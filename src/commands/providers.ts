@@ -91,6 +91,7 @@ export async function setProviderKey(
   } else {
     const storage = await setProviderSecret(provider, secret);
     if (storage === "fallback") {
+      process.exitCode = 3;
       console.warn(
         chalk.yellow(
           `Warning: OS keychain unavailable; stored in ${getFallbackKeysPath()} with restricted permissions.`,
@@ -137,6 +138,17 @@ export async function printProviderKeys(): Promise<void> {
       `${active} ${configured} ${status.provider.padEnd(10)} ${source}${secret}${note} model=${status.model}`,
     );
   }
+}
+
+export async function ensureProviderConfigured(
+  provider: ProviderId,
+): Promise<void> {
+  const secret = await getProviderSecret(provider);
+  if (secret.value || envValue(provider) || provider === "ollama") return;
+  if (!process.stdin.isTTY) return;
+  const entered = await promptForSecret(provider);
+  if (!entered) return;
+  await setProviderKey(provider, entered, { skipPing: false });
 }
 
 export async function useProvider(providerValue: string): Promise<void> {

@@ -28,6 +28,17 @@ function systemInstruction(
   return system ? { parts: [{ text: system.content }] } : undefined;
 }
 
+function geminiBody(request: CompletionRequest): string {
+  return JSON.stringify({
+    systemInstruction: systemInstruction(request.messages),
+    contents: geminiContents(request.messages),
+    generationConfig: {
+      temperature: request.temperature ?? 0.2,
+      maxOutputTokens: request.maxTokens ?? 1_024,
+    },
+  });
+}
+
 export const geminiProvider: LlmProvider = {
   id: "gemini",
   displayName: "Google Gemini",
@@ -53,14 +64,7 @@ export const geminiProvider: LlmProvider = {
         method: "POST",
         signal: request.signal ?? null,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: systemInstruction(request.messages),
-          contents: geminiContents(request.messages),
-          generationConfig: {
-            temperature: request.temperature ?? 0.2,
-            maxOutputTokens: request.maxTokens ?? 1_024,
-          },
-        }),
+        body: geminiBody(request),
       },
     );
     const data = await readJson<{
@@ -74,5 +78,61 @@ export const geminiProvider: LlmProvider = {
       throw new Error("Gemini returned no completion text");
     }
     return { text, provider: "gemini", model };
+  },
+  async stream(
+    request: CompletionRequest,
+    auth: ProviderAuth,
+    onToken: (token: string) => void,
+  ): Promise<CompletionResult> {
+    if (!auth.apiKey) throw new Error("Gemini API key is required");
+    const model = request.model ?? defaultModels.gemini;
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(auth.apiKey)}`,
+      {
+        method: "POST",
+        signal: request.signal ?? null,
+        headers: { "content-type": "application/json" },
+        body: geminiBody(request),
+      },
+    );
+    if (!response.ok) {
+      await readJson<unknown>(response);
+    }
+    if (!response.body) {
+      throw new Error("Gemini returned no stream body");
+    }
+    const decoder = new TextDecoder();
+    const reader = response.body.getReader();
+    let buffer = "";
+    let full = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") return { text: full, provider: "gemini", model };
+        try {
+          const parsed = JSON.parse(payload) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          };
+          const token = parsed.candidates?.[0]?.content?.parts
+            ?.map((p) => p.text ?? "")
+            .join("");
+          if (token) {
+            full += token;
+            onToken(token);
+          }
+        } catch {
+          // Ignore malformed keepalive lines.
+        }
+      }
+    }
+    return { text: full, provider: "gemini", model };
   },
 };

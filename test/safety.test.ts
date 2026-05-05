@@ -14,8 +14,13 @@ describe('safety classifier', () => {
     expect(result.level).toBe('block');
   });
 
-  it('requires confirmation for normal shell commands', () => {
+  it('auto-approves read-only shell commands', () => {
     const result = classifyToolCall({ name: 'shell.exec', args: { command: 'ls -la' } });
+    expect(result.level).toBe('safe');
+  });
+
+  it('requires confirmation for mutating shell commands', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'mv file.txt /tmp/' } });
     expect(result.level).toBe('confirm');
   });
 

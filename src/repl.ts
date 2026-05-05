@@ -2,7 +2,7 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
 import type { ChatMessage, Mode, ProviderId } from "./types.js";
-import { runAsk } from "./modes/ask.js";
+import { runAskStream } from "./modes/ask.js";
 import { runAgent } from "./modes/agent.js";
 import {
   providerSwitcher,
@@ -20,6 +20,14 @@ import {
 } from "./store/config.js";
 import { listSessions, saveSession } from "./store/history.js";
 import { assertProvider } from "./llm/provider.js";
+import {
+  renderBanner,
+  renderSessionInfo,
+  renderSuggestions,
+  renderModeSwitch,
+  renderProviderSwitch,
+  PROMPT,
+} from "./ui/banner.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -36,23 +44,27 @@ function splitCommand(line: string): string[] {
 }
 
 function help(): string {
-  return [
-    "/ask                  switch to ask mode",
-    "/agent                switch to agent mode",
-    "/model <name>         switch model",
-    "/provider [name]      switch provider or open picker",
-    "/use <provider>       alias for /provider <name>",
-    "/set <provider> [key] store API key",
-    "/unset <provider>     remove key",
-    "/keys                 list configured providers",
-    "/clear                clear context",
-    "/history              show past sessions",
-    "/save <name>          save session",
-    "/cwd <path>           change working directory",
-    "/allow <tool>         allow a tool for session/config",
-    "/exit                 quit",
-    "/help                 list commands",
-  ].join("\n");
+  const cmds = [
+    ["/ask", "switch to ask mode"],
+    ["/agent", "switch to agent mode"],
+    ["/model <name>", "switch model"],
+    ["/provider [name]", "switch provider or open picker"],
+    ["/use <provider>", "alias for /provider <name>"],
+    ["/set <provider> [key]", "store API key"],
+    ["/unset <provider>", "remove key"],
+    ["/keys", "list configured providers"],
+    ["/clear", "clear context"],
+    ["/history", "show past sessions"],
+    ["/save <name>", "save session"],
+    ["/cwd <path>", "change working directory"],
+    ["/allow <tool>", "allow a tool for session"],
+    ["/exit", "quit"],
+    ["/help", "list commands"],
+  ];
+  const maxCmd = Math.max(...cmds.map((c) => c[0]!.length));
+  return cmds
+    .map((c) => `  ${chalk.cyan(c[0]!.padEnd(maxCmd + 2))}${chalk.dim(c[1]!)}`)
+    .join("\n");
 }
 
 async function handleSlash(
@@ -69,20 +81,20 @@ async function handleSlash(
     case "/ask":
       state.mode = "ask";
       setDefaultMode("ask");
-      console.log(chalk.green("mode: ask"));
+      console.log(renderModeSwitch("ask"));
       return true;
     case "/agent":
       state.mode = "agent";
       setDefaultMode("agent");
-      console.log(chalk.yellow("mode: agent"));
+      console.log(renderModeSwitch("agent"));
       return true;
     case "/model": {
       const model = args.join(" ");
-      if (!model) console.log("usage: /model <name>");
+      if (!model) console.log(chalk.dim("usage: /model <name>"));
       else {
         state.model = model;
         setProviderModel(state.provider, model);
-        console.log(`model: ${model}`);
+        console.log(renderProviderSwitch(state.provider, model));
       }
       return true;
     }
@@ -92,15 +104,16 @@ async function handleSlash(
       const config = getConfig();
       state.provider = config.defaultProvider;
       state.model = getProviderModel(state.provider);
+      console.log(renderProviderSwitch(state.provider, state.model));
       return true;
     }
     case "/set": {
-      if (!args[0]) console.log("usage: /set <provider> [key]");
+      if (!args[0]) console.log(chalk.dim("usage: /set <provider> [key]"));
       else await setProviderKey(args[0], args[1], {});
       return true;
     }
     case "/unset": {
-      if (!args[0]) console.log("usage: /unset <provider>");
+      if (!args[0]) console.log(chalk.dim("usage: /unset <provider>"));
       else await unsetProviderKey(args[0]);
       return true;
     }
@@ -109,14 +122,15 @@ async function handleSlash(
       return true;
     case "/clear":
       state.messages.length = 0;
-      console.log("context cleared");
+      console.log(chalk.dim("  context cleared"));
       return true;
     case "/history": {
       const sessions = await listSessions();
-      if (sessions.length === 0) console.log("no saved sessions yet");
+      if (sessions.length === 0) console.log(chalk.dim("  no saved sessions"));
       for (const session of sessions) {
         console.log(
-          `${session.createdAt} ${session.name ?? session.id} (${session.messages.length} messages) ${session.cwd}`,
+          chalk.dim("  ") +
+            `${session.createdAt} ${session.name ?? session.id} ${chalk.dim(`(${session.messages.length} msgs)`)}`,
         );
       }
       return true;
@@ -126,12 +140,12 @@ async function handleSlash(
         state.messages,
         args.join(" ") || undefined,
       );
-      console.log(`saved session ${record.id}`);
+      console.log(chalk.dim(`  saved session ${record.id}`));
       return true;
     }
     case "/cwd": {
       const dir = args.join(" ");
-      if (!dir) console.log(process.cwd());
+      if (!dir) console.log(chalk.dim(`  ${process.cwd()}`));
       else {
         process.chdir(dir);
         const config = getConfig();
@@ -140,13 +154,13 @@ async function handleSlash(
             new Set([...config.sandboxRoots, process.cwd()]),
           ),
         });
-        console.log(`cwd: ${process.cwd()}`);
+        console.log(chalk.dim(`  cwd → ${process.cwd()}`));
       }
       return true;
     }
     case "/allow": {
       const tool = args[0];
-      if (!tool) console.log("usage: /allow <tool>");
+      if (!tool) console.log(chalk.dim("usage: /allow <tool>"));
       else {
         const config = getConfig();
         updateConfig({
@@ -154,7 +168,7 @@ async function handleSlash(
             new Set([...config.allowAlwaysTools, tool]),
           ),
         });
-        console.log(`allowed ${tool}`);
+        console.log(chalk.dim(`  allowed ${tool} ✓`));
       }
       return true;
     }
@@ -165,7 +179,7 @@ async function handleSlash(
       console.log(help());
       return true;
     default:
-      console.log(`unknown command: ${command}. Try /help`);
+      console.log(chalk.dim(`  unknown command: ${command}. Try /help`));
       return true;
   }
 }
@@ -183,14 +197,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   }
 
   const rl = readline.createInterface({ input, output });
-  console.log(chalk.bold("clai"));
+
+  // ── Startup banner ──────────────────────────────────────────────────────
+  console.log(renderBanner("0.1.0"));
   console.log(
-    `mode=${state.mode} provider=${state.provider} model=${state.model}. Type /help for commands.`,
+    renderSessionInfo({
+      workdir: process.cwd(),
+      model: state.model,
+      provider: state.provider,
+      mode: state.mode,
+    }),
   );
+  console.log(renderSuggestions());
+  console.log();
 
   try {
     while (true) {
-      const line = (await rl.question(chalk.cyan("clai> "))).trim();
+      const line = (await rl.question(PROMPT)).trim();
       if (!line) continue;
       if (line.startsWith("/")) {
         const shouldContinue = await handleSlash(line, state);
@@ -201,7 +224,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       try {
         const answer =
           state.mode === "ask"
-            ? await runAsk(line, {
+            ? await runAskStream(line, (token) => process.stdout.write(token), {
                 provider: state.provider,
                 model: state.model,
                 history: state.messages,
@@ -211,9 +234,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
                 model: state.model,
                 history: state.messages,
               });
-        console.log(chalk.gray("─".repeat(40)));
-        console.log(answer);
-        console.log(chalk.gray("─".repeat(40)));
+        if (state.mode === "ask") {
+          process.stdout.write("\n");
+        }
+        console.log(); // breathing room between exchanges
         state.messages.push(
           { role: "user", content: line },
           { role: "assistant", content: answer },
@@ -225,6 +249,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       }
     }
   } finally {
+    if (state.messages.length > 0) {
+      await saveSession(state.messages, `repl-${new Date().toISOString()}`);
+    }
     rl.close();
   }
 }

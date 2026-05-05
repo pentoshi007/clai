@@ -1,7 +1,7 @@
 import { Command, Option } from "commander";
 import chalk from "chalk";
 import type { Mode, ProviderId } from "./types.js";
-import { runAsk } from "./modes/ask.js";
+import { runAsk, runAskStream } from "./modes/ask.js";
 import { runAgent } from "./modes/agent.js";
 import { startRepl } from "./repl.js";
 import {
@@ -10,6 +10,7 @@ import {
   setProviderKey,
   unsetProviderKey,
   useProvider,
+  ensureProviderConfigured,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
 import {
@@ -19,7 +20,7 @@ import {
   updateConfig,
 } from "./store/config.js";
 import { assertProvider } from "./llm/provider.js";
-import { listSessions } from "./store/history.js";
+import { listSessions, saveSession, getSession } from "./store/history.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -47,6 +48,7 @@ async function oneShot(
   const provider = resolveProvider(options.provider);
   const mode = options.mode ?? getConfig().defaultMode;
   const model = options.model ?? getConfig().defaultModel;
+  await ensureProviderConfigured(provider ?? getConfig().defaultProvider);
 
   if (!prompt) {
     await startRepl({ mode, provider, model });
@@ -55,9 +57,16 @@ async function oneShot(
 
   const answer =
     mode === "ask"
-      ? await runAsk(prompt, { provider, model })
+      ? await runAskStream(prompt, (token) => process.stdout.write(token), {
+          provider,
+          model,
+        })
       : await runAgent(prompt, { provider, model, autoConfirm: options.yes });
-  console.log(answer);
+  if (mode === "ask") process.stdout.write("\n");
+  await saveSession([
+    { role: "user", content: prompt },
+    { role: "assistant", content: answer },
+  ]);
 }
 
 function printError(error: unknown): void {
@@ -177,11 +186,18 @@ async function main(): Promise<void> {
   program
     .command("history")
     .description("list saved sessions")
-    .action(async () => {
+    .option("--show <sessionId>", "print a saved session")
+    .action(async (options: { show?: string | undefined }) => {
+      if (options.show) {
+        const session = await getSession(options.show);
+        if (!session) throw new Error(`No session found: ${options.show}`);
+        console.log(JSON.stringify(session, null, 2));
+        return;
+      }
       const sessions = await listSessions();
       for (const session of sessions) {
         console.log(
-          `${session.createdAt} ${session.name ?? session.id} (${session.messages.length} messages) ${session.cwd}`,
+          `${session.updatedAt} ${session.name ?? session.id} (${session.messages.length} messages) ${session.cwd}`,
         );
       }
     });

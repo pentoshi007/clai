@@ -69,6 +69,73 @@ export async function openAiCompatibleComplete(options: {
   return text;
 }
 
+export async function openAiCompatibleStream(options: {
+  provider: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  messages: ChatMessage[];
+  maxTokens?: number | undefined;
+  temperature?: number | undefined;
+  headers?: Record<string, string> | undefined;
+  signal?: AbortSignal | undefined;
+  onToken: (token: string) => void;
+}): Promise<string> {
+  const response = await fetch(`${options.baseUrl}/chat/completions`, {
+    method: "POST",
+    signal: options.signal ?? null,
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${options.apiKey}`,
+      ...options.headers,
+    },
+    body: JSON.stringify({
+      model: options.model,
+      messages: toOpenAiMessages(options.messages),
+      max_tokens: options.maxTokens ?? 1_024,
+      temperature: options.temperature ?? 0.2,
+      stream: true,
+    }),
+  });
+  if (!response.ok) {
+    await readJson<unknown>(response);
+  }
+  if (!response.body)
+    throw new ProviderError(`${options.provider} returned no stream body`);
+
+  const decoder = new TextDecoder();
+  const reader = response.body.getReader();
+  let buffer = "";
+  let full = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === "[DONE]") return full;
+      try {
+        const parsed = JSON.parse(payload) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const token = parsed.choices?.[0]?.delta?.content;
+        if (token) {
+          full += token;
+          options.onToken(token);
+        }
+      } catch {
+        // Ignore malformed keepalive lines.
+      }
+    }
+  }
+  return full;
+}
+
 export async function openAiCompatiblePing(
   baseUrl: string,
   apiKey: string,

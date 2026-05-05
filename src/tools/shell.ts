@@ -13,6 +13,7 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
     timeout: args.timeoutMs ?? 120_000,
     reject: false,
     all: true,
+    shell: true,
   });
   return {
     ok: subprocess.exitCode === 0,

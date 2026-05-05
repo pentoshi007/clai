@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0",
+  "description": "Cross-platform terminal AI assistant with ask and agent modes",
+  "homepage": "https://github.com/aniketpandey/clai",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/aniketpandey/clai/releases/download/v0.1.0/clai-bun-windows-x64.exe#/clai.exe",
+      "hash": "TO_BE_FILLED_BY_RELEASE_WORKFLOW"
+    }
+  },
+  "bin": "clai.exe",
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/aniketpandey/clai/releases/download/v$version/clai-bun-windows-x64.exe#/clai.exe"
+      }
+    }
+  }
+}

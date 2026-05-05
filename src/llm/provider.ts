@@ -16,6 +16,11 @@ export interface LlmProvider {
     request: CompletionRequest,
     auth: ProviderAuth,
   ): Promise<CompletionResult>;
+  stream?(
+    request: CompletionRequest,
+    auth: ProviderAuth,
+    onToken: (token: string) => void,
+  ): Promise<CompletionResult>;
 }
 
 export interface ProviderAuth {
