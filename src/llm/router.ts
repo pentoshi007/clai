@@ -1,0 +1,64 @@
+import type { CompletionRequest, CompletionResult, ProviderId } from '../types.js';
+import { getConfig } from '../store/config.js';
+import { getProviderSecret } from '../store/keys.js';
+import { anthropicProvider } from './anthropic.js';
+import { geminiProvider } from './gemini.js';
+import { groqProvider } from './groq.js';
+import { ollamaProvider } from './ollama.js';
+import { openaiProvider } from './openai.js';
+import { openrouterProvider } from './openrouter.js';
+import type { LlmProvider, ProviderAuth } from './provider.js';
+
+export const providers: Record<ProviderId, LlmProvider> = {
+  groq: groqProvider,
+  gemini: geminiProvider,
+  openrouter: openrouterProvider,
+  openai: openaiProvider,
+  anthropic: anthropicProvider,
+  ollama: ollamaProvider,
+};
+
+const fallbackOrder: ProviderId[] = ['groq', 'gemini', 'openrouter', 'ollama'];
+
+export function getProvider(provider: ProviderId): LlmProvider {
+  return providers[provider];
+}
+
+export async function providerAuth(provider: ProviderId): Promise<ProviderAuth> {
+  const secret = await getProviderSecret(provider);
+  if (provider === 'ollama') {
+    return { baseUrl: secret.value };
+  }
+  return { apiKey: secret.value };
+}
+
+export async function completeWithProvider(request: CompletionRequest): Promise<CompletionResult> {
+  const config = getConfig();
+  const requested = request.provider ?? config.defaultProvider;
+  const order = [requested, ...fallbackOrder.filter((provider) => provider !== requested)];
+  const failures: string[] = [];
+
+  for (const providerId of order) {
+    const provider = providers[providerId];
+    const auth = await providerAuth(providerId);
+    const hasAuth = providerId === 'ollama' ? Boolean(auth.baseUrl) : Boolean(auth.apiKey);
+    if (!hasAuth) {
+      failures.push(`${providerId}: no API key configured`);
+      continue;
+    }
+
+    try {
+      return await provider.complete({ ...request, provider: providerId, model: request.model ?? provider.defaultModel }, auth);
+    } catch (error) {
+      failures.push(`${providerId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  throw new Error(`No provider could complete the request. ${failures.join(' | ')}`);
+}
+
+export async function pingProvider(providerId: ProviderId, secretOverride?: string): Promise<void> {
+  const provider = providers[providerId];
+  const auth = providerId === 'ollama' ? { baseUrl: secretOverride ?? (await providerAuth(providerId)).baseUrl } : { apiKey: secretOverride ?? (await providerAuth(providerId)).apiKey };
+  await provider.ping(auth);
+}

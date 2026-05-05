@@ -1,21 +1,28 @@
-export const providerIds = ['groq', 'gemini', 'openrouter', 'openai', 'anthropic', 'ollama'] as const;
+export const providerIds = [
+  "groq",
+  "gemini",
+  "openrouter",
+  "openai",
+  "anthropic",
+  "ollama",
+] as const;
 
 export type ProviderId = (typeof providerIds)[number];
-export type Mode = 'ask' | 'agent';
-export type RiskLevel = 'safe' | 'confirm' | 'block';
+export type Mode = "ask" | "agent";
+export type RiskLevel = "safe" | "confirm" | "block";
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
 }
 
 export interface CompletionRequest {
-  provider?: ProviderId;
-  model?: string;
+  provider?: ProviderId | undefined;
+  model?: string | undefined;
   messages: ChatMessage[];
-  temperature?: number;
-  maxTokens?: number;
-  signal?: AbortSignal;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export interface CompletionResult {
@@ -29,10 +36,10 @@ export interface ProviderStatus {
   label: string;
   active: boolean;
   configured: boolean;
-  source: 'env' | 'keychain' | 'fallback' | 'local' | 'missing';
-  maskedKey?: string;
+  source: "env" | "keychain" | "fallback" | "local" | "missing";
+  maskedKey?: string | undefined;
   model: string;
-  note?: string;
+  note?: string | undefined;
 }
 
 export interface ToolCall {
@@ -43,5 +50,5 @@ export interface ToolCall {
 export interface ToolResult {
   ok: boolean;
   output: string;
-  exitCode?: number;
+  exitCode?: number | undefined;
 }
