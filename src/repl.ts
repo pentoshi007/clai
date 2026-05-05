@@ -19,7 +19,8 @@ import {
   updateConfig,
 } from "./store/config.js";
 import { listSessions, saveSession } from "./store/history.js";
-import { assertProvider } from "./llm/provider.js";
+import { assertProvider, defaultModels } from "./llm/provider.js";
+import { providerIds } from "./types.js";
 import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
 import {
   renderBanner,
@@ -36,6 +37,51 @@ export interface ReplOptions {
   model?: string | undefined;
 }
 
+// ── Well-known models per provider ─────────────────────────────────────────
+const knownModels: Record<string, string[]> = {
+  groq: [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+    "qwen/qwen3-32b",
+  ],
+  gemini: [
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+  ],
+  openrouter: [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "deepseek/deepseek-r1:free",
+    "qwen/qwen3-32b:free",
+    "mistralai/mistral-7b-instruct:free",
+  ],
+  openai: [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4-turbo",
+    "o1-mini",
+  ],
+  anthropic: [
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-haiku-latest",
+    "claude-3-opus-latest",
+  ],
+  ollama: [
+    "llama3.1:8b",
+    "llama3.2:3b",
+    "mistral:7b",
+    "codellama:7b",
+  ],
+};
+
+// ── Abort controller for streaming cancellation ─────────────────────────────
+let currentAbortController: AbortController | null = null;
+
 function splitCommand(line: string): string[] {
   return (
     line
@@ -44,11 +90,91 @@ function splitCommand(line: string): string[] {
   );
 }
 
+// ── Strip / collapse <think> blocks ─────────────────────────────────────────
+let lastThinkContent = "";
+
+function stripThinking(text: string): { visible: string; hasThinking: boolean; thinkContent: string } {
+  const thinkBlocks: string[] = [];
+  const visible = text.replace(/<think>([\s\S]*?)<\/think>/gi, (_, content: string) => {
+    thinkBlocks.push(content.trim());
+    return "";
+  }).trim();
+  const hasThinking = thinkBlocks.length > 0;
+  const thinkContent = thinkBlocks.join("\n\n");
+  return { visible, hasThinking, thinkContent };
+}
+
+// Stream a response while hiding <think> blocks and handling ESC abort
+async function streamWithAbort(
+  run: (signal: AbortSignal, onToken: (t: string) => void) => Promise<string>,
+): Promise<string> {
+  const ac = new AbortController();
+  currentAbortController = ac;
+  lastThinkContent = "";
+
+  let buffer = "";
+  let visibleBuffer = "";
+  let inThink = false;
+  let thinkBuffer = "";
+
+  const onToken = (token: string): void => {
+    buffer += token;
+    // Stream-parse <think> blocks on the fly
+    let remaining = token;
+    while (remaining.length > 0) {
+      if (inThink) {
+        const closeIdx = remaining.indexOf("</think>");
+        if (closeIdx >= 0) {
+          thinkBuffer += remaining.slice(0, closeIdx);
+          lastThinkContent = thinkBuffer.trim();
+          inThink = false;
+          remaining = remaining.slice(closeIdx + 8);
+        } else {
+          thinkBuffer += remaining;
+          remaining = "";
+        }
+      } else {
+        const openIdx = remaining.indexOf("<think>");
+        if (openIdx >= 0) {
+          const before = remaining.slice(0, openIdx);
+          if (before) {
+            process.stdout.write(before);
+            visibleBuffer += before;
+          }
+          inThink = true;
+          thinkBuffer = "";
+          remaining = remaining.slice(openIdx + 7);
+        } else {
+          process.stdout.write(remaining);
+          visibleBuffer += remaining;
+          remaining = "";
+        }
+      }
+    }
+  };
+
+  try {
+    const raw = await run(ac.signal, onToken);
+    if (lastThinkContent) {
+      process.stdout.write(chalk.dim("  [thinking hidden — Ctrl+T to show]\n"));
+    }
+    return visibleBuffer || raw;
+  } catch (err) {
+    if (ac.signal.aborted) {
+      process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
+      return visibleBuffer;
+    }
+    throw err;
+  } finally {
+    currentAbortController = null;
+  }
+}
+
 function help(): string {
   const cmds = [
     ["/ask", "switch to ask mode"],
     ["/agent", "switch to agent mode"],
-    ["/model <name>", "switch model"],
+    ["/model [name|#]", "list models or switch (e.g. /model 2)"],
     ["/provider [name]", "switch provider or open picker"],
     ["/use <provider>", "alias for /provider <name>"],
     ["/set <provider> [key]", "store API key"],
@@ -64,9 +190,25 @@ function help(): string {
     ["/help", "list commands"],
   ];
   const maxCmd = Math.max(...cmds.map((c) => c[0]!.length));
-  return cmds
+  const lines = cmds
     .map((c) => `  ${chalk.cyan(c[0]!.padEnd(maxCmd + 2))}${chalk.dim(c[1]!)}`)
     .join("\n");
+  return lines + chalk.dim("\n\n  ESC / Ctrl+C  abort current response");
+}
+
+function showModelPicker(provider: string): void {
+  const models = knownModels[provider] ?? [];
+  const def = defaultModels[provider as ProviderId] ?? "";
+  if (models.length === 0) {
+    console.log(chalk.dim("  No known models for this provider. Type /model <name> to set manually."));
+    return;
+  }
+  console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:`));
+  models.forEach((m, i) => {
+    const marker = m === def ? chalk.yellow(" ← default") : "";
+    console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.white(m)}${marker}`);
+  });
+  console.log(chalk.dim("  Use /model <name> or /model <#> to select."));
 }
 
 async function handleSlash(
@@ -91,12 +233,25 @@ async function handleSlash(
       console.log(renderModeSwitch("agent"));
       return true;
     case "/model": {
-      const model = args.join(" ");
-      if (!model) console.log(chalk.dim("usage: /model <name>"));
-      else {
-        state.model = model;
-        setProviderModel(state.provider, model);
-        console.log(renderProviderSwitch(state.provider, model));
+      const arg = args.join(" ").trim();
+      if (!arg) {
+        // No arg → show picker
+        showModelPicker(state.provider);
+        return true;
+      }
+      // Numeric → pick from known list
+      const num = parseInt(arg, 10);
+      const models = knownModels[state.provider] ?? [];
+      if (!isNaN(num) && num >= 1 && num <= models.length) {
+        const picked = models[num - 1]!;
+        state.model = picked;
+        setProviderModel(state.provider, picked);
+        console.log(renderProviderSwitch(state.provider, picked));
+      } else {
+        // Name → set directly
+        state.model = arg;
+        setProviderModel(state.provider, arg);
+        console.log(renderProviderSwitch(state.provider, arg));
       }
       return true;
     }
@@ -174,6 +329,17 @@ async function handleSlash(
       }
       return true;
     }
+    case "/think":
+    case "/thinking": {
+      if (lastThinkContent) {
+        console.log(chalk.dim("─── thinking ──────────────────────────────────"));
+        console.log(chalk.dim(lastThinkContent));
+        console.log(chalk.dim("───────────────────────────────────────────────"));
+      } else {
+        console.log(chalk.dim("  No thinking from last response."));
+      }
+      return true;
+    }
     case "/exit":
     case "/quit":
       return false;
@@ -203,6 +369,21 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   const rl = readline.createInterface({ input, output });
 
+  // ── ESC / Ctrl+C abort ──────────────────────────────────────────────────
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false); // keep readline in control
+  }
+  // Ctrl+C while streaming → abort; otherwise readline handles it
+  process.on("SIGINT", () => {
+    if (currentAbortController) {
+      currentAbortController.abort();
+    } else {
+      // No active stream → exit
+      console.log();
+      process.exit(0);
+    }
+  });
+
   // ── Startup banner ──────────────────────────────────────────────────────
   console.log(renderBanner(getCurrentVersion()));
   console.log(
@@ -214,7 +395,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }),
   );
   console.log(renderSuggestions());
-  console.log();
+  console.log(chalk.dim("  ESC / Ctrl+C to abort a response  │  /model to list models  │  /think to show thinking\n"));
 
   // Non-blocking update check
   checkForUpdateSilent();
@@ -230,25 +411,27 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       }
 
       try {
-        const answer =
-          state.mode === "ask"
-            ? await runAskStream(line, (token) => process.stdout.write(token), {
-                provider: state.provider,
-                model: state.model,
-                history: state.messages,
-              })
-            : await runAgent(line, {
-                provider: state.provider,
-                model: state.model,
-                history: state.messages,
-              });
         if (state.mode === "ask") {
+          await streamWithAbort(async (signal, onToken) => {
+            return await runAskStream(line, onToken, {
+              provider: state.provider,
+              model: state.model,
+              history: state.messages,
+              signal,
+            });
+          });
           process.stdout.write("\n");
+        } else {
+          await runAgent(line, {
+            provider: state.provider,
+            model: state.model,
+            history: state.messages,
+          });
         }
-        console.log(); // breathing room between exchanges
+        console.log();
         state.messages.push(
           { role: "user", content: line },
-          { role: "assistant", content: answer },
+          { role: "assistant", content: "" },
         );
       } catch (error) {
         console.error(

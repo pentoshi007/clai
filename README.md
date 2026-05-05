@@ -133,12 +133,14 @@ export OLLAMA_HOST=http://localhost:11434
 |-------------------------|--------------------------------------------------  |
 | `/ask`                  | Switch to ask mode                                 |
 | `/agent`                | Switch to agent mode                               |
-| `/model <name>`         | Switch LLM model                                   |
+| `/model`                | List available models for current provider (numbered) |
+| `/model <name\|#>`      | Switch model by name or number (e.g. `/model 2`)   |
 | `/provider [name]`      | Switch provider or open interactive picker          |
 | `/use <provider>`       | Alias for `/provider <name>`                       |
 | `/set <provider> [key]` | Store API key (masked input if key omitted)        |
 | `/unset <provider>`     | Remove stored key                                  |
 | `/keys`                 | List configured providers, masked                  |
+| `/think`                | Show hidden thinking from last response            |
 | `/clear`                | Clear conversation context                         |
 | `/history`              | Show past sessions                                 |
 | `/save <name>`          | Save current session                               |
@@ -147,6 +149,7 @@ export OLLAMA_HOST=http://localhost:11434
 | `/update`               | Check for updates                                  |
 | `/exit`                 | Quit                                               |
 | `/help`                 | List commands                                      |
+| `Ctrl+C`                | Abort current response (second Ctrl+C exits)       |
 
 ## Built-in Tools (Agent Mode)
 

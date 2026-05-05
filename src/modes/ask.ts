@@ -9,6 +9,7 @@ export interface AskOptions {
   provider?: ProviderId | undefined;
   model?: string | undefined;
   history?: ChatMessage[] | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 async function buildAskMessages(
@@ -62,6 +63,7 @@ export async function runAskStream(
       messages: request.messages,
       temperature: 0.2,
       maxTokens: 1_500,
+      signal: options.signal,
     },
     onToken,
   );
