@@ -8,10 +8,21 @@ import { getProviderSecret } from "../store/keys.js";
 import { anthropicProvider } from "./anthropic.js";
 import { geminiProvider } from "./gemini.js";
 import { groqProvider } from "./groq.js";
+import { ProviderError } from "./http.js";
 import { ollamaProvider } from "./ollama.js";
 import { openaiProvider } from "./openai.js";
 import { openrouterProvider } from "./openrouter.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
+
+const MAX_RETRIES = 2;
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimited(error: unknown): boolean {
+  return error instanceof ProviderError && error.status === 429;
+}
 
 export const providers: Record<ProviderId, LlmProvider> = {
   groq: groqProvider,
@@ -108,28 +119,39 @@ export async function streamWithProvider(
       failures.push(`${providerId}: no API key configured`);
       continue;
     }
-    try {
-      const model =
-        providerId === requested
-          ? (request.model ?? provider.defaultModel)
-          : provider.defaultModel;
-      if (provider.stream) {
-        return await provider.stream(
+
+    const model =
+      providerId === requested
+        ? (request.model ?? provider.defaultModel)
+        : provider.defaultModel;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        if (provider.stream) {
+          return await provider.stream(
+            { ...request, provider: providerId, model },
+            auth,
+            onToken,
+          );
+        }
+        const result = await provider.complete(
           { ...request, provider: providerId, model },
           auth,
-          onToken,
         );
+        onToken(result.text);
+        return result;
+      } catch (error) {
+        if (isRateLimited(error) && attempt < MAX_RETRIES) {
+          const wait = (attempt + 1) * 2_000;
+          onToken(`\n  ⏳ Rate limited, retrying in ${wait / 1000}s...\n`);
+          await sleep(wait);
+          continue;
+        }
+        failures.push(
+          `${providerId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        break;
       }
-      const result = await provider.complete(
-        { ...request, provider: providerId, model },
-        auth,
-      );
-      onToken(result.text);
-      return result;
-    } catch (error) {
-      failures.push(
-        `${providerId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
     }
   }
 

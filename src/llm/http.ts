@@ -14,8 +14,21 @@ export class ProviderError extends Error {
 export async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
   if (!response.ok) {
+    // Try to extract a useful message from the body
+    let detail = '';
+    try {
+      const body = JSON.parse(text) as Record<string, unknown>;
+      const msg = (body as { error?: { message?: string } }).error?.message
+        ?? (body as { message?: string }).message
+        ?? '';
+      if (msg) detail = ` — ${msg}`;
+    } catch {
+      if (text.length > 0) detail = ` — ${text.slice(0, 200)}`;
+    }
+    const retryAfter = response.headers.get('retry-after');
+    const retryHint = retryAfter ? ` (retry after ${retryAfter}s)` : '';
     throw new ProviderError(
-      `Provider request failed with HTTP ${response.status}`,
+      `Provider request failed with HTTP ${response.status}${retryHint}${detail}`,
       response.status,
       text.slice(0, 1_000),
     );
