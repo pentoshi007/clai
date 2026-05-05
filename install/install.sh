@@ -16,16 +16,29 @@ esac
 case "$os" in
   darwin) platform="darwin" ;;
   linux) platform="linux" ;;
-  *) echo "Unsupported OS: $os" >&2; exit 1 ;;
+  *) echo "Unsupported OS: $os. Use install.ps1 for Windows." >&2; exit 1 ;;
 esac
 
 name="clai-bun-${platform}-${arch}"
-url="https://github.com/${repo}/releases/${version}/download/${name}"
+
+if [ "$version" = "latest" ]; then
+  url="https://github.com/${repo}/releases/latest/download/${name}"
+else
+  url="https://github.com/${repo}/releases/download/${version}/${name}"
+fi
+
 tmp="$(mktemp)"
 
-echo "Downloading $url"
+echo "⬇ Downloading clai for ${platform}-${arch}..."
 curl -fsSL "$url" -o "$tmp"
 chmod +x "$tmp"
-mkdir -p "$bin_dir"
-mv "$tmp" "$bin_dir/clai"
-echo "Installed clai to $bin_dir/clai"
+
+if [ -w "$bin_dir" ]; then
+  mv "$tmp" "$bin_dir/clai"
+else
+  echo "Installing to $bin_dir (requires sudo)..."
+  sudo mv "$tmp" "$bin_dir/clai"
+fi
+
+echo "✓ Installed clai to $bin_dir/clai"
+echo "  Run 'clai' to get started."

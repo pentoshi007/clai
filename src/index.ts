@@ -13,6 +13,7 @@ import {
   ensureProviderConfigured,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
+import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
 import {
   getConfig,
   setDefaultMode,
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
   program
     .name("clai")
     .description("A cross-platform AI CLI assistant with ask and agent modes")
-    .version("0.1.0")
+    .version(getCurrentVersion())
     .addOption(modeOption())
     .option("--provider <provider>", "LLM provider to use")
     .option("--model <model>", "model to use")
@@ -204,11 +205,9 @@ async function main(): Promise<void> {
 
   program
     .command("update")
-    .description("print update instructions")
-    .action(() => {
-      console.log(
-        "Update via your installer: npm i -g clai, brew upgrade clai, scoop update clai, or download the latest GitHub release.",
-      );
+    .description("check for updates and show upgrade instructions")
+    .action(async () => {
+      await runUpdate();
     });
 
   program

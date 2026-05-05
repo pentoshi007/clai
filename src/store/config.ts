@@ -12,6 +12,7 @@ export interface ClaiConfig {
   sandboxRoots: string[];
   ollamaHost: string;
   telemetry: boolean;
+  lastUpdateCheck: number;
 }
 
 const defaults: ClaiConfig = {
@@ -24,6 +25,7 @@ const defaults: ClaiConfig = {
   sandboxRoots: [process.cwd()],
   ollamaHost: 'http://localhost:11434',
   telemetry: false,
+  lastUpdateCheck: 0,
 };
 
 const store = new Conf<ClaiConfig>({

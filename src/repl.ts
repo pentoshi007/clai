@@ -20,6 +20,7 @@ import {
 } from "./store/config.js";
 import { listSessions, saveSession } from "./store/history.js";
 import { assertProvider } from "./llm/provider.js";
+import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
 import {
   renderBanner,
   renderSessionInfo,
@@ -58,6 +59,7 @@ function help(): string {
     ["/save <name>", "save session"],
     ["/cwd <path>", "change working directory"],
     ["/allow <tool>", "allow a tool for session"],
+    ["/update", "check for updates"],
     ["/exit", "quit"],
     ["/help", "list commands"],
   ];
@@ -175,6 +177,9 @@ async function handleSlash(
     case "/exit":
     case "/quit":
       return false;
+    case "/update":
+      await runUpdate();
+      return true;
     case "/help":
       console.log(help());
       return true;
@@ -199,7 +204,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const rl = readline.createInterface({ input, output });
 
   // ── Startup banner ──────────────────────────────────────────────────────
-  console.log(renderBanner("0.1.0"));
+  console.log(renderBanner(getCurrentVersion()));
   console.log(
     renderSessionInfo({
       workdir: process.cwd(),
@@ -210,6 +215,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   );
   console.log(renderSuggestions());
   console.log();
+
+  // Non-blocking update check
+  checkForUpdateSilent();
 
   try {
     while (true) {

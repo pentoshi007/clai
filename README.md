@@ -16,23 +16,30 @@
 ## Installation
 
 ```sh
-# npm (any platform)
+# npm (any platform — requires Node.js ≥ 20)
 npm i -g clai
 
 # macOS (Homebrew)
-brew install pentoshi007/clai/clai
+brew tap pentoshi007/clai
+brew install clai
+
+# Linux / macOS (curl)
+curl -fsSL https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.ps1 | iex
 
 # Windows (Scoop)
+scoop bucket add clai https://github.com/pentoshi007/clai
 scoop install clai
+```
 
-# Linux (curl)
-curl -fsSL https://github.com/pentoshi007/clai/releases/latest/download/install.sh | sh
-
+```sh
 # From source
 git clone https://github.com/pentoshi007/clai.git
-cd clai
-npm install
-npm run dev
+cd clai && npm install && npm run dev
 ```
 
 ## Quick Start
