@@ -17,7 +17,7 @@
 
 ```sh
 # npm (any platform — requires Node.js ≥ 20)
-npm i -g clai
+npm i -g @pentoshi/clai
 
 # macOS (Homebrew)
 brew tap pentoshi007/clai
