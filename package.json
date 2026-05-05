@@ -1,13 +1,13 @@
 {
   "name": "clai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",
   "author": "pentoshi007",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pentoshi007/clai.git"
+    "url": "git+https://github.com/pentoshi007/clai.git"
   },
   "homepage": "https://github.com/pentoshi007/clai",
   "keywords": [
@@ -24,7 +24,7 @@
     "ollama"
   ],
   "bin": {
-    "clai": "./bin/clai"
+    "clai": "bin/clai.mjs"
   },
   "files": [
     "bin",
