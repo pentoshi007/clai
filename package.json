@@ -1,0 +1,48 @@
+{
+  "name": "clai",
+  "version": "0.1.0",
+  "description": "A fast, cross-platform AI CLI assistant with ask and agent modes.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "clai": "./bin/clai"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "SRS.md"
+  ],
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "compile": "bun run scripts/build.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "doctor": "tsx src/index.ts doctor"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.2.3",
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "conf": "^13.1.0",
+    "execa": "^9.5.2",
+    "ink": "^5.1.0",
+    "ora": "^8.1.1",
+    "zod": "^3.24.1"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.7.0",
+    "keytar": "^7.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
