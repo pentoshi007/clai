@@ -2,45 +2,50 @@
 
 > A fast, cross-platform AI CLI assistant with `/ask` and `/agent` modes for general shell tasks, file operations, and cybersecurity / pentesting workflows. Free to build, free to run.
 
-## Features
-
-- **`/ask` mode** — Read-only. AI explains, gives commands & step-by-step guidance, but does NOT execute anything.
-- **`/agent` mode** — Agentic. AI plans, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met.
-- **6 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, and Ollama (local). All with streaming support.
-- **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
-- **Safety gate** — 3-tier classifier (`safe` / `confirm` / `block`) with destructive pattern detection, public IP scan blocking, and exfiltration guards.
-- **Cross-platform** — macOS, Linux, and Windows. Detects OS-native package managers (brew, apt, dnf, pacman, winget, choco).
-- **Pentest-aware** — nmap, nikto, sqlmap, gobuster, ffuf, hydra, masscan, whois, dig, netcat, tshark integration with authorization gates.
-- **Persistent history** — SQLite with JSONL fallback. Automatic key redaction in logs.
-
 ## Installation
 
-```sh
-# npm (any platform — requires Node.js ≥ 20)
-npm i -g @pentoshi/clai
+### macOS
 
-# macOS (Homebrew)
+```sh
+# Homebrew (recommended)
 brew tap pentoshi007/clai
 brew install clai
 
-# Linux / macOS (curl)
+# or via curl
 curl -fsSL https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.sh | sh
 ```
 
+### Linux
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.sh | sh
+```
+
+### Windows
+
 ```powershell
-# Windows (PowerShell)
+# PowerShell (recommended)
 irm https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.ps1 | iex
 
-# Windows (Scoop)
+# or Scoop
 scoop bucket add clai https://github.com/pentoshi007/clai
 scoop install clai
 ```
 
+### Any OS (via npm)
+
 ```sh
-# From source
+npm i -g @pentoshi/clai
+```
+
+### From Source
+
+```sh
 git clone https://github.com/pentoshi007/clai.git
 cd clai && npm install && npm run dev
 ```
+
+After installing, type `clai` in any terminal to start.
 
 ## Quick Start
 
@@ -48,15 +53,27 @@ cd clai && npm install && npm run dev
 # Open interactive REPL
 clai
 
-# One-shot ask mode
+# One-shot ask mode (explains but doesn't execute)
 clai --mode ask "create a python venv and install requests"
 
-# One-shot agent mode
+# One-shot agent mode (executes)
 clai --mode agent "find all PDFs larger than 10MB in ~/Documents"
 
-# With auto-confirm for agent mode
+# Auto-confirm tool execution
 clai -y "list the 10 largest files in my home directory"
 ```
+
+## Features
+
+- **`/ask` mode** — Read-only. AI explains, gives commands & step-by-step guidance, but does NOT execute anything.
+- **`/agent` mode** — Agentic. AI plans, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met.
+- **6 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, and Ollama (local). All with streaming.
+- **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
+- **Smart safety gate** — Read-only commands auto-execute; mutating commands require confirmation; destructive patterns are blocked.
+- **Cross-platform** — macOS, Linux, and Windows. Detects OS-native package managers (brew, apt, dnf, pacman, winget, choco).
+- **Pentest-aware** — nmap, nikto, sqlmap, gobuster, ffuf, hydra, masscan, whois, dig, netcat, tshark.
+- **Auto-update** — Checks for new versions on startup; run `/update` or `clai update` to upgrade.
+- **Persistent history** — Session history with automatic key redaction in logs.
 
 ## Provider Setup
 
@@ -78,7 +95,7 @@ clai set groq gsk_xxxxxxxxxxxxxxxx
 # Import from environment variable
 clai set gemini --from-env GEMINI_API_KEY
 
-# Read from stdin (safer for shell history)
+# Read from stdin (safer — avoids shell history)
 echo "gsk_xxx" | clai set groq --stdin
 
 # Set Ollama endpoint
@@ -113,7 +130,7 @@ export OLLAMA_HOST=http://localhost:11434
 ## REPL Commands
 
 | Command                 | Action                                             |
-|-------------------------|----------------------------------------------------|
+|-------------------------|--------------------------------------------------  |
 | `/ask`                  | Switch to ask mode                                 |
 | `/agent`                | Switch to agent mode                               |
 | `/model <name>`         | Switch LLM model                                   |
@@ -127,6 +144,7 @@ export OLLAMA_HOST=http://localhost:11434
 | `/save <name>`          | Save current session                               |
 | `/cwd <path>`           | Change working directory                           |
 | `/allow <tool>`         | Whitelist a tool for the session                   |
+| `/update`               | Check for updates                                  |
 | `/exit`                 | Quit                                               |
 | `/help`                 | List commands                                      |
 
@@ -145,13 +163,15 @@ export OLLAMA_HOST=http://localhost:11434
 | `sysinfo`        | OS, architecture, shell, and working directory info                | safe       |
 | `pentest.recon`  | Composite: whois + dig + nmap top-100 ports                       | confirm    |
 
+> \* **smart** = read-only commands (`curl`, `ls`, `whoami`, `gobuster`, `dirb`, etc.) auto-execute; mutating commands require confirmation.
+
 ## Safety Gate
 
 Every tool call passes through a 3-tier classifier:
 
-- **`safe`** — Auto-run (read-only fs, sysinfo, http.fetch, read-only shell commands like `curl`, `ls`, `whoami`, `ifconfig`, recon tools like `gobuster`, `dirb`)
-- **`confirm`** — User prompt (mutating shell commands, fs.write, pkg.install, net.scan)
-- **`block`** — Refuse with explanation (`rm -rf /`, fork bombs, public IP scans without authorization, exfiltration patterns)
+- **`safe`** — Auto-run: read-only fs, sysinfo, http.fetch, read-only shell commands (`curl`, `ls`, `whoami`, `ifconfig`, `gobuster`, `dirb`, `ffuf`, `nikto`, etc.)
+- **`confirm`** — User prompt: mutating shell commands, fs.write, pkg.install, net.scan
+- **`block`** — Refuse with explanation: `rm -rf /`, fork bombs, public IP scans without authorization, exfiltration patterns
 
 ### Pentest Authorization
 
@@ -163,18 +183,25 @@ clai authorize-pentest AGREE
 
 Public IP scanning is blocked unless the target is private (RFC 1918) or the user explicitly confirms ownership.
 
+## Updates
+
+clai checks for updates automatically on startup (every 4 hours, non-blocking). You can also check manually:
+
+```sh
+# CLI command
+clai update
+
+# Inside the REPL
+/update
+```
+
 ## Diagnostics
 
 ```sh
-# Check system info, provider configuration, and available tools
 clai doctor
 ```
 
-Outputs:
-- OS, shell, architecture
-- Config and history file paths
-- Provider key status
-- Available pentest tools with install commands for missing ones
+Outputs: OS, shell, architecture, config paths, provider key status, available pentest tools with install commands for missing ones.
 
 ## Per-Project Context
 
@@ -183,7 +210,6 @@ Create a `.clai/context.md` file in your project root to automatically inject pr
 ```md
 This is a Node.js project using Express and PostgreSQL.
 The API server runs on port 3000.
-Database migrations are in the `migrations/` directory.
 ```
 
 ## Configuration
@@ -191,36 +217,20 @@ Database migrations are in the `migrations/` directory.
 Configuration is stored at `~/.config/clai/config.json` (varies by OS):
 
 ```sh
-# Print config path and current settings
-clai config
-
-# Set default mode
-clai mode agent
-
-# Set model for current provider
-clai model llama-3.3-70b-versatile
+clai config        # Print config path and settings
+clai mode agent    # Set default mode
+clai model llama-3.3-70b-versatile  # Set model
 ```
 
 ## Development
 
 ```sh
-# Install dependencies
-npm install
-
-# Run in development mode
-npm run dev
-
-# Type check
-npm run typecheck
-
-# Build TypeScript
-npm run build
-
-# Run tests
-npm test
-
-# Build native binaries (requires Bun)
-npm run compile
+npm install        # Install dependencies
+npm run dev        # Run in development mode
+npm run typecheck  # Type check
+npm run build      # Build TypeScript
+npm test           # Run tests (39 tests)
+npm run compile    # Build native binaries (requires Bun)
 ```
 
 ## Architecture
@@ -258,25 +268,26 @@ clai/
 │  │   └─ pkgmgr.ts         # Package manager detection
 │  ├─ store/
 │  │   ├─ config.ts         # Persistent config via `conf`
-│  │   ├─ history.ts        # SQLite sessions + JSONL fallback
+│  │   ├─ history.ts        # Session history
 │  │   ├─ keys.ts           # Keychain + fallback key storage
 │  │   ├─ logs.ts           # Audit log with rotation
 │  │   └─ project.ts        # Per-project context loader
 │  ├─ commands/
 │  │   ├─ doctor.ts         # System diagnostics
+│  │   ├─ update.ts         # Auto-update checker
 │  │   └─ providers.ts      # Provider management commands
 │  └─ prompts/
-│      ├─ index.ts          # Prompt template renderer
-│      ├─ system.ask.md     # Ask mode system prompt
-│      └─ system.agent.md   # Agent mode system prompt
-├─ bin/clai                 # Shebang launcher
+│      └─ index.ts          # Prompt template renderer
+├─ bin/clai.mjs             # ESM shebang launcher
 ├─ scripts/build.ts         # Bun compile per target
 ├─ .github/workflows/
-│   └─ release.yml          # CI: build + publish binaries
+│   └─ release.yml          # CI: build + publish binaries on tag
 ├─ manifests/
 │   ├─ homebrew/clai.rb     # Homebrew formula
 │   └─ scoop/clai.json      # Scoop manifest
-├─ install/install.sh       # curl installer
+├─ install/
+│   ├─ install.sh           # macOS/Linux curl installer
+│   └─ install.ps1          # Windows PowerShell installer
 ├─ package.json
 ├─ tsconfig.json
 └─ README.md
