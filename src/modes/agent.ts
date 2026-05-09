@@ -7,6 +7,7 @@ export interface AgentOptions {
   history?: ChatMessage[] | undefined;
   autoConfirm?: boolean | undefined;
   maxSteps?: number | undefined;
+  signal?: AbortSignal | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?:
     | ((

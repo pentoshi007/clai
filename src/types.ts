@@ -51,4 +51,6 @@ export interface ToolResult {
   ok: boolean;
   output: string;
   exitCode?: number | undefined;
+  outputPath?: string | undefined;
+  truncated?: boolean | undefined;
 }

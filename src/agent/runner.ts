@@ -1,5 +1,8 @@
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type {
   ChatMessage,
   ProviderId,
@@ -14,6 +17,7 @@ import { availableToolNames, runToolCall } from "../tools/registry.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
+import { rememberThinkingFromText, renderThinkingSummary } from "../ui/thinking.js";
 
 export interface AgentRunOptions {
   provider?: ProviderId | undefined;
@@ -21,6 +25,7 @@ export interface AgentRunOptions {
   history?: ChatMessage[] | undefined;
   autoConfirm?: boolean | undefined;
   maxSteps?: number | undefined;
+  signal?: AbortSignal | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
 }
@@ -121,6 +126,66 @@ function formatToolArgs(call: ToolCall): string {
   return JSON.stringify(call.args);
 }
 
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  return Boolean(signal?.aborted) || (error instanceof Error && error.name === "AbortError");
+}
+
+function safeArtifactName(name: string): string {
+  return name.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "tool-output";
+}
+
+async function saveToolOutput(call: ToolCall, output: string): Promise<string | undefined> {
+  if (!output.trim()) return undefined;
+  const dir = join(homedir(), ".clai", "outputs");
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const path = join(dir, `${stamp}-${safeArtifactName(call.name)}.txt`);
+  await writeFile(path, `${output}\n`, "utf8");
+  return path;
+}
+
+function summarizeOutput(output: string, maxChars = 8_000): { text: string; truncated: boolean } {
+  if (output.length <= maxChars) return { text: output, truncated: false };
+
+  const lines = output.split(/\r?\n/);
+  const head: string[] = [];
+  const tail: string[] = [];
+  let used = 0;
+  const half = Math.floor(maxChars / 2);
+
+  for (const line of lines) {
+    const cost = line.length + 1;
+    if (used + cost > half) break;
+    head.push(line);
+    used += cost;
+  }
+
+  used = 0;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!;
+    const cost = line.length + 1;
+    if (used + cost > half) break;
+    tail.unshift(line);
+    used += cost;
+  }
+
+  return {
+    text: [
+      ...head,
+      `... (${lines.length.toLocaleString()} output lines truncated) ...`,
+      ...tail,
+    ].join("\n"),
+    truncated: true,
+  };
+}
+
+function formatToolContext(result: ToolResult): string {
+  const output = result.output.trim();
+  const summary = summarizeOutput(output, 8_000);
+  const saved = result.outputPath ? `\nFull output saved to: ${result.outputPath}` : "";
+  return `${summary.text}${saved}`.trim();
+}
+
 async function ensurePentestAuthorization(
   call: ToolCall,
   autoConfirm: boolean,
@@ -178,8 +243,8 @@ export async function runAgentLoop(
   let lastAnswer = "";
 
   for (let step = 0; step < maxSteps; step += 1) {
-    // Stream LLM response to stdout
-    let streamed = false;
+    options.signal?.throwIfAborted();
+    // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
     const completion = await streamWithProvider(
       {
         provider,
@@ -187,33 +252,38 @@ export async function runAgentLoop(
         messages,
         temperature: 0.2,
         maxTokens: 2_000,
+        signal: options.signal,
       },
-      (token) => {
-        // Buffer — we'll print selectively after we have the full response
-        // For now, don't stream directly since we need to strip tool call JSON
-        streamed = true;
-      },
+      () => {},
     );
     provider = completion.provider;
     model = completion.model;
 
-    const call = parseToolCall(completion.text);
+    const assistantText = rememberThinkingFromText(completion.text);
+    const call = parseToolCall(assistantText.visible);
     if (!call) {
-      // Final answer — print it
-      process.stdout.write(completion.text);
-      process.stdout.write("\n");
+      if (assistantText.visible) {
+        process.stdout.write(assistantText.visible);
+        if (!assistantText.visible.endsWith("\n")) process.stdout.write("\n");
+      }
+      if (assistantText.hasThinking) {
+        process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
+      }
       await auditLog("agent.final", { provider, model, steps: step + 1 });
-      lastAnswer = completion.text;
+      lastAnswer = assistantText.visible;
       return lastAnswer;
     }
 
-    // Print only the thinking text, not the raw tool call JSON
-    const thinking = textBeforeToolCall(completion.text);
-    if (thinking) {
-      process.stdout.write(chalk.dim(thinking) + "\n");
+    // Print only non-thinking text before the tool call, not raw <think> blocks.
+    const beforeTool = textBeforeToolCall(assistantText.visible);
+    if (beforeTool) {
+      process.stdout.write(chalk.dim(beforeTool) + "\n");
+    }
+    if (assistantText.hasThinking) {
+      process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
     }
 
-    messages.push({ role: "assistant", content: completion.text });
+    messages.push({ role: "assistant", content: assistantText.visible });
     const decision = classifyToolCall(call);
     await auditLog("tool.classified", { call, decision });
 
@@ -253,9 +323,20 @@ export async function runAgentLoop(
     }
 
     // Execute tool
+    options.signal?.throwIfAborted();
     options.onToolStart?.(call);
-    const result = await runToolCall(call);
-    options.onToolResult?.(call, result);
+    const result = await runToolCall(call, { signal: options.signal });
+    const output = result.output.trim();
+    const displayMax = 6_000;
+    const savedOutputPath = output.length > displayMax
+      ? await saveToolOutput(call, output)
+      : undefined;
+    const resultWithArtifact: ToolResult = {
+      ...result,
+      outputPath: savedOutputPath,
+      truncated: Boolean(savedOutputPath),
+    };
+    options.onToolResult?.(call, resultWithArtifact);
     await auditLog("tool.result", {
       call,
       ok: result.ok,
@@ -266,20 +347,20 @@ export async function runAgentLoop(
     // Print tool result
     const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
     process.stdout.write(statusIcon + "\n");
-    const output = result.output.trim();
     if (output) {
-      const displayMax = 3_000;
-      const displayText = output.length > displayMax
-        ? output.slice(0, displayMax) + chalk.dim("\n  ... (truncated)")
-        : output;
+      const displaySummary = summarizeOutput(output, displayMax);
+      const displayText = displaySummary.truncated
+        ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : chalk.dim("\n  ... output truncated")}`
+        : displaySummary.text;
       process.stdout.write(chalk.gray(displayText) + "\n");
     }
+    if (isAbortError(undefined, options.signal)) {
+      lastAnswer = "Aborted.";
+      process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
+      return lastAnswer;
+    }
 
-    // Truncate output for LLM context to avoid blowing token limits
-    const contextMax = 4_000;
-    const contextOutput = output.length > contextMax
-      ? output.slice(0, contextMax) + `\n... (output truncated — ${output.length} chars total, showing first ${contextMax})`
-      : output;
+    const contextOutput = formatToolContext(resultWithArtifact);
     messages.push({
       role: "tool",
       content: `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}`,

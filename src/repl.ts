@@ -1,3 +1,4 @@
+import { emitKeypressEvents } from "node:readline";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
@@ -30,6 +31,15 @@ import {
   renderProviderSwitch,
   PROMPT,
 } from "./ui/banner.js";
+import {
+  clearThinking,
+  createThinkingStreamParser,
+  getLastThinking,
+  rememberThinkingFromText,
+  renderThinkingBlock,
+  renderThinkingSummary,
+  renderThinkingToggleMessage,
+} from "./ui/thinking.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -82,6 +92,13 @@ const knownModels: Record<string, string[]> = {
 // ── Abort controller for streaming cancellation ─────────────────────────────
 let currentAbortController: AbortController | null = null;
 
+class AbortRunError extends Error {
+  constructor() {
+    super("Aborted.");
+    this.name = "AbortRunError";
+  }
+}
+
 function splitCommand(line: string): string[] {
   return (
     line
@@ -90,82 +107,53 @@ function splitCommand(line: string): string[] {
   );
 }
 
-// ── Strip / collapse <think> blocks ─────────────────────────────────────────
-let lastThinkContent = "";
-
-function stripThinking(text: string): { visible: string; hasThinking: boolean; thinkContent: string } {
-  const thinkBlocks: string[] = [];
-  const visible = text.replace(/<think>([\s\S]*?)<\/think>/gi, (_, content: string) => {
-    thinkBlocks.push(content.trim());
-    return "";
-  }).trim();
-  const hasThinking = thinkBlocks.length > 0;
-  const thinkContent = thinkBlocks.join("\n\n");
-  return { visible, hasThinking, thinkContent };
-}
-
 // Stream a response while hiding <think> blocks and handling ESC abort
 async function streamWithAbort(
   run: (signal: AbortSignal, onToken: (t: string) => void) => Promise<string>,
+  signal: AbortSignal,
 ): Promise<string> {
-  const ac = new AbortController();
-  currentAbortController = ac;
-  lastThinkContent = "";
-
-  let buffer = "";
-  let visibleBuffer = "";
-  let inThink = false;
-  let thinkBuffer = "";
+  let sawToken = false;
+  const parser = createThinkingStreamParser((text) => process.stdout.write(text));
 
   const onToken = (token: string): void => {
-    buffer += token;
-    // Stream-parse <think> blocks on the fly
-    let remaining = token;
-    while (remaining.length > 0) {
-      if (inThink) {
-        const closeIdx = remaining.indexOf("</think>");
-        if (closeIdx >= 0) {
-          thinkBuffer += remaining.slice(0, closeIdx);
-          lastThinkContent = thinkBuffer.trim();
-          inThink = false;
-          remaining = remaining.slice(closeIdx + 8);
-        } else {
-          thinkBuffer += remaining;
-          remaining = "";
-        }
-      } else {
-        const openIdx = remaining.indexOf("<think>");
-        if (openIdx >= 0) {
-          const before = remaining.slice(0, openIdx);
-          if (before) {
-            process.stdout.write(before);
-            visibleBuffer += before;
-          }
-          inThink = true;
-          thinkBuffer = "";
-          remaining = remaining.slice(openIdx + 7);
-        } else {
-          process.stdout.write(remaining);
-          visibleBuffer += remaining;
-          remaining = "";
-        }
-      }
-    }
+    sawToken = true;
+    parser.push(token);
   };
 
   try {
-    const raw = await run(ac.signal, onToken);
-    if (lastThinkContent) {
-      process.stdout.write(chalk.dim("  [thinking hidden — Ctrl+T to show]\n"));
+    const raw = await run(signal, onToken);
+    const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
+    if (!sawToken && result.visible) process.stdout.write(result.visible);
+    if (result.hasThinking) {
+      const prefix = result.visible && !result.visible.endsWith("\n") ? "\n" : "";
+      process.stdout.write(`${prefix}${renderThinkingSummary(result.thinkContent)}\n`);
     }
-    return visibleBuffer || raw;
+    return result.visible;
   } catch (err) {
-    if (ac.signal.aborted) {
+    const result = parser.finish();
+    if (signal.aborted) {
       process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
-      return visibleBuffer;
+      return result.visible;
     }
     throw err;
+  }
+}
+
+async function withAbortableInput<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const ac = new AbortController();
+  currentAbortController = ac;
+  if (input.isTTY) input.setRawMode(true);
+  try {
+    return await run(ac.signal);
+  } catch (error) {
+    if (ac.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw new AbortRunError();
+    }
+    throw error;
   } finally {
+    if (input.isTTY) input.setRawMode(false);
     currentAbortController = null;
   }
 }
@@ -185,6 +173,7 @@ function help(): string {
     ["/save <name>", "save session"],
     ["/cwd <path>", "change working directory"],
     ["/allow <tool>", "allow a tool for session"],
+    ["/think", "show thinking from last response"],
     ["/update", "check for updates"],
     ["/exit", "quit"],
     ["/help", "list commands"],
@@ -193,7 +182,7 @@ function help(): string {
   const lines = cmds
     .map((c) => `  ${chalk.cyan(c[0]!.padEnd(maxCmd + 2))}${chalk.dim(c[1]!)}`)
     .join("\n");
-  return lines + chalk.dim("\n\n  ESC / Ctrl+C  abort current response");
+  return lines + chalk.dim("\n\n  ESC / Ctrl+C  abort current response  │  Ctrl+T  toggle thinking");
 }
 
 function showModelPicker(provider: string): void {
@@ -331,10 +320,9 @@ async function handleSlash(
     }
     case "/think":
     case "/thinking": {
-      if (lastThinkContent) {
-        console.log(chalk.dim("─── thinking ──────────────────────────────────"));
-        console.log(chalk.dim(lastThinkContent));
-        console.log(chalk.dim("───────────────────────────────────────────────"));
+      const thinking = getLastThinking();
+      if (thinking) {
+        console.log(renderThinkingBlock(thinking));
       } else {
         console.log(chalk.dim("  No thinking from last response."));
       }
@@ -357,24 +345,41 @@ async function handleSlash(
 
 export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const config = getConfig();
+  const provider = options.provider ? assertProvider(options.provider) : config.defaultProvider;
   const state = {
     mode: options.mode ?? config.defaultMode,
-    provider: options.provider ?? config.defaultProvider,
-    model: options.model ?? config.defaultModel,
+    provider,
+    model: options.model ?? getProviderModel(provider),
     messages: [] as ChatMessage[],
   };
-  if (options.provider) {
-    state.provider = assertProvider(options.provider);
-  }
 
   const rl = readline.createInterface({ input, output });
+  emitKeypressEvents(input, rl);
 
-  // ── ESC / Ctrl+C abort ──────────────────────────────────────────────────
+  // ── ESC / Ctrl+C abort; Ctrl+T toggles hidden thinking ──────────────────
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false); // keep readline in control
   }
+  const handleThinkingShortcut = (): void => {
+    process.stdout.write(`\n${renderThinkingToggleMessage()}\n`);
+  };
+  const handleKeypress = (_sequence: string, key: { ctrl?: boolean; name?: string }): void => {
+    if (key.ctrl && key.name === "t") handleThinkingShortcut();
+    if ((key.name === "escape" || (key.ctrl && key.name === "c")) && currentAbortController) {
+      currentAbortController.abort();
+    }
+  };
+  input.on("keypress", handleKeypress);
+  const siginfo = "SIGINFO" as NodeJS.Signals;
+  let siginfoRegistered = false;
+  try {
+    process.on(siginfo, handleThinkingShortcut);
+    siginfoRegistered = true;
+  } catch {
+    // SIGINFO is macOS/BSD-specific; other platforms can still use /think.
+  }
   // Ctrl+C while streaming → abort; otherwise readline handles it
-  process.on("SIGINT", () => {
+  const handleSigint = (): void => {
     if (currentAbortController) {
       currentAbortController.abort();
     } else {
@@ -382,7 +387,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       console.log();
       process.exit(0);
     }
-  });
+  };
+  process.on("SIGINT", handleSigint);
 
   // ── Startup banner ──────────────────────────────────────────────────────
   console.log(renderBanner(getCurrentVersion()));
@@ -395,7 +401,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }),
   );
   console.log(renderSuggestions());
-  console.log(chalk.dim("  ESC / Ctrl+C to abort a response  │  /model to list models  │  /think to show thinking\n"));
+  console.log(chalk.dim("  ESC / Ctrl+C to abort a response  │  /model to list models  │  Ctrl+T or /think for thinking\n"));
 
   // Non-blocking update check
   checkForUpdateSilent();
@@ -411,35 +417,49 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       }
 
       try {
+        clearThinking();
+        let assistantContent = "";
         if (state.mode === "ask") {
-          await streamWithAbort(async (signal, onToken) => {
-            return await runAskStream(line, onToken, {
+          assistantContent = await withAbortableInput(async (signal) =>
+            streamWithAbort(async (runSignal, onToken) => {
+              return await runAskStream(line, onToken, {
+                provider: state.provider,
+                model: state.model,
+                history: state.messages,
+                signal: runSignal,
+              });
+            }, signal),
+          );
+          process.stdout.write("\n");
+        } else {
+          assistantContent = await withAbortableInput(async (signal) =>
+            runAgent(line, {
               provider: state.provider,
               model: state.model,
               history: state.messages,
               signal,
-            });
-          });
-          process.stdout.write("\n");
-        } else {
-          await runAgent(line, {
-            provider: state.provider,
-            model: state.model,
-            history: state.messages,
-          });
+            }),
+          );
         }
         console.log();
         state.messages.push(
           { role: "user", content: line },
-          { role: "assistant", content: "" },
+          { role: "assistant", content: assistantContent },
         );
       } catch (error) {
+        if (error instanceof AbortRunError) {
+          process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
+          continue;
+        }
         console.error(
           chalk.red(error instanceof Error ? error.message : String(error)),
         );
       }
     }
   } finally {
+    input.off("keypress", handleKeypress);
+    process.off("SIGINT", handleSigint);
+    if (siginfoRegistered) process.off(siginfo, handleThinkingShortcut);
     if (state.messages.length > 0) {
       await saveSession(state.messages, `repl-${new Date().toISOString()}`);
     }

@@ -48,6 +48,20 @@ describe('tool registry', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('shell.exec can be aborted', async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await toolRegistry['shell.exec']!(
+      { command: 'node -e "setTimeout(() => {}, 10000)"', timeoutMs: 10_000 },
+      { signal: controller.signal },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.exitCode).toBe(130);
+    expect(result.output).toContain('aborted');
+  });
+
   it('tool handler throws on missing required string arg', async () => {
     await expect(toolRegistry['fs.read']!({})).rejects.toThrow('must be a non-empty string');
   });

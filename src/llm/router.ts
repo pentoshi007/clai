@@ -16,8 +16,25 @@ import type { LlmProvider, ProviderAuth } from "./provider.js";
 
 const MAX_RETRIES = 2;
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
+  return new Promise((resolve, reject) => {
+    let timer: NodeJS.Timeout;
+    let cleanup = (): void => {};
+    const abort = (): void => {
+      clearTimeout(timer);
+      cleanup();
+      reject(signal?.reason ?? new Error("Aborted"));
+    };
+    cleanup = (): void => {
+      signal?.removeEventListener("abort", abort);
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function isRateLimited(error: unknown): boolean {
@@ -68,6 +85,7 @@ export async function completeWithProvider(
   const failures: string[] = [];
 
   for (const providerId of order) {
+    request.signal?.throwIfAborted();
     const provider = providers[providerId];
     const auth = await providerAuth(providerId);
     const hasAuth =
@@ -111,6 +129,7 @@ export async function streamWithProvider(
   const failures: string[] = [];
 
   for (const providerId of order) {
+    request.signal?.throwIfAborted();
     const provider = providers[providerId];
     const auth = await providerAuth(providerId);
     const hasAuth =
@@ -127,6 +146,7 @@ export async function streamWithProvider(
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
+        request.signal?.throwIfAborted();
         if (provider.stream) {
           return await provider.stream(
             { ...request, provider: providerId, model },
@@ -141,10 +161,11 @@ export async function streamWithProvider(
         onToken(result.text);
         return result;
       } catch (error) {
+        if (request.signal?.aborted) throw error;
         if (isRateLimited(error) && attempt < MAX_RETRIES) {
           const wait = (attempt + 1) * 2_000;
           onToken(`\n  ⏳ Rate limited, retrying in ${wait / 1000}s...\n`);
-          await sleep(wait);
+          await sleep(wait, request.signal);
           continue;
         }
         failures.push(

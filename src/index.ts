@@ -16,12 +16,19 @@ import { runDoctor } from "./commands/doctor.js";
 import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
 import {
   getConfig,
+  getProviderModel,
   setDefaultMode,
   setProviderModel,
   updateConfig,
 } from "./store/config.js";
 import { assertProvider } from "./llm/provider.js";
 import { listSessions, saveSession, getSession } from "./store/history.js";
+import {
+  clearThinking,
+  createThinkingStreamParser,
+  rememberThinkingFromText,
+  renderThinkingSummary,
+} from "./ui/thinking.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -46,24 +53,41 @@ async function oneShot(
   options: GlobalOptions,
 ): Promise<void> {
   const prompt = promptParts?.join(" ").trim();
+  const config = getConfig();
   const provider = resolveProvider(options.provider);
-  const mode = options.mode ?? getConfig().defaultMode;
-  const model = options.model ?? getConfig().defaultModel;
-  await ensureProviderConfigured(provider ?? getConfig().defaultProvider);
+  const activeProvider = provider ?? config.defaultProvider;
+  const mode = options.mode ?? config.defaultMode;
+  const model = options.model ?? getProviderModel(activeProvider);
+  await ensureProviderConfigured(activeProvider);
 
   if (!prompt) {
     await startRepl({ mode, provider, model });
     return;
   }
 
-  const answer =
-    mode === "ask"
-      ? await runAskStream(prompt, (token) => process.stdout.write(token), {
-          provider,
-          model,
-        })
-      : await runAgent(prompt, { provider, model, autoConfirm: options.yes });
-  if (mode === "ask") process.stdout.write("\n");
+  clearThinking();
+  let answer = "";
+  if (mode === "ask") {
+    let sawToken = false;
+    const parser = createThinkingStreamParser((text) => process.stdout.write(text));
+    const raw = await runAskStream(prompt, (token) => {
+      sawToken = true;
+      parser.push(token);
+    }, {
+      provider,
+      model,
+    });
+    const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
+    if (!sawToken && result.visible) process.stdout.write(result.visible);
+    if (result.hasThinking) {
+      const prefix = result.visible && !result.visible.endsWith("\n") ? "\n" : "";
+      process.stdout.write(`${prefix}${renderThinkingSummary(result.thinkContent)}\n`);
+    }
+    process.stdout.write("\n");
+    answer = result.visible;
+  } else {
+    answer = await runAgent(prompt, { provider, model, autoConfirm: options.yes });
+  }
   await saveSession([
     { role: "user", content: prompt },
     { role: "assistant", content: answer },

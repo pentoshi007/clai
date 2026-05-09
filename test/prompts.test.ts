@@ -34,4 +34,11 @@ describe('prompt rendering', () => {
     const prompt = renderAgentSystemPrompt('net.scan');
     expect(prompt).toContain('permission to test');
   });
+
+  it('agent prompt discourages stale data and vague tool summaries', () => {
+    const prompt = renderAgentSystemPrompt('shell.exec');
+    expect(prompt).toContain('Do not invent volatile live data');
+    expect(prompt).toContain('summarize concrete findings');
+    expect(prompt).toContain('For ffuf, do not use -q');
+  });
 });

@@ -30,6 +30,7 @@ const defaults: ClaiConfig = {
 
 const store = new Conf<ClaiConfig>({
   projectName: 'clai',
+  ...(process.env.CLAI_CONFIG_DIR ? { cwd: process.env.CLAI_CONFIG_DIR } : {}),
   defaults,
 });
 
