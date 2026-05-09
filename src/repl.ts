@@ -1,5 +1,9 @@
-import { emitKeypressEvents } from "node:readline";
-import readline from "node:readline/promises";
+import {
+  clearLine,
+  cursorTo,
+  emitKeypressEvents,
+  moveCursor,
+} from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
 import type { ChatMessage, Mode, ProviderId } from "./types.js";
@@ -46,6 +50,53 @@ export interface ReplOptions {
   provider?: ProviderId | undefined;
   model?: string | undefined;
 }
+
+export interface SlashCommand {
+  command: string;
+  usage?: string;
+  description: string;
+}
+
+interface KeypressKey {
+  ctrl?: boolean;
+  meta?: boolean;
+  name?: string;
+  sequence?: string;
+}
+
+const slashCommands: SlashCommand[] = [
+  { command: "/ask", description: "switch to ask mode" },
+  { command: "/agent", description: "switch to agent mode" },
+  {
+    command: "/model",
+    usage: "[name|#]",
+    description: "list models or switch (e.g. /model 2)",
+  },
+  {
+    command: "/provider",
+    usage: "[name]",
+    description: "switch provider or open picker",
+  },
+  {
+    command: "/use",
+    usage: "<provider>",
+    description: "alias for /provider <name>",
+  },
+  { command: "/set", usage: "<provider> [key]", description: "store API key" },
+  { command: "/unset", usage: "<provider>", description: "remove key" },
+  { command: "/keys", description: "list configured providers" },
+  { command: "/clear", description: "clear context" },
+  { command: "/history", description: "show past sessions" },
+  { command: "/save", usage: "<name>", description: "save session" },
+  { command: "/cwd", usage: "<path>", description: "change working directory" },
+  { command: "/allow", usage: "<tool>", description: "allow a tool for session" },
+  { command: "/think", description: "show thinking from last response" },
+  { command: "/thinking", description: "alias for /think" },
+  { command: "/update", description: "check for updates" },
+  { command: "/exit", description: "quit" },
+  { command: "/quit", description: "alias for /exit" },
+  { command: "/help", description: "list commands" },
+];
 
 // ── Well-known models per provider ─────────────────────────────────────────
 const knownModels: Record<string, string[]> = {
@@ -107,6 +158,280 @@ function splitCommand(line: string): string[] {
   );
 }
 
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function slashCommandLabel(command: SlashCommand): string {
+  return command.usage ? `${command.command} ${command.usage}` : command.command;
+}
+
+function slashCommandFilter(line: string): string | null {
+  if (!line.startsWith("/") || /\s/.test(line)) return null;
+  return line.slice(1).toLowerCase();
+}
+
+export function getSlashCommandSuggestions(line: string): SlashCommand[] {
+  const filter = slashCommandFilter(line);
+  if (filter === null) return [];
+  return slashCommands.filter((command) =>
+    command.command.slice(1).toLowerCase().startsWith(filter),
+  );
+}
+
+function renderSlashCommandMenu(
+  line: string,
+  suggestions: SlashCommand[],
+  selectedIndex: number,
+): string[] {
+  if (suggestions.length === 0) {
+    return [chalk.dim(`  no commands matching ${line}`)];
+  }
+
+  const maxCommandLength = Math.max(
+    ...suggestions.map((command) => slashCommandLabel(command).length),
+  );
+
+  return suggestions.map((command, index) => {
+    const marker = index === selectedIndex ? chalk.magenta("›") : " ";
+    const label = slashCommandLabel(command).padEnd(maxCommandLength + 2);
+    return `  ${marker} ${chalk.cyan(label)}${chalk.dim(command.description)}`;
+  });
+}
+
+function isPrintableSequence(sequence: string | undefined): sequence is string {
+  return sequence !== undefined && /^[^\x00-\x1f\x7f]+$/u.test(sequence);
+}
+
+async function readPromptLine(options: {
+  history: string[];
+  onThinkingShortcut: () => void;
+}): Promise<string> {
+  return new Promise((resolve) => {
+    let line = "";
+    let cursor = 0;
+    let selectedIndex = 0;
+    let renderedMenuLines = 0;
+    let dismissedSlashLine: string | null = null;
+    let historyIndex: number | null = null;
+    let historyDraft = "";
+
+    const promptColumns = stripAnsi(PROMPT).length;
+
+    const getMenuState = (): {
+      visible: boolean;
+      suggestions: SlashCommand[];
+    } => {
+      const filter = slashCommandFilter(line);
+      if (filter === null || dismissedSlashLine === line) {
+        return { visible: false, suggestions: [] };
+      }
+      const suggestions = getSlashCommandSuggestions(line);
+      if (selectedIndex >= suggestions.length) selectedIndex = 0;
+      return { visible: true, suggestions };
+    };
+
+    const refresh = (): void => {
+      const menu = getMenuState();
+      const menuLines = menu.visible
+        ? renderSlashCommandMenu(line, menu.suggestions, selectedIndex)
+        : [];
+      const linesToClear = Math.max(renderedMenuLines, menuLines.length);
+
+      cursorTo(output, 0);
+      clearLine(output, 0);
+      output.write(`${PROMPT}${line}`);
+
+      for (let i = 0; i < linesToClear; i += 1) {
+        output.write("\n");
+        clearLine(output, 0);
+        const menuLine = menuLines[i];
+        if (menuLine) output.write(menuLine);
+      }
+
+      if (linesToClear > 0) moveCursor(output, 0, -linesToClear);
+      cursorTo(output, promptColumns + cursor);
+      renderedMenuLines = menuLines.length;
+    };
+
+    const editLine = (nextLine: string, nextCursor: number): void => {
+      line = nextLine;
+      cursor = Math.max(0, Math.min(nextCursor, line.length));
+      selectedIndex = 0;
+      dismissedSlashLine = null;
+      historyIndex = null;
+      refresh();
+    };
+
+    const cleanup = (): void => {
+      input.off("keypress", handleKeypress);
+      if (input.isTTY) input.setRawMode(false);
+    };
+
+    const submit = (submittedLine: string): void => {
+      const previousMenuLines = renderedMenuLines;
+      line = submittedLine;
+      cursor = line.length;
+      renderedMenuLines = 0;
+
+      cursorTo(output, 0);
+      clearLine(output, 0);
+      output.write(`${PROMPT}${line}`);
+      for (let i = 0; i < previousMenuLines; i += 1) {
+        output.write("\n");
+        clearLine(output, 0);
+      }
+      if (previousMenuLines > 0) moveCursor(output, 0, -previousMenuLines);
+      cursorTo(output, promptColumns + cursor);
+      output.write("\n");
+
+      cleanup();
+      resolve(submittedLine);
+    };
+
+    function handleKeypress(sequence: string, key: KeypressKey): void {
+      const menu = getMenuState();
+
+      if (key.ctrl && key.name === "c") {
+        cleanup();
+        output.write("\n");
+        process.exit(0);
+      }
+
+      if (key.ctrl && key.name === "t") {
+        options.onThinkingShortcut();
+        refresh();
+        return;
+      }
+
+      if (key.name === "return" || key.name === "enter") {
+        const selectedCommand = menu.visible
+          ? menu.suggestions[selectedIndex]
+          : undefined;
+        submit(selectedCommand?.command ?? line);
+        return;
+      }
+
+      if (key.name === "escape") {
+        if (menu.visible) {
+          dismissedSlashLine = line;
+          refresh();
+        }
+        return;
+      }
+
+      if (key.name === "up") {
+        if (menu.visible && menu.suggestions.length > 0) {
+          selectedIndex =
+            (selectedIndex - 1 + menu.suggestions.length) % menu.suggestions.length;
+          refresh();
+          return;
+        }
+        if (options.history.length > 0) {
+          if (historyIndex === null) {
+            historyDraft = line;
+            historyIndex = options.history.length - 1;
+          } else {
+            historyIndex = Math.max(0, historyIndex - 1);
+          }
+          line = options.history[historyIndex] ?? "";
+          cursor = line.length;
+          selectedIndex = 0;
+          dismissedSlashLine = null;
+          refresh();
+        }
+        return;
+      }
+
+      if (key.name === "down") {
+        if (menu.visible && menu.suggestions.length > 0) {
+          selectedIndex = (selectedIndex + 1) % menu.suggestions.length;
+          refresh();
+          return;
+        }
+        if (historyIndex !== null) {
+          if (historyIndex < options.history.length - 1) {
+            historyIndex += 1;
+            line = options.history[historyIndex] ?? "";
+          } else {
+            historyIndex = null;
+            line = historyDraft;
+          }
+          cursor = line.length;
+          selectedIndex = 0;
+          dismissedSlashLine = null;
+          refresh();
+        }
+        return;
+      }
+
+      if (key.name === "left") {
+        if (cursor > 0) {
+          cursor -= 1;
+          refresh();
+        }
+        return;
+      }
+
+      if (key.name === "right") {
+        if (cursor < line.length) {
+          cursor += 1;
+          refresh();
+        }
+        return;
+      }
+
+      if (key.name === "home" || (key.ctrl && key.name === "a")) {
+        cursor = 0;
+        refresh();
+        return;
+      }
+
+      if (key.name === "end" || (key.ctrl && key.name === "e")) {
+        cursor = line.length;
+        refresh();
+        return;
+      }
+
+      if (key.name === "backspace") {
+        if (cursor > 0) {
+          editLine(line.slice(0, cursor - 1) + line.slice(cursor), cursor - 1);
+        }
+        return;
+      }
+
+      if (key.name === "delete") {
+        if (cursor < line.length) {
+          editLine(line.slice(0, cursor) + line.slice(cursor + 1), cursor);
+        }
+        return;
+      }
+
+      if (key.ctrl && key.name === "u") {
+        editLine(line.slice(cursor), 0);
+        return;
+      }
+
+      if (key.ctrl && key.name === "k") {
+        editLine(line.slice(0, cursor), cursor);
+        return;
+      }
+
+      if (isPrintableSequence(sequence) && !key.ctrl && !key.meta) {
+        editLine(
+          line.slice(0, cursor) + sequence + line.slice(cursor),
+          cursor + sequence.length,
+        );
+      }
+    }
+
+    output.write(PROMPT);
+    if (input.isTTY) input.setRawMode(true);
+    input.resume();
+    input.on("keypress", handleKeypress);
+  });
+}
+
 // Stream a response while hiding <think> blocks and handling ESC abort
 async function streamWithAbort(
   run: (signal: AbortSignal, onToken: (t: string) => void) => Promise<string>,
@@ -159,28 +484,14 @@ async function withAbortableInput<T>(
 }
 
 function help(): string {
-  const cmds = [
-    ["/ask", "switch to ask mode"],
-    ["/agent", "switch to agent mode"],
-    ["/model [name|#]", "list models or switch (e.g. /model 2)"],
-    ["/provider [name]", "switch provider or open picker"],
-    ["/use <provider>", "alias for /provider <name>"],
-    ["/set <provider> [key]", "store API key"],
-    ["/unset <provider>", "remove key"],
-    ["/keys", "list configured providers"],
-    ["/clear", "clear context"],
-    ["/history", "show past sessions"],
-    ["/save <name>", "save session"],
-    ["/cwd <path>", "change working directory"],
-    ["/allow <tool>", "allow a tool for session"],
-    ["/think", "show thinking from last response"],
-    ["/update", "check for updates"],
-    ["/exit", "quit"],
-    ["/help", "list commands"],
-  ];
-  const maxCmd = Math.max(...cmds.map((c) => c[0]!.length));
-  const lines = cmds
-    .map((c) => `  ${chalk.cyan(c[0]!.padEnd(maxCmd + 2))}${chalk.dim(c[1]!)}`)
+  const maxCmd = Math.max(
+    ...slashCommands.map((command) => slashCommandLabel(command).length),
+  );
+  const lines = slashCommands
+    .map((command) => {
+      const label = slashCommandLabel(command).padEnd(maxCmd + 2);
+      return `  ${chalk.cyan(label)}${chalk.dim(command.description)}`;
+    })
     .join("\n");
   return lines + chalk.dim("\n\n  ESC / Ctrl+C  abort current response  │  Ctrl+T  toggle thinking");
 }
@@ -353,18 +664,20 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     messages: [] as ChatMessage[],
   };
 
-  const rl = readline.createInterface({ input, output });
-  emitKeypressEvents(input, rl);
+  const promptHistory: string[] = [];
+  let isReadingPrompt = false;
+
+  emitKeypressEvents(input);
 
   // ── ESC / Ctrl+C abort; Ctrl+T toggles hidden thinking ──────────────────
   if (process.stdin.isTTY) {
-    process.stdin.setRawMode(false); // keep readline in control
+    process.stdin.setRawMode(false);
   }
   const handleThinkingShortcut = (): void => {
     process.stdout.write(`\n${renderThinkingToggleMessage()}\n`);
   };
   const handleKeypress = (_sequence: string, key: { ctrl?: boolean; name?: string }): void => {
-    if (key.ctrl && key.name === "t") handleThinkingShortcut();
+    if (key.ctrl && key.name === "t" && !isReadingPrompt) handleThinkingShortcut();
     if ((key.name === "escape" || (key.ctrl && key.name === "c")) && currentAbortController) {
       currentAbortController.abort();
     }
@@ -408,8 +721,18 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   try {
     while (true) {
-      const line = (await rl.question(PROMPT)).trim();
+      isReadingPrompt = true;
+      const line = (
+        await readPromptLine({
+          history: promptHistory,
+          onThinkingShortcut: handleThinkingShortcut,
+        })
+      ).trim();
+      isReadingPrompt = false;
       if (!line) continue;
+      if (promptHistory[promptHistory.length - 1] !== line) {
+        promptHistory.push(line);
+      }
       if (line.startsWith("/")) {
         const shouldContinue = await handleSlash(line, state);
         if (!shouldContinue) break;
@@ -457,12 +780,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       }
     }
   } finally {
+    isReadingPrompt = false;
     input.off("keypress", handleKeypress);
     process.off("SIGINT", handleSigint);
     if (siginfoRegistered) process.off(siginfo, handleThinkingShortcut);
     if (state.messages.length > 0) {
       await saveSession(state.messages, `repl-${new Date().toISOString()}`);
     }
-    rl.close();
+    if (input.isTTY) input.setRawMode(false);
   }
 }
