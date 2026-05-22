@@ -1,6 +1,6 @@
 {
   "name": "@pentoshi/clai",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",

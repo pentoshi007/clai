@@ -6,6 +6,7 @@ import {
 } from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
+import { select } from "@inquirer/prompts";
 import type { ChatMessage, Mode, ProviderId } from "./types.js";
 import { runAskStream } from "./modes/ask.js";
 import { runAgent } from "./modes/agent.js";
@@ -72,8 +73,8 @@ const slashCommands: SlashCommand[] = [
   { command: "/agent", description: "switch to agent mode" },
   {
     command: "/model",
-    usage: "[name|#]",
-    description: "list models or switch (e.g. /model 2)",
+    usage: "[name|#|list]",
+    description: "open picker (↑/↓ + Enter), or pass a name/number",
   },
   {
     command: "/provider",
@@ -578,7 +579,41 @@ function help(): string {
   return lines + chalk.dim("\n\n  ESC / Ctrl+C  abort current response  │  Ctrl+T  toggle thinking");
 }
 
-function showModelPicker(provider: string): void {
+async function pickModelInteractively(provider: ProviderId, currentModel: string): Promise<string | undefined> {
+  const models = knownModels[provider] ?? [];
+  const def = defaultModels[provider] ?? "";
+  if (models.length === 0) {
+    console.log(chalk.dim("  No known models for this provider. Type /model <name> to set manually."));
+    return undefined;
+  }
+
+  const choices = models.map((model) => {
+    const tags: string[] = [];
+    if (model === currentModel) tags.push(chalk.green("active"));
+    if (model === def) tags.push(chalk.yellow("default"));
+    const suffix = tags.length > 0 ? `  ${chalk.dim(tags.join(" · "))}` : "";
+    return {
+      name: `${model}${suffix}`,
+      value: model,
+    };
+  });
+
+  try {
+    const picked = await select({
+      message: `Select model for ${chalk.cyan(provider)}:`,
+      choices,
+      default: currentModel,
+      pageSize: Math.min(15, choices.length),
+      loop: false,
+    });
+    return picked;
+  } catch {
+    // User pressed ESC / Ctrl+C inside the inquirer prompt.
+    return undefined;
+  }
+}
+
+function showModelList(provider: string, currentModel: string): void {
   const models = knownModels[provider] ?? [];
   const def = defaultModels[provider as ProviderId] ?? "";
   if (models.length === 0) {
@@ -587,8 +622,11 @@ function showModelPicker(provider: string): void {
   }
   console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:`));
   models.forEach((m, i) => {
-    const marker = m === def ? chalk.yellow(" ← default") : "";
-    console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.white(m)}${marker}`);
+    const tags: string[] = [];
+    if (m === currentModel) tags.push("active");
+    if (m === def) tags.push("default");
+    const tag = tags.length > 0 ? chalk.dim(`  (${tags.join(" · ")})`) : "";
+    console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.white(m)}${tag}`);
   });
   console.log(chalk.dim("  Use /model <name> or /model <#> to select."));
 }
@@ -617,8 +655,19 @@ async function handleSlash(
     case "/model": {
       const arg = args.join(" ").trim();
       if (!arg) {
-        // No arg → show picker
-        showModelPicker(state.provider);
+        // No arg → interactive picker (up/down, Enter to select)
+        const picked = await pickModelInteractively(state.provider, state.model);
+        if (!picked) {
+          console.log(chalk.dim("  model unchanged"));
+          return true;
+        }
+        state.model = picked;
+        setProviderModel(state.provider, picked);
+        console.log(renderProviderSwitch(state.provider, picked));
+        return true;
+      }
+      if (arg === "list" || arg === "ls") {
+        showModelList(state.provider, state.model);
         return true;
       }
       // Numeric → pick from known list
