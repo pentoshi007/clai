@@ -245,16 +245,18 @@ export async function runAgentLoop(
   for (let step = 0; step < maxSteps; step += 1) {
     options.signal?.throwIfAborted();
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
+    // Status messages (rate-limit retries, fallback hints) still surface live.
     const completion = await streamWithProvider(
       {
         provider,
         model,
         messages,
         temperature: 0.2,
-        maxTokens: 4_096,
+        maxTokens: 2_048,
         signal: options.signal,
       },
       () => {},
+      (status) => process.stdout.write(chalk.dim(status)),
     );
     provider = completion.provider;
     model = completion.model;

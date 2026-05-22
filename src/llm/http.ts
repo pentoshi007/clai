@@ -5,10 +5,33 @@ export class ProviderError extends Error {
     message: string,
     public readonly status?: number | undefined,
     public readonly body?: string | undefined,
+    public readonly retryAfterSeconds?: number | undefined,
   ) {
     super(message);
     this.name = "ProviderError";
   }
+}
+
+function parseRetryAfterHeader(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number.parseFloat(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  // HTTP-date form: "Wed, 21 Oct 2015 07:28:00 GMT"
+  const date = Date.parse(value);
+  if (Number.isFinite(date)) {
+    const diff = (date - Date.now()) / 1000;
+    if (diff > 0) return diff;
+  }
+  return undefined;
+}
+
+function parseRetryHintFromBody(text: string): number | undefined {
+  const match = text.match(/try again in\s+([0-9.]+)\s*s/i);
+  if (match) {
+    const seconds = Number.parseFloat(match[1]!);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+  }
+  return undefined;
 }
 
 export async function readJson<T>(response: Response): Promise<T> {
@@ -25,12 +48,17 @@ export async function readJson<T>(response: Response): Promise<T> {
     } catch {
       if (text.length > 0) detail = ` — ${text.slice(0, 200)}`;
     }
-    const retryAfter = response.headers.get('retry-after');
-    const retryHint = retryAfter ? ` (retry after ${retryAfter}s)` : '';
+    const retryAfterSeconds =
+      parseRetryAfterHeader(response.headers.get('retry-after'))
+      ?? parseRetryHintFromBody(text);
+    const retryHint = retryAfterSeconds !== undefined
+      ? ` (retry after ${Math.ceil(retryAfterSeconds)}s)`
+      : '';
     throw new ProviderError(
       `Provider request failed with HTTP ${response.status}${retryHint}${detail}`,
       response.status,
       text.slice(0, 1_000),
+      retryAfterSeconds,
     );
   }
   return JSON.parse(text) as T;

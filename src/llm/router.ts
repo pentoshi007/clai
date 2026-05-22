@@ -15,6 +15,8 @@ import { openrouterProvider } from "./openrouter.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 
 const MAX_RETRIES = 2;
+// Wait at most this long before giving up on a provider and falling through.
+const MAX_RETRY_WAIT_MS = 8_000;
 
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
@@ -39,6 +41,24 @@ async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 function isRateLimited(error: unknown): boolean {
   return error instanceof ProviderError && error.status === 429;
+}
+
+function retryWaitMs(error: unknown, attempt: number): number {
+  if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
+    return Math.ceil(error.retryAfterSeconds * 1000);
+  }
+  return (attempt + 1) * 2_000;
+}
+
+function summarizeProviderError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  // Collapse newlines and excess whitespace; cap length so logs stay readable.
+  const flattened = message.replace(/\s+/g, " ").trim();
+  return flattened.length > 240 ? `${flattened.slice(0, 237)}...` : flattened;
+}
+
+function formatFailures(failures: string[]): string {
+  return failures.map((failure) => `\n  • ${failure}`).join("");
 }
 
 export const providers: Record<ProviderId, LlmProvider> = {
@@ -105,20 +125,19 @@ export async function completeWithProvider(
         auth,
       );
     } catch (error) {
-      failures.push(
-        `${providerId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      failures.push(`${providerId}: ${summarizeProviderError(error)}`);
     }
   }
 
   throw new Error(
-    `No provider could complete the request. ${failures.join(" | ")}`,
+    `No provider could complete the request.${formatFailures(failures)}`,
   );
 }
 
 export async function streamWithProvider(
   request: CompletionRequest,
   onToken: (token: string) => void,
+  onStatus?: (message: string) => void,
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
@@ -127,6 +146,7 @@ export async function streamWithProvider(
     ...fallbackOrder.filter((provider) => provider !== requested),
   ];
   const failures: string[] = [];
+  const emitStatus = onStatus ?? ((message) => onToken(message));
 
   for (const providerId of order) {
     request.signal?.throwIfAborted();
@@ -163,21 +183,29 @@ export async function streamWithProvider(
       } catch (error) {
         if (request.signal?.aborted) throw error;
         if (isRateLimited(error) && attempt < MAX_RETRIES) {
-          const wait = (attempt + 1) * 2_000;
-          onToken(`\n  ⏳ Rate limited, retrying in ${wait / 1000}s...\n`);
+          const wait = retryWaitMs(error, attempt);
+          if (wait > MAX_RETRY_WAIT_MS) {
+            // Long wait — skip to next provider rather than blocking the user.
+            emitStatus(
+              `\n  ⏭  ${providerId} rate limited (~${Math.ceil(wait / 1000)}s); trying next provider...\n`,
+            );
+            failures.push(`${providerId}: ${summarizeProviderError(error)}`);
+            break;
+          }
+          emitStatus(
+            `\n  ⏳ ${providerId} rate limited, retrying in ${Math.ceil(wait / 1000)}s...\n`,
+          );
           await sleep(wait, request.signal);
           continue;
         }
-        failures.push(
-          `${providerId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        failures.push(`${providerId}: ${summarizeProviderError(error)}`);
         break;
       }
     }
   }
 
   throw new Error(
-    `No provider could stream the request. ${failures.join(" | ")}`,
+    `No provider could stream the request.${formatFailures(failures)}`,
   );
 }
 
