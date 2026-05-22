@@ -52,3 +52,125 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
+
+  sync-tap:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if tap token is missing
+        id: gate
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "${TAP_GITHUB_TOKEN}" ]; then
+            echo "TAP_GITHUB_TOKEN secret not set; skipping homebrew tap sync." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve version
+        if: steps.gate.outputs.skip != 'true'
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release binaries
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Compute checksums
+        if: steps.gate.outputs.skip != 'true'
+        id: sha
+        run: |
+          set -euo pipefail
+          cd release
+          for asset in clai-bun-darwin-arm64 clai-bun-darwin-x64 clai-bun-linux-arm64 clai-bun-linux-x64; do
+            if [ ! -f "$asset" ]; then
+              echo "Missing release asset: $asset" >&2
+              exit 1
+            fi
+          done
+          {
+            echo "darwin_arm64=$(sha256sum clai-bun-darwin-arm64 | awk '{print $1}')"
+            echo "darwin_x64=$(sha256sum clai-bun-darwin-x64 | awk '{print $1}')"
+            echo "linux_arm64=$(sha256sum clai-bun-linux-arm64 | awk '{print $1}')"
+            echo "linux_x64=$(sha256sum clai-bun-linux-x64 | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew tap
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: pentoshi007/homebrew-clai
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: tap
+          persist-credentials: true
+
+      - name: Render formula
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
+          DARWIN_X64: ${{ steps.sha.outputs.darwin_x64 }}
+          LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+          LINUX_X64: ${{ steps.sha.outputs.linux_x64 }}
+        run: |
+          mkdir -p tap/Formula
+          cat > tap/Formula/clai.rb <<RUBY
+          class Clai < Formula
+            desc "Cross-platform terminal AI assistant with ask and agent modes"
+            homepage "https://github.com/pentoshi007/clai"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-darwin-arm64"
+                sha256 "${DARWIN_ARM64}"
+              else
+                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-darwin-x64"
+                sha256 "${DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-linux-arm64"
+                sha256 "${LINUX_ARM64}"
+              else
+                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-linux-x64"
+                sha256 "${LINUX_X64}"
+              end
+            end
+
+            def install
+              bin.install Dir["clai-*"].first => "clai"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/clai --version")
+            end
+          end
+          RUBY
+
+      - name: Commit and push to tap
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet Formula/clai.rb; then
+            echo "Formula already up to date for v${VERSION}; nothing to push."
+            exit 0
+          fi
+          git add Formula/clai.rb
+          git commit -m "clai ${VERSION}"
+          git push origin HEAD:main
