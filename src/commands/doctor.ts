@@ -5,7 +5,11 @@ import { getConfigPath } from '../store/config.js';
 import { getHistoryPath } from '../store/history.js';
 import { printProviderKeys } from './providers.js';
 
-const pentestTools = ['nmap', 'nikto', 'sqlmap', 'gobuster', 'ffuf', 'hydra', 'masscan', 'whois', 'dig', 'nc', 'tshark'];
+const pentestTools = [
+  'nmap', 'nikto', 'sqlmap', 'gobuster', 'ffuf', 'hydra', 'masscan',
+  'whois', 'dig', 'nc', 'tshark', 'dirb', 'wfuzz', 'nuclei',
+  'whatweb', 'wpscan', 'amass', 'subfinder', 'httpx', 'curl', 'jq',
+];
 
 export async function runDoctor(): Promise<void> {
   const system = detectSystem();

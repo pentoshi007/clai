@@ -5,5 +5,7 @@ coverage/
 .env
 .DS_Store
 .clai/
+.claude/
+.kilo/
 *.tgz
 SRS.md

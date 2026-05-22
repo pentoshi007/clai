@@ -22,7 +22,13 @@ function stringArg(
 
 export function isPrivateIpv4(value: string): boolean {
   const candidate = value.split("/")[0] ?? value;
-  if (net.isIP(candidate) !== 4) return false;
+  // Handle hostnames — if it's not an IP, treat it as non-private (domain)
+  if (net.isIP(candidate) === 0) return false;
+  if (net.isIP(candidate) === 6) {
+    // IPv6 link-local (fe80::), loopback (::1), ULA (fc00::/7)
+    const lower = candidate.toLowerCase();
+    return lower === "::1" || lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd");
+  }
   const parts = candidate.split(".").map((part) => Number(part));
   const [a, b] = parts;
   if (a === 10) return true;
@@ -92,6 +98,10 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
         reason:
           "Public target scanning requires explicit --i-own-this authorization flag",
       };
+    }
+    // Pentest scan tools always require confirmation even against private targets
+    if (commandContainsNetworkScanner(command)) {
+      return { level: "confirm", reason: "Security scan tool requires confirmation" };
     }
     // Read-only / info commands are safe to auto-execute
     const base = command.trim().split(/\s+/)[0]?.replace(/^.*\//, "") ?? "";

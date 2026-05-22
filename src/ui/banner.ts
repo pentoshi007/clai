@@ -60,9 +60,9 @@ export function renderSessionInfo(opts: {
 export function renderSuggestions(): string {
   const suggestions = [
     "scan my network",
-    "find open ports on 192.168.1.1",
-    "what is my IP?",
-    "read my .zshrc",
+    "recon example.com",
+    "directory bruteforce on 192.168.1.1",
+    "find open ports on target",
   ];
   return chalk.dim("  try: ") + chalk.dim.italic(suggestions.join(" │ "));
 }

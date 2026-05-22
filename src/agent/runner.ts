@@ -116,7 +116,7 @@ function textBeforeToolCall(text: string): string {
 
 function formatToolArgs(call: ToolCall): string {
   if (call.name === "shell.exec") return String(call.args.command ?? "");
-  if (call.name === "net.scan") return `${call.args.target ?? ""}${call.args.ports ? ` -p ${call.args.ports}` : ""}`;
+  if (call.name === "net.scan") return `${call.args.target ?? ""}${call.args.ports ? ` -p ${call.args.ports}` : ""}${call.args.flags ? ` ${call.args.flags}` : ""}`;
   if (call.name === "pentest.recon") return String(call.args.target ?? "");
   if (call.name === "fs.read" || call.name === "fs.write") return String(call.args.path ?? "");
   if (call.name === "fs.search") return String(call.args.pattern ?? "");
@@ -225,7 +225,7 @@ export async function runAgentLoop(
   options: AgentRunOptions = {},
 ): Promise<string> {
   const config = getConfig();
-  const maxSteps = options.maxSteps ?? 25;
+  const maxSteps = options.maxSteps ?? 30;
   const projectContext = await loadProjectContext();
   const systemPrompt = renderAgentSystemPrompt(availableToolNames().join(", "));
   const fullSystemPrompt = projectContext
@@ -251,7 +251,7 @@ export async function runAgentLoop(
         model,
         messages,
         temperature: 0.2,
-        maxTokens: 2_000,
+        maxTokens: 4_096,
         signal: options.signal,
       },
       () => {},
@@ -325,7 +325,18 @@ export async function runAgentLoop(
     // Execute tool
     options.signal?.throwIfAborted();
     options.onToolStart?.(call);
-    const result = await runToolCall(call, { signal: options.signal });
+    let result: ToolResult;
+    try {
+      result = await runToolCall(call, { signal: options.signal });
+    } catch (toolError) {
+      if (isAbortError(toolError, options.signal)) {
+        lastAnswer = "Aborted.";
+        process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
+        return lastAnswer;
+      }
+      const errMsg = toolError instanceof Error ? toolError.message : String(toolError);
+      result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
+    }
     const output = result.output.trim();
     const displayMax = 6_000;
     const savedOutputPath = output.length > displayMax

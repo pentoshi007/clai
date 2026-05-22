@@ -44,7 +44,7 @@ export async function runAsk(
     model: request.model,
     messages: request.messages,
     temperature: 0.2,
-    maxTokens: 1_500,
+    maxTokens: 2_048,
   });
 
   return result.text;
@@ -62,7 +62,7 @@ export async function runAskStream(
       model: request.model,
       messages: request.messages,
       temperature: 0.2,
-      maxTokens: 1_500,
+      maxTokens: 2_048,
       signal: options.signal,
     },
     onToken,

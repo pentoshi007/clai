@@ -14,9 +14,11 @@ export const exfiltrationPatterns = [
   /wget\s+.*\|\s*sh/i,
   /tar\s+.*\|\s*(curl|nc|netcat)/i,
   /\bscp\b.*(~\/|\.ssh|\.env)/i,
+  /curl\s+.*-d\s+@\/(etc\/passwd|etc\/shadow)/i,
+  /base64\s+.*\|\s*(curl|wget|nc)/i,
 ];
 
-export const networkScanTools = ['nmap', 'masscan', 'nikto', 'sqlmap', 'gobuster', 'ffuf', 'hydra'];
+export const networkScanTools = ['nmap', 'masscan', 'nikto', 'sqlmap', 'gobuster', 'ffuf', 'hydra', 'dirb', 'wfuzz', 'nuclei'];
 
 /** Read-only commands that are safe to auto-execute without user confirmation */
 export const readOnlyShellCommands = new Set([
@@ -41,8 +43,8 @@ export const readOnlyShellCommands = new Set([
   'git',
   // package query
   'dpkg', 'rpm', 'brew', 'pip', 'npm', 'node', 'python', 'python3', 'ruby',
-  // recon / scanning (read-only, pentest auth covers ethics)
-  'gobuster', 'dirb', 'ffuf', 'nikto', 'whatweb', 'wpscan',
+  // recon / scanning (pentest auth covers ethics — classified separately)
+  'whatweb', 'wpscan',
   'sublist3r', 'amass', 'subfinder', 'httpx', 'nuclei',
 ]);
 

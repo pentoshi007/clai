@@ -93,6 +93,6 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
     });
 
     args.signal?.addEventListener("abort", abort, { once: true });
-    timeout = setTimeout(() => terminate("timeout"), args.timeoutMs ?? 120_000);
+    timeout = setTimeout(() => terminate("timeout"), args.timeoutMs ?? 180_000);
   });
 }

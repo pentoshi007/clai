@@ -28,4 +28,14 @@ describe('safety classifier', () => {
     const result = classifyToolCall({ name: 'shell.exec', args: { command: 'nmap 8.8.8.8' } });
     expect(result.level).toBe('block');
   });
+
+  it('requires confirmation for pentest scan tools even against private targets', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'gobuster dir -u http://192.168.1.1 -w /usr/share/wordlists/common.txt' } });
+    expect(result.level).toBe('confirm');
+  });
+
+  it('requires confirmation for ffuf', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'ffuf -u http://192.168.1.1/FUZZ -w wordlist.txt' } });
+    expect(result.level).toBe('confirm');
+  });
 });

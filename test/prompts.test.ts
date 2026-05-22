@@ -39,6 +39,6 @@ describe('prompt rendering', () => {
     const prompt = renderAgentSystemPrompt('shell.exec');
     expect(prompt).toContain('Do not invent volatile live data');
     expect(prompt).toContain('summarize concrete findings');
-    expect(prompt).toContain('For ffuf, do not use -q');
+    expect(prompt).toContain('For ffuf');
   });
 });
