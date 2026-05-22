@@ -1,5 +1,5 @@
 import Conf from 'conf';
-import type { Mode, ProviderId } from '../types.js';
+import type { Mode, ProviderId, ReasoningPreference } from '../types.js';
 import { defaultModels } from '../llm/provider.js';
 
 export interface ClaiConfig {
@@ -13,11 +13,12 @@ export interface ClaiConfig {
   ollamaHost: string;
   telemetry: boolean;
   lastUpdateCheck: number;
+  thinking: ReasoningPreference;
 }
 
 const defaults: ClaiConfig = {
-  defaultProvider: 'groq',
-  defaultModel: defaultModels.groq,
+  defaultProvider: 'nvidia',
+  defaultModel: defaultModels.nvidia,
   defaultMode: 'ask',
   providerModels: {},
   allowAlwaysTools: [],
@@ -26,6 +27,7 @@ const defaults: ClaiConfig = {
   ollamaHost: 'http://localhost:11434',
   telemetry: false,
   lastUpdateCheck: 0,
+  thinking: { enabled: false, effort: 'medium' },
 };
 
 const store = new Conf<ClaiConfig>({
@@ -66,4 +68,13 @@ export function getProviderModel(provider: ProviderId): string {
 
 export function getConfigPath(): string {
   return store.path;
+}
+
+export function setThinking(patch: Partial<ReasoningPreference>): ClaiConfig {
+  const current = getConfig().thinking;
+  const next: ReasoningPreference = {
+    enabled: patch.enabled ?? current.enabled,
+    effort: patch.effort ?? current.effort,
+  };
+  return updateConfig({ thinking: next });
 }

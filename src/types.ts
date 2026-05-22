@@ -11,6 +11,12 @@ export const providerIds = [
 export type ProviderId = (typeof providerIds)[number];
 export type Mode = "ask" | "agent";
 export type RiskLevel = "safe" | "confirm" | "block";
+export type ReasoningEffort = "low" | "medium" | "high";
+
+export interface ReasoningPreference {
+  enabled: boolean;
+  effort: ReasoningEffort;
+}
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -24,6 +30,7 @@ export interface CompletionRequest {
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   signal?: AbortSignal | undefined;
+  thinking?: ReasoningPreference | undefined;
 }
 
 export interface CompletionResult {

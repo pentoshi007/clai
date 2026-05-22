@@ -29,6 +29,7 @@ import {
   rememberThinkingFromText,
   renderThinkingSummary,
 } from "./ui/thinking.js";
+import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -69,7 +70,8 @@ async function oneShot(
   let answer = "";
   if (mode === "ask") {
     let sawToken = false;
-    const parser = createThinkingStreamParser((text) => process.stdout.write(text));
+    const markdown = createMarkdownStreamWriter((chunk) => process.stdout.write(chunk));
+    const parser = createThinkingStreamParser((text) => markdown.push(text));
     const raw = await runAskStream(prompt, (token) => {
       sawToken = true;
       parser.push(token);
@@ -78,7 +80,11 @@ async function oneShot(
       model,
     });
     const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
-    if (!sawToken && result.visible) process.stdout.write(result.visible);
+    if (sawToken) {
+      markdown.finish();
+    } else if (result.visible) {
+      process.stdout.write(renderMarkdown(result.visible));
+    }
     if (result.hasThinking) {
       const prefix = result.visible && !result.visible.endsWith("\n") ? "\n" : "";
       process.stdout.write(`${prefix}${renderThinkingSummary(result.thinkContent)}\n`);

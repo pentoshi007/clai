@@ -1,4 +1,4 @@
-import type { CompletionRequest, CompletionResult } from "../types.js";
+import type { CompletionRequest, CompletionResult, ReasoningPreference } from "../types.js";
 import {
   defaultModels,
   type LlmProvider,
@@ -8,6 +8,20 @@ import { readJson } from "./http.js";
 
 const baseUrl = "https://api.anthropic.com/v1";
 const anthropicVersion = "2023-06-01";
+
+function anthropicThinkingBudget(reasoning: ReasoningPreference | undefined): number | undefined {
+  if (!reasoning?.enabled) return undefined;
+  // Map to a sensible token budget. Anthropic requires budget < max_tokens
+  // and >= 1024.
+  switch (reasoning.effort) {
+    case "low":
+      return 1_024;
+    case "high":
+      return 8_192;
+    default:
+      return 4_096;
+  }
+}
 
 export const anthropicProvider: LlmProvider = {
   id: "anthropic",
@@ -54,11 +68,24 @@ export const anthropicProvider: LlmProvider = {
         messages,
         max_tokens: request.maxTokens ?? 1_024,
         temperature: request.temperature ?? 0.2,
+        ...(anthropicThinkingBudget(request.thinking) !== undefined
+          ? {
+              thinking: {
+                type: "enabled",
+                budget_tokens: anthropicThinkingBudget(request.thinking),
+              },
+            }
+          : {}),
       }),
     });
     const data = await readJson<{
-      content?: Array<{ type: string; text?: string }>;
+      content?: Array<{ type: string; text?: string; thinking?: string }>;
     }>(response);
+    const thinkingText = data.content
+      ?.filter((part) => part.type === "thinking")
+      .map((part) => part.thinking ?? "")
+      .join("")
+      .trim();
     const text = data.content
       ?.filter((part) => part.type === "text")
       .map((part) => part.text ?? "")
@@ -67,7 +94,8 @@ export const anthropicProvider: LlmProvider = {
     if (!text) {
       throw new Error("Anthropic returned no completion text");
     }
-    return { text, provider: "anthropic", model };
+    const final = thinkingText ? `<think>${thinkingText}</think>${text}` : text;
+    return { text: final, provider: "anthropic", model };
   },
   async stream(
     request: CompletionRequest,
@@ -100,6 +128,14 @@ export const anthropicProvider: LlmProvider = {
         max_tokens: request.maxTokens ?? 1_024,
         temperature: request.temperature ?? 0.2,
         stream: true,
+        ...(anthropicThinkingBudget(request.thinking) !== undefined
+          ? {
+              thinking: {
+                type: "enabled",
+                budget_tokens: anthropicThinkingBudget(request.thinking),
+              },
+            }
+          : {}),
       }),
     });
     if (!response.ok) {
@@ -112,6 +148,20 @@ export const anthropicProvider: LlmProvider = {
     const reader = response.body.getReader();
     let buffer = "";
     let full = "";
+    let inThinking = false;
+
+    const enterThinking = (): void => {
+      if (inThinking) return;
+      inThinking = true;
+      full += "<think>";
+      onToken("<think>");
+    };
+    const exitThinking = (): void => {
+      if (!inThinking) return;
+      inThinking = false;
+      full += "</think>";
+      onToken("</think>");
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -123,21 +173,33 @@ export const anthropicProvider: LlmProvider = {
         const trimmed = line.trim();
         if (!trimmed.startsWith("data:")) continue;
         const payload = trimmed.slice(5).trim();
-        if (payload === "[DONE]") return { text: full, provider: "anthropic", model };
+        if (payload === "[DONE]") {
+          exitThinking();
+          return { text: full, provider: "anthropic", model };
+        }
         try {
           const parsed = JSON.parse(payload) as {
             type?: string;
-            delta?: { type?: string; text?: string };
+            delta?: { type?: string; text?: string; thinking?: string };
           };
-          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-            full += parsed.delta.text;
-            onToken(parsed.delta.text);
+          if (parsed.type === "content_block_delta") {
+            const deltaType = parsed.delta?.type;
+            if (deltaType === "thinking_delta" && parsed.delta?.thinking) {
+              enterThinking();
+              full += parsed.delta.thinking;
+              onToken(parsed.delta.thinking);
+            } else if (deltaType === "text_delta" && parsed.delta?.text) {
+              if (inThinking) exitThinking();
+              full += parsed.delta.text;
+              onToken(parsed.delta.text);
+            }
           }
         } catch {
           // Ignore malformed keepalive lines.
         }
       }
     }
+    exitThinking();
     return { text: full, provider: "anthropic", model };
   },
 };

@@ -21,6 +21,7 @@ import {
   getProviderModel,
   setDefaultMode,
   setProviderModel,
+  setThinking,
   updateConfig,
 } from "./store/config.js";
 import { listSessions, saveSession } from "./store/history.js";
@@ -44,6 +45,8 @@ import {
   renderThinkingSummary,
   renderThinkingToggleMessage,
 } from "./ui/thinking.js";
+import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
+import { modelSupportsThinking } from "./llm/capabilities.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -85,6 +88,16 @@ const slashCommands: SlashCommand[] = [
   { command: "/set", usage: "<provider> [key]", description: "store API key" },
   { command: "/unset", usage: "<provider>", description: "remove key" },
   { command: "/keys", description: "list configured providers" },
+  {
+    command: "/variants",
+    usage: "[on|off|low|medium|high]",
+    description: "toggle thinking and effort for capable models",
+  },
+  {
+    command: "/reasoning",
+    usage: "[on|off|low|medium|high]",
+    description: "alias for /variants",
+  },
   { command: "/clear", description: "clear context" },
   { command: "/history", description: "show past sessions" },
   { command: "/save", usage: "<name>", description: "save session" },
@@ -501,7 +514,8 @@ async function streamWithAbort(
   signal: AbortSignal,
 ): Promise<string> {
   let sawToken = false;
-  const parser = createThinkingStreamParser((text) => process.stdout.write(text));
+  const markdown = createMarkdownStreamWriter((chunk) => process.stdout.write(chunk));
+  const parser = createThinkingStreamParser((text) => markdown.push(text));
 
   const onToken = (token: string): void => {
     sawToken = true;
@@ -511,7 +525,11 @@ async function streamWithAbort(
   try {
     const raw = await run(signal, onToken);
     const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
-    if (!sawToken && result.visible) process.stdout.write(result.visible);
+    if (sawToken) {
+      markdown.finish();
+    } else if (result.visible) {
+      process.stdout.write(renderMarkdown(result.visible));
+    }
     if (result.hasThinking) {
       const prefix = result.visible && !result.visible.endsWith("\n") ? "\n" : "";
       process.stdout.write(`${prefix}${renderThinkingSummary(result.thinkContent)}\n`);
@@ -519,6 +537,7 @@ async function streamWithAbort(
     return result.visible;
   } catch (err) {
     const result = parser.finish();
+    if (sawToken) markdown.finish();
     if (signal.aborted) {
       process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
       return result.visible;
@@ -640,6 +659,56 @@ async function handleSlash(
     case "/keys":
       await printProviderKeys();
       return true;
+    case "/variants":
+    case "/reasoning": {
+      const arg = (args[0] ?? "").toLowerCase().trim();
+      const current = getConfig().thinking;
+      const supported = modelSupportsThinking(state.provider, state.model);
+
+      if (!arg) {
+        const status = current.enabled ? chalk.green("on") : chalk.dim("off");
+        const support = supported
+          ? chalk.green("supported")
+          : chalk.yellow("not advertised by this model");
+        console.log(
+          chalk.dim("  thinking: ") +
+            status +
+            chalk.dim("  effort: ") +
+            chalk.cyan(current.effort) +
+            chalk.dim("  · ") +
+            support,
+        );
+        console.log(chalk.dim("  usage: /variants on|off|low|medium|high"));
+        return true;
+      }
+
+      if (arg === "on" || arg === "enable" || arg === "true") {
+        setThinking({ enabled: true });
+        console.log(chalk.dim(`  thinking: ${chalk.green("on")} (effort=${getConfig().thinking.effort})`));
+        if (!supported) {
+          console.log(chalk.yellow("  note: current model may ignore the thinking flag."));
+        }
+        return true;
+      }
+      if (arg === "off" || arg === "disable" || arg === "false") {
+        setThinking({ enabled: false });
+        console.log(chalk.dim(`  thinking: ${chalk.dim("off")}`));
+        return true;
+      }
+      if (arg === "low" || arg === "medium" || arg === "high") {
+        setThinking({ enabled: true, effort: arg });
+        console.log(
+          chalk.dim(`  thinking: ${chalk.green("on")}  effort: ${chalk.cyan(arg)}`),
+        );
+        if (!supported) {
+          console.log(chalk.yellow("  note: current model may ignore the thinking flag."));
+        }
+        return true;
+      }
+
+      console.log(chalk.dim("  usage: /variants on|off|low|medium|high"));
+      return true;
+    }
     case "/clear":
       state.messages.length = 0;
       console.log(chalk.dim("  context cleared"));

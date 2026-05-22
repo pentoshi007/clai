@@ -42,6 +42,8 @@ export const openrouterProvider: LlmProvider = {
       temperature: request.temperature,
       headers,
       signal: request.signal,
+      reasoning: request.thinking,
+      reasoningStyle: "openrouter",
     });
     return { text, provider: "openrouter", model };
   },
@@ -63,6 +65,8 @@ export const openrouterProvider: LlmProvider = {
       headers,
       signal: request.signal,
       onToken,
+      reasoning: request.thinking,
+      reasoningStyle: "openrouter",
     });
     return { text, provider: "openrouter", model };
   },

@@ -254,6 +254,7 @@ export async function runAgentLoop(
         temperature: 0.2,
         maxTokens: 2_048,
         signal: options.signal,
+        thinking: config.thinking,
       },
       () => {},
       (status) => process.stdout.write(chalk.dim(status)),

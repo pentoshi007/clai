@@ -37,6 +37,8 @@ export const openaiProvider: LlmProvider = {
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       signal: request.signal,
+      reasoning: request.thinking,
+      reasoningStyle: "openai",
     });
     return { text, provider: "openai", model };
   },
@@ -57,6 +59,8 @@ export const openaiProvider: LlmProvider = {
       temperature: request.temperature,
       signal: request.signal,
       onToken,
+      reasoning: request.thinking,
+      reasoningStyle: "openai",
     });
     return { text, provider: "openai", model };
   },

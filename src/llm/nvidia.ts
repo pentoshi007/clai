@@ -40,6 +40,8 @@ export const nvidiaProvider: LlmProvider = {
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       signal: request.signal,
+      reasoning: request.thinking,
+      reasoningStyle: "nvidia",
     });
     return { text, provider: "nvidia", model };
   },
@@ -60,6 +62,8 @@ export const nvidiaProvider: LlmProvider = {
       temperature: request.temperature,
       signal: request.signal,
       onToken,
+      reasoning: request.thinking,
+      reasoningStyle: "nvidia",
     });
     return { text, provider: "nvidia", model };
   },

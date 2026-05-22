@@ -32,11 +32,11 @@ describe('config store', () => {
     expect(typeof config.telemetry).toBe('boolean');
   });
 
-  it('defaults to groq provider', async () => {
+  it('defaults to nvidia provider', async () => {
     const { getConfig } = await loadConfigStore();
     const config = getConfig();
 
-    expect(config.defaultProvider).toBe('groq');
+    expect(config.defaultProvider).toBe('nvidia');
   });
 
   it('returns correct default model for each provider', async () => {
@@ -44,6 +44,7 @@ describe('config store', () => {
 
     expect(getProviderModel('groq')).toBe('llama-3.3-70b-versatile');
     expect(getProviderModel('gemini')).toBe('gemini-2.0-flash');
+    expect(getProviderModel('nvidia')).toBe('moonshotai/kimi-k2.6');
     expect(getProviderModel('ollama')).toBe('llama3.1:8b');
   });
 });

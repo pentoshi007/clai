@@ -73,12 +73,12 @@ export const providers: Record<ProviderId, LlmProvider> = {
 };
 
 const fallbackOrder: ProviderId[] = [
+  "nvidia",
   "groq",
   "gemini",
   "openrouter",
   "openai",
   "anthropic",
-  "nvidia",
   "ollama",
 ];
 

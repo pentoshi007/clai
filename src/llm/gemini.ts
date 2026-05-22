@@ -2,6 +2,7 @@ import type {
   ChatMessage,
   CompletionRequest,
   CompletionResult,
+  ReasoningPreference,
 } from "../types.js";
 import {
   defaultModels,
@@ -28,15 +29,33 @@ function systemInstruction(
   return system ? { parts: [{ text: system.content }] } : undefined;
 }
 
+function geminiThinkingBudget(reasoning: ReasoningPreference | undefined): number | undefined {
+  if (!reasoning?.enabled) return undefined;
+  switch (reasoning.effort) {
+    case "low":
+      return 1_024;
+    case "high":
+      return 16_384;
+    default:
+      return 4_096;
+  }
+}
+
 function geminiBody(request: CompletionRequest): string {
-  return JSON.stringify({
-    systemInstruction: systemInstruction(request.messages),
+  const thinkingBudget = geminiThinkingBudget(request.thinking);
+  const body: Record<string, unknown> = {
     contents: geminiContents(request.messages),
     generationConfig: {
       temperature: request.temperature ?? 0.2,
       maxOutputTokens: request.maxTokens ?? 1_024,
+      ...(thinkingBudget !== undefined
+        ? { thinkingConfig: { thinkingBudget, includeThoughts: true } }
+        : {}),
     },
-  });
+  };
+  const sys = systemInstruction(request.messages);
+  if (sys) body.systemInstruction = sys;
+  return JSON.stringify(body);
 }
 
 export const geminiProvider: LlmProvider = {
@@ -68,16 +87,28 @@ export const geminiProvider: LlmProvider = {
       },
     );
     const data = await readJson<{
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string; thought?: boolean }>;
+        };
+      }>;
     }>(response);
-    const text = data.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text ?? "")
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const thought = parts
+      .filter((part) => part.thought)
+      .map((part) => part.text ?? "")
+      .join("")
+      .trim();
+    const text = parts
+      .filter((part) => !part.thought)
+      .map((part) => part.text ?? "")
       .join("")
       .trim();
     if (!text) {
       throw new Error("Gemini returned no completion text");
     }
-    return { text, provider: "gemini", model };
+    const final = thought ? `<think>${thought}</think>${text}` : text;
+    return { text: final, provider: "gemini", model };
   },
   async stream(
     request: CompletionRequest,
@@ -105,6 +136,20 @@ export const geminiProvider: LlmProvider = {
     const reader = response.body.getReader();
     let buffer = "";
     let full = "";
+    let inThought = false;
+
+    const enterThought = (): void => {
+      if (inThought) return;
+      inThought = true;
+      full += "<think>";
+      onToken("<think>");
+    };
+    const exitThought = (): void => {
+      if (!inThought) return;
+      inThought = false;
+      full += "</think>";
+      onToken("</think>");
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -116,23 +161,37 @@ export const geminiProvider: LlmProvider = {
         const trimmed = line.trim();
         if (!trimmed.startsWith("data:")) continue;
         const payload = trimmed.slice(5).trim();
-        if (payload === "[DONE]") return { text: full, provider: "gemini", model };
+        if (payload === "[DONE]") {
+          exitThought();
+          return { text: full, provider: "gemini", model };
+        }
         try {
           const parsed = JSON.parse(payload) as {
-            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+            candidates?: Array<{
+              content?: {
+                parts?: Array<{ text?: string; thought?: boolean }>;
+              };
+            }>;
           };
-          const token = parsed.candidates?.[0]?.content?.parts
-            ?.map((p) => p.text ?? "")
-            .join("");
-          if (token) {
-            full += token;
-            onToken(token);
+          const parts = parsed.candidates?.[0]?.content?.parts ?? [];
+          for (const part of parts) {
+            if (!part.text) continue;
+            if (part.thought) {
+              enterThought();
+              full += part.text;
+              onToken(part.text);
+            } else {
+              if (inThought) exitThought();
+              full += part.text;
+              onToken(part.text);
+            }
           }
         } catch {
           // Ignore malformed keepalive lines.
         }
       }
     }
+    exitThought();
     return { text: full, provider: "gemini", model };
   },
 };

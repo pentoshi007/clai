@@ -37,6 +37,8 @@ export const groqProvider: LlmProvider = {
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       signal: request.signal,
+      reasoning: request.thinking,
+      reasoningStyle: "groq",
     });
     return { text, provider: "groq", model };
   },
@@ -57,6 +59,8 @@ export const groqProvider: LlmProvider = {
       temperature: request.temperature,
       signal: request.signal,
       onToken,
+      reasoning: request.thinking,
+      reasoningStyle: "groq",
     });
     return { text, provider: "groq", model };
   },

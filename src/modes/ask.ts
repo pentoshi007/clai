@@ -39,12 +39,14 @@ export async function runAsk(
   options: AskOptions = {},
 ): Promise<string> {
   const request = await buildAskMessages(prompt, options);
+  const config = getConfig();
   const result = await completeWithProvider({
     provider: request.provider,
     model: request.model,
     messages: request.messages,
     temperature: 0.2,
     maxTokens: 2_048,
+    thinking: config.thinking,
   });
 
   return result.text;
@@ -56,6 +58,7 @@ export async function runAskStream(
   options: AskOptions = {},
 ): Promise<string> {
   const request = await buildAskMessages(prompt, options);
+  const config = getConfig();
   const result = await streamWithProvider(
     {
       provider: request.provider,
@@ -64,6 +67,7 @@ export async function runAskStream(
       temperature: 0.2,
       maxTokens: 2_048,
       signal: options.signal,
+      thinking: config.thinking,
     },
     onToken,
   );

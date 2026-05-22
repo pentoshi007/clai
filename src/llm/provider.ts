@@ -49,7 +49,7 @@ export const defaultModels: Record<ProviderId, string> = {
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
-  nvidia: "meta/llama-3.3-70b-instruct",
+  nvidia: "moonshotai/kimi-k2.6",
   ollama: "llama3.1:8b",
 };
 
