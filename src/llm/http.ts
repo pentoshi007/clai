@@ -92,8 +92,18 @@ function buildReasoningPayload(
       // Groq's Kimi/DeepSeek reasoning routes accept reasoning_effort.
       return { reasoning_effort: effort };
     case "nvidia":
-      // NVIDIA NIM toggles thinking via chat_template_kwargs.
-      return { chat_template_kwargs: { thinking: true } };
+      // NVIDIA NIM toggles thinking via chat_template_kwargs, but the field
+      // name varies by model family: DeepSeek/Kimi use `thinking`, GLM uses
+      // `enable_thinking`, and some accept `reasoning_effort`. Send all
+      // variants — unknown keys are ignored by the upstream chat template.
+      return {
+        chat_template_kwargs: {
+          thinking: true,
+          enable_thinking: true,
+          reasoning_effort: effort,
+        },
+        reasoning_effort: effort,
+      };
     default:
       return {};
   }

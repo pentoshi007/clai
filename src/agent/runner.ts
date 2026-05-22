@@ -19,6 +19,7 @@ import { loadProjectContext } from "../store/project.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { rememberThinkingFromText, renderThinkingSummary } from "../ui/thinking.js";
 import { renderMarkdown } from "../ui/markdown.js";
+import { startThinkingSpinner } from "../ui/spinner.js";
 
 export interface AgentRunOptions {
   provider?: ProviderId | undefined;
@@ -247,6 +248,12 @@ export async function runAgentLoop(
     options.signal?.throwIfAborted();
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
     // Status messages (rate-limit retries, fallback hints) still surface live.
+    // A spinner gives the user feedback during long thinking phases on
+    // models like glm-5.1 / deepseek-v4-flash that stream reasoning first.
+    const spinner = startThinkingSpinner(
+      step === 0 ? "waiting for model" : `step ${step + 1}`,
+    );
+    let sawReasoning = false;
     const completion = await streamWithProvider(
       {
         provider,
@@ -257,9 +264,23 @@ export async function runAgentLoop(
         signal: options.signal,
         thinking: config.thinking,
       },
-      () => {},
-      (status) => process.stdout.write(chalk.dim(status)),
+      (token) => {
+        // Heuristic: <think>… markers and reasoning_content tokens flow
+        // through onToken. Surface activity in the spinner so the screen
+        // is never empty for minutes.
+        if (!sawReasoning && /<think|<\/think>/i.test(token)) {
+          sawReasoning = true;
+          spinner.setLabel("thinking");
+        }
+        const approx = token.split(/\s+/).filter(Boolean).length;
+        if (approx > 0) spinner.bumpReasoning(approx);
+      },
+      (status) => {
+        spinner.stop();
+        process.stdout.write(chalk.dim(status));
+      },
     );
+    spinner.stop();
     provider = completion.provider;
     model = completion.model;
 

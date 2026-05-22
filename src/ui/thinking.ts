@@ -91,7 +91,10 @@ export function renderThinkingToggleMessage(): string {
   return chalk.dim(`  thinking ${visible ? "will be shown" : "will be hidden"}`);
 }
 
-export function createThinkingStreamParser(onVisible: (text: string) => void): {
+export function createThinkingStreamParser(
+  onVisible: (text: string) => void,
+  onReasoning?: (text: string) => void,
+): {
   push(token: string): void;
   finish(): ThinkingResult;
 } {
@@ -110,6 +113,7 @@ export function createThinkingStreamParser(onVisible: (text: string) => void): {
   const emitThinking = (text: string): void => {
     if (!text) return;
     thinkBuffer += text;
+    onReasoning?.(text);
   };
 
   const finishThinkingBlock = (): void => {

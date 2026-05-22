@@ -47,6 +47,7 @@ import {
   renderThinkingToggleMessage,
 } from "./ui/thinking.js";
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
+import { startThinkingSpinner } from "./ui/spinner.js";
 import { modelSupportsThinking } from "./llm/capabilities.js";
 
 export interface ReplOptions {
@@ -515,16 +516,37 @@ async function streamWithAbort(
   signal: AbortSignal,
 ): Promise<string> {
   let sawToken = false;
+  const spinner = startThinkingSpinner("waiting for model");
   const markdown = createMarkdownStreamWriter((chunk) => process.stdout.write(chunk));
-  const parser = createThinkingStreamParser((text) => markdown.push(text));
+  const parser = createThinkingStreamParser(
+    (text) => {
+      // Visible content arriving — drop the spinner so output isn't stomped on.
+      spinner.stop();
+      markdown.push(text);
+    },
+    (reasoning) => {
+      // Reasoning tokens are hidden by default; show progress so users see
+      // something is happening even when the model spends a minute thinking.
+      spinner.setLabel("thinking");
+      // Approximate token count by whitespace splits — purely cosmetic.
+      const approx = reasoning.split(/\s+/).filter(Boolean).length;
+      if (approx > 0) spinner.bumpReasoning(approx);
+    },
+  );
 
   const onToken = (token: string): void => {
-    sawToken = true;
+    if (!sawToken) {
+      // First raw token from the provider — still hold the spinner if it
+      // turns out to be a reasoning token; the parser's callbacks above
+      // decide which label to show.
+      sawToken = true;
+    }
     parser.push(token);
   };
 
   try {
     const raw = await run(signal, onToken);
+    spinner.stop();
     const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
     if (sawToken) {
       markdown.finish();
@@ -537,6 +559,7 @@ async function streamWithAbort(
     }
     return result.visible;
   } catch (err) {
+    spinner.stop();
     const result = parser.finish();
     if (sawToken) markdown.finish();
     if (signal.aborted) {
