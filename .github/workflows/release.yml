@@ -22,19 +22,19 @@ jobs:
           - bun-darwin-arm64
           - bun-windows-x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
       - run: bun build ./src/index.ts --compile --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: clai-${{ matrix.target }}
           path: release/*
@@ -44,11 +44,11 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: release/*
           generate_release_notes: true
@@ -79,7 +79,7 @@ jobs:
 
       - name: Download release binaries
         if: steps.gate.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
@@ -105,7 +105,7 @@ jobs:
 
       - name: Checkout homebrew tap
         if: steps.gate.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: pentoshi007/homebrew-clai
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
