@@ -73,8 +73,8 @@ const slashCommands: SlashCommand[] = [
   { command: "/agent", description: "switch to agent mode" },
   {
     command: "/model",
-    usage: "[name|#|list]",
-    description: "open picker (↑/↓ + Enter), or pass a name/number",
+    usage: "[name|#]",
+    description: "open numbered picker (↑/↓ + Enter), or pass a name/number",
   },
   {
     command: "/provider",
@@ -587,13 +587,24 @@ async function pickModelInteractively(provider: ProviderId, currentModel: string
     return undefined;
   }
 
-  const choices = models.map((model) => {
+  // Print the numbered list first so users can still type /model <#> later.
+  console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:`));
+  models.forEach((m, i) => {
+    const tags: string[] = [];
+    if (m === currentModel) tags.push("active");
+    if (m === def) tags.push("default");
+    const tag = tags.length > 0 ? chalk.dim(`  (${tags.join(" · ")})`) : "";
+    console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.white(m)}${tag}`);
+  });
+  console.log(chalk.dim("  ↑/↓ to navigate · Enter to select · ESC to cancel · /model <#> also works"));
+
+  const choices = models.map((model, i) => {
     const tags: string[] = [];
     if (model === currentModel) tags.push(chalk.green("active"));
     if (model === def) tags.push(chalk.yellow("default"));
     const suffix = tags.length > 0 ? `  ${chalk.dim(tags.join(" · "))}` : "";
     return {
-      name: `${model}${suffix}`,
+      name: `${chalk.dim(`${i + 1}.`)} ${model}${suffix}`,
       value: model,
     };
   });

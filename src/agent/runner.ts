@@ -18,6 +18,7 @@ import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { rememberThinkingFromText, renderThinkingSummary } from "../ui/thinking.js";
+import { renderMarkdown } from "../ui/markdown.js";
 
 export interface AgentRunOptions {
   provider?: ProviderId | undefined;
@@ -266,7 +267,7 @@ export async function runAgentLoop(
     const call = parseToolCall(assistantText.visible);
     if (!call) {
       if (assistantText.visible) {
-        process.stdout.write(assistantText.visible);
+        process.stdout.write(renderMarkdown(assistantText.visible));
         if (!assistantText.visible.endsWith("\n")) process.stdout.write("\n");
       }
       if (assistantText.hasThinking) {
@@ -280,7 +281,7 @@ export async function runAgentLoop(
     // Print only non-thinking text before the tool call, not raw <think> blocks.
     const beforeTool = textBeforeToolCall(assistantText.visible);
     if (beforeTool) {
-      process.stdout.write(chalk.dim(beforeTool) + "\n");
+      process.stdout.write(chalk.dim(renderMarkdown(beforeTool)) + "\n");
     }
     if (assistantText.hasThinking) {
       process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
