@@ -6,7 +6,7 @@ import {
 } from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
-import { select } from "@inquirer/prompts";
+import { search } from "@inquirer/prompts";
 import type { ChatMessage, Mode, ProviderId } from "./types.js";
 import { runAskStream } from "./modes/ask.js";
 import { runAgent } from "./modes/agent.js";
@@ -74,7 +74,7 @@ const slashCommands: SlashCommand[] = [
   {
     command: "/model",
     usage: "[name|#]",
-    description: "open numbered picker (↑/↓ + Enter), or pass a name/number",
+    description: "open searchable picker (type/↑/↓ + Enter), or pass a name/number",
   },
   {
     command: "/provider",
@@ -587,35 +587,38 @@ async function pickModelInteractively(provider: ProviderId, currentModel: string
     return undefined;
   }
 
-  // Print the numbered list first so users can still type /model <#> later.
-  console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:`));
-  models.forEach((m, i) => {
-    const tags: string[] = [];
-    if (m === currentModel) tags.push("active");
-    if (m === def) tags.push("default");
-    const tag = tags.length > 0 ? chalk.dim(`  (${tags.join(" · ")})`) : "";
-    console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.white(m)}${tag}`);
-  });
-  console.log(chalk.dim("  ↑/↓ to navigate · Enter to select · ESC to cancel · /model <#> also works"));
+  console.log(
+    chalk.dim(`  ↑/↓ to navigate · type to filter (name or number) · Enter to select · ESC to cancel`),
+  );
 
-  const choices = models.map((model, i) => {
+  const labelFor = (model: string, index: number): string => {
     const tags: string[] = [];
     if (model === currentModel) tags.push(chalk.green("active"));
     if (model === def) tags.push(chalk.yellow("default"));
     const suffix = tags.length > 0 ? `  ${chalk.dim(tags.join(" · "))}` : "";
-    return {
-      name: `${chalk.dim(`${i + 1}.`)} ${model}${suffix}`,
-      value: model,
-    };
-  });
+    return `${chalk.dim(`${(index + 1).toString().padStart(2)}.`)} ${model}${suffix}`;
+  };
 
   try {
-    const picked = await select({
+    const picked = await search<string>({
       message: `Select model for ${chalk.cyan(provider)}:`,
-      choices,
-      default: currentModel,
-      pageSize: Math.min(15, choices.length),
-      loop: false,
+      pageSize: Math.min(15, models.length),
+      source: (term) => {
+        const needle = (term ?? "").trim().toLowerCase();
+        const filtered = needle
+          ? models
+              .map((model, index) => ({ model, index }))
+              .filter(({ model, index }) => {
+                if (model.toLowerCase().includes(needle)) return true;
+                // Allow filtering by number prefix ("1", "10", etc.)
+                return (index + 1).toString().startsWith(needle);
+              })
+          : models.map((model, index) => ({ model, index }));
+        return filtered.map(({ model, index }) => ({
+          name: labelFor(model, index),
+          value: model,
+        }));
+      },
     });
     return picked;
   } catch {
