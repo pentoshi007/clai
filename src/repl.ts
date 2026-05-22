@@ -98,44 +98,99 @@ const slashCommands: SlashCommand[] = [
   { command: "/help", description: "list commands" },
 ];
 
-// ── Well-known models per provider ─────────────────────────────────────────
+// ── Well-known models per provider (refreshed May 2026) ───────────────────
 const knownModels: Record<string, string[]> = {
   groq: [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "llama3-70b-8192",
-    "mixtral-8x7b-32768",
-    "gemma2-9b-it",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "moonshotai/kimi-k2-instruct",
+    "deepseek-r1-distill-llama-70b",
     "qwen/qwen3-32b",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "gemma2-9b-it",
   ],
   gemini: [
+    "gemini-3.5-flash",
+    "gemini-3.1-pro",
+    "gemini-3-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
     "gemini-1.5-pro",
-    "gemini-1.5-flash",
   ],
   openrouter: [
     "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
+    "meta-llama/llama-4-maverick:free",
     "deepseek/deepseek-r1:free",
-    "qwen/qwen3-32b:free",
+    "deepseek/deepseek-v3.1:free",
+    "moonshotai/kimi-k2:free",
+    "qwen/qwen3-235b-a22b:free",
+    "google/gemini-2.5-flash",
+    "anthropic/claude-sonnet-4-6",
+    "openai/gpt-4o-mini",
     "mistralai/mistral-7b-instruct:free",
   ],
   openai: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-4.1",
+    "gpt-4.1-mini",
     "gpt-4o",
     "gpt-4o-mini",
-    "gpt-4-turbo",
-    "o1-mini",
+    "o3",
+    "o3-mini",
+    "o4-mini",
   ],
   anthropic: [
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-opus-4-6",
+    "claude-sonnet-4-5",
     "claude-3-5-sonnet-latest",
     "claude-3-5-haiku-latest",
-    "claude-3-opus-latest",
+  ],
+  nvidia: [
+    "meta/llama-3.3-70b-instruct",
+    "meta/llama-3.1-405b-instruct",
+    "meta/llama-3.1-70b-instruct",
+    "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "deepseek-ai/deepseek-v4-pro",
+    "deepseek-ai/deepseek-v4-flash",
+    "deepseek-ai/deepseek-v3.1-terminus",
+    "deepseek-ai/deepseek-r1",
+    "moonshotai/kimi-k2.6",
+    "moonshotai/kimi-k2-instruct",
+    "z-ai/glm-5.1",
+    "z-ai/glm-5",
+    "minimaxai/minimax-m2.7",
+    "minimaxai/minimax-m2.5",
+    "minimaxai/minimax-m2.1",
+    "qwen/qwen3-235b-a22b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "mistralai/mistral-large-2-instruct",
   ],
   ollama: [
-    "llama3.1:8b",
+    "llama3.3:70b",
     "llama3.2:3b",
+    "llama3.1:8b",
+    "qwen2.5:7b",
+    "qwen2.5-coder:7b",
+    "deepseek-r1:7b",
     "mistral:7b",
+    "gemma3:9b",
+    "phi4:14b",
     "codellama:7b",
   ],
 };
@@ -309,6 +364,14 @@ async function readPromptLine(options: {
           ? menu.suggestions[selectedIndex]
           : undefined;
         submit(selectedCommand?.command ?? line);
+        return;
+      }
+
+      if (key.name === "tab") {
+        if (menu.visible && menu.suggestions.length > 0) {
+          const target = menu.suggestions[selectedIndex] ?? menu.suggestions[0]!;
+          editLine(target.command, target.command.length);
+        }
         return;
       }
 

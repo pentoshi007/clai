@@ -36,6 +36,9 @@ export const providerAliases: Record<string, ProviderId> = {
   openai: "openai",
   anthropic: "anthropic",
   claude: "anthropic",
+  nvidia: "nvidia",
+  nim: "nvidia",
+  nvcf: "nvidia",
   ollama: "ollama",
   local: "ollama",
 };
@@ -46,6 +49,7 @@ export const defaultModels: Record<ProviderId, string> = {
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
+  nvidia: "meta/llama-3.3-70b-instruct",
   ollama: "llama3.1:8b",
 };
 
@@ -55,6 +59,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   openrouter: "OPENROUTER_API_KEY",
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
+  nvidia: "NVIDIA_API_KEY",
   ollama: "OLLAMA_HOST",
 };
 
@@ -81,7 +86,7 @@ export function maskSecret(secret: string): string {
     return "••••";
   }
   const knownPrefix =
-    ["gsk_", "AIza", "sk-or-", "sk-ant-", "sk-"].find((prefix) =>
+    ["gsk_", "AIza", "sk-or-", "sk-ant-", "sk-", "nvapi-"].find((prefix) =>
       secret.startsWith(prefix),
     ) ?? "";
   const suffix = secret.slice(-4);
@@ -94,5 +99,6 @@ export function redactSecrets(value: string): string {
     .replace(/AIza[0-9A-Za-z_-]+/g, "AIza••••••")
     .replace(/sk-[A-Za-z0-9_-]+/g, "sk-••••••")
     .replace(/sk-or-[A-Za-z0-9_-]+/g, "sk-or-••••••")
-    .replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-••••••");
+    .replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-••••••")
+    .replace(/nvapi-[A-Za-z0-9_-]+/g, "nvapi-••••••");
 }

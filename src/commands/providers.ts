@@ -48,6 +48,8 @@ function invalidFormatHint(provider: ProviderId): string {
   if (provider === "openai") return "OpenAI keys usually start with sk-";
   if (provider === "anthropic")
     return "Anthropic keys usually start with sk-ant-";
+  if (provider === "nvidia")
+    return "NVIDIA NIM keys usually start with nvapi-";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

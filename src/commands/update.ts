@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { getConfig, updateConfig } from "../store/config.js";
 
 const REPO = "pentoshi007/clai";
-const CURRENT_VERSION = "0.3.1";
+const CURRENT_VERSION = "0.4.0";
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface GitHubRelease {
@@ -66,11 +66,11 @@ export function checkForUpdateSilent(): void {
         const ver = release.tag_name.replace(/^v/, "");
         console.log(
           chalk.yellow(`\n  ⬆ Update available: ${CURRENT_VERSION} → ${ver}`) +
-            chalk.dim("  Run: /update or clai update\n"),
+          chalk.dim("  Run: /update or clai update\n"),
         );
       }
     })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 /** Interactive update command */

@@ -67,7 +67,7 @@ clai -y "list the 10 largest files in my home directory"
 
 - **`/ask` mode** — Read-only. AI explains, gives commands & step-by-step guidance, but does NOT execute anything.
 - **`/agent` mode** — Agentic. AI plans, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met.
-- **6 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, and Ollama (local). All with streaming.
+- **7 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, and Ollama (local). All with streaming.
 - **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
 - **Smart safety gate** — Read-only commands auto-execute; mutating commands require confirmation; destructive patterns are blocked.
 - **Cross-platform** — macOS, Linux, and Windows. Detects OS-native package managers (brew, apt, dnf, pacman, winget, choco).
@@ -77,7 +77,7 @@ clai -y "list the 10 largest files in my home directory"
 
 ## Provider Setup
 
-clai supports 6 LLM providers with free tiers:
+clai supports 7 LLM providers with free tiers:
 
 | Provider    | Default Model                                | Free? | API Key Prefix |
 |-------------|----------------------------------------------|-------|----------------|
@@ -86,6 +86,7 @@ clai supports 6 LLM providers with free tiers:
 | OpenRouter  | `meta-llama/llama-3.3-70b-instruct:free`     | ✓     | `sk-or-`       |
 | OpenAI      | `gpt-4o-mini`                                | —     | `sk-`          |
 | Anthropic   | `claude-3-5-haiku-latest`                    | —     | `sk-ant-`      |
+| NVIDIA NIM  | `meta/llama-3.3-70b-instruct`                | ✓     | `nvapi-`       |
 | Ollama      | `llama3.1:8b`                                | ✓     | (local URL)    |
 
 ```sh
@@ -124,6 +125,7 @@ export GEMINI_API_KEY=AIza...
 export OPENROUTER_API_KEY=sk-or-...
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
+export NVIDIA_API_KEY=nvapi-...
 export OLLAMA_HOST=http://localhost:11434
 ```
 
@@ -257,6 +259,7 @@ clai/
 │  │   ├─ ollama.ts         # Ollama provider (streaming)
 │  │   ├─ openai.ts         # OpenAI provider (streaming)
 │  │   ├─ anthropic.ts      # Anthropic provider (streaming)
+│  │   ├─ nvidia.ts         # NVIDIA NIM provider (streaming)
 │  │   └─ openrouter.ts     # OpenRouter provider (streaming)
 │  ├─ tools/
 │  │   ├─ registry.ts       # Tool dispatch table
