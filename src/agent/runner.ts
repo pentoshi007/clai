@@ -51,6 +51,50 @@ function tryParseCall(raw: string): ToolCall | undefined {
   return undefined;
 }
 
+// Kimi K2 / Moonshot models on NVIDIA NIM emit tool calls using a
+// sentinel-token format that looks like:
+//   <|tool_calls_section_begin|>
+//     <|tool_call_begin|>functions.shell.exec:0<|tool_call_argument_begin|>
+//     {"command":"ls"}
+//     <|tool_call_end|>
+//   <|tool_calls_section_end|>
+// The `functions.` prefix is optional, the trailing `:N` index is optional,
+// and the surrounding section markers may be absent on truncated streams.
+const KIMI_TOOL_CALL_RE =
+  /<\|tool_call_begin\|>\s*(?:functions\.)?([A-Za-z][\w.]*?)(?::\d+)?\s*<\|tool_call_argument_begin\|>\s*(\{[\s\S]*?\})\s*<\|tool_call_end\|>/i;
+
+function parseKimiToolCall(text: string): ToolCall | undefined {
+  const match = text.match(KIMI_TOOL_CALL_RE);
+  if (!match) return undefined;
+  const name = match[1]!;
+  return tryParseCall(JSON.stringify({ name, args: tryJson(match[2]!) ?? {} }));
+}
+
+function tryJson(raw: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
+/** Strip any leftover Kimi/Moonshot sentinel tokens from final answers
+ *  so a model that mixes prose and tool-call markers never bleeds raw
+ *  `<|tool_call_begin|>` strings to the terminal. */
+function stripSentinelTokens(text: string): string {
+  return text
+    .replace(/<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>/gi, "")
+    .replace(/<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>/gi, "")
+    .replace(/<\|tool_calls?(?:_section)?_(?:begin|end)\|>/gi, "")
+    .replace(/<\|tool_call_argument_begin\|>/gi, "")
+    .replace(/<\|tool_[a-z_]*\|>/gi, "")
+    .trim();
+}
+
 export function parseToolCall(text: string): ToolCall | undefined {
   // 1. ```tool ... ``` (standard format)
   const fenced = text.match(/```tool\s*\n?([\s\S]*?)```/i);
@@ -66,28 +110,32 @@ export function parseToolCall(text: string): ToolCall | undefined {
     if (call) return call;
   }
 
-  // 3. ### tool / ## tool / # tool heading + JSON
+  // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
+  const kimi = parseKimiToolCall(text);
+  if (kimi) return kimi;
+
+  // 4. ### tool / ## tool / # tool heading + JSON
   const heading = text.match(/#{1,3}\s*tool\s*\n\s*(\{[\s\S]*\})/i);
   if (heading?.[1]) {
     const call = tryParseCall(heading[1]);
     if (call) return call;
   }
 
-  // 4. **tool** heading + JSON
+  // 5. **tool** heading + JSON
   const bold = text.match(/\*\*tool\*\*\s*\n\s*(\{[\s\S]*\})/i);
   if (bold?.[1]) {
     const call = tryParseCall(bold[1]);
     if (call) return call;
   }
 
-  // 5. Any fenced block (```json, ```, etc.) containing name+args
+  // 6. Any fenced block (```json, ```, etc.) containing name+args
   const anyFenced = text.match(/```\w*\s*\n?([\s\S]*?)```/);
   if (anyFenced?.[1]) {
     const call = tryParseCall(anyFenced[1]);
     if (call) return call;
   }
 
-  // 6. Trailing JSON object with "name" and "args"
+  // 7. Trailing JSON object with "name" and "args"
   const trailingJson = text.match(/(\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*?\}\s*\})\s*$/);
   if (trailingJson?.[1]) {
     const call = tryParseCall(trailingJson[1]);
@@ -102,6 +150,10 @@ function textBeforeToolCall(text: string): string {
   const patterns = [
     /```tool\s*\n?[\s\S]*?```/i,
     /<tool_call>[\s\S]*?<\/tool_call>/i,
+    // Kimi/Moonshot sentinel block — strip from the section opener
+    // (or the first call opener if the section header is missing).
+    /<\|tool_calls_section_begin\|>[\s\S]*$/i,
+    /<\|tool_call_begin\|>[\s\S]*$/i,
     /#{1,3}\s*tool\s*\n\s*\{[\s\S]*\}/i,
     /\*\*tool\*\*\s*\n\s*\{[\s\S]*\}/i,
     /```\w*\s*\n?\{[\s\S]*?"name"[\s\S]*?\}[\s\S]*?```/,
@@ -303,15 +355,43 @@ export async function runAgentLoop(
     const assistantText = rememberThinkingFromText(completion.text);
     const call = parseToolCall(assistantText.visible);
     if (!call) {
-      if (assistantText.visible) {
-        process.stdout.write(renderMarkdown(assistantText.visible));
-        if (!assistantText.visible.endsWith("\n")) process.stdout.write("\n");
+      // Detect the case where the model emitted sentinel-style tool-call
+      // markers but the body was malformed or truncated. Printing those
+      // raw tokens looks like a crash to the user — instead, ask the
+      // model to retry the tool call in a clean JSON format.
+      if (
+        /<\|tool_call(?:s_section)?_begin\|>|<\|tool_call_argument_begin\|>/i.test(
+          assistantText.visible,
+        )
+      ) {
+        process.stdout.write(
+          chalk.yellow(
+            "  ⚠ tool call was malformed or cut off — asking the model to retry in JSON form\n",
+          ),
+        );
+        messages.push({ role: "assistant", content: assistantText.visible });
+        messages.push({
+          role: "user",
+          content:
+            "Your previous tool call was malformed or truncated. " +
+            "Reply with ONLY a fenced ```tool block containing valid JSON " +
+            'of the form `{"name": "<tool>", "args": { ... }}`. ' +
+            "Do not use <|tool_call_begin|> markers.",
+        });
+        continue;
+      }
+      // Normal final-answer path: strip any stray sentinel tokens that
+      // somehow leaked into prose so the answer renders cleanly.
+      const cleaned = stripSentinelTokens(assistantText.visible);
+      if (cleaned) {
+        process.stdout.write(renderMarkdown(cleaned));
+        if (!cleaned.endsWith("\n")) process.stdout.write("\n");
       }
       if (assistantText.hasThinking) {
         process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
       }
       await auditLog("agent.final", { provider, model, steps: step + 1 });
-      lastAnswer = assistantText.visible;
+      lastAnswer = cleaned;
       return lastAnswer;
     }
 

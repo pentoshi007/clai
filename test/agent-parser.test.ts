@@ -75,3 +75,38 @@ describe('agent tool-call parser', () => {
     expect(call!.args).toEqual({ path: '/tmp/test.txt' });
   });
 });
+
+describe('Kimi K2 sentinel-token tool-call format', () => {
+  it('parses Kimi sentinel calls with the functions. prefix', () => {
+    const text =
+      '<|tool_calls_section_begin|><|tool_call_begin|>functions.sysinfo:1<|tool_call_argument_begin|>{}<|tool_call_end|><|tool_calls_section_end|>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('sysinfo');
+    expect(call!.args).toEqual({});
+  });
+
+  it('parses Kimi sentinel calls without the functions. prefix', () => {
+    const text =
+      '<|tool_call_begin|>shell.exec:0<|tool_call_argument_begin|>{"command":"uname -a"}<|tool_call_end|>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('shell.exec');
+    expect(call!.args).toEqual({ command: 'uname -a' });
+  });
+
+  it('parses Kimi sentinel calls without the trailing :index', () => {
+    const text =
+      '<|tool_call_begin|>fs.read<|tool_call_argument_begin|>{"path":"/etc/os-release"}<|tool_call_end|>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('fs.read');
+    expect(call!.args).toEqual({ path: '/etc/os-release' });
+  });
+
+  it('returns undefined for truncated Kimi sentinel calls so the runner can ask for a retry', () => {
+    const text =
+      '<|tool_calls_section_begin|><|tool_call_bhell.exec:0<|tool_call_argument_begin|>{"command":"find ..."}<|tool_call_end|><|tool_|>';
+    expect(parseToolCall(text)).toBeUndefined();
+  });
+});

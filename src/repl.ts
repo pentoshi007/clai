@@ -232,6 +232,17 @@ function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+function isAbortLikeError(error: unknown): boolean {
+  if (!error) return false;
+  if (typeof error === "object") {
+    const err = error as { name?: string; code?: string; message?: string };
+    if (err.name === "AbortError") return true;
+    if (err.code === "ABORT_ERR") return true;
+    if (typeof err.message === "string" && /abort/i.test(err.message)) return true;
+  }
+  return false;
+}
+
 function slashCommandLabel(command: SlashCommand): string {
   return command.usage ? `${command.command} ${command.usage}` : command.command;
 }
@@ -695,6 +706,19 @@ function showModelList(provider: string, currentModel: string): void {
   console.log(chalk.dim("  Use /model <name> or /model <#> to select."));
 }
 
+function maybePrintThinkingTip(provider: ProviderId, model: string): void {
+  if (getConfig().thinking.enabled) return;
+  if (!modelSupportsThinking(provider, model)) return;
+  console.log(
+    chalk.dim("  💡 ") +
+      chalk.dim(`${model} supports reasoning. Run `) +
+      chalk.cyan("/variants on") +
+      chalk.dim(" (or ") +
+      chalk.cyan("low|medium|high") +
+      chalk.dim(") to enable it."),
+  );
+}
+
 async function handleSlash(
   line: string,
   state: {
@@ -728,6 +752,7 @@ async function handleSlash(
         state.model = picked;
         setProviderModel(state.provider, picked);
         console.log(renderProviderSwitch(state.provider, picked));
+        maybePrintThinkingTip(state.provider, picked);
         return true;
       }
       if (arg === "list" || arg === "ls") {
@@ -742,11 +767,13 @@ async function handleSlash(
         state.model = picked;
         setProviderModel(state.provider, picked);
         console.log(renderProviderSwitch(state.provider, picked));
+        maybePrintThinkingTip(state.provider, picked);
       } else {
         // Name → set directly
         state.model = arg;
         setProviderModel(state.provider, arg);
         console.log(renderProviderSwitch(state.provider, arg));
+        maybePrintThinkingTip(state.provider, arg);
       }
       return true;
     }
@@ -757,6 +784,7 @@ async function handleSlash(
       state.provider = config.defaultProvider;
       state.model = getProviderModel(state.provider);
       console.log(renderProviderSwitch(state.provider, state.model));
+      maybePrintThinkingTip(state.provider, state.model);
       return true;
     }
     case "/set": {
@@ -914,6 +942,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   emitKeypressEvents(input);
 
+  // Survive stray promise rejections (eg AbortError from a cancelled
+  // SSE reader) without killing the REPL. Anything that ends up here
+  // is a bug — log it dim and keep the prompt alive so the user
+  // doesn't lose their session over a transient network hiccup.
+  const handleUnhandledRejection = (reason: unknown): void => {
+    if (isAbortLikeError(reason)) return; // expected during ESC/abort
+    const message = reason instanceof Error ? reason.message : String(reason);
+    process.stderr.write(chalk.dim(`\n  ⚠ background error suppressed: ${message}\n`));
+  };
+  const handleUncaughtException = (error: unknown): void => {
+    if (isAbortLikeError(error)) return;
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(chalk.dim(`\n  ⚠ uncaught error suppressed: ${message}\n`));
+  };
+  process.on("unhandledRejection", handleUnhandledRejection);
+  process.on("uncaughtException", handleUncaughtException);
+
   // ── ESC / Ctrl+C abort; Ctrl+T toggles hidden thinking ──────────────────
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
@@ -973,6 +1018,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   );
   console.log(renderSuggestions());
   console.log(chalk.dim("  ESC to abort a response  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T or /think for thinking\n"));
+
+  // Hint thinking-capable users that the toggle exists. We default it to
+  // off for speed, since on NIM many models route through a much slower
+  // chat-template path when reasoning is enabled.
+  if (
+    !getConfig().thinking.enabled &&
+    modelSupportsThinking(state.provider, state.model)
+  ) {
+    console.log(
+      chalk.dim("  💡 ") +
+        chalk.dim(`${state.model} supports reasoning. Run `) +
+        chalk.cyan("/variants on") +
+        chalk.dim(" (or ") +
+        chalk.cyan("low|medium|high") +
+        chalk.dim(") to enable it.\n"),
+    );
+  }
 
   // Non-blocking update check
   checkForUpdateSilent();
@@ -1047,6 +1109,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     isReadingPrompt = false;
     input.off("keypress", handleKeypress);
     process.off("SIGINT", handleSigint);
+    process.off("unhandledRejection", handleUnhandledRejection);
+    process.off("uncaughtException", handleUncaughtException);
     if (siginfoRegistered) process.off(siginfo, handleThinkingShortcut);
     if (state.messages.length > 0) {
       await saveSession(state.messages, `repl-${new Date().toISOString()}`);

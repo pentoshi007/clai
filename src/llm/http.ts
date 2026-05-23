@@ -401,10 +401,19 @@ export async function openAiCompatibleStream(options: {
     return full;
   } catch (error) {
     cleanup();
+    // reader.cancel() returns a promise that rejects when the underlying
+    // stream is already errored (eg from the same abort that triggered
+    // this catch). Swallow it so it never escalates to an unhandled
+    // rejection that kills the whole REPL.
     try {
-      reader.cancel();
+      await reader.cancel().catch(() => undefined);
     } catch {
       // best-effort cleanup
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released
     }
     if (idleFired) {
       throw new ProviderError(

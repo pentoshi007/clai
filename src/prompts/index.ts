@@ -31,6 +31,12 @@ FORMAT — one tool per response:
 {"name":"shell.exec","args":{"command":"curl -s ifconfig.me"}}
 \`\`\`
 
+CRITICAL — DO NOT use any other tool-call format:
+- NO <|tool_call_begin|>, <|tool_calls_section_begin|>, or any pipe-delimited sentinel tokens.
+- NO <tool_call> XML, NO ### tool headings, NO trailing JSON outside a fence.
+- The "functions." prefix is NOT allowed — use the bare tool name (e.g. "shell.exec", not "functions.shell.exec").
+- Anything other than a single \`\`\`tool fenced JSON block will be rejected and you will be asked to retry, wasting tokens.
+
 RULES:
 1. ANSWER THEN STOP. Once you have the answer, give it and STOP. Do NOT run extra tools.
 2. STAY ON TASK. Do EXACTLY what the user asked — nothing more, nothing less.
