@@ -89,3 +89,29 @@ describe("markdown stream writer", () => {
     expect(strip(out)).toContain("echo hi");
   });
 });
+
+describe("markdown extras", () => {
+  it("renders inline markdown inside headings", () => {
+    const out = strip(renderMarkdown("## Important **note**"));
+    expect(out).toBe("Important note");
+  });
+
+  it("renders task list checkboxes", () => {
+    const out = strip(renderMarkdown("- [ ] todo\n- [x] done"));
+    expect(out).toContain("☐ todo");
+    expect(out).toContain("☑ done");
+  });
+
+  it("renders simple markdown tables", () => {
+    const md = "| a | b |\n| --- | --- |\n| 1 | 2 |";
+    const out = strip(renderMarkdown(md));
+    expect(out).toContain("│ a │ b │");
+    expect(out).toContain("│ 1 │ 2 │");
+  });
+
+  it("strips bold markers in real-world phrases like **Word:**", () => {
+    expect(strip(renderInlineMarkdown("**Note:** be careful"))).toBe(
+      "Note: be careful",
+    );
+  });
+});

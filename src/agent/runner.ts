@@ -252,35 +252,41 @@ export async function runAgentLoop(
     // models like glm-5.1 / deepseek-v4-flash that stream reasoning first.
     const spinner = startThinkingSpinner(
       step === 0 ? "waiting for model" : `step ${step + 1}`,
+      options.signal,
     );
     let sawReasoning = false;
-    const completion = await streamWithProvider(
-      {
-        provider,
-        model,
-        messages,
-        temperature: 0.2,
-        maxTokens: 2_048,
-        signal: options.signal,
-        thinking: config.thinking,
-      },
-      (token) => {
-        // Heuristic: <think>… markers and reasoning_content tokens flow
-        // through onToken. Surface activity in the spinner so the screen
-        // is never empty for minutes.
-        if (!sawReasoning && /<think|<\/think>/i.test(token)) {
-          sawReasoning = true;
-          spinner.setLabel("thinking");
-        }
-        const approx = token.split(/\s+/).filter(Boolean).length;
-        if (approx > 0) spinner.bumpReasoning(approx);
-      },
-      (status) => {
-        spinner.stop();
-        process.stdout.write(chalk.dim(status));
-      },
-    );
-    spinner.stop();
+    let completion;
+    try {
+      completion = await streamWithProvider(
+        {
+          provider,
+          model,
+          messages,
+          temperature: 0.2,
+          maxTokens: 2_048,
+          signal: options.signal,
+          thinking: config.thinking,
+        },
+        (token) => {
+          // Heuristic: <think>… markers and reasoning_content tokens flow
+          // through onToken. Surface activity in the spinner so the screen
+          // is never empty for minutes.
+          if (!sawReasoning && /<think|<\/think>/i.test(token)) {
+            sawReasoning = true;
+            spinner.setLabel("thinking");
+          }
+          const approx = token.split(/\s+/).filter(Boolean).length;
+          if (approx > 0) spinner.bumpReasoning(approx);
+        },
+        (status) => {
+          spinner.stop();
+          process.stdout.write(chalk.dim(status));
+        },
+      );
+    } finally {
+      // Always clear the spinner — abort, network error, or success.
+      spinner.stop();
+    }
     provider = completion.provider;
     model = completion.model;
 

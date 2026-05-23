@@ -14,7 +14,10 @@ export interface ThinkingSpinner {
   stop(): void;
 }
 
-export function startThinkingSpinner(initialLabel = "thinking"): ThinkingSpinner {
+export function startThinkingSpinner(
+  initialLabel = "thinking",
+  signal?: AbortSignal,
+): ThinkingSpinner {
   if (!process.stdout.isTTY) {
     // No-op for piped output so logs stay grep-friendly.
     return {
@@ -59,6 +62,21 @@ export function startThinkingSpinner(initialLabel = "thinking"): ThinkingSpinner
   // Don't keep the process alive just for the spinner.
   if (typeof timer.unref === "function") timer.unref();
 
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    // Erase the spinner line entirely so subsequent output starts clean.
+    process.stdout.write(`\r${" ".repeat(Math.max(lastWidth, 1))}\r`);
+  };
+
+  // Stop the moment the user aborts so the spinner can never linger past
+  // an ESC, even if upstream cleanup paths are skipped by an exception.
+  if (signal) {
+    if (signal.aborted) stop();
+    else signal.addEventListener("abort", stop, { once: true });
+  }
+
   return {
     setLabel(next: string): void {
       label = next;
@@ -66,13 +84,7 @@ export function startThinkingSpinner(initialLabel = "thinking"): ThinkingSpinner
     bumpReasoning(tokens: number): void {
       reasoningTokens += tokens;
     },
-    stop(): void {
-      if (stopped) return;
-      stopped = true;
-      clearInterval(timer);
-      // Erase the spinner line entirely so subsequent output starts clean.
-      process.stdout.write(`\r${" ".repeat(Math.max(lastWidth, 1))}\r`);
-    },
+    stop,
   };
 }
 

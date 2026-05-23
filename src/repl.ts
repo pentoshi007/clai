@@ -516,7 +516,7 @@ async function streamWithAbort(
   signal: AbortSignal,
 ): Promise<string> {
   let sawToken = false;
-  const spinner = startThinkingSpinner("waiting for model");
+  const spinner = startThinkingSpinner("waiting for model", signal);
   const markdown = createMarkdownStreamWriter((chunk) => process.stdout.write(chunk));
   const parser = createThinkingStreamParser(
     (text) => {
@@ -559,7 +559,6 @@ async function streamWithAbort(
     }
     return result.visible;
   } catch (err) {
-    spinner.stop();
     const result = parser.finish();
     if (sawToken) markdown.finish();
     if (signal.aborted) {
@@ -567,6 +566,10 @@ async function streamWithAbort(
       return result.visible;
     }
     throw err;
+  } finally {
+    // Belt and braces: spinner already self-stops on abort, but make sure
+    // any other exit path (success, network error) clears it too.
+    spinner.stop();
   }
 }
 

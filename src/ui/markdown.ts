@@ -176,9 +176,9 @@ function renderBlockLine(line: string, state: BlockState): string {
   if (heading) {
     const level = heading[1]!.length;
     const body = heading[2]!.trim();
-    if (level <= 2) return chalk.bold.magenta(body);
-    if (level === 3) return chalk.bold.cyan(body);
-    return chalk.bold(body);
+    if (level <= 2) return chalk.bold.magenta(renderInlineMarkdown(body));
+    if (level === 3) return chalk.bold.cyan(renderInlineMarkdown(body));
+    return chalk.bold(renderInlineMarkdown(body));
   }
 
   // Horizontal rule
@@ -186,9 +186,33 @@ function renderBlockLine(line: string, state: BlockState): string {
     return chalk.dim(repeat("─", 60));
   }
 
+  // Markdown table separator: | --- | --- |
+  if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
+    return chalk.dim(repeat("─", Math.max(20, line.length)));
+  }
+
+  // Markdown table row: | cell | cell |
+  if (/^\s*\|.*\|\s*$/.test(line)) {
+    const cells = line
+      .replace(/^\s*\|/, "")
+      .replace(/\|\s*$/, "")
+      .split("|")
+      .map((cell) => renderInlineMarkdown(cell.trim()));
+    return chalk.dim("│ ") + cells.join(chalk.dim(" │ ")) + chalk.dim(" │");
+  }
+
   // Blockquote
   if (line.startsWith("> ")) {
     return chalk.dim("│ ") + chalk.dim.italic(renderInlineMarkdown(line.slice(2)));
+  }
+
+  // GitHub-style task list: - [ ] todo  /  - [x] done
+  const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
+  if (task) {
+    const checked = /[xX]/.test(task[2]!);
+    const box = checked ? chalk.green("☑") : chalk.dim("☐");
+    const body = renderInlineMarkdown(task[3]!);
+    return `${task[1]}${box} ${checked ? chalk.dim(body) : body}`;
   }
 
   // Ordered list
