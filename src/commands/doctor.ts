@@ -30,7 +30,7 @@ export async function runDoctor(): Promise<void> {
         ? 'native module not installed'
         : `runtime error — ${keychain.detail?.split('\n')[0] ?? 'unknown'}`;
     console.log(
-      `Keychain: ${chalk.yellow('using encrypted file')} ${chalk.dim(`(${reason})`)}`,
+      `Keychain: ${chalk.yellow('using restricted-permission plaintext file')} ${chalk.dim(`(${reason})`)}`,
     );
     console.log(`         ${chalk.dim(`→ ${getFallbackKeysPath()}`)}`);
   }

@@ -10,41 +10,34 @@ describe('agent tool-call parser', () => {
     expect(call!.args).toEqual({ command: 'ls -la' });
   });
 
-  it('extracts tool calls from XML-style tags', () => {
+  it('rejects XML-style tags by default', () => {
     const text = 'Planning.\n<tool_call>{"name":"sysinfo","args":{}}</tool_call>';
     const call = parseToolCall(text);
-    expect(call).toBeDefined();
-    expect(call!.name).toBe('sysinfo');
-    expect(call!.args).toEqual({});
+    expect(call).toBeUndefined();
   });
 
-  it('extracts tool calls from ### heading format', () => {
+  it('rejects ### heading format by default', () => {
     const text = 'I will check your IP.\n### tool\n{"name":"shell.exec","args":{"command":"curl ifconfig.me"}}';
     const call = parseToolCall(text);
-    expect(call).toBeDefined();
-    expect(call!.name).toBe('shell.exec');
-    expect(call!.args).toEqual({ command: 'curl ifconfig.me' });
+    expect(call).toBeUndefined();
   });
 
-  it('extracts tool calls from **tool** bold format', () => {
+  it('rejects **tool** bold format by default', () => {
     const text = 'Checking.\n**tool**\n{"name":"sysinfo","args":{}}';
     const call = parseToolCall(text);
-    expect(call).toBeDefined();
-    expect(call!.name).toBe('sysinfo');
+    expect(call).toBeUndefined();
   });
 
-  it('extracts from ```json fenced blocks', () => {
+  it('rejects ```json fenced blocks by default', () => {
     const text = 'Running:\n```json\n{"name":"http.fetch","args":{"url":"https://api.ipify.org"}}\n```';
     const call = parseToolCall(text);
-    expect(call).toBeDefined();
-    expect(call!.name).toBe('http.fetch');
+    expect(call).toBeUndefined();
   });
 
-  it('extracts trailing JSON object', () => {
+  it('rejects trailing JSON object by default', () => {
     const text = 'Let me check.\n{"name":"sysinfo","args":{}}';
     const call = parseToolCall(text);
-    expect(call).toBeDefined();
-    expect(call!.name).toBe('sysinfo');
+    expect(call).toBeUndefined();
   });
 
   it('returns undefined for plain text without tool calls', () => {

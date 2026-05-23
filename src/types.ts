@@ -61,4 +61,22 @@ export interface ToolResult {
   exitCode?: number | undefined;
   outputPath?: string | undefined;
   truncated?: boolean | undefined;
+  modelContext?: string | undefined;
+  summary?: string | undefined;
+  artifacts?: ToolArtifact[] | undefined;
+  stats?: ToolStats | undefined;
+}
+
+export interface ToolArtifact {
+  path: string;
+  kind: "raw" | "json" | "xml" | "report";
+  redacted: boolean;
+}
+
+export interface ToolStats {
+  bytesRead?: number | undefined;
+  bytesShown?: number | undefined;
+  bytesDropped?: number | undefined;
+  linesRead?: number | undefined;
+  elapsedMs?: number | undefined;
 }

@@ -12,6 +12,8 @@ export interface ClaiConfig {
   sandboxRoots: string[];
   ollamaHost: string;
   telemetry: boolean;
+  autoUpdateCheck: boolean;
+  freeOnly: boolean;
   lastUpdateCheck: number;
   thinking: ReasoningPreference;
 }
@@ -26,6 +28,8 @@ const defaults: ClaiConfig = {
   sandboxRoots: [process.cwd()],
   ollamaHost: 'http://localhost:11434',
   telemetry: false,
+  autoUpdateCheck: false,
+  freeOnly: true,
   lastUpdateCheck: 0,
   thinking: { enabled: false, effort: 'medium' },
 };

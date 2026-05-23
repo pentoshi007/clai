@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { getConfig, updateConfig } from "../store/config.js";
 
 const REPO = "pentoshi007/clai";
-const CURRENT_VERSION = "0.5.10";
+const CURRENT_VERSION = "0.6.0";
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface GitHubRelease {

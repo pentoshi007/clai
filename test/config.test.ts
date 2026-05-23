@@ -30,6 +30,8 @@ describe('config store', () => {
     expect(Array.isArray(config.sandboxRoots)).toBe(true);
     expect(typeof config.pentestAuthorized).toBe('boolean');
     expect(typeof config.telemetry).toBe('boolean');
+    expect(typeof config.autoUpdateCheck).toBe('boolean');
+    expect(typeof config.freeOnly).toBe('boolean');
   });
 
   it('defaults to nvidia provider', async () => {
@@ -37,6 +39,14 @@ describe('config store', () => {
     const config = getConfig();
 
     expect(config.defaultProvider).toBe('nvidia');
+  });
+
+  it('defaults to free-only and no automatic update checks', async () => {
+    const { getConfig } = await loadConfigStore();
+    const config = getConfig();
+
+    expect(config.freeOnly).toBe(true);
+    expect(config.autoUpdateCheck).toBe(false);
   });
 
   it('returns correct default model for each provider', async () => {

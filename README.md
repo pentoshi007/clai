@@ -69,10 +69,11 @@ clai -y "list the 10 largest files in my home directory"
 - **`/agent` mode** — Agentic. AI plans, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met.
 - **7 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, and Ollama (local). All with streaming.
 - **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
-- **Smart safety gate** — Read-only commands auto-execute; mutating commands require confirmation; destructive patterns are blocked.
+- **Smart safety gate** — Low-risk commands auto-execute; mutating, network, secret-touching, or shell-control commands require confirmation; destructive patterns are blocked.
+- **Bounded tool output** — Long scan output is streamed lightly while running, saved to artifacts when needed, and reduced before it reaches the model.
 - **Cross-platform** — macOS, Linux, and Windows. Detects OS-native package managers (brew, apt, dnf, pacman, winget, choco).
 - **Pentest-aware** — nmap, nikto, sqlmap, gobuster, ffuf, hydra, masscan, whois, dig, netcat, tshark.
-- **Auto-update** — Checks for new versions on startup; run `/update` or `clai update` to upgrade.
+- **Manual update checks** — Run `/update` or `clai update` to check for new releases.
 - **Persistent history** — Session history with automatic key redaction in logs.
 
 ## Provider Setup
@@ -88,6 +89,8 @@ clai supports 7 LLM providers with free tiers:
 | Anthropic   | `claude-3-5-haiku-latest`                    | —     | `sk-ant-`      |
 | NVIDIA NIM  | `meta/llama-3.3-70b-instruct`                | ✓     | `nvapi-`       |
 | Ollama      | `llama3.1:8b`                                | ✓     | (local URL)    |
+
+`freeOnly` mode is enabled by default. Paid providers are excluded from fallback unless you explicitly opt in by disabling `freeOnly` in config or setting `CLAI_ALLOW_PAID=1`.
 
 ```sh
 # Store an API key
@@ -148,6 +151,7 @@ export OLLAMA_HOST=http://localhost:11434
 | `/save <name>`          | Save current session                               |
 | `/cwd <path>`           | Change working directory                           |
 | `/allow <tool>`         | Whitelist a tool for the session                   |
+| `/output [last]`        | Toggle full output from the last tool               |
 | `/update`               | Check for updates                                  |
 | `/exit`                 | Quit                                               |
 | `/help`                 | List commands                                      |
@@ -157,25 +161,25 @@ export OLLAMA_HOST=http://localhost:11434
 
 | Tool             | Description                                                        | Risk Level |
 |------------------|--------------------------------------------------------------------|------------|
-| `shell.exec`     | Run shell commands via execa (120s timeout, streams output)        | smart*     |
+| `shell.exec`     | Run shell commands with bounded capture and live progress          | smart*     |
 | `fs.read`        | Read files (sandboxed to approved roots)                           | safe       |
 | `fs.write`       | Write files (sandboxed)                                            | confirm    |
 | `fs.list`        | List directory contents                                            | safe       |
 | `fs.search`      | Search files with ripgrep (falls back to grep)                     | safe       |
 | `pkg.install`    | Install packages via detected OS package manager                   | confirm    |
 | `net.scan`       | Nmap wrapper for port scanning                                     | confirm    |
-| `http.fetch`     | HTTP GET/POST with response size limits                            | safe       |
+| `http.fetch`     | HTTP GET/HEAD with streaming response limits                       | safe*      |
 | `sysinfo`        | OS, architecture, shell, and working directory info                | safe       |
 | `pentest.recon`  | Composite: whois + dig + nmap top-100 ports                       | confirm    |
 
-> \* **smart** = read-only commands (`curl`, `ls`, `whoami`, `gobuster`, `dirb`, etc.) auto-execute; mutating commands require confirmation.
+> \* **smart** = only low-risk commands such as `ls`, `whoami`, and `uname` auto-execute. Network scanners, shell control syntax, secret paths, mutating commands, and non-GET HTTP methods require confirmation.
 
 ## Safety Gate
 
 Every tool call passes through a 3-tier classifier:
 
-- **`safe`** — Auto-run: read-only fs, sysinfo, http.fetch, read-only shell commands (`curl`, `ls`, `whoami`, `ifconfig`, `gobuster`, `dirb`, `ffuf`, `nikto`, etc.)
-- **`confirm`** — User prompt: mutating shell commands, fs.write, pkg.install, net.scan
+- **`safe`** — Auto-run: sandboxed read-only fs, sysinfo, GET/HEAD http.fetch, and low-risk shell info commands.
+- **`confirm`** — User prompt: mutating shell commands, fs.write, pkg.install, net.scan, network/private HTTP targets, scanner tools, and commands touching possible secrets.
 - **`block`** — Refuse with explanation: `rm -rf /`, fork bombs, public IP scans without authorization, exfiltration patterns
 
 ### Pentest Authorization
@@ -186,11 +190,15 @@ Security tools require a one-time acknowledgment:
 clai authorize-pentest AGREE
 ```
 
-Public IP scanning is blocked unless the target is private (RFC 1918) or the user explicitly confirms ownership.
+Public target scanning is blocked unless the target is private/local or the tool call carries explicit structured ownership confirmation.
+
+### Tool Output
+
+During long tool runs, clai shows live output in dim text so you can see progress. After the AI summarizes the result, raw output is collapsed. Press `Ctrl+O` on macOS, Linux, or Windows to toggle full output for the last tool. In non-interactive terminals, use `/output last` or open the saved artifact path.
 
 ## Updates
 
-clai checks for updates automatically on startup (every 4 hours, non-blocking). You can also check manually:
+clai does not call GitHub automatically by default. Check manually:
 
 ```sh
 # CLI command

@@ -30,6 +30,41 @@ function optionalNumber(args: Record<string, unknown>, key: string): number | un
   return typeof value === 'number' ? value : undefined;
 }
 
+function safeToolName(value: string): string {
+  if (!/^[A-Za-z0-9_.+-]+$/.test(value)) {
+    throw new Error(`Unsafe package/tool name: ${value}`);
+  }
+  return value;
+}
+
+function safeTarget(value: string): string {
+  if (!/^[A-Za-z0-9_.:-]+(?:\/\d{1,3})?$/.test(value)) {
+    throw new Error(`Unsafe target syntax: ${value}`);
+  }
+  return value;
+}
+
+function safePorts(value: string): string {
+  if (!/^[A-Za-z0-9,:-]+$/.test(value)) {
+    throw new Error(`Unsafe port syntax: ${value}`);
+  }
+  return value;
+}
+
+function safeFlagTokens(value: string): string[] {
+  if (!value.trim()) return [];
+  return value.trim().split(/\s+/).map((token) => {
+    if (!/^-{1,2}[A-Za-z0-9][A-Za-z0-9_.:=,+/-]*$/.test(token)) {
+      throw new Error(`Unsafe flag syntax: ${token}`);
+    }
+    return token;
+  });
+}
+
+function commandLabel(command: string, argv: string[]): string {
+  return [command, ...argv].join(' ');
+}
+
 export const toolRegistry: Record<string, ToolHandler> = {
   async 'shell.exec'(args, options) {
     return shellExec({ command: requireString(args, 'command'), cwd: optionalString(args, 'cwd'), timeoutMs: optionalNumber(args, 'timeoutMs'), signal: options?.signal, onOutput: options?.onOutput });
@@ -47,20 +82,20 @@ export const toolRegistry: Record<string, ToolHandler> = {
     return fsSearch(requireString(args, 'pattern'), optionalString(args, 'path'));
   },
   async 'pkg.install'(args, options) {
-    const tool = requireString(args, 'tool');
+    const tool = safeToolName(requireString(args, 'tool'));
     const pkgmgr = await detectPackageManager();
     return shellExec({ command: pkgmgr.installCommand(tool), signal: options?.signal, onOutput: options?.onOutput });
   },
   async 'net.scan'(args, options) {
-    const target = requireString(args, 'target');
+    const target = safeTarget(requireString(args, 'target'));
     const ports = optionalString(args, 'ports');
-    const flags = optionalString(args, 'flags') ?? '';
-    const command = ports
-      ? `nmap -p ${ports} ${flags} ${target}`.trim()
-      : `nmap ${flags} ${target}`.trim();
-    return shellExec({ command, timeoutMs: 300_000, signal: options?.signal, onOutput: options?.onOutput });
+    const flags = safeFlagTokens(optionalString(args, 'flags') ?? '');
+    const argv = ports
+      ? ['-p', safePorts(ports), ...flags, target]
+      : [...flags, target];
+    return shellExec({ command: 'nmap', argv, shell: false, timeoutMs: 300_000, signal: options?.signal, onOutput: options?.onOutput });
   },
-  async 'http.fetch'(args) {
+  async 'http.fetch'(args, options) {
     const headers = args.headers && typeof args.headers === 'object' && !Array.isArray(args.headers)
       ? args.headers as Record<string, string>
       : undefined;
@@ -69,21 +104,27 @@ export const toolRegistry: Record<string, ToolHandler> = {
       body: optionalString(args, 'body'),
       headers,
       maxBytes: optionalNumber(args, 'maxBytes'),
+      signal: options?.signal,
     });
   },
   async sysinfo() {
     return { ok: true, output: JSON.stringify(detectSystem(), null, 2) };
   },
   async 'pentest.recon'(args, options) {
-    const target = requireString(args, 'target');
-    const commands = [`whois ${target}`, `dig ${target} ANY +noall +answer`, `nmap -sV --top-ports 100 ${target}`];
+    const target = safeTarget(requireString(args, 'target'));
+    const commands = [
+      { command: 'whois', argv: [target] },
+      { command: 'dig', argv: [target, 'ANY', '+noall', '+answer'] },
+      { command: 'nmap', argv: ['-sV', '--top-ports', '100', target] },
+    ];
     const outputs: string[] = [];
-    for (const command of commands) {
+    for (const { command, argv } of commands) {
       if (options?.signal?.aborted) break;
       // Announce each sub-step so users see progress through long recons.
-      options?.onOutput?.(`\n$ ${command}\n`, "stdout");
-      const result = await shellExec({ command, timeoutMs: 180_000, signal: options?.signal, onOutput: options?.onOutput });
-      outputs.push(`$ ${command}\n${result.output}`);
+      const label = commandLabel(command, argv);
+      options?.onOutput?.(`\n$ ${label}\n`, "stdout");
+      const result = await shellExec({ command, argv, shell: false, timeoutMs: 180_000, signal: options?.signal, onOutput: options?.onOutput });
+      outputs.push(`$ ${label}\n${result.output}`);
       if (options?.signal?.aborted) break;
     }
     return {

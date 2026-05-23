@@ -1,8 +1,5 @@
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
-import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type {
   ChatMessage,
   ProviderId,
@@ -20,6 +17,15 @@ import { ensureProviderConfigured } from "../commands/providers.js";
 import { rememberThinkingFromText, renderThinkingSummary } from "../ui/thinking.js";
 import { renderMarkdown } from "../ui/markdown.js";
 import { startThinkingSpinner } from "../ui/spinner.js";
+import { writeArtifact } from "../tools/artifacts.js";
+import {
+  createToolLivePane,
+  hasToolOutputSnapshot,
+  rememberToolOutput,
+  renderToolOutputHint,
+  updateLastToolSummary,
+} from "../ui/tool-output.js";
+import { compactMessagesForModel, wrapUntrustedContext } from "../context/manager.js";
 
 export interface AgentRunOptions {
   provider?: ProviderId | undefined;
@@ -103,44 +109,11 @@ export function parseToolCall(text: string): ToolCall | undefined {
     if (call) return call;
   }
 
-  // 2. <tool_call>...</tool_call>
-  const xml = text.match(/<tool_call>([\s\S]*?)<\/tool_call>/i);
-  if (xml?.[1]) {
-    const call = tryParseCall(xml[1]);
-    if (call) return call;
-  }
-
-  // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
+  // 2. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
+  // Keep this provider-specific compatibility path, but reject generic JSON
+  // examples/headings/trailing objects so explanatory prose never executes.
   const kimi = parseKimiToolCall(text);
   if (kimi) return kimi;
-
-  // 4. ### tool / ## tool / # tool heading + JSON
-  const heading = text.match(/#{1,3}\s*tool\s*\n\s*(\{[\s\S]*\})/i);
-  if (heading?.[1]) {
-    const call = tryParseCall(heading[1]);
-    if (call) return call;
-  }
-
-  // 5. **tool** heading + JSON
-  const bold = text.match(/\*\*tool\*\*\s*\n\s*(\{[\s\S]*\})/i);
-  if (bold?.[1]) {
-    const call = tryParseCall(bold[1]);
-    if (call) return call;
-  }
-
-  // 6. Any fenced block (```json, ```, etc.) containing name+args
-  const anyFenced = text.match(/```\w*\s*\n?([\s\S]*?)```/);
-  if (anyFenced?.[1]) {
-    const call = tryParseCall(anyFenced[1]);
-    if (call) return call;
-  }
-
-  // 7. Trailing JSON object with "name" and "args"
-  const trailingJson = text.match(/(\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*?\}\s*\})\s*$/);
-  if (trailingJson?.[1]) {
-    const call = tryParseCall(trailingJson[1]);
-    if (call) return call;
-  }
 
   return undefined;
 }
@@ -184,29 +157,35 @@ function isAbortError(error: unknown, signal?: AbortSignal): boolean {
   return Boolean(signal?.aborted) || (error instanceof Error && error.name === "AbortError");
 }
 
-function safeArtifactName(name: string): string {
-  return name.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "tool-output";
-}
-
 async function saveToolOutput(call: ToolCall, output: string): Promise<string | undefined> {
   if (!output.trim()) return undefined;
-  const dir = join(homedir(), ".clai", "outputs");
-  await mkdir(dir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const path = join(dir, `${stamp}-${safeArtifactName(call.name)}.txt`);
-  await writeFile(path, `${output}\n`, "utf8");
-  return path;
+  return writeArtifact(call.name, output);
 }
 
 function summarizeOutput(output: string, maxChars = 8_000): { text: string; truncated: boolean } {
   if (output.length <= maxChars) return { text: output, truncated: false };
 
   const lines = output.split(/\r?\n/);
+  const signalLines = lines.filter((line) =>
+    /\b(open|vulnerable|critical|high|medium|found|success|injectable|CVE-\d{4}-\d+|200|201|204|301|302|307|308|401|403|500|error|failed)\b/i.test(
+      line,
+    ),
+  );
   const head: string[] = [];
   const tail: string[] = [];
   let used = 0;
-  const half = Math.floor(maxChars / 2);
+  const signalBudget = Math.floor(maxChars * 0.45);
+  const half = Math.floor((maxChars - signalBudget) / 2);
 
+  const signals: string[] = [];
+  for (const line of signalLines) {
+    const cost = line.length + 1;
+    if (used + cost > signalBudget) break;
+    signals.push(line);
+    used += cost;
+  }
+
+  used = 0;
   for (const line of lines) {
     const cost = line.length + 1;
     if (used + cost > half) break;
@@ -226,6 +205,9 @@ function summarizeOutput(output: string, maxChars = 8_000): { text: string; trun
   return {
     text: [
       ...head,
+      ...(signals.length > 0
+        ? [`... high-signal lines from omitted output ...`, ...signals]
+        : []),
       `... (${lines.length.toLocaleString()} output lines truncated) ...`,
       ...tail,
     ].join("\n"),
@@ -234,7 +216,7 @@ function summarizeOutput(output: string, maxChars = 8_000): { text: string; trun
 }
 
 function formatToolContext(result: ToolResult): string {
-  const output = result.output.trim();
+  const output = (result.modelContext ?? result.summary ?? result.output).trim();
   const summary = summarizeOutput(output, 8_000);
   const saved = result.outputPath ? `\nFull output saved to: ${result.outputPath}` : "";
   return `${summary.text}${saved}`.trim();
@@ -248,7 +230,6 @@ async function ensurePentestAuthorization(
   if (!isPentestToolCall(call) || config.pentestAuthorized) return true;
 
   if (autoConfirm) {
-    updateConfig({ pentestAuthorized: true });
     return true;
   }
 
@@ -283,7 +264,7 @@ export async function runAgentLoop(
   const projectContext = await loadProjectContext();
   const systemPrompt = renderAgentSystemPrompt(availableToolNames().join(", "));
   const fullSystemPrompt = projectContext
-    ? `${systemPrompt}\n\nProject context from .clai/context.md:\n${projectContext}`
+    ? `${systemPrompt}\n\n${wrapUntrustedContext("Project context from .clai/context.md", projectContext)}`
     : systemPrompt;
   const messages: ChatMessage[] = [
     { role: "system", content: fullSystemPrompt },
@@ -313,7 +294,7 @@ export async function runAgentLoop(
         {
           provider,
           model,
-          messages,
+          messages: compactMessagesForModel(messages),
           temperature: 0.2,
           // Reasoning models can spend a lot on hidden thinking; give
           // them headroom so the visible answer / tool call isn't
@@ -387,6 +368,10 @@ export async function runAgentLoop(
         process.stdout.write(renderMarkdown(cleaned));
         if (!cleaned.endsWith("\n")) process.stdout.write("\n");
       }
+      updateLastToolSummary(cleaned);
+      if (hasToolOutputSnapshot()) {
+        process.stdout.write(`${renderToolOutputHint()}\n`);
+      }
       if (assistantText.hasThinking) {
         process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
       }
@@ -450,6 +435,7 @@ export async function runAgentLoop(
     let liveBytes = 0;
     const liveCap = 16_000; // Stop streaming after this many bytes to avoid flooding the terminal.
     let liveTruncatedNotified = false;
+    const livePane = createToolLivePane(formatToolArgs(call));
     const printLive = (chunk: string): void => {
       // Suppress live preview for fs.read / fs.list — those are read-only
       // and the final summary is already concise. Stream shell-style tools
@@ -465,9 +451,7 @@ export async function runAgentLoop(
       const remaining = liveCap - liveBytes;
       const slice = chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
       liveBytes += slice.length;
-      // Indent each line so live output lines up under the tool call.
-      const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
-      process.stdout.write(chalk.dim(indented.startsWith("\n") ? indented : `  ${indented}`.replace(/^  /, "  ")));
+      livePane.append(slice);
     };
 
     try {
@@ -479,8 +463,9 @@ export async function runAgentLoop(
         },
       });
       // Newline separator if live output didn't already end with one.
-      if (liveBytes > 0) process.stdout.write("\n");
+      livePane.finish();
     } catch (toolError) {
+      livePane.finish();
       if (isAbortError(toolError, options.signal)) {
         lastAnswer = "Aborted.";
         process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
@@ -491,14 +476,26 @@ export async function runAgentLoop(
     }
     const output = result.output.trim();
     const displayMax = 6_000;
-    const savedOutputPath = output.length > displayMax
+    const savedOutputPath = result.outputPath ?? (output.length > displayMax
       ? await saveToolOutput(call, output)
-      : undefined;
+      : undefined);
     const resultWithArtifact: ToolResult = {
       ...result,
       outputPath: savedOutputPath,
-      truncated: Boolean(savedOutputPath),
+      truncated: result.truncated || Boolean(savedOutputPath),
+      artifacts: result.artifacts ?? (savedOutputPath
+        ? [{ path: savedOutputPath, kind: "raw", redacted: true }]
+        : undefined),
     };
+    if (output || savedOutputPath) {
+      rememberToolOutput({
+        id: `${Date.now()}-${step}`,
+        label: `${call.name} ${formatToolArgs(call)}`.trim(),
+        artifactPath: savedOutputPath,
+        fullText: savedOutputPath ? undefined : output,
+        summary: result.summary ?? result.modelContext,
+      });
+    }
     options.onToolResult?.(call, resultWithArtifact);
     await auditLog("tool.result", {
       call,
@@ -517,7 +514,7 @@ export async function runAgentLoop(
         : displaySummary.text;
       // If we already streamed live output for this call, skip re-printing
       // the same bytes. Just note where the full output lives if it was saved.
-      if (liveBytes > 0) {
+      if (liveBytes > 0 && process.stdout.isTTY) {
         if (savedOutputPath) {
           process.stdout.write(chalk.dim(`  full output saved to ${savedOutputPath}\n`));
         }

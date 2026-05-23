@@ -23,7 +23,9 @@ describe('tools – http.fetch', () => {
     const result = await httpFetch('https://example.test/get', { maxBytes: 10 });
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(200);
-    expect(result.output.length).toBeLessThanOrEqual(10);
+    expect(result.output).toContain('status=200');
+    expect(result.output).toContain('response truncated');
+    expect(result.truncated).toBe(true);
   });
 
   it('returns not-ok for 404', async () => {

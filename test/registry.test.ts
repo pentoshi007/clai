@@ -65,4 +65,10 @@ describe('tool registry', () => {
   it('tool handler throws on missing required string arg', async () => {
     await expect(toolRegistry['fs.read']!({})).rejects.toThrow('must be a non-empty string');
   });
+
+  it('net.scan rejects shell metacharacters before spawning nmap', async () => {
+    await expect(
+      toolRegistry['net.scan']!({ target: 'example.com; whoami' }),
+    ).rejects.toThrow('Unsafe target syntax');
+  });
 });

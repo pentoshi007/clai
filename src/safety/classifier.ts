@@ -45,9 +45,54 @@ function commandContainsNetworkScanner(command: string): boolean {
   );
 }
 
+function isPrivateTarget(value: string): boolean {
+  const trimmed = value.trim().replace(/^https?:\/\//i, "");
+  const host = trimmed.split(/[/:?#]/)[0] ?? trimmed;
+  if (!host || host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "0.0.0.0") return true;
+  return isPrivateIpv4(host);
+}
+
+function shellTokens(command: string): string[] {
+  return command.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((token) =>
+    token.replace(/^["']|["']$/g, ""),
+  ) ?? [];
+}
+
+function commandHasOwnershipFlag(command: string): boolean {
+  return shellTokens(command).includes("--i-own-this");
+}
+
+function extractNetworkTargets(command: string): string[] {
+  const targets = new Set<string>();
+  for (const match of command.matchAll(/https?:\/\/[^\s"'`<>]+/gi)) {
+    targets.add(match[0]);
+  }
+  for (const match of command.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g)) {
+    targets.add(match[0]);
+  }
+  for (const token of shellTokens(command)) {
+    if (token.startsWith("-") || token.includes("/") || token.includes("=")) continue;
+    if (/\.(?:txt|lst|list|json|xml|csv|log|html)$/i.test(token)) continue;
+    if (/^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(token)) targets.add(token);
+  }
+  return [...targets];
+}
+
 function containsPublicTarget(command: string): boolean {
-  const ips = command.match(/\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g) ?? [];
-  return ips.some((ip) => !isPrivateIpv4(ip));
+  const targets = extractNetworkTargets(command);
+  if (targets.length === 0) return false;
+  return targets.some((target) => !isPrivateTarget(target));
+}
+
+function hasShellControlSyntax(command: string): boolean {
+  return /(?:[;&|`<>]|\$\(|\${)/.test(command);
+}
+
+function referencesSecretPath(command: string): boolean {
+  return /(?:^|\s)(?:~\/)?(?:\.ssh|\.gnupg|\.aws|\.kube|\.docker|\.env\b|id_rsa|id_ed25519|\.npmrc|\.pypirc|\.clai\/keys\.json)/i.test(
+    command,
+  );
 }
 
 export function isPentestToolCall(call: ToolCall): boolean {
@@ -68,6 +113,26 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
   }
 
   if (call.name === "http.fetch") {
+    const method = (stringArg(call.args, "method") ?? "GET").toUpperCase();
+    const url = stringArg(call.args, "url") ?? "";
+    if (method !== "GET" && method !== "HEAD") {
+      return {
+        level: "confirm",
+        reason: "Non-GET HTTP requests can mutate remote systems",
+      };
+    }
+    if (/169\.254\.169\.254|metadata\.google\.internal/i.test(url)) {
+      return {
+        level: "block",
+        reason: "Cloud metadata endpoints are blocked",
+      };
+    }
+    if (url && isPrivateTarget(url)) {
+      return {
+        level: "confirm",
+        reason: "Fetching local or private network URLs requires confirmation",
+      };
+    }
     return {
       level: "safe",
       reason: "HTTP fetch is read-only with response size limits",
@@ -88,10 +153,16 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
         reason: "Command resembles secret or data exfiltration",
       };
     }
+    if (referencesSecretPath(command)) {
+      return {
+        level: "confirm",
+        reason: "Command references a path that may contain secrets",
+      };
+    }
     if (
       commandContainsNetworkScanner(command) &&
       containsPublicTarget(command) &&
-      !command.includes("--i-own-this")
+      !commandHasOwnershipFlag(command)
     ) {
       return {
         level: "block",
@@ -105,6 +176,9 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
     }
     // Read-only / info commands are safe to auto-execute
     const base = command.trim().split(/\s+/)[0]?.replace(/^.*\//, "") ?? "";
+    if (hasShellControlSyntax(command)) {
+      return { level: "confirm", reason: "Shell control syntax requires confirmation" };
+    }
     if (readOnlyShellCommands.has(base)) {
       return { level: "safe", reason: "Read-only command" };
     }
@@ -114,10 +188,10 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
   if (call.name === "net.scan") {
     const target = stringArg(call.args, "target") ?? "";
     const ownsTarget = call.args.iOwnThis === true || call.args.own === true;
-    if (target && !isPrivateIpv4(target) && !ownsTarget) {
+    if (target && !isPrivateTarget(target) && !ownsTarget) {
       return {
         level: "block",
-        reason: "Public IP scan requires ownership confirmation",
+        reason: "Public target scan requires ownership confirmation",
       };
     }
     return { level: "confirm", reason: "Network scans require confirmation" };
@@ -128,8 +202,7 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
     const ownsTarget = call.args.iOwnThis === true || call.args.own === true;
     if (
       target &&
-      net.isIP(target.split("/")[0] ?? target) &&
-      !isPrivateIpv4(target) &&
+      !isPrivateTarget(target) &&
       !ownsTarget
     ) {
       return {

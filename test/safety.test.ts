@@ -38,4 +38,31 @@ describe('safety classifier', () => {
     const result = classifyToolCall({ name: 'shell.exec', args: { command: 'ffuf -u http://192.168.1.1/FUZZ -w wordlist.txt' } });
     expect(result.level).toBe('confirm');
   });
+
+  it('does not auto-approve secret file reads through shell', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'cat ~/.clai/keys.json' } });
+    expect(result.level).not.toBe('safe');
+  });
+
+  it('does not auto-approve env dumping', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'env' } });
+    expect(result.level).toBe('confirm');
+  });
+
+  it('requires confirmation for mutating HTTP fetches', () => {
+    const result = classifyToolCall({ name: 'http.fetch', args: { url: 'https://example.com/api', method: 'POST', body: '{}' } });
+    expect(result.level).toBe('confirm');
+  });
+
+  it('blocks metadata endpoint fetches', () => {
+    const result = classifyToolCall({ name: 'http.fetch', args: { url: 'http://169.254.169.254/latest/meta-data/' } });
+    expect(result.level).toBe('block');
+  });
+
+  it('blocks public domain scans unless ownership is structured', () => {
+    const blocked = classifyToolCall({ name: 'net.scan', args: { target: 'example.com' } });
+    const allowed = classifyToolCall({ name: 'net.scan', args: { target: 'example.com', iOwnThis: true } });
+    expect(blocked.level).toBe('block');
+    expect(allowed.level).toBe('confirm');
+  });
 });

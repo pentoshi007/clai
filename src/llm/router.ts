@@ -82,6 +82,32 @@ const fallbackOrder: ProviderId[] = [
   "ollama",
 ];
 
+const freeProviderIds = new Set<ProviderId>([
+  "nvidia",
+  "groq",
+  "gemini",
+  "openrouter",
+  "ollama",
+]);
+
+function isPaidProvider(provider: ProviderId): boolean {
+  return !freeProviderIds.has(provider);
+}
+
+function providerOrder(requested: ProviderId, freeOnly: boolean): ProviderId[] {
+  const enforceFree = freeOnly && process.env.CLAI_ALLOW_PAID !== "1";
+  if (enforceFree && isPaidProvider(requested)) {
+    throw new Error(
+      `${requested} is disabled because freeOnly mode is on. Set CLAI_ALLOW_PAID=1 or disable freeOnly in config to use paid providers.`,
+    );
+  }
+  const order = [
+    requested,
+    ...fallbackOrder.filter((provider) => provider !== requested),
+  ];
+  return enforceFree ? order.filter((provider) => freeProviderIds.has(provider)) : order;
+}
+
 export function getProvider(provider: ProviderId): LlmProvider {
   return providers[provider];
 }
@@ -101,10 +127,7 @@ export async function completeWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
-  const order = [
-    requested,
-    ...fallbackOrder.filter((provider) => provider !== requested),
-  ];
+  const order = providerOrder(requested, config.freeOnly);
   const failures: string[] = [];
 
   for (const providerId of order) {
@@ -144,10 +167,7 @@ export async function streamWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
-  const order = [
-    requested,
-    ...fallbackOrder.filter((provider) => provider !== requested),
-  ];
+  const order = providerOrder(requested, config.freeOnly);
   const failures: string[] = [];
   const emitStatus = onStatus ?? ((message) => onToken(message));
 

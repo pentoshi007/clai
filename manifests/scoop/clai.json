@@ -1,11 +1,11 @@
 {
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "Cross-platform terminal AI assistant with ask and agent modes",
   "homepage": "https://github.com/pentoshi007/clai",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/pentoshi007/clai/releases/download/v0.1.0/clai-bun-windows-x64.exe#/clai.exe",
+      "url": "https://github.com/pentoshi007/clai/releases/download/v0.6.0/clai-bun-windows-x64.exe#/clai.exe",
       "hash": "TO_BE_FILLED_BY_RELEASE_WORKFLOW"
     }
   },

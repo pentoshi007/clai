@@ -11,7 +11,7 @@ const serviceName = 'clai';
 // `@napi-rs/keyring` ships prebuilt napi binaries (no node-gyp / prebuild-install)
 // and exposes a keytar-compatible API at the `/keytar` subpath. We dynamically
 // import it so the CLI keeps working when the optional native binding is
-// missing on a platform — falling back to the encrypted JSON keys file.
+// missing on a platform — falling back to a restricted-permission JSON file.
 const keychainModuleName = '@napi-rs/keyring/keytar.js';
 const keysFile = join(homedir(), '.clai', 'keys.json');
 
@@ -63,7 +63,7 @@ function noteKeychainRuntimeFailure(error: unknown): void {
     keychainRuntimeWarned = true;
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(
-      `clai: OS keychain unavailable (${message.split('\n')[0]}); using encrypted file at ${keysFile}\n`,
+      `clai: OS keychain unavailable (${message.split('\n')[0]}); using restricted-permission plaintext file at ${keysFile}\n`,
     );
   }
 }

@@ -49,6 +49,7 @@ import {
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { startThinkingSpinner } from "./ui/spinner.js";
 import { modelSupportsThinking } from "./llm/capabilities.js";
+import { toggleLastToolOutput } from "./ui/tool-output.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -107,6 +108,7 @@ const slashCommands: SlashCommand[] = [
   { command: "/allow", usage: "<tool>", description: "allow a tool for session" },
   { command: "/think", description: "show thinking from last response" },
   { command: "/thinking", description: "alias for /think" },
+  { command: "/output", usage: "[last]", description: "toggle full output from last tool" },
   { command: "/update", description: "check for updates" },
   { command: "/exit", description: "quit" },
   { command: "/quit", description: "alias for /exit" },
@@ -287,6 +289,7 @@ function isPrintableSequence(sequence: string | undefined): sequence is string {
 async function readPromptLine(options: {
   history: string[];
   onThinkingShortcut: () => void;
+  onOutputToggle: () => void;
 }): Promise<string> {
   return new Promise((resolve) => {
     let line = "";
@@ -406,6 +409,13 @@ async function readPromptLine(options: {
       if (key.ctrl && key.name === "t") {
         options.onThinkingShortcut();
         refresh();
+        return;
+      }
+
+      if (key.ctrl && key.name === "o") {
+        output.write("\n");
+        renderedMenuLines = 0;
+        options.onOutputToggle();
         return;
       }
 
@@ -912,6 +922,9 @@ async function handleSlash(
       }
       return true;
     }
+    case "/output":
+      await toggleLastToolOutput();
+      return true;
     case "/exit":
     case "/quit":
       return false;
@@ -968,6 +981,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   };
   const handleKeypress = (_sequence: string, key: { ctrl?: boolean; name?: string }): void => {
     if (key.ctrl && key.name === "t" && !isReadingPrompt) handleThinkingShortcut();
+    if (key.ctrl && key.name === "o" && !isReadingPrompt) {
+      void toggleLastToolOutput().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(chalk.dim(`\n  output toggle failed: ${message}\n`));
+      });
+    }
     if ((key.name === "escape" || (key.ctrl && key.name === "c")) && currentAbortController) {
       currentAbortController.abort();
     }
@@ -1036,8 +1055,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     );
   }
 
-  // Non-blocking update check
-  checkForUpdateSilent();
+  // Non-blocking update check when enabled.
+  if (getConfig().autoUpdateCheck && process.env.CLAI_OFFLINE !== "1") {
+    checkForUpdateSilent();
+  }
 
   try {
     while (true) {
@@ -1046,6 +1067,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         await readPromptLine({
           history: promptHistory,
           onThinkingShortcut: handleThinkingShortcut,
+          onOutputToggle: () => {
+            void toggleLastToolOutput().catch((error) => {
+              const message = error instanceof Error ? error.message : String(error);
+              process.stderr.write(chalk.dim(`\n  output toggle failed: ${message}\n`));
+            });
+          },
         })
       ).trim();
       isReadingPrompt = false;

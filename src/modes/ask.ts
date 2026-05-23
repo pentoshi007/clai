@@ -4,6 +4,7 @@ import { renderAskSystemPrompt } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { loadProjectContext } from "../store/project.js";
+import { compactMessagesForModel, wrapUntrustedContext } from "../context/manager.js";
 
 export interface AskOptions {
   provider?: ProviderId | undefined;
@@ -21,16 +22,16 @@ async function buildAskMessages(
   await ensureProviderConfigured(provider);
   const projectContext = await loadProjectContext();
   const systemPrompt = projectContext
-    ? `${renderAskSystemPrompt()}\n\nProject context from .clai/context.md:\n${projectContext}`
+    ? `${renderAskSystemPrompt()}\n\n${wrapUntrustedContext("Project context from .clai/context.md", projectContext)}`
     : renderAskSystemPrompt();
   return {
     provider,
     model: options.model ?? config.defaultModel,
-    messages: [
+    messages: compactMessagesForModel([
       { role: "system", content: systemPrompt },
       ...(options.history ?? []),
       { role: "user", content: prompt },
-    ],
+    ]),
   };
 }
 

@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { startThinkingSpinner } from "../src/ui/spinner.js";
+import {
+  rememberToolOutput,
+  toggleLastToolOutput,
+  updateLastToolSummary,
+} from "../src/ui/tool-output.js";
 
 describe("thinking spinner", () => {
   it("is a no-op when stdout is not a TTY", () => {
@@ -33,5 +38,24 @@ describe("spinner preview API", () => {
     const spinner = startThinkingSpinner("test");
     expect(() => spinner.pushPreview("model thinking about ports…")).not.toThrow();
     spinner.stop();
+  });
+});
+
+describe("tool output toggle", () => {
+  it("toggles the last tool output without requiring a platform-specific key", async () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    rememberToolOutput({
+      id: "test",
+      label: "nmap 127.0.0.1",
+      fullText: "PORT   STATE SERVICE\n80/tcp open  http",
+    });
+    updateLastToolSummary("80/tcp is open.");
+    try {
+      await expect(toggleLastToolOutput()).resolves.toBeUndefined();
+      await expect(toggleLastToolOutput()).resolves.toBeUndefined();
+      expect(write).toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+    }
   });
 });
