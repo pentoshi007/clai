@@ -112,23 +112,27 @@ function buildReasoningPayload(
       if (!enabled) return {};
       return { reasoning_effort: effort };
     case "nvidia": {
+      // When reasoning is disabled, deliberately send NO chat_template_kwargs
+      // and NO reasoning_effort. Empirically NIM's chat templates for kimi /
+      // deepseek route an explicit `thinking: false` through a slower path
+      // than just omitting the field, and it costs us tens of seconds of
+      // latency on otherwise instant models. Keep the body minimal.
+      if (!enabled) return {};
       const kind = classifyNvidiaModel(model ?? "");
       switch (kind) {
         case "thinking":
-          // Always send the flag explicitly — when disabled, ask the
-          // chat template to skip the reasoning preamble entirely.
           return {
             chat_template_kwargs: {
-              thinking: enabled,
-              ...(enabled ? { reasoning_effort: effort } : {}),
+              thinking: true,
+              reasoning_effort: effort,
             },
           };
         case "enable-thinking":
           return {
-            chat_template_kwargs: { enable_thinking: enabled },
+            chat_template_kwargs: { enable_thinking: true },
           };
         case "effort-only":
-          return enabled ? { reasoning_effort: effort } : {};
+          return { reasoning_effort: effort };
         case "none":
         default:
           return {};
@@ -156,9 +160,10 @@ function buildChatBody(options: {
   // Reasoning models often spend most of their budget on the hidden
   // <think> stream before emitting any visible answer. If the caller
   // didn't pin a maxTokens, give the model enough headroom (8K when
-  // thinking is on, 4K otherwise) so we don't get truncated to silence.
+  // thinking is on, 2K otherwise — keep small for fast non-reasoning
+  // paths so kimi-k2.6 etc. respond instantly).
   const reasoningOn = Boolean(options.reasoning?.enabled);
-  const defaultMaxTokens = reasoningOn ? 8_192 : 4_096;
+  const defaultMaxTokens = reasoningOn ? 8_192 : 2_048;
   const body: Record<string, unknown> = {
     model: options.model,
     messages: toOpenAiMessages(options.messages),
@@ -260,6 +265,11 @@ export async function openAiCompatibleStream(options: {
       signal: idleController.signal,
       headers: {
         "content-type": "application/json",
+        // NIM and many OpenAI-compatible gateways start buffering SSE
+        // server-side when this header is absent. Always advertise it
+        // for stream=true requests so the upstream pushes tokens as
+        // soon as they're generated instead of accumulating a chunk.
+        accept: "text/event-stream",
         authorization: `Bearer ${options.apiKey}`,
         ...options.headers,
       },

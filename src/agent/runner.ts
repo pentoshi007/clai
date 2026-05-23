@@ -265,8 +265,9 @@ export async function runAgentLoop(
           temperature: 0.2,
           // Reasoning models can spend a lot on hidden thinking; give
           // them headroom so the visible answer / tool call isn't
-          // truncated to silence.
-          maxTokens: config.thinking?.enabled ? 8_192 : 4_096,
+          // truncated to silence. Keep the no-thinking default lean so
+          // fast models like kimi-k2.6 respond instantly.
+          maxTokens: config.thinking?.enabled ? 8_192 : 2_048,
           signal: options.signal,
           thinking: config.thinking,
         },
