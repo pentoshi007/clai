@@ -263,7 +263,10 @@ export async function runAgentLoop(
           model,
           messages,
           temperature: 0.2,
-          maxTokens: 2_048,
+          // Reasoning models can spend a lot on hidden thinking; give
+          // them headroom so the visible answer / tool call isn't
+          // truncated to silence.
+          maxTokens: config.thinking?.enabled ? 8_192 : 4_096,
           signal: options.signal,
           thinking: config.thinking,
         },

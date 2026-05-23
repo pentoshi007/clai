@@ -75,35 +75,65 @@ export function toOpenAiMessages(
 
 export type ReasoningStyle = "openai" | "nvidia" | "groq" | "openrouter" | "none";
 
+// NVIDIA NIM models exposed at integrate.api.nvidia.com use family-specific
+// chat-template variables. Sending the wrong variable to a model that does
+// not recognise it can leave the upstream renderer in a broken state and
+// stream zero tokens — so we route per-family rather than firing every key.
+export type NvidiaReasoningKind =
+  | "thinking" // DeepSeek-V3/V4, Kimi K2/Nemotron — `chat_template_kwargs.thinking`
+  | "enable-thinking" // GLM-5/4.5, Gemma 3/4 — `chat_template_kwargs.enable_thinking`
+  | "effort-only" // gpt-oss, qwen3 — top-level `reasoning_effort`
+  | "none"; // Llama, Mistral, MiniMax m2.x — no thinking knob
+
+export function classifyNvidiaModel(model: string): NvidiaReasoningKind {
+  const m = model.toLowerCase();
+  if (/glm-?[345]|gemma-?[34]/.test(m)) return "enable-thinking";
+  if (/deepseek-(?:v[34]|r1)|kimi-k2|nemotron/.test(m)) return "thinking";
+  if (/gpt-oss|qwen3/.test(m)) return "effort-only";
+  return "none";
+}
+
 function buildReasoningPayload(
   reasoning: ReasoningPreference | undefined,
   style: ReasoningStyle,
+  model?: string,
 ): Record<string, unknown> {
-  if (!reasoning?.enabled || style === "none") return {};
-  const effort = reasoning.effort;
+  if (style === "none") return {};
+  const enabled = Boolean(reasoning?.enabled);
+  const effort = reasoning?.effort ?? "medium";
   switch (style) {
     case "openai":
-      // GPT-5/o-series: supply both reasoning_effort (legacy) and the
-      // newer `reasoning: { effort }` so we work across recent SDKs.
+      if (!enabled) return {};
       return { reasoning_effort: effort, reasoning: { effort } };
     case "openrouter":
+      if (!enabled) return {};
       return { reasoning: { enabled: true, effort } };
     case "groq":
-      // Groq's Kimi/DeepSeek reasoning routes accept reasoning_effort.
+      if (!enabled) return {};
       return { reasoning_effort: effort };
-    case "nvidia":
-      // NVIDIA NIM toggles thinking via chat_template_kwargs, but the field
-      // name varies by model family: DeepSeek/Kimi use `thinking`, GLM uses
-      // `enable_thinking`, and some accept `reasoning_effort`. Send all
-      // variants — unknown keys are ignored by the upstream chat template.
-      return {
-        chat_template_kwargs: {
-          thinking: true,
-          enable_thinking: true,
-          reasoning_effort: effort,
-        },
-        reasoning_effort: effort,
-      };
+    case "nvidia": {
+      const kind = classifyNvidiaModel(model ?? "");
+      switch (kind) {
+        case "thinking":
+          // Always send the flag explicitly — when disabled, ask the
+          // chat template to skip the reasoning preamble entirely.
+          return {
+            chat_template_kwargs: {
+              thinking: enabled,
+              ...(enabled ? { reasoning_effort: effort } : {}),
+            },
+          };
+        case "enable-thinking":
+          return {
+            chat_template_kwargs: { enable_thinking: enabled },
+          };
+        case "effort-only":
+          return enabled ? { reasoning_effort: effort } : {};
+        case "none":
+        default:
+          return {};
+      }
+    }
     default:
       return {};
   }
@@ -121,11 +151,18 @@ function buildChatBody(options: {
   const reasoning = buildReasoningPayload(
     options.reasoning,
     options.reasoningStyle ?? "none",
+    options.model,
   );
+  // Reasoning models often spend most of their budget on the hidden
+  // <think> stream before emitting any visible answer. If the caller
+  // didn't pin a maxTokens, give the model enough headroom (8K when
+  // thinking is on, 4K otherwise) so we don't get truncated to silence.
+  const reasoningOn = Boolean(options.reasoning?.enabled);
+  const defaultMaxTokens = reasoningOn ? 8_192 : 4_096;
   const body: Record<string, unknown> = {
     model: options.model,
     messages: toOpenAiMessages(options.messages),
-    max_tokens: options.maxTokens ?? 1_024,
+    max_tokens: options.maxTokens ?? defaultMaxTokens,
     temperature: options.temperature ?? 0.2,
     stream: options.stream,
     ...reasoning,
@@ -196,36 +233,75 @@ export async function openAiCompatibleStream(options: {
   onToken: (token: string) => void;
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
+  /** Abort a stream that produces no bytes for this long. Default 90s. */
+  idleTimeoutMs?: number | undefined;
 }): Promise<string> {
-  const response = await fetch(`${options.baseUrl}/chat/completions`, {
-    method: "POST",
-    signal: options.signal ?? null,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${options.apiKey}`,
-      ...options.headers,
-    },
-    body: buildChatBody({
-      model: options.model,
-      messages: options.messages,
-      maxTokens: options.maxTokens,
-      temperature: options.temperature,
-      stream: true,
-      reasoning: options.reasoning,
-      reasoningStyle: options.reasoningStyle,
-    }),
-  });
+  // Combine the caller's abort signal with an idle watchdog so a stuck
+  // connection on a thinking model can't wedge the REPL forever.
+  const idleTimeoutMs = options.idleTimeoutMs ?? 90_000;
+  const idleController = new AbortController();
+  let idleTimer: NodeJS.Timeout | undefined;
+  let idleFired = false;
+  const resetIdleTimer = (): void => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleFired = true;
+      idleController.abort();
+    }, idleTimeoutMs);
+  };
+  resetIdleTimer();
+  const onCallerAbort = (): void => idleController.abort();
+  options.signal?.addEventListener("abort", onCallerAbort, { once: true });
+
+  let response: Response;
+  try {
+    response = await fetch(`${options.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: idleController.signal,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${options.apiKey}`,
+        ...options.headers,
+      },
+      body: buildChatBody({
+        model: options.model,
+        messages: options.messages,
+        maxTokens: options.maxTokens,
+        temperature: options.temperature,
+        stream: true,
+        reasoning: options.reasoning,
+        reasoningStyle: options.reasoningStyle,
+      }),
+    });
+  } catch (error) {
+    if (idleTimer) clearTimeout(idleTimer);
+    options.signal?.removeEventListener("abort", onCallerAbort);
+    if (idleFired) {
+      throw new ProviderError(
+        `${options.provider} request timed out before any response (${Math.round(idleTimeoutMs / 1000)}s)`,
+      );
+    }
+    throw error;
+  }
   if (!response.ok) {
+    if (idleTimer) clearTimeout(idleTimer);
+    options.signal?.removeEventListener("abort", onCallerAbort);
     await readJson<unknown>(response);
   }
-  if (!response.body)
+  if (!response.body) {
+    if (idleTimer) clearTimeout(idleTimer);
+    options.signal?.removeEventListener("abort", onCallerAbort);
     throw new ProviderError(`${options.provider} returned no stream body`);
+  }
 
   const decoder = new TextDecoder();
   const reader = response.body.getReader();
   let buffer = "";
   let full = "";
+  let visible = "";
+  let reasoningSeen = "";
   let inReasoning = false;
+  let finishReason: string | undefined;
 
   const enterReasoning = (): void => {
     if (inReasoning) return;
@@ -240,50 +316,93 @@ export async function openAiCompatibleStream(options: {
     options.onToken("</think>");
   };
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (payload === "[DONE]") {
-        exitReasoning();
-        return full;
-      }
-      try {
-        const parsed = JSON.parse(payload) as {
-          choices?: Array<{
-            delta?: {
-              content?: string;
-              reasoning_content?: string;
-              reasoning?: string;
-            };
-          }>;
-        };
-        const delta = parsed.choices?.[0]?.delta;
-        const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
-        if (reasoningToken) {
-          enterReasoning();
-          full += reasoningToken;
-          options.onToken(reasoningToken);
+  const cleanup = (): void => {
+    if (idleTimer) clearTimeout(idleTimer);
+    options.signal?.removeEventListener("abort", onCallerAbort);
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      resetIdleTimer();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") {
+          exitReasoning();
+          cleanup();
+          if (!visible.trim() && reasoningSeen.trim() && finishReason === "length") {
+            // The model spent its entire budget on hidden reasoning and
+            // never produced a visible answer. Surfacing this as an error
+            // — instead of an empty string — is far less confusing than
+            // a frozen-looking REPL.
+            throw new ProviderError(
+              `${options.provider} hit the max_tokens limit while still thinking (no visible answer). Try /variants off, lower the effort, or raise max_tokens.`,
+            );
+          }
+          return full;
         }
-        const token = delta?.content;
-        if (token) {
-          if (inReasoning) exitReasoning();
-          full += token;
-          options.onToken(token);
+        try {
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{
+              finish_reason?: string;
+              delta?: {
+                content?: string;
+                reasoning_content?: string;
+                reasoning?: string;
+              };
+            }>;
+          };
+          const choice = parsed.choices?.[0];
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
+          const delta = choice?.delta;
+          const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
+          if (reasoningToken) {
+            enterReasoning();
+            reasoningSeen += reasoningToken;
+            full += reasoningToken;
+            options.onToken(reasoningToken);
+          }
+          const token = delta?.content;
+          if (token) {
+            if (inReasoning) exitReasoning();
+            visible += token;
+            full += token;
+            options.onToken(token);
+          }
+        } catch (parseError) {
+          if (parseError instanceof ProviderError) throw parseError;
+          // Ignore malformed keepalive lines.
         }
-      } catch {
-        // Ignore malformed keepalive lines.
       }
     }
+    exitReasoning();
+    cleanup();
+    if (!visible.trim() && reasoningSeen.trim()) {
+      throw new ProviderError(
+        `${options.provider} ended the stream after only emitting hidden reasoning. Try /variants off, lower the effort, or raise max_tokens.`,
+      );
+    }
+    return full;
+  } catch (error) {
+    cleanup();
+    try {
+      reader.cancel();
+    } catch {
+      // best-effort cleanup
+    }
+    if (idleFired) {
+      throw new ProviderError(
+        `${options.provider} stream stalled — no data for ${Math.round(idleTimeoutMs / 1000)}s. Try a smaller model or disable thinking with /variants off.`,
+      );
+    }
+    throw error;
   }
-  exitReasoning();
-  return full;
 }
 
 export async function openAiCompatiblePing(

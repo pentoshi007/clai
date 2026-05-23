@@ -45,7 +45,7 @@ export async function runAsk(
     model: request.model,
     messages: request.messages,
     temperature: 0.2,
-    maxTokens: 2_048,
+    maxTokens: config.thinking?.enabled ? 8_192 : 4_096,
     thinking: config.thinking,
   });
 
@@ -65,7 +65,7 @@ export async function runAskStream(
       model: request.model,
       messages: request.messages,
       temperature: 0.2,
-      maxTokens: 2_048,
+      maxTokens: config.thinking?.enabled ? 8_192 : 4_096,
       signal: options.signal,
       thinking: config.thinking,
     },
