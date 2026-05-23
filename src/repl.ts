@@ -285,6 +285,7 @@ async function readPromptLine(options: {
     let dismissedSlashLine: string | null = null;
     let historyIndex: number | null = null;
     let historyDraft = "";
+    let lastCtrlCAt = 0;
 
     const promptColumns = stripAnsi(PROMPT).length;
 
@@ -362,10 +363,33 @@ async function readPromptLine(options: {
     function handleKeypress(sequence: string, key: KeypressKey): void {
       const menu = getMenuState();
 
+      // Cmd+C on macOS terminals is handled by the OS (it never reaches us),
+      // but some Linux terminals forward Meta+C. Treat that as a no-op so
+      // selecting + copying never breaks the REPL.
+      if (key.meta && !key.ctrl && key.name === "c") return;
+
       if (key.ctrl && key.name === "c") {
-        cleanup();
+        // First press: clear the current line. Second press within 1s: exit.
+        // This mirrors bash / Claude Code and avoids killing the REPL by
+        // accident when users habitually press Ctrl+C to copy in some
+        // terminals.
+        const now = Date.now();
+        if (line.length > 0) {
+          editLine("", 0);
+          lastCtrlCAt = now;
+          return;
+        }
+        if (now - lastCtrlCAt < 1_000) {
+          cleanup();
+          output.write("\n");
+          process.exit(0);
+        }
+        lastCtrlCAt = now;
         output.write("\n");
-        process.exit(0);
+        output.write(chalk.dim("  (press Ctrl+C again to exit)\n"));
+        output.write(PROMPT);
+        renderedMenuLines = 0;
+        return;
       }
 
       if (key.ctrl && key.name === "t") {
@@ -528,7 +552,7 @@ async function streamWithAbort(
       // Reasoning tokens are hidden by default; show progress so users see
       // something is happening even when the model spends a minute thinking.
       spinner.setLabel("thinking");
-      // Approximate token count by whitespace splits — purely cosmetic.
+      spinner.pushPreview(reasoning);
       const approx = reasoning.split(/\s+/).filter(Boolean).length;
       if (approx > 0) spinner.bumpReasoning(approx);
     },
@@ -602,7 +626,7 @@ function help(): string {
       return `  ${chalk.cyan(label)}${chalk.dim(command.description)}`;
     })
     .join("\n");
-  return lines + chalk.dim("\n\n  ESC / Ctrl+C  abort current response  │  Ctrl+T  toggle thinking");
+  return lines + chalk.dim("\n\n  ESC abort  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T toggle thinking");
 }
 
 async function pickModelInteractively(provider: ProviderId, currentModel: string): Promise<string | undefined> {
@@ -912,15 +936,28 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   } catch {
     // SIGINFO is macOS/BSD-specific; other platforms can still use /think.
   }
-  // Ctrl+C while streaming → abort; otherwise readline handles it
+  let lastSigintAt = 0;
+  // Ctrl+C while streaming → abort. While idle at a prompt, the
+  // readPromptLine handler clears the line on first press and exits on
+  // second press within 1s; so SIGINT here only acts as a fallback for
+  // the rare case where no prompt or stream is active.
   const handleSigint = (): void => {
     if (currentAbortController) {
       currentAbortController.abort();
-    } else {
-      // No active stream → exit
+      return;
+    }
+    if (isReadingPrompt) {
+      // readPromptLine's keypress handler owns the prompt-level Ctrl+C
+      // semantics; do nothing here so the two paths never fight.
+      return;
+    }
+    const now = Date.now();
+    if (now - lastSigintAt < 1_000) {
       console.log();
       process.exit(0);
     }
+    lastSigintAt = now;
+    console.log(chalk.dim("\n  (press Ctrl+C again to exit)"));
   };
   process.on("SIGINT", handleSigint);
 
@@ -935,7 +972,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }),
   );
   console.log(renderSuggestions());
-  console.log(chalk.dim("  ESC / Ctrl+C to abort a response  │  /model to list models  │  Ctrl+T or /think for thinking\n"));
+  console.log(chalk.dim("  ESC to abort a response  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T or /think for thinking\n"));
 
   // Non-blocking update check
   checkForUpdateSilent();

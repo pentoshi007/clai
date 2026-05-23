@@ -27,3 +27,11 @@ describe("thinking spinner", () => {
     expect(() => startThinkingSpinner("test", ac.signal).stop()).not.toThrow();
   });
 });
+
+describe("spinner preview API", () => {
+  it("accepts pushPreview without throwing in non-TTY mode", () => {
+    const spinner = startThinkingSpinner("test");
+    expect(() => spinner.pushPreview("model thinking about ports…")).not.toThrow();
+    spinner.stop();
+  });
+});

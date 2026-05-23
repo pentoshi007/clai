@@ -32,3 +32,34 @@ describe('tools – http.fetch', () => {
     expect(result.exitCode).toBe(404);
   });
 });
+
+import { shellExec } from "../src/tools/shell.js";
+
+describe("shellExec live output", () => {
+  it("streams chunks via onOutput before the promise resolves", async () => {
+    const chunks: string[] = [];
+    const result = await shellExec({
+      command: "echo hello && echo world",
+      onOutput: (chunk) => chunks.push(chunk),
+      timeoutMs: 5_000,
+    });
+
+    expect(result.ok).toBe(true);
+    // At least one chunk should have arrived live, not just at the end.
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.join("")).toContain("hello");
+    expect(chunks.join("")).toContain("world");
+  });
+
+  it("reports stderr through the same onOutput stream channel", async () => {
+    const events: Array<{ stream: string; text: string }> = [];
+    const result = await shellExec({
+      command: "echo oops 1>&2",
+      onOutput: (chunk, stream) => events.push({ stream, text: chunk }),
+      timeoutMs: 5_000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(events.some((e) => e.stream === "stderr" && e.text.includes("oops"))).toBe(true);
+  });
+});

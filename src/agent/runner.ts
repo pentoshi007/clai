@@ -275,6 +275,12 @@ export async function runAgentLoop(
             sawReasoning = true;
             spinner.setLabel("thinking");
           }
+          // Show the model's actual reasoning text live. The provider
+          // wraps reasoning_content in <think>…</think> in our http layer,
+          // so anything between those tags is fair game for the preview.
+          // For non-reasoning tokens (the eventual answer / tool call),
+          // also surface them so users see the live response forming.
+          spinner.pushPreview(token.replace(/<\/?think[^>]*>/gi, ""));
           const approx = token.split(/\s+/).filter(Boolean).length;
           if (approx > 0) spinner.bumpReasoning(approx);
         },
@@ -357,8 +363,39 @@ export async function runAgentLoop(
     options.signal?.throwIfAborted();
     options.onToolStart?.(call);
     let result: ToolResult;
+    let liveBytes = 0;
+    const liveCap = 16_000; // Stop streaming after this many bytes to avoid flooding the terminal.
+    let liveTruncatedNotified = false;
+    const printLive = (chunk: string): void => {
+      // Suppress live preview for fs.read / fs.list — those are read-only
+      // and the final summary is already concise. Stream shell-style tools
+      // (shell.exec, net.scan, pentest.recon, pkg.install).
+      if (call.name === "fs.read" || call.name === "fs.list" || call.name === "fs.search") return;
+      if (liveBytes >= liveCap) {
+        if (!liveTruncatedNotified) {
+          liveTruncatedNotified = true;
+          process.stdout.write(chalk.dim("\n  … live preview truncated, full output saved\n"));
+        }
+        return;
+      }
+      const remaining = liveCap - liveBytes;
+      const slice = chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
+      liveBytes += slice.length;
+      // Indent each line so live output lines up under the tool call.
+      const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
+      process.stdout.write(chalk.dim(indented.startsWith("\n") ? indented : `  ${indented}`.replace(/^  /, "  ")));
+    };
+
     try {
-      result = await runToolCall(call, { signal: options.signal });
+      result = await runToolCall(call, {
+        signal: options.signal,
+        onOutput: (chunk) => {
+          if (options.signal?.aborted) return;
+          printLive(chunk);
+        },
+      });
+      // Newline separator if live output didn't already end with one.
+      if (liveBytes > 0) process.stdout.write("\n");
     } catch (toolError) {
       if (isAbortError(toolError, options.signal)) {
         lastAnswer = "Aborted.";
@@ -394,7 +431,15 @@ export async function runAgentLoop(
       const displayText = displaySummary.truncated
         ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : chalk.dim("\n  ... output truncated")}`
         : displaySummary.text;
-      process.stdout.write(chalk.gray(displayText) + "\n");
+      // If we already streamed live output for this call, skip re-printing
+      // the same bytes. Just note where the full output lives if it was saved.
+      if (liveBytes > 0) {
+        if (savedOutputPath) {
+          process.stdout.write(chalk.dim(`  full output saved to ${savedOutputPath}\n`));
+        }
+      } else {
+        process.stdout.write(chalk.gray(displayText) + "\n");
+      }
     }
     if (isAbortError(undefined, options.signal)) {
       lastAnswer = "Aborted.";

@@ -6,6 +6,7 @@ export interface ShellExecArgs {
   cwd?: string | undefined;
   timeoutMs?: number | undefined;
   signal?: AbortSignal | undefined;
+  onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
 }
 
 export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
@@ -33,8 +34,12 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
       args.signal?.removeEventListener("abort", abort);
     };
 
-    const append = (chunk: Buffer): void => {
-      output += chunk.toString();
+    const append = (chunk: Buffer, stream: "stdout" | "stderr"): void => {
+      const text = chunk.toString();
+      output += text;
+      // Surface live progress so users see what nmap/curl/etc. are doing
+      // instead of staring at a frozen prompt for a minute.
+      args.onOutput?.(text, stream);
     };
 
     const killChild = (signal: NodeJS.Signals): void => {
@@ -56,8 +61,8 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
 
     const abort = (): void => terminate("abort");
 
-    child.stdout?.on("data", append);
-    child.stderr?.on("data", append);
+    child.stdout?.on("data", (chunk: Buffer) => append(chunk, "stdout"));
+    child.stderr?.on("data", (chunk: Buffer) => append(chunk, "stderr"));
     child.on("error", (error) => {
       cleanup();
       if (aborted || args.signal?.aborted) {

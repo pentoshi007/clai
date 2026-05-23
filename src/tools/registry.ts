@@ -7,6 +7,7 @@ import { shellExec } from './shell.js';
 
 export interface ToolRunOptions {
   signal?: AbortSignal | undefined;
+  onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
 }
 
 export type ToolHandler = (args: Record<string, unknown>, options?: ToolRunOptions) => Promise<ToolResult>;
@@ -31,7 +32,7 @@ function optionalNumber(args: Record<string, unknown>, key: string): number | un
 
 export const toolRegistry: Record<string, ToolHandler> = {
   async 'shell.exec'(args, options) {
-    return shellExec({ command: requireString(args, 'command'), cwd: optionalString(args, 'cwd'), timeoutMs: optionalNumber(args, 'timeoutMs'), signal: options?.signal });
+    return shellExec({ command: requireString(args, 'command'), cwd: optionalString(args, 'cwd'), timeoutMs: optionalNumber(args, 'timeoutMs'), signal: options?.signal, onOutput: options?.onOutput });
   },
   async 'fs.read'(args) {
     return fsRead(requireString(args, 'path'));
@@ -48,7 +49,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async 'pkg.install'(args, options) {
     const tool = requireString(args, 'tool');
     const pkgmgr = await detectPackageManager();
-    return shellExec({ command: pkgmgr.installCommand(tool), signal: options?.signal });
+    return shellExec({ command: pkgmgr.installCommand(tool), signal: options?.signal, onOutput: options?.onOutput });
   },
   async 'net.scan'(args, options) {
     const target = requireString(args, 'target');
@@ -57,7 +58,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const command = ports
       ? `nmap -p ${ports} ${flags} ${target}`.trim()
       : `nmap ${flags} ${target}`.trim();
-    return shellExec({ command, timeoutMs: 300_000, signal: options?.signal });
+    return shellExec({ command, timeoutMs: 300_000, signal: options?.signal, onOutput: options?.onOutput });
   },
   async 'http.fetch'(args) {
     const headers = args.headers && typeof args.headers === 'object' && !Array.isArray(args.headers)
@@ -79,7 +80,9 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const outputs: string[] = [];
     for (const command of commands) {
       if (options?.signal?.aborted) break;
-      const result = await shellExec({ command, timeoutMs: 180_000, signal: options?.signal });
+      // Announce each sub-step so users see progress through long recons.
+      options?.onOutput?.(`\n$ ${command}\n`, "stdout");
+      const result = await shellExec({ command, timeoutMs: 180_000, signal: options?.signal, onOutput: options?.onOutput });
       outputs.push(`$ ${command}\n${result.output}`);
       if (options?.signal?.aborted) break;
     }
