@@ -88,6 +88,40 @@ function tryJson(raw: string): Record<string, unknown> | undefined {
   return undefined;
 }
 
+function callFromFencedPayload(lang: string, raw: string): ToolCall | undefined {
+  const call = tryParseCall(raw);
+  if (call) return call;
+
+  const args = tryJson(raw);
+  if (!args) return undefined;
+  const normalizedLang = lang.toLowerCase();
+  if (
+    normalizedLang === "shell" ||
+    normalizedLang === "bash" ||
+    normalizedLang === "sh" ||
+    normalizedLang === "shell.exec"
+  ) {
+    if (typeof args.command === "string") {
+      return { name: "shell.exec", args };
+    }
+  }
+  const knownToolNames = new Set([
+    "fs.read",
+    "fs.write",
+    "fs.list",
+    "fs.search",
+    "pkg.install",
+    "net.scan",
+    "http.fetch",
+    "sysinfo",
+    "pentest.recon",
+  ]);
+  if (knownToolNames.has(normalizedLang)) {
+    return { name: normalizedLang, args };
+  }
+  return undefined;
+}
+
 /** Strip any leftover Kimi/Moonshot sentinel tokens from final answers
  *  so a model that mixes prose and tool-call markers never bleeds raw
  *  `<|tool_call_begin|>` strings to the terminal. */
@@ -109,7 +143,18 @@ export function parseToolCall(text: string): ToolCall | undefined {
     if (call) return call;
   }
 
-  // 2. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
+  // Many free/open models ignore the requested `tool` fence language and
+  // emit the same valid call in a ```json block. Accept fenced JSON, but
+  // continue rejecting loose/trailing JSON prose below.
+  for (const compatibleFenced of text.matchAll(/```([A-Za-z0-9_.-]+)\s*\n?([\s\S]*?)```/g)) {
+    const lang = compatibleFenced[1];
+    const payload = compatibleFenced[2];
+    if (!lang || !payload) continue;
+    const call = callFromFencedPayload(lang, payload);
+    if (call) return call;
+  }
+
+  // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
   // Keep this provider-specific compatibility path, but reject generic JSON
   // examples/headings/trailing objects so explanatory prose never executes.
   const kimi = parseKimiToolCall(text);
@@ -130,6 +175,7 @@ function textBeforeToolCall(text: string): string {
     /#{1,3}\s*tool\s*\n\s*\{[\s\S]*\}/i,
     /\*\*tool\*\*\s*\n\s*\{[\s\S]*\}/i,
     /```\w*\s*\n?\{[\s\S]*?"name"[\s\S]*?\}[\s\S]*?```/,
+    /```[A-Za-z0-9_.-]*\s*\n?\{[\s\S]*?"command"[\s\S]*?\}[\s\S]*?```/,
     /\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*?\}\s*\}\s*$/,
   ];
   for (const pattern of patterns) {

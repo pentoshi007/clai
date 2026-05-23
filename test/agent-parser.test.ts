@@ -28,10 +28,45 @@ describe('agent tool-call parser', () => {
     expect(call).toBeUndefined();
   });
 
-  it('rejects ```json fenced blocks by default', () => {
+  it('extracts tool calls from ```json fenced blocks', () => {
     const text = 'Running:\n```json\n{"name":"http.fetch","args":{"url":"https://api.ipify.org"}}\n```';
     const call = parseToolCall(text);
-    expect(call).toBeUndefined();
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('http.fetch');
+    expect(call!.args).toEqual({ url: 'https://api.ipify.org' });
+  });
+
+  it('extracts shell.exec from fenced shell JSON args', () => {
+    const text = '```shell\n{"command":"echo hello"}\n```';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('shell.exec');
+    expect(call!.args).toEqual({ command: 'echo hello' });
+  });
+
+  it('extracts tool-name fenced JSON args', () => {
+    const text = '```sysinfo\n{}\n```';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('sysinfo');
+    expect(call!.args).toEqual({});
+  });
+
+  it('skips unrelated fenced code before a real tool call', () => {
+    const text = [
+      'Example:',
+      '```json',
+      '{"not":"a tool call"}',
+      '```',
+      'Now run it:',
+      '```json',
+      '{"name":"sysinfo","args":{}}',
+      '```',
+    ].join('\n');
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe('sysinfo');
+    expect(call!.args).toEqual({});
   });
 
   it('rejects trailing JSON object by default', () => {

@@ -59,6 +59,16 @@ describe('safety classifier', () => {
     expect(result.level).toBe('block');
   });
 
+  it('auto-approves simple public GET curl commands', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'curl -s ifconfig.me' } });
+    expect(result.level).toBe('safe');
+  });
+
+  it('requires confirmation for mutating curl commands', () => {
+    const result = classifyToolCall({ name: 'shell.exec', args: { command: 'curl -X POST https://example.com -d a=b' } });
+    expect(result.level).toBe('confirm');
+  });
+
   it('blocks public domain scans unless ownership is structured', () => {
     const blocked = classifyToolCall({ name: 'net.scan', args: { target: 'example.com' } });
     const allowed = classifyToolCall({ name: 'net.scan', args: { target: 'example.com', iOwnThis: true } });

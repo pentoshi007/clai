@@ -95,6 +95,28 @@ function referencesSecretPath(command: string): boolean {
   );
 }
 
+function isSafeHttpCliCommand(base: string, command: string): boolean {
+  if (base !== "curl" && base !== "wget") return false;
+  const tokens = shellTokens(command);
+  if (
+    tokens.some((token, index) => {
+      const lower = token.toLowerCase();
+      if (["-d", "--data", "--data-raw", "--data-binary", "-f", "--form", "-t", "--upload-file", "-o", "--output", "-O"].includes(lower)) return true;
+      if (lower === "-x" || lower === "--request") {
+        const method = tokens[index + 1]?.toUpperCase();
+        return Boolean(method && method !== "GET" && method !== "HEAD");
+      }
+      if (/^-X(POST|PUT|PATCH|DELETE)$/i.test(token)) return true;
+      return false;
+    })
+  ) {
+    return false;
+  }
+  const urls = tokens.filter((token) => /^https?:\/\//i.test(token) || /^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:\/.*)?$/.test(token));
+  if (urls.length === 0) return false;
+  return urls.every((url) => !isPrivateTarget(url) && !/169\.254\.169\.254|metadata\.google\.internal/i.test(url));
+}
+
 export function isPentestToolCall(call: ToolCall): boolean {
   if (call.name === "net.scan" || call.name === "pentest.recon") return true;
   if (call.name !== "shell.exec") return false;
@@ -178,6 +200,9 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
     const base = command.trim().split(/\s+/)[0]?.replace(/^.*\//, "") ?? "";
     if (hasShellControlSyntax(command)) {
       return { level: "confirm", reason: "Shell control syntax requires confirmation" };
+    }
+    if (isSafeHttpCliCommand(base, command)) {
+      return { level: "safe", reason: "Read-only public HTTP request" };
     }
     if (readOnlyShellCommands.has(base)) {
       return { level: "safe", reason: "Read-only command" };

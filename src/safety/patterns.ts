@@ -29,4 +29,5 @@ export const readOnlyShellCommands = new Set([
   'df', 'lsof', 'md5', 'md5sum', 'sha256sum', 'shasum',
   'ifconfig', 'ipconfig', 'netstat', 'ss', 'route', 'arp',
   'ps', 'pgrep', 'lscpu', 'free', 'vmstat', 'iostat',
+  'echo', 'printf',
 ]);

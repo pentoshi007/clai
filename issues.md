@@ -431,7 +431,7 @@ Files:
 - `manifests/homebrew/clai.rb`
 - `manifests/scoop/clai.json`
 
-Homebrew manifest is at `0.3.1`, while `package.json` and Scoop are at `0.6.0`. Curl/PowerShell installers download binaries without checksum/signature verification.
+Homebrew manifest is at `0.3.1`, while `package.json` and Scoop are at `0.6.1`. Curl/PowerShell installers download binaries without checksum/signature verification.
 
 Suggestions:
 
