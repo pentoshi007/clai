@@ -988,7 +988,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       ).trim();
       isReadingPrompt = false;
       if (!line) continue;
-      if (promptHistory[promptHistory.length - 1] !== line) {
+      // Only remember real prompts in the history ring. Slash commands
+      // are operational toggles (eg /model, /provider) and surfacing them
+      // when the user presses ↑ to recall a past prompt is just noise.
+      if (
+        !line.startsWith("/") &&
+        promptHistory[promptHistory.length - 1] !== line
+      ) {
         promptHistory.push(line);
       }
       if (line.startsWith("/")) {

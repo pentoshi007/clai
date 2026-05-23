@@ -8,7 +8,11 @@ import { envVars, getDefaultModel, maskSecret } from '../llm/provider.js';
 import { getConfig } from './config.js';
 
 const serviceName = 'clai';
-const keychainModuleName = 'keytar';
+// `@napi-rs/keyring` ships prebuilt napi binaries (no node-gyp / prebuild-install)
+// and exposes a keytar-compatible API at the `/keytar` subpath. We dynamically
+// import it so the CLI keeps working when the optional native binding is
+// missing on a platform — falling back to the encrypted JSON keys file.
+const keychainModuleName = '@napi-rs/keyring/keytar.js';
 const keysFile = join(homedir(), '.clai', 'keys.json');
 
 type KeytarLike = {
@@ -19,12 +23,62 @@ type KeytarLike = {
 
 type FallbackKeys = Partial<Record<ProviderId, string>>;
 
+let cachedKeytar: KeytarLike | undefined;
+let keytarLoadAttempted = false;
+// On many Linux servers and most Windows non-interactive sessions the
+// napi-rs keyring binary loads cleanly but the underlying OS keystore
+// (libsecret/DBus on Linux, Windows Credential Manager) is unreachable.
+// In that case the first call fails — we record it and stop trying
+// for the rest of the process so every read/write/delete falls back
+// to the encrypted JSON file silently.
+let keychainRuntimeUnavailable = false;
+let keychainRuntimeWarned = false;
+
 async function loadKeytar(): Promise<KeytarLike | undefined> {
+  if (cachedKeytar) return cachedKeytar;
+  if (keytarLoadAttempted) return cachedKeytar;
+  keytarLoadAttempted = true;
   try {
     const imported = (await import(keychainModuleName)) as { default?: KeytarLike } & KeytarLike;
-    return imported.default ?? imported;
+    cachedKeytar = imported.default ?? imported;
+    return cachedKeytar;
   } catch {
     return undefined;
+  }
+}
+
+function isMissingKeychainError(error: unknown): boolean {
+  // Best-effort detection so transient errors (eg locked keychain prompt
+  // dismissed) don't permanently disable the keychain. Anything that
+  // looks like a missing-platform-service signature gets latched off.
+  const message = error instanceof Error ? error.message : String(error);
+  return /(no such (?:bus|service)|secret service|libsecret|dbus|keyring|gnome-keyring|kwallet|credential|keychain|security framework|access denied|not (?:available|implemented))/i.test(
+    message,
+  );
+}
+
+function noteKeychainRuntimeFailure(error: unknown): void {
+  if (isMissingKeychainError(error)) keychainRuntimeUnavailable = true;
+  if (!keychainRuntimeWarned) {
+    keychainRuntimeWarned = true;
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(
+      `clai: OS keychain unavailable (${message.split('\n')[0]}); using encrypted file at ${keysFile}\n`,
+    );
+  }
+}
+
+async function withKeytar<T>(
+  fn: (keytar: KeytarLike) => Promise<T>,
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  if (keychainRuntimeUnavailable) return { ok: false };
+  const keytar = await loadKeytar();
+  if (!keytar) return { ok: false };
+  try {
+    return { ok: true, value: await fn(keytar) };
+  } catch (error) {
+    noteKeychainRuntimeFailure(error);
+    return { ok: false };
   }
 }
 
@@ -67,12 +121,11 @@ export async function getProviderSecret(provider: ProviderId): Promise<{ value?:
     return { value: getConfig().ollamaHost, source: 'local' };
   }
 
-  const keytar = await loadKeytar();
-  if (keytar) {
-    const fromKeychain = await keytar.getPassword(serviceName, provider);
-    if (fromKeychain) {
-      return { value: fromKeychain, source: 'keychain' };
-    }
+  const keychainResult = await withKeytar((keytar) =>
+    keytar.getPassword(serviceName, provider),
+  );
+  if (keychainResult.ok && keychainResult.value) {
+    return { value: keychainResult.value, source: 'keychain' };
   }
 
   const fallback = await readFallback();
@@ -89,11 +142,10 @@ export async function setProviderSecret(provider: ProviderId, secret: string): P
     return 'fallback';
   }
 
-  const keytar = await loadKeytar();
-  if (keytar) {
-    await keytar.setPassword(serviceName, provider, secret);
-    return 'keychain';
-  }
+  const keychainResult = await withKeytar((keytar) =>
+    keytar.setPassword(serviceName, provider, secret),
+  );
+  if (keychainResult.ok) return 'keychain';
 
   const fallback = await readFallback();
   fallback[provider] = secret;
@@ -102,10 +154,9 @@ export async function setProviderSecret(provider: ProviderId, secret: string): P
 }
 
 export async function unsetProviderSecret(provider: ProviderId): Promise<void> {
-  const keytar = await loadKeytar();
-  if (keytar) {
-    await keytar.deletePassword(serviceName, provider);
-  }
+  // Best-effort: try the keychain first, but never fail the whole call
+  // if it errors. The fallback-file cleanup below always runs.
+  await withKeytar((keytar) => keytar.deletePassword(serviceName, provider));
 
   if (existsSync(keysFile)) {
     const fallback = await readFallback();
@@ -115,6 +166,28 @@ export async function unsetProviderSecret(provider: ProviderId): Promise<void> {
     } else {
       await writeFallback(fallback);
     }
+  }
+}
+
+export type KeychainStatus =
+  | { available: true }
+  | { available: false; reason: 'module-missing' | 'runtime-error'; detail?: string };
+
+/**
+ * Probes the OS keychain by performing a harmless read against a marker
+ * service. Used by `clai doctor` so users can tell at a glance whether
+ * secrets land in the OS store or the encrypted JSON fallback.
+ */
+export async function probeKeychain(): Promise<KeychainStatus> {
+  const keytar = await loadKeytar();
+  if (!keytar) return { available: false, reason: 'module-missing' };
+  try {
+    await keytar.getPassword(serviceName, '__clai_probe__');
+    return { available: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isMissingKeychainError(error)) keychainRuntimeUnavailable = true;
+    return { available: false, reason: 'runtime-error', detail: message };
   }
 }
 

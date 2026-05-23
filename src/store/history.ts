@@ -8,6 +8,14 @@ import { redactSecrets } from "../llm/provider.js";
 const historyDir = join(homedir(), ".clai");
 const dbFile = join(historyDir, "history.db");
 const jsonlFile = join(historyDir, "history.jsonl");
+// We keep this string here (not as a literal) so the bundler doesn't try
+// to statically resolve a module that may not be installed. If a user has
+// `better-sqlite3` available (eg they explicitly added it for a richer
+// history experience) we'll happily use it; otherwise we transparently
+// fall back to the always-available JSONL log. This lets us drop
+// `better-sqlite3` from our optional dependencies — and with it the
+// deprecated `prebuild-install` warning — without losing functionality
+// for users who already had a SQLite-backed history.
 const sqliteModuleName = "better-sqlite3";
 
 export interface HistoryRecord {
