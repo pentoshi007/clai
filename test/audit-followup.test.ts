@@ -160,10 +160,16 @@ describe("audit#2 — shell.exec public domain scanners are scoped", () => {
  * ------------------------------------------------------------------------- */
 describe("audit#3 — fs reads are sandboxed", () => {
   it("fs.read refuses paths outside sandbox roots when sandboxReads=true", async () => {
+    const before = getConfig().sandboxReads;
+    updateConfig({ sandboxReads: true });
     // Default config: sandboxRoots=[cwd]. Reads of /etc/hosts (outside cwd,
     // tmpdir, $HOME) must be refused. /etc/hosts is unlikely to be a secret
     // path so this exercises the sandbox-only check.
-    await expect(fsRead("/etc/hosts")).rejects.toThrow(/sandbox/i);
+    try {
+      await expect(fsRead("/etc/hosts")).rejects.toThrow(/sandbox/i);
+    } finally {
+      updateConfig({ sandboxReads: before });
+    }
   });
 
   it("classifier still marks fs.read safe — sandbox enforcement happens in fs.ts", () => {

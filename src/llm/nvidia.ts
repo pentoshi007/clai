@@ -64,6 +64,7 @@ export const nvidiaProvider: LlmProvider = {
       onToken,
       reasoning: request.thinking,
       reasoningStyle: "nvidia",
+      idleTimeoutMs: 45_000,
     });
     return { text, provider: "nvidia", model };
   },

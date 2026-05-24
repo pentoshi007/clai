@@ -243,20 +243,24 @@ export type ReasoningStyle = "openai" | "nvidia" | "groq" | "openrouter" | "none
 // not recognise it can leave the upstream renderer in a broken state and
 // stream zero tokens — so we route per-family rather than firing every key.
 export type NvidiaReasoningKind =
-  | "thinking" // DeepSeek-V3/V4, Kimi K2/Nemotron — `chat_template_kwargs.thinking`
+  | "kimi-thinking" // Kimi K2.6 — reasoning is on by default; `thinking:false` disables it
+  | "deepseek-v4" // DeepSeek V4 — `thinking` plus V4's none/high reasoning effort
+  | "thinking" // DeepSeek-R1/V3, Nemotron — `chat_template_kwargs.thinking`
   | "enable-thinking" // GLM-5/4.5, Gemma 3/4 — `chat_template_kwargs.enable_thinking`
   | "effort-only" // gpt-oss, qwen3 — top-level `reasoning_effort`
   | "none"; // Llama, Mistral, MiniMax m2.x — no thinking knob
 
 export function classifyNvidiaModel(model: string): NvidiaReasoningKind {
   const m = model.toLowerCase();
+  if (/kimi-k2(?:\.6|-thinking|-instruct)?/.test(m)) return "kimi-thinking";
+  if (/deepseek-v4/.test(m)) return "deepseek-v4";
   if (/glm-?[345]|gemma-?[34]/.test(m)) return "enable-thinking";
-  if (/deepseek-(?:v[34]|r1)|kimi-k2|nemotron/.test(m)) return "thinking";
+  if (/deepseek-(?:v3|r1)|nemotron/.test(m)) return "thinking";
   if (/gpt-oss|qwen3/.test(m)) return "effort-only";
   return "none";
 }
 
-function buildReasoningPayload(
+export function buildReasoningPayload(
   reasoning: ReasoningPreference | undefined,
   style: ReasoningStyle,
   model?: string,
@@ -273,28 +277,44 @@ function buildReasoningPayload(
       return { reasoning: { enabled: true, effort } };
     case "groq":
       if (!enabled) return {};
+      if (!/deepseek-r1|qwen3|gpt-oss|kimi-k2/i.test(model ?? "")) {
+        return {};
+      }
       return { reasoning_effort: effort };
     case "nvidia": {
-      // When reasoning is disabled, deliberately send NO chat_template_kwargs
-      // and NO reasoning_effort. Empirically NIM's chat templates for kimi /
-      // deepseek route an explicit `thinking: false` through a slower path
-      // than just omitting the field, and it costs us tens of seconds of
-      // latency on otherwise instant models. Keep the body minimal.
-      if (!enabled) return {};
       const kind = classifyNvidiaModel(model ?? "");
       switch (kind) {
+        case "kimi-thinking":
+          return {
+            chat_template_kwargs: {
+              thinking: enabled,
+            },
+          };
+        case "deepseek-v4":
+          return {
+            chat_template_kwargs: {
+              thinking: enabled,
+              // NVIDIA's DeepSeek V4 API accepts none/high/max. clai's
+              // public toggle is low/medium/high, so all enabled states
+              // use high; disabled maps to none so /variants off really
+              // takes the model out of hidden-thinking mode.
+              reasoning_effort: enabled ? "high" : "none",
+            },
+          };
         case "thinking":
           return {
             chat_template_kwargs: {
-              thinking: true,
-              reasoning_effort: effort,
+              thinking: enabled,
             },
           };
         case "enable-thinking":
           return {
-            chat_template_kwargs: { enable_thinking: true },
+            chat_template_kwargs: enabled
+              ? { enable_thinking: true, clear_thinking: false }
+              : { enable_thinking: false },
           };
         case "effort-only":
+          if (!enabled) return {};
           return { reasoning_effort: effort };
         case "none":
         default:
@@ -465,6 +485,42 @@ export async function openAiCompatibleStream(options: {
     if (idleTimer) clearTimeout(idleTimer);
     options.signal?.removeEventListener("abort", onCallerAbort);
     throw new ProviderError(`${options.provider} returned no stream body`);
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (response.status === 202 || /\bapplication\/json\b/i.test(contentType)) {
+    if (idleTimer) clearTimeout(idleTimer);
+    options.signal?.removeEventListener("abort", onCallerAbort);
+    const data = await readJson<{
+      id?: string;
+      requestId?: string;
+      status?: string;
+      choices?: Array<{
+        message?: { content?: string; reasoning_content?: string; reasoning?: string };
+      }>;
+    }>(response);
+    if (response.status === 202) {
+      const requestId = data.requestId ?? data.id;
+      throw new ProviderError(
+        `${options.provider} returned a pending async response${requestId ? ` (${requestId})` : ""}; streaming did not start.`,
+        response.status,
+        JSON.stringify(data).slice(0, 1_000),
+      );
+    }
+    const message = data.choices?.[0]?.message;
+    const text = message?.content ?? "";
+    const reasoning = message?.reasoning_content ?? message?.reasoning;
+    const full =
+      reasoning && reasoning.trim() ? `<think>${reasoning}</think>${text}` : text;
+    if (full.trim()) {
+      options.onToken(full);
+      return full;
+    }
+    throw new ProviderError(
+      `${options.provider} returned JSON instead of an SSE stream, but no completion text was present.`,
+      response.status,
+      JSON.stringify(data).slice(0, 1_000),
+    );
   }
 
   const decoder = new TextDecoder();

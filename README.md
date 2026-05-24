@@ -142,16 +142,21 @@ export OLLAMA_HOST=http://localhost:11434
 | `/set <provider> [key]` | Store API key (masked input if key omitted)        |
 | `/unset <provider>`     | Remove stored key                                  |
 | `/keys`                 | List configured providers, masked                  |
+| `/variants [on|off|low|medium|high]` | Toggle model thinking/reasoning variants |
 | `/think`                | Show hidden thinking from last response            |
+| `/output [last|id|list]`| Toggle full saved tool output                      |
 | `/clear`                | Clear conversation context                         |
 | `/history`              | Show past sessions                                 |
 | `/save <name>`          | Save current session                               |
 | `/cwd <path>`           | Change working directory                           |
 | `/allow <tool>`         | Whitelist a tool for the session                   |
+| `/scope add <targets>`  | Add authorized pentest targets                     |
+| `/fallback [on|off]`    | Try other configured providers after a failure     |
 | `/update`               | Check for updates                                  |
 | `/exit`                 | Quit                                               |
 | `/help`                 | List commands                                      |
 | `Ctrl+C`                | Abort current response (second Ctrl+C exits)       |
+| `Ctrl+O`                | Toggle full tool output (same keys on all OSes)    |
 
 ## Built-in Tools (Agent Mode)
 
@@ -186,7 +191,13 @@ Security tools require a one-time acknowledgment:
 clai authorize-pentest AGREE
 ```
 
-Public IP scanning is blocked unless the target is private (RFC 1918) or the user explicitly confirms ownership.
+Public targets also need an engagement scope. Add targets once with:
+
+```sh
+clai scope add --targets example.com,10.0.0.0/24
+```
+
+Inside the REPL, use `/scope add example.com`. If the agent proposes a scoped recon target that is not yet covered, clai now asks whether to authorize that specific target for the current session instead of dead-ending on a block.
 
 ## Updates
 

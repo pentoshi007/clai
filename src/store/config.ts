@@ -18,6 +18,8 @@ export interface ClaiConfig {
   thinking: ReasoningPreference;
   /** When true, exclude paid-cloud providers from the fallback chain. */
   freeOnly: boolean;
+  /** When true, try other configured providers after the selected provider fails. */
+  providerFallback: boolean;
   /** When true, suppress non-essential outbound calls (update check). */
   offline: boolean;
   /** When true, the agent only accepts ```tool / XML / Kimi sentinel tool calls. */
@@ -59,6 +61,7 @@ const defaults: ClaiConfig = {
   lastUpdateCheck: 0,
   thinking: { enabled: false, effort: "medium" },
   freeOnly: false,
+  providerFallback: false,
   offline: false,
   parserStrict: false,
   privateMode: false,

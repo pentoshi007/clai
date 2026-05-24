@@ -6,12 +6,17 @@ import {
   clearScope,
   loadScope,
   isScopeActive,
+  addScopeTargets,
+  normalizeScopeTarget,
   targetInScope,
   resetScopeCache,
   getScopePath,
   type EngagementScope,
 } from "../src/store/scope.js";
-import { classifyToolCall } from "../src/safety/classifier.js";
+import {
+  classifyToolCall,
+  scopeTargetForToolCall,
+} from "../src/safety/classifier.js";
 
 // The scope file path is computed at module-load time from the real
 // $HOME, so the persistence round-trip below uses the real
@@ -62,6 +67,19 @@ describe("phase 10 — scope helpers", () => {
     expect(targetInScope("evil.com", scope)).toBe(false);
   });
 
+  it("targetInScope normalizes URLs and ports before matching", () => {
+    const scope: EngagementScope = {
+      authorizedTargets: ["example.com", "10.0.0.0/24"],
+    };
+    expect(normalizeScopeTarget("https://api.example.com:8443/path")).toBe(
+      "api.example.com",
+    );
+    expect(targetInScope("https://api.example.com:8443/path", scope)).toBe(
+      true,
+    );
+    expect(targetInScope("10.0.0.5", scope)).toBe(true);
+  });
+
   it("targetInScope respects excludedTargets", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["example.com"],
@@ -102,6 +120,27 @@ describe("phase 10 — classifier scope gating", () => {
       { scope },
     );
     expect(result.level).toBe("block");
+  });
+
+  it("extracts the target that can be authorized for this session", () => {
+    expect(
+      scopeTargetForToolCall({
+        name: "pentest.recon",
+        args: { target: "https://example.com/login" },
+      }),
+    ).toBe("example.com");
+    expect(
+      scopeTargetForToolCall({
+        name: "shell.exec",
+        args: { command: "nmap -sV scanme.nmap.org" },
+      }),
+    ).toBe("scanme.nmap.org");
+    expect(
+      scopeTargetForToolCall({
+        name: "net.scan",
+        args: { target: "192.168.1.1" },
+      }),
+    ).toBeUndefined();
   });
 
   it("does not bypass scope when shell.exec contains legacy --i-own-this", () => {
@@ -154,5 +193,25 @@ describe("phase 10 — scope persistence round-trip", () => {
     resetScopeCache();
     const loaded = await loadScope();
     expect(loaded).toBeUndefined();
+  });
+
+  it("addScopeTargets appends targets without replacing metadata", async () => {
+    await saveScope({
+      name: "test-engagement",
+      authorizedTargets: ["example.com"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const updated = await addScopeTargets([
+      "https://api.example.com",
+      "other.com",
+    ]);
+    expect(updated.name).toBe("test-engagement");
+    expect(updated.createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(updated.authorizedTargets).toEqual([
+      "example.com",
+      "api.example.com",
+      "other.com",
+    ]);
+    expect(updated.updatedAt).toBeTruthy();
   });
 });

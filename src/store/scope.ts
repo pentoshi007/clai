@@ -15,6 +15,7 @@ export interface EngagementScope {
   maxConcurrency?: number | undefined;
   authorizationNote?: string | undefined;
   createdAt?: string | undefined;
+  updatedAt?: string | undefined;
   expiresAt?: string | undefined;
 }
 
@@ -39,6 +40,57 @@ export async function saveScope(scope: EngagementScope): Promise<void> {
   await writeFile(scopeFile, `${JSON.stringify(scope, null, 2)}\n`, { mode: 0o600 });
   cached = scope;
   cacheLoaded = true;
+}
+
+export function normalizeScopeTarget(target: string): string {
+  const trimmed = target.trim();
+  if (!trimmed) return "";
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      return new URL(trimmed).hostname.toLowerCase();
+    }
+  } catch {
+    // Fall through to token cleanup below.
+  }
+  const noBrackets = trimmed.replace(/^\[/, "").replace(/\]$/, "");
+  if (/^(?:\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/.test(noBrackets)) {
+    return noBrackets.toLowerCase();
+  }
+  const withoutPath = noBrackets.split(/[/?#]/)[0] ?? noBrackets;
+  if (net.isIP(withoutPath)) {
+    return withoutPath.toLowerCase();
+  }
+  return withoutPath.replace(/:\d+$/, "").toLowerCase();
+}
+
+export async function addScopeTargets(
+  targets: string[],
+  patch: Partial<Omit<EngagementScope, "authorizedTargets">> = {},
+): Promise<EngagementScope> {
+  const normalized = targets
+    .map(normalizeScopeTarget)
+    .filter((target) => target.length > 0);
+  if (normalized.length === 0) {
+    throw new Error("No valid targets supplied");
+  }
+
+  const existing = await loadScope();
+  const authorizedTargets = Array.from(
+    new Set([
+      ...(existing?.authorizedTargets ?? []).map(normalizeScopeTarget),
+      ...normalized,
+    ]),
+  ).filter(Boolean);
+  const now = new Date().toISOString();
+  const scope: EngagementScope = {
+    ...(existing ?? {}),
+    ...patch,
+    authorizedTargets,
+    createdAt: existing?.createdAt ?? patch.createdAt ?? now,
+    updatedAt: now,
+  };
+  await saveScope(scope);
+  return scope;
 }
 
 export async function clearScope(): Promise<void> {
@@ -92,11 +144,11 @@ function ipInCidr(ip: string, cidr: string): boolean {
  *   - the CIDR target is exactly an authorized CIDR
  */
 export function targetInScope(target: string, scope: EngagementScope): boolean {
-  const trimmed = target.trim().toLowerCase();
+  const trimmed = normalizeScopeTarget(target);
   if (!trimmed) return false;
-  const excluded = (scope.excludedTargets ?? []).map((t) => t.toLowerCase());
+  const excluded = (scope.excludedTargets ?? []).map(normalizeScopeTarget);
   if (excluded.some((entry) => matchEntry(trimmed, entry))) return false;
-  return scope.authorizedTargets.some((entry) => matchEntry(trimmed, entry.toLowerCase()));
+  return scope.authorizedTargets.some((entry) => matchEntry(trimmed, normalizeScopeTarget(entry)));
 }
 
 function matchEntry(target: string, entry: string): boolean {

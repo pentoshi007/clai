@@ -29,6 +29,7 @@ describe('config store', () => {
     expect(config.defaultMode).toMatch(/^(ask|agent)$/);
     expect(Array.isArray(config.sandboxRoots)).toBe(true);
     expect(typeof config.pentestAuthorized).toBe('boolean');
+    expect(typeof config.providerFallback).toBe('boolean');
     expect(typeof config.telemetry).toBe('boolean');
   });
 

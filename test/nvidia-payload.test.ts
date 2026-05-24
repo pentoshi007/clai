@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { classifyNvidiaModel } from "../src/llm/http.js";
+import {
+  buildReasoningPayload,
+  classifyNvidiaModel,
+} from "../src/llm/http.js";
 
 describe("NVIDIA NIM model classification", () => {
-  it("routes DeepSeek/Kimi/Nemotron to chat_template_kwargs.thinking", () => {
-    expect(classifyNvidiaModel("deepseek-ai/deepseek-v4-flash")).toBe("thinking");
-    expect(classifyNvidiaModel("deepseek-ai/deepseek-v4-pro")).toBe("thinking");
+  it("routes Kimi and DeepSeek V4 to their explicit NIM reasoning controls", () => {
+    expect(classifyNvidiaModel("moonshotai/kimi-k2.6")).toBe("kimi-thinking");
+    expect(classifyNvidiaModel("moonshotai/kimi-k2-instruct")).toBe("kimi-thinking");
+    expect(classifyNvidiaModel("deepseek-ai/deepseek-v4-flash")).toBe("deepseek-v4");
+    expect(classifyNvidiaModel("deepseek-ai/deepseek-v4-pro")).toBe("deepseek-v4");
+  });
+
+  it("routes older DeepSeek and Nemotron to chat_template_kwargs.thinking", () => {
     expect(classifyNvidiaModel("deepseek-ai/deepseek-v3.1-terminus")).toBe("thinking");
     expect(classifyNvidiaModel("deepseek-ai/deepseek-r1")).toBe("thinking");
-    expect(classifyNvidiaModel("moonshotai/kimi-k2.6")).toBe("thinking");
-    expect(classifyNvidiaModel("moonshotai/kimi-k2-instruct")).toBe("thinking");
     expect(classifyNvidiaModel("nvidia/llama-3.3-nemotron-super-49b-v1")).toBe("thinking");
   });
 
@@ -30,5 +36,58 @@ describe("NVIDIA NIM model classification", () => {
     expect(classifyNvidiaModel("mistralai/mistral-large-2-instruct")).toBe("none");
     expect(classifyNvidiaModel("minimaxai/minimax-m2.7")).toBe("none");
     expect(classifyNvidiaModel("minimaxai/minimax-m2.5")).toBe("none");
+  });
+
+  it("turns Kimi reasoning off explicitly because NIM enables it by default", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: false, effort: "medium" },
+        "nvidia",
+        "moonshotai/kimi-k2.6",
+      ),
+    ).toEqual({ chat_template_kwargs: { thinking: false } });
+  });
+
+  it("maps DeepSeek V4 off/on to NIM's none/high reasoning effort", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: false, effort: "medium" },
+        "nvidia",
+        "deepseek-ai/deepseek-v4-flash",
+      ),
+    ).toEqual({
+      chat_template_kwargs: { thinking: false, reasoning_effort: "none" },
+    });
+    expect(
+      buildReasoningPayload(
+        { enabled: true, effort: "medium" },
+        "nvidia",
+        "deepseek-ai/deepseek-v4-flash",
+      ),
+    ).toEqual({
+      chat_template_kwargs: { thinking: true, reasoning_effort: "high" },
+    });
+  });
+
+  it("sends GLM's clear_thinking flag when thinking is enabled", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: true, effort: "high" },
+        "nvidia",
+        "z-ai/glm-5.1",
+      ),
+    ).toEqual({
+      chat_template_kwargs: { enable_thinking: true, clear_thinking: false },
+    });
+  });
+
+  it("does not send Groq reasoning_effort to non-reasoning Groq models", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: true, effort: "medium" },
+        "groq",
+        "llama-3.3-70b-versatile",
+      ),
+    ).toEqual({});
   });
 });

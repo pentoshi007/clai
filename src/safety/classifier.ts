@@ -14,6 +14,7 @@ import {
 } from "./patterns.js";
 import {
   isScopeActive,
+  normalizeScopeTarget,
   targetInScope,
   type EngagementScope,
 } from "../store/scope.js";
@@ -214,6 +215,41 @@ function extractScanTarget(command: string): string | undefined {
   return undefined;
 }
 
+function isPublicTarget(target: string): boolean {
+  const normalized = normalizeScopeTarget(target);
+  if (!normalized) return false;
+  const host = normalized.split("/")[0] ?? normalized;
+  if (net.isIP(host)) return !isPrivateIpv4(normalized);
+  if (host === "localhost" || PRIVATE_TLD_RE.test(host)) return false;
+  return true;
+}
+
+export function scopeTargetForToolCall(call: ToolCall): string | undefined {
+  if (call.name === "shell.exec") {
+    const command = stringArg(call.args, "command") ?? "";
+    if (!commandContainsNetworkScanner(command) || !containsPublicTarget(command)) {
+      return undefined;
+    }
+    const target = extractScanTarget(command);
+    return target && isPublicTarget(target) ? normalizeScopeTarget(target) : undefined;
+  }
+
+  if (call.name === "net.scan" || call.name === "pentest.recon") {
+    const target = stringArg(call.args, "target") ?? "";
+    return target && isPublicTarget(target)
+      ? normalizeScopeTarget(target)
+      : undefined;
+  }
+
+  return undefined;
+}
+
+function scopeHint(target: string | undefined): string {
+  return target
+    ? `Run \`/scope add ${target}\` or \`clai scope add --targets ${target}\` to authorize it.`
+    : "Run `/scope add <target>` or `clai scope add --targets <target>` to authorize it.";
+}
+
 export function classifyToolCall(
   call: ToolCall,
   options: ClassifyOptions = {},
@@ -295,7 +331,7 @@ export function classifyToolCall(
       // string could include that flag and trick the agent into running a
       // public scan. Now the agent must have a configured engagement scope
       // that explicitly covers the apparent target.
-      const target = extractScanTarget(command);
+      const target = scopeTargetForToolCall(call);
       const scopeOk =
         isScopeActive(options.scope) && target
           ? targetInScope(target, options.scope!)
@@ -304,7 +340,7 @@ export function classifyToolCall(
         return {
           level: "block",
           reason:
-            "Public target scanning requires a configured engagement scope. Run `clai scope new` to authorize specific domains/CIDRs.",
+            `Public target scanning requires an engagement scope covering ${target ?? "this target"}. ${scopeHint(target)}`,
         };
       }
     }
@@ -349,14 +385,15 @@ export function classifyToolCall(
 
   if (call.name === "net.scan") {
     const target = stringArg(call.args, "target") ?? "";
-    if (target && !isPrivateIpv4(target)) {
+    const scopeTarget = scopeTargetForToolCall(call);
+    if (target && scopeTarget) {
       const scopeOk =
-        isScopeActive(options.scope) && targetInScope(target, options.scope!);
+        isScopeActive(options.scope) && targetInScope(scopeTarget, options.scope!);
       if (!scopeOk) {
         return {
           level: "block",
           reason:
-            "Public IP scan requires a configured engagement scope covering this target",
+            `Public target scan requires an engagement scope covering ${scopeTarget}. ${scopeHint(scopeTarget)}`,
         };
       }
     }
@@ -364,18 +401,15 @@ export function classifyToolCall(
   }
 
   if (call.name === "pentest.recon") {
-    const target = stringArg(call.args, "target") ?? "";
-    const targetHost = target.split("/")[0] ?? target;
-    const isPublic =
-      target && (net.isIP(targetHost) ? !isPrivateIpv4(target) : true);
-    if (isPublic) {
+    const scopeTarget = scopeTargetForToolCall(call);
+    if (scopeTarget) {
       const scopeOk =
-        isScopeActive(options.scope) && targetInScope(target, options.scope!);
+        isScopeActive(options.scope) && targetInScope(scopeTarget, options.scope!);
       if (!scopeOk) {
         return {
           level: "block",
           reason:
-            "Public target recon requires a configured engagement scope covering this target",
+            `Public target recon requires an engagement scope covering ${scopeTarget}. ${scopeHint(scopeTarget)}`,
         };
       }
     }

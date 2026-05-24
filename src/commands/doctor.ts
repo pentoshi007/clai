@@ -46,6 +46,7 @@ export async function runDoctor(): Promise<void> {
   );
   console.log(
     `Free-only mode: ${config.freeOnly ? chalk.green('on') : chalk.dim('off')}  ` +
+      `Provider fallback: ${config.providerFallback ? chalk.green('on') : chalk.dim('off')}  ` +
       `Private mode: ${config.privateMode ? chalk.green('on') : chalk.dim('off')}  ` +
       `Sandbox reads: ${config.sandboxReads === false ? chalk.yellow('off') : chalk.green('on')}  ` +
       `Parser strict: ${config.parserStrict ? chalk.green('on') : chalk.dim('off')}`,

@@ -12,14 +12,23 @@ import type {
 import { streamWithProvider } from "../llm/router.js";
 import { renderAgentSystemPrompt } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
-import { classifyToolCall, isPentestToolCall } from "../safety/classifier.js";
+import {
+  classifyToolCall,
+  isPentestToolCall,
+  scopeTargetForToolCall,
+} from "../safety/classifier.js";
 import { availableToolNames, runToolCall } from "../tools/registry.js";
 import { reduceToolOutput } from "../tools/policies/output-policy.js";
 import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import { compactMessages, estimateMessagesTokens } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
-import { loadScope, isScopeActive } from "../store/scope.js";
+import {
+  loadScope,
+  isScopeActive,
+  targetInScope,
+  type EngagementScope,
+} from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
   rememberThinkingFromText,
@@ -33,10 +42,16 @@ export interface SessionPolicy {
   allow: Set<string>;
   /** Mutable flag so the runner can flip pentest auth for this session only. */
   pentestAuthorized: { value: boolean };
+  /** Public pentest targets authorized for this REPL session only. */
+  scopeTargets: Set<string>;
 }
 
 export function createSessionPolicy(): SessionPolicy {
-  return { allow: new Set(), pentestAuthorized: { value: false } };
+  return {
+    allow: new Set(),
+    pentestAuthorized: { value: false },
+    scopeTargets: new Set(),
+  };
 }
 
 export interface AgentRunOptions {
@@ -363,6 +378,47 @@ async function confirmToolExecution(
   });
 }
 
+function effectiveScope(
+  persisted: EngagementScope | undefined,
+  session: SessionPolicy,
+): EngagementScope | undefined {
+  if (session.scopeTargets.size === 0) return persisted;
+  return {
+    ...(persisted ?? {}),
+    name: persisted?.name ?? "session",
+    authorizedTargets: Array.from(
+      new Set([...(persisted?.authorizedTargets ?? []), ...session.scopeTargets]),
+    ),
+  };
+}
+
+async function ensureSessionScopeTarget(
+  call: ToolCall,
+  scope: EngagementScope | undefined,
+  autoConfirm: boolean,
+  session: SessionPolicy,
+): Promise<string | undefined> {
+  const target = scopeTargetForToolCall(call);
+  if (!target) return undefined;
+  if (isScopeActive(scope) && targetInScope(target, scope)) return target;
+  if (session.scopeTargets.has(target)) return target;
+
+  if (autoConfirm) {
+    session.scopeTargets.add(target);
+    return target;
+  }
+
+  const ok = await confirm({
+    message: chalk.yellow(
+      `Authorize ${target} as an in-scope pentest target for this session?`,
+    ),
+    default: true,
+  });
+  if (!ok) return undefined;
+  session.scopeTargets.add(target);
+  return target;
+}
+
 export async function runAgentLoop(
   prompt: string,
   options: AgentRunOptions = {},
@@ -501,8 +557,9 @@ export async function runAgentLoop(
     }
 
     messages.push({ role: "assistant", content: assistantText.visible });
-    const scope = await loadScope();
-    const decision = classifyToolCall(call, { scope });
+    const persistedScope = await loadScope();
+    let scope = effectiveScope(persistedScope, session);
+    let decision = classifyToolCall(call, { scope });
     await auditLog("tool.classified", {
       call,
       decision,
@@ -515,6 +572,29 @@ export async function runAgentLoop(
         chalk.gray(` ${formatToolArgs(call)}`) +
         "\n",
     );
+
+    if (decision.level === "block") {
+      const target = /scope/i.test(decision.reason)
+        ? await ensureSessionScopeTarget(
+            call,
+            scope,
+            Boolean(options.autoConfirm),
+            session,
+          )
+        : undefined;
+      if (target) {
+        scope = effectiveScope(persistedScope, session);
+        decision = classifyToolCall(call, { scope });
+        await auditLog("scope.session_authorized", {
+          call,
+          target,
+          decision,
+        });
+        process.stdout.write(
+          chalk.dim(`  ✓ authorized ${target} for this session\n`),
+        );
+      }
+    }
 
     if (decision.level === "block") {
       process.stdout.write(chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n");

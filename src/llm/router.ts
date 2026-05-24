@@ -91,7 +91,9 @@ const fallbackOrder: ProviderId[] = [
 export function buildFallbackChain(
   requested: ProviderId,
   freeOnly: boolean,
+  enabled = false,
 ): ProviderId[] {
+  if (!enabled) return [requested];
   const filtered = freeOnly
     ? fallbackOrder.filter(
         (provider) =>
@@ -120,7 +122,11 @@ export async function completeWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
-  const order = buildFallbackChain(requested, config.freeOnly);
+  const order = buildFallbackChain(
+    requested,
+    config.freeOnly,
+    config.providerFallback,
+  );
   const failures: string[] = [];
 
   for (const providerId of order) {
@@ -160,7 +166,11 @@ export async function streamWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
-  const order = buildFallbackChain(requested, config.freeOnly);
+  const order = buildFallbackChain(
+    requested,
+    config.freeOnly,
+    config.providerFallback,
+  );
   const failures: string[] = [];
   const emitStatus = onStatus ?? ((message) => onToken(message));
 

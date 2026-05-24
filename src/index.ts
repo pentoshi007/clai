@@ -367,6 +367,28 @@ async function main(): Promise<void> {
     );
 
   scopeCommand
+    .command("add")
+    .description("append targets to the active engagement scope")
+    .requiredOption(
+      "--targets <list>",
+      "comma-separated authorized targets (domains, IPs, CIDRs)",
+    )
+    .action(async (options: { targets: string }) => {
+      const { addScopeTargets } = await import("./store/scope.js");
+      const targets = options.targets
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      if (targets.length === 0) {
+        throw new Error("--targets must list at least one target");
+      }
+      const scope = await addScopeTargets(targets);
+      console.log(
+        `Added ${targets.length} authorized target(s). Scope now has ${scope.authorizedTargets.length}.`,
+      );
+    });
+
+  scopeCommand
     .command("clear")
     .description("clear the active engagement scope")
     .action(async () => {

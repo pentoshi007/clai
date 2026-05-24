@@ -67,6 +67,7 @@ import {
   compactMessages,
   estimateMessagesTokens,
 } from "./agent/context-manager.js";
+import { isCtrlC, isCtrlO, isCtrlT, isEscape } from "./ui/keys.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -144,13 +145,18 @@ const slashCommands: SlashCommand[] = [
   {
     command: "/freeonly",
     usage: "[on|off]",
-    description: "skip paid providers in fallback (off by default)",
+    description: "skip paid providers when fallback is enabled",
+  },
+  {
+    command: "/fallback",
+    usage: "[on|off]",
+    description: "try other configured providers after a failure (off by default)",
   },
   { command: "/compact", description: "compact session history now" },
   { command: "/context", description: "show estimated context size" },
   {
     command: "/scope",
-    usage: "[show|clear|new <targets>]",
+    usage: "[show|clear|new|add <targets>]",
     description: "manage pentest engagement scope",
   },
   {
@@ -341,6 +347,7 @@ function isPrintableSequence(sequence: string | undefined): sequence is string {
 async function readPromptLine(options: {
   history: string[];
   onThinkingShortcut: () => void;
+  onOutputShortcut: () => Promise<void>;
 }): Promise<string> {
   return new Promise((resolve) => {
     let line = "";
@@ -404,6 +411,18 @@ async function readPromptLine(options: {
       if (input.isTTY) input.setRawMode(false);
     };
 
+    const clearPromptDisplay = (): void => {
+      const previousMenuLines = renderedMenuLines;
+      cursorTo(output, 0);
+      clearLine(output, 0);
+      for (let i = 0; i < previousMenuLines; i += 1) {
+        output.write("\n");
+        clearLine(output, 0);
+      }
+      if (previousMenuLines > 0) moveCursor(output, 0, -previousMenuLines);
+      renderedMenuLines = 0;
+    };
+
     const submit = (submittedLine: string): void => {
       const previousMenuLines = renderedMenuLines;
       line = submittedLine;
@@ -433,7 +452,7 @@ async function readPromptLine(options: {
       // selecting + copying never breaks the REPL.
       if (key.meta && !key.ctrl && key.name === "c") return;
 
-      if (key.ctrl && key.name === "c") {
+      if (isCtrlC(key)) {
         // First press: clear the current line. Second press within 1s: exit.
         // This mirrors bash / Claude Code and avoids killing the REPL by
         // accident when users habitually press Ctrl+C to copy in some
@@ -457,9 +476,16 @@ async function readPromptLine(options: {
         return;
       }
 
-      if (key.ctrl && key.name === "t") {
+      if (isCtrlT(key)) {
         options.onThinkingShortcut();
         refresh();
+        return;
+      }
+
+      if (isCtrlO(key)) {
+        clearPromptDisplay();
+        output.write("\n");
+        void options.onOutputShortcut().finally(refresh);
         return;
       }
 
@@ -480,7 +506,7 @@ async function readPromptLine(options: {
         return;
       }
 
-      if (key.name === "escape") {
+      if (isEscape(key)) {
         if (menu.visible) {
           dismissedSlashLine = line;
           refresh();
@@ -1042,6 +1068,7 @@ async function handleSlash(
       const {
         loadScope,
         saveScope,
+        addScopeTargets,
         clearScope,
         isScopeActive,
         getScopePath,
@@ -1057,7 +1084,7 @@ async function handleSlash(
           );
           console.log(
             chalk.dim(
-              "  create one with: /scope new domain1,domain2 [--name <eng>] or `clai scope new --targets ...`",
+              "  create one with: /scope add domain1,domain2 or `clai scope add --targets ...`",
             ),
           );
           return true;
@@ -1086,7 +1113,30 @@ async function handleSlash(
         console.log(chalk.dim("  engagement scope cleared"));
         return true;
       }
-      if (sub === "new" || sub === "set" || sub === "add") {
+      if (sub === "add") {
+        const rest = args.slice(1).join(" ").trim();
+        if (!rest) {
+          console.log(chalk.dim("  usage: /scope add <target1,target2,...>"));
+          return true;
+        }
+        const targets = rest
+          .split(/\s+/)[0]!
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        if (targets.length === 0) {
+          console.log(chalk.dim("  no targets parsed"));
+          return true;
+        }
+        const scope = await addScopeTargets(targets);
+        console.log(
+          chalk.dim(
+            `  added ${targets.length} target(s); scope now has ${scope.authorizedTargets.length}`,
+          ),
+        );
+        return true;
+      }
+      if (sub === "new" || sub === "set") {
         const rest = args.slice(1).join(" ").trim();
         if (!rest) {
           console.log(
@@ -1143,7 +1193,7 @@ async function handleSlash(
         return true;
       }
       console.log(
-        chalk.dim("  usage: /scope [show|clear|new <targets> [key=value]...]"),
+        chalk.dim("  usage: /scope [show|clear|new <targets>|add <targets> [key=value]...]"),
       );
       return true;
     }
@@ -1217,7 +1267,7 @@ async function handleSlash(
         const value = getConfig().freeOnly;
         console.log(
           chalk.dim(
-            `  freeOnly: ${value ? chalk.green("on") : chalk.dim("off")}  (paid providers ${value ? "skipped" : "in fallback"})`,
+            `  freeOnly: ${value ? chalk.green("on") : chalk.dim("off")}  (applies when /fallback is on)`,
           ),
         );
         return true;
@@ -1233,6 +1283,30 @@ async function handleSlash(
         return true;
       }
       console.log(chalk.dim("  usage: /freeonly [on|off]"));
+      return true;
+    }
+    case "/fallback": {
+      const arg = (args[0] ?? "").toLowerCase().trim();
+      if (!arg) {
+        const value = getConfig().providerFallback;
+        console.log(
+          chalk.dim(
+            `  fallback: ${value ? chalk.green("on") : chalk.dim("off")}  (selected provider/model only when off)`,
+          ),
+        );
+        return true;
+      }
+      if (arg === "on" || arg === "true" || arg === "enable") {
+        updateConfig({ providerFallback: true });
+        console.log(chalk.dim("  fallback: " + chalk.green("on")));
+        return true;
+      }
+      if (arg === "off" || arg === "false" || arg === "disable") {
+        updateConfig({ providerFallback: false });
+        console.log(chalk.dim("  fallback: " + chalk.dim("off")));
+        return true;
+      }
+      console.log(chalk.dim("  usage: /fallback [on|off]"));
       return true;
     }
     case "/output": {
@@ -1301,6 +1375,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
   const promptHistory: string[] = [];
   let isReadingPrompt = false;
+  let outputShortcutBusy = false;
 
   emitKeypressEvents(input);
 
@@ -1332,22 +1407,32 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const handleThinkingShortcut = (): void => {
     process.stdout.write(`\n${renderThinkingToggleMessage()}\n`);
   };
+  const handleOutputShortcut = async (): Promise<void> => {
+    if (outputShortcutBusy) return;
+    outputShortcutBusy = true;
+    try {
+      const v = getLastViewport();
+      if (v) {
+        if (currentAbortController) process.stdout.write("\n");
+        await toggleViewport(v.id);
+      } else {
+        process.stdout.write(chalk.dim("\n  (no tool output to expand yet)\n"));
+      }
+    } finally {
+      outputShortcutBusy = false;
+    }
+  };
   const handleKeypress = (
     _sequence: string,
     key: { ctrl?: boolean; name?: string },
   ): void => {
-    if (key.ctrl && key.name === "t" && !isReadingPrompt)
+    if (isCtrlT(key) && !isReadingPrompt)
       handleThinkingShortcut();
-    if (key.ctrl && key.name === "o" && !isReadingPrompt) {
-      const v = getLastViewport();
-      if (v) {
-        void toggleViewport(v.id);
-      } else {
-        process.stdout.write(chalk.dim("\n  (no tool output to expand yet)\n"));
-      }
+    if (isCtrlO(key) && !isReadingPrompt) {
+      void handleOutputShortcut();
     }
     if (
-      (key.name === "escape" || (key.ctrl && key.name === "c")) &&
+      (isEscape(key) || isCtrlC(key)) &&
       currentAbortController
     ) {
       currentAbortController.abort();
@@ -1431,6 +1516,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         await readPromptLine({
           history: promptHistory,
           onThinkingShortcut: handleThinkingShortcut,
+          onOutputShortcut: handleOutputShortcut,
         })
       ).trim();
       isReadingPrompt = false;
