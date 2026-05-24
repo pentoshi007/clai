@@ -1,10 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import net from "node:net";
 
-const scopeFile = join(homedir(), ".clai", "scope.json");
+const scopeFile =
+  process.env.CLAI_SCOPE_FILE ??
+  (process.env.VITEST_WORKER_ID
+    ? join(tmpdir(), `clai-scope-${process.env.VITEST_WORKER_ID}.json`)
+    : join(homedir(), ".clai", "scope.json"));
 
 export interface EngagementScope {
   name?: string | undefined;

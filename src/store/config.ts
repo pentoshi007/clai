@@ -81,8 +81,8 @@ export function getConfig(): ClaiConfig {
 
 export function updateConfig(patch: Partial<ClaiConfig>): ClaiConfig {
   const next = { ...getConfig(), ...patch } satisfies ClaiConfig;
-  store.store = next;
-  return next;
+  store.set(next);
+  return getConfig();
 }
 
 export function setDefaultProvider(provider: ProviderId): ClaiConfig {

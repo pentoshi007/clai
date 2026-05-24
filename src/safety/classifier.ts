@@ -244,7 +244,7 @@ export function scopeTargetForToolCall(call: ToolCall): string | undefined {
   return undefined;
 }
 
-function scopeHint(target: string | undefined): string {
+export function scopeHint(target: string | undefined): string {
   return target
     ? `Run \`/scope add ${target}\` or \`clai scope add --targets ${target}\` to authorize it.`
     : "Run `/scope add <target>` or `clai scope add --targets <target>` to authorize it.";
@@ -323,29 +323,18 @@ export function classifyToolCall(
           "Command references a known secret path (e.g. ~/.ssh, ~/.clai/keys.json, .env)",
       };
     }
-    if (
-      commandContainsNetworkScanner(command) &&
-      containsPublicTarget(command)
-    ) {
-      // The legacy `--i-own-this` substring bypass is gone: a malicious target
-      // string could include that flag and trick the agent into running a
-      // public scan. Now the agent must have a configured engagement scope
-      // that explicitly covers the apparent target.
-      const target = scopeTargetForToolCall(call);
-      const scopeOk =
-        isScopeActive(options.scope) && target
-          ? targetInScope(target, options.scope!)
-          : false;
-      if (!scopeOk) {
-        return {
-          level: "block",
-          reason:
-            `Public target scanning requires an engagement scope covering ${target ?? "this target"}. ${scopeHint(target)}`,
-        };
-      }
-    }
     // Pentest scan tools always require confirmation even against private targets
     if (commandContainsNetworkScanner(command)) {
+      const target = scopeTargetForToolCall(call);
+      if (
+        target &&
+        (!isScopeActive(options.scope) || !targetInScope(target, options.scope))
+      ) {
+        return {
+          level: "confirm",
+          reason: `Public target scan; scope is optional. ${scopeHint(target)}`,
+        };
+      }
       return {
         level: "confirm",
         reason: "Security scan tool requires confirmation",
@@ -384,34 +373,29 @@ export function classifyToolCall(
   }
 
   if (call.name === "net.scan") {
-    const target = stringArg(call.args, "target") ?? "";
     const scopeTarget = scopeTargetForToolCall(call);
-    if (target && scopeTarget) {
-      const scopeOk =
-        isScopeActive(options.scope) && targetInScope(scopeTarget, options.scope!);
-      if (!scopeOk) {
-        return {
-          level: "block",
-          reason:
-            `Public target scan requires an engagement scope covering ${scopeTarget}. ${scopeHint(scopeTarget)}`,
-        };
-      }
+    if (
+      scopeTarget &&
+      (!isScopeActive(options.scope) || !targetInScope(scopeTarget, options.scope))
+    ) {
+      return {
+        level: "confirm",
+        reason: `Public target scan; scope is optional. ${scopeHint(scopeTarget)}`,
+      };
     }
     return { level: "confirm", reason: "Network scans require confirmation" };
   }
 
   if (call.name === "pentest.recon") {
     const scopeTarget = scopeTargetForToolCall(call);
-    if (scopeTarget) {
-      const scopeOk =
-        isScopeActive(options.scope) && targetInScope(scopeTarget, options.scope!);
-      if (!scopeOk) {
-        return {
-          level: "block",
-          reason:
-            `Public target recon requires an engagement scope covering ${scopeTarget}. ${scopeHint(scopeTarget)}`,
-        };
-      }
+    if (
+      scopeTarget &&
+      (!isScopeActive(options.scope) || !targetInScope(scopeTarget, options.scope))
+    ) {
+      return {
+        level: "confirm",
+        reason: `Public target recon; scope is optional. ${scopeHint(scopeTarget)}`,
+      };
     }
     return {
       level: "confirm",

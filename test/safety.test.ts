@@ -38,12 +38,13 @@ describe("safety classifier", () => {
     expect(result.level).toBe("confirm");
   });
 
-  it("blocks public scans without explicit ownership flag", () => {
+  it("confirms public scans and keeps scope advisory", () => {
     const result = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap 8.8.8.8" },
     });
-    expect(result.level).toBe("block");
+    expect(result.level).toBe("confirm");
+    expect(result.reason).toMatch(/scope is optional/i);
   });
 
   it("requires confirmation for pentest scan tools even against private targets", () => {

@@ -260,6 +260,12 @@ export function classifyNvidiaModel(model: string): NvidiaReasoningKind {
   return "none";
 }
 
+function supportsOpenRouterReasoning(model: string): boolean {
+  return /:thinking|deepseek-r1|qwen3|kimi-k2|claude-(?:opus|sonnet|haiku)-4|gpt-5|(?:^|\/)o[134]|grok.*reasoner/i.test(
+    model,
+  );
+}
+
 export function buildReasoningPayload(
   reasoning: ReasoningPreference | undefined,
   style: ReasoningStyle,
@@ -274,6 +280,7 @@ export function buildReasoningPayload(
       return { reasoning_effort: effort, reasoning: { effort } };
     case "openrouter":
       if (!enabled) return {};
+      if (!supportsOpenRouterReasoning(model ?? "")) return {};
       return { reasoning: { enabled: true, effort } };
     case "groq":
       if (!enabled) return {};

@@ -83,7 +83,7 @@ describe("audit#1 — tool.batch refuses mutating child calls", () => {
 /* -------------------------------------------------------------------------
  * Audit follow-up #2 — public domain scans through shell.exec are scoped.
  * ------------------------------------------------------------------------- */
-describe("audit#2 — shell.exec public domain scanners are scoped", () => {
+describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
   beforeEach(() => {
     resetScopeCache();
   });
@@ -92,24 +92,24 @@ describe("audit#2 — shell.exec public domain scanners are scoped", () => {
     resetScopeCache();
   });
 
-  it("blocks `nmap example.com` without scope", () => {
+  it("confirms `nmap example.com` without requiring scope", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap example.com" },
     });
-    expect(decision.level).toBe("block");
-    expect(decision.reason).toMatch(/scope/i);
+    expect(decision.level).toBe("confirm");
+    expect(decision.reason).toMatch(/scope is optional/i);
   });
 
-  it("blocks `nuclei -u https://example.com` without scope", () => {
+  it("confirms `nuclei -u https://example.com` without requiring scope", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: { command: "nuclei -u https://example.com -severity high" },
     });
-    expect(decision.level).toBe("block");
+    expect(decision.level).toBe("confirm");
   });
 
-  it("blocks `ffuf -u https://example.com/FUZZ -w wordlists/common.txt` without scope", () => {
+  it("confirms `ffuf -u https://example.com/FUZZ -w wordlists/common.txt` without requiring scope", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: {
@@ -117,7 +117,7 @@ describe("audit#2 — shell.exec public domain scanners are scoped", () => {
           "ffuf -u https://example.com/FUZZ -w /usr/share/wordlists/common.txt",
       },
     });
-    expect(decision.level).toBe("block");
+    expect(decision.level).toBe("confirm");
   });
 
   it("private RFC1918 ffuf with wordlists/*.txt still confirms (not blocked)", () => {

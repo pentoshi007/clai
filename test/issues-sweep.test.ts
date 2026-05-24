@@ -40,14 +40,15 @@ describe("issues.md §23 — sweep", () => {
     }
   });
 
-  it("public scan is blocked even when --i-own-this appears in the command", () => {
-    // Legacy --i-own-this substring bypass is gone (Phase 10).
+  it("public scan with --i-own-this still only reaches confirm", () => {
+    // Legacy --i-own-this substring bypass is gone; the flag does not
+    // auto-safe a public scan, but scope is only advisory.
     const decision = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap --i-own-this 8.8.8.8" },
     });
-    expect(decision.level).toBe("block");
-    expect(decision.reason).toMatch(/scope/i);
+    expect(decision.level).toBe("confirm");
+    expect(decision.reason).toMatch(/scope is optional/i);
   });
 
   it("Ctrl+O uses the same readline shape on macOS, Linux, Windows", () => {

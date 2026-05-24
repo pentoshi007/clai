@@ -191,13 +191,13 @@ Security tools require a one-time acknowledgment:
 clai authorize-pentest AGREE
 ```
 
-Public targets also need an engagement scope. Add targets once with:
+Public targets do not require a stored scope, but keeping one helps clai remember what you are authorized to test. Add targets with:
 
 ```sh
 clai scope add --targets example.com,10.0.0.0/24
 ```
 
-Inside the REPL, use `/scope add example.com`. If the agent proposes a scoped recon target that is not yet covered, clai now asks whether to authorize that specific target for the current session instead of dead-ending on a block.
+Inside the REPL, use `/scope add example.com`. If the agent proposes a public recon target that is not covered, clai shows a scope suggestion and still lets you continue through the normal confirmation flow.
 
 ## Updates
 

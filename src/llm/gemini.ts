@@ -29,8 +29,16 @@ function systemInstruction(
   return system ? { parts: [{ text: system.content }] } : undefined;
 }
 
-function geminiThinkingBudget(reasoning: ReasoningPreference | undefined): number | undefined {
+function geminiSupportsThinking(model: string): boolean {
+  return /gemini-(?:2\.5|3|3\.\d)/i.test(model);
+}
+
+function geminiThinkingBudget(
+  reasoning: ReasoningPreference | undefined,
+  model: string,
+): number | undefined {
   if (!reasoning?.enabled) return undefined;
+  if (!geminiSupportsThinking(model)) return undefined;
   switch (reasoning.effort) {
     case "low":
       return 1_024;
@@ -41,8 +49,9 @@ function geminiThinkingBudget(reasoning: ReasoningPreference | undefined): numbe
   }
 }
 
-function geminiBody(request: CompletionRequest): string {
-  const thinkingBudget = geminiThinkingBudget(request.thinking);
+export function geminiBody(request: CompletionRequest): string {
+  const model = request.model ?? defaultModels.gemini;
+  const thinkingBudget = geminiThinkingBudget(request.thinking, model);
   const body: Record<string, unknown> = {
     contents: geminiContents(request.messages),
     generationConfig: {

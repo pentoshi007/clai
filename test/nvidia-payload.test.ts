@@ -3,6 +3,7 @@ import {
   buildReasoningPayload,
   classifyNvidiaModel,
 } from "../src/llm/http.js";
+import { geminiBody } from "../src/llm/gemini.js";
 
 describe("NVIDIA NIM model classification", () => {
   it("routes Kimi and DeepSeek V4 to their explicit NIM reasoning controls", () => {
@@ -89,5 +90,55 @@ describe("NVIDIA NIM model classification", () => {
         "llama-3.3-70b-versatile",
       ),
     ).toEqual({});
+  });
+
+  it("keeps OpenRouter reasoning payloads separate from Groq and NVIDIA fields", () => {
+    const payload = buildReasoningPayload(
+      { enabled: true, effort: "high" },
+      "openrouter",
+      "moonshotai/kimi-k2:free",
+    );
+    expect(payload).toEqual({ reasoning: { enabled: true, effort: "high" } });
+    expect(payload).not.toHaveProperty("reasoning_effort");
+    expect(payload).not.toHaveProperty("chat_template_kwargs");
+  });
+
+  it("does not send OpenRouter reasoning to models that do not advertise it", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: true, effort: "high" },
+        "openrouter",
+        "meta-llama/llama-3.3-70b-instruct:free",
+      ),
+    ).toEqual({});
+  });
+
+  it("keeps Gemini thinking config inside Gemini generationConfig only", () => {
+    const body = JSON.parse(
+      geminiBody({
+        model: "gemini-2.5-flash",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "low" },
+      }),
+    ) as Record<string, unknown>;
+    const generationConfig = body.generationConfig as Record<string, unknown>;
+    expect(generationConfig.thinkingConfig).toEqual({
+      thinkingBudget: 1024,
+      includeThoughts: true,
+    });
+    expect(body).not.toHaveProperty("reasoning");
+    expect(body).not.toHaveProperty("reasoning_effort");
+    expect(body).not.toHaveProperty("chat_template_kwargs");
+  });
+
+  it("does not send Gemini thinkingConfig to non-thinking Gemini models", () => {
+    const body = JSON.parse(
+      geminiBody({
+        model: "gemini-2.0-flash",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "high" },
+      }),
+    ) as { generationConfig?: Record<string, unknown> };
+    expect(body.generationConfig).not.toHaveProperty("thinkingConfig");
   });
 });

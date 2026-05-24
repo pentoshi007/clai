@@ -7,7 +7,6 @@ describe("phase 1 — session policy", () => {
     const policy = createSessionPolicy();
     expect(policy.allow.size).toBe(0);
     expect(policy.pentestAuthorized.value).toBe(false);
-    expect(policy.scopeTargets.size).toBe(0);
   });
 
   it("config.pentestAuthorized is not silently flipped by creating a policy", () => {
@@ -32,10 +31,4 @@ describe("phase 1 — session policy", () => {
     expect(b.pentestAuthorized.value).toBe(false);
   });
 
-  it("session scope targets are independent across instances", () => {
-    const a = createSessionPolicy();
-    const b = createSessionPolicy();
-    a.scopeTargets.add("example.com");
-    expect(b.scopeTargets.has("example.com")).toBe(false);
-  });
 });

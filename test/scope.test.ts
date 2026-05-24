@@ -91,13 +91,13 @@ describe("phase 10 — scope helpers", () => {
 });
 
 describe("phase 10 — classifier scope gating", () => {
-  it("blocks public net.scan without a scope", () => {
+  it("confirms public net.scan without requiring a scope", () => {
     const result = classifyToolCall({
       name: "net.scan",
       args: { target: "example.com" },
     });
-    expect(result.level).toBe("block");
-    expect(result.reason).toMatch(/scope/i);
+    expect(result.level).toBe("confirm");
+    expect(result.reason).toMatch(/scope is optional/i);
   });
 
   it("permits public net.scan when scope covers the target", () => {
@@ -111,7 +111,7 @@ describe("phase 10 — classifier scope gating", () => {
     expect(result.level).toBe("confirm");
   });
 
-  it("blocks pentest.recon when target is out of scope", () => {
+  it("confirms pentest.recon when target is out of scope", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["myco.com"],
     };
@@ -119,10 +119,11 @@ describe("phase 10 — classifier scope gating", () => {
       { name: "pentest.recon", args: { target: "evil.com" } },
       { scope },
     );
-    expect(result.level).toBe("block");
+    expect(result.level).toBe("confirm");
+    expect(result.reason).toMatch(/scope is optional/i);
   });
 
-  it("extracts the target that can be authorized for this session", () => {
+  it("extracts the target that can be suggested for scope", () => {
     expect(
       scopeTargetForToolCall({
         name: "pentest.recon",
@@ -143,13 +144,13 @@ describe("phase 10 — classifier scope gating", () => {
     ).toBeUndefined();
   });
 
-  it("does not bypass scope when shell.exec contains legacy --i-own-this", () => {
+  it("does not auto-safe shell.exec when legacy --i-own-this is present", () => {
     const result = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap --i-own-this 8.8.8.8" },
     });
-    expect(result.level).toBe("block");
-    expect(result.reason).toMatch(/scope/i);
+    expect(result.level).toBe("confirm");
+    expect(result.reason).toMatch(/scope is optional/i);
   });
 
   it("permits shell.exec public scan when the trailing target is in scope", () => {
