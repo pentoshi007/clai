@@ -5,6 +5,26 @@ import { join } from "node:path";
 import { shellExec } from "../src/tools/shell.js";
 
 describe("phase 3 — bounded shell capture", () => {
+  it("RingBuffer trims a single oversized chunk to capacity (Windows regression)", async () => {
+    // On Windows, Node delivers the entire stdout as one chunk; the original
+    // ring buffer kept the whole thing because of the `chunks.length > 1`
+    // guard. Trim immediately when a single chunk overflows.
+    const { RingBuffer } = await import("../src/tools/shell.js");
+    const ring = new RingBuffer(1_000);
+    ring.push("a".repeat(200_000));
+    expect(ring.size()).toBeLessThanOrEqual(1_000);
+    expect(ring.toString().length).toBeLessThanOrEqual(1_000);
+  });
+
+  it("RingBuffer keeps the tail when many small chunks arrive", async () => {
+    const { RingBuffer } = await import("../src/tools/shell.js");
+    const ring = new RingBuffer(50);
+    for (let i = 0; i < 100; i += 1) ring.push(`x${i.toString().padStart(2, "0")}`);
+    expect(ring.size()).toBeLessThanOrEqual(50);
+    // Last chunks should still be visible.
+    expect(ring.toString()).toContain("x99");
+  });
+
   it("keeps the in-memory output bounded by maxModelBytes even for large stdout", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clai-shell-bounded-"));
     const artifactPath = join(dir, "out.txt");

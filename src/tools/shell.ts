@@ -76,19 +76,36 @@ async function openArtifact(
   }
 }
 
-/** A small ring buffer of recent output lines used as the "tail" summary. */
-class RingBuffer {
+/** A small ring buffer of recent output lines used as the "tail" summary.
+ *  Exported only for tests. */
+export class RingBuffer {
   private chunks: string[] = [];
   private bytes = 0;
 
   constructor(private readonly capacity: number) {}
 
   push(text: string): void {
+    // When a single chunk is larger than our capacity, keep only its
+    // tail. Otherwise some platforms (notably Windows, where Node delivers
+    // stdout in one big buffer) leave the ring holding far more than
+    // capacity bytes and the model-facing summary blows past maxModelBytes.
+    if (text.length >= this.capacity) {
+      this.chunks = [text.slice(text.length - this.capacity)];
+      this.bytes = this.chunks[0]!.length;
+      return;
+    }
     this.chunks.push(text);
     this.bytes += text.length;
     while (this.bytes > this.capacity && this.chunks.length > 1) {
       const removed = this.chunks.shift()!;
       this.bytes -= removed.length;
+    }
+    // After shifting all but one chunk we may still be over capacity if
+    // the remaining chunk is itself larger than the cap. Trim it down.
+    if (this.bytes > this.capacity && this.chunks.length === 1) {
+      const only = this.chunks[0]!;
+      this.chunks[0] = only.slice(only.length - this.capacity);
+      this.bytes = this.chunks[0]!.length;
     }
   }
 
