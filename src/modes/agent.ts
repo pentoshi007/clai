@@ -1,5 +1,10 @@
 import type { ChatMessage, ProviderId, ToolCall } from "../types.js";
-import { runAgentLoop, parseToolCall } from "../agent/runner.js";
+import {
+  runAgentLoop,
+  parseToolCall,
+  createSessionPolicy,
+  type SessionPolicy,
+} from "../agent/runner.js";
 
 export interface AgentOptions {
   provider?: ProviderId | undefined;
@@ -8,6 +13,7 @@ export interface AgentOptions {
   autoConfirm?: boolean | undefined;
   maxSteps?: number | undefined;
   signal?: AbortSignal | undefined;
+  session?: SessionPolicy | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?:
     | ((
@@ -17,7 +23,8 @@ export interface AgentOptions {
     | undefined;
 }
 
-export { parseToolCall };
+export { parseToolCall, createSessionPolicy };
+export type { SessionPolicy };
 
 export async function runAgent(
   prompt: string,

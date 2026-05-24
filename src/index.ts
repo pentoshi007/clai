@@ -36,6 +36,7 @@ interface GlobalOptions {
   provider?: string | undefined;
   model?: string | undefined;
   yes?: boolean | undefined;
+  noHistory?: boolean | undefined;
 }
 
 function modeOption(): Option {
@@ -62,7 +63,7 @@ async function oneShot(
   await ensureProviderConfigured(activeProvider);
 
   if (!prompt) {
-    await startRepl({ mode, provider, model });
+    await startRepl({ mode, provider, model, noHistory: options.noHistory });
     return;
   }
 
@@ -94,10 +95,12 @@ async function oneShot(
   } else {
     answer = await runAgent(prompt, { provider, model, autoConfirm: options.yes });
   }
-  await saveSession([
-    { role: "user", content: prompt },
-    { role: "assistant", content: answer },
-  ]);
+  if (!options.noHistory) {
+    await saveSession([
+      { role: "user", content: prompt },
+      { role: "assistant", content: answer },
+    ]);
+  }
 }
 
 function printError(error: unknown): void {
@@ -117,6 +120,10 @@ async function main(): Promise<void> {
     .option("--provider <provider>", "LLM provider to use")
     .option("--model <model>", "model to use")
     .option("-y, --yes", "auto-confirm tool execution for one-shot agent mode")
+    .option(
+      "--no-history",
+      "do not persist this session to history (in-memory only)",
+    )
     .argument("[prompt...]", "one-shot prompt")
     .action(
       async (promptParts: string[] | undefined, options: GlobalOptions) => {
@@ -249,6 +256,212 @@ async function main(): Promise<void> {
       updateConfig({ pentestAuthorized: true });
       console.log(
         "Pentest authorization acknowledgement stored. Only test systems you own or have written permission to test.",
+      );
+    });
+
+  const scopeCommand = program
+    .command("scope")
+    .description("manage the pentest engagement scope (authorized targets)");
+
+  scopeCommand
+    .command("show")
+    .description("print the current engagement scope")
+    .action(async () => {
+      const { loadScope, isScopeActive, getScopePath, resetScopeCache } =
+        await import("./store/scope.js");
+      resetScopeCache();
+      const scope = await loadScope();
+      if (!scope) {
+        console.log("No engagement scope configured.");
+        console.log(`  expected at: ${getScopePath()}`);
+        return;
+      }
+      console.log(JSON.stringify(scope, null, 2));
+      console.log(
+        isScopeActive(scope)
+          ? "  status: active"
+          : "  status: expired or empty",
+      );
+    });
+
+  scopeCommand
+    .command("new")
+    .description("create or replace the engagement scope")
+    .requiredOption(
+      "--targets <list>",
+      "comma-separated authorized targets (domains, IPs, CIDRs)",
+    )
+    .option(
+      "--exclude <list>",
+      "comma-separated excluded targets",
+    )
+    .option(
+      "--phases <list>",
+      "comma-separated phases (recon,enumeration,exploitation,post-exploitation)",
+    )
+    .option("--name <name>", "engagement name")
+    .option("--note <text>", "authorization note")
+    .option("--expires <iso>", "ISO date when this scope expires")
+    .option("--max-rate <n>", "max requests per second", parseFloat)
+    .option(
+      "--max-concurrency <n>",
+      "max concurrent network operations",
+      parseFloat,
+    )
+    .action(
+      async (options: {
+        targets: string;
+        exclude?: string | undefined;
+        phases?: string | undefined;
+        name?: string | undefined;
+        note?: string | undefined;
+        expires?: string | undefined;
+        maxRate?: number | undefined;
+        maxConcurrency?: number | undefined;
+      }) => {
+        const { saveScope } = await import("./store/scope.js");
+        const split = (raw: string | undefined): string[] | undefined =>
+          raw === undefined
+            ? undefined
+            : raw
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean);
+        const phases = split(options.phases);
+        const allowedPhases = phases
+          ? (phases.filter((phase): phase is
+              | "recon"
+              | "enumeration"
+              | "exploitation"
+              | "post-exploitation" =>
+              [
+                "recon",
+                "enumeration",
+                "exploitation",
+                "post-exploitation",
+              ].includes(phase),
+            ) as Array<
+              "recon" | "enumeration" | "exploitation" | "post-exploitation"
+            >)
+          : undefined;
+        const targets = split(options.targets) ?? [];
+        if (targets.length === 0) {
+          throw new Error("--targets must list at least one target");
+        }
+        const scope = {
+          name: options.name,
+          authorizedTargets: targets,
+          excludedTargets: split(options.exclude),
+          allowedPhases,
+          authorizationNote: options.note,
+          createdAt: new Date().toISOString(),
+          expiresAt: options.expires,
+          maxRate: options.maxRate,
+          maxConcurrency: options.maxConcurrency,
+        };
+        await saveScope(scope);
+        console.log(
+          `Saved engagement scope${scope.name ? ` "${scope.name}"` : ""} with ${targets.length} authorized target(s).`,
+        );
+      },
+    );
+
+  scopeCommand
+    .command("clear")
+    .description("clear the active engagement scope")
+    .action(async () => {
+      const { clearScope, getScopePath } = await import("./store/scope.js");
+      await clearScope();
+      console.log(`Engagement scope cleared (${getScopePath()}).`);
+    });
+
+  const privacyCommand = program
+    .command("privacy")
+    .description("control retention, private mode, and clear stored data");
+
+  privacyCommand
+    .command("status")
+    .description("show retention and private-mode status")
+    .action(() => {
+      const cfg = getConfig();
+      console.log(
+        `privateMode=${cfg.privateMode}  historyRetentionLimit=${cfg.historyRetentionLimit || "unlimited"}`,
+      );
+    });
+
+  privacyCommand
+    .command("on")
+    .description("enable private mode (no history persisted)")
+    .action(() => {
+      updateConfig({ privateMode: true });
+      console.log("privateMode=on");
+    });
+
+  privacyCommand
+    .command("off")
+    .description("disable private mode")
+    .action(() => {
+      updateConfig({ privateMode: false });
+      console.log("privateMode=off");
+    });
+
+  privacyCommand
+    .command("retention")
+    .description("set or show how many sessions to keep in history (0=unlimited)")
+    .argument("[limit]", "numeric limit")
+    .action((limit?: string) => {
+      if (limit === undefined) {
+        console.log(
+          `historyRetentionLimit=${getConfig().historyRetentionLimit || "unlimited"}`,
+        );
+        return;
+      }
+      const n = Math.max(0, Math.floor(Number(limit)));
+      if (!Number.isFinite(n)) throw new Error("limit must be a non-negative number");
+      updateConfig({ historyRetentionLimit: n });
+      console.log(`historyRetentionLimit=${n || "unlimited"}`);
+    });
+
+  privacyCommand
+    .command("clear-history")
+    .description("delete all saved chat history")
+    .action(async () => {
+      const { clearAllHistory } = await import("./store/history.js");
+      const r = await clearAllHistory();
+      console.log(`history cleared (${r.detail || "ok"})`);
+    });
+
+  privacyCommand
+    .command("clear-logs")
+    .description("delete all audit logs")
+    .action(async () => {
+      const { clearAuditLogs } = await import("./store/logs.js");
+      const r = await clearAuditLogs();
+      console.log(`audit logs cleared (${r.removed} files)`);
+    });
+
+  privacyCommand
+    .command("clear-artifacts")
+    .description("delete all saved tool artifacts under ~/.clai/outputs")
+    .action(async () => {
+      const { clearArtifacts } = await import("./store/logs.js");
+      const r = await clearArtifacts();
+      console.log(`artifacts cleared (${r.removed} files)`);
+    });
+
+  privacyCommand
+    .command("clear-all")
+    .description("delete history, logs, and artifacts")
+    .action(async () => {
+      const { clearAllHistory } = await import("./store/history.js");
+      const { clearAuditLogs, clearArtifacts } = await import(
+        "./store/logs.js"
+      );
+      const a = await clearAllHistory();
+      const b = await clearAuditLogs();
+      const c = await clearArtifacts();
+      console.log(
+        `history (${a.detail || "ok"}); logs (${b.removed}); artifacts (${c.removed})`,
       );
     });
 

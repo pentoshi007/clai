@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { getConfig, updateConfig } from "../store/config.js";
 
 const REPO = "pentoshi007/clai";
-const CURRENT_VERSION = "0.5.10";
+const CURRENT_VERSION = "0.7.0";
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface GitHubRelease {
@@ -53,10 +53,24 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
   }
 }
 
+function isUpdateCheckDisabled(): boolean {
+  if (
+    process.env.CLAI_OFFLINE === "1" ||
+    process.env.CLAI_NO_UPDATE_CHECK === "1"
+  )
+    return true;
+  return Boolean(getConfig().offline);
+}
+
 /** Non-blocking startup check — prints a notice if a new version exists */
 export function checkForUpdateSilent(): void {
+  if (isUpdateCheckDisabled()) return;
   const config = getConfig();
-  if (config.lastUpdateCheck && Date.now() - config.lastUpdateCheck < CHECK_INTERVAL_MS) return;
+  if (
+    config.lastUpdateCheck &&
+    Date.now() - config.lastUpdateCheck < CHECK_INTERVAL_MS
+  )
+    return;
 
   fetchLatestRelease()
     .then((release) => {
@@ -66,11 +80,11 @@ export function checkForUpdateSilent(): void {
         const ver = release.tag_name.replace(/^v/, "");
         console.log(
           chalk.yellow(`\n  ⬆ Update available: ${CURRENT_VERSION} → ${ver}`) +
-          chalk.dim("  Run: /update or clai update\n"),
+            chalk.dim("  Run: /update or clai update\n"),
         );
       }
     })
-    .catch(() => { });
+    .catch(() => {});
 }
 
 /** Interactive update command */
@@ -79,18 +93,26 @@ export async function runUpdate(): Promise<void> {
   const release = await fetchLatestRelease();
 
   if (!release) {
-    console.log(chalk.red("  ✗ Could not reach GitHub. Check your connection."));
+    console.log(
+      chalk.red("  ✗ Could not reach GitHub. Check your connection."),
+    );
     return;
   }
 
   const remoteVer = release.tag_name.replace(/^v/, "");
   if (!isNewer(release.tag_name, CURRENT_VERSION)) {
-    console.log(chalk.green(`  ✓ Already on latest version (${CURRENT_VERSION})`));
+    console.log(
+      chalk.green(`  ✓ Already on latest version (${CURRENT_VERSION})`),
+    );
     updateConfig({ lastUpdateCheck: Date.now() });
     return;
   }
 
-  console.log(chalk.yellow(`  ⬆ New version available: ${CURRENT_VERSION} → ${remoteVer}`));
+  console.log(
+    chalk.yellow(
+      `  ⬆ New version available: ${CURRENT_VERSION} → ${remoteVer}`,
+    ),
+  );
   console.log(chalk.dim(`  Released: ${release.published_at}\n`));
 
   // Detect install method and give specific instructions
@@ -135,7 +157,9 @@ export async function runUpdate(): Promise<void> {
 
   console.log(chalk.cyan("  GitHub release:"));
   console.log(chalk.white(`    ${release.html_url}\n`));
-  console.log(chalk.dim("  After updating, restart clai to use the new version."));
+  console.log(
+    chalk.dim("  After updating, restart clai to use the new version."),
+  );
   updateConfig({ lastUpdateCheck: Date.now() });
 }
 
@@ -143,7 +167,8 @@ function detectInstallMethod(): string[] {
   const methods: string[] = [];
   const argv1 = process.argv[1] ?? "";
   // npm global install paths
-  if (argv1.includes("node_modules") || argv1.includes("npm")) methods.push("npm");
+  if (argv1.includes("node_modules") || argv1.includes("npm"))
+    methods.push("npm");
   if (process.platform === "darwin") methods.push("brew");
   methods.push("binary");
   return methods;

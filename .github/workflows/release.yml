@@ -33,7 +33,17 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
-      - run: bun build ./src/index.ts --compile --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+      - name: Build binary
+        run: bun build ./src/index.ts --compile --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+      - name: Compute SHA256 sidecar
+        run: |
+          set -euo pipefail
+          cd release
+          for asset in clai-*; do
+            if [[ "$asset" == *.sha256 ]]; then continue; fi
+            sha256sum "$asset" | awk '{print $1}' > "${asset}.sha256"
+            cat "${asset}.sha256"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: clai-${{ matrix.target }}

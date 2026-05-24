@@ -11,7 +11,10 @@ const serviceName = 'clai';
 // `@napi-rs/keyring` ships prebuilt napi binaries (no node-gyp / prebuild-install)
 // and exposes a keytar-compatible API at the `/keytar` subpath. We dynamically
 // import it so the CLI keeps working when the optional native binding is
-// missing on a platform — falling back to the encrypted JSON keys file.
+// missing on a platform — falling back to a *restricted-permission plaintext*
+// JSON file (mode 0600) at ~/.clai/keys.json. Despite older docs, this fallback
+// is NOT encrypted; it is plaintext that the OS protects with file permissions.
+// The agent is also blocked from reading that path (see safety/patterns.ts).
 const keychainModuleName = '@napi-rs/keyring/keytar.js';
 const keysFile = join(homedir(), '.clai', 'keys.json');
 
@@ -30,7 +33,7 @@ let keytarLoadAttempted = false;
 // (libsecret/DBus on Linux, Windows Credential Manager) is unreachable.
 // In that case the first call fails — we record it and stop trying
 // for the rest of the process so every read/write/delete falls back
-// to the encrypted JSON file silently.
+// to the restricted-permission plaintext JSON file silently.
 let keychainRuntimeUnavailable = false;
 let keychainRuntimeWarned = false;
 
@@ -63,7 +66,7 @@ function noteKeychainRuntimeFailure(error: unknown): void {
     keychainRuntimeWarned = true;
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(
-      `clai: OS keychain unavailable (${message.split('\n')[0]}); using encrypted file at ${keysFile}\n`,
+      `clai: OS keychain unavailable (${message.split('\n')[0]}); using restricted-permission plaintext file at ${keysFile}\n`,
     );
   }
 }
@@ -176,7 +179,8 @@ export type KeychainStatus =
 /**
  * Probes the OS keychain by performing a harmless read against a marker
  * service. Used by `clai doctor` so users can tell at a glance whether
- * secrets land in the OS store or the encrypted JSON fallback.
+ * secrets land in the OS store or the restricted-permission plaintext
+ * fallback file at ~/.clai/keys.json.
  */
 export async function probeKeychain(): Promise<KeychainStatus> {
   const keytar = await loadKeytar();

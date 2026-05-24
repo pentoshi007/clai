@@ -9,7 +9,11 @@ import chalk from "chalk";
 import { search } from "@inquirer/prompts";
 import type { ChatMessage, Mode, ProviderId } from "./types.js";
 import { runAskStream } from "./modes/ask.js";
-import { runAgent } from "./modes/agent.js";
+import {
+  runAgent,
+  createSessionPolicy,
+  type SessionPolicy,
+} from "./modes/agent.js";
 import {
   providerSwitcher,
   printProviderKeys,
@@ -28,7 +32,11 @@ import {
 import { listSessions, saveSession } from "./store/history.js";
 import { assertProvider, defaultModels } from "./llm/provider.js";
 import { providerIds } from "./types.js";
-import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
+import {
+  runUpdate,
+  checkForUpdateSilent,
+  getCurrentVersion,
+} from "./commands/update.js";
 import {
   renderBanner,
   renderSessionInfo,
@@ -49,11 +57,22 @@ import {
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { startThinkingSpinner } from "./ui/spinner.js";
 import { modelSupportsThinking } from "./llm/capabilities.js";
+import {
+  getLastViewport,
+  getViewport,
+  listViewports,
+  toggleViewport,
+} from "./ui/output-pane.js";
+import {
+  compactMessages,
+  estimateMessagesTokens,
+} from "./agent/context-manager.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
   provider?: ProviderId | undefined;
   model?: string | undefined;
+  noHistory?: boolean | undefined;
 }
 
 export interface SlashCommand {
@@ -75,7 +94,8 @@ const slashCommands: SlashCommand[] = [
   {
     command: "/model",
     usage: "[name|#]",
-    description: "open searchable picker (type/↑/↓ + Enter), or pass a name/number",
+    description:
+      "open searchable picker (type/↑/↓ + Enter), or pass a name/number",
   },
   {
     command: "/provider",
@@ -104,9 +124,40 @@ const slashCommands: SlashCommand[] = [
   { command: "/history", description: "show past sessions" },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/cwd", usage: "<path>", description: "change working directory" },
-  { command: "/allow", usage: "<tool>", description: "allow a tool for session" },
+  {
+    command: "/allow",
+    usage: "<tool>|list",
+    description: "allow a tool for this session (not persisted)",
+  },
+  {
+    command: "/disallow",
+    usage: "<tool>",
+    description: "revoke a session allow",
+  },
   { command: "/think", description: "show thinking from last response" },
   { command: "/thinking", description: "alias for /think" },
+  {
+    command: "/output",
+    usage: "[last|<id>|list]",
+    description: "toggle full tool output (same as Ctrl+O)",
+  },
+  {
+    command: "/freeonly",
+    usage: "[on|off]",
+    description: "skip paid providers in fallback (off by default)",
+  },
+  { command: "/compact", description: "compact session history now" },
+  { command: "/context", description: "show estimated context size" },
+  {
+    command: "/scope",
+    usage: "[show|clear|new <targets>]",
+    description: "manage pentest engagement scope",
+  },
+  {
+    command: "/privacy",
+    usage: "[status|clear-history|clear-logs|clear-artifacts|clear-all|on|off]",
+    description: "control retention and private mode (in-memory only)",
+  },
   { command: "/update", description: "check for updates" },
   { command: "/exit", description: "quit" },
   { command: "/quit", description: "alias for /exit" },
@@ -238,13 +289,16 @@ function isAbortLikeError(error: unknown): boolean {
     const err = error as { name?: string; code?: string; message?: string };
     if (err.name === "AbortError") return true;
     if (err.code === "ABORT_ERR") return true;
-    if (typeof err.message === "string" && /abort/i.test(err.message)) return true;
+    if (typeof err.message === "string" && /abort/i.test(err.message))
+      return true;
   }
   return false;
 }
 
 function slashCommandLabel(command: SlashCommand): string {
-  return command.usage ? `${command.command} ${command.usage}` : command.command;
+  return command.usage
+    ? `${command.command} ${command.usage}`
+    : command.command;
 }
 
 function slashCommandFilter(line: string): string | null {
@@ -419,7 +473,8 @@ async function readPromptLine(options: {
 
       if (key.name === "tab") {
         if (menu.visible && menu.suggestions.length > 0) {
-          const target = menu.suggestions[selectedIndex] ?? menu.suggestions[0]!;
+          const target =
+            menu.suggestions[selectedIndex] ?? menu.suggestions[0]!;
           editLine(target.command, target.command.length);
         }
         return;
@@ -436,7 +491,8 @@ async function readPromptLine(options: {
       if (key.name === "up") {
         if (menu.visible && menu.suggestions.length > 0) {
           selectedIndex =
-            (selectedIndex - 1 + menu.suggestions.length) % menu.suggestions.length;
+            (selectedIndex - 1 + menu.suggestions.length) %
+            menu.suggestions.length;
           refresh();
           return;
         }
@@ -552,7 +608,9 @@ async function streamWithAbort(
 ): Promise<string> {
   let sawToken = false;
   const spinner = startThinkingSpinner("waiting for model", signal);
-  const markdown = createMarkdownStreamWriter((chunk) => process.stdout.write(chunk));
+  const markdown = createMarkdownStreamWriter((chunk) =>
+    process.stdout.write(chunk),
+  );
   const parser = createThinkingStreamParser(
     (text) => {
       // Visible content arriving — drop the spinner so output isn't stomped on.
@@ -589,8 +647,11 @@ async function streamWithAbort(
       process.stdout.write(renderMarkdown(result.visible));
     }
     if (result.hasThinking) {
-      const prefix = result.visible && !result.visible.endsWith("\n") ? "\n" : "";
-      process.stdout.write(`${prefix}${renderThinkingSummary(result.thinkContent)}\n`);
+      const prefix =
+        result.visible && !result.visible.endsWith("\n") ? "\n" : "";
+      process.stdout.write(
+        `${prefix}${renderThinkingSummary(result.thinkContent)}\n`,
+      );
     }
     return result.visible;
   } catch (err) {
@@ -617,7 +678,10 @@ async function withAbortableInput<T>(
   try {
     return await run(ac.signal);
   } catch (error) {
-    if (ac.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+    if (
+      ac.signal.aborted ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
       throw new AbortRunError();
     }
     throw error;
@@ -637,19 +701,33 @@ function help(): string {
       return `  ${chalk.cyan(label)}${chalk.dim(command.description)}`;
     })
     .join("\n");
-  return lines + chalk.dim("\n\n  ESC abort  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T toggle thinking");
+  return (
+    lines +
+    chalk.dim(
+      "\n\n  ESC abort  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T toggle thinking  │  Ctrl+O / /output last toggle tool output",
+    )
+  );
 }
 
-async function pickModelInteractively(provider: ProviderId, currentModel: string): Promise<string | undefined> {
+async function pickModelInteractively(
+  provider: ProviderId,
+  currentModel: string,
+): Promise<string | undefined> {
   const models = knownModels[provider] ?? [];
   const def = defaultModels[provider] ?? "";
   if (models.length === 0) {
-    console.log(chalk.dim("  No known models for this provider. Type /model <name> to set manually."));
+    console.log(
+      chalk.dim(
+        "  No known models for this provider. Type /model <name> to set manually.",
+      ),
+    );
     return undefined;
   }
 
   console.log(
-    chalk.dim(`  ↑/↓ to navigate · type to filter (name or number) · Enter to select · ESC to cancel`),
+    chalk.dim(
+      `  ↑/↓ to navigate · type to filter (name or number) · Enter to select · ESC to cancel`,
+    ),
   );
 
   const labelFor = (model: string, index: number): string => {
@@ -692,7 +770,11 @@ function showModelList(provider: string, currentModel: string): void {
   const models = knownModels[provider] ?? [];
   const def = defaultModels[provider as ProviderId] ?? "";
   if (models.length === 0) {
-    console.log(chalk.dim("  No known models for this provider. Type /model <name> to set manually."));
+    console.log(
+      chalk.dim(
+        "  No known models for this provider. Type /model <name> to set manually.",
+      ),
+    );
     return;
   }
   console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:`));
@@ -726,6 +808,7 @@ async function handleSlash(
     provider: ProviderId;
     model: string;
     messages: ChatMessage[];
+    session: SessionPolicy;
   },
 ): Promise<boolean> {
   const [command, ...args] = splitCommand(line);
@@ -744,7 +827,10 @@ async function handleSlash(
       const arg = args.join(" ").trim();
       if (!arg) {
         // No arg → interactive picker (up/down, Enter to select)
-        const picked = await pickModelInteractively(state.provider, state.model);
+        const picked = await pickModelInteractively(
+          state.provider,
+          state.model,
+        );
         if (!picked) {
           console.log(chalk.dim("  model unchanged"));
           return true;
@@ -825,9 +911,15 @@ async function handleSlash(
 
       if (arg === "on" || arg === "enable" || arg === "true") {
         setThinking({ enabled: true });
-        console.log(chalk.dim(`  thinking: ${chalk.green("on")} (effort=${getConfig().thinking.effort})`));
+        console.log(
+          chalk.dim(
+            `  thinking: ${chalk.green("on")} (effort=${getConfig().thinking.effort})`,
+          ),
+        );
         if (!supported) {
-          console.log(chalk.yellow("  note: current model may ignore the thinking flag."));
+          console.log(
+            chalk.yellow("  note: current model may ignore the thinking flag."),
+          );
         }
         return true;
       }
@@ -839,10 +931,14 @@ async function handleSlash(
       if (arg === "low" || arg === "medium" || arg === "high") {
         setThinking({ enabled: true, effort: arg });
         console.log(
-          chalk.dim(`  thinking: ${chalk.green("on")}  effort: ${chalk.cyan(arg)}`),
+          chalk.dim(
+            `  thinking: ${chalk.green("on")}  effort: ${chalk.cyan(arg)}`,
+          ),
         );
         if (!supported) {
-          console.log(chalk.yellow("  note: current model may ignore the thinking flag."));
+          console.log(
+            chalk.yellow("  note: current model may ignore the thinking flag."),
+          );
         }
         return true;
       }
@@ -890,16 +986,279 @@ async function handleSlash(
     }
     case "/allow": {
       const tool = args[0];
-      if (!tool) console.log(chalk.dim("usage: /allow <tool>"));
-      else {
-        const config = getConfig();
-        updateConfig({
-          allowAlwaysTools: Array.from(
-            new Set([...config.allowAlwaysTools, tool]),
-          ),
-        });
-        console.log(chalk.dim(`  allowed ${tool} ✓`));
+      if (!tool) {
+        console.log(chalk.dim("usage: /allow <tool>|list"));
+        return true;
       }
+      if (tool === "list" || tool === "ls") {
+        if (state.session.allow.size === 0) {
+          console.log(chalk.dim("  no session allows"));
+        } else {
+          for (const allowed of state.session.allow) {
+            console.log(chalk.dim(`  ✓ ${allowed}`));
+          }
+        }
+        return true;
+      }
+      state.session.allow.add(tool);
+      console.log(chalk.dim(`  allowed ${tool} for this session only ✓`));
+      return true;
+    }
+    case "/disallow": {
+      const tool = args[0];
+      if (!tool) {
+        console.log(chalk.dim("usage: /disallow <tool>"));
+        return true;
+      }
+      if (state.session.allow.delete(tool)) {
+        console.log(chalk.dim(`  revoked ${tool} ✓`));
+      } else {
+        console.log(chalk.dim(`  ${tool} was not in the session allow list`));
+      }
+      return true;
+    }
+    case "/context": {
+      const tokens = estimateMessagesTokens(state.messages);
+      console.log(
+        chalk.dim(
+          `  ${state.messages.length} message(s), ~${tokens.toLocaleString()} tokens estimated`,
+        ),
+      );
+      return true;
+    }
+    case "/compact": {
+      const before = state.messages.length;
+      const compacted = compactMessages(state.messages, { budgetTokens: 0 });
+      state.messages.splice(0, state.messages.length, ...compacted);
+      console.log(
+        chalk.dim(
+          `  compacted ${before} → ${state.messages.length} messages (~${estimateMessagesTokens(state.messages).toLocaleString()} tokens)`,
+        ),
+      );
+      return true;
+    }
+    case "/scope": {
+      const sub = (args[0] ?? "show").toLowerCase();
+      const {
+        loadScope,
+        saveScope,
+        clearScope,
+        isScopeActive,
+        getScopePath,
+        resetScopeCache,
+      } = await import("./store/scope.js");
+      if (sub === "show" || sub === "ls" || sub === "list") {
+        resetScopeCache();
+        const scope = await loadScope();
+        if (!scope) {
+          console.log(chalk.dim("  no engagement scope configured"));
+          console.log(
+            chalk.dim(`  expected at: ${getScopePath()}`),
+          );
+          console.log(
+            chalk.dim(
+              "  create one with: /scope new domain1,domain2 [--name <eng>] or `clai scope new --targets ...`",
+            ),
+          );
+          return true;
+        }
+        const status = isScopeActive(scope)
+          ? chalk.green("active")
+          : chalk.yellow("expired or empty");
+        console.log(
+          chalk.dim(`  scope: ${scope.name ?? "(unnamed)"} [${status}]`),
+        );
+        console.log(
+          chalk.dim(`  authorized: ${scope.authorizedTargets.join(", ")}`),
+        );
+        if (scope.excludedTargets && scope.excludedTargets.length > 0) {
+          console.log(
+            chalk.dim(`  excluded:   ${scope.excludedTargets.join(", ")}`),
+          );
+        }
+        if (scope.expiresAt) {
+          console.log(chalk.dim(`  expires:    ${scope.expiresAt}`));
+        }
+        return true;
+      }
+      if (sub === "clear" || sub === "reset" || sub === "off") {
+        await clearScope();
+        console.log(chalk.dim("  engagement scope cleared"));
+        return true;
+      }
+      if (sub === "new" || sub === "set" || sub === "add") {
+        const rest = args.slice(1).join(" ").trim();
+        if (!rest) {
+          console.log(
+            chalk.dim(
+              "  usage: /scope new <target1,target2,...> [name=<engagement>] [expires=<iso>]",
+            ),
+          );
+          return true;
+        }
+        // Parse: first whitespace-delimited token is the targets list,
+        // remaining `key=value` pairs configure name/expires/note.
+        const tokens = rest.split(/\s+/);
+        const targetsRaw = tokens[0] ?? "";
+        const targets = targetsRaw
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
+        if (targets.length === 0) {
+          console.log(chalk.dim("  no targets parsed"));
+          return true;
+        }
+        let name: string | undefined;
+        let expires: string | undefined;
+        let note: string | undefined;
+        let exclude: string[] | undefined;
+        for (const token of tokens.slice(1)) {
+          const eq = token.indexOf("=");
+          if (eq < 0) continue;
+          const key = token.slice(0, eq).toLowerCase();
+          const value = token.slice(eq + 1);
+          if (key === "name") name = value;
+          else if (key === "expires") expires = value;
+          else if (key === "note") note = value;
+          else if (key === "exclude")
+            exclude = value
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+        }
+        const scope = {
+          name,
+          authorizedTargets: targets,
+          excludedTargets: exclude,
+          authorizationNote: note,
+          createdAt: new Date().toISOString(),
+          expiresAt: expires,
+        };
+        await saveScope(scope);
+        console.log(
+          chalk.dim(
+            `  saved scope${name ? ` "${name}"` : ""} with ${targets.length} target(s)`,
+          ),
+        );
+        return true;
+      }
+      console.log(
+        chalk.dim("  usage: /scope [show|clear|new <targets> [key=value]...]"),
+      );
+      return true;
+    }
+    case "/privacy": {
+      const sub = (args[0] ?? "status").toLowerCase();
+      if (sub === "on" || sub === "enable") {
+        updateConfig({ privateMode: true });
+        console.log(
+          chalk.dim(
+            "  privateMode: " +
+              chalk.green("on") +
+              "  (history not written; in-memory only)",
+          ),
+        );
+        return true;
+      }
+      if (sub === "off" || sub === "disable") {
+        updateConfig({ privateMode: false });
+        console.log(chalk.dim("  privateMode: " + chalk.dim("off")));
+        return true;
+      }
+      if (sub === "status" || sub === "show") {
+        const cfg = getConfig();
+        console.log(
+          chalk.dim(
+            `  privateMode: ${cfg.privateMode ? chalk.green("on") : chalk.dim("off")}  retention: ${cfg.historyRetentionLimit || "unlimited"}`,
+          ),
+        );
+        return true;
+      }
+      const { clearAllHistory } = await import("./store/history.js");
+      const { clearAuditLogs, clearArtifacts } = await import(
+        "./store/logs.js"
+      );
+      if (sub === "clear-history") {
+        const r = await clearAllHistory();
+        console.log(chalk.dim(`  history cleared (${r.detail || "ok"})`));
+        return true;
+      }
+      if (sub === "clear-logs") {
+        const r = await clearAuditLogs();
+        console.log(chalk.dim(`  audit logs cleared (${r.removed} files)`));
+        return true;
+      }
+      if (sub === "clear-artifacts") {
+        const r = await clearArtifacts();
+        console.log(chalk.dim(`  artifacts cleared (${r.removed} files)`));
+        return true;
+      }
+      if (sub === "clear-all") {
+        const a = await clearAllHistory();
+        const b = await clearAuditLogs();
+        const c = await clearArtifacts();
+        console.log(
+          chalk.dim(
+            `  history (${a.detail || "ok"}); logs (${b.removed}); artifacts (${c.removed})`,
+          ),
+        );
+        return true;
+      }
+      console.log(
+        chalk.dim(
+          "  usage: /privacy [status|on|off|clear-history|clear-logs|clear-artifacts|clear-all]",
+        ),
+      );
+      return true;
+    }
+    case "/freeonly": {
+      const arg = (args[0] ?? "").toLowerCase().trim();
+      if (!arg) {
+        const value = getConfig().freeOnly;
+        console.log(
+          chalk.dim(
+            `  freeOnly: ${value ? chalk.green("on") : chalk.dim("off")}  (paid providers ${value ? "skipped" : "in fallback"})`,
+          ),
+        );
+        return true;
+      }
+      if (arg === "on" || arg === "true" || arg === "enable") {
+        updateConfig({ freeOnly: true });
+        console.log(chalk.dim("  freeOnly: " + chalk.green("on")));
+        return true;
+      }
+      if (arg === "off" || arg === "false" || arg === "disable") {
+        updateConfig({ freeOnly: false });
+        console.log(chalk.dim("  freeOnly: " + chalk.dim("off")));
+        return true;
+      }
+      console.log(chalk.dim("  usage: /freeonly [on|off]"));
+      return true;
+    }
+    case "/output": {
+      const target = args[0] ?? "last";
+      if (target === "list" || target === "ls") {
+        const all = listViewports();
+        if (all.length === 0) {
+          console.log(chalk.dim("  no tool outputs recorded yet"));
+        } else {
+          for (const v of all) {
+            console.log(
+              chalk.dim(
+                `  ${v.id} — ${v.toolName} ${v.argsDisplay}${v.artifactPath ? ` (${v.artifactPath})` : ""}`,
+              ),
+            );
+          }
+        }
+        return true;
+      }
+      const viewport =
+        target === "last" ? getLastViewport() : getViewport(target);
+      if (!viewport) {
+        console.log(chalk.dim(`  no viewport: ${target}`));
+        return true;
+      }
+      await toggleViewport(viewport.id);
       return true;
     }
     case "/think":
@@ -929,12 +1288,15 @@ async function handleSlash(
 
 export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const config = getConfig();
-  const provider = options.provider ? assertProvider(options.provider) : config.defaultProvider;
+  const provider = options.provider
+    ? assertProvider(options.provider)
+    : config.defaultProvider;
   const state = {
     mode: options.mode ?? config.defaultMode,
     provider,
     model: options.model ?? getProviderModel(provider),
     messages: [] as ChatMessage[],
+    session: createSessionPolicy(),
   };
 
   const promptHistory: string[] = [];
@@ -949,12 +1311,16 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const handleUnhandledRejection = (reason: unknown): void => {
     if (isAbortLikeError(reason)) return; // expected during ESC/abort
     const message = reason instanceof Error ? reason.message : String(reason);
-    process.stderr.write(chalk.dim(`\n  ⚠ background error suppressed: ${message}\n`));
+    process.stderr.write(
+      chalk.dim(`\n  ⚠ background error suppressed: ${message}\n`),
+    );
   };
   const handleUncaughtException = (error: unknown): void => {
     if (isAbortLikeError(error)) return;
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(chalk.dim(`\n  ⚠ uncaught error suppressed: ${message}\n`));
+    process.stderr.write(
+      chalk.dim(`\n  ⚠ uncaught error suppressed: ${message}\n`),
+    );
   };
   process.on("unhandledRejection", handleUnhandledRejection);
   process.on("uncaughtException", handleUncaughtException);
@@ -966,9 +1332,24 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const handleThinkingShortcut = (): void => {
     process.stdout.write(`\n${renderThinkingToggleMessage()}\n`);
   };
-  const handleKeypress = (_sequence: string, key: { ctrl?: boolean; name?: string }): void => {
-    if (key.ctrl && key.name === "t" && !isReadingPrompt) handleThinkingShortcut();
-    if ((key.name === "escape" || (key.ctrl && key.name === "c")) && currentAbortController) {
+  const handleKeypress = (
+    _sequence: string,
+    key: { ctrl?: boolean; name?: string },
+  ): void => {
+    if (key.ctrl && key.name === "t" && !isReadingPrompt)
+      handleThinkingShortcut();
+    if (key.ctrl && key.name === "o" && !isReadingPrompt) {
+      const v = getLastViewport();
+      if (v) {
+        void toggleViewport(v.id);
+      } else {
+        process.stdout.write(chalk.dim("\n  (no tool output to expand yet)\n"));
+      }
+    }
+    if (
+      (key.name === "escape" || (key.ctrl && key.name === "c")) &&
+      currentAbortController
+    ) {
       currentAbortController.abort();
     }
   };
@@ -1017,7 +1398,11 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     }),
   );
   console.log(renderSuggestions());
-  console.log(chalk.dim("  ESC to abort a response  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T or /think for thinking\n"));
+  console.log(
+    chalk.dim(
+      "  ESC abort  │  Ctrl+C clears input  │  Ctrl+T or /think for thinking  │  Ctrl+O or /output last for full tool output\n",
+    ),
+  );
 
   // Hint thinking-capable users that the toggle exists. We default it to
   // off for speed, since on NIM many models route through a much slower
@@ -1087,6 +1472,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
               model: state.model,
               history: state.messages,
               signal,
+              session: state.session,
             }),
           );
         }
@@ -1113,7 +1499,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     process.off("uncaughtException", handleUncaughtException);
     if (siginfoRegistered) process.off(siginfo, handleThinkingShortcut);
     if (state.messages.length > 0) {
-      await saveSession(state.messages, `repl-${new Date().toISOString()}`);
+      // Honor `--no-history` and the persistent privateMode setting.
+      // The session.allow set is already in-memory only; saveSession itself
+      // also bails early when privateMode is on, but checking here keeps
+      // intent obvious in the call site.
+      if (!options.noHistory && !getConfig().privateMode) {
+        await saveSession(state.messages, `repl-${new Date().toISOString()}`);
+      }
     }
     if (input.isTTY) input.setRawMode(false);
   }

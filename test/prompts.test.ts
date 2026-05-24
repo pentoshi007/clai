@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { renderAskSystemPrompt, renderAgentSystemPrompt } from '../src/prompts/index.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  renderAskSystemPrompt,
+  renderAgentSystemPrompt,
+  _ASK_TEMPLATE,
+  _AGENT_TEMPLATE,
+} from '../src/prompts/index.js';
 
 describe('prompt rendering', () => {
   it('ask prompt contains /ask mode instruction', () => {
@@ -40,5 +47,25 @@ describe('prompt rendering', () => {
     expect(prompt).toContain('Do not invent volatile live data');
     expect(prompt).toContain('summarize concrete findings');
     expect(prompt).toContain('For ffuf');
+  });
+});
+
+describe('phase 11 — prompt template ↔ markdown drift', () => {
+  it('system.ask.md content matches the inline ask template', () => {
+    const md = readFileSync(
+      resolve(__dirname, '../src/prompts/system.ask.md'),
+      'utf8',
+    ).replace(/\r\n/g, '\n').trimEnd();
+    const inline = _ASK_TEMPLATE.replace(/\r\n/g, '\n').trimEnd();
+    expect(md).toBe(inline);
+  });
+
+  it('system.agent.md content matches the inline agent template', () => {
+    const md = readFileSync(
+      resolve(__dirname, '../src/prompts/system.agent.md'),
+      'utf8',
+    ).replace(/\r\n/g, '\n').trimEnd();
+    const inline = _AGENT_TEMPLATE.replace(/\r\n/g, '\n').trimEnd();
+    expect(md).toBe(inline);
   });
 });

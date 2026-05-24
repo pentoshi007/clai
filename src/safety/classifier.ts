@@ -1,11 +1,22 @@
 import net from "node:net";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import type { RiskLevel, ToolCall } from "../types.js";
 import {
+  containsShellMetacharacter,
   destructiveCommandPatterns,
   exfiltrationPatterns,
+  isSecretPath,
   networkScanTools,
   readOnlyShellCommands,
+  subcommandSafeMap,
+  commandHasMutatingArg,
 } from "./patterns.js";
+import {
+  isScopeActive,
+  targetInScope,
+  type EngagementScope,
+} from "../store/scope.js";
 
 export interface RiskDecision {
   level: RiskLevel;
@@ -20,6 +31,18 @@ function stringArg(
   return typeof value === "string" ? value : undefined;
 }
 
+function expandTilde(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return resolve(homedir(), path.slice(2));
+  }
+  return path;
+}
+
+function resolveForSecretCheck(path: string): string {
+  return resolve(expandTilde(path));
+}
+
 export function isPrivateIpv4(value: string): boolean {
   const candidate = value.split("/")[0] ?? value;
   // Handle hostnames — if it's not an IP, treat it as non-private (domain)
@@ -27,7 +50,12 @@ export function isPrivateIpv4(value: string): boolean {
   if (net.isIP(candidate) === 6) {
     // IPv6 link-local (fe80::), loopback (::1), ULA (fc00::/7)
     const lower = candidate.toLowerCase();
-    return lower === "::1" || lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd");
+    return (
+      lower === "::1" ||
+      lower.startsWith("fe80:") ||
+      lower.startsWith("fc") ||
+      lower.startsWith("fd")
+    );
   }
   const parts = candidate.split(".").map((part) => Number(part));
   const [a, b] = parts;
@@ -45,9 +73,56 @@ function commandContainsNetworkScanner(command: string): boolean {
   );
 }
 
+const PRIVATE_TLD_RE = /\.(?:local|internal|lan|home|corp|intranet|test|localdomain)$/i;
+const URL_HOSTNAME_RE = /\bhttps?:\/\/([^\/\s:?#]+)/gi;
+// A bareword domain anchored at a whitespace boundary on the left so we
+// don't pick up file paths like `wordlists/common.txt`. The right side
+// stays at \b so trailing punctuation doesn't trip us up.
+const BARE_HOSTNAME_RE =
+  /(?:^|\s)((?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63})\b/g;
+
+function extractHostnameTokens(command: string): string[] {
+  const tokens: string[] = [];
+  // First pull host parts out of any URL so https://example.com/FUZZ contributes "example.com"
+  let match: RegExpExecArray | null;
+  URL_HOSTNAME_RE.lastIndex = 0;
+  while ((match = URL_HOSTNAME_RE.exec(command)) !== null) {
+    if (match[1]) tokens.push(match[1].replace(/\[|\]/g, "").split(":")[0]!);
+  }
+  // Then capture bare-hostname tokens (eg `nmap example.com`). The leading
+  // boundary stops us picking up `path/to/common.txt` (which would
+  // otherwise look like a domain because of the `.txt` suffix).
+  BARE_HOSTNAME_RE.lastIndex = 0;
+  while ((match = BARE_HOSTNAME_RE.exec(command)) !== null) {
+    if (match[1]) tokens.push(match[1]);
+  }
+  return tokens;
+}
+
+const FILEY_TLDS = new Set([
+  "txt", "log", "json", "yaml", "yml", "md", "html", "htm", "xml", "csv",
+  "sh", "py", "rb", "rs", "go", "js", "ts", "tsx", "jsx", "css", "scss",
+  "tar", "gz", "zip", "tgz", "pdf", "png", "jpg", "jpeg", "gif", "svg",
+  "exe", "dll", "so", "dylib", "ini", "conf", "lock", "toml", "env",
+]);
+
+function isPublicHostname(host: string): boolean {
+  const lower = host.toLowerCase();
+  if (!lower.includes(".")) return false;
+  if (lower === "localhost" || lower === "localhost.localdomain") return false;
+  if (PRIVATE_TLD_RE.test(lower)) return false;
+  // Reject things that look like filenames (common.txt, package.json, etc.)
+  // even when they syntactically resemble a domain.
+  const tld = lower.split(".").pop() ?? "";
+  if (FILEY_TLDS.has(tld)) return false;
+  // Must contain at least one alphabetic TLD-like segment to count as a domain
+  return /\.[a-z]{2,63}$/i.test(lower);
+}
+
 function containsPublicTarget(command: string): boolean {
   const ips = command.match(/\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g) ?? [];
-  return ips.some((ip) => !isPrivateIpv4(ip));
+  if (ips.some((ip) => !isPrivateIpv4(ip))) return true;
+  return extractHostnameTokens(command).some((host) => isPublicHostname(host));
 }
 
 export function isPentestToolCall(call: ToolCall): boolean {
@@ -57,20 +132,137 @@ export function isPentestToolCall(call: ToolCall): boolean {
   return commandContainsNetworkScanner(command);
 }
 
-export function classifyToolCall(call: ToolCall): RiskDecision {
+/**
+ * Pull rough "path-looking" tokens out of a command string. Used so we can
+ * refuse to auto-execute commands that touch known secret paths even when
+ * the base command (cat, head, tail, less, etc.) is otherwise safe.
+ */
+function extractPathLikeTokens(command: string): string[] {
+  // Match tilde paths, absolute paths, and dotted relative paths.
+  const matches = command.match(/(?:~|\.{1,2}|\/)?[\w./~-]+/g) ?? [];
+  return matches.filter((token) => /[\\/~]/.test(token));
+}
+
+function commandTouchesSecretPath(command: string): boolean {
+  return extractPathLikeTokens(command).some((token) => {
+    try {
+      return isSecretPath(resolveForSecretCheck(token));
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Split a command line into [base, subcommand] respecting quotes minimally.
+ * We only need the first two whitespace-delimited tokens.
+ */
+function baseAndSub(command: string): {
+  base: string;
+  sub: string | undefined;
+} {
+  const tokens = command.trim().split(/\s+/);
+  const baseRaw = tokens[0] ?? "";
+  const base = baseRaw.replace(/^.*\//, "");
+  const sub = tokens[1];
+  return { base, sub };
+}
+
+function isReadOnlyBase(base: string): boolean {
+  return readOnlyShellCommands.has(base);
+}
+
+function isSafeSubcommand(base: string, sub: string | undefined): boolean {
+  if (!sub) return false;
+  const allow = subcommandSafeMap[base];
+  if (!allow) return false;
+  // Strip leading `--` so `--list` and `list` both work.
+  return allow.has(sub) || allow.has(sub.replace(/^--/, ""));
+}
+
+export interface ClassifyOptions {
+  scope?: EngagementScope | undefined;
+}
+
+/**
+ * Extract the apparent target from a shell command that contains a scanner.
+ * Used to decide whether the target is covered by the active engagement
+ * scope. Falls back to the trailing token of the command if no obvious
+ * target argument is found.
+ */
+function extractScanTarget(command: string): string | undefined {
+  // URL-style targets first (eg `ffuf -u https://example.com/FUZZ`,
+  // `nuclei -u https://example.com`). The hostname is what scope cares about.
+  const urlMatch = /\bhttps?:\/\/([^\/\s:?#]+)/i.exec(command);
+  if (urlMatch?.[1]) {
+    return urlMatch[1].replace(/[\[\]]/g, "").split(":")[0];
+  }
+  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  // Drop the first token (binary) and any leading flags.
+  const args = tokens.slice(1).filter((token) => !token.startsWith("-"));
+  // Many scanners take target as the trailing positional.
+  for (let i = args.length - 1; i >= 0; i -= 1) {
+    const arg = args[i]!;
+    if (
+      /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(arg) ||
+      net.isIP(arg) ||
+      /^[0-9./]+$/.test(arg)
+    ) {
+      return arg;
+    }
+  }
+  return undefined;
+}
+
+export function classifyToolCall(
+  call: ToolCall,
+  options: ClassifyOptions = {},
+): RiskDecision {
   if (
-    call.name === "sysinfo" ||
     call.name === "fs.read" ||
     call.name === "fs.list" ||
     call.name === "fs.search"
   ) {
+    const pathArg = stringArg(call.args, "path");
+    if (pathArg) {
+      try {
+        if (isSecretPath(resolveForSecretCheck(pathArg))) {
+          return {
+            level: "block",
+            reason:
+              "Path is a known secret location and cannot be read by the agent",
+          };
+        }
+      } catch {
+        // resolve failed — fall through to safe
+      }
+    }
     return { level: "safe", reason: "Read-only operation" };
   }
 
+  if (call.name === "sysinfo") {
+    return { level: "safe", reason: "Read-only operation" };
+  }
+
+  if (call.name === "tool.batch") {
+    // The batch handler enforces a hard allowlist of read-only tools and a
+    // capped concurrency. Treat it as safe so batched recon can run without
+    // a per-call confirmation. If the caller smuggles in a non-safe tool,
+    // the handler rejects it.
+    return { level: "safe", reason: "Read-only batch dispatch" };
+  }
+
   if (call.name === "http.fetch") {
+    const method = (stringArg(call.args, "method") ?? "GET").toUpperCase();
+    if (method !== "GET" && method !== "HEAD") {
+      return {
+        level: "confirm",
+        reason: `HTTP ${method} is mutating and requires confirmation`,
+      };
+    }
     return {
       level: "safe",
-      reason: "HTTP fetch is read-only with response size limits",
+      reason: "HTTP GET/HEAD is read-only",
     };
   }
 
@@ -88,54 +280,104 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
         reason: "Command resembles secret or data exfiltration",
       };
     }
-    if (
-      commandContainsNetworkScanner(command) &&
-      containsPublicTarget(command) &&
-      !command.includes("--i-own-this")
-    ) {
+    if (commandTouchesSecretPath(command)) {
       return {
         level: "block",
         reason:
-          "Public target scanning requires explicit --i-own-this authorization flag",
+          "Command references a known secret path (e.g. ~/.ssh, ~/.clai/keys.json, .env)",
       };
+    }
+    if (
+      commandContainsNetworkScanner(command) &&
+      containsPublicTarget(command)
+    ) {
+      // The legacy `--i-own-this` substring bypass is gone: a malicious target
+      // string could include that flag and trick the agent into running a
+      // public scan. Now the agent must have a configured engagement scope
+      // that explicitly covers the apparent target.
+      const target = extractScanTarget(command);
+      const scopeOk =
+        isScopeActive(options.scope) && target
+          ? targetInScope(target, options.scope!)
+          : false;
+      if (!scopeOk) {
+        return {
+          level: "block",
+          reason:
+            "Public target scanning requires a configured engagement scope. Run `clai scope new` to authorize specific domains/CIDRs.",
+        };
+      }
     }
     // Pentest scan tools always require confirmation even against private targets
     if (commandContainsNetworkScanner(command)) {
-      return { level: "confirm", reason: "Security scan tool requires confirmation" };
+      return {
+        level: "confirm",
+        reason: "Security scan tool requires confirmation",
+      };
+    }
+    // Compound commands (pipes, redirects, &&, ||, sudo, command substitution)
+    // always require confirmation because the arguments can mutate state or
+    // exfiltrate data even when the base command is otherwise safe.
+    if (containsShellMetacharacter(command)) {
+      return {
+        level: "confirm",
+        reason:
+          "Compound command (pipes, redirects, &&, ||, sudo, or command substitution) requires confirmation",
+      };
+    }
+    // Mutating-argument patterns (sed -i, awk system(...), find -exec/-delete,
+    // git config --global, npm config set, docker run, kubectl apply, ...).
+    // These bypass the read-only base check because their *arguments* mutate
+    // state or escape into another shell.
+    if (commandHasMutatingArg(command)) {
+      return {
+        level: "confirm",
+        reason:
+          "Command argument mutates state or escapes into another shell (sed -i, awk system(), find -exec/-delete, git config --global, npm config set, docker/kubectl mutators)",
+      };
     }
     // Read-only / info commands are safe to auto-execute
-    const base = command.trim().split(/\s+/)[0]?.replace(/^.*\//, "") ?? "";
-    if (readOnlyShellCommands.has(base)) {
+    const { base, sub } = baseAndSub(command);
+    if (isReadOnlyBase(base)) {
       return { level: "safe", reason: "Read-only command" };
+    }
+    if (isSafeSubcommand(base, sub)) {
+      return { level: "safe", reason: `Read-only ${base} subcommand` };
     }
     return { level: "confirm", reason: "Shell commands require confirmation" };
   }
 
   if (call.name === "net.scan") {
     const target = stringArg(call.args, "target") ?? "";
-    const ownsTarget = call.args.iOwnThis === true || call.args.own === true;
-    if (target && !isPrivateIpv4(target) && !ownsTarget) {
-      return {
-        level: "block",
-        reason: "Public IP scan requires ownership confirmation",
-      };
+    if (target && !isPrivateIpv4(target)) {
+      const scopeOk =
+        isScopeActive(options.scope) && targetInScope(target, options.scope!);
+      if (!scopeOk) {
+        return {
+          level: "block",
+          reason:
+            "Public IP scan requires a configured engagement scope covering this target",
+        };
+      }
     }
     return { level: "confirm", reason: "Network scans require confirmation" };
   }
 
   if (call.name === "pentest.recon") {
     const target = stringArg(call.args, "target") ?? "";
-    const ownsTarget = call.args.iOwnThis === true || call.args.own === true;
-    if (
-      target &&
-      net.isIP(target.split("/")[0] ?? target) &&
-      !isPrivateIpv4(target) &&
-      !ownsTarget
-    ) {
-      return {
-        level: "block",
-        reason: "Public target recon requires ownership confirmation",
-      };
+    const targetHost = target.split("/")[0] ?? target;
+    const isPublic =
+      target && (net.isIP(targetHost) ? !isPrivateIpv4(target) : true);
+    if (isPublic) {
+      const scopeOk =
+        isScopeActive(options.scope) && targetInScope(target, options.scope!);
+      if (!scopeOk) {
+        return {
+          level: "block",
+          reason:
+            "Public target recon requires a configured engagement scope covering this target",
+        };
+      }
     }
     return {
       level: "confirm",
@@ -145,6 +387,21 @@ export function classifyToolCall(call: ToolCall): RiskDecision {
   }
 
   if (call.name === "fs.write" || call.name === "pkg.install") {
+    if (call.name === "fs.write") {
+      const pathArg = stringArg(call.args, "path");
+      if (pathArg) {
+        try {
+          if (isSecretPath(resolveForSecretCheck(pathArg))) {
+            return {
+              level: "block",
+              reason: "Refusing to write to a known secret path",
+            };
+          }
+        } catch {
+          // fall through
+        }
+      }
+    }
     return {
       level: "confirm",
       reason: "Mutating operation requires confirmation",

@@ -1,9 +1,10 @@
 import chalk from 'chalk';
 import { commandAvailable, detectPackageManager } from '../os/pkgmgr.js';
 import { detectSystem } from '../os/detect.js';
-import { getConfigPath } from '../store/config.js';
+import { getConfig, getConfigPath } from '../store/config.js';
 import { getHistoryPath } from '../store/history.js';
 import { getFallbackKeysPath, probeKeychain } from '../store/keys.js';
+import { loadScope, isScopeActive, getScopePath } from '../store/scope.js';
 import { printProviderKeys } from './providers.js';
 
 const pentestTools = [
@@ -30,11 +31,38 @@ export async function runDoctor(): Promise<void> {
         ? 'native module not installed'
         : `runtime error — ${keychain.detail?.split('\n')[0] ?? 'unknown'}`;
     console.log(
-      `Keychain: ${chalk.yellow('using encrypted file')} ${chalk.dim(`(${reason})`)}`,
+      `Keychain: ${chalk.yellow('using restricted-permission plaintext file')} ${chalk.dim(`(${reason})`)}`,
     );
-    console.log(`         ${chalk.dim(`→ ${getFallbackKeysPath()}`)}`);
+    console.log(`         ${chalk.dim(`→ ${getFallbackKeysPath()} (mode 0600, NOT encrypted)`)}`);
   }
   console.log(`Package manager: ${pkgmgr.id}`);
+  const config = getConfig();
+  const offline =
+    process.env.CLAI_OFFLINE === '1' ||
+    process.env.CLAI_NO_UPDATE_CHECK === '1' ||
+    Boolean(config.offline);
+  console.log(
+    `Update check: ${offline ? chalk.yellow('disabled (offline)') : chalk.green('enabled')}`,
+  );
+  console.log(
+    `Free-only mode: ${config.freeOnly ? chalk.green('on') : chalk.dim('off')}  ` +
+      `Private mode: ${config.privateMode ? chalk.green('on') : chalk.dim('off')}  ` +
+      `Sandbox reads: ${config.sandboxReads === false ? chalk.yellow('off') : chalk.green('on')}  ` +
+      `Parser strict: ${config.parserStrict ? chalk.green('on') : chalk.dim('off')}`,
+  );
+  console.log(
+    `History retention: ${config.historyRetentionLimit ? `${config.historyRetentionLimit} sessions` : chalk.yellow('unlimited')}`,
+  );
+  const scope = await loadScope();
+  if (isScopeActive(scope)) {
+    console.log(
+      `Engagement scope: ${chalk.green('active')} ${chalk.dim(`(${scope.name ?? 'unnamed'} → ${scope.authorizedTargets.join(', ')})`)}`,
+    );
+  } else {
+    console.log(
+      `Engagement scope: ${chalk.dim('none')} ${chalk.dim(`(create at ${getScopePath()})`)}`,
+    );
+  }
   console.log('');
   console.log(chalk.bold('Providers'));
   await printProviderKeys();

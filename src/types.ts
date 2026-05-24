@@ -55,10 +55,19 @@ export interface ToolCall {
   args: Record<string, unknown>;
 }
 
+export interface ToolStats {
+  bytesRead: number;
+  bytesDropped: number;
+  linesRead: number;
+  elapsedMs: number;
+  captureLimitHit?: boolean | undefined;
+}
+
 export interface ToolResult {
   ok: boolean;
   output: string;
   exitCode?: number | undefined;
   outputPath?: string | undefined;
   truncated?: boolean | undefined;
+  stats?: ToolStats | undefined;
 }

@@ -1,6 +1,8 @@
-import Conf from 'conf';
-import type { Mode, ProviderId, ReasoningPreference } from '../types.js';
-import { defaultModels } from '../llm/provider.js';
+import Conf from "conf";
+import type { Mode, ProviderId, ReasoningPreference } from "../types.js";
+import { defaultModels } from "../llm/provider.js";
+
+export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
 
 export interface ClaiConfig {
   defaultProvider: ProviderId;
@@ -14,24 +16,58 @@ export interface ClaiConfig {
   telemetry: boolean;
   lastUpdateCheck: number;
   thinking: ReasoningPreference;
+  /** When true, exclude paid-cloud providers from the fallback chain. */
+  freeOnly: boolean;
+  /** When true, suppress non-essential outbound calls (update check). */
+  offline: boolean;
+  /** When true, the agent only accepts ```tool / XML / Kimi sentinel tool calls. */
+  parserStrict: boolean;
+  /** When true, suppress writing chat history (in-memory only). */
+  privateMode: boolean;
+  /** Max number of session records kept in JSONL history (0 = unlimited). */
+  historyRetentionLimit: number;
+  /** When true, fs.read/list/search must stay within sandboxRoots ∪ {cwd, $HOME}. */
+  sandboxReads: boolean;
 }
 
+/**
+ * Best-effort classification for the built-in providers. Some "free-cloud"
+ * providers have paid tiers too — the label reflects what the default keys
+ * usually buy you. Users who set up paid OpenAI/Anthropic keys can flip
+ * freeOnly off to opt back into them.
+ */
+export const providerCategory: Record<ProviderId, ProviderCategory> = {
+  groq: "free-cloud",
+  gemini: "free-cloud",
+  openrouter: "free-cloud",
+  nvidia: "free-cloud",
+  ollama: "local",
+  openai: "paid-cloud",
+  anthropic: "paid-cloud",
+};
+
 const defaults: ClaiConfig = {
-  defaultProvider: 'nvidia',
+  defaultProvider: "nvidia",
   defaultModel: defaultModels.nvidia,
-  defaultMode: 'ask',
+  defaultMode: "ask",
   providerModels: {},
   allowAlwaysTools: [],
   pentestAuthorized: false,
   sandboxRoots: [process.cwd()],
-  ollamaHost: 'http://localhost:11434',
+  ollamaHost: "http://localhost:11434",
   telemetry: false,
   lastUpdateCheck: 0,
-  thinking: { enabled: false, effort: 'medium' },
+  thinking: { enabled: false, effort: "medium" },
+  freeOnly: false,
+  offline: false,
+  parserStrict: false,
+  privateMode: false,
+  historyRetentionLimit: 200,
+  sandboxReads: true,
 };
 
 const store = new Conf<ClaiConfig>({
-  projectName: 'clai',
+  projectName: "clai",
   ...(process.env.CLAI_CONFIG_DIR ? { cwd: process.env.CLAI_CONFIG_DIR } : {}),
   defaults,
 });
@@ -55,7 +91,10 @@ export function setDefaultMode(mode: Mode): ClaiConfig {
   return updateConfig({ defaultMode: mode });
 }
 
-export function setProviderModel(provider: ProviderId, model: string): ClaiConfig {
+export function setProviderModel(
+  provider: ProviderId,
+  model: string,
+): ClaiConfig {
   const current = getConfig();
   const providerModels = { ...current.providerModels, [provider]: model };
   return updateConfig({ providerModels, defaultModel: model });

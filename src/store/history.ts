@@ -1,9 +1,10 @@
-import { mkdir, appendFile, readFile } from "node:fs/promises";
+import { mkdir, appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ChatMessage, ToolCall, ToolResult } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
+import { getConfig } from "./config.js";
 
 const historyDir = join(homedir(), ".clai");
 const dbFile = join(historyDir, "history.db");
@@ -108,6 +109,18 @@ function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
 async function appendJsonl(record: HistoryRecord): Promise<void> {
   await mkdir(historyDir, { recursive: true });
   await appendFile(jsonlFile, `${JSON.stringify(record)}\n`, "utf8");
+  await enforceJsonlRetention();
+}
+
+async function enforceJsonlRetention(): Promise<void> {
+  const limit = getConfig().historyRetentionLimit;
+  if (!limit || limit <= 0) return;
+  if (!existsSync(jsonlFile)) return;
+  const raw = await readFile(jsonlFile, "utf8");
+  const lines = raw.split("\n").filter(Boolean);
+  if (lines.length <= limit) return;
+  const trimmed = lines.slice(-limit).join("\n");
+  await writeFile(jsonlFile, `${trimmed}\n`, { mode: 0o600 });
 }
 
 export async function saveSession(
@@ -124,6 +137,12 @@ export async function saveSession(
     messages: scrubMessages(messages),
   };
 
+  // Private mode: never persist chat content. Caller still gets a record
+  // back (so /save echoes a usable id) but nothing hits disk.
+  if (getConfig().privateMode) {
+    return record;
+  }
+
   const db = await loadDatabase();
   if (db) {
     db.prepare(
@@ -136,11 +155,20 @@ export async function saveSession(
       record.cwd,
       JSON.stringify(record.messages),
     );
+    await enforceSqliteRetention(db);
   } else {
     await appendJsonl(record);
   }
 
   return record;
+}
+
+async function enforceSqliteRetention(db: DatabaseLike): Promise<void> {
+  const limit = getConfig().historyRetentionLimit;
+  if (!limit || limit <= 0) return;
+  db.exec(
+    `DELETE FROM sessions WHERE id NOT IN (SELECT id FROM sessions ORDER BY updated_at DESC LIMIT ${Math.floor(limit)});`,
+  );
 }
 
 export async function saveToolCall(
@@ -236,4 +264,37 @@ export async function getSession(
 
 export function getHistoryPath(): string {
   return sqliteUnavailable ? jsonlFile : dbFile;
+}
+
+/**
+ * Clear all stored history. Returns whether the operation succeeded.
+ * Used by the /privacy slash command and `clai privacy clear-history`.
+ */
+export async function clearAllHistory(): Promise<{
+  cleared: boolean;
+  detail: string;
+}> {
+  let detail = "";
+  try {
+    const db = await loadDatabase();
+    if (db) {
+      db.exec("DELETE FROM sessions; DELETE FROM tool_calls;");
+      detail += "sqlite cleared; ";
+    }
+  } catch (error) {
+    detail += `sqlite error: ${error instanceof Error ? error.message : String(error)}; `;
+  }
+  if (existsSync(jsonlFile)) {
+    try {
+      await rm(jsonlFile, { force: true });
+      detail += "jsonl removed";
+    } catch (error) {
+      detail += `jsonl error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  return { cleared: true, detail: detail.trim() };
+}
+
+export function getJsonlHistoryPath(): string {
+  return jsonlFile;
 }

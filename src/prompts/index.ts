@@ -1,4 +1,4 @@
-import { detectSystem } from '../os/detect.js';
+import { detectSystem } from "../os/detect.js";
 
 const askPrompt = `You are clai in /ask mode — a cybersecurity and pentesting assistant. Do NOT execute anything.
 OS: {{os}} | Shell: {{shell}} | CWD: {{cwd}}
@@ -21,10 +21,11 @@ TOOLS (use EXACT arg names — wrong names = failure):
 - fs.list: {"path":"<dir>"} — list directory
 - fs.search: {"pattern":"<regex>","path":"<dir>"} — search file CONTENTS (NOT filenames)
 - pkg.install: {"tool":"<name>"} — install package (only if user asks or command not found)
-- net.scan: {"target":"<ip/host>","ports":"<optional>"} — nmap scan
-- http.fetch: {"url":"<url>","method":"<optional>","body":"<optional>","headers":{"Key":"Value"}} — HTTP request with optional headers
+- net.scan: {"target":"<ip|cidr|hostname>","ports":"<optional 80,443,1-1000>","profile":{"scanType":"syn|tcp|udp|ping","serviceDetect":bool,"topPorts":int,"timing":"T0|T1|T2|T3|T4|T5","scripts":["safe-script-name"]},"iOwnThis":bool} — nmap scan. Target/ports/flags are strictly validated (no shell injection). Prefer the structured profile field; the legacy flags string still works but every token must be safe.
+- http.fetch: {"url":"<url>","method":"<optional GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS>","body":"<optional>","headers":{"Key":"Value"},"maxBytes":<optional>,"iOwnThis":<optional bool>} — HTTP request. GET/HEAD auto-execute against public URLs; non-GET/HEAD and private/loopback/metadata addresses require confirmation; pass iOwnThis=true to allow private targets you own.
 - sysinfo: {} — OS info
 - pentest.recon: {"target":"<ip/host>"} — whois + dig + nmap top-100
+- tool.batch: {"calls":[{"name":"<tool>","args":{...}}, ...],"concurrency":<optional 1-4>} — run up to 8 read-only tools (fs.read/list/search, http.fetch GET/HEAD, sysinfo) in parallel and aggregate their outputs. Use this for independent recon lookups (e.g. resolve a hostname AND read robots.txt) instead of a chain of single calls.
 
 FORMAT — one tool per response:
 \`\`\`tool
@@ -78,10 +79,20 @@ Step 3: Report discovered paths with status codes, sizes, and likely false-posit
 
 Do NOT: run sysinfo after answering, list home dirs, scan localhost unprompted, fetch random ports, install tools without reason, or do ANYTHING the user did not ask for.`;
 
-
 function render(template: string, values: Record<string, string>): string {
-  return Object.entries(values).reduce((current, [key, value]) => current.replaceAll(`{{${key}}}`, value), template);
+  return Object.entries(values).reduce(
+    (current, [key, value]) => current.replaceAll(`{{${key}}}`, value),
+    template,
+  );
 }
+
+/**
+ * Internal exports for tests that verify the canonical inline templates
+ * have not drifted from the markdown copies in src/prompts/. These are
+ * not part of the public API.
+ */
+export const _ASK_TEMPLATE = askPrompt;
+export const _AGENT_TEMPLATE = agentPrompt;
 
 export function renderAskSystemPrompt(): string {
   const system = detectSystem();
@@ -89,7 +100,7 @@ export function renderAskSystemPrompt(): string {
     os: `${system.osName} ${system.release} ${system.arch}`,
     shell: system.shell,
     cwd: system.cwd,
-    tool_list: 'none',
+    tool_list: "none",
   });
 }
 

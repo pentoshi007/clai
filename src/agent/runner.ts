@@ -11,15 +11,33 @@ import type {
 } from "../types.js";
 import { streamWithProvider } from "../llm/router.js";
 import { renderAgentSystemPrompt } from "../prompts/index.js";
-import { getConfig, updateConfig } from "../store/config.js";
+import { getConfig } from "../store/config.js";
 import { classifyToolCall, isPentestToolCall } from "../safety/classifier.js";
 import { availableToolNames, runToolCall } from "../tools/registry.js";
+import { reduceToolOutput } from "../tools/policies/output-policy.js";
+import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
+import { compactMessages, estimateMessagesTokens } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
+import { loadScope, isScopeActive } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
-import { rememberThinkingFromText, renderThinkingSummary } from "../ui/thinking.js";
+import {
+  rememberThinkingFromText,
+  renderThinkingSummary,
+} from "../ui/thinking.js";
 import { renderMarkdown } from "../ui/markdown.js";
 import { startThinkingSpinner } from "../ui/spinner.js";
+
+export interface SessionPolicy {
+  /** Tools the user authorized once during this REPL session. Not persisted. */
+  allow: Set<string>;
+  /** Mutable flag so the runner can flip pentest auth for this session only. */
+  pentestAuthorized: { value: boolean };
+}
+
+export function createSessionPolicy(): SessionPolicy {
+  return { allow: new Set(), pentestAuthorized: { value: false } };
+}
 
 export interface AgentRunOptions {
   provider?: ProviderId | undefined;
@@ -30,6 +48,7 @@ export interface AgentRunOptions {
   signal?: AbortSignal | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
+  session?: SessionPolicy | undefined;
 }
 
 function tryParseCall(raw: string): ToolCall | undefined {
@@ -87,7 +106,10 @@ function tryJson(raw: string): Record<string, unknown> | undefined {
  *  `<|tool_call_begin|>` strings to the terminal. */
 function stripSentinelTokens(text: string): string {
   return text
-    .replace(/<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>/gi, "")
+    .replace(
+      /<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>/gi,
+      "",
+    )
     .replace(/<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>/gi, "")
     .replace(/<\|tool_calls?(?:_section)?_(?:begin|end)\|>/gi, "")
     .replace(/<\|tool_call_argument_begin\|>/gi, "")
@@ -95,7 +117,21 @@ function stripSentinelTokens(text: string): string {
     .trim();
 }
 
-export function parseToolCall(text: string): ToolCall | undefined {
+export interface ParseToolCallOptions {
+  /**
+   * When true, only formats that are explicitly tool-call delimited are
+   * accepted: ```tool fenced JSON, <tool_call> XML, and the Kimi sentinel
+   * token format. Loose formats (any fenced block, heading-prefix, trailing
+   * JSON) are dropped — useful when models routinely emit JSON examples in
+   * prose. Default is `false` so existing free-tier models keep working.
+   */
+  strict?: boolean | undefined;
+}
+
+export function parseToolCall(
+  text: string,
+  options: ParseToolCallOptions = {},
+): ToolCall | undefined {
   // 1. ```tool ... ``` (standard format)
   const fenced = text.match(/```tool\s*\n?([\s\S]*?)```/i);
   if (fenced?.[1]) {
@@ -113,6 +149,11 @@ export function parseToolCall(text: string): ToolCall | undefined {
   // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
   const kimi = parseKimiToolCall(text);
   if (kimi) return kimi;
+
+  // In strict mode, stop here. Headings, generic fenced blocks, and trailing
+  // JSON are too easy to accidentally trigger when the model is showing a
+  // worked example.
+  if (options.strict) return undefined;
 
   // 4. ### tool / ## tool / # tool heading + JSON
   const heading = text.match(/#{1,3}\s*tool\s*\n\s*(\{[\s\S]*\})/i);
@@ -136,7 +177,9 @@ export function parseToolCall(text: string): ToolCall | undefined {
   }
 
   // 7. Trailing JSON object with "name" and "args"
-  const trailingJson = text.match(/(\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*?\}\s*\})\s*$/);
+  const trailingJson = text.match(
+    /(\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*?\}\s*\})\s*$/,
+  );
   if (trailingJson?.[1]) {
     const call = tryParseCall(trailingJson[1]);
     if (call) return call;
@@ -170,9 +213,11 @@ function textBeforeToolCall(text: string): string {
 
 function formatToolArgs(call: ToolCall): string {
   if (call.name === "shell.exec") return String(call.args.command ?? "");
-  if (call.name === "net.scan") return `${call.args.target ?? ""}${call.args.ports ? ` -p ${call.args.ports}` : ""}${call.args.flags ? ` ${call.args.flags}` : ""}`;
+  if (call.name === "net.scan")
+    return `${call.args.target ?? ""}${call.args.ports ? ` -p ${call.args.ports}` : ""}${call.args.flags ? ` ${call.args.flags}` : ""}`;
   if (call.name === "pentest.recon") return String(call.args.target ?? "");
-  if (call.name === "fs.read" || call.name === "fs.write") return String(call.args.path ?? "");
+  if (call.name === "fs.read" || call.name === "fs.write")
+    return String(call.args.path ?? "");
   if (call.name === "fs.search") return String(call.args.pattern ?? "");
   if (call.name === "http.fetch") return String(call.args.url ?? "");
   if (call.name === "pkg.install") return String(call.args.tool ?? "");
@@ -181,14 +226,23 @@ function formatToolArgs(call: ToolCall): string {
 }
 
 function isAbortError(error: unknown, signal?: AbortSignal): boolean {
-  return Boolean(signal?.aborted) || (error instanceof Error && error.name === "AbortError");
+  return (
+    Boolean(signal?.aborted) ||
+    (error instanceof Error && error.name === "AbortError")
+  );
 }
 
 function safeArtifactName(name: string): string {
-  return name.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") || "tool-output";
+  return (
+    name.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") ||
+    "tool-output"
+  );
 }
 
-async function saveToolOutput(call: ToolCall, output: string): Promise<string | undefined> {
+async function saveToolOutput(
+  call: ToolCall,
+  output: string,
+): Promise<string | undefined> {
   if (!output.trim()) return undefined;
   const dir = join(homedir(), ".clai", "outputs");
   await mkdir(dir, { recursive: true });
@@ -198,7 +252,10 @@ async function saveToolOutput(call: ToolCall, output: string): Promise<string | 
   return path;
 }
 
-function summarizeOutput(output: string, maxChars = 8_000): { text: string; truncated: boolean } {
+function summarizeOutput(
+  output: string,
+  maxChars = 8_000,
+): { text: string; truncated: boolean } {
   if (output.length <= maxChars) return { text: output, truncated: false };
 
   const lines = output.split(/\r?\n/);
@@ -233,40 +290,72 @@ function summarizeOutput(output: string, maxChars = 8_000): { text: string; trun
   };
 }
 
-function formatToolContext(result: ToolResult): string {
+function formatToolContext(call: ToolCall, result: ToolResult): string {
   const output = result.output.trim();
-  const summary = summarizeOutput(output, 8_000);
-  const saved = result.outputPath ? `\nFull output saved to: ${result.outputPath}` : "";
+  if (!output) return "";
+  let reduced: string | undefined;
+  try {
+    const command =
+      call.name === "shell.exec" ? String(call.args.command ?? "") : call.name;
+    const policy = reduceToolOutput(output, {
+      toolName: call.name,
+      command,
+    });
+    reduced = policy.summary.trim();
+  } catch {
+    reduced = undefined;
+  }
+  // Hard cap on the reduced text — reducers should already be small, but
+  // never let one accidentally explode model context.
+  const base = reduced && reduced.length > 0 ? reduced : output;
+  const summary = summarizeOutput(base, 8_000);
+  const saved = result.outputPath
+    ? `\nFull output saved to: ${result.outputPath}`
+    : "";
   return `${summary.text}${saved}`.trim();
 }
 
 async function ensurePentestAuthorization(
   call: ToolCall,
   autoConfirm: boolean,
+  session: SessionPolicy,
 ): Promise<boolean> {
-  const config = getConfig();
-  if (!isPentestToolCall(call) || config.pentestAuthorized) return true;
+  if (!isPentestToolCall(call)) return true;
+  // Persistent auth (via `clai authorize-pentest AGREE`) wins.
+  if (getConfig().pentestAuthorized) return true;
+  // Session auth flipped earlier in this session — no re-prompt.
+  if (session.pentestAuthorized.value) return true;
 
   if (autoConfirm) {
-    updateConfig({ pentestAuthorized: true });
+    // -y is session-scoped only. We do NOT touch the persistent config so
+    // a one-shot `-y` cannot silently authorize later interactive runs.
+    session.pentestAuthorized.value = true;
     return true;
   }
 
   const ok = await confirm({
-    message: chalk.red("clai only assists with security testing on systems you own or have written permission to test. Confirm?"),
+    message: chalk.red(
+      "clai only assists with security testing on systems you own or have written permission to test. Confirm for this session?",
+    ),
     default: false,
   });
   if (!ok) return false;
-  updateConfig({ pentestAuthorized: true });
+  session.pentestAuthorized.value = true;
   return true;
 }
 
 async function confirmToolExecution(
   call: ToolCall,
   autoConfirm: boolean,
+  session: SessionPolicy,
 ): Promise<boolean> {
   const config = getConfig();
-  if (autoConfirm || config.allowAlwaysTools.includes(call.name)) return true;
+  if (autoConfirm) return true;
+  if (session.allow.has(call.name)) return true;
+  // Persistent allowlist kept for backwards compat with users who set it
+  // through `clai config` directly, but `/allow` only mutates the session
+  // set so authorizations never leak across processes.
+  if (config.allowAlwaysTools.includes(call.name)) return true;
 
   return confirm({
     message: chalk.yellow(`  run ${call.name}: ${formatToolArgs(call)}?`),
@@ -295,6 +384,7 @@ export async function runAgentLoop(
   await ensureProviderConfigured(provider);
   let model = options.model ?? config.defaultModel;
   let lastAnswer = "";
+  const session: SessionPolicy = options.session ?? createSessionPolicy();
 
   for (let step = 0; step < maxSteps; step += 1) {
     options.signal?.throwIfAborted();
@@ -353,7 +443,9 @@ export async function runAgentLoop(
     model = completion.model;
 
     const assistantText = rememberThinkingFromText(completion.text);
-    const call = parseToolCall(assistantText.visible);
+    const call = parseToolCall(assistantText.visible, {
+      strict: getConfig().parserStrict,
+    });
     if (!call) {
       // Detect the case where the model emitted sentinel-style tool-call
       // markers but the body was malformed or truncated. Printing those
@@ -388,7 +480,9 @@ export async function runAgentLoop(
         if (!cleaned.endsWith("\n")) process.stdout.write("\n");
       }
       if (assistantText.hasThinking) {
-        process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
+        process.stdout.write(
+          `${renderThinkingSummary(assistantText.thinkContent)}\n`,
+        );
       }
       await auditLog("agent.final", { provider, model, steps: step + 1 });
       lastAnswer = cleaned;
@@ -401,15 +495,26 @@ export async function runAgentLoop(
       process.stdout.write(chalk.dim(renderMarkdown(beforeTool)) + "\n");
     }
     if (assistantText.hasThinking) {
-      process.stdout.write(`${renderThinkingSummary(assistantText.thinkContent)}\n`);
+      process.stdout.write(
+        `${renderThinkingSummary(assistantText.thinkContent)}\n`,
+      );
     }
 
     messages.push({ role: "assistant", content: assistantText.visible });
-    const decision = classifyToolCall(call);
-    await auditLog("tool.classified", { call, decision });
+    const scope = await loadScope();
+    const decision = classifyToolCall(call, { scope });
+    await auditLog("tool.classified", {
+      call,
+      decision,
+      scope: isScopeActive(scope) ? scope.name ?? "(unnamed)" : "(none)",
+    });
 
     // Show tool call
-    process.stdout.write(chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`) + "\n");
+    process.stdout.write(
+      chalk.cyan(`  ▶ ${call.name}`) +
+        chalk.gray(` ${formatToolArgs(call)}`) +
+        "\n",
+    );
 
     if (decision.level === "block") {
       process.stdout.write(chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n");
@@ -419,10 +524,14 @@ export async function runAgentLoop(
 
     // Pentest authorization — if user confirms this, skip the per-tool confirm
     let pentestJustConfirmed = false;
-    const needsPentestAuth = isPentestToolCall(call) && !getConfig().pentestAuthorized;
+    const needsPentestAuth =
+      isPentestToolCall(call) &&
+      !getConfig().pentestAuthorized &&
+      !session.pentestAuthorized.value;
     const authorized = await ensurePentestAuthorization(
       call,
       Boolean(options.autoConfirm),
+      session,
     );
     if (!authorized) {
       lastAnswer = "Pentest authorization not confirmed.";
@@ -435,7 +544,11 @@ export async function runAgentLoop(
 
     // Confirm if needed (safe tools auto-execute, pentest-auth'd tools skip)
     if (decision.level === "confirm" && !pentestJustConfirmed) {
-      const ok = await confirmToolExecution(call, Boolean(options.autoConfirm));
+      const ok = await confirmToolExecution(
+        call,
+        Boolean(options.autoConfirm),
+        session,
+      );
       if (!ok) {
         lastAnswer = "Cancelled.";
         process.stdout.write(chalk.yellow(`  ✗ cancelled`) + "\n");
@@ -454,20 +567,34 @@ export async function runAgentLoop(
       // Suppress live preview for fs.read / fs.list — those are read-only
       // and the final summary is already concise. Stream shell-style tools
       // (shell.exec, net.scan, pentest.recon, pkg.install).
-      if (call.name === "fs.read" || call.name === "fs.list" || call.name === "fs.search") return;
+      if (
+        call.name === "fs.read" ||
+        call.name === "fs.list" ||
+        call.name === "fs.search"
+      )
+        return;
       if (liveBytes >= liveCap) {
         if (!liveTruncatedNotified) {
           liveTruncatedNotified = true;
-          process.stdout.write(chalk.dim("\n  … live preview truncated, full output saved\n"));
+          process.stdout.write(
+            chalk.dim("\n  … live preview truncated, full output saved\n"),
+          );
         }
         return;
       }
       const remaining = liveCap - liveBytes;
-      const slice = chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
+      const slice =
+        chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
       liveBytes += slice.length;
       // Indent each line so live output lines up under the tool call.
       const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
-      process.stdout.write(chalk.dim(indented.startsWith("\n") ? indented : `  ${indented}`.replace(/^  /, "  ")));
+      process.stdout.write(
+        chalk.dim(
+          indented.startsWith("\n")
+            ? indented
+            : `  ${indented}`.replace(/^  /, "  "),
+        ),
+      );
     };
 
     try {
@@ -486,18 +613,24 @@ export async function runAgentLoop(
         process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
         return lastAnswer;
       }
-      const errMsg = toolError instanceof Error ? toolError.message : String(toolError);
+      const errMsg =
+        toolError instanceof Error ? toolError.message : String(toolError);
       result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
     }
     const output = result.output.trim();
     const displayMax = 6_000;
-    const savedOutputPath = output.length > displayMax
-      ? await saveToolOutput(call, output)
-      : undefined;
+    // If the tool already produced an artifact (shell.exec now streams to one
+    // as it runs), respect that path. Otherwise, fall back to the post-hoc
+    // save for tools that return their full output in memory.
+    const savedOutputPath =
+      result.outputPath ??
+      (output.length > displayMax
+        ? await saveToolOutput(call, output)
+        : undefined);
     const resultWithArtifact: ToolResult = {
       ...result,
       outputPath: savedOutputPath,
-      truncated: Boolean(savedOutputPath),
+      truncated: result.truncated ?? Boolean(savedOutputPath),
     };
     options.onToolResult?.(call, resultWithArtifact);
     await auditLog("tool.result", {
@@ -519,7 +652,9 @@ export async function runAgentLoop(
       // the same bytes. Just note where the full output lives if it was saved.
       if (liveBytes > 0) {
         if (savedOutputPath) {
-          process.stdout.write(chalk.dim(`  full output saved to ${savedOutputPath}\n`));
+          process.stdout.write(
+            chalk.dim(`  full output saved to ${savedOutputPath}\n`),
+          );
         }
       } else {
         process.stdout.write(chalk.gray(displayText) + "\n");
@@ -531,11 +666,35 @@ export async function runAgentLoop(
       return lastAnswer;
     }
 
-    const contextOutput = formatToolContext(resultWithArtifact);
+    const contextOutput = formatToolContext(call, resultWithArtifact);
+
+    // Register a collapse/expand viewport so the user can pull the full raw
+    // output back with Ctrl+O or `/output last` after the AI summary lands.
+    if (output) {
+      const viewport = registerViewport({
+        toolName: call.name,
+        argsDisplay: formatToolArgs(call),
+        artifactPath: savedOutputPath,
+        summary: contextOutput,
+      });
+      process.stdout.write(`${formatViewportHint(viewport)}\n`);
+    }
     messages.push({
       role: "tool",
       content: `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}`,
     });
+    // Compact older messages when the running estimate exceeds budget so
+    // free-tier context windows are not blown by long pentest sessions.
+    if (estimateMessagesTokens(messages) > 24_000) {
+      const compacted = compactMessages(messages);
+      if (compacted.length < messages.length) {
+        messages.splice(0, messages.length, ...compacted);
+        await auditLog("agent.compact", {
+          newLength: messages.length,
+          estimatedTokens: estimateMessagesTokens(messages),
+        });
+      }
+    }
   }
 
   lastAnswer = `Stopped after ${maxSteps} steps.`;

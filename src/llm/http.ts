@@ -35,7 +35,7 @@ function parseRetryHintFromBody(text: string): number | undefined {
 }
 
 export async function readJson<T>(response: Response): Promise<T> {
-  const text = await response.text();
+  const text = await readBodyCapped(response, MAX_JSON_RESPONSE_BYTES);
   if (!response.ok) {
     // Try to extract a useful message from the body
     let detail = '';
@@ -62,6 +62,169 @@ export async function readJson<T>(response: Response): Promise<T> {
     );
   }
   return JSON.parse(text) as T;
+}
+
+/** Hard cap on a JSON response body so a misbehaving provider can't OOM us. */
+const MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+async function readBodyCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    // Some shapes (eg synthetic Response in tests) don't expose a reader.
+    // Fall back to text() but still slice the result so callers see the
+    // same cap downstream.
+    const text = await response.text();
+    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
+  }
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let collected = "";
+  let bytesRead = 0;
+  try {
+    while (bytesRead < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const remaining = maxBytes - bytesRead;
+      if (value.byteLength > remaining) {
+        collected += decoder.decode(value.subarray(0, remaining), {
+          stream: true,
+        });
+        bytesRead += remaining;
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore — we're abandoning the body deliberately
+        }
+        break;
+      }
+      collected += decoder.decode(value, { stream: true });
+      bytesRead += value.byteLength;
+    }
+    collected += decoder.decode();
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released
+    }
+  }
+  return collected;
+}
+
+/**
+ * Shared SSE/JSONL stream reader. Wraps a fetch response body in:
+ *  - an idle watchdog (default 90s, configurable per call) that aborts
+ *    when no bytes arrive,
+ *  - a hard total-byte cap (default 16MB) so a runaway provider can't
+ *    grow our memory unbounded,
+ *  - a caller-provided abort signal.
+ *
+ * Yields lines as they arrive. Caller is responsible for parsing JSON /
+ * SSE `data:` framing. Cleans up timers and reader locks on every exit
+ * path so callers don't have to.
+ */
+export interface StreamLineReaderOptions {
+  signal?: AbortSignal | undefined;
+  idleTimeoutMs?: number | undefined;
+  maxBytes?: number | undefined;
+  /** If provided, called after every read so callers can reset their own
+   *  watchdogs (eg the OpenAI-compatible streamer's existing one). */
+  onActivity?: (() => void) | undefined;
+}
+
+export async function* readStreamLines(
+  response: Response,
+  options: StreamLineReaderOptions = {},
+): AsyncGenerator<string, void, void> {
+  if (!response.body) return;
+  const idleTimeoutMs = options.idleTimeoutMs ?? 90_000;
+  const maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
+  const idleController = new AbortController();
+  let idleTimer: NodeJS.Timeout | undefined;
+  let idleFired = false;
+  const resetIdleTimer = (): void => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleFired = true;
+      idleController.abort();
+    }, idleTimeoutMs);
+  };
+  resetIdleTimer();
+  const onCallerAbort = (): void => idleController.abort();
+  options.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  // If either signal is already aborted, bail before starting the loop.
+  if (idleController.signal.aborted) {
+    if (idleTimer) clearTimeout(idleTimer);
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let bytesRead = 0;
+  // Cancel the reader when either the idle watchdog or the caller signal
+  // fires. ReadableStream.read() doesn't honor an external AbortSignal, so
+  // we have to actively cancel the reader for the loop below to unblock.
+  const cancelReaderOnAbort = (): void => {
+    reader.cancel().catch(() => undefined);
+  };
+  idleController.signal.addEventListener("abort", cancelReaderOnAbort, {
+    once: true,
+  });
+
+  try {
+    while (true) {
+      if (idleController.signal.aborted) {
+        if (idleFired) {
+          throw new ProviderError(
+            `Provider stream stalled — no data for ${Math.round(idleTimeoutMs / 1000)}s.`,
+          );
+        }
+        break;
+      }
+      const { done, value } = await reader.read();
+      if (done) {
+        if (idleFired) {
+          throw new ProviderError(
+            `Provider stream stalled — no data for ${Math.round(idleTimeoutMs / 1000)}s.`,
+          );
+        }
+        break;
+      }
+      if (value) {
+        bytesRead += value.byteLength;
+        if (bytesRead > maxBytes) {
+          throw new ProviderError(
+            `Provider stream exceeded ${maxBytes.toLocaleString()} bytes — aborting.`,
+          );
+        }
+      }
+      resetIdleTimer();
+      options.onActivity?.();
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) yield line;
+    }
+    if (buffer.length > 0) yield buffer;
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+    options.signal?.removeEventListener("abort", onCallerAbort);
+    idleController.signal.removeEventListener("abort", cancelReaderOnAbort);
+    try {
+      await reader.cancel().catch(() => undefined);
+    } catch {
+      // best-effort
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released
+    }
+  }
 }
 
 export function toOpenAiMessages(

@@ -4,7 +4,7 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
-import { readJson } from "./http.js";
+import { readJson, readStreamLines } from "./http.js";
 
 function base(auth: ProviderAuth): string {
   return (auth.baseUrl ?? auth.apiKey ?? "http://localhost:11434").replace(
@@ -75,36 +75,28 @@ export const ollamaProvider: LlmProvider = {
     if (!response.body) {
       throw new Error("Ollama returned no stream body");
     }
-    const decoder = new TextDecoder();
-    const reader = response.body.getReader();
-    let buffer = "";
     let full = "";
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const parsed = JSON.parse(trimmed) as {
-            message?: { content?: string };
-            done?: boolean;
-          };
-          const token = parsed.message?.content;
-          if (token) {
-            full += token;
-            onToken(token);
-          }
-          if (parsed.done) {
-            return { text: full, provider: "ollama", model };
-          }
-        } catch {
-          // Ignore malformed lines.
+    for await (const line of readStreamLines(response, {
+      signal: request.signal,
+    })) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed) as {
+          message?: { content?: string };
+          done?: boolean;
+        };
+        const token = parsed.message?.content;
+        if (token) {
+          full += token;
+          onToken(token);
         }
+        if (parsed.done) {
+          return { text: full, provider: "ollama", model };
+        }
+      } catch {
+        // Ignore malformed lines.
       }
     }
     return { text: full, provider: "ollama", model };

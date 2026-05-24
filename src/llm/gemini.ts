@@ -9,7 +9,7 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
-import { readJson } from "./http.js";
+import { readJson, readStreamLines } from "./http.js";
 
 function geminiContents(
   messages: ChatMessage[],
@@ -132,9 +132,6 @@ export const geminiProvider: LlmProvider = {
     if (!response.body) {
       throw new Error("Gemini returned no stream body");
     }
-    const decoder = new TextDecoder();
-    const reader = response.body.getReader();
-    let buffer = "";
     let full = "";
     let inThought = false;
 
@@ -151,44 +148,39 @@ export const geminiProvider: LlmProvider = {
       onToken("</think>");
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (payload === "[DONE]") {
-          exitThought();
-          return { text: full, provider: "gemini", model };
-        }
-        try {
-          const parsed = JSON.parse(payload) as {
-            candidates?: Array<{
-              content?: {
-                parts?: Array<{ text?: string; thought?: boolean }>;
-              };
-            }>;
-          };
-          const parts = parsed.candidates?.[0]?.content?.parts ?? [];
-          for (const part of parts) {
-            if (!part.text) continue;
-            if (part.thought) {
-              enterThought();
-              full += part.text;
-              onToken(part.text);
-            } else {
-              if (inThought) exitThought();
-              full += part.text;
-              onToken(part.text);
-            }
+    for await (const line of readStreamLines(response, {
+      signal: request.signal,
+    })) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === "[DONE]") {
+        exitThought();
+        return { text: full, provider: "gemini", model };
+      }
+      try {
+        const parsed = JSON.parse(payload) as {
+          candidates?: Array<{
+            content?: {
+              parts?: Array<{ text?: string; thought?: boolean }>;
+            };
+          }>;
+        };
+        const parts = parsed.candidates?.[0]?.content?.parts ?? [];
+        for (const part of parts) {
+          if (!part.text) continue;
+          if (part.thought) {
+            enterThought();
+            full += part.text;
+            onToken(part.text);
+          } else {
+            if (inThought) exitThought();
+            full += part.text;
+            onToken(part.text);
           }
-        } catch {
-          // Ignore malformed keepalive lines.
         }
+      } catch {
+        // Ignore malformed keepalive lines.
       }
     }
     exitThought();

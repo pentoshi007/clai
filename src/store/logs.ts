@@ -1,4 +1,4 @@
-import { mkdir, readdir, rename, stat, appendFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, stat, appendFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -30,4 +30,40 @@ export async function auditLog(event: string, payload: unknown = {}): Promise<vo
   await rotateIfNeeded(path);
   const entry = redactSecrets(JSON.stringify({ at: new Date().toISOString(), event, payload }));
   await appendFile(path, `${entry}\n`, 'utf8');
+}
+
+export async function clearAuditLogs(): Promise<{ removed: number }> {
+  if (!existsSync(logsDir)) return { removed: 0 };
+  const entries = await readdir(logsDir).catch(() => []);
+  let removed = 0;
+  for (const entry of entries) {
+    if (!entry.startsWith('clai-')) continue;
+    try {
+      await rm(join(logsDir, entry), { force: true });
+      removed += 1;
+    } catch {
+      // best-effort: keep going
+    }
+  }
+  return { removed };
+}
+
+export function getLogsDir(): string {
+  return logsDir;
+}
+
+export async function clearArtifacts(): Promise<{ removed: number }> {
+  const dir = join(homedir(), '.clai', 'outputs');
+  if (!existsSync(dir)) return { removed: 0 };
+  const entries = await readdir(dir).catch(() => []);
+  let removed = 0;
+  for (const entry of entries) {
+    try {
+      await rm(join(dir, entry), { force: true, recursive: true });
+      removed += 1;
+    } catch {
+      // best-effort
+    }
+  }
+  return { removed };
 }

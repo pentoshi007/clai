@@ -4,7 +4,7 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
-import { readJson } from "./http.js";
+import { readJson, readStreamLines } from "./http.js";
 
 const baseUrl = "https://api.anthropic.com/v1";
 const anthropicVersion = "2023-06-01";
@@ -144,9 +144,6 @@ export const anthropicProvider: LlmProvider = {
     if (!response.body) {
       throw new Error("Anthropic returned no stream body");
     }
-    const decoder = new TextDecoder();
-    const reader = response.body.getReader();
-    let buffer = "";
     let full = "";
     let inThinking = false;
 
@@ -163,40 +160,35 @@ export const anthropicProvider: LlmProvider = {
       onToken("</think>");
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (payload === "[DONE]") {
-          exitThinking();
-          return { text: full, provider: "anthropic", model };
-        }
-        try {
-          const parsed = JSON.parse(payload) as {
-            type?: string;
-            delta?: { type?: string; text?: string; thinking?: string };
-          };
-          if (parsed.type === "content_block_delta") {
-            const deltaType = parsed.delta?.type;
-            if (deltaType === "thinking_delta" && parsed.delta?.thinking) {
-              enterThinking();
-              full += parsed.delta.thinking;
-              onToken(parsed.delta.thinking);
-            } else if (deltaType === "text_delta" && parsed.delta?.text) {
-              if (inThinking) exitThinking();
-              full += parsed.delta.text;
-              onToken(parsed.delta.text);
-            }
+    for await (const line of readStreamLines(response, {
+      signal: request.signal,
+    })) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === "[DONE]") {
+        exitThinking();
+        return { text: full, provider: "anthropic", model };
+      }
+      try {
+        const parsed = JSON.parse(payload) as {
+          type?: string;
+          delta?: { type?: string; text?: string; thinking?: string };
+        };
+        if (parsed.type === "content_block_delta") {
+          const deltaType = parsed.delta?.type;
+          if (deltaType === "thinking_delta" && parsed.delta?.thinking) {
+            enterThinking();
+            full += parsed.delta.thinking;
+            onToken(parsed.delta.thinking);
+          } else if (deltaType === "text_delta" && parsed.delta?.text) {
+            if (inThinking) exitThinking();
+            full += parsed.delta.text;
+            onToken(parsed.delta.text);
           }
-        } catch {
-          // Ignore malformed keepalive lines.
         }
+      } catch {
+        // Ignore malformed keepalive lines.
       }
     }
     exitThinking();

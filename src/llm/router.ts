@@ -3,7 +3,7 @@ import type {
   CompletionResult,
   ProviderId,
 } from "../types.js";
-import { getConfig } from "../store/config.js";
+import { getConfig, providerCategory } from "../store/config.js";
 import { getProviderSecret } from "../store/keys.js";
 import { anthropicProvider } from "./anthropic.js";
 import { geminiProvider } from "./gemini.js";
@@ -82,6 +82,25 @@ const fallbackOrder: ProviderId[] = [
   "ollama",
 ];
 
+/**
+ * Build the fallback chain, optionally filtering paid-cloud providers when
+ * `freeOnly` is enabled. The user's explicitly requested provider is always
+ * tried first regardless of category — flipping freeOnly never strands an
+ * explicit `clai --provider openai` request.
+ */
+export function buildFallbackChain(
+  requested: ProviderId,
+  freeOnly: boolean,
+): ProviderId[] {
+  const filtered = freeOnly
+    ? fallbackOrder.filter(
+        (provider) =>
+          provider === requested || providerCategory[provider] !== "paid-cloud",
+      )
+    : fallbackOrder;
+  return [requested, ...filtered.filter((provider) => provider !== requested)];
+}
+
 export function getProvider(provider: ProviderId): LlmProvider {
   return providers[provider];
 }
@@ -101,10 +120,7 @@ export async function completeWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
-  const order = [
-    requested,
-    ...fallbackOrder.filter((provider) => provider !== requested),
-  ];
+  const order = buildFallbackChain(requested, config.freeOnly);
   const failures: string[] = [];
 
   for (const providerId of order) {
@@ -144,10 +160,7 @@ export async function streamWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
-  const order = [
-    requested,
-    ...fallbackOrder.filter((provider) => provider !== requested),
-  ];
+  const order = buildFallbackChain(requested, config.freeOnly);
   const failures: string[] = [];
   const emitStatus = onStatus ?? ((message) => onToken(message));
 
