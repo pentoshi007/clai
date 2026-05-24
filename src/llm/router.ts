@@ -151,6 +151,11 @@ export async function completeWithProvider(
       );
     } catch (error) {
       failures.push(`${providerId}: ${summarizeProviderError(error)}`);
+      if (isRateLimited(error)) {
+        throw new Error(
+          `No provider could complete the request.${formatFailures(failures)}`,
+        );
+      }
     }
   }
 
@@ -208,21 +213,26 @@ export async function streamWithProvider(
         return result;
       } catch (error) {
         if (request.signal?.aborted) throw error;
-        if (isRateLimited(error) && attempt < MAX_RETRIES) {
+        if (isRateLimited(error)) {
           const wait = retryWaitMs(error, attempt);
-          if (wait > MAX_RETRY_WAIT_MS) {
-            // Long wait — skip to next provider rather than blocking the user.
+          if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
             emitStatus(
-              `\n  ⏭  ${providerId} rate limited (~${Math.ceil(wait / 1000)}s); trying next provider...\n`,
+              `\n  ⏳ ${providerId} rate limited, retrying in ${Math.ceil(wait / 1000)}s...\n`,
             );
-            failures.push(`${providerId}: ${summarizeProviderError(error)}`);
-            break;
+            await sleep(wait, request.signal);
+            continue;
           }
+          const suffix =
+            wait > MAX_RETRY_WAIT_MS
+              ? ` (~${Math.ceil(wait / 1000)}s)`
+              : "";
           emitStatus(
-            `\n  ⏳ ${providerId} rate limited, retrying in ${Math.ceil(wait / 1000)}s...\n`,
+            `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
           );
-          await sleep(wait, request.signal);
-          continue;
+          failures.push(`${providerId}: ${summarizeProviderError(error)}`);
+          throw new Error(
+            `No provider could stream the request.${formatFailures(failures)}`,
+          );
         }
         failures.push(`${providerId}: ${summarizeProviderError(error)}`);
         break;

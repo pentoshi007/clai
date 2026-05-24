@@ -16,11 +16,9 @@ import { isCtrlC, isCtrlO, isCtrlT, isEscape } from "../src/ui/keys.js";
 describe("phase 6 — keys", () => {
   it("isCtrlO recognizes the canonical readline shape across platforms", () => {
     expect(isCtrlO({ ctrl: true, name: "o" })).toBe(true);
+    expect(isCtrlO({ sequence: "\x0f" })).toBe(true);
     expect(isCtrlO({ ctrl: false, name: "o" })).toBe(false);
     expect(isCtrlO({ ctrl: true, name: "p" })).toBe(false);
-    // Many terminals also send the literal control byte as `sequence`.
-    // We rely on readline's normalized `{ ctrl, name }`, not raw sequences,
-    // so the same handler fires on macOS, Linux, and Windows.
   });
   it("isCtrlT / isCtrlC / isEscape are independent shapes", () => {
     expect(isCtrlT({ ctrl: true, name: "t" })).toBe(true);
@@ -55,7 +53,7 @@ describe("phase 6 — output pane", () => {
     const expanded = chunks.join("");
     expect(getViewport(v.id)?.expanded).toBe(true);
     expect(expanded).toMatch(/RAW BIG OUTPUT/);
-    expect(expanded).toMatch(/REDUCED/);
+    expect(expanded).not.toMatch(/REDUCED/);
     chunks.length = 0;
     await toggleViewport(v.id, (c) => chunks.push(c));
     expect(getViewport(v.id)?.expanded).toBe(false);

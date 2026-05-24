@@ -3,6 +3,7 @@ import {
   buildReasoningPayload,
   classifyNvidiaModel,
 } from "../src/llm/http.js";
+import { groqMaxTokens } from "../src/llm/groq.js";
 import { geminiBody } from "../src/llm/gemini.js";
 
 describe("NVIDIA NIM model classification", () => {
@@ -90,6 +91,36 @@ describe("NVIDIA NIM model classification", () => {
         "llama-3.3-70b-versatile",
       ),
     ).toEqual({});
+  });
+
+  it("maps Groq Qwen3 reasoning to Qwen's none/default values", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: true, effort: "high" },
+        "groq",
+        "qwen/qwen3-32b",
+      ),
+    ).toEqual({ reasoning_effort: "default" });
+    expect(
+      buildReasoningPayload(
+        { enabled: false, effort: "medium" },
+        "groq",
+        "qwen/qwen3-32b",
+      ),
+    ).toEqual({ reasoning_effort: "none" });
+  });
+
+  it("keeps Groq GPT-OSS on low/medium/high and caps large output budgets", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: true, effort: "low" },
+        "groq",
+        "openai/gpt-oss-120b",
+      ),
+    ).toEqual({ reasoning_effort: "low" });
+    expect(groqMaxTokens("openai/gpt-oss-120b", 8_192)).toBe(1_024);
+    expect(groqMaxTokens("openai/gpt-oss-20b", 8_192)).toBe(2_048);
+    expect(groqMaxTokens("qwen/qwen3-32b", 8_192)).toBe(2_048);
   });
 
   it("keeps OpenRouter reasoning payloads separate from Groq and NVIDIA fields", () => {

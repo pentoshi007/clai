@@ -82,9 +82,7 @@ export async function toggleViewport(
     } else {
       write(chalk.dim("  (no artifact file — only the summary is available)\n"));
     }
-    write(chalk.dim(`  ── summary still shown below; press Ctrl+O again to collapse ──\n`));
-    // Re-print summary so the user has it without scrolling.
-    write(`${v.summary}\n`);
+    write(chalk.dim(`  ── press Ctrl+O again to collapse ──\n`));
   } else {
     write(chalk.dim(`\n  ── collapsed; press Ctrl+O to expand ──\n`));
   }

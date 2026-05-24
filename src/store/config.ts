@@ -1,6 +1,6 @@
 import Conf from "conf";
 import type { Mode, ProviderId, ReasoningPreference } from "../types.js";
-import { defaultModels } from "../llm/provider.js";
+import { defaultModels, sanitizeProviderModel } from "../llm/provider.js";
 
 export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
 
@@ -76,7 +76,21 @@ const store = new Conf<ClaiConfig>({
 });
 
 export function getConfig(): ClaiConfig {
-  return store.store;
+  const current = store.store;
+  const providerModels: Partial<Record<ProviderId, string>> = {};
+  for (const [provider, model] of Object.entries(current.providerModels ?? {}) as Array<
+    [ProviderId, string]
+  >) {
+    providerModels[provider] = sanitizeProviderModel(provider, model);
+  }
+  return {
+    ...current,
+    defaultModel: sanitizeProviderModel(
+      current.defaultProvider,
+      current.defaultModel,
+    ),
+    providerModels,
+  };
 }
 
 export function updateConfig(patch: Partial<ClaiConfig>): ClaiConfig {
@@ -99,13 +113,16 @@ export function setProviderModel(
   model: string,
 ): ClaiConfig {
   const current = getConfig();
-  const providerModels = { ...current.providerModels, [provider]: model };
-  return updateConfig({ providerModels, defaultModel: model });
+  const sanitized = sanitizeProviderModel(provider, model);
+  const providerModels = { ...current.providerModels, [provider]: sanitized };
+  return updateConfig({ providerModels, defaultModel: sanitized });
 }
 
 export function getProviderModel(provider: ProviderId): string {
   const configured = getConfig().providerModels[provider];
-  return configured ?? defaultModels[provider];
+  return configured
+    ? sanitizeProviderModel(provider, configured)
+    : defaultModels[provider];
 }
 
 export function getConfigPath(): string {

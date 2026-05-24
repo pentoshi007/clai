@@ -6,9 +6,10 @@ describe("modelSupportsThinking", () => {
     expect(modelSupportsThinking("nvidia", "moonshotai/kimi-k2.6")).toBe(true);
   });
 
-  it("recognizes DeepSeek R1 across providers", () => {
+  it("recognizes DeepSeek R1 on NVIDIA and current Groq reasoning models", () => {
     expect(modelSupportsThinking("nvidia", "deepseek-ai/deepseek-r1")).toBe(true);
-    expect(modelSupportsThinking("groq", "deepseek-r1-distill-llama-70b")).toBe(true);
+    expect(modelSupportsThinking("groq", "qwen/qwen3-32b")).toBe(true);
+    expect(modelSupportsThinking("groq", "openai/gpt-oss-20b")).toBe(true);
   });
 
   it("recognizes GPT-5/o-series on OpenAI", () => {

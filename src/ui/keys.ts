@@ -25,7 +25,10 @@ export function isCtrlT(key: Keypress): boolean {
 }
 
 export function isCtrlO(key: Keypress): boolean {
-  return Boolean(key.ctrl) && key.name === "o";
+  return (
+    (Boolean(key.ctrl) && key.name?.toLowerCase() === "o") ||
+    key.sequence === "\x0f"
+  );
 }
 
 export function isEscape(key: Keypress): boolean {

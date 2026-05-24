@@ -4,7 +4,13 @@ import {
   updateConfig,
   getConfig,
 } from "../src/store/config.js";
-import { buildFallbackChain } from "../src/llm/router.js";
+import {
+  buildFallbackChain,
+  providers,
+  streamWithProvider,
+} from "../src/llm/router.js";
+import { ProviderError } from "../src/llm/http.js";
+import type { LlmProvider } from "../src/llm/provider.js";
 
 describe("phase 7 — free-only provider categories", () => {
   const before = getConfig().freeOnly;
@@ -51,5 +57,75 @@ describe("phase 7 — free-only provider categories", () => {
 
   it("provider fallback defaults to the selected provider only", () => {
     expect(buildFallbackChain("groq", false)).toEqual(["groq"]);
+  });
+});
+
+describe("provider fallback rate limits", () => {
+  const originalGroq = providers.groq;
+  const originalNvidia = providers.nvidia;
+  const beforeFallback = getConfig().providerFallback;
+  const beforeGroqKey = process.env.GROQ_API_KEY;
+  const beforeNvidiaKey = process.env.NVIDIA_API_KEY;
+
+  afterEach(() => {
+    providers.groq = originalGroq;
+    providers.nvidia = originalNvidia;
+    updateConfig({ providerFallback: beforeFallback });
+    if (beforeGroqKey === undefined) {
+      delete process.env.GROQ_API_KEY;
+    } else {
+      process.env.GROQ_API_KEY = beforeGroqKey;
+    }
+    if (beforeNvidiaKey === undefined) {
+      delete process.env.NVIDIA_API_KEY;
+    } else {
+      process.env.NVIDIA_API_KEY = beforeNvidiaKey;
+    }
+  });
+
+  it("stays on the selected model when it is rate limited, even if fallback is enabled", async () => {
+    updateConfig({ providerFallback: true });
+    process.env.GROQ_API_KEY = "gsk_test";
+    process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
+    let nvidiaCalled = false;
+    providers.groq = {
+      ...originalGroq,
+      async stream() {
+        throw new ProviderError(
+          "Provider request failed with HTTP 429 (retry after 35s)",
+          429,
+          "",
+          35,
+        );
+      },
+    } as LlmProvider;
+    providers.nvidia = {
+      ...originalNvidia,
+      async stream() {
+        nvidiaCalled = true;
+        return {
+          text: "fallback",
+          provider: "nvidia",
+          model: "nvidia/llama-3.3-nemotron-super-49b-v1",
+        };
+      },
+    } as LlmProvider;
+    const statuses: string[] = [];
+
+    await expect(
+      streamWithProvider(
+        {
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        () => undefined,
+        (message) => statuses.push(message),
+      ),
+    ).rejects.toThrow(/groq: Provider request failed with HTTP 429/);
+
+    expect(nvidiaCalled).toBe(false);
+    expect(statuses.join("")).toMatch(/staying on selected provider/);
+    expect(statuses.join("")).not.toMatch(/trying next provider/);
   });
 });

@@ -4,10 +4,8 @@ import type { ProviderId } from "../types.js";
 // toggle. The match is case-insensitive substring or regex.
 const reasoningPatterns: Record<ProviderId, RegExp[]> = {
   groq: [
-    /deepseek-r1/i,
-    /qwen3/i,
+    /qwen\/qwen3-32b/i,
     /gpt-oss/i,
-    /kimi-k2/i,
   ],
   gemini: [
     /gemini-2\.5/i,
@@ -41,7 +39,6 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
     /qwen3/i,
     /nemotron/i,
     /glm-?5/i,
-    /minimax-m2/i,
     /gpt-oss/i,
   ],
   ollama: [

@@ -282,12 +282,17 @@ export function buildReasoningPayload(
       if (!enabled) return {};
       if (!supportsOpenRouterReasoning(model ?? "")) return {};
       return { reasoning: { enabled: true, effort } };
-    case "groq":
-      if (!enabled) return {};
-      if (!/deepseek-r1|qwen3|gpt-oss|kimi-k2/i.test(model ?? "")) {
-        return {};
+    case "groq": {
+      const m = (model ?? "").toLowerCase();
+      if (/qwen\/qwen3-32b/.test(m)) {
+        return { reasoning_effort: enabled ? "default" : "none" };
       }
-      return { reasoning_effort: effort };
+      if (/openai\/gpt-oss-(?:20b|120b)/.test(m)) {
+        if (!enabled) return {};
+        return { reasoning_effort: effort };
+      }
+      return {};
+    }
     case "nvidia": {
       const kind = classifyNvidiaModel(model ?? "");
       switch (kind) {
@@ -555,11 +560,26 @@ export async function openAiCompatibleStream(options: {
   const cleanup = (): void => {
     if (idleTimer) clearTimeout(idleTimer);
     options.signal?.removeEventListener("abort", onCallerAbort);
+    idleController.signal.removeEventListener("abort", cancelReaderOnAbort);
   };
+  const cancelReaderOnAbort = (): void => {
+    reader.cancel().catch(() => undefined);
+  };
+  idleController.signal.addEventListener("abort", cancelReaderOnAbort, {
+    once: true,
+  });
 
   try {
     while (true) {
+      options.signal?.throwIfAborted();
+      if (idleController.signal.aborted) {
+        throw new Error("Stream aborted");
+      }
       const { done, value } = await reader.read();
+      options.signal?.throwIfAborted();
+      if (idleController.signal.aborted) {
+        throw new Error("Stream aborted");
+      }
       if (done) break;
       resetIdleTimer();
       buffer += decoder.decode(value, { stream: true });

@@ -175,38 +175,37 @@ const knownModels: Record<string, string[]> = {
   groq: [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-    "moonshotai/kimi-k2-instruct",
-    "deepseek-r1-distill-llama-70b",
-    "qwen/qwen3-32b",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
     "meta-llama/llama-4-scout-17b-16e-instruct",
-    "gemma2-9b-it",
+    "qwen/qwen3-32b",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "groq/compound-mini",
+    "groq/compound",
   ],
   gemini: [
     "gemini-3.5-flash",
-    "gemini-3.1-pro",
-    "gemini-3-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
     "gemini-3.1-flash-lite",
+    "gemini-3-pro-preview",
     "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
-    "gemini-1.5-pro",
   ],
   openrouter: [
     "meta-llama/llama-3.3-70b-instruct:free",
-    "meta-llama/llama-4-maverick:free",
-    "deepseek/deepseek-r1:free",
-    "deepseek/deepseek-v3.1:free",
-    "moonshotai/kimi-k2:free",
-    "qwen/qwen3-235b-a22b:free",
+    "deepseek/deepseek-v4-flash:free",
+    "openai/gpt-oss-20b:free",
+    "qwen/qwen3-coder:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "z-ai/glm-4.5-air:free",
+    "moonshotai/kimi-k2.6",
+    "meta-llama/llama-4-maverick",
     "google/gemini-2.5-flash",
-    "anthropic/claude-sonnet-4-6",
-    "openai/gpt-4o-mini",
-    "mistralai/mistral-7b-instruct:free",
   ],
   openai: [
     "gpt-5.5",
@@ -232,26 +231,21 @@ const knownModels: Record<string, string[]> = {
     "claude-3-5-haiku-latest",
   ],
   nvidia: [
-    "meta/llama-3.3-70b-instruct",
-    "meta/llama-3.1-405b-instruct",
-    "meta/llama-3.1-70b-instruct",
     "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "meta/llama-3.3-70b-instruct",
+    "meta/llama-4-maverick-17b-128e-instruct",
+    "meta/llama-3.1-70b-instruct",
     "nvidia/llama-3.1-nemotron-70b-instruct",
-    "deepseek-ai/deepseek-v4-pro",
-    "deepseek-ai/deepseek-v4-flash",
-    "deepseek-ai/deepseek-v3.1-terminus",
-    "deepseek-ai/deepseek-r1",
-    "moonshotai/kimi-k2.6",
-    "moonshotai/kimi-k2-instruct",
-    "z-ai/glm-5.1",
-    "z-ai/glm-5",
-    "minimaxai/minimax-m2.7",
-    "minimaxai/minimax-m2.5",
-    "minimaxai/minimax-m2.1",
-    "qwen/qwen3-235b-a22b",
-    "openai/gpt-oss-120b",
+    "qwen/qwen3-next-80b-a3b-instruct",
+    "qwen/qwen3.5-122b-a10b",
     "openai/gpt-oss-20b",
-    "mistralai/mistral-large-2-instruct",
+    "openai/gpt-oss-120b",
+    "mistralai/mistral-small-4-119b-2603",
+    "mistralai/mistral-large-3-675b-instruct-2512",
+    "mistralai/mistral-nemotron",
   ],
   ollama: [
     "llama3.3:70b",
@@ -266,6 +260,10 @@ const knownModels: Record<string, string[]> = {
     "codellama:7b",
   ],
 };
+
+export function getKnownModels(provider: string): string[] {
+  return [...(knownModels[provider] ?? [])];
+}
 
 // ── Abort controller for streaming cancellation ─────────────────────────────
 let currentAbortController: AbortController | null = null;
@@ -1376,6 +1374,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const promptHistory: string[] = [];
   let isReadingPrompt = false;
   let outputShortcutBusy = false;
+  let lastOutputShortcutAt = 0;
 
   emitKeypressEvents(input);
 
@@ -1409,6 +1408,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   };
   const handleOutputShortcut = async (): Promise<void> => {
     if (outputShortcutBusy) return;
+    const now = Date.now();
+    if (now - lastOutputShortcutAt < 400) return;
+    lastOutputShortcutAt = now;
     outputShortcutBusy = true;
     try {
       const v = getLastViewport();

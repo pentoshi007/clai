@@ -49,8 +49,31 @@ export const defaultModels: Record<ProviderId, string> = {
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
-  nvidia: "moonshotai/kimi-k2.6",
+  nvidia: "nvidia/llama-3.3-nemotron-super-49b-v1",
   ollama: "llama3.1:8b",
+};
+
+const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
+  groq: {
+    "gemma2-9b-it": "llama-3.1-8b-instant",
+    "moonshotai/kimi-k2-instruct": "openai/gpt-oss-120b",
+    "deepseek-r1-distill-llama-70b": "llama-3.3-70b-versatile",
+    "llama3-70b-8192": "llama-3.3-70b-versatile",
+    "llama3-8b-8192": "llama-3.1-8b-instant",
+    "meta-llama/llama-4-maverick-17b-128e-instruct":
+      "meta-llama/llama-4-scout-17b-16e-instruct",
+  },
+  nvidia: {
+    "moonshotai/kimi-k2.6": defaultModels.nvidia,
+    "moonshotai/kimi-k2-instruct": defaultModels.nvidia,
+    "deepseek-ai/deepseek-v4-flash": defaultModels.nvidia,
+    "deepseek-ai/deepseek-v4-pro": defaultModels.nvidia,
+    "z-ai/glm-5.1": defaultModels.nvidia,
+    "z-ai/glm-5": defaultModels.nvidia,
+    "minimaxai/minimax-m2.7": defaultModels.nvidia,
+    "minimaxai/minimax-m2.5": defaultModels.nvidia,
+    "minimaxai/minimax-m2.1": defaultModels.nvidia,
+  },
 };
 
 export const envVars: Record<ProviderId, string | undefined> = {
@@ -79,6 +102,13 @@ export function assertProvider(value: string): ProviderId {
 
 export function getDefaultModel(provider: ProviderId): string {
   return defaultModels[provider];
+}
+
+export function sanitizeProviderModel(provider: ProviderId, model: string): string {
+  const normalized = model.trim();
+  const replacement =
+    retiredModelReplacements[provider]?.[normalized.toLowerCase()];
+  return replacement ?? normalized;
 }
 
 export function maskSecret(secret: string): string {

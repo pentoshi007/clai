@@ -12,6 +12,20 @@ import {
 
 const baseUrl = "https://api.groq.com/openai/v1";
 
+export function groqMaxTokens(
+  model: string,
+  requested: number | undefined,
+): number | undefined {
+  const m = model.toLowerCase();
+  const cap = /openai\/gpt-oss-120b/.test(m)
+    ? 1_024
+    : /openai\/gpt-oss-20b|qwen\/qwen3-32b/.test(m)
+      ? 2_048
+      : undefined;
+  if (!cap) return requested;
+  return Math.min(requested ?? cap, cap);
+}
+
 export const groqProvider: LlmProvider = {
   id: "groq",
   displayName: "Groq",
@@ -34,7 +48,7 @@ export const groqProvider: LlmProvider = {
       apiKey: auth.apiKey,
       model,
       messages: request.messages,
-      maxTokens: request.maxTokens,
+      maxTokens: groqMaxTokens(model, request.maxTokens),
       temperature: request.temperature,
       signal: request.signal,
       reasoning: request.thinking,
@@ -55,7 +69,7 @@ export const groqProvider: LlmProvider = {
       apiKey: auth.apiKey,
       model,
       messages: request.messages,
-      maxTokens: request.maxTokens,
+      maxTokens: groqMaxTokens(model, request.maxTokens),
       temperature: request.temperature,
       signal: request.signal,
       onToken,
