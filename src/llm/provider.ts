@@ -53,7 +53,7 @@ export const defaultModels: Record<ProviderId, string> = {
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "openai/gpt-oss-20b",
-  agentrouter: "gpt-5",
+  agentrouter: "claude-haiku-4-5-20251001",
   ollama: "llama3.1:8b",
 };
 

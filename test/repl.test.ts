@@ -41,9 +41,14 @@ describe('REPL known model lists', () => {
     expect(models).toContain('google/gemma-4-31b-it');
   });
 
-  it('exposes AgentRouter known models', () => {
+  it('exposes only the documented AgentRouter models (5 listed in provider docs)', () => {
     const models = getKnownModels('agentrouter');
-    expect(models.length).toBeGreaterThan(0);
-    expect(models).toContain('gpt-5');
+    expect(models).toEqual([
+      'claude-haiku-4-5-20251001',
+      'claude-opus-4-6',
+      'deepseek-v4-flash',
+      'deepseek-v4-pro',
+      'glm-5.1',
+    ]);
   });
 });

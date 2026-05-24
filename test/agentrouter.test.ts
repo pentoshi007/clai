@@ -22,9 +22,9 @@ describe("agentrouter provider", () => {
     expect(normalizeProvider("router")).toBe("agentrouter");
   });
 
-  it("uses gpt-5 as the default model", () => {
-    expect(defaultModels.agentrouter).toBe("gpt-5");
-    expect(agentrouterProvider.defaultModel).toBe("gpt-5");
+  it("uses claude-haiku-4-5 as the default model", () => {
+    expect(defaultModels.agentrouter).toBe("claude-haiku-4-5-20251001");
+    expect(agentrouterProvider.defaultModel).toBe("claude-haiku-4-5-20251001");
   });
 
   it("reads AGENTROUTER_API_KEY from the environment", () => {

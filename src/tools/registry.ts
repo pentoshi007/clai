@@ -143,10 +143,35 @@ export const toolRegistry: Record<string, ToolHandler> = {
       { command: "dig", argv: [host.value, "ANY", "+noall", "+answer"] },
       { command: "nmap", argv: ["-sV", "--top-ports", "100", host.value] },
     ];
+
+    // Allocate one shared artifact file so the user can pop the full
+    // recon transcript open in the Ctrl+O pager. Without this, the
+    // viewport would have only the model-facing summary and the pager
+    // would render "(no artifact file — only the summary is available)".
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { homedir } = await import("node:os");
+    const artifactDir = join(homedir(), ".clai", "outputs");
+    let artifactPath: string | undefined;
+    try {
+      await mkdir(artifactDir, { recursive: true });
+      const safeHost = host.value.replace(/[^a-z0-9_.-]+/gi, "-");
+      artifactPath = join(
+        artifactDir,
+        `${new Date().toISOString().replace(/[:.]/g, "-")}-recon-${safeHost}.txt`,
+      );
+    } catch {
+      // Falling back to no artifact is fine; the model still sees the
+      // summary even if the artifact couldn't be created.
+      artifactPath = undefined;
+    }
+
     const outputs: string[] = [];
+    const transcript: string[] = [];
     for (const step of steps) {
       if (options?.signal?.aborted) break;
       const display = `${step.command} ${step.argv.join(" ")}`;
+      transcript.push(`$ ${display}`);
       // Announce each sub-step so users see progress through long recons.
       options?.onOutput?.(`\n$ ${display}\n`, "stdout");
       const result = await spawnArgv({
@@ -157,14 +182,26 @@ export const toolRegistry: Record<string, ToolHandler> = {
         onOutput: options?.onOutput,
       });
       outputs.push(result.output);
+      transcript.push(result.output);
       if (options?.signal?.aborted) break;
     }
+
+    if (artifactPath) {
+      const body = transcript.join("\n\n");
+      try {
+        await writeFile(artifactPath, body, "utf8");
+      } catch {
+        artifactPath = undefined;
+      }
+    }
+
     return {
       ok: !options?.signal?.aborted,
       output: options?.signal?.aborted
         ? `${outputs.join("\n\n")}\n\nCommand aborted.`.trim()
         : outputs.join("\n\n"),
       exitCode: options?.signal?.aborted ? 130 : 0,
+      ...(artifactPath ? { outputPath: artifactPath } : {}),
     };
   },
   async "tool.batch"(args, options) {

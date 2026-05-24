@@ -272,17 +272,11 @@ const knownModels: Record<string, string[]> = {
     "codellama:7b",
   ],
   agentrouter: [
-    "gpt-5",
-    "gpt-5-mini",
-    "claude-opus-4-6",
     "claude-haiku-4-5-20251001",
+    "claude-opus-4-6",
     "deepseek-v4-flash",
     "deepseek-v4-pro",
-    "deepseek-v3.1",
-    "deepseek-v3.2",
-    "glm-4.6",
     "glm-5.1",
-    "glm4.5",
   ],
 };
 
@@ -1455,11 +1449,15 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         return;
       }
       // While a stream is in flight, opening the alt-screen pager would
-      // collide with incoming tokens. Fall back to the inline toggle so the
-      // user can still peek at the previous tool's output.
+      // collide with incoming tokens — drop a hint instead so the user
+      // knows the pager is available once the run completes. Hitting
+      // Ctrl+O at the prompt afterward will then open it.
       if (currentAbortController) {
-        process.stdout.write("\n");
-        await toggleViewport(v.id);
+        process.stdout.write(
+          chalk.dim(
+            `\n  (stream in progress — press Ctrl+O at the prompt after it finishes to open ${v.toolName})\n`,
+          ),
+        );
         return;
       }
       // Idle path: open the full output in the alternate-screen pager.
