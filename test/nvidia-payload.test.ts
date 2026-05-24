@@ -21,8 +21,8 @@ describe("NVIDIA NIM model classification", () => {
   });
 
   it("routes GLM and Gemma to chat_template_kwargs.enable_thinking", () => {
-    expect(classifyNvidiaModel("z-ai/glm-5.1")).toBe("enable-thinking");
-    expect(classifyNvidiaModel("z-ai/glm-5")).toBe("enable-thinking");
+    expect(classifyNvidiaModel("z-ai/glm-5.1")).toBe("glm-thinking");
+    expect(classifyNvidiaModel("z-ai/glm-5")).toBe("glm-thinking");
     expect(classifyNvidiaModel("google/gemma-4-31b-it")).toBe("enable-thinking");
     expect(classifyNvidiaModel("google/gemma-3-27b-it")).toBe("enable-thinking");
   });
@@ -31,6 +31,49 @@ describe("NVIDIA NIM model classification", () => {
     expect(classifyNvidiaModel("openai/gpt-oss-120b")).toBe("effort-only");
     expect(classifyNvidiaModel("openai/gpt-oss-20b")).toBe("effort-only");
     expect(classifyNvidiaModel("qwen/qwen3-235b-a22b")).toBe("effort-only");
+  });
+
+  it("routes Mistral 3+ medium/small/large variants to top-level reasoning_effort", () => {
+    expect(classifyNvidiaModel("mistralai/mistral-medium-3.5-128b")).toBe("effort-only");
+    expect(classifyNvidiaModel("mistralai/mistral-small-4-119b-2603")).toBe("effort-only");
+    expect(classifyNvidiaModel("mistralai/mistral-large-3-675b-instruct-2512")).toBe("effort-only");
+  });
+
+  it("routes Nemotron-3 to enable_thinking, not the legacy thinking flag", () => {
+    expect(classifyNvidiaModel("nvidia/nemotron-3-nano-30b-a3b")).toBe("nemotron-3");
+    expect(classifyNvidiaModel("nvidia/nemotron-3-super-120b-a12b")).toBe("nemotron-3");
+  });
+
+  it("Nemotron-3 sends enable_thinking + reasoning_budget per the docs", () => {
+    const enabled = buildReasoningPayload(
+      { enabled: true, effort: "high" },
+      "nvidia",
+      "nvidia/nemotron-3-super-120b-a12b",
+    );
+    expect(enabled).toEqual({
+      reasoning_budget: 16_384,
+      chat_template_kwargs: { enable_thinking: true },
+    });
+    const disabled = buildReasoningPayload(
+      { enabled: false, effort: "medium" },
+      "nvidia",
+      "nvidia/nemotron-3-super-120b-a12b",
+    );
+    expect(disabled).toEqual({
+      chat_template_kwargs: { enable_thinking: false },
+    });
+  });
+
+  it("Gemma sends enable_thinking only (no clear_thinking)", () => {
+    const payload = buildReasoningPayload(
+      { enabled: true, effort: "high" },
+      "nvidia",
+      "google/gemma-4-31b-it",
+    );
+    expect(payload).toEqual({
+      chat_template_kwargs: { enable_thinking: true },
+    });
+    expect(payload.chat_template_kwargs).not.toHaveProperty("clear_thinking");
   });
 
   it("returns 'none' for non-thinking model families", () => {

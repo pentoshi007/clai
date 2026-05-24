@@ -46,6 +46,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   ollama: "local",
   openai: "paid-cloud",
   anthropic: "paid-cloud",
+  agentrouter: "paid-cloud",
 };
 
 const defaults: ClaiConfig = {

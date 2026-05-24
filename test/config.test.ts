@@ -45,7 +45,7 @@ describe('config store', () => {
 
     expect(getProviderModel('groq')).toBe('llama-3.3-70b-versatile');
     expect(getProviderModel('gemini')).toBe('gemini-2.0-flash');
-    expect(getProviderModel('nvidia')).toBe('nvidia/llama-3.3-nemotron-super-49b-v1');
+    expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
     expect(getProviderModel('ollama')).toBe('llama3.1:8b');
   });
 
@@ -54,15 +54,15 @@ describe('config store', () => {
 
     updateConfig({
       defaultProvider: 'nvidia',
-      defaultModel: 'moonshotai/kimi-k2.6',
+      defaultModel: 'nvidia/llama-3.3-nemotron-super-49b-v1',
       providerModels: {
         groq: 'gemma2-9b-it',
-        nvidia: 'z-ai/glm-5.1',
+        nvidia: 'nvidia/llama-3.3-nemotron-super-49b-v1',
       },
     });
 
-    expect(getConfig().defaultModel).toBe('nvidia/llama-3.3-nemotron-super-49b-v1');
+    expect(getConfig().defaultModel).toBe('openai/gpt-oss-20b');
     expect(getProviderModel('groq')).toBe('llama-3.1-8b-instant');
-    expect(getProviderModel('nvidia')).toBe('nvidia/llama-3.3-nemotron-super-49b-v1');
+    expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
   });
 });

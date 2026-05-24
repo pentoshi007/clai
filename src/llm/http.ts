@@ -34,16 +34,55 @@ function parseRetryHintFromBody(text: string): number | undefined {
   return undefined;
 }
 
+function statusCodeHint(status: number): string {
+  if (status === 401) {
+    return ' — check that the API key is valid (run `clai providers` to inspect)';
+  }
+  if (status === 403) {
+    return ' — the key was rejected (insufficient permissions, billing, or region restriction)';
+  }
+  if (status === 404) {
+    return ' — endpoint or model not found (try `/model list` to see supported names)';
+  }
+  if (status === 422) {
+    return ' — the provider rejected the request body (model name or parameter mismatch)';
+  }
+  if (status === 413) {
+    return ' — request too large; try `/compact` or pick a model with a larger context window';
+  }
+  if (status >= 500 && status < 600) {
+    return ' — upstream provider error; try again or switch with `/provider`';
+  }
+  return '';
+}
+
 export async function readJson<T>(response: Response): Promise<T> {
   const text = await readBodyCapped(response, MAX_JSON_RESPONSE_BYTES);
   if (!response.ok) {
-    // Try to extract a useful message from the body
+    // Try to extract a useful message from the body. Some providers (NVIDIA
+    // NIM, Groq) wrap errors in `{ error: { message } }`, others (Anthropic)
+    // use `{ error: { type, message } }`, and AgentRouter-style proxies
+    // sometimes return `{ detail }` or a bare string. Cover the common
+    // shapes so users see a helpful message instead of just "HTTP 400".
     let detail = '';
     try {
       const body = JSON.parse(text) as Record<string, unknown>;
-      const msg = (body as { error?: { message?: string } }).error?.message
-        ?? (body as { message?: string }).message
-        ?? '';
+      const error = (body as { error?: unknown }).error;
+      let msg = '';
+      if (typeof error === 'string') {
+        msg = error;
+      } else if (error && typeof error === 'object') {
+        const errObj = error as { message?: string; type?: string; code?: string };
+        msg = errObj.message ?? '';
+        if (!msg && (errObj.type || errObj.code)) {
+          msg = errObj.type ?? errObj.code ?? '';
+        }
+      }
+      if (!msg) {
+        msg = (body as { message?: string }).message
+          ?? (body as { detail?: string }).detail
+          ?? '';
+      }
       if (msg) detail = ` — ${msg}`;
     } catch {
       if (text.length > 0) detail = ` — ${text.slice(0, 200)}`;
@@ -54,8 +93,9 @@ export async function readJson<T>(response: Response): Promise<T> {
     const retryHint = retryAfterSeconds !== undefined
       ? ` (retry after ${Math.ceil(retryAfterSeconds)}s)`
       : '';
+    const codeHint = statusCodeHint(response.status);
     throw new ProviderError(
-      `Provider request failed with HTTP ${response.status}${retryHint}${detail}`,
+      `Provider request failed with HTTP ${response.status}${retryHint}${detail}${codeHint}`,
       response.status,
       text.slice(0, 1_000),
       retryAfterSeconds,
@@ -245,18 +285,26 @@ export type ReasoningStyle = "openai" | "nvidia" | "groq" | "openrouter" | "none
 export type NvidiaReasoningKind =
   | "kimi-thinking" // Kimi K2.6 — reasoning is on by default; `thinking:false` disables it
   | "deepseek-v4" // DeepSeek V4 — `thinking` plus V4's none/high reasoning effort
-  | "thinking" // DeepSeek-R1/V3, Nemotron — `chat_template_kwargs.thinking`
-  | "enable-thinking" // GLM-5/4.5, Gemma 3/4 — `chat_template_kwargs.enable_thinking`
-  | "effort-only" // gpt-oss, qwen3 — top-level `reasoning_effort`
-  | "none"; // Llama, Mistral, MiniMax m2.x — no thinking knob
+  | "thinking" // DeepSeek-R1/V3, older Nemotron — `chat_template_kwargs.thinking`
+  | "nemotron-3" // Nemotron-3 — `enable_thinking` + reasoning_budget
+  | "glm-thinking" // GLM-5/4.5 — `enable_thinking` + `clear_thinking:false`
+  | "enable-thinking" // Gemma 3/4 — `chat_template_kwargs.enable_thinking`
+  | "effort-only" // gpt-oss, qwen3, mistral 3+ — top-level `reasoning_effort`
+  | "none"; // Llama, MiniMax m2.x, Step, Sarvam — no thinking knob
 
 export function classifyNvidiaModel(model: string): NvidiaReasoningKind {
   const m = model.toLowerCase();
   if (/kimi-k2(?:\.6|-thinking|-instruct)?/.test(m)) return "kimi-thinking";
   if (/deepseek-v4/.test(m)) return "deepseek-v4";
-  if (/glm-?[345]|gemma-?[34]/.test(m)) return "enable-thinking";
+  // Match newer Nemotron-3 (uses enable_thinking + reasoning_budget) before
+  // the legacy Nemotron pattern below — the older `nemotron` bucket would
+  // otherwise swallow these too.
+  if (/nemotron-3/.test(m)) return "nemotron-3";
+  if (/glm-?[345]/.test(m)) return "glm-thinking";
+  if (/gemma-?[34]/.test(m)) return "enable-thinking";
   if (/deepseek-(?:v3|r1)|nemotron/.test(m)) return "thinking";
-  if (/gpt-oss|qwen3/.test(m)) return "effort-only";
+  if (/gpt-oss|qwen3|mistral-(?:medium|small|large)-(?:[3-9]|\d{2,})/.test(m))
+    return "effort-only";
   return "none";
 }
 
@@ -319,11 +367,34 @@ export function buildReasoningPayload(
               thinking: enabled,
             },
           };
-        case "enable-thinking":
+        case "nemotron-3": {
+          // Nemotron-3 supports both `enable_thinking` and an optional
+          // `reasoning_budget` cap. Mirror the docs example by sending the
+          // budget alongside the toggle so users get the documented behavior.
+          if (!enabled) {
+            return {
+              chat_template_kwargs: { enable_thinking: false },
+            };
+          }
+          const budget = effort === "low" ? 4_096 : effort === "high" ? 16_384 : 8_192;
+          return {
+            reasoning_budget: budget,
+            chat_template_kwargs: { enable_thinking: true },
+          };
+        }
+        case "glm-thinking":
+          // GLM-5 / 4.5 expects `clear_thinking:false` alongside
+          // `enable_thinking:true` per the NIM docs example.
           return {
             chat_template_kwargs: enabled
               ? { enable_thinking: true, clear_thinking: false }
               : { enable_thinking: false },
+          };
+        case "enable-thinking":
+          // Gemma 3/4 only documents `enable_thinking`; do not add
+          // `clear_thinking` here since the chat template doesn't accept it.
+          return {
+            chat_template_kwargs: { enable_thinking: enabled },
           };
         case "effort-only":
           if (!enabled) return {};
@@ -383,33 +454,55 @@ export async function openAiCompatibleComplete(options: {
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
 }): Promise<string> {
-  const response = await fetch(`${options.baseUrl}/chat/completions`, {
-    method: "POST",
-    signal: options.signal ?? null,
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${options.apiKey}`,
-      ...options.headers,
-    },
-    body: buildChatBody({
-      model: options.model,
-      messages: options.messages,
-      maxTokens: options.maxTokens,
-      temperature: options.temperature,
-      stream: false,
-      reasoning: options.reasoning,
-      reasoningStyle: options.reasoningStyle,
-    }),
-  });
-  const data = await readJson<{
+  let response: Response;
+  try {
+    response = await fetch(`${options.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal: options.signal ?? null,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${options.apiKey}`,
+        ...options.headers,
+      },
+      body: buildChatBody({
+        model: options.model,
+        messages: options.messages,
+        maxTokens: options.maxTokens,
+        temperature: options.temperature,
+        stream: false,
+        reasoning: options.reasoning,
+        reasoningStyle: options.reasoningStyle,
+      }),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new ProviderError(
+      `${options.provider} request could not be sent (${msg}). Check connectivity to ${options.baseUrl}.`,
+    );
+  }
+  let data: {
     choices?: Array<{
       message?: { content?: string; reasoning_content?: string; reasoning?: string };
     }>;
-  }>(response);
+  };
+  try {
+    data = await readJson(response);
+  } catch (error) {
+    if (error instanceof ProviderError) {
+      throw new ProviderError(
+        `${options.provider} (model=${options.model}): ${error.message}`,
+        error.status,
+        error.body,
+        error.retryAfterSeconds,
+      );
+    }
+    throw error;
+  }
   const message = data.choices?.[0]?.message;
   const text = message?.content;
   if (!text) {
-    throw new ProviderError(`${options.provider} returned no completion text`);
+    throw new ProviderError(`${options.provider} returned no completion text (model=${options.model}). The response was empty — try /variants off, raise max_tokens, or pick another model with /model.`);
   }
   // If the API returns reasoning separately, prepend it inside <think>
   // tags so the existing thinking parser can pick it up uniformly.
@@ -491,7 +584,19 @@ export async function openAiCompatibleStream(options: {
   if (!response.ok) {
     if (idleTimer) clearTimeout(idleTimer);
     options.signal?.removeEventListener("abort", onCallerAbort);
-    await readJson<unknown>(response);
+    try {
+      await readJson<unknown>(response);
+    } catch (error) {
+      if (error instanceof ProviderError) {
+        throw new ProviderError(
+          `${options.provider} (model=${options.model}): ${error.message}`,
+          error.status,
+          error.body,
+          error.retryAfterSeconds,
+        );
+      }
+      throw error;
+    }
   }
   if (!response.body) {
     if (idleTimer) clearTimeout(idleTimer);

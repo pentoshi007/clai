@@ -60,7 +60,9 @@ import { modelSupportsThinking } from "./llm/capabilities.js";
 import {
   getLastViewport,
   getViewport,
+  isPagerActive,
   listViewports,
+  openViewportPager,
   toggleViewport,
 } from "./ui/output-pane.js";
 import {
@@ -140,7 +142,7 @@ const slashCommands: SlashCommand[] = [
   {
     command: "/output",
     usage: "[last|<id>|list]",
-    description: "toggle full tool output (same as Ctrl+O)",
+    description: "open full tool output (Ctrl+O); q closes the pager",
   },
   {
     command: "/freeonly",
@@ -173,12 +175,13 @@ const slashCommands: SlashCommand[] = [
 // ── Well-known models per provider (refreshed May 2026) ───────────────────
 const knownModels: Record<string, string[]> = {
   groq: [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-safeguard-20b",
+    "qwen/qwen3-32b",
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
     "meta-llama/llama-4-scout-17b-16e-instruct",
-    "qwen/qwen3-32b",
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b",
     "groq/compound-mini",
     "groq/compound",
   ],
@@ -231,21 +234,30 @@ const knownModels: Record<string, string[]> = {
     "claude-3-5-haiku-latest",
   ],
   nvidia: [
-    "nvidia/llama-3.3-nemotron-super-49b-v1",
-    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "moonshotai/kimi-k2.6",
+    "deepseek-ai/deepseek-v4-flash",
+    "deepseek-ai/deepseek-v4-pro",
+    "z-ai/glm-5.1",
+    "minimaxai/minimax-m2.7",
+    "google/gemma-4-31b-it",
     "nvidia/nemotron-3-nano-30b-a3b",
     "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
     "meta/llama-3.3-70b-instruct",
     "meta/llama-4-maverick-17b-128e-instruct",
     "meta/llama-3.1-70b-instruct",
     "nvidia/llama-3.1-nemotron-70b-instruct",
     "qwen/qwen3-next-80b-a3b-instruct",
     "qwen/qwen3.5-122b-a10b",
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b",
     "mistralai/mistral-small-4-119b-2603",
+    "mistralai/mistral-medium-3.5-128b",
     "mistralai/mistral-large-3-675b-instruct-2512",
     "mistralai/mistral-nemotron",
+    "stepfun-ai/step-3.5-flash",
+    "sarvamai/sarvam-m",
   ],
   ollama: [
     "llama3.3:70b",
@@ -258,6 +270,19 @@ const knownModels: Record<string, string[]> = {
     "gemma3:9b",
     "phi4:14b",
     "codellama:7b",
+  ],
+  agentrouter: [
+    "gpt-5",
+    "gpt-5-mini",
+    "claude-opus-4-6",
+    "claude-haiku-4-5-20251001",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "deepseek-v3.1",
+    "deepseek-v3.2",
+    "glm-4.6",
+    "glm-5.1",
+    "glm4.5",
   ],
 };
 
@@ -443,6 +468,9 @@ async function readPromptLine(options: {
     };
 
     function handleKeypress(sequence: string, key: KeypressKey): void {
+      // The alt-screen pager owns the terminal while open; ignore everything
+      // here so the user's navigation keys don't bleed into the input line.
+      if (isPagerActive()) return;
       const menu = getMenuState();
 
       // Cmd+C on macOS terminals is handled by the OS (it never reaches us),
@@ -728,7 +756,7 @@ function help(): string {
   return (
     lines +
     chalk.dim(
-      "\n\n  ESC abort  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T toggle thinking  │  Ctrl+O / /output last toggle tool output",
+      "\n\n  ESC abort  │  Ctrl+C clears input (twice to exit)  │  Ctrl+T toggle thinking  │  Ctrl+O opens tool output pager (q to close)",
     )
   );
 }
@@ -1330,7 +1358,15 @@ async function handleSlash(
         console.log(chalk.dim(`  no viewport: ${target}`));
         return true;
       }
-      await toggleViewport(viewport.id);
+      // On a TTY, open the alternate-screen pager so users can scroll long
+      // outputs and close with q / Ctrl+O. In non-TTY contexts (piped or
+      // CI), fall back to the inline toggle so the artifact still lands in
+      // the captured stdout.
+      if (process.stdout.isTTY) {
+        await openViewportPager(viewport.id);
+      } else {
+        await toggleViewport(viewport.id);
+      }
       return true;
     }
     case "/think":
@@ -1414,12 +1450,21 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     outputShortcutBusy = true;
     try {
       const v = getLastViewport();
-      if (v) {
-        if (currentAbortController) process.stdout.write("\n");
-        await toggleViewport(v.id);
-      } else {
+      if (!v) {
         process.stdout.write(chalk.dim("\n  (no tool output to expand yet)\n"));
+        return;
       }
+      // While a stream is in flight, opening the alt-screen pager would
+      // collide with incoming tokens. Fall back to the inline toggle so the
+      // user can still peek at the previous tool's output.
+      if (currentAbortController) {
+        process.stdout.write("\n");
+        await toggleViewport(v.id);
+        return;
+      }
+      // Idle path: open the full output in the alternate-screen pager.
+      // Keys (q / ESC / Ctrl+O) inside the pager close it and return here.
+      await openViewportPager(v.id);
     } finally {
       outputShortcutBusy = false;
     }
@@ -1428,6 +1473,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     _sequence: string,
     key: { ctrl?: boolean; name?: string },
   ): void => {
+    if (isPagerActive()) return;
     if (isCtrlT(key) && !isReadingPrompt)
       handleThinkingShortcut();
     if (isCtrlO(key) && !isReadingPrompt) {
@@ -1487,7 +1533,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   console.log(renderSuggestions());
   console.log(
     chalk.dim(
-      "  ESC abort  │  Ctrl+C clears input  │  Ctrl+T or /think for thinking  │  Ctrl+O or /output last for full tool output\n",
+      "  ESC abort  │  Ctrl+C clears input  │  Ctrl+T or /think for thinking  │  Ctrl+O opens full tool output (q to close)\n",
     ),
   );
 

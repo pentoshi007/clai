@@ -39,6 +39,9 @@ export const providerAliases: Record<string, ProviderId> = {
   nvidia: "nvidia",
   nim: "nvidia",
   nvcf: "nvidia",
+  agentrouter: "agentrouter",
+  "agent-router": "agentrouter",
+  router: "agentrouter",
   ollama: "ollama",
   local: "ollama",
 };
@@ -49,7 +52,8 @@ export const defaultModels: Record<ProviderId, string> = {
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
-  nvidia: "nvidia/llama-3.3-nemotron-super-49b-v1",
+  nvidia: "openai/gpt-oss-20b",
+  agentrouter: "gpt-5",
   ollama: "llama3.1:8b",
 };
 
@@ -64,15 +68,9 @@ const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string
       "meta-llama/llama-4-scout-17b-16e-instruct",
   },
   nvidia: {
-    "moonshotai/kimi-k2.6": defaultModels.nvidia,
-    "moonshotai/kimi-k2-instruct": defaultModels.nvidia,
-    "deepseek-ai/deepseek-v4-flash": defaultModels.nvidia,
-    "deepseek-ai/deepseek-v4-pro": defaultModels.nvidia,
-    "z-ai/glm-5.1": defaultModels.nvidia,
-    "z-ai/glm-5": defaultModels.nvidia,
-    "minimaxai/minimax-m2.7": defaultModels.nvidia,
-    "minimaxai/minimax-m2.5": defaultModels.nvidia,
-    "minimaxai/minimax-m2.1": defaultModels.nvidia,
+    // Older default; redirect existing configs to the new openai/gpt-oss-20b
+    // default so retired Nemotron entries don't surface 404s.
+    "nvidia/llama-3.3-nemotron-super-49b-v1": defaultModels.nvidia,
   },
 };
 
@@ -83,6 +81,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   nvidia: "NVIDIA_API_KEY",
+  agentrouter: "AGENTROUTER_API_KEY",
   ollama: "OLLAMA_HOST",
 };
 

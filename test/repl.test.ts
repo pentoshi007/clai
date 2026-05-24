@@ -30,12 +30,20 @@ describe('REPL known model lists', () => {
     expect(models).toContain('qwen/qwen3-32b');
   });
 
-  it('does not offer NVIDIA models observed as unavailable or streaming-incompatible', () => {
+  it('exposes the documented NVIDIA NIM models with the new gpt-oss default at the top', () => {
     const models = getKnownModels('nvidia');
-    expect(models).not.toContain('moonshotai/kimi-k2.6');
-    expect(models).not.toContain('moonshotai/kimi-k2-instruct');
-    expect(models).not.toContain('minimaxai/minimax-m2.7');
-    expect(models).not.toContain('z-ai/glm-5.1');
-    expect(models[0]).toBe('nvidia/llama-3.3-nemotron-super-49b-v1');
+    expect(models[0]).toBe('openai/gpt-oss-20b');
+    expect(models).toContain('moonshotai/kimi-k2.6');
+    expect(models).toContain('deepseek-ai/deepseek-v4-flash');
+    expect(models).toContain('deepseek-ai/deepseek-v4-pro');
+    expect(models).toContain('z-ai/glm-5.1');
+    expect(models).toContain('mistralai/mistral-medium-3.5-128b');
+    expect(models).toContain('google/gemma-4-31b-it');
+  });
+
+  it('exposes AgentRouter known models', () => {
+    const models = getKnownModels('agentrouter');
+    expect(models.length).toBeGreaterThan(0);
+    expect(models).toContain('gpt-5');
   });
 });

@@ -5,6 +5,7 @@ export const providerIds = [
   "openai",
   "anthropic",
   "nvidia",
+  "agentrouter",
   "ollama",
 ] as const;
 

@@ -6,7 +6,9 @@ import {
   clearViewports,
   getLastViewport,
   getViewport,
+  isPagerActive,
   listViewports,
+  openPager,
   registerViewport,
   toggleViewport,
   formatViewportHint,
@@ -81,5 +83,19 @@ describe("phase 6 — output pane", () => {
     const a = registerViewport({ toolName: "a", argsDisplay: "", summary: "" });
     const b = registerViewport({ toolName: "b", argsDisplay: "", summary: "" });
     expect(listViewports().map((v) => v.id)).toEqual([a.id, b.id]);
+  });
+
+  it("isPagerActive defaults to false until a pager is opened", () => {
+    expect(isPagerActive()).toBe(false);
+  });
+
+  it("openPager non-TTY fallback prints the body inline without entering raw mode", async () => {
+    // Vitest runs without a TTY so this exercises the fallback branch that
+    // serves CI / piped output. The pager should resolve immediately and
+    // not throw.
+    await expect(
+      openPager({ title: "test", body: "line1\nline2\n" }),
+    ).resolves.toBeUndefined();
+    expect(isPagerActive()).toBe(false);
   });
 });

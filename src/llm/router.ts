@@ -10,6 +10,7 @@ import { geminiProvider } from "./gemini.js";
 import { groqProvider } from "./groq.js";
 import { ProviderError } from "./http.js";
 import { nvidiaProvider } from "./nvidia.js";
+import { agentrouterProvider } from "./agentrouter.js";
 import { ollamaProvider } from "./ollama.js";
 import { openaiProvider } from "./openai.js";
 import { openrouterProvider } from "./openrouter.js";
@@ -69,6 +70,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
   nvidia: nvidiaProvider,
+  agentrouter: agentrouterProvider,
   ollama: ollamaProvider,
 };
 
@@ -77,6 +79,7 @@ const fallbackOrder: ProviderId[] = [
   "groq",
   "gemini",
   "openrouter",
+  "agentrouter",
   "openai",
   "anthropic",
   "ollama",

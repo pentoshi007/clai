@@ -50,6 +50,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Anthropic keys usually start with sk-ant-";
   if (provider === "nvidia")
     return "NVIDIA NIM keys usually start with nvapi-";
+  if (provider === "agentrouter")
+    return "AgentRouter keys usually start with sk- (issued at https://agentrouter.org/console/token)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

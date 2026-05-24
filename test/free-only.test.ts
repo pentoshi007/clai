@@ -106,7 +106,7 @@ describe("provider fallback rate limits", () => {
         return {
           text: "fallback",
           provider: "nvidia",
-          model: "nvidia/llama-3.3-nemotron-super-49b-v1",
+          model: "openai/gpt-oss-20b",
         };
       },
     } as LlmProvider;

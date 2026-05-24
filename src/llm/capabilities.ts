@@ -46,6 +46,15 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
     /qwen3/i,
     /qwq/i,
   ],
+  agentrouter: [
+    /gpt-5/i,
+    /claude-(?:opus|sonnet|haiku)-4/i,
+    /deepseek-(?:v[34]|r1)/i,
+    /glm-?[45]/i,
+    /qwen3/i,
+    /kimi-k2/i,
+    /o[134]/i,
+  ],
 };
 
 export function modelSupportsThinking(provider: ProviderId, model: string): boolean {

@@ -77,7 +77,7 @@ clai -y "list the 10 largest files in my home directory"
 
 ## Provider Setup
 
-clai supports 7 LLM providers with free tiers:
+clai supports 8 LLM providers (7 with free tiers):
 
 | Provider    | Default Model                                | Free? | API Key Prefix |
 |-------------|----------------------------------------------|-------|----------------|
@@ -86,7 +86,8 @@ clai supports 7 LLM providers with free tiers:
 | OpenRouter  | `meta-llama/llama-3.3-70b-instruct:free`     | ✓     | `sk-or-`       |
 | OpenAI      | `gpt-4o-mini`                                | —     | `sk-`          |
 | Anthropic   | `claude-3-5-haiku-latest`                    | —     | `sk-ant-`      |
-| NVIDIA NIM  | `nvidia/llama-3.3-nemotron-super-49b-v1`     | ✓     | `nvapi-`       |
+| NVIDIA NIM  | `openai/gpt-oss-20b`                         | ✓     | `nvapi-`       |
+| AgentRouter | `gpt-5`                                      | —     | `sk-`          |
 | Ollama      | `llama3.1:8b`                                | ✓     | (local URL)    |
 
 ```sh
