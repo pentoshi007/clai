@@ -8,9 +8,9 @@ describe('provider helpers', () => {
     expect(normalizeProvider('LOCAL')).toBe('ollama');
   });
 
-  it('masks secrets without leaking middle content', () => {
-    expect(maskSecret('sk-proj-secret-middle-OkcA')).toBe('sk-••••••OkcA');
-    expect(maskSecret('gsk_abcdef1234567890')).toBe('gsk_••••••7890');
+  it('masks secrets showing only first 4 and last 3 chars', () => {
+    expect(maskSecret('sk-proj-secret-middle-OkcA')).toBe('sk-p••••kcA');
+    expect(maskSecret('gsk_abcdef1234567890')).toBe('gsk_••••890');
   });
 
   it('redacts known key formats', () => {

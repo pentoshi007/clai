@@ -111,15 +111,11 @@ export function sanitizeProviderModel(provider: ProviderId, model: string): stri
 }
 
 export function maskSecret(secret: string): string {
-  if (secret.length <= 4) {
-    return "••••";
-  }
-  const knownPrefix =
-    ["gsk_", "AIza", "sk-or-", "sk-ant-", "sk-", "nvapi-"].find((prefix) =>
-      secret.startsWith(prefix),
-    ) ?? "";
-  const suffix = secret.slice(-4);
-  return `${knownPrefix}••••••${suffix}`;
+  // Show the first 4 characters and the last 3 characters with a fixed
+  // dotted middle, so users can identify the right key at a glance
+  // without leaking enough of it to be useful to a shoulder-surfer.
+  if (secret.length <= 7) return "•".repeat(Math.max(secret.length, 4));
+  return `${secret.slice(0, 4)}••••${secret.slice(-3)}`;
 }
 
 export function redactSecrets(value: string): string {

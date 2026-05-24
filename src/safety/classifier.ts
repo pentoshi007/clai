@@ -280,6 +280,14 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only operation" };
   }
 
+  if (call.name === "dns.lookup" || call.name === "whois.lookup") {
+    // Single-shot DNS / whois queries are passive lookups. They never
+    // touch the target's network stack, so we don't gate them behind
+    // pentest authorization or scope confirmation. The underlying
+    // spawnArgv call still validates the target via parseHost.
+    return { level: "safe", reason: "Passive lookup against public registries" };
+  }
+
   if (call.name === "tool.batch") {
     // The batch handler enforces a hard allowlist of read-only tools and a
     // capped concurrency. Treat it as safe so batched recon can run without

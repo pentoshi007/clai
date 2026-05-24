@@ -136,13 +136,72 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async sysinfo() {
     return { ok: true, output: JSON.stringify(detectSystem(), null, 2) };
   },
+  /**
+   * Run a single DNS query without spinning up a full recon. Use for
+   * narrow asks ("what's the A record for X", "find the MX for Y") so
+   * the agent doesn't reach for nmap/whois when one dig is enough.
+   */
+  async "dns.lookup"(args, options) {
+    const host = parseHost(requireString(args, "target"));
+    const recordRaw = (optionalString(args, "record") ?? "A").toUpperCase();
+    const allowed = new Set([
+      "A", "AAAA", "ANY", "CAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT",
+    ]);
+    if (!allowed.has(recordRaw)) {
+      throw new Error(
+        `dns.lookup: unsupported record type "${recordRaw}". Allowed: ${[...allowed].join(", ")}`,
+      );
+    }
+    return spawnArgv({
+      command: "dig",
+      argv: [host.value, recordRaw, "+noall", "+answer", "+stats"],
+      timeoutMs: 30_000,
+      signal: options?.signal,
+      onOutput: options?.onOutput,
+    });
+  },
+  /**
+   * Run a single whois query so callers asking about ownership/registrar
+   * never trigger an nmap scan as a side effect.
+   */
+  async "whois.lookup"(args, options) {
+    const host = parseHost(requireString(args, "target"));
+    return spawnArgv({
+      command: "whois",
+      argv: [host.value],
+      timeoutMs: 60_000,
+      signal: options?.signal,
+      onOutput: options?.onOutput,
+    });
+  },
   async "pentest.recon"(args, options) {
     const host = parseHost(requireString(args, "target"));
-    const steps: Array<{ command: string; argv: string[] }> = [
-      { command: "whois", argv: [host.value] },
-      { command: "dig", argv: [host.value, "ANY", "+noall", "+answer"] },
-      { command: "nmap", argv: ["-sV", "--top-ports", "100", host.value] },
+    // Per-step opt-in flags so callers can ask for ONLY the recon they
+    // need. When no flags are supplied the legacy behavior runs (all
+    // three steps), preserving backwards compatibility for prompts that
+    // expect a full sweep.
+    const wantWhois = args.whois !== false;
+    const wantDns = args.dns !== false;
+    const wantNmap = args.nmap !== false;
+    const allSteps: Array<{ key: "whois" | "dns" | "nmap"; command: string; argv: string[] }> = [
+      { key: "whois", command: "whois", argv: [host.value] },
+      { key: "dns", command: "dig", argv: [host.value, "ANY", "+noall", "+answer"] },
+      { key: "nmap", command: "nmap", argv: ["-sV", "--top-ports", "100", host.value] },
     ];
+    const steps = allSteps.filter((step) => {
+      if (step.key === "whois") return wantWhois;
+      if (step.key === "dns") return wantDns;
+      if (step.key === "nmap") return wantNmap;
+      return true;
+    });
+    if (steps.length === 0) {
+      return {
+        ok: false,
+        output:
+          "pentest.recon: no steps requested. Set at least one of whois|dns|nmap to true, or omit them all for a full sweep.",
+        exitCode: 1,
+      };
+    }
 
     // Allocate one shared artifact file so the user can pop the full
     // recon transcript open in the Ctrl+O pager. Without this, the
@@ -237,6 +296,8 @@ const BATCH_SAFE_TOOLS = new Set([
   "fs.search",
   "http.fetch",
   "sysinfo",
+  "dns.lookup",
+  "whois.lookup",
 ]);
 
 const BATCH_MAX_CALLS = 8;

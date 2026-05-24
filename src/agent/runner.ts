@@ -228,6 +228,9 @@ function formatToolArgs(call: ToolCall): string {
   if (call.name === "net.scan")
     return `${call.args.target ?? ""}${call.args.ports ? ` -p ${call.args.ports}` : ""}${call.args.flags ? ` ${call.args.flags}` : ""}`;
   if (call.name === "pentest.recon") return String(call.args.target ?? "");
+  if (call.name === "dns.lookup")
+    return `${call.args.target ?? ""}${call.args.record ? ` ${call.args.record}` : " A"}`;
+  if (call.name === "whois.lookup") return String(call.args.target ?? "");
   if (call.name === "fs.read" || call.name === "fs.write")
     return String(call.args.path ?? "");
   if (call.name === "fs.search") return String(call.args.pattern ?? "");
@@ -398,6 +401,12 @@ export async function runAgentLoop(
   let lastAnswer = "";
   const session: SessionPolicy = options.session ?? createSessionPolicy();
 
+  // Track recent tool calls to detect models stuck in a loop calling the
+  // same tool with the same arguments over and over (e.g. pentest.recon
+  // called 3× on the same target without summarizing).
+  const recentCallSignatures: string[] = [];
+  const MAX_IDENTICAL_CALLS = 2;
+
   for (let step = 0; step < maxSteps; step += 1) {
     options.signal?.throwIfAborted();
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
@@ -421,7 +430,7 @@ export async function runAgentLoop(
           // them headroom so the visible answer / tool call isn't
           // truncated to silence. Keep the no-thinking default lean so
           // fast models like kimi-k2.6 respond instantly.
-          maxTokens: config.thinking?.enabled ? 8_192 : 2_048,
+          maxTokens: config.thinking?.enabled ? 8_192 : 4_096,
           signal: options.signal,
           thinking: config.thinking,
         },
@@ -501,10 +510,35 @@ export async function runAgentLoop(
       return lastAnswer;
     }
 
-    // Print only non-thinking text before the tool call, not raw <think> blocks.
+    // ── Duplicate-call detection ──────────────────────────────────────────
+    // If the model calls the exact same tool with the exact same args
+    // repeatedly, it's stuck in a loop. Inject a corrective message
+    // telling it to summarize the results it already has.
+    const callSignature = `${call.name}::${JSON.stringify(call.args)}`;
+    const consecutiveCount = recentCallSignatures.filter(
+      (sig) => sig === callSignature,
+    ).length;
+    recentCallSignatures.push(callSignature);
+    if (consecutiveCount >= MAX_IDENTICAL_CALLS) {
+      process.stdout.write(
+        chalk.yellow(
+          `  ⚠ ${call.name} was already called with the same arguments — forcing summary\n`,
+        ),
+      );
+      messages.push({ role: "assistant", content: assistantText.visible });
+      messages.push({
+        role: "user",
+        content:
+          `You already called ${call.name} with the same arguments and received results. ` +
+          "Do NOT call it again. Summarize the findings you already have and give your final answer NOW.",
+      });
+      continue;
+    }
+
+    // Print only non-thinking text before the tool call.
     const beforeTool = textBeforeToolCall(assistantText.visible);
     if (beforeTool) {
-      process.stdout.write(chalk.dim(renderMarkdown(beforeTool)) + "\n");
+      process.stdout.write(renderMarkdown(beforeTool) + "\n");
     }
     if (assistantText.hasThinking) {
       process.stdout.write(

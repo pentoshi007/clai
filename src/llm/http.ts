@@ -429,7 +429,7 @@ function buildChatBody(options: {
   // thinking is on, 2K otherwise — keep small for fast non-reasoning
   // paths so kimi-k2.6 etc. respond instantly).
   const reasoningOn = Boolean(options.reasoning?.enabled);
-  const defaultMaxTokens = reasoningOn ? 8_192 : 2_048;
+  const defaultMaxTokens = reasoningOn ? 8_192 : 4_096;
   const body: Record<string, unknown> = {
     model: options.model,
     messages: toOpenAiMessages(options.messages),
