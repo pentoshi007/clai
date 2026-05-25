@@ -37,18 +37,7 @@ import {
 import { renderMarkdown } from "../ui/markdown.js";
 import { startThinkingSpinner } from "../ui/spinner.js";
 import { analyzeTask } from "./task-analyzer.js";
-import {
-  createTaskPlan,
-  formatPlanForPrompt,
-  markStepRunning,
-  markStepDone,
-  markStepFailed,
-  nextPendingStep,
-  type TaskPlan,
-} from "./task-plan.js";
 import { LoopGuard } from "./loop-guard.js";
-import { evaluateProgress } from "./progress.js";
-import { renderTaskPane, renderProgressLine } from "../ui/task-pane.js";
 
 export interface SessionPolicy {
   /** Tools the user authorized once during this REPL session. Not persisted. */
@@ -419,23 +408,11 @@ export async function runAgentLoop(
   // called 3× on the same target without summarizing).
   const loopGuard = new LoopGuard();
 
-  // ── Task analysis & planning ──────────────────────────────────────
+  // ── Complexity-based step limit (no hardcoded plans) ──────────────
   const analysis = analyzeTask(prompt);
-  let plan: TaskPlan | undefined;
-  if (analysis.shouldPlan && analysis.suggestedSteps.length > 0) {
-    plan = createTaskPlan(analysis.goal, analysis.complexity, analysis.suggestedSteps);
-    messages.push({
-      role: "user",
-      content: `[INTERNAL CONTEXT — task analysis]\n${formatPlanForPrompt(plan)}\nStop when: ${analysis.stopWhen}`,
-    });
-    process.stdout.write(renderTaskPane(plan) + "\n");
-  }
-
-  // Dynamic max steps based on complexity
-  const dynamicMaxSteps = plan
-    ? analysis.complexity === "simple" ? 5
-    : analysis.complexity === "standard" ? 15
-    : maxSteps
+  const dynamicMaxSteps =
+    analysis.complexity === "simple" ? 10
+    : analysis.complexity === "standard" ? 20
     : maxSteps;
 
   for (let step = 0; step < dynamicMaxSteps; step += 1) {
@@ -731,25 +708,25 @@ export async function runAgentLoop(
     // Record the attempt in the loop guard for dedup tracking.
     loopGuard.recordAttempt(step, call.name, call.args, result.ok, result.exitCode);
 
-    // Update plan tracking if we have an active plan.
-    if (plan) {
-      const progress = evaluateProgress(plan, call, result);
-      const currentStep = plan.steps.find((s) => s.status === "running");
-      if (currentStep) {
-        if (result.ok) {
-          markStepDone(plan, currentStep.id, progress.reason);
-        } else {
-          markStepFailed(plan, currentStep.id, progress.reason);
-        }
-      }
-      // Advance to next step
-      const next = nextPendingStep(plan);
-      if (next) {
-        markStepRunning(plan, next.id);
-        const progressLine = renderProgressLine(plan);
-        if (progressLine) {
-          process.stdout.write(progressLine + "\n");
-        }
+    // ── Auto-retry on "command not found" ──────────────────────────
+    // Detect missing tools and instruct the model to install + retry.
+    const NOT_FOUND_RE = /command not found|ENOENT.*spawn|is not recognized/i;
+    if (!result.ok && NOT_FOUND_RE.test(output)) {
+      const cmdName = call.name === "shell.exec"
+        ? String(call.args.command ?? "").split(/\s+/)[0]
+        : call.name === "net.scan" ? "nmap" : undefined;
+      if (cmdName) {
+        process.stdout.write(
+          chalk.yellow(`  ⚠ ${cmdName} not found — asking model to install and retry\n`),
+        );
+        messages.push({
+          role: "tool",
+          content:
+            `Tool failed: "${cmdName}" is not installed.\n` +
+            `You MUST: 1) use pkg.install to install "${cmdName}", ` +
+            `2) then RETRY the original command. Do NOT stop or give up.`,
+        });
+        continue;
       }
     }
 
@@ -770,7 +747,7 @@ export async function runAgentLoop(
           );
         }
       } else {
-        process.stdout.write(chalk.gray(displayText) + "\n");
+        process.stdout.write(displayText + "\n");
       }
     }
     if (isAbortError(undefined, options.signal)) {
@@ -790,7 +767,12 @@ export async function runAgentLoop(
         artifactPath: savedOutputPath,
         summary: contextOutput,
       });
-      process.stdout.write(`${formatViewportHint(viewport)}\n`);
+      // Only print the Ctrl+O hint when there's a real artifact file
+      // (large output saved to disk). Avoid spamming the hint for
+      // every tiny tool call — the user can always use /output last.
+      if (savedOutputPath) {
+        process.stdout.write(`${formatViewportHint(viewport)}\n`);
+      }
     }
     messages.push({
       role: "tool",

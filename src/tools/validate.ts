@@ -125,14 +125,13 @@ export function profileToNmapArgs(profile: ScanProfile = {}): string[] {
     args.push(`-${profile.timing}`);
   }
   if (typeof profile.topPorts === "number") {
-    if (
-      !Number.isInteger(profile.topPorts) ||
-      profile.topPorts < 1 ||
-      profile.topPorts > 65535
-    ) {
+    if (profile.topPorts <= 0) {
+      // Model sent 0 or negative — treat as "not specified", don't crash
+    } else if (!Number.isInteger(profile.topPorts) || profile.topPorts > 65535) {
       throw new Error(`Invalid topPorts: ${profile.topPorts}`);
+    } else {
+      args.push("--top-ports", String(profile.topPorts));
     }
-    args.push("--top-ports", String(profile.topPorts));
   }
   if (profile.scripts && profile.scripts.length > 0) {
     const joined = profile.scripts.join(",");

@@ -110,7 +110,12 @@ export const toolRegistry: Record<string, ToolHandler> = {
         ? (args.profile as ScanProfile)
         : undefined;
     const legacyFlags = optionalString(args, "flags");
-    const profileArgs = profileToNmapArgs(profile);
+    // ports and topPorts conflict on the nmap CLI — ports takes priority
+    const cleanedProfile =
+      ports && profile?.topPorts
+        ? { ...profile, topPorts: undefined }
+        : profile;
+    const profileArgs = profileToNmapArgs(cleanedProfile);
     const legacyArgs = legacyFlags ? parseLegacyFlags(legacyFlags) : [];
     const argv: string[] = [];
     if (ports) argv.push("-p", ports);

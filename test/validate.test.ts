@@ -88,7 +88,10 @@ describe("phase 4 — profileToNmapArgs", () => {
   });
 
   it("rejects invalid topPorts", () => {
-    expect(() => profileToNmapArgs({ topPorts: 0 })).toThrow();
+    // topPorts <= 0 is silently ignored (treated as "not specified"), not an error
+    expect(profileToNmapArgs({ topPorts: 0 })).toEqual([]);
+    expect(profileToNmapArgs({ topPorts: -1 })).toEqual([]);
+    // Out-of-range positive values still throw
     expect(() => profileToNmapArgs({ topPorts: 100000 })).toThrow();
   });
 });
