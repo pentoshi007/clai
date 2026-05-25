@@ -350,15 +350,42 @@ function renderSlashCommandMenu(
     return [chalk.dim(`  no commands matching ${line}`)];
   }
 
+  // Cap visible items to leave room in the terminal
+  const termRows = process.stdout.rows || 24;
+  const maxVisible = Math.max(5, termRows - 4);
+  const visible = suggestions.slice(0, maxVisible);
+
   const maxCommandLength = Math.max(
-    ...suggestions.map((command) => slashCommandLabel(command).length),
+    ...visible.map((command) => slashCommandLabel(command).length),
   );
 
-  return suggestions.map((command, index) => {
+  const cols = process.stdout.columns || 80;
+
+  const items = visible.map((command, index) => {
     const marker = index === selectedIndex ? chalk.magenta("›") : " ";
     const label = slashCommandLabel(command).padEnd(maxCommandLength + 2);
-    return `  ${marker} ${chalk.cyan(label)}${chalk.dim(command.description)}`;
+    const full = `  ${marker} ${chalk.cyan(label)}${chalk.dim(command.description)}`;
+    // Truncate to terminal width so lines never wrap
+    const stripped = stripAnsi(full);
+    if (stripped.length > cols - 1) {
+      // Trim visible text to fit, keeping ANSI codes intact by
+      // building a truncated version from the plain-text width.
+      const descMaxLen = Math.max(
+        0,
+        cols - 1 - stripAnsi(`  ${marker} ${label}`).length - 1,
+      );
+      const truncDesc = command.description.slice(0, descMaxLen) + "…";
+      return `  ${marker} ${chalk.cyan(label)}${chalk.dim(truncDesc)}`;
+    }
+    return full;
   });
+
+  if (suggestions.length > maxVisible) {
+    const more = `  ${chalk.dim(`… ${suggestions.length - maxVisible} more`)}`;
+    items.push(more);
+  }
+
+  return items;
 }
 
 function isPrintableSequence(sequence: string | undefined): sequence is string {
@@ -403,18 +430,34 @@ async function readPromptLine(options: {
         : [];
       const linesToClear = Math.max(renderedMenuLines, menuLines.length);
 
+      // ── Redraw prompt line ──
       cursorTo(output, 0);
       clearLine(output, 0);
       output.write(`${PROMPT}${line}`);
 
-      for (let i = 0; i < linesToClear; i += 1) {
-        output.write("\n");
-        clearLine(output, 0);
-        const menuLine = menuLines[i];
-        if (menuLine) output.write(menuLine);
+      // ── Draw / clear menu lines ──
+      // We need to go down and redraw. Using \n to go down causes the
+      // terminal to scroll when at the bottom, which corrupts cursor
+      // positioning on the way back up. Instead, first ensure enough
+      // blank lines exist below (only on initial draw), then use
+      // \x1b[B (cursor-down) which never scrolls.
+      if (linesToClear > 0) {
+        if (renderedMenuLines === 0 && menuLines.length > 0) {
+          // First draw: reserve space by writing newlines, then come back.
+          output.write("\n".repeat(menuLines.length));
+          moveCursor(output, 0, -menuLines.length);
+        }
+        for (let i = 0; i < linesToClear; i += 1) {
+          // Move down one line without scrolling
+          output.write("\x1b[B");
+          cursorTo(output, 0);
+          clearLine(output, 0);
+          const menuLine = menuLines[i];
+          if (menuLine) output.write(menuLine);
+        }
+        moveCursor(output, 0, -linesToClear);
       }
 
-      if (linesToClear > 0) moveCursor(output, 0, -linesToClear);
       cursorTo(output, promptColumns + cursor);
       renderedMenuLines = menuLines.length;
     };
@@ -439,7 +482,8 @@ async function readPromptLine(options: {
       cursorTo(output, 0);
       clearLine(output, 0);
       for (let i = 0; i < previousMenuLines; i += 1) {
-        output.write("\n");
+        output.write("\x1b[B");
+        cursorTo(output, 0);
         clearLine(output, 0);
       }
       if (previousMenuLines > 0) moveCursor(output, 0, -previousMenuLines);
@@ -456,7 +500,8 @@ async function readPromptLine(options: {
       clearLine(output, 0);
       output.write(`${PROMPT}${line}`);
       for (let i = 0; i < previousMenuLines; i += 1) {
-        output.write("\n");
+        output.write("\x1b[B");
+        cursorTo(output, 0);
         clearLine(output, 0);
       }
       if (previousMenuLines > 0) moveCursor(output, 0, -previousMenuLines);
