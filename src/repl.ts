@@ -58,6 +58,7 @@ import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { startThinkingSpinner } from "./ui/spinner.js";
 import { modelSupportsThinking } from "./llm/capabilities.js";
 import {
+  clearViewports,
   getLastViewport,
   getViewport,
   isPagerActive,
@@ -167,6 +168,7 @@ const slashCommands: SlashCommand[] = [
     description: "control retention and private mode (in-memory only)",
   },
   { command: "/update", description: "check for updates" },
+  { command: "/clean", description: "clear screen and reset chat (fresh start)" },
   { command: "/exit", description: "quit" },
   { command: "/quit", description: "alias for /exit" },
   { command: "/help", description: "list commands" },
@@ -1375,7 +1377,33 @@ async function handleSlash(
     }
     case "/exit":
     case "/quit":
+      process.stdout.write(chalk.dim("  Goodbye!\n"));
       return false;
+    case "/clean": {
+      // Clear terminal, reset chat state, redraw banner — like a fresh start
+      state.messages.length = 0;
+      clearViewports();
+      clearThinking();
+      // Clear the entire screen and move cursor to top
+      process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
+      // Re-render the startup banner
+      console.log(renderBanner(getCurrentVersion()));
+      console.log(
+        renderSessionInfo({
+          workdir: process.cwd(),
+          model: state.model,
+          provider: state.provider,
+          mode: state.mode,
+        }),
+      );
+      console.log(renderSuggestions());
+      console.log(
+        chalk.dim(
+          "  ESC abort  │  Ctrl+C clears input  │  Ctrl+T or /think for thinking  │  Ctrl+O opens full tool output (q to close)\n",
+        ),
+      );
+      return true;
+    }
     case "/update":
       await runUpdate();
       return true;
@@ -1640,5 +1668,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       }
     }
     if (input.isTTY) input.setRawMode(false);
+    // Force exit so lingering handles (timers, watchers, bg jobs) don't
+    // keep the process alive after the user chose to quit.
+    process.exit(0);
   }
 }
