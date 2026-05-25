@@ -34,7 +34,7 @@ import {
   rememberThinkingFromText,
   renderThinkingSummary,
 } from "../ui/thinking.js";
-import { renderMarkdown } from "../ui/markdown.js";
+import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
 import { startThinkingSpinner } from "../ui/spinner.js";
 import { analyzeTask } from "./task-analyzer.js";
 import { LoopGuard } from "./loop-guard.js";
@@ -818,7 +818,7 @@ export async function runAgentLoop(
           );
         }
       } else {
-        process.stdout.write(displayText + "\n");
+        process.stdout.write(indentAndWrapText(displayText) + "\n");
       }
     }
     if (isAbortError(undefined, options.signal)) {
@@ -864,6 +864,6 @@ export async function runAgentLoop(
   }
 
   lastAnswer = `Stopped after ${dynamicMaxSteps} steps.`;
-  process.stdout.write(chalk.yellow(lastAnswer) + "\n");
+  process.stdout.write("  " + chalk.yellow(lastAnswer) + "\n");
   return lastAnswer;
 }

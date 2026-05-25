@@ -327,11 +327,9 @@ function slashCommandLabel(command: SlashCommand): string {
 }
 
 function slashCommandFilter(line: string): string | null {
-  // Show the menu only after at least one character is typed after '/'.
-  // Just '/' alone should not trigger suggestions — the user may be
-  // typing a path or just exploring. This prevents accidental Enter
-  // from submitting the first suggestion (/ask).
-  if (!line.startsWith("/") || line.length < 2 || /\s/.test(line)) return null;
+  // Show the menu immediately on '/' so the user can see available commands,
+  // but let Enter submit a raw '/' unless they explicitly navigate the menu.
+  if (!line.startsWith("/") || line.length < 1 || /\s/.test(line)) return null;
   return line.slice(1).toLowerCase();
 }
 
@@ -376,6 +374,7 @@ async function readPromptLine(options: {
     let line = "";
     let cursor = 0;
     let selectedIndex = 0;
+    let menuNavigated = false;
     let renderedMenuLines = 0;
     let dismissedSlashLine: string | null = null;
     let historyIndex: number | null = null;
@@ -424,6 +423,7 @@ async function readPromptLine(options: {
       line = nextLine;
       cursor = Math.max(0, Math.min(nextCursor, line.length));
       selectedIndex = 0;
+      menuNavigated = false;
       dismissedSlashLine = null;
       historyIndex = null;
       refresh();
@@ -516,7 +516,8 @@ async function readPromptLine(options: {
       }
 
       if (key.name === "return" || key.name === "enter") {
-        const selectedCommand = menu.visible
+        const useSelection = menu.visible && (line !== "/" || menuNavigated);
+        const selectedCommand = useSelection
           ? menu.suggestions[selectedIndex]
           : undefined;
         submit(selectedCommand?.command ?? line);
@@ -545,6 +546,7 @@ async function readPromptLine(options: {
           selectedIndex =
             (selectedIndex - 1 + menu.suggestions.length) %
             menu.suggestions.length;
+          menuNavigated = true;
           refresh();
           return;
         }
@@ -567,6 +569,7 @@ async function readPromptLine(options: {
       if (key.name === "down") {
         if (menu.visible && menu.suggestions.length > 0) {
           selectedIndex = (selectedIndex + 1) % menu.suggestions.length;
+          menuNavigated = true;
           refresh();
           return;
         }

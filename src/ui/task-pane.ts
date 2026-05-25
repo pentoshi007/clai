@@ -67,7 +67,7 @@ export function renderTaskPaneDetailed(plan: TaskPlan): string {
   const total = plan.steps.length;
   const done = plan.steps.filter((s) => s.status === "done").length;
 
-  lines.push(chalk.bold.underline(`Plan: ${plan.goal}`));
+  lines.push("  " + chalk.bold.underline(`Plan: ${plan.goal}`));
   lines.push(
     chalk.dim(`  complexity: ${plan.complexity} | progress: ${done}/${total}`),
   );

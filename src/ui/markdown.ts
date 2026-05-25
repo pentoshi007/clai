@@ -233,13 +233,143 @@ function renderBlockLine(line: string, state: BlockState): string {
 /** Left margin for all rendered output so text doesn't go edge-to-edge. */
 const OUTPUT_INDENT = "  ";
 
+function stripAnsi(str: string): string {
+  // biome-ignore lint: escape sequences are intentional
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+export function wrapAnsiLine(line: string, maxWidth: number): string[] {
+  const visibleLength = stripAnsi(line).length;
+  if (visibleLength <= maxWidth) return [line];
+
+  const tokens: { type: "space" | "ansi" | "char"; value: string }[] = [];
+  let i = 0;
+  while (i < line.length) {
+    if (line.startsWith("\x1b[", i)) {
+      let j = i + 2;
+      while (j < line.length && !/[a-zA-Z]/.test(line[j]!)) {
+        j++;
+      }
+      const val = line.slice(i, j + 1);
+      tokens.push({ type: "ansi", value: val });
+      i = j + 1;
+    } else if (/\s/.test(line[i]!)) {
+      let j = i;
+      while (j < line.length && /\s/.test(line[j]!)) {
+        j++;
+      }
+      tokens.push({ type: "space", value: line.slice(i, j) });
+      i = j;
+    } else {
+      tokens.push({ type: "char", value: line[i]! });
+      i++;
+    }
+  }
+
+  const words: { text: string; visibleLength: number }[] = [];
+  let currentWord = "";
+  let currentWordVisibleLength = 0;
+
+  for (const token of tokens) {
+    if (token.type === "space") {
+      if (currentWord) {
+        words.push({ text: currentWord, visibleLength: currentWordVisibleLength });
+        currentWord = "";
+        currentWordVisibleLength = 0;
+      }
+      words.push({ text: " ", visibleLength: 0 });
+    } else {
+      currentWord += token.value;
+      if (token.type === "char") {
+        currentWordVisibleLength += 1;
+      }
+    }
+  }
+  if (currentWord) {
+    words.push({ text: currentWord, visibleLength: currentWordVisibleLength });
+  }
+
+  const lines: string[] = [];
+  let currentLineText = "";
+  let currentLineVisibleLength = 0;
+
+  for (const word of words) {
+    if (word.text === " ") {
+      if (currentLineVisibleLength > 0) {
+        currentLineText += " ";
+        currentLineVisibleLength += 1;
+      }
+      continue;
+    }
+
+    if (currentLineVisibleLength === 0) {
+      currentLineText = word.text;
+      currentLineVisibleLength = word.visibleLength;
+    } else if (currentLineVisibleLength + word.visibleLength <= maxWidth) {
+      currentLineText += word.text;
+      currentLineVisibleLength += word.visibleLength;
+    } else {
+      lines.push(currentLineText);
+      currentLineText = word.text;
+      currentLineVisibleLength = word.visibleLength;
+    }
+  }
+  if (currentLineVisibleLength > 0) {
+    lines.push(currentLineText);
+  }
+
+  return lines.length > 0 ? lines : [line];
+}
+
+export function indentAndWrapText(text: string, indent = "  "): string {
+  if (!text) return text;
+  const cols = process.stdout.columns || 80;
+  const wrapWidth = Math.max(40, cols - 6);
+  return text
+    .split("\n")
+    .map((line) => {
+      const wrapped = wrapAnsiLine(line, wrapWidth);
+      return wrapped.map((wl) => `${indent}${wl}`).join("\n");
+    })
+    .join("\n");
+}
+
+function isParagraph(line: string, inFence: boolean): boolean {
+  if (inFence) return false;
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^(\s*)```/.test(line)) return false;
+  if (/^(#{1,6})\s+/.test(line)) return false;
+  if (/^\s*[-*_]{3,}\s*$/.test(line)) return false;
+  if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) return false;
+  if (/^\s*\|.*\|\s*$/.test(line)) return false;
+  if (line.startsWith("> ")) return false;
+  if (/^(\s*)[-*+]\s+\[([ xX])\]\s+/.test(line)) return false;
+  if (/^(\s*)(\d+)\.\s+/.test(line)) return false;
+  if (/^(\s*)[-*+]\s+/.test(line)) return false;
+  return true;
+}
+
 export function renderMarkdown(text: string): string {
   if (!text) return text;
   const state: BlockState = { inFence: false, fenceLang: "" };
   const lines = text.split("\n");
-  return lines
-    .map((line) => `${OUTPUT_INDENT}${renderBlockLine(line, state)}`)
-    .join("\n");
+  const resultLines: string[] = [];
+
+  const cols = process.stdout.columns || 80;
+  const wrapWidth = Math.max(40, cols - 6);
+
+  for (const line of lines) {
+    if (isParagraph(line, state.inFence)) {
+      const wrapped = wrapAnsiLine(line, wrapWidth);
+      for (const wl of wrapped) {
+        resultLines.push(`${OUTPUT_INDENT}${renderBlockLine(wl, state)}`);
+      }
+    } else {
+      resultLines.push(`${OUTPUT_INDENT}${renderBlockLine(line, state)}`);
+    }
+  }
+  return resultLines.join("\n");
 }
 
 // Streaming variant: buffers tokens and emits ANSI-rendered output
@@ -252,9 +382,20 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
   const state: BlockState = { inFence: false, fenceLang: "" };
   let buffer = "";
 
+  const cols = process.stdout.columns || 80;
+  const wrapWidth = Math.max(40, cols - 6);
+
   const emitLine = (line: string, withNewline: boolean): void => {
-    write(`${OUTPUT_INDENT}${renderBlockLine(line, state)}`);
-    if (withNewline) write("\n");
+    if (isParagraph(line, state.inFence)) {
+      const wrapped = wrapAnsiLine(line, wrapWidth);
+      wrapped.forEach((wl, idx) => {
+        write(`${OUTPUT_INDENT}${renderBlockLine(wl, state)}`);
+        if (withNewline || idx < wrapped.length - 1) write("\n");
+      });
+    } else {
+      write(`${OUTPUT_INDENT}${renderBlockLine(line, state)}`);
+      if (withNewline) write("\n");
+    }
   };
 
   return {
@@ -280,3 +421,4 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
     },
   };
 }
+

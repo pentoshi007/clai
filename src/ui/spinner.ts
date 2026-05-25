@@ -76,6 +76,7 @@ export function startThinkingSpinner(
         ? chalk.dim(` · ${reasoningTokens.toLocaleString()} reasoning tokens`)
         : "";
     const headLine =
+      "  " +
       chalk.magenta(FRAMES[frame % FRAMES.length]!) +
       " " +
       chalk.dim(`${label} ${elapsed}s`) +
@@ -94,7 +95,7 @@ export function startThinkingSpinner(
         .replace(/\s+/g, " ")
         .trim();
       if (tail) {
-        const previewLine = chalk.dim.italic(`  ${tail}`);
+        const previewLine = chalk.dim.italic(`    ${tail}`);
         lines.push(truncateForWidth(previewLine, cols));
       }
     }

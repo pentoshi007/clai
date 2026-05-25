@@ -69,10 +69,14 @@ export function toggleThinkingVisibility(): boolean {
 }
 
 export function renderThinkingBlock(content = lastThinkContent): string {
+  const contentIndented = content
+    .split("\n")
+    .map((l) => `  ${l}`)
+    .join("\n");
   return [
-    chalk.dim("--- thinking -----------------------------------"),
-    chalk.dim(content),
-    chalk.dim("-----------------------------------------------"),
+    chalk.dim("  --- thinking -----------------------------------"),
+    chalk.dim(contentIndented),
+    chalk.dim("  -----------------------------------------------"),
   ].join("\n");
 }
 

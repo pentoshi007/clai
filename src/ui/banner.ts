@@ -23,7 +23,7 @@ function box(
     const pad = contentWidth - stripAnsi(l).length;
     return `${color("│")} ${l}${" ".repeat(Math.max(0, pad))} ${color("│")}`;
   });
-  return [top, ...padded, bottom].join("\n");
+  return [top, ...padded, bottom].map(line => `  ${line}`).join("\n");
 }
 
 // ── Public rendering functions ──────────────────────────────────────────────
@@ -84,5 +84,5 @@ export function renderProviderSwitch(provider: string, model: string): string {
   );
 }
 
-export const PROMPT = `${chalk.magenta("❯")} `;
-export const PROMPT_SECONDARY = `${chalk.gray("…")} `;
+export const PROMPT = `  ${chalk.magenta("❯")} `;
+export const PROMPT_SECONDARY = `  ${chalk.gray("…")} `;
