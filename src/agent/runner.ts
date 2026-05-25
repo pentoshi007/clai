@@ -408,6 +408,10 @@ export async function runAgentLoop(
   // called 3× on the same target without summarizing).
   const loopGuard = new LoopGuard();
 
+  // Track consecutive thinking-only responses so we can nudge the model
+  // to actually act instead of silently returning an empty answer.
+  let emptyVisibleRetries = 0;
+
   // ── Complexity-based step limit (no hardcoded plans) ──────────────
   const analysis = analyzeTask(prompt);
   const dynamicMaxSteps =
@@ -472,6 +476,40 @@ export async function runAgentLoop(
     model = completion.model;
 
     const assistantText = rememberThinkingFromText(completion.text);
+
+    // ── Thinking-only recovery ────────────────────────────────────────
+    // Some models (eg gpt-oss-20b on NVIDIA NIM) occasionally spend their
+    // entire budget on hidden <think> reasoning and emit no visible text
+    // or tool call. Without this guard the agent silently returns an empty
+    // answer and the user has to re-submit the same prompt.
+    if (!assistantText.visible.trim() && assistantText.hasThinking) {
+      emptyVisibleRetries += 1;
+      if (emptyVisibleRetries <= 2) {
+        process.stdout.write(
+          `${renderThinkingSummary(assistantText.thinkContent)}\n`,
+        );
+        process.stdout.write(
+          chalk.yellow(
+            "  ⚠ model produced only thinking — nudging it to take action\n",
+          ),
+        );
+        messages.push({ role: "assistant", content: completion.text });
+        messages.push({
+          role: "user",
+          content:
+            "You only produced internal reasoning with no visible answer or tool call. " +
+            "You MUST either call a tool using the ```tool format or provide your final answer. " +
+            "Do NOT just think — take action NOW.",
+        });
+        continue;
+      }
+      // Exhausted retries — fall through to the normal empty-answer path
+      // which will print a warning and return.
+    } else {
+      // Reset the counter on any successful visible output.
+      emptyVisibleRetries = 0;
+    }
+
     const call = parseToolCall(assistantText.visible, {
       strict: getConfig().parserStrict,
     });
@@ -596,6 +634,13 @@ export async function runAgentLoop(
       Boolean(options.autoConfirm),
       session,
     );
+    // inquirer's confirm() creates its own readline interface which resets
+    // raw mode when it finishes. Re-assert raw mode so the outer keypress
+    // handler (ESC/Ctrl+C abort, Ctrl+O output pane) keeps working during
+    // the next streaming phase.
+    if (process.stdin.isTTY && !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
+      try { process.stdin.setRawMode(true); } catch { /* ignore */ }
+    }
     if (!authorized) {
       lastAnswer = "Pentest authorization not confirmed.";
       process.stdout.write(chalk.red(`  ✗ ${lastAnswer}`) + "\n");
@@ -614,6 +659,10 @@ export async function runAgentLoop(
         forceManualConfirm ? false : Boolean(options.autoConfirm),
         session,
       );
+      // Re-assert raw mode after inquirer's confirm() (see comment above).
+      if (process.stdin.isTTY && !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
+        try { process.stdin.setRawMode(true); } catch { /* ignore */ }
+      }
       if (!ok) {
         lastAnswer = "Cancelled.";
         process.stdout.write(chalk.yellow(`  ✗ cancelled`) + "\n");

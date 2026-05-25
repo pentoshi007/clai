@@ -6,7 +6,7 @@
 class Clai < Formula
   desc "Cross-platform terminal AI assistant with ask and agent modes"
   homepage "https://github.com/pentoshi007/clai"
-  version "0.9.2"
+  version "0.9.3"
   license "MIT"
 
   on_macos do
