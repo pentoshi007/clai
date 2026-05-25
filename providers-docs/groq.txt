@@ -1,0 +1,175 @@
+
+import OpenAI from "openai";
+const client = new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: "https://api.groq.com/openai/v1",
+});
+
+const response = await client.responses.create({
+    model: "openai/gpt-oss-20b",
+    input: "Explain the importance of fast language models",
+});
+console.log(response.output_text);
+
+https://console.groq.com/docs/quickstart
+
+import Groq from "groq-sdk";
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+export async function main() {
+  const chatCompletion = await getGroqChatCompletion();
+  // Print the completion returned by the LLM.
+  console.log(chatCompletion.choices[0]?.message?.content || "");
+}
+
+export async function getGroqChatCompletion() {
+  return groq.chat.completions.create({
+    messages: [
+      {
+        role: "user",
+        content: "Explain the importance of fast language models",
+      },
+    ],
+    model: "openai/gpt-oss-20b",
+  });
+}
+
+https://console.groq.com/docs/reasoning
+
+Get All Available Models
+Hosted models are directly accessible through the GroqCloud Models API endpoint using the model IDs mentioned above. You can use the https://api.groq.com/openai/v1/models endpoint to return a JSON list of all active models:
+
+
+JavaScript
+
+import Groq from "groq-sdk";
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+const getModels = async () => {
+  return await groq.models.list();
+};
+
+getModels().then((models) => {
+  // console.log(models);
+});
+
+import { Groq } from 'groq-sdk';
+
+const groq = new Groq();
+
+const chatCompletion = await groq.chat.completions.create({
+  "messages": [
+    {
+      "role": "user",
+      "content": ""
+    }
+  ],
+  "model": "qwen/qwen3-32b",
+  "temperature": 0.6,
+  "max_completion_tokens": 4096,
+  "top_p": 0.95,
+  "stream": true,
+  "reasoning_effort": "default",
+  "stop": null
+});
+
+for await (const chunk of chatCompletion) {
+  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+}
+
+Production Models
+Note: Production models are intended for use in your production environments. They meet or exceed our high standards for speed, quality, and reliability. Read more here.
+
+MODEL ID	SPEED (T/SEC)	PRICE PER 1M TOKENS	RATE LIMITS (DEVELOPER PLAN)	CONTEXT WINDOW (TOKENS)	MAX COMPLETION TOKENS	MAX FILE SIZE
+MetaLlama 3.1 8B
+llama-3.1-8b-instant
+560
+$0.05 input
+$0.08 output
+250K TPM
+1K RPM
+131,072
+131,072
+-
+MetaLlama 3.3 70B
+llama-3.3-70b-versatile
+280
+$0.59 input
+$0.79 output
+300K TPM
+1K RPM
+131,072
+32,768
+-
+OpenAIGPT OSS 120B
+openai/gpt-oss-120b
+500
+$0.15 input
+$0.60 output
+250K TPM
+1K RPM
+131,072
+65,536
+-
+OpenAIGPT OSS 20B
+openai/gpt-oss-20b
+
+1000
+$0.075 input
+$0.30 output
+250K TPM
+1K RPM
+131,072
+65,536
+-
+
+Reasoning Supported Models
+Model ID	Model
+openai/gpt-oss-20b
+
+OpenAI GPT-OSS 20B
+openai/gpt-oss-120b
+
+OpenAI GPT-OSS 120B
+openai/gpt-oss-safeguard-20b
+
+OpenAI GPT-OSS-Safeguard 20B
+qwen/qwen3-32b
+
+Qwen 3 32B
+Reasoning Format
+Groq API supports explicit reasoning formats through the reasoning_format parameter, giving you fine-grained control over how the model's reasoning process is presented. This is particularly valuable for valid JSON outputs, debugging, and understanding the model's decision-making process.
+
+
+Note: The format defaults to raw or parsed when JSON mode or tool use are enabled as those modes do not support raw. If reasoning is explicitly set to raw with JSON mode or tool use enabled, we will return a 400 error.
+
+Options for Reasoning Format
+reasoning_format Options	Description
+parsed	Separates reasoning into a dedicated message.reasoning field while keeping the response concise.
+raw	Includes reasoning within <think> tags in the main text content.
+hidden	Returns only the final answer.
+Including Reasoning in the Response
+You can also control whether reasoning is included in the response by setting the include_reasoning parameter.
+
+include_reasoning Options	Description
+true	Includes the reasoning in a dedicated message.reasoning field. This is the default behavior.
+false	Excludes reasoning from the response.
+
+Note: The include_reasoning parameter cannot be used together with reasoning_format. These parameters are mutually exclusive.
+
+Reasoning Effort
+Options for Reasoning Effort (Qwen 3 32B)
+The reasoning_effort parameter controls the level of effort the model will put into reasoning. This is only supported by Qwen 3 32B.
+
+reasoning_effort Options	Description
+none	Disable reasoning. The model will not use any reasoning tokens.
+default	Enable reasoning.
+Options for Reasoning Effort (GPT-OSS)
+The reasoning_effort parameter controls the level of effort the model will put into reasoning. This is only supported by GPT-OSS 20B and GPT-OSS 120B.
+
+reasoning_effort Options	Description
+low	Low effort reasoning. The model will use a small number of reasoning tokens.
+medium	Medium effort reasoning. The model will use a moderate number of reasoning tokens.
+high	High effort reasoning. The model will use a large number of reasoning tokens.

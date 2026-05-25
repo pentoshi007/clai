@@ -1,0 +1,70 @@
+/**
+ * Detect commands that are likely long-running servers, listeners, or
+ * watch processes. These should be started as background jobs rather
+ * than blocking the REPL.
+ */
+
+const LONG_RUNNING_PATTERNS: RegExp[] = [
+  // Listeners / bind shells
+  /\bnc\s+.*-l\b/i,
+  /\bncat\s+.*-l\b/i,
+  /\bsocat\b.*\bLISTEN\b/i,
+
+  // Python HTTP servers
+  /\bpython3?\s+(-m\s+)?http\.server\b/i,
+  /\bpython3?\s+(-m\s+)?SimpleHTTPServer\b/i,
+
+  // Node/JS dev servers
+  /\bnpm\s+run\s+dev\b/i,
+  /\byarn\s+dev\b/i,
+  /\bpnpm\s+dev\b/i,
+  /\bbun\s+dev\b/i,
+  /\bnpm\s+start\s*$/i,
+  /\bnode\s+server\b/i,
+  /\bnodemon\b/i,
+  /\bvite\b(?!\s+build)/i,
+  /\bnext\s+dev\b/i,
+  /\bnuxt\s+dev\b/i,
+
+  // Log followers / watchers
+  /\btail\s+.*-[fF]\b/i,
+  /\bjournalctl\s+.*-f\b/i,
+  /\bwatch\s+/i,
+  /\bcargo\s+watch\b/i,
+
+  // Docker
+  /\bdocker\s+logs\s+.*-f\b/i,
+  /\bdocker\s+compose\s+up\b/i,
+  /\bdocker-compose\s+up\b/i,
+
+  // Python/Ruby/Go servers
+  /\buvicorn\b/i,
+  /\bgunicorn\b/i,
+  /\bflask\s+run\b/i,
+  /\brails\s+(?:server|s)\b/i,
+  /\bsinatra\b/i,
+
+  // Other dev servers
+  /\bphp\s+-S\b/i,
+  /\bnginx\s*$/i,
+  /\bapache2?\s*$/i,
+
+  // Tunnel / proxy
+  /\bngrok\s+http\b/i,
+  /\bssh\s+.*-[DLRN]\b/i,
+  /\bchisel\s+(server|client)\b/i,
+
+  // Network listeners
+  /\btcpdump\b/i,
+  /\bwireshark\b/i,
+  /\btshark\b.*-i\b/i,
+];
+
+/**
+ * Returns true if the command appears to be a long-running process that
+ * should not block the foreground shell. This is a heuristic — false
+ * negatives are safer than false positives.
+ */
+export function looksLongRunning(command: string): boolean {
+  return LONG_RUNNING_PATTERNS.some((pattern) => pattern.test(command));
+}

@@ -1,7 +1,7 @@
 import { detectSystem } from "../os/detect.js";
 import { detectPackageManager, assertSafePackageName } from "../os/pkgmgr.js";
 import type { ToolCall, ToolResult } from "../types.js";
-import { fsList, fsRead, fsSearch, fsWrite } from "./fs.js";
+import { fsEdit, fsDelete, fsList, fsRead, fsSearch, fsWrite } from "./fs.js";
 import { httpFetch } from "./http.js";
 import { shellExec, spawnArgv } from "./shell.js";
 import { classifyToolCall } from "../safety/classifier.js";
@@ -13,6 +13,11 @@ import {
   profileToNmapArgs,
   type ScanProfile,
 } from "./validate.js";
+import { getNetworkContext } from "./network-context.js";
+import { pingSweep } from "./net-ping-sweep.js";
+import { toolCheckHandler } from "./capabilities.js";
+import { jobManager } from "./jobs.js";
+import { looksLongRunning } from "./command-intent.js";
 
 export interface ToolRunOptions {
   signal?: AbortSignal | undefined;
@@ -266,6 +271,53 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async "tool.batch"(args, options) {
     return runToolBatch(args, options);
   },
+  async "net.context"() {
+    return getNetworkContext();
+  },
+  async "net.pingSweep"(args) {
+    const target = requireString(args, "target");
+    return pingSweep({
+      target,
+      method: optionalString(args, "method") as "auto" | "nmap" | "arp" | "native" | undefined,
+      timeoutMs: optionalNumber(args, "timeoutMs"),
+    });
+  },
+  async "tool.check"(args) {
+    return toolCheckHandler(args);
+  },
+  async "shell.start"(args) {
+    const command = requireString(args, "command");
+    return jobManager.startJob(command, {
+      cwd: optionalString(args, "cwd"),
+      name: optionalString(args, "name"),
+    });
+  },
+  async "shell.jobs"() {
+    return jobManager.listJobs();
+  },
+  async "shell.tail"(args) {
+    return jobManager.tailJob(
+      requireString(args, "id"),
+      optionalNumber(args, "bytes"),
+    );
+  },
+  async "shell.stop"(args) {
+    return jobManager.stopJob(requireString(args, "id"));
+  },
+  async "fs.edit"(args) {
+    return fsEdit(
+      requireString(args, "path"),
+      requireString(args, "oldText"),
+      requireString(args, "newText"),
+      optionalNumber(args, "expectedReplacements"),
+    );
+  },
+  async "fs.delete"(args) {
+    return fsDelete(
+      requireString(args, "path"),
+      typeof args.recursive === "boolean" ? args.recursive : undefined,
+    );
+  },
 };
 
 export function availableToolNames(): string[] {
@@ -298,6 +350,8 @@ const BATCH_SAFE_TOOLS = new Set([
   "sysinfo",
   "dns.lookup",
   "whois.lookup",
+  "net.context",
+  "tool.check",
 ]);
 
 const BATCH_MAX_CALLS = 8;

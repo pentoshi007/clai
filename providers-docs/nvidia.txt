@@ -1,0 +1,436 @@
+import axios from 'axios';
+import { readFile } from 'node:fs/promises';
+
+const invokeUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
+const stream = true;
+
+const headers = {
+  "Authorization": "Bearer $NVIDIA_API_KEY",
+  "Accept": stream ? "text/event-stream" : "application/json"
+};
+
+const payload = {
+  "model": "moonshotai/kimi-k2.6",
+  "messages": [{"role":"user","content":""}],
+  "max_tokens": 16384,
+  "temperature": 1.00,
+  "top_p": 1.00,
+  "stream": stream,
+  "chat_template_kwargs": {"thinking":true},
+  
+  
+};
+
+Promise.resolve(
+  axios.post(invokeUrl, payload, {
+    headers: headers,
+    responseType: stream ? 'stream' : 'json'
+  })
+)
+
+  .then(response => {
+    if (stream) {
+      response.data.on('data', (chunk) => {
+        console.log(chunk.toString());
+      });
+    } else {
+      console.log(JSON.stringify(response.data));
+    }
+  })
+  .catch(error => {
+    if (error.response) {
+      console.error(`HTTP ${error.response.status}`);
+      if (error.response.data?.on) {
+        error.response.data.on('data', (chunk) => console.error(chunk.toString()));
+      } else {
+        console.error(error.response.data);
+      }
+    } else {
+      console.error(error);
+    }
+  });
+
+
+  ------------
+
+  import axios from 'axios';
+import { readFile } from 'node:fs/promises';
+
+const invokeUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
+const stream = true;
+
+const headers = {
+  "Authorization": "Bearer $NVIDIA_API_KEY",
+  "Accept": stream ? "text/event-stream" : "application/json"
+};
+
+
+const payload = {
+  "model": "mistralai/mistral-medium-3.5-128b",
+  "reasoning_effort": "high",
+  "messages": [{"role":"user","content":""}],
+  "max_tokens": 16384,
+  "temperature": 0.70,
+  "top_p": 1.00,
+  "stream": stream
+};
+
+Promise.resolve(
+  axios.post(invokeUrl, payload, {
+    headers: headers,
+    responseType: stream ? 'stream' : 'json'
+  })
+)
+
+  .then(response => {
+    if (stream) {
+      response.data.on('data', (chunk) => {
+        console.log(chunk.toString());
+      });
+    } else {
+      console.log(JSON.stringify(response.data));
+    }
+  })
+  .catch(error => {
+    console.error(error);
+  });
+
+  ------------
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "deepseek-ai/deepseek-v4-flash",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 0.95,
+    max_tokens: 16384,
+    chat_template_kwargs: {"thinking":true,"reasoning_effort":"high"},
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+        const reasoning = chunk.choices[0]?.delta?.reasoning || chunk.choices[0]?.delta?.reasoning_content;
+    if (reasoning) process.stdout.write(reasoning);
+        process.stdout.write(chunk.choices[0]?.delta?.content || '')
+    
+  }
+  
+}
+
+main();
+
+
+-----------
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "z-ai/glm-5.1",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 1,
+    max_tokens: 16384,
+    chat_template_kwargs: {"enable_thinking":true,"clear_thinking":false},
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+        const reasoning = chunk.choices[0]?.delta?.reasoning_content;
+    if (reasoning) process.stdout.write(reasoning);
+        process.stdout.write(chunk.choices[0]?.delta?.content || '')
+    
+  }
+  
+}
+
+main();
+
+----------
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "minimaxai/minimax-m2.7",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 0.95,
+    max_tokens: 8192,
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+    process.stdout.write(chunk.choices[0]?.delta?.content || '')
+    
+  }
+  
+}
+
+main();
+
+-----
+
+import axios from 'axios';
+import { readFile } from 'node:fs/promises';
+
+const invokeUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
+const stream = true;
+
+const headers = {
+  "Authorization": "Bearer $NVIDIA_API_KEY",
+  "Accept": stream ? "text/event-stream" : "application/json"
+};
+
+const payload = {
+  "model": "google/gemma-4-31b-it",
+  "messages": [{"role":"user","content":""}],
+  "max_tokens": 16384,
+  "temperature": 1.00,
+  "top_p": 0.95,
+  "stream": stream,
+  "chat_template_kwargs": {"enable_thinking":true},
+  
+  
+};
+
+Promise.resolve(
+  axios.post(invokeUrl, payload, {
+    headers: headers,
+    responseType: stream ? 'stream' : 'json'
+  })
+)
+
+  .then(response => {
+    if (stream) {
+      response.data.on('data', (chunk) => {
+        console.log(chunk.toString());
+      });
+    } else {
+      console.log(JSON.stringify(response.data));
+    }
+  })
+  .catch(error => {
+    console.error(error);
+  });
+
+
+------------
+
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "nvidia/nemotron-3-super-120b-a12b",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 0.95,
+    max_tokens: 16384,
+    reasoning_budget: 16384,
+    chat_template_kwargs: {"enable_thinking":true},
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+        const reasoning = chunk.choices[0]?.delta?.reasoning_content;
+    if (reasoning) process.stdout.write(reasoning);
+        process.stdout.write(chunk.choices[0]?.delta?.content || '')
+    
+  }
+  
+}
+
+main();
+
+----
+
+import axios from 'axios';
+import { readFile } from 'node:fs/promises';
+
+const invokeUrl = "https://integrate.api.nvidia.com/v1/chat/completions";
+const stream = true;
+
+const headers = {
+  "Authorization": "Bearer $NVIDIA_API_KEY",
+  "Accept": stream ? "text/event-stream" : "application/json"
+};
+
+
+const payload = {
+  "model": "mistralai/mistral-small-4-119b-2603",
+  "reasoning_effort": "high",
+  "messages": [{"role":"user","content":""}],
+  "max_tokens": 16384,
+  "temperature": 0.10,
+  "top_p": 1.00,
+  "stream": stream
+};
+
+Promise.resolve(
+  axios.post(invokeUrl, payload, {
+    headers: headers,
+    responseType: stream ? 'stream' : 'json'
+  })
+)
+
+  .then(response => {
+    if (stream) {
+      response.data.on('data', (chunk) => {
+        console.log(chunk.toString());
+      });
+    } else {
+      console.log(JSON.stringify(response.data));
+    }
+  })
+  .catch(error => {
+    console.error(error);
+  });
+
+
+_____
+
+
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "stepfun-ai/step-3.5-flash",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 0.9,
+    max_tokens: 16384,
+    stream: true
+  });
+
+  
+  for await (const chunk of completion) {
+    const delta = chunk.choices[0]?.delta;
+
+    const reasoning = delta?.reasoning_content;
+    if (reasoning) {
+      process.stdout.write(reasoning);
+    }
+
+    if (delta?.content) {
+      process.stdout.write(delta.content);
+    }
+  }
+  
+}
+
+main().catch(console.error);
+
+_____
+
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "nvidia/nemotron-3-nano-30b-a3b",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 1,
+    max_tokens: 16384,
+    reasoning_budget: 16384,
+    chat_template_kwargs: {"enable_thinking":true},
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+        const reasoning = chunk.choices[0]?.delta?.reasoning_content;
+    if (reasoning) process.stdout.write(reasoning);
+        process.stdout.write(chunk.choices[0]?.delta?.content || '')
+    
+  }
+  
+}
+
+main();
+
+------
+
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "sarvamai/sarvam-m",
+    messages: [{"role":"user","content":""}],
+    temperature: 0.5,
+    top_p: 1,
+    max_tokens: 16384,
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+    process.stdout.write(chunk.choices[0]?.delta?.content || '')
+  }
+  
+}
+
+main();
+
+----------
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: '$NVIDIA_API_KEY',
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+})
+
+ 
+async function main() {
+  const completion = await openai.chat.completions.create({
+    model: "deepseek-ai/deepseek-v4-pro",
+    messages: [{"role":"user","content":""}],
+    temperature: 1,
+    top_p: 0.95,
+    max_tokens: 16384,
+    chat_template_kwargs: {"thinking":false},
+    stream: true
+  })
+   
+  for await (const chunk of completion) {
+        process.stdout.write(chunk.choices[0]?.delta?.content || '')
+    
+  }
+  
+}
+
+main();
+  

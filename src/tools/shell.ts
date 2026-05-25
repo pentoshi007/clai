@@ -39,7 +39,7 @@ export interface SpawnArgvArgs {
 }
 
 const DEFAULT_MAX_MODEL_BYTES = 12_000;
-const DEFAULT_MAX_CAPTURE_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MAX_CAPTURE_BYTES = 500 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 180_000;
 
 function safeArtifactName(command: string): string {
@@ -149,7 +149,7 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
 
   const maxModelBytes = args.maxModelBytes ?? DEFAULT_MAX_MODEL_BYTES;
   const maxCaptureBytes = args.maxCaptureBytes ?? DEFAULT_MAX_CAPTURE_BYTES;
-  const onLimit = args.onLimit ?? "terminate";
+  const onLimit = args.onLimit ?? "continue";
   const halfModel = Math.max(512, Math.floor(maxModelBytes / 2));
 
   const start = Date.now();
@@ -374,7 +374,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
 
   const maxModelBytes = args.maxModelBytes ?? DEFAULT_MAX_MODEL_BYTES;
   const maxCaptureBytes = args.maxCaptureBytes ?? DEFAULT_MAX_CAPTURE_BYTES;
-  const onLimit = args.onLimit ?? "terminate";
+  const onLimit = args.onLimit ?? "continue";
   const halfModel = Math.max(512, Math.floor(maxModelBytes / 2));
 
   const display = `${args.command} ${args.argv.join(" ")}`.trim();

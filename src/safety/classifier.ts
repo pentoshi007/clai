@@ -434,5 +434,77 @@ export function classifyToolCall(
     };
   }
 
+  // ── New tools ──────────────────────────────────────────────────────
+
+  if (call.name === "net.context") {
+    return { level: "safe", reason: "Read-only local network info" };
+  }
+
+  if (call.name === "tool.check") {
+    return { level: "safe", reason: "Read-only tool availability check" };
+  }
+
+  if (call.name === "net.pingSweep") {
+    return {
+      level: "confirm",
+      reason: "Network sweep requires confirmation",
+    };
+  }
+
+  if (call.name === "shell.start") {
+    return {
+      level: "confirm",
+      reason: "Background job requires confirmation",
+    };
+  }
+
+  if (
+    call.name === "shell.jobs" ||
+    call.name === "shell.tail" ||
+    call.name === "shell.stop"
+  ) {
+    return { level: "safe", reason: "Read-only job management" };
+  }
+
+  if (call.name === "fs.edit") {
+    const pathArg = stringArg(call.args, "path");
+    if (pathArg) {
+      try {
+        if (isSecretPath(resolveForSecretCheck(pathArg))) {
+          return {
+            level: "block",
+            reason: "Refusing to edit a known secret path",
+          };
+        }
+      } catch {
+        // fall through
+      }
+    }
+    return {
+      level: "confirm",
+      reason: "File edit requires confirmation",
+    };
+  }
+
+  if (call.name === "fs.delete") {
+    const pathArg = stringArg(call.args, "path");
+    if (pathArg) {
+      try {
+        if (isSecretPath(resolveForSecretCheck(pathArg))) {
+          return {
+            level: "block",
+            reason: "Refusing to delete a known secret path",
+          };
+        }
+      } catch {
+        // fall through
+      }
+    }
+    return {
+      level: "confirm",
+      reason: "File deletion requires manual confirmation (never auto-confirmed)",
+    };
+  }
+
   return { level: "confirm", reason: "Unknown tool requires confirmation" };
 }

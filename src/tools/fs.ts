@@ -1,5 +1,5 @@
-import { open, readdir, writeFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { open, readdir, readFile, writeFile, unlink, rm, rename } from "node:fs/promises";
+import { join, dirname, basename, relative, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execa } from "execa";
 import type { ToolResult } from "../types.js";
@@ -188,5 +188,85 @@ export async function fsSearch(
       output: result.all ?? "",
       exitCode: result.exitCode,
     };
+  }
+}
+
+/**
+ * Atomic search-and-replace edit. Reads the file, validates the match
+ * count, performs replacement, and writes back.
+ */
+export async function fsEdit(
+  path: string,
+  oldText: string,
+  newText: string,
+  expectedReplacements?: number | undefined,
+): Promise<ToolResult> {
+  const resolved = ensureWriteAllowed(path);
+  const content = await readFile(resolved, "utf8");
+  const expected = expectedReplacements ?? 1;
+
+  // Count occurrences
+  let count = 0;
+  let searchPos = 0;
+  while (true) {
+    const idx = content.indexOf(oldText, searchPos);
+    if (idx === -1) break;
+    count += 1;
+    searchPos = idx + oldText.length;
+  }
+
+  if (count === 0) {
+    return {
+      ok: false,
+      output: `No matches found for the search text in ${resolved}. The text to replace was not found.`,
+      exitCode: 1,
+    };
+  }
+  if (count !== expected) {
+    return {
+      ok: false,
+      output: `Found ${count} occurrence(s) of the search text, but expected exactly ${expected}. Aborting to avoid unintended changes. Use expectedReplacements=${count} if you want to replace all.`,
+      exitCode: 1,
+    };
+  }
+
+  const updated = content.replaceAll(oldText, newText);
+
+  // Atomic write: write to temp file in same directory, then rename
+  const tempPath = join(dirname(resolved), `.${basename(resolved)}.clai-tmp`);
+  try {
+    await writeFile(tempPath, updated, "utf8");
+    await rename(tempPath, resolved);
+  } catch (error) {
+    // Cleanup temp file on failure
+    try { await unlink(tempPath); } catch { /* ignore */ }
+    throw error;
+  }
+
+  return {
+    ok: true,
+    output: `Replaced ${count} occurrence(s) in ${resolved}.`,
+  };
+}
+
+/**
+ * Delete a file or directory. Requires the path to be inside the
+ * write sandbox and not a secret path.
+ */
+export async function fsDelete(
+  path: string,
+  recursive?: boolean | undefined,
+): Promise<ToolResult> {
+  const resolved = ensureWriteAllowed(path);
+  try {
+    if (recursive) {
+      await rm(resolved, { recursive: true, force: false });
+      return { ok: true, output: `Deleted (recursive): ${resolved}` };
+    }
+    await unlink(resolved);
+    return { ok: true, output: `Deleted: ${resolved}` };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { ok: false, output: `Delete failed: ${msg}`, exitCode: 1 };
   }
 }

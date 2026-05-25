@@ -1,0 +1,155 @@
+Using Agent Router in Claude Code
+Install Claude Code
+
+pnpm
+
+npm
+
+yarn
+
+pnpm install -g @anthropic-ai/claude-code
+Configure environment variables
+To use AgentRouter's Anthropic API, enter the following command in the terminal:
+
+
+Linux/macOS
+
+Windows PowerShell
+
+bash
+
+Linux/macOS
+
+Windows PowerShell
+
+# 设置 AgentRouter 的 API 基础 URL
+export ANTHROPIC_BASE_URL=https://agentrouter.org/
+
+# 设置您的 AgentRouter API 密钥, 可以从 https://agentrouter.org/console/token 获取
+export ANTHROPIC_AUTH_TOKEN=sk-xxx
+export ANTHROPIC_API_KEY=sk-xxx
+IMPORTANT
+
+Please ensure that sk-xxx is replaced with the token provided by AgentRouter. You can obtain the API Key in the AgentRouter console .
+
+Start using directly
+After configuring the environment variables, open the project directory you want to work with in the terminal, and then run the following command to start Claude Code.
+
+TIP
+
+You can add environment variable configurations to your shell configuration file to avoid manually setting them each time:
+
+
+Linux/macOS
+
+Windows PowerShell
+
+# 添加到 ~/.bashrc 或 ~/.zshrc 文件中
+export ANTHROPIC_BASE_URL=https://agentrouter.org/
+export ANTHROPIC_AUTH_TOKEN=sk-xxx
+export ANTHROPIC_API_KEY=sk-xxx
+Pager
+
+Using Agent Router in Codex
+Install Codex
+
+pnpm
+
+npm
+
+yarn
+
+npm install -g @openai/codex
+Configure environment variables
+Visit https://agentrouter.org/console/token to obtain your API Key.
+Set a system environment variable with the variable name AGENT_ROUTER_TOKENand the value as the one you just created ( environment variable setting tutorial ).
+Create ~/.codex/config.tomla file and add the following configuration.
+
+model = "gpt-5" # 也可以将其修改为 glm4.5,glm-4.6,or deepseek-v3.1
+model_provider = "openai-chat-completions"
+preferred_auth_method = "apikey"
+
+
+[model_providers.openai-chat-completions]
+name = "OpenAI using Chat Completions"
+base_url = "https://agentrouter.org/v1"
+env_key = "AGENT_ROUTER_TOKEN"
+wire_api = "chat"
+query_params = {}
+stream_idle_timeout_ms = 300000
+Create ~/.codex/auth.jsona file and add the following code to it.
+
+{
+ "OPENAI_API_KEY":"这里换成你申请的 KEY"
+}
+Start using directly
+After configuring the environment variables, open the project directory you want to work with in the terminal, and then run the following command to start Codex.
+
+
+# 进入项目目录
+cd my-project
+
+# 直接启动 OpenAI Codex
+codex
+Using Codex in VSCode
+Install Codex according to the instructions above, and configure the environment variables and configuration files.
+
+Open VSCode and install the Codex extension .
+
+Go to settings and click the top right corner to switch to JSON configuration mode.
+
+
+
+Add the following configuration items
+
+"chatgpt.apiBase": "https://agentrouter.org/v1",
+"chatgpt.config": {
+    "pepreferred_auth_method": "api_key",
+    "model_provider": "openai-chat-completions"
+}
+
+Using Agent Router in Qwen Code
+Install Qwen Code
+
+pnpm
+
+npm
+
+yarn
+
+pnpm install -g @qwen-code/qwen-code
+Configure environment variables
+Enter the following command in the terminal to set environment variables ( environment variable setting tutorial ) to use AgentRouter's OpenAI API:
+
+
+Linux/macOS
+
+Windows PowerShell
+
+Windows CMD
+
+# 设置您的 AgentRouter API 密钥, 可以从 https://agentrouter.org/console/token 获取
+export OPENAI_API_KEY="sk-xxx"
+# 设置 AgentRouter 的 API 基础 URL
+export OPENAI_BASE_URL="https://agentrouter.org/v1"  # 可选
+export OPENAI_MODEL="gpt-5" # 可选，模型名 ，可以修改为 `deepseek-v3.1` , `deepseek-v3.2`
+IMPORTANT
+
+Please ensure that sk-xxx is replaced with the token provided by AgentRouter. You can obtain the API Key in the AgentRouter console .
+
+Start using directly
+After configuring the environment variables, open the project directory you want to work with in the terminal, and then run the following command to start Qwen Code.
+
+
+# 进入项目目录
+cd my-project
+
+# 直接启动 Qwen Code
+qwen
+
+all models:
+claude-haiku-4-5-20251001
+claude-opus-4-6
+deepseek-v4-flash
+deepseek-v4-pro
+glm-5.1

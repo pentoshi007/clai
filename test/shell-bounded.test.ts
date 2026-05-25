@@ -57,6 +57,7 @@ describe("phase 3 — bounded shell capture", () => {
       command: 'node -e "setInterval(() => process.stdout.write(\\"x\\".repeat(8192)), 1);"',
       maxModelBytes: 4_000,
       maxCaptureBytes: 100_000,
+      onLimit: "terminate",
       artifactPath,
       timeoutMs: 5_000,
     });

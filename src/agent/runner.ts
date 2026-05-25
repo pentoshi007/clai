@@ -36,6 +36,19 @@ import {
 } from "../ui/thinking.js";
 import { renderMarkdown } from "../ui/markdown.js";
 import { startThinkingSpinner } from "../ui/spinner.js";
+import { analyzeTask } from "./task-analyzer.js";
+import {
+  createTaskPlan,
+  formatPlanForPrompt,
+  markStepRunning,
+  markStepDone,
+  markStepFailed,
+  nextPendingStep,
+  type TaskPlan,
+} from "./task-plan.js";
+import { LoopGuard } from "./loop-guard.js";
+import { evaluateProgress } from "./progress.js";
+import { renderTaskPane, renderProgressLine } from "../ui/task-pane.js";
 
 export interface SessionPolicy {
   /** Tools the user authorized once during this REPL session. Not persisted. */
@@ -404,10 +417,28 @@ export async function runAgentLoop(
   // Track recent tool calls to detect models stuck in a loop calling the
   // same tool with the same arguments over and over (e.g. pentest.recon
   // called 3× on the same target without summarizing).
-  const recentCallSignatures: string[] = [];
-  const MAX_IDENTICAL_CALLS = 2;
+  const loopGuard = new LoopGuard();
 
-  for (let step = 0; step < maxSteps; step += 1) {
+  // ── Task analysis & planning ──────────────────────────────────────
+  const analysis = analyzeTask(prompt);
+  let plan: TaskPlan | undefined;
+  if (analysis.shouldPlan && analysis.suggestedSteps.length > 0) {
+    plan = createTaskPlan(analysis.goal, analysis.complexity, analysis.suggestedSteps);
+    messages.push({
+      role: "user",
+      content: `[INTERNAL CONTEXT — task analysis]\n${formatPlanForPrompt(plan)}\nStop when: ${analysis.stopWhen}`,
+    });
+    process.stdout.write(renderTaskPane(plan) + "\n");
+  }
+
+  // Dynamic max steps based on complexity
+  const dynamicMaxSteps = plan
+    ? analysis.complexity === "simple" ? 5
+    : analysis.complexity === "standard" ? 15
+    : maxSteps
+    : maxSteps;
+
+  for (let step = 0; step < dynamicMaxSteps; step += 1) {
     options.signal?.throwIfAborted();
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
     // Status messages (rate-limit retries, fallback hints) still surface live.
@@ -514,12 +545,8 @@ export async function runAgentLoop(
     // If the model calls the exact same tool with the exact same args
     // repeatedly, it's stuck in a loop. Inject a corrective message
     // telling it to summarize the results it already has.
-    const callSignature = `${call.name}::${JSON.stringify(call.args)}`;
-    const consecutiveCount = recentCallSignatures.filter(
-      (sig) => sig === callSignature,
-    ).length;
-    recentCallSignatures.push(callSignature);
-    if (consecutiveCount >= MAX_IDENTICAL_CALLS) {
+    const loopCheck = loopGuard.shouldBlock(call.name, call.args);
+    if (loopCheck.block) {
       process.stdout.write(
         chalk.yellow(
           `  ⚠ ${call.name} was already called with the same arguments — forcing summary\n`,
@@ -533,6 +560,9 @@ export async function runAgentLoop(
           "Do NOT call it again. Summarize the findings you already have and give your final answer NOW.",
       });
       continue;
+    }
+    if (loopCheck.reason) {
+      process.stdout.write(chalk.dim(`  ℹ ${loopCheck.reason}\n`));
     }
 
     // Print only non-thinking text before the tool call.
@@ -599,10 +629,12 @@ export async function runAgentLoop(
     }
 
     // Confirm if needed (safe tools auto-execute, pentest-auth'd tools skip)
+    // fs.delete and shell deletions NEVER auto-confirm even with -y flag.
+    const forceManualConfirm = call.name === "fs.delete";
     if (decision.level === "confirm" && !pentestJustConfirmed) {
       const ok = await confirmToolExecution(
         call,
-        Boolean(options.autoConfirm),
+        forceManualConfirm ? false : Boolean(options.autoConfirm),
         session,
       );
       if (!ok) {
@@ -696,6 +728,31 @@ export async function runAgentLoop(
       output: result.output.slice(0, 4_000),
     });
 
+    // Record the attempt in the loop guard for dedup tracking.
+    loopGuard.recordAttempt(step, call.name, call.args, result.ok, result.exitCode);
+
+    // Update plan tracking if we have an active plan.
+    if (plan) {
+      const progress = evaluateProgress(plan, call, result);
+      const currentStep = plan.steps.find((s) => s.status === "running");
+      if (currentStep) {
+        if (result.ok) {
+          markStepDone(plan, currentStep.id, progress.reason);
+        } else {
+          markStepFailed(plan, currentStep.id, progress.reason);
+        }
+      }
+      // Advance to next step
+      const next = nextPendingStep(plan);
+      if (next) {
+        markStepRunning(plan, next.id);
+        const progressLine = renderProgressLine(plan);
+        if (progressLine) {
+          process.stdout.write(progressLine + "\n");
+        }
+      }
+    }
+
     // Print tool result
     const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
     process.stdout.write(statusIcon + "\n");
@@ -753,7 +810,7 @@ export async function runAgentLoop(
     }
   }
 
-  lastAnswer = `Stopped after ${maxSteps} steps.`;
+  lastAnswer = `Stopped after ${dynamicMaxSteps} steps.`;
   process.stdout.write(chalk.yellow(lastAnswer) + "\n");
   return lastAnswer;
 }

@@ -8,4 +8,5 @@ coverage/
 .claude/
 .kilo/
 *.tgz
-providers-docs/
+providers-docs/improvements.md
+enhancements.md
