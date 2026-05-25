@@ -233,10 +233,19 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
     };
 
     const terminate = (reason: "abort" | "timeout" | "cap"): void => {
-      if (reason === "abort") aborted = true;
+      if (reason === "abort") {
+        if (aborted) {
+          // Second abort attempt — the child ignored SIGTERM; force-kill.
+          killChild("SIGKILL");
+          return;
+        }
+        aborted = true;
+      }
       if (reason === "timeout") timedOut = true;
       killChild("SIGTERM");
-      forceKill = setTimeout(() => killChild("SIGKILL"), 1_000);
+      // Escalate to SIGKILL quickly — some tools (eg ffuf) catch SIGTERM
+      // and take several seconds to shut down.
+      forceKill = setTimeout(() => killChild("SIGKILL"), 500);
     };
 
     const abort = (): void => terminate("abort");
@@ -449,10 +458,16 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
     };
 
     const terminate = (reason: "abort" | "timeout" | "cap"): void => {
-      if (reason === "abort") aborted = true;
+      if (reason === "abort") {
+        if (aborted) {
+          killChild("SIGKILL");
+          return;
+        }
+        aborted = true;
+      }
       if (reason === "timeout") timedOut = true;
       killChild("SIGTERM");
-      forceKill = setTimeout(() => killChild("SIGKILL"), 1_000);
+      forceKill = setTimeout(() => killChild("SIGKILL"), 500);
     };
 
     const abort = (): void => terminate("abort");

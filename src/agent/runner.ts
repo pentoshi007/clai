@@ -677,6 +677,7 @@ export async function runAgentLoop(
     let liveBytes = 0;
     const liveCap = 16_000; // Stop streaming after this many bytes to avoid flooding the terminal.
     let liveTruncatedNotified = false;
+    let lastProgressAt = 0;
     const printLive = (chunk: string): void => {
       // Suppress live preview for fs.read / fs.list — those are read-only
       // and the final summary is already concise. Stream shell-style tools
@@ -693,6 +694,17 @@ export async function runAgentLoop(
           process.stdout.write(
             chalk.dim("\n  … live preview truncated, full output saved\n"),
           );
+          process.stdout.write(
+            chalk.dim("  (tool still running — ESC or Ctrl+C to abort)\n"),
+          );
+          lastProgressAt = Date.now();
+        }
+        // After truncation, show a dot every 5 seconds so the user knows
+        // the tool is still running and the terminal isn't frozen.
+        const now = Date.now();
+        if (now - lastProgressAt > 5_000) {
+          lastProgressAt = now;
+          process.stdout.write(chalk.dim("."));
         }
         return;
       }
@@ -719,8 +731,8 @@ export async function runAgentLoop(
           printLive(chunk);
         },
       });
-      // Newline separator if live output didn't already end with one.
-      if (liveBytes > 0) process.stdout.write("\n");
+      // Newline separator if live output or progress dots didn't already end with one.
+      if (liveBytes > 0 || liveTruncatedNotified) process.stdout.write("\n");
     } catch (toolError) {
       if (isAbortError(toolError, options.signal)) {
         lastAnswer = "Aborted.";

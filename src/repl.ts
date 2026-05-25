@@ -1433,6 +1433,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   let isReadingPrompt = false;
   let outputShortcutBusy = false;
   let lastOutputShortcutAt = 0;
+  let abortPressCount = 0;
 
   emitKeypressEvents(input);
 
@@ -1476,14 +1477,14 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         process.stdout.write(chalk.dim("\n  (no tool output to expand yet)\n"));
         return;
       }
-      // While a stream is in flight, opening the alt-screen pager would
-      // collide with incoming tokens — drop a hint instead so the user
-      // knows the pager is available once the run completes. Hitting
-      // Ctrl+O at the prompt afterward will then open it.
-      if (currentAbortController) {
+      // Never open the pager while the agent is actively running. The
+      // pager takes over all keypress handling (isPagerActive() causes
+      // the main handler to bail), which makes ESC / Ctrl+C abort
+      // impossible. Only open when we're idle at the prompt.
+      if (currentAbortController || !isReadingPrompt) {
         process.stdout.write(
           chalk.dim(
-            `\n  (stream in progress — press Ctrl+O at the prompt after it finishes to open ${v.toolName})\n`,
+            `\n  (press Ctrl+O at the prompt after it finishes to open ${v.toolName})\n`,
           ),
         );
         return;
@@ -1509,7 +1510,20 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       (isEscape(key) || isCtrlC(key)) &&
       currentAbortController
     ) {
+      abortPressCount += 1;
       currentAbortController.abort();
+      // Escalate: after the first abort attempt the child process
+      // receives SIGTERM, which tools like ffuf may catch and handle
+      // gracefully (taking several seconds). Show feedback so the
+      // user knows the abort registered, and on subsequent presses
+      // hint that force-kill is in progress.
+      if (abortPressCount === 1) {
+        process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
+      } else if (abortPressCount >= 2) {
+        process.stdout.write(
+          chalk.yellow("  ⏹ force-killing…\n"),
+        );
+      }
     }
   };
   input.on("keypress", handleKeypress);
@@ -1612,6 +1626,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
       try {
         clearThinking();
+        abortPressCount = 0;
         let assistantContent = "";
         if (state.mode === "ask") {
           assistantContent = await withAbortableInput(async (signal) =>
