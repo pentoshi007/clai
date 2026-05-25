@@ -3,11 +3,14 @@ import { getKnownModels, getSlashCommandSuggestions } from '../src/repl.js';
 
 describe('REPL slash command suggestions', () => {
   it('lists commands after a bare slash', () => {
-    const commands = getSlashCommandSuggestions('/').map((item) => item.command);
+    // A bare '/' no longer triggers suggestions (prevents accidental
+    // /ask submission). At least one character is required.
+    expect(getSlashCommandSuggestions('/')).toEqual([]);
 
+    // With one character, suggestions should appear.
+    const commands = getSlashCommandSuggestions('/a').map((item) => item.command);
     expect(commands).toContain('/ask');
-    expect(commands).toContain('/model');
-    expect(commands).toContain('/help');
+    expect(commands).toContain('/agent');
   });
 
   it('filters commands by typed prefix', () => {

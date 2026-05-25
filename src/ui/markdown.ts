@@ -230,11 +230,16 @@ function renderBlockLine(line: string, state: BlockState): string {
   return renderInlineMarkdown(line);
 }
 
+/** Left margin for all rendered output so text doesn't go edge-to-edge. */
+const OUTPUT_INDENT = "  ";
+
 export function renderMarkdown(text: string): string {
   if (!text) return text;
   const state: BlockState = { inFence: false, fenceLang: "" };
   const lines = text.split("\n");
-  return lines.map((line) => renderBlockLine(line, state)).join("\n");
+  return lines
+    .map((line) => `${OUTPUT_INDENT}${renderBlockLine(line, state)}`)
+    .join("\n");
 }
 
 // Streaming variant: buffers tokens and emits ANSI-rendered output
@@ -248,7 +253,7 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
   let buffer = "";
 
   const emitLine = (line: string, withNewline: boolean): void => {
-    write(renderBlockLine(line, state));
+    write(`${OUTPUT_INDENT}${renderBlockLine(line, state)}`);
     if (withNewline) write("\n");
   };
 

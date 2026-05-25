@@ -430,6 +430,7 @@ export async function runAgentLoop(
       options.signal,
     );
     let sawReasoning = false;
+    let inThinking = false;
     let completion;
     try {
       completion = await streamWithProvider(
@@ -450,18 +451,27 @@ export async function runAgentLoop(
           // Heuristic: <think>… markers and reasoning_content tokens flow
           // through onToken. Surface activity in the spinner so the screen
           // is never empty for minutes.
-          if (!sawReasoning && /<think|<\/think>/i.test(token)) {
+          if (!sawReasoning && /<think/i.test(token)) {
             sawReasoning = true;
+            inThinking = true;
             spinner.setLabel("thinking");
           }
-          // Show the model's actual reasoning text live. The provider
-          // wraps reasoning_content in <think>…</think> in our http layer,
-          // so anything between those tags is fair game for the preview.
-          // For non-reasoning tokens (the eventual answer / tool call),
-          // also surface them so users see the live response forming.
-          spinner.pushPreview(token.replace(/<\/?think[^>]*>/gi, ""));
-          const approx = token.split(/\s+/).filter(Boolean).length;
-          if (approx > 0) spinner.bumpReasoning(approx);
+          if (/<\/think>/i.test(token)) {
+            inThinking = false;
+          }
+          // Only push reasoning tokens to the spinner preview. Visible
+          // answer / tool-call tokens should NOT go through the dim
+          // spinner preview — doing so makes the final answer appear
+          // "diluted" in light font when the spinner's last render
+          // briefly shows the answer text before being erased.
+          if (inThinking) {
+            const cleaned = token.replace(/<\/?think[^>]*>/gi, "");
+            if (cleaned) {
+              spinner.pushPreview(cleaned);
+              const approx = cleaned.split(/\s+/).filter(Boolean).length;
+              if (approx > 0) spinner.bumpReasoning(approx);
+            }
+          }
         },
         (status) => {
           spinner.stop();

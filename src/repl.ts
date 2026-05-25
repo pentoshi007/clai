@@ -327,7 +327,11 @@ function slashCommandLabel(command: SlashCommand): string {
 }
 
 function slashCommandFilter(line: string): string | null {
-  if (!line.startsWith("/") || /\s/.test(line)) return null;
+  // Show the menu only after at least one character is typed after '/'.
+  // Just '/' alone should not trigger suggestions — the user may be
+  // typing a path or just exploring. This prevents accidental Enter
+  // from submitting the first suggestion (/ask).
+  if (!line.startsWith("/") || line.length < 2 || /\s/.test(line)) return null;
   return line.slice(1).toLowerCase();
 }
 

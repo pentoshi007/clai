@@ -76,7 +76,7 @@ describe("markdown stream writer", () => {
     });
     writer.push("hello **world**");
     writer.push("\n");
-    expect(strip(out)).toBe("hello world\n");
+    expect(strip(out)).toBe("  hello world\n");
   });
 
   it("flushes pending fenced content on finish", () => {
@@ -93,7 +93,7 @@ describe("markdown stream writer", () => {
 describe("markdown extras", () => {
   it("renders inline markdown inside headings", () => {
     const out = strip(renderMarkdown("## Important **note**"));
-    expect(out).toBe("Important note");
+    expect(out).toBe("  Important note");
   });
 
   it("renders task list checkboxes", () => {
