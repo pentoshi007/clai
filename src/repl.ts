@@ -125,6 +125,7 @@ const slashCommands: SlashCommand[] = [
     description: "alias for /variants",
   },
   { command: "/clear", description: "clear context" },
+  { command: "/new", description: "start a fresh session (clear context, no history carryover)" },
   { command: "/history", description: "browse & resume past sessions (interactive picker)" },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/reset", description: "clear all saved history" },
@@ -1077,6 +1078,7 @@ async function handleSlash(
     model: string;
     messages: ChatMessage[];
     session: SessionPolicy;
+    resumedMessageCount: number;
   },
 ): Promise<boolean> {
   const [command, ...args] = splitCommand(line);
@@ -1216,8 +1218,22 @@ async function handleSlash(
     }
     case "/clear":
       state.messages.length = 0;
+      state.resumedMessageCount = 0;
       console.log(chalk.dim("  context cleared"));
       return true;
+    case "/new": {
+      // Save the current session if it has new messages, then start fresh
+      if (state.messages.length > state.resumedMessageCount) {
+        if (!getConfig().privateMode) {
+          await saveSession(state.messages);
+          console.log(chalk.dim("  current session saved"));
+        }
+      }
+      state.messages.length = 0;
+      state.resumedMessageCount = 0;
+      console.log(chalk.dim("  ✦ fresh session started"));
+      return true;
+    }
     case "/history": {
       const sessions = await listSessions(50);
       if (sessions.length === 0) {
@@ -1267,6 +1283,13 @@ async function handleSlash(
         return true;
       }
 
+      // Save current session first if it has new messages
+      if (state.messages.length > state.resumedMessageCount) {
+        if (!getConfig().privateMode) {
+          await saveSession(state.messages);
+        }
+      }
+
       // Replay messages
       console.log(chalk.dim(`\n  ── resuming session ──\n`));
       for (const msg of session.messages) {
@@ -1281,6 +1304,7 @@ async function handleSlash(
 
       // Load into state so the user can continue
       state.messages.splice(0, state.messages.length, ...session.messages);
+      state.resumedMessageCount = session.messages.length;
       return true;
     }
     case "/save": {
@@ -1661,6 +1685,7 @@ async function handleSlash(
     case "/clean": {
       // Clear terminal, reset chat state, redraw banner — like a fresh start
       state.messages.length = 0;
+      state.resumedMessageCount = 0;
       clearViewports();
       clearThinking();
       // Clear the entire screen and move cursor to top
@@ -1706,6 +1731,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     model: options.model ?? getProviderModel(provider),
     messages: [] as ChatMessage[],
     session: createSessionPolicy(),
+    resumedMessageCount: 0,
   };
 
   const promptHistory: string[] = [];
@@ -1940,9 +1966,14 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
           continue;
         }
-        console.error(
-          chalk.red(error instanceof Error ? error.message : String(error)),
+        // Still save the exchange so /history doesn't lose conversations
+        // that hit transient errors (e.g. "requires root", network timeout).
+        const errMsg = error instanceof Error ? error.message : String(error);
+        state.messages.push(
+          { role: "user", content: line },
+          { role: "assistant", content: `[error: ${errMsg}]` },
         );
+        console.error(chalk.red(errMsg));
       }
     }
   } finally {
@@ -1952,7 +1983,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     process.off("unhandledRejection", handleUnhandledRejection);
     process.off("uncaughtException", handleUncaughtException);
     if (siginfoRegistered) process.off(siginfo, handleThinkingShortcut);
-    if (state.messages.length > 0) {
+    if (state.messages.length > state.resumedMessageCount) {
       // Honor `--no-history` and the persistent privateMode setting.
       // The session.allow set is already in-memory only; saveSession itself
       // also bails early when privateMode is on, but checking here keeps

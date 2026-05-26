@@ -147,6 +147,7 @@ export OLLAMA_HOST=http://localhost:11434
 | `/think`                | Show hidden thinking from last response            |
 | `/output [last|id|list]`| Toggle full saved tool output                      |
 | `/clear`                | Clear conversation context                         |
+| `/new`                  | Save current session & start fresh                 |
 | `/history`              | Browse & resume past sessions (interactive picker) |
 | `/save <name>`          | Save current session                               |
 | `/reset`                | Clear all saved history                            |
