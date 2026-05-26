@@ -136,7 +136,7 @@ export OLLAMA_HOST=http://localhost:11434
 |-------------------------|--------------------------------------------------  |
 | `/ask`                  | Switch to ask mode                                 |
 | `/agent`                | Switch to agent mode                               |
-| `/model`                | List available models for current provider (numbered) |
+| `/model`                | Open interactive model picker (type/↑/↓, Tab fills, Enter selects) |
 | `/model <name\|#>`      | Switch model by name or number (e.g. `/model 2`)   |
 | `/provider [name]`      | Switch provider or open interactive picker          |
 | `/use <provider>`       | Alias for `/provider <name>`                       |
@@ -147,8 +147,9 @@ export OLLAMA_HOST=http://localhost:11434
 | `/think`                | Show hidden thinking from last response            |
 | `/output [last|id|list]`| Toggle full saved tool output                      |
 | `/clear`                | Clear conversation context                         |
-| `/history`              | Show past sessions                                 |
+| `/history`              | Browse & resume past sessions (interactive picker) |
 | `/save <name>`          | Save current session                               |
+| `/reset`                | Clear all saved history                            |
 | `/cwd <path>`           | Change working directory                           |
 | `/allow <tool>`         | Whitelist a tool for the session                   |
 | `/scope add <targets>`  | Add authorized pentest targets                     |

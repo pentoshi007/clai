@@ -6,7 +6,7 @@ import {
 } from "node:readline";
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
-import { search } from "@inquirer/prompts";
+
 import type { ChatMessage, Mode, ProviderId } from "./types.js";
 import { runAskStream } from "./modes/ask.js";
 import {
@@ -29,7 +29,7 @@ import {
   setThinking,
   updateConfig,
 } from "./store/config.js";
-import { listSessions, saveSession } from "./store/history.js";
+import { listSessions, saveSession, clearAllHistory, getSession } from "./store/history.js";
 import { assertProvider, defaultModels } from "./llm/provider.js";
 import { providerIds } from "./types.js";
 import {
@@ -125,8 +125,9 @@ const slashCommands: SlashCommand[] = [
     description: "alias for /variants",
   },
   { command: "/clear", description: "clear context" },
-  { command: "/history", description: "show past sessions" },
+  { command: "/history", description: "browse & resume past sessions (interactive picker)" },
   { command: "/save", usage: "<name>", description: "save session" },
+  { command: "/reset", description: "clear all saved history" },
   { command: "/cwd", usage: "<path>", description: "change working directory" },
   {
     command: "/allow",
@@ -809,6 +810,197 @@ function help(): string {
   );
 }
 
+/** Generic inline picker — renders a filterable list below the current cursor
+ *  position and returns the selected value on Enter, or undefined on Escape.
+ *  Supports: typing to filter, ↑/↓ to navigate, Tab to fill the filter with
+ *  the highlighted item's value, Enter to confirm, Escape to cancel. */
+async function pickInline<T>(options: {
+  items: { label: string; value: T; filterText: string }[];
+  header?: string;
+  pageSize?: number;
+}): Promise<T | undefined> {
+  const { items, header, pageSize = 15 } = options;
+  if (items.length === 0) return undefined;
+
+  return new Promise((resolve) => {
+    let filter = "";
+    let filterCursor = 0;
+    let selectedIndex = 0;
+    let renderedLines = 0;
+
+    const promptLabel = chalk.dim("  filter: ");
+    const promptLabelLen = stripAnsi(promptLabel).length;
+
+    const getFiltered = () => {
+      const needle = filter.trim().toLowerCase();
+      if (!needle) return items;
+      return items.filter((item) => item.filterText.toLowerCase().includes(needle));
+    };
+
+    const renderMenu = (): void => {
+      const filtered = getFiltered();
+      if (selectedIndex >= filtered.length) selectedIndex = Math.max(0, filtered.length - 1);
+
+      const cols = process.stdout.columns || 80;
+      const visible = filtered.slice(0, pageSize);
+      const lines: string[] = [];
+
+      for (let i = 0; i < visible.length; i++) {
+        const marker = i === selectedIndex ? chalk.magenta("›") : " ";
+        let full = `  ${marker} ${visible[i]!.label}`;
+        const stripped = stripAnsi(full);
+        if (stripped.length > cols - 1) {
+          full = full.slice(0, cols - 1) + chalk.dim("…");
+        }
+        lines.push(full);
+      }
+      if (filtered.length > pageSize) {
+        lines.push(chalk.dim(`    … ${filtered.length - pageSize} more`));
+      }
+      if (filtered.length === 0) {
+        lines.push(chalk.dim("    no matches"));
+      }
+
+      // Clear old menu
+      const toClear = Math.max(renderedLines, lines.length + 1); // +1 for filter line
+      cursorTo(output, 0);
+      clearLine(output, 0);
+      output.write(`${promptLabel}${filter}`);
+
+      if (toClear > 0) {
+        // Reserve space
+        if (renderedLines === 0 && lines.length > 0) {
+          output.write("\n".repeat(lines.length));
+          moveCursor(output, 0, -lines.length);
+        }
+        for (let i = 0; i < toClear; i++) {
+          output.write("\x1b[B");
+          cursorTo(output, 0);
+          clearLine(output, 0);
+          if (i < lines.length) output.write(lines[i]!);
+        }
+        moveCursor(output, 0, -toClear);
+      }
+
+      cursorTo(output, promptLabelLen + filterCursor);
+      renderedLines = lines.length;
+    };
+
+    const cleanup = (): void => {
+      input.off("keypress", handleKeypress);
+      // Clear menu from screen
+      cursorTo(output, 0);
+      clearLine(output, 0);
+      for (let i = 0; i < renderedLines; i++) {
+        output.write("\x1b[B");
+        cursorTo(output, 0);
+        clearLine(output, 0);
+      }
+      if (renderedLines > 0) moveCursor(output, 0, -renderedLines);
+      renderedLines = 0;
+      if (input.isTTY) input.setRawMode(false);
+    };
+
+    function handleKeypress(sequence: string, key: KeypressKey): void {
+      if (isPagerActive()) return;
+
+      if (isCtrlC(key) || isEscape(key)) {
+        cleanup();
+        resolve(undefined);
+        return;
+      }
+
+      if (key.name === "return" || key.name === "enter") {
+        const filtered = getFiltered();
+        const picked = filtered[selectedIndex];
+        cleanup();
+        resolve(picked?.value);
+        return;
+      }
+
+      if (key.name === "tab") {
+        const filtered = getFiltered();
+        const picked = filtered[selectedIndex];
+        if (picked) {
+          filter = picked.filterText;
+          filterCursor = filter.length;
+          selectedIndex = 0;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (key.name === "up") {
+        const filtered = getFiltered();
+        if (filtered.length > 0) {
+          selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (key.name === "down") {
+        const filtered = getFiltered();
+        if (filtered.length > 0) {
+          selectedIndex = (selectedIndex + 1) % filtered.length;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (key.name === "backspace") {
+        if (filterCursor > 0) {
+          filter = filter.slice(0, filterCursor - 1) + filter.slice(filterCursor);
+          filterCursor -= 1;
+          selectedIndex = 0;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (key.name === "delete") {
+        if (filterCursor < filter.length) {
+          filter = filter.slice(0, filterCursor) + filter.slice(filterCursor + 1);
+          selectedIndex = 0;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (key.name === "left") {
+        if (filterCursor > 0) {
+          filterCursor -= 1;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (key.name === "right") {
+        if (filterCursor < filter.length) {
+          filterCursor += 1;
+          renderMenu();
+        }
+        return;
+      }
+
+      if (isPrintableSequence(sequence) && !key.ctrl && !key.meta) {
+        filter = filter.slice(0, filterCursor) + sequence + filter.slice(filterCursor);
+        filterCursor += sequence.length;
+        selectedIndex = 0;
+        renderMenu();
+      }
+    }
+
+    if (header) {
+      console.log(header);
+    }
+    if (input.isTTY) input.setRawMode(true);
+    input.resume();
+    input.on("keypress", handleKeypress);
+    renderMenu();
+  });
+}
+
 async function pickModelInteractively(
   provider: ProviderId,
   currentModel: string,
@@ -824,46 +1016,22 @@ async function pickModelInteractively(
     return undefined;
   }
 
-  console.log(
-    chalk.dim(
-      `  ↑/↓ to navigate · type to filter (name or number) · Enter to select · ESC to cancel`,
-    ),
-  );
-
-  const labelFor = (model: string, index: number): string => {
+  const items = models.map((model, index) => {
     const tags: string[] = [];
     if (model === currentModel) tags.push(chalk.green("active"));
     if (model === def) tags.push(chalk.yellow("default"));
     const suffix = tags.length > 0 ? `  ${chalk.dim(tags.join(" · "))}` : "";
-    return `${chalk.dim(`${(index + 1).toString().padStart(2)}.`)} ${model}${suffix}`;
-  };
+    const label = `${chalk.dim(`${(index + 1).toString().padStart(2)}.`)} ${model}${suffix}`;
+    return { label, value: model, filterText: model };
+  });
 
-  try {
-    const picked = await search<string>({
-      message: `Select model for ${chalk.cyan(provider)}:`,
-      pageSize: Math.min(15, models.length),
-      source: (term) => {
-        const needle = (term ?? "").trim().toLowerCase();
-        const filtered = needle
-          ? models
-              .map((model, index) => ({ model, index }))
-              .filter(({ model, index }) => {
-                if (model.toLowerCase().includes(needle)) return true;
-                // Allow filtering by number prefix ("1", "10", etc.)
-                return (index + 1).toString().startsWith(needle);
-              })
-          : models.map((model, index) => ({ model, index }));
-        return filtered.map(({ model, index }) => ({
-          name: labelFor(model, index),
-          value: model,
-        }));
-      },
-    });
-    return picked;
-  } catch {
-    // User pressed ESC / Ctrl+C inside the inquirer prompt.
-    return undefined;
-  }
+  return pickInline({
+    items,
+    header: chalk.dim(
+      `  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`,
+    ),
+    pageSize: Math.min(15, models.length),
+  });
 }
 
 function showModelList(provider: string, currentModel: string): void {
@@ -1051,14 +1219,68 @@ async function handleSlash(
       console.log(chalk.dim("  context cleared"));
       return true;
     case "/history": {
-      const sessions = await listSessions();
-      if (sessions.length === 0) console.log(chalk.dim("  no saved sessions"));
-      for (const session of sessions) {
-        console.log(
-          chalk.dim("  ") +
-            `${session.createdAt} ${session.name ?? session.id} ${chalk.dim(`(${session.messages.length} msgs)`)}`,
-        );
+      const sessions = await listSessions(50);
+      if (sessions.length === 0) {
+        console.log(chalk.dim("  no saved sessions"));
+        return true;
       }
+
+      // Derive a readable name from first user message if name is an auto-generated repl-<iso>
+      const sessionLabel = (s: typeof sessions[0]): string => {
+        let name = s.name ?? s.id;
+        // If the name is an auto-generated "repl-..." fallback, derive from first user msg
+        if (name.startsWith("repl-")) {
+          const firstUser = s.messages.find((m) => m.role === "user");
+          if (firstUser) {
+            const preview = firstUser.content.slice(0, 60).replace(/\n/g, " ").trim();
+            name = preview + (firstUser.content.length > 60 ? "…" : "");
+          }
+        }
+        return name;
+      };
+
+      const items = sessions.map((s) => {
+        const name = sessionLabel(s);
+        const date = chalk.dim(s.createdAt.replace("T", " ").slice(0, 19));
+        const msgs = chalk.dim(`(${s.messages.length} msgs)`);
+        const label = `${date}  ${chalk.white(name)}  ${msgs}`;
+        return { label, value: s.id, filterText: `${name} ${s.createdAt}` };
+      });
+
+      const selectedId = await pickInline({
+        items,
+        header: chalk.dim(
+          `  ↑/↓ navigate · type to filter · Enter to resume · ESC to cancel`,
+        ),
+        pageSize: Math.min(15, items.length),
+      });
+
+      if (!selectedId) {
+        console.log(chalk.dim("  cancelled"));
+        return true;
+      }
+
+      // Load the selected session
+      const session = await getSession(selectedId);
+      if (!session) {
+        console.log(chalk.red("  session not found"));
+        return true;
+      }
+
+      // Replay messages
+      console.log(chalk.dim(`\n  ── resuming session ──\n`));
+      for (const msg of session.messages) {
+        if (msg.role === "user") {
+          console.log(`${PROMPT}${chalk.white(msg.content)}`);
+        } else if (msg.role === "assistant") {
+          process.stdout.write(renderMarkdown(msg.content));
+          process.stdout.write("\n");
+        }
+      }
+      console.log(chalk.dim(`  ── end of history · continue below ──\n`));
+
+      // Load into state so the user can continue
+      state.messages.splice(0, state.messages.length, ...session.messages);
       return true;
     }
     case "/save": {
@@ -1067,6 +1289,11 @@ async function handleSlash(
         args.join(" ") || undefined,
       );
       console.log(chalk.dim(`  saved session ${record.id}`));
+      return true;
+    }
+    case "/reset": {
+      const result = await clearAllHistory();
+      console.log(chalk.dim(`  all history cleared (${result.detail || "ok"})`));
       return true;
     }
     case "/cwd": {
@@ -1731,7 +1958,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       // also bails early when privateMode is on, but checking here keeps
       // intent obvious in the call site.
       if (!options.noHistory && !getConfig().privateMode) {
-        await saveSession(state.messages, `repl-${new Date().toISOString()}`);
+        await saveSession(state.messages);
       }
     }
     if (input.isTTY) input.setRawMode(false);

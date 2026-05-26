@@ -127,6 +127,15 @@ export async function saveSession(
   messages: ChatMessage[],
   name?: string | undefined,
 ): Promise<HistoryRecord> {
+  // Auto-derive a readable name from the first user message if none provided
+  if (!name) {
+    const firstUser = messages.find((m) => m.role === "user");
+    if (firstUser) {
+      const preview = firstUser.content.slice(0, 60).replace(/\n/g, " ").trim();
+      name = preview + (firstUser.content.length > 60 ? "…" : "");
+    }
+  }
+
   const now = new Date().toISOString();
   const record: HistoryRecord = {
     id: newId(),
