@@ -414,6 +414,8 @@ async function readPromptLine(options: {
     // Track which row (relative to prompt start) the cursor is on.
     // Needed to move back up to prompt start when text wraps across rows.
     let promptCursorRow = 0;
+    // How many physical rows the prompt text occupied on last render.
+    let prevPromptRows = 1;
 
     const getMenuState = (): {
       visible: boolean;
@@ -435,47 +437,81 @@ async function readPromptLine(options: {
         ? renderSlashCommandMenu(line, menu.suggestions, selectedIndex)
         : [];
 
-      // ── Step 1: Move cursor back to the start of the prompt ──
+      // ── Move cursor to prompt start ──
       if (promptCursorRow > 0) {
         moveCursor(output, 0, -promptCursorRow);
       }
       cursorTo(output, 0);
 
-      // ── Step 2: Clear everything from prompt start downward ──
-      // \x1b[J clears from cursor to end of screen (old text + old menu)
-      output.write("\x1b[J");
+      // ── Calculate new prompt dimensions ──
+      const totalLen = promptColumns + line.length;
+      const newPromptRows = Math.max(1, Math.ceil(totalLen / cols));
+      const writeRow = totalLen > 0 ? Math.floor(totalLen / cols) : 0;
+      const promptRowsChanged = newPromptRows !== prevPromptRows;
 
-      // ── Step 3: Write prompt + text ──
+      // ── Clear old content ──
+      if (promptRowsChanged) {
+        // Prompt wrapped or unwrapped — old menu is at wrong offset.
+        // Clear ALL old rows (prompt + menu) so we can re-reserve cleanly.
+        const totalOldRows = prevPromptRows + renderedMenuLines;
+        const rowsToBlank = Math.max(totalOldRows, newPromptRows);
+        clearLine(output, 0);
+        for (let i = 1; i < rowsToBlank; i++) {
+          output.write("\x1b[B");
+          cursorTo(output, 0);
+          clearLine(output, 0);
+        }
+        if (rowsToBlank > 1) moveCursor(output, 0, -(rowsToBlank - 1));
+        // Force menu to re-reserve space from the new position
+        renderedMenuLines = 0;
+      } else {
+        // Prompt rows unchanged — just clear the prompt row(s)
+        clearLine(output, 0);
+        for (let i = 1; i < prevPromptRows; i++) {
+          output.write("\x1b[B");
+          cursorTo(output, 0);
+          clearLine(output, 0);
+        }
+        if (prevPromptRows > 1) moveCursor(output, 0, -(prevPromptRows - 1));
+      }
+
+      // ── Write prompt ──
       output.write(`${PROMPT}${line}`);
 
-      // After writing, cursor is at:
-      const totalLen = promptColumns + line.length;
-      const writeRow = totalLen > 0 ? Math.floor(totalLen / cols) : 0;
+      // ── Draw menu (original logic, relative to end of prompt text) ──
+      const linesToClear = Math.max(renderedMenuLines, menuLines.length);
+      if (linesToClear > 0) {
+        if (renderedMenuLines === 0 && menuLines.length > 0) {
+          // First draw (or re-draw after prompt rows change):
+          // reserve space by writing newlines, then come back.
+          output.write("\n".repeat(menuLines.length));
+          moveCursor(output, 0, -menuLines.length);
+        }
+        for (let i = 0; i < linesToClear; i += 1) {
+          // Move down one line without scrolling
+          output.write("\x1b[B");
+          cursorTo(output, 0);
+          clearLine(output, 0);
+          const menuLine = menuLines[i];
+          if (menuLine) output.write(menuLine);
+        }
+        moveCursor(output, 0, -linesToClear);
+      }
 
-      // ── Step 4: Draw menu lines below ──
-      for (let i = 0; i < menuLines.length; i++) {
-        output.write("\n");
-        output.write(menuLines[i]!);
-      }
-      // Move back up from menu end to the write position
-      if (menuLines.length > 0) {
-        moveCursor(output, 0, -menuLines.length);
-      }
       renderedMenuLines = menuLines.length;
+      prevPromptRows = newPromptRows;
 
-      // ── Step 5: Position cursor at the correct location within prompt ──
+      // ── Position cursor (wrapping-aware) ──
       const cursorPos = promptColumns + cursor;
       const targetRow = Math.floor(cursorPos / cols);
       const targetCol = cursorPos % cols;
 
-      // Move from writeRow to targetRow
       const rowDelta = targetRow - writeRow;
       if (rowDelta !== 0) {
         moveCursor(output, 0, rowDelta);
       }
       cursorTo(output, targetCol);
 
-      // Save cursor row for next refresh
       promptCursorRow = targetRow;
     };
 
@@ -504,6 +540,7 @@ async function readPromptLine(options: {
       output.write("\x1b[J");
       renderedMenuLines = 0;
       promptCursorRow = 0;
+      prevPromptRows = 1;
     };
 
     const submit = (submittedLine: string): void => {
@@ -521,6 +558,7 @@ async function readPromptLine(options: {
       // Write final prompt and move to next line
       output.write(`${PROMPT}${line}\n`);
       promptCursorRow = 0;
+      prevPromptRows = 1;
 
       cleanup();
       resolve(submittedLine);
@@ -789,6 +827,7 @@ async function withAbortableInput<T>(
   const ac = new AbortController();
   currentAbortController = ac;
   if (input.isTTY) input.setRawMode(true);
+  input.resume();
   try {
     return await run(ac.signal);
   } catch (error) {
