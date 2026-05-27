@@ -899,7 +899,11 @@ async function pickInline<T>(options: {
       }
       if (renderedLines > 0) moveCursor(output, 0, -renderedLines);
       renderedLines = 0;
+      // Restore terminal state to what readPromptLine expects:
+      // raw mode off, input paused.
+      input.pause();
       if (input.isTTY) input.setRawMode(false);
+      output.write("\n");
     };
 
     function handleKeypress(sequence: string, key: KeypressKey): void {
