@@ -23,12 +23,17 @@ Write-Host "Downloading clai for windows-${arch}..." -ForegroundColor Cyan
 $tmp = Join-Path $env:TEMP "clai-download.exe"
 $sumTmp = Join-Path $env:TEMP "clai-download.exe.sha256"
 
-Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
+$headers = @{
+    "Cache-Control" = "no-cache, no-store"
+    "Pragma" = "no-cache"
+}
+
+Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers $headers
 
 if (-not $skipChecksum) {
     Write-Host "Verifying SHA256..." -ForegroundColor Cyan
     try {
-        Invoke-WebRequest -Uri $sumUrl -OutFile $sumTmp -UseBasicParsing
+        Invoke-WebRequest -Uri $sumUrl -OutFile $sumTmp -UseBasicParsing -Headers $headers
     } catch {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
         throw "Could not fetch checksum file from $sumUrl. Re-run with `$env:CLAI_SKIP_CHECKSUM=1` to bypass (not recommended)."
