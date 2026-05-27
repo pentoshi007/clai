@@ -491,6 +491,7 @@ async function readPromptLine(options: {
 
     const cleanup = (): void => {
       input.off("keypress", handleKeypress);
+      input.pause();
       if (input.isTTY) input.setRawMode(false);
     };
 
@@ -799,6 +800,7 @@ async function withAbortableInput<T>(
     }
     throw error;
   } finally {
+    input.pause();
     if (input.isTTY) input.setRawMode(false);
     currentAbortController = null;
   }
