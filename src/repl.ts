@@ -411,6 +411,9 @@ async function readPromptLine(options: {
     let lastCtrlCAt = 0;
 
     const promptColumns = stripAnsi(PROMPT).length;
+    // Track which row (relative to prompt start) the cursor is on.
+    // Needed to move back up to prompt start when text wraps across rows.
+    let promptCursorRow = 0;
 
     const getMenuState = (): {
       visible: boolean;
@@ -426,42 +429,54 @@ async function readPromptLine(options: {
     };
 
     const refresh = (): void => {
+      const cols = process.stdout.columns || 80;
       const menu = getMenuState();
       const menuLines = menu.visible
         ? renderSlashCommandMenu(line, menu.suggestions, selectedIndex)
         : [];
-      const linesToClear = Math.max(renderedMenuLines, menuLines.length);
 
-      // ── Redraw prompt line ──
+      // ── Step 1: Move cursor back to the start of the prompt ──
+      if (promptCursorRow > 0) {
+        moveCursor(output, 0, -promptCursorRow);
+      }
       cursorTo(output, 0);
-      clearLine(output, 0);
+
+      // ── Step 2: Clear everything from prompt start downward ──
+      // \x1b[J clears from cursor to end of screen (old text + old menu)
+      output.write("\x1b[J");
+
+      // ── Step 3: Write prompt + text ──
       output.write(`${PROMPT}${line}`);
 
-      // ── Draw / clear menu lines ──
-      // We need to go down and redraw. Using \n to go down causes the
-      // terminal to scroll when at the bottom, which corrupts cursor
-      // positioning on the way back up. Instead, first ensure enough
-      // blank lines exist below (only on initial draw), then use
-      // \x1b[B (cursor-down) which never scrolls.
-      if (linesToClear > 0) {
-        if (renderedMenuLines === 0 && menuLines.length > 0) {
-          // First draw: reserve space by writing newlines, then come back.
-          output.write("\n".repeat(menuLines.length));
-          moveCursor(output, 0, -menuLines.length);
-        }
-        for (let i = 0; i < linesToClear; i += 1) {
-          // Move down one line without scrolling
-          output.write("\x1b[B");
-          cursorTo(output, 0);
-          clearLine(output, 0);
-          const menuLine = menuLines[i];
-          if (menuLine) output.write(menuLine);
-        }
-        moveCursor(output, 0, -linesToClear);
-      }
+      // After writing, cursor is at:
+      const totalLen = promptColumns + line.length;
+      const writeRow = totalLen > 0 ? Math.floor(totalLen / cols) : 0;
 
-      cursorTo(output, promptColumns + cursor);
+      // ── Step 4: Draw menu lines below ──
+      for (let i = 0; i < menuLines.length; i++) {
+        output.write("\n");
+        output.write(menuLines[i]!);
+      }
+      // Move back up from menu end to the write position
+      if (menuLines.length > 0) {
+        moveCursor(output, 0, -menuLines.length);
+      }
       renderedMenuLines = menuLines.length;
+
+      // ── Step 5: Position cursor at the correct location within prompt ──
+      const cursorPos = promptColumns + cursor;
+      const targetRow = Math.floor(cursorPos / cols);
+      const targetCol = cursorPos % cols;
+
+      // Move from writeRow to targetRow
+      const rowDelta = targetRow - writeRow;
+      if (rowDelta !== 0) {
+        moveCursor(output, 0, rowDelta);
+      }
+      cursorTo(output, targetCol);
+
+      // Save cursor row for next refresh
+      promptCursorRow = targetRow;
     };
 
     const editLine = (nextLine: string, nextCursor: number): void => {
@@ -480,35 +495,31 @@ async function readPromptLine(options: {
     };
 
     const clearPromptDisplay = (): void => {
-      const previousMenuLines = renderedMenuLines;
-      cursorTo(output, 0);
-      clearLine(output, 0);
-      for (let i = 0; i < previousMenuLines; i += 1) {
-        output.write("\x1b[B");
-        cursorTo(output, 0);
-        clearLine(output, 0);
+      // Move back to prompt start
+      if (promptCursorRow > 0) {
+        moveCursor(output, 0, -promptCursorRow);
       }
-      if (previousMenuLines > 0) moveCursor(output, 0, -previousMenuLines);
+      cursorTo(output, 0);
+      output.write("\x1b[J");
       renderedMenuLines = 0;
+      promptCursorRow = 0;
     };
 
     const submit = (submittedLine: string): void => {
-      const previousMenuLines = renderedMenuLines;
       line = submittedLine;
       cursor = line.length;
       renderedMenuLines = 0;
 
-      cursorTo(output, 0);
-      clearLine(output, 0);
-      output.write(`${PROMPT}${line}`);
-      for (let i = 0; i < previousMenuLines; i += 1) {
-        output.write("\x1b[B");
-        cursorTo(output, 0);
-        clearLine(output, 0);
+      // Move back to prompt start
+      if (promptCursorRow > 0) {
+        moveCursor(output, 0, -promptCursorRow);
       }
-      if (previousMenuLines > 0) moveCursor(output, 0, -previousMenuLines);
-      cursorTo(output, promptColumns + cursor);
-      output.write("\n");
+      cursorTo(output, 0);
+      output.write("\x1b[J");
+
+      // Write final prompt and move to next line
+      output.write(`${PROMPT}${line}\n`);
+      promptCursorRow = 0;
 
       cleanup();
       resolve(submittedLine);
