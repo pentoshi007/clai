@@ -29,7 +29,12 @@ import {
   setThinking,
   updateConfig,
 } from "./store/config.js";
-import { listSessions, saveSession, clearAllHistory, getSession } from "./store/history.js";
+import {
+  listSessions,
+  saveSession,
+  clearAllHistory,
+  getSession,
+} from "./store/history.js";
 import { assertProvider, defaultModels } from "./llm/provider.js";
 import { providerIds } from "./types.js";
 import {
@@ -125,8 +130,14 @@ const slashCommands: SlashCommand[] = [
     description: "alias for /variants",
   },
   { command: "/clear", description: "clear context" },
-  { command: "/new", description: "start a fresh session (clear context, no history carryover)" },
-  { command: "/history", description: "browse & resume past sessions (interactive picker)" },
+  {
+    command: "/new",
+    description: "start a fresh session (clear context, no history carryover)",
+  },
+  {
+    command: "/history",
+    description: "browse & resume past sessions (interactive picker)",
+  },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/reset", description: "clear all saved history" },
   { command: "/cwd", usage: "<path>", description: "change working directory" },
@@ -155,7 +166,8 @@ const slashCommands: SlashCommand[] = [
   {
     command: "/fallback",
     usage: "[on|off]",
-    description: "try other configured providers after a failure (off by default)",
+    description:
+      "try other configured providers after a failure (off by default)",
   },
   { command: "/compact", description: "compact session history now" },
   { command: "/context", description: "show estimated context size" },
@@ -170,7 +182,10 @@ const slashCommands: SlashCommand[] = [
     description: "control retention and private mode (in-memory only)",
   },
   { command: "/update", description: "check for updates" },
-  { command: "/clean", description: "clear screen and reset chat (fresh start)" },
+  {
+    command: "/clean",
+    description: "clear screen and reset chat (fresh start)",
+  },
   { command: "/exit", description: "quit" },
   { command: "/quit", description: "alias for /exit" },
   { command: "/help", description: "list commands" },
@@ -343,13 +358,25 @@ export function getSlashCommandSuggestions(line: string): SlashCommand[] {
   );
 }
 
-function renderSlashCommandMenu(
+function fitPlain(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (text.length <= maxWidth) return text;
+  if (maxWidth === 1) return "…";
+  return `${text.slice(0, maxWidth - 1)}…`;
+}
+
+export function renderSlashCommandMenu(
   line: string,
   suggestions: SlashCommand[],
   selectedIndex: number,
 ): string[] {
+  const cols = terminalColumns();
+  // Stay one column short to avoid terminal autowrap when the cursor lands in
+  // the final column. refresh() depends on each menu item occupying one row.
+  const maxWidth = Math.max(1, cols - 1);
+
   if (suggestions.length === 0) {
-    return [chalk.dim(`  no commands matching ${line}`)];
+    return [chalk.dim(fitPlain(`  no commands matching ${line}`, maxWidth))];
   }
 
   // Cap visible items to leave room in the terminal
@@ -361,30 +388,27 @@ function renderSlashCommandMenu(
     ...visible.map((command) => slashCommandLabel(command).length),
   );
 
-  const cols = process.stdout.columns || 80;
-
   const items = visible.map((command, index) => {
+    const markerPlain = index === selectedIndex ? "›" : " ";
     const marker = index === selectedIndex ? chalk.magenta("›") : " ";
-    const label = slashCommandLabel(command).padEnd(maxCommandLength + 2);
-    const full = `  ${marker} ${chalk.cyan(label)}${chalk.dim(command.description)}`;
-    // Truncate to terminal width so lines never wrap
-    const stripped = stripAnsi(full);
-    if (stripped.length > cols - 1) {
-      // Trim visible text to fit, keeping ANSI codes intact by
-      // building a truncated version from the plain-text width.
-      const descMaxLen = Math.max(
-        0,
-        cols - 1 - stripAnsi(`  ${marker} ${label}`).length - 1,
-      );
-      const truncDesc = command.description.slice(0, descMaxLen) + "…";
-      return `  ${marker} ${chalk.cyan(label)}${chalk.dim(truncDesc)}`;
-    }
-    return full;
+    const prefix = `  ${markerPlain} `;
+    const labelBudget = Math.max(1, maxWidth - prefix.length);
+    const labelWidth = Math.min(maxCommandLength + 2, labelBudget);
+    const label = fitPlain(slashCommandLabel(command), labelWidth).padEnd(
+      labelWidth,
+    );
+    const descWidth = Math.max(0, maxWidth - prefix.length - label.length);
+    const desc = fitPlain(command.description, descWidth);
+
+    return `  ${marker} ${chalk.cyan(label)}${chalk.dim(desc)}`;
   });
 
   if (suggestions.length > maxVisible) {
-    const more = `  ${chalk.dim(`… ${suggestions.length - maxVisible} more`)}`;
-    items.push(more);
+    items.push(
+      chalk.dim(
+        fitPlain(`  … ${suggestions.length - maxVisible} more`, maxWidth),
+      ),
+    );
   }
 
   return items;
@@ -392,6 +416,61 @@ function renderSlashCommandMenu(
 
 function isPrintableSequence(sequence: string | undefined): sequence is string {
   return sequence !== undefined && /^[^\x00-\x1f\x7f]+$/u.test(sequence);
+}
+
+function terminalColumns(): number {
+  return Math.max(1, process.stdout.columns || 80);
+}
+
+function promptCursorPosition(
+  cursor: number,
+  columns: number,
+): {
+  row: number;
+  col: number;
+} {
+  const cols = Math.max(1, columns);
+  const visible = promptColumnsForRender() + cursor;
+  return {
+    row: Math.floor(visible / cols),
+    col: visible % cols,
+  };
+}
+
+function promptColumnsForRender(): number {
+  return stripAnsi(PROMPT).length;
+}
+
+function buildPromptRows(
+  line: string,
+  columns: number,
+  includeCursorRow: boolean,
+): string[] {
+  const cols = Math.max(1, columns);
+  const promptCols = promptColumnsForRender();
+  const rows: string[] = [];
+
+  if (promptCols >= cols) {
+    // The normal prompt is short; for extremely narrow terminals, keep the
+    // editable text on rows beneath the prompt anchor.
+    rows.push(PROMPT);
+    for (let i = 0; i < line.length; i += cols) {
+      rows.push(line.slice(i, i + cols));
+    }
+  } else {
+    const firstRowCapacity = cols - promptCols;
+    rows.push(PROMPT + line.slice(0, firstRowCapacity));
+    for (let i = firstRowCapacity; i < line.length; i += cols) {
+      rows.push(line.slice(i, i + cols));
+    }
+  }
+
+  if (includeCursorRow) {
+    const cursorRows = Math.floor((promptCols + line.length) / cols) + 1;
+    while (rows.length < cursorRows) rows.push("");
+  }
+
+  return rows;
 }
 
 async function readPromptLine(options: {
@@ -404,19 +483,14 @@ async function readPromptLine(options: {
     let cursor = 0;
     let selectedIndex = 0;
     let menuNavigated = false;
-    let renderedMenuLines = 0;
     let dismissedSlashLine: string | null = null;
     let historyIndex: number | null = null;
     let historyDraft = "";
     let lastCtrlCAt = 0;
 
-    const promptColumns = stripAnsi(PROMPT).length;
     // Track which row (relative to prompt start) the cursor is on.
     // Needed to move back up to prompt start when text wraps across rows.
     let promptCursorRow = 0;
-    // How many physical rows the prompt text occupied on last render.
-    let prevPromptRows = 1;
-
     const getMenuState = (): {
       visible: boolean;
       suggestions: SlashCommand[];
@@ -431,88 +505,34 @@ async function readPromptLine(options: {
     };
 
     const refresh = (): void => {
-      const cols = process.stdout.columns || 80;
+      const cols = terminalColumns();
       const menu = getMenuState();
       const menuLines = menu.visible
         ? renderSlashCommandMenu(line, menu.suggestions, selectedIndex)
         : [];
+      const promptRows = buildPromptRows(line, cols, true);
+      const target = promptCursorPosition(cursor, cols);
+      const blockRows = [...promptRows, ...menuLines];
 
-      // ── Move cursor to prompt start ──
+      // Always redraw the whole prompt block from its anchor. Partial row
+      // clearing is fragile once terminal autowrap, slash menus, and cursor
+      // movement mix; clearing to the end of screen leaves no stale wrapped
+      // prompt/menu rows behind and keeps the cursor anchor stable.
       if (promptCursorRow > 0) {
         moveCursor(output, 0, -promptCursorRow);
       }
       cursorTo(output, 0);
+      output.write("\x1b[J");
+      output.write(blockRows.join("\n"));
 
-      // ── Calculate new prompt dimensions ──
-      const totalLen = promptColumns + line.length;
-      const newPromptRows = Math.max(1, Math.ceil(totalLen / cols));
-      const writeRow = totalLen > 0 ? Math.floor(totalLen / cols) : 0;
-      const promptRowsChanged = newPromptRows !== prevPromptRows;
-
-      // ── Clear old content ──
-      if (promptRowsChanged) {
-        // Prompt wrapped or unwrapped — old menu is at wrong offset.
-        // Clear ALL old rows (prompt + menu) so we can re-reserve cleanly.
-        const totalOldRows = prevPromptRows + renderedMenuLines;
-        const rowsToBlank = Math.max(totalOldRows, newPromptRows);
-        clearLine(output, 0);
-        for (let i = 1; i < rowsToBlank; i++) {
-          output.write("\x1b[B");
-          cursorTo(output, 0);
-          clearLine(output, 0);
-        }
-        if (rowsToBlank > 1) moveCursor(output, 0, -(rowsToBlank - 1));
-        // Force menu to re-reserve space from the new position
-        renderedMenuLines = 0;
-      } else {
-        // Prompt rows unchanged — just clear the prompt row(s)
-        clearLine(output, 0);
-        for (let i = 1; i < prevPromptRows; i++) {
-          output.write("\x1b[B");
-          cursorTo(output, 0);
-          clearLine(output, 0);
-        }
-        if (prevPromptRows > 1) moveCursor(output, 0, -(prevPromptRows - 1));
-      }
-
-      // ── Write prompt ──
-      output.write(`${PROMPT}${line}`);
-
-      // ── Draw menu (original logic, relative to end of prompt text) ──
-      const linesToClear = Math.max(renderedMenuLines, menuLines.length);
-      if (linesToClear > 0) {
-        if (renderedMenuLines === 0 && menuLines.length > 0) {
-          // First draw (or re-draw after prompt rows change):
-          // reserve space by writing newlines, then come back.
-          output.write("\n".repeat(menuLines.length));
-          moveCursor(output, 0, -menuLines.length);
-        }
-        for (let i = 0; i < linesToClear; i += 1) {
-          // Move down one line without scrolling
-          output.write("\x1b[B");
-          cursorTo(output, 0);
-          clearLine(output, 0);
-          const menuLine = menuLines[i];
-          if (menuLine) output.write(menuLine);
-        }
-        moveCursor(output, 0, -linesToClear);
-      }
-
-      renderedMenuLines = menuLines.length;
-      prevPromptRows = newPromptRows;
-
-      // ── Position cursor (wrapping-aware) ──
-      const cursorPos = promptColumns + cursor;
-      const targetRow = Math.floor(cursorPos / cols);
-      const targetCol = cursorPos % cols;
-
-      const rowDelta = targetRow - writeRow;
+      const currentRow = Math.max(0, blockRows.length - 1);
+      const rowDelta = target.row - currentRow;
       if (rowDelta !== 0) {
         moveCursor(output, 0, rowDelta);
       }
-      cursorTo(output, targetCol);
+      cursorTo(output, target.col);
 
-      promptCursorRow = targetRow;
+      promptCursorRow = target.row;
     };
 
     const editLine = (nextLine: string, nextCursor: number): void => {
@@ -525,10 +545,12 @@ async function readPromptLine(options: {
       refresh();
     };
 
-    const cleanup = (): void => {
+    const cleanup = (restoreInput = false): void => {
       input.off("keypress", handleKeypress);
-      input.pause();
-      if (input.isTTY) input.setRawMode(false);
+      if (restoreInput) {
+        input.pause();
+        if (input.isTTY) input.setRawMode(false);
+      }
     };
 
     const clearPromptDisplay = (): void => {
@@ -538,16 +560,12 @@ async function readPromptLine(options: {
       }
       cursorTo(output, 0);
       output.write("\x1b[J");
-      renderedMenuLines = 0;
       promptCursorRow = 0;
-      prevPromptRows = 1;
     };
 
     const submit = (submittedLine: string): void => {
       line = submittedLine;
       cursor = line.length;
-      renderedMenuLines = 0;
-
       // Move back to prompt start
       if (promptCursorRow > 0) {
         moveCursor(output, 0, -promptCursorRow);
@@ -555,10 +573,12 @@ async function readPromptLine(options: {
       cursorTo(output, 0);
       output.write("\x1b[J");
 
-      // Write final prompt and move to next line
-      output.write(`${PROMPT}${line}\n`);
+      // Write final prompt using the same wrapping rules as refresh(), then
+      // move to the next line. Do not include the extra cursor-only row used
+      // for interactive editing at exact terminal-width boundaries.
+      output.write(buildPromptRows(line, terminalColumns(), false).join("\n"));
+      output.write("\n");
       promptCursorRow = 0;
-      prevPromptRows = 1;
 
       cleanup();
       resolve(submittedLine);
@@ -587,7 +607,7 @@ async function readPromptLine(options: {
           return;
         }
         if (now - lastCtrlCAt < 1_000) {
-          cleanup();
+          cleanup(true);
           output.write("\n");
           process.exit(0);
         }
@@ -595,7 +615,6 @@ async function readPromptLine(options: {
         output.write("\n");
         output.write(chalk.dim("  (press Ctrl+C again to exit)\n"));
         output.write(PROMPT);
-        renderedMenuLines = 0;
         return;
       }
 
@@ -825,9 +844,20 @@ async function withAbortableInput<T>(
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const ac = new AbortController();
+  const abortFromRawData = (chunk: Buffer | string): void => {
+    const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    if (text.includes("\x03") || text === "\x1b") {
+      ac.abort();
+    }
+  };
+
   currentAbortController = ac;
   if (input.isTTY) input.setRawMode(true);
   input.resume();
+  // readline's keypress normalization is not equally reliable in every
+  // terminal (notably Windows PowerShell after raw-mode transitions). Watch
+  // raw bytes as a fallback so Ctrl+C and a bare ESC can always abort a run.
+  input.on("data", abortFromRawData);
   try {
     return await run(ac.signal);
   } catch (error) {
@@ -839,9 +869,13 @@ async function withAbortableInput<T>(
     }
     throw error;
   } finally {
-    input.pause();
-    if (input.isTTY) input.setRawMode(false);
+    input.off("data", abortFromRawData);
     currentAbortController = null;
+    // Keep stdin raw/resumed for the next prompt. Toggling back to cooked mode
+    // between a response and the following prompt can leave PowerShell waiting
+    // for Enter before keypress events flow again.
+    if (input.isTTY) input.setRawMode(true);
+    input.resume();
   }
 }
 
@@ -887,12 +921,15 @@ async function pickInline<T>(options: {
     const getFiltered = () => {
       const needle = filter.trim().toLowerCase();
       if (!needle) return items;
-      return items.filter((item) => item.filterText.toLowerCase().includes(needle));
+      return items.filter((item) =>
+        item.filterText.toLowerCase().includes(needle),
+      );
     };
 
     const renderMenu = (): void => {
       const filtered = getFiltered();
-      if (selectedIndex >= filtered.length) selectedIndex = Math.max(0, filtered.length - 1);
+      if (selectedIndex >= filtered.length)
+        selectedIndex = Math.max(0, filtered.length - 1);
 
       const cols = process.stdout.columns || 80;
       const visible = filtered.slice(0, pageSize);
@@ -990,7 +1027,8 @@ async function pickInline<T>(options: {
       if (key.name === "up") {
         const filtered = getFiltered();
         if (filtered.length > 0) {
-          selectedIndex = (selectedIndex - 1 + filtered.length) % filtered.length;
+          selectedIndex =
+            (selectedIndex - 1 + filtered.length) % filtered.length;
           renderMenu();
         }
         return;
@@ -1007,7 +1045,8 @@ async function pickInline<T>(options: {
 
       if (key.name === "backspace") {
         if (filterCursor > 0) {
-          filter = filter.slice(0, filterCursor - 1) + filter.slice(filterCursor);
+          filter =
+            filter.slice(0, filterCursor - 1) + filter.slice(filterCursor);
           filterCursor -= 1;
           selectedIndex = 0;
           renderMenu();
@@ -1017,7 +1056,8 @@ async function pickInline<T>(options: {
 
       if (key.name === "delete") {
         if (filterCursor < filter.length) {
-          filter = filter.slice(0, filterCursor) + filter.slice(filterCursor + 1);
+          filter =
+            filter.slice(0, filterCursor) + filter.slice(filterCursor + 1);
           selectedIndex = 0;
           renderMenu();
         }
@@ -1041,7 +1081,8 @@ async function pickInline<T>(options: {
       }
 
       if (isPrintableSequence(sequence) && !key.ctrl && !key.meta) {
-        filter = filter.slice(0, filterCursor) + sequence + filter.slice(filterCursor);
+        filter =
+          filter.slice(0, filterCursor) + sequence + filter.slice(filterCursor);
         filterCursor += sequence.length;
         selectedIndex = 0;
         renderMenu();
@@ -1298,13 +1339,16 @@ async function handleSlash(
       }
 
       // Derive a readable name from first user message if name is an auto-generated repl-<iso>
-      const sessionLabel = (s: typeof sessions[0]): string => {
+      const sessionLabel = (s: (typeof sessions)[0]): string => {
         let name = s.name ?? s.id;
         // If the name is an auto-generated "repl-..." fallback, derive from first user msg
         if (name.startsWith("repl-")) {
           const firstUser = s.messages.find((m) => m.role === "user");
           if (firstUser) {
-            const preview = firstUser.content.slice(0, 60).replace(/\n/g, " ").trim();
+            const preview = firstUser.content
+              .slice(0, 60)
+              .replace(/\n/g, " ")
+              .trim();
             name = preview + (firstUser.content.length > 60 ? "…" : "");
           }
         }
@@ -1373,7 +1417,9 @@ async function handleSlash(
     }
     case "/reset": {
       const result = await clearAllHistory();
-      console.log(chalk.dim(`  all history cleared (${result.detail || "ok"})`));
+      console.log(
+        chalk.dim(`  all history cleared (${result.detail || "ok"})`),
+      );
       return true;
     }
     case "/cwd": {
@@ -1460,9 +1506,7 @@ async function handleSlash(
         const scope = await loadScope();
         if (!scope) {
           console.log(chalk.dim("  no engagement scope configured"));
-          console.log(
-            chalk.dim(`  expected at: ${getScopePath()}`),
-          );
+          console.log(chalk.dim(`  expected at: ${getScopePath()}`));
           console.log(
             chalk.dim(
               "  create one with: /scope add domain1,domain2 or `clai scope add --targets ...`",
@@ -1574,7 +1618,9 @@ async function handleSlash(
         return true;
       }
       console.log(
-        chalk.dim("  usage: /scope [show|clear|new <targets>|add <targets> [key=value]...]"),
+        chalk.dim(
+          "  usage: /scope [show|clear|new <targets>|add <targets> [key=value]...]",
+        ),
       );
       return true;
     }
@@ -1606,9 +1652,8 @@ async function handleSlash(
         return true;
       }
       const { clearAllHistory } = await import("./store/history.js");
-      const { clearAuditLogs, clearArtifacts } = await import(
-        "./store/logs.js"
-      );
+      const { clearAuditLogs, clearArtifacts } =
+        await import("./store/logs.js");
       if (sub === "clear-history") {
         const r = await clearAllHistory();
         console.log(chalk.dim(`  history cleared (${r.detail || "ok"})`));
@@ -1857,20 +1902,13 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       outputShortcutBusy = false;
     }
   };
-  const handleKeypress = (
-    _sequence: string,
-    key: { ctrl?: boolean; name?: string },
-  ): void => {
+  const handleKeypress = (_sequence: string, key: KeypressKey): void => {
     if (isPagerActive()) return;
-    if (isCtrlT(key) && !isReadingPrompt)
-      handleThinkingShortcut();
+    if (isCtrlT(key) && !isReadingPrompt) handleThinkingShortcut();
     if (isCtrlO(key) && !isReadingPrompt) {
       void handleOutputShortcut();
     }
-    if (
-      (isEscape(key) || isCtrlC(key)) &&
-      currentAbortController
-    ) {
+    if ((isEscape(key) || isCtrlC(key)) && currentAbortController) {
       abortPressCount += 1;
       currentAbortController.abort();
       // Escalate: after the first abort attempt the child process
@@ -1881,9 +1919,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       if (abortPressCount === 1) {
         process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
       } else if (abortPressCount >= 2) {
-        process.stdout.write(
-          chalk.yellow("  ⏹ force-killing…\n"),
-        );
+        process.stdout.write(chalk.yellow("  ⏹ force-killing…\n"));
       }
     }
   };
@@ -1980,6 +2016,11 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         promptHistory.push(line);
       }
       if (line.startsWith("/")) {
+        // Slash commands may call inquirer/password prompts, which expect the
+        // terminal in cooked mode. Normal model runs keep raw mode enabled so
+        // ESC/Ctrl+C can abort while streaming.
+        input.pause();
+        if (input.isTTY) input.setRawMode(false);
         const shouldContinue = await handleSlash(line, state);
         if (!shouldContinue) break;
         continue;

@@ -17,7 +17,10 @@ export interface Keypress {
 }
 
 export function isCtrlC(key: Keypress): boolean {
-  return Boolean(key.ctrl) && key.name === "c";
+  return (
+    (Boolean(key.ctrl) && key.name?.toLowerCase() === "c") ||
+    key.sequence === "\x03"
+  );
 }
 
 export function isCtrlT(key: Keypress): boolean {
@@ -32,5 +35,5 @@ export function isCtrlO(key: Keypress): boolean {
 }
 
 export function isEscape(key: Keypress): boolean {
-  return key.name === "escape";
+  return key.name === "escape" || key.sequence === "\x1b";
 }

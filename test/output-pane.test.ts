@@ -25,7 +25,9 @@ describe("phase 6 — keys", () => {
   it("isCtrlT / isCtrlC / isEscape are independent shapes", () => {
     expect(isCtrlT({ ctrl: true, name: "t" })).toBe(true);
     expect(isCtrlC({ ctrl: true, name: "c" })).toBe(true);
+    expect(isCtrlC({ sequence: "\x03" })).toBe(true);
     expect(isEscape({ name: "escape" })).toBe(true);
+    expect(isEscape({ sequence: "\x1b" })).toBe(true);
   });
 });
 
@@ -33,8 +35,16 @@ describe("phase 6 — output pane", () => {
   afterEach(() => clearViewports());
 
   it("registerViewport returns a unique id and remembers the last one", () => {
-    const a = registerViewport({ toolName: "shell.exec", argsDisplay: "ls", summary: "sa" });
-    const b = registerViewport({ toolName: "fs.read", argsDisplay: "x.txt", summary: "sb" });
+    const a = registerViewport({
+      toolName: "shell.exec",
+      argsDisplay: "ls",
+      summary: "sa",
+    });
+    const b = registerViewport({
+      toolName: "fs.read",
+      argsDisplay: "x.txt",
+      summary: "sb",
+    });
     expect(a.id).not.toBe(b.id);
     expect(getLastViewport()?.id).toBe(b.id);
     expect(getViewport(a.id)?.summary).toBe("sa");
@@ -63,7 +73,11 @@ describe("phase 6 — output pane", () => {
   });
 
   it("toggleViewport without an artifact still toggles", async () => {
-    const v = registerViewport({ toolName: "sysinfo", argsDisplay: "", summary: "SUM" });
+    const v = registerViewport({
+      toolName: "sysinfo",
+      argsDisplay: "",
+      summary: "SUM",
+    });
     const chunks: string[] = [];
     await toggleViewport(v.id, (c) => chunks.push(c));
     expect(chunks.join("")).toMatch(/no artifact file/);
