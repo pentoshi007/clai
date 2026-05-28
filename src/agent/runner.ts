@@ -10,7 +10,10 @@ import type {
   ToolResult,
 } from "../types.js";
 import { streamWithProvider } from "../llm/router.js";
-import { renderAgentSystemPrompt } from "../prompts/index.js";
+import {
+  currentDateTimeContext,
+  renderAgentSystemPrompt,
+} from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
 import {
   classifyToolCall,
@@ -273,10 +276,11 @@ export function requiresFreshWebSearch(prompt: string): boolean {
   );
 }
 
-function freshnessGuardMessage(): string {
+function freshnessGuardMessage(now = new Date()): string {
   return (
-    "Freshness guard for this turn: the latest user prompt appears to ask for current, volatile, or externally verifiable information. " +
+    `Freshness guard for this turn: the latest user prompt appears to ask for current, volatile, or externally verifiable information. The present moment is ${currentDateTimeContext(now)}. ` +
     "Before answering, call web.search FIRST with a concise query derived from the user prompt. " +
+    "Shape the search query for the newest timeline by including current/latest or the current year/month when useful. " +
     "Use the search results to answer. If web.search fails or has no results, say that current information is unavailable instead of guessing from memory."
   );
 }

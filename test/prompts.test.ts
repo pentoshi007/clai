@@ -6,6 +6,7 @@ import {
   renderAgentSystemPrompt,
   _ASK_TEMPLATE,
   _AGENT_TEMPLATE,
+  currentDateTimeContext,
 } from "../src/prompts/index.js";
 
 describe("prompt rendering", () => {
@@ -15,11 +16,13 @@ describe("prompt rendering", () => {
     expect(prompt).toContain("Do NOT execute");
   });
 
-  it("ask prompt includes OS info", () => {
+  it("ask prompt includes OS info and current date/time", () => {
     const prompt = renderAskSystemPrompt();
     // Should have replaced the {{os}} template
     expect(prompt).not.toContain("{{os}}");
     expect(prompt).not.toContain("{{shell}}");
+    expect(prompt).not.toContain("{{datetime}}");
+    expect(prompt).toContain("Current date/time:");
   });
 
   it("agent prompt includes tool list", () => {
@@ -35,6 +38,7 @@ describe("prompt rendering", () => {
     expect(prompt).not.toContain("{{cwd}}");
     expect(prompt).not.toContain("{{tool_list}}");
     expect(prompt).not.toContain("{{shell}}");
+    expect(prompt).not.toContain("{{datetime}}");
   });
 
   it("agent prompt contains pentesting authorization reminder", () => {
@@ -47,8 +51,14 @@ describe("prompt rendering", () => {
     expect(prompt).toContain("Do not invent volatile live data");
     expect(prompt).toContain("office holders");
     expect(prompt).toContain("If your knowledge may be stale");
+    expect(prompt).toContain("newest timeline");
     expect(prompt).toContain("summarize concrete findings");
     expect(prompt).toContain("For ffuf");
+  });
+
+  it("formats date/time context with an ISO timestamp", () => {
+    const when = new Date("2026-05-29T12:34:56.000Z");
+    expect(currentDateTimeContext(when)).toContain("2026-05-29T12:34:56.000Z");
   });
 });
 
