@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { updateConfig, getConfig } from "../src/store/config.js";
 
 let originalConfigDir: string | undefined;
 let configDir: string;
@@ -12,6 +11,13 @@ beforeEach(() => {
   originalConfigDir = process.env.CLAI_CONFIG_DIR;
   configDir = mkdtempSync(join(tmpdir(), "clai-retention-"));
   process.env.CLAI_CONFIG_DIR = configDir;
+  // The `Conf` store inside `src/store/config.ts` captures
+  // `CLAI_CONFIG_DIR` at module import time. Reset the module
+  // cache so the dynamic import below re-reads the env var and
+  // points at this test's tmp dir, avoiding cross-test pollution
+  // when retention.test.ts runs after another test that already
+  // imported config.ts.
+  vi.resetModules();
 });
 
 afterEach(async () => {
@@ -22,10 +28,14 @@ afterEach(async () => {
   } catch {
     // best effort
   }
+  vi.resetModules();
 });
 
 describe("phase 11 — retention config", () => {
-  it("privateMode and historyRetentionLimit are persisted via updateConfig", () => {
+  it("privateMode and historyRetentionLimit are persisted via updateConfig", async () => {
+    const { updateConfig, getConfig } = await import(
+      "../src/store/config.js"
+    );
     updateConfig({ privateMode: true, historyRetentionLimit: 42 });
     expect(getConfig().privateMode).toBe(true);
     expect(getConfig().historyRetentionLimit).toBe(42);
