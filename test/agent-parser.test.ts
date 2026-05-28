@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseToolCall } from "../src/agent/runner.js";
+import {
+  parseToolCall,
+  requiresFreshWebSearch,
+  shouldDimToolChatter,
+} from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
   it("extracts tool calls from fenced code blocks", () => {
@@ -113,6 +117,35 @@ describe("Kimi K2 sentinel-token tool-call format", () => {
     const text =
       '<|tool_calls_section_begin|><|tool_call_bhell.exec:0<|tool_call_argument_begin|>{"command":"find ..."}<|tool_call_end|><|tool_|>';
     expect(parseToolCall(text)).toBeUndefined();
+  });
+});
+
+describe("fresh web-search guard", () => {
+  it("treats current office-holder questions as volatile even without the word current", () => {
+    expect(requiresFreshWebSearch("who is westbengal cm")).toBe(true);
+    expect(requiresFreshWebSearch("who is the CEO of Apple")).toBe(true);
+    expect(requiresFreshWebSearch("president of France")).toBe(true);
+  });
+
+  it("treats releases and explicit web lookups as fresh-search cases", () => {
+    expect(requiresFreshWebSearch("latest vite version")).toBe(true);
+    expect(requiresFreshWebSearch("look up the npm package status")).toBe(true);
+  });
+
+  it("does not route static abbreviation questions through web.search", () => {
+    expect(requiresFreshWebSearch("what does cm stand for")).toBe(false);
+    expect(requiresFreshWebSearch("define cm")).toBe(false);
+  });
+});
+
+describe("web.search display styling", () => {
+  it("dims web.search tool chatter but not unrelated tools", () => {
+    expect(
+      shouldDimToolChatter({ name: "web.search", args: { query: "x" } }),
+    ).toBe(true);
+    expect(shouldDimToolChatter({ name: "fs.read", args: { path: "x" } })).toBe(
+      false,
+    );
   });
 });
 

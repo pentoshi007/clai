@@ -25,11 +25,7 @@ import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import { compactMessages, estimateMessagesTokens } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
-import {
-  loadScope,
-  isScopeActive,
-  targetInScope,
-} from "../store/scope.js";
+import { loadScope, isScopeActive, targetInScope } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
   rememberThinkingFromText,
@@ -237,10 +233,60 @@ function formatToolArgs(call: ToolCall): string {
   if (call.name === "fs.read" || call.name === "fs.write")
     return String(call.args.path ?? "");
   if (call.name === "fs.search") return String(call.args.pattern ?? "");
-  if (call.name === "http.fetch") return String(call.args.url ?? "");
+  if (call.name === "http.fetch" || call.name === "web.fetch")
+    return String(call.args.url ?? "");
+  if (call.name === "web.search") return String(call.args.query ?? "");
   if (call.name === "pkg.install") return String(call.args.tool ?? "");
   if (call.name === "fs.list") return String(call.args.path ?? process.cwd());
   return JSON.stringify(call.args);
+}
+
+const VOLATILE_SIGNAL_RE =
+  /\b(?:current(?:ly)?|latest|newest|today|now|right now|live|recent|breaking|news|release[sd]?|version|prices?|stocks?|market|rates?|weather|forecast|elections?|results?|rankings?|standings?|stats?|cve|advis(?:ory|ories)|vulnerabilit(?:y|ies))\b/i;
+
+const VOLATILE_ROLE_QUERY_RE =
+  /\b(?:who(?:\s+is|'s)?|whos|name|tell\s+me|what(?:\s+is|'s)?)\b[\s\S]{0,120}\b(?:cm|chief\s+minister|prime\s+minister|president|governor|mayor|ministers?|cabinet|leader|head\s+of|ceo|cto|cfo|coo|chair(?:man|woman|person)?|coach|captain)\b/i;
+
+const ROLE_OF_ENTITY_RE =
+  /\b(?:cm|chief\s+minister|prime\s+minister|president|governor|mayor|ministers?|ceo|cto|cfo|coo|chair(?:man|woman|person)?|coach|captain)\s+(?:of|for|in)\b/i;
+
+const EXPLICIT_WEB_LOOKUP_RE =
+  /\b(?:search\s+(?:the\s+)?(?:web|internet|online)|look\s*up|google|verify\s+(?:online|on\s+the\s+web)|check\s+(?:online|the\s+web|internet))\b/i;
+
+const STATIC_DISAMBIGUATION_RE =
+  /\b(?:stand\s+for|stands\s+for|meaning|definition|define|abbreviation|centimeters?|centimetres?)\b/i;
+
+const LOCAL_RUNTIME_RE =
+  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami)\b/i;
+
+export function requiresFreshWebSearch(prompt: string): boolean {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (STATIC_DISAMBIGUATION_RE.test(text) || LOCAL_RUNTIME_RE.test(text)) {
+    return false;
+  }
+  return (
+    VOLATILE_SIGNAL_RE.test(text) ||
+    VOLATILE_ROLE_QUERY_RE.test(text) ||
+    ROLE_OF_ENTITY_RE.test(text) ||
+    EXPLICIT_WEB_LOOKUP_RE.test(text)
+  );
+}
+
+function freshnessGuardMessage(): string {
+  return (
+    "Freshness guard for this turn: the latest user prompt appears to ask for current, volatile, or externally verifiable information. " +
+    "Before answering, call web.search FIRST with a concise query derived from the user prompt. " +
+    "Use the search results to answer. If web.search fails or has no results, say that current information is unavailable instead of guessing from memory."
+  );
+}
+
+export function shouldDimToolChatter(call: ToolCall): boolean {
+  return call.name === "web.search";
+}
+
+function styleToolChatter(call: ToolCall, text: string): string {
+  return shouldDimToolChatter(call) ? chalk.dim(text) : text;
 }
 
 function isAbortError(error: unknown, signal?: AbortSignal): boolean {
@@ -388,10 +434,19 @@ export async function runAgentLoop(
   const config = getConfig();
   const maxSteps = options.maxSteps ?? 30;
   const projectContext = await loadProjectContext();
-  const systemPrompt = renderAgentSystemPrompt(availableToolNames().join(", "));
-  const fullSystemPrompt = projectContext
-    ? `${systemPrompt}\n\nProject context from .clai/context.md:\n${projectContext}`
-    : systemPrompt;
+  const toolNames = availableToolNames();
+  const freshWebSearchRequired =
+    toolNames.includes("web.search") && requiresFreshWebSearch(prompt);
+  const systemSections = [renderAgentSystemPrompt(toolNames.join(", "))];
+  if (projectContext) {
+    systemSections.push(
+      `Project context from .clai/context.md:\n${projectContext}`,
+    );
+  }
+  if (freshWebSearchRequired) {
+    systemSections.push(freshnessGuardMessage());
+  }
+  const fullSystemPrompt = systemSections.join("\n\n");
   const messages: ChatMessage[] = [
     { role: "system", content: fullSystemPrompt },
     ...(options.history ?? []),
@@ -413,12 +468,19 @@ export async function runAgentLoop(
   // to actually act instead of silently returning an empty answer.
   let emptyVisibleRetries = 0;
 
+  // For volatile live-info prompts, make one corrective pass if a model
+  // ignores the freshness guard and tries to answer from stale memory.
+  let sawFreshWebSearch = false;
+  let freshnessRetryUsed = false;
+
   // ── Complexity-based step limit (no hardcoded plans) ──────────────
   const analysis = analyzeTask(prompt);
   const dynamicMaxSteps =
-    analysis.complexity === "simple" ? 10
-    : analysis.complexity === "standard" ? 20
-    : maxSteps;
+    analysis.complexity === "simple"
+      ? 10
+      : analysis.complexity === "standard"
+        ? 20
+        : maxSteps;
 
   for (let step = 0; step < dynamicMaxSteps; step += 1) {
     options.signal?.throwIfAborted();
@@ -553,6 +615,22 @@ export async function runAgentLoop(
       // Normal final-answer path: strip any stray sentinel tokens that
       // somehow leaked into prose so the answer renders cleanly.
       const cleaned = stripSentinelTokens(assistantText.visible);
+      if (freshWebSearchRequired && !sawFreshWebSearch && !freshnessRetryUsed) {
+        freshnessRetryUsed = true;
+        process.stdout.write(
+          chalk.dim(
+            "  ℹ current-info question detected — searching the web before answering\n",
+          ),
+        );
+        messages.push({ role: "assistant", content: assistantText.visible });
+        messages.push({
+          role: "user",
+          content:
+            freshnessGuardMessage() +
+            " Reply with ONLY a fenced ```tool block for web.search now.",
+        });
+        continue;
+      }
       if (cleaned) {
         process.stdout.write(renderMarkdown(cleaned));
         if (!cleaned.endsWith("\n")) process.stdout.write("\n");
@@ -608,15 +686,17 @@ export async function runAgentLoop(
     await auditLog("tool.classified", {
       call,
       decision,
-      scope: isScopeActive(scope) ? scope.name ?? "(unnamed)" : "(none)",
+      scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
     });
 
+    if (call.name === "web.search") {
+      sawFreshWebSearch = true;
+    }
+
     // Show tool call
-    process.stdout.write(
-      chalk.cyan(`  ▶ ${call.name}`) +
-        chalk.gray(` ${formatToolArgs(call)}`) +
-        "\n",
-    );
+    const toolCallLine =
+      chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+    process.stdout.write(styleToolChatter(call, toolCallLine) + "\n");
 
     const scopeTarget = scopeTargetForToolCall(call);
     if (
@@ -649,8 +729,15 @@ export async function runAgentLoop(
     // raw mode when it finishes. Re-assert raw mode so the outer keypress
     // handler (ESC/Ctrl+C abort, Ctrl+O output pane) keeps working during
     // the next streaming phase.
-    if (process.stdin.isTTY && !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
-      try { process.stdin.setRawMode(true); } catch { /* ignore */ }
+    if (
+      process.stdin.isTTY &&
+      !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw
+    ) {
+      try {
+        process.stdin.setRawMode(true);
+      } catch {
+        /* ignore */
+      }
     }
     if (!authorized) {
       lastAnswer = "Pentest authorization not confirmed.";
@@ -671,8 +758,15 @@ export async function runAgentLoop(
         session,
       );
       // Re-assert raw mode after inquirer's confirm() (see comment above).
-      if (process.stdin.isTTY && !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
-        try { process.stdin.setRawMode(true); } catch { /* ignore */ }
+      if (
+        process.stdin.isTTY &&
+        !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw
+      ) {
+        try {
+          process.stdin.setRawMode(true);
+        } catch {
+          /* ignore */
+        }
       }
       if (!ok) {
         lastAnswer = "Cancelled.";
@@ -798,18 +892,29 @@ export async function runAgentLoop(
     });
 
     // Record the attempt in the loop guard for dedup tracking.
-    loopGuard.recordAttempt(step, call.name, call.args, result.ok, result.exitCode);
+    loopGuard.recordAttempt(
+      step,
+      call.name,
+      call.args,
+      result.ok,
+      result.exitCode,
+    );
 
     // ── Auto-retry on "command not found" ──────────────────────────
     // Detect missing tools and instruct the model to install + retry.
     const NOT_FOUND_RE = /command not found|ENOENT.*spawn|is not recognized/i;
     if (!result.ok && NOT_FOUND_RE.test(output)) {
-      const cmdName = call.name === "shell.exec"
-        ? String(call.args.command ?? "").split(/\s+/)[0]
-        : call.name === "net.scan" ? "nmap" : undefined;
+      const cmdName =
+        call.name === "shell.exec"
+          ? String(call.args.command ?? "").split(/\s+/)[0]
+          : call.name === "net.scan"
+            ? "nmap"
+            : undefined;
       if (cmdName) {
         process.stdout.write(
-          chalk.yellow(`  ⚠ ${cmdName} not found — asking model to install and retry\n`),
+          chalk.yellow(
+            `  ⚠ ${cmdName} not found — asking model to install and retry\n`,
+          ),
         );
         messages.push({
           role: "tool",
@@ -842,7 +947,7 @@ export async function runAgentLoop(
           "Tool failed: sudo could not read a password.\n" +
           "On the next attempt: call shell.exec with `sudo <command>` directly. " +
           "clai inherits stdin from the user's terminal, so the user can type the password live. " +
-          "DO NOT use `echo \"<pwd>\" | sudo -S`, DO NOT use SUDO_ASKPASS, DO NOT ask the user for the password in chat. " +
+          'DO NOT use `echo "<pwd>" | sudo -S`, DO NOT use SUDO_ASKPASS, DO NOT ask the user for the password in chat. ' +
           "Just run `sudo <command>` and the password prompt will be visible.",
       });
       continue;
@@ -865,7 +970,8 @@ export async function runAgentLoop(
           );
         }
       } else {
-        process.stdout.write(indentAndWrapText(displayText) + "\n");
+        const renderedOutput = indentAndWrapText(displayText);
+        process.stdout.write(styleToolChatter(call, renderedOutput) + "\n");
       }
     }
     if (isAbortError(undefined, options.signal)) {
