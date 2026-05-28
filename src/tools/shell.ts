@@ -22,6 +22,14 @@ export interface ShellExecArgs {
   artifactPath?: string | undefined;
   /** When true, do not allocate an artifact file (used by tests / dry runs). */
   noArtifact?: boolean | undefined;
+  /**
+   * Force the child to inherit the parent's stdin so interactive
+   * password prompts (sudo, ssh, gpg, doas) can read from the controlling
+   * TTY. Defaults to `auto`: enabled for commands {@link looksInteractiveStdin}
+   * detects when stdin is a TTY; disabled otherwise. Set explicitly to
+   * `true` to force-inherit, `false` to keep stdin closed.
+   */
+  interactiveStdin?: boolean | "auto" | undefined;
 }
 
 export interface SpawnArgvArgs {
@@ -36,11 +44,147 @@ export interface SpawnArgvArgs {
   onLimit?: "terminate" | "continue" | undefined;
   artifactPath?: string | undefined;
   noArtifact?: boolean | undefined;
+  /** See {@link ShellExecArgs.interactiveStdin}. */
+  interactiveStdin?: boolean | "auto" | undefined;
 }
 
 const DEFAULT_MAX_MODEL_BYTES = 12_000;
 const DEFAULT_MAX_CAPTURE_BYTES = 500 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 180_000;
+
+/**
+ * Heuristic: does this command line need to read from a real TTY so a
+ * password / passphrase / yes-no prompt can reach the user?
+ *
+ * The classic case is `sudo`: with `stdio: ["ignore", ...]` sudo prints
+ * "a terminal is required to read the password" and exits with code 1.
+ * We catch the same family of tools (su/doas/ssh/gpg/passwd, plus the
+ * Windows elevation helpers `gsudo` / `sudo` / `runas`) so the agent
+ * can run them like a human would.
+ *
+ * Returns `false` when the command explicitly opts out of prompts
+ * (`sudo -n`, `sudo --non-interactive`, `sudo -S`, `ssh -o BatchMode=yes`)
+ * because in those cases inheriting stdin would only confuse things.
+ */
+export function looksInteractiveStdin(command: string): boolean {
+  if (typeof command !== "string" || command.length === 0) return false;
+
+  // Tokenize on shell metacharacters so `foo && sudo bar` and
+  // `cat x | sudo tee y` both register a sudo segment. We split on the
+  // raw command (preserving case) because some flags differ only in
+  // case — `sudo -S` means "read password from stdin" while `sudo -s`
+  // means "run a login shell"; conflating them is a real bug.
+  const segments = command
+    .split(/\s*(?:\|\||&&|;|\|)\s*/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    // Strip env-var prefixes ("FOO=bar sudo …") and leading `command`/`exec`.
+    const tokens = segment.split(/\s+/);
+    let i = 0;
+    while (i < tokens.length && /^[A-Za-z_][\w]*=.*$/.test(tokens[i]!)) i += 1;
+    if (
+      i < tokens.length &&
+      (tokens[i] === "command" || tokens[i] === "exec" || tokens[i] === "time")
+    ) {
+      i += 1;
+    }
+    const head = tokens[i];
+    if (!head) continue;
+    // Strip absolute paths so `/usr/bin/sudo` matches `sudo`.
+    const base = head.replace(/^.*[\\\/]/, "").toLowerCase();
+    if (
+      base !== "sudo" &&
+      base !== "su" &&
+      base !== "doas" &&
+      base !== "ssh" &&
+      base !== "scp" &&
+      base !== "rsync" &&
+      base !== "gpg" &&
+      base !== "passwd" &&
+      base !== "gsudo" &&
+      base !== "runas"
+    ) {
+      continue;
+    }
+
+    // Honor opt-outs so non-interactive flags don't get bypassed. We
+    // check `tokens` directly (preserving case) so `-S` and `-s` stay
+    // distinguishable.
+    const rest = tokens.slice(i + 1);
+    const restJoined = rest.join(" ");
+    if (base === "sudo" || base === "doas") {
+      if (
+        rest.includes("-n") ||
+        rest.includes("--non-interactive") ||
+        rest.includes("-S") ||
+        rest.includes("--stdin")
+      ) {
+        return false;
+      }
+    }
+    if (base === "ssh" || base === "scp" || base === "rsync") {
+      if (/-o\s+batchmode=yes/i.test(restJoined)) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Compose the `stdio` array for {@link spawn} based on whether the
+ * caller requested an interactive stdin and whether the parent has
+ * one to give. Falls back to `"ignore"` whenever the parent is not
+ * connected to a TTY (CI runs, piped invocations, tests) so a missing
+ * controlling terminal can never wedge the child waiting on input.
+ */
+function chooseStdio(
+  command: string,
+  preference: boolean | "auto" | undefined,
+): ["ignore" | "inherit", "pipe", "pipe"] {
+  const wantInteractive =
+    preference === true ||
+    (preference !== false &&
+      (preference === "auto" || preference === undefined) &&
+      looksInteractiveStdin(command));
+  if (!wantInteractive) return ["ignore", "pipe", "pipe"];
+  // Honor only when the parent actually has a TTY on stdin. Inheriting
+  // a piped or closed stdin gains us nothing and would let an
+  // interactive child hang forever in non-interactive contexts.
+  if (process.stdin.isTTY) return ["inherit", "pipe", "pipe"];
+  return ["ignore", "pipe", "pipe"];
+}
+
+/**
+ * Capture stdin's current `isRaw` state and switch it to cooked mode so
+ * an interactive child (sudo, ssh) can read a password line through the
+ * inherited stdin. Returns a function that restores the previous mode
+ * when the child exits — the REPL relies on raw mode for its key
+ * handling, so we must put it back the way we found it.
+ */
+function takeOverCookedStdin(): () => void {
+  if (!process.stdin.isTTY) return () => {};
+  const stream = process.stdin as NodeJS.ReadStream & { isRaw?: boolean };
+  const wasRaw = Boolean(stream.isRaw);
+  try {
+    if (wasRaw) stream.setRawMode(false);
+    // `pause` on a raw-mode stdin can drop bytes; we already disabled
+    // raw, so a normal pause is safe and prevents the REPL's data
+    // listener from gulping the password line before sudo reads it.
+    process.stdin.pause();
+  } catch {
+    /* ignore */
+  }
+  return () => {
+    try {
+      if (wasRaw && process.stdin.isTTY) stream.setRawMode(true);
+      process.stdin.resume();
+    } catch {
+      /* ignore */
+    }
+  };
+}
 
 function safeArtifactName(command: string): string {
   const head = command.trim().split(/\s+/)[0] ?? "shell";
@@ -166,11 +310,16 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
 
   return new Promise((resolve, reject) => {
     const detached = process.platform !== "win32";
+    const stdio = chooseStdio(args.command, args.interactiveStdin);
+    const usingInteractiveStdin = stdio[0] === "inherit";
+    const restoreStdin = usingInteractiveStdin
+      ? takeOverCookedStdin()
+      : () => {};
     const child = spawn(args.command, {
       cwd: args.cwd ?? process.cwd(),
-      detached,
+      detached: detached && !usingInteractiveStdin,
       shell: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio,
     });
     let aborted = false;
     let timedOut = false;
@@ -181,6 +330,7 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
       if (timeout) clearTimeout(timeout);
       if (forceKill) clearTimeout(forceKill);
       args.signal?.removeEventListener("abort", abort);
+      restoreStdin();
       if (artifact) {
         artifact.stream.end();
       }
@@ -225,7 +375,10 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
     const killChild = (signal: NodeJS.Signals): void => {
       if (!child.pid) return;
       try {
-        if (detached) process.kill(-child.pid, signal);
+        // `detached` was disabled when we inherited stdin so the child
+        // shares our process group — kill it directly. Otherwise use the
+        // negative-PID form to take down the whole shell + descendants.
+        if (detached && !usingInteractiveStdin) process.kill(-child.pid, signal);
         else child.kill(signal);
       } catch {
         // Process may have already exited.
@@ -401,11 +554,21 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
 
   return new Promise((resolve, reject) => {
     const detached = process.platform !== "win32";
+    // For spawnArgv we know the exact program; build an `argv0`-style
+    // command preview that {@link looksInteractiveStdin} can inspect so
+    // `pkg.install` (which invokes `sudo apt …` on Linux) lights up the
+    // password-prompt path.
+    const previewCommand = `${args.command} ${args.argv.join(" ")}`;
+    const stdio = chooseStdio(previewCommand, args.interactiveStdin);
+    const usingInteractiveStdin = stdio[0] === "inherit";
+    const restoreStdin = usingInteractiveStdin
+      ? takeOverCookedStdin()
+      : () => {};
     const child = spawn(args.command, args.argv, {
       cwd: args.cwd ?? process.cwd(),
-      detached,
+      detached: detached && !usingInteractiveStdin,
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio,
     });
     let aborted = false;
     let timedOut = false;
@@ -416,6 +579,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       if (timeout) clearTimeout(timeout);
       if (forceKill) clearTimeout(forceKill);
       args.signal?.removeEventListener("abort", abort);
+      restoreStdin();
       if (artifact) artifact.stream.end();
     };
 
@@ -450,7 +614,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
     const killChild = (signal: NodeJS.Signals): void => {
       if (!child.pid) return;
       try {
-        if (detached) process.kill(-child.pid, signal);
+        if (detached && !usingInteractiveStdin) process.kill(-child.pid, signal);
         else child.kill(signal);
       } catch {
         // already exited

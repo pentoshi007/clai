@@ -8,9 +8,11 @@ describe('provider helpers', () => {
     expect(normalizeProvider('LOCAL')).toBe('ollama');
   });
 
-  it('masks secrets showing only first 4 and last 3 chars', () => {
-    expect(maskSecret('sk-proj-secret-middle-OkcA')).toBe('sk-p••••kcA');
-    expect(maskSecret('gsk_abcdef1234567890')).toBe('gsk_••••890');
+  it('masks secrets per Requirement 3.6 (last 4 chars visible, prefix masked)', () => {
+    expect(maskSecret('sk-proj-secret-middle-OkcA')).toBe('*'.repeat(22) + 'OkcA');
+    expect(maskSecret('gsk_abcdef1234567890')).toBe('*'.repeat(16) + '7890');
+    expect(maskSecret('short')).toBe('*****');
+    expect(maskSecret('')).toBe('');
   });
 
   it('redacts known key formats', () => {

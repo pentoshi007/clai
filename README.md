@@ -178,6 +178,38 @@ export OLLAMA_HOST=http://localhost:11434
 
 > \* **smart** = read-only commands (`curl`, `ls`, `whoami`, `gobuster`, `dirb`, etc.) auto-execute; mutating commands require confirmation.
 
+## Web tools
+
+Two higher-level tools sit alongside `http.fetch` for agent-driven web reading:
+
+- **`web.search`** — query the public web through a configurable search provider and return structured `{title, url, snippet}` hits. Default provider is **DuckDuckGo** (keyless, works out of the box). **Brave Search** and **Tavily** are supported when an API key is configured. Use this for current-events or post-cutoff information; the agent prompt steers `web.search` toward time-sensitive questions and `web.fetch` toward reading a known URL.
+- **`web.fetch`** — fetch a URL and return readable prose (HTML stripped of `<script>`/`<style>`/chrome) plus rich metadata: response headers, TLS session details (cipher, peer cert SAN list, fingerprint), redirect chain, fine-grained timing, resolved IP. Sensitive headers and cookie values are redacted by default; pass `redactSensitive=false` to expose them in the *output* (the audit log never carries them). Loopback / RFC1918 / link-local / cloud-metadata addresses are blocked by SSRF checks at every redirect hop, with DNS rebinding defeated by IP-pinning the connection to the resolved address.
+
+### Search provider configuration
+
+```sh
+# Set a key for Brave or Tavily (DuckDuckGo is keyless and is a no-op).
+clai set brave bsx-xxxxxxxxxxxxxxxx
+clai set tavily tvly-xxxxxxxxxxxxxxxx
+
+# Remove a stored key.
+clai unset brave
+
+# Switch the active search provider used by web.search.
+clai search-provider tavily
+
+# List configured keys (LLM and search) with the same masking rule.
+clai keys
+```
+
+Environment variables override stored keys at call time:
+
+| Provider     | Env var                  |
+|--------------|--------------------------|
+| Brave Search | `BRAVE_SEARCH_API_KEY`   |
+| Tavily       | `TAVILY_API_KEY`         |
+| DuckDuckGo   | (none, keyless)          |
+
 ## Safety Gate
 
 Every tool call passes through a 3-tier classifier:

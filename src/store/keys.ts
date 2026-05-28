@@ -6,6 +6,7 @@ import type { ProviderId, ProviderStatus } from '../types.js';
 import { providerIds } from '../types.js';
 import { envVars, getDefaultModel, maskSecret } from '../llm/provider.js';
 import { getConfig } from './config.js';
+import type { SearchProviderId } from '../tools/web/types.js';
 
 const serviceName = 'clai';
 // `@napi-rs/keyring` ships prebuilt napi binaries (no node-gyp / prebuild-install)
@@ -24,7 +25,23 @@ type KeytarLike = {
   deletePassword(service: string, account: string): Promise<boolean>;
 };
 
-type FallbackKeys = Partial<Record<ProviderId, string>>;
+/**
+ * Logical namespace for a stored secret. Search-provider keys live in the
+ * same keyring service as LLM keys but under separate accounts so the two
+ * keyspaces never collide.
+ */
+export type SecretNamespace = 'llm' | 'search';
+
+/** Where a resolved secret value originated. Mirrors `ProviderStatus.source`. */
+export type SecretSource = ProviderStatus['source'];
+
+/**
+ * On-disk shape of the restricted-permission plaintext fallback file.
+ * Keys are either namespaced (`<namespace>:<id>`) or, for backwards
+ * compatibility, the bare LLM `ProviderId` written by older clai versions.
+ * Bare entries are migrated lazily into the `llm:` namespace on read.
+ */
+type FallbackKeys = Record<string, string>;
 
 let cachedKeytar: KeytarLike | undefined;
 let keytarLoadAttempted = false;
@@ -105,6 +122,172 @@ export function getFallbackKeysPath(): string {
   return keysFile;
 }
 
+/**
+ * Compose the keychain account name used for a `(namespace, id)` pair.
+ * Exposed so tests and callers can inspect the exact account string.
+ */
+export function secretAccount(namespace: SecretNamespace, id: string): string {
+  return `${namespace}:${id}`;
+}
+
+/**
+ * Env-var name used for a search provider's API key, per Requirement 3.3.
+ * Returns `undefined` for keyless providers (DuckDuckGo).
+ */
+const searchProviderEnvVars: Record<SearchProviderId, string | undefined> = {
+  brave: 'BRAVE_SEARCH_API_KEY',
+  tavily: 'TAVILY_API_KEY',
+  duckduckgo: undefined,
+};
+
+export function searchProviderEnvVar(id: SearchProviderId): string | undefined {
+  return searchProviderEnvVars[id];
+}
+
+// ---------------------------------------------------------------------------
+// Low-level namespaced secret API
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a secret out of the OS keychain (preferred) or the restricted-permission
+ * plaintext fallback file. Returns `{ source: 'missing' }` when neither
+ * backend has a value.
+ *
+ * Legacy LLM entries that still live under the bare `<provider>` account
+ * name (no namespace prefix) are migrated lazily into `llm:<provider>` on
+ * first read so older installs keep working without manual intervention.
+ */
+export async function getSecret(
+  namespace: SecretNamespace,
+  id: string,
+): Promise<{ value?: string; source: SecretSource }> {
+  const account = secretAccount(namespace, id);
+
+  // Keychain — primary store.
+  const keychainResult = await withKeytar((keytar) =>
+    keytar.getPassword(serviceName, account),
+  );
+  if (keychainResult.ok && keychainResult.value) {
+    return { value: keychainResult.value, source: 'keychain' };
+  }
+
+  // Lazy migration of pre-namespaced LLM entries. Older clai versions
+  // wrote `setPassword(serviceName, providerId, ...)` with no `llm:`
+  // prefix; pick those up once and copy them into the new account name.
+  if (namespace === 'llm') {
+    const legacy = await withKeytar((keytar) =>
+      keytar.getPassword(serviceName, id),
+    );
+    if (legacy.ok && legacy.value) {
+      const migrated = await withKeytar((keytar) =>
+        keytar.setPassword(serviceName, account, legacy.value as string),
+      );
+      if (migrated.ok) {
+        await withKeytar((keytar) =>
+          keytar.deletePassword(serviceName, id),
+        );
+      }
+      return { value: legacy.value, source: 'keychain' };
+    }
+  }
+
+  // Fallback file — accept both namespaced and legacy bare-id keys.
+  const fallback = await readFallback();
+  const namespacedValue = fallback[account];
+  if (namespacedValue) {
+    return { value: namespacedValue, source: 'fallback' };
+  }
+  if (namespace === 'llm') {
+    const legacyValue = fallback[id];
+    if (legacyValue) {
+      // Migrate the legacy key in place so subsequent reads find it
+      // under the namespaced account name.
+      delete fallback[id];
+      fallback[account] = legacyValue;
+      await writeFallback(fallback);
+      return { value: legacyValue, source: 'fallback' };
+    }
+  }
+
+  return { source: 'missing' };
+}
+
+/**
+ * Persist `value` for `(namespace, id)`. Tries the OS keychain first; on
+ * failure (module missing, runtime error, or permission denied) writes the
+ * value into the restricted-permission plaintext fallback file at
+ * `~/.clai/keys.json`. Returns the chosen storage backend so callers can
+ * surface the plaintext-fallback warning.
+ */
+export async function setSecret(
+  namespace: SecretNamespace,
+  id: string,
+  value: string,
+): Promise<'keychain' | 'fallback'> {
+  const account = secretAccount(namespace, id);
+
+  const keychainResult = await withKeytar((keytar) =>
+    keytar.setPassword(serviceName, account, value),
+  );
+  if (keychainResult.ok) {
+    // Best-effort cleanup of any legacy bare-id entry so the namespaced
+    // account is the single source of truth going forward.
+    if (namespace === 'llm') {
+      await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
+    }
+    return 'keychain';
+  }
+
+  const fallback = await readFallback();
+  fallback[account] = value;
+  if (namespace === 'llm') delete fallback[id];
+  await writeFallback(fallback);
+  return 'fallback';
+}
+
+/**
+ * Best-effort delete: removes the secret from both the keychain and the
+ * fallback file. Never throws on keychain errors so unset always cleans
+ * up the on-disk fallback even when the OS keystore is unreachable.
+ */
+export async function unsetSecret(
+  namespace: SecretNamespace,
+  id: string,
+): Promise<void> {
+  const account = secretAccount(namespace, id);
+
+  await withKeytar((keytar) => keytar.deletePassword(serviceName, account));
+  if (namespace === 'llm') {
+    // Sweep the legacy bare-id entry too so partially migrated installs
+    // get a clean unset.
+    await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
+  }
+
+  if (existsSync(keysFile)) {
+    const fallback = await readFallback();
+    let mutated = false;
+    if (account in fallback) {
+      delete fallback[account];
+      mutated = true;
+    }
+    if (namespace === 'llm' && id in fallback) {
+      delete fallback[id];
+      mutated = true;
+    }
+    if (mutated) {
+      if (Object.keys(fallback).length === 0) {
+        await rm(keysFile, { force: true });
+      } else {
+        await writeFallback(fallback);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Provider-facing helpers
+// ---------------------------------------------------------------------------
+
 export function envValue(provider: ProviderId): string | undefined {
   const envVar = envVars[provider];
   if (!envVar) {
@@ -114,6 +297,17 @@ export function envValue(provider: ProviderId): string | undefined {
   return value && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Resolve an LLM provider's secret using the precedence:
+ *
+ *   1. Provider env var (e.g. `GROQ_API_KEY`)
+ *   2. OS keychain account `llm:<provider>` (with lazy migration of the
+ *      legacy bare `<provider>` account)
+ *   3. Restricted-permission plaintext fallback file
+ *
+ * `ollama` is special-cased: it has no API key, only a base URL drawn from
+ * `OLLAMA_HOST` or the user-config `ollamaHost`.
+ */
 export async function getProviderSecret(provider: ProviderId): Promise<{ value?: string; source: ProviderStatus['source'] }> {
   const env = envValue(provider);
   if (env) {
@@ -124,52 +318,37 @@ export async function getProviderSecret(provider: ProviderId): Promise<{ value?:
     return { value: getConfig().ollamaHost, source: 'local' };
   }
 
-  const keychainResult = await withKeytar((keytar) =>
-    keytar.getPassword(serviceName, provider),
-  );
-  if (keychainResult.ok && keychainResult.value) {
-    return { value: keychainResult.value, source: 'keychain' };
-  }
-
-  const fallback = await readFallback();
-  const fromFallback = fallback[provider];
-  if (fromFallback) {
-    return { value: fromFallback, source: 'fallback' };
-  }
-
-  return { source: 'missing' };
+  return getSecret('llm', provider);
 }
 
 export async function setProviderSecret(provider: ProviderId, secret: string): Promise<'keychain' | 'fallback'> {
   if (provider === 'ollama') {
     return 'fallback';
   }
-
-  const keychainResult = await withKeytar((keytar) =>
-    keytar.setPassword(serviceName, provider, secret),
-  );
-  if (keychainResult.ok) return 'keychain';
-
-  const fallback = await readFallback();
-  fallback[provider] = secret;
-  await writeFallback(fallback);
-  return 'fallback';
+  return setSecret('llm', provider, secret);
 }
 
 export async function unsetProviderSecret(provider: ProviderId): Promise<void> {
-  // Best-effort: try the keychain first, but never fail the whole call
-  // if it errors. The fallback-file cleanup below always runs.
-  await withKeytar((keytar) => keytar.deletePassword(serviceName, provider));
+  await unsetSecret('llm', provider);
+}
 
-  if (existsSync(keysFile)) {
-    const fallback = await readFallback();
-    delete fallback[provider];
-    if (Object.keys(fallback).length === 0) {
-      await rm(keysFile, { force: true });
-    } else {
-      await writeFallback(fallback);
+/**
+ * Resolve a search-provider's API key using the precedence required by
+ * Requirement 3.3: env var → keychain `search:<id>` → fallback file →
+ * `undefined`. DuckDuckGo has no env var and no key, so it returns
+ * `{ source: 'missing' }` unless a key has been explicitly set.
+ */
+export async function getSearchProviderKey(
+  id: SearchProviderId,
+): Promise<{ value?: string; source: SecretSource }> {
+  const envVar = searchProviderEnvVars[id];
+  if (envVar) {
+    const fromEnv = process.env[envVar];
+    if (fromEnv && fromEnv.length > 0) {
+      return { value: fromEnv, source: 'env' };
     }
   }
+  return getSecret('search', id);
 }
 
 export type KeychainStatus =
@@ -213,3 +392,8 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
   }
   return statuses;
 }
+
+// Re-export the mask helper so search-provider listings (and any other
+// consumer that already imports from `./store/keys.js`) use the same
+// masking rule as `clai keys` for LLM entries (Requirement 3.6).
+export { maskSecret };

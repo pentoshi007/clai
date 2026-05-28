@@ -60,6 +60,22 @@ export async function setProviderKey(
   keyArg: string | undefined,
   options: SetKeyOptions,
 ): Promise<void> {
+  // Search-provider ids (`brave`, `tavily`, `duckduckgo`) are stored in
+  // the `search:` namespace (Requirement 3.1). Dispatch before the LLM
+  // path so the matching helper handles the keyless DuckDuckGo no-op.
+  if (
+    providerValue === "brave" ||
+    providerValue === "tavily" ||
+    providerValue === "duckduckgo"
+  ) {
+    const { setSearchProviderKey } = await import("./search-providers.js");
+    const opts: { fromEnv?: string; stdin?: boolean } = {};
+    if (options.fromEnv !== undefined) opts.fromEnv = options.fromEnv;
+    if (options.stdin !== undefined) opts.stdin = options.stdin;
+    await setSearchProviderKey(providerValue, keyArg, opts);
+    return;
+  }
+
   const provider = assertProvider(providerValue);
   const providerImpl = getProvider(provider);
 
@@ -124,6 +140,15 @@ export async function setProviderKey(
 }
 
 export async function unsetProviderKey(providerValue: string): Promise<void> {
+  if (
+    providerValue === "brave" ||
+    providerValue === "tavily" ||
+    providerValue === "duckduckgo"
+  ) {
+    const { unsetSearchProviderKey } = await import("./search-providers.js");
+    await unsetSearchProviderKey(providerValue);
+    return;
+  }
   const provider = assertProvider(providerValue);
   await unsetProviderSecret(provider);
   console.log(`unset ${provider}`);
@@ -142,6 +167,15 @@ export async function printProviderKeys(): Promise<void> {
       `${active} ${configured} ${status.provider.padEnd(10)} ${source}${secret}${note} model=${status.model}`,
     );
   }
+
+  // Search providers are listed under a separate header so users can
+  // tell LLM and search keyspaces apart at a glance (Requirement 3.6).
+  console.log("");
+  console.log(chalk.bold("Search providers:"));
+  const { printSearchProviderKeys } = await import(
+    "./search-providers.js"
+  );
+  await printSearchProviderKeys();
 }
 
 export async function ensureProviderConfigured(

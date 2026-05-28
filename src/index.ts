@@ -194,6 +194,15 @@ async function main(): Promise<void> {
     });
 
   program
+    .command("search-provider")
+    .description("set the active search provider for web.search")
+    .argument("<provider>", "search provider id (brave, tavily, duckduckgo)")
+    .action(async (provider: string) => {
+      const { useSearchProvider } = await import("./commands/search-providers.js");
+      await useSearchProvider(provider);
+    });
+
+  program
     .command("model")
     .description("set the active model for the current provider")
     .argument("<model>", "model name")

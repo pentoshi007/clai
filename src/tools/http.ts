@@ -1,6 +1,7 @@
 import net from "node:net";
 import { lookup } from "node:dns/promises";
 import type { ToolResult } from "../types.js";
+import { isBlockedAddress } from "./web/ssrf-guard.js";
 
 const DEFAULT_MAX_BYTES = 256 * 1024;
 const ALLOWED_METHODS = new Set([
@@ -16,38 +17,14 @@ const ALLOWED_METHODS = new Set([
 /**
  * Block (or require explicit ownership confirmation for) requests that
  * target loopback, private, link-local, or cloud-metadata addresses.
- * This stops the agent from being tricked into SSRF against the host's
- * intranet via a "fetch this URL" prompt.
+ *
+ * The classification logic now lives in {@link "./web/ssrf-guard"} so that
+ * `http.fetch` and the new `web.fetch` tool share a single source of truth
+ * for SSRF rules. This file re-exports `isBlockedAddress` for callers that
+ * still import it from `../tools/http`, but the implementation is the
+ * structured classifier in `web/ssrf-guard.ts`.
  */
-function isBlockedAddress(host: string): boolean {
-  const lower = host.toLowerCase();
-  if (lower === "localhost" || lower === "localhost.localdomain") return true;
-  if (lower === "ip6-localhost" || lower === "ip6-loopback") return true;
-  if (net.isIPv4(host)) {
-    const parts = host.split(".").map((p) => Number(p));
-    const [a, b] = parts;
-    if (a === 127) return true; // loopback
-    if (a === 10) return true; // RFC1918
-    if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true; // RFC1918
-    if (a === 192 && b === 168) return true; // RFC1918
-    if (a === 169 && b === 254) return true; // link-local + cloud metadata
-    if (a === 0) return true; // 0.0.0.0/8
-    if (a === 100 && b !== undefined && b >= 64 && b <= 127) return true; // CGNAT
-    return false;
-  }
-  if (net.isIPv6(host)) {
-    if (lower === "::1") return true;
-    if (lower.startsWith("fe80:")) return true; // link-local
-    if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // ULA
-    if (lower.startsWith("::ffff:")) {
-      // IPv4-mapped IPv6 — re-check the embedded v4 address.
-      const v4 = lower.slice("::ffff:".length);
-      return isBlockedAddress(v4);
-    }
-    return false;
-  }
-  return false;
-}
+export { isBlockedAddress };
 
 async function resolveHost(host: string): Promise<string | undefined> {
   if (net.isIP(host)) return host;

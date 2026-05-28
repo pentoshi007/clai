@@ -18,6 +18,7 @@ import {
   targetInScope,
   type EngagementScope,
 } from "../store/scope.js";
+import { classifyHost } from "../tools/web/ssrf-guard.js";
 
 export interface RiskDecision {
   level: RiskLevel;
@@ -504,6 +505,46 @@ export function classifyToolCall(
       level: "confirm",
       reason: "File deletion requires manual confirmation (never auto-confirmed)",
     };
+  }
+
+  if (call.name === "web.search") {
+    const query = stringArg(call.args, "query") ?? "";
+    if (query.length === 0 || query.length > 2048) {
+      return {
+        level: "block",
+        reason: "web.search query length out of bounds (must be 1..2048 chars)",
+      };
+    }
+    return { level: "safe", reason: "Public search engine query" };
+  }
+
+  if (call.name === "web.fetch") {
+    const url = stringArg(call.args, "url") ?? "";
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return {
+        level: "block",
+        reason: "web.fetch url is not parseable",
+      };
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return {
+        level: "block",
+        reason: `web.fetch refuses scheme ${parsed.protocol}`,
+      };
+    }
+    // Strip surrounding `[]` from IPv6 hostname literals before classifying.
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+    const blocked = classifyHost(hostname);
+    if (blocked) {
+      return {
+        level: "block",
+        reason: `web.fetch refuses ${blocked.class} address ${parsed.hostname}`,
+      };
+    }
+    return { level: "safe", reason: "Public web read" };
   }
 
   return { level: "confirm", reason: "Unknown tool requires confirmation" };

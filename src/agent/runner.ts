@@ -19,6 +19,7 @@ import {
   scopeTargetForToolCall,
 } from "../safety/classifier.js";
 import { availableToolNames, runToolCall } from "../tools/registry.js";
+import { looksInteractiveStdin } from "../tools/shell.js";
 import { reduceToolOutput } from "../tools/policies/output-policy.js";
 import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import { compactMessages, estimateMessagesTokens } from "./context-manager.js";
@@ -683,11 +684,33 @@ export async function runAgentLoop(
     // Execute tool
     options.signal?.throwIfAborted();
     options.onToolStart?.(call);
+
+    // Heads-up when the command is about to run something that may pause
+    // for a password prompt (sudo, ssh, gpg, ...). The shell tool already
+    // routes such commands through inherited stdin so the user can type
+    // directly into the controlling TTY; we just warn them to expect it.
+    const interactiveCommand =
+      call.name === "shell.exec" &&
+      typeof call.args.command === "string" &&
+      looksInteractiveStdin(call.args.command);
+    if (interactiveCommand && process.stdin.isTTY) {
+      process.stdout.write(
+        chalk.yellow(
+          "  ⚠ this command may prompt for a password — type it when asked\n",
+        ),
+      );
+    }
     let result: ToolResult;
     let liveBytes = 0;
     const liveCap = 16_000; // Stop streaming after this many bytes to avoid flooding the terminal.
     let liveTruncatedNotified = false;
     let lastProgressAt = 0;
+    // When the underlying command may pause for a password prompt
+    // (sudo / ssh / etc.) we stream the live preview *without* the dim
+    // attribute so the prompt is fully readable. Otherwise we keep the
+    // dim styling that makes ordinary tool chatter visually distinct
+    // from the model's prose.
+    const shouldDimLive = !interactiveCommand;
     const printLive = (chunk: string): void => {
       // Suppress live preview for fs.read / fs.list — those are read-only
       // and the final summary is already concise. Stream shell-style tools
@@ -724,13 +747,11 @@ export async function runAgentLoop(
       liveBytes += slice.length;
       // Indent each line so live output lines up under the tool call.
       const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
-      process.stdout.write(
-        chalk.dim(
-          indented.startsWith("\n")
-            ? indented
-            : `  ${indented}`.replace(/^  /, "  "),
-        ),
-      );
+      const body = indented.startsWith("\n") ? indented : `  ${indented}`;
+      // Skip the dim wrapper for interactive commands so a sudo password
+      // prompt is rendered at full brightness; everything else stays dim
+      // so tool chatter is visually distinct from the model's prose.
+      process.stdout.write(shouldDimLive ? chalk.dim(body) : body);
     };
 
     try {
@@ -799,6 +820,32 @@ export async function runAgentLoop(
         });
         continue;
       }
+    }
+
+    // ── Auto-retry on "a terminal is required" sudo error ──────────────
+    // Older Node versions and some non-TTY contexts can still surface the
+    // canonical sudo "a terminal is required" or "no askpass program"
+    // failure. Tell the model to retry through plain `sudo …` (which the
+    // shell tool now inherits stdin for) instead of getting clever with
+    // -S / askpass / piping a password.
+    const SUDO_NEEDS_TTY_RE =
+      /sudo:\s+a terminal is required to read the password|sudo:\s+a password is required|no askpass program|sudo: \d+ incorrect password attempts|sudo:\s+(?:no tty present|sorry, you must have a tty)/i;
+    if (!result.ok && SUDO_NEEDS_TTY_RE.test(output)) {
+      process.stdout.write(
+        chalk.yellow(
+          "  ⚠ sudo needs an interactive terminal — asking the model to retry without -S/askpass\n",
+        ),
+      );
+      messages.push({
+        role: "tool",
+        content:
+          "Tool failed: sudo could not read a password.\n" +
+          "On the next attempt: call shell.exec with `sudo <command>` directly. " +
+          "clai inherits stdin from the user's terminal, so the user can type the password live. " +
+          "DO NOT use `echo \"<pwd>\" | sudo -S`, DO NOT use SUDO_ASKPASS, DO NOT ask the user for the password in chat. " +
+          "Just run `sudo <command>` and the password prompt will be visible.",
+      });
+      continue;
     }
 
     // Print tool result

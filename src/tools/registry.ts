@@ -4,6 +4,9 @@ import type { ToolCall, ToolResult } from "../types.js";
 import { fsEdit, fsDelete, fsList, fsRead, fsSearch, fsWrite } from "./fs.js";
 import { httpFetch } from "./http.js";
 import { shellExec, spawnArgv } from "./shell.js";
+import { webFetch } from "./web/fetch.js";
+import { webSearch } from "./web/search.js";
+import { RESPONSE_MODES, type ResponseMode } from "./web/types.js";
 import { classifyToolCall } from "../safety/classifier.js";
 import { loadScope } from "../store/scope.js";
 import {
@@ -51,6 +54,25 @@ function optionalNumber(
 ): number | undefined {
   const value = args[key];
   return typeof value === "number" ? value : undefined;
+}
+
+function optionalBoolean(
+  args: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const value = args[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function optionalResponseMode(
+  args: Record<string, unknown>,
+  key: string,
+): ResponseMode | undefined {
+  const value = args[key];
+  if (typeof value === "string" && (RESPONSE_MODES as readonly string[]).includes(value)) {
+    return value as ResponseMode;
+  }
+  return undefined;
 }
 
 export const toolRegistry: Record<string, ToolHandler> = {
@@ -141,6 +163,40 @@ export const toolRegistry: Record<string, ToolHandler> = {
       headers,
       maxBytes: optionalNumber(args, "maxBytes"),
       iOwnThis: args.iOwnThis === true || args.own === true,
+    });
+  },
+  async "web.search"(args, options) {
+    return webSearch(
+      {
+        query: requireString(args, "query"),
+        ...(optionalNumber(args, "maxResults") !== undefined
+          ? { maxResults: optionalNumber(args, "maxResults") as number }
+          : {}),
+      },
+      { ...(options?.signal ? { signal: options.signal } : {}) },
+    );
+  },
+  async "web.fetch"(args, options) {
+    const url = requireString(args, "url");
+    const fetchArgs: Parameters<typeof webFetch>[0] = { url };
+    const maxBytes = optionalNumber(args, "maxBytes");
+    if (maxBytes !== undefined) fetchArgs.maxBytes = maxBytes;
+    const includeHeaders = optionalBoolean(args, "includeHeaders");
+    if (includeHeaders !== undefined) fetchArgs.includeHeaders = includeHeaders;
+    const includeTls = optionalBoolean(args, "includeTls");
+    if (includeTls !== undefined) fetchArgs.includeTls = includeTls;
+    const includeTiming = optionalBoolean(args, "includeTiming");
+    if (includeTiming !== undefined) fetchArgs.includeTiming = includeTiming;
+    const includeRedirectChain = optionalBoolean(args, "includeRedirectChain");
+    if (includeRedirectChain !== undefined)
+      fetchArgs.includeRedirectChain = includeRedirectChain;
+    const responseMode = optionalResponseMode(args, "responseMode");
+    if (responseMode !== undefined) fetchArgs.responseMode = responseMode;
+    const redactSensitive = optionalBoolean(args, "redactSensitive");
+    if (redactSensitive !== undefined)
+      fetchArgs.redactSensitive = redactSensitive;
+    return webFetch(fetchArgs, {
+      ...(options?.signal ? { signal: options.signal } : {}),
     });
   },
   async sysinfo() {
@@ -357,6 +413,8 @@ const BATCH_SAFE_TOOLS = new Set([
   "whois.lookup",
   "net.context",
   "tool.check",
+  "web.search",
+  "web.fetch",
 ]);
 
 const BATCH_MAX_CALLS = 8;

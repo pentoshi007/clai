@@ -1,5 +1,6 @@
 import Conf from "conf";
 import type { Mode, ProviderId, ReasoningPreference } from "../types.js";
+import type { SearchProviderId } from "../tools/web/types.js";
 import { defaultModels, sanitizeProviderModel } from "../llm/provider.js";
 
 export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
@@ -30,6 +31,8 @@ export interface ClaiConfig {
   historyRetentionLimit: number;
   /** When true, fs.read/list/search must stay within sandboxRoots ∪ {cwd, $HOME}. */
   sandboxReads: boolean;
+  /** Active search provider used by the web.search tool. */
+  activeSearchProvider: SearchProviderId;
 }
 
 /**
@@ -68,6 +71,7 @@ const defaults: ClaiConfig = {
   privateMode: false,
   historyRetentionLimit: 200,
   sandboxReads: true,
+  activeSearchProvider: "duckduckgo",
 };
 
 const store = new Conf<ClaiConfig>({
@@ -137,4 +141,12 @@ export function setThinking(patch: Partial<ReasoningPreference>): ClaiConfig {
     effort: patch.effort ?? current.effort,
   };
   return updateConfig({ thinking: next });
+}
+
+export function getActiveSearchProvider(): SearchProviderId {
+  return getConfig().activeSearchProvider;
+}
+
+export function setActiveSearchProvider(id: SearchProviderId): ClaiConfig {
+  return updateConfig({ activeSearchProvider: id });
 }

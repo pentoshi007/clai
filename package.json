@@ -1,6 +1,6 @@
 {
   "name": "@pentoshi/clai",
-  "version": "0.10.5",
+  "version": "0.11.0",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",
@@ -46,6 +46,7 @@
   "dependencies": {
     "@inquirer/prompts": "^8.4.2",
     "chalk": "^5.4.1",
+    "cheerio": "^1.0.0",
     "commander": "^14.0.3",
     "conf": "^13.1.0",
     "execa": "^9.5.2",
@@ -57,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "fast-check": "^4.3.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"

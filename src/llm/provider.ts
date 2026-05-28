@@ -111,11 +111,14 @@ export function sanitizeProviderModel(provider: ProviderId, model: string): stri
 }
 
 export function maskSecret(secret: string): string {
-  // Show the first 4 characters and the last 3 characters with a fixed
-  // dotted middle, so users can identify the right key at a glance
-  // without leaking enough of it to be useful to a shoulder-surfer.
-  if (secret.length <= 7) return "•".repeat(Math.max(secret.length, 4));
-  return `${secret.slice(0, 4)}••••${secret.slice(-3)}`;
+  // Per Requirement 3.6: for keys shorter than 8 characters, mask every
+  // character with `*`; for keys of length >= 8, expose only the last 4
+  // characters and replace every preceding character with `*`. Shoulder
+  // surfers see only the trailing 4 chars; users can still tell two
+  // configured keys apart at a glance.
+  const n = secret.length;
+  if (n < 8) return "*".repeat(n);
+  return "*".repeat(n - 4) + secret.slice(-4);
 }
 
 export function redactSecrets(value: string): string {
