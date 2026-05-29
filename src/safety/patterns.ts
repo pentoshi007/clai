@@ -121,6 +121,177 @@ export function commandHasMutatingArg(command: string): boolean {
 }
 
 /**
+ * Base commands whose whole job is to MUTATE state — create/copy/move/delete
+ * files, change ownership/permissions, write to disk, install packages, build
+ * artifacts, or control services/processes. These always require confirmation
+ * even when they appear without any obviously dangerous flag.
+ *
+ * The policy this powers is: benign/read-only commands auto-run, but anything
+ * that installs, deletes, modifies, moves, or copies (or needs elevation) must
+ * be confirmed first. Package managers and build tools are included because
+ * they write to disk and pull remote code.
+ */
+export const mutatingCommandBases = new Set([
+  // file mutation
+  "mv",
+  "cp",
+  "rm",
+  "rmdir",
+  "mkdir",
+  "touch",
+  "ln",
+  "link",
+  "rename",
+  "dd",
+  "tee",
+  "truncate",
+  "shred",
+  "install",
+  "patch",
+  "chmod",
+  "chown",
+  "chgrp",
+  "chattr",
+  "setfacl",
+  "mkfs",
+  "mkswap",
+  "fallocate",
+  "split",
+  // archives that write to disk
+  "unzip",
+  "gunzip",
+  "bunzip2",
+  "unxz",
+  "7z",
+  // transfer / sync that writes
+  "rsync",
+  "scp",
+  "sftp",
+  // process / service / system control
+  "kill",
+  "pkill",
+  "killall",
+  "mount",
+  "umount",
+  "systemctl",
+  "service",
+  "launchctl",
+  "crontab",
+  "reboot",
+  "halt",
+  "poweroff",
+  "useradd",
+  "userdel",
+  "usermod",
+  "groupadd",
+  "passwd",
+  // package managers / installers
+  "apt",
+  "apt-get",
+  "dpkg",
+  "dnf",
+  "yum",
+  "rpm",
+  "pacman",
+  "zypper",
+  "apk",
+  "snap",
+  "flatpak",
+  "brew",
+  "port",
+  "choco",
+  "winget",
+  "scoop",
+  "gem",
+  "cargo",
+  "go",
+  "pip",
+  "pip3",
+  "pipx",
+  "npm",
+  "pnpm",
+  "yarn",
+  "bun",
+  "deno",
+  // build systems (write artifacts)
+  "make",
+  "cmake",
+  "ninja",
+  "gradle",
+  "mvn",
+  "msbuild",
+  // VCS / containers / orchestration whose mutating subcommands are not on
+  // the read-only allowlist (status/log/diff/ps/images/etc. are checked and
+  // allowed *before* this set, so only the mutating subcommands land here).
+  "git",
+  "docker",
+  "kubectl",
+  "podman",
+]);
+
+/**
+ * Metacharacters that WRITE to disk or escape into another command:
+ *   - `>` / `>>` output redirection (overwrites/appends a file)
+ *   - command substitution `$(...)` / backticks
+ *   - process substitution `<(...)` / `>(...)`
+ *   - `sudo` / `doas` (privilege escalation)
+ *
+ * Note: plain pipes (`|`) and command chaining (`&&`, `||`, `;`) are
+ * intentionally NOT here — chaining read-only commands is benign and is
+ * handled per-segment by {@link commandIsMutating}.
+ */
+const WRITE_OR_ESCALATE_RE =
+  /(?:>>|>|`|\$\(|<\(|>\(|\bsudo\b|\bdoas\b)/;
+
+export function commandWritesOrEscalates(command: string): boolean {
+  return WRITE_OR_ESCALATE_RE.test(command);
+}
+
+/**
+ * Split a command line on pipes / chaining operators and report whether ANY
+ * segment is a mutating command. A segment is mutating when its base command
+ * is in {@link mutatingCommandBases} AND it is not a known read-only
+ * subcommand of that base (so `git status` / `docker ps` / `npm list` are NOT
+ * flagged, while `git push` / `docker run` / `npm install` are). In-place /
+ * state-mutating ARGUMENTS (sed -i, find -exec, …) are handled separately by
+ * {@link commandHasMutatingArg}, which callers check first.
+ *
+ * This lets a chain of purely read-only commands (`grep x foo | sort | head`)
+ * auto-run, while a chain that includes a mutator (`cat a | tee b`) is flagged.
+ */
+export function commandIsMutating(command: string): boolean {
+  const segments = command
+    .split(/(?:\|\||&&|;|\|)/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  for (const segment of segments) {
+    const tokens = segment.split(/\s+/);
+    let i = 0;
+    // Skip env-var assignment prefixes ("FOO=bar cmd ...") and exec/command.
+    while (i < tokens.length && /^[A-Za-z_][\w]*=.*$/.test(tokens[i]!)) i += 1;
+    if (
+      i < tokens.length &&
+      (tokens[i] === "command" || tokens[i] === "exec" || tokens[i] === "time")
+    ) {
+      i += 1;
+    }
+    const head = tokens[i];
+    if (!head) continue;
+    const base = head.replace(/^.*[\\/]/, "").toLowerCase();
+    if (!mutatingCommandBases.has(base)) continue;
+    // A read-only subcommand of an otherwise-mutating CLI (git status,
+    // docker ps, npm list) is NOT a mutation.
+    const sub = tokens[i + 1];
+    const allow = subcommandSafeMap[base];
+    if (allow && sub && (allow.has(sub) || allow.has(sub.replace(/^--/, "")))) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
  * Paths that should never be read by an agent without explicit confirmation.
  * Matched against the resolved (tilde-expanded) absolute path of any tool
  * that takes a `path` argument, AND against shell command strings for

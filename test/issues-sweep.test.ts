@@ -20,14 +20,14 @@ describe("issues.md §23 — sweep", () => {
     ).toBe("block");
   });
 
-  it("env / printenv are no longer auto-safe", () => {
+  it("env / printenv auto-run (read-only env inspection is not mutating)", () => {
     expect(
       classifyToolCall({ name: "shell.exec", args: { command: "env" } }).level,
-    ).toBe("confirm");
+    ).toBe("safe");
     expect(
       classifyToolCall({ name: "shell.exec", args: { command: "printenv" } })
         .level,
-    ).toBe("confirm");
+    ).toBe("safe");
   });
 
   it("http.fetch POST/PUT/DELETE require confirmation", () => {

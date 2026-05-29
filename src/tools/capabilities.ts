@@ -29,6 +29,7 @@ const VERSION_COMMANDS: Record<string, string[]> = {
   git: ["git", "--version"],
   docker: ["docker", "--version"],
   kubectl: ["kubectl", "version", "--client", "--short"],
+  tesseract: ["tesseract", "--version"],
 };
 
 const INSTALL_HINTS: Record<string, string> = {
@@ -41,9 +42,11 @@ const INSTALL_HINTS: Record<string, string> = {
   rg: "pkg.install ripgrep",
   jq: "pkg.install jq",
   dig: "pkg.install dnsutils (or bind-utils)",
-  subfinder: "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+  subfinder:
+    "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
   httpx: "go install github.com/projectdiscovery/httpx/cmd/httpx@latest",
   nuclei: "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+  tesseract: "pkg.install tesseract",
 };
 
 function findCommand(name: string): string | undefined {
@@ -100,9 +103,7 @@ export async function checkTool(name: string): Promise<ToolAvailability> {
   };
 }
 
-export async function checkTools(
-  names: string[],
-): Promise<ToolAvailability[]> {
+export async function checkTools(names: string[]): Promise<ToolAvailability[]> {
   return Promise.all(names.map((name) => checkTool(name)));
 }
 
@@ -114,11 +115,15 @@ export async function toolCheckHandler(
   if (Array.isArray(toolsRaw)) {
     names = toolsRaw.filter((t): t is string => typeof t === "string");
   } else if (typeof toolsRaw === "string") {
-    names = toolsRaw.split(",").map((t) => t.trim()).filter(Boolean);
+    names = toolsRaw
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
   } else {
     return {
       ok: false,
-      output: 'tool.check expects { "tools": ["nmap", "ffuf", ...] } or { "tools": "nmap,ffuf" }',
+      output:
+        'tool.check expects { "tools": ["nmap", "ffuf", ...] } or { "tools": "nmap,ffuf" }',
       exitCode: 1,
     };
   }

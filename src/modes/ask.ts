@@ -1,4 +1,4 @@
-import type { ChatMessage, ProviderId } from "../types.js";
+import type { ChatMessage, ChatImage, ProviderId } from "../types.js";
 import { completeWithProvider, streamWithProvider } from "../llm/router.js";
 import { renderAskSystemPrompt } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
@@ -10,6 +10,7 @@ export interface AskOptions {
   model?: string | undefined;
   history?: ChatMessage[] | undefined;
   signal?: AbortSignal | undefined;
+  images?: ChatImage[] | undefined;
 }
 
 async function buildAskMessages(
@@ -23,13 +24,17 @@ async function buildAskMessages(
   const systemPrompt = projectContext
     ? `${renderAskSystemPrompt()}\n\nProject context from .clai/context.md:\n${projectContext}`
     : renderAskSystemPrompt();
+  const userMessage: ChatMessage = { role: "user", content: prompt };
+  if (options.images && options.images.length > 0) {
+    userMessage.images = options.images;
+  }
   return {
     provider,
     model: options.model ?? config.defaultModel,
     messages: [
       { role: "system", content: systemPrompt },
       ...(options.history ?? []),
-      { role: "user", content: prompt },
+      userMessage,
     ],
   };
 }

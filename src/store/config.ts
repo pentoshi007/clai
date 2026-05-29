@@ -2,6 +2,7 @@ import Conf from "conf";
 import type { Mode, ProviderId, ReasoningPreference } from "../types.js";
 import type { SearchProviderId } from "../tools/web/types.js";
 import { defaultModels, sanitizeProviderModel } from "../llm/provider.js";
+import { safeCwd } from "../os/cwd.js";
 
 export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
 
@@ -59,7 +60,7 @@ const defaults: ClaiConfig = {
   providerModels: {},
   allowAlwaysTools: [],
   pentestAuthorized: false,
-  sandboxRoots: [process.cwd()],
+  sandboxRoots: [safeCwd()],
   ollamaHost: "http://localhost:11434",
   telemetry: false,
   lastUpdateCheck: 0,

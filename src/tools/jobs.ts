@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { ToolResult } from "../types.js";
+import { safeCwd } from "../os/cwd.js";
 
 export type JobStatus = "running" | "exited" | "killed" | "failed";
 
@@ -30,7 +31,7 @@ export class JobManager {
     options?: { cwd?: string | undefined; name?: string | undefined } | undefined,
   ): Promise<ToolResult> {
     const id = randomUUID().slice(0, 8);
-    const cwd = options?.cwd ?? process.cwd();
+    const cwd = options?.cwd ?? safeCwd();
     const dir = join(homedir(), ".clai", "jobs");
     await mkdir(dir, { recursive: true });
     const artifactPath = join(

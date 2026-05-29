@@ -1,4 +1,4 @@
-import type { CompletionRequest, CompletionResult } from "../types.js";
+import type { ChatMessage, CompletionRequest, CompletionResult } from "../types.js";
 import {
   defaultModels,
   type LlmProvider,
@@ -11,6 +11,23 @@ function base(auth: ProviderAuth): string {
     /\/$/,
     "",
   );
+}
+
+/** Ollama's /api/chat takes a per-message `images` array of base64 strings. */
+function toOllamaMessages(
+  messages: ChatMessage[],
+): Array<{ role: string; content: string; images?: string[] }> {
+  return messages.map((message) => {
+    const role = message.role === "tool" ? "user" : message.role;
+    if (role === "user" && message.images && message.images.length > 0) {
+      return {
+        role,
+        content: message.content,
+        images: message.images.map((img) => img.dataBase64),
+      };
+    }
+    return { role, content: message.content };
+  });
 }
 
 export const ollamaProvider: LlmProvider = {
@@ -34,10 +51,7 @@ export const ollamaProvider: LlmProvider = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         model,
-        messages: request.messages.map((message) => ({
-          role: message.role === "tool" ? "user" : message.role,
-          content: message.content,
-        })),
+        messages: toOllamaMessages(request.messages),
         stream: false,
         options: { temperature: request.temperature ?? 0.2 },
       }),
@@ -61,10 +75,7 @@ export const ollamaProvider: LlmProvider = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         model,
-        messages: request.messages.map((message) => ({
-          role: message.role === "tool" ? "user" : message.role,
-          content: message.content,
-        })),
+        messages: toOllamaMessages(request.messages),
         stream: true,
         options: { temperature: request.temperature ?? 0.2 },
       }),

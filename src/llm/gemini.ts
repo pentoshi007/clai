@@ -11,15 +11,30 @@ import {
 } from "./provider.js";
 import { readJson, readStreamLines } from "./http.js";
 
+type GeminiPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
 function geminiContents(
   messages: ChatMessage[],
-): Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> {
+): Array<{ role: "user" | "model"; parts: GeminiPart[] }> {
   return messages
     .filter((message) => message.role !== "system")
-    .map((message) => ({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: message.content }],
-    }));
+    .map((message) => {
+      const role = message.role === "assistant" ? "model" : "user";
+      const parts: GeminiPart[] = [];
+      if (message.content) parts.push({ text: message.content });
+      if (role === "user" && message.images) {
+        for (const img of message.images) {
+          parts.push({
+            inlineData: { mimeType: img.mediaType, data: img.dataBase64 },
+          });
+        }
+      }
+      // Gemini requires at least one part per content entry.
+      if (parts.length === 0) parts.push({ text: "" });
+      return { role, parts };
+    });
 }
 
 function systemInstruction(

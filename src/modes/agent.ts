@@ -1,4 +1,4 @@
-import type { ChatMessage, ProviderId, ToolCall } from "../types.js";
+import type { ChatMessage, ChatImage, ProviderId, ToolCall } from "../types.js";
 import {
   runAgentLoop,
   parseToolCall,
@@ -14,6 +14,7 @@ export interface AgentOptions {
   maxSteps?: number | undefined;
   signal?: AbortSignal | undefined;
   session?: SessionPolicy | undefined;
+  images?: ChatImage[] | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?:
     | ((

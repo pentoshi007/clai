@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { safeCwd } from "../os/cwd.js";
 
 const MAX_PROJECT_CONTEXT_BYTES = 16 * 1024;
 
 export async function loadProjectContext(): Promise<string | undefined> {
-  const contextFile = join(process.cwd(), ".clai", "context.md");
+  const contextFile = join(safeCwd(), ".clai", "context.md");
   if (!existsSync(contextFile)) return undefined;
   const raw = await readFile(contextFile, "utf8");
   const trimmed = raw.trim();
@@ -36,7 +37,7 @@ export async function loadProjectContext(): Promise<string | undefined> {
 }
 
 export function getProjectContextPath(): string {
-  return join(process.cwd(), ".clai", "context.md");
+  return join(safeCwd(), ".clai", "context.md");
 }
 
 export const MAX_PROJECT_CONTEXT = MAX_PROJECT_CONTEXT_BYTES;

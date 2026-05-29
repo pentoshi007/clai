@@ -3,6 +3,8 @@ import {
   parseToolCall,
   requiresFreshWebSearch,
   shouldDimToolChatter,
+  looksLikeTruncatedToolCall,
+  recognizeBareToolJson,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -191,5 +193,69 @@ describe("phase 8 — parser strict mode", () => {
     const text =
       'Here is an example: {"name":"shell.exec","args":{"command":"rm -rf /"}}';
     expect(parseToolCall(text, { strict: true })).toBeUndefined();
+  });
+});
+
+describe("truncated tool-call detection", () => {
+  const bigCall = JSON.stringify({
+    name: "fs.writeMany",
+    args: { files: [{ path: "package.json", content: "{}" }] },
+  });
+
+  it("flags an opened ```tool fence with no closing fence", () => {
+    const text = "Plan\n\n```tool\n" + bigCall.slice(0, 40);
+    expect(looksLikeTruncatedToolCall(text)).toBe(true);
+    // And it does NOT parse, which is what triggers the recovery path.
+    expect(parseToolCall(text)).toBeUndefined();
+  });
+
+  it("flags a tool JSON whose braces never balanced", () => {
+    const text = '{"name":"fs.writeMany","args":{"files":[{"path":"a.txt"';
+    expect(looksLikeTruncatedToolCall(text)).toBe(true);
+  });
+
+  it("does not flag a complete fenced tool call", () => {
+    const text = "Plan\n\n```tool\n" + bigCall + "\n```";
+    expect(looksLikeTruncatedToolCall(text)).toBe(false);
+    expect(parseToolCall(text)?.name).toBe("fs.writeMany");
+  });
+
+  it("does not flag ordinary prose with no tool markers", () => {
+    expect(looksLikeTruncatedToolCall("Here is your answer, all done.")).toBe(false);
+  });
+});
+
+describe("bare-JSON tool-call recovery", () => {
+  it("recovers a complete {name,args} object that the strict matchers missed", () => {
+    const text = '{"name":"pdf.read","args":{"path":"/abs/file.pdf"}}';
+    const result = recognizeBareToolJson(text);
+    expect(result?.call?.name).toBe("pdf.read");
+    expect(result?.call?.args).toEqual({ path: "/abs/file.pdf" });
+  });
+
+  it("recovers a complete call wrapped in a lone ```json fence", () => {
+    const text = '```json\n{"name":"sysinfo","args":{}}\n```';
+    const result = recognizeBareToolJson(text);
+    expect(result?.call?.name).toBe("sysinfo");
+  });
+
+  it("flags a bare args object (no name/fence) as argsOnly", () => {
+    const text = '{"path":"/Users/x/signed-cert.pdf"}';
+    const result = recognizeBareToolJson(text);
+    expect(result?.argsOnly).toBe(true);
+    expect(result?.call).toBeUndefined();
+  });
+
+  it("flags a bare command args object as argsOnly", () => {
+    const result = recognizeBareToolJson('{"command":"ls -la"}');
+    expect(result?.argsOnly).toBe(true);
+  });
+
+  it("ignores ordinary JSON answers that are not tool args", () => {
+    expect(
+      recognizeBareToolJson('{"answer":42,"explanation":"because"}'),
+    ).toBeUndefined();
+    expect(recognizeBareToolJson("just some prose")).toBeUndefined();
+    expect(recognizeBareToolJson('{"path":"x","extra":1,"more":2,"a":3,"b":4,"c":5,"d":6}')).toBeUndefined();
   });
 });

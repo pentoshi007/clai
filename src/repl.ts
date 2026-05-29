@@ -61,27 +61,38 @@ import {
 } from "./ui/thinking.js";
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { startThinkingSpinner } from "./ui/spinner.js";
-import { modelSupportsThinking } from "./llm/capabilities.js";
+import {
+  modelSupportsThinking,
+  modelSupportsVision,
+  preferredVisionModel,
+} from "./llm/capabilities.js";
 import {
   clearViewports,
   getLastViewport,
   getViewport,
   isPagerActive,
   listViewports,
+  openPager,
   openViewportPager,
   toggleViewport,
 } from "./ui/output-pane.js";
+import { loadPlan, savePlan } from "./store/plan.js";
+import { renderPlanDocument, renderPlanChecklist } from "./ui/plan-pane.js";
+import { safeCwd, cwdIsBroken, recoverCwd } from "./os/cwd.js";
 import {
   compactMessages,
   estimateMessagesTokens,
 } from "./agent/context-manager.js";
-import { isCtrlC, isCtrlO, isCtrlT, isEscape } from "./ui/keys.js";
+import { isCtrlC, isCtrlO, isCtrlP, isCtrlT, isEscape } from "./ui/keys.js";
 import {
   getMentionQuery,
   findFileSuggestions,
   expandMentions,
+  loadImageAttachments,
+  imageAttachmentPaths,
   type FileSuggestion,
 } from "./ui/mentions.js";
+import { imageOcr } from "./tools/image.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -177,6 +188,14 @@ const slashCommands: SlashCommand[] = [
   },
   { command: "/compact", description: "compact session history now" },
   { command: "/context", description: "show estimated context size" },
+  {
+    command: "/plan",
+    description: "view the current session plan (also Ctrl+P)",
+  },
+  {
+    command: "/implement",
+    description: "approve the current plan and have clai execute it",
+  },
   {
     command: "/scope",
     usage: "[show|clear|new|add <targets>]",
@@ -331,6 +350,80 @@ function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+/** Set of known slash-command names (without the leading "/"). */
+const knownSlashNames = new Set(
+  slashCommands.map((c) => c.command.slice(1).toLowerCase()),
+);
+
+/**
+ * Build an OCR text layer for attached images. Some providers/proxies accept
+ * multimodal `image_url` parts but silently ignore the bytes upstream — the
+ * model then hallucinates an answer from the filename ("Screenshot…AM.png" →
+ * "a dark terminal"). To make image handling robust regardless of whether the
+ * provider's vision actually fired, we OCR each attached image locally and
+ * append the extracted text as supplementary grounding. Vision models still
+ * get the real bytes for colors/layout/style; this only ADDS a safety net.
+ *
+ * Best-effort: if tesseract is missing or OCR yields nothing, returns "".
+ */
+async function buildImageOcrGrounding(
+  line: string,
+  baseDir: string,
+): Promise<string> {
+  const paths = imageAttachmentPaths(line, baseDir);
+  if (paths.length === 0) return "";
+  const sections: string[] = [];
+  for (const path of paths) {
+    try {
+      const result = await imageOcr({ path });
+      const text = result.output.trim();
+      // tesseract emits noise/garbage on non-text images; only include a
+      // section when there is a meaningful amount of recognized text.
+      const meaningful = (text.match(/[A-Za-z0-9]/g) ?? []).length;
+      if (result.ok && meaningful >= 8) {
+        sections.push(`----- OCR of ${path} -----\n${text}\n----- end OCR -----`);
+      }
+    } catch {
+      // tesseract missing or failed — skip silently; vision bytes still sent.
+    }
+  }
+  if (sections.length === 0) return "";
+  return (
+    '<image-ocr note="Text extracted locally from the attached image(s) via OCR, in case the model cannot see the image bytes directly. Use it to ground your answer; if you CAN see the image, prefer your own visual reading and use this only to confirm text.">\n' +
+    sections.join("\n\n") +
+    "\n</image-ocr>"
+  );
+}
+
+/**
+ * Decide whether a line that starts with "/" is actually a slash command
+ * versus an absolute filesystem path the user typed or drag-dropped (e.g.
+ * `/Users/me/Desktop/Screenshot.png`). A real command is "/" + a single
+ * known command word (optionally followed by arguments). An absolute path
+ * has extra "/" segments in its first token and won't match a known command,
+ * so we route it to the normal prompt path where expandMentions() turns it
+ * into a file attachment.
+ */
+export function looksLikeSlashCommand(line: string): boolean {
+  if (!line.startsWith("/") || line.length < 2) return false;
+  // First whitespace-delimited token, minus the leading slash.
+  const firstToken = line.slice(1).split(/\s/)[0] ?? "";
+  // A path-like first token (contains another "/" or a backslash escape, or
+  // looks like a filename with an extension) is never a command.
+  if (firstToken.includes("/") || firstToken.includes("\\")) return false;
+  const name = firstToken.toLowerCase();
+  // Exact match against a known command, or a unique prefix of one (so
+  // partial typing like "/imp" still routes to the command handler, which
+  // already resolves abbreviations). Unknown words like a single-segment
+  // path token still fall through to handleSlash's "unknown command" help,
+  // which is the historical behavior for genuine typos.
+  if (knownSlashNames.has(name)) return true;
+  // Only treat as a (mistyped) command when it has no path/extension shape.
+  // "Users" alone (from "/Users") would be caught above by the "/" check,
+  // so here we accept bare alpha words as command attempts.
+  return /^[a-z][a-z0-9-]*$/i.test(firstToken);
+}
+
 function isAbortLikeError(error: unknown): boolean {
   if (!error) return false;
   if (typeof error === "object") {
@@ -353,6 +446,11 @@ function slashCommandFilter(line: string): string | null {
   // Show the menu immediately on '/' so the user can see available commands,
   // but let Enter submit a raw '/' unless they explicitly navigate the menu.
   if (!line.startsWith("/") || line.length < 1 || /\s/.test(line)) return null;
+  // Don't show the command menu for an absolute path the user is typing or
+  // drag-dropped (e.g. "/Users/me/file.png"): a path's first token has more
+  // "/" or backslash escapes in it. Those go to the normal prompt path.
+  const firstToken = line.slice(1).split(/\s/)[0] ?? "";
+  if (firstToken.includes("/") || firstToken.includes("\\")) return null;
   return line.slice(1).toLowerCase();
 }
 
@@ -429,9 +527,7 @@ export function renderFileMentionMenu(
   const maxWidth = Math.max(1, cols - 1);
 
   if (suggestions.length === 0) {
-    return [
-      chalk.dim(fitPlain(`  no files matching @${query}`, maxWidth)),
-    ];
+    return [chalk.dim(fitPlain(`  no files matching @${query}`, maxWidth))];
   }
 
   const termRows = process.stdout.rows || 24;
@@ -522,6 +618,7 @@ async function readPromptLine(options: {
   history: string[];
   onThinkingShortcut: () => void;
   onOutputShortcut: () => Promise<void>;
+  onPlanShortcut: () => Promise<void>;
 }): Promise<string> {
   return new Promise((resolve) => {
     let line = "";
@@ -572,10 +669,7 @@ async function readPromptLine(options: {
       return { visible: true, query: q.query, start: q.start, suggestions };
     };
 
-    const applyMention = (
-      suggestion: FileSuggestion,
-      start: number,
-    ): void => {
+    const applyMention = (suggestion: FileSuggestion, start: number): void => {
       const before = line.slice(0, start);
       const after = line.slice(cursor);
       let insert = `@${suggestion.value}`;
@@ -601,12 +695,21 @@ async function readPromptLine(options: {
       const cols = terminalColumns();
       const menu = getMenuState();
       const mention = menu.visible
-        ? { visible: false, query: "", start: 0, suggestions: [] as FileSuggestion[] }
+        ? {
+            visible: false,
+            query: "",
+            start: 0,
+            suggestions: [] as FileSuggestion[],
+          }
         : getMentionState();
       const menuLines = menu.visible
         ? renderSlashCommandMenu(line, menu.suggestions, selectedIndex)
         : mention.visible
-          ? renderFileMentionMenu(mention.query, mention.suggestions, selectedIndex)
+          ? renderFileMentionMenu(
+              mention.query,
+              mention.suggestions,
+              selectedIndex,
+            )
           : [];
       const promptRows = buildPromptRows(line, cols, true);
       const target = promptCursorPosition(cursor, cols);
@@ -689,7 +792,12 @@ async function readPromptLine(options: {
       if (isPagerActive()) return;
       const menu = getMenuState();
       const mention = menu.visible
-        ? { visible: false, query: "", start: 0, suggestions: [] as FileSuggestion[] }
+        ? {
+            visible: false,
+            query: "",
+            start: 0,
+            suggestions: [] as FileSuggestion[],
+          }
         : getMentionState();
 
       // Cmd+C on macOS terminals is handled by the OS (it never reaches us),
@@ -730,6 +838,13 @@ async function readPromptLine(options: {
         clearPromptDisplay();
         output.write("\n");
         void options.onOutputShortcut().finally(refresh);
+        return;
+      }
+
+      if (isCtrlP(key)) {
+        clearPromptDisplay();
+        output.write("\n");
+        void options.onPlanShortcut().finally(refresh);
         return;
       }
 
@@ -1451,6 +1566,7 @@ async function handleSlash(
     case "/clear":
       state.messages.length = 0;
       state.resumedMessageCount = 0;
+      state.session.planApproved.value = false;
       console.log(chalk.dim("  context cleared"));
       return true;
     case "/new": {
@@ -1559,16 +1675,35 @@ async function handleSlash(
     }
     case "/cwd": {
       const dir = args.join(" ");
-      if (!dir) console.log(chalk.dim(`  ${process.cwd()}`));
-      else {
-        process.chdir(dir);
+      if (!dir) {
+        if (cwdIsBroken()) {
+          const recovered = recoverCwd();
+          console.log(
+            chalk.yellow(
+              `  ⚠ the previous working directory no longer exists — moved to ${recovered}`,
+            ),
+          );
+        } else {
+          console.log(chalk.dim(`  ${safeCwd()}`));
+        }
+      } else {
+        try {
+          process.chdir(dir);
+        } catch (error) {
+          console.log(
+            chalk.red(
+              `  ✗ cannot change to ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+          return true;
+        }
         const config = getConfig();
         updateConfig({
           sandboxRoots: Array.from(
-            new Set([...config.sandboxRoots, process.cwd()]),
+            new Set([...config.sandboxRoots, safeCwd()]),
           ),
         });
-        console.log(chalk.dim(`  cwd → ${process.cwd()}`));
+        console.log(chalk.dim(`  cwd → ${safeCwd()}`));
       }
       return true;
     }
@@ -1612,6 +1747,28 @@ async function handleSlash(
           `  ${state.messages.length} message(s), ~${tokens.toLocaleString()} tokens estimated`,
         ),
       );
+      return true;
+    }
+    case "/plan": {
+      const plan = await loadPlan(state.session.sessionId).catch(
+        () => undefined,
+      );
+      if (!plan) {
+        console.log(
+          chalk.dim(
+            '  no plan yet — ask clai to plan a multi-step task (e.g. "build a react blog app")',
+          ),
+        );
+        return true;
+      }
+      if (process.stdout.isTTY && input.isTTY) {
+        await openPager({
+          title: `plan · ${plan.goal}`,
+          body: renderPlanDocument(plan),
+        });
+      } else {
+        console.log(renderPlanDocument(plan));
+      }
       return true;
     }
     case "/compact": {
@@ -1930,7 +2087,7 @@ async function handleSlash(
       console.log(renderBanner(getCurrentVersion()));
       console.log(
         renderSessionInfo({
-          workdir: process.cwd(),
+          workdir: safeCwd(),
           model: state.model,
           provider: state.provider,
           mode: state.mode,
@@ -1939,7 +2096,7 @@ async function handleSlash(
       console.log(renderSuggestions());
       console.log(
         chalk.dim(
-          "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output (q to close)\n",
+          "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output  │  Ctrl+P plan (q to close)\n",
         ),
       );
       return true;
@@ -2037,11 +2194,47 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       outputShortcutBusy = false;
     }
   };
+  let planShortcutBusy = false;
+  const handlePlanShortcut = async (): Promise<void> => {
+    if (planShortcutBusy) return;
+    planShortcutBusy = true;
+    try {
+      // Only open the pager when idle (same reasoning as Ctrl+O).
+      if (currentAbortController || !isReadingPrompt) {
+        process.stdout.write(
+          chalk.dim(
+            "\n  (press Ctrl+P at the prompt when idle to view the plan)\n",
+          ),
+        );
+        return;
+      }
+      const plan = await loadPlan(state.session.sessionId).catch(
+        () => undefined,
+      );
+      if (!plan) {
+        process.stdout.write(
+          chalk.dim(
+            '\n  (no plan yet — ask clai to plan a multi-step task, e.g. "build a react blog app")\n',
+          ),
+        );
+        return;
+      }
+      await openPager({
+        title: `plan · ${plan.goal}`,
+        body: renderPlanDocument(plan),
+      });
+    } finally {
+      planShortcutBusy = false;
+    }
+  };
   const handleKeypress = (_sequence: string, key: KeypressKey): void => {
     if (isPagerActive()) return;
     if (isCtrlT(key) && !isReadingPrompt) handleThinkingShortcut();
     if (isCtrlO(key) && !isReadingPrompt) {
       void handleOutputShortcut();
+    }
+    if (isCtrlP(key) && !isReadingPrompt) {
+      void handlePlanShortcut();
     }
     if ((isEscape(key) || isCtrlC(key)) && currentAbortController) {
       abortPressCount += 1;
@@ -2096,7 +2289,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   console.log(renderBanner(getCurrentVersion()));
   console.log(
     renderSessionInfo({
-      workdir: process.cwd(),
+      workdir: safeCwd(),
       model: state.model,
       provider: state.provider,
       mode: state.mode,
@@ -2105,7 +2298,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   console.log(renderSuggestions());
   console.log(
     chalk.dim(
-      "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output (q to close)\n",
+      "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output  │  Ctrl+P plan (q to close)\n",
     ),
   );
 
@@ -2137,20 +2330,57 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           history: promptHistory,
           onThinkingShortcut: handleThinkingShortcut,
           onOutputShortcut: handleOutputShortcut,
+          onPlanShortcut: handlePlanShortcut,
         })
       ).trim();
       isReadingPrompt = false;
       if (!line) continue;
+
+      // ── /implement — approve the active plan and execute it ──────────
+      // Handled here (not in handleSlash) because it must trigger a full
+      // agent run with the plan marked approved, not just print something.
+      let implementApproved = false;
+      let effectiveLine = line;
+      if (line === "/implement" || line.startsWith("/implement ")) {
+        const plan = await loadPlan(state.session.sessionId).catch(
+          () => undefined,
+        );
+        if (!plan) {
+          console.log(
+            chalk.dim(
+              "  no plan to implement — ask clai to plan a multi-step task first",
+            ),
+          );
+          continue;
+        }
+        if (plan.tasks.every((t) => t.state === "done")) {
+          console.log(chalk.dim("  this plan is already complete ✓"));
+          continue;
+        }
+        plan.status = "approved";
+        await savePlan(plan).catch(() => undefined);
+        state.session.planApproved.value = true;
+        console.log(
+          chalk.cyan("  ✦ plan approved — clai will now execute it\n"),
+        );
+        console.log(renderPlanChecklist(plan) + "\n");
+        implementApproved = true;
+        effectiveLine =
+          "I approve the plan. Execute it now, task by task: mark each task in_progress before " +
+          "you start it and done after it actually succeeds. Run real commands (installs, servers, " +
+          "verification) — do not claim anything ran without a successful tool call.";
+      }
+
       // Only remember real prompts in the history ring. Slash commands
       // are operational toggles (eg /model, /provider) and surfacing them
       // when the user presses ↑ to recall a past prompt is just noise.
       if (
-        !line.startsWith("/") &&
+        !looksLikeSlashCommand(line) &&
         promptHistory[promptHistory.length - 1] !== line
       ) {
         promptHistory.push(line);
       }
-      if (line.startsWith("/")) {
+      if (looksLikeSlashCommand(line) && !implementApproved) {
         // Slash commands may call inquirer/password prompts, which expect the
         // terminal in cooked mode. Normal model runs keep raw mode enabled so
         // ESC/Ctrl+C can abort while streaming.
@@ -2168,11 +2398,51 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         // Expand @file mentions and drag-and-dropped paths into real context.
         // The user-visible `line` stays readable in history; the model gets
         // the line plus an appended block of file contents / path notes.
-        const expansion = expandMentions(line);
+        let requestModel = state.model;
+        let visionCapable = modelSupportsVision(state.provider, requestModel);
+        let expansion = expandMentions(effectiveLine, safeCwd(), visionCapable);
+        const hasImageAttachment = expansion.attachments.some(
+          (att) => att.kind === "image",
+        );
+        if (hasImageAttachment && !visionCapable) {
+          const fallbackVisionModel = preferredVisionModel(
+            state.provider,
+            requestModel,
+          );
+          if (fallbackVisionModel && fallbackVisionModel !== requestModel) {
+            const previousModel = requestModel;
+            requestModel = fallbackVisionModel;
+            visionCapable = true;
+            expansion = expandMentions(effectiveLine, safeCwd(), true);
+            console.log(
+              chalk.dim("  ↳ vision model: ") +
+                chalk.dim(
+                  `${requestModel} (auto for image; ${previousModel} can't view images)`,
+                ),
+            );
+          }
+        }
+        const images = visionCapable
+          ? loadImageAttachments(effectiveLine, safeCwd())
+          : [];
+        const sentImagePaths = new Set(
+          images.map((img) => img.path).filter((p): p is string => Boolean(p)),
+        );
+        // OCR grounding: extract text from any attached image locally and
+        // append it. This is the safety net for the case the user hit — a
+        // provider that accepts image bytes but silently ignores them, so the
+        // model otherwise hallucinates from the filename. Cheap, best-effort,
+        // and additive (vision models still get the real bytes).
+        const ocrGrounding = hasImageAttachment
+          ? await buildImageOcrGrounding(effectiveLine, safeCwd())
+          : "";
+        const contextParts = [expansion.contextBlock, ocrGrounding].filter(
+          (part) => part.length > 0,
+        );
         const modelInput =
-          expansion.contextBlock.length > 0
-            ? `${line}\n\n${expansion.contextBlock}`
-            : line;
+          contextParts.length > 0
+            ? `${effectiveLine}\n\n${contextParts.join("\n\n")}`
+            : effectiveLine;
         if (expansion.attachments.length > 0) {
           for (const att of expansion.attachments) {
             const tag =
@@ -2180,10 +2450,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
                 ? chalk.green("attached")
                 : att.kind === "missing"
                   ? chalk.red("not found")
-                  : chalk.yellow(att.kind);
-            console.log(
-              chalk.dim(`  ↳ ${tag}: `) + chalk.dim(att.path),
-            );
+                  : att.kind === "image" && sentImagePaths.has(att.path)
+                    ? chalk.green("image (sent to model)")
+                    : att.kind === "image" && visionCapable
+                      ? chalk.yellow("image (not sent)")
+                      : chalk.yellow(att.kind);
+            console.log(chalk.dim(`  ↳ ${tag}: `) + chalk.dim(att.path));
           }
         }
         if (state.mode === "ask") {
@@ -2191,9 +2463,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             streamWithAbort(async (runSignal, onToken) => {
               return await runAskStream(modelInput, onToken, {
                 provider: state.provider,
-                model: state.model,
+                model: requestModel,
                 history: state.messages,
                 signal: runSignal,
+                images,
               });
             }, signal),
           );
@@ -2202,18 +2475,24 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           assistantContent = await withAbortableInput(async (signal) =>
             runAgent(modelInput, {
               provider: state.provider,
-              model: state.model,
+              model: requestModel,
               history: state.messages,
               signal,
               session: state.session,
+              images,
             }),
           );
         }
         console.log();
-        state.messages.push(
-          { role: "user", content: modelInput },
-          { role: "assistant", content: assistantContent },
-        );
+        const userHistoryMessage: ChatMessage = {
+          role: "user",
+          content: modelInput,
+        };
+        if (images.length > 0) userHistoryMessage.images = images;
+        state.messages.push(userHistoryMessage, {
+          role: "assistant",
+          content: assistantContent,
+        });
       } catch (error) {
         if (error instanceof AbortRunError) {
           process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));

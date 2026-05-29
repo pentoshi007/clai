@@ -5,6 +5,7 @@ import { execa } from "execa";
 import type { ToolResult } from "../types.js";
 import { getConfig } from "../store/config.js";
 import { isSecretPath } from "../safety/patterns.js";
+import { safeCwd } from "../os/cwd.js";
 
 const DEFAULT_READ_MAX_BYTES = 256 * 1024;
 const DEFAULT_LIST_MAX_ENTRIES = 500;
@@ -51,7 +52,7 @@ function pathInsideSandbox(
 ): boolean {
   const roots = [
     ...getConfig().sandboxRoots.map((root) => resolve(expandHome(root))),
-    process.cwd(),
+    safeCwd(),
   ];
   if (mode === "read") {
     // For reads we also accept the user's home (so dotfiles are inspectable
@@ -242,7 +243,7 @@ export async function fsList(
 
 export async function fsSearch(
   pattern: string,
-  path = process.cwd(),
+  path = safeCwd(),
 ): Promise<ToolResult> {
   const resolved = resolvePath(path);
   ensureReadAllowed(resolved, path);

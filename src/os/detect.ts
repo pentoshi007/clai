@@ -1,4 +1,5 @@
 import { arch, platform, release, type } from 'node:os';
+import { safeCwd } from './cwd.js';
 
 export interface SystemInfo {
   platform: NodeJS.Platform;
@@ -18,7 +19,7 @@ export function detectSystem(): SystemInfo {
     arch: arch(),
     release: release(),
     shell: process.env.SHELL ?? process.env.ComSpec ?? 'unknown',
-    cwd: process.cwd(),
+    cwd: safeCwd(),
   };
 }
 

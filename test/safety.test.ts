@@ -142,23 +142,25 @@ describe("phase 1 — secret-leak hardening", () => {
     expect(result.level).toBe("safe");
   });
 
-  it("confirms env (was auto-safe pre-phase-1)", () => {
+  it("confirms env (mutating? no — now auto-safe under non-mutating policy)", () => {
+    // env / printenv only READ the environment; under the "confirm only for
+    // mutating/installing/deleting/etc." policy they auto-execute.
     expect(
       classifyToolCall({ name: "shell.exec", args: { command: "env" } }).level,
-    ).toBe("confirm");
+    ).toBe("safe");
     expect(
       classifyToolCall({ name: "shell.exec", args: { command: "printenv" } })
         .level,
-    ).toBe("confirm");
+    ).toBe("safe");
   });
 
-  it("confirms cat alone (was auto-safe pre-phase-1)", () => {
+  it("auto-runs a plain file read (cat) — reading is not mutating", () => {
     expect(
       classifyToolCall({
         name: "shell.exec",
         args: { command: "cat /tmp/notes" },
       }).level,
-    ).toBe("confirm");
+    ).toBe("safe");
   });
 
   it("allows git status/log/diff/show as subcommand-safe", () => {
@@ -249,23 +251,50 @@ describe("phase 1 — secret-leak hardening", () => {
     ).toBe("confirm");
   });
 
-  it("confirms compound commands with pipes/redirects/&&", () => {
+  it("confirms commands that write to disk or escalate, allows read-only chains", () => {
+    // tee writes a file → mutating → confirm
     expect(
       classifyToolCall({
         name: "shell.exec",
         args: { command: "ls | tee /tmp/x" },
       }).level,
     ).toBe("confirm");
+    // chaining two read-only commands is benign → safe
     expect(
       classifyToolCall({ name: "shell.exec", args: { command: "ls && pwd" } })
         .level,
-    ).toBe("confirm");
+    ).toBe("safe");
+    // output redirection writes a file → confirm
     expect(
       classifyToolCall({
         name: "shell.exec",
         args: { command: "echo hi > /tmp/y" },
       }).level,
     ).toBe("confirm");
+  });
+
+  it("auto-runs read-only pipelines (grep | sort | head)", () => {
+    expect(
+      classifyToolCall({
+        name: "shell.exec",
+        args: { command: "grep foo bar.txt | sort | head" },
+      }).level,
+    ).toBe("safe");
+  });
+
+  it("confirms file-mutating base commands (mv/cp/rm/mkdir/chmod)", () => {
+    for (const command of [
+      "mv a b",
+      "cp a b",
+      "rm a.txt",
+      "mkdir newdir",
+      "chmod 644 a.txt",
+      "touch a.txt",
+    ]) {
+      expect(
+        classifyToolCall({ name: "shell.exec", args: { command } }).level,
+      ).toBe("confirm");
+    }
   });
 
   it("confirms sudo", () => {
@@ -322,5 +351,20 @@ describe("phase 1 — secret-leak hardening", () => {
       args: { path: "~/.ssh/authorized_keys", content: "x" },
     });
     expect(result.level).toBe("block");
+  });
+
+  it("classifies pdf.read as safe and blocks secret paths", () => {
+    expect(
+      classifyToolCall({
+        name: "pdf.read",
+        args: { path: "/tmp/report.pdf" },
+      }).level,
+    ).toBe("safe");
+    expect(
+      classifyToolCall({
+        name: "pdf.read",
+        args: { path: "~/.ssh/id_rsa" },
+      }).level,
+    ).toBe("block");
   });
 });

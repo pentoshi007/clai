@@ -1,9 +1,25 @@
 import { detectSystem } from "../os/detect.js";
-import { detectPackageManager, assertSafePackageName } from "../os/pkgmgr.js";
+import {
+  detectPackageManager,
+  assertSafePackageName,
+  commandAvailable,
+} from "../os/pkgmgr.js";
+import { safeCwd } from "../os/cwd.js";
 import type { ToolCall, ToolResult } from "../types.js";
-import { fsEdit, fsDelete, fsList, fsRead, fsSearch, fsWrite, fsWriteMany, type FileWrite } from "./fs.js";
+import {
+  fsEdit,
+  fsDelete,
+  fsList,
+  fsRead,
+  fsSearch,
+  fsWrite,
+  fsWriteMany,
+  type FileWrite,
+} from "./fs.js";
 import { httpFetch } from "./http.js";
 import { shellExec, spawnArgv } from "./shell.js";
+import { imageOcr } from "./image.js";
+import { pdfRead } from "./pdf.js";
 import { webFetch } from "./web/fetch.js";
 import { webSearch } from "./web/search.js";
 import { RESPONSE_MODES, type ResponseMode } from "./web/types.js";
@@ -69,10 +85,43 @@ function optionalResponseMode(
   key: string,
 ): ResponseMode | undefined {
   const value = args[key];
-  if (typeof value === "string" && (RESPONSE_MODES as readonly string[]).includes(value)) {
+  if (
+    typeof value === "string" &&
+    (RESPONSE_MODES as readonly string[]).includes(value)
+  ) {
     return value as ResponseMode;
   }
   return undefined;
+}
+
+/**
+ * Map a package name to the executable it installs, when they differ. Used
+ * by pkg.install to check whether the tool already exists before installing.
+ * Most packages share their binary name, so this only lists the exceptions.
+ */
+const PACKAGE_BINARY_ALIASES: Record<string, string> = {
+  ripgrep: "rg",
+  dnsutils: "dig",
+  "bind-utils": "dig",
+  "bind9-dnsutils": "dig",
+  "python3-pip": "pip3",
+  "build-essential": "gcc",
+  nodejs: "node",
+  golang: "go",
+  "g++": "g++",
+  imagemagick: "magick",
+  "netcat-openbsd": "nc",
+  "net-tools": "ifconfig",
+  coreutils: "ls",
+};
+
+function packageBinaryName(pkg: string): string {
+  const lower = pkg.toLowerCase();
+  if (PACKAGE_BINARY_ALIASES[lower]) return PACKAGE_BINARY_ALIASES[lower]!;
+  // Strip a tap/cask prefix (homebrew "owner/tap/name" → "name") and any
+  // version suffix (apt "pkg=1.2" → "pkg") so the binary guess is sane.
+  const noTap = pkg.includes("/") ? pkg.slice(pkg.lastIndexOf("/") + 1) : pkg;
+  return noTap.split(/[=@:]/)[0] ?? noTap;
 }
 
 export const toolRegistry: Record<string, ToolHandler> = {
@@ -104,7 +153,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
     return fsWriteMany(files);
   },
   async "fs.list"(args) {
-    return fsList(optionalString(args, "path") ?? process.cwd(), {
+    return fsList(optionalString(args, "path") ?? safeCwd(), {
       maxEntries: optionalNumber(args, "maxEntries"),
     });
   },
@@ -116,6 +165,19 @@ export const toolRegistry: Record<string, ToolHandler> = {
   },
   async "pkg.install"(args, options) {
     const tool = assertSafePackageName(requireString(args, "tool"));
+    // Skip the install entirely if the tool is already on PATH. The executable
+    // a package provides isn't always its package name (ripgrep→rg,
+    // dnsutils→dig), so check the known binary alias too. This makes the
+    // model's "check-then-install" intent cheap and idempotent.
+    const checkArg = optionalString(args, "checkBinary");
+    const binary = checkArg ?? packageBinaryName(tool);
+    if (await commandAvailable(binary)) {
+      return {
+        ok: true,
+        output: `${binary} is already installed and on PATH — skipping install.`,
+        exitCode: 0,
+      };
+    }
     const pkgmgr = await detectPackageManager();
     const spec = pkgmgr.installArgv(tool);
     if (!spec) {
@@ -221,7 +283,17 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const host = parseHost(requireString(args, "target"));
     const recordRaw = (optionalString(args, "record") ?? "A").toUpperCase();
     const allowed = new Set([
-      "A", "AAAA", "ANY", "CAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT",
+      "A",
+      "AAAA",
+      "ANY",
+      "CAA",
+      "CNAME",
+      "MX",
+      "NS",
+      "PTR",
+      "SOA",
+      "SRV",
+      "TXT",
     ]);
     if (!allowed.has(recordRaw)) {
       throw new Error(
@@ -259,10 +331,22 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const wantWhois = args.whois !== false;
     const wantDns = args.dns !== false;
     const wantNmap = args.nmap !== false;
-    const allSteps: Array<{ key: "whois" | "dns" | "nmap"; command: string; argv: string[] }> = [
+    const allSteps: Array<{
+      key: "whois" | "dns" | "nmap";
+      command: string;
+      argv: string[];
+    }> = [
       { key: "whois", command: "whois", argv: [host.value] },
-      { key: "dns", command: "dig", argv: [host.value, "ANY", "+noall", "+answer"] },
-      { key: "nmap", command: "nmap", argv: ["-sV", "--top-ports", "100", host.value] },
+      {
+        key: "dns",
+        command: "dig",
+        argv: [host.value, "ANY", "+noall", "+answer"],
+      },
+      {
+        key: "nmap",
+        command: "nmap",
+        argv: ["-sV", "--top-ports", "100", host.value],
+      },
     ];
     const steps = allSteps.filter((step) => {
       if (step.key === "whois") return wantWhois;
@@ -349,12 +433,23 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const target = requireString(args, "target");
     return pingSweep({
       target,
-      method: optionalString(args, "method") as "auto" | "nmap" | "arp" | "native" | undefined,
+      method: optionalString(args, "method") as
+        | "auto"
+        | "nmap"
+        | "arp"
+        | "native"
+        | undefined,
       timeoutMs: optionalNumber(args, "timeoutMs"),
     });
   },
   async "tool.check"(args) {
     return toolCheckHandler(args);
+  },
+  async "image.ocr"(args, options) {
+    return imageOcr(args, options);
+  },
+  async "pdf.read"(args, options) {
+    return pdfRead(args, options);
   },
   async "shell.start"(args) {
     const command = requireString(args, "command");
@@ -423,6 +518,8 @@ const BATCH_SAFE_TOOLS = new Set([
   "whois.lookup",
   "net.context",
   "tool.check",
+  "image.ocr",
+  "pdf.read",
   "web.search",
   "web.fetch",
 ]);

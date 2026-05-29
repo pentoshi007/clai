@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
   ChatMessage,
+  ChatImage,
   ProviderId,
   ToolCall,
   ToolResult,
@@ -36,20 +37,45 @@ import {
 } from "../ui/thinking.js";
 import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
 import { startThinkingSpinner } from "../ui/spinner.js";
+import { safeCwd } from "../os/cwd.js";
 import { analyzeTask } from "./task-analyzer.js";
 import { LoopGuard } from "./loop-guard.js";
+import {
+  createPlan,
+  loadPlan,
+  savePlan,
+  markTask,
+  type SessionPlan,
+  type TaskState,
+} from "../store/plan.js";
+import { renderPlanChecklist, renderPlanSidePane } from "../ui/plan-pane.js";
+
+/** Render the plan as a right-side pane on wide terminals, else inline. */
+function renderPlanForTerminal(plan: SessionPlan): string {
+  const cols = process.stdout.columns ?? 0;
+  const side = process.stdout.isTTY
+    ? renderPlanSidePane(plan, cols)
+    : undefined;
+  return side ?? renderPlanChecklist(plan);
+}
 
 export interface SessionPolicy {
   /** Tools the user authorized once during this REPL session. Not persisted. */
   allow: Set<string>;
   /** Mutable flag so the runner can flip pentest auth for this session only. */
   pentestAuthorized: { value: boolean };
+  /** Stable id used to scope the session's plan/tasks in the plan store. */
+  sessionId: string;
+  /** When true, the agent must follow its approved plan (set by /implement). */
+  planApproved: { value: boolean };
 }
 
 export function createSessionPolicy(): SessionPolicy {
   return {
     allow: new Set(),
     pentestAuthorized: { value: false },
+    sessionId: `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    planApproved: { value: false },
   };
 }
 
@@ -60,6 +86,7 @@ export interface AgentRunOptions {
   autoConfirm?: boolean | undefined;
   maxSteps?: number | undefined;
   signal?: AbortSignal | undefined;
+  images?: ChatImage[] | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
   session?: SessionPolicy | undefined;
@@ -202,6 +229,145 @@ export function parseToolCall(
   return undefined;
 }
 
+// Argument keys that the built-in tools accept. Used to recognize when a
+// model emitted a bare args object (e.g. {"path":"file.pdf"}) — intending a
+// tool call but forgetting the {"name","args"} wrapper and the ```tool fence.
+const TOOL_ARG_KEYS = new Set([
+  "command",
+  "path",
+  "paths",
+  "url",
+  "query",
+  "target",
+  "pattern",
+  "tool",
+  "tools",
+  "files",
+  "content",
+  "calls",
+  "record",
+  "ports",
+  "profile",
+  "id",
+  "lang",
+  "dpi",
+  "psm",
+  "recursive",
+  "oldText",
+  "newText",
+  "expectedReplacements",
+  "goal",
+  "tasks",
+  "taskId",
+  "state",
+  "method",
+  "body",
+  "headers",
+  "maxBytes",
+  "maxResults",
+  "cwd",
+  "name",
+  "concurrency",
+]);
+
+/**
+ * Strip a single wrapping ```json / ``` fence (if any) and return the inner
+ * text trimmed. Leaves un-fenced text unchanged.
+ */
+function stripLoneFence(text: string): string {
+  const fenced = text
+    .trim()
+    .match(/^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?```$/);
+  return (fenced?.[1] ?? text).trim();
+}
+
+/**
+ * When a model means to call a tool but emits ONLY a bare JSON object —
+ * either a proper {"name","args"} that the strict matchers missed, or a bare
+ * args object like {"path":"file.pdf"} with the wrapper/fence dropped — this
+ * recognizes it. Returns:
+ *   - { call } when the object is a complete {name, args} tool call, or
+ *   - { argsOnly: true } when it looks like a bare args object (so the caller
+ *     can nudge the model to re-emit a properly named, fenced tool call).
+ * Returns undefined for anything that is plainly a normal prose/JSON answer.
+ */
+export function recognizeBareToolJson(
+  text: string,
+): { call?: ToolCall; argsOnly?: boolean } | undefined {
+  const inner = stripLoneFence(text);
+  // Must be a single JSON object spanning the whole (de-fenced) output.
+  if (!inner.startsWith("{") || !inner.endsWith("}")) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(inner);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const obj = parsed as Record<string, unknown>;
+  // Complete {name, args} call the earlier matchers didn't catch (e.g. not
+  // anchored to end-of-string). Recover it directly.
+  const direct = tryParseCall(inner);
+  if (direct) return { call: direct };
+  // Bare args object: every key is a known tool-arg key, and it carries at
+  // least one identifying arg. Don't treat huge/odd objects as tool args.
+  const keys = Object.keys(obj);
+  if (keys.length === 0 || keys.length > 6) return undefined;
+  const allKnown = keys.every((key) => TOOL_ARG_KEYS.has(key));
+  if (allKnown) return { argsOnly: true };
+  return undefined;
+}
+
+/**
+ * Detect an opened-but-unparseable tool call. This happens when the model's
+ * output is truncated by the token limit mid-JSON: we see the ```tool fence
+ * (or a bare {"name":"...","args" prefix) open, but parseToolCall returns
+ * undefined because the JSON never closed. Without this, the broken block
+ * leaks to the screen as a "final answer" and the requested action (e.g. a
+ * multi-file fs.writeMany scaffold) silently never runs.
+ */
+export function looksLikeTruncatedToolCall(text: string): boolean {
+  // An opened ```tool fence with no closing fence.
+  const openFence = /```tool\s*\n?/i.test(text);
+  const closeFence = /```tool[\s\S]*?```/i.test(text);
+  if (openFence && !closeFence) return true;
+  // A tool-call JSON object that started but whose braces never balanced.
+  const jsonStart = text.search(
+    /\{\s*"name"\s*:\s*"[A-Za-z][\w.]*"\s*,\s*"args"/,
+  );
+  if (jsonStart >= 0) {
+    const slice = text.slice(jsonStart);
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let balanced = false;
+    for (const ch of slice) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') inString = !inString;
+      if (inString) continue;
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          balanced = true;
+          break;
+        }
+      }
+    }
+    if (!balanced) return true;
+  }
+  return false;
+}
+
 /** Extract the text before the tool call block for display purposes */
 function textBeforeToolCall(text: string): string {
   const patterns = [
@@ -239,18 +405,22 @@ function formatToolArgs(call: ToolCall): string {
     const files = Array.isArray(call.args.files) ? call.args.files : [];
     const names = files
       .map((f) =>
-        f && typeof f === "object" ? String((f as { path?: unknown }).path ?? "") : "",
+        f && typeof f === "object"
+          ? String((f as { path?: unknown }).path ?? "")
+          : "",
       )
       .filter(Boolean);
     const preview = names.slice(0, 4).join(", ");
     return `${names.length} file(s)${preview ? `: ${preview}${names.length > 4 ? ", …" : ""}` : ""}`;
   }
   if (call.name === "fs.search") return String(call.args.pattern ?? "");
+  if (call.name === "image.ocr" || call.name === "pdf.read")
+    return String(call.args.path ?? "");
   if (call.name === "http.fetch" || call.name === "web.fetch")
     return String(call.args.url ?? "");
   if (call.name === "web.search") return String(call.args.query ?? "");
   if (call.name === "pkg.install") return String(call.args.tool ?? "");
-  if (call.name === "fs.list") return String(call.args.path ?? process.cwd());
+  if (call.name === "fs.list") return String(call.args.path ?? safeCwd());
   return JSON.stringify(call.args);
 }
 
@@ -491,6 +661,168 @@ async function confirmToolExecution(
   });
 }
 
+interface PlanToolResult {
+  handled: boolean;
+  ok: boolean;
+  /** What to print to the user's terminal. */
+  display: string;
+  /** What to feed back to the model as the tool result. */
+  modelNote: string;
+}
+
+/** Build the system-context block describing the session's active plan. */
+function planContextMessage(plan: SessionPlan, approved: boolean): string {
+  const lines: string[] = [];
+  lines.push(
+    `ACTIVE PLAN for this session (goal: ${plan.goal}, status: ${plan.status}):`,
+  );
+  if (plan.detail.trim()) lines.push(plan.detail.trim());
+  lines.push("Tasks:");
+  plan.tasks.forEach((t, i) => {
+    lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}`);
+  });
+  if (approved) {
+    lines.push(
+      "The user APPROVED this plan. Execute it task by task NOW: before starting a task call " +
+        'task.update with {"taskId":"<id>","state":"in_progress"}, do the work with real tool calls, ' +
+        'then call task.update {"taskId":"<id>","state":"done"} (or "failed"/"skipped" with a note). ' +
+        "Actually run installs and start servers — never claim something ran without a successful tool call. " +
+        "When all tasks are done, verify and give a final summary.",
+    );
+  } else {
+    lines.push(
+      "This plan is NOT yet approved. If the user is refining it, update it with plan.create again. " +
+        "Do NOT execute tasks until the user runs /implement.",
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Handle plan.create / task.update inline. These are session-scoped and
+ * persisted via the plan store so the user can view the plan (Ctrl+P) and
+ * the agent keeps it in context across the whole session.
+ */
+async function handlePlanTool(
+  call: ToolCall,
+  session: SessionPolicy,
+  ctx: { loopGuard: LoopGuard; step: number },
+): Promise<PlanToolResult> {
+  void ctx;
+  if (call.name === "plan.create") {
+    const goal = typeof call.args.goal === "string" ? call.args.goal : "";
+    const detail = typeof call.args.detail === "string" ? call.args.detail : "";
+    const kind =
+      typeof call.args.kind === "string" ? call.args.kind : "general";
+    const rawTasks = Array.isArray(call.args.tasks) ? call.args.tasks : [];
+    const taskTitles = rawTasks
+      .map((t) => (typeof t === "string" ? t : ""))
+      .filter(Boolean);
+    if (!goal || taskTitles.length === 0) {
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.red(
+          "  ✗ plan.create needs a non-empty goal and at least one task title\n",
+        ),
+        modelNote:
+          "plan.create failed: provide a string goal and a non-empty tasks array of step titles.",
+      };
+    }
+    const plan = createPlan({
+      sessionId: session.sessionId,
+      goal,
+      detail,
+      taskTitles,
+      kind,
+    });
+    await savePlan(plan).catch(() => undefined);
+    // A freshly (re)created plan resets approval — the user must /implement.
+    session.planApproved.value = false;
+    const checklist = renderPlanForTerminal(plan);
+    const display =
+      chalk.cyan("  ● planning\n") +
+      checklist +
+      "\n" +
+      chalk.dim(
+        "  ✦ plan created — press Ctrl+P to view it, or type /implement to approve and run it\n",
+      );
+    return {
+      handled: true,
+      ok: true,
+      display,
+      modelNote:
+        `Plan saved with ${plan.tasks.length} task(s). STOP here and wait. ` +
+        "Do NOT start executing tasks until the user approves with /implement. " +
+        "When approved you will receive a message telling you to begin; then work task by task, " +
+        "calling task.update to mark each in_progress before and done after you finish it.",
+    };
+  }
+
+  // task.update
+  const plan = await loadPlan(session.sessionId).catch(() => undefined);
+  if (!plan) {
+    return {
+      handled: true,
+      ok: false,
+      display: chalk.red(
+        "  ✗ task.update: no active plan — call plan.create first\n",
+      ),
+      modelNote:
+        "task.update failed: there is no active plan. Call plan.create first.",
+    };
+  }
+  const taskId = typeof call.args.taskId === "string" ? call.args.taskId : "";
+  const stateRaw = typeof call.args.state === "string" ? call.args.state : "";
+  const note = typeof call.args.note === "string" ? call.args.note : undefined;
+  const validStates: TaskState[] = [
+    "pending",
+    "in_progress",
+    "done",
+    "failed",
+    "skipped",
+  ];
+  if (!validStates.includes(stateRaw as TaskState)) {
+    return {
+      handled: true,
+      ok: false,
+      display: chalk.red(
+        `  ✗ task.update: state must be one of ${validStates.join(", ")}\n`,
+      ),
+      modelNote: `task.update failed: state must be one of ${validStates.join(", ")}.`,
+    };
+  }
+  const ok = markTask(plan, taskId, stateRaw as TaskState, note);
+  if (!ok) {
+    const ids = plan.tasks.map((t) => t.id).join(", ");
+    return {
+      handled: true,
+      ok: false,
+      display: chalk.red(
+        `  ✗ task.update: unknown taskId "${taskId}" (have: ${ids})\n`,
+      ),
+      modelNote: `task.update failed: unknown taskId. Valid ids: ${ids}.`,
+    };
+  }
+  if (plan.status === "draft" || plan.status === "approved") {
+    plan.status = "in_progress";
+  }
+  const allDone = plan.tasks.every(
+    (t) => t.state === "done" || t.state === "skipped" || t.state === "failed",
+  );
+  if (allDone) plan.status = "completed";
+  await savePlan(plan).catch(() => undefined);
+  const checklist = renderPlanForTerminal(plan);
+  return {
+    handled: true,
+    ok: true,
+    display: checklist + "\n",
+    modelNote: allDone
+      ? "Task updated. ALL tasks are now finished. Verify the result and give your final summary."
+      : "Task updated. Continue with the next pending task.",
+  };
+}
+
 export async function runAgentLoop(
   prompt: string,
   options: AgentRunOptions = {},
@@ -510,18 +842,44 @@ export async function runAgentLoop(
   if (freshWebSearchRequired) {
     systemSections.push(freshnessGuardMessage());
   }
-  const fullSystemPrompt = systemSections.join("\n\n");
-  const messages: ChatMessage[] = [
-    { role: "system", content: fullSystemPrompt },
-    ...(options.history ?? []),
-    { role: "user", content: prompt },
-  ];
 
   let provider = options.provider ?? config.defaultProvider;
   await ensureProviderConfigured(provider);
   let model = options.model ?? config.defaultModel;
   let lastAnswer = "";
   const session: SessionPolicy = options.session ?? createSessionPolicy();
+
+  // ── Active plan context ────────────────────────────────────────────
+  // If this session already has a plan, inject it so the model keeps it in
+  // context. When the user has approved it (via /implement) we instruct the
+  // agent to execute task by task; otherwise the agent should refine/wait.
+  const activePlan = await loadPlan(session.sessionId).catch(() => undefined);
+  if (activePlan) {
+    systemSections.push(
+      planContextMessage(activePlan, session.planApproved.value),
+    );
+  }
+
+  const fullSystemPrompt = systemSections.join("\n\n");
+  const userMessage: ChatMessage = { role: "user", content: prompt };
+  if (options.images && options.images.length > 0) {
+    userMessage.images = options.images;
+  }
+  const messages: ChatMessage[] = [
+    { role: "system", content: fullSystemPrompt },
+    ...(options.history ?? []),
+    userMessage,
+  ];
+  const recoveryUserMessage = (content: string): ChatMessage => {
+    const message: ChatMessage = { role: "user", content };
+    if (options.images && options.images.length > 0) {
+      // Some OpenAI-compatible gateways/models attend most strongly to the
+      // latest user turn. Keep the image attached on recovery nudges so a
+      // thinking-only retry does not degrade into OCR/tool guessing.
+      message.images = options.images;
+    }
+    return message;
+  };
 
   // Track recent tool calls to detect models stuck in a loop calling the
   // same tool with the same arguments over and over (e.g. pentest.recon
@@ -531,6 +889,15 @@ export async function runAgentLoop(
   // Track consecutive thinking-only responses so we can nudge the model
   // to actually act instead of silently returning an empty answer.
   let emptyVisibleRetries = 0;
+
+  // Track tool calls truncated by the token limit so we can ask the model
+  // to retry in smaller pieces instead of leaking broken JSON as an answer.
+  let truncatedToolRetries = 0;
+
+  // Track bare-args JSON tool calls (missing the {name,args} wrapper / fence)
+  // so we can nudge the model to re-emit a proper fenced call a few times
+  // before giving up, instead of leaking the JSON as a final answer.
+  let bareToolJsonRetries = 0;
 
   // For volatile live-info prompts, make one corrective pass if a model
   // ignores the freshness guard and tries to answer from stale memory.
@@ -600,9 +967,11 @@ export async function runAgentLoop(
           temperature: 0.2,
           // Reasoning models can spend a lot on hidden thinking; give
           // them headroom so the visible answer / tool call isn't
-          // truncated to silence. Keep the no-thinking default lean so
-          // fast models like kimi-k2.6 respond instantly.
-          maxTokens: config.thinking?.enabled ? 8_192 : 4_096,
+          // truncated to silence. The non-thinking budget must be large
+          // enough for a multi-file fs.writeMany payload — a truncated
+          // tool-call JSON fails to parse and used to leak a broken
+          // ```tool block to the screen with no files written.
+          maxTokens: config.thinking?.enabled ? 16_384 : 8_192,
           signal: options.signal,
           thinking: config.thinking,
         },
@@ -663,13 +1032,14 @@ export async function runAgentLoop(
           ),
         );
         messages.push({ role: "assistant", content: completion.text });
-        messages.push({
-          role: "user",
-          content:
+        messages.push(
+          recoveryUserMessage(
             "You only produced internal reasoning with no visible answer or tool call. " +
-            "You MUST either call a tool using the ```tool format or provide your final answer. " +
-            "Do NOT just think — take action NOW.",
-        });
+              "You MUST either call a tool using the ```tool format or provide your final answer. " +
+              "If images are attached, inspect them directly for visual details (text, colors, layout, spacing, style) instead of using OCR unless explicitly needed. " +
+              "Do NOT just think — take action NOW.",
+          ),
+        );
         continue;
       }
       // Exhausted retries — fall through to the normal empty-answer path
@@ -679,10 +1049,51 @@ export async function runAgentLoop(
       emptyVisibleRetries = 0;
     }
 
-    const call = parseToolCall(assistantText.visible, {
+    let call = parseToolCall(assistantText.visible, {
       strict: getConfig().parserStrict,
     });
+    // Recovery: the model meant to call a tool but emitted a bare JSON object
+    // with no ```tool fence — either a complete {name,args} the strict
+    // matchers missed (recover it directly), or just an args object like
+    // {"path":"file.pdf"} with the wrapper dropped (nudge a retry below so
+    // the requested action runs instead of the JSON leaking as the answer).
+    let bareArgsOnly = false;
+    let recoveredFromBareJson = false;
     if (!call) {
+      const bare = recognizeBareToolJson(assistantText.visible);
+      if (bare?.call) {
+        call = bare.call;
+        recoveredFromBareJson = true;
+        process.stdout.write(
+          chalk.dim("  ℹ recovered an unfenced tool call from bare JSON\n"),
+        );
+      } else if (bare?.argsOnly) {
+        bareArgsOnly = true;
+      }
+    }
+    if (!call) {
+      if (bareArgsOnly) {
+        bareToolJsonRetries += 1;
+        if (bareToolJsonRetries <= 3) {
+          process.stdout.write(
+            chalk.yellow(
+              "  ⚠ tool call missing its name/fence — asking the model to re-emit a proper ```tool block\n",
+            ),
+          );
+          messages.push({ role: "assistant", content: assistantText.visible });
+          messages.push(
+            recoveryUserMessage(
+              "Your previous message was a bare JSON args object with no tool name and no ```tool fence, so NOTHING ran. " +
+                "Reply with ONLY a fenced ```tool block of the form " +
+                '`{"name": "<tool>", "args": { ... }}`. For example, to read a PDF:\n' +
+                '```tool\n{"name":"pdf.read","args":{"path":"/abs/file.pdf"}}\n```\n' +
+                "Choose the correct tool name for the task and include those args.",
+            ),
+          );
+          continue;
+        }
+        // Exhausted retries — fall through to the normal answer path.
+      }
       // Detect the case where the model emitted sentinel-style tool-call
       // markers but the body was malformed or truncated. Printing those
       // raw tokens looks like a crash to the user — instead, ask the
@@ -698,15 +1109,41 @@ export async function runAgentLoop(
           ),
         );
         messages.push({ role: "assistant", content: assistantText.visible });
-        messages.push({
-          role: "user",
-          content:
+        messages.push(
+          recoveryUserMessage(
             "Your previous tool call was malformed or truncated. " +
-            "Reply with ONLY a fenced ```tool block containing valid JSON " +
-            'of the form `{"name": "<tool>", "args": { ... }}`. ' +
-            "Do not use <|tool_call_begin|> markers.",
-        });
+              "Reply with ONLY a fenced ```tool block containing valid JSON " +
+              'of the form `{"name": "<tool>", "args": { ... }}`. ' +
+              "Do not use <|tool_call_begin|> markers.",
+          ),
+        );
         continue;
+      }
+      // Detect a tool call that opened but was cut off by the token limit
+      // (most common with a large multi-file fs.writeMany). Retrying with a
+      // nudge to split the work is far better than rendering broken JSON as
+      // a final answer and leaving the project half-created.
+      if (looksLikeTruncatedToolCall(assistantText.visible)) {
+        truncatedToolRetries += 1;
+        if (truncatedToolRetries <= 3) {
+          process.stdout.write(
+            chalk.yellow(
+              "  ⚠ tool call was cut off (output too long) — asking the model to retry in smaller pieces\n",
+            ),
+          );
+          messages.push({ role: "assistant", content: assistantText.visible });
+          messages.push({
+            role: "user",
+            content:
+              "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
+              "Retry now with a COMPLETE, valid ```tool block. " +
+              "If it was a large fs.writeMany, split it into SMALLER batches (3-5 files per call, and keep each file's content concise) " +
+              "so the whole JSON fits in one response. Do NOT claim any file was written until a tool call actually succeeds.",
+          });
+          continue;
+        }
+        // Exhausted retries — fall through so we don't loop forever, but the
+        // user at least sees the (broken) output and the stop notice.
       }
       // Normal final-answer path: strip any stray sentinel tokens that
       // somehow leaked into prose so the answer renders cleanly.
@@ -772,8 +1209,12 @@ export async function runAgentLoop(
       process.stdout.write(chalk.dim(`  ℹ ${loopCheck.reason}\n`));
     }
 
-    // Print only non-thinking text before the tool call.
-    const beforeTool = textBeforeToolCall(assistantText.visible);
+    // Print only non-thinking text before the tool call. When the call was
+    // recovered from a bare JSON object (the whole message WAS the call),
+    // there is no prose to show — skip it so we don't echo the raw JSON.
+    const beforeTool = recoveredFromBareJson
+      ? ""
+      : textBeforeToolCall(assistantText.visible);
     if (beforeTool) {
       process.stdout.write(renderMarkdown(beforeTool) + "\n");
     }
@@ -784,6 +1225,27 @@ export async function runAgentLoop(
     }
 
     messages.push({ role: "assistant", content: assistantText.visible });
+
+    // ── Plan / task tools (session-scoped, handled inline) ─────────────
+    // These don't go through the generic registry because they need the
+    // session id and mutate the live plan that the user can view (Ctrl+P).
+    if (call.name === "plan.create" || call.name === "task.update") {
+      const planResult = await handlePlanTool(call, session, {
+        loopGuard,
+        step,
+      });
+      if (planResult.handled) {
+        productiveSteps += 1;
+        loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
+        process.stdout.write(planResult.display);
+        messages.push({
+          role: "tool",
+          content: `Tool ${call.name} result (ok=${planResult.ok}):\n${planResult.modelNote}`,
+        });
+        continue;
+      }
+    }
+
     const scope = await loadScope();
     const decision = classifyToolCall(call, { scope });
     await auditLog("tool.classified", {
@@ -1017,7 +1479,9 @@ export async function runAgentLoop(
           ? String(call.args.command ?? "").split(/\s+/)[0]
           : call.name === "net.scan"
             ? "nmap"
-            : undefined;
+            : call.name === "image.ocr"
+              ? "tesseract"
+              : undefined;
       if (cmdName) {
         process.stdout.write(
           chalk.yellow(

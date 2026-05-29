@@ -36,24 +36,24 @@ function parseRetryHintFromBody(text: string): number | undefined {
 
 function statusCodeHint(status: number): string {
   if (status === 401) {
-    return ' — check that the API key is valid (run `clai providers` to inspect)';
+    return " — check that the API key is valid (run `clai providers` to inspect)";
   }
   if (status === 403) {
-    return ' — the key was rejected (insufficient permissions, billing, or region restriction)';
+    return " — the key was rejected (insufficient permissions, billing, or region restriction)";
   }
   if (status === 404) {
-    return ' — endpoint or model not found (try `/model list` to see supported names)';
+    return " — endpoint or model not found (try `/model list` to see supported names)";
   }
   if (status === 422) {
-    return ' — the provider rejected the request body (model name or parameter mismatch)';
+    return " — the provider rejected the request body (model name or parameter mismatch)";
   }
   if (status === 413) {
-    return ' — request too large; try `/compact` or pick a model with a larger context window';
+    return " — request too large; try `/compact` or pick a model with a larger context window";
   }
   if (status >= 500 && status < 600) {
-    return ' — upstream provider error; try again or switch with `/provider`';
+    return " — upstream provider error; try again or switch with `/provider`";
   }
-  return '';
+  return "";
 }
 
 export async function readJson<T>(response: Response): Promise<T> {
@@ -64,35 +64,41 @@ export async function readJson<T>(response: Response): Promise<T> {
     // use `{ error: { type, message } }`, and AgentRouter-style proxies
     // sometimes return `{ detail }` or a bare string. Cover the common
     // shapes so users see a helpful message instead of just "HTTP 400".
-    let detail = '';
+    let detail = "";
     try {
       const body = JSON.parse(text) as Record<string, unknown>;
       const error = (body as { error?: unknown }).error;
-      let msg = '';
-      if (typeof error === 'string') {
+      let msg = "";
+      if (typeof error === "string") {
         msg = error;
-      } else if (error && typeof error === 'object') {
-        const errObj = error as { message?: string; type?: string; code?: string };
-        msg = errObj.message ?? '';
+      } else if (error && typeof error === "object") {
+        const errObj = error as {
+          message?: string;
+          type?: string;
+          code?: string;
+        };
+        msg = errObj.message ?? "";
         if (!msg && (errObj.type || errObj.code)) {
-          msg = errObj.type ?? errObj.code ?? '';
+          msg = errObj.type ?? errObj.code ?? "";
         }
       }
       if (!msg) {
-        msg = (body as { message?: string }).message
-          ?? (body as { detail?: string }).detail
-          ?? '';
+        msg =
+          (body as { message?: string }).message ??
+          (body as { detail?: string }).detail ??
+          "";
       }
       if (msg) detail = ` — ${msg}`;
     } catch {
       if (text.length > 0) detail = ` — ${text.slice(0, 200)}`;
     }
     const retryAfterSeconds =
-      parseRetryAfterHeader(response.headers.get('retry-after'))
-      ?? parseRetryHintFromBody(text);
-    const retryHint = retryAfterSeconds !== undefined
-      ? ` (retry after ${Math.ceil(retryAfterSeconds)}s)`
-      : '';
+      parseRetryAfterHeader(response.headers.get("retry-after")) ??
+      parseRetryHintFromBody(text);
+    const retryHint =
+      retryAfterSeconds !== undefined
+        ? ` (retry after ${Math.ceil(retryAfterSeconds)}s)`
+        : "";
     const codeHint = statusCodeHint(response.status);
     throw new ProviderError(
       `Provider request failed with HTTP ${response.status}${retryHint}${detail}${codeHint}`,
@@ -267,16 +273,44 @@ export async function* readStreamLines(
   }
 }
 
+type OpenAiContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail: "high" } };
+
 export function toOpenAiMessages(
   messages: ChatMessage[],
-): Array<{ role: string; content: string }> {
-  return messages.map((message) => ({
-    role: message.role === "tool" ? "user" : message.role,
-    content: message.content,
-  }));
+): Array<{ role: string; content: string | OpenAiContentPart[] }> {
+  return messages.map((message) => {
+    const role = message.role === "tool" ? "user" : message.role;
+    // Attach images as OpenAI-style multimodal content parts (data URLs).
+    // Only user messages carry images; everything else stays a plain string
+    // so we don't disturb providers/models that expect string content.
+    if (role === "user" && message.images && message.images.length > 0) {
+      const parts: OpenAiContentPart[] = [];
+      if (message.content) parts.push({ type: "text", text: message.content });
+      for (const img of message.images) {
+        parts.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${img.mediaType};base64,${img.dataBase64}`,
+            // Request high-detail vision so screenshots/UI images preserve
+            // colors, spacing, layout, and small text when providers support it.
+            detail: "high",
+          },
+        });
+      }
+      return { role, content: parts };
+    }
+    return { role, content: message.content };
+  });
 }
 
-export type ReasoningStyle = "openai" | "nvidia" | "groq" | "openrouter" | "none";
+export type ReasoningStyle =
+  | "openai"
+  | "nvidia"
+  | "groq"
+  | "openrouter"
+  | "none";
 
 // NVIDIA NIM models exposed at integrate.api.nvidia.com use family-specific
 // chat-template variables. Sending the wrong variable to a model that does
@@ -376,7 +410,8 @@ export function buildReasoningPayload(
               chat_template_kwargs: { enable_thinking: false },
             };
           }
-          const budget = effort === "low" ? 4_096 : effort === "high" ? 16_384 : 8_192;
+          const budget =
+            effort === "low" ? 4_096 : effort === "high" ? 16_384 : 8_192;
           return {
             reasoning_budget: budget,
             chat_template_kwargs: { enable_thinking: true },
@@ -483,7 +518,11 @@ export async function openAiCompatibleComplete(options: {
   }
   let data: {
     choices?: Array<{
-      message?: { content?: string; reasoning_content?: string; reasoning?: string };
+      message?: {
+        content?: string;
+        reasoning_content?: string;
+        reasoning?: string;
+      };
     }>;
   };
   try {
@@ -502,7 +541,9 @@ export async function openAiCompatibleComplete(options: {
   const message = data.choices?.[0]?.message;
   const text = message?.content;
   if (!text) {
-    throw new ProviderError(`${options.provider} returned no completion text (model=${options.model}). The response was empty — try /variants off, raise max_tokens, or pick another model with /model.`);
+    throw new ProviderError(
+      `${options.provider} returned no completion text (model=${options.model}). The response was empty — try /variants off, raise max_tokens, or pick another model with /model.`,
+    );
   }
   // If the API returns reasoning separately, prepend it inside <think>
   // tags so the existing thinking parser can pick it up uniformly.
@@ -613,7 +654,11 @@ export async function openAiCompatibleStream(options: {
       requestId?: string;
       status?: string;
       choices?: Array<{
-        message?: { content?: string; reasoning_content?: string; reasoning?: string };
+        message?: {
+          content?: string;
+          reasoning_content?: string;
+          reasoning?: string;
+        };
       }>;
     }>(response);
     if (response.status === 202) {
@@ -628,7 +673,9 @@ export async function openAiCompatibleStream(options: {
     const text = message?.content ?? "";
     const reasoning = message?.reasoning_content ?? message?.reasoning;
     const full =
-      reasoning && reasoning.trim() ? `<think>${reasoning}</think>${text}` : text;
+      reasoning && reasoning.trim()
+        ? `<think>${reasoning}</think>${text}`
+        : text;
     if (full.trim()) {
       options.onToken(full);
       return full;
@@ -697,7 +744,11 @@ export async function openAiCompatibleStream(options: {
         if (payload === "[DONE]") {
           exitReasoning();
           cleanup();
-          if (!visible.trim() && reasoningSeen.trim() && finishReason === "length") {
+          if (
+            !visible.trim() &&
+            reasoningSeen.trim() &&
+            finishReason === "length"
+          ) {
             // The model spent its entire budget on hidden reasoning and
             // never produced a visible answer. Surfacing this as an error
             // — instead of an empty string — is far less confusing than

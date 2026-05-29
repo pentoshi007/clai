@@ -1,4 +1,4 @@
-import type { CompletionRequest, CompletionResult, ReasoningPreference } from "../types.js";
+import type { ChatMessage, CompletionRequest, CompletionResult, ReasoningPreference } from "../types.js";
 import {
   defaultModels,
   type LlmProvider,
@@ -8,6 +8,44 @@ import { readJson, readStreamLines } from "./http.js";
 
 const baseUrl = "https://api.anthropic.com/v1";
 const anthropicVersion = "2023-06-01";
+
+type AnthropicBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      source: { type: "base64"; media_type: string; data: string };
+    };
+
+/**
+ * Convert clai messages to Anthropic's format, expanding any image
+ * attachments on user turns into base64 image content blocks (the same
+ * shape Claude Code uses). Non-image turns keep a plain string content.
+ */
+function toAnthropicMessages(
+  messages: ChatMessage[],
+): Array<{ role: "user" | "assistant"; content: string | AnthropicBlock[] }> {
+  return messages
+    .filter((message) => message.role !== "system")
+    .map((message) => {
+      const role = message.role === "assistant" ? "assistant" : "user";
+      if (role === "user" && message.images && message.images.length > 0) {
+        const blocks: AnthropicBlock[] = [];
+        if (message.content) blocks.push({ type: "text", text: message.content });
+        for (const img of message.images) {
+          blocks.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: img.mediaType,
+              data: img.dataBase64,
+            },
+          });
+        }
+        return { role, content: blocks };
+      }
+      return { role, content: message.content };
+    });
+}
 
 function anthropicThinkingBudget(reasoning: ReasoningPreference | undefined): number | undefined {
   if (!reasoning?.enabled) return undefined;
@@ -48,12 +86,7 @@ export const anthropicProvider: LlmProvider = {
     const system = request.messages.find(
       (message) => message.role === "system",
     )?.content;
-    const messages = request.messages
-      .filter((message) => message.role !== "system")
-      .map((message) => ({
-        role: message.role === "assistant" ? "assistant" : "user",
-        content: message.content,
-      }));
+    const messages = toAnthropicMessages(request.messages);
     const response = await fetch(`${baseUrl}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
@@ -107,12 +140,7 @@ export const anthropicProvider: LlmProvider = {
     const system = request.messages.find(
       (message) => message.role === "system",
     )?.content;
-    const messages = request.messages
-      .filter((message) => message.role !== "system")
-      .map((message) => ({
-        role: message.role === "assistant" ? "assistant" : "user",
-        content: message.content,
-      }));
+    const messages = toAnthropicMessages(request.messages);
     const response = await fetch(`${baseUrl}/messages`, {
       method: "POST",
       signal: request.signal ?? null,

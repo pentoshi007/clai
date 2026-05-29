@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { RiskLevel, ToolCall } from "../types.js";
 import {
-  containsShellMetacharacter,
   destructiveCommandPatterns,
   exfiltrationPatterns,
   isSecretPath,
@@ -11,6 +10,8 @@ import {
   readOnlyShellCommands,
   subcommandSafeMap,
   commandHasMutatingArg,
+  commandIsMutating,
+  commandWritesOrEscalates,
 } from "./patterns.js";
 import {
   isScopeActive,
@@ -75,7 +76,8 @@ function commandContainsNetworkScanner(command: string): boolean {
   );
 }
 
-const PRIVATE_TLD_RE = /\.(?:local|internal|lan|home|corp|intranet|test|localdomain)$/i;
+const PRIVATE_TLD_RE =
+  /\.(?:local|internal|lan|home|corp|intranet|test|localdomain)$/i;
 const URL_HOSTNAME_RE = /\bhttps?:\/\/([^\/\s:?#]+)/gi;
 // A bareword domain anchored at a whitespace boundary on the left so we
 // don't pick up file paths like `wordlists/common.txt`. The right side
@@ -102,10 +104,46 @@ function extractHostnameTokens(command: string): string[] {
 }
 
 const FILEY_TLDS = new Set([
-  "txt", "log", "json", "yaml", "yml", "md", "html", "htm", "xml", "csv",
-  "sh", "py", "rb", "rs", "go", "js", "ts", "tsx", "jsx", "css", "scss",
-  "tar", "gz", "zip", "tgz", "pdf", "png", "jpg", "jpeg", "gif", "svg",
-  "exe", "dll", "so", "dylib", "ini", "conf", "lock", "toml", "env",
+  "txt",
+  "log",
+  "json",
+  "yaml",
+  "yml",
+  "md",
+  "html",
+  "htm",
+  "xml",
+  "csv",
+  "sh",
+  "py",
+  "rb",
+  "rs",
+  "go",
+  "js",
+  "ts",
+  "tsx",
+  "jsx",
+  "css",
+  "scss",
+  "tar",
+  "gz",
+  "zip",
+  "tgz",
+  "pdf",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "svg",
+  "exe",
+  "dll",
+  "so",
+  "dylib",
+  "ini",
+  "conf",
+  "lock",
+  "toml",
+  "env",
 ]);
 
 function isPublicHostname(host: string): boolean {
@@ -228,11 +266,16 @@ function isPublicTarget(target: string): boolean {
 export function scopeTargetForToolCall(call: ToolCall): string | undefined {
   if (call.name === "shell.exec") {
     const command = stringArg(call.args, "command") ?? "";
-    if (!commandContainsNetworkScanner(command) || !containsPublicTarget(command)) {
+    if (
+      !commandContainsNetworkScanner(command) ||
+      !containsPublicTarget(command)
+    ) {
       return undefined;
     }
     const target = extractScanTarget(command);
-    return target && isPublicTarget(target) ? normalizeScopeTarget(target) : undefined;
+    return target && isPublicTarget(target)
+      ? normalizeScopeTarget(target)
+      : undefined;
   }
 
   if (call.name === "net.scan" || call.name === "pentest.recon") {
@@ -286,7 +329,10 @@ export function classifyToolCall(
     // touch the target's network stack, so we don't gate them behind
     // pentest authorization or scope confirmation. The underlying
     // spawnArgv call still validates the target via parseHost.
-    return { level: "safe", reason: "Passive lookup against public registries" };
+    return {
+      level: "safe",
+      reason: "Passive lookup against public registries",
+    };
   }
 
   if (call.name === "tool.batch") {
@@ -349,20 +395,17 @@ export function classifyToolCall(
         reason: "Security scan tool requires confirmation",
       };
     }
-    // Compound commands (pipes, redirects, &&, ||, sudo, command substitution)
-    // always require confirmation because the arguments can mutate state or
-    // exfiltrate data even when the base command is otherwise safe.
-    if (containsShellMetacharacter(command)) {
-      return {
-        level: "confirm",
-        reason:
-          "Compound command (pipes, redirects, &&, ||, sudo, or command substitution) requires confirmation",
-      };
-    }
-    // Mutating-argument patterns (sed -i, awk system(...), find -exec/-delete,
-    // git config --global, npm config set, docker run, kubectl apply, ...).
-    // These bypass the read-only base check because their *arguments* mutate
-    // state or escape into another shell.
+    // Read-only / info commands auto-execute — but only after we've ruled
+    // out mutating arguments, output redirection, and mutating bases below.
+    // (sed/find are read-only bases yet `sed -i` / `find -exec` mutate, and a
+    // pipe can hide a writer like `ls | tee file`, so the mutation checks must
+    // run first.)
+    const { base, sub } = baseAndSub(command);
+    const readOnlyBase = isReadOnlyBase(base);
+    const safeSub = isSafeSubcommand(base, sub);
+
+    // Confirm for in-place / state-mutating ARGUMENTS (sed -i, find -exec/
+    // -delete, git config --global, npm config set, docker/kubectl mutators).
     if (commandHasMutatingArg(command)) {
       return {
         level: "confirm",
@@ -370,22 +413,42 @@ export function classifyToolCall(
           "Command argument mutates state or escapes into another shell (sed -i, awk system(), find -exec/-delete, git config --global, npm config set, docker/kubectl mutators)",
       };
     }
-    // Read-only / info commands are safe to auto-execute
-    const { base, sub } = baseAndSub(command);
-    if (isReadOnlyBase(base)) {
+    // Confirm for commands that write to disk, escalate privileges, or
+    // substitute a command: output redirection / command substitution / sudo.
+    if (commandWritesOrEscalates(command)) {
+      return {
+        level: "confirm",
+        reason:
+          "Command writes to a file, escalates privileges, or substitutes a command (redirect, $(...), or sudo)",
+      };
+    }
+    // Confirm for a base command whose job is to install / delete / modify /
+    // move / copy (mv, cp, rm, mkdir, chmod, package managers, build tools …).
+    if (commandIsMutating(command)) {
+      return {
+        level: "confirm",
+        reason:
+          "Command installs, deletes, moves, copies, or otherwise modifies state and requires confirmation",
+      };
+    }
+    if (readOnlyBase) {
       return { level: "safe", reason: "Read-only command" };
     }
-    if (isSafeSubcommand(base, sub)) {
+    if (safeSub) {
       return { level: "safe", reason: `Read-only ${base} subcommand` };
     }
-    return { level: "confirm", reason: "Shell commands require confirmation" };
+    // Everything else is a benign read/inspect command and runs without a
+    // prompt. Destructive, secret-touching, and exfiltration cases were
+    // already blocked above; mutating cases were already confirmed.
+    return { level: "safe", reason: "Non-mutating command" };
   }
 
   if (call.name === "net.scan") {
     const scopeTarget = scopeTargetForToolCall(call);
     if (
       scopeTarget &&
-      (!isScopeActive(options.scope) || !targetInScope(scopeTarget, options.scope))
+      (!isScopeActive(options.scope) ||
+        !targetInScope(scopeTarget, options.scope))
     ) {
       return {
         level: "confirm",
@@ -399,7 +462,8 @@ export function classifyToolCall(
     const scopeTarget = scopeTargetForToolCall(call);
     if (
       scopeTarget &&
-      (!isScopeActive(options.scope) || !targetInScope(scopeTarget, options.scope))
+      (!isScopeActive(options.scope) ||
+        !targetInScope(scopeTarget, options.scope))
     ) {
       return {
         level: "confirm",
@@ -472,6 +536,45 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only tool availability check" };
   }
 
+  if (call.name === "image.ocr") {
+    const pathArg = stringArg(call.args, "path");
+    if (pathArg) {
+      try {
+        if (isSecretPath(resolveForSecretCheck(pathArg))) {
+          return {
+            level: "block",
+            reason:
+              "Path is a known secret location and cannot be OCR-read by the agent",
+          };
+        }
+      } catch {
+        // resolve failed — let the tool return a normal file error
+      }
+    }
+    return { level: "safe", reason: "Read-only local image OCR" };
+  }
+
+  if (call.name === "pdf.read") {
+    const pathArg = stringArg(call.args, "path");
+    if (pathArg) {
+      try {
+        if (isSecretPath(resolveForSecretCheck(pathArg))) {
+          return {
+            level: "block",
+            reason:
+              "Path is a known secret location and cannot be read by the agent",
+          };
+        }
+      } catch {
+        // resolve failed — let the tool return a normal file error
+      }
+    }
+    return {
+      level: "safe",
+      reason: "Read-only local PDF text extraction (with OCR fallback)",
+    };
+  }
+
   if (call.name === "net.pingSweep") {
     return {
       level: "confirm",
@@ -530,7 +633,8 @@ export function classifyToolCall(
     }
     return {
       level: "confirm",
-      reason: "File deletion requires manual confirmation (never auto-confirmed)",
+      reason:
+        "File deletion requires manual confirmation (never auto-confirmed)",
     };
   }
 

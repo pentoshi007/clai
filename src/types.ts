@@ -19,9 +19,26 @@ export interface ReasoningPreference {
   effort: ReasoningEffort;
 }
 
+export interface ChatImage {
+  /** MIME type, e.g. "image/png", "image/jpeg". */
+  mediaType: string;
+  /** Base64-encoded image bytes (no data: prefix). */
+  dataBase64: string;
+  /** Original path, for display/debugging. */
+  path?: string | undefined;
+}
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /**
+   * Optional image attachments for this message. Only populated for user
+   * turns when the active model supports vision; providers that understand
+   * images serialize these into their multimodal message format, and
+   * providers/models without vision ignore them (the text content still
+   * carries a note so the agent can fall back to OCR tools).
+   */
+  images?: ChatImage[] | undefined;
 }
 
 export interface CompletionRequest {

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ToolResult, ToolStats } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
+import { safeCwd } from "../os/cwd.js";
 
 export interface ShellExecArgs {
   command: string;
@@ -316,7 +317,7 @@ export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
       ? takeOverCookedStdin()
       : () => {};
     const child = spawn(args.command, {
-      cwd: args.cwd ?? process.cwd(),
+      cwd: args.cwd ?? safeCwd(),
       detached: detached && !usingInteractiveStdin,
       shell: true,
       stdio,
@@ -565,7 +566,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       ? takeOverCookedStdin()
       : () => {};
     const child = spawn(args.command, args.argv, {
-      cwd: args.cwd ?? process.cwd(),
+      cwd: args.cwd ?? safeCwd(),
       detached: detached && !usingInteractiveStdin,
       shell: false,
       stdio,

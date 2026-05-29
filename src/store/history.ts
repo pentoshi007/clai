@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import type { ChatMessage, ToolCall, ToolResult } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
 import { getConfig } from "./config.js";
+import { safeCwd } from "../os/cwd.js";
 
 const historyDir = join(homedir(), ".clai");
 const dbFile = join(historyDir, "history.db");
@@ -100,10 +101,13 @@ function newId(): string {
 }
 
 function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    content: redactSecrets(message.content),
-  }));
+  return messages.map((message) => {
+    const { images: _images, ...rest } = message;
+    // Drop image bytes from persisted history — base64 blobs would bloat the
+    // store and they're not useful to replay. The text content (which
+    // includes a note that an image was attached) is kept and redacted.
+    return { ...rest, content: redactSecrets(message.content) };
+  });
 }
 
 async function appendJsonl(record: HistoryRecord): Promise<void> {
@@ -142,7 +146,7 @@ export async function saveSession(
     name,
     createdAt: now,
     updatedAt: now,
-    cwd: process.cwd(),
+    cwd: safeCwd(),
     messages: scrubMessages(messages),
   };
 
@@ -300,6 +304,15 @@ export async function clearAllHistory(): Promise<{
     } catch (error) {
       detail += `jsonl error: ${error instanceof Error ? error.message : String(error)}`;
     }
+  }
+  // Plans live alongside history (same DB / a sibling JSONL). Clearing
+  // history should clear stored plans too so nothing leaks across a reset.
+  try {
+    const { clearAllPlans } = await import("./plan.js");
+    await clearAllPlans();
+    detail += "; plans cleared";
+  } catch {
+    /* plan store optional */
   }
   return { cleared: true, detail: detail.trim() };
 }
