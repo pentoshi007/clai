@@ -1,4 +1,4 @@
-import { open, readdir, readFile, writeFile, unlink, rm, rename } from "node:fs/promises";
+import { open, readdir, readFile, writeFile, unlink, rm, rename, mkdir } from "node:fs/promises";
 import { join, dirname, basename, relative, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execa } from "execa";
@@ -130,6 +130,11 @@ export async function fsWrite(
   content: string,
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path);
+  // Create any missing parent directories so writing "src/index.js" into a
+  // fresh project just works — the agent should not have to chain a separate
+  // mkdir before every file write. This was the most common failure: ENOENT
+  // on a path whose parent dir did not exist yet.
+  await mkdir(dirname(resolved), { recursive: true });
   await writeFile(resolved, content, "utf8");
   return { ok: true, output: `Wrote ${resolved}` };
 }

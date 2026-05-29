@@ -76,6 +76,12 @@ import {
   estimateMessagesTokens,
 } from "./agent/context-manager.js";
 import { isCtrlC, isCtrlO, isCtrlT, isEscape } from "./ui/keys.js";
+import {
+  getMentionQuery,
+  findFileSuggestions,
+  expandMentions,
+  type FileSuggestion,
+} from "./ui/mentions.js";
 
 export interface ReplOptions {
   mode?: Mode | undefined;
@@ -414,6 +420,45 @@ export function renderSlashCommandMenu(
   return items;
 }
 
+export function renderFileMentionMenu(
+  query: string,
+  suggestions: FileSuggestion[],
+  selectedIndex: number,
+): string[] {
+  const cols = terminalColumns();
+  const maxWidth = Math.max(1, cols - 1);
+
+  if (suggestions.length === 0) {
+    return [
+      chalk.dim(fitPlain(`  no files matching @${query}`, maxWidth)),
+    ];
+  }
+
+  const termRows = process.stdout.rows || 24;
+  const maxVisible = Math.max(5, termRows - 4);
+  const visible = suggestions.slice(0, maxVisible);
+
+  const items = visible.map((suggestion, index) => {
+    const markerPlain = index === selectedIndex ? "›" : " ";
+    const marker = index === selectedIndex ? chalk.magenta("›") : " ";
+    const prefix = `  ${markerPlain} `;
+    const labelBudget = Math.max(1, maxWidth - prefix.length);
+    const label = fitPlain(suggestion.label, labelBudget);
+    const colored = suggestion.isDir ? chalk.cyan(label) : chalk.white(label);
+    return `  ${marker} ${colored}`;
+  });
+
+  if (suggestions.length > maxVisible) {
+    items.push(
+      chalk.dim(
+        fitPlain(`  … ${suggestions.length - maxVisible} more`, maxWidth),
+      ),
+    );
+  }
+
+  return items;
+}
+
 function isPrintableSequence(sequence: string | undefined): sequence is string {
   return sequence !== undefined && /^[^\x00-\x1f\x7f]+$/u.test(sequence);
 }
@@ -484,6 +529,7 @@ async function readPromptLine(options: {
     let selectedIndex = 0;
     let menuNavigated = false;
     let dismissedSlashLine: string | null = null;
+    let mentionDismissed = false;
     let historyIndex: number | null = null;
     let historyDraft = "";
     let lastCtrlCAt = 0;
@@ -504,12 +550,64 @@ async function readPromptLine(options: {
       return { visible: true, suggestions };
     };
 
+    // File @-mention autocomplete: active when the cursor sits inside an
+    // `@partial/path` token. Mutually exclusive with the slash menu (slash
+    // requires the line to start with "/" and contain no whitespace).
+    const getMentionState = (): {
+      visible: boolean;
+      query: string;
+      start: number;
+      suggestions: FileSuggestion[];
+    } => {
+      if (mentionDismissed || line.startsWith("/")) {
+        return { visible: false, query: "", start: 0, suggestions: [] };
+      }
+      const q = getMentionQuery(line, cursor);
+      if (!q) return { visible: false, query: "", start: 0, suggestions: [] };
+      const suggestions = findFileSuggestions(q.query);
+      if (suggestions.length === 0) {
+        return { visible: false, query: q.query, start: q.start, suggestions };
+      }
+      if (selectedIndex >= suggestions.length) selectedIndex = 0;
+      return { visible: true, query: q.query, start: q.start, suggestions };
+    };
+
+    const applyMention = (
+      suggestion: FileSuggestion,
+      start: number,
+    ): void => {
+      const before = line.slice(0, start);
+      const after = line.slice(cursor);
+      let insert = `@${suggestion.value}`;
+      let newCursor = before.length + insert.length;
+      if (!suggestion.isDir) {
+        // Completed a file — add a trailing space and close the menu so the
+        // user can keep typing their request.
+        insert += " ";
+        newCursor = before.length + insert.length;
+        mentionDismissed = true;
+      } else {
+        // Completed a directory — keep the menu open so the user drills in.
+        mentionDismissed = false;
+      }
+      line = before + insert + after;
+      cursor = newCursor;
+      selectedIndex = 0;
+      menuNavigated = false;
+      refresh();
+    };
+
     const refresh = (): void => {
       const cols = terminalColumns();
       const menu = getMenuState();
+      const mention = menu.visible
+        ? { visible: false, query: "", start: 0, suggestions: [] as FileSuggestion[] }
+        : getMentionState();
       const menuLines = menu.visible
         ? renderSlashCommandMenu(line, menu.suggestions, selectedIndex)
-        : [];
+        : mention.visible
+          ? renderFileMentionMenu(mention.query, mention.suggestions, selectedIndex)
+          : [];
       const promptRows = buildPromptRows(line, cols, true);
       const target = promptCursorPosition(cursor, cols);
       const blockRows = [...promptRows, ...menuLines];
@@ -541,6 +639,7 @@ async function readPromptLine(options: {
       selectedIndex = 0;
       menuNavigated = false;
       dismissedSlashLine = null;
+      mentionDismissed = false;
       historyIndex = null;
       refresh();
     };
@@ -589,6 +688,9 @@ async function readPromptLine(options: {
       // here so the user's navigation keys don't bleed into the input line.
       if (isPagerActive()) return;
       const menu = getMenuState();
+      const mention = menu.visible
+        ? { visible: false, query: "", start: 0, suggestions: [] as FileSuggestion[] }
+        : getMentionState();
 
       // Cmd+C on macOS terminals is handled by the OS (it never reaches us),
       // but some Linux terminals forward Meta+C. Treat that as a no-op so
@@ -632,6 +734,13 @@ async function readPromptLine(options: {
       }
 
       if (key.name === "return" || key.name === "enter") {
+        if (mention.visible && mention.suggestions.length > 0) {
+          applyMention(
+            mention.suggestions[selectedIndex] ?? mention.suggestions[0]!,
+            mention.start,
+          );
+          return;
+        }
         const useSelection = menu.visible && (line !== "/" || menuNavigated);
         const selectedCommand = useSelection
           ? menu.suggestions[selectedIndex]
@@ -641,6 +750,13 @@ async function readPromptLine(options: {
       }
 
       if (key.name === "tab") {
+        if (mention.visible && mention.suggestions.length > 0) {
+          applyMention(
+            mention.suggestions[selectedIndex] ?? mention.suggestions[0]!,
+            mention.start,
+          );
+          return;
+        }
         if (menu.visible && menu.suggestions.length > 0) {
           const target =
             menu.suggestions[selectedIndex] ?? menu.suggestions[0]!;
@@ -650,6 +766,11 @@ async function readPromptLine(options: {
       }
 
       if (isEscape(key)) {
+        if (mention.visible) {
+          mentionDismissed = true;
+          refresh();
+          return;
+        }
         if (menu.visible) {
           dismissedSlashLine = line;
           refresh();
@@ -658,6 +779,14 @@ async function readPromptLine(options: {
       }
 
       if (key.name === "up") {
+        if (mention.visible && mention.suggestions.length > 0) {
+          selectedIndex =
+            (selectedIndex - 1 + mention.suggestions.length) %
+            mention.suggestions.length;
+          menuNavigated = true;
+          refresh();
+          return;
+        }
         if (menu.visible && menu.suggestions.length > 0) {
           selectedIndex =
             (selectedIndex - 1 + menu.suggestions.length) %
@@ -683,6 +812,12 @@ async function readPromptLine(options: {
       }
 
       if (key.name === "down") {
+        if (mention.visible && mention.suggestions.length > 0) {
+          selectedIndex = (selectedIndex + 1) % mention.suggestions.length;
+          menuNavigated = true;
+          refresh();
+          return;
+        }
         if (menu.visible && menu.suggestions.length > 0) {
           selectedIndex = (selectedIndex + 1) % menu.suggestions.length;
           menuNavigated = true;
@@ -1804,7 +1939,7 @@ async function handleSlash(
       console.log(renderSuggestions());
       console.log(
         chalk.dim(
-          "  ESC abort  │  Ctrl+C clears input  │  Ctrl+T or /think for thinking  │  Ctrl+O opens full tool output (q to close)\n",
+          "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output (q to close)\n",
         ),
       );
       return true;
@@ -1970,7 +2105,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   console.log(renderSuggestions());
   console.log(
     chalk.dim(
-      "  ESC abort  │  Ctrl+C clears input  │  Ctrl+T or /think for thinking  │  Ctrl+O opens full tool output (q to close)\n",
+      "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output (q to close)\n",
     ),
   );
 
@@ -2030,10 +2165,31 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         clearThinking();
         abortPressCount = 0;
         let assistantContent = "";
+        // Expand @file mentions and drag-and-dropped paths into real context.
+        // The user-visible `line` stays readable in history; the model gets
+        // the line plus an appended block of file contents / path notes.
+        const expansion = expandMentions(line);
+        const modelInput =
+          expansion.contextBlock.length > 0
+            ? `${line}\n\n${expansion.contextBlock}`
+            : line;
+        if (expansion.attachments.length > 0) {
+          for (const att of expansion.attachments) {
+            const tag =
+              att.kind === "text"
+                ? chalk.green("attached")
+                : att.kind === "missing"
+                  ? chalk.red("not found")
+                  : chalk.yellow(att.kind);
+            console.log(
+              chalk.dim(`  ↳ ${tag}: `) + chalk.dim(att.path),
+            );
+          }
+        }
         if (state.mode === "ask") {
           assistantContent = await withAbortableInput(async (signal) =>
             streamWithAbort(async (runSignal, onToken) => {
-              return await runAskStream(line, onToken, {
+              return await runAskStream(modelInput, onToken, {
                 provider: state.provider,
                 model: state.model,
                 history: state.messages,
@@ -2044,7 +2200,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           process.stdout.write("\n");
         } else {
           assistantContent = await withAbortableInput(async (signal) =>
-            runAgent(line, {
+            runAgent(modelInput, {
               provider: state.provider,
               model: state.model,
               history: state.messages,
@@ -2055,7 +2211,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         }
         console.log();
         state.messages.push(
-          { role: "user", content: line },
+          { role: "user", content: modelInput },
           { role: "assistant", content: assistantContent },
         );
       } catch (error) {

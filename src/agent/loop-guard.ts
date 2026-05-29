@@ -15,6 +15,7 @@ export interface ToolAttempt {
 export class LoopGuard {
   private attempts: ToolAttempt[] = [];
   private signatureCount = new Map<string, number>();
+  private signatureSuccess = new Map<string, boolean>();
 
   /**
    * Produce a canonical string for a (name, args) pair so that calls
@@ -44,6 +45,12 @@ export class LoopGuard {
     const sig = this.canonicalize(name, args);
     this.attempts.push({ step, callName: name, canonicalSignature: sig, ok, exitCode });
     this.signatureCount.set(sig, (this.signatureCount.get(sig) ?? 0) + 1);
+    // Remember whether this exact call has EVER succeeded. A call that only
+    // ever failed should be allowed to retry (e.g. fs.write that hit ENOENT,
+    // a command that needed installing first) without being flagged as a
+    // redundant loop.
+    if (ok) this.signatureSuccess.set(sig, true);
+    else if (!this.signatureSuccess.has(sig)) this.signatureSuccess.set(sig, false);
   }
 
   /**
@@ -52,6 +59,11 @@ export class LoopGuard {
    * Returns `{ block: false }` if the call is fine, or
    * `{ block: false, reason: "..." }` for a warning (first repeat), or
    * `{ block: true, reason: "..." }` to force summary (second+ repeat).
+   *
+   * A call whose every prior attempt FAILED is never blocked — the model is
+   * expected to fix the cause (install a tool, create a dir) and retry. Only
+   * calls that already SUCCEEDED are deduped, since re-running them wastes a
+   * step and risks an infinite summarize loop.
    */
   shouldBlock(
     name: string,
@@ -62,14 +74,17 @@ export class LoopGuard {
 
     if (count === 0) return { block: false };
 
+    // Prior attempts all failed → allow the retry, no warning.
+    if (this.signatureSuccess.get(sig) === false) return { block: false };
+
     if (count === 1) {
       return {
         block: false,
-        reason: `${name} has already been called with these arguments once. Consider using the results you already have.`,
+        reason: `${name} has already been called with these arguments once and succeeded. Consider using the results you already have.`,
       };
     }
 
-    // count >= 2: block
+    // count >= 2 and at least one success: block
     return {
       block: true,
       reason: `${name} was already called ${count} time(s) with the same arguments. Summarize existing results instead.`,

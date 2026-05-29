@@ -61,8 +61,8 @@ export function renderSuggestions(): string {
   const suggestions = [
     "scan my network",
     "recon example.com",
-    "directory bruteforce on 192.168.1.1",
-    "find open ports on target",
+    "create a react app here",
+    "explain @file.ts",
   ];
   return chalk.dim("  try: ") + chalk.dim.italic(suggestions.join(" │ "));
 }

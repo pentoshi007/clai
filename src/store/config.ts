@@ -70,7 +70,7 @@ const defaults: ClaiConfig = {
   parserStrict: false,
   privateMode: false,
   historyRetentionLimit: 200,
-  sandboxReads: true,
+  sandboxReads: false,
   activeSearchProvider: "duckduckgo",
 };
 
