@@ -1,8 +1,47 @@
 import chalk from "chalk";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { getConfig, updateConfig } from "../store/config.js";
 
 const REPO = "pentoshi007/clai";
-const CURRENT_VERSION = "1.0.1";
+
+/**
+ * Resolve the running version from the installed package.json so the banner,
+ * `--version`, and the update checker always report the ACTUAL installed
+ * build — never a hardcoded constant that drifts after `npm i -g`. Walks up
+ * from this module to find the nearest package.json (works in dev via tsx and
+ * in the compiled dist layout). Falls back to a baked constant only if the
+ * file can't be read.
+ */
+const FALLBACK_VERSION = "1.0.2";
+
+function resolvePackageVersion(): string {
+  try {
+    let dir = dirname(fileURLToPath(import.meta.url));
+    for (let i = 0; i < 6; i += 1) {
+      try {
+        const pkg = JSON.parse(
+          readFileSync(join(dir, "package.json"), "utf8"),
+        ) as { name?: string; version?: string };
+        // Only accept our own package.json, not a dependency's.
+        if (pkg.version && (!pkg.name || pkg.name === "@pentoshi/clai")) {
+          return pkg.version;
+        }
+      } catch {
+        // not here — walk up
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    // ignore — use fallback
+  }
+  return FALLBACK_VERSION;
+}
+
+const CURRENT_VERSION = resolvePackageVersion();
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 interface GitHubRelease {

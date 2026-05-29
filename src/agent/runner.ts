@@ -549,6 +549,22 @@ function freshnessGuardMessage(now = new Date()): string {
   );
 }
 
+/**
+ * Directive injected for build/scaffold turns. Forces the careful
+ * explore → understand → plan → implement loop instead of a one-shot dump,
+ * and forbids stopping before the goal is reached.
+ */
+function buildWorkflowDirective(): string {
+  return [
+    "BUILD WORKFLOW (this is a build/scaffold/feature task — follow this order, do NOT rush to write files in one shot):",
+    "1. EXPLORE: fs.list the working directory (and key subdirs) to see what already exists. Use tool.batch to parallelize reads.",
+    "2. UNDERSTAND: fs.read the files that matter (package.json, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the directory is empty or only has a stub, start fresh with a sensible modern default (e.g. Vite + React) and say so.",
+    "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. NEVER cram everything into one task (e.g. one task that lists 8 files is rejected). Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
+    "4. IMPLEMENT: once approved, work task by task across MULTIPLE steps — mark each task in_progress, do the real work (fs.writeMany for files, pkg.install / npm install, shell.start for the dev server), mark it done, then move to the NEXT task. Keep going until EVERY task is done and the goal is achieved. Do NOT stop after one file or one step, and do NOT claim work you didn't actually run.",
+    "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
+  ].join("\n");
+}
+
 export function shouldDimToolChatter(call: ToolCall): boolean {
   return call.name === "web.search";
 }
@@ -918,6 +934,16 @@ export async function runAgentLoop(
     systemSections.push(
       planContextMessage(activePlan, session.planApproved.value),
     );
+  }
+
+  // For build/scaffold turns with no active plan yet, inject an explicit
+  // workflow so the agent does NOT rush to write files in one shot. It must
+  // explore the directory, read the relevant existing files to understand
+  // what's already there, create a comprehensive multi-task plan, then
+  // implement task by task until the goal is met. This mirrors how a careful
+  // coding agent (Claude Code) operates.
+  if (buildLikeTurn && !activePlan) {
+    systemSections.push(buildWorkflowDirective());
   }
 
   const fullSystemPrompt = systemSections.join("\n\n");
