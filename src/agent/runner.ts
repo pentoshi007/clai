@@ -275,9 +275,7 @@ const TOOL_ARG_KEYS = new Set([
  * text trimmed. Leaves un-fenced text unchanged.
  */
 function stripLoneFence(text: string): string {
-  const fenced = text
-    .trim()
-    .match(/^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?```$/);
+  const fenced = text.trim().match(/^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?```$/);
   return (fenced?.[1] ?? text).trim();
 }
 
@@ -556,11 +554,13 @@ function freshnessGuardMessage(now = new Date()): string {
  */
 function buildWorkflowDirective(): string {
   return [
-    "BUILD WORKFLOW (this is a build/scaffold/feature task — follow this order, do NOT rush to write files in one shot):",
+    "BUILD WORKFLOW (this is a build/scaffold/feature task — follow this order EXACTLY; deviation is a failure):",
     "1. EXPLORE: fs.list the working directory (and key subdirs) to see what already exists. Use tool.batch to parallelize reads.",
-    "2. UNDERSTAND: fs.read the files that matter (package.json, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the directory is empty or only has a stub, start fresh with a sensible modern default (e.g. Vite + React) and say so.",
+    "2. UNDERSTAND: fs.read the files that matter (like package.json for js related and same for other languages too, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the dir is empty or only has a stub, start fresh with a sensible modern default (e.g. Vite + React) and say so.",
     "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. NEVER cram everything into one task (e.g. one task that lists 8 files is rejected). Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
     "4. IMPLEMENT: once approved, work task by task across MULTIPLE steps — mark each task in_progress, do the real work (fs.writeMany for files, pkg.install / npm install, shell.start for the dev server), mark it done, then move to the NEXT task. Keep going until EVERY task is done and the goal is achieved. Do NOT stop after one file or one step, and do NOT claim work you didn't actually run.",
+    "",
+    "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
     "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
   ].join("\n");
 }
@@ -1101,12 +1101,30 @@ export async function runAgentLoop(
 
     const assistantText = rememberThinkingFromText(completion.text);
 
+    // Try visible text first, then thinking content — some models (e.g. glm-5.1)
+    // wrap tool calls inside  considering tags, so stripThinking removes them
+    // into thinkContent and visible becomes empty. Recovering from thinkContent
+    // prevents an endless nudge loop where the model keeps hiding the call.
+    let call = parseToolCall(assistantText.visible, {
+      strict: getConfig().parserStrict,
+    });
+    if (!call && assistantText.hasThinking) {
+      call = parseToolCall(assistantText.thinkContent, {
+        strict: getConfig().parserStrict,
+      });
+      if (call) {
+        process.stdout.write(
+          chalk.dim("  ℹ recovered tool call from thinking content\n"),
+        );
+      }
+    }
+
     // ── Thinking-only recovery ────────────────────────────────────────
     // Some models (eg gpt-oss-20b on NVIDIA NIM) occasionally spend their
     // entire budget on hidden <think> reasoning and emit no visible text
     // or tool call. Without this guard the agent silently returns an empty
     // answer and the user has to re-submit the same prompt.
-    if (!assistantText.visible.trim() && assistantText.hasThinking) {
+    if (!assistantText.visible.trim() && !call && assistantText.hasThinking) {
       emptyVisibleRetries += 1;
       if (emptyVisibleRetries <= 2) {
         process.stdout.write(
@@ -1118,26 +1136,29 @@ export async function runAgentLoop(
           ),
         );
         messages.push({ role: "assistant", content: completion.text });
-        messages.push(
-          recoveryUserMessage(
-            "You only produced internal reasoning with no visible answer or tool call. " +
+        const buildNudge =
+          buildLikeTurn && !activePlan
+            ? "You only produced internal reasoning with no visible answer or tool call. " +
+              "This is a BUILD/SCAFFOLD task with NO plan yet. " +
+              "You MUST call plan.create using the ```tool format to create a comprehensive plan BEFORE writing any files or running any commands. " +
+              "Do NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, or pkg.install yet. " +
+              "Your ONLY allowed action right now is plan.create (or read/list for exploration)."
+            : "You only produced internal reasoning with no visible answer or tool call. " +
               "You MUST either call a tool using the ```tool format or provide your final answer. " +
+              "Do NOT wrap your tool call inside  considering or reasoning tags — put it in the VISIBLE response, not hidden. " +
               "If images are attached, inspect them directly for visual details (text, colors, layout, spacing, style) instead of using OCR unless explicitly needed. " +
-              "Do NOT just think — take action NOW.",
-          ),
-        );
+              "Do NOT just think — take action NOW.";
+        messages.push(recoveryUserMessage(buildNudge));
         continue;
       }
       // Exhausted retries — fall through to the normal empty-answer path
       // which will print a warning and return.
     } else {
-      // Reset the counter on any successful visible output.
+      // Reset the counter on any successful visible output or recovered call.
       emptyVisibleRetries = 0;
     }
 
-    let call = parseToolCall(assistantText.visible, {
-      strict: getConfig().parserStrict,
-    });
+    // `call` was already extracted above (from visible text or thinking content).
     // Recovery: the model meant to call a tool but emitted a bare JSON object
     // with no ```tool fence — either a complete {name,args} the strict
     // matchers missed (recover it directly), or just an args object like
