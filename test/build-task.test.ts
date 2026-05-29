@@ -38,6 +38,13 @@ describe("looksLikeBuildTask", () => {
     );
   });
 
+  it("treats the /implement plan-execution message as build work", () => {
+    const implementMsg =
+      "I approve the plan. Execute it now, task by task: mark each task in_progress before " +
+      "you start it and done after it actually succeeds.";
+    expect(looksLikeBuildTask(implementMsg)).toBe(true);
+  });
+
   it("does not flag unrelated one-shot lookups", () => {
     expect(looksLikeBuildTask("who registered example.com")).toBe(false);
     expect(looksLikeBuildTask("what is my ip")).toBe(false);

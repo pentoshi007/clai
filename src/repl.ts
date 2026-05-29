@@ -2367,8 +2367,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         implementApproved = true;
         effectiveLine =
           "I approve the plan. Execute it now, task by task: mark each task in_progress before " +
-          "you start it and done after it actually succeeds. Run real commands (installs, servers, " +
-          "verification) — do not claim anything ran without a successful tool call.";
+          "you start it and done after it actually succeeds. Build the project for real with fs.writeMany " +
+          "(create all files in as few calls as possible), then verify. Do NOT call web.search — you already " +
+          "know everything needed to scaffold this. Run real commands (installs, servers, verification) — " +
+          "do not claim anything ran without a successful tool call.";
       }
 
       // Only remember real prompts in the history ring. Slash commands

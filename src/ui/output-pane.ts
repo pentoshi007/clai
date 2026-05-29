@@ -282,11 +282,18 @@ export async function openPager(options: PagerOptions): Promise<void> {
       // small `output.write()` calls cause flicker on Windows Terminal and
       // on macOS Terminal.app under high CPU load; one big write paints
       // the whole pager in a single syscall.
+      //
+      // IMPORTANT: do NOT emit `\x1b[2J` (clear-entire-screen) on every
+      // frame. On terminals where the alternate screen buffer is disabled or
+      // unsupported, `2J` scrolls the current contents into the main
+      // scrollback, so every scroll keypress left another copy of the plan in
+      // history (the "plan text repeats 20x as I scroll up" bug). Instead we
+      // home the cursor, overwrite each row with an erase-to-end-of-line, and
+      // finish with erase-to-end-of-screen — none of which touch scrollback.
       let frame = "";
       frame += HOME;
-      frame += CLEAR_SCREEN;
-      frame += HOME;
       frame += chalk.cyan(options.title);
+      frame += ansiSeq("K");
       frame += "\n";
       for (let i = 0; i < viewRows; i += 1) {
         frame += ansiSeq(`${i + 2};1H`);
@@ -302,6 +309,8 @@ export async function openPager(options: PagerOptions): Promise<void> {
       );
       const visibleFooter = footer.length > cols ? footer.slice(0, cols) : footer;
       frame += chalk.dim(visibleFooter);
+      // Erase anything below the footer (e.g. when a resize shrank the view).
+      frame += ansiSeq("J");
 
       output.write(frame);
     };

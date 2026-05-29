@@ -5,6 +5,7 @@ import {
   shouldDimToolChatter,
   looksLikeTruncatedToolCall,
   recognizeBareToolJson,
+  isLumpedSingleTask,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -138,6 +139,19 @@ describe("fresh web-search guard", () => {
     expect(requiresFreshWebSearch("what does cm stand for")).toBe(false);
     expect(requiresFreshWebSearch("define cm")).toBe(false);
   });
+
+  it("never treats a plan-execution / build turn as a fresh-search turn", () => {
+    // The /implement synthetic message contains "now" — must NOT trigger a
+    // web.search for the current date instead of building the project.
+    const implementMsg =
+      "I approve the plan. Execute it now, task by task: mark each task in_progress before " +
+      "you start it and done after it actually succeeds.";
+    expect(requiresFreshWebSearch(implementMsg)).toBe(false);
+    expect(requiresFreshWebSearch("create a simple blog page react app here")).toBe(
+      false,
+    );
+    expect(requiresFreshWebSearch("build it now")).toBe(false);
+  });
 });
 
 describe("web.search display styling", () => {
@@ -257,5 +271,30 @@ describe("bare-JSON tool-call recovery", () => {
     ).toBeUndefined();
     expect(recognizeBareToolJson("just some prose")).toBeUndefined();
     expect(recognizeBareToolJson('{"path":"x","extra":1,"more":2,"a":3,"b":4,"c":5,"d":6}')).toBeUndefined();
+  });
+});
+
+describe("plan quality — lumped single-task detection", () => {
+  it("flags a single task that crams many files/actions into one step", () => {
+    expect(
+      isLumpedSingleTask([
+        "Create package.json, vite.config.js, index.html, src/main.jsx, src/App.jsx, src/Post.jsx, src/posts.json, src/styles.css",
+      ]),
+    ).toBe(true);
+    expect(isLumpedSingleTask(["scaffold the app and install deps and run it"])).toBe(
+      true,
+    );
+  });
+
+  it("accepts a focused single task and any multi-task plan", () => {
+    expect(isLumpedSingleTask(["scaffold package.json"])).toBe(false);
+    expect(
+      isLumpedSingleTask([
+        "scaffold package.json + vite config",
+        "create index.html and entry",
+        "build App + Post components",
+      ]),
+    ).toBe(false);
+    expect(isLumpedSingleTask([])).toBe(false);
   });
 });

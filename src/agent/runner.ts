@@ -460,6 +460,14 @@ const CONTINUATION_RE =
 const INCOMPLETE_RE =
   /\b(?:not\s+complete|incomplete|isn'?t\s+(?:done|complete|working|finished)|doesn'?t\s+work|still\s+(?:broken|missing|failing)|missing\s+(?:files?|parts?)|finish\s+(?:the|it)|complete\s+(?:the|it))\b/i;
 
+// The synthetic message injected when the user runs /implement to approve a
+// plan ("I approve the plan. Execute it now, task by task…"). It must always
+// count as a build/continuation turn — it contains the word "now", which
+// would otherwise trip the volatile-info freshness guard and divert the run
+// into a pointless web.search instead of executing the plan.
+const PLAN_EXECUTION_RE =
+  /\b(?:approve the plan|execute it (?:now|task by task)|task by task|execute the plan|implement the plan)\b/i;
+
 /**
  * Decide whether this turn should get a generous step budget because it is
  * a multi-file build, a continuation of one, or a "it's not done yet" nudge.
@@ -475,7 +483,8 @@ export function looksLikeBuildTask(
     BUILD_TASK_RE.test(text) ||
     BUILD_STACK_RE.test(text) ||
     CONTINUATION_RE.test(text) ||
-    INCOMPLETE_RE.test(text)
+    INCOMPLETE_RE.test(text) ||
+    PLAN_EXECUTION_RE.test(text)
   ) {
     return true;
   }
@@ -498,11 +507,36 @@ export function requiresFreshWebSearch(prompt: string): boolean {
   if (STATIC_DISAMBIGUATION_RE.test(text) || LOCAL_RUNTIME_RE.test(text)) {
     return false;
   }
+  // Plan-execution and terse continuation turns are never "fetch current
+  // info" turns, even when they contain words like "now". (We intentionally
+  // do NOT exclude on build-stack keywords here — "latest vite version" is a
+  // legitimate version lookup. The runAgentLoop caller additionally gates the
+  // guard on looksLikeBuildTask so a real scaffold turn never searches.)
+  if (PLAN_EXECUTION_RE.test(text) || CONTINUATION_RE.test(text)) {
+    return false;
+  }
   return (
     VOLATILE_SIGNAL_RE.test(text) ||
     VOLATILE_ROLE_QUERY_RE.test(text) ||
     ROLE_OF_ENTITY_RE.test(text) ||
     EXPLICIT_WEB_LOOKUP_RE.test(text)
+  );
+}
+
+/**
+ * Detect a low-quality "everything in one step" plan task. A single task that
+ * itself enumerates many files/actions (multiple commas, an "and", several
+ * slashes, or an overlong title) means the model lumped the whole build into
+ * one checkbox instead of producing a real ordered checklist.
+ */
+export function isLumpedSingleTask(taskTitles: string[]): boolean {
+  if (taskTitles.length !== 1) return false;
+  const only = taskTitles[0]!;
+  return (
+    (only.match(/,/g)?.length ?? 0) >= 2 ||
+    /\band\b/i.test(only) ||
+    (only.match(/\//g)?.length ?? 0) >= 2 ||
+    only.length > 90
   );
 }
 
@@ -729,6 +763,24 @@ async function handlePlanTool(
           "plan.create failed: provide a string goal and a non-empty tasks array of step titles.",
       };
     }
+    // Reject a low-quality "everything in one step" plan. A single task that
+    // itself enumerates many files/actions (commas, "and", slashes) is a sign
+    // the model lumped the whole build into one checkbox — split it so the
+    // user gets a real, trackable checklist and the executor works step by step.
+    if (isLumpedSingleTask(taskTitles)) {
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.red(
+          "  ✗ plan.create: that single task lumps the whole build into one step\n",
+        ),
+        modelNote:
+          "plan.create rejected: you put everything into ONE task. Break it into 3-8 SEPARATE, " +
+          "ordered tasks — each a distinct action, e.g. 'scaffold package.json + vite config', " +
+          "'create index.html + entry (main.jsx)', 'build App + Post components', 'add posts data + styles', " +
+          "'install deps and run dev server to verify'. Call plan.create again with that tasks array.",
+      };
+    }
     const plan = createPlan({
       sessionId: session.sessionId,
       goal,
@@ -831,8 +883,16 @@ export async function runAgentLoop(
   const maxSteps = options.maxSteps ?? 30;
   const projectContext = await loadProjectContext();
   const toolNames = availableToolNames();
+  // Build / scaffold / continuation turns must NEVER be diverted into a
+  // web.search for "current info". The /implement directive ("Execute it
+  // now…") and prompts like "create a react app" contain words such as
+  // "now"/"latest" that trip the volatile-info regex; without this guard the
+  // agent burns its turn searching the date instead of writing files.
+  const buildLikeTurn = looksLikeBuildTask(prompt, options.history);
   const freshWebSearchRequired =
-    toolNames.includes("web.search") && requiresFreshWebSearch(prompt);
+    !buildLikeTurn &&
+    toolNames.includes("web.search") &&
+    requiresFreshWebSearch(prompt);
   const systemSections = [renderAgentSystemPrompt(toolNames.join(", "))];
   if (projectContext) {
     systemSections.push(
@@ -919,7 +979,7 @@ export async function runAgentLoop(
   // like a build/scaffold or a continuation of one.
   const analysis = analyzeTask(prompt);
   const hasHistory = (options.history?.length ?? 0) > 0;
-  const buildLike = looksLikeBuildTask(prompt, options.history);
+  const buildLike = buildLikeTurn;
   let stepBudget =
     analysis.complexity === "simple"
       ? 15
