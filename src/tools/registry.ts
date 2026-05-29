@@ -1,7 +1,7 @@
 import { detectSystem } from "../os/detect.js";
 import { detectPackageManager, assertSafePackageName } from "../os/pkgmgr.js";
 import type { ToolCall, ToolResult } from "../types.js";
-import { fsEdit, fsDelete, fsList, fsRead, fsSearch, fsWrite } from "./fs.js";
+import { fsEdit, fsDelete, fsList, fsRead, fsSearch, fsWrite, fsWriteMany, type FileWrite } from "./fs.js";
 import { httpFetch } from "./http.js";
 import { shellExec, spawnArgv } from "./shell.js";
 import { webFetch } from "./web/fetch.js";
@@ -92,6 +92,16 @@ export const toolRegistry: Record<string, ToolHandler> = {
   },
   async "fs.write"(args) {
     return fsWrite(requireString(args, "path"), requireString(args, "content"));
+  },
+  async "fs.writeMany"(args) {
+    const raw = args.files;
+    if (!Array.isArray(raw)) {
+      throw new Error(
+        'fs.writeMany requires a "files" array of { path, content } objects',
+      );
+    }
+    const files = raw as FileWrite[];
+    return fsWriteMany(files);
   },
   async "fs.list"(args) {
     return fsList(optionalString(args, "path") ?? process.cwd(), {

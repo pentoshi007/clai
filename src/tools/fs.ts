@@ -111,7 +111,7 @@ export async function fsRead(
     const buffer = Buffer.alloc(cap);
     const { bytesRead } = await handle.read(buffer, 0, cap, 0);
     const truncated = stat.size > maxBytes;
-    const text = buffer.slice(0, bytesRead).toString("utf8");
+    const text = buffer.subarray(0, bytesRead).toString("utf8");
     const suffix = truncated
       ? `\n... (truncated at ${maxBytes.toLocaleString()} bytes of ${stat.size.toLocaleString()})`
       : "";
@@ -137,6 +137,82 @@ export async function fsWrite(
   await mkdir(dirname(resolved), { recursive: true });
   await writeFile(resolved, content, "utf8");
   return { ok: true, output: `Wrote ${resolved}` };
+}
+
+export interface FileWrite {
+  path: string;
+  content: string;
+}
+
+const WRITE_MANY_MAX_FILES = 50;
+
+/**
+ * Write several files in a single tool call. This is the workhorse for
+ * scaffolding a project: a React app, an Express server, etc. all need a
+ * handful of files, and forcing one fs.write per file burns through the
+ * agent's step budget (the most common reason a scaffold never finished).
+ *
+ * Each entry is validated and written independently — a bad path does not
+ * abort the whole batch. Parent directories are created automatically, just
+ * like fs.write.
+ */
+export async function fsWriteMany(files: FileWrite[]): Promise<ToolResult> {
+  if (!Array.isArray(files) || files.length === 0) {
+    return {
+      ok: false,
+      output:
+        'fs.writeMany requires a non-empty "files" array of { path, content } objects.',
+      exitCode: 1,
+    };
+  }
+  if (files.length > WRITE_MANY_MAX_FILES) {
+    return {
+      ok: false,
+      output: `fs.writeMany accepts at most ${WRITE_MANY_MAX_FILES} files per call (got ${files.length}). Split the scaffold into smaller batches.`,
+      exitCode: 1,
+    };
+  }
+
+  const written: string[] = [];
+  const failures: string[] = [];
+  for (const file of files) {
+    if (
+      !file ||
+      typeof file !== "object" ||
+      typeof file.path !== "string" ||
+      file.path.length === 0 ||
+      typeof file.content !== "string"
+    ) {
+      failures.push(
+        `invalid entry — each file needs a non-empty string "path" and a string "content": ${JSON.stringify(file)}`,
+      );
+      continue;
+    }
+    try {
+      const resolved = ensureWriteAllowed(file.path);
+      await mkdir(dirname(resolved), { recursive: true });
+      await writeFile(resolved, file.content, "utf8");
+      written.push(resolved);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      failures.push(`${file.path}: ${msg}`);
+    }
+  }
+
+  const lines: string[] = [];
+  if (written.length > 0) {
+    lines.push(`Wrote ${written.length} file(s):`);
+    for (const p of written) lines.push(`  ${p}`);
+  }
+  if (failures.length > 0) {
+    lines.push(`Failed ${failures.length} file(s):`);
+    for (const f of failures) lines.push(`  ${f}`);
+  }
+  return {
+    ok: failures.length === 0,
+    output: lines.join("\n"),
+    exitCode: failures.length === 0 ? 0 : 1,
+  };
 }
 
 export async function fsList(

@@ -77,17 +77,27 @@ export class LoopGuard {
     // Prior attempts all failed → allow the retry, no warning.
     if (this.signatureSuccess.get(sig) === false) return { block: false };
 
+    // Mutating file tools deserve tool-appropriate wording. Telling a model
+    // that just wrote a file to "use the results you already have" is
+    // nonsensical and has caused models to assume the whole task is done.
+    const isWrite =
+      name === "fs.write" || name === "fs.writeMany" || name === "fs.edit";
+
     if (count === 1) {
       return {
         block: false,
-        reason: `${name} has already been called with these arguments once and succeeded. Consider using the results you already have.`,
+        reason: isWrite
+          ? `${name} already wrote this exact path/content once. If that file is finished, move on to the NEXT file or step — do NOT rewrite it.`
+          : `${name} has already been called with these arguments once and succeeded. Consider using the results you already have.`,
       };
     }
 
     // count >= 2 and at least one success: block
     return {
       block: true,
-      reason: `${name} was already called ${count} time(s) with the same arguments. Summarize existing results instead.`,
+      reason: isWrite
+        ? `${name} was already called ${count} time(s) with the identical path and content. That file is already written. Continue with the remaining files/steps or give your final answer.`
+        : `${name} was already called ${count} time(s) with the same arguments. Summarize existing results instead.`,
     };
   }
 

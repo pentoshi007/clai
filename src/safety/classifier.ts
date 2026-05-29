@@ -435,6 +435,33 @@ export function classifyToolCall(
     };
   }
 
+  if (call.name === "fs.writeMany") {
+    // Block the whole batch if ANY target is a known secret path.
+    const files = Array.isArray(call.args.files) ? call.args.files : [];
+    for (const entry of files) {
+      const pathArg =
+        entry && typeof entry === "object"
+          ? (entry as { path?: unknown }).path
+          : undefined;
+      if (typeof pathArg === "string") {
+        try {
+          if (isSecretPath(resolveForSecretCheck(pathArg))) {
+            return {
+              level: "block",
+              reason: `Refusing to write to a known secret path: ${pathArg}`,
+            };
+          }
+        } catch {
+          // fall through
+        }
+      }
+    }
+    return {
+      level: "confirm",
+      reason: "Mutating operation requires confirmation",
+    };
+  }
+
   // ── New tools ──────────────────────────────────────────────────────
 
   if (call.name === "net.context") {

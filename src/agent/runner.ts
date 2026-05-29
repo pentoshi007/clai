@@ -235,6 +235,16 @@ function formatToolArgs(call: ToolCall): string {
   if (call.name === "whois.lookup") return String(call.args.target ?? "");
   if (call.name === "fs.read" || call.name === "fs.write")
     return String(call.args.path ?? "");
+  if (call.name === "fs.writeMany") {
+    const files = Array.isArray(call.args.files) ? call.args.files : [];
+    const names = files
+      .map((f) =>
+        f && typeof f === "object" ? String((f as { path?: unknown }).path ?? "") : "",
+      )
+      .filter(Boolean);
+    const preview = names.slice(0, 4).join(", ");
+    return `${names.length} file(s)${preview ? `: ${preview}${names.length > 4 ? ", …" : ""}` : ""}`;
+  }
   if (call.name === "fs.search") return String(call.args.pattern ?? "");
   if (call.name === "http.fetch" || call.name === "web.fetch")
     return String(call.args.url ?? "");
@@ -261,6 +271,56 @@ const STATIC_DISAMBIGUATION_RE =
 
 const LOCAL_RUNTIME_RE =
   /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami)\b/i;
+
+// Signals that the current turn is (or continues) a coding / scaffolding
+// task. These are intentionally broad — over-budgeting a build is cheap
+// (the loop still stops as soon as the model gives a final answer) while
+// under-budgeting silently truncates a half-built project.
+const BUILD_TASK_RE =
+  /\b(?:build|create|scaffold|generate|make|set\s*up|setup|bootstrap|init(?:ialize)?|implement|add|write|develop|code|refactor|migrate|convert|wire\s*up|integrate)\b[\s\S]{0,80}\b(?:app|application|project|site|website|web\s*app|server|api|service|component|page|module|feature|cli|script|library|package|frontend|backend|fullstack|game|bot|dashboard|form|endpoint|database|schema|test|tests|suite)\b/i;
+
+const BUILD_STACK_RE =
+  /\b(?:react|next(?:\.?js)?|vue|svelte|angular|vite|webpack|express|fastify|nest(?:js)?|django|flask|fastapi|rails|laravel|spring|node(?:\.?js)?|typescript|tailwind|redux|prisma|mongoose|graphql|docker|kubernetes)\b/i;
+
+// Short continuation prompts that, on their own, carry no build signal but
+// clearly mean "keep going with what we were doing".
+const CONTINUATION_RE =
+  /^(?:do\s+it|build\s+it|build\s+fully|build\s+it\s+fully|go\s+ahead|continue|proceed|keep\s+going|finish(?:\s+it)?|complete(?:\s+it)?|yes|ok(?:ay)?|make\s+it|run\s+it|next|on\s+your\s+own|build\s+(?:fully\s+)?on\s+your\s+own)\b/i;
+
+const INCOMPLETE_RE =
+  /\b(?:not\s+complete|incomplete|isn'?t\s+(?:done|complete|working|finished)|doesn'?t\s+work|still\s+(?:broken|missing|failing)|missing\s+(?:files?|parts?)|finish\s+(?:the|it)|complete\s+(?:the|it))\b/i;
+
+/**
+ * Decide whether this turn should get a generous step budget because it is
+ * a multi-file build, a continuation of one, or a "it's not done yet" nudge.
+ * Looks at the current prompt first, then falls back to the most recent
+ * user/assistant turns so a terse follow-up inherits the build context.
+ */
+export function looksLikeBuildTask(
+  prompt: string,
+  history?: ChatMessage[] | undefined,
+): boolean {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (
+    BUILD_TASK_RE.test(text) ||
+    BUILD_STACK_RE.test(text) ||
+    CONTINUATION_RE.test(text) ||
+    INCOMPLETE_RE.test(text)
+  ) {
+    return true;
+  }
+  // Inspect recent history: if the conversation was already about building
+  // something, treat a terse follow-up as part of that build.
+  if (history && history.length > 0) {
+    const recent = history.slice(-6);
+    for (const msg of recent) {
+      if (msg.role !== "user" && msg.role !== "assistant") continue;
+      const h = msg.content.replace(/\s+/g, " ");
+      if (BUILD_TASK_RE.test(h) || BUILD_STACK_RE.test(h)) return true;
+    }
+  }
+  return false;
+}
 
 export function requiresFreshWebSearch(prompt: string): boolean {
   const text = prompt.replace(/\s+/g, " ").trim();
@@ -477,16 +537,48 @@ export async function runAgentLoop(
   let sawFreshWebSearch = false;
   let freshnessRetryUsed = false;
 
-  // ── Complexity-based step limit (no hardcoded plans) ──────────────
+  // ── Step budget ───────────────────────────────────────────────────
+  // The budget governs how many *productive* steps (a tool execution or a
+  // final answer) the agent may take. Recovery iterations — nudging a model
+  // that only produced thinking, asking it to re-emit a malformed tool call,
+  // a freshness retry, or a loop-guard summary — do NOT consume this budget;
+  // they get a separate hard ceiling so a wedged model can't spin forever.
+  //
+  // Complexity is a coarse signal from prompt length, but short follow-up
+  // prompts ("do it", "build fully on your own", "app is not complete") in
+  // the middle of a multi-file build must NOT be capped like a one-shot
+  // lookup — that was the reason a React scaffold stopped half-built after
+  // 10 steps. We bump the budget when the prompt (or recent history) looks
+  // like a build/scaffold or a continuation of one.
   const analysis = analyzeTask(prompt);
-  const dynamicMaxSteps =
+  const hasHistory = (options.history?.length ?? 0) > 0;
+  const buildLike = looksLikeBuildTask(prompt, options.history);
+  let stepBudget =
     analysis.complexity === "simple"
-      ? 10
+      ? 15
       : analysis.complexity === "standard"
-        ? 20
+        ? 30
         : maxSteps;
+  if (buildLike) {
+    // Scaffolding / multi-file work needs room: many file writes plus a
+    // verify/build step. Continuation prompts ("do it") inherit this too.
+    stepBudget = Math.max(stepBudget, maxSteps);
+  } else if (hasHistory) {
+    // A follow-up to an ongoing task should never be capped tighter than a
+    // standard one-shot, even if it's only a couple of words.
+    stepBudget = Math.max(stepBudget, 30);
+  }
+  // Hard ceiling on total loop iterations (productive + recovery) so a model
+  // stuck emitting only thinking or malformed calls can't loop indefinitely.
+  const maxIterations = stepBudget * 3;
 
-  for (let step = 0; step < dynamicMaxSteps; step += 1) {
+  let productiveSteps = 0;
+  let step = -1;
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    // `step` is the productive-step index (used for display + audit). It only
+    // advances when the previous iteration actually executed a tool.
+    step = productiveSteps;
+    if (productiveSteps >= stepBudget) break;
     options.signal?.throwIfAborted();
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
     // Status messages (rate-limit retries, fallback hints) still surface live.
@@ -655,17 +747,24 @@ export async function runAgentLoop(
     // telling it to summarize the results it already has.
     const loopCheck = loopGuard.shouldBlock(call.name, call.args);
     if (loopCheck.block) {
+      const isWrite =
+        call.name === "fs.write" ||
+        call.name === "fs.writeMany" ||
+        call.name === "fs.edit";
       process.stdout.write(
         chalk.yellow(
-          `  ⚠ ${call.name} was already called with the same arguments — forcing summary\n`,
+          `  ⚠ ${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}\n`,
         ),
       );
       messages.push({ role: "assistant", content: assistantText.visible });
       messages.push({
         role: "user",
-        content:
-          `You already called ${call.name} with the same arguments and received results. ` +
-          "Do NOT call it again. Summarize the findings you already have and give your final answer NOW.",
+        content: isWrite
+          ? `You already wrote that exact file with ${call.name}. It is saved. ` +
+            "Do NOT write it again. Move on to the NEXT file or step. If every file is written, " +
+            "verify the project (list the tree, run the build/install command) and give your final answer."
+          : `You already called ${call.name} with the same arguments and received results. ` +
+            "Do NOT call it again. Summarize the findings you already have and give your final answer NOW.",
       });
       continue;
     }
@@ -903,6 +1002,11 @@ export async function runAgentLoop(
       result.ok,
       result.exitCode,
     );
+    // A tool actually executed this iteration — count it against the
+    // productive-step budget. Recovery iterations (thinking-only nudges,
+    // malformed-call retries, freshness/loop-guard prompts) reach `continue`
+    // before this point and therefore never consume the budget.
+    productiveSteps += 1;
 
     // ── Auto-retry on "command not found" ──────────────────────────
     // Detect missing tools and instruct the model to install + retry.
@@ -1020,7 +1124,7 @@ export async function runAgentLoop(
     }
   }
 
-  lastAnswer = `Stopped after ${dynamicMaxSteps} steps.`;
+  lastAnswer = `Stopped after ${productiveSteps} steps.`;
   process.stdout.write("  " + chalk.yellow(lastAnswer) + "\n");
   return lastAnswer;
 }

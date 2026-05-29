@@ -66,4 +66,27 @@ describe("LoopGuard", () => {
     const sig2 = guard.canonicalize("test", { a: 1, b: 2 });
     expect(sig1).toBe(sig2);
   });
+
+  it("uses move-on wording for repeated file writes, not summarize", () => {
+    const guard = new LoopGuard();
+    const args = { path: "src/App.jsx", content: "x" };
+    guard.recordAttempt(0, "fs.write", args, true);
+    const warn = guard.shouldBlock("fs.write", args);
+    expect(warn.block).toBe(false);
+    expect(warn.reason).toMatch(/NEXT file|move on/i);
+    expect(warn.reason).not.toMatch(/summarize/i);
+
+    guard.recordAttempt(1, "fs.write", args, true);
+    const blocked = guard.shouldBlock("fs.write", args);
+    expect(blocked.block).toBe(true);
+    expect(blocked.reason).toMatch(/already written|remaining files/i);
+  });
+
+  it("applies the same move-on wording to fs.writeMany", () => {
+    const guard = new LoopGuard();
+    const args = { files: [{ path: "a.txt", content: "x" }] };
+    guard.recordAttempt(0, "fs.writeMany", args, true);
+    const warn = guard.shouldBlock("fs.writeMany", args);
+    expect(warn.reason).toMatch(/NEXT file|move on/i);
+  });
 });
