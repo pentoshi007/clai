@@ -303,6 +303,40 @@ npm test           # Run tests (39 tests)
 npm run compile    # Build native binaries (requires Bun)
 ```
 
+## Releasing
+
+Releases are fully automated by `.github/workflows/release.yml`, triggered when
+you push a `v*.*.*` tag. To cut a release:
+
+```sh
+npm version 1.0.6 --no-git-tag-version   # bump package.json + lockfile
+# also bump: src/commands/update.ts (FALLBACK_VERSION),
+#            manifests/homebrew/clai.rb, manifests/scoop/clai.json
+git commit -am "v1.0.6"
+git push origin main
+git tag -a v1.0.6 -m "clai v1.0.6"
+git push origin v1.0.6                   # this triggers the workflow
+```
+
+On the tag push the workflow:
+
+1. **build** — runs typecheck + tests and compiles native binaries for all platforms.
+2. **publish** — creates the GitHub Release with the binaries and SHA256 sidecars.
+3. **publish-npm** — publishes `@pentoshi/clai` to npm (with provenance).
+4. **sync-tap** — regenerates the Homebrew formula in `pentoshi007/homebrew-clai`.
+
+Required repository secrets (Settings → Secrets and variables → Actions). Each
+job skips gracefully if its secret is absent:
+
+| Secret             | Used by       | How to create                                                                 |
+|--------------------|---------------|-------------------------------------------------------------------------------|
+| `NPM_TOKEN`        | `publish-npm` | npm → Access Tokens → Generate **Automation** (or Granular) token with publish rights |
+| `TAP_GITHUB_TOKEN` | `sync-tap`    | A GitHub PAT with `contents:write` on the `pentoshi007/homebrew-clai` repo     |
+
+The `publish-npm` job verifies the tag matches `package.json` version and skips
+if that version is already on npm, so re-running a tag is safe. npm provenance
+requires 2FA set to "authorization only" (not "auth and writes") on the account.
+
 ## Architecture
 
 ```
