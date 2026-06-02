@@ -340,3 +340,27 @@ describe("multi-tool-block detection (countToolFences)", () => {
     expect(countToolFences('```js\nconst x = 1;\n```')).toBe(0);
   });
 });
+
+describe("malformed fenced tool block detection", () => {
+  it("a ```tool block with bad braces fails to parse but is detected as a fence", () => {
+    // The exact shape Claude-opus emitted: extra `}` after each file object
+    // and a trailing ` }` after the closing brace.
+    const malformed =
+      '```tool\n{"name":"fs.writeMany","args":{"files":[{"path":"a","content":"x"}},' +
+      '{"path":"b","content":"y"}]} }\n```';
+    expect(parseToolCall(malformed, {})).toBeUndefined();
+    // Not simple truncation (braces are present, just unbalanced/extra).
+    expect(looksLikeTruncatedToolCall(malformed)).toBe(false);
+    // But it IS a tool fence, so the runner can nudge a re-emit instead of
+    // leaking it as the final answer.
+    expect(countToolFences(malformed)).toBe(1);
+  });
+
+  it("a valid ```tool block still parses (no false retry)", () => {
+    const good = '```tool\n{"name":"fs.read","args":{"path":"a"}}\n```';
+    expect(parseToolCall(good, {})).toEqual({
+      name: "fs.read",
+      args: { path: "a" },
+    });
+  });
+});

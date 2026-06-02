@@ -638,7 +638,7 @@ function buildWorkflowDirective(): string {
     "BUILD WORKFLOW (this is a build/scaffold/feature task — follow this order EXACTLY; deviation is a failure):",
     "1. EXPLORE: fs.list the working directory (and key subdirs) to see what already exists. Use tool.batch to parallelize reads.",
     "2. UNDERSTAND: fs.read the files that matter (like package.json for js related and same for other languages too, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the dir is empty or only has a stub, start fresh with a sensible modern default and say so.",
-    "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. The FIRST task must be to INITIALIZE the project with its official scaffolder (NOT hand-writing package.json). Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
+    "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. The FIRST task initializes the project (scaffolder); the MIDDLE tasks MUST implement the ACTUAL FEATURE the user asked for by REPLACING the scaffolder's boilerplate (e.g. rewrite src/App.jsx into the real todo/blog/etc. UI, add components, state, styles); the LAST task verifies with a build. Scaffolding + install + run ALONE is NOT acceptable — that just leaves the Vite starter page. Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
     "4. IMPLEMENT: once approved, work task by task in STRICT ORDER across MULTIPLE steps, ONE tool call per turn. For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it actually succeeded (read a file you wrote, check the command's exit/output) → call task.update {taskId, state:'done'}, then move to the NEXT task. Keep going until EVERY task is done. Do NOT stop after one step, and do NOT claim work you didn't actually run.",
     "",
     "INITIALIZE WITH THE OFFICIAL SCAFFOLDER FIRST (do NOT hand-write build configs):",
@@ -658,6 +658,7 @@ function buildWorkflowDirective(): string {
     "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY, fix it, and retry until it succeeds.",
     "- NEVER claim a task is done, files were created, a dependency is installed, or a server is running unless the tool call ACTUALLY succeeded and you saw the success output. If you have not run it, say so.",
     "- Start a dev server with shell.start (background job), NOT `npm run dev &` via shell.exec.",
+    "- THE DELIVERABLE IS THE WORKING FEATURE, NOT THE SCAFFOLD. After scaffolding you MUST replace the starter boilerplate (Vite's default App.jsx counter, Next's starter page, etc.) with the actual app the user asked for. If the user asked for a todo app, src/App.jsx must contain a real todo UI with state — finishing with the untouched Vite starter page is a FAILURE even if the build passes.",
     "",
     "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
     "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
@@ -1143,6 +1144,11 @@ export async function runAgentLoop(
   // before giving up, instead of leaking the JSON as a final answer.
   let bareToolJsonRetries = 0;
 
+  // Track a ```tool fence that is present but whose JSON could not be parsed
+  // (e.g. malformed extra/missing braces that are NOT simple truncation). We
+  // retry instead of leaking the raw block as the final answer.
+  let malformedFenceRetries = 0;
+
   // For volatile live-info prompts, make one corrective pass if a model
   // ignores the freshness guard and tries to answer from stale memory.
   let sawFreshWebSearch = false;
@@ -1436,6 +1442,39 @@ export async function runAgentLoop(
         }
         // Exhausted retries — fall through so we don't loop forever, but the
         // user at least sees the (broken) output and the stop notice.
+      }
+      // Detect a ```tool fence whose JSON could NOT be parsed for any other
+      // reason (malformed braces, trailing junk, a stray `}` — NOT plain
+      // truncation, which is handled above). Without this, the raw block
+      // leaks to the screen as a code fence and the requested action (often
+      // a whole fs.writeMany scaffold) silently never runs — exactly the
+      // "fs.writeMany printed but nothing created" failure. Require the fence
+      // to actually look like an intended call (mentions name/args) so a
+      // genuine ```tool code example in prose isn't mistaken for one.
+      const hasFencedCallShape =
+        countToolFences(assistantText.visible) > 0 &&
+        /```tool\s*\n[\s\S]*?"(?:name|args)"\s*:/i.test(assistantText.visible);
+      if (hasFencedCallShape) {
+        malformedFenceRetries += 1;
+        if (malformedFenceRetries <= 3) {
+          process.stdout.write(
+            chalk.yellow(
+              "  ⚠ tool block present but its JSON didn't parse — asking the model to re-emit valid JSON\n",
+            ),
+          );
+          messages.push({ role: "assistant", content: assistantText.visible });
+          messages.push({
+            role: "user",
+            content:
+              "Your previous message contained a ```tool block, but its JSON was INVALID, so NOTHING ran. " +
+              "Common causes: an extra or missing `}` / `]`, a trailing brace after the closing `}`, or unescaped quotes/newlines inside a string value. " +
+              'Re-emit ONE valid ```tool block of the exact form {"name":"<tool>","args":{...}} with balanced braces. ' +
+              "If it was a large fs.writeMany, split it into SMALLER batches (3-5 files) so the JSON is easy to keep valid. " +
+              "Do NOT claim any file was written until a tool call actually succeeds.",
+          });
+          continue;
+        }
+        // Exhausted retries — fall through to the normal path.
       }
       // Normal final-answer path: strip any stray sentinel tokens that
       // somehow leaked into prose so the answer renders cleanly.
