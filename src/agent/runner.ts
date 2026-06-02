@@ -642,6 +642,28 @@ export function shouldDimToolChatter(call: ToolCall): boolean {
   return call.name === "web.search";
 }
 
+/**
+ * Tools allowed while an UN-approved plan is active. Before the user runs
+ * /implement, the agent may only (re)create the plan and do read-only
+ * exploration to refine it — never execute. Everything else is blocked by
+ * the plan-awaiting-approval gate so a stray/recovered tool call can't start
+ * running the plan, and so free-text after a plan is treated as a revision.
+ */
+const PRE_APPROVAL_ALLOWED_TOOLS = new Set<string>([
+  "plan.create",
+  "task.update",
+  "fs.read",
+  "fs.list",
+  "fs.search",
+  "sysinfo",
+  "tool.batch",
+  "net.context",
+]);
+
+export function isPreApprovalAllowedTool(name: string): boolean {
+  return PRE_APPROVAL_ALLOWED_TOOLS.has(name);
+}
+
 function styleToolChatter(call: ToolCall, text: string): string {
   return shouldDimToolChatter(call) ? chalk.dim(text) : text;
 }
@@ -822,8 +844,13 @@ function planContextMessage(plan: SessionPlan, approved: boolean): string {
     );
   } else {
     lines.push(
-      "This plan is NOT yet approved. If the user is refining it, update it with plan.create again. " +
-        "Do NOT execute tasks until the user runs /implement.",
+      "This plan is NOT yet approved, so you MUST NOT execute any of its tasks yet. " +
+        "Any new free-text message from the user right now is a PLAN REVISION, not approval — even if it " +
+        "sounds like an instruction (e.g. 'do not install new tools', 'use only X', 'also add Y', 'skip task 2'). " +
+        "Treat it as feedback: call plan.create AGAIN with the revised goal/detail/tasks to produce an updated " +
+        "plan, then STOP and wait. Do NOT call shell.exec, pkg.install, net.scan, tool.check, fs.write, or any " +
+        "other execution tool. The user will APPROVE with /implement, or CANCEL with /discard. Only after " +
+        "/implement may you begin executing.",
     );
   }
   return lines.join("\n");
@@ -894,17 +921,20 @@ async function handlePlanTool(
       checklist +
       "\n" +
       chalk.dim(
-        "  ✦ plan created — press Ctrl+P to view it, or type /implement to approve and run it\n",
+        "  ✦ plan created — press Ctrl+P to view it, /implement to approve and run it,\n" +
+          "    or /discard to cancel it. Any other message refines this plan.\n",
       );
     return {
       handled: true,
       ok: true,
       display,
       modelNote:
-        `Plan saved with ${plan.tasks.length} task(s). STOP here and wait. ` +
+        `Plan saved with ${plan.tasks.length} task(s). STOP here and wait — produce NO other tool calls now. ` +
         "Do NOT start executing tasks until the user approves with /implement. " +
-        "When approved you will receive a message telling you to begin; then work task by task, " +
-        "calling task.update to mark each in_progress before and done after you finish it.",
+        "If the user's next message gives feedback instead of /implement, that is a REVISION: call plan.create " +
+        "again with the updated plan and STOP again. The user may cancel the whole plan with /discard. " +
+        "Only after /implement do you begin, working task by task, calling task.update to mark each " +
+        "in_progress before and done after you finish it.",
     };
   }
 
@@ -1462,6 +1492,37 @@ export async function runAgentLoop(
       decision,
       scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
     });
+
+    // ── Plan-awaiting-approval gate ────────────────────────────────────
+    // When an active plan exists but the user has NOT approved it with
+    // /implement, the agent must NOT execute the plan. Any free-text the
+    // user typed after the plan was shown is a PLAN REVISION, not a "go"
+    // signal — the agent should re-plan (plan.create) and wait again. We
+    // hard-block execution tools here so a model that ignores the prompt
+    // directive (or recovers a stray tool call) can't start running the
+    // plan. Read-only exploration is still allowed so it can refine the
+    // plan intelligently.
+    if (
+      activePlan &&
+      !session.planApproved.value &&
+      !isPreApprovalAllowedTool(call.name)
+    ) {
+      process.stdout.write(
+        chalk.yellow(
+          `  ⚠ plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)\n`,
+        ),
+      );
+      messages.push({
+        role: "user",
+        content:
+          `There is an ACTIVE PLAN that has NOT been approved yet, so you must NOT execute it — ` +
+          `you tried to call ${call.name}, which is blocked. The user's latest message is a PLAN REVISION, ` +
+          `not approval. Update the plan to incorporate their feedback by calling plan.create again with the ` +
+          `revised goal/detail/tasks, then STOP and wait. The user approves with /implement or cancels with /discard. ` +
+          `Do NOT run any execution tool (shell.exec, pkg.install, fs.write, net.scan, tool.check, etc.) until they /implement.`,
+      });
+      continue;
+    }
 
     if (call.name === "web.search") {
       sawFreshWebSearch = true;

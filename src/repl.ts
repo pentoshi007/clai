@@ -76,7 +76,7 @@ import {
   openViewportPager,
   toggleViewport,
 } from "./ui/output-pane.js";
-import { loadPlan, savePlan } from "./store/plan.js";
+import { loadPlan, savePlan, deletePlan } from "./store/plan.js";
 import { renderPlanDocument, renderPlanChecklist } from "./ui/plan-pane.js";
 import { safeCwd, cwdIsBroken, recoverCwd } from "./os/cwd.js";
 import {
@@ -195,6 +195,10 @@ const slashCommands: SlashCommand[] = [
   {
     command: "/implement",
     description: "approve the current plan and have clai execute it",
+  },
+  {
+    command: "/discard",
+    description: "discard the current plan so later messages ignore it",
   },
   {
     command: "/scope",
@@ -1771,6 +1775,24 @@ async function handleSlash(
       } else {
         console.log(renderPlanDocument(plan));
       }
+      return true;
+    }
+    case "/discard": {
+      const plan = await loadPlan(state.session.sessionId).catch(
+        () => undefined,
+      );
+      if (!plan) {
+        console.log(
+          chalk.dim("  no active plan to discard"),
+        );
+        return true;
+      }
+      await deletePlan(state.session.sessionId).catch(() => undefined);
+      state.session.planApproved.value = false;
+      console.log(
+        chalk.yellow(`  ✗ plan discarded — "${plan.goal}"`) +
+          chalk.dim("\n  later messages are now independent of it.\n"),
+      );
       return true;
     }
     case "/compact": {

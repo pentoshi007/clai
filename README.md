@@ -66,10 +66,11 @@ clai -y "list the 10 largest files in my home directory"
 ## Features
 
 - **`/ask` mode** — Read-only. AI explains, gives commands & step-by-step guidance, but does NOT execute anything.
-- **`/agent` mode** — Agentic. AI plans, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met.
+- **`/agent` mode** — Agentic. AI plans, waits for approval, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met. Tasks run on an approve/refine/discard plan workflow (`/implement`, free-text to refine, `/discard` to cancel).
 - **7 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, and Ollama (local). All with streaming.
 - **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
 - **Smart safety gate** — Read-only commands auto-execute; mutating commands require confirmation; destructive patterns are blocked.
+- **OS-aware & tool-frugal** — Picks the best approach for your OS, prefers tools already installed (installs only when nothing suitable exists), broadens its approach and escalates privileges as needed to finish the task.
 - **Cross-platform** — macOS, Linux, and Windows. Detects OS-native package managers (brew, apt, dnf, pacman, winget, choco).
 - **Pentest-aware** — nmap, nikto, sqlmap, gobuster, ffuf, hydra, masscan, whois, dig, netcat, tshark.
 - **Auto-update** — Checks for new versions on startup; run `/update` or `clai update` to upgrade.
@@ -153,6 +154,9 @@ export OLLAMA_HOST=http://localhost:11434
 | `/reset`                | Clear all saved history                            |
 | `/cwd <path>`           | Change working directory                           |
 | `/allow <tool>`         | Whitelist a tool for the session                   |
+| `/plan`                 | View the current session plan (also `Ctrl+P`)      |
+| `/implement`            | Approve the current plan and have clai execute it  |
+| `/discard`              | Discard the current plan so later messages ignore it |
 | `/scope add <targets>`  | Add authorized pentest targets                     |
 | `/fallback [on|off]`    | Try other configured providers after a failure     |
 | `/update`               | Check for updates                                  |
@@ -160,6 +164,21 @@ export OLLAMA_HOST=http://localhost:11434
 | `/help`                 | List commands                                      |
 | `Ctrl+C`                | Abort current response (second Ctrl+C exits)       |
 | `Ctrl+O`                | Toggle full tool output (same keys on all OSes)    |
+| `Ctrl+P`                | View the current session plan                      |
+
+### Plan → Implement workflow
+
+For multi-step coding or pentest tasks, clai first proposes a **plan** (a goal,
+an approach, and an ordered task checklist) and then waits. Nothing runs until
+you approve it.
+
+- **Approve** — type `/implement` to execute the plan task by task.
+- **Refine** — type any normal message (e.g. "use only installed tools",
+  "skip task 2", "also enumerate subdomains") and clai produces a **revised
+  plan**, then waits again. While a plan is awaiting approval, free-text is
+  treated as plan feedback, not as a signal to start running.
+- **Cancel** — type `/discard` to drop the plan. After discarding, later
+  messages are independent of it.
 
 ## Built-in Tools (Agent Mode)
 
@@ -171,10 +190,10 @@ export OLLAMA_HOST=http://localhost:11434
 | `fs.list`        | List directory contents                                            | safe       |
 | `fs.search`      | Search files with ripgrep (falls back to grep)                     | safe       |
 | `pkg.install`    | Install packages via detected OS package manager                   | confirm    |
-| `net.scan`       | Nmap wrapper for port scanning                                     | confirm    |
+| `net.scan`       | Nmap wrapper. Defaults to a stealth SYN scan, auto-elevates (sudo/doas/gsudo) and falls back to an unprivileged TCP connect scan | confirm    |
 | `http.fetch`     | HTTP GET/POST with response size limits                            | safe       |
 | `sysinfo`        | OS, architecture, shell, and working directory info                | safe       |
-| `pentest.recon`  | Composite: whois + dig + nmap top-100 ports                       | confirm    |
+| `pentest.recon`  | Composite: whois + dig + stealth nmap top-100 ports               | confirm    |
 
 > \* **smart** = read-only commands (`curl`, `ls`, `whoami`, `gobuster`, `dirb`, etc.) auto-execute; mutating commands require confirmation.
 

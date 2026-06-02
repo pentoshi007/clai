@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createSessionPolicy } from "../src/agent/runner.js";
+import {
+  createSessionPolicy,
+  isPreApprovalAllowedTool,
+} from "../src/agent/runner.js";
 import { getConfig } from "../src/store/config.js";
 
 describe("phase 1 — session policy", () => {
@@ -31,4 +34,44 @@ describe("phase 1 — session policy", () => {
     expect(b.pentestAuthorized.value).toBe(false);
   });
 
+});
+
+describe("plan-awaiting-approval gate — allowed tools", () => {
+  it("permits only plan + read-only exploration before /implement", () => {
+    // These let the agent (re)plan and gather context to refine a plan.
+    for (const tool of [
+      "plan.create",
+      "task.update",
+      "fs.read",
+      "fs.list",
+      "fs.search",
+      "sysinfo",
+      "tool.batch",
+      "net.context",
+    ]) {
+      expect(isPreApprovalAllowedTool(tool)).toBe(true);
+    }
+  });
+
+  it("blocks execution/mutation tools until the plan is approved", () => {
+    // A free-text message after a plan is a REVISION, not a 'go' signal, so
+    // none of these may run before /implement.
+    for (const tool of [
+      "shell.exec",
+      "shell.start",
+      "pkg.install",
+      "fs.write",
+      "fs.writeMany",
+      "fs.edit",
+      "fs.delete",
+      "net.scan",
+      "pentest.recon",
+      "tool.check",
+      "http.fetch",
+      "web.fetch",
+      "net.pingSweep",
+    ]) {
+      expect(isPreApprovalAllowedTool(tool)).toBe(false);
+    }
+  });
 });
