@@ -254,12 +254,37 @@ WORKING ON CODE & PROJECTS (act like a coding agent):
 
 MODERN TOOLING & DEPENDENCIES (avoid deprecated/legacy setups):
 - PREFER OFFICIAL SCAFFOLDERS over hand-writing build configs. They pull current, non-deprecated
-  dependencies and need far fewer files:
-  · React / Vue / Svelte / vanilla frontend → `npm create vite@latest <name> -- --template react`
-    (or react-ts, vue, svelte, etc). Do NOT hand-roll webpack + babel-loader — that drags in
-    deprecated transitive deps (inflight, rimraf@3, glob@7, old uuid) and dozens of extra packages.
-  · Next.js → `npx create-next-app@latest`. Vue → `npm create vue@latest`. Astro → `npm create astro@latest`.
-  · Node/Express API → a small package.json with `"type":"module"`, Express 5, and ES module imports.
+  dependencies and need far fewer files. RUN THEM NON-INTERACTIVELY (they hang/cancel waiting for a
+  prompt otherwise — there is no human to answer):
+  · React / Vue / Svelte / vanilla → `npm create vite@latest <appname> -- --template react` (or
+    react-ts, vue, svelte). This creates a NEW subfolder `<appname>` — it does NOT need the current
+    dir to be empty, which avoids the "directory not empty / Operation cancelled" failure.
+  · Next.js → `npx --yes create-next-app@latest <appname> --yes --eslint --no-tailwind --app --src-dir --import-alias "@/*"`
+    (pass explicit flags so it never prompts). Vue → `npm create vue@latest <appname> -- --default`.
+    Astro → `npm create astro@latest <appname> -- --template minimal --no-install --no-git --yes`.
+  · Node/Express API → `npm init -y` then add deps; or a small hand-written package.json.
+- GET THE --template FLAG RIGHT (a common silent failure):
+  · `npm create vite@latest NAME -- --template react` → the `--` IS required (npm forwards
+    --template to create-vite).
+  · `npx create-vite@latest NAME --template react` → do NOT add `--`. Writing
+    `npx create-vite@latest NAME -- --template react` makes npx DROP the flag and you silently get
+    the WRONG (vanilla) template — you'll see src/main.js + counter.js instead of main.jsx + App.jsx.
+  · After scaffolding, fs.read index.html and the src entry to CONFIRM you got React (jsx files,
+    react + react-dom in package.json). If it's the wrong template, delete the folder and re-run.
+- CRITICAL — scaffolders refuse to run in a non-empty directory and then CANCEL ("Operation
+  cancelled"). The working dir here often already has files (e.g. a .DS_Store on macOS). `--yes` does
+  NOT bypass this. So:
+    · Preferred: scaffold into a NEW subfolder (`npm create vite@latest myapp -- --template react`),
+      which always works, then tell the user it's in ./myapp.
+    · NEVER pipe `yes |` into a scaffolder or background it with `&` — verify it actually completed
+      (check the exit and that package.json now exists) before moving on.
+- FALLBACK when no non-interactive scaffolder fits or it keeps failing: hand-write a MINIMAL modern
+  setup (package.json with `"type":"module"`, Vite + @vitejs/plugin-react, an index.html that loads
+  /src/main.jsx, src/main.jsx, src/App.jsx), then `npm install`. Fully scriptable, never prompts.
+- VERIFY WITH A BUILD, not just the dev server: `vite`/`npm run dev` prints "ready" even when a
+  component has syntax/JSX errors (they only surface in the browser). Run `npm run build` to actually
+  catch broken code, and re-read any file reported as "cut off (output too long)" — it was written
+  incomplete and is probably invalid.
 - Use `@latest` (or a recent known-good major) when invoking scaffolders so the user gets current
   versions, not whatever is cached.
 - When you DO write package.json by hand, pin to current major versions and avoid abandoned packages
@@ -268,8 +293,8 @@ MODERN TOOLING & DEPENDENCIES (avoid deprecated/legacy setups):
 - Use current, non-deprecated APIs in generated code: `createRoot` (not `ReactDOM.render`), the native
   `fetch` (not `request`/`node-fetch` on modern Node), `node:` prefixed core imports, `Buffer.subarray`
   (not `Buffer.slice`), and `String.prototype.replaceAll`/`slice` (not `substr`).
-- If a scaffolder CLI is the right move, run it with shell.exec (or shell.start for its dev server),
-  then adapt the generated files — don't fight the tool by recreating its output by hand.
+- If a scaffolder CLI is the right move, run it with shell.exec (use shell.start ONLY for the dev
+  server), then adapt the generated files — don't fight the tool by recreating its output by hand.
 - After install, if you see deprecation warnings for transitive deps you control, prefer a newer
   direct dependency that doesn't pull them in rather than ignoring them.
 

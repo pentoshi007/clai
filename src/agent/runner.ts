@@ -642,15 +642,19 @@ function buildWorkflowDirective(): string {
     "4. IMPLEMENT: once approved, work task by task in STRICT ORDER across MULTIPLE steps, ONE tool call per turn. For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it actually succeeded (read a file you wrote, check the command's exit/output) → call task.update {taskId, state:'done'}, then move to the NEXT task. Keep going until EVERY task is done. Do NOT stop after one step, and do NOT claim work you didn't actually run.",
     "",
     "INITIALIZE WITH THE OFFICIAL SCAFFOLDER FIRST (do NOT hand-write build configs):",
-    "- React/Vue/Svelte/vanilla → `npm create vite@latest <name> -- --template react` (or react-ts, vue, svelte). Next.js → `npx create-next-app@latest <name> --yes`. Vue → `npm create vue@latest`. Astro → `npm create astro@latest`. Node API → `npm init -y` then add deps. Python → `uv init` / `python -m venv`. Use the ecosystem's standard initializer for the framework.",
-    "- Run the scaffolder NON-INTERACTIVELY (pass flags/--yes) via shell.exec, into the current directory. THEN run the install (npm install) and adapt/add only the files the app needs (components, routes, styles) with fs.write/fs.writeMany. Do NOT recreate what the scaffolder already generated.",
-    "- Only hand-write package.json/config when there is genuinely no suitable scaffolder for the stack.",
+    "- React/Vue/Svelte/vanilla → `npm create vite@latest <appname> -- --template react` (templates: react, react-ts, vue, vue-ts, svelte, vanilla). Next.js → `npx --yes create-next-app@latest <appname> --yes --eslint --no-tailwind --app --src-dir --import-alias \"@/*\"`. Node API → `npm init -y`.",
+    "- GET THE TEMPLATE FLAG RIGHT. With `npm create vite@latest NAME -- --template react` the `--` IS required (it forwards --template to create-vite). With `npx create-vite@latest NAME --template react` do NOT add `--` (npx passes args straight through, so `-- --template react` makes npx DROP the flag and you silently get the WRONG, vanilla template). Pick ONE form and keep the template flag attached. After scaffolding, fs.read the generated index.html / src entry to CONFIRM you got React (a src/main.jsx + App.jsx, not a vanilla main.js/counter.js). If it's the wrong template, delete the folder and re-run with the correct command.",
+    "- RUN SCAFFOLDERS NON-INTERACTIVELY and into a NEW SUBFOLDER (`<appname>`). Scaffolders REFUSE to run in a non-empty directory and then print 'Operation cancelled' — and the current dir frequently already has a file like .DS_Store. So scaffold into a subfolder (always works). `--yes` does NOT fix the non-empty-dir cancel; a subfolder does. NEVER background a scaffolder with `&` or pipe `yes |` into it.",
+    "- If a scaffolder cannot be driven non-interactively or keeps failing, FALL BACK to hand-writing a minimal Vite setup (package.json with \"type\":\"module\", @vitejs/plugin-react, index.html that loads /src/main.jsx, src/main.jsx, src/App.jsx) then `npm install`. That never prompts and you control every file.",
+    "- VERIFY the init actually worked before marking the task done: fs.read package.json (it must now exist AND list react + react-dom) and fs.read index.html (it must reference your jsx entry). 'Operation cancelled' / non-zero exit means the task FAILED — do not proceed as if it succeeded.",
     "",
     "CRITICAL RULES during IMPLEMENTATION:",
     "- EXACTLY ONE ```tool block per message. NEVER put several tool calls (e.g. fs.writeMany + npm install + npm run dev) in one response — only the first runs and the rest are silently discarded, which is how false 'all done' claims happen.",
     "- Do NOT re-explore. Step 1 (EXPLORE) was already completed during planning. Start executing the first pending task immediately.",
     "- ONE task at a time, in ORDER. Do NOT skip ahead to task 3 before task 2 is done.",
-    "- VERIFY each step before marking it done: after writing files, fs.list/fs.read to confirm they exist; after an install, check it exited 0; after starting the dev server with shell.start, confirm the job is running. Marking a task done without a successful tool call is the worst failure.",
+    "- KEEP EACH FILE SMALL ENOUGH TO WRITE IN ONE CALL. If a fs.write is reported as 'cut off (output too long)', the file was NOT fully written and is likely broken/invalid — re-write it, splitting a large component into smaller files if needed. NEVER leave a half-written file and move on.",
+    "- VERIFY each step before marking it done: after writing files, fs.read the file back and confirm it is COMPLETE and syntactically valid (balanced braces/parens/JSX tags); after an install, check it exited 0. Marking a task done without a successful, verified tool call is the worst failure.",
+    "- VERIFY THE BUILD, not just the dev server. `vite` / `npm run dev` reports 'ready' even when your App.jsx has syntax errors (the error only shows in the browser). To actually confirm the app works, run `npm run build` (it fails on real syntax/JSX errors) and check it exits 0. Seeing 'VITE ready' is NOT proof the app renders.",
     "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY, fix it, and retry until it succeeds.",
     "- NEVER claim a task is done, files were created, a dependency is installed, or a server is running unless the tool call ACTUALLY succeeded and you saw the success output. If you have not run it, say so.",
     "- Start a dev server with shell.start (background job), NOT `npm run dev &` via shell.exec.",
@@ -1213,10 +1217,11 @@ export async function runAgentLoop(
           // Reasoning models can spend a lot on hidden thinking; give
           // them headroom so the visible answer / tool call isn't
           // truncated to silence. The non-thinking budget must be large
-          // enough for a multi-file fs.writeMany payload — a truncated
-          // tool-call JSON fails to parse and used to leak a broken
-          // ```tool block to the screen with no files written.
-          maxTokens: config.thinking?.enabled ? 16_384 : 8_192,
+          // enough for a single-file fs.write / multi-file fs.writeMany
+          // payload — a truncated tool-call JSON fails to parse and leaks a
+          // broken (and syntactically invalid) file. 8k was too small for a
+          // full component, so allow more room for the visible tool call.
+          maxTokens: config.thinking?.enabled ? 16_384 : 12_288,
           signal: options.signal,
           thinking: config.thinking,
         },
@@ -1487,9 +1492,37 @@ export async function runAgentLoop(
           continue;
         }
       }
+      // If we still print a final answer while an approved plan has unfinished
+      // tasks (retries exhausted), do NOT let a fabricated "it's done" stand
+      // unchallenged — append an explicit, honest status so the user knows the
+      // build did not actually complete.
+      let completionWarning = "";
+      if (session.planApproved.value) {
+        const livePlan = await loadPlan(session.sessionId).catch(
+          () => undefined,
+        );
+        const unfinished = livePlan?.tasks.filter(
+          (t) => t.state === "pending" || t.state === "in_progress",
+        );
+        if (livePlan && unfinished && unfinished.length > 0) {
+          completionWarning =
+            chalk.yellow(
+              `\n  ⚠ ${unfinished.length} of ${livePlan.tasks.length} plan task(s) are NOT actually complete:\n`,
+            ) +
+            unfinished
+              .map((t) => chalk.yellow(`    • [${t.id}] ${t.title}`))
+              .join("\n") +
+            chalk.dim(
+              "\n  The summary above may overstate progress. Re-run with /implement, or ask clai to finish the remaining tasks.\n",
+            );
+        }
+      }
       if (cleaned) {
         process.stdout.write(renderMarkdown(cleaned));
         if (!cleaned.endsWith("\n")) process.stdout.write("\n");
+      }
+      if (completionWarning) {
+        process.stdout.write(completionWarning);
       }
       if (assistantText.hasThinking) {
         process.stdout.write(
