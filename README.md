@@ -322,20 +322,35 @@ On the tag push the workflow:
 
 1. **build** — runs typecheck + tests and compiles native binaries for all platforms.
 2. **publish** — creates the GitHub Release with the binaries and SHA256 sidecars.
-3. **publish-npm** — publishes `@pentoshi/clai` to npm (with provenance).
+3. **publish-npm** — publishes `@pentoshi/clai` to npm.
 4. **sync-tap** — regenerates the Homebrew formula in `pentoshi007/homebrew-clai`.
+
+> **Reruns don't pick up newer workflow code.** Re-running a workflow runs it
+> against the commit the tag points to. If you change `release.yml` after
+> tagging, you must move/recreate the tag (or cut a new version) for the change
+> to take effect.
 
 Required repository secrets (Settings → Secrets and variables → Actions). Each
 job skips gracefully if its secret is absent:
 
 | Secret             | Used by       | How to create                                                                 |
 |--------------------|---------------|-------------------------------------------------------------------------------|
-| `NPM_TOKEN`        | `publish-npm` | npm → Access Tokens → Generate **Automation** (or Granular) token with publish rights |
+| `NPM_TOKEN`        | `publish-npm` | npm → Access Tokens → **Granular** (Read and write on `@pentoshi/clai`) or classic **Automation** token. These bypass the interactive OTP prompt that blocks CI. |
 | `TAP_GITHUB_TOKEN` | `sync-tap`    | A GitHub PAT with `contents:write` on the `pentoshi007/homebrew-clai` repo     |
 
+Optional repository **variable** (not a secret):
+
+| Variable         | Effect                                                                          |
+|------------------|---------------------------------------------------------------------------------|
+| `NPM_PROVENANCE` | Set to `true` to publish with `--provenance`. Only works if the npm account's 2FA is set to **"authorization only"**. Leave unset otherwise — the job publishes without provenance. |
+
 The `publish-npm` job verifies the tag matches `package.json` version and skips
-if that version is already on npm, so re-running a tag is safe. npm provenance
-requires 2FA set to "authorization only" (not "auth and writes") on the account.
+if that version is already on npm, so re-running a tag is safe.
+
+> A normal account with 2FA set to **"auth and writes"** prompts for a one-time
+> password on every publish, which fails in CI. Use a Granular/Automation
+> `NPM_TOKEN` (token-level auth) so CI can publish without an OTP — you can keep
+> 2FA enabled on the account.
 
 ## Architecture
 

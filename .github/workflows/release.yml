@@ -133,7 +133,17 @@ jobs:
         if: steps.gate.outputs.skip != 'true' && steps.exists.outputs.already != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+          # Provenance requires the npm account 2FA to be "authorization only"
+          # (not "auth and writes"). Enable it by setting the repo VARIABLE
+          # NPM_PROVENANCE=true once your account is configured for it.
+          NPM_PROVENANCE: ${{ vars.NPM_PROVENANCE }}
+        run: |
+          set -euo pipefail
+          if [ "${NPM_PROVENANCE:-}" = "true" ]; then
+            npm publish --access public --provenance
+          else
+            npm publish --access public
+          fi
 
   sync-tap:
     needs: publish
