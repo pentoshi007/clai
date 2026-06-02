@@ -2204,11 +2204,23 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       // the main handler to bail), which makes ESC / Ctrl+C abort
       // impossible. Only open when we're idle at the prompt.
       if (currentAbortController || !isReadingPrompt) {
-        process.stdout.write(
-          chalk.dim(
-            `\n  (press Ctrl+O at the prompt after it finishes to open ${v.toolName})\n`,
-          ),
-        );
+        // Give the user something actionable instead of a silent no-op:
+        // point at the live artifact file they can tail in another shell,
+        // and remind them how to open it once the run finishes.
+        if (v.artifactPath) {
+          process.stdout.write(
+            chalk.dim(
+              `\n  ▸ ${v.toolName} output is streaming to:\n    ${v.artifactPath}\n` +
+                `    (tail it in another terminal now, or press Ctrl+O here after it finishes)\n`,
+            ),
+          );
+        } else {
+          process.stdout.write(
+            chalk.dim(
+              `\n  (press Ctrl+O at the prompt after it finishes to open ${v.toolName})\n`,
+            ),
+          );
+        }
         return;
       }
       // Idle path: open the full output in the alternate-screen pager.

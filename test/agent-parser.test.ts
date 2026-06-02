@@ -6,6 +6,7 @@ import {
   looksLikeTruncatedToolCall,
   recognizeBareToolJson,
   isLumpedSingleTask,
+  countToolFences,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -315,5 +316,27 @@ describe("plan quality — lumped single-task detection", () => {
       ]),
     ).toBe(false);
     expect(isLumpedSingleTask([])).toBe(false);
+  });
+});
+
+describe("multi-tool-block detection (countToolFences)", () => {
+  it("counts a single tool block", () => {
+    const text =
+      '```tool\n{"name":"shell.exec","args":{"command":"ls"}}\n```';
+    expect(countToolFences(text)).toBe(1);
+  });
+
+  it("counts multiple tool blocks crammed into one message", () => {
+    const text =
+      'Doing it all:\n' +
+      '```tool\n{"name":"fs.writeMany","args":{"files":[]}}\n```\n' +
+      '```tool\n{"name":"shell.exec","args":{"command":"npm install"}}\n```\n' +
+      '```tool\n{"name":"shell.exec","args":{"command":"npm run dev"}}\n```';
+    expect(countToolFences(text)).toBe(3);
+  });
+
+  it("returns 0 when there is no tool block", () => {
+    expect(countToolFences("just prose, no tools here")).toBe(0);
+    expect(countToolFences('```js\nconst x = 1;\n```')).toBe(0);
   });
 });

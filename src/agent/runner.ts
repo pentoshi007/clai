@@ -433,6 +433,20 @@ export function looksLikeTruncatedToolCall(text: string): boolean {
   return false;
 }
 
+/**
+ * Count the number of ```tool fenced blocks in a message. Models sometimes
+ * emit MULTIPLE tool calls in one response (e.g. fs.writeMany + npm install +
+ * npm run dev). Only the FIRST is parsed and executed; the rest are silently
+ * dropped and leak to the screen as code fences, while the model believes it
+ * ran all of them — a major cause of "everything is done" fabrications. We
+ * detect this so the runner can run the first and explicitly tell the model
+ * the others did NOT run and must be re-sent one at a time.
+ */
+export function countToolFences(text: string): number {
+  const matches = text.match(/```tool\s*\n[\s\S]*?```/gi);
+  return matches ? matches.length : 0;
+}
+
 /** Extract the text before the tool call block for display purposes */
 function textBeforeToolCall(text: string): string {
   const patterns = [
@@ -623,15 +637,23 @@ function buildWorkflowDirective(): string {
   return [
     "BUILD WORKFLOW (this is a build/scaffold/feature task — follow this order EXACTLY; deviation is a failure):",
     "1. EXPLORE: fs.list the working directory (and key subdirs) to see what already exists. Use tool.batch to parallelize reads.",
-    "2. UNDERSTAND: fs.read the files that matter (like package.json for js related and same for other languages too, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the dir is empty or only has a stub, start fresh with a sensible modern default (e.g. Vite + React) and say so.",
-    "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. NEVER cram everything into one task (e.g. one task that lists 8 files is rejected). Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
-    "4. IMPLEMENT: once approved, work task by task in STRICT ORDER across MULTIPLE steps. Start with the FIRST pending task. For each task: call task.update {taskId, state:'in_progress'} → do the real work (fs.writeMany for files, pkg.install / npm install, shell.start for the dev server) → VERIFY it succeeded → call task.update {taskId, state:'done'}, then move to the NEXT task. Keep going until EVERY task is done and the goal is achieved. Do NOT stop after one file or one step, and do NOT claim work you didn't actually run.",
+    "2. UNDERSTAND: fs.read the files that matter (like package.json for js related and same for other languages too, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the dir is empty or only has a stub, start fresh with a sensible modern default and say so.",
+    "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. The FIRST task must be to INITIALIZE the project with its official scaffolder (NOT hand-writing package.json). Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
+    "4. IMPLEMENT: once approved, work task by task in STRICT ORDER across MULTIPLE steps, ONE tool call per turn. For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it actually succeeded (read a file you wrote, check the command's exit/output) → call task.update {taskId, state:'done'}, then move to the NEXT task. Keep going until EVERY task is done. Do NOT stop after one step, and do NOT claim work you didn't actually run.",
+    "",
+    "INITIALIZE WITH THE OFFICIAL SCAFFOLDER FIRST (do NOT hand-write build configs):",
+    "- React/Vue/Svelte/vanilla → `npm create vite@latest <name> -- --template react` (or react-ts, vue, svelte). Next.js → `npx create-next-app@latest <name> --yes`. Vue → `npm create vue@latest`. Astro → `npm create astro@latest`. Node API → `npm init -y` then add deps. Python → `uv init` / `python -m venv`. Use the ecosystem's standard initializer for the framework.",
+    "- Run the scaffolder NON-INTERACTIVELY (pass flags/--yes) via shell.exec, into the current directory. THEN run the install (npm install) and adapt/add only the files the app needs (components, routes, styles) with fs.write/fs.writeMany. Do NOT recreate what the scaffolder already generated.",
+    "- Only hand-write package.json/config when there is genuinely no suitable scaffolder for the stack.",
     "",
     "CRITICAL RULES during IMPLEMENTATION:",
+    "- EXACTLY ONE ```tool block per message. NEVER put several tool calls (e.g. fs.writeMany + npm install + npm run dev) in one response — only the first runs and the rest are silently discarded, which is how false 'all done' claims happen.",
     "- Do NOT re-explore. Step 1 (EXPLORE) was already completed during planning. Start executing the first pending task immediately.",
     "- ONE task at a time, in ORDER. Do NOT skip ahead to task 3 before task 2 is done.",
-    "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY it failed, fix the problem, and retry until it succeeds.",
-    "- NEVER claim a task is done, a dependency is installed, or a server is running unless the tool call actually succeeded and you saw the success output.",
+    "- VERIFY each step before marking it done: after writing files, fs.list/fs.read to confirm they exist; after an install, check it exited 0; after starting the dev server with shell.start, confirm the job is running. Marking a task done without a successful tool call is the worst failure.",
+    "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY, fix it, and retry until it succeeds.",
+    "- NEVER claim a task is done, files were created, a dependency is installed, or a server is running unless the tool call ACTUALLY succeeded and you saw the success output. If you have not run it, say so.",
+    "- Start a dev server with shell.start (background job), NOT `npm run dev &` via shell.exec.",
     "",
     "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
     "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
@@ -640,6 +662,27 @@ function buildWorkflowDirective(): string {
 
 export function shouldDimToolChatter(call: ToolCall): boolean {
   return call.name === "web.search";
+}
+
+/**
+ * Re-assert raw mode AND resume stdin after an inquirer prompt
+ * (confirm/password). inquirer's readline interface pauses stdin and
+ * switches it to cooked mode when it closes; if we only flip raw mode back
+ * on but leave stdin paused, no `keypress`/`data` events flow to the REPL's
+ * ESC/Ctrl+C abort handler — so a long-running tool launched right after a
+ * confirmation can no longer be aborted (the user had to kill the terminal).
+ * Calling resume() restores the event flow.
+ */
+function restoreInteractiveStdin(): void {
+  if (!process.stdin.isTTY) return;
+  try {
+    if (!(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -1101,6 +1144,11 @@ export async function runAgentLoop(
   let sawFreshWebSearch = false;
   let freshnessRetryUsed = false;
 
+  // Guard against a model that declares an approved plan "complete" while
+  // tasks are still pending and it never ran the work. We nudge it back to
+  // executing the next task a bounded number of times before giving up.
+  let prematureCompletionRetries = 0;
+
   // ── Step budget ───────────────────────────────────────────────────
   // The budget governs how many *productive* steps (a tool execution or a
   // final answer) the agent may take. Recovery iterations — nudging a model
@@ -1403,6 +1451,42 @@ export async function runAgentLoop(
         });
         continue;
       }
+      // ── Premature-completion guard (approved plan still has work) ──────
+      // If the user approved a plan and the model now gives a final answer
+      // while tasks are still pending/in_progress — without having run the
+      // work — it is fabricating completion (the exact "all tasks completed,
+      // running at localhost:5173" failure). Force it back to executing the
+      // next real task instead of accepting the false claim.
+      if (session.planApproved.value && prematureCompletionRetries < 3) {
+        const livePlan = await loadPlan(session.sessionId).catch(
+          () => undefined,
+        );
+        const unfinished = livePlan?.tasks.filter(
+          (t) => t.state === "pending" || t.state === "in_progress",
+        );
+        if (livePlan && unfinished && unfinished.length > 0) {
+          prematureCompletionRetries += 1;
+          const next = unfinished[0]!;
+          process.stdout.write(
+            chalk.yellow(
+              `  ⚠ ${unfinished.length} plan task(s) still unfinished — not accepting a "done" claim; resuming execution\n`,
+            ),
+          );
+          messages.push({ role: "assistant", content: assistantText.visible });
+          messages.push({
+            role: "user",
+            content:
+              `You have NOT finished the approved plan: ${unfinished.length} task(s) remain ` +
+              `(${unfinished.map((t) => `[${t.id}] ${t.title}`).join("; ")}). ` +
+              `Do NOT claim the work is complete, that files were created, or that a server is running ` +
+              `unless a tool call actually succeeded and you saw the output. ` +
+              `Resume now with the NEXT task ${next.id} ("${next.title}"): call task.update {taskId:"${next.id}", state:"in_progress"}, ` +
+              `then do the real work with a tool call (fs.writeMany / shell.exec / shell.start), VERIFY it, and mark it done. ` +
+              `Continue task by task until EVERY task is actually finished.`,
+          });
+          continue;
+        }
+      }
       if (cleaned) {
         process.stdout.write(renderMarkdown(cleaned));
         if (!cleaned.endsWith("\n")) process.stdout.write("\n");
@@ -1464,6 +1548,19 @@ export async function runAgentLoop(
     }
 
     messages.push({ role: "assistant", content: assistantText.visible });
+
+    // Detect a model that crammed MULTIPLE tool calls into one response.
+    // Only `call` (the first block) will run this turn; the rest are dropped.
+    // We flag it so that after the first tool executes we explicitly tell the
+    // model the others did NOT run — preventing the "I ran everything" lie.
+    const extraToolBlocks = Math.max(0, countToolFences(assistantText.visible) - 1);
+    if (extraToolBlocks > 0) {
+      process.stdout.write(
+        chalk.yellow(
+          `  ⚠ ${extraToolBlocks} extra tool block(s) in one message were ignored — only the first ran. One tool per turn.\n`,
+        ),
+      );
+    }
 
     // ── Plan / task tools (session-scoped, handled inline) ─────────────
     // These don't go through the generic registry because they need the
@@ -1561,19 +1658,10 @@ export async function runAgentLoop(
       session,
     );
     // inquirer's confirm() creates its own readline interface which resets
-    // raw mode when it finishes. Re-assert raw mode so the outer keypress
-    // handler (ESC/Ctrl+C abort, Ctrl+O output pane) keeps working during
-    // the next streaming phase.
-    if (
-      process.stdin.isTTY &&
-      !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw
-    ) {
-      try {
-        process.stdin.setRawMode(true);
-      } catch {
-        /* ignore */
-      }
-    }
+    // raw mode AND pauses stdin when it finishes. Re-assert raw mode and
+    // resume stdin so the outer keypress handler (ESC/Ctrl+C abort, Ctrl+O
+    // output pane) keeps working during the next streaming/tool phase.
+    restoreInteractiveStdin();
     if (!authorized) {
       lastAnswer = "Pentest authorization not confirmed.";
       process.stdout.write(chalk.red(`  ✗ ${lastAnswer}`) + "\n");
@@ -1592,17 +1680,9 @@ export async function runAgentLoop(
         forceManualConfirm ? false : Boolean(options.autoConfirm),
         session,
       );
-      // Re-assert raw mode after inquirer's confirm() (see comment above).
-      if (
-        process.stdin.isTTY &&
-        !(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw
-      ) {
-        try {
-          process.stdin.setRawMode(true);
-        } catch {
-          /* ignore */
-        }
-      }
+      // Re-assert raw mode and resume stdin after inquirer's confirm()
+      // (see restoreInteractiveStdin / the comment above).
+      restoreInteractiveStdin();
       if (!ok) {
         lastAnswer = "Cancelled.";
         process.stdout.write(chalk.yellow(`  ✗ cancelled`) + "\n");
@@ -1842,7 +1922,11 @@ export async function runAgentLoop(
     }
     messages.push({
       role: "tool",
-      content: `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}`,
+      content:
+        `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}` +
+        (extraToolBlocks > 0
+          ? `\n\nIMPORTANT: your previous message contained ${extraToolBlocks + 1} tool blocks, but ONLY this first one (${call.name}) actually ran. The other ${extraToolBlocks} did NOT execute and were discarded. Emit EXACTLY ONE tool block per message. Send the next tool call now — and do NOT assume any of the dropped calls happened.`
+          : ""),
     });
     // Compact older messages when the running estimate exceeds budget so
     // free-tier context windows are not blown by long pentest sessions.
