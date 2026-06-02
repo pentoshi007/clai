@@ -260,9 +260,28 @@ describe("bare-JSON tool-call recovery", () => {
     expect(result?.call).toBeUndefined();
   });
 
-  it("flags a bare command args object as argsOnly", () => {
+  it("infers shell.exec from an unambiguous bare command args object", () => {
+    // A bare {"command":"…"} unambiguously means shell.exec, so it should be
+    // recovered and run directly instead of nudging the user to type "run".
     const result = recognizeBareToolJson('{"command":"ls -la"}');
+    expect(result?.call?.name).toBe("shell.exec");
+    expect(result?.call?.args).toEqual({ command: "ls -la" });
+    expect(result?.argsOnly).toBeUndefined();
+  });
+
+  it("infers shell.exec even with an extra timeout key", () => {
+    const result = recognizeBareToolJson(
+      '{"command":"find / -iname rockyou*","timeoutMs":300000}',
+    );
+    expect(result?.call?.name).toBe("shell.exec");
+  });
+
+  it("still flags a lone ambiguous path object as argsOnly", () => {
+    // A lone `path` could be fs.read / fs.list / pdf.read / image.ocr — too
+    // ambiguous to infer, so we still nudge for a properly named tool call.
+    const result = recognizeBareToolJson('{"path":"/Users/x/notes.txt"}');
     expect(result?.argsOnly).toBe(true);
+    expect(result?.call).toBeUndefined();
   });
 
   it("ignores ordinary JSON answers that are not tool args", () => {

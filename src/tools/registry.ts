@@ -30,8 +30,11 @@ import {
   parsePortSpec,
   parseLegacyFlags,
   profileToNmapArgs,
+  nmapScanNeedsPrivilege,
+  toConnectScanArgv,
   type ScanProfile,
 } from "./validate.js";
+import { platform } from "node:os";
 import { getNetworkContext } from "./network-context.js";
 import { pingSweep } from "./net-ping-sweep.js";
 import { toolCheckHandler } from "./capabilities.js";
@@ -124,6 +127,134 @@ function packageBinaryName(pkg: string): string {
   return noTap.split(/[=@:]/)[0] ?? noTap;
 }
 
+/**
+ * Pick the OS-appropriate privilege-escalation prefix for a raw-socket scan.
+ *   - macOS / Linux  → `sudo` (clai forwards stdin so the user types their
+ *     password live; the runner's interactive-stdin path handles the prompt).
+ *   - Windows        → `sudo` on Win11 build 26052+ if present, else `gsudo`
+ *     if installed; otherwise no prefix (the user must run from an elevated
+ *     terminal — nmap SYN scans need Administrator + Npcap there).
+ * Returns the elevation command + leading argv, or undefined when no helper
+ * is available (caller then falls back to an unprivileged connect scan).
+ */
+async function elevationPrefix(): Promise<
+  { command: string; argv: string[] } | undefined
+> {
+  if (process.getuid && process.getuid() === 0) {
+    // Already root — no wrapper needed.
+    return { command: "", argv: [] };
+  }
+  if (platform() === "win32") {
+    if (await commandAvailable("sudo")) return { command: "sudo", argv: [] };
+    if (await commandAvailable("gsudo")) return { command: "gsudo", argv: [] };
+    return undefined;
+  }
+  if (await commandAvailable("sudo")) {
+    // -p sets a clear prompt; clai's interactive-stdin lets the user type it.
+    return { command: "sudo", argv: ["-p", "[clai] sudo password for nmap: "] };
+  }
+  if (await commandAvailable("doas")) return { command: "doas", argv: [] };
+  return undefined;
+}
+
+/**
+ * Run an nmap scan, transparently obtaining the privileges a stealth/raw
+ * scan needs and falling back to an unprivileged TCP connect scan when those
+ * privileges can't be obtained (no sudo, password declined, etc.).
+ *
+ * Strategy:
+ *   1. If the scan needs raw sockets and we're not root, wrap it in the
+ *      OS-appropriate elevation helper (sudo / doas / gsudo). stdin is
+ *      inherited so the user can type their password live — exactly the
+ *      pattern documented for shell.exec sudo.
+ *   2. If elevation is unavailable, or the privileged attempt fails in a way
+ *      that looks like a permission/privilege error, retry as `-sT` (TCP
+ *      connect) which works for any user on every OS.
+ * This is the "most general approach first, then fall back" behavior the
+ * scans need so they never dead-end on "you must be root".
+ */
+async function runNmapScan(
+  argv: string[],
+  options?: ToolRunOptions,
+): Promise<ToolResult> {
+  const needsPrivilege = nmapScanNeedsPrivilege(argv);
+  const prefix = needsPrivilege ? await elevationPrefix() : undefined;
+
+  const attempts: Array<{
+    command: string;
+    argv: string[];
+    interactiveStdin?: boolean | "auto";
+    note?: string;
+  }> = [];
+
+  if (needsPrivilege && prefix) {
+    if (prefix.command) {
+      attempts.push({
+        command: prefix.command,
+        argv: [...prefix.argv, "nmap", ...argv],
+        interactiveStdin: true,
+        note: `Running a stealth scan with ${prefix.command} (you may be prompted for your password).`,
+      });
+    } else {
+      // Already root.
+      attempts.push({ command: "nmap", argv });
+    }
+    // Fallback: unprivileged connect scan if elevation fails/declines.
+    attempts.push({
+      command: "nmap",
+      argv: toConnectScanArgv(argv),
+      note: "Privileged scan unavailable — falling back to an unprivileged TCP connect scan (-sT).",
+    });
+  } else if (needsPrivilege && !prefix) {
+    // No elevation helper at all — go straight to the connect-scan fallback,
+    // but tell the user why the stealth scan was downgraded.
+    attempts.push({
+      command: "nmap",
+      argv: toConnectScanArgv(argv),
+      note:
+        platform() === "win32"
+          ? "No elevation helper found (sudo/gsudo). Run from an Administrator terminal with Npcap for a SYN scan; using a TCP connect scan (-sT) for now."
+          : "No sudo/doas available for a raw-socket SYN scan — using an unprivileged TCP connect scan (-sT) instead.",
+    });
+  } else {
+    attempts.push({ command: "nmap", argv });
+  }
+
+  let last: ToolResult | undefined;
+  for (let i = 0; i < attempts.length; i += 1) {
+    const attempt = attempts[i]!;
+    if (options?.signal?.aborted) {
+      return { ok: false, output: "Command aborted.", exitCode: 130 };
+    }
+    if (attempt.note) options?.onOutput?.(`\n${attempt.note}\n`, "stdout");
+    const result = await spawnArgv({
+      command: attempt.command,
+      argv: attempt.argv,
+      timeoutMs: 300_000,
+      signal: options?.signal,
+      onOutput: options?.onOutput,
+      ...(attempt.interactiveStdin !== undefined
+        ? { interactiveStdin: attempt.interactiveStdin }
+        : {}),
+    });
+    last = result;
+    // Success, or a non-privilege failure we shouldn't paper over → return.
+    const isLastAttempt = i === attempts.length - 1;
+    if (result.ok || isLastAttempt || !looksLikePrivilegeError(result.output)) {
+      return result;
+    }
+    // Otherwise loop to the next (fallback) attempt.
+  }
+  return last ?? { ok: false, output: "nmap produced no result.", exitCode: 1 };
+}
+
+/** Heuristic: did an nmap/sudo invocation fail because of missing privileges? */
+function looksLikePrivilegeError(output: string): boolean {
+  return /(?:requires root privileges|you (?:requested|need) (?:a scan type|root)|operation not permitted|must (?:be|run as) root|raw sockets?|sudo: (?:a (?:password|terminal) is required|no askpass|3 incorrect)|incorrect password|authentication failure|permission denied|requires (?:administrator|elevation))/i.test(
+    output,
+  );
+}
+
 export const toolRegistry: Record<string, ToolHandler> = {
   async "shell.exec"(args, options) {
     return shellExec({
@@ -214,13 +345,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const argv: string[] = [];
     if (ports) argv.push("-p", ports);
     argv.push(...profileArgs, ...legacyArgs, host.value);
-    return spawnArgv({
-      command: "nmap",
-      argv,
-      timeoutMs: 300_000,
-      signal: options?.signal,
-      onOutput: options?.onOutput,
-    });
+    return runNmapScan(argv, options);
   },
   async "http.fetch"(args) {
     const headers =
@@ -345,7 +470,11 @@ export const toolRegistry: Record<string, ToolHandler> = {
       {
         key: "nmap",
         command: "nmap",
-        argv: ["-sV", "--top-ports", "100", host.value],
+        // -sS = stealth SYN scan (the professional default). It needs raw
+        // sockets, so runNmapScan wraps it in sudo / elevation and falls
+        // back to an unprivileged TCP connect scan (-sT) when privilege
+        // can't be obtained.
+        argv: ["-sS", "-sV", "--top-ports", "100", host.value],
       },
     ];
     const steps = allSteps.filter((step) => {
@@ -393,13 +522,19 @@ export const toolRegistry: Record<string, ToolHandler> = {
       transcript.push(`$ ${display}`);
       // Announce each sub-step so users see progress through long recons.
       options?.onOutput?.(`\n$ ${display}\n`, "stdout");
-      const result = await spawnArgv({
-        command: step.command,
-        argv: step.argv,
-        timeoutMs: 180_000,
-        signal: options?.signal,
-        onOutput: options?.onOutput,
-      });
+      const result =
+        step.key === "nmap"
+          ? // Route the scan through the privilege-aware runner so the
+            // stealth SYN scan is elevated (sudo/elevation) and falls back
+            // to a connect scan when privilege isn't available.
+            await runNmapScan(step.argv, options)
+          : await spawnArgv({
+              command: step.command,
+              argv: step.argv,
+              timeoutMs: 180_000,
+              signal: options?.signal,
+              onOutput: options?.onOutput,
+            });
       outputs.push(result.output);
       transcript.push(result.output);
       if (options?.signal?.aborted) break;

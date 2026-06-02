@@ -268,7 +268,67 @@ const TOOL_ARG_KEYS = new Set([
   "cwd",
   "name",
   "concurrency",
+  // Extra optional keys that commonly ride along with a bare args object so
+  // it is still recognized (and its tool inferred) instead of leaking to the
+  // screen — e.g. shell.exec with {"command":"…","timeoutMs":300000}.
+  "timeoutMs",
+  "flags",
+  "iOwnThis",
+  "own",
+  "note",
+  "kind",
+  "detail",
+  "maxEntries",
+  "checkBinary",
+  "scanType",
+  "whois",
+  "dns",
+  "nmap",
+  "bytes",
+  "responseMode",
+  "includeHeaders",
+  "includeTls",
+  "includeTiming",
+  "includeRedirectChain",
+  "redactSensitive",
 ]);
+
+/**
+ * When a model emits a bare args object with no {"name", "args"} wrapper and
+ * no ```tool fence, infer which tool it MEANT from the argument keys so we
+ * can run it directly instead of nudging the model to re-emit (the user
+ * should not have to type "run"). Only unambiguous key signatures map to a
+ * tool; genuinely ambiguous shapes (a lone `path` could be fs.read / fs.list
+ * / pdf.read / image.ocr; a lone `target` could be whois / dns / scan) return
+ * undefined so the caller falls back to a re-emit nudge. Inferred calls still
+ * pass through the normal safety classifier + confirmation, so inference can
+ * never bypass a confirm/block gate.
+ */
+export function inferToolFromArgs(
+  obj: Record<string, unknown>,
+): string | undefined {
+  const has = (key: string): boolean =>
+    Object.prototype.hasOwnProperty.call(obj, key);
+  if (has("command")) return "shell.exec";
+  if (has("files")) return "fs.writeMany";
+  if (has("calls")) return "tool.batch";
+  if (has("oldText") || has("newText")) return "fs.edit";
+  if (has("content") && has("path")) return "fs.write";
+  if (has("pattern")) return "fs.search";
+  if (has("query")) return "web.search";
+  if (has("tools")) return "tool.check";
+  if (has("goal") && has("tasks")) return "plan.create";
+  if (has("taskId") || has("state")) return "task.update";
+  if (has("tool")) return "pkg.install";
+  if (has("record") && has("target")) return "dns.lookup";
+  if (has("ports") && has("target")) return "net.scan";
+  if (has("url")) {
+    // A url with an explicit method/body is a raw HTTP request (http.fetch);
+    // a lone url is a content read (web.fetch).
+    return has("method") || has("body") ? "http.fetch" : "web.fetch";
+  }
+  return undefined;
+}
 
 /**
  * Strip a single wrapping ```json / ``` fence (if any) and return the inner
@@ -314,8 +374,15 @@ export function recognizeBareToolJson(
   const keys = Object.keys(obj);
   if (keys.length === 0 || keys.length > 6) return undefined;
   const allKnown = keys.every((key) => TOOL_ARG_KEYS.has(key));
-  if (allKnown) return { argsOnly: true };
-  return undefined;
+  if (!allKnown) return undefined;
+  // Try to infer the tool from the arg shape so an unambiguous bare object
+  // (e.g. {"command":"…"}) runs immediately instead of forcing the user to
+  // type "run". Ambiguous shapes fall back to a re-emit nudge.
+  const inferred = inferToolFromArgs(obj);
+  if (inferred) {
+    return { call: { name: inferred, args: obj } };
+  }
+  return { argsOnly: true };
 }
 
 /**
@@ -558,7 +625,13 @@ function buildWorkflowDirective(): string {
     "1. EXPLORE: fs.list the working directory (and key subdirs) to see what already exists. Use tool.batch to parallelize reads.",
     "2. UNDERSTAND: fs.read the files that matter (like package.json for js related and same for other languages too, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the dir is empty or only has a stub, start fresh with a sensible modern default (e.g. Vite + React) and say so.",
     "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. NEVER cram everything into one task (e.g. one task that lists 8 files is rejected). Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
-    "4. IMPLEMENT: once approved, work task by task across MULTIPLE steps — mark each task in_progress, do the real work (fs.writeMany for files, pkg.install / npm install, shell.start for the dev server), mark it done, then move to the NEXT task. Keep going until EVERY task is done and the goal is achieved. Do NOT stop after one file or one step, and do NOT claim work you didn't actually run.",
+    "4. IMPLEMENT: once approved, work task by task in STRICT ORDER across MULTIPLE steps. Start with the FIRST pending task. For each task: call task.update {taskId, state:'in_progress'} → do the real work (fs.writeMany for files, pkg.install / npm install, shell.start for the dev server) → VERIFY it succeeded → call task.update {taskId, state:'done'}, then move to the NEXT task. Keep going until EVERY task is done and the goal is achieved. Do NOT stop after one file or one step, and do NOT claim work you didn't actually run.",
+    "",
+    "CRITICAL RULES during IMPLEMENTATION:",
+    "- Do NOT re-explore. Step 1 (EXPLORE) was already completed during planning. Start executing the first pending task immediately.",
+    "- ONE task at a time, in ORDER. Do NOT skip ahead to task 3 before task 2 is done.",
+    "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY it failed, fix the problem, and retry until it succeeds.",
+    "- NEVER claim a task is done, a dependency is installed, or a server is running unless the tool call actually succeeded and you saw the success output.",
     "",
     "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
     "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
@@ -732,12 +805,20 @@ function planContextMessage(plan: SessionPlan, approved: boolean): string {
     lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}`);
   });
   if (approved) {
+    const firstPending = plan.tasks.find((t) => t.state === "pending");
+    lines.push("The user APPROVED this plan. Execute it task by task NOW.");
+    if (firstPending) {
+      lines.push(
+        `START WITH TASK ${firstPending.id} (${firstPending.title}). ` +
+          "Do NOT re-do tasks already marked done, and do NOT skip ahead to later tasks.",
+      );
+    }
     lines.push(
-      "The user APPROVED this plan. Execute it task by task NOW: before starting a task call " +
-        'task.update with {"taskId":"<id>","state":"in_progress"}, do the work with real tool calls, ' +
-        'then call task.update {"taskId":"<id>","state":"done"} (or "failed"/"skipped" with a note). ' +
-        "Actually run installs and start servers — never claim something ran without a successful tool call. " +
-        "When all tasks are done, verify and give a final summary.",
+      "STRICT ORDER: call task.update {taskId, state:'in_progress'} → do the real work → " +
+        "call task.update {taskId, state:'done'} ONLY after the tool calls actually succeed. " +
+        "If a tool fails, mark the task 'failed' with a note, fix the problem, then retry. " +
+        "Do NOT mark a task done when its commands error out. " +
+        "Never claim something ran without a successful tool call.",
     );
   } else {
     lines.push(
@@ -1178,6 +1259,21 @@ export async function runAgentLoop(
         bareArgsOnly = true;
       }
     }
+    // Also check thinking content for bare JSON calls.
+    if (!call && assistantText.hasThinking) {
+      const bareThink = recognizeBareToolJson(assistantText.thinkContent);
+      if (bareThink?.call) {
+        call = bareThink.call;
+        recoveredFromBareJson = true;
+        process.stdout.write(
+          chalk.dim(
+            "  ℹ recovered an unfenced tool call from thinking content\n",
+          ),
+        );
+      } else if (bareThink?.argsOnly) {
+        bareArgsOnly = true;
+      }
+    }
     if (!call) {
       if (bareArgsOnly) {
         bareToolJsonRetries += 1;
@@ -1190,11 +1286,17 @@ export async function runAgentLoop(
           messages.push({ role: "assistant", content: assistantText.visible });
           messages.push(
             recoveryUserMessage(
-              "Your previous message was a bare JSON args object with no tool name and no ```tool fence, so NOTHING ran. " +
-                "Reply with ONLY a fenced ```tool block of the form " +
-                '`{"name": "<tool>", "args": { ... }}`. For example, to read a PDF:\n' +
-                '```tool\n{"name":"pdf.read","args":{"path":"/abs/file.pdf"}}\n```\n' +
-                "Choose the correct tool name for the task and include those args.",
+              buildLikeTurn && !activePlan
+                ? "Your previous message was a bare JSON args object with no tool name and no ```tool fence, so NOTHING ran. " +
+                    "This is a BUILD/SCAFFOLD task with NO plan yet. " +
+                    "You MUST call plan.create using a proper ```tool block. For example:\n" +
+                    '```tool\n{"name":"plan.create","args":{"goal":"scaffold todo app","detail":"...","tasks":["...","..."],"kind":"coding"}}\n```\n' +
+                    "Do NOT use fs.write, fs.writeMany, shell.exec, or pkg.install yet."
+                : "Your previous message was a bare JSON args object with no tool name and no ```tool fence, so NOTHING ran. " +
+                    "Reply with ONLY a fenced ```tool block of the form " +
+                    '`{"name": "<tool>", "args": { ... }}`. For example, to read a PDF:\n' +
+                    '```tool\n{"name":"pdf.read","args":{"path":"/abs/file.pdf"}}\n```\n' +
+                    "Choose the correct tool name for the task and include those args.",
             ),
           );
           continue;

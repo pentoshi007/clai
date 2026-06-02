@@ -4,22 +4,41 @@ import {
   parsePortSpec,
   parseLegacyFlags,
   profileToNmapArgs,
+  nmapScanNeedsPrivilege,
+  toConnectScanArgv,
 } from "../src/tools/validate.js";
 import { assertSafePackageName } from "../src/os/pkgmgr.js";
 import { toolRegistry } from "../src/tools/registry.js";
 
 describe("phase 4 — parseHost", () => {
   it("accepts ipv4, ipv6, CIDR, hostnames", () => {
-    expect(parseHost("192.168.1.1")).toEqual({ kind: "ip", value: "192.168.1.1" });
-    expect(parseHost("10.0.0.0/8")).toEqual({ kind: "cidr", value: "10.0.0.0/8" });
-    expect(parseHost("2001:db8::1")).toEqual({ kind: "ip", value: "2001:db8::1" });
-    expect(parseHost("example.com")).toEqual({ kind: "hostname", value: "example.com" });
-    expect(parseHost("scanme.nmap.org")).toEqual({ kind: "hostname", value: "scanme.nmap.org" });
+    expect(parseHost("192.168.1.1")).toEqual({
+      kind: "ip",
+      value: "192.168.1.1",
+    });
+    expect(parseHost("10.0.0.0/8")).toEqual({
+      kind: "cidr",
+      value: "10.0.0.0/8",
+    });
+    expect(parseHost("2001:db8::1")).toEqual({
+      kind: "ip",
+      value: "2001:db8::1",
+    });
+    expect(parseHost("example.com")).toEqual({
+      kind: "hostname",
+      value: "example.com",
+    });
+    expect(parseHost("scanme.nmap.org")).toEqual({
+      kind: "hostname",
+      value: "scanme.nmap.org",
+    });
   });
 
   it("rejects shell metacharacters", () => {
     expect(() => parseHost("example.com; rm -rf /")).toThrow(/metacharacters/);
-    expect(() => parseHost("example.com && curl evil")).toThrow(/metacharacters/);
+    expect(() => parseHost("example.com && curl evil")).toThrow(
+      /metacharacters/,
+    );
     expect(() => parseHost("`whoami`")).toThrow(/metacharacters/);
     expect(() => parseHost("$(id)")).toThrow(/metacharacters/);
     expect(() => parseHost("a|b")).toThrow(/metacharacters/);
@@ -75,8 +94,25 @@ describe("phase 4 — parseLegacyFlags", () => {
 describe("phase 4 — profileToNmapArgs", () => {
   it("maps structured fields to safe nmap argv", () => {
     expect(
-      profileToNmapArgs({ scanType: "syn", serviceDetect: true, topPorts: 100, timing: "T3" }),
+      profileToNmapArgs({
+        scanType: "syn",
+        serviceDetect: true,
+        topPorts: 100,
+        timing: "T3",
+      }),
     ).toEqual(["-sS", "-sV", "-T3", "--top-ports", "100"]);
+  });
+
+  it("defaults to a stealth SYN scan (-sS) when no scan type is specified", () => {
+    expect(profileToNmapArgs({})).toEqual(["-sS"]);
+    expect(profileToNmapArgs({ serviceDetect: true })).toEqual(["-sS", "-sV"]);
+  });
+
+  it("uses an unprivileged TCP connect scan (-sT) when scanType is tcp", () => {
+    expect(profileToNmapArgs({ scanType: "tcp" })).toEqual(["-sT"]);
+    expect(profileToNmapArgs({ scanType: "tcp", serviceDetect: true })).toEqual(
+      ["-sT", "-sV"],
+    );
   });
 
   it("rejects invalid timing template", () => {
@@ -89,10 +125,38 @@ describe("phase 4 — profileToNmapArgs", () => {
 
   it("rejects invalid topPorts", () => {
     // topPorts <= 0 is silently ignored (treated as "not specified"), not an error
-    expect(profileToNmapArgs({ topPorts: 0 })).toEqual([]);
-    expect(profileToNmapArgs({ topPorts: -1 })).toEqual([]);
+    expect(profileToNmapArgs({ topPorts: 0 })).toEqual(["-sS"]);
+    expect(profileToNmapArgs({ topPorts: -1 })).toEqual(["-sS"]);
     // Out-of-range positive values still throw
     expect(() => profileToNmapArgs({ topPorts: 100000 })).toThrow();
+  });
+});
+
+describe("phase 4 — privilege-aware nmap helpers", () => {
+  it("detects raw-socket scan types that need privilege", () => {
+    expect(nmapScanNeedsPrivilege(["-sS", "-sV", "host"])).toBe(true);
+    expect(nmapScanNeedsPrivilege(["-sU", "host"])).toBe(true);
+    expect(nmapScanNeedsPrivilege(["-O", "host"])).toBe(true);
+    expect(nmapScanNeedsPrivilege(["-sT", "-sV", "host"])).toBe(false);
+    expect(nmapScanNeedsPrivilege(["-sn", "host"])).toBe(false);
+  });
+
+  it("rewrites a privileged scan into an unprivileged connect scan", () => {
+    // SYN collapses to a single -sT; service detection + ports are preserved.
+    expect(
+      toConnectScanArgv(["-sS", "-sV", "--top-ports", "100", "host"]),
+    ).toEqual(["-sT", "-sV", "--top-ports", "100", "host"]);
+    // -O and -sU have no unprivileged equivalent and are dropped.
+    expect(toConnectScanArgv(["-sS", "-sU", "-O", "host"])).toEqual([
+      "-sT",
+      "host",
+    ]);
+    // A connect/ping scan is left untouched.
+    expect(toConnectScanArgv(["-sT", "-sV", "host"])).toEqual([
+      "-sT",
+      "-sV",
+      "host",
+    ]);
   });
 });
 
@@ -101,7 +165,9 @@ describe("phase 4 — assertSafePackageName", () => {
     expect(assertSafePackageName("nmap")).toBe("nmap");
     expect(assertSafePackageName("python3.11")).toBe("python3.11");
     expect(assertSafePackageName("@scope/pkg")).toBe("@scope/pkg");
-    expect(assertSafePackageName("Microsoft.PowerShell")).toBe("Microsoft.PowerShell");
+    expect(assertSafePackageName("Microsoft.PowerShell")).toBe(
+      "Microsoft.PowerShell",
+    );
   });
 
   it("rejects shell metacharacters", () => {
@@ -120,7 +186,10 @@ describe("phase 4 — registry validation rejects injection at the tool boundary
 
   it("net.scan rejects bad ports", async () => {
     await expect(
-      toolRegistry["net.scan"]!({ target: "example.com", ports: "80; rm -rf /" }),
+      toolRegistry["net.scan"]!({
+        target: "example.com",
+        ports: "80; rm -rf /",
+      }),
     ).rejects.toThrow();
   });
 

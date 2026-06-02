@@ -381,7 +381,9 @@ async function buildImageOcrGrounding(
       // section when there is a meaningful amount of recognized text.
       const meaningful = (text.match(/[A-Za-z0-9]/g) ?? []).length;
       if (result.ok && meaningful >= 8) {
-        sections.push(`----- OCR of ${path} -----\n${text}\n----- end OCR -----`);
+        sections.push(
+          `----- OCR of ${path} -----\n${text}\n----- end OCR -----`,
+        );
       }
     } catch {
       // tesseract missing or failed — skip silently; vision bytes still sent.
@@ -2366,11 +2368,14 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         console.log(renderPlanChecklist(plan) + "\n");
         implementApproved = true;
         effectiveLine =
-          "I approve the plan. Execute it now, task by task: mark each task in_progress before " +
-          "you start it and done after it actually succeeds. Build the project for real with fs.writeMany " +
-          "(create all files in as few calls as possible), then verify. Do NOT call web.search — you already " +
-          "know everything needed to scaffold this. Run real commands (installs, servers, verification) — " +
-          "do not claim anything ran without a successful tool call.";
+          "I approve the plan. Execute it now in STRICT ORDER. Task 1 (explore) is ALREADY COMPLETE from the planning phase — " +
+          "do NOT re-list or re-read the directory. Start with the FIRST pending task that still needs implementation work. " +
+          "For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it succeeded → " +
+          "call task.update {taskId, state:'done'}, then move to the NEXT task. " +
+          "If a tool call FAILS, mark the task 'failed', fix the problem, and retry. Do NOT mark a task done when it failed. " +
+          "Build the project for real with fs.writeMany (create all files in as few calls as possible). " +
+          "Do NOT call web.search — you already know everything needed. " +
+          "Run real commands (installs, servers, verification) — do not claim anything ran without a successful tool call.";
       }
 
       // Only remember real prompts in the history ring. Slash commands

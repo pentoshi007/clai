@@ -110,12 +110,73 @@ export interface ScanProfile {
 
 const SAFE_SCRIPT_RE = /^[a-z0-9_-]+(?:,[a-z0-9_-]+)*$/i;
 
+/**
+ * nmap scan-type flags that require raw sockets, i.e. root on Linux/macOS
+ * and Administrator (+ Npcap) on Windows. The net.scan / pentest.recon
+ * runners use this to decide when to wrap the scan in sudo / elevation and
+ * when to fall back to an unprivileged TCP connect scan.
+ */
+const ROOT_SCAN_FLAGS = new Set([
+  "-sS",
+  "-sU",
+  "-sO",
+  "-sN",
+  "-sF",
+  "-sX",
+  "-sA",
+  "-sW",
+  "-sM",
+  "-sY",
+  "-sZ",
+  "-O",
+]);
+
+/** True when an nmap argv contains a scan type that needs root/Administrator. */
+export function nmapScanNeedsPrivilege(argv: readonly string[]): boolean {
+  return argv.some((token) => ROOT_SCAN_FLAGS.has(token));
+}
+
+/**
+ * Rewrite a privileged nmap argv into an equivalent that runs WITHOUT root:
+ * SYN/FIN/Xmas/etc. stealth variants become a TCP connect scan (-sT), and
+ * flags that simply cannot run unprivileged (-O OS detection, -sU UDP,
+ * -sO protocol) are dropped. Used as the automatic fallback when sudo /
+ * elevation is declined or unavailable.
+ */
+export function toConnectScanArgv(argv: readonly string[]): string[] {
+  const out: string[] = [];
+  let haveConnect = false;
+  for (const token of argv) {
+    if (ROOT_SCAN_FLAGS.has(token)) {
+      // These have no unprivileged equivalent — drop them.
+      if (token === "-O" || token === "-sU" || token === "-sO") continue;
+      // Every other raw-socket scan collapses to a single TCP connect scan.
+      if (!haveConnect) {
+        out.push("-sT");
+        haveConnect = true;
+      }
+      continue;
+    }
+    out.push(token);
+  }
+  if (!haveConnect && !out.includes("-sT") && !out.includes("-sn")) {
+    out.unshift("-sT");
+  }
+  return out;
+}
+
 /** Convert a structured scan profile into safe argv for nmap. */
 export function profileToNmapArgs(profile: ScanProfile = {}): string[] {
   const args: string[] = [];
-  if (profile.scanType === "syn") args.push("-sS");
-  else if (profile.scanType === "tcp") args.push("-sT");
+  // Default to a STEALTH SYN scan (-sS): it is quieter than a full TCP
+  // connect, completes faster, and is the professional default. It needs
+  // raw sockets (root on Linux/macOS, Administrator + Npcap on Windows), so
+  // the net.scan / pentest.recon runners wrap it in sudo / elevation and
+  // automatically fall back to a TCP connect scan (-sT) when privilege can't
+  // be obtained. Pass scanType:"tcp" to force an unprivileged connect scan.
+  if (profile.scanType === "tcp") args.push("-sT");
   else if (profile.scanType === "ping") args.push("-sn");
+  else if (profile.scanType !== "udp") args.push("-sS"); // "syn" or unspecified
   if (profile.udp || profile.scanType === "udp") args.push("-sU");
   if (profile.serviceDetect) args.push("-sV");
   if (profile.timing) {
@@ -127,7 +188,10 @@ export function profileToNmapArgs(profile: ScanProfile = {}): string[] {
   if (typeof profile.topPorts === "number") {
     if (profile.topPorts <= 0) {
       // Model sent 0 or negative — treat as "not specified", don't crash
-    } else if (!Number.isInteger(profile.topPorts) || profile.topPorts > 65535) {
+    } else if (
+      !Number.isInteger(profile.topPorts) ||
+      profile.topPorts > 65535
+    ) {
       throw new Error(`Invalid topPorts: ${profile.topPorts}`);
     } else {
       args.push("--top-ports", String(profile.topPorts));
