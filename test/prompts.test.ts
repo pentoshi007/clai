@@ -43,7 +43,7 @@ describe("prompt rendering", () => {
 
   it("agent prompt contains pentesting authorization reminder", () => {
     const prompt = renderAgentSystemPrompt("net.scan");
-    expect(prompt).toContain("permission to test");
+    expect(prompt).toContain("proper authorization");
   });
 
   it("agent prompt discourages stale data and vague tool summaries", () => {
