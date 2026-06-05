@@ -42,6 +42,7 @@ describe("NVIDIA NIM model classification", () => {
   it("routes Nemotron-3 to enable_thinking, not the legacy thinking flag", () => {
     expect(classifyNvidiaModel("nvidia/nemotron-3-nano-30b-a3b")).toBe("nemotron-3");
     expect(classifyNvidiaModel("nvidia/nemotron-3-super-120b-a12b")).toBe("nemotron-3");
+    expect(classifyNvidiaModel("nvidia/nemotron-3-ultra-550b-a55b")).toBe("nemotron-3");
   });
 
   it("Nemotron-3 sends enable_thinking + reasoning_budget per the docs", () => {
@@ -64,6 +65,27 @@ describe("NVIDIA NIM model classification", () => {
     });
   });
 
+  it("Nemotron-3 Ultra sends enable_thinking + reasoning_budget matching the NVIDIA docs example", () => {
+    const enabled = buildReasoningPayload(
+      { enabled: true, effort: "high" },
+      "nvidia",
+      "nvidia/nemotron-3-ultra-550b-a55b",
+    );
+    expect(enabled).toEqual({
+      reasoning_budget: 16_384,
+      chat_template_kwargs: { enable_thinking: true },
+    });
+  });
+
+  it("Step 3.7 Flash sends no reasoning payload (non-thinking model)", () => {
+    const payload = buildReasoningPayload(
+      { enabled: true, effort: "high" },
+      "nvidia",
+      "stepfun-ai/step-3.7-flash",
+    );
+    expect(payload).toEqual({});
+  });
+
   it("Gemma sends enable_thinking only (no clear_thinking)", () => {
     const payload = buildReasoningPayload(
       { enabled: true, effort: "high" },
@@ -81,6 +103,7 @@ describe("NVIDIA NIM model classification", () => {
     expect(classifyNvidiaModel("mistralai/mistral-large-2-instruct")).toBe("none");
     expect(classifyNvidiaModel("minimaxai/minimax-m2.7")).toBe("none");
     expect(classifyNvidiaModel("minimaxai/minimax-m2.5")).toBe("none");
+    expect(classifyNvidiaModel("stepfun-ai/step-3.7-flash")).toBe("none");
   });
 
   it("turns Kimi reasoning off explicitly because NIM enables it by default", () => {

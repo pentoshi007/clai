@@ -198,11 +198,21 @@ export function profileToNmapArgs(profile: ScanProfile = {}): string[] {
     }
   }
   if (profile.scripts && profile.scripts.length > 0) {
-    const joined = profile.scripts.join(",");
-    if (!SAFE_SCRIPT_RE.test(joined)) {
-      throw new Error(`Invalid scripts list: ${joined}`);
+    const PLACEHOLDER_SCRIPTS = new Set([
+      "safe-script-name",
+      "script-name",
+      "safe_script_name",
+    ]);
+    const filtered = profile.scripts.filter(
+      (s) => !PLACEHOLDER_SCRIPTS.has(s),
+    );
+    if (filtered.length > 0) {
+      const joined = filtered.join(",");
+      if (!SAFE_SCRIPT_RE.test(joined)) {
+        throw new Error(`Invalid scripts list: ${joined}`);
+      }
+      args.push("--script", joined);
     }
-    args.push("--script", joined);
   }
   return args;
 }
