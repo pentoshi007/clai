@@ -292,6 +292,7 @@ const knownModels: Record<string, string[]> = {
     "google/gemma-4-31b-it",
     "nvidia/nemotron-3-nano-30b-a3b",
     "nvidia/nemotron-3-super-120b-a12b",
+    "nvidia/nemotron-3-ultra-550b-a55b",
     "nvidia/llama-3.3-nemotron-super-49b-v1",
     "nvidia/llama-3.3-nemotron-super-49b-v1.5",
     "meta/llama-3.3-70b-instruct",
@@ -305,6 +306,7 @@ const knownModels: Record<string, string[]> = {
     "mistralai/mistral-large-3-675b-instruct-2512",
     "mistralai/mistral-nemotron",
     "stepfun-ai/step-3.5-flash",
+    "stepfun-ai/step-3.7-flash",
     "sarvamai/sarvam-m",
   ],
   ollama: [
