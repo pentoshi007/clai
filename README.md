@@ -67,7 +67,7 @@ clai -y "list the 10 largest files in my home directory"
 
 - **`/ask` mode** — Read-only. AI explains, gives commands & step-by-step guidance, but does NOT execute anything.
 - **`/agent` mode** — Agentic. AI plans, waits for approval, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met. Tasks run on an approve/refine/discard plan workflow (`/implement`, free-text to refine, `/discard` to cancel).
-- **7 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, and Ollama (local). All with streaming.
+- **9 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, AgentRouter, Kimchi, AWS Mantle, and Ollama (local). All with streaming.
 - **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
 - **Smart safety gate** — Read-only commands auto-execute; mutating commands require confirmation; destructive patterns are blocked.
 - **OS-aware & tool-frugal** — Picks the best approach for your OS, prefers tools already installed (installs only when nothing suitable exists), broadens its approach and escalates privileges as needed to finish the task.
@@ -78,7 +78,7 @@ clai -y "list the 10 largest files in my home directory"
 
 ## Provider Setup
 
-clai supports 8 LLM providers (7 with free tiers):
+clai supports 10 LLM providers (8 with free tiers):
 
 | Provider    | Default Model                                | Free? | API Key Prefix |
 |-------------|----------------------------------------------|-------|----------------|
@@ -89,6 +89,8 @@ clai supports 8 LLM providers (7 with free tiers):
 | Anthropic   | `claude-3-5-haiku-latest`                    | —     | `sk-ant-`      |
 | NVIDIA NIM  | `openai/gpt-oss-20b`                         | ✓     | `nvapi-`       |
 | AgentRouter | `gpt-5`                                      | —     | `sk-`          |
+| Kimchi      | `kimi-k2.6`                                  | ✓     | (any)          |
+| AWS Mantle  | `anthropic.claude-haiku-4-5`                 | —     | `sk-ant-`      |
 | Ollama      | `llama3.1:8b`                                | ✓     | (local URL)    |
 
 ```sh
@@ -128,6 +130,8 @@ export OPENROUTER_API_KEY=sk-or-...
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 export NVIDIA_API_KEY=nvapi-...
+export CASTAI_API_KEY=...
+export ANTHROPIC_WORKSPACE_ID=default  # optional, for AWS Mantle
 export OLLAMA_HOST=http://localhost:11434
 ```
 

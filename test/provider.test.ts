@@ -6,6 +6,9 @@ describe('provider helpers', () => {
   it('normalizes aliases', () => {
     expect(normalizeProvider('google')).toBe('gemini');
     expect(normalizeProvider('LOCAL')).toBe('ollama');
+    expect(normalizeProvider('kimchi')).toBe('kimchi');
+    expect(normalizeProvider('aws-mantle')).toBe('aws-mantle');
+    expect(normalizeProvider('castai')).toBe('kimchi');
   });
 
   it('masks secrets per Requirement 3.6 (last 4 chars visible, prefix masked)', () => {

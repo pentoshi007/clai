@@ -36,6 +36,8 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
     /kimi-k2/i,
     /o[134]/i,
   ],
+  kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
+  "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
 };
 
 export function modelSupportsThinking(
@@ -65,7 +67,7 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /gpt-4\.1/i,
     /gpt-5/i,
     /claude-(?:opus|sonnet|haiku)-(?:3-5|3-7|4|4-\d)/i,
-    /claude-3(?:-|\.)/i,
+    /claude-3(?:-|\.|$)/i,
     /gemini-/i,
     /llama-4/i,
     /llama-3\.2-(?:11b|90b)-vision/i,
@@ -79,7 +81,7 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
   anthropic: [
     // Claude 3+ (opus/sonnet/haiku) are all vision-capable.
     /claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i,
-    /claude-3(?:-|\.)/i,
+    /claude-3(?:-|\.|$)/i,
   ],
   nvidia: [
     /llama-4/i,
@@ -105,12 +107,14 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /gpt-4\.1/i,
     /gpt-5/i,
     /claude-(?:opus|sonnet|haiku)-(?:3-5|3-7|4|4-\d)/i,
-    /claude-3(?:-|\.)/i,
+    /claude-3(?:-|\.|$)/i,
     /gemini-/i,
     /llama-4/i,
     /qwen2?\.?5?-vl/i,
     /glm-4\.?\d*v/i,
   ],
+  kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
+  "aws-mantle": [/claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i],
 };
 
 /**
@@ -137,6 +141,8 @@ const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "meta/llama-4-maverick-17b-128e-instruct",
   agentrouter: "claude-haiku-4-5-20251001",
+  kimchi: "kimi-k2.6",
+  "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.2-vision",
 };
 

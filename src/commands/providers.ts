@@ -52,6 +52,10 @@ function invalidFormatHint(provider: ProviderId): string {
     return "NVIDIA NIM keys usually start with nvapi-";
   if (provider === "agentrouter")
     return "AgentRouter keys usually start with sk- (issued at https://agentrouter.org/console/token)";
+  if (provider === "kimchi")
+    return "Kimchi keys are alphanumeric (at least 8 characters)";
+  if (provider === "aws-mantle")
+    return "Mantle keys are alphanumeric with base64 characters (at least 8 characters)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

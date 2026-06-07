@@ -51,6 +51,8 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   openai: "paid-cloud",
   anthropic: "paid-cloud",
   agentrouter: "paid-cloud",
+  kimchi: "free-cloud",
+  "aws-mantle": "paid-cloud",
 };
 
 const defaults: ClaiConfig = {

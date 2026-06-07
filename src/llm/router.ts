@@ -11,6 +11,8 @@ import { groqProvider } from "./groq.js";
 import { ProviderError } from "./http.js";
 import { nvidiaProvider } from "./nvidia.js";
 import { agentrouterProvider } from "./agentrouter.js";
+import { kimchiProvider } from "./kimchi.js";
+import { mantleProvider } from "./aws-mantle.js";
 import { ollamaProvider } from "./ollama.js";
 import { openaiProvider } from "./openai.js";
 import { openrouterProvider } from "./openrouter.js";
@@ -71,6 +73,8 @@ export const providers: Record<ProviderId, LlmProvider> = {
   anthropic: anthropicProvider,
   nvidia: nvidiaProvider,
   agentrouter: agentrouterProvider,
+  kimchi: kimchiProvider,
+  "aws-mantle": mantleProvider,
   ollama: ollamaProvider,
 };
 
@@ -80,8 +84,10 @@ const fallbackOrder: ProviderId[] = [
   "gemini",
   "openrouter",
   "agentrouter",
+  "kimchi",
   "openai",
   "anthropic",
+  "aws-mantle",
   "ollama",
 ];
 

@@ -6,6 +6,8 @@ export const providerIds = [
   "anthropic",
   "nvidia",
   "agentrouter",
+  "kimchi",
+  "aws-mantle",
   "ollama",
 ] as const;
 

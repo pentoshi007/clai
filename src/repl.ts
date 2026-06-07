@@ -36,6 +36,7 @@ import {
   getSession,
 } from "./store/history.js";
 import { assertProvider, defaultModels } from "./llm/provider.js";
+import { getProvider, providerAuth } from "./llm/router.js";
 import { providerIds } from "./types.js";
 import {
   runUpdate,
@@ -328,6 +329,12 @@ const knownModels: Record<string, string[]> = {
     "deepseek-v4-pro",
     "glm-5.1",
   ],
+  kimchi: [
+    "kimi-k2.6",
+    "minimax-m2.7",
+    "nemotron-3-super-fp4",
+  ],
+  "aws-mantle": [],
 };
 
 export function getKnownModels(provider: string): string[] {
@@ -1190,11 +1197,19 @@ async function pickInline<T>(options: {
         selectedIndex = Math.max(0, filtered.length - 1);
 
       const cols = process.stdout.columns || 80;
-      const visible = filtered.slice(0, pageSize);
+
+      // Scroll the visible window so the selected item is always shown
+      let start = 0;
+      if (filtered.length > pageSize) {
+        start = Math.max(0, selectedIndex - Math.floor(pageSize / 2));
+        start = Math.min(start, filtered.length - pageSize);
+      }
+      const visible = filtered.slice(start, start + pageSize);
       const lines: string[] = [];
 
       for (let i = 0; i < visible.length; i++) {
-        const marker = i === selectedIndex ? chalk.magenta("›") : " ";
+        const marker =
+          start + i === selectedIndex ? chalk.magenta("›") : " ";
         let full = `  ${marker} ${visible[i]!.label}`;
         const stripped = stripAnsi(full);
         if (stripped.length > cols - 1) {
@@ -1203,7 +1218,12 @@ async function pickInline<T>(options: {
         lines.push(full);
       }
       if (filtered.length > pageSize) {
-        lines.push(chalk.dim(`    … ${filtered.length - pageSize} more`));
+        const prefix = start > 0 ? `… ${start} above · ` : "";
+        const suffix =
+          start + pageSize < filtered.length
+            ? ` · ${filtered.length - start - pageSize} below`
+            : "";
+        lines.push(chalk.dim(`    ${prefix}${visible.length} shown${suffix}`));
       }
       if (filtered.length === 0) {
         lines.push(chalk.dim("    no matches"));
@@ -1361,8 +1381,26 @@ async function pickModelInteractively(
   provider: ProviderId,
   currentModel: string,
 ): Promise<string | undefined> {
-  const models = knownModels[provider] ?? [];
+  let models = knownModels[provider] ?? [];
   const def = defaultModels[provider] ?? "";
+
+  // Try to fetch models dynamically if provider has listModels and knownModels is empty
+  if (models.length === 0) {
+    const providerImpl = getProvider(provider);
+    if (providerImpl.listModels) {
+      try {
+        const auth = await providerAuth(provider);
+        models = await providerImpl.listModels(auth);
+      } catch (error) {
+        console.warn(
+          chalk.yellow(
+            `  Warning: Could not fetch models from ${provider}: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+      }
+    }
+  }
+
   if (models.length === 0) {
     console.log(
       chalk.dim(
@@ -1390,9 +1428,23 @@ async function pickModelInteractively(
   });
 }
 
-function showModelList(provider: string, currentModel: string): void {
-  const models = knownModels[provider] ?? [];
+async function showModelList(provider: string, currentModel: string): Promise<void> {
+  let models = knownModels[provider] ?? [];
   const def = defaultModels[provider as ProviderId] ?? "";
+
+  // Try to fetch models dynamically if provider has listModels and knownModels is empty
+  if (models.length === 0) {
+    const providerImpl = getProvider(provider as ProviderId);
+    if (providerImpl.listModels) {
+      try {
+        const auth = await providerAuth(provider as ProviderId);
+        models = await providerImpl.listModels(auth);
+      } catch {
+        // Silently fall back to empty array on error
+      }
+    }
+  }
+
   if (models.length === 0) {
     console.log(
       chalk.dim(
@@ -1467,7 +1519,7 @@ async function handleSlash(
         return true;
       }
       if (arg === "list" || arg === "ls") {
-        showModelList(state.provider, state.model);
+        await showModelList(state.provider, state.model);
         return true;
       }
       // Numeric → pick from known list

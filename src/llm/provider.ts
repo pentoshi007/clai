@@ -21,6 +21,7 @@ export interface LlmProvider {
     auth: ProviderAuth,
     onToken: (token: string) => void,
   ): Promise<CompletionResult>;
+  listModels?(auth: ProviderAuth): Promise<string[]>;
 }
 
 export interface ProviderAuth {
@@ -42,6 +43,9 @@ export const providerAliases: Record<string, ProviderId> = {
   agentrouter: "agentrouter",
   "agent-router": "agentrouter",
   router: "agentrouter",
+  kimchi: "kimchi",
+  castai: "kimchi",
+  "aws-mantle": "aws-mantle",
   ollama: "ollama",
   local: "ollama",
 };
@@ -54,6 +58,8 @@ export const defaultModels: Record<ProviderId, string> = {
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "openai/gpt-oss-20b",
   agentrouter: "claude-haiku-4-5-20251001",
+  kimchi: "kimi-k2.6",
+  "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.1:8b",
 };
 
@@ -82,6 +88,8 @@ export const envVars: Record<ProviderId, string | undefined> = {
   anthropic: "ANTHROPIC_API_KEY",
   nvidia: "NVIDIA_API_KEY",
   agentrouter: "AGENTROUTER_API_KEY",
+  kimchi: "CASTAI_API_KEY",
+  "aws-mantle": "ANTHROPIC_API_KEY",
   ollama: "OLLAMA_HOST",
 };
 
