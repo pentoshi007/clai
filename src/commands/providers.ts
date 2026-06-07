@@ -218,12 +218,15 @@ export async function providerSwitcher(
 
   const config = getConfig();
   const statuses = await listProviderStatuses(config.defaultProvider);
+  const pageSize = 15;
   const selected = await select({
     message: "Select provider:",
+    pageSize,
     choices: statuses.map((status) => ({
       name: `${status.provider.padEnd(10)} ${status.configured ? "✓ key set" : "✗ no key"}${status.active ? " (active)" : ""}`,
       value: status.provider,
     })),
+    loop: false,
   });
   await useProvider(selected);
 }
