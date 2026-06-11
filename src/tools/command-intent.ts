@@ -58,7 +58,26 @@ const LONG_RUNNING_PATTERNS: RegExp[] = [
   /\btcpdump\b/i,
   /\bwireshark\b/i,
   /\btshark\b.*-i\b/i,
+
+  // Databases / services run in the foreground (these block until killed)
+  /\bneo4j\s+console\b/i,
+  /\bmongod\b/i,
+  /\bredis-server\b/i,
+  /\bmysqld\b/i,
+  /\bpostgres\b/i,
+  /\belasticsearch\b/i,
+  /\bjava\s+-jar\b/i,
 ];
+
+/**
+ * Detect explicit job-control backgrounding (a bare ` & ` or trailing ` &`,
+ * NOT `&&`, NOT the `2>&1` fd-dup). A command that backgrounds a process
+ * keeps the piped stdout open, so running it via the blocking shell executor
+ * hangs the agent until the timeout — route it to the job manager instead.
+ */
+function backgroundsAProcess(command: string): boolean {
+  return /(?:^|[^&\d>])\s&(?:\s|$)/.test(command);
+}
 
 /**
  * Returns true if the command appears to be a long-running process that
@@ -66,5 +85,8 @@ const LONG_RUNNING_PATTERNS: RegExp[] = [
  * negatives are safer than false positives.
  */
 export function looksLongRunning(command: string): boolean {
-  return LONG_RUNNING_PATTERNS.some((pattern) => pattern.test(command));
+  return (
+    backgroundsAProcess(command) ||
+    LONG_RUNNING_PATTERNS.some((pattern) => pattern.test(command))
+  );
 }

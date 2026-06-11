@@ -1,6 +1,8 @@
 export const destructiveCommandPatterns = [
-  /\brm\s+-[rfRf]*\s+\//,
-  /\brm\s+-[rfRf]*\s+~\b/,
+  // Catastrophic recursive deletes: root, home, a glob of root, or a
+  // top-level system directory. A normal `rm -rf /tmp/foo` is NOT blocked —
+  // it falls through to a confirmation like any other delete.
+  /\brm\s+(?:-[a-zA-Z]*\s+)*-[a-zA-Z]*r[a-zA-Z]*\s+(?:["']?)(?:\/|\/\*|~\/?|\$HOME\/?|\/(?:etc|usr|bin|sbin|var|lib|lib64|boot|dev|sys|proc|root|opt|private|home|System|Library|Applications|Users)(?:\/\*?)?)(?:["'\s;|&]|$)/i,
   /\bdel\s+\/f\s+\/s\s+\/q\s+[A-Z]:\\/i,
   /\bformat\s+[A-Z]:/i,
   /\bdd\s+if=.*\s+of=\/dev\//,
@@ -80,7 +82,7 @@ export const subcommandSafeMap: Record<string, Set<string>> = {
   ]),
   pip: new Set(['show', 'list', 'freeze', 'check', 'help']),
   pip3: new Set(['show', 'list', 'freeze', 'check', 'help']),
-  brew: new Set(['list', 'info', 'search', 'outdated', 'help', 'doctor', 'deps']),
+  brew: new Set(['list', 'info', 'search', 'outdated', 'help', 'doctor', 'deps', 'services']),
   apt: new Set(['list', 'search', 'show', 'help']),
   dpkg: new Set(['-l', '-s', '-L', '--list', '--status', '--listfiles']),
   rpm: new Set(['-q', '-qa', '-qi', '-ql', '--query']),
@@ -111,7 +113,7 @@ export const mutatingArgPatterns: RegExp[] = [
   /\bnpm\s+config\s+(?:set|delete|edit)\b/i,
   /\bpnpm\s+config\s+(?:set|delete|edit)\b/i,
   /\byarn\s+config\s+(?:set|delete)\b/i,
-  /\bbrew\s+(?:install|uninstall|upgrade|reinstall|cask|services\s+(?:start|stop|restart|run))\b/i,
+  /\bbrew\s+(?:install|uninstall|remove|upgrade|reinstall|cask|tap|untap|link|unlink|pin|unpin|cleanup)\b/i,
   /\bdocker\s+(?:run|exec|build|push|pull|rm|rmi|stop|kill|start|restart|cp|commit|login)\b/i,
   /\bkubectl\s+(?:apply|create|delete|edit|patch|replace|exec|cp|drain|rollout|scale|attach|run|label|annotate|cordon|uncordon)\b/i,
 ];
@@ -168,14 +170,8 @@ export const mutatingCommandBases = new Set([
   "scp",
   "sftp",
   // process / service / system control
-  "kill",
-  "pkill",
-  "killall",
   "mount",
   "umount",
-  "systemctl",
-  "service",
-  "launchctl",
   "crontab",
   "reboot",
   "halt",
@@ -230,21 +226,34 @@ export const mutatingCommandBases = new Set([
 ]);
 
 /**
- * Metacharacters that WRITE to disk or escape into another command:
- *   - `>` / `>>` output redirection (overwrites/appends a file)
- *   - command substitution `$(...)` / backticks
- *   - process substitution `<(...)` / `>(...)`
- *   - `sudo` / `doas` (privilege escalation)
+ * Detect a redirection that WRITES TO A REAL FILE — the only kind that should
+ * gate behind a confirmation. Discards and fd-duplications are NOT real
+ * writes and must auto-run, because the agent uses them on nearly every
+ * command:
+ *   - `2>/dev/null`, `>/dev/null`, `&>/dev/null`   → discard (safe)
+ *   - `2>&1`, `>&2`, `1>&2`                         → fd-dup (safe)
+ *   - `> out.txt`, `>> log`, `&> out`              → real write (confirm)
  *
- * Note: plain pipes (`|`) and command chaining (`&&`, `||`, `;`) are
- * intentionally NOT here — chaining read-only commands is benign and is
- * handled per-segment by {@link commandIsMutating}.
+ * Command substitution `$(...)`/backticks and plain `sudo` are intentionally
+ * NOT treated as writes here: they are extremely common and any actual
+ * mutation is caught by {@link commandIsMutating} (which sees through a
+ * leading `sudo`/`doas`). Keeping them out of the confirm path is what lets
+ * the agent run ordinary commands without a prompt on every call.
  */
-const WRITE_OR_ESCALATE_RE =
-  /(?:>>|>|`|\$\(|<\(|>\(|\bsudo\b|\bdoas\b)/;
-
 export function commandWritesOrEscalates(command: string): boolean {
-  return WRITE_OR_ESCALATE_RE.test(command);
+  // Strip fd-duplications (2>&1, >&2, 1>&2, &>&1) — these never touch disk.
+  const withoutDup = command.replace(/\d*>&\d+|&>&\d+/g, " ");
+  // Find redirection operators and the target token that follows.
+  const re = /(?:&?>>?)\s*('[^']*'|"[^"]*"|[^\s;|&<>()]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(withoutDup)) !== null) {
+    const target = (match[1] ?? "").replace(/^['"]|['"]$/g, "");
+    if (!target) continue;
+    // Discards / terminal devices are not real file writes.
+    if (/^\/dev\/(null|stdout|stderr|tty|fd\/\d+)$/.test(target)) continue;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -274,6 +283,19 @@ export function commandIsMutating(command: string): boolean {
       (tokens[i] === "command" || tokens[i] === "exec" || tokens[i] === "time")
     ) {
       i += 1;
+    }
+    // See through a leading sudo/doas (and its flags) so the REAL command is
+    // classified: `sudo rm` / `sudo apt install` confirm, while `sudo
+    // systemctl start` / `sudo cat` stay non-mutating. sudo itself no longer
+    // forces a confirm — the OS password prompt is the real gate.
+    if (i < tokens.length && (tokens[i] === "sudo" || tokens[i] === "doas")) {
+      i += 1;
+      while (i < tokens.length && tokens[i]!.startsWith("-")) {
+        const flag = tokens[i]!;
+        i += 1;
+        // sudo flags that consume a following value.
+        if (/^-(?:u|g|p|C|h|U|r|t|T)$/.test(flag) && i < tokens.length) i += 1;
+      }
     }
     const head = tokens[i];
     if (!head) continue;

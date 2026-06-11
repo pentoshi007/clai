@@ -294,6 +294,99 @@ export function scopeHint(target: string | undefined): string {
     : "Run `/scope add <target>` or `clai scope add --targets <target>` to authorize it.";
 }
 
+/**
+ * Classify a raw shell command line into safe / confirm / block. Shared by
+ * shell.exec and shell.start so starting a service/server is as frictionless
+ * as running it inline, while genuinely mutating/destructive commands still
+ * gate behind a confirmation.
+ */
+export function classifyShellCommand(
+  command: string,
+  options: ClassifyOptions = {},
+): RiskDecision {
+  if (destructiveCommandPatterns.some((pattern) => pattern.test(command))) {
+    return {
+      level: "block",
+      reason: "Command matches destructive safety pattern",
+    };
+  }
+  if (exfiltrationPatterns.some((pattern) => pattern.test(command))) {
+    return {
+      level: "block",
+      reason: "Command resembles secret or data exfiltration",
+    };
+  }
+  if (commandTouchesSecretPath(command)) {
+    return {
+      level: "block",
+      reason:
+        "Command references a known secret path (e.g. ~/.ssh, ~/.clai/keys.json, .env)",
+    };
+  }
+  // Pentest scan tools always require confirmation even against private targets
+  if (commandContainsNetworkScanner(command)) {
+    const target = scopeTargetForToolCall({
+      name: "shell.exec",
+      args: { command },
+    });
+    if (
+      target &&
+      (!isScopeActive(options.scope) || !targetInScope(target, options.scope))
+    ) {
+      return {
+        level: "confirm",
+        reason: `Public target scan; scope is optional. ${scopeHint(target)}`,
+      };
+    }
+    return {
+      level: "confirm",
+      reason: "Security scan tool requires confirmation",
+    };
+  }
+  // Run mutation checks BEFORE the read-only base check: sed/find are
+  // read-only bases yet `sed -i` / `find -exec` mutate, and a pipe can hide a
+  // writer like `ls | tee file`.
+  const { base, sub } = baseAndSub(command);
+  const readOnlyBase = isReadOnlyBase(base);
+  const safeSub = isSafeSubcommand(base, sub);
+
+  // Confirm for in-place / state-mutating ARGUMENTS.
+  if (commandHasMutatingArg(command)) {
+    return {
+      level: "confirm",
+      reason:
+        "Command argument mutates state or escapes into another shell (sed -i, awk system(), find -exec/-delete, git config --global, npm config set, docker/kubectl mutators)",
+    };
+  }
+  // Confirm only when a redirection writes to a REAL file (2>/dev/null and
+  // 2>&1 are NOT real writes and auto-run).
+  if (commandWritesOrEscalates(command)) {
+    return {
+      level: "confirm",
+      reason: "Command writes output to a file (redirect to a real path)",
+    };
+  }
+  // Confirm for a base whose job is to install / delete / modify / move / copy
+  // (mv, cp, rm, chmod, package managers, build tools …; sees through sudo).
+  if (commandIsMutating(command)) {
+    return {
+      level: "confirm",
+      reason:
+        "Command installs, deletes, moves, copies, or otherwise modifies state and requires confirmation",
+    };
+  }
+  if (readOnlyBase) {
+    return { level: "safe", reason: "Read-only command" };
+  }
+  if (safeSub) {
+    return { level: "safe", reason: `Read-only ${base} subcommand` };
+  }
+  // Benign read/inspect/run/service-start command — auto-runs. Destructive,
+  // secret-touching, and exfiltration cases were blocked above; mutating
+  // cases were confirmed.
+  return { level: "safe", reason: "Non-mutating command" };
+}
+
 export function classifyToolCall(
   call: ToolCall,
   options: ClassifyOptions = {},
@@ -359,88 +452,7 @@ export function classifyToolCall(
 
   if (call.name === "shell.exec") {
     const command = stringArg(call.args, "command") ?? "";
-    if (destructiveCommandPatterns.some((pattern) => pattern.test(command))) {
-      return {
-        level: "block",
-        reason: "Command matches destructive safety pattern",
-      };
-    }
-    if (exfiltrationPatterns.some((pattern) => pattern.test(command))) {
-      return {
-        level: "block",
-        reason: "Command resembles secret or data exfiltration",
-      };
-    }
-    if (commandTouchesSecretPath(command)) {
-      return {
-        level: "block",
-        reason:
-          "Command references a known secret path (e.g. ~/.ssh, ~/.clai/keys.json, .env)",
-      };
-    }
-    // Pentest scan tools always require confirmation even against private targets
-    if (commandContainsNetworkScanner(command)) {
-      const target = scopeTargetForToolCall(call);
-      if (
-        target &&
-        (!isScopeActive(options.scope) || !targetInScope(target, options.scope))
-      ) {
-        return {
-          level: "confirm",
-          reason: `Public target scan; scope is optional. ${scopeHint(target)}`,
-        };
-      }
-      return {
-        level: "confirm",
-        reason: "Security scan tool requires confirmation",
-      };
-    }
-    // Read-only / info commands auto-execute — but only after we've ruled
-    // out mutating arguments, output redirection, and mutating bases below.
-    // (sed/find are read-only bases yet `sed -i` / `find -exec` mutate, and a
-    // pipe can hide a writer like `ls | tee file`, so the mutation checks must
-    // run first.)
-    const { base, sub } = baseAndSub(command);
-    const readOnlyBase = isReadOnlyBase(base);
-    const safeSub = isSafeSubcommand(base, sub);
-
-    // Confirm for in-place / state-mutating ARGUMENTS (sed -i, find -exec/
-    // -delete, git config --global, npm config set, docker/kubectl mutators).
-    if (commandHasMutatingArg(command)) {
-      return {
-        level: "confirm",
-        reason:
-          "Command argument mutates state or escapes into another shell (sed -i, awk system(), find -exec/-delete, git config --global, npm config set, docker/kubectl mutators)",
-      };
-    }
-    // Confirm for commands that write to disk, escalate privileges, or
-    // substitute a command: output redirection / command substitution / sudo.
-    if (commandWritesOrEscalates(command)) {
-      return {
-        level: "confirm",
-        reason:
-          "Command writes to a file, escalates privileges, or substitutes a command (redirect, $(...), or sudo)",
-      };
-    }
-    // Confirm for a base command whose job is to install / delete / modify /
-    // move / copy (mv, cp, rm, mkdir, chmod, package managers, build tools …).
-    if (commandIsMutating(command)) {
-      return {
-        level: "confirm",
-        reason:
-          "Command installs, deletes, moves, copies, or otherwise modifies state and requires confirmation",
-      };
-    }
-    if (readOnlyBase) {
-      return { level: "safe", reason: "Read-only command" };
-    }
-    if (safeSub) {
-      return { level: "safe", reason: `Read-only ${base} subcommand` };
-    }
-    // Everything else is a benign read/inspect command and runs without a
-    // prompt. Destructive, secret-touching, and exfiltration cases were
-    // already blocked above; mutating cases were already confirmed.
-    return { level: "safe", reason: "Non-mutating command" };
+    return classifyShellCommand(command, options);
   }
 
   if (call.name === "net.scan") {
@@ -583,10 +595,11 @@ export function classifyToolCall(
   }
 
   if (call.name === "shell.start") {
-    return {
-      level: "confirm",
-      reason: "Background job requires confirmation",
-    };
+    // Starting a background program/service should be as frictionless as
+    // running it inline — classify by the command itself (a destructive or
+    // mutating background command still confirms).
+    const command = stringArg(call.args, "command") ?? "";
+    return classifyShellCommand(command, options);
   }
 
   if (
