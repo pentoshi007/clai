@@ -497,6 +497,28 @@ export function sameToolCall(a: ToolCall, b: ToolCall): boolean {
   }
 }
 
+/**
+ * Collapse pathological repetition before a message is stored in history.
+ * Some models degenerate into emitting the same short phrase hundreds of
+ * times ("We need to wait.We need to wait.…"), which otherwise bloats the
+ * context window and wastes tokens on every subsequent turn. We keep a few
+ * copies and note the collapse so the meaning is preserved without the bulk.
+ */
+export function collapseRepeatedText(text: string): string {
+  if (!text || text.length < 1500) return text;
+  try {
+    return text.replace(
+      /(.{3,80}?)\1{6,}/gs,
+      (match: string, unit: string) =>
+        `${unit.repeat(3)} …[repeated ~${Math.round(
+          match.length / Math.max(1, unit.length),
+        )}× — collapsed]`,
+    );
+  } catch {
+    return text;
+  }
+}
+
 /** Extract the text before the tool call block for display purposes */
 function textBeforeToolCall(text: string): string {
   const patterns = [
@@ -628,6 +650,45 @@ export function looksLikeBuildTask(
     }
   }
   return false;
+}
+
+// Matrix of action-verb narration: the model says it is *about to* do
+// something but hasn't. Used to detect "narrate, don't act" stalls.
+const ACTION_NARRATION_RE =
+  /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:explore|list|read|check|inspect|examine|look|create|run|start|write|build|add|scaffold|set\s*up|setup|install|initialize|init|generate|make|review|open|find|search|verify|update|edit|modify|fix|implement)\b/i;
+
+/**
+ * Detect a message that narrates an *upcoming* action ("let me explore the
+ * directory", "I'll create the components") rather than an actual answer or
+ * tool call. Used to catch models that describe intent but emit no tool call,
+ * which would otherwise end the turn with nothing done. A real completion
+ * summary (past tense, longer, or containing a code block) is NOT flagged.
+ */
+export function looksLikeActionNarration(text: string): boolean {
+  const t = text.trim();
+  if (t.length === 0 || t.length > 600) return false;
+  if (t.includes("```")) return false;
+  return ACTION_NARRATION_RE.test(t);
+}
+
+/**
+ * Detect a message that narrates a PLAN as prose ("Goal: … Tasks: 1. … Please
+ * approve the plan") instead of calling plan.create. Such a turn leaves no
+ * real plan, so the user can't /implement it — we nudge the model to emit the
+ * plan.create tool call instead.
+ */
+export function looksLikePlanNarration(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 40) return false;
+  const approval =
+    /\b(?:approve|approval|once approved|request changes|await(?:ing)?\s+(?:your\s+)?approval)\b/i.test(
+      t,
+    );
+  const goal = /\bgoal\b/i.test(t);
+  const tasks =
+    /\b(?:tasks?|steps?)\b/i.test(t) ||
+    /(?:^|\n)\s*(?:t?1[.)]|step\s*1)\b/im.test(t);
+  return approval || (goal && tasks);
 }
 
 export function requiresFreshWebSearch(prompt: string): boolean {
@@ -1210,6 +1271,14 @@ export async function runAgentLoop(
   // executing the next task a bounded number of times before giving up.
   let prematureCompletionRetries = 0;
 
+  // Guard against a model that NARRATES intent ("let me explore the
+  // directory…") but emits no tool call, so nothing runs and the turn ends
+  // prematurely. On build/scaffold/plan turns where nothing has executed yet,
+  // we nudge it to emit a real tool call instead of accepting the narration
+  // as a final answer. Bounded so a model that truly can't emit the format
+  // still terminates.
+  let actionIntentRetries = 0;
+
   // ── Multi-tool execution queue ─────────────────────────────────────
   // Models naturally emit several tool calls in one message — e.g. the
   // plan-execution rhythm "task.update in_progress → do the work →
@@ -1388,7 +1457,10 @@ export async function runAgentLoop(
             "  ⚠ model produced only thinking — nudging it to take action\n",
           ),
         );
-        messages.push({ role: "assistant", content: completion.text });
+        messages.push({
+          role: "assistant",
+          content: collapseRepeatedText(completion.text),
+        });
         const buildNudge =
           buildLikeTurn && !activePlan
             ? "You only produced internal reasoning with no visible answer or tool call. " +
@@ -1562,6 +1634,65 @@ export async function runAgentLoop(
       // Normal final-answer path: strip any stray sentinel tokens that
       // somehow leaked into prose so the answer renders cleanly.
       const cleaned = stripSentinelTokens(assistantText.visible);
+
+      // ── Act, don't narrate ────────────────────────────────────────────
+      // Build/scaffold/plan turns must DO something. If the model returns
+      // prose with NO tool call, it is narrating intent ("Let me first
+      // explore the directory…") or writing a PLAN as prose ("Goal: … Tasks:
+      // … please approve") instead of calling a tool — accepting it as a
+      // final answer ends the turn with nothing done and no real plan saved.
+      // Nudge it to emit a real tool call, with a concrete example.
+      const wantsAction =
+        buildLikeTurn || (activePlan && session.planApproved.value);
+      const planNarrated =
+        buildLikeTurn && !activePlan && looksLikePlanNarration(cleaned);
+      if (
+        wantsAction &&
+        cleaned.trim().length > 0 &&
+        actionIntentRetries < 3 &&
+        (productiveSteps === 0 ||
+          planNarrated ||
+          looksLikeActionNarration(cleaned))
+      ) {
+        actionIntentRetries += 1;
+        let nudge: string;
+        if (activePlan && session.planApproved.value) {
+          nudge =
+            "You wrote a message but emitted NO ```tool block, so NOTHING ran. Do NOT narrate what you will do — DO it. Emit the next tool call now (task.update / fs.writeMany / shell.exec) in a single ```tool block.";
+          process.stdout.write(
+            chalk.yellow(
+              "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
+            ),
+          );
+        } else if (planNarrated || productiveSteps > 0) {
+          // It explored and/or wrote a plan as prose but never called
+          // plan.create — emit the plan as a real tool call so the user gets
+          // a checklist and the /implement gate.
+          nudge =
+            "You wrote the plan as PROSE but did NOT call plan.create, so no plan was saved and the user cannot /implement it. Emit it as a real tool call NOW — exactly one ```tool block:\n" +
+            '```tool\n{"name":"plan.create","args":{"goal":"<short goal>","detail":"<stack/approach and how you\'ll verify>","tasks":["task 1","task 2","task 3"],"kind":"coding"}}\n```\n' +
+            "Do not describe the plan again in prose — just emit the plan.create tool block.";
+          process.stdout.write(
+            chalk.yellow(
+              "  ⚠ plan was written as text, not created — nudging it to call plan.create\n",
+            ),
+          );
+        } else {
+          nudge =
+            "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
+            '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
+            "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+          process.stdout.write(
+            chalk.yellow(
+              "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
+            ),
+          );
+        }
+        messages.push({ role: "assistant", content: assistantText.visible });
+        messages.push(recoveryUserMessage(nudge));
+        continue;
+      }
+
       if (freshWebSearchRequired && !sawFreshWebSearch && !freshnessRetryUsed) {
         freshnessRetryUsed = true;
         process.stdout.write(
@@ -1671,7 +1802,10 @@ export async function runAgentLoop(
           `${renderThinkingSummary(assistantText.thinkContent)}\n`,
         );
       }
-      messages.push({ role: "assistant", content: assistantText.visible });
+      messages.push({
+        role: "assistant",
+        content: collapseRepeatedText(assistantText.visible),
+      });
       if (!recoveredFromBareJson && call) {
         const allCalls = parseAllToolCalls(assistantText.visible);
         if (

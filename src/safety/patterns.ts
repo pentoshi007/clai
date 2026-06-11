@@ -257,6 +257,44 @@ export function commandWritesOrEscalates(command: string): boolean {
 }
 
 /**
+ * A bare version/help probe like `node --version`, `npm -v`, `go version`,
+ * `python3 --version`, `docker --help`. These are read-only even though the
+ * base command (node/npm/go/…) is otherwise a mutating/build tool, so they
+ * must auto-run without a confirmation. We only treat a command as a probe
+ * when its SOLE argument is a version/help token (and there are no
+ * redirects / substitutions / chains that could do more), so `rm -v file` or
+ * `npm version patch` are NOT misread as probes.
+ */
+const VERSION_HELP_TOKEN_RE =
+  /^(?:--version|-version|-v|-V|--versions|version|--help|-help|-h|help|--usage)$/i;
+
+export function isVersionOrHelpProbe(command: string): boolean {
+  if (/[<>`$()]/.test(command)) return false;
+  const segments = command
+    .split(/(?:\|\||&&|;|\|)/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return false;
+  return segments.every((segment) => {
+    const tokens = segment.split(/\s+/);
+    let i = 0;
+    while (i < tokens.length && /^[A-Za-z_][\w]*=.*$/.test(tokens[i]!)) i += 1;
+    if (
+      i < tokens.length &&
+      (tokens[i] === "sudo" ||
+        tokens[i] === "doas" ||
+        tokens[i] === "command" ||
+        tokens[i] === "exec" ||
+        tokens[i] === "time")
+    ) {
+      i += 1;
+    }
+    const args = tokens.slice(i + 1);
+    return args.length === 1 && VERSION_HELP_TOKEN_RE.test(args[0]!);
+  });
+}
+
+/**
  * Split a command line on pipes / chaining operators and report whether ANY
  * segment is a mutating command. A segment is mutating when its base command
  * is in {@link mutatingCommandBases} AND it is not a known read-only

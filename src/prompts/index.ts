@@ -102,6 +102,7 @@ RESILIENT ERROR HANDLING — diagnose, adapt, retry:
 
 BACKGROUND / LONG-RUNNING COMMANDS:
 - Anything that does not exit on its own — dev servers (npm/yarn/pnpm/bun run dev, vite, next dev), HTTP servers (python -m http.server, php -S), listeners (nc -l, socat), watchers (tail -f, nodemon, cargo watch), tunnels (ngrok, ssh -L), docker compose up — must run in the BACKGROUND so it does not block you. Prefer shell.start; if you use shell.exec for such a command it is auto-started in the background and returns a job id. Then use shell.tail to read its output and shell.stop to end it. Never assume a backgrounded server "exited" — it is still running.
+- To CHECK a local server/port (localhost or 127.0.0.1), use curl via shell.exec (e.g. \`curl -sI http://localhost:5173\`) or http.fetch with iOwnThis:true. Do NOT use web.fetch for local addresses — it refuses loopback/private targets by design. Often you do not need to fetch at all: a clean \`npm run build\` plus the dev server's "ready" line in shell.tail is enough proof.
 
 WORKING ON CODE:
 - "build X" / "create X here" / "add Y" means work in the current directory ({{cwd}}). First fs.list and fs.read the files that matter (package.json, config, entry points) to detect and MATCH the existing stack — do not swap tooling unless asked. For a brand-new project, pick a sensible modern default and say which.

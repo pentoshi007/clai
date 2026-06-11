@@ -6,6 +6,7 @@ import {
   destructiveCommandPatterns,
   exfiltrationPatterns,
   isSecretPath,
+  isVersionOrHelpProbe,
   networkScanTools,
   readOnlyShellCommands,
   subcommandSafeMap,
@@ -322,6 +323,11 @@ export function classifyShellCommand(
       reason:
         "Command references a known secret path (e.g. ~/.ssh, ~/.clai/keys.json, .env)",
     };
+  }
+  // A bare version/help probe (node --version, npm -v, go version, docker
+  // --help, even nmap --version) is read-only — auto-run it.
+  if (isVersionOrHelpProbe(command)) {
+    return { level: "safe", reason: "Version/help probe is read-only" };
   }
   // Pentest scan tools always require confirmation even against private targets
   if (commandContainsNetworkScanner(command)) {
