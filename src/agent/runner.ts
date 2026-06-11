@@ -447,6 +447,56 @@ export function countToolFences(text: string): number {
   return matches ? matches.length : 0;
 }
 
+/**
+ * Parse EVERY explicitly-delimited tool call in a message, in document
+ * order. Unlike parseToolCall (which returns only the first), this lets the
+ * runner execute a batch the model emitted in one turn — e.g. the natural
+ * "task.update in_progress → do the work → task.update done" sequence, or
+ * several fs.write calls. Only the unambiguous, delimited formats are
+ * collected (```tool fences, <tool_call> XML, and Kimi sentinel blocks) so a
+ * worked example in prose is far less likely to be mistaken for a call.
+ * The runner executes them sequentially and STOPS the batch on the first
+ * failure so the model can react, mirroring how Claude Code batches reads
+ * and edits but pauses when something breaks.
+ */
+export function parseAllToolCalls(text: string): ToolCall[] {
+  const found: Array<{ index: number; call: ToolCall }> = [];
+  let m: RegExpExecArray | null;
+
+  const fenceRe = /```tool\s*\n?([\s\S]*?)```/gi;
+  while ((m = fenceRe.exec(text)) !== null) {
+    const call = tryParseCall(m[1] ?? "");
+    if (call) found.push({ index: m.index, call });
+  }
+
+  const xmlRe = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
+  while ((m = xmlRe.exec(text)) !== null) {
+    const call = tryParseCall(m[1] ?? "");
+    if (call) found.push({ index: m.index, call });
+  }
+
+  const kimiRe = new RegExp(KIMI_TOOL_CALL_RE.source, "gi");
+  while ((m = kimiRe.exec(text)) !== null) {
+    const call = tryParseCall(
+      JSON.stringify({ name: m[1], args: tryJson(m[2] ?? "{}") ?? {} }),
+    );
+    if (call) found.push({ index: m.index, call });
+  }
+
+  found.sort((a, b) => a.index - b.index);
+  return found.map((f) => f.call);
+}
+
+/** Structural equality for two tool calls (name + canonical args JSON). */
+export function sameToolCall(a: ToolCall, b: ToolCall): boolean {
+  if (a.name !== b.name) return false;
+  try {
+    return JSON.stringify(a.args) === JSON.stringify(b.args);
+  } catch {
+    return false;
+  }
+}
+
 /** Extract the text before the tool call block for display purposes */
 function textBeforeToolCall(text: string): string {
   const patterns = [
@@ -624,7 +674,8 @@ function freshnessGuardMessage(now = new Date()): string {
     `Freshness guard for this turn: the latest user prompt appears to ask for current, volatile, or externally verifiable information. The present moment is ${currentDateTimeContext(now)}. ` +
     "Before answering, call web.search FIRST with a concise query derived from the user prompt. " +
     "Shape the search query for the newest timeline by including current/latest or the current year/month when useful. " +
-    "Use the search results to answer. If web.search fails or has no results, say that current information is unavailable instead of guessing from memory."
+    "Do not answer from the snippets alone when detail matters — set fetchTop (e.g. fetchTop:2) to read the top result pages, or follow up with web.fetch on the most relevant URL, then answer from what the pages actually say and cite them. " +
+    "If web.search fails or has no results, say that current information is unavailable instead of guessing from memory."
   );
 }
 
@@ -639,7 +690,7 @@ function buildWorkflowDirective(): string {
     "1. EXPLORE: fs.list the working directory (and key subdirs) to see what already exists. Use tool.batch to parallelize reads.",
     "2. UNDERSTAND: fs.read the files that matter (like package.json for js related and same for other languages too, config, entry points, existing components). Detect the existing stack/tooling and MATCH it. If the dir is empty or only has a stub, start fresh with a sensible modern default and say so.",
     "3. PLAN: call plan.create with a COMPREHENSIVE plan — a detailed `detail` (stack chosen and WHY, architecture, how you'll verify) and 4-8 SEPARATE, ordered, high-quality tasks. The FIRST task initializes the project (scaffolder); the MIDDLE tasks MUST implement the ACTUAL FEATURE the user asked for by REPLACING the scaffolder's boilerplate (e.g. rewrite src/App.jsx into the real todo/blog/etc. UI, add components, state, styles); the LAST task verifies with a build. Scaffolding + install + run ALONE is NOT acceptable — that just leaves the Vite starter page. Each task is one distinct, verifiable action. Then STOP and wait for the user to /implement.",
-    "4. IMPLEMENT: once approved, work task by task in STRICT ORDER across MULTIPLE steps, ONE tool call per turn. For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it actually succeeded (read a file you wrote, check the command's exit/output) → call task.update {taskId, state:'done'}, then move to the NEXT task. Keep going until EVERY task is done. Do NOT stop after one step, and do NOT claim work you didn't actually run.",
+    "4. IMPLEMENT: once approved, work task by task in STRICT ORDER. For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it actually succeeded (read a file you wrote, check the command's exit/output) → call task.update {taskId, state:'done'}, then move to the NEXT task. You MAY emit several tool calls in one message and they run in order, top to bottom (the batch STOPS if one fails). A clean rhythm is: task.update in_progress + the work + task.update done together. Keep going until EVERY task is done. Do NOT claim work you didn't actually run.",
     "",
     "INITIALIZE WITH THE OFFICIAL SCAFFOLDER FIRST (do NOT hand-write build configs):",
     "- React/Vue/Svelte/vanilla → `npm create vite@latest <appname> -- --template react` (templates: react, react-ts, vue, vue-ts, svelte, vanilla). Next.js → `npx --yes create-next-app@latest <appname> --yes --eslint --no-tailwind --app --src-dir --import-alias \"@/*\"`. Node API → `npm init -y`.",
@@ -649,7 +700,7 @@ function buildWorkflowDirective(): string {
     "- VERIFY the init actually worked before marking the task done: fs.read package.json (it must now exist AND list react + react-dom) and fs.read index.html (it must reference your jsx entry). 'Operation cancelled' / non-zero exit means the task FAILED — do not proceed as if it succeeded.",
     "",
     "CRITICAL RULES during IMPLEMENTATION:",
-    "- EXACTLY ONE ```tool block per message. NEVER put several tool calls (e.g. fs.writeMany + npm install + npm run dev) in one response — only the first runs and the rest are silently discarded, which is how false 'all done' claims happen.",
+    "- You may batch tool calls: emit one or several ```tool blocks in a message and they run in order, top to bottom. If any call fails, the rest of that batch is cancelled so you can react — so order dependent steps correctly and keep batches focused. A good batch is task.update(in_progress) + the work + task.update(done) for ONE task.",
     "- Do NOT re-explore. Step 1 (EXPLORE) was already completed during planning. Start executing the first pending task immediately.",
     "- ONE task at a time, in ORDER. Do NOT skip ahead to task 3 before task 2 is done.",
     "- KEEP EACH FILE SMALL ENOUGH TO WRITE IN ONE CALL. If a fs.write is reported as 'cut off (output too long)', the file was NOT fully written and is likely broken/invalid — re-write it, splitting a large component into smaller files if needed. NEVER leave a half-written file and move on.",
@@ -1159,6 +1210,18 @@ export async function runAgentLoop(
   // executing the next task a bounded number of times before giving up.
   let prematureCompletionRetries = 0;
 
+  // ── Multi-tool execution queue ─────────────────────────────────────
+  // Models naturally emit several tool calls in one message — e.g. the
+  // plan-execution rhythm "task.update in_progress → do the work →
+  // task.update done", or a batch of fs.write calls. Rather than running
+  // only the first and discarding the rest (which made models believe work
+  // ran when it didn't, and broke plan execution), we parse ALL calls in a
+  // message, run the first this iteration, and queue the rest here to run on
+  // subsequent iterations WITHOUT another model round-trip. The queue is
+  // cleared whenever a call fails, is blocked, or needs the model to react,
+  // so the model always sees errors and stays in control.
+  let pendingCalls: ToolCall[] = [];
+
   // ── Step budget ───────────────────────────────────────────────────
   // The budget governs how many *productive* steps (a tool execution or a
   // final answer) the agent may take. Recovery iterations — nudging a model
@@ -1202,6 +1265,25 @@ export async function runAgentLoop(
     step = productiveSteps;
     if (productiveSteps >= stepBudget) break;
     options.signal?.throwIfAborted();
+
+    // `call` and `assistantText` are shared by both paths below: a fresh
+    // model round-trip, or draining a previously-queued tool call.
+    let call: ToolCall | undefined;
+    let assistantText: { visible: string; thinkContent: string; hasThinking: boolean };
+    let recoveredFromBareJson = false;
+
+    if (pendingCalls.length > 0) {
+      // Drain the next queued call from the previous model message — no new
+      // round-trip. The assistant message and any prose were already shown
+      // when the batch was parsed.
+      call = pendingCalls.shift()!;
+      assistantText = { visible: "", thinkContent: "", hasThinking: false };
+      process.stdout.write(
+        chalk.dim(
+          `  ↳ continuing batch (${pendingCalls.length} more queued)\n`,
+        ),
+      );
+    } else {
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
     // Status messages (rate-limit retries, fallback hints) still surface live.
     // A spinner gives the user feedback during long thinking phases on
@@ -1269,13 +1351,14 @@ export async function runAgentLoop(
     provider = completion.provider;
     model = completion.model;
 
-    const assistantText = rememberThinkingFromText(completion.text);
+    const assistantTextResult = rememberThinkingFromText(completion.text);
+    assistantText = assistantTextResult;
 
     // Try visible text first, then thinking content — some models (e.g. glm-5.1)
     // wrap tool calls inside  considering tags, so stripThinking removes them
     // into thinkContent and visible becomes empty. Recovering from thinkContent
     // prevents an endless nudge loop where the model keeps hiding the call.
-    let call = parseToolCall(assistantText.visible, {
+    call = parseToolCall(assistantText.visible, {
       strict: getConfig().parserStrict,
     });
     if (!call && assistantText.hasThinking) {
@@ -1335,7 +1418,7 @@ export async function runAgentLoop(
     // {"path":"file.pdf"} with the wrapper dropped (nudge a retry below so
     // the requested action runs instead of the JSON leaking as the answer).
     let bareArgsOnly = false;
-    let recoveredFromBareJson = false;
+    recoveredFromBareJson = false;
     if (!call) {
       const bare = recognizeBareToolJson(assistantText.visible);
       if (bare?.call) {
@@ -1573,6 +1656,42 @@ export async function runAgentLoop(
       return lastAnswer;
     }
 
+      // A valid primary tool call exists for this fresh model turn. Show any
+      // prose / thinking that preceded it, record the assistant message ONCE,
+      // then queue any additional tool calls from the same message so they
+      // run in order on the next iterations (no extra round-trip).
+      const beforeTool = recoveredFromBareJson
+        ? ""
+        : textBeforeToolCall(assistantText.visible);
+      if (beforeTool) {
+        process.stdout.write(renderMarkdown(beforeTool) + "\n");
+      }
+      if (assistantText.hasThinking) {
+        process.stdout.write(
+          `${renderThinkingSummary(assistantText.thinkContent)}\n`,
+        );
+      }
+      messages.push({ role: "assistant", content: assistantText.visible });
+      if (!recoveredFromBareJson && call) {
+        const allCalls = parseAllToolCalls(assistantText.visible);
+        if (
+          allCalls.length > 1 &&
+          allCalls[0] &&
+          sameToolCall(allCalls[0], call)
+        ) {
+          pendingCalls = allCalls.slice(1);
+          process.stdout.write(
+            chalk.dim(
+              `  ℹ ${allCalls.length} tool calls in this message — running them in order\n`,
+            ),
+          );
+        }
+      }
+    }
+
+    // Type guard: every path above either set `call` or returned/continued.
+    if (!call) continue;
+
     // ── Duplicate-call detection ──────────────────────────────────────────
     // If the model calls the exact same tool with the exact same args
     // repeatedly, it's stuck in a loop. Inject a corrective message
@@ -1588,7 +1707,9 @@ export async function runAgentLoop(
           `  ⚠ ${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}\n`,
         ),
       );
-      messages.push({ role: "assistant", content: assistantText.visible });
+      // A repeat means this batch went off the rails — drop any queued calls
+      // and let the model react. The assistant message was already recorded.
+      pendingCalls = [];
       messages.push({
         role: "user",
         content: isWrite
@@ -1604,36 +1725,6 @@ export async function runAgentLoop(
       process.stdout.write(chalk.dim(`  ℹ ${loopCheck.reason}\n`));
     }
 
-    // Print only non-thinking text before the tool call. When the call was
-    // recovered from a bare JSON object (the whole message WAS the call),
-    // there is no prose to show — skip it so we don't echo the raw JSON.
-    const beforeTool = recoveredFromBareJson
-      ? ""
-      : textBeforeToolCall(assistantText.visible);
-    if (beforeTool) {
-      process.stdout.write(renderMarkdown(beforeTool) + "\n");
-    }
-    if (assistantText.hasThinking) {
-      process.stdout.write(
-        `${renderThinkingSummary(assistantText.thinkContent)}\n`,
-      );
-    }
-
-    messages.push({ role: "assistant", content: assistantText.visible });
-
-    // Detect a model that crammed MULTIPLE tool calls into one response.
-    // Only `call` (the first block) will run this turn; the rest are dropped.
-    // We flag it so that after the first tool executes we explicitly tell the
-    // model the others did NOT run — preventing the "I ran everything" lie.
-    const extraToolBlocks = Math.max(0, countToolFences(assistantText.visible) - 1);
-    if (extraToolBlocks > 0) {
-      process.stdout.write(
-        chalk.yellow(
-          `  ⚠ ${extraToolBlocks} extra tool block(s) in one message were ignored — only the first ran. One tool per turn.\n`,
-        ),
-      );
-    }
-
     // ── Plan / task tools (session-scoped, handled inline) ─────────────
     // These don't go through the generic registry because they need the
     // session id and mutate the live plan that the user can view (Ctrl+P).
@@ -1646,6 +1737,9 @@ export async function runAgentLoop(
         productiveSteps += 1;
         loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
         process.stdout.write(planResult.display);
+        // plan.create means "STOP and wait for /implement" — abandon any
+        // other calls the model batched alongside it.
+        if (call.name === "plan.create") pendingCalls = [];
         messages.push({
           role: "tool",
           content: `Tool ${call.name} result (ok=${planResult.ok}):\n${planResult.modelNote}`,
@@ -1681,6 +1775,7 @@ export async function runAgentLoop(
           `  ⚠ plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)\n`,
         ),
       );
+      pendingCalls = [];
       messages.push({
         role: "user",
         content:
@@ -1855,6 +1950,17 @@ export async function runAgentLoop(
         toolError instanceof Error ? toolError.message : String(toolError);
       result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
     }
+    // Stop-on-error: if this call failed, abandon any remaining queued calls
+    // from the same message so the model sees the failure and decides what to
+    // do next instead of blindly running steps that depended on it.
+    if (!result.ok && pendingCalls.length > 0) {
+      process.stdout.write(
+        chalk.dim(
+          `  ↳ ${pendingCalls.length} queued call(s) cancelled because this step failed\n`,
+        ),
+      );
+      pendingCalls = [];
+    }
     const output = result.output.trim();
     const displayMax = 6_000;
     // If the tool already produced an artifact (shell.exec now streams to one
@@ -1994,11 +2100,7 @@ export async function runAgentLoop(
     }
     messages.push({
       role: "tool",
-      content:
-        `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}` +
-        (extraToolBlocks > 0
-          ? `\n\nIMPORTANT: your previous message contained ${extraToolBlocks + 1} tool blocks, but ONLY this first one (${call.name}) actually ran. The other ${extraToolBlocks} did NOT execute and were discarded. Emit EXACTLY ONE tool block per message. Send the next tool call now — and do NOT assume any of the dropped calls happened.`
-          : ""),
+      content: `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}`,
     });
     // Compact older messages when the running estimate exceeds budget so
     // free-tier context windows are not blown by long pentest sessions.

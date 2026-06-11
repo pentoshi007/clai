@@ -257,8 +257,35 @@ function looksLikePrivilegeError(output: string): boolean {
 
 export const toolRegistry: Record<string, ToolHandler> = {
   async "shell.exec"(args, options) {
+    const command = requireString(args, "command");
+    // Cross-OS non-blocking safety net: servers, watchers, and listeners
+    // (npm run dev, vite, python -m http.server, nc -l, docker compose up,
+    // tail -f, …) would otherwise block the agent's main thread until the
+    // command's timeout — exactly the "I have to Ctrl+C" problem. Route them
+    // to the background job manager (a detached child process on
+    // macOS/Linux, a normal child on Windows) so the agent gets a job id
+    // back immediately and can inspect output with shell.tail / shell.jobs.
+    // The model is still encouraged to use shell.start directly; this just
+    // catches the common mistake of using shell.exec for a server.
+    if (looksLongRunning(command)) {
+      const job = await jobManager.startJob(command, {
+        cwd: optionalString(args, "cwd"),
+      });
+      if (job.ok) {
+        return {
+          ...job,
+          output:
+            `${job.output}\n\n` +
+            "This command keeps running, so it was started in the BACKGROUND (a separate process) " +
+            "instead of blocking. It is NOT finished — use shell.tail {\"id\":\"<id>\"} to read its " +
+            "output, shell.jobs to list jobs, and shell.stop {\"id\":\"<id>\"} to stop it. " +
+            "Do NOT wait on it or claim it exited.",
+        };
+      }
+      return job;
+    }
     return shellExec({
-      command: requireString(args, "command"),
+      command,
       cwd: optionalString(args, "cwd"),
       timeoutMs: optionalNumber(args, "timeoutMs"),
       signal: options?.signal,
@@ -363,15 +390,54 @@ export const toolRegistry: Record<string, ToolHandler> = {
     });
   },
   async "web.search"(args, options) {
-    return webSearch(
+    const query = requireString(args, "query");
+    const maxResults = optionalNumber(args, "maxResults");
+    const result = await webSearch(
       {
-        query: requireString(args, "query"),
-        ...(optionalNumber(args, "maxResults") !== undefined
-          ? { maxResults: optionalNumber(args, "maxResults") as number }
-          : {}),
+        query,
+        ...(maxResults !== undefined ? { maxResults } : {}),
       },
       { ...(options?.signal ? { signal: options.signal } : {}) },
     );
+
+    // "Search and read" — like a human (or Claude) following the most
+    // relevant links. When fetchTop is set, fetch the readable content of the
+    // top N result pages and append it so the agent gets real page text in a
+    // SINGLE call instead of only snippets. Capped to 3 pages to stay fast and
+    // keep context lean.
+    const fetchTop = optionalNumber(args, "fetchTop");
+    const want = fetchTop ? Math.max(0, Math.min(3, Math.floor(fetchTop))) : 0;
+    if (!result.ok || want === 0) return result;
+
+    const urls = extractResultUrls(result.output).slice(0, want);
+    if (urls.length === 0) return result;
+
+    const pages = await Promise.all(
+      urls.map(async (url) => {
+        try {
+          const page = await webFetch(
+            { url, responseMode: "readable", includeHeaders: false },
+            { ...(options?.signal ? { signal: options.signal } : {}) },
+          );
+          const text = page.output.trim();
+          // Keep each appended page modest so several fit within the model's
+          // tool-output budget. For the full text of one page, the model can
+          // call web.fetch on that single URL (it then gets the larger cap).
+          const capped =
+            text.length > 3500
+              ? `${text.slice(0, 3500)}\n…[truncated — call web.fetch on this url for the full page]`
+              : text;
+          return `── PAGE: ${url} ${page.ok ? "" : "(fetch failed)"}\n${capped}`;
+        } catch (error) {
+          return `── PAGE: ${url} (fetch error: ${error instanceof Error ? error.message : String(error)})`;
+        }
+      }),
+    );
+
+    return {
+      ...result,
+      output: `${result.output}\n\n${pages.join("\n\n")}`,
+    };
   },
   async "web.fetch"(args, options) {
     const url = requireString(args, "url");
@@ -623,6 +689,31 @@ export const toolRegistry: Record<string, ToolHandler> = {
 
 export function availableToolNames(): string[] {
   return Object.keys(toolRegistry);
+}
+
+/**
+ * Pull the result URLs out of a web.search success output. The output is a
+ * one-line summary followed by a JSON `{ results: [{url, ...}] }` block; we
+ * parse from the first brace. Falls back to a regex scan if JSON parsing
+ * fails so a slightly different shape still yields fetchable URLs.
+ */
+export function extractResultUrls(output: string): string[] {
+  const brace = output.indexOf("{");
+  if (brace >= 0) {
+    try {
+      const parsed = JSON.parse(output.slice(brace)) as {
+        results?: Array<{ url?: unknown }>;
+      };
+      const urls = (parsed.results ?? [])
+        .map((r) => (typeof r.url === "string" ? r.url : ""))
+        .filter((u) => u.startsWith("http://") || u.startsWith("https://"));
+      if (urls.length > 0) return urls;
+    } catch {
+      // fall through to regex
+    }
+  }
+  const matches = output.match(/https?:\/\/[^\s"]+/g);
+  return matches ? matches.map((u) => u.replace(/[",]+$/, "")) : [];
 }
 
 export async function runToolCall(

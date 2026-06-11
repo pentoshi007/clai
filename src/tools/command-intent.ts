@@ -5,9 +5,9 @@
  */
 
 const LONG_RUNNING_PATTERNS: RegExp[] = [
-  // Listeners / bind shells
-  /\bnc\s+.*-l\b/i,
-  /\bncat\s+.*-l\b/i,
+  // Listeners / bind shells. Match nc/ncat with a listen flag in any flag
+  // cluster form: -l, -lvnp, -nvlp, -p 4444 -l, etc.
+  /\bnc(?:at)?\b[^|&;\n]*\s-[a-z]*l/i,
   /\bsocat\b.*\bLISTEN\b/i,
 
   // Python HTTP servers

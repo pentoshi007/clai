@@ -56,7 +56,7 @@ import {
   createThinkingStreamParser,
   getLastThinking,
   rememberThinkingFromText,
-  renderThinkingBlock,
+  renderAllThinking,
   renderThinkingSummary,
   renderThinkingToggleMessage,
 } from "./ui/thinking.js";
@@ -579,6 +579,7 @@ function terminalColumns(): number {
 }
 
 function promptCursorPosition(
+  line: string,
   cursor: number,
   columns: number,
 ): {
@@ -586,11 +587,26 @@ function promptCursorPosition(
   col: number;
 } {
   const cols = Math.max(1, columns);
-  const visible = promptColumnsForRender() + cursor;
-  return {
-    row: Math.floor(visible / cols),
-    col: visible % cols,
-  };
+  const promptCols = promptColumnsForRender();
+  // Walk the buffer up to the cursor, advancing visual row/col. Newlines
+  // (from a multi-line paste) move to the next row at column 0; otherwise we
+  // wrap when a row fills. The prompt only offsets the very first row.
+  let row = 0;
+  let col = promptCols < cols ? promptCols : 0;
+  const end = Math.max(0, Math.min(cursor, line.length));
+  for (let i = 0; i < end; i += 1) {
+    if (line[i] === "\n") {
+      row += 1;
+      col = 0;
+      continue;
+    }
+    col += 1;
+    if (col >= cols) {
+      row += 1;
+      col = 0;
+    }
+  }
+  return { row, col };
 }
 
 function promptColumnsForRender(): number {
@@ -606,23 +622,31 @@ function buildPromptRows(
   const promptCols = promptColumnsForRender();
   const rows: string[] = [];
 
-  if (promptCols >= cols) {
-    // The normal prompt is short; for extremely narrow terminals, keep the
-    // editable text on rows beneath the prompt anchor.
-    rows.push(PROMPT);
-    for (let i = 0; i < line.length; i += cols) {
-      rows.push(line.slice(i, i + cols));
+  // Split on explicit newlines first (multi-line paste), then wrap each
+  // logical line by the terminal width. Only the first logical line carries
+  // the prompt prefix; continuation lines start at column 0.
+  const logicalLines = line.split("\n");
+  logicalLines.forEach((logical, li) => {
+    const prefix = li === 0 ? PROMPT : "";
+    const prefixCols = li === 0 ? promptCols : 0;
+    if (prefixCols >= cols) {
+      rows.push(prefix);
+      for (let i = 0; i < logical.length; i += cols) {
+        rows.push(logical.slice(i, i + cols));
+      }
+    } else {
+      const firstRowCapacity = cols - prefixCols;
+      rows.push(prefix + logical.slice(0, firstRowCapacity));
+      for (let i = firstRowCapacity; i < logical.length; i += cols) {
+        rows.push(logical.slice(i, i + cols));
+      }
     }
-  } else {
-    const firstRowCapacity = cols - promptCols;
-    rows.push(PROMPT + line.slice(0, firstRowCapacity));
-    for (let i = firstRowCapacity; i < line.length; i += cols) {
-      rows.push(line.slice(i, i + cols));
-    }
-  }
+  });
 
   if (includeCursorRow) {
-    const cursorRows = Math.floor((promptCols + line.length) / cols) + 1;
+    // Pad so the row the cursor will sit on exists even at exact width
+    // boundaries or after a trailing newline.
+    const cursorRows = promptCursorPosition(line, line.length, cols).row + 1;
     while (rows.length < cursorRows) rows.push("");
   }
 
@@ -645,6 +669,13 @@ async function readPromptLine(options: {
     let historyIndex: number | null = null;
     let historyDraft = "";
     let lastCtrlCAt = 0;
+    // Bracketed-paste state. When the terminal wraps a paste in
+    // paste-start/paste-end markers, we buffer the whole paste (including
+    // its embedded newlines) and insert it as literal text — so a multi-line
+    // prompt is captured in full instead of the first newline submitting and
+    // dropping the rest.
+    let pasting = false;
+    let pasteBuffer = "";
 
     // Track which row (relative to prompt start) the cursor is on.
     // Needed to move back up to prompt start when text wraps across rows.
@@ -727,7 +758,7 @@ async function readPromptLine(options: {
             )
           : [];
       const promptRows = buildPromptRows(line, cols, true);
-      const target = promptCursorPosition(cursor, cols);
+      const target = promptCursorPosition(line, cursor, cols);
       const blockRows = [...promptRows, ...menuLines];
 
       // Always redraw the whole prompt block from its anchor. Partial row
@@ -762,8 +793,26 @@ async function readPromptLine(options: {
       refresh();
     };
 
+    // Insert literal text (e.g. a multi-line paste) at the cursor, preserving
+    // newlines so the full pasted prompt is kept and later submitted intact.
+    const insertText = (text: string): void => {
+      const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      if (!normalized) return;
+      line = line.slice(0, cursor) + normalized + line.slice(cursor);
+      cursor += normalized.length;
+      selectedIndex = 0;
+      menuNavigated = false;
+      dismissedSlashLine = null;
+      mentionDismissed = false;
+      historyIndex = null;
+      refresh();
+    };
+
     const cleanup = (restoreInput = false): void => {
       input.off("keypress", handleKeypress);
+      // Leave bracketed-paste mode so the terminal isn't left in a special
+      // state during tool execution or after exit.
+      if (input.isTTY) output.write("\x1b[?2004l");
       if (restoreInput) {
         input.pause();
         if (input.isTTY) input.setRawMode(false);
@@ -805,6 +854,35 @@ async function readPromptLine(options: {
       // The alt-screen pager owns the terminal while open; ignore everything
       // here so the user's navigation keys don't bleed into the input line.
       if (isPagerActive()) return;
+
+      // ── Bracketed paste ───────────────────────────────────────────────
+      // The terminal brackets a paste with paste-start / paste-end markers.
+      // Buffer everything in between (including embedded newlines) and insert
+      // it literally, so a long multi-line prompt is captured in full and the
+      // first newline does not submit early.
+      if (key?.name === "paste-start") {
+        pasting = true;
+        pasteBuffer = "";
+        return;
+      }
+      if (key?.name === "paste-end") {
+        pasting = false;
+        const pasted = pasteBuffer;
+        pasteBuffer = "";
+        if (pasted) insertText(pasted);
+        return;
+      }
+      if (pasting) {
+        if (key?.name === "return" || key?.name === "enter") {
+          pasteBuffer += "\n";
+        } else if (key?.name === "tab") {
+          pasteBuffer += "\t";
+        } else if (isPrintableSequence(sequence)) {
+          pasteBuffer += sequence;
+        }
+        return;
+      }
+
       const menu = getMenuState();
       const mention = menu.visible
         ? {
@@ -1031,7 +1109,13 @@ async function readPromptLine(options: {
     }
 
     output.write(PROMPT);
-    if (input.isTTY) input.setRawMode(true);
+    if (input.isTTY) {
+      input.setRawMode(true);
+      // Enable bracketed paste so multi-line pastes arrive as one chunk
+      // (wrapped in paste-start/paste-end) instead of submitting at the
+      // first embedded newline.
+      output.write("\x1b[?2004h");
+    }
     input.resume();
     input.on("keypress", handleKeypress);
   });
@@ -2141,9 +2225,8 @@ async function handleSlash(
     }
     case "/think":
     case "/thinking": {
-      const thinking = getLastThinking();
-      if (thinking) {
-        console.log(renderThinkingBlock(thinking));
+      if (getLastThinking()) {
+        console.log(renderAllThinking());
       } else {
         console.log(chalk.dim("  No thinking from last response."));
       }

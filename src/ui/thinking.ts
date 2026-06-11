@@ -7,6 +7,7 @@ export interface ThinkingResult {
 }
 
 let lastThinkContent = "";
+let thinkingBlocks: string[] = [];
 let thinkingVisible = false;
 
 function trimBlocks(blocks: string[]): string {
@@ -42,7 +43,14 @@ export function stripThinking(text: string): ThinkingResult {
 
 export function rememberThinking(content: string): void {
   const trimmed = content.trim();
-  if (trimmed) lastThinkContent = trimmed;
+  if (!trimmed) return;
+  lastThinkContent = trimmed;
+  // Keep every block of the current response so Ctrl+T can expand them all,
+  // not just the most recent one. Avoid pushing an exact duplicate of the
+  // previous block (some providers re-emit the same reasoning on a retry).
+  if (thinkingBlocks[thinkingBlocks.length - 1] !== trimmed) {
+    thinkingBlocks.push(trimmed);
+  }
 }
 
 export function rememberThinkingFromText(text: string): ThinkingResult {
@@ -53,10 +61,16 @@ export function rememberThinkingFromText(text: string): ThinkingResult {
 
 export function clearThinking(): void {
   lastThinkContent = "";
+  thinkingBlocks = [];
 }
 
 export function getLastThinking(): string {
   return lastThinkContent;
+}
+
+/** Every reasoning block captured for the current/last response, in order. */
+export function getAllThinking(): string[] {
+  return thinkingBlocks;
 }
 
 export function isThinkingVisible(): boolean {
@@ -68,20 +82,75 @@ export function toggleThinkingVisibility(): boolean {
   return thinkingVisible;
 }
 
-export function renderThinkingBlock(content = lastThinkContent): string {
-  const contentIndented = content
-    .split("\n")
-    .map((l) => `  ${l}`)
+/** Terminal width, clamped to a sensible band for the thinking frame. */
+function frameWidth(): number {
+  const cols = process.stdout.columns ?? 80;
+  return Math.max(40, Math.min(cols - 2, 100));
+}
+
+/** Soft-wrap a paragraph to `width` columns without breaking mid-word. */
+function wrapText(text: string, width: number): string[] {
+  const out: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.replace(/\s+$/g, "");
+    if (line.length === 0) {
+      out.push("");
+      continue;
+    }
+    let current = "";
+    for (const word of line.split(/\s+/)) {
+      if (current.length === 0) {
+        current = word;
+      } else if (current.length + 1 + word.length <= width) {
+        current += ` ${word}`;
+      } else {
+        out.push(current);
+        current = word;
+      }
+      // Hard-break a single word longer than the line width.
+      while (current.length > width) {
+        out.push(current.slice(0, width));
+        current = current.slice(width);
+      }
+    }
+    if (current.length > 0) out.push(current);
+  }
+  return out;
+}
+
+/**
+ * Render one reasoning block as a framed, dimmed-italic panel. An optional
+ * label (e.g. "1/3") is shown in the header so multiple blocks are
+ * distinguishable when expanded together.
+ */
+export function renderThinkingBlock(
+  content = lastThinkContent,
+  label?: string,
+): string {
+  const width = frameWidth();
+  const headerText = label ? `thinking ${label}` : "thinking";
+  const header = `╭─ ${headerText} ` + "─".repeat(Math.max(0, width - headerText.length - 4));
+  const footer = "╰" + "─".repeat(Math.max(0, width - 1));
+  const body = wrapText(content, width - 4).map(
+    (l) => chalk.dim("│ ") + chalk.dim.italic(l),
+  );
+  return [chalk.dim(`  ${header}`), ...body.map((l) => `  ${l}`), chalk.dim(`  ${footer}`)].join(
+    "\n",
+  );
+}
+
+/** Render every reasoning block of the current/last response, expanded. */
+export function renderAllThinking(): string {
+  const blocks = thinkingBlocks.length > 0 ? thinkingBlocks : lastThinkContent ? [lastThinkContent] : [];
+  if (blocks.length === 0) return chalk.dim("  No thinking from the last response.");
+  if (blocks.length === 1) return renderThinkingBlock(blocks[0]!);
+  return blocks
+    .map((block, i) => renderThinkingBlock(block, `${i + 1}/${blocks.length}`))
     .join("\n");
-  return [
-    chalk.dim("  --- thinking -----------------------------------"),
-    chalk.dim(contentIndented),
-    chalk.dim("  -----------------------------------------------"),
-  ].join("\n");
 }
 
 export function renderThinkingHiddenNotice(): string {
-  return chalk.dim("  [thinking hidden - Ctrl+T to show]");
+  return chalk.dim("  ▸ thinking collapsed — Ctrl+T to expand");
 }
 
 export function renderThinkingSummary(content: string): string {
@@ -90,9 +159,11 @@ export function renderThinkingSummary(content: string): string {
 
 export function renderThinkingToggleMessage(): string {
   const visible = toggleThinkingVisibility();
-  if (lastThinkContent && visible) return renderThinkingBlock(lastThinkContent);
-  if (lastThinkContent) return chalk.dim("  thinking hidden");
-  return chalk.dim(`  thinking ${visible ? "will be shown" : "will be hidden"}`);
+  if (visible) {
+    if (thinkingBlocks.length > 0 || lastThinkContent) return renderAllThinking();
+    return chalk.dim("  ▾ thinking expanded — reasoning will show inline as it happens");
+  }
+  return chalk.dim("  ▸ thinking collapsed — reasoning hidden");
 }
 
 export function createThinkingStreamParser(

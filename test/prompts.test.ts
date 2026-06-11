@@ -10,10 +10,10 @@ import {
 } from "../src/prompts/index.js";
 
 describe("prompt rendering", () => {
-  it("ask prompt contains /ask mode instruction", () => {
+  it("ask prompt contains ask-mode, no-execute instruction", () => {
     const prompt = renderAskSystemPrompt();
-    expect(prompt).toContain("/ask mode");
-    expect(prompt).toContain("Do NOT execute");
+    expect(prompt).toContain("ask mode");
+    expect(prompt).toContain("NOT execute anything");
   });
 
   it("ask prompt includes OS info and current date/time", () => {
@@ -22,7 +22,7 @@ describe("prompt rendering", () => {
     expect(prompt).not.toContain("{{os}}");
     expect(prompt).not.toContain("{{shell}}");
     expect(prompt).not.toContain("{{datetime}}");
-    expect(prompt).toContain("Current date/time:");
+    expect(prompt).toContain("(ISO:");
   });
 
   it("agent prompt includes tool list", () => {
@@ -43,17 +43,19 @@ describe("prompt rendering", () => {
 
   it("agent prompt contains pentesting authorization reminder", () => {
     const prompt = renderAgentSystemPrompt("net.scan");
-    expect(prompt).toContain("proper authorization");
+    expect(prompt).toContain("responsible for authorization");
   });
 
-  it("agent prompt discourages stale data and vague tool summaries", () => {
+  it("agent prompt enforces honesty and current-info behavior", () => {
     const prompt = renderAgentSystemPrompt("shell.exec");
-    expect(prompt).toContain("Do not invent volatile live data");
-    expect(prompt).toContain("office holders");
-    expect(prompt).toContain("If your knowledge may be stale");
-    expect(prompt).toContain("newest timeline");
-    expect(prompt).toContain("summarize concrete findings");
-    expect(prompt).toContain("For ffuf");
+    // Anti-fabrication is the headline rule of the rewritten prompt.
+    expect(prompt).toContain("HONESTY");
+    expect(prompt).toContain("fabricated success");
+    expect(prompt).toContain("report ONLY what the tool output actually showed");
+    // Still steers to live data and concrete summaries.
+    expect(prompt).toContain("web.search");
+    expect(prompt).toContain("current/volatile facts");
+    expect(prompt).toContain("summarize the concrete findings");
   });
 
   it("formats date/time context with an ISO timestamp", () => {
