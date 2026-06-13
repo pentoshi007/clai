@@ -33,8 +33,18 @@ import { searchProviders } from "./provider.js";
 /** Endpoint for DuckDuckGo's keyless lite-HTML search. */
 const ENDPOINT = "https://html.duckduckgo.com/html/";
 
-/** User-Agent sent on the outbound DDG request. */
-const USER_AGENT = "clai-web-search/1.0";
+/**
+ * User-Agent sent on the outbound DDG request.
+ *
+ * DuckDuckGo's html/lite endpoints anti-bot-challenge obvious
+ * non-browser agents (replying HTTP 202 with a non-results page), so
+ * we present a current desktop-browser UA to reduce the challenge rate.
+ * Note this is best-effort: DDG also throttles by source IP, so on a
+ * blocked network a keyed provider (Brave / Tavily) is the reliable
+ * path.
+ */
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /**
  * Inject point for the underlying HTTPS transport. Mirrors the seam in
@@ -99,6 +109,7 @@ function httpsGetText(url: string, signal: AbortSignal): Promise<FetchedHtml> {
           headers: {
             "user-agent": USER_AGENT,
             accept: "text/html,application/xhtml+xml",
+            "accept-language": "en-US,en;q=0.9",
             "accept-encoding": "identity",
           },
         },

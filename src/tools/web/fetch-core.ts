@@ -29,6 +29,7 @@
 
 import { Buffer } from "node:buffer";
 import { lookup as defaultDnsLookup } from "node:dns/promises";
+import type { LookupAddress, LookupOptions } from "node:dns";
 import http from "node:http";
 import https from "node:https";
 import type {
@@ -977,21 +978,37 @@ async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
 /**
  * Build a Node `lookup` callback that synchronously resolves to
  * `resolvedIp` so the socket connects to the IP the SSRF guard already
- * classified. The callback signature matches `dns.LookupOneOptions`
- * (with `all: false`), the form Node's `http`/`https` modules use by
- * default.
+ * classified.
+ *
+ * The callback must honor the `all` option. Node's `http`/`https` agents
+ * call `lookup` with `all: false` and expect the one-result form
+ * `(err, address, family)`. Bun's agent instead calls `lookup` with
+ * `{ all: true }` and expects the array form `(err, [{ address, family }])`;
+ * it then runs `results.sort((a, b) => b.family - a.family)` on whatever is
+ * passed back. Returning a bare string there throws
+ * "results.sort is not a function" and breaks every fetch under the
+ * Bun-compiled binary, so we branch on the requested form. The `options`
+ * argument may also be the callback itself when Node invokes the
+ * `lookup(hostname, callback)` overload.
  */
 function pinnedLookup(resolvedIp: string, family: 4 | 6) {
   return function lookup(
     _hostname: string,
-    _options: unknown,
+    options: LookupOptions,
     callback: (
       err: NodeJS.ErrnoException | null,
-      address: string,
-      family: number,
+      address: string | LookupAddress[],
+      family?: number,
     ) => void,
   ): void {
-    callback(null, resolvedIp, family);
+    const wantsAll =
+      typeof options === "object" && options !== null && options.all === true;
+
+    if (wantsAll) {
+      callback(null, [{ address: resolvedIp, family }]);
+    } else {
+      callback(null, resolvedIp, family);
+    }
   };
 }
 

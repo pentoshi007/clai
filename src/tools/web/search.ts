@@ -344,7 +344,21 @@ function classifyHttpStatus(
   const provider = searchProviders[id];
   const displayName = provider?.displayName ?? id;
   const { status } = raw;
-  if (status >= 200 && status < 300) return undefined;
+  // Only a plain 200 carries a real results page. Other 2xx codes —
+  // notably the HTTP 202 anti-bot challenge that DuckDuckGo's
+  // html/lite endpoints now return — are NOT results pages. Treating
+  // them as success made the handler parse zero hits and report the
+  // misleading literal "No results found.", which in turn made the
+  // agent loop. Surface them as an actionable error instead.
+  if (status === 200) return undefined;
+  if (status > 200 && status < 300) {
+    return {
+      kind: "http",
+      provider: id,
+      status,
+      message: `${displayName}: received HTTP ${status} instead of a results page (typically an anti-bot challenge). Configure a keyed provider with \`clai search-provider brave\` (or \`tavily\`) and \`clai set <provider> <KEY>\`.`,
+    };
+  }
   if (status === 401 || status === 403) {
     return {
       kind: "auth",
