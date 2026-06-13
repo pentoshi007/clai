@@ -109,6 +109,52 @@ describe("markdown extras", () => {
     expect(out).toContain("│ 1 │ 2 │");
   });
 
+  it("draws aligned box borders around a table", () => {
+    const md = "| a | b |\n| --- | --- |\n| 1 | 2 |";
+    const out = strip(renderMarkdown(md));
+    expect(out).toContain("┌");
+    expect(out).toContain("┬");
+    expect(out).toContain("├");
+    expect(out).toContain("┼");
+    expect(out).toContain("└");
+    expect(out).toContain("┴");
+  });
+
+  it("expands <br> inside a table cell into stacked lines (no literal <br>)", () => {
+    const md =
+      "| Item | Notes |\n| --- | --- |\n| One | first<br>second<br>third |";
+    const out = strip(renderMarkdown(md));
+    expect(out).not.toContain("<br>");
+    expect(out).toContain("first");
+    expect(out).toContain("second");
+    expect(out).toContain("third");
+    // The three sub-lines occupy three separate physical rows.
+    const firstLine = out.split("\n").find((l) => l.includes("first"))!;
+    expect(firstLine).not.toContain("second");
+  });
+
+  it("expands <br> outside tables into separate lines", () => {
+    const out = strip(renderMarkdown("alpha<br>beta"));
+    expect(out).not.toContain("<br>");
+    expect(out).toContain("alpha");
+    expect(out).toContain("beta");
+    expect(out.split("\n").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders tables identically through the streaming writer", () => {
+    const md = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    let streamed = "";
+    const writer = createMarkdownStreamWriter((chunk) => {
+      streamed += chunk;
+    });
+    for (const ch of md) writer.push(ch);
+    writer.finish();
+    const out = strip(streamed);
+    expect(out).toContain("│ a │ b │");
+    expect(out).toContain("│ 1 │ 2 │");
+    expect(out).toContain("┌");
+  });
+
   it("strips bold markers in real-world phrases like **Word:**", () => {
     expect(strip(renderInlineMarkdown("**Note:** be careful"))).toBe(
       "Note: be careful",
