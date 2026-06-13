@@ -692,6 +692,83 @@ export function availableToolNames(): string[] {
 }
 
 /**
+ * Build a shell command string from a bare-command tool call. Models often
+ * emit the binary as the tool name (`sed`, `awk`, `git`, …) and stuff the
+ * rest into a `command`/`args`/`argv` field — or split it across fields. We
+ * recover a runnable command from whatever shape arrived.
+ */
+function buildShellCommandFromCall(
+  name: string,
+  args: Record<string, unknown>,
+): string | undefined {
+  const asText = (value: unknown): string | undefined => {
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return String(value);
+    if (Array.isArray(value)) {
+      const parts = value
+        .filter((v) => typeof v === "string" || typeof v === "number")
+        .map((v) => String(v));
+      return parts.length > 0 ? parts.join(" ") : undefined;
+    }
+    return undefined;
+  };
+
+  let rest =
+    asText(args.command) ??
+    asText(args.cmd) ??
+    asText(args.args) ??
+    asText(args.arguments) ??
+    asText(args.argv) ??
+    asText(args.input);
+
+  if (rest === undefined) {
+    // Last resort: concatenate scalar arg values (skipping execution knobs)
+    // in insertion order so e.g. {"expression":"s/a/b/","file":"x"} still runs.
+    const skip = new Set(["cwd", "timeoutMs", "iOwnThis", "own"]);
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(args)) {
+      if (skip.has(key)) continue;
+      const text = asText(value);
+      if (text) parts.push(text);
+    }
+    rest = parts.join(" ");
+  }
+
+  const trimmedName = name.trim();
+  const trimmedRest = (rest ?? "").trim();
+  if (!trimmedRest) return trimmedName || undefined;
+  // Avoid a doubled binary when `rest` already begins with the tool name.
+  const firstToken = trimmedRest.split(/\s+/)[0];
+  if (!trimmedName.includes(" ") && firstToken === trimmedName) {
+    return trimmedRest;
+  }
+  return `${trimmedName} ${trimmedRest}`.trim();
+}
+
+/**
+ * Normalize a tool call before dispatch. If the name is not a registered
+ * tool but looks like a bare shell command (no `namespace.` dot — clai tools
+ * are all namespaced, e.g. `fs.read`, `web.search`), rewrite it into a
+ * `shell.exec` call instead of dead-ending on "Unknown tool: sed". The
+ * rewritten call still flows through the normal shell safety classifier, so
+ * dangerous commands are gated exactly as a hand-written shell.exec would be.
+ */
+export function normalizeToolCall(call: ToolCall): ToolCall {
+  if (toolRegistry[call.name]) return call;
+  const name = typeof call.name === "string" ? call.name.trim() : "";
+  // Leave genuinely unknown namespaced tools (e.g. a typo'd "fs.reed") to
+  // surface a clear error rather than guessing at a shell command.
+  if (!name || name.includes(".") || name.includes("/")) return call;
+  const args = call.args ?? {};
+  const command = buildShellCommandFromCall(name, args);
+  if (!command) return call;
+  const shellArgs: Record<string, unknown> = { command };
+  if (typeof args.cwd === "string") shellArgs.cwd = args.cwd;
+  if (typeof args.timeoutMs === "number") shellArgs.timeoutMs = args.timeoutMs;
+  return { name: "shell.exec", args: shellArgs };
+}
+
+/**
  * Pull the result URLs out of a web.search success output. The output is a
  * one-line summary followed by a JSON `{ results: [{url, ...}] }` block; we
  * parse from the first brace. Falls back to a regex scan if JSON parsing
@@ -720,11 +797,12 @@ export async function runToolCall(
   call: ToolCall,
   options: ToolRunOptions = {},
 ): Promise<ToolResult> {
-  const handler = toolRegistry[call.name];
+  const normalized = normalizeToolCall(call);
+  const handler = toolRegistry[normalized.name];
   if (!handler) {
-    throw new Error(`Unknown tool: ${call.name}`);
+    throw new Error(`Unknown tool: ${normalized.name}`);
   }
-  return handler(call.args, options);
+  return handler(normalized.args, options);
 }
 
 /**

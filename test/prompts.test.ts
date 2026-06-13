@@ -10,10 +10,17 @@ import {
 } from "../src/prompts/index.js";
 
 describe("prompt rendering", () => {
-  it("ask prompt contains ask-mode, no-execute instruction", () => {
+  it("ask prompt contains ask-mode, no-system-changes instruction", () => {
     const prompt = renderAskSystemPrompt();
     expect(prompt).toContain("ask mode");
-    expect(prompt).toContain("NOT execute anything");
+    expect(prompt).toContain("do NOT modify the system");
+  });
+
+  it("ask prompt enables read-only web research", () => {
+    const prompt = renderAskSystemPrompt();
+    expect(prompt).toContain("web.search");
+    expect(prompt).toContain("READ-ONLY");
+    expect(prompt).toContain("CANNOT run shell commands");
   });
 
   it("ask prompt includes OS info and current date/time", () => {

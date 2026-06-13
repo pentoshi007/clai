@@ -22,7 +22,7 @@ import {
   scopeHint,
   scopeTargetForToolCall,
 } from "../safety/classifier.js";
-import { availableToolNames, runToolCall } from "../tools/registry.js";
+import { availableToolNames, normalizeToolCall, runToolCall } from "../tools/registry.js";
 import { looksInteractiveStdin } from "../tools/shell.js";
 import { reduceToolOutput } from "../tools/policies/output-policy.js";
 import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
@@ -1167,7 +1167,7 @@ export async function runAgentLoop(
   options: AgentRunOptions = {},
 ): Promise<string> {
   const config = getConfig();
-  const maxSteps = options.maxSteps ?? 30;
+  const maxSteps = options.maxSteps ?? 70;
   const projectContext = await loadProjectContext();
   const toolNames = availableToolNames();
   // Build / scaffold / continuation turns must NEVER be diverted into a
@@ -1309,9 +1309,9 @@ export async function runAgentLoop(
   const buildLike = buildLikeTurn;
   let stepBudget =
     analysis.complexity === "simple"
-      ? 15
+      ? 20
       : analysis.complexity === "standard"
-        ? 30
+        ? 40
         : maxSteps;
   if (buildLike) {
     // Scaffolding / multi-file work needs room: many file writes plus a
@@ -1320,7 +1320,7 @@ export async function runAgentLoop(
   } else if (hasHistory) {
     // A follow-up to an ongoing task should never be capped tighter than a
     // standard one-shot, even if it's only a couple of words.
-    stepBudget = Math.max(stepBudget, 30);
+    stepBudget = Math.max(stepBudget, 40);
   }
   // Hard ceiling on total loop iterations (productive + recovery) so a model
   // stuck emitting only thinking or malformed calls can't loop indefinitely.
@@ -1825,6 +1825,13 @@ export async function runAgentLoop(
 
     // Type guard: every path above either set `call` or returned/continued.
     if (!call) continue;
+
+    // Models often emit a bare CLI name as the tool (e.g. {"name":"sed",...})
+    // instead of wrapping it in shell.exec. Rewrite such unknown, un-namespaced
+    // names into a shell.exec call BEFORE classification so the command both
+    // runs and is safety-classified as the shell command it really is —
+    // instead of dead-ending on "Unknown tool: sed".
+    call = normalizeToolCall(call);
 
     // ── Duplicate-call detection ──────────────────────────────────────────
     // If the model calls the exact same tool with the exact same args
