@@ -619,34 +619,64 @@ const INCOMPLETE_RE =
 const PLAN_EXECUTION_RE =
   /\b(?:approve the plan|execute it (?:now|task by task)|task by task|execute the plan|implement the plan)\b/i;
 
+// Informational / comparison / explanation intent. These questions want an
+// ANSWER, not a build — even when they mention a framework or an install
+// step (e.g. "compare installation steps in react vite", "how do I set up
+// tailwind", "tailwind 3 vs 4"). They must NOT trigger the explore→plan
+// build workflow.
+const INFORMATIONAL_SIGNAL_RE =
+  /\b(?:compare|comparison|contrast|differ(?:ence|ences|s)?|pros\s+and\s+cons|trade-?offs?|versus|vs\.?|cheat\s*sheet|explain|describe|summari[sz]e|overview)\b/i;
+const INTERROGATIVE_LEAD_RE =
+  /^(?:what|which|why|how|when|who|where|is|are|do|does|did|can|could|should|would|will)\b/i;
+
 /**
- * Decide whether this turn should get a generous step budget because it is
- * a multi-file build, a continuation of one, or a "it's not done yet" nudge.
- * Looks at the current prompt first, then falls back to the most recent
- * user/assistant turns so a terse follow-up inherits the build context.
+ * Does a single message imply an actual build/scaffold task (as opposed to a
+ * question about one)? Comparison/explanation signals and plain questions are
+ * treated as informational and return false even when they name a stack.
+ */
+function messageImpliesBuild(text: string): boolean {
+  if (!text) return false;
+  if (INFORMATIONAL_SIGNAL_RE.test(text)) return false;
+  // Explicit "build/create/scaffold … <thing>" is always a build.
+  if (BUILD_TASK_RE.test(text)) return true;
+  // A bare question (interrogative lead or trailing "?") that merely mentions
+  // a stack is informational, not a build.
+  if (text.endsWith("?") || INTERROGATIVE_LEAD_RE.test(text)) return false;
+  return BUILD_STACK_RE.test(text);
+}
+
+/**
+ * Decide whether this turn should get the build workflow (explore → plan →
+ * implement) and a generous step budget. Looks at the current prompt first,
+ * then falls back to recent USER turns so a terse follow-up inherits an
+ * ongoing build — but NOT the agent's own (possibly mistaken) plan narration.
  */
 export function looksLikeBuildTask(
   prompt: string,
   history?: ChatMessage[] | undefined,
 ): boolean {
   const text = prompt.replace(/\s+/g, " ").trim();
+  // Continuation / "not done yet" / plan-execution always count as build.
   if (
-    BUILD_TASK_RE.test(text) ||
-    BUILD_STACK_RE.test(text) ||
     CONTINUATION_RE.test(text) ||
     INCOMPLETE_RE.test(text) ||
     PLAN_EXECUTION_RE.test(text)
   ) {
     return true;
   }
-  // Inspect recent history: if the conversation was already about building
-  // something, treat a terse follow-up as part of that build.
+  if (messageImpliesBuild(text)) {
+    return true;
+  }
+  // Inspect recent USER turns only: if the user was already building
+  // something, treat a terse follow-up as part of that build. (Assistant
+  // turns are excluded so a misfired plan can't keep re-triggering build.)
   if (history && history.length > 0) {
     const recent = history.slice(-6);
     for (const msg of recent) {
-      if (msg.role !== "user" && msg.role !== "assistant") continue;
-      const h = msg.content.replace(/\s+/g, " ");
-      if (BUILD_TASK_RE.test(h) || BUILD_STACK_RE.test(h)) return true;
+      if (msg.role !== "user") continue;
+      if (messageImpliesBuild(msg.content.replace(/\s+/g, " ").trim())) {
+        return true;
+      }
     }
   }
   return false;

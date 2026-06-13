@@ -50,4 +50,37 @@ describe("looksLikeBuildTask", () => {
     expect(looksLikeBuildTask("what is my ip")).toBe(false);
     expect(looksLikeBuildTask("scan port 80 on 10.0.0.1")).toBe(false);
   });
+
+  it("does not flag informational questions that merely mention a stack", () => {
+    expect(
+      looksLikeBuildTask(
+        "compare their installation and integration steps in react vite",
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeBuildTask("what are the differences between tailwind 3 and 4"),
+    ).toBe(false);
+    expect(looksLikeBuildTask("how do I install tailwind in vite")).toBe(false);
+    expect(looksLikeBuildTask("react vs vue for a dashboard?")).toBe(false);
+    expect(looksLikeBuildTask("explain how vite handles HMR")).toBe(false);
+  });
+
+  it("does not inherit build from the agent's own plan narration", () => {
+    // The user only asked an informational question; the assistant then
+    // (mistakenly) drafted a build plan. A follow-up must NOT be treated as a
+    // build just because the assistant's plan text mentions a stack.
+    const history: ChatMessage[] = [
+      {
+        role: "user",
+        content: "compare installation steps in react vite",
+      },
+      {
+        role: "assistant",
+        content: "Plan: 1. Initialize a new Vite React app 2. Install Tailwind",
+      },
+    ];
+    expect(looksLikeBuildTask("you just have to tell me, do not write anything", history)).toBe(
+      false,
+    );
+  });
 });
