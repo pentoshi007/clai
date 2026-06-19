@@ -24,11 +24,6 @@ for (const target of targets) {
       '--compile',
       '--target',
       target,
-      // Ink only imports react-devtools-core when DEV=true (never in a
-      // shipped binary). It's not a dependency, so mark it external to keep
-      // `bun build --compile` from trying to resolve it.
-      '--external',
-      'react-devtools-core',
       '--outfile',
       out,
     ],
