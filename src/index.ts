@@ -30,6 +30,7 @@ import {
   renderThinkingSummary,
 } from "./ui/thinking.js";
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
+import { canUseTui } from "./tui/can-use-tui.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -37,6 +38,23 @@ interface GlobalOptions {
   model?: string | undefined;
   yes?: boolean | undefined;
   noHistory?: boolean | undefined;
+  tui?: boolean | undefined;
+  classic?: boolean | undefined;
+}
+
+/**
+ * Decide whether the full-screen TUI frontend should launch for an
+ * interactive (no-prompt) session.
+ *
+ * Explicit flags win over the env var; the env var wins over the default
+ * (classic). When the user asks for the TUI but the terminal can't host it
+ * (non-TTY pipe/CI, or too small) we fall back to the classic REPL with a
+ * one-line notice so nothing ever hard-fails.
+ */
+function shouldUseTui(options: GlobalOptions): boolean {
+  if (options.classic) return false;
+  const requested = options.tui ?? process.env.CLAI_TUI === "1";
+  return requested;
 }
 
 function modeOption(): Option {
@@ -63,6 +81,22 @@ async function oneShot(
   await ensureProviderConfigured(activeProvider);
 
   if (!prompt) {
+    if (shouldUseTui(options)) {
+      const gate = canUseTui();
+      if (gate.ok) {
+        const { startTui } = await import("./tui/index.js");
+        await startTui({
+          mode,
+          provider,
+          model,
+          noHistory: options.noHistory,
+        });
+        return;
+      }
+      console.error(
+        chalk.dim(`  TUI unavailable (${gate.reason}); using classic REPL.`),
+      );
+    }
     await startRepl({ mode, provider, model, noHistory: options.noHistory });
     return;
   }
@@ -124,6 +158,8 @@ async function main(): Promise<void> {
       "--no-history",
       "do not persist this session to history (in-memory only)",
     )
+    .option("--tui", "launch the full-screen terminal UI (experimental)")
+    .option("--classic", "force the classic line-based REPL")
     .argument("[prompt...]", "one-shot prompt")
     .action(
       async (promptParts: string[] | undefined, options: GlobalOptions) => {

@@ -91,6 +91,7 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /qwen2?\.?5?-vl/i,
     /pixtral/i,
     /gemma-3/i,
+    /minimax-m3/i,
   ],
   ollama: [
     /llava/i,

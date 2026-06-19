@@ -1,8 +1,10 @@
 import type { ChatMessage, ChatImage, ProviderId, ToolCall } from "../types.js";
+import type { AgentEvent } from "../agent/events.js";
 import {
   runAgentLoop,
   parseToolCall,
   createSessionPolicy,
+  type ConfirmPort,
   type SessionPolicy,
 } from "../agent/runner.js";
 
@@ -22,6 +24,8 @@ export interface AgentOptions {
         result: { ok: boolean; output: string; exitCode?: number | undefined },
       ) => void)
     | undefined;
+  onEvent?: ((event: AgentEvent) => void) | undefined;
+  confirm?: ConfirmPort | undefined;
 }
 
 export { parseToolCall, createSessionPolicy };

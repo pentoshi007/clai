@@ -8,6 +8,7 @@ import {
   openAiCompatibleComplete,
   openAiCompatiblePing,
   openAiCompatibleStream,
+  readJson,
 } from "./http.js";
 
 const baseUrl = "https://api.openai.com/v1";
@@ -18,6 +19,14 @@ export const openaiProvider: LlmProvider = {
   defaultModel: defaultModels.openai,
   envVar: "OPENAI_API_KEY",
   validateKey: (key: string) => /^sk-[A-Za-z0-9_-]{12,}$/.test(key),
+  async listModels(auth: ProviderAuth): Promise<string[]> {
+    if (!auth.apiKey) throw new Error("OpenAI API key is required");
+    const response = await fetch(`${baseUrl}/models`, {
+      headers: { authorization: `Bearer ${auth.apiKey}` },
+    });
+    const data = await readJson<{ data?: Array<{ id: string }> }>(response);
+    return data.data?.map((m) => m.id).sort() ?? [];
+  },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("OpenAI API key is required");
     await openAiCompatiblePing(baseUrl, auth.apiKey);
@@ -65,3 +74,4 @@ export const openaiProvider: LlmProvider = {
     return { text, provider: "openai", model };
   },
 };
+

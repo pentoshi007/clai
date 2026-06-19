@@ -32,11 +32,12 @@ import { loadProjectContext } from "../store/project.js";
 import { loadScope, isScopeActive, targetInScope } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
+  createThinkingStreamParser,
   rememberThinkingFromText,
   renderThinkingSummary,
 } from "../ui/thinking.js";
 import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
-import { startThinkingSpinner } from "../ui/spinner.js";
+import { startThinkingSpinner, type ThinkingSpinner } from "../ui/spinner.js";
 import { safeCwd } from "../os/cwd.js";
 import { analyzeTask } from "./task-analyzer.js";
 import { LoopGuard } from "./loop-guard.js";
@@ -49,6 +50,7 @@ import {
   type TaskState,
 } from "../store/plan.js";
 import { renderPlanChecklist, renderPlanSidePane } from "../ui/plan-pane.js";
+import type { AgentEvent } from "./events.js";
 
 /** Render the plan as a right-side pane on wide terminals, else inline. */
 function renderPlanForTerminal(plan: SessionPlan): string {
@@ -79,6 +81,11 @@ export function createSessionPolicy(): SessionPolicy {
   };
 }
 
+export interface ConfirmPort {
+  confirmTool(call: ToolCall): Promise<boolean>;
+  confirmPentest(): Promise<boolean>;
+}
+
 export interface AgentRunOptions {
   provider?: ProviderId | undefined;
   model?: string | undefined;
@@ -89,6 +96,8 @@ export interface AgentRunOptions {
   images?: ChatImage[] | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
+  onEvent?: ((event: AgentEvent) => void) | undefined;
+  confirm?: ConfirmPort | undefined;
   session?: SessionPolicy | undefined;
 }
 
@@ -854,7 +863,7 @@ export function isPreApprovalAllowedTool(name: string): boolean {
   return PRE_APPROVAL_ALLOWED_TOOLS.has(name);
 }
 
-function styleToolChatter(call: ToolCall, text: string): string {
+export function styleToolChatter(call: ToolCall, text: string): string {
   return shouldDimToolChatter(call) ? chalk.dim(text) : text;
 }
 
@@ -948,10 +957,28 @@ function formatToolContext(call: ToolCall, result: ToolResult): string {
   return `${summary.text}${saved}`.trim();
 }
 
+const inquirerConfirmPort: ConfirmPort = {
+  async confirmTool(call: ToolCall): Promise<boolean> {
+    return confirm({
+      message: chalk.yellow(`  run ${call.name}: ${formatToolArgs(call)}?`),
+      default: true,
+    });
+  },
+  async confirmPentest(): Promise<boolean> {
+    return confirm({
+      message: chalk.red(
+        "clai only assists with security testing on systems you own or have written permission to test. Confirm for this session?",
+      ),
+      default: false,
+    });
+  },
+};
+
 async function ensurePentestAuthorization(
   call: ToolCall,
   autoConfirm: boolean,
   session: SessionPolicy,
+  confirmPort: ConfirmPort,
 ): Promise<boolean> {
   if (!isPentestToolCall(call)) return true;
   // Persistent auth (via `clai authorize-pentest AGREE`) wins.
@@ -966,12 +993,7 @@ async function ensurePentestAuthorization(
     return true;
   }
 
-  const ok = await confirm({
-    message: chalk.red(
-      "clai only assists with security testing on systems you own or have written permission to test. Confirm for this session?",
-    ),
-    default: false,
-  });
+  const ok = await confirmPort.confirmPentest();
   if (!ok) return false;
   session.pentestAuthorized.value = true;
   return true;
@@ -981,6 +1003,7 @@ async function confirmToolExecution(
   call: ToolCall,
   autoConfirm: boolean,
   session: SessionPolicy,
+  confirmPort: ConfirmPort,
 ): Promise<boolean> {
   const config = getConfig();
   if (autoConfirm) return true;
@@ -990,15 +1013,13 @@ async function confirmToolExecution(
   // set so authorizations never leak across processes.
   if (config.allowAlwaysTools.includes(call.name)) return true;
 
-  return confirm({
-    message: chalk.yellow(`  run ${call.name}: ${formatToolArgs(call)}?`),
-    default: true,
-  });
+  return confirmPort.confirmTool(call);
 }
 
 interface PlanToolResult {
   handled: boolean;
   ok: boolean;
+  plan?: SessionPlan | undefined;
   /** What to print to the user's terminal. */
   display: string;
   /** What to feed back to the model as the tool result. */
@@ -1117,6 +1138,7 @@ async function handlePlanTool(
     return {
       handled: true,
       ok: true,
+      plan,
       display,
       modelNote:
         `Plan saved with ${plan.tasks.length} task(s). STOP here and wait — produce NO other tool calls now. ` +
@@ -1185,6 +1207,7 @@ async function handlePlanTool(
   return {
     handled: true,
     ok: true,
+    plan,
     display: checklist + "\n",
     modelNote: allDone
       ? "Task updated. ALL tasks are now finished. Verify the result and give your final summary."
@@ -1196,8 +1219,100 @@ export async function runAgentLoop(
   prompt: string,
   options: AgentRunOptions = {},
 ): Promise<string> {
+  const writesDirectly = !options.onEvent;
+  const emit = (event: AgentEvent): void => options.onEvent?.(event);
+  const noopSpinner: ThinkingSpinner = {
+    setLabel: () => {},
+    bumpReasoning: () => {},
+    pushPreview: () => {},
+    stop: () => {},
+  };
+  const writeStatus = (text: string, rendered = chalk.dim(text)): void => {
+    emit({ type: "status", text });
+    if (writesDirectly) process.stdout.write(rendered);
+  };
+  const writeNotice = (
+    level: "info" | "warn",
+    text: string,
+    rendered: string,
+  ): void => {
+    emit({ type: "notice", level, text });
+    if (writesDirectly) process.stdout.write(rendered);
+  };
+  const writeAssistantMessage = (text: string): void => {
+    emit({ type: "assistant-message", text });
+    const rendered = renderMarkdown(text);
+    if (writesDirectly) {
+      process.stdout.write(text.endsWith("\n") ? rendered : `${rendered}\n`);
+    }
+  };
+  const writeThinkingBlock = (content: string): void => {
+    emit({ type: "thinking-block", content });
+    if (writesDirectly) process.stdout.write(`${renderThinkingSummary(content)}\n`);
+  };
+  const writeToolOutput = (
+    id: string,
+    chunk: string,
+    rendered: string,
+  ): void => {
+    emit({ type: "tool-output", id, chunk });
+    if (writesDirectly) process.stdout.write(rendered);
+  };
+  const writeToolCall = (id: string, call: ToolCall, rendered: string): void => {
+    emit({
+      type: "tool-call",
+      id,
+      name: call.name,
+      argsDisplay: formatToolArgs(call),
+    });
+    if (writesDirectly) process.stdout.write(rendered);
+  };
+  const writePlanUpdate = (plan: SessionPlan, rendered: string): void => {
+    emit({ type: "plan-update", plan });
+    if (writesDirectly) process.stdout.write(rendered);
+  };
+  const writeToolBlocked = (
+    id: string,
+    name: string,
+    reason: string,
+    rendered: string,
+  ): void => {
+    emit({ type: "tool-blocked", id, name, reason });
+    if (writesDirectly) process.stdout.write(rendered);
+  };
+  const writeAbort = (): void => {
+    emit({ type: "turn-aborted" });
+    if (writesDirectly) process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
+  };
+  const emitToolResult = (
+    id: string,
+    result: ToolResult,
+    summary: string,
+    artifactPath?: string,
+  ): void => {
+    const event: Extract<AgentEvent, { type: "tool-result" }> = {
+      type: "tool-result",
+      id,
+      ok: result.ok,
+      summary,
+    };
+    if (typeof result.exitCode === "number") {
+      event.exitCode = result.exitCode;
+    }
+    if (artifactPath) {
+      event.artifactPath = artifactPath;
+    }
+    emit(event);
+  };
+  const finishTurn = (answer: string, steps: number): string => {
+    emit({ type: "turn-end", finalAnswer: answer, steps });
+    return answer;
+  };
+
+  emit({ type: "turn-start", prompt });
   const config = getConfig();
   const maxSteps = options.maxSteps ?? 70;
+  const confirmPort = options.confirm ?? inquirerConfirmPort;
   const projectContext = await loadProjectContext();
   const toolNames = availableToolNames();
   // Build / scaffold / continuation turns must NEVER be diverted into a
@@ -1358,6 +1473,7 @@ export async function runAgentLoop(
 
   let productiveSteps = 0;
   let step = -1;
+  let nextToolEventId = 0;
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     // `step` is the productive-step index (used for display + audit). It only
     // advances when the previous iteration actually executed a tool.
@@ -1377,22 +1493,38 @@ export async function runAgentLoop(
       // when the batch was parsed.
       call = pendingCalls.shift()!;
       assistantText = { visible: "", thinkContent: "", hasThinking: false };
-      process.stdout.write(
-        chalk.dim(
-          `  ↳ continuing batch (${pendingCalls.length} more queued)\n`,
-        ),
+      const batchStatus = `  ↳ continuing batch (${pendingCalls.length} more queued)\n`;
+      writeStatus(
+        batchStatus,
+        chalk.dim(batchStatus),
       );
     } else {
     // Buffer LLM output so tool JSON and hidden thinking are not printed raw.
     // Status messages (rate-limit retries, fallback hints) still surface live.
     // A spinner gives the user feedback during long thinking phases on
     // models like glm-5.1 / deepseek-v4-flash that stream reasoning first.
-    const spinner = startThinkingSpinner(
-      step === 0 ? "waiting for model" : `step ${step + 1}`,
-      options.signal,
-    );
+    const streamLabel = step === 0 ? "waiting for model" : `step ${step + 1}`;
+    const spinner = writesDirectly
+      ? startThinkingSpinner(streamLabel, options.signal)
+      : noopSpinner;
+    if (!writesDirectly) {
+      emit({ type: "status", text: streamLabel });
+    }
     let sawReasoning = false;
     let inThinking = false;
+    let emittedThinkingStatus = false;
+    const deltaParser = writesDirectly
+      ? undefined
+      : createThinkingStreamParser(
+          (text) => emit({ type: "assistant-delta", text }),
+          (text) => {
+            if (!emittedThinkingStatus) {
+              emittedThinkingStatus = true;
+              emit({ type: "status", text: "thinking" });
+            }
+            emit({ type: "thinking-delta", text });
+          },
+        );
     let completion;
     try {
       completion = await streamWithProvider(
@@ -1413,6 +1545,7 @@ export async function runAgentLoop(
           thinking: config.thinking,
         },
         (token) => {
+          deltaParser?.push(token);
           // Heuristic: <think>… markers and reasoning_content tokens flow
           // through onToken. Surface activity in the spinner so the screen
           // is never empty for minutes.
@@ -1420,6 +1553,7 @@ export async function runAgentLoop(
             sawReasoning = true;
             inThinking = true;
             spinner.setLabel("thinking");
+            if (!writesDirectly) emit({ type: "status", text: "thinking" });
           }
           if (/<\/think>/i.test(token)) {
             inThinking = false;
@@ -1440,7 +1574,7 @@ export async function runAgentLoop(
         },
         (status) => {
           spinner.stop();
-          process.stdout.write(chalk.dim(status));
+          writeStatus(status, chalk.dim(status));
         },
       );
     } finally {
@@ -1449,6 +1583,7 @@ export async function runAgentLoop(
     }
     provider = completion.provider;
     model = completion.model;
+    deltaParser?.finish();
 
     const assistantTextResult = rememberThinkingFromText(completion.text);
     assistantText = assistantTextResult;
@@ -1465,7 +1600,9 @@ export async function runAgentLoop(
         strict: getConfig().parserStrict,
       });
       if (call) {
-        process.stdout.write(
+        writeNotice(
+          "info",
+          "recovered tool call from thinking content",
           chalk.dim("  ℹ recovered tool call from thinking content\n"),
         );
       }
@@ -1479,10 +1616,10 @@ export async function runAgentLoop(
     if (!assistantText.visible.trim() && !call && assistantText.hasThinking) {
       emptyVisibleRetries += 1;
       if (emptyVisibleRetries <= 2) {
-        process.stdout.write(
-          `${renderThinkingSummary(assistantText.thinkContent)}\n`,
-        );
-        process.stdout.write(
+        writeThinkingBlock(assistantText.thinkContent);
+        writeNotice(
+          "warn",
+          "model produced only thinking — nudging it to take action",
           chalk.yellow(
             "  ⚠ model produced only thinking — nudging it to take action\n",
           ),
@@ -1526,7 +1663,9 @@ export async function runAgentLoop(
       if (bare?.call) {
         call = bare.call;
         recoveredFromBareJson = true;
-        process.stdout.write(
+        writeNotice(
+          "info",
+          "recovered an unfenced tool call from bare JSON",
           chalk.dim("  ℹ recovered an unfenced tool call from bare JSON\n"),
         );
       } else if (bare?.argsOnly) {
@@ -1539,7 +1678,9 @@ export async function runAgentLoop(
       if (bareThink?.call) {
         call = bareThink.call;
         recoveredFromBareJson = true;
-        process.stdout.write(
+        writeNotice(
+          "info",
+          "recovered an unfenced tool call from thinking content",
           chalk.dim(
             "  ℹ recovered an unfenced tool call from thinking content\n",
           ),
@@ -1552,7 +1693,9 @@ export async function runAgentLoop(
       if (bareArgsOnly) {
         bareToolJsonRetries += 1;
         if (bareToolJsonRetries <= 3) {
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            "tool call missing its name/fence — asking the model to re-emit a proper ```tool block",
             chalk.yellow(
               "  ⚠ tool call missing its name/fence — asking the model to re-emit a proper ```tool block\n",
             ),
@@ -1586,7 +1729,9 @@ export async function runAgentLoop(
           assistantText.visible,
         )
       ) {
-        process.stdout.write(
+        writeNotice(
+          "warn",
+          "tool call was malformed or cut off — asking the model to retry in JSON form",
           chalk.yellow(
             "  ⚠ tool call was malformed or cut off — asking the model to retry in JSON form\n",
           ),
@@ -1609,7 +1754,9 @@ export async function runAgentLoop(
       if (looksLikeTruncatedToolCall(assistantText.visible)) {
         truncatedToolRetries += 1;
         if (truncatedToolRetries <= 3) {
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            "tool call was cut off (output too long) — asking the model to retry in smaller pieces",
             chalk.yellow(
               "  ⚠ tool call was cut off (output too long) — asking the model to retry in smaller pieces\n",
             ),
@@ -1642,7 +1789,9 @@ export async function runAgentLoop(
       if (hasFencedCallShape) {
         malformedFenceRetries += 1;
         if (malformedFenceRetries <= 3) {
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            "tool block present but its JSON didn't parse — asking the model to re-emit valid JSON",
             chalk.yellow(
               "  ⚠ tool block present but its JSON didn't parse — asking the model to re-emit valid JSON\n",
             ),
@@ -1689,7 +1838,9 @@ export async function runAgentLoop(
         if (activePlan && session.planApproved.value) {
           nudge =
             "You wrote a message but emitted NO ```tool block, so NOTHING ran. Do NOT narrate what you will do — DO it. Emit the next tool call now (task.update / fs.writeMany / shell.exec) in a single ```tool block.";
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            "described an action but emitted no tool call — nudging it to run one",
             chalk.yellow(
               "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
             ),
@@ -1702,7 +1853,9 @@ export async function runAgentLoop(
             "You wrote the plan as PROSE but did NOT call plan.create, so no plan was saved and the user cannot /implement it. Emit it as a real tool call NOW — exactly one ```tool block:\n" +
             '```tool\n{"name":"plan.create","args":{"goal":"<short goal>","detail":"<stack/approach and how you\'ll verify>","tasks":["task 1","task 2","task 3"],"kind":"coding"}}\n```\n' +
             "Do not describe the plan again in prose — just emit the plan.create tool block.";
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            "plan was written as text, not created — nudging it to call plan.create",
             chalk.yellow(
               "  ⚠ plan was written as text, not created — nudging it to call plan.create\n",
             ),
@@ -1712,7 +1865,9 @@ export async function runAgentLoop(
             "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
             '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
             "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            "described an action but emitted no tool call — nudging it to run one",
             chalk.yellow(
               "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
             ),
@@ -1725,7 +1880,9 @@ export async function runAgentLoop(
 
       if (freshWebSearchRequired && !sawFreshWebSearch && !freshnessRetryUsed) {
         freshnessRetryUsed = true;
-        process.stdout.write(
+        writeNotice(
+          "info",
+          "current-info question detected — searching the web before answering",
           chalk.dim(
             "  ℹ current-info question detected — searching the web before answering\n",
           ),
@@ -1755,7 +1912,9 @@ export async function runAgentLoop(
         if (livePlan && unfinished && unfinished.length > 0) {
           prematureCompletionRetries += 1;
           const next = unfinished[0]!;
-          process.stdout.write(
+          writeNotice(
+            "warn",
+            `${unfinished.length} plan task(s) still unfinished — not accepting a "done" claim; resuming execution`,
             chalk.yellow(
               `  ⚠ ${unfinished.length} plan task(s) still unfinished — not accepting a "done" claim; resuming execution\n`,
             ),
@@ -1780,6 +1939,7 @@ export async function runAgentLoop(
       // unchallenged — append an explicit, honest status so the user knows the
       // build did not actually complete.
       let completionWarning = "";
+      let completionWarningText = "";
       if (session.planApproved.value) {
         const livePlan = await loadPlan(session.sessionId).catch(
           () => undefined,
@@ -1788,6 +1948,9 @@ export async function runAgentLoop(
           (t) => t.state === "pending" || t.state === "in_progress",
         );
         if (livePlan && unfinished && unfinished.length > 0) {
+          completionWarningText =
+            `${unfinished.length} of ${livePlan.tasks.length} plan task(s) are NOT actually complete. ` +
+            "The summary above may overstate progress.";
           completionWarning =
             chalk.yellow(
               `\n  ⚠ ${unfinished.length} of ${livePlan.tasks.length} plan task(s) are NOT actually complete:\n`,
@@ -1801,20 +1964,17 @@ export async function runAgentLoop(
         }
       }
       if (cleaned) {
-        process.stdout.write(renderMarkdown(cleaned));
-        if (!cleaned.endsWith("\n")) process.stdout.write("\n");
+        writeAssistantMessage(cleaned);
       }
       if (completionWarning) {
-        process.stdout.write(completionWarning);
+        writeNotice("warn", completionWarningText, completionWarning);
       }
       if (assistantText.hasThinking) {
-        process.stdout.write(
-          `${renderThinkingSummary(assistantText.thinkContent)}\n`,
-        );
+        writeThinkingBlock(assistantText.thinkContent);
       }
       await auditLog("agent.final", { provider, model, steps: step + 1 });
       lastAnswer = cleaned;
-      return lastAnswer;
+      return finishTurn(lastAnswer, step + 1);
     }
 
       // A valid primary tool call exists for this fresh model turn. Show any
@@ -1825,12 +1985,10 @@ export async function runAgentLoop(
         ? ""
         : textBeforeToolCall(assistantText.visible);
       if (beforeTool) {
-        process.stdout.write(renderMarkdown(beforeTool) + "\n");
+        writeAssistantMessage(beforeTool);
       }
       if (assistantText.hasThinking) {
-        process.stdout.write(
-          `${renderThinkingSummary(assistantText.thinkContent)}\n`,
-        );
+        writeThinkingBlock(assistantText.thinkContent);
       }
       messages.push({
         role: "assistant",
@@ -1844,7 +2002,9 @@ export async function runAgentLoop(
           sameToolCall(allCalls[0], call)
         ) {
           pendingCalls = allCalls.slice(1);
-          process.stdout.write(
+          writeNotice(
+            "info",
+            `${allCalls.length} tool calls in this message — running them in order`,
             chalk.dim(
               `  ℹ ${allCalls.length} tool calls in this message — running them in order\n`,
             ),
@@ -1862,6 +2022,7 @@ export async function runAgentLoop(
     // runs and is safety-classified as the shell command it really is —
     // instead of dead-ending on "Unknown tool: sed".
     call = normalizeToolCall(call);
+    const toolEventId = `tool-${++nextToolEventId}`;
 
     // ── Duplicate-call detection ──────────────────────────────────────────
     // If the model calls the exact same tool with the exact same args
@@ -1873,7 +2034,10 @@ export async function runAgentLoop(
         call.name === "fs.write" ||
         call.name === "fs.writeMany" ||
         call.name === "fs.edit";
-      process.stdout.write(
+      const reason = `${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}`;
+      writeNotice(
+        "warn",
+        reason,
         chalk.yellow(
           `  ⚠ ${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}\n`,
         ),
@@ -1893,7 +2057,7 @@ export async function runAgentLoop(
       continue;
     }
     if (loopCheck.reason) {
-      process.stdout.write(chalk.dim(`  ℹ ${loopCheck.reason}\n`));
+      writeNotice("info", loopCheck.reason, chalk.dim(`  ℹ ${loopCheck.reason}\n`));
     }
 
     // ── Plan / task tools (session-scoped, handled inline) ─────────────
@@ -1907,7 +2071,9 @@ export async function runAgentLoop(
       if (planResult.handled) {
         productiveSteps += 1;
         loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
-        process.stdout.write(planResult.display);
+        if (planResult.plan) {
+          writePlanUpdate(planResult.plan, planResult.display);
+        }
         // plan.create means "STOP and wait for /implement" — abandon any
         // other calls the model batched alongside it.
         if (call.name === "plan.create") pendingCalls = [];
@@ -1941,7 +2107,10 @@ export async function runAgentLoop(
       !session.planApproved.value &&
       !isPreApprovalAllowedTool(call.name)
     ) {
-      process.stdout.write(
+      const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
+      writeNotice(
+        "warn",
+        reason,
         chalk.yellow(
           `  ⚠ plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)\n`,
         ),
@@ -1966,22 +2135,33 @@ export async function runAgentLoop(
     // Show tool call
     const toolCallLine =
       chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-    process.stdout.write(styleToolChatter(call, toolCallLine) + "\n");
+    writeToolCall(
+      toolEventId,
+      call,
+      styleToolChatter(call, toolCallLine) + "\n",
+    );
 
     const scopeTarget = scopeTargetForToolCall(call);
     if (
       scopeTarget &&
       (!isScopeActive(scope) || !targetInScope(scopeTarget, scope))
     ) {
-      process.stdout.write(
+      writeNotice(
+        "info",
+        `scope optional: ${scopeHint(scopeTarget)}`,
         chalk.dim(`  scope optional: ${scopeHint(scopeTarget)}\n`),
       );
     }
 
     if (decision.level === "block") {
-      process.stdout.write(chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n");
+      writeToolBlocked(
+        toolEventId,
+        call.name,
+        decision.reason,
+        chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n",
+      );
       lastAnswer = `Blocked: ${call.name} — ${decision.reason}`;
-      return lastAnswer;
+      return finishTurn(lastAnswer, productiveSteps);
     }
 
     // Pentest authorization — if user confirms this, skip the per-tool confirm
@@ -1994,6 +2174,7 @@ export async function runAgentLoop(
       call,
       Boolean(options.autoConfirm),
       session,
+      confirmPort,
     );
     // inquirer's confirm() creates its own readline interface which resets
     // raw mode AND pauses stdin when it finishes. Re-assert raw mode and
@@ -2002,8 +2183,13 @@ export async function runAgentLoop(
     restoreInteractiveStdin();
     if (!authorized) {
       lastAnswer = "Pentest authorization not confirmed.";
-      process.stdout.write(chalk.red(`  ✗ ${lastAnswer}`) + "\n");
-      return lastAnswer;
+      writeToolBlocked(
+        toolEventId,
+        call.name,
+        lastAnswer,
+        chalk.red(`  ✗ ${lastAnswer}`) + "\n",
+      );
+      return finishTurn(lastAnswer, productiveSteps);
     }
     if (needsPentestAuth) {
       pentestJustConfirmed = true;
@@ -2017,14 +2203,15 @@ export async function runAgentLoop(
         call,
         forceManualConfirm ? false : Boolean(options.autoConfirm),
         session,
+        confirmPort,
       );
       // Re-assert raw mode and resume stdin after inquirer's confirm()
       // (see restoreInteractiveStdin / the comment above).
       restoreInteractiveStdin();
       if (!ok) {
         lastAnswer = "Cancelled.";
-        process.stdout.write(chalk.yellow(`  ✗ cancelled`) + "\n");
-        return lastAnswer;
+        writeNotice("warn", "cancelled", chalk.yellow(`  ✗ cancelled`) + "\n");
+        return finishTurn(lastAnswer, productiveSteps);
       }
     }
 
@@ -2041,7 +2228,9 @@ export async function runAgentLoop(
       typeof call.args.command === "string" &&
       looksInteractiveStdin(call.args.command);
     if (interactiveCommand && process.stdin.isTTY) {
-      process.stdout.write(
+      writeNotice(
+        "warn",
+        "this command may prompt for a password — type it when asked",
         chalk.yellow(
           "  ⚠ this command may prompt for a password — type it when asked\n",
         ),
@@ -2071,10 +2260,14 @@ export async function runAgentLoop(
       if (liveBytes >= liveCap) {
         if (!liveTruncatedNotified) {
           liveTruncatedNotified = true;
-          process.stdout.write(
+          writeNotice(
+            "info",
+            "live preview truncated, full output saved",
             chalk.dim("\n  … live preview truncated, full output saved\n"),
           );
-          process.stdout.write(
+          writeNotice(
+            "info",
+            "tool still running — ESC or Ctrl+C to abort",
             chalk.dim("  (tool still running — ESC or Ctrl+C to abort)\n"),
           );
           lastProgressAt = Date.now();
@@ -2084,7 +2277,7 @@ export async function runAgentLoop(
         const now = Date.now();
         if (now - lastProgressAt > 5_000) {
           lastProgressAt = now;
-          process.stdout.write(chalk.dim("."));
+          writeToolOutput(toolEventId, ".", chalk.dim("."));
         }
         return;
       }
@@ -2098,7 +2291,7 @@ export async function runAgentLoop(
       // Skip the dim wrapper for interactive commands so a sudo password
       // prompt is rendered at full brightness; everything else stays dim
       // so tool chatter is visually distinct from the model's prose.
-      process.stdout.write(shouldDimLive ? chalk.dim(body) : body);
+      writeToolOutput(toolEventId, slice, shouldDimLive ? chalk.dim(body) : body);
     };
 
     try {
@@ -2110,11 +2303,13 @@ export async function runAgentLoop(
         },
       });
       // Newline separator if live output or progress dots didn't already end with one.
-      if (liveBytes > 0 || liveTruncatedNotified) process.stdout.write("\n");
+      if (liveBytes > 0 || liveTruncatedNotified) {
+        writeToolOutput(toolEventId, "\n", "\n");
+      }
     } catch (toolError) {
       if (isAbortError(toolError, options.signal)) {
         lastAnswer = "Aborted.";
-        process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
+        writeAbort();
         return lastAnswer;
       }
       const errMsg =
@@ -2125,10 +2320,10 @@ export async function runAgentLoop(
     // from the same message so the model sees the failure and decides what to
     // do next instead of blindly running steps that depended on it.
     if (!result.ok && pendingCalls.length > 0) {
-      process.stdout.write(
-        chalk.dim(
-          `  ↳ ${pendingCalls.length} queued call(s) cancelled because this step failed\n`,
-        ),
+      const cancelledQueuedStatus = `  ↳ ${pendingCalls.length} queued call(s) cancelled because this step failed\n`;
+      writeStatus(
+        cancelledQueuedStatus,
+        chalk.dim(cancelledQueuedStatus),
       );
       pendingCalls = [];
     }
@@ -2147,6 +2342,8 @@ export async function runAgentLoop(
       outputPath: savedOutputPath,
       truncated: result.truncated ?? Boolean(savedOutputPath),
     };
+    const contextOutput = formatToolContext(call, resultWithArtifact);
+    emitToolResult(toolEventId, resultWithArtifact, contextOutput, savedOutputPath);
     options.onToolResult?.(call, resultWithArtifact);
     await auditLog("tool.result", {
       call,
@@ -2182,7 +2379,9 @@ export async function runAgentLoop(
               ? "tesseract"
               : undefined;
       if (cmdName) {
-        process.stdout.write(
+        writeNotice(
+          "warn",
+          `${cmdName} not found — asking model to install and retry`,
           chalk.yellow(
             `  ⚠ ${cmdName} not found — asking model to install and retry\n`,
           ),
@@ -2207,7 +2406,9 @@ export async function runAgentLoop(
     const SUDO_NEEDS_TTY_RE =
       /sudo:\s+a terminal is required to read the password|sudo:\s+a password is required|no askpass program|sudo: \d+ incorrect password attempts|sudo:\s+(?:no tty present|sorry, you must have a tty)/i;
     if (!result.ok && SUDO_NEEDS_TTY_RE.test(output)) {
-      process.stdout.write(
+      writeNotice(
+        "warn",
+        "sudo needs an interactive terminal — asking the model to retry without -S/askpass",
         chalk.yellow(
           "  ⚠ sudo needs an interactive terminal — asking the model to retry without -S/askpass\n",
         ),
@@ -2226,7 +2427,7 @@ export async function runAgentLoop(
 
     // Print tool result
     const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
-    process.stdout.write(statusIcon + "\n");
+    writeToolOutput(toolEventId, result.ok ? "ok\n" : "failed\n", statusIcon + "\n");
     if (output) {
       const displaySummary = summarizeOutput(output, displayMax);
       const displayText = displaySummary.truncated
@@ -2236,22 +2437,26 @@ export async function runAgentLoop(
       // the same bytes. Just note where the full output lives if it was saved.
       if (liveBytes > 0) {
         if (savedOutputPath) {
-          process.stdout.write(
+          writeNotice(
+            "info",
+            `full output saved to ${savedOutputPath}`,
             chalk.dim(`  full output saved to ${savedOutputPath}\n`),
           );
         }
       } else {
         const renderedOutput = indentAndWrapText(displayText);
-        process.stdout.write(styleToolChatter(call, renderedOutput) + "\n");
+        writeToolOutput(
+          toolEventId,
+          displayText,
+          styleToolChatter(call, renderedOutput) + "\n",
+        );
       }
     }
     if (isAbortError(undefined, options.signal)) {
       lastAnswer = "Aborted.";
-      process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
+      writeAbort();
       return lastAnswer;
     }
-
-    const contextOutput = formatToolContext(call, resultWithArtifact);
 
     // Register a collapse/expand viewport so the user can pull the full raw
     // output back with Ctrl+O or `/output last` after the AI summary lands.
@@ -2266,7 +2471,8 @@ export async function runAgentLoop(
       // (large output saved to disk). Avoid spamming the hint for
       // every tiny tool call — the user can always use /output last.
       if (savedOutputPath) {
-        process.stdout.write(`${formatViewportHint(viewport)}\n`);
+        const viewportHint = `${formatViewportHint(viewport)}\n`;
+        writeStatus(viewportHint, viewportHint);
       }
     }
     messages.push({
@@ -2288,6 +2494,6 @@ export async function runAgentLoop(
   }
 
   lastAnswer = `Stopped after ${productiveSteps} steps.`;
-  process.stdout.write("  " + chalk.yellow(lastAnswer) + "\n");
-  return lastAnswer;
+  writeNotice("warn", lastAnswer, "  " + chalk.yellow(lastAnswer) + "\n");
+  return finishTurn(lastAnswer, productiveSteps);
 }

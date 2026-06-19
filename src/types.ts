@@ -14,7 +14,7 @@ export const providerIds = [
 export type ProviderId = (typeof providerIds)[number];
 export type Mode = "ask" | "agent";
 export type RiskLevel = "safe" | "confirm" | "block";
-export type ReasoningEffort = "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface ReasoningPreference {
   enabled: boolean;

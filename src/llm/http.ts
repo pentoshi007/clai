@@ -356,14 +356,24 @@ export function buildReasoningPayload(
   if (style === "none") return {};
   const enabled = Boolean(reasoning?.enabled);
   const effort = reasoning?.effort ?? "medium";
+
+  // Map expanded effort levels to the classic low/medium/high subset for
+  // providers that only understand the smaller set.
+  const clampEffort = (e: string): "low" | "medium" | "high" => {
+    if (e === "none" || e === "minimal" || e === "low") return "low";
+    if (e === "xhigh" || e === "high") return "high";
+    return "medium";
+  };
+
   switch (style) {
     case "openai":
+      // OpenAI supports none/minimal/low/medium/high/xhigh natively.
       if (!enabled) return {};
       return { reasoning_effort: effort, reasoning: { effort } };
     case "openrouter":
       if (!enabled) return {};
       if (!supportsOpenRouterReasoning(model ?? "")) return {};
-      return { reasoning: { enabled: true, effort } };
+      return { reasoning: { enabled: true, effort: clampEffort(effort) } };
     case "groq": {
       const m = (model ?? "").toLowerCase();
       if (/qwen\/qwen3-32b/.test(m)) {
@@ -371,7 +381,7 @@ export function buildReasoningPayload(
       }
       if (/openai\/gpt-oss-(?:20b|120b)/.test(m)) {
         if (!enabled) return {};
-        return { reasoning_effort: effort };
+        return { reasoning_effort: clampEffort(effort) };
       }
       return {};
     }
@@ -385,14 +395,12 @@ export function buildReasoningPayload(
             },
           };
         case "deepseek-v4":
+          // NVIDIA's DeepSeek V4 API accepts none/high/max. Map expanded
+          // effort levels: none/minimal/low → none; medium/high/xhigh → high.
           return {
             chat_template_kwargs: {
               thinking: enabled,
-              // NVIDIA's DeepSeek V4 API accepts none/high/max. clai's
-              // public toggle is low/medium/high, so all enabled states
-              // use high; disabled maps to none so /variants off really
-              // takes the model out of hidden-thinking mode.
-              reasoning_effort: enabled ? "high" : "none",
+              reasoning_effort: enabled ? (clampEffort(effort) === "low" ? "none" : "high") : "none",
             },
           };
         case "thinking":
@@ -403,15 +411,15 @@ export function buildReasoningPayload(
           };
         case "nemotron-3": {
           // Nemotron-3 supports both `enable_thinking` and an optional
-          // `reasoning_budget` cap. Mirror the docs example by sending the
-          // budget alongside the toggle so users get the documented behavior.
+          // `reasoning_budget` cap. Map expanded effort to budget values.
           if (!enabled) {
             return {
               chat_template_kwargs: { enable_thinking: false },
             };
           }
+          const clamped = clampEffort(effort);
           const budget =
-            effort === "low" ? 4_096 : effort === "high" ? 16_384 : 8_192;
+            clamped === "low" ? 4_096 : clamped === "high" ? 16_384 : 8_192;
           return {
             reasoning_budget: budget,
             chat_template_kwargs: { enable_thinking: true },
@@ -433,7 +441,7 @@ export function buildReasoningPayload(
           };
         case "effort-only":
           if (!enabled) return {};
-          return { reasoning_effort: effort };
+          return { reasoning_effort: clampEffort(effort) };
         case "none":
         default:
           return {};

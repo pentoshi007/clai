@@ -7,13 +7,14 @@ import {
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
 
-import type { ChatMessage, Mode, ProviderId } from "./types.js";
+import type { ChatMessage, Mode, ProviderId, ReasoningEffort } from "./types.js";
 import { runAskStream } from "./modes/ask.js";
 import {
   runAgent,
   createSessionPolicy,
   type SessionPolicy,
 } from "./modes/agent.js";
+import { attachClassicRenderer } from "./agent/classic-renderer.js";
 import {
   providerSwitcher,
   printProviderKeys,
@@ -139,12 +140,12 @@ const slashCommands: SlashCommand[] = [
   { command: "/keys", description: "list configured providers" },
   {
     command: "/variants",
-    usage: "[on|off|low|medium|high]",
-    description: "toggle thinking and effort for capable models",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh]",
+    description: "toggle thinking/effort (interactive picker if no arg)",
   },
   {
     command: "/reasoning",
-    usage: "[on|off|low|medium|high]",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh]",
     description: "alias for /variants",
   },
   { command: "/clear", description: "clear context" },
@@ -290,6 +291,7 @@ const knownModels: Record<string, string[]> = {
     "deepseek-ai/deepseek-v4-pro",
     "z-ai/glm-5.1",
     "minimaxai/minimax-m2.7",
+    "minimaxai/minimax-m3",
     "google/gemma-4-31b-it",
     "nvidia/nemotron-3-nano-30b-a3b",
     "nvidia/nemotron-3-super-120b-a12b",
@@ -1554,10 +1556,10 @@ function maybePrintThinkingTip(provider: ProviderId, model: string): void {
   console.log(
     chalk.dim("  💡 ") +
       chalk.dim(`${model} supports reasoning. Run `) +
-      chalk.cyan("/variants on") +
-      chalk.dim(" (or ") +
-      chalk.cyan("low|medium|high") +
-      chalk.dim(") to enable it."),
+      chalk.cyan("/variants") +
+      chalk.dim(" to pick an effort level or ") +
+      chalk.cyan("/variants high") +
+      chalk.dim(" to enable directly."),
   );
 }
 
@@ -1652,8 +1654,18 @@ async function handleSlash(
       const arg = (args[0] ?? "").toLowerCase().trim();
       const current = getConfig().thinking;
       const supported = modelSupportsThinking(state.provider, state.model);
+      const allEfforts: { value: ReasoningEffort | "off"; label: string; desc: string }[] = [
+        { value: "off",     label: "off",     desc: "disable thinking entirely" },
+        { value: "none",    label: "none",    desc: "no reasoning tokens (fastest)" },
+        { value: "minimal", label: "minimal", desc: "bare minimum reasoning" },
+        { value: "low",     label: "low",     desc: "modest reasoning, optimized for speed" },
+        { value: "medium",  label: "medium",  desc: "balanced quality and latency (default)" },
+        { value: "high",    label: "high",    desc: "deep reasoning for complex tasks" },
+        { value: "xhigh",   label: "xhigh",   desc: "maximum reasoning depth (highest latency)" },
+      ];
 
       if (!arg) {
+        // Show current status
         const status = current.enabled ? chalk.green("on") : chalk.dim("off");
         const support = supported
           ? chalk.green("supported")
@@ -1666,7 +1678,46 @@ async function handleSlash(
             chalk.dim("  · ") +
             support,
         );
-        console.log(chalk.dim("  usage: /variants on|off|low|medium|high"));
+
+        // Interactive picker for effort levels
+        const items = allEfforts.map((e) => {
+          const isActive =
+            (e.value === "off" && !current.enabled) ||
+            (e.value !== "off" && current.enabled && current.effort === e.value);
+          const activeTag = isActive ? chalk.green(" (active)") : "";
+          const label = `  ${chalk.cyan(e.label.padEnd(8))} ${chalk.dim(e.desc)}${activeTag}`;
+          return { label, value: e.value, filterText: e.label };
+        });
+
+        const picked = await pickInline({
+          items,
+          header: chalk.dim(
+            "  ↑/↓ navigate · Enter to select · ESC to cancel",
+          ),
+          pageSize: allEfforts.length,
+        });
+
+        if (!picked) {
+          console.log(chalk.dim("  variants unchanged"));
+          return true;
+        }
+
+        if (picked === "off") {
+          setThinking({ enabled: false });
+          console.log(chalk.dim(`  thinking: ${chalk.dim("off")}`));
+        } else {
+          setThinking({ enabled: true, effort: picked as ReasoningEffort });
+          console.log(
+            chalk.dim(
+              `  thinking: ${chalk.green("on")}  effort: ${chalk.cyan(picked)}`,
+            ),
+          );
+          if (!supported) {
+            console.log(
+              chalk.yellow("  note: current model may ignore the thinking flag."),
+            );
+          }
+        }
         return true;
       }
 
@@ -1684,13 +1735,14 @@ async function handleSlash(
         }
         return true;
       }
-      if (arg === "off" || arg === "disable" || arg === "false") {
+      if (arg === "off" || arg === "disable" || arg === "false" || arg === "none") {
         setThinking({ enabled: false });
         console.log(chalk.dim(`  thinking: ${chalk.dim("off")}`));
         return true;
       }
-      if (arg === "low" || arg === "medium" || arg === "high") {
-        setThinking({ enabled: true, effort: arg });
+      const validEfforts: ReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh"];
+      if (validEfforts.includes(arg as ReasoningEffort)) {
+        setThinking({ enabled: true, effort: arg as ReasoningEffort });
         console.log(
           chalk.dim(
             `  thinking: ${chalk.green("on")}  effort: ${chalk.cyan(arg)}`,
@@ -1704,7 +1756,7 @@ async function handleSlash(
         return true;
       }
 
-      console.log(chalk.dim("  usage: /variants on|off|low|medium|high"));
+      console.log(chalk.dim("  usage: /variants on|off|none|minimal|low|medium|high|xhigh"));
       return true;
     }
     case "/clear":
@@ -2485,10 +2537,10 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     console.log(
       chalk.dim("  💡 ") +
         chalk.dim(`${state.model} supports reasoning. Run `) +
-        chalk.cyan("/variants on") +
-        chalk.dim(" (or ") +
-        chalk.cyan("low|medium|high") +
-        chalk.dim(") to enable it.\n"),
+        chalk.cyan("/variants") +
+        chalk.dim(" to pick an effort level or ") +
+        chalk.cyan("/variants high") +
+        chalk.dim(" to enable directly.\n"),
     );
   }
 
@@ -2650,6 +2702,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           );
           process.stdout.write("\n");
         } else {
+          const classicRenderer = attachClassicRenderer();
           assistantContent = await withAbortableInput(async (signal) =>
             runAgent(modelInput, {
               provider: state.provider,
@@ -2658,6 +2711,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
               signal,
               session: state.session,
               images,
+              onEvent: classicRenderer.onEvent,
             }),
           );
         }
