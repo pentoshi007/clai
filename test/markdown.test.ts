@@ -3,6 +3,7 @@ import {
   renderInlineMarkdown,
   renderMarkdown,
   createMarkdownStreamWriter,
+  wrapAnsiLine,
 } from "../src/ui/markdown.js";
 
 function strip(text: string): string {
@@ -159,5 +160,23 @@ describe("markdown extras", () => {
     expect(strip(renderInlineMarkdown("**Note:** be careful"))).toBe(
       "Note: be careful",
     );
+  });
+
+  it("splits extremely long words without spaces to avoid layout overflow", () => {
+    const longWord = "a".repeat(100);
+    const wrapped = wrapAnsiLine(longWord, 40);
+    expect(wrapped.length).toBe(3);
+    expect(wrapped[0]).toBe("a".repeat(40));
+    expect(wrapped[1]).toBe("a".repeat(40));
+    expect(wrapped[2]).toBe("a".repeat(20));
+  });
+
+  it("renders list items formatted inside table cells", () => {
+    const md = "| Key points |\n| --- |\n| * item one<br>- item two<br>1. item three |";
+    const out = renderMarkdown(md);
+    // Should render a cyan bullet (•) or number (1.)
+    expect(out).toContain("• item one");
+    expect(out).toContain("• item two");
+    expect(out).toContain("1. item three");
   });
 });

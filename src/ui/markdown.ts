@@ -238,11 +238,37 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
 }
 
+type Token = { type: "space" | "ansi" | "char"; value: string };
+
+function splitWord(tokens: Token[], maxWidth: number): { text: string; visibleLength: number }[] {
+  const segments: { text: string; visibleLength: number }[] = [];
+  let currentSegmentText = "";
+  let currentSegmentVisibleLength = 0;
+
+  for (const token of tokens) {
+    if (token.type === "ansi") {
+      currentSegmentText += token.value;
+    } else { // type === "char"
+      if (currentSegmentVisibleLength >= maxWidth) {
+        segments.push({ text: currentSegmentText, visibleLength: currentSegmentVisibleLength });
+        currentSegmentText = "";
+        currentSegmentVisibleLength = 0;
+      }
+      currentSegmentText += token.value;
+      currentSegmentVisibleLength += 1;
+    }
+  }
+  if (currentSegmentText) {
+    segments.push({ text: currentSegmentText, visibleLength: currentSegmentVisibleLength });
+  }
+  return segments;
+}
+
 export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   const visibleLength = stripAnsi(line).length;
   if (visibleLength <= maxWidth) return [line];
 
-  const tokens: { type: "space" | "ansi" | "char"; value: string }[] = [];
+  const tokens: Token[] = [];
   let i = 0;
   while (i < line.length) {
     if (line.startsWith("\x1b[", i)) {
@@ -267,27 +293,34 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   }
 
   const words: { text: string; visibleLength: number }[] = [];
-  let currentWord = "";
+  let currentWordTokens: Token[] = [];
   let currentWordVisibleLength = 0;
+
+  const pushWord = () => {
+    if (currentWordTokens.length === 0) return;
+    if (currentWordVisibleLength > maxWidth) {
+      const segments = splitWord(currentWordTokens, maxWidth);
+      words.push(...segments);
+    } else {
+      const text = currentWordTokens.map((t) => t.value).join("");
+      words.push({ text, visibleLength: currentWordVisibleLength });
+    }
+    currentWordTokens = [];
+    currentWordVisibleLength = 0;
+  };
 
   for (const token of tokens) {
     if (token.type === "space") {
-      if (currentWord) {
-        words.push({ text: currentWord, visibleLength: currentWordVisibleLength });
-        currentWord = "";
-        currentWordVisibleLength = 0;
-      }
-      words.push({ text: " ", visibleLength: 0 });
+      pushWord();
+      words.push({ text: token.value, visibleLength: 0 });
     } else {
-      currentWord += token.value;
+      currentWordTokens.push(token);
       if (token.type === "char") {
         currentWordVisibleLength += 1;
       }
     }
   }
-  if (currentWord) {
-    words.push({ text: currentWord, visibleLength: currentWordVisibleLength });
-  }
+  pushWord();
 
   const lines: string[] = [];
   let currentLineText = "";
@@ -458,7 +491,20 @@ function renderTableBlock(rawLines: string[], availWidth: number): string[] {
     text
       .split(BR_RE_GLOBAL)
       .map((part) => {
-        const rendered = renderInlineMarkdown(part.trim());
+        const trimmed = part.trim();
+        const bulletMatch = trimmed.match(/^([-\*+])\s+(.*)$/);
+        if (bulletMatch) {
+          const content = renderInlineMarkdown(bulletMatch[2]!);
+          const rendered = `${chalk.cyan("•")} ${content}`;
+          return { rendered, width: stripAnsi(rendered).length };
+        }
+        const numberMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (numberMatch) {
+          const content = renderInlineMarkdown(numberMatch[2]!);
+          const rendered = `${chalk.cyan(`${numberMatch[1]}.`)} ${content}`;
+          return { rendered, width: stripAnsi(rendered).length };
+        }
+        const rendered = renderInlineMarkdown(trimmed);
         return { rendered, width: stripAnsi(rendered).length };
       });
 
