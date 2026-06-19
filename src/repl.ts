@@ -263,16 +263,19 @@ const knownModels: Record<string, string[]> = {
   openai: [
     "gpt-5.5",
     "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-rosalind",
+    "gpt-realtime-2",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
     "gpt-5",
     "gpt-5-mini",
     "gpt-5-nano",
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-4o",
     "gpt-4o-mini",
-    "o3",
-    "o3-mini",
-    "o4-mini",
+    "gpt-4o",
   ],
   anthropic: [
     "claude-opus-4-7",
@@ -1180,6 +1183,7 @@ async function streamWithAbort(
     const result = parser.finish();
     if (sawToken) markdown.finish();
     if (signal.aborted) {
+      spinner.stop();
       process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
       return result.visible;
     }
@@ -1467,24 +1471,25 @@ async function pickModelInteractively(
   provider: ProviderId,
   currentModel: string,
 ): Promise<string | undefined> {
-  let models = knownModels[provider] ?? [];
+  let models: string[] = [];
   const def = defaultModels[provider] ?? "";
 
-  // Try to fetch models dynamically if provider has listModels and knownModels is empty
-  if (models.length === 0) {
-    const providerImpl = getProvider(provider);
-    if (providerImpl.listModels) {
-      try {
-        const auth = await providerAuth(provider);
-        models = await providerImpl.listModels(auth);
-      } catch (error) {
-        console.warn(
-          chalk.yellow(
-            `  Warning: Could not fetch models from ${provider}: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
-      }
+  const providerImpl = getProvider(provider);
+  if (providerImpl.listModels) {
+    try {
+      const auth = await providerAuth(provider);
+      models = await providerImpl.listModels(auth);
+    } catch (error) {
+      console.warn(
+        chalk.yellow(
+          `  Warning: Could not fetch models from ${provider}: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
     }
+  }
+
+  if (models.length === 0) {
+    models = knownModels[provider] ?? [];
   }
 
   if (models.length === 0) {
@@ -1515,20 +1520,21 @@ async function pickModelInteractively(
 }
 
 async function showModelList(provider: string, currentModel: string): Promise<void> {
-  let models = knownModels[provider] ?? [];
+  let models: string[] = [];
   const def = defaultModels[provider as ProviderId] ?? "";
 
-  // Try to fetch models dynamically if provider has listModels and knownModels is empty
-  if (models.length === 0) {
-    const providerImpl = getProvider(provider as ProviderId);
-    if (providerImpl.listModels) {
-      try {
-        const auth = await providerAuth(provider as ProviderId);
-        models = await providerImpl.listModels(auth);
-      } catch {
-        // Silently fall back to empty array on error
-      }
+  const providerImpl = getProvider(provider as ProviderId);
+  if (providerImpl.listModels) {
+    try {
+      const auth = await providerAuth(provider as ProviderId);
+      models = await providerImpl.listModels(auth);
+    } catch {
+      // Silently fall back to empty array on error
     }
+  }
+
+  if (models.length === 0) {
+    models = knownModels[provider] ?? [];
   }
 
   if (models.length === 0) {

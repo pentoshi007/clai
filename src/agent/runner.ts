@@ -1309,8 +1309,9 @@ export async function runAgentLoop(
     return answer;
   };
 
-  emit({ type: "turn-start", prompt });
-  const config = getConfig();
+  try {
+    emit({ type: "turn-start", prompt });
+    const config = getConfig();
   const maxSteps = options.maxSteps ?? 70;
   const confirmPort = options.confirm ?? inquirerConfirmPort;
   const projectContext = await loadProjectContext();
@@ -2493,7 +2494,18 @@ export async function runAgentLoop(
     }
   }
 
-  lastAnswer = `Stopped after ${productiveSteps} steps.`;
-  writeNotice("warn", lastAnswer, "  " + chalk.yellow(lastAnswer) + "\n");
-  return finishTurn(lastAnswer, productiveSteps);
+    lastAnswer = `Stopped after ${productiveSteps} steps.`;
+    writeNotice("warn", lastAnswer, "  " + chalk.yellow(lastAnswer) + "\n");
+    return finishTurn(lastAnswer, productiveSteps);
+  } catch (error) {
+    if (isAbortError(error, options.signal)) {
+      writeAbort();
+      return "Aborted.";
+    }
+    emit({
+      type: "turn-error",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
