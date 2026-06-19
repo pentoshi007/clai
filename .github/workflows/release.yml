@@ -34,7 +34,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Build binary
-        run: bun build ./src/index.ts --compile --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+        run: bun build ./src/index.ts --compile --external react-devtools-core --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
       - name: Compute SHA256 sidecar
         run: |
           set -euo pipefail
