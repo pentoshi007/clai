@@ -48,7 +48,7 @@ export interface AgentRunner {
   /** Replace the current conversation when resuming a saved session. */
   setMessages: (messages: ChatMessage[]) => void;
   /** Compact the in-memory history; returns counts before/after. */
-  compact: (sessionTranscript?: string) => Promise<CompactResult>;
+  compact: (sessionTranscript?: string, keepRecent?: number) => Promise<CompactResult>;
 }
 
 /**
@@ -88,7 +88,7 @@ export function useAgentRunner({
     sessionRef.current = createSessionPolicy();
   }, []);
 
-  const compact = useCallback(async (sessionTranscript?: string) => {
+  const compact = useCallback(async (sessionTranscript?: string, keepRecent?: number) => {
     const ctx = getContext();
     const completeSummary = async (prompt: string): Promise<string> => {
       const response = await completeWithProvider({
@@ -123,7 +123,7 @@ export function useAgentRunner({
           partials.map((part, index) => `PART ${index + 1}:\n${part}`).join("\n\n"),
         );
       },
-      { budgetTokens: 0 },
+      { budgetTokens: 0, keepRecent },
       sessionTranscript,
     );
     messagesRef.current = result.messages;

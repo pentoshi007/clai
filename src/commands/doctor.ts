@@ -17,6 +17,7 @@ export async function runDoctor(): Promise<void> {
   const system = detectSystem();
   const pkgmgr = await detectPackageManager();
   console.log(chalk.bold('clai doctor'));
+  console.log('Built by: Aniket Pandey, pentoshi007 on GitHub');
   console.log(`OS: ${system.osName} ${system.release} ${system.arch}`);
   console.log(`Shell: ${system.shell}`);
   console.log(`CWD: ${system.cwd}`);

@@ -1,13 +1,18 @@
 import chalk from "chalk";
-import type { TranscriptItem, ToolItem, TuiState } from "./state.js";
+import type { TranscriptItem, ToolItem, TuiState, CompactedItem } from "./state.js";
 import { renderMarkdown, wrapAnsiLine } from "../ui/markdown.js";
 import { renderPlanChecklist } from "../ui/plan-pane.js";
+import { safeCwd } from "../os/cwd.js";
 
 export interface RenderCtx {
   width: number;
   thinkingExpanded: boolean;
   outputExpanded: boolean;
   running: boolean;
+  version?: string | undefined;
+  mode?: string | undefined;
+  provider?: string | undefined;
+  model?: string | undefined;
 }
 
 const COLLAPSED_OUTPUT_LINES = 3;
@@ -56,9 +61,13 @@ function looksLikeToolFence(text: string): boolean {
 
 function renderUser(text: string, width: number): string[] {
   const tag = chalk.bgHex("#22D3EE").hex("#020617").bold(" you ");
-  const body = chalk.bold(text);
-  const lines = wrap(body, width - 8);
-  return lines.map((l, i) =>
+  const md = renderMarkdown(text).replace(/\n+$/, "");
+  const lines = md.split("\n").map((line) => line.startsWith("  ") ? line.slice(2) : line);
+  const out: string[] = [];
+  for (const line of lines) {
+    out.push(...wrap(line, width - 8));
+  }
+  return out.map((l, i) =>
     i === 0 ? `${tag} ${l}` : `      ${l}`,
   );
 }
@@ -163,6 +172,38 @@ function renderNotice(level: "info" | "warn", text: string, width: number): stri
   return rendered;
 }
 
+function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
+  const color = chalk.hex("#64748B"); // Slate/dim border
+  const bar = color("│ ");
+  const top = color("╭ ") + chalk.bold.yellow("✦ Compacted Context");
+  const bottom = color("╰ ");
+
+  const rawLines = item.summary ? item.summary.replace(/\n+$/, "").split("\n") : [];
+  let shown = rawLines;
+  let hidden = 0;
+  if (!ctx.outputExpanded) {
+    if (rawLines.length > 3) {
+      shown = rawLines.slice(0, 3);
+      hidden = rawLines.length - shown.length;
+    }
+  }
+
+  const lines: string[] = [top];
+  for (const raw of shown) {
+    for (const wl of wrapAnsiLine(raw, Math.max(10, ctx.width - 4))) {
+      lines.push(bar + chalk.dim(wl));
+    }
+  }
+
+  if (hidden > 0) {
+    lines.push(bottom + chalk.dim(`+${hidden} more line(s) · ctrl+o to expand in place`));
+  } else {
+    lines.push(bottom + chalk.dim("expanded · ctrl+o/esc to collapse"));
+  }
+
+  return lines;
+}
+
 export function renderItemLines(item: TranscriptItem, ctx: RenderCtx): string[] {
   switch (item.kind) {
     case "user":
@@ -177,7 +218,62 @@ export function renderItemLines(item: TranscriptItem, ctx: RenderCtx): string[] 
       return renderNotice(item.level, item.text, ctx.width);
     case "plan":
       return renderPlanChecklist(item.plan).split("\n");
+    case "compacted":
+      return renderCompacted(item as CompactedItem, ctx);
   }
+}
+
+function renderHeader(ctx: RenderCtx): string[] {
+  const version = ctx.version ?? "0.0.0";
+  const mode = ctx.mode ?? "agent";
+  const provider = ctx.provider ?? "openai";
+  const model = ctx.model ?? "gpt-4";
+
+  const width = Math.max(40, ctx.width - 4);
+  const innerWidth = width - 4;
+  
+  // Left part: " ◆ clai  v{version}"
+  const leftPlain = ` ◆ clai  v${version}`;
+  const leftColored = chalk.bgBlue.white.bold(" ◆ clai ") + chalk.gray(` v${version}`);
+  
+  // Right part: " {mode}  MODE"
+  const rightPlain = ` ${mode.toUpperCase()}  MODE`;
+  const rightColored = chalk.bgYellow.black.bold(` ${mode.toUpperCase()} `) + chalk.gray(" MODE");
+  
+  // Line 1: space between
+  const spaceCount = Math.max(1, innerWidth - leftPlain.length - rightPlain.length);
+  const line1 = " " + leftColored + " ".repeat(spaceCount) + rightColored + " ";
+  
+  // Line 2: "{provider} / {model} · {cwd}"
+  const cwd = safeCwd();
+  const providerPart = chalk.green(provider);
+  const modelPart = chalk.cyan(model);
+  const cwdPart = chalk.gray(` ·  ${cwd}`);
+  const line2Inner = `${provider} / ${model} ·  ${cwd}`;
+  const line2ColoredInner = providerPart + chalk.gray(" / ") + modelPart + cwdPart;
+  
+  // Truncate line 2 if it's too long
+  let line2PlainInner = line2Inner;
+  let finalLine2Inner = line2ColoredInner;
+  if (line2Inner.length > innerWidth) {
+    const spaceForCwd = Math.max(5, innerWidth - provider.length - model.length - 12);
+    const truncatedCwd = cwd.slice(0, spaceForCwd) + "…";
+    line2PlainInner = `${provider} / ${model} ·  ${truncatedCwd}`;
+    finalLine2Inner = providerPart + chalk.gray(" / ") + modelPart + chalk.gray(" ·  ") + chalk.gray(truncatedCwd);
+  }
+  const line2Pad = Math.max(0, innerWidth - line2PlainInner.length);
+  const line2Content = " " + finalLine2Inner + " ".repeat(line2Pad) + " ";
+
+  const topStr = "  " + chalk.gray("╭" + "─".repeat(innerWidth + 2) + "╮");
+  const botStr = "  " + chalk.gray("╰" + "─".repeat(innerWidth + 2) + "╯");
+  
+  return [
+    "", // Blank line to prevent the header from getting cut off at the terminal top edge
+    topStr,
+    "  " + chalk.gray("│") + line1 + chalk.gray("│"),
+    "  " + chalk.gray("│") + line2Content + chalk.gray("│"),
+    botStr
+  ];
 }
 
 /**
@@ -188,6 +284,8 @@ export function renderItemLines(item: TranscriptItem, ctx: RenderCtx): string[] 
  */
 export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[] {
   const blocks: string[][] = [];
+  blocks.push(renderHeader(ctx));
+
   for (const item of state.items) {
     blocks.push(renderItemLines(item, ctx));
   }

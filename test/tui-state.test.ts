@@ -356,4 +356,62 @@ describe("TUI compaction transcript", () => {
     expect(source).toContain("5000/tcp open");
     expect(source).toContain("FULL ARTIFACT: /tmp/nmap.txt");
   });
+
+  it("handles serialization of compacted items", () => {
+    const source = serializeTranscriptForCompaction([
+      { kind: "compacted", id: "c", summary: "Previously did task X", originalItems: [], done: true },
+    ]);
+    expect(source).toContain("COMPACTED CONTEXT:\nPreviously did task X");
+  });
+});
+
+describe("TUI compaction reducer and rendering", () => {
+  it("compacts older items and keeps recent ones in the reducer", () => {
+    let state = initialState();
+    state.items = [
+      { kind: "user", id: "u1", text: "query 1", done: true },
+      { kind: "assistant", id: "a1", text: "response 1", streaming: false, done: true },
+      { kind: "user", id: "u2", text: "query 2", done: true },
+      { kind: "assistant", id: "a2", text: "response 2", streaming: false, done: true },
+    ];
+
+    state = reducer(state, { type: "compacted", summary: "Compacted memory", keepRecent: 2 });
+    expect(state.items).toHaveLength(3);
+    expect(state.items[0]!.kind).toBe("compacted");
+    expect((state.items[0] as any).summary).toBe("Compacted memory");
+    expect(state.items[1]!.kind).toBe("user");
+    expect(state.items[1]!.id).toBe("u2");
+    expect(state.items[2]!.kind).toBe("assistant");
+    expect(state.items[2]!.id).toBe("a2");
+  });
+
+  it("renders compacted item with spoiler and full view on toggle", () => {
+    const item = {
+      kind: "compacted" as const,
+      id: "c1",
+      summary: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5",
+      originalItems: [],
+      done: true,
+    };
+
+    const renderedCollapsed = renderItemLines(item, {
+      width: 80,
+      thinkingExpanded: false,
+      outputExpanded: false,
+      running: false,
+    });
+    expect(renderedCollapsed.join("\n")).toContain("✦ Compacted Context");
+    expect(renderedCollapsed.join("\n")).toContain("+2 more line(s)");
+
+    const renderedExpanded = renderItemLines(item, {
+      width: 80,
+      thinkingExpanded: false,
+      outputExpanded: true,
+      running: false,
+    });
+    expect(renderedExpanded.join("\n")).toContain("✦ Compacted Context");
+    expect(renderedExpanded.join("\n")).toContain("Line 4");
+    expect(renderedExpanded.join("\n")).toContain("Line 5");
+    expect(renderedExpanded.join("\n")).toContain("expanded · ctrl+o");
+  });
 });

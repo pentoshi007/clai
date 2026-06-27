@@ -14,9 +14,9 @@ describe("TUI terminal startup sequences", () => {
   });
 
   it("exposes explicit mouse-reporting toggles for touchpad chat scrolling", () => {
-    expect(ENABLE_MOUSE_REPORTING).toContain("\x1b[?1000h");
+    expect(ENABLE_MOUSE_REPORTING).toContain("\x1b[?1002h");
     expect(ENABLE_MOUSE_REPORTING).toContain("\x1b[?1006h");
     expect(DISABLE_MOUSE_REPORTING).toContain("\x1b[?1006l");
-    expect(DISABLE_MOUSE_REPORTING).toContain("\x1b[?1000l");
+    expect(DISABLE_MOUSE_REPORTING).toContain("\x1b[?1002l");
   });
 });

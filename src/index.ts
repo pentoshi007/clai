@@ -134,7 +134,9 @@ async function main(): Promise<void> {
 
   program
     .name("clai")
-    .description("A cross-platform AI CLI assistant with ask and agent modes")
+    .description(
+      "A cross-platform AI CLI assistant with ask and agent modes. Built by Aniket Pandey, pentoshi007 on GitHub.",
+    )
     .version(getCurrentVersion())
     .addOption(modeOption())
     .option("--provider <provider>", "LLM provider to use")

@@ -56,13 +56,22 @@ export interface PlanItem {
   done: boolean;
 }
 
+export interface CompactedItem {
+  kind: "compacted";
+  id: string;
+  summary: string;
+  originalItems: TranscriptItem[];
+  done: boolean;
+}
+
 export type TranscriptItem =
   | UserItem
   | AssistantItem
   | ThinkingItem
   | ToolItem
   | NoticeItem
-  | PlanItem;
+  | PlanItem
+  | CompactedItem;
 
 const MAX_COMPACTION_FIELD_CHARS = 12_000;
 
@@ -94,6 +103,8 @@ export function serializeTranscriptForCompaction(items: TranscriptItem[]): strin
         return `SESSION EVENT (${item.level}): ${compactField(item.text)}`;
       case "plan":
         return `PLAN/TASK STATE:\n${compactField(JSON.stringify(item.plan, null, 2))}`;
+      case "compacted":
+        return `COMPACTED CONTEXT:\n${compactField(item.summary)}`;
     }
   }).join("\n\n---\n\n");
 }
@@ -152,6 +163,7 @@ export type TuiAction =
   | { type: "toggle-output" }
   | { type: "confirm-resolved" }
   | { type: "load-history"; messages: ChatMessage[]; transcript?: TranscriptItem[] | undefined }
+  | { type: "compacted"; summary: string; keepRecent: number }
   | { type: "reset" };
 
 let idCounter = 0;
@@ -170,6 +182,37 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
       return { ...state, thinkingExpanded: !state.thinkingExpanded };
     case "toggle-output":
       return { ...state, outputExpanded: !state.outputExpanded };
+    case "compacted": {
+      const keepRecent = action.keepRecent;
+      let userAsstCount = 0;
+      let tailStartIndex = 0;
+      for (let i = state.items.length - 1; i >= 0; i--) {
+        const item = state.items[i]!;
+        if (item.kind === "user" || item.kind === "assistant") {
+          userAsstCount++;
+          if (userAsstCount === keepRecent) {
+            tailStartIndex = i;
+            break;
+          }
+        }
+      }
+      
+      const compactedItems = state.items.slice(0, tailStartIndex);
+      const tailItems = state.items.slice(tailStartIndex);
+      
+      const compactedItem: CompactedItem = {
+        kind: "compacted",
+        id: nextId("compacted"),
+        summary: action.summary,
+        originalItems: compactedItems,
+        done: true,
+      };
+      
+      return {
+        ...state,
+        items: [compactedItem, ...tailItems],
+      };
+    }
     case "queue":
       return { ...state, queued: [...state.queued, action.text] };
     case "dequeue": {

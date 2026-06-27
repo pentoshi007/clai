@@ -139,6 +139,13 @@ function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[]
         return { ...item, text: redactSecrets(item.text), done: true };
       case "plan":
         return { ...item, done: true };
+      case "compacted":
+        return {
+          ...item,
+          summary: redactSecrets(item.summary),
+          originalItems: scrubTranscript(item.originalItems) ?? [],
+          done: true,
+        };
     }
   });
 }
@@ -269,7 +276,14 @@ async function upsertJsonl(record: HistoryRecord): Promise<void> {
     ? (await readFile(jsonlFile, "utf8"))
         .split("\n")
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as HistoryRecord)
+        .map((line) => {
+          try {
+            return JSON.parse(line) as HistoryRecord;
+          } catch {
+            return null;
+          }
+        })
+        .filter((item): item is HistoryRecord => item !== null)
     : [];
   const idx = records.findIndex((item) => item.id === record.id);
   if (idx >= 0) records[idx] = record;
@@ -341,7 +355,14 @@ async function listJsonlSessions(limit: number): Promise<HistoryRecord[]> {
   return raw
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as HistoryRecord)
+    .map((line) => {
+      try {
+        return JSON.parse(line) as HistoryRecord;
+      } catch {
+        return null;
+      }
+    })
+    .filter((record): record is HistoryRecord => record !== null)
     .slice(-limit)
     .reverse();
 }

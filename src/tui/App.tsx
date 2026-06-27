@@ -171,6 +171,7 @@ export function App({
   const historyIdx = useRef(-1);
   const historyDraft = useRef("");
   const lastCtrlC = useRef(0);
+  const lastDragTime = useRef(0);
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -788,13 +789,21 @@ export function App({
           info("compacting conversation…");
           const fullSession = serializeTranscriptForCompaction(state.items);
           void runner
-            .compact(fullSession)
+            .compact(fullSession, 2)
             .then((result) => {
               if (result.after === result.before) {
                 info(
-                  "nothing to compact yet — more than 8 recent messages are required",
+                  "nothing to compact yet — more messages are required",
                 );
               } else {
+                const memoMsg = result.messages.find(
+                  (m) =>
+                    m.role === "system" &&
+                    (m.content.startsWith("Session memory") ||
+                      m.content.startsWith("Earlier turns")),
+                ) ?? result.messages.find((m, i) => i > 0 && m.role === "system");
+                const summary = memoMsg ? memoMsg.content : "Compacted context";
+                dispatch({ type: "compacted", summary, keepRecent: 2 });
                 info(
                   `compacted ${result.before} → ${result.after} messages · ~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} tokens${result.summarized ? "" : " · local fallback"}`,
                 );
@@ -1501,12 +1510,26 @@ export function App({
   // trigger an implicit scroll in several terminals, which looks like a full
   // screen flash on every keypress/spinner frame.
   const usableRows = Math.max(8, rows - 1);
-  const headerH = 4;
-  const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 1;
+  const headerH = 0;
+  const statusH = state.pendingConfirm
+    ? 6
+    : secretRequest
+      ? 7
+      : state.status.running || compacting
+        ? 1
+        : 0;
   const composerH = 3;
+  const chromeH =
+    !secretRequest &&
+    !state.pendingConfirm &&
+    !state.status.running &&
+    !compacting
+      ? 1
+      : 0;
+  const gapH = 1;
   const maxMenuRows = Math.max(
     3,
-    usableRows - headerH - statusH - composerH - 3,
+    usableRows - headerH - statusH - composerH - chromeH - gapH - 3,
   );
   const menuH = slashMenuOpen
     ? Math.min(suggestions.length, maxMenuRows)
@@ -1515,7 +1538,7 @@ export function App({
       : 0;
   const viewportH = Math.max(
     3,
-    usableRows - headerH - statusH - composerH - menuH,
+    usableRows - headerH - statusH - composerH - menuH - chromeH - gapH,
   );
   const slashWindowStart = slashMenuOpen
     ? Math.min(
@@ -1533,6 +1556,10 @@ export function App({
     thinkingExpanded: state.thinkingExpanded,
     outputExpanded: state.outputExpanded,
     running: state.status.running,
+    version,
+    mode,
+    provider,
+    model,
   });
   const total = transcriptLines.length;
   const maxOffset = Math.max(0, total - viewportH);
@@ -1541,7 +1568,7 @@ export function App({
   const start = Math.max(0, end - viewportH);
   let visible = transcriptLines.slice(start, end);
   if (visible.length < viewportH) {
-    visible = [...Array(viewportH - visible.length).fill(""), ...visible];
+    visible = [...visible, ...Array(viewportH - visible.length).fill("")];
   }
 
   // SGR mouse reporting keeps wheel/trackpad events distinct from cursor-key
@@ -1549,15 +1576,46 @@ export function App({
   useEffect(() => {
     if (!stdin || modalActive) return;
     const onData = (chunk: Buffer | string): void => {
-      const direction = mouseWheelDirection(String(chunk));
-      if (direction < 0) setScroll((value) => Math.min(maxOffset, value + 3));
-      if (direction > 0) setScroll((value) => Math.max(0, value - 3));
+      const data = String(chunk);
+      const direction = mouseWheelDirection(data);
+      if (direction < 0) {
+        setScroll((value) => Math.min(maxOffset, value + 3));
+        return;
+      }
+      if (direction > 0) {
+        setScroll((value) => Math.max(0, value - 3));
+        return;
+      }
+
+      // Handle drag to scroll when mouse mode is active
+      if (mouseMode) {
+        const match = data.match(/\x1b\[<(\d+);(\d+);(\d+)([mM])/);
+        if (match) {
+          const button = parseInt(match[1]!, 10);
+          const y = parseInt(match[3]!, 10);
+          const action = match[4];
+
+          // Drag event (button 32, pressed/moving action M)
+          if (button === 32 && action === "M") {
+            const now = Date.now();
+            if (now - lastDragTime.current > 100) {
+              if (y <= 4) {
+                setScroll((value) => Math.min(maxOffset, value + 1));
+                lastDragTime.current = now;
+              } else if (y >= viewportH) {
+                setScroll((value) => Math.max(0, value - 1));
+                lastDragTime.current = now;
+              }
+            }
+          }
+        }
+      }
     };
     stdin.on("data", onData);
     return () => {
       stdin.off("data", onData);
     };
-  }, [stdin, modalActive, maxOffset]);
+  }, [stdin, modalActive, maxOffset, mouseMode, viewportH]);
 
   // ── Key handling ────────────────────────────────────────────────────────────
   useInput((ch, key) => {
@@ -1572,11 +1630,17 @@ export function App({
     }
     if (key.ctrl && ch === "o") {
       const hasOutput = state.items.some(
-        (item) => item.kind === "tool" && Boolean(item.output),
+        (item) =>
+          (item.kind === "tool" && Boolean(item.output)) ||
+          item.kind === "compacted",
       );
       if (hasOutput) dispatch({ type: "toggle-output" });
       else
-        dispatch({ type: "notice", level: "info", text: "no tool output yet" });
+        dispatch({
+          type: "notice",
+          level: "info",
+          text: "no tool output or compacted context yet",
+        });
       return;
     }
     if (key.ctrl && ch === "p") {
@@ -1619,6 +1683,14 @@ export function App({
     }
     if (key.ctrl && ch === "d") {
       setScroll((s) => Math.max(0, s - Math.floor(viewportH / 2)));
+      return;
+    }
+    if (key.upArrow && (key.shift || key.ctrl || key.meta)) {
+      setScroll((s) => Math.min(maxOffset, s + 1));
+      return;
+    }
+    if (key.downArrow && (key.shift || key.ctrl || key.meta)) {
+      setScroll((s) => Math.max(0, s - 1));
       return;
     }
     if (!input && maxOffset > 0 && ch === "k") {
@@ -1732,6 +1804,14 @@ export function App({
       setCursor((c) => Math.min(input.length, c + 1));
       return;
     }
+    if (key.backspace && (key.ctrl || key.meta)) {
+      setInput("");
+      setCursor(0);
+      setSelected(0);
+      historyIdx.current = -1;
+      historyDraft.current = "";
+      return;
+    }
     if (key.backspace || key.delete) {
       if (cursor === 0) return;
       setInput(input.slice(0, cursor - 1) + input.slice(cursor));
@@ -1764,39 +1844,7 @@ export function App({
 
   return (
     <Box flexDirection="column" width={cols} height={usableRows}>
-      {/* Header */}
-      <Box
-        flexDirection="column"
-        borderStyle="round"
-        borderColor="gray"
-        marginX={2}
-        paddingX={1}
-      >
-        <Box justifyContent="space-between">
-          <Text>
-            <Text backgroundColor="#2563EB" color="#FFFFFF" bold>
-              {" "}
-              ◆ clai{" "}
-            </Text>
-            <Text color="#94A3B8"> v{version}</Text>
-          </Text>
-          <Text>
-            <Text
-              backgroundColor="#854D0E"
-              color="#FFFFFF"
-              bold
-            >{` ${mode.toUpperCase()} `}</Text>
-            <Text color="#94A3B8"> MODE</Text>
-          </Text>
-        </Box>
-        <Text wrap="truncate-end">
-          <Text color="green">{provider}</Text>
-          <Text dimColor> / </Text>
-          <Text color="cyan">{model}</Text>
-          <Text dimColor>{`  ·  ${safeCwd()}`}</Text>
-          {offset > 0 ? <Text color="yellow">{`  ·  ▲ ${offset}`}</Text> : null}
-        </Text>
-      </Box>
+
 
       {/* Transcript viewport OR overlay */}
       {overlay.kind === "pager" ? (
@@ -1825,6 +1873,9 @@ export function App({
           ))}
         </Box>
       )}
+
+      {/* Gap between viewport and composer/status */}
+      <Box height={gapH} />
 
       {/* Slash menu (sits just above the composer) */}
       {slashMenuOpen && !modalActive
@@ -1910,14 +1961,14 @@ export function App({
         />
       ) : state.pendingConfirm ? (
         <ConfirmModal confirm={state.pendingConfirm} onAnswer={answerConfirm} />
-      ) : (
+      ) : state.status.running || compacting ? (
         <Box>
           {compacting ? (
             <Text>
               <Text color="magenta">{spinner} </Text>
               <Text color="yellow">compacting conversation…</Text>
             </Text>
-          ) : state.status.running ? (
+          ) : (
             <Text>
               <Text color="magenta">{spinner} </Text>
               <Text color="yellow">{state.status.activity || "working"}</Text>
@@ -1929,9 +1980,9 @@ export function App({
                 <Text dimColor>{` · ${state.queued.length} queued`}</Text>
               ) : null}
             </Text>
-          ) : null}
+          )}
         </Box>
-      )}
+      ) : null}
 
       {/* Composer (pinned bottom) */}
       <Box
@@ -2008,6 +2059,12 @@ export function App({
             backgroundColor={mouseMode ? "#155E75" : "#334155"}
             color="#F8FAFC"
           >{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
+          {offset > 0 ? (
+            <>
+              <Text> </Text>
+              <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ▲ ${offset} `}</Text>
+            </>
+          ) : null}
         </Box>
       ) : null}
     </Box>
