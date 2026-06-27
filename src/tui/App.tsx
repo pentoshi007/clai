@@ -1,4 +1,5 @@
 import { Box, Text, useApp, useInput, useStdin } from "ink";
+import chalk from "chalk";
 import {
   useCallback,
   useEffect,
@@ -19,6 +20,7 @@ import {
   maskSecret,
   setProviderSecret,
   setSecret,
+  unsetProviderSecret,
 } from "../store/keys.js";
 import { setActiveSearchProvider } from "../store/config.js";
 import {
@@ -1049,11 +1051,345 @@ export function App({
             ),
           );
           return true;
-        case "/set":
-        case "/unset":
+        case "/set": {
+          const parts = arg.split(/\s+/).filter(Boolean);
+          const providerVal = parts[0];
+          const keyVal = parts[1];
+          void (async () => {
+            if (!providerVal) {
+              const llm = await listProviderStatuses(provider);
+              const activeSearch = getConfig().activeSearchProvider;
+              const search = await Promise.all(
+                searchProviderIds.map(async (id) => {
+                  const secret = await getSearchProviderKey(id);
+                  const keyless = id === "duckduckgo";
+                  return {
+                    provider: id,
+                    configured: keyless || Boolean(secret.value),
+                    maskedKey: secret.value ? maskSecret(secret.value) : undefined,
+                  };
+                }),
+              );
+              setOverlay({
+                kind: "picker",
+                title: "Set API key for provider",
+                options: [
+                  ...llm.map((status) => ({
+                    value: `llm:${status.provider}`,
+                    label: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ key set") : chalk.red("✗ no key")}${status.active ? " (active)" : ""}`,
+                    description: status.model,
+                  })),
+                  ...search.map((status) => ({
+                    value: `search:${status.provider}`,
+                    label: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ key set") : chalk.red("✗ no key")}`,
+                    description: `Search provider${status.provider === activeSearch ? " (active)" : ""}`,
+                  })),
+                ],
+                onSelect: (val) => {
+                  setOverlay({ kind: "none" });
+                  void (async () => {
+                    const isSearch = val.startsWith("search:");
+                    const id = val.split(":")[1]!;
+                    if (isSearch) {
+                      const next = id as SearchProviderId;
+                      if (next === "duckduckgo") {
+                        info("duckduckgo is keyless and requires no setup");
+                        return;
+                      }
+                      const secret = await getSearchProviderKey(next);
+                      if (secret.value) {
+                        const reset = await new Promise<boolean>((resolveConfirm) => {
+                          confirmResolver.current = resolveConfirm;
+                          dispatch({
+                            type: "event",
+                            event: {
+                              type: "confirm-request",
+                              id: "c",
+                              kind: "reset",
+                              prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                            },
+                          });
+                        });
+                        if (!reset) {
+                          info("cancelled");
+                          return;
+                        }
+                      }
+                      const key = await requestSecret({
+                        title: `${next} API key`,
+                        prompt: `Enter API key for ${next}:`,
+                      });
+                      if (!key) {
+                        info("cancelled");
+                        return;
+                      }
+                      await setSecret("search", next, key.trim());
+                      info(`saved ${next} ${maskSecret(key.trim())}`);
+                    } else {
+                      const next = id as ProviderId;
+                      if (next === "ollama") {
+                        const key = await requestSecret({
+                          title: "Ollama host URL",
+                          prompt: `Enter host URL for Ollama:`,
+                        });
+                        if (!key) {
+                          info("cancelled");
+                          return;
+                        }
+                        updateConfig({ ollamaHost: key.trim() });
+                        info(`saved ollama host → ${key.trim()}`);
+                        return;
+                      }
+                      const secret = await getProviderSecret(next);
+                      if (secret.value) {
+                        const reset = await new Promise<boolean>((resolveConfirm) => {
+                          confirmResolver.current = resolveConfirm;
+                          dispatch({
+                            type: "event",
+                            event: {
+                              type: "confirm-request",
+                              id: "c",
+                              kind: "reset",
+                              prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                            },
+                          });
+                        });
+                        if (!reset) {
+                          info("cancelled");
+                          return;
+                        }
+                      }
+                      const key = await requestSecret({
+                        title: `${next} API key`,
+                        prompt: `Enter API key for ${next}:`,
+                      });
+                      if (!key) {
+                        info("cancelled");
+                        return;
+                      }
+                      if (!getProvider(next).validateKey(key.trim())) {
+                        warn(`invalid API key format for ${next}`);
+                        return;
+                      }
+                      await setProviderSecret(next, key.trim());
+                      info(`saved ${next} ${maskSecret(key.trim())}`);
+                    }
+                  })();
+                },
+              });
+            } else {
+              try {
+                const isSearch = ["brave", "tavily", "duckduckgo"].includes(providerVal);
+                if (isSearch) {
+                  const next = providerVal as SearchProviderId;
+                  if (next === "duckduckgo") {
+                    info("duckduckgo is keyless and requires no setup");
+                    return;
+                  }
+                  let key = keyVal;
+                  if (!key) {
+                    const secret = await getSearchProviderKey(next);
+                    if (secret.value) {
+                      const reset = await new Promise<boolean>((resolveConfirm) => {
+                        confirmResolver.current = resolveConfirm;
+                        dispatch({
+                          type: "event",
+                          event: {
+                            type: "confirm-request",
+                            id: "c",
+                            kind: "reset",
+                            prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                          },
+                        });
+                      });
+                      if (!reset) {
+                        info("cancelled");
+                        return;
+                      }
+                    }
+                    key = await requestSecret({
+                      title: `${next} API key`,
+                      prompt: `Enter API key for ${next}:`,
+                    });
+                    if (!key) {
+                      info("cancelled");
+                      return;
+                    }
+                  }
+                  await setSecret("search", next, key.trim());
+                  info(`saved ${next} ${maskSecret(key.trim())}`);
+                } else {
+                  const next = assertProvider(providerVal);
+                  if (next === "ollama") {
+                    let key = keyVal;
+                    if (!key) {
+                      key = await requestSecret({
+                        title: "Ollama host URL",
+                        prompt: `Enter host URL for Ollama:`,
+                      });
+                      if (!key) {
+                        info("cancelled");
+                        return;
+                      }
+                    }
+                    updateConfig({ ollamaHost: key.trim() });
+                    info(`saved ollama host → ${key.trim()}`);
+                    return;
+                  }
+                  let key = keyVal;
+                  if (!key) {
+                    const secret = await getProviderSecret(next);
+                    if (secret.value) {
+                      const reset = await new Promise<boolean>((resolveConfirm) => {
+                        confirmResolver.current = resolveConfirm;
+                        dispatch({
+                          type: "event",
+                          event: {
+                            type: "confirm-request",
+                            id: "c",
+                            kind: "reset",
+                            prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                          },
+                        });
+                      });
+                      if (!reset) {
+                        info("cancelled");
+                        return;
+                      }
+                    }
+                    key = await requestSecret({
+                      title: `${next} API key`,
+                      prompt: `Enter API key for ${next}:`,
+                    });
+                    if (!key) {
+                      info("cancelled");
+                      return;
+                    }
+                  }
+                  if (!getProvider(next).validateKey(key.trim())) {
+                    warn(`invalid API key format for ${next}`);
+                    return;
+                  }
+                  await setProviderSecret(next, key.trim());
+                  info(`saved ${next} ${maskSecret(key.trim())}`);
+                }
+              } catch (e: any) {
+                warn(e.message);
+              }
+            }
+          })();
+          return true;
+        }
+        case "/unset": {
+          const parts = arg.split(/\s+/).filter(Boolean);
+          const providerVal = parts[0];
+          void (async () => {
+            if (!providerVal) {
+              const llm = await listProviderStatuses(provider);
+              const activeSearch = getConfig().activeSearchProvider;
+              const search = await Promise.all(
+                searchProviderIds.map(async (id) => {
+                  const secret = await getSearchProviderKey(id);
+                  const keyless = id === "duckduckgo";
+                  return {
+                    provider: id,
+                    configured: keyless || Boolean(secret.value),
+                    maskedKey: secret.value ? maskSecret(secret.value) : undefined,
+                  };
+                }),
+              );
+              setOverlay({
+                kind: "picker",
+                title: "Unset API key for provider",
+                options: [
+                  ...llm.map((status) => ({
+                    value: `llm:${status.provider}`,
+                    label: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ ") + (status.maskedKey ?? "key set") : chalk.red("✗ no key")}${status.active ? " (active)" : ""}`,
+                    description: status.model,
+                  })),
+                  ...search.map((status) => ({
+                    value: `search:${status.provider}`,
+                    label: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ ") + (status.maskedKey ?? "keyless") : chalk.red("✗ no key")}`,
+                    description: `Search provider${status.provider === activeSearch ? " (active)" : ""}`,
+                  })),
+                ],
+                onSelect: (val) => {
+                  setOverlay({ kind: "none" });
+                  void (async () => {
+                    const isSearch = val.startsWith("search:");
+                    const id = val.split(":")[1]!;
+                    if (isSearch) {
+                      const next = id as SearchProviderId;
+                      if (next === "duckduckgo") {
+                        info("duckduckgo requires no credentials and cannot be unset");
+                        return;
+                      }
+                      const secret = await getSearchProviderKey(next);
+                      if (!secret.value) {
+                        warn(`${next} has no key to unset`);
+                        return;
+                      }
+                      const { unsetSearchProviderKey } = await import("../commands/search-providers.js");
+                      await unsetSearchProviderKey(next);
+                      info(`unset ${next}`);
+                    } else {
+                      const next = id as ProviderId;
+                      if (next === "ollama") {
+                        info("ollama does not store an API key");
+                        return;
+                      }
+                      const secret = await getProviderSecret(next);
+                      if (!secret.value) {
+                        warn(`${next} has no key to unset`);
+                        return;
+                      }
+                      await unsetProviderSecret(next);
+                      info(`unset ${next}`);
+                    }
+                  })();
+                },
+              });
+            } else {
+              try {
+                const isSearch = ["brave", "tavily", "duckduckgo"].includes(providerVal);
+                if (isSearch) {
+                  const next = providerVal as SearchProviderId;
+                  if (next === "duckduckgo") {
+                    info("duckduckgo requires no credentials and cannot be unset");
+                    return;
+                  }
+                  const secret = await getSearchProviderKey(next);
+                  if (!secret.value) {
+                    warn(`${next} has no key to unset`);
+                    return;
+                  }
+                  const { unsetSearchProviderKey } = await import("../commands/search-providers.js");
+                  await unsetSearchProviderKey(next);
+                  info(`unset ${next}`);
+                } else {
+                  const next = assertProvider(providerVal);
+                  if (next === "ollama") {
+                    info("ollama does not store an API key");
+                    return;
+                  }
+                  const secret = await getProviderSecret(next);
+                  if (!secret.value) {
+                    warn(`${next} has no key to unset`);
+                    return;
+                  }
+                  await unsetProviderSecret(next);
+                  info(`unset ${next}`);
+                }
+              } catch (e: any) {
+                warn(e.message);
+              }
+            }
+          })();
+          return true;
+        }
         case "/update":
           info(
-            `${cmd} manages external credentials or updates; use the equivalent \`clai ${cmd.slice(1)}\` command outside the TUI`,
+            `${cmd} manages updates; use the equivalent \`clai update\` command outside the TUI`,
           );
           return true;
         case "/help":
@@ -1100,6 +1436,8 @@ export function App({
       openToolOutput,
       setReasoning,
       state.items,
+      requestSecret,
+      setOverlay,
     ],
   );
 

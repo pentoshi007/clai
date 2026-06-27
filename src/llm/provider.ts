@@ -54,7 +54,7 @@ export const defaultModels: Record<ProviderId, string> = {
   groq: "llama-3.3-70b-versatile",
   gemini: "gemini-2.0-flash",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
-  openai: "gpt-4o-mini",
+  openai: "gpt-5.4-mini",
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "openai/gpt-oss-20b",
   agentrouter: "claude-haiku-4-5-20251001",
@@ -77,6 +77,11 @@ const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string
     // Older default; redirect existing configs to the new openai/gpt-oss-20b
     // default so retired Nemotron entries don't surface 404s.
     "nvidia/llama-3.3-nemotron-super-49b-v1": defaultModels.nvidia,
+  },
+  openai: {
+    // gpt-4o models have been superseded by the gpt-5.x lineup.
+    "gpt-4o-mini": "gpt-5.4-mini",
+    "gpt-4o": "gpt-5.4",
   },
 };
 

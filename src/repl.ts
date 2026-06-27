@@ -18,7 +18,9 @@ import { attachClassicRenderer } from "./agent/classic-renderer.js";
 import {
   providerSwitcher,
   printProviderKeys,
+  setKeyPicker,
   setProviderKey,
+  unsetKeyPicker,
   unsetProviderKey,
   useProvider,
 } from "./commands/providers.js";
@@ -140,8 +142,8 @@ export const slashCommands: SlashCommand[] = [
     usage: "<provider>",
     description: "alias for /provider <name>",
   },
-  { command: "/set", usage: "<provider> [key]", description: "store API key" },
-  { command: "/unset", usage: "<provider>", description: "remove key" },
+  { command: "/set", usage: "[provider] [key]", description: "store API key or open picker" },
+  { command: "/unset", usage: "[provider]", description: "remove key or open picker" },
   { command: "/keys", description: "list configured providers" },
   {
     command: "/search",
@@ -1669,13 +1671,11 @@ async function handleSlash(
       return true;
     }
     case "/set": {
-      if (!args[0]) console.log(chalk.dim("usage: /set <provider> [key]"));
-      else await setProviderKey(args[0], args[1], {});
+      await setKeyPicker(args[0], args[1]);
       return true;
     }
     case "/unset": {
-      if (!args[0]) console.log(chalk.dim("usage: /unset <provider>"));
-      else await unsetProviderKey(args[0]);
+      await unsetKeyPicker(args[0]);
       return true;
     }
     case "/keys":

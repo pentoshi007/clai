@@ -18,7 +18,7 @@ export const openaiProvider: LlmProvider = {
   displayName: "OpenAI",
   defaultModel: defaultModels.openai,
   envVar: "OPENAI_API_KEY",
-  validateKey: (key: string) => /^sk-[A-Za-z0-9_-]{12,}$/.test(key),
+  validateKey: (key: string) => /^sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{12,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("OpenAI API key is required");
     const response = await fetch(`${baseUrl}/models`, {

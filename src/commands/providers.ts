@@ -1,4 +1,4 @@
-import { password, select } from "@inquirer/prompts";
+import { confirm, password, select } from "@inquirer/prompts";
 import chalk from "chalk";
 import { getProvider, pingProvider } from "../llm/router.js";
 import { assertProvider, maskSecret } from "../llm/provider.js";
@@ -34,10 +34,11 @@ async function readStdin(): Promise<string> {
 }
 
 async function promptForSecret(provider: ProviderId): Promise<string> {
-  return password({
+  const raw = await password({
     message: `Enter API key for ${provider} (input hidden, leave blank to cancel):`,
     mask: "•",
   });
+  return raw.trim();
 }
 
 function invalidFormatHint(provider: ProviderId): string {
@@ -45,7 +46,7 @@ function invalidFormatHint(provider: ProviderId): string {
   if (provider === "gemini") return "Gemini keys usually start with AIza";
   if (provider === "openrouter")
     return "OpenRouter keys usually start with sk-or-";
-  if (provider === "openai") return "OpenAI keys usually start with sk-";
+  if (provider === "openai") return "OpenAI keys usually start with sk- or sk-proj-";
   if (provider === "anthropic")
     return "Anthropic keys usually start with sk-ant-";
   if (provider === "nvidia")
@@ -229,4 +230,71 @@ export async function providerSwitcher(
     loop: false,
   });
   await useProvider(selected);
+}
+
+export async function setKeyPicker(
+  providerValue?: string | undefined,
+  keyArg?: string | undefined,
+): Promise<void> {
+  if (providerValue) {
+    await setProviderKey(providerValue, keyArg, {});
+    return;
+  }
+
+  const config = getConfig();
+  const statuses = await listProviderStatuses(config.defaultProvider);
+  const pageSize = 15;
+  const selected = await select({
+    message: "Set API key for provider:",
+    pageSize,
+    choices: statuses.map((status) => ({
+      name: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ key set") : chalk.red("✗ no key")}${status.active ? chalk.cyan(" (active)") : ""}`,
+      value: status.provider,
+    })),
+    loop: false,
+  });
+
+  const secret = await getProviderSecret(selected);
+  if (secret.value) {
+    // Key already set — ask whether to reset
+    const reset = await confirm({
+      message: `${selected} already has a key (${maskSecret(secret.value)}). Reset it?`,
+      default: false,
+    });
+    if (!reset) {
+      console.log(chalk.dim("cancelled"));
+      return;
+    }
+  }
+  // Prompt for the new key
+  await setProviderKey(selected, undefined, {});
+}
+
+export async function unsetKeyPicker(
+  providerValue?: string | undefined,
+): Promise<void> {
+  if (providerValue) {
+    await unsetProviderKey(providerValue);
+    return;
+  }
+
+  const config = getConfig();
+  const statuses = await listProviderStatuses(config.defaultProvider);
+  const pageSize = 15;
+  const selected = await select({
+    message: "Unset API key for provider:",
+    pageSize,
+    choices: statuses.map((status) => ({
+      name: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ ") + (status.maskedKey ?? "key set") : chalk.red("✗ no key")}${status.active ? chalk.cyan(" (active)") : ""}`,
+      value: status.provider,
+    })),
+    loop: false,
+  });
+
+  const secret = await getProviderSecret(selected);
+  if (!secret.value && selected !== "ollama") {
+    console.log(chalk.dim(`${selected} has no key to unset`));
+    return;
+  }
+  await unsetProviderKey(selected);
 }
