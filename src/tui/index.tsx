@@ -18,19 +18,27 @@ export async function startTui(opts: StartTuiOptions = {}): Promise<void> {
   const model = opts.model ?? getProviderModel(provider);
   const mode = opts.mode ?? config.defaultMode;
 
-  const app = render(
-    createElement(App, {
-      version: getCurrentVersion(),
-      initialMode: mode,
-      provider,
-      initialModel: model,
-      noHistory: opts.noHistory,
-    }),
-    {
-      // We own Ctrl+C handling (abort vs. exit), so Ink must not exit on it.
-      exitOnCtrlC: false,
-    },
-  );
-
-  await app.waitUntilExit();
+  // Enter and clear the alternate screen before Ink's first paint. Doing this
+  // in a React effect erases that first frame and leaves a blank terminal
+  // until a resize causes another render (notably in macOS Terminal).
+  const alternateScreen = Boolean(process.stdout.isTTY);
+  if (alternateScreen) process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
+  try {
+    const app = render(
+      createElement(App, {
+        version: getCurrentVersion(),
+        initialMode: mode,
+        provider,
+        initialModel: model,
+        noHistory: opts.noHistory,
+      }),
+      {
+        // We own Ctrl+C handling (abort vs. exit), so Ink must not exit on it.
+        exitOnCtrlC: false,
+      },
+    );
+    await app.waitUntilExit();
+  } finally {
+    if (alternateScreen) process.stdout.write("\x1b[?1049l");
+  }
 }

@@ -58,7 +58,7 @@ const IMPLEMENT_PROMPT =
   "Do NOT call web.search — you already know everything needed. " +
   "Run real commands (installs, servers, verification) — do not claim anything ran without a successful tool call.";
 
-const MAX_SUGGESTIONS = 6;
+const MAX_FILE_SUGGESTIONS = 6;
 
 type Overlay =
   | { kind: "none" }
@@ -87,15 +87,6 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const lastCtrlC = useRef(0);
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
-
-  useEffect(() => {
-    if (!process.stdout.isTTY) return;
-    process.stdout.write("\x1b[?1049h");
-    process.stdout.write("\x1b[2J\x1b[H");
-    return () => {
-      process.stdout.write("\x1b[?1049l");
-    };
-  }, []);
 
   // ── Confirm port → in-app modal ────────────────────────────────────────────
   const confirmController = useMemo(() => createTuiConfirmPort(), []);
@@ -567,11 +558,11 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
 
   // ── Layout math (keep the composer pinned to the bottom) ────────────────────
   const suggestions: SlashCommand[] = input.startsWith("/")
-    ? getSlashCommandSuggestions(input).slice(0, MAX_SUGGESTIONS)
+    ? getSlashCommandSuggestions(input)
     : [];
   const mention = getMentionQuery(input, cursor);
   const fileSuggestions: FileSuggestion[] = mention
-    ? findFileSuggestions(mention.query, safeCwd(), MAX_SUGGESTIONS)
+    ? findFileSuggestions(mention.query, safeCwd(), MAX_FILE_SUGGESTIONS)
     : [];
   const slashMenuOpen = suggestions.length > 0;
   const fileMenuOpen = !slashMenuOpen && Boolean(mention) && fileSuggestions.length > 0;
@@ -586,8 +577,16 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const headerH = 4;
   const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 1;
   const composerH = 3;
-  const menuH = slashMenuOpen ? suggestions.length : fileMenuOpen ? fileSuggestions.length : 0;
+  const maxMenuRows = Math.max(3, usableRows - headerH - statusH - composerH - 3);
+  const menuH = slashMenuOpen ? Math.min(suggestions.length, maxMenuRows) : fileMenuOpen ? fileSuggestions.length : 0;
   const viewportH = Math.max(3, usableRows - headerH - statusH - composerH - menuH);
+  const slashWindowStart = slashMenuOpen
+    ? Math.min(
+        Math.max(0, selected - Math.floor(menuH / 2)),
+        Math.max(0, suggestions.length - menuH),
+      )
+    : 0;
+  const visibleSlashSuggestions = suggestions.slice(slashWindowStart, slashWindowStart + menuH);
 
   const transcriptLines = renderTranscriptLines(state, {
     width: cols,
@@ -788,16 +787,22 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
 
       {/* Slash menu (sits just above the composer) */}
       {slashMenuOpen && !modalActive
-        ? suggestions.map((cmd, i) => (
+        ? visibleSlashSuggestions.map((cmd, i) => {
+            const absoluteIndex = slashWindowStart + i;
+            return (
             <Text key={cmd.command} wrap="truncate-end">
-              <Text color={i === selected ? "magenta" : "cyan"}>
-                {i === selected ? "❯ " : "  "}
+              <Text color={absoluteIndex === selected ? "magenta" : "cyan"}>
+                {absoluteIndex === selected ? "❯ " : "  "}
                 {cmd.command}
               </Text>
               {cmd.usage ? <Text dimColor> {cmd.usage}</Text> : null}
               <Text dimColor>{"  "}{cmd.description}</Text>
+              {i === visibleSlashSuggestions.length - 1 && slashWindowStart + menuH < suggestions.length
+                ? <Text dimColor>{`  · ${suggestions.length - slashWindowStart - menuH} more ↓`}</Text>
+                : null}
             </Text>
-          ))
+            );
+          })
         : null}
       {fileMenuOpen && !modalActive
         ? fileSuggestions.map((file, i) => (
