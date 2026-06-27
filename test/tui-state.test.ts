@@ -269,7 +269,7 @@ describe("tui transcript formatting", () => {
         running: false,
       },
     ).join("\n");
-    expect(rendered).toMatch(/^ you\s+hello/);
+    expect(rendered.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")).toMatch(/^ you\s+hello/);
   });
 
   it("labels shell commands and their output instead of showing ambiguous bare text", () => {

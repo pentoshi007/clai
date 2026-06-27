@@ -67,9 +67,10 @@ function renderUser(text: string, width: number): string[] {
   for (const line of lines) {
     out.push(...wrap(line, width - 8));
   }
-  return out.map((l, i) =>
-    i === 0 ? `${tag} ${l}` : `      ${l}`,
-  );
+  return out.map((l, i) => {
+    const whiteLine = "\x1b[37m" + l.replace(/\x1b\[39m/g, "\x1b[37m") + "\x1b[39m";
+    return i === 0 ? `${tag} ${whiteLine}` : `      ${whiteLine}`;
+  });
 }
 
 function renderAssistant(text: string, width: number): string[] {

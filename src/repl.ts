@@ -44,6 +44,7 @@ import {
 } from "./store/history.js";
 import { assertProvider, defaultModels } from "./llm/provider.js";
 import { getProvider, providerAuth } from "./llm/router.js";
+import { nvidiaFallbackModels } from "./llm/nvidia.js";
 import { providerIds } from "./types.js";
 import {
   runUpdate,
@@ -309,35 +310,7 @@ export const knownModels: Record<string, string[]> = {
     "claude-3-5-sonnet-latest",
     "claude-3-5-haiku-latest",
   ],
-  nvidia: [
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b",
-    "moonshotai/kimi-k2.6",
-    "deepseek-ai/deepseek-v4-flash",
-    "deepseek-ai/deepseek-v4-pro",
-    "z-ai/glm-5.1",
-    "minimaxai/minimax-m2.7",
-    "minimaxai/minimax-m3",
-    "google/gemma-4-31b-it",
-    "nvidia/nemotron-3-nano-30b-a3b",
-    "nvidia/nemotron-3-super-120b-a12b",
-    "nvidia/nemotron-3-ultra-550b-a55b",
-    "nvidia/llama-3.3-nemotron-super-49b-v1",
-    "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-    "meta/llama-3.3-70b-instruct",
-    "meta/llama-4-maverick-17b-128e-instruct",
-    "meta/llama-3.1-70b-instruct",
-    "nvidia/llama-3.1-nemotron-70b-instruct",
-    "qwen/qwen3-next-80b-a3b-instruct",
-    "qwen/qwen3.5-122b-a10b",
-    "mistralai/mistral-small-4-119b-2603",
-    "mistralai/mistral-medium-3.5-128b",
-    "mistralai/mistral-large-3-675b-instruct-2512",
-    "mistralai/mistral-nemotron",
-    "stepfun-ai/step-3.5-flash",
-    "stepfun-ai/step-3.7-flash",
-    "sarvamai/sarvam-m",
-  ],
+  nvidia: nvidiaFallbackModels,
   ollama: [
     "llama3.3:70b",
     "llama3.2:3b",
