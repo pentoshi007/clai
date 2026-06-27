@@ -64,6 +64,40 @@ export type TranscriptItem =
   | NoticeItem
   | PlanItem;
 
+const MAX_COMPACTION_FIELD_CHARS = 12_000;
+
+function compactField(value: string): string {
+  if (value.length <= MAX_COMPACTION_FIELD_CHARS) return value;
+  return `${value.slice(0, MAX_COMPACTION_FIELD_CHARS)}\n…[truncated; full output remains in the session transcript/artifact]`;
+}
+
+/** Plain, detailed session record used as source material for model compaction. */
+export function serializeTranscriptForCompaction(items: TranscriptItem[]): string {
+  return items.map((item) => {
+    switch (item.kind) {
+      case "user":
+        return `USER INTENT/PROMPT:\n${compactField(item.text)}`;
+      case "assistant":
+        return `ASSISTANT RESPONSE:\n${compactField(item.text)}`;
+      case "thinking":
+        return `REASONING/STEP NOTES:\n${compactField(item.content)}`;
+      case "tool":
+        return [
+          `TOOL/COMMAND: ${item.name}`,
+          `INPUT: ${compactField(item.argsDisplay)}`,
+          `STATUS: ${item.status}${typeof item.exitCode === "number" ? ` (exit ${item.exitCode})` : ""}`,
+          item.summary ? `RESULT SUMMARY: ${compactField(item.summary)}` : "",
+          `OUTPUT/RESULT:\n${compactField(item.output)}`,
+          item.artifactPath ? `FULL ARTIFACT: ${item.artifactPath}` : "",
+        ].filter(Boolean).join("\n");
+      case "notice":
+        return `SESSION EVENT (${item.level}): ${compactField(item.text)}`;
+      case "plan":
+        return `PLAN/TASK STATE:\n${compactField(JSON.stringify(item.plan, null, 2))}`;
+    }
+  }).join("\n\n---\n\n");
+}
+
 // ── Confirm requests ─────────────────────────────────────────────────────────
 
 export interface PendingConfirm {

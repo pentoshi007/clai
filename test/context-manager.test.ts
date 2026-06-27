@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compactMessages,
+  compactMessagesWithSummary,
   estimateMessagesTokens,
   estimateTokens,
 } from "../src/agent/context-manager.js";
@@ -59,5 +60,33 @@ describe("phase 9 — context manager", () => {
     ];
     const out = compactMessages(msgs, { budgetTokens: 100_000 });
     expect(out).toEqual(msgs);
+  });
+
+  it("creates semantic memory while preserving recent messages", async () => {
+    const msgs: ChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: `message-${index}`,
+    }));
+    const result = await compactMessagesWithSummary(msgs, async (prompt) => {
+      expect(prompt).toContain("nmap -sT localhost");
+      expect(prompt).toContain("Commands/tools and results");
+      return "The user selected PostgreSQL and implementation remains pending.";
+    }, {}, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
+    expect(result.summarized).toBe(true);
+    expect(result.messages[0]?.content).toContain("PostgreSQL");
+    expect(result.messages.slice(-8)).toEqual(msgs.slice(-8));
+  });
+
+  it("falls back locally when model summarization fails", async () => {
+    const msgs: ChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" as const : "assistant" as const,
+      content: `message-${index}`,
+    }));
+    const result = await compactMessagesWithSummary(msgs, async () => {
+      throw new Error("offline");
+    }, { keepRecent: 4 });
+    expect(result.summarized).toBe(false);
+    expect(result.after).toBeLessThan(result.before);
+    expect(result.messages.slice(-4)).toEqual(msgs.slice(-4));
   });
 });

@@ -50,12 +50,13 @@ After installing, type `clai` in any terminal to start.
 ## Quick Start
 
 ```sh
-# Open interactive REPL
+# Open the full-screen terminal UI (default)
 clai
 
-# Full-screen terminal UI (experimental, opencode/claude-code style)
-clai --tui          # or set CLAI_TUI=1
-clai --classic      # force the classic line-based REPL
+# Frontend selection
+clai --tui          # explicitly request the TUI
+clai --classic      # start the legacy line-based REPL
+CLAI_CLASSIC=1 clai # persistent shell-level opt-out (CLAI_TUI=0 also works)
 
 # One-shot ask mode (explains but doesn't execute)
 clai --mode ask "create a python venv and install requests"
@@ -67,12 +68,13 @@ clai --mode agent "find all PDFs larger than 10MB in ~/Documents"
 clai -y "list the 10 largest files in my home directory"
 ```
 
-### Terminal UI (`--tui`)
+### Terminal UI
 
-`clai --tui` launches a full-screen interface (built on Ink) with a persistent
-composer, live tool cards, streaming responses, and a status line — the same
-agent under the hood as the classic REPL. It is opt-in for now; pass
-`--classic` (or just run `clai`) for the line-based REPL.
+`clai` launches the full-screen interface by default. It uses the same agent as
+the legacy REPL, with a persistent composer, streaming responses, live tool
+cards, searchable pickers, secure credential/password prompts, and restorable
+session transcripts. Use `clai --classic` when a line-based interface is
+required.
 
 In the TUI:
 
@@ -85,12 +87,20 @@ In the TUI:
 - `Esc` cancels the running turn · `Ctrl+T` expand/collapse thinking ·
   `Ctrl+O` view full tool output · `Ctrl+P` view the plan · `Ctrl+J` jobs panel
   · `Ctrl+C` twice to exit.
-- Interactive pickers (provider/model lists, history browser) currently live in
-  classic mode — pass an explicit argument (`/model <name>`) in the TUI, or use
-  `clai --classic`.
+- `Up`/`Down` browse submitted prompts; reaching the newest entry restores the
+  draft. Use `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` to scroll the transcript.
+- Provider, model, variant, and history pickers filter as you type.
+- `/compact` shows active progress and asks the selected model to turn the full
+  session—prompts, reasoning, plans, commands, outputs, results, completed
+  tasks, failures, and remaining work—into compact continuation memory. That
+  memory replaces older model context while the eight newest messages remain
+  verbatim. If the provider is unavailable, a local deterministic fallback is
+  used.
+- `/history` restores user prompts, assistant responses, thinking, tool calls,
+  and tool outputs for sessions saved by v1.2.9 or newer.
 
-If the terminal is not a TTY or is too small, `--tui` falls back to the classic
-REPL automatically.
+If the terminal is not interactive or is too small, clai falls back to the
+classic REPL automatically.
 
 ## Features
 
@@ -103,7 +113,12 @@ REPL automatically.
 - **Cross-platform** — macOS, Linux, and Windows. Detects OS-native package managers (brew, apt, dnf, pacman, winget, choco).
 - **Pentest-aware** — nmap, nikto, sqlmap, gobuster, ffuf, hydra, masscan, whois, dig, netcat, tshark.
 - **Auto-update** — Checks for new versions on startup; run `/update` or `clai update` to upgrade.
-- **Persistent history** — Session history with automatic key redaction in logs.
+- **Persistent history** — Full transcript restoration with automatic secret
+  redaction, including thinking and tool activity.
+- **Context compaction** — Model-generated continuation memory with recent-turn
+  preservation and an offline fallback.
+- **Modern terminal UI by default** — Boxed session header, searchable pickers,
+  cancellable tools, secure prompts, full-output pager, and queued messages.
 
 ## Provider Setup
 

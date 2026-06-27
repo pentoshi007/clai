@@ -7,7 +7,8 @@ import {
   createSessionPolicy,
   type SessionPolicy,
 } from "../../agent/runner.js";
-import { compactMessages } from "../../agent/context-manager.js";
+import { compactMessagesWithSummary, type CompactResult } from "../../agent/context-manager.js";
+import { completeWithProvider } from "../../llm/router.js";
 import {
   createThinkingStreamParser,
   rememberThinkingFromText,
@@ -47,7 +48,7 @@ export interface AgentRunner {
   /** Replace the current conversation when resuming a saved session. */
   setMessages: (messages: ChatMessage[]) => void;
   /** Compact the in-memory history; returns counts before/after. */
-  compact: () => { before: number; after: number };
+  compact: (sessionTranscript?: string) => Promise<CompactResult>;
 }
 
 /**
@@ -87,11 +88,47 @@ export function useAgentRunner({
     sessionRef.current = createSessionPolicy();
   }, []);
 
-  const compact = useCallback(() => {
-    const before = messagesRef.current.length;
-    messagesRef.current = compactMessages(messagesRef.current, { budgetTokens: 0 });
-    return { before, after: messagesRef.current.length };
-  }, []);
+  const compact = useCallback(async (sessionTranscript?: string) => {
+    const ctx = getContext();
+    const completeSummary = async (prompt: string): Promise<string> => {
+      const response = await completeWithProvider({
+        provider: ctx.provider,
+        model: ctx.model,
+        messages: [
+          { role: "system", content: "You compress conversation history into accurate continuation memory." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.1,
+        maxTokens: 2_048,
+      });
+      return response.text;
+    };
+    const result = await compactMessagesWithSummary(
+      messagesRef.current,
+      async (prompt) => {
+        const chunkSize = 50_000;
+        if (prompt.length <= chunkSize) return completeSummary(prompt);
+        const chunks = Array.from(
+          { length: Math.ceil(prompt.length / chunkSize) },
+          (_, index) => prompt.slice(index * chunkSize, (index + 1) * chunkSize),
+        );
+        const partials: string[] = [];
+        for (let index = 0; index < chunks.length; index += 1) {
+          partials.push(await completeSummary(
+            `Summarize part ${index + 1} of ${chunks.length} of one session. Preserve concrete goals, actions, commands, results, task state, failures, and remaining work.\n\n${chunks[index]}`,
+          ));
+        }
+        return completeSummary(
+          "Merge these ordered partial session memories into one non-redundant continuation memory. Preserve all concrete facts and unresolved work. Use sections: User goals, Decisions and constraints, Work completed, Commands/tools and results, Current state, Remaining work.\n\n" +
+          partials.map((part, index) => `PART ${index + 1}:\n${part}`).join("\n\n"),
+        );
+      },
+      { budgetTokens: 0 },
+      sessionTranscript,
+    );
+    messagesRef.current = result.messages;
+    return result;
+  }, [getContext]);
 
   const run = useCallback(
     async (input: string, opts?: RunOptions): Promise<void> => {

@@ -31,6 +31,7 @@ import {
 } from "./ui/thinking.js";
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { canUseTui } from "./tui/can-use-tui.js";
+import { shouldUseTui } from "./tui/default.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -40,21 +41,6 @@ interface GlobalOptions {
   noHistory?: boolean | undefined;
   tui?: boolean | undefined;
   classic?: boolean | undefined;
-}
-
-/**
- * Decide whether the full-screen TUI frontend should launch for an
- * interactive (no-prompt) session.
- *
- * Explicit flags win over the env var; the env var wins over the default
- * (classic). When the user asks for the TUI but the terminal can't host it
- * (non-TTY pipe/CI, or too small) we fall back to the classic REPL with a
- * one-line notice so nothing ever hard-fails.
- */
-function shouldUseTui(options: GlobalOptions): boolean {
-  if (options.classic) return false;
-  const requested = options.tui ?? process.env.CLAI_TUI === "1";
-  return requested;
 }
 
 function modeOption(): Option {
@@ -158,8 +144,8 @@ async function main(): Promise<void> {
       "--no-history",
       "do not persist this session to history (in-memory only)",
     )
-    .option("--tui", "launch the full-screen terminal UI (experimental)")
-    .option("--classic", "force the classic line-based REPL")
+    .option("--tui", "launch the full-screen terminal UI (default)")
+    .option("--classic", "launch the legacy line-based REPL")
     .argument("[prompt...]", "one-shot prompt")
     .action(
       async (promptParts: string[] | undefined, options: GlobalOptions) => {

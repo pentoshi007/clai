@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../types.js";
+import { redactSecrets } from "../llm/provider.js";
 
 /**
  * Crude per-char token estimator. Production-grade tokenization differs by
@@ -24,6 +25,15 @@ export interface CompactOptions {
   budgetTokens?: number | undefined;
   /** Keep this many trailing messages (system + user/assistant pairs). */
   keepRecent?: number | undefined;
+}
+
+export interface CompactResult {
+  messages: ChatMessage[];
+  before: number;
+  after: number;
+  beforeTokens: number;
+  afterTokens: number;
+  summarized: boolean;
 }
 
 const DEFAULT_BUDGET_TOKENS = 24_000;
@@ -80,6 +90,73 @@ export function compactMessages(
   };
 
   return [...head, memo, ...tail];
+}
+
+/**
+ * Compact older turns into a model-written memory while retaining recent
+ * messages verbatim. If summarization fails, the deterministic compactor is
+ * used so `/compact` still reduces context without losing the recent tail.
+ */
+export async function compactMessagesWithSummary(
+  messages: ChatMessage[],
+  summarize: (prompt: string) => Promise<string>,
+  options: CompactOptions = {},
+  sessionTranscript?: string | undefined,
+): Promise<CompactResult> {
+  const before = messages.length;
+  const beforeTokens = estimateMessagesTokens(messages);
+  const keepRecent = Math.max(2, options.keepRecent ?? DEFAULT_KEEP_RECENT);
+  const start = messages[0]?.role === "system" ? 1 : 0;
+  const tailStart = Math.max(start, messages.length - keepRecent);
+  const older = messages.slice(start, tailStart);
+
+  if (older.length === 0) {
+    return { messages: [...messages], before, after: before, beforeTokens, afterTokens: beforeTokens, summarized: false };
+  }
+
+  const messageTranscript = older
+    .map((message) => `${message.role.toUpperCase()}: ${redactSecrets(message.content)}`)
+    .join("\n\n");
+  const transcript = sessionTranscript?.trim()
+    ? redactSecrets(sessionTranscript.trim())
+    : messageTranscript;
+  const prompt = [
+    "Create a complete but compact continuation memory of the entire session below for another assistant that will continue it.",
+    "Preserve user intentions and prompts, decisions, constraints, file paths, commands/tools run, steps taken, task states, outputs and results, errors and failed approaches, completed work, and exactly what remains.",
+    "Organize the memory under concise sections: User goals, Decisions and constraints, Work completed, Commands/tools and results, Current state, Remaining work.",
+    "Do not add facts, commentary, or markdown framing. Be concise but specific. Never include secrets or credentials.",
+    "",
+    transcript,
+  ].join("\n");
+
+  try {
+    const summary = redactSecrets((await summarize(prompt)).trim());
+    if (!summary) throw new Error("empty summary");
+    const head = start === 1 ? [messages[0]!] : [];
+    const compacted: ChatMessage[] = [
+      ...head,
+      { role: "system", content: `Session memory from compacted earlier turns:\n\n${summary}` },
+      ...messages.slice(tailStart),
+    ];
+    return {
+      messages: compacted,
+      before,
+      after: compacted.length,
+      beforeTokens,
+      afterTokens: estimateMessagesTokens(compacted),
+      summarized: true,
+    };
+  } catch {
+    const compacted = compactMessages(messages, { ...options, budgetTokens: 0 });
+    return {
+      messages: compacted,
+      before,
+      after: compacted.length,
+      beforeTokens,
+      afterTokens: estimateMessagesTokens(compacted),
+      summarized: false,
+    };
+  }
 }
 
 function oneLine(text: string, maxChars: number): string {

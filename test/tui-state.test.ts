@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   initialState,
   reducer,
+  serializeTranscriptForCompaction,
   type TuiState,
   type ToolItem,
   type AssistantItem,
@@ -255,5 +256,23 @@ describe("evaluateTui gating", () => {
     expect(
       evaluateTui({ stdoutIsTTY: true, stdinIsTTY: true, columns: 120, rows: 40 }).ok,
     ).toBe(true);
+  });
+});
+
+describe("TUI compaction transcript", () => {
+  it("includes intentions, tool commands, status, output, and artifacts", () => {
+    const source = serializeTranscriptForCompaction([
+      { kind: "user", id: "u", text: "find open ports", done: true },
+      {
+        kind: "tool", id: "t", name: "net.scan", argsDisplay: "127.0.0.1",
+        output: "5000/tcp open", status: "ok", exitCode: 0,
+        artifactPath: "/tmp/nmap.txt", done: true,
+      },
+    ]);
+    expect(source).toContain("USER INTENT/PROMPT:\nfind open ports");
+    expect(source).toContain("TOOL/COMMAND: net.scan");
+    expect(source).toContain("STATUS: ok (exit 0)");
+    expect(source).toContain("5000/tcp open");
+    expect(source).toContain("FULL ARTIFACT: /tmp/nmap.txt");
   });
 });

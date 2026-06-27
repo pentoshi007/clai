@@ -25,7 +25,7 @@ import { expandMentions, findFileSuggestions, getMentionQuery, loadImageAttachme
 import { deletePlan, loadPlan, savePlan } from "../store/plan.js";
 import { renderPlanDocument } from "../ui/plan-pane.js";
 import { getSlashCommandSuggestions, isKnownSlashCommand, knownModels, slashCommands, type SlashCommand } from "../repl.js";
-import { initialState, reducer, type ToolItem } from "./state.js";
+import { initialState, reducer, serializeTranscriptForCompaction, type ToolItem } from "./state.js";
 import { renderTranscriptLines } from "./render-lines.js";
 import { createTuiConfirmPort } from "./confirm.js";
 import { useAgentRunner } from "./hooks/useAgentRunner.js";
@@ -80,8 +80,10 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const [secretRequest, setSecretRequest] = useState<{ title: string; prompt: string } | undefined>();
   const secretResolver = useRef<((value: string | undefined) => void) | undefined>();
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
+  const [compacting, setCompacting] = useState(false);
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
+  const historyDraft = useRef("");
   const lastCtrlC = useRef(0);
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
@@ -384,8 +386,19 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           return true;
         }
         case "/compact": {
-          const { before, after } = runner.compact();
-          info(`compacted ${before} → ${after} messages`); return true;
+          if (runner.isRunning() || compacting) { warn("wait for the current operation to finish"); return true; }
+          setCompacting(true);
+          info("compacting conversation…");
+          const fullSession = serializeTranscriptForCompaction(state.items);
+          void runner.compact(fullSession).then((result) => {
+            if (result.after === result.before) {
+              info("nothing to compact yet — more than 8 recent messages are required");
+            } else {
+              info(`compacted ${result.before} → ${result.after} messages · ~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} tokens${result.summarized ? "" : " · local fallback"}`);
+            }
+          }).catch((error) => warn(`compaction failed: ${error instanceof Error ? error.message : String(error)}`))
+            .finally(() => setCompacting(false));
+          return true;
         }
         case "/save":
           void (async () => {
@@ -514,7 +527,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         default: return false;
       }
     },
-    [activateProvider, chooseModel, chooseProvider, chooseReasoning, exitTui, noHistory, provider, runner, runImplement, lastToolOutput, openToolOutput, setReasoning, state.items],
+    [activateProvider, chooseModel, chooseProvider, chooseReasoning, compacting, exitTui, noHistory, provider, runner, runImplement, lastToolOutput, openToolOutput, setReasoning, state.items],
   );
 
   const submitText = useCallback(
@@ -523,6 +536,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       if (!trimmed) return;
       history.current.push(text);
       historyIdx.current = -1;
+      historyDraft.current = "";
       setInput("");
       setCursor(0);
       setSelected(0);
@@ -618,11 +632,11 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     if (key.pageDown) { setScroll((s) => Math.max(0, s - viewportH)); return; }
     if (key.ctrl && ch === "u") { setScroll((s) => Math.min(maxOffset, s + Math.floor(viewportH / 2))); return; }
     if (key.ctrl && ch === "d") { setScroll((s) => Math.max(0, s - Math.floor(viewportH / 2))); return; }
-    if (!input && maxOffset > 0 && (key.upArrow || ch === "k")) {
+    if (!input && maxOffset > 0 && ch === "k") {
       setScroll((s) => Math.min(maxOffset, s + 1));
       return;
     }
-    if (!input && maxOffset > 0 && (key.downArrow || ch === "j")) {
+    if (!input && maxOffset > 0 && ch === "j") {
       setScroll((s) => Math.max(0, s - 1));
       return;
     }
@@ -680,6 +694,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     // History (when menu closed)
     if (!menuOpen && key.upArrow) {
       if (history.current.length === 0) return;
+      if (historyIdx.current < 0) historyDraft.current = input;
       const idx = historyIdx.current < 0 ? history.current.length - 1 : Math.max(0, historyIdx.current - 1);
       historyIdx.current = idx;
       const v = history.current[idx] ?? "";
@@ -689,7 +704,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     if (!menuOpen && key.downArrow) {
       if (historyIdx.current < 0) return;
       const idx = historyIdx.current + 1;
-      if (idx >= history.current.length) { historyIdx.current = -1; setInput(""); setCursor(0); return; }
+      if (idx >= history.current.length) {
+        historyIdx.current = -1;
+        const draft = historyDraft.current;
+        setInput(draft); setCursor(draft.length);
+        return;
+      }
       historyIdx.current = idx;
       const v = history.current[idx] ?? "";
       setInput(v); setCursor(v.length);
@@ -703,6 +723,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       setInput(input.slice(0, cursor - 1) + input.slice(cursor));
       setCursor(cursor - 1);
       setSelected(0);
+      historyIdx.current = -1;
+      historyDraft.current = "";
       return;
     }
     if (key.ctrl || key.meta) return;
@@ -710,6 +732,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       setInput(input.slice(0, cursor) + ch + input.slice(cursor));
       setCursor(cursor + ch.length);
       setSelected(0);
+      historyIdx.current = -1;
+      historyDraft.current = "";
     }
   });
 
@@ -798,7 +822,9 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         <ConfirmModal confirm={state.pendingConfirm} onAnswer={answerConfirm} />
       ) : (
         <Box>
-          {state.status.running ? (
+          {compacting ? (
+            <Text><Text color="magenta">{spinner} </Text><Text color="yellow">compacting conversation…</Text></Text>
+          ) : state.status.running ? (
             <Text>
               <Text color="magenta">{spinner} </Text>
               <Text color="yellow">{state.status.activity || "working"}</Text>
