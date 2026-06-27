@@ -1,24 +1,27 @@
 import { Box, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Mode, ProviderId } from "../types.js";
+import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
+import { providerIds } from "../types.js";
 import { assertProvider } from "../llm/provider.js";
-import { modelSupportsVision } from "../llm/capabilities.js";
+import { modelSupportsThinking, modelSupportsVision } from "../llm/capabilities.js";
 import {
   getConfig,
   getProviderModel,
   setDefaultMode,
+  setDefaultProvider,
   setProviderModel,
+  setThinking,
   updateConfig,
 } from "../store/config.js";
 import { estimateMessagesTokens } from "../agent/context-manager.js";
-import { saveSession } from "../store/history.js";
+import { clearAllHistory, getSession, listSessions, saveSession } from "../store/history.js";
 import { safeCwd } from "../os/cwd.js";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { expandMentions, loadImageAttachments } from "../ui/mentions.js";
-import { loadPlan, savePlan } from "../store/plan.js";
+import { expandMentions, findFileSuggestions, getMentionQuery, loadImageAttachments, type FileSuggestion } from "../ui/mentions.js";
+import { deletePlan, loadPlan, savePlan } from "../store/plan.js";
 import { renderPlanDocument } from "../ui/plan-pane.js";
-import { getSlashCommandSuggestions, type SlashCommand } from "../repl.js";
+import { getSlashCommandSuggestions, isKnownSlashCommand, knownModels, slashCommands, type SlashCommand } from "../repl.js";
 import { initialState, reducer, type ToolItem } from "./state.js";
 import { renderTranscriptLines } from "./render-lines.js";
 import { createTuiConfirmPort } from "./confirm.js";
@@ -29,6 +32,9 @@ import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { ConfirmModal } from "./components/ConfirmModal.js";
 import { Pager } from "./components/Pager.js";
 import { JobsPanel } from "./components/JobsPanel.js";
+import { PickerPanel, type PickerOption } from "./components/PickerPanel.js";
+import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
+import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
 
 export interface AppProps {
   version: string;
@@ -49,7 +55,11 @@ const IMPLEMENT_PROMPT =
 
 const MAX_SUGGESTIONS = 6;
 
-type Overlay = { kind: "none" } | { kind: "pager"; title: string; body: string } | { kind: "jobs" };
+type Overlay =
+  | { kind: "none" }
+  | { kind: "pager"; title: string; body: string }
+  | { kind: "jobs" }
+  | { kind: "picker"; title: string; options: PickerOption[]; onSelect: (value: string) => void };
 
 export function App({ version, initialMode, provider: initialProvider, initialModel }: AppProps) {
   const { exit } = useApp();
@@ -144,6 +154,79 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     void startTurn("/implement", IMPLEMENT_PROMPT);
   }, [runner, startTurn]);
 
+  const chooseModel = useCallback(() => {
+    const models = knownModels[provider] ?? [model];
+    setOverlay({
+      kind: "picker",
+      title: `Models · ${provider}`,
+      options: models.map((value) => ({ value, label: value, active: value === model })),
+      onSelect: (value) => {
+        setModel(value);
+        setProviderModel(provider, value);
+        setOverlay({ kind: "none" });
+        dispatch({ type: "notice", level: "info", text: `model → ${value}` });
+      },
+    });
+  }, [model, provider]);
+
+  const chooseProvider = useCallback(() => {
+    setOverlay({
+      kind: "picker",
+      title: "Providers",
+      options: providerIds.map((value) => ({
+        value,
+        label: value,
+        description: getProviderModel(value),
+        active: value === provider,
+      })),
+      onSelect: (value) => {
+        const next = assertProvider(value);
+        const nextModel = getProviderModel(next);
+        setDefaultProvider(next);
+        setProvider(next);
+        setModel(nextModel);
+        setOverlay({ kind: "none" });
+        dispatch({ type: "notice", level: "info", text: `provider → ${next} · model → ${nextModel}` });
+      },
+    });
+  }, [provider]);
+
+  const setReasoning = useCallback((value: string) => {
+    if (value === "off" || value === "none") setThinking({ enabled: false });
+    else setThinking({ enabled: true, effort: value as ReasoningEffort });
+    dispatch({
+      type: "notice",
+      level: "info",
+      text: value === "off" || value === "none" ? "thinking → off" : `thinking → ${value}`,
+    });
+  }, []);
+
+  const chooseReasoning = useCallback(() => {
+    const current = getConfig().thinking;
+    const descriptions: Record<string, string> = {
+      off: "disable reasoning",
+      minimal: "lowest latency",
+      low: "light reasoning",
+      medium: "balanced",
+      high: "deep reasoning",
+      xhigh: "maximum depth",
+    };
+    setOverlay({
+      kind: "picker",
+      title: `Reasoning · ${modelSupportsThinking(provider, model) ? "supported" : "model may ignore it"}`,
+      options: Object.entries(descriptions).map(([value, description]) => ({
+        value,
+        label: value,
+        description,
+        active: value === (current.enabled ? current.effort : "off"),
+      })),
+      onSelect: (value) => {
+        setReasoning(value);
+        setOverlay({ kind: "none" });
+      },
+    });
+  }, [model, provider, setReasoning]);
+
   const handleLocalSlash = useCallback(
     (text: string): boolean => {
       const [cmd, ...rest] = text.trim().split(/\s+/);
@@ -153,9 +236,9 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       switch (cmd) {
         case "/ask": setMode("ask"); setDefaultMode("ask"); info("mode → ask"); return true;
         case "/agent": setMode("agent"); setDefaultMode("agent"); info("mode → agent"); return true;
-        case "/clear":
+        case "/clear": runner.reset(); dispatch({ type: "reset" }); info("context cleared"); return true;
         case "/new":
-        case "/clean": runner.reset(); dispatch({ type: "reset" }); return true;
+        case "/clean": runner.reset(); dispatch({ type: "reset" }); info("fresh session started"); return true;
         case "/think":
         case "/thinking": dispatch({ type: "toggle-thinking" }); return true;
         case "/implement":
@@ -171,25 +254,50 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           return true;
         case "/jobs": setOverlay({ kind: "jobs" }); return true;
         case "/output": {
-          const last = lastToolOutput();
-          if (!last) info("no tool output yet");
-          else setOverlay({ kind: "pager", title: `${last.name} output`, body: last.output });
+          const outputs = state.items.filter((item): item is ToolItem => item.kind === "tool" && Boolean(item.output));
+          if (arg === "list" || arg === "ls") {
+            info(outputs.length ? outputs.map((item) => `${item.id} · ${item.name}`).join("\n") : "no tool output yet");
+            return true;
+          }
+          const selectedOutput = arg && arg !== "last" ? outputs.find((item) => item.id === arg) : lastToolOutput();
+          if (!selectedOutput) info(arg ? `no tool output: ${arg}` : "no tool output yet");
+          else setOverlay({ kind: "pager", title: `${selectedOutput.name} output`, body: selectedOutput.output });
           return true;
         }
         case "/model":
-          if (!arg) { info("usage: /model <name>"); return true; }
-          setModel(arg); setProviderModel(provider, arg); info(`model → ${arg}`); return true;
+          if (!arg || arg === "list" || arg === "ls") { chooseModel(); return true; }
+          {
+            const options = knownModels[provider] ?? [];
+            const index = Number.parseInt(arg, 10);
+            const nextModel = Number.isInteger(index) && index >= 1 && index <= options.length ? options[index - 1]! : arg;
+            setModel(nextModel); setProviderModel(provider, nextModel); info(`model → ${nextModel}`); return true;
+          }
         case "/provider":
         case "/use":
-          if (!arg) { info("usage: /provider <name>"); return true; }
+          if (!arg) { chooseProvider(); return true; }
           try {
             const next = assertProvider(arg);
+            setDefaultProvider(next);
             setProvider(next);
             const m = getProviderModel(next);
             setModel(m);
             info(`provider → ${next} / ${m}`);
           } catch { warn(`unknown provider: ${arg}`); }
           return true;
+        case "/variants":
+        case "/reasoning": {
+          if (!arg) { chooseReasoning(); return true; }
+          const value = arg.toLowerCase();
+          if (/^(on|enable|true)$/.test(value)) {
+            setThinking({ enabled: true });
+            info(`thinking → ${getConfig().thinking.effort}`);
+          } else if (["off", "none", "disable", "false"].includes(value)) {
+            setReasoning("off");
+          } else if (["minimal", "low", "medium", "high", "xhigh"].includes(value)) {
+            setReasoning(value);
+          } else warn("usage: /variants [on|off|minimal|low|medium|high|xhigh]");
+          return true;
+        }
         case "/cwd": {
           if (!arg) { info(`cwd: ${safeCwd()}`); return true; }
           const target = resolve(safeCwd(), arg);
@@ -199,7 +307,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           return true;
         }
         case "/allow":
-          if (!arg) {
+          if (!arg || arg === "list" || arg === "ls") {
             const list = [...runner.getSession().allow];
             info(list.length ? `allowed: ${list.join(", ")}` : "no session allowances");
             return true;
@@ -225,6 +333,86 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
             info(rec ? `saved session ${rec.id}` : "save failed");
           })();
           return true;
+        case "/history":
+          void (async () => {
+            const sessions = await listSessions(50);
+            if (sessions.length === 0) { info("no saved sessions"); return; }
+            setOverlay({
+              kind: "picker",
+              title: "Session history",
+              options: sessions.map((session) => ({
+                value: session.id,
+                label: session.name ?? session.id,
+                description: `${session.createdAt.slice(0, 16).replace("T", " ")} · ${session.messages.length} messages`,
+              })),
+              onSelect: (id) => {
+                void (async () => {
+                  const session = await getSession(id);
+                  if (!session) { warn("session not found"); return; }
+                  runner.setMessages(session.messages);
+                  setOverlay({ kind: "none" });
+                  dispatch({ type: "reset" });
+                  info(`resumed “${session.name ?? session.id}” · ${session.messages.length} messages in context`);
+                })();
+              },
+            });
+          })();
+          return true;
+        case "/reset":
+          void clearAllHistory().then((result) => info(`history cleared · ${result.detail || "ok"}`));
+          return true;
+        case "/discard":
+          void (async () => {
+            const session = runner.getSession();
+            const plan = await loadPlan(session.sessionId).catch(() => undefined);
+            if (!plan) { info("no active plan to discard"); return; }
+            await deletePlan(session.sessionId);
+            session.planApproved.value = false;
+            info(`plan discarded · ${plan.goal}`);
+          })();
+          return true;
+        case "/scope":
+          void (async () => {
+            const [sub = "show", ...parts] = arg.split(/\s+/).filter(Boolean);
+            if (["clear", "reset", "off"].includes(sub)) {
+              await clearScope(); info("engagement scope cleared"); return;
+            }
+            if (sub === "show" || sub === "list" || sub === "ls") {
+              const scope = await loadScope();
+              info(scope ? `scope: ${scope.name ?? "unnamed"} · ${scope.authorizedTargets.join(", ")}` : "no engagement scope configured");
+              return;
+            }
+            if (sub === "add") {
+              const targets = parts.join(" ").split(/[\s,]+/).filter(Boolean);
+              if (!targets.length) { warn("usage: /scope add <target1,target2>"); return; }
+              const scope = await addScopeTargets(targets);
+              info(`scope updated · ${scope.authorizedTargets.join(", ")}`); return;
+            }
+            if (sub === "new" || sub === "set") {
+              const targets = parts.join(" ").split(/[\s,]+/).filter(Boolean);
+              if (!targets.length) { warn("usage: /scope new <target1,target2>"); return; }
+              await saveScope({ authorizedTargets: targets, createdAt: new Date().toISOString() });
+              info(`scope created · ${targets.join(", ")}`); return;
+            }
+            warn("usage: /scope [show|clear|new <targets>|add <targets>]");
+          })().catch((error) => warn(error instanceof Error ? error.message : String(error)));
+          return true;
+        case "/privacy":
+          void (async () => {
+            const sub = (arg || "status").toLowerCase();
+            if (["on", "enable"].includes(sub)) { updateConfig({ privateMode: true }); info("private mode → on"); return; }
+            if (["off", "disable"].includes(sub)) { updateConfig({ privateMode: false }); info("private mode → off"); return; }
+            if (sub === "status") { info(`private mode: ${getConfig().privateMode ? "on" : "off"}`); return; }
+            if (sub === "clear-history") { const result = await clearAllHistory(); info(`history cleared · ${result.detail || "ok"}`); return; }
+            if (sub === "clear-logs") { const result = await clearAuditLogs(); info(`audit logs cleared · ${result.removed} files`); return; }
+            if (sub === "clear-artifacts") { const result = await clearArtifacts(); info(`artifacts cleared · ${result.removed} files`); return; }
+            if (sub === "clear-all") {
+              const [historyResult, logResult, artifactResult] = await Promise.all([clearAllHistory(), clearAuditLogs(), clearArtifacts()]);
+              info(`cleared history (${historyResult.detail || "ok"}), logs (${logResult.removed}), artifacts (${artifactResult.removed})`); return;
+            }
+            warn("usage: /privacy [status|on|off|clear-history|clear-logs|clear-artifacts|clear-all]");
+          })();
+          return true;
         case "/freeonly": {
           const on = /^(on|true|1|enable)$/i.test(arg), off = /^(off|false|0|disable)$/i.test(arg);
           if (!on && !off) { info(`freeOnly=${getConfig().freeOnly}`); return true; }
@@ -235,23 +423,21 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           if (!on && !off) { info(`providerFallback=${getConfig().providerFallback}`); return true; }
           updateConfig({ providerFallback: on }); info(`providerFallback=${on}`); return true;
         }
-        case "/keys":
-        case "/history":
         case "/set":
         case "/unset":
-        case "/scope":
         case "/update":
-          info(`${cmd} is interactive — run it from classic mode (clai --classic) or the \`clai\` subcommand`);
+        case "/keys":
+          info(`${cmd} manages external credentials or updates; use the equivalent \`clai ${cmd.slice(1)}\` command outside the TUI`);
           return true;
         case "/help":
-          info("commands: /ask /agent /model <name> /provider <name> /implement /plan /jobs /output /cwd /allow /context /compact /save /clear /think /exit  ·  keys: ctrl+t thinking · ctrl+o output · ctrl+p plan · ctrl+j jobs · pgup/pgdn scroll · esc cancel · ctrl+c exit");
+          setOverlay({ kind: "pager", title: "Commands", body: slashCommands.map((item) => `${item.command}${item.usage ? ` ${item.usage}` : ""}\n  ${item.description}`).join("\n\n") });
           return true;
         case "/exit":
         case "/quit": exit(); return true;
         default: return false;
       }
     },
-    [exit, provider, runner, runImplement, lastToolOutput],
+    [chooseModel, chooseProvider, chooseReasoning, exit, provider, runner, runImplement, lastToolOutput, setReasoning, state.items],
   );
 
   const submitText = useCallback(
@@ -263,7 +449,10 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       setInput("");
       setCursor(0);
       setSelected(0);
-      if (trimmed.startsWith("/")) {
+      // A macOS/Linux drag-and-drop commonly starts with an absolute path.
+      // Only route a leading slash through the command handler when its first
+      // token is an actual clai command; file paths remain normal prompts.
+      if (trimmed.startsWith("/") && isKnownSlashCommand(trimmed)) {
         if (!handleLocalSlash(trimmed)) dispatch({ type: "notice", level: "warn", text: `unknown command: ${trimmed}` });
         return;
       }
@@ -283,15 +472,25 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const suggestions: SlashCommand[] = input.startsWith("/")
     ? getSlashCommandSuggestions(input).slice(0, MAX_SUGGESTIONS)
     : [];
-  const menuOpen = suggestions.length > 0;
+  const mention = getMentionQuery(input, cursor);
+  const fileSuggestions: FileSuggestion[] = mention
+    ? findFileSuggestions(mention.query, safeCwd(), MAX_SUGGESTIONS)
+    : [];
+  const slashMenuOpen = suggestions.length > 0;
+  const fileMenuOpen = !slashMenuOpen && Boolean(mention) && fileSuggestions.length > 0;
+  const menuOpen = slashMenuOpen || fileMenuOpen;
   const overlayOpen = overlay.kind !== "none";
   const modalActive = Boolean(state.pendingConfirm) || overlayOpen;
 
-  const headerH = 1;
-  const statusH = 1;
+  // Leave the terminal's final row unused. Painting through the last cell can
+  // trigger an implicit scroll in several terminals, which looks like a full
+  // screen flash on every keypress/spinner frame.
+  const usableRows = Math.max(8, rows - 1);
+  const headerH = 4;
+  const statusH = state.pendingConfirm ? 6 : 1;
   const composerH = 3;
-  const menuH = menuOpen ? suggestions.length : 0;
-  const viewportH = Math.max(3, rows - headerH - statusH - composerH - menuH);
+  const menuH = slashMenuOpen ? suggestions.length : fileMenuOpen ? fileSuggestions.length : 0;
+  const viewportH = Math.max(3, usableRows - headerH - statusH - composerH - menuH);
 
   const transcriptLines = renderTranscriptLines(state, {
     width: cols,
@@ -348,19 +547,36 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     // Slash menu navigation
     if (menuOpen && (key.upArrow || key.downArrow)) {
       setSelected((s) => {
-        const n = suggestions.length;
+        const n = slashMenuOpen ? suggestions.length : fileSuggestions.length;
         return key.upArrow ? (s - 1 + n) % n : (s + 1) % n;
       });
       return;
     }
     if (menuOpen && key.tab) {
-      setInput(suggestions[selected]!.command + " ");
-      setCursor(suggestions[selected]!.command.length + 1);
+      if (slashMenuOpen) {
+        setInput(suggestions[selected]!.command + " ");
+        setCursor(suggestions[selected]!.command.length + 1);
+      } else if (mention && fileSuggestions[selected]) {
+        const suggestion = fileSuggestions[selected]!;
+        const inserted = `@${suggestion.value}${suggestion.isDir ? "" : " "}`;
+        const next = input.slice(0, mention.start) + inserted + input.slice(cursor);
+        setInput(next);
+        setCursor(mention.start + inserted.length);
+      }
       setSelected(0);
       return;
     }
     if (key.return) {
-      if (menuOpen) { submitText(suggestions[selected]!.command); return; }
+      if (slashMenuOpen) { submitText(suggestions[selected]!.command); return; }
+      if (fileMenuOpen && mention && fileSuggestions[selected]) {
+        const suggestion = fileSuggestions[selected]!;
+        const inserted = `@${suggestion.value}${suggestion.isDir ? "" : " "}`;
+        const next = input.slice(0, mention.start) + inserted + input.slice(cursor);
+        setInput(next);
+        setCursor(mention.start + inserted.length);
+        setSelected(0);
+        return;
+      }
       submitText(input);
       return;
     }
@@ -413,20 +629,23 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const after = input.slice(cursor + 1);
 
   return (
-    <Box flexDirection="column" width={cols} height={rows}>
+    <Box flexDirection="column" width={cols} height={usableRows}>
       {/* Header */}
-      <Box>
-        <Text>
-          <Text color="magenta">● </Text>
-          <Text bold>clai </Text>
-          <Text dimColor>v{version}</Text>
-          <Text dimColor>{"   "}</Text>
-          <Text color="yellow">{mode}</Text>
-          <Text dimColor> · </Text>
-          <Text color="green">{provider}</Text>
-          <Text dimColor>/</Text>
-          <Text color="cyan">{model}</Text>
-          {offset > 0 ? <Text dimColor>{`   ▲ ${offset} lines up — PgDn`}</Text> : null}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor="gray"
+        marginX={2}
+        paddingX={1}
+      >
+        <Box justifyContent="space-between">
+          <Text><Text color="magenta" bold>◆ clai</Text><Text dimColor>  v{version}</Text></Text>
+          <Text><Text color="yellow">{mode}</Text><Text dimColor> mode</Text></Text>
+        </Box>
+        <Text wrap="truncate-end">
+          <Text color="green">{provider}</Text><Text dimColor>  /  </Text><Text color="cyan">{model}</Text>
+          <Text dimColor>{`  ·  ${safeCwd()}`}</Text>
+          {offset > 0 ? <Text color="yellow">{`  ·  ▲ ${offset}`}</Text> : null}
         </Text>
       </Box>
 
@@ -435,6 +654,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         <Pager title={overlay.title} body={overlay.body} height={viewportH} onClose={closeOverlay} />
       ) : overlay.kind === "jobs" ? (
         <JobsPanel jobs={jobs} onClose={closeOverlay} />
+      ) : overlay.kind === "picker" ? (
+        <PickerPanel title={overlay.title} options={overlay.options} height={viewportH} onSelect={overlay.onSelect} onClose={closeOverlay} />
       ) : (
         <Box flexDirection="column" height={viewportH}>
           {visible.map((line, i) => (
@@ -446,7 +667,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       )}
 
       {/* Slash menu (sits just above the composer) */}
-      {menuOpen && !modalActive
+      {slashMenuOpen && !modalActive
         ? suggestions.map((cmd, i) => (
             <Text key={cmd.command} wrap="truncate-end">
               <Text color={i === selected ? "magenta" : "cyan"}>
@@ -455,6 +676,16 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
               </Text>
               {cmd.usage ? <Text dimColor> {cmd.usage}</Text> : null}
               <Text dimColor>{"  "}{cmd.description}</Text>
+            </Text>
+          ))
+        : null}
+      {fileMenuOpen && !modalActive
+        ? fileSuggestions.map((file, i) => (
+            <Text key={file.value} wrap="truncate-end">
+              <Text color={i === selected ? "magenta" : file.isDir ? "cyan" : "white"} bold={i === selected}>
+                {i === selected ? "❯ " : "  "}{file.isDir ? "▸ " : "· "}{file.value}
+              </Text>
+              <Text dimColor>{file.isDir ? "  directory" : "  attach file"}</Text>
             </Text>
           ))
         : null}
@@ -483,11 +714,13 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       )}
 
       {/* Composer (pinned bottom) */}
-      <Box borderStyle="round" borderColor={state.status.running ? "yellow" : "magenta"} paddingX={1}>
+      <Box borderStyle="round" borderColor={state.pendingConfirm ? "yellow" : state.status.running ? "yellow" : "magenta"} paddingX={1}>
         <Text color={state.status.running ? "yellow" : "magenta"} bold>
-          {"❯ "}
+          {state.pendingConfirm ? "! " : "❯ "}
         </Text>
-        {input.length === 0 ? (
+        {state.pendingConfirm ? (
+          <Text bold>Input locked · answer the confirmation above with Y or N</Text>
+        ) : input.length === 0 ? (
           <Text dimColor>
             {state.status.running
               ? "type to queue a message…"

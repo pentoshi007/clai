@@ -43,6 +43,8 @@ export interface AgentRunner {
   getSession: () => SessionPolicy;
   /** Snapshot of the conversation messages (for /context, /save). */
   getMessages: () => ChatMessage[];
+  /** Replace the current conversation when resuming a saved session. */
+  setMessages: (messages: ChatMessage[]) => void;
   /** Compact the in-memory history; returns counts before/after. */
   compact: () => { before: number; after: number };
 }
@@ -78,6 +80,11 @@ export function useAgentRunner({
 
   const getMessages = useCallback(() => [...messagesRef.current], []);
 
+  const setMessages = useCallback((messages: ChatMessage[]) => {
+    messagesRef.current = [...messages];
+    sessionRef.current = createSessionPolicy();
+  }, []);
+
   const compact = useCallback(() => {
     const before = messagesRef.current.length;
     messagesRef.current = compactMessages(messagesRef.current, { budgetTokens: 0 });
@@ -91,6 +98,12 @@ export function useAgentRunner({
       const ctx = getContext();
       const ac = new AbortController();
       abortRef.current = ac;
+      // Interactive children temporarily switch the shared terminal to cooked
+      // mode. In that state Ink cannot receive Ctrl+C as a keypress, so catch
+      // SIGINT here and translate it into the same turn abort. This prevents a
+      // password prompt from requiring a second Ctrl+C that exits clai.
+      const onSigint = (): void => ac.abort();
+      process.on("SIGINT", onSigint);
       messagesRef.current.push({ role: "user", content: input });
 
       try {
@@ -146,6 +159,7 @@ export function useAgentRunner({
           });
         }
       } finally {
+        process.off("SIGINT", onSigint);
         runningRef.current = false;
         abortRef.current = undefined;
       }
@@ -154,7 +168,7 @@ export function useAgentRunner({
   );
 
   return useMemo<AgentRunner>(
-    () => ({ isRunning, run, abort, reset, getSession, getMessages, compact }),
-    [isRunning, run, abort, reset, getSession, getMessages, compact],
+    () => ({ isRunning, run, abort, reset, getSession, getMessages, setMessages, compact }),
+    [isRunning, run, abort, reset, getSession, getMessages, setMessages, compact],
   );
 }

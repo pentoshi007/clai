@@ -8,6 +8,7 @@ import {
   extractMentionTokens,
   normalizeDroppedPath,
   expandMentions,
+  extractExistingPathsFs,
 } from "../src/ui/mentions.js";
 
 describe("getMentionQuery", () => {
@@ -171,5 +172,16 @@ describe("expandMentions", () => {
   it("preserves the original text", () => {
     const out = expandMentions("read @notes.txt please", dir);
     expect(out.text).toBe("read @notes.txt please");
+  });
+
+  it("resolves a dropped absolute path with spaces before trailing prompt text", () => {
+    const image = join(dir, "Screenshot 2026-06-27 at 10.44.32 AM.png");
+    writeFileSync(image, Buffer.from([0x89, 0x50]));
+    const line = `${image.replaceAll(" ", "\\ ")} what is it`;
+    expect(extractExistingPathsFs(line, dir)).toEqual([image]);
+    expect(expandMentions(line, dir, true).attachments[0]).toMatchObject({
+      path: image,
+      kind: "image",
+    });
   });
 });

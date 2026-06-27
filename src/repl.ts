@@ -116,7 +116,8 @@ interface KeypressKey {
   sequence?: string;
 }
 
-const slashCommands: SlashCommand[] = [
+/** Shared command catalogue used by both the classic REPL and the Ink TUI. */
+export const slashCommands: SlashCommand[] = [
   { command: "/ask", description: "switch to ask mode" },
   { command: "/agent", description: "switch to agent mode" },
   {
@@ -223,7 +224,8 @@ const slashCommands: SlashCommand[] = [
 ];
 
 // ── Well-known models per provider (refreshed May 2026) ───────────────────
-const knownModels: Record<string, string[]> = {
+/** Curated model choices used by both frontends. */
+export const knownModels: Record<string, string[]> = {
   groq: [
     "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
@@ -480,6 +482,11 @@ export function getSlashCommandSuggestions(line: string): SlashCommand[] {
   return slashCommands.filter((command) =>
     command.command.slice(1).toLowerCase().startsWith(filter),
   );
+}
+
+export function isKnownSlashCommand(command: string): boolean {
+  const normalized = command.trim().split(/\s+/, 1)[0]?.toLowerCase();
+  return slashCommands.some((item) => item.command === normalized);
 }
 
 function fitPlain(text: string, maxWidth: number): string {

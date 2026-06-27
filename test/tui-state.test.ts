@@ -9,6 +9,7 @@ import {
 import type { AgentEvent } from "../src/agent/events.js";
 import { evaluateTui, MIN_COLS, MIN_ROWS } from "../src/tui/can-use-tui.js";
 import type { SessionPlan } from "../src/store/plan.js";
+import { renderItemLines } from "../src/tui/render-lines.js";
 
 function apply(state: TuiState, events: AgentEvent[]): TuiState {
   return events.reduce((s, event) => reducer(s, { type: "event", event }), state);
@@ -165,6 +166,30 @@ describe("toggle actions", () => {
   it("toggle-output flips the outputExpanded flag", () => {
     const s = reducer(initialState(), { type: "toggle-output" });
     expect(s.outputExpanded).toBe(true);
+  });
+});
+
+describe("tui transcript formatting", () => {
+  it("labels shell commands and their output instead of showing ambiguous bare text", () => {
+    const item: ToolItem = {
+      kind: "tool",
+      id: "tool-1",
+      name: "shell.exec",
+      argsDisplay: "whoami",
+      output: "aniketpandey\n",
+      status: "ok",
+      done: true,
+    };
+    const rendered = renderItemLines(item, {
+      width: 100,
+      thinkingExpanded: false,
+      outputExpanded: false,
+      running: false,
+    }).join("\n");
+    expect(rendered).toContain("command:");
+    expect(rendered).toContain("whoami");
+    expect(rendered).toContain("output:");
+    expect(rendered).toContain("aniketpandey");
   });
 });
 

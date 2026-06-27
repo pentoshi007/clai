@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   getKnownModels,
   getSlashCommandSuggestions,
+  isKnownSlashCommand,
   renderSlashCommandMenu,
 } from "../src/repl.js";
 
@@ -36,6 +37,11 @@ describe("REPL slash command suggestions", () => {
 
   it("stops suggesting after command arguments begin", () => {
     expect(getSlashCommandSuggestions("/model ")).toEqual([]);
+  });
+
+  it("distinguishes real slash commands from absolute dropped paths", () => {
+    expect(isKnownSlashCommand("/variants high")).toBe(true);
+    expect(isKnownSlashCommand("/var/folders/screenshot.png what is it")).toBe(false);
   });
 
   it("renders slash menu rows within terminal width so refresh can redraw in-place", () => {

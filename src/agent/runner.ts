@@ -874,6 +874,15 @@ function isAbortError(error: unknown, signal?: AbortSignal): boolean {
   );
 }
 
+/** OCR is opt-in when real image pixels are already attached to the model. */
+export function shouldEnableImageOcr(
+  prompt: string,
+  hasAttachedImages: boolean,
+): boolean {
+  if (!hasAttachedImages) return true;
+  return /\b(?:ocr|optical character recognition|tesseract)\b/i.test(prompt);
+}
+
 function safeArtifactName(name: string): string {
   return (
     name.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") ||
@@ -1315,7 +1324,14 @@ export async function runAgentLoop(
   const maxSteps = options.maxSteps ?? 70;
   const confirmPort = options.confirm ?? inquirerConfirmPort;
   const projectContext = await loadProjectContext();
-  const toolNames = availableToolNames();
+  const hasAttachedImages = Boolean(options.images?.length);
+  const imageOcrEnabled = shouldEnableImageOcr(prompt, hasAttachedImages);
+  // A vision-capable request already carries the actual image bytes. Hiding
+  // image.ocr from the model prevents it from replacing visual inspection
+  // with a lossy Tesseract pass (which produced fabricated screenshot text).
+  const toolNames = availableToolNames().filter(
+    (name) => name !== "image.ocr" || imageOcrEnabled,
+  );
   // Build / scaffold / continuation turns must NEVER be diverted into a
   // web.search for "current info". The /implement directive ("Execute it
   // now…") and prompts like "create a react app" contain words such as
@@ -2023,6 +2039,22 @@ export async function runAgentLoop(
     // runs and is safety-classified as the shell command it really is —
     // instead of dead-ending on "Unknown tool: sed".
     call = normalizeToolCall(call);
+
+    if (call.name === "image.ocr" && !imageOcrEnabled) {
+      pendingCalls = pendingCalls.filter((queued) => queued.name !== "image.ocr");
+      writeNotice(
+        "info",
+        "skipped OCR because the original image is attached to the vision model",
+        chalk.dim("  ℹ skipped OCR — inspecting the attached image directly\n"),
+      );
+      messages.push(
+        recoveryUserMessage(
+          "The original image is attached to this message and you can inspect it directly. " +
+            "Do not call image.ocr or infer text from OCR. Answer the user's question from the actual image pixels now.",
+        ),
+      );
+      continue;
+    }
     const toolEventId = `tool-${++nextToolEventId}`;
 
     // ── Duplicate-call detection ──────────────────────────────────────────
@@ -2225,9 +2257,11 @@ export async function runAgentLoop(
     // routes such commands through inherited stdin so the user can type
     // directly into the controlling TTY; we just warn them to expect it.
     const interactiveCommand =
-      call.name === "shell.exec" &&
-      typeof call.args.command === "string" &&
-      looksInteractiveStdin(call.args.command);
+      (call.name === "shell.exec" &&
+        typeof call.args.command === "string" &&
+        looksInteractiveStdin(call.args.command)) ||
+      call.name === "net.scan" ||
+      call.name === "pentest.recon";
     if (interactiveCommand && process.stdin.isTTY) {
       writeNotice(
         "warn",

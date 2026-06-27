@@ -13,6 +13,7 @@ import {
   imageAttachmentPaths,
 } from "../src/ui/mentions.js";
 import type { ChatMessage } from "../src/types.js";
+import { shouldEnableImageOcr } from "../src/agent/runner.js";
 
 // 1x1 transparent PNG.
 const PNG_HEX =
@@ -48,6 +49,17 @@ describe("modelSupportsVision", () => {
     expect(modelSupportsVision("nvidia", "openai/gpt-oss-20b")).toBe(false);
     expect(modelSupportsVision("groq", "llama-3.3-70b-versatile")).toBe(false);
     expect(modelSupportsVision("anthropic", "claude-2")).toBe(false);
+  });
+});
+
+describe("vision-first image inspection", () => {
+  it("disables lossy OCR when image bytes are attached", () => {
+    expect(shouldEnableImageOcr("what is this screenshot?", true)).toBe(false);
+  });
+
+  it("keeps OCR available when explicitly requested or no image is attached", () => {
+    expect(shouldEnableImageOcr("OCR this screenshot", true)).toBe(true);
+    expect(shouldEnableImageOcr("read the image", false)).toBe(true);
   });
 });
 

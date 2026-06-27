@@ -64,9 +64,9 @@ function renderUser(text: string, width: number): string[] {
 }
 
 function renderAssistant(text: string, width: number): string[] {
-  const label = chalk.magenta.bold("clai");
+  const label = chalk.magenta.bold("◆ Response");
   const md = renderMarkdown(text).replace(/\n+$/, "");
-  return [label, ...md.split("\n")];
+  return [label, ...md.split("\n").map((line) => `  ${line}`)];
 }
 
 function renderThinking(content: string, ctx: RenderCtx): string[] {
@@ -89,13 +89,17 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
     statusGlyph(item.status) +
     " " +
     chalk.bold.cyan(item.name) +
-    (item.argsDisplay ? chalk.dim(" · " + item.argsDisplay) : "") +
     (typeof item.exitCode === "number" && item.exitCode !== 0
       ? chalk.red(`  (exit ${item.exitCode})`)
       : "");
   const lines: string[] = wrap(header, ctx.width).map((l, i) =>
     i === 0 ? l : color("│   ") + l,
   );
+
+  if (item.argsDisplay) {
+    const label = item.name === "shell.exec" ? "command" : "input";
+    lines.push(bar + chalk.dim(`${label}: `) + chalk.white(item.argsDisplay));
+  }
 
   if (item.status === "blocked" && item.summary) {
     for (const l of wrap(chalk.red(item.summary), ctx.width - 4)) {
@@ -116,10 +120,15 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
     shown = rawLines.slice(-8);
   }
 
+  if (shown.length > 0) lines.push(bar + chalk.dim("output:"));
   for (const raw of shown) {
     for (const wl of wrapAnsiLine(raw, Math.max(10, ctx.width - 2))) {
-      lines.push(bar + chalk.dim(wl));
+      lines.push(bar + "  " + chalk.dim(wl));
     }
+  }
+
+  if (item.artifactPath) {
+    lines.push(bar + chalk.dim("saved: ") + chalk.cyan(item.artifactPath));
   }
 
   if (hidden > 0) {
@@ -178,7 +187,7 @@ export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[]
   // tool-call fence, which will be replaced by a clean tool card).
   if (state.streaming && !looksLikeToolFence(state.streaming)) {
     const md = renderMarkdown(state.streaming).replace(/\n+$/, "");
-    blocks.push([chalk.magenta.bold("clai"), ...md.split("\n"), chalk.magenta("▌")]);
+    blocks.push([chalk.magenta.bold("◆ Response"), ...md.split("\n").map((line) => `  ${line}`), chalk.magenta("  ▌")]);
   }
 
   const lines: string[] = [];

@@ -9,7 +9,7 @@ export interface ConfirmModalProps {
 export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
   useInput((input, key) => {
     const ch = input.toLowerCase();
-    if (ch === "y" || key.return) {
+    if (ch === "y") {
       onAnswer(true);
     } else if (ch === "n" || key.escape) {
       onAnswer(false);
@@ -19,18 +19,18 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
   const color = confirm.kind === "pentest" ? "red" : "yellow";
   return (
     <Box
-      borderStyle="round"
+      borderStyle="double"
       borderColor={color}
       flexDirection="column"
       paddingX={1}
+      marginX={2}
     >
-      <Text color={color} bold>
-        {confirm.kind === "pentest" ? "⚠ Authorization required" : "Confirm action"}
+      <Text color={color} bold inverse>
+        {confirm.kind === "pentest" ? " ACTION REQUIRED · AUTHORIZATION " : " ACTION REQUIRED · CONFIRMATION "}
       </Text>
       <Text>{confirm.prompt}</Text>
-      <Text dimColor>
-        {"  "}
-        <Text color="green">y</Text>/enter = yes · <Text color="red">n</Text>/esc = no
+      <Text bold>
+        Press <Text color="green" inverse> Y </Text> to approve  ·  Press <Text color="red" inverse> N </Text> to deny
       </Text>
     </Box>
   );

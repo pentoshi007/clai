@@ -188,7 +188,38 @@ async function runNmapScan(
   }> = [];
 
   if (needsPrivilege && prefix) {
-    if (prefix.command) {
+    if (prefix.command === "sudo") {
+      // Authenticate in a short, dedicated interactive process. Keeping
+      // stdin inherited for the entire nmap scan prevents Ink from receiving
+      // Escape/Ctrl+C for minutes. Once `sudo -v` succeeds, the real scan can
+      // use cached credentials with `-n` and release stdin back to the TUI.
+      options?.onOutput?.(
+        "\nAdministrator access is required for a stealth scan. Enter your sudo password below; Ctrl+C cancels.\n",
+        "stdout",
+      );
+      const auth = await spawnArgv({
+        command: "sudo",
+        argv: [...prefix.argv, "-v"],
+        timeoutMs: 120_000,
+        signal: options?.signal,
+        onOutput: options?.onOutput,
+        interactiveStdin: true,
+        noArtifact: true,
+      });
+      if (options?.signal?.aborted || auth.exitCode === 130) return auth;
+      if (auth.ok) {
+        attempts.push({
+          command: "sudo",
+          argv: ["-n", "nmap", ...argv],
+          note: "Administrator access confirmed. Starting stealth scan (ESC cancels).",
+        });
+      } else {
+        options?.onOutput?.(
+          "\nSudo authentication was not completed; using an unprivileged TCP connect scan instead.\n",
+          "stderr",
+        );
+      }
+    } else if (prefix.command) {
       attempts.push({
         command: prefix.command,
         argv: [...prefix.argv, "nmap", ...argv],
