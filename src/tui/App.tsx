@@ -41,6 +41,7 @@ import { SecretInputPanel } from "./components/SecretInputPanel.js";
 import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
 import { formatKeyStatus } from "./format-keys.js";
+import { shouldStoreInPromptHistory } from "./input-history.js";
 
 export interface AppProps {
   version: string;
@@ -530,7 +531,22 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           info(`${cmd} manages external credentials or updates; use the equivalent \`clai ${cmd.slice(1)}\` command outside the TUI`);
           return true;
         case "/help":
-          setOverlay({ kind: "pager", title: "Commands", body: slashCommands.map((item) => `${item.command}${item.usage ? ` ${item.usage}` : ""}\n  ${item.description}`).join("\n\n") });
+          setOverlay({
+            kind: "picker",
+            title: "Command reference",
+            options: slashCommands.map((item) => ({
+              value: item.command,
+              label: `${item.command}${item.usage ? ` ${item.usage}` : ""}`,
+              description: item.description,
+            })),
+            onSelect: (value) => {
+              const next = `${value} `;
+              setInput(next);
+              setCursor(next.length);
+              setSelected(0);
+              setOverlay({ kind: "none" });
+            },
+          });
           return true;
         case "/exit":
         case "/quit": exitTui(); return true;
@@ -544,7 +560,6 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      history.current.push(text);
       historyIdx.current = -1;
       historyDraft.current = "";
       setInput("");
@@ -557,6 +572,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         if (!handleLocalSlash(trimmed)) dispatch({ type: "notice", level: "warn", text: `unknown command: ${trimmed}` });
         return;
       }
+      if (shouldStoreInPromptHistory(trimmed)) history.current.push(trimmed);
       if (runner.isRunning()) dispatch({ type: "queue", text: trimmed });
       else beginTurn(trimmed);
     },
