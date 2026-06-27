@@ -209,6 +209,35 @@ describe("toggle actions", () => {
     const s = reducer(initialState(), { type: "toggle-output" });
     expect(s.outputExpanded).toBe(true);
   });
+
+  it("collapsed and expanded tool outputs render in place with clear hints", () => {
+    const item: ToolItem = {
+      kind: "tool",
+      id: "tool-expand",
+      name: "shell.exec",
+      argsDisplay: "printf lines",
+      output: "one\ntwo\nthree\nfour\nfive\n",
+      status: "ok",
+      done: true,
+    };
+    const collapsed = renderItemLines(item, {
+      width: 100,
+      thinkingExpanded: false,
+      outputExpanded: false,
+      running: false,
+    }).join("\n");
+    expect(collapsed).toContain("+2 more line(s) · ctrl+o to expand in place");
+    expect(collapsed).not.toContain("five");
+
+    const expanded = renderItemLines(item, {
+      width: 100,
+      thinkingExpanded: false,
+      outputExpanded: true,
+      running: false,
+    }).join("\n");
+    expect(expanded).toContain("five");
+    expect(expanded).toContain("expanded · ctrl+o/esc to collapse");
+  });
 });
 
 describe("tui transcript formatting", () => {

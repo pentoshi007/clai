@@ -1,17 +1,41 @@
 import { Box, Text, useApp, useInput, useStdin } from "ink";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
 import { providerIds } from "../types.js";
 import { assertProvider } from "../llm/provider.js";
 import { getProvider } from "../llm/router.js";
-import { envValue, getProviderSecret, getSearchProviderKey, listProviderStatuses, maskSecret, setProviderSecret, setSecret } from "../store/keys.js";
+import {
+  envValue,
+  getProviderSecret,
+  getSearchProviderKey,
+  listProviderStatuses,
+  maskSecret,
+  setProviderSecret,
+  setSecret,
+} from "../store/keys.js";
 import { setActiveSearchProvider } from "../store/config.js";
-import { searchProviderIds, type SearchProviderId } from "../tools/web/types.js";
-import { assertSearchProvider, searchProviders } from "../tools/web/providers/provider.js";
+import {
+  searchProviderIds,
+  type SearchProviderId,
+} from "../tools/web/types.js";
+import {
+  assertSearchProvider,
+  searchProviders,
+} from "../tools/web/providers/provider.js";
 import "../tools/web/providers/duckduckgo.js";
 import "../tools/web/providers/brave.js";
 import "../tools/web/providers/tavily.js";
-import { modelSupportsThinking, modelSupportsVision } from "../llm/capabilities.js";
+import {
+  modelSupportsThinking,
+  modelSupportsVision,
+} from "../llm/capabilities.js";
 import {
   getConfig,
   getProviderModel,
@@ -22,16 +46,39 @@ import {
   updateConfig,
 } from "../store/config.js";
 import { estimateMessagesTokens } from "../agent/context-manager.js";
-import { clearAllHistory, getSession, listSessions, saveSession, upsertSession } from "../store/history.js";
+import {
+  clearAllHistory,
+  getSession,
+  listSessions,
+  saveSession,
+  upsertSession,
+} from "../store/history.js";
 import { safeCwd } from "../os/cwd.js";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { expandMentions, findFileSuggestions, getMentionQuery, loadImageAttachments, type FileSuggestion } from "../ui/mentions.js";
+import {
+  expandMentions,
+  findFileSuggestions,
+  getMentionQuery,
+  loadImageAttachments,
+  type FileSuggestion,
+} from "../ui/mentions.js";
 import { deletePlan, loadPlan, savePlan } from "../store/plan.js";
 import { renderPlanDocument } from "../ui/plan-pane.js";
-import { getSlashCommandSuggestions, isKnownSlashCommand, knownModels, slashCommands, type SlashCommand } from "../repl.js";
-import { initialState, reducer, serializeTranscriptForCompaction, type ToolItem } from "./state.js";
+import {
+  getSlashCommandSuggestions,
+  isKnownSlashCommand,
+  knownModels,
+  slashCommands,
+  type SlashCommand,
+} from "../repl.js";
+import {
+  initialState,
+  reducer,
+  serializeTranscriptForCompaction,
+  type ToolItem,
+} from "./state.js";
 import { renderTranscriptLines } from "./render-lines.js";
 import { createTuiConfirmPort } from "./confirm.js";
 import { useAgentRunner } from "./hooks/useAgentRunner.js";
@@ -44,10 +91,21 @@ import { JobsPanel } from "./components/JobsPanel.js";
 import { PickerPanel, type PickerOption } from "./components/PickerPanel.js";
 import { SecretInputPanel } from "./components/SecretInputPanel.js";
 import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
-import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
+import {
+  addScopeTargets,
+  clearScope,
+  loadScope,
+  saveScope,
+} from "../store/scope.js";
 import { formatKeyStatus } from "./format-keys.js";
 import { shouldStoreInPromptHistory } from "./input-history.js";
-import { DISABLE_MOUSE_REPORTING, ENABLE_MOUSE_REPORTING, isMouseReport, mouseWheelDirection, stripMouseReports } from "./mouse.js";
+import {
+  DISABLE_MOUSE_REPORTING,
+  ENABLE_MOUSE_REPORTING,
+  isMouseReport,
+  mouseWheelDirection,
+  stripMouseReports,
+} from "./mouse.js";
 
 export interface AppProps {
   version: string;
@@ -73,9 +131,20 @@ type Overlay =
   | { kind: "none" }
   | { kind: "pager"; title: string; body: string }
   | { kind: "jobs" }
-  | { kind: "picker"; title: string; options: PickerOption[]; onSelect: (value: string) => void };
+  | {
+      kind: "picker";
+      title: string;
+      options: PickerOption[];
+      onSelect: (value: string) => void;
+    };
 
-export function App({ version, initialMode, provider: initialProvider, initialModel, noHistory = false }: AppProps) {
+export function App({
+  version,
+  initialMode,
+  provider: initialProvider,
+  initialModel,
+  noHistory = false,
+}: AppProps) {
   const { exit } = useApp();
   const { stdin } = useStdin();
   const { columns: cols, rows } = useTerminalSize();
@@ -87,8 +156,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const [input, setInput] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState(0);
-  const [secretRequest, setSecretRequest] = useState<{ title: string; prompt: string } | undefined>();
-  const secretResolver = useRef<((value: string | undefined) => void) | undefined>();
+  const [secretRequest, setSecretRequest] = useState<
+    { title: string; prompt: string } | undefined
+  >();
+  const secretResolver = useRef<
+    ((value: string | undefined) => void) | undefined
+  >();
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const [compacting, setCompacting] = useState(false);
   const [mouseMode, setMouseMode] = useState(true);
@@ -98,13 +171,17 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const lastCtrlC = useRef(0);
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const latestItems = useRef(state.items);
   latestItems.current = state.items;
 
   useEffect(() => {
     if (!process.stdout.isTTY) return;
-    process.stdout.write(mouseMode ? ENABLE_MOUSE_REPORTING : DISABLE_MOUSE_REPORTING);
+    process.stdout.write(
+      mouseMode ? ENABLE_MOUSE_REPORTING : DISABLE_MOUSE_REPORTING,
+    );
     return () => {
       process.stdout.write(DISABLE_MOUSE_REPORTING);
     };
@@ -112,24 +189,32 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
 
   // ── Confirm port → in-app modal ────────────────────────────────────────────
   const confirmController = useMemo(() => createTuiConfirmPort(), []);
-  const confirmResolver = useRef<((ok: boolean) => void) | undefined>(undefined);
+  const confirmResolver = useRef<((ok: boolean) => void) | undefined>(
+    undefined,
+  );
   useEffect(() => {
     confirmController.setHandler(
       (req) =>
         new Promise<boolean>((res) => {
           confirmResolver.current = res;
-          dispatch({ type: "event", event: { type: "confirm-request", id: "c", ...req } });
+          dispatch({
+            type: "event",
+            event: { type: "confirm-request", id: "c", ...req },
+          });
         }),
     );
   }, [confirmController]);
 
   const ctxRef = useRef({ mode, provider, model });
   ctxRef.current = { mode, provider, model };
-  const requestSecret = useCallback((request: { title: string; prompt: string }) =>
-    new Promise<string | undefined>((resolveSecret) => {
-      secretResolver.current = resolveSecret;
-      setSecretRequest(request);
-    }), []);
+  const requestSecret = useCallback(
+    (request: { title: string; prompt: string }) =>
+      new Promise<string | undefined>((resolveSecret) => {
+        secretResolver.current = resolveSecret;
+        setSecretRequest(request);
+      }),
+    [],
+  );
   const runner = useAgentRunner({
     dispatchEvent: (event) => dispatch({ type: "event", event }),
     confirm: confirmController.port,
@@ -141,7 +226,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     void (async () => {
       const messages = runner.getMessages();
       if (!noHistory && !getConfig().privateMode && messages.length > 0) {
-        await upsertSession(runner.getSession().sessionId, messages, undefined, state.items).catch(() => undefined);
+        await upsertSession(
+          runner.getSession().sessionId,
+          messages,
+          undefined,
+          state.items,
+        ).catch(() => undefined);
       }
       exit();
     })();
@@ -166,19 +256,38 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     };
   }, [noHistory, runner, state.items]);
 
-  useEffect(() => () => {
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    const messages = runner.getMessages();
-    if (!noHistory && !getConfig().privateMode && (messages.length > 0 || latestItems.current.length > 0)) {
-      void upsertSession(runner.getSession().sessionId, messages, undefined, latestItems.current).catch(() => undefined);
-    }
-  }, [noHistory, runner]);
+  useEffect(
+    () => () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+      const messages = runner.getMessages();
+      if (
+        !noHistory &&
+        !getConfig().privateMode &&
+        (messages.length > 0 || latestItems.current.length > 0)
+      ) {
+        void upsertSession(
+          runner.getSession().sessionId,
+          messages,
+          undefined,
+          latestItems.current,
+        ).catch(() => undefined);
+      }
+    },
+    [noHistory, runner],
+  );
 
   const startTurn = useCallback(
-    async (display: string, modelInput: string, images?: ReturnType<typeof loadImageAttachments>) => {
+    async (
+      display: string,
+      modelInput: string,
+      images?: ReturnType<typeof loadImageAttachments>,
+    ) => {
       setScroll(0);
       dispatch({ type: "submit", text: display });
-      await runner.run(modelInput, images && images.length > 0 ? { images } : undefined);
+      await runner.run(
+        modelInput,
+        images && images.length > 0 ? { images } : undefined,
+      );
     },
     [runner],
   );
@@ -188,14 +297,20 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       const vision = modelSupportsVision(provider, model);
       const expansion = expandMentions(rawText, safeCwd(), vision);
       const images = vision ? loadImageAttachments(rawText, safeCwd()) : [];
-      const modelInput = expansion.contextBlock ? `${rawText}\n\n${expansion.contextBlock}` : rawText;
+      const modelInput = expansion.contextBlock
+        ? `${rawText}\n\n${expansion.contextBlock}`
+        : rawText;
       void startTurn(rawText, modelInput, images);
     },
     [provider, model, startTurn],
   );
 
   useEffect(() => {
-    if (!state.status.running && state.queued.length > 0 && !runner.isRunning()) {
+    if (
+      !state.status.running &&
+      state.queued.length > 0 &&
+      !runner.isRunning()
+    ) {
       const next = state.queued[0]!;
       dispatch({ type: "dequeue" });
       beginTurn(next);
@@ -222,17 +337,29 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     const session = runner.getSession();
     const plan = await loadPlan(session.sessionId).catch(() => undefined);
     if (!plan) {
-      dispatch({ type: "notice", level: "info", text: "no plan to implement — ask clai to plan a multi-step task first" });
+      dispatch({
+        type: "notice",
+        level: "info",
+        text: "no plan to implement — ask clai to plan a multi-step task first",
+      });
       return;
     }
     if (plan.tasks.every((t) => t.state === "done")) {
-      dispatch({ type: "notice", level: "info", text: "this plan is already complete ✓" });
+      dispatch({
+        type: "notice",
+        level: "info",
+        text: "this plan is already complete ✓",
+      });
       return;
     }
     plan.status = "approved";
     await savePlan(plan).catch(() => undefined);
     session.planApproved.value = true;
-    dispatch({ type: "notice", level: "info", text: "✦ plan approved — executing it now" });
+    dispatch({
+      type: "notice",
+      level: "info",
+      text: "✦ plan approved — executing it now",
+    });
     void startTurn("/implement", IMPLEMENT_PROMPT);
   }, [runner, startTurn]);
 
@@ -259,7 +386,11 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     setOverlay({
       kind: "picker",
       title: `Models · ${provider}`,
-      options: models.map((value) => ({ value, label: value, active: value === model })),
+      options: models.map((value) => ({
+        value,
+        label: value,
+        active: value === model,
+      })),
       onSelect: (value) => {
         setModel(value);
         setProviderModel(provider, value);
@@ -269,30 +400,48 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     });
   }, [model, provider]);
 
-  const activateProvider = useCallback(async (next: ProviderId): Promise<void> => {
-    const configured = next === "ollama" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
-    if (!configured) {
-      const key = await requestSecret({
-        title: `${next} API key`,
-        prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+  const activateProvider = useCallback(
+    async (next: ProviderId): Promise<void> => {
+      const configured =
+        next === "ollama" ||
+        Boolean(envValue(next)) ||
+        Boolean((await getProviderSecret(next)).value);
+      if (!configured) {
+        const key = await requestSecret({
+          title: `${next} API key`,
+          prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+        });
+        if (!key) {
+          dispatch({
+            type: "notice",
+            level: "warn",
+            text: `provider unchanged · ${next} needs an API key`,
+          });
+          return;
+        }
+        if (!getProvider(next).validateKey(key)) {
+          dispatch({
+            type: "notice",
+            level: "warn",
+            text: `invalid API key format for ${next}`,
+          });
+          return;
+        }
+        await setProviderSecret(next, key);
+      }
+      const nextModel = getProviderModel(next);
+      setDefaultProvider(next);
+      setProvider(next);
+      setModel(nextModel);
+      setOverlay({ kind: "none" });
+      dispatch({
+        type: "notice",
+        level: "info",
+        text: `provider → ${next} · model → ${nextModel}`,
       });
-      if (!key) {
-        dispatch({ type: "notice", level: "warn", text: `provider unchanged · ${next} needs an API key` });
-        return;
-      }
-      if (!getProvider(next).validateKey(key)) {
-        dispatch({ type: "notice", level: "warn", text: `invalid API key format for ${next}` });
-        return;
-      }
-      await setProviderSecret(next, key);
-    }
-    const nextModel = getProviderModel(next);
-    setDefaultProvider(next);
-    setProvider(next);
-    setModel(nextModel);
-    setOverlay({ kind: "none" });
-    dispatch({ type: "notice", level: "info", text: `provider → ${next} · model → ${nextModel}` });
-  }, [requestSecret]);
+    },
+    [requestSecret],
+  );
 
   const chooseProvider = useCallback(() => {
     setOverlay({
@@ -311,26 +460,37 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     });
   }, [activateProvider, provider]);
 
-  const activateSearchProvider = useCallback(async (next: SearchProviderId): Promise<void> => {
-    const adapter = searchProviders[next];
-    if (adapter?.needsApiKey) {
-      const current = await getSearchProviderKey(next);
-      if (!current.value) {
-        const key = await requestSecret({
-          title: `${next} search API key`,
-          prompt: `No API key is configured for ${adapter.displayName}. Enter it now to use this search provider.`,
-        });
-        if (!key) {
-          dispatch({ type: "notice", level: "warn", text: `search provider unchanged · ${next} needs an API key` });
-          return;
+  const activateSearchProvider = useCallback(
+    async (next: SearchProviderId): Promise<void> => {
+      const adapter = searchProviders[next];
+      if (adapter?.needsApiKey) {
+        const current = await getSearchProviderKey(next);
+        if (!current.value) {
+          const key = await requestSecret({
+            title: `${next} search API key`,
+            prompt: `No API key is configured for ${adapter.displayName}. Enter it now to use this search provider.`,
+          });
+          if (!key) {
+            dispatch({
+              type: "notice",
+              level: "warn",
+              text: `search provider unchanged · ${next} needs an API key`,
+            });
+            return;
+          }
+          await setSecret("search", next, key);
         }
-        await setSecret("search", next, key);
       }
-    }
-    setActiveSearchProvider(next);
-    setOverlay({ kind: "none" });
-    dispatch({ type: "notice", level: "info", text: `search provider → ${next}` });
-  }, [requestSecret]);
+      setActiveSearchProvider(next);
+      setOverlay({ kind: "none" });
+      dispatch({
+        type: "notice",
+        level: "info",
+        text: `search provider → ${next}`,
+      });
+    },
+    [requestSecret],
+  );
 
   const chooseSearchProvider = useCallback(() => {
     const active = getConfig().activeSearchProvider;
@@ -347,7 +507,9 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
             : `${adapter?.displayName ?? id} · keyless`,
         };
       }),
-      onSelect: (value) => { void activateSearchProvider(assertSearchProvider(value)); },
+      onSelect: (value) => {
+        void activateSearchProvider(assertSearchProvider(value));
+      },
     });
   }, [activateSearchProvider]);
 
@@ -357,7 +519,10 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     dispatch({
       type: "notice",
       level: "info",
-      text: value === "off" || value === "none" ? "thinking → off" : `thinking → ${value}`,
+      text:
+        value === "off" || value === "none"
+          ? "thinking → off"
+          : `thinking → ${value}`,
     });
   }, []);
 
@@ -391,83 +556,158 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     (text: string): boolean => {
       const [cmd, ...rest] = text.trim().split(/\s+/);
       const arg = rest.join(" ").trim();
-      const info = (t: string) => dispatch({ type: "notice", level: "info", text: t });
-      const warn = (t: string) => dispatch({ type: "notice", level: "warn", text: t });
+      const info = (t: string) =>
+        dispatch({ type: "notice", level: "info", text: t });
+      const warn = (t: string) =>
+        dispatch({ type: "notice", level: "warn", text: t });
       switch (cmd) {
-        case "/ask": setMode("ask"); setDefaultMode("ask"); info("mode → ask"); return true;
-        case "/agent": setMode("agent"); setDefaultMode("agent"); info("mode → agent"); return true;
-        case "/clear": runner.reset(); dispatch({ type: "reset" }); info("context cleared"); return true;
+        case "/ask":
+          setMode("ask");
+          setDefaultMode("ask");
+          info("mode → ask");
+          return true;
+        case "/agent":
+          setMode("agent");
+          setDefaultMode("agent");
+          info("mode → agent");
+          return true;
+        case "/clear":
+          runner.reset();
+          dispatch({ type: "reset" });
+          info("context cleared");
+          return true;
         case "/new":
           void (async () => {
             const messages = runner.getMessages();
-            if (!noHistory && !getConfig().privateMode && messages.length > 0) await saveSession(messages, undefined, state.items).catch(() => undefined);
-            runner.reset(); dispatch({ type: "reset" }); info("fresh session started");
+            if (!noHistory && !getConfig().privateMode && messages.length > 0)
+              await saveSession(messages, undefined, state.items).catch(
+                () => undefined,
+              );
+            runner.reset();
+            dispatch({ type: "reset" });
+            info("fresh session started");
           })();
           return true;
-        case "/clean": runner.reset(); dispatch({ type: "reset" }); info("fresh session started"); return true;
+        case "/clean":
+          runner.reset();
+          dispatch({ type: "reset" });
+          info("fresh session started");
+          return true;
         case "/think":
-        case "/thinking": dispatch({ type: "toggle-thinking" }); return true;
+        case "/thinking":
+          dispatch({ type: "toggle-thinking" });
+          return true;
         case "/implement":
           if (runner.isRunning()) warn("a turn is already running");
           else void runImplement();
           return true;
         case "/plan":
           void (async () => {
-            const plan = await loadPlan(runner.getSession().sessionId).catch(() => undefined);
+            const plan = await loadPlan(runner.getSession().sessionId).catch(
+              () => undefined,
+            );
             if (!plan) info("no active plan yet");
-            else setOverlay({ kind: "pager", title: "Plan", body: renderPlanDocument(plan) });
+            else
+              setOverlay({
+                kind: "pager",
+                title: "Plan",
+                body: renderPlanDocument(plan),
+              });
           })();
           return true;
-        case "/jobs": setOverlay({ kind: "jobs" }); return true;
+        case "/jobs":
+          setOverlay({ kind: "jobs" });
+          return true;
         case "/output": {
-          const outputs = state.items.filter((item): item is ToolItem => item.kind === "tool" && Boolean(item.output));
-          if (arg === "list" || arg === "ls") {
-            info(outputs.length ? outputs.map((item) => `${item.id} · ${item.name}`).join("\n") : "no tool output yet");
+          const outputs = state.items.filter(
+            (item): item is ToolItem =>
+              item.kind === "tool" && Boolean(item.output),
+          );
+          if (!arg) {
+            if (outputs.length) dispatch({ type: "toggle-output" });
+            else info("no tool output yet");
             return true;
           }
-          const selectedOutput = arg && arg !== "last" ? outputs.find((item) => item.id === arg) : lastToolOutput();
-          if (!selectedOutput) info(arg ? `no tool output: ${arg}` : "no tool output yet");
+          if (arg === "list" || arg === "ls") {
+            info(
+              outputs.length
+                ? outputs.map((item) => `${item.id} · ${item.name}`).join("\n")
+                : "no tool output yet",
+            );
+            return true;
+          }
+          const selectedOutput =
+            arg && arg !== "last"
+              ? outputs.find((item) => item.id === arg)
+              : lastToolOutput();
+          if (!selectedOutput)
+            info(arg ? `no tool output: ${arg}` : "no tool output yet");
           else void openToolOutput(selectedOutput);
           return true;
         }
         case "/model":
-          if (!arg || arg === "list" || arg === "ls") { void chooseModel(); return true; }
+          if (!arg || arg === "list" || arg === "ls") {
+            void chooseModel();
+            return true;
+          }
           {
             const options = knownModels[provider] ?? [];
             const index = Number.parseInt(arg, 10);
-            const nextModel = Number.isInteger(index) && index >= 1 && index <= options.length ? options[index - 1]! : arg;
-            setModel(nextModel); setProviderModel(provider, nextModel); info(`model → ${nextModel}`); return true;
+            const nextModel =
+              Number.isInteger(index) && index >= 1 && index <= options.length
+                ? options[index - 1]!
+                : arg;
+            setModel(nextModel);
+            setProviderModel(provider, nextModel);
+            info(`model → ${nextModel}`);
+            return true;
           }
         case "/provider":
         case "/use":
-          if (!arg) { chooseProvider(); return true; }
+          if (!arg) {
+            chooseProvider();
+            return true;
+          }
           try {
             const next = assertProvider(arg);
             void activateProvider(next);
-          } catch { warn(`unknown provider: ${arg}`); }
+          } catch {
+            warn(`unknown provider: ${arg}`);
+          }
           return true;
         case "/search":
         case "/search-provider":
-          if (!arg || arg === "list" || arg === "ls") { chooseSearchProvider(); return true; }
+          if (!arg || arg === "list" || arg === "ls") {
+            chooseSearchProvider();
+            return true;
+          }
           try {
             const next = assertSearchProvider(arg);
             void activateSearchProvider(next);
-          } catch { warn(`unknown search provider: ${arg}`); }
+          } catch {
+            warn(`unknown search provider: ${arg}`);
+          }
           return true;
         case "/mouse": {
           const normalized = arg.toLowerCase();
           if (!normalized) {
-            info(`mouse=${mouseMode ? "on" : "off"} · on: touchpad scrolls chat; off: native select/copy`);
+            info(
+              `mouse=${mouseMode ? "on" : "off"} · on: touchpad scrolls chat; off: native select/copy`,
+            );
             return true;
           }
           if (/^(on|true|1|enable)$/i.test(normalized)) {
             setMouseMode(true);
-            info("mouse=on · touchpad scrolls chat; use Option/Shift selection if your terminal requires it");
+            info(
+              "mouse=on · touchpad scrolls chat; use Option/Shift selection if your terminal requires it",
+            );
             return true;
           }
           if (/^(off|false|0|disable)$/i.test(normalized)) {
             setMouseMode(false);
-            info("mouse=off · native select/copy restored; use PageUp/PageDown/Ctrl+U/Ctrl+D or j/k to scroll chat");
+            info(
+              "mouse=off · native select/copy restored; use PageUp/PageDown/Ctrl+U/Ctrl+D or j/k to scroll chat",
+            );
             return true;
           }
           warn("usage: /mouse [on|off]");
@@ -475,61 +715,109 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         }
         case "/variants":
         case "/reasoning": {
-          if (!arg) { chooseReasoning(); return true; }
+          if (!arg) {
+            chooseReasoning();
+            return true;
+          }
           const value = arg.toLowerCase();
           if (/^(on|enable|true)$/.test(value)) {
             setThinking({ enabled: true });
             info(`thinking → ${getConfig().thinking.effort}`);
           } else if (["off", "none", "disable", "false"].includes(value)) {
             setReasoning("off");
-          } else if (["minimal", "low", "medium", "high", "xhigh"].includes(value)) {
+          } else if (
+            ["minimal", "low", "medium", "high", "xhigh"].includes(value)
+          ) {
             setReasoning(value);
-          } else warn("usage: /variants [on|off|minimal|low|medium|high|xhigh]");
+          } else
+            warn("usage: /variants [on|off|minimal|low|medium|high|xhigh]");
           return true;
         }
         case "/cwd": {
-          if (!arg) { info(`cwd: ${safeCwd()}`); return true; }
+          if (!arg) {
+            info(`cwd: ${safeCwd()}`);
+            return true;
+          }
           const target = resolve(safeCwd(), arg);
-          if (!existsSync(target)) { warn(`no such directory: ${target}`); return true; }
-          try { process.chdir(target); info(`cwd → ${target}`); }
-          catch (e) { warn(`could not chdir: ${e instanceof Error ? e.message : String(e)}`); }
+          if (!existsSync(target)) {
+            warn(`no such directory: ${target}`);
+            return true;
+          }
+          try {
+            process.chdir(target);
+            info(`cwd → ${target}`);
+          } catch (e) {
+            warn(
+              `could not chdir: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
           return true;
         }
         case "/allow":
           if (!arg || arg === "list" || arg === "ls") {
             const list = [...runner.getSession().allow];
-            info(list.length ? `allowed: ${list.join(", ")}` : "no session allowances");
+            info(
+              list.length
+                ? `allowed: ${list.join(", ")}`
+                : "no session allowances",
+            );
             return true;
           }
-          runner.getSession().allow.add(arg); info(`allowed for session: ${arg}`); return true;
+          runner.getSession().allow.add(arg);
+          info(`allowed for session: ${arg}`);
+          return true;
         case "/disallow":
           if (arg) runner.getSession().allow.delete(arg);
-          info(arg ? `disallowed: ${arg}` : "usage: /disallow <tool>"); return true;
+          info(arg ? `disallowed: ${arg}` : "usage: /disallow <tool>");
+          return true;
         case "/context": {
           const msgs = runner.getMessages();
-          info(`context: ${msgs.length} messages · ~${estimateMessagesTokens(msgs)} tokens`);
+          info(
+            `context: ${msgs.length} messages · ~${estimateMessagesTokens(msgs)} tokens`,
+          );
           return true;
         }
         case "/compact": {
-          if (runner.isRunning() || compacting) { warn("wait for the current operation to finish"); return true; }
+          if (runner.isRunning() || compacting) {
+            warn("wait for the current operation to finish");
+            return true;
+          }
           setCompacting(true);
           info("compacting conversation…");
           const fullSession = serializeTranscriptForCompaction(state.items);
-          void runner.compact(fullSession).then((result) => {
-            if (result.after === result.before) {
-              info("nothing to compact yet — more than 8 recent messages are required");
-            } else {
-              info(`compacted ${result.before} → ${result.after} messages · ~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} tokens${result.summarized ? "" : " · local fallback"}`);
-            }
-          }).catch((error) => warn(`compaction failed: ${error instanceof Error ? error.message : String(error)}`))
+          void runner
+            .compact(fullSession)
+            .then((result) => {
+              if (result.after === result.before) {
+                info(
+                  "nothing to compact yet — more than 8 recent messages are required",
+                );
+              } else {
+                info(
+                  `compacted ${result.before} → ${result.after} messages · ~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} tokens${result.summarized ? "" : " · local fallback"}`,
+                );
+              }
+            })
+            .catch((error) =>
+              warn(
+                `compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+            )
             .finally(() => setCompacting(false));
           return true;
         }
         case "/save":
           void (async () => {
             const msgs = runner.getMessages();
-            if (msgs.length === 0) { info("nothing to save yet"); return; }
-            const rec = await saveSession(msgs, arg || undefined, state.items).catch(() => undefined);
+            if (msgs.length === 0) {
+              info("nothing to save yet");
+              return;
+            }
+            const rec = await saveSession(
+              msgs,
+              arg || undefined,
+              state.items,
+            ).catch(() => undefined);
             info(rec ? `saved session ${rec.id}` : "save failed");
           })();
           return true;
@@ -537,17 +825,24 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           void (async () => {
             const sessions = await listSessions(50);
             const currentMessages = runner.getMessages();
-            if (sessions.length === 0 && currentMessages.length === 0) { info("no session history yet"); return; }
+            if (sessions.length === 0 && currentMessages.length === 0) {
+              info("no session history yet");
+              return;
+            }
             setOverlay({
               kind: "picker",
               title: "Session history",
               options: [
-                ...(currentMessages.length ? [{
-                  value: "__current__",
-                  label: "Current session",
-                  description: `${currentMessages.length} messages · active now`,
-                  active: true,
-                }] : []),
+                ...(currentMessages.length
+                  ? [
+                      {
+                        value: "__current__",
+                        label: "Current session",
+                        description: `${currentMessages.length} messages · active now`,
+                        active: true,
+                      },
+                    ]
+                  : []),
                 ...sessions.map((session) => ({
                   value: session.id,
                   label: session.name ?? session.id,
@@ -562,25 +857,41 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
                     return;
                   }
                   const session = await getSession(id);
-                  if (!session) { warn("session not found"); return; }
+                  if (!session) {
+                    warn("session not found");
+                    return;
+                  }
                   runner.setMessages(session.messages);
                   setOverlay({ kind: "none" });
-                  dispatch({ type: "load-history", messages: session.messages, transcript: session.transcript });
+                  dispatch({
+                    type: "load-history",
+                    messages: session.messages,
+                    transcript: session.transcript,
+                  });
                   setScroll(0);
-                  info(`session resumed · ${session.transcript?.length ?? session.messages.length} items`);
+                  info(
+                    `session resumed · ${session.transcript?.length ?? session.messages.length} items`,
+                  );
                 })();
               },
             });
           })();
           return true;
         case "/reset":
-          void clearAllHistory().then((result) => info(`history cleared · ${result.detail || "ok"}`));
+          void clearAllHistory().then((result) =>
+            info(`history cleared · ${result.detail || "ok"}`),
+          );
           return true;
         case "/discard":
           void (async () => {
             const session = runner.getSession();
-            const plan = await loadPlan(session.sessionId).catch(() => undefined);
-            if (!plan) { info("no active plan to discard"); return; }
+            const plan = await loadPlan(session.sessionId).catch(
+              () => undefined,
+            );
+            if (!plan) {
+              info("no active plan to discard");
+              return;
+            }
             await deletePlan(session.sessionId);
             session.planApproved.value = false;
             info(`plan discarded · ${plan.goal}`);
@@ -590,76 +901,160 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           void (async () => {
             const [sub = "show", ...parts] = arg.split(/\s+/).filter(Boolean);
             if (["clear", "reset", "off"].includes(sub)) {
-              await clearScope(); info("engagement scope cleared"); return;
+              await clearScope();
+              info("engagement scope cleared");
+              return;
             }
             if (sub === "show" || sub === "list" || sub === "ls") {
               const scope = await loadScope();
-              info(scope ? `scope: ${scope.name ?? "unnamed"} · ${scope.authorizedTargets.join(", ")}` : "no engagement scope configured");
+              info(
+                scope
+                  ? `scope: ${scope.name ?? "unnamed"} · ${scope.authorizedTargets.join(", ")}`
+                  : "no engagement scope configured",
+              );
               return;
             }
             if (sub === "add") {
-              const targets = parts.join(" ").split(/[\s,]+/).filter(Boolean);
-              if (!targets.length) { warn("usage: /scope add <target1,target2>"); return; }
+              const targets = parts
+                .join(" ")
+                .split(/[\s,]+/)
+                .filter(Boolean);
+              if (!targets.length) {
+                warn("usage: /scope add <target1,target2>");
+                return;
+              }
               const scope = await addScopeTargets(targets);
-              info(`scope updated · ${scope.authorizedTargets.join(", ")}`); return;
+              info(`scope updated · ${scope.authorizedTargets.join(", ")}`);
+              return;
             }
             if (sub === "new" || sub === "set") {
-              const targets = parts.join(" ").split(/[\s,]+/).filter(Boolean);
-              if (!targets.length) { warn("usage: /scope new <target1,target2>"); return; }
-              await saveScope({ authorizedTargets: targets, createdAt: new Date().toISOString() });
-              info(`scope created · ${targets.join(", ")}`); return;
+              const targets = parts
+                .join(" ")
+                .split(/[\s,]+/)
+                .filter(Boolean);
+              if (!targets.length) {
+                warn("usage: /scope new <target1,target2>");
+                return;
+              }
+              await saveScope({
+                authorizedTargets: targets,
+                createdAt: new Date().toISOString(),
+              });
+              info(`scope created · ${targets.join(", ")}`);
+              return;
             }
             warn("usage: /scope [show|clear|new <targets>|add <targets>]");
-          })().catch((error) => warn(error instanceof Error ? error.message : String(error)));
+          })().catch((error) =>
+            warn(error instanceof Error ? error.message : String(error)),
+          );
           return true;
         case "/privacy":
           void (async () => {
             const sub = (arg || "status").toLowerCase();
-            if (["on", "enable"].includes(sub)) { updateConfig({ privateMode: true }); info("private mode → on"); return; }
-            if (["off", "disable"].includes(sub)) { updateConfig({ privateMode: false }); info("private mode → off"); return; }
-            if (sub === "status") { info(`private mode: ${getConfig().privateMode ? "on" : "off"}`); return; }
-            if (sub === "clear-history") { const result = await clearAllHistory(); info(`history cleared · ${result.detail || "ok"}`); return; }
-            if (sub === "clear-logs") { const result = await clearAuditLogs(); info(`audit logs cleared · ${result.removed} files`); return; }
-            if (sub === "clear-artifacts") { const result = await clearArtifacts(); info(`artifacts cleared · ${result.removed} files`); return; }
-            if (sub === "clear-all") {
-              const [historyResult, logResult, artifactResult] = await Promise.all([clearAllHistory(), clearAuditLogs(), clearArtifacts()]);
-              info(`cleared history (${historyResult.detail || "ok"}), logs (${logResult.removed}), artifacts (${artifactResult.removed})`); return;
+            if (["on", "enable"].includes(sub)) {
+              updateConfig({ privateMode: true });
+              info("private mode → on");
+              return;
             }
-            warn("usage: /privacy [status|on|off|clear-history|clear-logs|clear-artifacts|clear-all]");
+            if (["off", "disable"].includes(sub)) {
+              updateConfig({ privateMode: false });
+              info("private mode → off");
+              return;
+            }
+            if (sub === "status") {
+              info(`private mode: ${getConfig().privateMode ? "on" : "off"}`);
+              return;
+            }
+            if (sub === "clear-history") {
+              const result = await clearAllHistory();
+              info(`history cleared · ${result.detail || "ok"}`);
+              return;
+            }
+            if (sub === "clear-logs") {
+              const result = await clearAuditLogs();
+              info(`audit logs cleared · ${result.removed} files`);
+              return;
+            }
+            if (sub === "clear-artifacts") {
+              const result = await clearArtifacts();
+              info(`artifacts cleared · ${result.removed} files`);
+              return;
+            }
+            if (sub === "clear-all") {
+              const [historyResult, logResult, artifactResult] =
+                await Promise.all([
+                  clearAllHistory(),
+                  clearAuditLogs(),
+                  clearArtifacts(),
+                ]);
+              info(
+                `cleared history (${historyResult.detail || "ok"}), logs (${logResult.removed}), artifacts (${artifactResult.removed})`,
+              );
+              return;
+            }
+            warn(
+              "usage: /privacy [status|on|off|clear-history|clear-logs|clear-artifacts|clear-all]",
+            );
           })();
           return true;
         case "/freeonly": {
-          const on = /^(on|true|1|enable)$/i.test(arg), off = /^(off|false|0|disable)$/i.test(arg);
-          if (!on && !off) { info(`freeOnly=${getConfig().freeOnly}`); return true; }
-          updateConfig({ freeOnly: on }); info(`freeOnly=${on}`); return true;
+          const on = /^(on|true|1|enable)$/i.test(arg),
+            off = /^(off|false|0|disable)$/i.test(arg);
+          if (!on && !off) {
+            info(`freeOnly=${getConfig().freeOnly}`);
+            return true;
+          }
+          updateConfig({ freeOnly: on });
+          info(`freeOnly=${on}`);
+          return true;
         }
         case "/fallback": {
-          const on = /^(on|true|1|enable)$/i.test(arg), off = /^(off|false|0|disable)$/i.test(arg);
-          if (!on && !off) { info(`providerFallback=${getConfig().providerFallback}`); return true; }
-          updateConfig({ providerFallback: on }); info(`providerFallback=${on}`); return true;
+          const on = /^(on|true|1|enable)$/i.test(arg),
+            off = /^(off|false|0|disable)$/i.test(arg);
+          if (!on && !off) {
+            info(`providerFallback=${getConfig().providerFallback}`);
+            return true;
+          }
+          updateConfig({ providerFallback: on });
+          info(`providerFallback=${on}`);
+          return true;
         }
         case "/keys":
           void (async () => {
             const llm = await listProviderStatuses(provider);
             const activeSearch = getConfig().activeSearchProvider;
-            const search = await Promise.all(searchProviderIds.map(async (id) => {
-              const secret = await getSearchProviderKey(id);
-              const keyless = id === "duckduckgo";
-              return {
-                provider: id,
-                active: id === activeSearch,
-                configured: keyless || Boolean(secret.value),
-                source: keyless ? "keyless" : secret.source,
-                maskedKey: secret.value ? maskSecret(secret.value) : undefined,
-              };
-            }));
-            setOverlay({ kind: "pager", title: "Credential status", body: formatKeyStatus(llm, search) });
-          })().catch((error) => warn(`could not read keys: ${error instanceof Error ? error.message : String(error)}`));
+            const search = await Promise.all(
+              searchProviderIds.map(async (id) => {
+                const secret = await getSearchProviderKey(id);
+                const keyless = id === "duckduckgo";
+                return {
+                  provider: id,
+                  active: id === activeSearch,
+                  configured: keyless || Boolean(secret.value),
+                  source: keyless ? "keyless" : secret.source,
+                  maskedKey: secret.value
+                    ? maskSecret(secret.value)
+                    : undefined,
+                };
+              }),
+            );
+            setOverlay({
+              kind: "pager",
+              title: "Credential status",
+              body: formatKeyStatus(llm, search),
+            });
+          })().catch((error) =>
+            warn(
+              `could not read keys: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
           return true;
         case "/set":
         case "/unset":
         case "/update":
-          info(`${cmd} manages external credentials or updates; use the equivalent \`clai ${cmd.slice(1)}\` command outside the TUI`);
+          info(
+            `${cmd} manages external credentials or updates; use the equivalent \`clai ${cmd.slice(1)}\` command outside the TUI`,
+          );
           return true;
         case "/help":
           setOverlay({
@@ -680,11 +1075,32 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           });
           return true;
         case "/exit":
-        case "/quit": exitTui(); return true;
-        default: return false;
+        case "/quit":
+          exitTui();
+          return true;
+        default:
+          return false;
       }
     },
-    [activateProvider, activateSearchProvider, chooseModel, chooseProvider, chooseReasoning, chooseSearchProvider, compacting, exitTui, mouseMode, noHistory, provider, runner, runImplement, lastToolOutput, openToolOutput, setReasoning, state.items],
+    [
+      activateProvider,
+      activateSearchProvider,
+      chooseModel,
+      chooseProvider,
+      chooseReasoning,
+      chooseSearchProvider,
+      compacting,
+      exitTui,
+      mouseMode,
+      noHistory,
+      provider,
+      runner,
+      runImplement,
+      lastToolOutput,
+      openToolOutput,
+      setReasoning,
+      state.items,
+    ],
   );
 
   const submitText = useCallback(
@@ -700,7 +1116,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       // Only route a leading slash through the command handler when its first
       // token is an actual clai command; file paths remain normal prompts.
       if (trimmed.startsWith("/") && isKnownSlashCommand(trimmed)) {
-        if (!handleLocalSlash(trimmed)) dispatch({ type: "notice", level: "warn", text: `unknown command: ${trimmed}` });
+        if (!handleLocalSlash(trimmed))
+          dispatch({
+            type: "notice",
+            level: "warn",
+            text: `unknown command: ${trimmed}`,
+          });
         return;
       }
       if (shouldStoreInPromptHistory(trimmed)) history.current.push(trimmed);
@@ -731,28 +1152,42 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     ? findFileSuggestions(mention.query, safeCwd(), MAX_FILE_SUGGESTIONS)
     : [];
   const slashMenuOpen = suggestions.length > 0;
-  const fileMenuOpen = !slashMenuOpen && Boolean(mention) && fileSuggestions.length > 0;
+  const fileMenuOpen =
+    !slashMenuOpen && Boolean(mention) && fileSuggestions.length > 0;
   const menuOpen = slashMenuOpen || fileMenuOpen;
   const overlayOpen = overlay.kind !== "none";
-  const modalActive = Boolean(state.pendingConfirm) || Boolean(secretRequest) || overlayOpen;
+  const modalActive =
+    Boolean(state.pendingConfirm) || Boolean(secretRequest) || overlayOpen;
 
-  // Leave the terminal's final row unused. Painting through the last cell can
-  // trigger an implicit scroll in several terminals, which looks like a full
-  // screen flash on every keypress/spinner frame.
-  const usableRows = Math.max(8, rows - 1);
+  // Use the full terminal height, but leave the final column unused below to
+  // avoid painting the bottom-right cell (which can trigger terminal scroll).
+  const usableRows = Math.max(8, rows);
   const headerH = 4;
   const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 1;
   const composerH = 3;
-  const maxMenuRows = Math.max(3, usableRows - headerH - statusH - composerH - 3);
-  const menuH = slashMenuOpen ? Math.min(suggestions.length, maxMenuRows) : fileMenuOpen ? fileSuggestions.length : 0;
-  const viewportH = Math.max(3, usableRows - headerH - statusH - composerH - menuH);
+  const maxMenuRows = Math.max(
+    3,
+    usableRows - headerH - statusH - composerH - 3,
+  );
+  const menuH = slashMenuOpen
+    ? Math.min(suggestions.length, maxMenuRows)
+    : fileMenuOpen
+      ? fileSuggestions.length
+      : 0;
+  const viewportH = Math.max(
+    3,
+    usableRows - headerH - statusH - composerH - menuH,
+  );
   const slashWindowStart = slashMenuOpen
     ? Math.min(
         Math.max(0, selected - Math.floor(menuH / 2)),
         Math.max(0, suggestions.length - menuH),
       )
     : 0;
-  const visibleSlashSuggestions = suggestions.slice(slashWindowStart, slashWindowStart + menuH);
+  const visibleSlashSuggestions = suggestions.slice(
+    slashWindowStart,
+    slashWindowStart + menuH,
+  );
 
   const transcriptLines = renderTranscriptLines(state, {
     width: cols,
@@ -780,7 +1215,9 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       if (direction > 0) setScroll((value) => Math.max(0, value - 3));
     };
     stdin.on("data", onData);
-    return () => { stdin.off("data", onData); };
+    return () => {
+      stdin.off("data", onData);
+    };
   }, [stdin, modalActive, maxOffset]);
 
   // ── Key handling ────────────────────────────────────────────────────────────
@@ -790,28 +1227,61 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     if (isMouseReport(ch) && cleanedChunk.length === 0) return;
 
     // Global shortcuts
-    if (key.ctrl && ch === "t") { dispatch({ type: "toggle-thinking" }); return; }
+    if (key.ctrl && ch === "t") {
+      dispatch({ type: "toggle-thinking" });
+      return;
+    }
     if (key.ctrl && ch === "o") {
-      const last = lastToolOutput();
-      if (last) void openToolOutput(last);
-      else dispatch({ type: "notice", level: "info", text: "no tool output yet" });
+      const hasOutput = state.items.some(
+        (item) => item.kind === "tool" && Boolean(item.output),
+      );
+      if (hasOutput) dispatch({ type: "toggle-output" });
+      else
+        dispatch({ type: "notice", level: "info", text: "no tool output yet" });
       return;
     }
     if (key.ctrl && ch === "p") {
       void (async () => {
-        const plan = await loadPlan(runner.getSession().sessionId).catch(() => undefined);
-        if (plan) setOverlay({ kind: "pager", title: "Plan", body: renderPlanDocument(plan) });
-        else dispatch({ type: "notice", level: "info", text: "no active plan yet" });
+        const plan = await loadPlan(runner.getSession().sessionId).catch(
+          () => undefined,
+        );
+        if (plan)
+          setOverlay({
+            kind: "pager",
+            title: "Plan",
+            body: renderPlanDocument(plan),
+          });
+        else
+          dispatch({
+            type: "notice",
+            level: "info",
+            text: "no active plan yet",
+          });
       })();
       return;
     }
-    if (key.ctrl && ch === "j") { setOverlay({ kind: "jobs" }); return; }
+    if (key.ctrl && ch === "j") {
+      setOverlay({ kind: "jobs" });
+      return;
+    }
 
     // Scrolling
-    if (key.pageUp) { setScroll((s) => Math.min(maxOffset, s + viewportH)); return; }
-    if (key.pageDown) { setScroll((s) => Math.max(0, s - viewportH)); return; }
-    if (key.ctrl && ch === "u") { setScroll((s) => Math.min(maxOffset, s + Math.floor(viewportH / 2))); return; }
-    if (key.ctrl && ch === "d") { setScroll((s) => Math.max(0, s - Math.floor(viewportH / 2))); return; }
+    if (key.pageUp) {
+      setScroll((s) => Math.min(maxOffset, s + viewportH));
+      return;
+    }
+    if (key.pageDown) {
+      setScroll((s) => Math.max(0, s - viewportH));
+      return;
+    }
+    if (key.ctrl && ch === "u") {
+      setScroll((s) => Math.min(maxOffset, s + Math.floor(viewportH / 2)));
+      return;
+    }
+    if (key.ctrl && ch === "d") {
+      setScroll((s) => Math.max(0, s - Math.floor(viewportH / 2)));
+      return;
+    }
     if (!input && maxOffset > 0 && ch === "k") {
       setScroll((s) => Math.min(maxOffset, s + 1));
       return;
@@ -822,12 +1292,20 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     }
 
     if (key.escape) {
-      if (runner.isRunning()) runner.abort();
-      else if (input) { setInput(""); setCursor(0); setSelected(0); }
+      if (state.outputExpanded) dispatch({ type: "toggle-output" });
+      else if (runner.isRunning()) runner.abort();
+      else if (input) {
+        setInput("");
+        setCursor(0);
+        setSelected(0);
+      }
       return;
     }
     if (key.ctrl && ch === "c") {
-      if (runner.isRunning()) { runner.abort(); return; }
+      if (runner.isRunning()) {
+        runner.abort();
+        return;
+      }
       const now = Date.now();
       if (now - lastCtrlC.current < 1500) exitTui();
       else lastCtrlC.current = now;
@@ -849,7 +1327,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       } else if (mention && fileSuggestions[selected]) {
         const suggestion = fileSuggestions[selected]!;
         const inserted = `@${suggestion.value}${suggestion.isDir ? "" : " "}`;
-        const next = input.slice(0, mention.start) + inserted + input.slice(cursor);
+        const next =
+          input.slice(0, mention.start) + inserted + input.slice(cursor);
         setInput(next);
         setCursor(mention.start + inserted.length);
       }
@@ -857,11 +1336,15 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       return;
     }
     if (key.return) {
-      if (slashMenuOpen) { submitText(suggestions[selected]!.command); return; }
+      if (slashMenuOpen) {
+        submitText(suggestions[selected]!.command);
+        return;
+      }
       if (fileMenuOpen && mention && fileSuggestions[selected]) {
         const suggestion = fileSuggestions[selected]!;
         const inserted = `@${suggestion.value}${suggestion.isDir ? "" : " "}`;
-        const next = input.slice(0, mention.start) + inserted + input.slice(cursor);
+        const next =
+          input.slice(0, mention.start) + inserted + input.slice(cursor);
         setInput(next);
         setCursor(mention.start + inserted.length);
         setSelected(0);
@@ -875,10 +1358,14 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     if (!menuOpen && key.upArrow) {
       if (history.current.length === 0) return;
       if (historyIdx.current < 0) historyDraft.current = input;
-      const idx = historyIdx.current < 0 ? history.current.length - 1 : Math.max(0, historyIdx.current - 1);
+      const idx =
+        historyIdx.current < 0
+          ? history.current.length - 1
+          : Math.max(0, historyIdx.current - 1);
       historyIdx.current = idx;
       const v = history.current[idx] ?? "";
-      setInput(v); setCursor(v.length);
+      setInput(v);
+      setCursor(v.length);
       return;
     }
     if (!menuOpen && key.downArrow) {
@@ -887,17 +1374,25 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       if (idx >= history.current.length) {
         historyIdx.current = -1;
         const draft = historyDraft.current;
-        setInput(draft); setCursor(draft.length);
+        setInput(draft);
+        setCursor(draft.length);
         return;
       }
       historyIdx.current = idx;
       const v = history.current[idx] ?? "";
-      setInput(v); setCursor(v.length);
+      setInput(v);
+      setCursor(v.length);
       return;
     }
 
-    if (key.leftArrow) { setCursor((c) => Math.max(0, c - 1)); return; }
-    if (key.rightArrow) { setCursor((c) => Math.min(input.length, c + 1)); return; }
+    if (key.leftArrow) {
+      setCursor((c) => Math.max(0, c - 1));
+      return;
+    }
+    if (key.rightArrow) {
+      setCursor((c) => Math.min(input.length, c + 1));
+      return;
+    }
     if (key.backspace || key.delete) {
       if (cursor === 0) return;
       setInput(input.slice(0, cursor - 1) + input.slice(cursor));
@@ -929,7 +1424,11 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const after = input.slice(cursor + 1);
 
   return (
-    <Box flexDirection="column" width={cols} height={usableRows}>
+    <Box
+      flexDirection="column"
+      width={Math.max(1, cols - 1)}
+      height={usableRows}
+    >
       {/* Header */}
       <Box
         flexDirection="column"
@@ -939,11 +1438,26 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         paddingX={1}
       >
         <Box justifyContent="space-between">
-          <Text><Text backgroundColor="#2563EB" color="#FFFFFF" bold> ◆ clai </Text><Text color="#94A3B8">  v{version}</Text></Text>
-          <Text><Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ${mode.toUpperCase()} `}</Text><Text color="#94A3B8"> MODE</Text></Text>
+          <Text>
+            <Text backgroundColor="#2563EB" color="#FFFFFF" bold>
+              {" "}
+              ◆ clai{" "}
+            </Text>
+            <Text color="#94A3B8"> v{version}</Text>
+          </Text>
+          <Text>
+            <Text
+              backgroundColor="#854D0E"
+              color="#FFFFFF"
+              bold
+            >{` ${mode.toUpperCase()} `}</Text>
+            <Text color="#94A3B8"> MODE</Text>
+          </Text>
         </Box>
         <Text wrap="truncate-end">
-          <Text color="green">{provider}</Text><Text dimColor>  /  </Text><Text color="cyan">{model}</Text>
+          <Text color="green">{provider}</Text>
+          <Text dimColor> / </Text>
+          <Text color="cyan">{model}</Text>
           <Text dimColor>{`  ·  ${safeCwd()}`}</Text>
           {offset > 0 ? <Text color="yellow">{`  ·  ▲ ${offset}`}</Text> : null}
         </Text>
@@ -951,11 +1465,22 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
 
       {/* Transcript viewport OR overlay */}
       {overlay.kind === "pager" ? (
-        <Pager title={overlay.title} body={overlay.body} height={viewportH} onClose={closeOverlay} />
+        <Pager
+          title={overlay.title}
+          body={overlay.body}
+          height={viewportH}
+          onClose={closeOverlay}
+        />
       ) : overlay.kind === "jobs" ? (
         <JobsPanel jobs={jobs} onClose={closeOverlay} />
       ) : overlay.kind === "picker" ? (
-        <PickerPanel title={overlay.title} options={overlay.options} height={viewportH} onSelect={overlay.onSelect} onClose={closeOverlay} />
+        <PickerPanel
+          title={overlay.title}
+          options={overlay.options}
+          height={viewportH}
+          onSelect={overlay.onSelect}
+          onClose={closeOverlay}
+        />
       ) : (
         <Box flexDirection="column" height={viewportH}>
           {visible.map((line, i) => (
@@ -971,27 +1496,71 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         ? visibleSlashSuggestions.map((cmd, i) => {
             const absoluteIndex = slashWindowStart + i;
             return (
-            <Text key={cmd.command} wrap="truncate-end" backgroundColor={absoluteIndex === selected ? "#2563EB" : absoluteIndex % 2 === 0 ? "#1E293B" : "#0F172A"}>
-              <Text color={absoluteIndex === selected ? "#FFFFFF" : "#67E8F9"} bold>
-                {absoluteIndex === selected ? " ❯ " : "   "}
-                {cmd.command.padEnd(14)}
+              <Text
+                key={cmd.command}
+                wrap="truncate-end"
+                backgroundColor={
+                  absoluteIndex === selected
+                    ? "#2563EB"
+                    : absoluteIndex % 2 === 0
+                      ? "#1E293B"
+                      : "#0F172A"
+                }
+              >
+                <Text
+                  color={absoluteIndex === selected ? "#FFFFFF" : "#67E8F9"}
+                  bold
+                >
+                  {absoluteIndex === selected ? " ❯ " : "   "}
+                  {cmd.command.padEnd(14)}
+                </Text>
+                {cmd.usage ? (
+                  <Text
+                    color={absoluteIndex === selected ? "#FFFFFF" : "#CBD5E1"}
+                  >
+                    {cmd.usage}{" "}
+                  </Text>
+                ) : null}
+                <Text color="#F8FAFC">
+                  {"  "}
+                  {cmd.description}
+                </Text>
+                {i === visibleSlashSuggestions.length - 1 &&
+                slashWindowStart + menuH < suggestions.length ? (
+                  <Text
+                    dimColor
+                  >{`  · ${suggestions.length - slashWindowStart - menuH} more ↓`}</Text>
+                ) : null}
               </Text>
-              {cmd.usage ? <Text color={absoluteIndex === selected ? "#FFFFFF" : "#CBD5E1"}>{cmd.usage} </Text> : null}
-              <Text color="#F8FAFC">{"  "}{cmd.description}</Text>
-              {i === visibleSlashSuggestions.length - 1 && slashWindowStart + menuH < suggestions.length
-                ? <Text dimColor>{`  · ${suggestions.length - slashWindowStart - menuH} more ↓`}</Text>
-                : null}
-            </Text>
             );
           })
         : null}
       {fileMenuOpen && !modalActive
         ? fileSuggestions.map((file, i) => (
-            <Text key={file.value} wrap="truncate-end" backgroundColor={i === selected ? "#2563EB" : i % 2 === 0 ? "#1E293B" : "#0F172A"}>
-              <Text color={i === selected ? "#FFFFFF" : file.isDir ? "#67E8F9" : "#F8FAFC"} bold={i === selected}>
-                {i === selected ? "❯ " : "  "}{file.isDir ? "▸ " : "· "}{file.value}
+            <Text
+              key={file.value}
+              wrap="truncate-end"
+              backgroundColor={
+                i === selected ? "#2563EB" : i % 2 === 0 ? "#1E293B" : "#0F172A"
+              }
+            >
+              <Text
+                color={
+                  i === selected
+                    ? "#FFFFFF"
+                    : file.isDir
+                      ? "#67E8F9"
+                      : "#F8FAFC"
+                }
+                bold={i === selected}
+              >
+                {i === selected ? "❯ " : "  "}
+                {file.isDir ? "▸ " : "· "}
+                {file.value}
               </Text>
-              <Text dimColor>{file.isDir ? "  directory" : "  attach file"}</Text>
+              <Text dimColor>
+                {file.isDir ? "  directory" : "  attach file"}
+              </Text>
             </Text>
           ))
         : null}
@@ -1009,28 +1578,47 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       ) : (
         <Box>
           {compacting ? (
-            <Text><Text color="magenta">{spinner} </Text><Text color="yellow">compacting conversation…</Text></Text>
+            <Text>
+              <Text color="magenta">{spinner} </Text>
+              <Text color="yellow">compacting conversation…</Text>
+            </Text>
           ) : state.status.running ? (
             <Text>
               <Text color="magenta">{spinner} </Text>
               <Text color="yellow">{state.status.activity || "working"}</Text>
-              {state.status.step > 0 ? <Text dimColor>{` · step ${state.status.step}`}</Text> : null}
+              {state.status.step > 0 ? (
+                <Text dimColor>{` · step ${state.status.step}`}</Text>
+              ) : null}
               <Text dimColor>{` · ${elapsed}s · esc to cancel`}</Text>
-              {state.queued.length > 0 ? <Text dimColor>{` · ${state.queued.length} queued`}</Text> : null}
+              {state.queued.length > 0 ? (
+                <Text dimColor>{` · ${state.queued.length} queued`}</Text>
+              ) : null}
             </Text>
           ) : null}
         </Box>
       )}
 
       {/* Composer (pinned bottom) */}
-      <Box borderStyle="round" borderColor={state.pendingConfirm || secretRequest ? "yellow" : state.status.running ? "yellow" : "cyan"} paddingX={1}>
+      <Box
+        borderStyle="round"
+        borderColor={
+          state.pendingConfirm || secretRequest
+            ? "yellow"
+            : state.status.running
+              ? "yellow"
+              : "cyan"
+        }
+        paddingX={1}
+      >
         <Text color={state.status.running ? "yellow" : "cyan"} bold>
           {state.pendingConfirm || secretRequest ? "! " : "❯ "}
         </Text>
         {secretRequest ? (
           <Text bold>Input locked · complete the secure input above</Text>
         ) : state.pendingConfirm ? (
-          <Text bold>Input locked · answer the confirmation above with Y or N</Text>
+          <Text bold>
+            Input locked · answer the confirmation above with Y or N
+          </Text>
         ) : input.length === 0 ? (
           <Text dimColor>
             {state.status.running
@@ -1040,25 +1628,51 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         ) : (
           <Text wrap="truncate-start">
             <Text color="#F8FAFC">{before}</Text>
-            <Text backgroundColor="#22D3EE" color="#020617" bold>{at}</Text>
+            <Text backgroundColor="#22D3EE" color="#020617" bold>
+              {at}
+            </Text>
             <Text color="#F8FAFC">{after}</Text>
           </Text>
         )}
       </Box>
 
       {/* Persistent chrome belongs below the input, separate from conversation content. */}
-      {!secretRequest && !state.pendingConfirm && !state.status.running && !compacting ? (
-        <Box paddingX={1}>
-          <Text backgroundColor="#166534" color="#FFFFFF" bold> READY </Text>
-          {state.queued.length > 0 ? <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ${state.queued.length} QUEUED `}</Text> : null}
+      {!secretRequest &&
+      !state.pendingConfirm &&
+      !state.status.running &&
+      !compacting ? (
+        <Box paddingX={1} justifyContent="center">
+          <Text backgroundColor="#166534" color="#FFFFFF" bold>
+            {" "}
+            READY{" "}
+          </Text>
+          {state.queued.length > 0 ? (
+            <Text
+              backgroundColor="#854D0E"
+              color="#FFFFFF"
+              bold
+            >{` ${state.queued.length} QUEUED `}</Text>
+          ) : null}
           <Text> </Text>
-          <Text backgroundColor="#334155" color="#F8FAFC"> / COMMANDS </Text>
+          <Text backgroundColor="#334155" color="#F8FAFC">
+            {" "}
+            / COMMANDS{" "}
+          </Text>
           <Text> </Text>
-          <Text backgroundColor="#334155" color="#F8FAFC"> CTRL+T THINKING </Text>
+          <Text backgroundColor="#334155" color="#F8FAFC">
+            {" "}
+            CTRL+T THINKING{" "}
+          </Text>
           <Text> </Text>
-          <Text backgroundColor="#334155" color="#F8FAFC"> CTRL+O OUTPUT </Text>
+          <Text backgroundColor="#334155" color="#F8FAFC">
+            {" "}
+            CTRL+O OUTPUT{" "}
+          </Text>
           <Text> </Text>
-          <Text backgroundColor={mouseMode ? "#155E75" : "#334155"} color="#F8FAFC">{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
+          <Text
+            backgroundColor={mouseMode ? "#155E75" : "#334155"}
+            color="#F8FAFC"
+          >{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
         </Box>
       ) : null}
     </Box>

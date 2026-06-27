@@ -123,7 +123,10 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
   if (shown.length > 0) lines.push(bar + chalk.dim("output:"));
   for (const raw of shown) {
     for (const wl of wrapAnsiLine(raw, Math.max(10, ctx.width - 2))) {
-      lines.push(bar + "  " + chalk.dim(wl));
+      const outputLine = ctx.outputExpanded && item.status !== "running"
+        ? chalk.bgHex("#1E293B").hex("#E5E7EB")(`  ${wl} `)
+        : "  " + chalk.dim(wl);
+      lines.push(bar + outputLine);
     }
   }
 
@@ -132,7 +135,9 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
   }
 
   if (hidden > 0) {
-    lines.push(bottom + chalk.dim(`+${hidden} more line(s) · ctrl+o to expand`));
+    lines.push(bottom + chalk.dim(`+${hidden} more line(s) · ctrl+o to expand in place`));
+  } else if (ctx.outputExpanded && item.output && item.status !== "running") {
+    lines.push(bottom + chalk.dim("expanded · ctrl+o/esc to collapse"));
   } else if (item.output || item.status !== "running") {
     lines.push(color("╰"));
   }
