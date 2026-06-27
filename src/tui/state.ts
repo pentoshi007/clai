@@ -82,14 +82,16 @@ function compactField(value: string): string {
 
 /** Plain, detailed session record used as source material for model compaction. */
 export function serializeTranscriptForCompaction(items: TranscriptItem[]): string {
-  return items.map((item) => {
+  return items.map((item): string | undefined => {
     switch (item.kind) {
       case "user":
         return `USER INTENT/PROMPT:\n${compactField(item.text)}`;
       case "assistant":
         return `ASSISTANT RESPONSE:\n${compactField(item.text)}`;
       case "thinking":
-        return `REASONING/STEP NOTES:\n${compactField(item.content)}`;
+        // Skip thinking/reasoning — it inflates the summary without
+        // adding useful continuation context.
+        return undefined;
       case "tool":
         return [
           `TOOL/COMMAND: ${item.name}`,
@@ -106,7 +108,7 @@ export function serializeTranscriptForCompaction(items: TranscriptItem[]): strin
       case "compacted":
         return `COMPACTED CONTEXT:\n${compactField(item.summary)}`;
     }
-  }).join("\n\n---\n\n");
+  }).filter(Boolean).join("\n\n---\n\n");
 }
 
 // ── Confirm requests ─────────────────────────────────────────────────────────
@@ -183,20 +185,21 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
     case "toggle-output":
       return { ...state, outputExpanded: !state.outputExpanded };
     case "compacted": {
-      // Replace all visual items with a single compacted context block.
-      // The model context has already been compacted (messages replaced in
-      // the runner); the visual side mirrors this by showing only the summary.
+      // Append a compacted context block to the existing visual history.
+      // The model's context has already been replaced with the summary
+      // (in the runner); the visual side keeps all items so the user can
+      // still scroll through past messages.
       const compactedItem: CompactedItem = {
         kind: "compacted",
         id: nextId("compacted"),
         summary: action.summary,
-        originalItems: [...state.items],
+        originalItems: [],
         done: true,
       };
       
       return {
         ...state,
-        items: [compactedItem],
+        items: [...state.items, compactedItem],
       };
     }
     case "queue":

@@ -138,12 +138,35 @@ export async function compactMessagesWithSummary(
       { role: "system", content: `Session memory from compacted earlier turns:\n\n${summary}` },
       ...messages.slice(tailStart),
     ];
+    const afterTokens = estimateMessagesTokens(compacted);
+    if (afterTokens >= beforeTokens) {
+      const deterministicCompacted = compactMessages(messages, { ...options, budgetTokens: 0 });
+      const detTokens = estimateMessagesTokens(deterministicCompacted);
+      if (detTokens < beforeTokens) {
+        return {
+          messages: deterministicCompacted,
+          before,
+          after: deterministicCompacted.length,
+          beforeTokens,
+          afterTokens: detTokens,
+          summarized: false,
+        };
+      }
+      return {
+        messages: [...messages],
+        before,
+        after: before,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        summarized: false,
+      };
+    }
     return {
       messages: compacted,
       before,
       after: compacted.length,
       beforeTokens,
-      afterTokens: estimateMessagesTokens(compacted),
+      afterTokens,
       summarized: true,
     };
   } catch (error) {
@@ -151,12 +174,23 @@ export async function compactMessagesWithSummary(
       throw error;
     }
     const compacted = compactMessages(messages, { ...options, budgetTokens: 0 });
+    const afterTokens = estimateMessagesTokens(compacted);
+    if (afterTokens >= beforeTokens) {
+      return {
+        messages: [...messages],
+        before,
+        after: before,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        summarized: false,
+      };
+    }
     return {
       messages: compacted,
       before,
       after: compacted.length,
       beforeTokens,
-      afterTokens: estimateMessagesTokens(compacted),
+      afterTokens,
       summarized: false,
     };
   }

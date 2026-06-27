@@ -65,7 +65,7 @@ describe("phase 9 — context manager", () => {
   it("creates semantic memory while preserving recent messages", async () => {
     const msgs: ChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
       role: index % 2 === 0 ? "user" as const : "assistant" as const,
-      content: `message-${index}`,
+      content: `message-${index}-` + "very-long-dummy-content-to-exceed-token-limits-and-make-compaction-worthwhile-".repeat(10),
     }));
     const result = await compactMessagesWithSummary(msgs, async (prompt) => {
       expect(prompt).toContain("nmap -sT localhost");
@@ -80,7 +80,7 @@ describe("phase 9 — context manager", () => {
   it("falls back locally when model summarization fails", async () => {
     const msgs: ChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
       role: index % 2 === 0 ? "user" as const : "assistant" as const,
-      content: `message-${index}`,
+      content: `message-${index}-` + "very-long-dummy-content-to-exceed-token-limits-and-make-compaction-worthwhile-".repeat(10),
     }));
     const result = await compactMessagesWithSummary(msgs, async () => {
       throw new Error("offline");
