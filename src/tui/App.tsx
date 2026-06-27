@@ -1537,21 +1537,9 @@ export function App({
   // screen flash on every keypress/spinner frame.
   const usableRows = Math.max(8, rows - 1);
   const headerH = 0;
-  const statusH = state.pendingConfirm
-    ? 6
-    : secretRequest
-      ? 7
-      : state.status.running || compacting
-        ? 1
-        : 0;
+  const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 0;
   const composerH = 3;
-  const chromeH =
-    !secretRequest &&
-    !state.pendingConfirm &&
-    !state.status.running &&
-    !compacting
-      ? 1
-      : 0;
+  const chromeH = !secretRequest && !state.pendingConfirm ? 1 : 0;
   const gapH = 1;
   const maxMenuRows = Math.max(
     3,
@@ -1991,27 +1979,6 @@ export function App({
         />
       ) : state.pendingConfirm ? (
         <ConfirmModal confirm={state.pendingConfirm} onAnswer={answerConfirm} />
-      ) : state.status.running || compacting ? (
-        <Box>
-          {compacting ? (
-            <Text>
-              <Text color="magenta">{spinner} </Text>
-              <Text color="yellow">compacting conversation…</Text>
-            </Text>
-          ) : (
-            <Text>
-              <Text color="magenta">{spinner} </Text>
-              <Text color="yellow">{state.status.activity || "working"}</Text>
-              {state.status.step > 0 ? (
-                <Text dimColor>{` · step ${state.status.step}`}</Text>
-              ) : null}
-              <Text dimColor>{` · ${elapsed}s · esc to cancel`}</Text>
-              {state.queued.length > 0 ? (
-                <Text dimColor>{` · ${state.queued.length} queued`}</Text>
-              ) : null}
-            </Text>
-          )}
-        </Box>
       ) : null}
 
       {/* Composer (pinned bottom) */}
@@ -2053,42 +2020,68 @@ export function App({
       </Box>
 
       {/* Persistent chrome belongs below the input, separate from conversation content. */}
-      {!secretRequest &&
-      !state.pendingConfirm &&
-      !state.status.running &&
-      !compacting ? (
+      {!secretRequest && !state.pendingConfirm ? (
         <Box paddingX={1} justifyContent="center">
-          <Text backgroundColor="#166534" color="#FFFFFF" bold>
-            {" "}
-            READY{" "}
-          </Text>
-          {state.queued.length > 0 ? (
-            <Text
-              backgroundColor="#854D0E"
-              color="#FFFFFF"
-              bold
-            >{` ${state.queued.length} QUEUED `}</Text>
-          ) : null}
-          <Text> </Text>
-          <Text backgroundColor="#334155" color="#F8FAFC">
-            {" "}
-            / COMMANDS{" "}
-          </Text>
-          <Text> </Text>
-          <Text backgroundColor="#334155" color="#F8FAFC">
-            {" "}
-            CTRL+T THINKING{" "}
-          </Text>
-          <Text> </Text>
-          <Text backgroundColor="#334155" color="#F8FAFC">
-            {" "}
-            CTRL+O OUTPUT{" "}
-          </Text>
-          <Text> </Text>
-          <Text
-            backgroundColor={mouseMode ? "#155E75" : "#334155"}
-            color="#F8FAFC"
-          >{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
+          {state.status.running || compacting ? (
+            <>
+              <Text backgroundColor="#B45309" color="#FFFFFF" bold>
+                {" "}
+                {compacting ? "COMPACTING" : "RUNNING"}{" "}
+              </Text>
+              <Text> </Text>
+              <Text color="magenta">{spinner} </Text>
+              <Text color="yellow">
+                {compacting ? "compacting conversation" : (state.status.activity || "working")}
+                {state.status.step > 0 ? ` (step ${state.status.step})` : ""}
+                {` · ${elapsed}s`}
+              </Text>
+              <Text> </Text>
+              <Text backgroundColor="#334155" color="#F8FAFC">
+                {" "}
+                ESC CANCEL{" "}
+              </Text>
+              {state.queued.length > 0 ? (
+                <>
+                  <Text> </Text>
+                  <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ${state.queued.length} QUEUED `}</Text>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text backgroundColor="#166534" color="#FFFFFF" bold>
+                {" "}
+                READY{" "}
+              </Text>
+              {state.queued.length > 0 ? (
+                <Text
+                  backgroundColor="#854D0E"
+                  color="#FFFFFF"
+                  bold
+                >{` ${state.queued.length} QUEUED `}</Text>
+              ) : null}
+              <Text> </Text>
+              <Text backgroundColor="#334155" color="#F8FAFC">
+                {" "}
+                / COMMANDS{" "}
+              </Text>
+              <Text> </Text>
+              <Text backgroundColor="#334155" color="#F8FAFC">
+                {" "}
+                CTRL+T THINKING{" "}
+              </Text>
+              <Text> </Text>
+              <Text backgroundColor="#334155" color="#F8FAFC">
+                {" "}
+                CTRL+O OUTPUT{" "}
+              </Text>
+              <Text> </Text>
+              <Text
+                backgroundColor={mouseMode ? "#155E75" : "#334155"}
+                color="#F8FAFC"
+              >{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
+            </>
+          )}
           {offset > 0 ? (
             <>
               <Text> </Text>
