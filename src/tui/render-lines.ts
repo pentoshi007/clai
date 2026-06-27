@@ -140,8 +140,10 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 }
 
 function renderNotice(level: "info" | "warn", text: string, width: number): string[] {
-  const label = level === "warn" ? chalk.bgYellow.black.bold(" WARN ") : chalk.bgGray.white.bold(" INFO ");
-  const color = level === "warn" ? chalk.yellow : chalk.white;
+  const label = level === "warn"
+    ? chalk.bgHex("#854D0E").hex("#FFFFFF").bold(" WARN ")
+    : chalk.bgHex("#334155").hex("#FFFFFF").bold(" INFO ");
+  const color = level === "warn" ? chalk.hex("#FDE68A") : chalk.hex("#F8FAFC");
   return wrap(text, width - 8).map((l, i) => (i === 0 ? `${label} ${color(l)}` : `       ${color(l)}`));
 }
 

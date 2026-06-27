@@ -777,8 +777,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         paddingX={1}
       >
         <Box justifyContent="space-between">
-          <Text><Text backgroundColor="magenta" color="black" bold> ◆ clai </Text><Text dimColor>  v{version}</Text></Text>
-          <Text><Text backgroundColor="yellow" color="black" bold>{` ${mode} `}</Text><Text dimColor> mode</Text></Text>
+          <Text><Text backgroundColor="#2563EB" color="#FFFFFF" bold> ◆ clai </Text><Text color="#94A3B8">  v{version}</Text></Text>
+          <Text><Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ${mode.toUpperCase()} `}</Text><Text color="#94A3B8"> MODE</Text></Text>
         </Box>
         <Text wrap="truncate-end">
           <Text color="green">{provider}</Text><Text dimColor>  /  </Text><Text color="cyan">{model}</Text>
@@ -809,13 +809,13 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         ? visibleSlashSuggestions.map((cmd, i) => {
             const absoluteIndex = slashWindowStart + i;
             return (
-            <Text key={cmd.command} wrap="truncate-end" backgroundColor={absoluteIndex === selected ? "magenta" : absoluteIndex % 2 === 0 ? "gray" : "black"}>
-              <Text color={absoluteIndex === selected ? "black" : "cyan"} bold>
+            <Text key={cmd.command} wrap="truncate-end" backgroundColor={absoluteIndex === selected ? "#2563EB" : absoluteIndex % 2 === 0 ? "#1E293B" : "#0F172A"}>
+              <Text color={absoluteIndex === selected ? "#FFFFFF" : "#67E8F9"} bold>
                 {absoluteIndex === selected ? " ❯ " : "   "}
                 {cmd.command.padEnd(14)}
               </Text>
-              {cmd.usage ? <Text color={absoluteIndex === selected ? "black" : "white"}>{cmd.usage} </Text> : null}
-              <Text color={absoluteIndex === selected ? "black" : "white"}>{"  "}{cmd.description}</Text>
+              {cmd.usage ? <Text color={absoluteIndex === selected ? "#FFFFFF" : "#CBD5E1"}>{cmd.usage} </Text> : null}
+              <Text color="#F8FAFC">{"  "}{cmd.description}</Text>
               {i === visibleSlashSuggestions.length - 1 && slashWindowStart + menuH < suggestions.length
                 ? <Text dimColor>{`  · ${suggestions.length - slashWindowStart - menuH} more ↓`}</Text>
                 : null}
@@ -825,8 +825,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         : null}
       {fileMenuOpen && !modalActive
         ? fileSuggestions.map((file, i) => (
-            <Text key={file.value} wrap="truncate-end" backgroundColor={i === selected ? "magenta" : i % 2 === 0 ? "gray" : "black"}>
-              <Text color={i === selected ? "magenta" : file.isDir ? "cyan" : "white"} bold={i === selected}>
+            <Text key={file.value} wrap="truncate-end" backgroundColor={i === selected ? "#2563EB" : i % 2 === 0 ? "#1E293B" : "#0F172A"}>
+              <Text color={i === selected ? "#FFFFFF" : file.isDir ? "#67E8F9" : "#F8FAFC"} bold={i === selected}>
                 {i === selected ? "❯ " : "  "}{file.isDir ? "▸ " : "· "}{file.value}
               </Text>
               <Text dimColor>{file.isDir ? "  directory" : "  attach file"}</Text>
@@ -887,14 +887,14 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       {/* Persistent chrome belongs below the input, separate from conversation content. */}
       {!secretRequest && !state.pendingConfirm && !state.status.running && !compacting ? (
         <Box paddingX={1}>
-          <Text backgroundColor="green" color="black" bold> READY </Text>
-          {state.queued.length > 0 ? <Text backgroundColor="yellow" color="black" bold>{` ${state.queued.length} QUEUED `}</Text> : null}
+          <Text backgroundColor="#166534" color="#FFFFFF" bold> READY </Text>
+          {state.queued.length > 0 ? <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ${state.queued.length} QUEUED `}</Text> : null}
           <Text> </Text>
-          <Text backgroundColor="gray" color="white"> / COMMANDS </Text>
+          <Text backgroundColor="#334155" color="#F8FAFC"> / COMMANDS </Text>
           <Text> </Text>
-          <Text backgroundColor="gray" color="white"> CTRL+T THINKING </Text>
+          <Text backgroundColor="#334155" color="#F8FAFC"> CTRL+T THINKING </Text>
           <Text> </Text>
-          <Text backgroundColor="gray" color="white"> CTRL+O OUTPUT </Text>
+          <Text backgroundColor="#334155" color="#F8FAFC"> CTRL+O OUTPUT </Text>
         </Box>
       ) : null}
     </Box>
