@@ -86,6 +86,15 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
 
+  useEffect(() => {
+    if (!process.stdout.isTTY) return;
+    process.stdout.write("\x1b[?1049h");
+    process.stdout.write("\x1b[2J\x1b[H");
+    return () => {
+      process.stdout.write("\x1b[?1049l");
+    };
+  }, []);
+
   // ── Confirm port → in-app modal ────────────────────────────────────────────
   const confirmController = useMemo(() => createTuiConfirmPort(), []);
   const confirmResolver = useRef<((ok: boolean) => void) | undefined>(undefined);
@@ -117,11 +126,11 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     void (async () => {
       const messages = runner.getMessages();
       if (!noHistory && !getConfig().privateMode && messages.length > 0) {
-        await saveSession(messages).catch(() => undefined);
+        await saveSession(messages, undefined, state.items).catch(() => undefined);
       }
       exit();
     })();
-  }, [exit, noHistory, runner]);
+  }, [exit, noHistory, runner, state.items]);
 
   const startTurn = useCallback(
     async (display: string, modelInput: string, images?: ReturnType<typeof loadImageAttachments>) => {
@@ -291,7 +300,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         case "/new":
           void (async () => {
             const messages = runner.getMessages();
-            if (!noHistory && !getConfig().privateMode && messages.length > 0) await saveSession(messages).catch(() => undefined);
+            if (!noHistory && !getConfig().privateMode && messages.length > 0) await saveSession(messages, undefined, state.items).catch(() => undefined);
             runner.reset(); dispatch({ type: "reset" }); info("fresh session started");
           })();
           return true;
@@ -382,7 +391,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           void (async () => {
             const msgs = runner.getMessages();
             if (msgs.length === 0) { info("nothing to save yet"); return; }
-            const rec = await saveSession(msgs, arg || undefined).catch(() => undefined);
+            const rec = await saveSession(msgs, arg || undefined, state.items).catch(() => undefined);
             info(rec ? `saved session ${rec.id}` : "save failed");
           })();
           return true;
@@ -404,7 +413,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
                 ...sessions.map((session) => ({
                   value: session.id,
                   label: session.name ?? session.id,
-                  description: `${session.createdAt.slice(0, 16).replace("T", " ")} · ${session.messages.length} messages`,
+                  description: `${session.createdAt.slice(0, 16).replace("T", " ")} · ${session.transcript?.length ?? session.messages.length} items`,
                 })),
               ],
               onSelect: (id) => {
@@ -414,12 +423,13 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
                     info("showing current session");
                     return;
                   }
-                  const messages = (await getSession(id))?.messages;
-                  if (!messages) { warn("session not found"); return; }
-                  runner.setMessages(messages);
+                  const session = await getSession(id);
+                  if (!session) { warn("session not found"); return; }
+                  runner.setMessages(session.messages);
                   setOverlay({ kind: "none" });
-                  dispatch({ type: "load-history", messages });
-                  info(`session resumed · ${messages.length} messages`);
+                  dispatch({ type: "load-history", messages: session.messages, transcript: session.transcript });
+                  setScroll(0);
+                  info(`session resumed · ${session.transcript?.length ?? session.messages.length} items`);
                 })();
               },
             });
@@ -608,6 +618,14 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     if (key.pageDown) { setScroll((s) => Math.max(0, s - viewportH)); return; }
     if (key.ctrl && ch === "u") { setScroll((s) => Math.min(maxOffset, s + Math.floor(viewportH / 2))); return; }
     if (key.ctrl && ch === "d") { setScroll((s) => Math.max(0, s - Math.floor(viewportH / 2))); return; }
+    if (!input && maxOffset > 0 && (key.upArrow || ch === "k")) {
+      setScroll((s) => Math.min(maxOffset, s + 1));
+      return;
+    }
+    if (!input && maxOffset > 0 && (key.downArrow || ch === "j")) {
+      setScroll((s) => Math.max(0, s - 1));
+      return;
+    }
 
     if (key.escape) {
       if (runner.isRunning()) runner.abort();

@@ -117,7 +117,7 @@ export type TuiAction =
   | { type: "toggle-thinking" }
   | { type: "toggle-output" }
   | { type: "confirm-resolved" }
-  | { type: "load-history"; messages: ChatMessage[] }
+  | { type: "load-history"; messages: ChatMessage[]; transcript?: TranscriptItem[] | undefined }
   | { type: "reset" };
 
 let idCounter = 0;
@@ -145,6 +145,12 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
     case "confirm-resolved":
       return { ...state, pendingConfirm: undefined };
     case "load-history": {
+      if (action.transcript?.length) {
+        return {
+          ...initialState(),
+          items: action.transcript.map((item) => ({ ...item, done: true })),
+        };
+      }
       const items = action.messages.flatMap<TranscriptItem>((message) => {
         if (message.role === "user") {
           return [{ kind: "user" as const, id: nextId("history-user"), text: message.content, done: true }];

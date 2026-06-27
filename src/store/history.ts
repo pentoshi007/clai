@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ChatMessage, ToolCall, ToolResult } from "../types.js";
+import type { TranscriptItem } from "../tui/state.js";
 import { redactSecrets } from "../llm/provider.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
@@ -27,6 +28,11 @@ export interface HistoryRecord {
   updatedAt: string;
   cwd: string;
   messages: ChatMessage[];
+  /**
+   * Optional TUI display transcript. Older records only have `messages`;
+   * they still restore as user/assistant summaries.
+   */
+  transcript?: TranscriptItem[] | undefined;
 }
 
 export interface ToolCallRecord {
@@ -110,6 +116,33 @@ function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
   });
 }
 
+function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[] | undefined {
+  if (!items) return undefined;
+  return items.map((item) => {
+    switch (item.kind) {
+      case "user":
+        return { ...item, text: redactSecrets(item.text), done: true };
+      case "assistant":
+        return { ...item, text: redactSecrets(item.text), streaming: false, done: true };
+      case "thinking":
+        return { ...item, content: redactSecrets(item.content), done: true };
+      case "tool":
+        return {
+          ...item,
+          argsDisplay: redactSecrets(item.argsDisplay),
+          output: redactSecrets(item.output),
+          summary: item.summary ? redactSecrets(item.summary) : item.summary,
+          status: item.status === "running" ? "ok" : item.status,
+          done: true,
+        };
+      case "notice":
+        return { ...item, text: redactSecrets(item.text), done: true };
+      case "plan":
+        return { ...item, done: true };
+    }
+  });
+}
+
 async function appendJsonl(record: HistoryRecord): Promise<void> {
   await mkdir(historyDir, { recursive: true });
   await appendFile(jsonlFile, `${JSON.stringify(record)}\n`, "utf8");
@@ -130,6 +163,7 @@ async function enforceJsonlRetention(): Promise<void> {
 export async function saveSession(
   messages: ChatMessage[],
   name?: string | undefined,
+  transcript?: TranscriptItem[] | undefined,
 ): Promise<HistoryRecord> {
   // Auto-derive a readable name from the first user message if none provided
   if (!name) {
@@ -148,6 +182,7 @@ export async function saveSession(
     updatedAt: now,
     cwd: safeCwd(),
     messages: scrubMessages(messages),
+    transcript: scrubTranscript(transcript),
   };
 
   // Private mode: never persist chat content. Caller still gets a record
@@ -166,7 +201,7 @@ export async function saveSession(
       record.createdAt,
       record.updatedAt,
       record.cwd,
-      JSON.stringify(record.messages),
+      JSON.stringify({ messages: record.messages, transcript: record.transcript }),
     );
     await enforceSqliteRetention(db);
   } else {
@@ -226,13 +261,18 @@ function rowToSession(row: unknown): HistoryRecord {
     cwd: string;
     messages_json: string;
   };
+  const parsed = JSON.parse(data.messages_json) as
+    | ChatMessage[]
+    | { messages?: ChatMessage[]; transcript?: TranscriptItem[] };
+  const messages = Array.isArray(parsed) ? parsed : parsed.messages ?? [];
   return {
     id: data.id,
     name: data.name ?? undefined,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     cwd: data.cwd,
-    messages: JSON.parse(data.messages_json) as ChatMessage[],
+    messages,
+    transcript: Array.isArray(parsed) ? undefined : parsed.transcript,
   };
 }
 

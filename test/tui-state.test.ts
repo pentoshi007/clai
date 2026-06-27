@@ -162,6 +162,47 @@ describe("tui reducer — thinking & notices", () => {
   });
 });
 
+describe("tui reducer — history restore", () => {
+  it("restores saved transcript items before falling back to chat messages", () => {
+    const s = reducer(initialState(), {
+      type: "load-history",
+      messages: [
+        { role: "user", content: "summarized prompt" },
+        { role: "assistant", content: "summarized answer" },
+      ],
+      transcript: [
+        { kind: "user", id: "u1", text: "full prompt", done: true },
+        { kind: "thinking", id: "th1", content: "internal plan preview", done: true },
+        {
+          kind: "tool",
+          id: "t1",
+          name: "shell.exec",
+          argsDisplay: "whoami",
+          output: "aniketpandey\n",
+          status: "ok",
+          done: true,
+        },
+        { kind: "assistant", id: "a1", text: "final answer", streaming: false, done: true },
+      ],
+    });
+
+    expect(s.items.map((item) => item.kind)).toEqual(["user", "thinking", "tool", "assistant"]);
+    expect(s.items.find((item): item is ToolItem => item.kind === "tool")?.output).toContain("aniketpandey");
+  });
+
+  it("keeps old message-only sessions readable", () => {
+    const s = reducer(initialState(), {
+      type: "load-history",
+      messages: [
+        { role: "user", content: "old prompt" },
+        { role: "assistant", content: "old answer" },
+      ],
+    });
+
+    expect(s.items.map((item) => item.kind)).toEqual(["user", "assistant"]);
+  });
+});
+
 describe("toggle actions", () => {
   it("toggle-output flips the outputExpanded flag", () => {
     const s = reducer(initialState(), { type: "toggle-output" });
