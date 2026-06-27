@@ -2082,10 +2082,16 @@ export function App({
               >{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
             </>
           )}
+          {maxOffset > offset ? (
+            <>
+              <Text> </Text>
+              <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ▲ ${maxOffset - offset} `}</Text>
+            </>
+          ) : null}
           {offset > 0 ? (
             <>
               <Text> </Text>
-              <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ▲ ${offset} `}</Text>
+              <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ▼ ${offset} `}</Text>
             </>
           ) : null}
         </Box>
