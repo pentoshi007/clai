@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdin } from "ink";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
 import { providerIds } from "../types.js";
@@ -42,6 +42,7 @@ import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
 import { formatKeyStatus } from "./format-keys.js";
 import { shouldStoreInPromptHistory } from "./input-history.js";
+import { isMouseReport, mouseWheelDirection, stripMouseReports } from "./mouse.js";
 
 export interface AppProps {
   version: string;
@@ -71,6 +72,7 @@ type Overlay =
 
 export function App({ version, initialMode, provider: initialProvider, initialModel, noHistory = false }: AppProps) {
   const { exit } = useApp();
+  const { stdin } = useStdin();
   const { columns: cols, rows } = useTerminalSize();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -190,8 +192,26 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     void startTurn("/implement", IMPLEMENT_PROMPT);
   }, [runner, startTurn]);
 
-  const chooseModel = useCallback(() => {
-    const models = knownModels[provider] ?? [model];
+  const chooseModel = useCallback(async () => {
+    const providerImpl = getProvider(provider);
+    let models: string[] = [];
+    if (providerImpl.listModels) {
+      try {
+        const secret = await getProviderSecret(provider);
+        models = await providerImpl.listModels({
+          apiKey: secret.value,
+          baseUrl: provider === "ollama" ? secret.value : undefined,
+        });
+      } catch (error) {
+        dispatch({
+          type: "notice",
+          level: "warn",
+          text: `could not refresh ${provider} models: ${error instanceof Error ? error.message : String(error)} · showing known models`,
+        });
+      }
+    }
+    if (models.length === 0) models = knownModels[provider] ?? [];
+    if (!models.includes(model)) models.unshift(model);
     setOverlay({
       kind: "picker",
       title: `Models · ${provider}`,
@@ -327,7 +347,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           return true;
         }
         case "/model":
-          if (!arg || arg === "list" || arg === "ls") { chooseModel(); return true; }
+          if (!arg || arg === "list" || arg === "ls") { void chooseModel(); return true; }
           {
             const options = knownModels[provider] ?? [];
             const index = Number.parseInt(arg, 10);
@@ -639,9 +659,24 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     visible = [...Array(viewportH - visible.length).fill(""), ...visible];
   }
 
+  // SGR mouse reporting keeps wheel/trackpad events distinct from cursor-key
+  // sequences, so scrolling the transcript never walks prompt history.
+  useEffect(() => {
+    if (!stdin || modalActive) return;
+    const onData = (chunk: Buffer | string): void => {
+      const direction = mouseWheelDirection(String(chunk));
+      if (direction < 0) setScroll((value) => Math.min(maxOffset, value + 3));
+      if (direction > 0) setScroll((value) => Math.max(0, value - 3));
+    };
+    stdin.on("data", onData);
+    return () => { stdin.off("data", onData); };
+  }, [stdin, modalActive, maxOffset]);
+
   // ── Key handling ────────────────────────────────────────────────────────────
   useInput((ch, key) => {
     if (modalActive) return; // overlay/modal owns input
+    const cleanedChunk = stripMouseReports(ch);
+    if (isMouseReport(ch) && cleanedChunk.length === 0) return;
 
     // Global shortcuts
     if (key.ctrl && ch === "t") { dispatch({ type: "toggle-thinking" }); return; }
@@ -762,9 +797,9 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       return;
     }
     if (key.ctrl || key.meta) return;
-    if (ch) {
-      setInput(input.slice(0, cursor) + ch + input.slice(cursor));
-      setCursor(cursor + ch.length);
+    if (cleanedChunk) {
+      setInput(input.slice(0, cursor) + cleanedChunk + input.slice(cursor));
+      setCursor(cursor + cleanedChunk.length);
       setSelected(0);
       historyIdx.current = -1;
       historyDraft.current = "";

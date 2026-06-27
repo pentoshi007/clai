@@ -39,6 +39,6 @@ export async function startTui(opts: StartTuiOptions = {}): Promise<void> {
     );
     await app.waitUntilExit();
   } finally {
-    if (alternateScreen) process.stdout.write("\x1b[?1049l");
+    if (alternateScreen) process.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
   }
 }

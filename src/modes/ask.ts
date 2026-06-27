@@ -37,10 +37,25 @@ const ASK_MAX_TOOLS_PER_ROUND = 4;
 /** Per-tool output cap fed back into the conversation. */
 const ASK_TOOL_OUTPUT_CAP = 6000;
 
+const EXPLICIT_FRESH_RE =
+  /\b(?:web\s*search|search\s+(?:the\s+)?(?:web|internet|online)|look\s*up|latest|current|today|now|recent|verify|check\s+(?:online|the\s+web|internet))\b/i;
+
 function truncateToolOutput(text: string): string {
   return text.length > ASK_TOOL_OUTPUT_CAP
     ? `${text.slice(0, ASK_TOOL_OUTPUT_CAP)}\n…[truncated — call web.fetch on a specific url for more]`
     : text;
+}
+
+function shouldPresearch(prompt: string): boolean {
+  return EXPLICIT_FRESH_RE.test(prompt);
+}
+
+function searchQueryForPrompt(prompt: string): string {
+  return prompt
+    .replace(/\b(?:do|please|can you|could you|search the web|web search|look up|tell me|give me|latest|current|data)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240) || prompt.slice(0, 240);
 }
 
 async function buildAskMessages(
@@ -82,6 +97,7 @@ async function buildAskMessages(
  * half-streamed one.
  */
 async function resolveAskAnswer(
+  originalPrompt: string,
   provider: ProviderId,
   model: string,
   messages: ChatMessage[],
@@ -97,6 +113,27 @@ async function resolveAskAnswer(
     thinking: config.thinking,
     ...(options.signal ? { signal: options.signal } : {}),
   };
+
+  if (shouldPresearch(originalPrompt)) {
+    const query = searchQueryForPrompt(originalPrompt);
+    let output: string;
+    try {
+      const toolResult = await runToolCall(
+        { name: "web.search", args: { query, maxResults: 5, fetchTop: 2 } },
+        { ...(options.signal ? { signal: options.signal } : {}) },
+      );
+      output = toolResult.output;
+    } catch (err) {
+      output = `error: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    messages.push({
+      role: "user",
+      content:
+        `Fresh web.search was run before answering because the user requested current/web-backed information.\n` +
+        `Query: ${query}\nResult:\n${truncateToolOutput(output)}\n\n` +
+        "Answer from these current results. If the result is insufficient or contradictory, call web.search/web.fetch again before answering. Cite URLs you used.",
+    });
+  }
 
   for (let round = 0; round < ASK_MAX_RESEARCH_ROUNDS; round += 1) {
     options.signal?.throwIfAborted();
@@ -146,6 +183,7 @@ export async function runAsk(
 ): Promise<string> {
   const request = await buildAskMessages(prompt, options);
   return resolveAskAnswer(
+    prompt,
     request.provider,
     request.model,
     request.messages,
@@ -160,6 +198,7 @@ export async function runAskStream(
 ): Promise<string> {
   const request = await buildAskMessages(prompt, options);
   const answer = await resolveAskAnswer(
+    prompt,
     request.provider,
     request.model,
     request.messages,

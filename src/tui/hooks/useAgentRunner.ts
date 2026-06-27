@@ -166,6 +166,7 @@ export function useAgentRunner({
               model: ctx.model,
               history: messagesRef.current.slice(0, -1),
               signal: ac.signal,
+              images: opts?.images,
             },
           );
           const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);

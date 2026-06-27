@@ -78,8 +78,15 @@ export const mantleProvider: LlmProvider = {
         "anthropic-version": anthropicVersion,
       },
     });
-    const data = await readJson<{ data?: Array<{ id: string }> }>(response);
-    return data.data?.map((m) => m.id).sort() ?? [];
+    const data = await readJson<
+      | Array<{ id?: string } | string>
+      | { data?: Array<{ id?: string } | string>; models?: Array<{ id?: string } | string> }
+    >(response);
+    const entries = Array.isArray(data) ? data : (data.data ?? data.models ?? []);
+    return entries
+      .map((entry) => typeof entry === "string" ? entry : entry.id)
+      .filter((id): id is string => Boolean(id))
+      .sort();
   },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("Mantle API key is required");

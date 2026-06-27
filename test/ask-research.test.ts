@@ -66,6 +66,23 @@ describe("ask mode read-only research loop", () => {
     expect(complete).toHaveBeenCalledTimes(2);
   });
 
+  it("pre-runs web.search for explicit current web-search prompts", async () => {
+    complete.mockResolvedValueOnce(reply("Current answer with citation."));
+    runTool.mockResolvedValueOnce({ ok: true, output: "fresh search results" });
+
+    const out = await runAsk("do web search and tell the latest data");
+
+    expect(out).toBe("Current answer with citation.");
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(runTool.mock.calls[0]![0]).toMatchObject({
+      name: "web.search",
+      args: { maxResults: 5, fetchTop: 2 },
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+    const messages = (complete.mock.calls[0]![0] as { messages: Array<{ content: string }> }).messages;
+    expect(messages.at(-1)?.content).toContain("Fresh web.search was run before answering");
+  });
+
   it("never executes a non-allowlisted tool like shell.exec in ask mode", async () => {
     complete.mockResolvedValueOnce(
       reply('```tool\n{"name":"shell.exec","args":{"command":"rm -rf /"}}\n```'),
