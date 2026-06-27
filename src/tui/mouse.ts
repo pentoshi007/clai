@@ -1,6 +1,9 @@
 const SGR_MOUSE_RE = /\x1b?\[?<(?<button>\d+);\d+;\d+[mM]/g;
 const PARTIAL_SGR_MOUSE_RE = /(?:\x1b?\[?<)?(?:6[45]|[0-9]{1,3});\d+;\d+[mM]/g;
 
+export const ENABLE_MOUSE_REPORTING = "\x1b[?1000h\x1b[?1006h";
+export const DISABLE_MOUSE_REPORTING = "\x1b[?1006l\x1b[?1000l";
+
 /** Decode an SGR mouse-report chunk. -1 is wheel up, +1 is wheel down. */
 export function mouseWheelDirection(data: string): -1 | 0 | 1 {
   for (const match of data.matchAll(SGR_MOUSE_RE)) {

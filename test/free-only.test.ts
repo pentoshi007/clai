@@ -122,10 +122,43 @@ describe("provider fallback rate limits", () => {
         () => undefined,
         (message) => statuses.push(message),
       ),
-    ).rejects.toThrow(/groq: Provider request failed with HTTP 429/);
+    ).rejects.toThrow(/Provider\s+Error[\s\S]*groq\s+Provider request failed with HTTP 429/);
 
     expect(nvidiaCalled).toBe(false);
     expect(statuses.join("")).toMatch(/staying on selected provider/);
     expect(statuses.join("")).not.toMatch(/trying next provider/);
+  });
+
+  it("stays on the selected model when auth fails, even if fallback is enabled", async () => {
+    updateConfig({ providerFallback: true });
+    process.env.GROQ_API_KEY = "gsk_test";
+    process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
+    let nvidiaCalled = false;
+    providers.groq = {
+      ...originalGroq,
+      async stream() {
+        throw new ProviderError("Provider request failed with HTTP 401 — bad key", 401);
+      },
+    } as LlmProvider;
+    providers.nvidia = {
+      ...originalNvidia,
+      async stream() {
+        nvidiaCalled = true;
+        return { text: "fallback", provider: "nvidia", model: "openai/gpt-oss-20b" };
+      },
+    } as LlmProvider;
+
+    await expect(
+      streamWithProvider(
+        {
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        () => undefined,
+      ),
+    ).rejects.toThrow(/Provider\s+Error[\s\S]*groq\s+Provider request failed with HTTP 401/);
+
+    expect(nvidiaCalled).toBe(false);
   });
 });

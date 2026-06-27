@@ -83,6 +83,19 @@ describe("ask mode read-only research loop", () => {
     expect(messages.at(-1)?.content).toContain("Fresh web.search was run before answering");
   });
 
+  it("pre-runs web.search for volatile role questions even without saying search", async () => {
+    complete.mockResolvedValueOnce(reply("The current PM is X, according to current sources."));
+    runTool.mockResolvedValueOnce({ ok: true, output: "fresh role results" });
+
+    await runAsk("who is the pm of the uk");
+
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(runTool.mock.calls[0]![0]).toMatchObject({
+      name: "web.search",
+      args: { maxResults: 5, fetchTop: 2 },
+    });
+  });
+
   it("never executes a non-allowlisted tool like shell.exec in ask mode", async () => {
     complete.mockResolvedValueOnce(
       reply('```tool\n{"name":"shell.exec","args":{"command":"rm -rf /"}}\n```'),

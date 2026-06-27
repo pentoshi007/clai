@@ -23,6 +23,10 @@ import {
   useProvider,
 } from "./commands/providers.js";
 import {
+  printSearchProviderKeys,
+  useSearchProvider,
+} from "./commands/search-providers.js";
+import {
   getConfig,
   getProviderModel,
   setDefaultMode,
@@ -139,6 +143,21 @@ export const slashCommands: SlashCommand[] = [
   { command: "/set", usage: "<provider> [key]", description: "store API key" },
   { command: "/unset", usage: "<provider>", description: "remove key" },
   { command: "/keys", description: "list configured providers" },
+  {
+    command: "/search",
+    usage: "[provider]",
+    description: "switch web.search provider or open picker",
+  },
+  {
+    command: "/search-provider",
+    usage: "[provider]",
+    description: "alias for /search",
+  },
+  {
+    command: "/mouse",
+    usage: "[on|off]",
+    description: "toggle touchpad transcript scrolling vs native selection",
+  },
   {
     command: "/variants",
     usage: "[on|off|none|minimal|low|medium|high|xhigh]",
@@ -1661,6 +1680,14 @@ async function handleSlash(
     }
     case "/keys":
       await printProviderKeys();
+      return true;
+    case "/search":
+    case "/search-provider":
+      if (!args[0] || args[0] === "list" || args[0] === "ls") {
+        await printSearchProviderKeys();
+      } else {
+        await useSearchProvider(args[0]);
+      }
       return true;
     case "/variants":
     case "/reasoning": {

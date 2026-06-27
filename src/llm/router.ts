@@ -61,8 +61,29 @@ function summarizeProviderError(error: unknown): string {
   return flattened.length > 240 ? `${flattened.slice(0, 237)}...` : flattened;
 }
 
-function formatFailures(failures: string[]): string {
-  return failures.map((failure) => `\n  • ${failure}`).join("");
+interface ProviderFailure {
+  provider: ProviderId;
+  message: string;
+}
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+}
+
+function formatFailures(failures: ProviderFailure[]): string {
+  if (failures.length === 0) return "";
+  const rows = failures.map((failure) =>
+    `${failure.provider.padEnd(12)} ${escapeTableCell(failure.message)}`,
+  );
+  return `\n\nProvider      Error\n------------  -----\n${rows.join("\n")}`;
+}
+
+function shouldStopFallback(error: unknown): boolean {
+  if (error instanceof ProviderError) {
+    return [401, 403, 404, 413, 422, 429].includes(error.status ?? 0);
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return /no completion text|response was empty|empty response|returned no text/i.test(message);
 }
 
 export const providers: Record<ProviderId, LlmProvider> = {
@@ -136,7 +157,7 @@ export async function completeWithProvider(
     config.freeOnly,
     config.providerFallback,
   );
-  const failures: string[] = [];
+  const failures: ProviderFailure[] = [];
 
   for (const providerId of order) {
     request.signal?.throwIfAborted();
@@ -145,7 +166,7 @@ export async function completeWithProvider(
     const hasAuth =
       providerId === "ollama" ? Boolean(auth.baseUrl) : Boolean(auth.apiKey);
     if (!hasAuth) {
-      failures.push(`${providerId}: no API key configured`);
+      failures.push({ provider: providerId, message: "no API key configured" });
       continue;
     }
 
@@ -159,8 +180,8 @@ export async function completeWithProvider(
         auth,
       );
     } catch (error) {
-      failures.push(`${providerId}: ${summarizeProviderError(error)}`);
-      if (isRateLimited(error)) {
+      failures.push({ provider: providerId, message: summarizeProviderError(error) });
+      if (shouldStopFallback(error)) {
         throw new Error(
           `No provider could complete the request.${formatFailures(failures)}`,
         );
@@ -185,7 +206,7 @@ export async function streamWithProvider(
     config.freeOnly,
     config.providerFallback,
   );
-  const failures: string[] = [];
+  const failures: ProviderFailure[] = [];
   const emitStatus = onStatus ?? ((message) => onToken(message));
 
   for (const providerId of order) {
@@ -195,7 +216,7 @@ export async function streamWithProvider(
     const hasAuth =
       providerId === "ollama" ? Boolean(auth.baseUrl) : Boolean(auth.apiKey);
     if (!hasAuth) {
-      failures.push(`${providerId}: no API key configured`);
+      failures.push({ provider: providerId, message: "no API key configured" });
       continue;
     }
 
@@ -238,12 +259,17 @@ export async function streamWithProvider(
           emitStatus(
             `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
           );
-          failures.push(`${providerId}: ${summarizeProviderError(error)}`);
+          failures.push({ provider: providerId, message: summarizeProviderError(error) });
           throw new Error(
             `No provider could stream the request.${formatFailures(failures)}`,
           );
         }
-        failures.push(`${providerId}: ${summarizeProviderError(error)}`);
+        failures.push({ provider: providerId, message: summarizeProviderError(error) });
+        if (shouldStopFallback(error)) {
+          throw new Error(
+            `No provider could stream the request.${formatFailures(failures)}`,
+          );
+        }
         break;
       }
     }

@@ -55,7 +55,7 @@ function looksLikeToolFence(text: string): boolean {
 }
 
 function renderUser(text: string, width: number): string[] {
-  const tag = chalk.bgMagenta.whiteBright.bold(" you ");
+  const tag = chalk.bgHex("#22D3EE").hex("#020617").bold(" you ");
   const body = chalk.bold(text);
   const lines = wrap(body, width - 8);
   return lines.map((l, i) =>
@@ -141,10 +141,21 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 
 function renderNotice(level: "info" | "warn", text: string, width: number): string[] {
   const label = level === "warn"
-    ? chalk.bgHex("#854D0E").hex("#FFFFFF").bold(" WARN ")
+    ? chalk.bgHex("#7F1D1D").hex("#FFFFFF").bold(" ERROR ")
     : chalk.bgHex("#334155").hex("#FFFFFF").bold(" INFO ");
-  const color = level === "warn" ? chalk.hex("#FDE68A") : chalk.hex("#F8FAFC");
-  return wrap(text, width - 8).map((l, i) => (i === 0 ? `${label} ${color(l)}` : `       ${color(l)}`));
+  const color = level === "warn" ? chalk.hex("#FECACA") : chalk.hex("#F8FAFC");
+  const rendered: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const available = width - 8;
+    const wrapped = /^\s*\S+\s{2,}\S+/.test(line) || /^-+$/.test(line)
+      ? [line]
+      : wrap(line, available);
+    for (const part of wrapped.length ? wrapped : [""]) {
+      rendered.push(rendered.length === 0 ? `${label} ${color(part)}` : `       ${color(part)}`);
+    }
+  }
+  return rendered;
 }
 
 export function renderItemLines(item: TranscriptItem, ctx: RenderCtx): string[] {

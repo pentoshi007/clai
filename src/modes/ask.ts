@@ -39,6 +39,10 @@ const ASK_TOOL_OUTPUT_CAP = 6000;
 
 const EXPLICIT_FRESH_RE =
   /\b(?:web\s*search|search\s+(?:the\s+)?(?:web|internet|online)|look\s*up|latest|current|today|now|recent|verify|check\s+(?:online|the\s+web|internet))\b/i;
+const VOLATILE_FACT_RE =
+  /\b(?:who\s+(?:is|are)|what\s+(?:is|are)|which)\b.*\b(?:president|prime\s+minister|pm|ceo|cto|cfo|leader|governor|mayor|minister|secretary|chair|head|owner|founder|maintainer|version|release|price|cost|rate|score|standing|schedule|weather|forecast|law|rule|regulation|policy|deadline|election|status)\b/i;
+const CHANGING_TECH_RE =
+  /\b(?:best|recommended|latest|new|modern|current)\b.*\b(?:method|approach|practice|library|framework|api|sdk|model|tool|package|dependency|syntax|docs?|documentation)\b/i;
 
 function truncateToolOutput(text: string): string {
   return text.length > ASK_TOOL_OUTPUT_CAP
@@ -47,7 +51,11 @@ function truncateToolOutput(text: string): string {
 }
 
 function shouldPresearch(prompt: string): boolean {
-  return EXPLICIT_FRESH_RE.test(prompt);
+  return (
+    EXPLICIT_FRESH_RE.test(prompt) ||
+    VOLATILE_FACT_RE.test(prompt) ||
+    CHANGING_TECH_RE.test(prompt)
+  );
 }
 
 function searchQueryForPrompt(prompt: string): string {

@@ -212,6 +212,37 @@ describe("toggle actions", () => {
 });
 
 describe("tui transcript formatting", () => {
+  it("wraps long assistant text into multiple transcript lines", () => {
+    const item: AssistantItem = {
+      kind: "assistant",
+      id: "a-wrap",
+      text: "This is a very long assistant sentence that should continue onto more than one visible terminal line instead of being ellipsized.",
+      streaming: false,
+      done: true,
+    };
+    const lines = renderItemLines(item, {
+      width: 48,
+      thinkingExpanded: false,
+      outputExpanded: false,
+      running: false,
+    });
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines.join("\n")).not.toContain("…");
+  });
+
+  it("renders the user badge label distinctly from the prompt body", () => {
+    const rendered = renderItemLines(
+      { kind: "user", id: "u-theme", text: "hello", done: true },
+      {
+        width: 80,
+        thinkingExpanded: false,
+        outputExpanded: false,
+        running: false,
+      },
+    ).join("\n");
+    expect(rendered).toMatch(/^ you\s+hello/);
+  });
+
   it("labels shell commands and their output instead of showing ambiguous bare text", () => {
     const item: ToolItem = {
       kind: "tool",
@@ -232,6 +263,27 @@ describe("tui transcript formatting", () => {
     expect(rendered).toContain("whoami");
     expect(rendered).toContain("output:");
     expect(rendered).toContain("aniketpandey");
+  });
+
+  it("keeps provider error rows readable in warning notices", () => {
+    const rendered = renderItemLines(
+      {
+        kind: "notice",
+        id: "n-provider",
+        level: "warn",
+        text: "No provider could complete the request.\n\nProvider      Error\n------------  -----\nagentrouter  HTTP 401 unauthorized",
+        done: true,
+      },
+      {
+        width: 80,
+        thinkingExpanded: false,
+        outputExpanded: false,
+        running: false,
+      },
+    ).join("\n");
+    expect(rendered).toContain("ERROR");
+    expect(rendered).toContain("Provider      Error");
+    expect(rendered).toContain("agentrouter  HTTP 401 unauthorized");
   });
 });
 

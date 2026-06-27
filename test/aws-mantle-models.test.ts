@@ -14,4 +14,38 @@ describe("AWS Mantle model discovery", () => {
       "anthropic.claude-sonnet-4-6",
     ]);
   });
+
+  it("uses the OpenAI-compatible chat endpoint for non-Anthropic Mantle models", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "ok" } }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(mantleProvider.complete({
+      provider: "aws-mantle",
+      model: "moonshotai.kimi-k2.5",
+      messages: [{ role: "user", content: "hi" }],
+    }, { apiKey: "test-key" })).resolves.toMatchObject({
+      text: "ok",
+      provider: "aws-mantle",
+      model: "moonshotai.kimi-k2.5",
+    });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/chat/completions");
+  });
+
+  it("keeps Claude/Anthropic Mantle models on the Anthropic messages endpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      content: [{ type: "text", text: "ok" }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mantleProvider.complete({
+      provider: "aws-mantle",
+      model: "anthropic.claude-haiku-4-5",
+      messages: [{ role: "user", content: "hi" }],
+    }, { apiKey: "test-key" });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/anthropic/v1/messages");
+  });
 });

@@ -4,8 +4,13 @@ import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
 import { providerIds } from "../types.js";
 import { assertProvider } from "../llm/provider.js";
 import { getProvider } from "../llm/router.js";
-import { envValue, getProviderSecret, getSearchProviderKey, listProviderStatuses, maskSecret, setProviderSecret } from "../store/keys.js";
-import { searchProviderIds } from "../tools/web/types.js";
+import { envValue, getProviderSecret, getSearchProviderKey, listProviderStatuses, maskSecret, setProviderSecret, setSecret } from "../store/keys.js";
+import { setActiveSearchProvider } from "../store/config.js";
+import { searchProviderIds, type SearchProviderId } from "../tools/web/types.js";
+import { assertSearchProvider, searchProviders } from "../tools/web/providers/provider.js";
+import "../tools/web/providers/duckduckgo.js";
+import "../tools/web/providers/brave.js";
+import "../tools/web/providers/tavily.js";
 import { modelSupportsThinking, modelSupportsVision } from "../llm/capabilities.js";
 import {
   getConfig,
@@ -17,7 +22,7 @@ import {
   updateConfig,
 } from "../store/config.js";
 import { estimateMessagesTokens } from "../agent/context-manager.js";
-import { clearAllHistory, getSession, listSessions, saveSession } from "../store/history.js";
+import { clearAllHistory, getSession, listSessions, saveSession, upsertSession } from "../store/history.js";
 import { safeCwd } from "../os/cwd.js";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
@@ -42,7 +47,7 @@ import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
 import { formatKeyStatus } from "./format-keys.js";
 import { shouldStoreInPromptHistory } from "./input-history.js";
-import { isMouseReport, mouseWheelDirection, stripMouseReports } from "./mouse.js";
+import { DISABLE_MOUSE_REPORTING, ENABLE_MOUSE_REPORTING, isMouseReport, mouseWheelDirection, stripMouseReports } from "./mouse.js";
 
 export interface AppProps {
   version: string;
@@ -86,12 +91,24 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const secretResolver = useRef<((value: string | undefined) => void) | undefined>();
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const [compacting, setCompacting] = useState(false);
+  const [mouseMode, setMouseMode] = useState(true);
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
   const historyDraft = useRef("");
   const lastCtrlC = useRef(0);
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const latestItems = useRef(state.items);
+  latestItems.current = state.items;
+
+  useEffect(() => {
+    if (!process.stdout.isTTY) return;
+    process.stdout.write(mouseMode ? ENABLE_MOUSE_REPORTING : DISABLE_MOUSE_REPORTING);
+    return () => {
+      process.stdout.write(DISABLE_MOUSE_REPORTING);
+    };
+  }, [mouseMode]);
 
   // ── Confirm port → in-app modal ────────────────────────────────────────────
   const confirmController = useMemo(() => createTuiConfirmPort(), []);
@@ -124,11 +141,38 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     void (async () => {
       const messages = runner.getMessages();
       if (!noHistory && !getConfig().privateMode && messages.length > 0) {
-        await saveSession(messages, undefined, state.items).catch(() => undefined);
+        await upsertSession(runner.getSession().sessionId, messages, undefined, state.items).catch(() => undefined);
       }
       exit();
     })();
   }, [exit, noHistory, runner, state.items]);
+
+  useEffect(() => {
+    if (noHistory || getConfig().privateMode) return;
+    if (state.items.length === 0) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      const messages = runner.getMessages();
+      if (messages.length === 0 && state.items.length === 0) return;
+      void upsertSession(
+        runner.getSession().sessionId,
+        messages,
+        undefined,
+        state.items,
+      ).catch(() => undefined);
+    }, 250);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+  }, [noHistory, runner, state.items]);
+
+  useEffect(() => () => {
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    const messages = runner.getMessages();
+    if (!noHistory && !getConfig().privateMode && (messages.length > 0 || latestItems.current.length > 0)) {
+      void upsertSession(runner.getSession().sessionId, messages, undefined, latestItems.current).catch(() => undefined);
+    }
+  }, [noHistory, runner]);
 
   const startTurn = useCallback(
     async (display: string, modelInput: string, images?: ReturnType<typeof loadImageAttachments>) => {
@@ -267,6 +311,46 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     });
   }, [activateProvider, provider]);
 
+  const activateSearchProvider = useCallback(async (next: SearchProviderId): Promise<void> => {
+    const adapter = searchProviders[next];
+    if (adapter?.needsApiKey) {
+      const current = await getSearchProviderKey(next);
+      if (!current.value) {
+        const key = await requestSecret({
+          title: `${next} search API key`,
+          prompt: `No API key is configured for ${adapter.displayName}. Enter it now to use this search provider.`,
+        });
+        if (!key) {
+          dispatch({ type: "notice", level: "warn", text: `search provider unchanged · ${next} needs an API key` });
+          return;
+        }
+        await setSecret("search", next, key);
+      }
+    }
+    setActiveSearchProvider(next);
+    setOverlay({ kind: "none" });
+    dispatch({ type: "notice", level: "info", text: `search provider → ${next}` });
+  }, [requestSecret]);
+
+  const chooseSearchProvider = useCallback(() => {
+    const active = getConfig().activeSearchProvider;
+    setOverlay({
+      kind: "picker",
+      title: "Search providers",
+      options: searchProviderIds.map((id) => {
+        const adapter = searchProviders[id];
+        return {
+          value: id,
+          label: id === active ? `${id} · active` : id,
+          description: adapter?.needsApiKey
+            ? `${adapter.displayName} · API key required`
+            : `${adapter?.displayName ?? id} · keyless`,
+        };
+      }),
+      onSelect: (value) => { void activateSearchProvider(assertSearchProvider(value)); },
+    });
+  }, [activateSearchProvider]);
+
   const setReasoning = useCallback((value: string) => {
     if (value === "off" || value === "none") setThinking({ enabled: false });
     else setThinking({ enabled: true, effort: value as ReasoningEffort });
@@ -362,6 +446,33 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
             void activateProvider(next);
           } catch { warn(`unknown provider: ${arg}`); }
           return true;
+        case "/search":
+        case "/search-provider":
+          if (!arg || arg === "list" || arg === "ls") { chooseSearchProvider(); return true; }
+          try {
+            const next = assertSearchProvider(arg);
+            void activateSearchProvider(next);
+          } catch { warn(`unknown search provider: ${arg}`); }
+          return true;
+        case "/mouse": {
+          const normalized = arg.toLowerCase();
+          if (!normalized) {
+            info(`mouse=${mouseMode ? "on" : "off"} · on: touchpad scrolls chat; off: native select/copy`);
+            return true;
+          }
+          if (/^(on|true|1|enable)$/i.test(normalized)) {
+            setMouseMode(true);
+            info("mouse=on · touchpad scrolls chat; use Option/Shift selection if your terminal requires it");
+            return true;
+          }
+          if (/^(off|false|0|disable)$/i.test(normalized)) {
+            setMouseMode(false);
+            info("mouse=off · native select/copy restored; use PageUp/PageDown/Ctrl+U/Ctrl+D or j/k to scroll chat");
+            return true;
+          }
+          warn("usage: /mouse [on|off]");
+          return true;
+        }
         case "/variants":
         case "/reasoning": {
           if (!arg) { chooseReasoning(); return true; }
@@ -573,7 +684,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         default: return false;
       }
     },
-    [activateProvider, chooseModel, chooseProvider, chooseReasoning, compacting, exitTui, noHistory, provider, runner, runImplement, lastToolOutput, openToolOutput, setReasoning, state.items],
+    [activateProvider, activateSearchProvider, chooseModel, chooseProvider, chooseReasoning, chooseSearchProvider, compacting, exitTui, mouseMode, noHistory, provider, runner, runImplement, lastToolOutput, openToolOutput, setReasoning, state.items],
   );
 
   const submitText = useCallback(
@@ -848,7 +959,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       ) : (
         <Box flexDirection="column" height={viewportH}>
           {visible.map((line, i) => (
-            <Text key={i} wrap="truncate-end">
+            <Text key={i} wrap="wrap">
               {line === "" ? " " : line}
             </Text>
           ))}
@@ -912,8 +1023,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       )}
 
       {/* Composer (pinned bottom) */}
-      <Box borderStyle="round" borderColor={state.pendingConfirm || secretRequest ? "yellow" : state.status.running ? "yellow" : "magenta"} paddingX={1}>
-        <Text color={state.status.running ? "yellow" : "magenta"} bold>
+      <Box borderStyle="round" borderColor={state.pendingConfirm || secretRequest ? "yellow" : state.status.running ? "yellow" : "cyan"} paddingX={1}>
+        <Text color={state.status.running ? "yellow" : "cyan"} bold>
           {state.pendingConfirm || secretRequest ? "! " : "❯ "}
         </Text>
         {secretRequest ? (
@@ -928,9 +1039,9 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           </Text>
         ) : (
           <Text wrap="truncate-start">
-            {before}
-            <Text inverse>{at}</Text>
-            {after}
+            <Text color="#F8FAFC">{before}</Text>
+            <Text backgroundColor="#22D3EE" color="#020617" bold>{at}</Text>
+            <Text color="#F8FAFC">{after}</Text>
           </Text>
         )}
       </Box>
@@ -946,6 +1057,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           <Text backgroundColor="#334155" color="#F8FAFC"> CTRL+T THINKING </Text>
           <Text> </Text>
           <Text backgroundColor="#334155" color="#F8FAFC"> CTRL+O OUTPUT </Text>
+          <Text> </Text>
+          <Text backgroundColor={mouseMode ? "#155E75" : "#334155"} color="#F8FAFC">{` MOUSE ${mouseMode ? "ON" : "OFF"} `}</Text>
         </Box>
       ) : null}
     </Box>

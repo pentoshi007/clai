@@ -9,9 +9,15 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
-import { readJson, readStreamLines } from "./http.js";
+import {
+  openAiCompatibleComplete,
+  openAiCompatibleStream,
+  readJson,
+  readStreamLines,
+} from "./http.js";
 
 const baseUrl = "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1";
+const openAiBaseUrl = "https://bedrock-mantle.ap-south-1.api.aws/v1";
 const modelsBaseUrl = "https://bedrock-mantle.ap-south-1.api.aws";
 const anthropicVersion = "2023-06-01";
 
@@ -64,6 +70,10 @@ function anthropicThinkingBudget(reasoning: ReasoningPreference | undefined): nu
   }
 }
 
+function isAnthropicMantleModel(model: string): boolean {
+  return /(?:^|[./-])(?:anthropic|claude)(?:[./-]|$)/i.test(model);
+}
+
 export const mantleProvider: LlmProvider = {
   id: "aws-mantle",
   displayName: "AWS Mantle",
@@ -104,6 +114,21 @@ export const mantleProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Mantle API key is required");
     const model = request.model ?? defaultModels["aws-mantle"];
+    if (!isAnthropicMantleModel(model)) {
+      const text = await openAiCompatibleComplete({
+        provider: "AWS Mantle",
+        baseUrl: openAiBaseUrl,
+        apiKey: auth.apiKey,
+        model,
+        messages: request.messages,
+        maxTokens: request.maxTokens,
+        temperature: request.temperature,
+        signal: request.signal,
+        reasoning: request.thinking,
+        reasoningStyle: "nvidia",
+      });
+      return { text, provider: "aws-mantle", model };
+    }
     const system = request.messages.find(
       (message) => message.role === "system",
     )?.content;
@@ -159,6 +184,22 @@ export const mantleProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Mantle API key is required");
     const model = request.model ?? defaultModels["aws-mantle"];
+    if (!isAnthropicMantleModel(model)) {
+      const text = await openAiCompatibleStream({
+        provider: "AWS Mantle",
+        baseUrl: openAiBaseUrl,
+        apiKey: auth.apiKey,
+        model,
+        messages: request.messages,
+        maxTokens: request.maxTokens,
+        temperature: request.temperature,
+        signal: request.signal,
+        onToken,
+        reasoning: request.thinking,
+        reasoningStyle: "nvidia",
+      });
+      return { text, provider: "aws-mantle", model };
+    }
     const system = request.messages.find(
       (message) => message.role === "system",
     )?.content;

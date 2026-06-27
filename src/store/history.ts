@@ -211,12 +211,71 @@ export async function saveSession(
   return record;
 }
 
+export async function upsertSession(
+  id: string,
+  messages: ChatMessage[],
+  name?: string | undefined,
+  transcript?: TranscriptItem[] | undefined,
+): Promise<HistoryRecord> {
+  const existing = await getSession(id);
+  const firstUser = messages.find((m) => m.role === "user");
+  const derivedName = firstUser
+    ? firstUser.content.slice(0, 60).replace(/\n/g, " ").trim() + (firstUser.content.length > 60 ? "…" : "")
+    : undefined;
+  const now = new Date().toISOString();
+  const record: HistoryRecord = {
+    id,
+    name: name ?? existing?.name ?? derivedName,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    cwd: safeCwd(),
+    messages: scrubMessages(messages),
+    transcript: scrubTranscript(transcript),
+  };
+
+  if (getConfig().privateMode) return record;
+
+  const db = await loadDatabase();
+  if (db) {
+    db.prepare(
+      "INSERT OR REPLACE INTO sessions (id, name, created_at, updated_at, cwd, messages_json) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      record.id,
+      record.name ?? null,
+      record.createdAt,
+      record.updatedAt,
+      record.cwd,
+      JSON.stringify({ messages: record.messages, transcript: record.transcript }),
+    );
+    await enforceSqliteRetention(db);
+  } else {
+    await upsertJsonl(record);
+  }
+
+  return record;
+}
+
 async function enforceSqliteRetention(db: DatabaseLike): Promise<void> {
   const limit = getConfig().historyRetentionLimit;
   if (!limit || limit <= 0) return;
   db.exec(
     `DELETE FROM sessions WHERE id NOT IN (SELECT id FROM sessions ORDER BY updated_at DESC LIMIT ${Math.floor(limit)});`,
   );
+}
+
+async function upsertJsonl(record: HistoryRecord): Promise<void> {
+  await mkdir(historyDir, { recursive: true });
+  const records = existsSync(jsonlFile)
+    ? (await readFile(jsonlFile, "utf8"))
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as HistoryRecord)
+    : [];
+  const idx = records.findIndex((item) => item.id === record.id);
+  if (idx >= 0) records[idx] = record;
+  else records.push(record);
+  await writeFile(jsonlFile, `${records.map((item) => JSON.stringify(item)).join("\n")}\n`, { mode: 0o600 });
+  await enforceJsonlRetention();
 }
 
 export async function saveToolCall(

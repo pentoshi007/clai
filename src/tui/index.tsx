@@ -5,6 +5,9 @@ import { getConfig, getProviderModel } from "../store/config.js";
 import { getCurrentVersion } from "../commands/update.js";
 import { App } from "./App.js";
 
+export const TUI_ENTER_SEQUENCE = "\x1b[?1049h\x1b[2J\x1b[H";
+export const TUI_EXIT_SEQUENCE = "\x1b[?1006l\x1b[?1000l\x1b[?1049l";
+
 export interface StartTuiOptions {
   mode?: Mode | undefined;
   provider?: ProviderId | undefined;
@@ -22,7 +25,7 @@ export async function startTui(opts: StartTuiOptions = {}): Promise<void> {
   // in a React effect erases that first frame and leaves a blank terminal
   // until a resize causes another render (notably in macOS Terminal).
   const alternateScreen = Boolean(process.stdout.isTTY);
-  if (alternateScreen) process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
+  if (alternateScreen) process.stdout.write(TUI_ENTER_SEQUENCE);
   try {
     const app = render(
       createElement(App, {
@@ -39,6 +42,6 @@ export async function startTui(opts: StartTuiOptions = {}): Promise<void> {
     );
     await app.waitUntilExit();
   } finally {
-    if (alternateScreen) process.stdout.write("\x1b[?1006l\x1b[?1000l\x1b[?1049l");
+    if (alternateScreen) process.stdout.write(TUI_EXIT_SEQUENCE);
   }
 }
