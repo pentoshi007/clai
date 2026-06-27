@@ -16,7 +16,7 @@ export interface PagerProps {
  * is given so it fits inside the pinned-composer layout.
  */
 export function Pager({ title, body, height, onClose }: PagerProps) {
-  const viewport = Math.max(3, height - 1);
+  const viewport = Math.max(3, height - 5);
   const lines = body.replace(/\n+$/, "").split("\n");
   const maxOffset = Math.max(0, lines.length - viewport);
   const [offset, setOffset] = useState(maxOffset);
@@ -39,16 +39,20 @@ export function Pager({ title, body, height, onClose }: PagerProps) {
   const pct = maxOffset === 0 ? 100 : Math.round((off / maxOffset) * 100);
 
   return (
-    <Box flexDirection="column" height={height}>
-      <Text>
+    <Box flexDirection="column" height={height} borderStyle="round" borderColor="gray" paddingX={1}>
+      <Box justifyContent="space-between">
         <Text bold color="cyan">{title}</Text>
-        <Text dimColor>{`  (${pct}%  ·  ↑↓/PgUp/PgDn/g/G · q to close)`}</Text>
-      </Text>
-      {visible.map((line, i) => (
-        <Text key={off + i} wrap="truncate-end">
-          {line === "" ? " " : line}
-        </Text>
-      ))}
+        <Text dimColor>{`${off + 1}-${Math.min(off + viewport, lines.length)} / ${lines.length} · ${pct}%`}</Text>
+      </Box>
+      <Text dimColor>↑/↓ or j/k scroll · PgUp/PgDn page · g/G jump · q/Esc close</Text>
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+        {visible.map((line, i) => (
+          <Text key={off + i} wrap="truncate-end" backgroundColor="black">
+            <Text dimColor>{String(off + i + 1).padStart(4, " ")} │ </Text>
+            {line === "" ? " " : line}
+          </Text>
+        ))}
+      </Box>
     </Box>
   );
 }

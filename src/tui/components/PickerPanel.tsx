@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface PickerOption {
   value: string;
@@ -23,33 +23,76 @@ export function PickerPanel({
 }) {
   const initial = Math.max(0, options.findIndex((item) => item.active));
   const [selected, setSelected] = useState(initial);
+  const [query, setQuery] = useState("");
 
   useEffect(() => setSelected(initial), [initial, options]);
 
-  useInput((_input, key) => {
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return options;
+    const matches = options.filter((item) => {
+      const haystack = `${item.label} ${item.value} ${item.description ?? ""}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+    return matches.sort((a, b) => {
+      const aText = `${a.label} ${a.value}`.toLowerCase();
+      const bText = `${b.label} ${b.value}`.toLowerCase();
+      const aStarts = aText.startsWith(needle) ? 0 : 1;
+      const bStarts = bText.startsWith(needle) ? 0 : 1;
+      return aStarts - bStarts;
+    });
+  }, [options, query]);
+
+  useEffect(() => {
+    const active = filtered.findIndex((item) => item.active);
+    setSelected(Math.max(0, active));
+  }, [filtered]);
+
+  useInput((input, key) => {
     if (key.escape) return onClose();
+    if (key.backspace || key.delete) {
+      setQuery((value) => value.slice(0, -1));
+      return;
+    }
+    if (key.ctrl && input === "u") {
+      setQuery("");
+      return;
+    }
     if (key.upArrow) {
-      setSelected((value) => (value - 1 + options.length) % options.length);
+      if (filtered.length) setSelected((value) => (value - 1 + filtered.length) % filtered.length);
       return;
     }
     if (key.downArrow) {
-      setSelected((value) => (value + 1) % options.length);
+      if (filtered.length) setSelected((value) => (value + 1) % filtered.length);
       return;
     }
-    if (key.return && options[selected]) onSelect(options[selected]!.value);
+    if (key.return && filtered[selected]) {
+      onSelect(filtered[selected]!.value);
+      return;
+    }
+    if (!key.ctrl && !key.meta && input && input.length === 1) {
+      setQuery((value) => value + input);
+    }
   });
 
-  const pageSize = Math.max(1, height - 4);
-  const start = Math.max(0, Math.min(selected - Math.floor(pageSize / 2), options.length - pageSize));
-  const visible = options.slice(start, start + pageSize);
+  const pageSize = Math.max(1, height - 6);
+  const safeSelected = Math.min(selected, Math.max(0, filtered.length - 1));
+  const start = Math.max(0, Math.min(safeSelected - Math.floor(pageSize / 2), filtered.length - pageSize));
+  const visible = filtered.slice(start, start + pageSize);
 
   return (
     <Box flexDirection="column" height={height} borderStyle="round" borderColor="magenta" paddingX={1}>
       <Text bold color="magenta">{title}</Text>
-      <Text dimColor>↑/↓ select · enter confirm · esc close</Text>
+      <Text>
+        <Text color="cyan">filter › </Text>
+        {query ? <Text color="white">{query}</Text> : <Text dimColor>type to search</Text>}
+        <Text dimColor>{`  ·  ${filtered.length}/${options.length}`}</Text>
+      </Text>
+      <Text dimColor>↑/↓ select · type filters · backspace edits · ctrl+u clears · enter confirm · esc close</Text>
+      {filtered.length === 0 ? <Text color="yellow">No matches</Text> : null}
       {visible.map((item, index) => {
         const absolute = start + index;
-        const focused = absolute === selected;
+        const focused = absolute === safeSelected;
         return (
           <Text key={item.value} wrap="truncate-end">
             <Text color={focused ? "magenta" : "white"} bold={focused}>
