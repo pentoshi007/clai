@@ -1159,9 +1159,10 @@ export function App({
   const modalActive =
     Boolean(state.pendingConfirm) || Boolean(secretRequest) || overlayOpen;
 
-  // Use the full terminal height, but leave the final column unused below to
-  // avoid painting the bottom-right cell (which can trigger terminal scroll).
-  const usableRows = Math.max(8, rows);
+  // Leave the terminal's final row unused. Painting through the last cell can
+  // trigger an implicit scroll in several terminals, which looks like a full
+  // screen flash on every keypress/spinner frame.
+  const usableRows = Math.max(8, rows - 1);
   const headerH = 4;
   const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 1;
   const composerH = 3;
@@ -1424,11 +1425,7 @@ export function App({
   const after = input.slice(cursor + 1);
 
   return (
-    <Box
-      flexDirection="column"
-      width={Math.max(1, cols - 1)}
-      height={usableRows}
-    >
+    <Box flexDirection="column" width={cols} height={usableRows}>
       {/* Header */}
       <Box
         flexDirection="column"
