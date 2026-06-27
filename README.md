@@ -53,6 +53,10 @@ After installing, type `clai` in any terminal to start.
 # Open interactive REPL
 clai
 
+# Full-screen terminal UI (experimental, opencode/claude-code style)
+clai --tui          # or set CLAI_TUI=1
+clai --classic      # force the classic line-based REPL
+
 # One-shot ask mode (explains but doesn't execute)
 clai --mode ask "create a python venv and install requests"
 
@@ -62,6 +66,31 @@ clai --mode agent "find all PDFs larger than 10MB in ~/Documents"
 # Auto-confirm tool execution
 clai -y "list the 10 largest files in my home directory"
 ```
+
+### Terminal UI (`--tui`)
+
+`clai --tui` launches a full-screen interface (built on Ink) with a persistent
+composer, live tool cards, streaming responses, and a status line — the same
+agent under the hood as the classic REPL. It is opt-in for now; pass
+`--classic` (or just run `clai`) for the line-based REPL.
+
+In the TUI:
+
+- Type to chat; `Enter` sends. While the agent works you can keep typing — the
+  message is queued and sent when the turn finishes.
+- `/` opens the command menu (`/ask`, `/agent`, `/model <name>`,
+  `/provider <name>`, `/implement`, `/plan`, `/jobs`, `/output`, `/clear`,
+  `/think`, `/cwd`, `/allow`, `/context`, `/compact`, `/save`, `/help`, …).
+- `@path` attaches files (and images on vision-capable models).
+- `Esc` cancels the running turn · `Ctrl+T` expand/collapse thinking ·
+  `Ctrl+O` view full tool output · `Ctrl+P` view the plan · `Ctrl+J` jobs panel
+  · `Ctrl+C` twice to exit.
+- Interactive pickers (provider/model lists, history browser) currently live in
+  classic mode — pass an explicit argument (`/model <name>`) in the TUI, or use
+  `clai --classic`.
+
+If the terminal is not a TTY or is too small, `--tui` falls back to the classic
+REPL automatically.
 
 ## Features
 

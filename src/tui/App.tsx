@@ -4,11 +4,17 @@ import type { Mode, ProviderId } from "../types.js";
 import { assertProvider } from "../llm/provider.js";
 import { modelSupportsVision } from "../llm/capabilities.js";
 import {
+  getConfig,
   getProviderModel,
   setDefaultMode,
   setProviderModel,
+  updateConfig,
 } from "../store/config.js";
+import { estimateMessagesTokens } from "../agent/context-manager.js";
+import { saveSession } from "../store/history.js";
 import { safeCwd } from "../os/cwd.js";
+import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { expandMentions, loadImageAttachments } from "../ui/mentions.js";
 import { loadPlan, savePlan } from "../store/plan.js";
 import { renderPlanDocument } from "../ui/plan-pane.js";
@@ -220,6 +226,124 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           }
           return true;
         }
+        case "/clean":
+          runner.reset();
+          dispatch({ type: "reset" });
+          return true;
+        case "/cwd": {
+          if (!arg) {
+            dispatch({ type: "notice", level: "info", text: `cwd: ${safeCwd()}` });
+            return true;
+          }
+          const target = resolve(safeCwd(), arg);
+          if (!existsSync(target)) {
+            dispatch({ type: "notice", level: "warn", text: `no such directory: ${target}` });
+            return true;
+          }
+          try {
+            process.chdir(target);
+            dispatch({ type: "notice", level: "info", text: `cwd → ${target}` });
+          } catch (e) {
+            dispatch({
+              type: "notice",
+              level: "warn",
+              text: `could not chdir: ${e instanceof Error ? e.message : String(e)}`,
+            });
+          }
+          return true;
+        }
+        case "/allow": {
+          if (!arg) {
+            const list = [...runner.getSession().allow];
+            dispatch({
+              type: "notice",
+              level: "info",
+              text: list.length ? `allowed: ${list.join(", ")}` : "no session allowances",
+            });
+            return true;
+          }
+          runner.getSession().allow.add(arg);
+          dispatch({ type: "notice", level: "info", text: `allowed for session: ${arg}` });
+          return true;
+        }
+        case "/disallow": {
+          if (arg) runner.getSession().allow.delete(arg);
+          dispatch({ type: "notice", level: "info", text: arg ? `disallowed: ${arg}` : "usage: /disallow <tool>" });
+          return true;
+        }
+        case "/context": {
+          const msgs = runner.getMessages();
+          const tokens = estimateMessagesTokens(msgs);
+          dispatch({
+            type: "notice",
+            level: "info",
+            text: `context: ${msgs.length} messages · ~${tokens} tokens`,
+          });
+          return true;
+        }
+        case "/compact": {
+          const { before, after } = runner.compact();
+          dispatch({
+            type: "notice",
+            level: "info",
+            text: `compacted ${before} → ${after} messages`,
+          });
+          return true;
+        }
+        case "/save": {
+          void (async () => {
+            const msgs = runner.getMessages();
+            if (msgs.length === 0) {
+              dispatch({ type: "notice", level: "info", text: "nothing to save yet" });
+              return;
+            }
+            const rec = await saveSession(msgs, arg || undefined).catch(() => undefined);
+            dispatch({
+              type: "notice",
+              level: "info",
+              text: rec ? `saved session ${rec.id}` : "save failed",
+            });
+          })();
+          return true;
+        }
+        case "/freeonly": {
+          const on = /^(on|true|1|enable)$/i.test(arg);
+          const off = /^(off|false|0|disable)$/i.test(arg);
+          if (!on && !off) {
+            dispatch({ type: "notice", level: "info", text: `freeOnly=${getConfig().freeOnly}` });
+            return true;
+          }
+          updateConfig({ freeOnly: on });
+          dispatch({ type: "notice", level: "info", text: `freeOnly=${on}` });
+          return true;
+        }
+        case "/fallback": {
+          const on = /^(on|true|1|enable)$/i.test(arg);
+          const off = /^(off|false|0|disable)$/i.test(arg);
+          if (!on && !off) {
+            dispatch({
+              type: "notice",
+              level: "info",
+              text: `providerFallback=${getConfig().providerFallback}`,
+            });
+            return true;
+          }
+          updateConfig({ providerFallback: on });
+          dispatch({ type: "notice", level: "info", text: `providerFallback=${on}` });
+          return true;
+        }
+        case "/keys":
+        case "/history":
+        case "/set":
+        case "/unset":
+        case "/scope":
+        case "/update":
+          dispatch({
+            type: "notice",
+            level: "info",
+            text: `${cmd} is interactive — run it from classic mode (clai --classic) or the \`clai\` subcommand`,
+          });
+          return true;
         case "/help":
           dispatch({
             type: "notice",

@@ -7,6 +7,7 @@ import {
   createSessionPolicy,
   type SessionPolicy,
 } from "../../agent/runner.js";
+import { compactMessages } from "../../agent/context-manager.js";
 import {
   createThinkingStreamParser,
   rememberThinkingFromText,
@@ -40,6 +41,10 @@ export interface AgentRunner {
   reset: () => void;
   /** The live session policy (sessionId, planApproved, allow set). */
   getSession: () => SessionPolicy;
+  /** Snapshot of the conversation messages (for /context, /save). */
+  getMessages: () => ChatMessage[];
+  /** Compact the in-memory history; returns counts before/after. */
+  compact: () => { before: number; after: number };
 }
 
 /**
@@ -70,6 +75,14 @@ export function useAgentRunner({
   }, []);
 
   const getSession = useCallback(() => sessionRef.current, []);
+
+  const getMessages = useCallback(() => [...messagesRef.current], []);
+
+  const compact = useCallback(() => {
+    const before = messagesRef.current.length;
+    messagesRef.current = compactMessages(messagesRef.current, { budgetTokens: 0 });
+    return { before, after: messagesRef.current.length };
+  }, []);
 
   const run = useCallback(
     async (input: string, opts?: RunOptions): Promise<void> => {
@@ -141,7 +154,7 @@ export function useAgentRunner({
   );
 
   return useMemo<AgentRunner>(
-    () => ({ isRunning, run, abort, reset, getSession }),
-    [isRunning, run, abort, reset, getSession],
+    () => ({ isRunning, run, abort, reset, getSession, getMessages, compact }),
+    [isRunning, run, abort, reset, getSession, getMessages, compact],
   );
 }
