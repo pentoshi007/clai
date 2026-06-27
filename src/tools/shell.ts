@@ -45,6 +45,8 @@ export interface SpawnArgvArgs {
   onLimit?: "terminate" | "continue" | undefined;
   artifactPath?: string | undefined;
   noArtifact?: boolean | undefined;
+  /** Sensitive stdin payload written directly to the child and never logged. */
+  stdinText?: string | undefined;
   /** See {@link ShellExecArgs.interactiveStdin}. */
   interactiveStdin?: boolean | "auto" | undefined;
 }
@@ -560,7 +562,9 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
     // `pkg.install` (which invokes `sudo apt …` on Linux) lights up the
     // password-prompt path.
     const previewCommand = `${args.command} ${args.argv.join(" ")}`;
-    const stdio = chooseStdio(previewCommand, args.interactiveStdin);
+    const stdio = args.stdinText !== undefined
+      ? (["pipe", "pipe", "pipe"] as ["pipe", "pipe", "pipe"])
+      : chooseStdio(previewCommand, args.interactiveStdin);
     const usingInteractiveStdin = stdio[0] === "inherit";
     const restoreStdin = usingInteractiveStdin
       ? takeOverCookedStdin()
@@ -571,6 +575,7 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       shell: false,
       stdio,
     });
+    if (args.stdinText !== undefined) child.stdin?.end(args.stdinText);
     let aborted = false;
     let timedOut = false;
     let timeout: NodeJS.Timeout | undefined;

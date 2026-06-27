@@ -98,6 +98,7 @@ export interface AgentRunOptions {
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
   onEvent?: ((event: AgentEvent) => void) | undefined;
   confirm?: ConfirmPort | undefined;
+  requestSecret?: ((request: { title: string; prompt: string }) => Promise<string | undefined>) | undefined;
   session?: SessionPolicy | undefined;
 }
 
@@ -2332,6 +2333,7 @@ export async function runAgentLoop(
     try {
       result = await runToolCall(call, {
         signal: options.signal,
+        requestSecret: options.requestSecret,
         onOutput: (chunk) => {
           if (options.signal?.aborted) return;
           printLive(chunk);

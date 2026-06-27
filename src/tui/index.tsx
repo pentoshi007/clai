@@ -24,6 +24,7 @@ export async function startTui(opts: StartTuiOptions = {}): Promise<void> {
       initialMode: mode,
       provider,
       initialModel: model,
+      noHistory: opts.noHistory,
     }),
     {
       // We own Ctrl+C handling (abort vs. exit), so Ink must not exit on it.

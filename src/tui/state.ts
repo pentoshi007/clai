@@ -1,5 +1,6 @@
 import type { AgentEvent } from "../agent/events.js";
 import type { SessionPlan } from "../store/plan.js";
+import type { ChatMessage } from "../types.js";
 
 // ── Transcript items ─────────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ export type TuiAction =
   | { type: "toggle-thinking" }
   | { type: "toggle-output" }
   | { type: "confirm-resolved" }
+  | { type: "load-history"; messages: ChatMessage[] }
   | { type: "reset" };
 
 let idCounter = 0;
@@ -142,6 +144,18 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
     }
     case "confirm-resolved":
       return { ...state, pendingConfirm: undefined };
+    case "load-history": {
+      const items = action.messages.flatMap<TranscriptItem>((message) => {
+        if (message.role === "user") {
+          return [{ kind: "user" as const, id: nextId("history-user"), text: message.content, done: true }];
+        }
+        if (message.role === "assistant") {
+          return [{ kind: "assistant" as const, id: nextId("history-asst"), text: message.content, streaming: false, done: true }];
+        }
+        return [];
+      });
+      return { ...initialState(), items };
+    }
     case "notice":
       return {
         ...state,

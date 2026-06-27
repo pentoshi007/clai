@@ -44,6 +44,7 @@ import { looksLongRunning } from "./command-intent.js";
 export interface ToolRunOptions {
   signal?: AbortSignal | undefined;
   onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
+  requestSecret?: ((request: { title: string; prompt: string }) => Promise<string | undefined>) | undefined;
 }
 
 export type ToolHandler = (
@@ -183,34 +184,61 @@ async function runNmapScan(
   const attempts: Array<{
     command: string;
     argv: string[];
+    stdinText?: string | undefined;
     interactiveStdin?: boolean | "auto";
     note?: string;
   }> = [];
 
   if (needsPrivilege && prefix) {
     if (prefix.command === "sudo") {
-      // Authenticate in a short, dedicated interactive process. Keeping
-      // stdin inherited for the entire nmap scan prevents Ink from receiving
-      // Escape/Ctrl+C for minutes. Once `sudo -v` succeeds, the real scan can
-      // use cached credentials with `-n` and release stdin back to the TUI.
+      // Authenticate in a short, dedicated process. In the TUI, never inherit
+      // stdin for the long nmap scan: pipe the already-entered password to
+      // sudo so Ink keeps receiving Escape/Ctrl+C while nmap is running.
       options?.onOutput?.(
-        "\nAdministrator access is required for a stealth scan. Enter your sudo password below; Ctrl+C cancels.\n",
+        options?.requestSecret
+          ? "\nAdministrator access is required for a stealth scan. Complete the secure password prompt below.\n"
+          : "\nAdministrator access is required for a stealth scan. Enter your sudo password below; Ctrl+C cancels.\n",
         "stdout",
       );
-      const auth = await spawnArgv({
-        command: "sudo",
-        argv: [...prefix.argv, "-v"],
-        timeoutMs: 120_000,
-        signal: options?.signal,
-        onOutput: options?.onOutput,
-        interactiveStdin: true,
-        noArtifact: true,
-      });
+      let auth: ToolResult;
+      let sudoPassword: string | undefined;
+      if (options?.requestSecret) {
+        const password = await options.requestSecret({
+          title: "Administrator access",
+          prompt: "Enter your macOS password for sudo. It is sent only to sudo and is never stored.",
+        });
+        if (password === undefined) {
+          return { ok: false, output: "Administrator authentication cancelled.", exitCode: 130 };
+        }
+        sudoPassword = password;
+        auth = await spawnArgv({
+          command: "sudo",
+          argv: ["-S", "-p", "", "-v"],
+          stdinText: `${password}\n`,
+          timeoutMs: 30_000,
+          signal: options.signal,
+          onOutput: options.onOutput,
+          noArtifact: true,
+          interactiveStdin: false,
+        });
+      } else {
+        // Classic REPL: let sudo read directly from its controlling terminal.
+        auth = await spawnArgv({
+          command: "sudo",
+          argv: [...prefix.argv, "-v"],
+          timeoutMs: 120_000,
+          signal: options?.signal,
+          onOutput: options?.onOutput,
+          interactiveStdin: true,
+          noArtifact: true,
+        });
+      }
       if (options?.signal?.aborted || auth.exitCode === 130) return auth;
       if (auth.ok) {
         attempts.push({
           command: "sudo",
-          argv: ["-n", "nmap", ...argv],
+          argv: options?.requestSecret ? ["-S", "-p", "", "nmap", ...argv] : ["-n", "nmap", ...argv],
+          stdinText: options?.requestSecret ? `${sudoPassword ?? ""}\n` : undefined,
           note: "Administrator access confirmed. Starting stealth scan (ESC cancels).",
         });
       } else {
@@ -261,6 +289,7 @@ async function runNmapScan(
     const result = await spawnArgv({
       command: attempt.command,
       argv: attempt.argv,
+      stdinText: attempt.stdinText,
       timeoutMs: 300_000,
       signal: options?.signal,
       onOutput: options?.onOutput,

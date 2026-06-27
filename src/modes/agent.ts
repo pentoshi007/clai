@@ -15,6 +15,7 @@ export interface AgentOptions {
   autoConfirm?: boolean | undefined;
   maxSteps?: number | undefined;
   signal?: AbortSignal | undefined;
+  requestSecret?: ((request: { title: string; prompt: string }) => Promise<string | undefined>) | undefined;
   session?: SessionPolicy | undefined;
   images?: ChatImage[] | undefined;
   onToolStart?: ((call: ToolCall) => void) | undefined;

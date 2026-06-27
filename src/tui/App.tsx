@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
 import { providerIds } from "../types.js";
 import { assertProvider } from "../llm/provider.js";
+import { getProvider } from "../llm/router.js";
+import { envValue, getProviderSecret, setProviderSecret } from "../store/keys.js";
 import { modelSupportsThinking, modelSupportsVision } from "../llm/capabilities.js";
 import {
   getConfig,
@@ -18,6 +20,7 @@ import { clearAllHistory, getSession, listSessions, saveSession } from "../store
 import { safeCwd } from "../os/cwd.js";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { expandMentions, findFileSuggestions, getMentionQuery, loadImageAttachments, type FileSuggestion } from "../ui/mentions.js";
 import { deletePlan, loadPlan, savePlan } from "../store/plan.js";
 import { renderPlanDocument } from "../ui/plan-pane.js";
@@ -33,6 +36,7 @@ import { ConfirmModal } from "./components/ConfirmModal.js";
 import { Pager } from "./components/Pager.js";
 import { JobsPanel } from "./components/JobsPanel.js";
 import { PickerPanel, type PickerOption } from "./components/PickerPanel.js";
+import { SecretInputPanel } from "./components/SecretInputPanel.js";
 import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
 
@@ -41,6 +45,7 @@ export interface AppProps {
   initialMode: Mode;
   provider: ProviderId;
   initialModel: string;
+  noHistory?: boolean | undefined;
 }
 
 const IMPLEMENT_PROMPT =
@@ -61,7 +66,7 @@ type Overlay =
   | { kind: "jobs" }
   | { kind: "picker"; title: string; options: PickerOption[]; onSelect: (value: string) => void };
 
-export function App({ version, initialMode, provider: initialProvider, initialModel }: AppProps) {
+export function App({ version, initialMode, provider: initialProvider, initialModel, noHistory = false }: AppProps) {
   const { exit } = useApp();
   const { columns: cols, rows } = useTerminalSize();
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
@@ -72,6 +77,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const [input, setInput] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState(0);
+  const [secretRequest, setSecretRequest] = useState<{ title: string; prompt: string } | undefined>();
+  const secretResolver = useRef<((value: string | undefined) => void) | undefined>();
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
@@ -94,11 +101,27 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
 
   const ctxRef = useRef({ mode, provider, model });
   ctxRef.current = { mode, provider, model };
+  const requestSecret = useCallback((request: { title: string; prompt: string }) =>
+    new Promise<string | undefined>((resolveSecret) => {
+      secretResolver.current = resolveSecret;
+      setSecretRequest(request);
+    }), []);
   const runner = useAgentRunner({
     dispatchEvent: (event) => dispatch({ type: "event", event }),
     confirm: confirmController.port,
     getContext: useCallback(() => ctxRef.current, []),
+    requestSecret,
   });
+
+  const exitTui = useCallback(() => {
+    void (async () => {
+      const messages = runner.getMessages();
+      if (!noHistory && !getConfig().privateMode && messages.length > 0) {
+        await saveSession(messages).catch(() => undefined);
+      }
+      exit();
+    })();
+  }, [exit, noHistory, runner]);
 
   const startTurn = useCallback(
     async (display: string, modelInput: string, images?: ReturnType<typeof loadImageAttachments>) => {
@@ -136,6 +159,14 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     return undefined;
   }, [state.items]);
 
+  const openToolOutput = useCallback(async (item: ToolItem): Promise<void> => {
+    let body = item.output;
+    if (item.artifactPath) {
+      body = await readFile(item.artifactPath, "utf8").catch(() => item.output);
+    }
+    setOverlay({ kind: "pager", title: `${item.name} · full output`, body });
+  }, []);
+
   const runImplement = useCallback(async () => {
     const session = runner.getSession();
     const plan = await loadPlan(session.sessionId).catch(() => undefined);
@@ -169,6 +200,31 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     });
   }, [model, provider]);
 
+  const activateProvider = useCallback(async (next: ProviderId): Promise<void> => {
+    const configured = next === "ollama" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
+    if (!configured) {
+      const key = await requestSecret({
+        title: `${next} API key`,
+        prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+      });
+      if (!key) {
+        dispatch({ type: "notice", level: "warn", text: `provider unchanged · ${next} needs an API key` });
+        return;
+      }
+      if (!getProvider(next).validateKey(key)) {
+        dispatch({ type: "notice", level: "warn", text: `invalid API key format for ${next}` });
+        return;
+      }
+      await setProviderSecret(next, key);
+    }
+    const nextModel = getProviderModel(next);
+    setDefaultProvider(next);
+    setProvider(next);
+    setModel(nextModel);
+    setOverlay({ kind: "none" });
+    dispatch({ type: "notice", level: "info", text: `provider → ${next} · model → ${nextModel}` });
+  }, [requestSecret]);
+
   const chooseProvider = useCallback(() => {
     setOverlay({
       kind: "picker",
@@ -181,15 +237,10 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       })),
       onSelect: (value) => {
         const next = assertProvider(value);
-        const nextModel = getProviderModel(next);
-        setDefaultProvider(next);
-        setProvider(next);
-        setModel(nextModel);
-        setOverlay({ kind: "none" });
-        dispatch({ type: "notice", level: "info", text: `provider → ${next} · model → ${nextModel}` });
+        void activateProvider(next);
       },
     });
-  }, [provider]);
+  }, [activateProvider, provider]);
 
   const setReasoning = useCallback((value: string) => {
     if (value === "off" || value === "none") setThinking({ enabled: false });
@@ -238,6 +289,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         case "/agent": setMode("agent"); setDefaultMode("agent"); info("mode → agent"); return true;
         case "/clear": runner.reset(); dispatch({ type: "reset" }); info("context cleared"); return true;
         case "/new":
+          void (async () => {
+            const messages = runner.getMessages();
+            if (!noHistory && !getConfig().privateMode && messages.length > 0) await saveSession(messages).catch(() => undefined);
+            runner.reset(); dispatch({ type: "reset" }); info("fresh session started");
+          })();
+          return true;
         case "/clean": runner.reset(); dispatch({ type: "reset" }); info("fresh session started"); return true;
         case "/think":
         case "/thinking": dispatch({ type: "toggle-thinking" }); return true;
@@ -261,7 +318,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           }
           const selectedOutput = arg && arg !== "last" ? outputs.find((item) => item.id === arg) : lastToolOutput();
           if (!selectedOutput) info(arg ? `no tool output: ${arg}` : "no tool output yet");
-          else setOverlay({ kind: "pager", title: `${selectedOutput.name} output`, body: selectedOutput.output });
+          else void openToolOutput(selectedOutput);
           return true;
         }
         case "/model":
@@ -277,11 +334,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           if (!arg) { chooseProvider(); return true; }
           try {
             const next = assertProvider(arg);
-            setDefaultProvider(next);
-            setProvider(next);
-            const m = getProviderModel(next);
-            setModel(m);
-            info(`provider → ${next} / ${m}`);
+            void activateProvider(next);
           } catch { warn(`unknown provider: ${arg}`); }
           return true;
         case "/variants":
@@ -336,23 +389,37 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         case "/history":
           void (async () => {
             const sessions = await listSessions(50);
-            if (sessions.length === 0) { info("no saved sessions"); return; }
+            const currentMessages = runner.getMessages();
+            if (sessions.length === 0 && currentMessages.length === 0) { info("no session history yet"); return; }
             setOverlay({
               kind: "picker",
               title: "Session history",
-              options: sessions.map((session) => ({
-                value: session.id,
-                label: session.name ?? session.id,
-                description: `${session.createdAt.slice(0, 16).replace("T", " ")} · ${session.messages.length} messages`,
-              })),
+              options: [
+                ...(currentMessages.length ? [{
+                  value: "__current__",
+                  label: "Current session",
+                  description: `${currentMessages.length} messages · active now`,
+                  active: true,
+                }] : []),
+                ...sessions.map((session) => ({
+                  value: session.id,
+                  label: session.name ?? session.id,
+                  description: `${session.createdAt.slice(0, 16).replace("T", " ")} · ${session.messages.length} messages`,
+                })),
+              ],
               onSelect: (id) => {
                 void (async () => {
-                  const session = await getSession(id);
-                  if (!session) { warn("session not found"); return; }
-                  runner.setMessages(session.messages);
+                  if (id === "__current__") {
+                    setOverlay({ kind: "none" });
+                    info("showing current session");
+                    return;
+                  }
+                  const messages = (await getSession(id))?.messages;
+                  if (!messages) { warn("session not found"); return; }
+                  runner.setMessages(messages);
                   setOverlay({ kind: "none" });
-                  dispatch({ type: "reset" });
-                  info(`resumed “${session.name ?? session.id}” · ${session.messages.length} messages in context`);
+                  dispatch({ type: "load-history", messages });
+                  info(`session resumed · ${messages.length} messages`);
                 })();
               },
             });
@@ -433,11 +500,11 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           setOverlay({ kind: "pager", title: "Commands", body: slashCommands.map((item) => `${item.command}${item.usage ? ` ${item.usage}` : ""}\n  ${item.description}`).join("\n\n") });
           return true;
         case "/exit":
-        case "/quit": exit(); return true;
+        case "/quit": exitTui(); return true;
         default: return false;
       }
     },
-    [chooseModel, chooseProvider, chooseReasoning, exit, provider, runner, runImplement, lastToolOutput, setReasoning, state.items],
+    [activateProvider, chooseModel, chooseProvider, chooseReasoning, exitTui, noHistory, provider, runner, runImplement, lastToolOutput, openToolOutput, setReasoning, state.items],
   );
 
   const submitText = useCallback(
@@ -468,6 +535,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     dispatch({ type: "confirm-resolved" });
   }, []);
 
+  const answerSecret = useCallback((value: string | undefined) => {
+    secretResolver.current?.(value);
+    secretResolver.current = undefined;
+    setSecretRequest(undefined);
+  }, []);
+
   // ── Layout math (keep the composer pinned to the bottom) ────────────────────
   const suggestions: SlashCommand[] = input.startsWith("/")
     ? getSlashCommandSuggestions(input).slice(0, MAX_SUGGESTIONS)
@@ -480,14 +553,14 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
   const fileMenuOpen = !slashMenuOpen && Boolean(mention) && fileSuggestions.length > 0;
   const menuOpen = slashMenuOpen || fileMenuOpen;
   const overlayOpen = overlay.kind !== "none";
-  const modalActive = Boolean(state.pendingConfirm) || overlayOpen;
+  const modalActive = Boolean(state.pendingConfirm) || Boolean(secretRequest) || overlayOpen;
 
   // Leave the terminal's final row unused. Painting through the last cell can
   // trigger an implicit scroll in several terminals, which looks like a full
   // screen flash on every keypress/spinner frame.
   const usableRows = Math.max(8, rows - 1);
   const headerH = 4;
-  const statusH = state.pendingConfirm ? 6 : 1;
+  const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 1;
   const composerH = 3;
   const menuH = slashMenuOpen ? suggestions.length : fileMenuOpen ? fileSuggestions.length : 0;
   const viewportH = Math.max(3, usableRows - headerH - statusH - composerH - menuH);
@@ -514,7 +587,12 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
 
     // Global shortcuts
     if (key.ctrl && ch === "t") { dispatch({ type: "toggle-thinking" }); return; }
-    if (key.ctrl && ch === "o") { dispatch({ type: "toggle-output" }); return; }
+    if (key.ctrl && ch === "o") {
+      const last = lastToolOutput();
+      if (last) void openToolOutput(last);
+      else dispatch({ type: "notice", level: "info", text: "no tool output yet" });
+      return;
+    }
     if (key.ctrl && ch === "p") {
       void (async () => {
         const plan = await loadPlan(runner.getSession().sessionId).catch(() => undefined);
@@ -539,7 +617,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
     if (key.ctrl && ch === "c") {
       if (runner.isRunning()) { runner.abort(); return; }
       const now = Date.now();
-      if (now - lastCtrlC.current < 1500) exit();
+      if (now - lastCtrlC.current < 1500) exitTui();
       else lastCtrlC.current = now;
       return;
     }
@@ -691,7 +769,14 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         : null}
 
       {/* Status line / confirm modal */}
-      {state.pendingConfirm ? (
+      {secretRequest ? (
+        <SecretInputPanel
+          title={secretRequest.title}
+          prompt={secretRequest.prompt}
+          onSubmit={(value) => answerSecret(value)}
+          onCancel={() => answerSecret(undefined)}
+        />
+      ) : state.pendingConfirm ? (
         <ConfirmModal confirm={state.pendingConfirm} onAnswer={answerConfirm} />
       ) : (
         <Box>
@@ -714,11 +799,13 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
       )}
 
       {/* Composer (pinned bottom) */}
-      <Box borderStyle="round" borderColor={state.pendingConfirm ? "yellow" : state.status.running ? "yellow" : "magenta"} paddingX={1}>
+      <Box borderStyle="round" borderColor={state.pendingConfirm || secretRequest ? "yellow" : state.status.running ? "yellow" : "magenta"} paddingX={1}>
         <Text color={state.status.running ? "yellow" : "magenta"} bold>
-          {state.pendingConfirm ? "! " : "❯ "}
+          {state.pendingConfirm || secretRequest ? "! " : "❯ "}
         </Text>
-        {state.pendingConfirm ? (
+        {secretRequest ? (
+          <Text bold>Input locked · complete the secure input above</Text>
+        ) : state.pendingConfirm ? (
           <Text bold>Input locked · answer the confirmation above with Y or N</Text>
         ) : input.length === 0 ? (
           <Text dimColor>

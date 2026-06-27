@@ -28,6 +28,7 @@ export interface UseAgentRunnerArgs {
   dispatchEvent: (event: AgentEvent) => void;
   confirm: ConfirmPort;
   getContext: () => RunnerContext;
+  requestSecret: (request: { title: string; prompt: string }) => Promise<string | undefined>;
 }
 
 export interface AgentRunner {
@@ -59,6 +60,7 @@ export function useAgentRunner({
   dispatchEvent,
   confirm,
   getContext,
+  requestSecret,
 }: UseAgentRunnerArgs): AgentRunner {
   const messagesRef = useRef<ChatMessage[]>([]);
   const sessionRef = useRef<SessionPolicy>(createSessionPolicy());
@@ -146,6 +148,7 @@ export function useAgentRunner({
             images: opts?.images,
             onEvent: dispatchEvent,
             confirm,
+            requestSecret,
           });
         }
         messagesRef.current.push({ role: "assistant", content: answer });
@@ -164,7 +167,7 @@ export function useAgentRunner({
         abortRef.current = undefined;
       }
     },
-    [dispatchEvent, confirm, getContext],
+    [dispatchEvent, confirm, getContext, requestSecret],
   );
 
   return useMemo<AgentRunner>(
