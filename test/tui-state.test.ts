@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   initialState,
   reducer,
-  splitItems,
   type TuiState,
   type ToolItem,
   type AssistantItem,
@@ -30,11 +29,16 @@ describe("tui reducer — submit & turn lifecycle", () => {
       { type: "assistant-delta", text: "par" },
       { type: "assistant-delta", text: "tial" },
     ]);
-    // streaming assistant item is live (not done) until finalized
-    expect(s.items.at(-1)).toMatchObject({ kind: "assistant", done: false });
-    s = apply(s, [{ type: "turn-end", finalAnswer: "partial", steps: 1 }]);
+    // streamed text is buffered, not committed as an item yet
+    expect(s.streaming).toBe("partial");
+    s = apply(s, [
+      { type: "assistant-message", text: "partial" },
+      { type: "turn-end", finalAnswer: "partial", steps: 1 },
+    ]);
+    expect(s.streaming).toBe("");
     expect(s.status.running).toBe(false);
     expect(s.items.every((i) => i.done)).toBe(true);
+    expect(s.items.some((i) => i.kind === "assistant")).toBe(true);
   });
 
   it("turn-aborted appends a warning notice and stops", () => {
@@ -77,19 +81,35 @@ describe("tui reducer — event → item mapping", () => {
     expect(tool.done).toBe(true);
   });
 
-  it("streams assistant deltas into one item then finalizes on assistant-message", () => {
+  it("buffers assistant deltas in `streaming` and commits on assistant-message", () => {
     let s = apply(initialState(), [
       { type: "assistant-delta", text: "Hel" },
       { type: "assistant-delta", text: "lo" },
     ]);
-    let asst = s.items.filter((i): i is AssistantItem => i.kind === "assistant");
-    expect(asst).toHaveLength(1);
-    expect(asst[0]!.text).toBe("Hello");
+    expect(s.streaming).toBe("Hello");
+    expect(s.items.filter((i): i is AssistantItem => i.kind === "assistant")).toHaveLength(0);
 
     s = apply(s, [{ type: "assistant-message", text: "Hello world" }]);
-    asst = s.items.filter((i): i is AssistantItem => i.kind === "assistant");
+    expect(s.streaming).toBe("");
+    const asst = s.items.filter((i): i is AssistantItem => i.kind === "assistant");
     expect(asst).toHaveLength(1);
     expect(asst[0]!).toMatchObject({ text: "Hello world", streaming: false, done: true });
+  });
+
+  it("discards streamed tool-call text when a real tool-call arrives", () => {
+    let s = apply(initialState(), [
+      { type: "assistant-delta", text: '```tool\n{"name":"shell.exec"}' },
+    ]);
+    expect(s.streaming).not.toBe("");
+    s = apply(s, [{ type: "tool-call", id: "t1", name: "shell.exec", argsDisplay: "ls" }]);
+    expect(s.streaming).toBe("");
+    expect(s.items.some((i) => i.kind === "tool")).toBe(true);
+    expect(s.items.some((i) => i.kind === "assistant")).toBe(false);
+  });
+
+  it("ignores empty assistant-message (no blank bubble)", () => {
+    const s = apply(initialState(), [{ type: "assistant-message", text: "   " }]);
+    expect(s.items.filter((i) => i.kind === "assistant")).toHaveLength(0);
   });
 
   it("updates the plan card in place rather than appending", () => {
@@ -141,17 +161,10 @@ describe("tui reducer — thinking & notices", () => {
   });
 });
 
-describe("splitItems", () => {
-  it("splits at the first not-done item so order stays chronological", () => {
-    let s = reducer(initialState(), { type: "submit", text: "q" }); // done user item
-    s = apply(s, [
-      { type: "tool-call", id: "t1", name: "x", argsDisplay: "" }, // live
-    ]);
-    const { committed, live } = splitItems(s.items);
-    expect(committed).toHaveLength(1);
-    expect(committed[0]!.kind).toBe("user");
-    expect(live).toHaveLength(1);
-    expect(live[0]!.kind).toBe("tool");
+describe("toggle actions", () => {
+  it("toggle-output flips the outputExpanded flag", () => {
+    const s = reducer(initialState(), { type: "toggle-output" });
+    expect(s.outputExpanded).toBe(true);
   });
 });
 

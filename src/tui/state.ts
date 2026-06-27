@@ -82,9 +82,12 @@ export interface TurnStatus {
 
 export interface TuiState {
   items: TranscriptItem[];
+  /** Transient assistant text streamed for the current step (not yet committed). */
+  streaming: string;
   status: TurnStatus;
   thinkingPreview: string;
   thinkingExpanded: boolean;
+  outputExpanded: boolean;
   pendingConfirm: PendingConfirm | undefined;
   queued: string[];
 }
@@ -92,9 +95,11 @@ export interface TuiState {
 export function initialState(): TuiState {
   return {
     items: [],
+    streaming: "",
     status: { running: false, activity: "", step: 0, startedAt: undefined },
     thinkingPreview: "",
     thinkingExpanded: false,
+    outputExpanded: false,
     pendingConfirm: undefined,
     queued: [],
   };
@@ -109,6 +114,7 @@ export type TuiAction =
   | { type: "dequeue" }
   | { type: "notice"; level: "info" | "warn"; text: string }
   | { type: "toggle-thinking" }
+  | { type: "toggle-output" }
   | { type: "confirm-resolved" }
   | { type: "reset" };
 
@@ -126,6 +132,8 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
       return initialState();
     case "toggle-thinking":
       return { ...state, thinkingExpanded: !state.thinkingExpanded };
+    case "toggle-output":
+      return { ...state, outputExpanded: !state.outputExpanded };
     case "queue":
       return { ...state, queued: [...state.queued, action.text] };
     case "dequeue": {
@@ -160,6 +168,7 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
             done: true,
           },
         ],
+        streaming: "",
         status: {
           running: true,
           activity: "thinking",
@@ -209,47 +218,35 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
           },
         ],
       };
-    case "assistant-delta": {
-      const items = [...state.items];
-      const last = items[items.length - 1];
-      if (last && last.kind === "assistant" && !last.done) {
-        items[items.length - 1] = { ...last, text: last.text + event.text };
-      } else {
-        items.push({
-          kind: "assistant",
-          id: nextId("asst"),
-          text: event.text,
-          streaming: true,
-          done: false,
-        });
+    case "assistant-delta":
+      // Buffer transient streaming text. It is NOT committed as a transcript
+      // item until `assistant-message`, and is discarded on `tool-call` (the
+      // tokens were a tool-call fence, not prose) so raw JSON never lingers.
+      return {
+        ...state,
+        status: { ...state.status, activity: "responding" },
+        streaming: state.streaming + event.text,
+      };
+    case "assistant-message": {
+      const text = event.text.trim();
+      if (!text) {
+        return { ...state, streaming: "" };
       }
       return {
         ...state,
+        streaming: "",
         thinkingPreview: "",
-        status: { ...state.status, activity: "responding" },
-        items,
+        items: [
+          ...state.items,
+          {
+            kind: "assistant",
+            id: nextId("asst"),
+            text,
+            streaming: false,
+            done: true,
+          },
+        ],
       };
-    }
-    case "assistant-message": {
-      const items = [...state.items];
-      const last = items[items.length - 1];
-      if (last && last.kind === "assistant" && !last.done) {
-        items[items.length - 1] = {
-          ...last,
-          text: event.text,
-          streaming: false,
-          done: true,
-        };
-      } else {
-        items.push({
-          kind: "assistant",
-          id: nextId("asst"),
-          text: event.text,
-          streaming: false,
-          done: true,
-        });
-      }
-      return { ...state, thinkingPreview: "", items };
     }
     case "notice":
       return {
@@ -266,8 +263,10 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
         ],
       };
     case "tool-call":
+      // A real tool call supersedes any streamed tool-call fence text.
       return {
         ...state,
+        streaming: "",
         status: { ...state.status, activity: event.name },
         items: [
           ...state.items,
@@ -324,6 +323,7 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
       }
       return {
         ...state,
+        streaming: "",
         items: [
           ...state.items,
           {
@@ -396,6 +396,7 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
       return {
         ...state,
         items,
+        streaming: "",
         thinkingPreview: "",
         pendingConfirm: undefined,
         status: { running: false, activity: "", step: 0, startedAt: undefined },
@@ -406,7 +407,7 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const TOOL_OUTPUT_CAP = 8000;
+const TOOL_OUTPUT_CAP = 20000;
 function capOutput(text: string): string {
   if (text.length <= TOOL_OUTPUT_CAP) return text;
   return `…${text.slice(text.length - TOOL_OUTPUT_CAP)}`;
@@ -417,27 +418,4 @@ function tailPreview(text: string): string {
   const collapsed = text.replace(/\s+/g, " ");
   if (collapsed.length <= PREVIEW_CAP) return collapsed;
   return `…${collapsed.slice(collapsed.length - PREVIEW_CAP)}`;
-}
-
-/**
- * Split the transcript into a finalized prefix (safe to render once in
- * Ink's <Static>) and a live suffix that may still mutate this turn.
- * The boundary is the first not-yet-done item, which keeps chronological
- * order intact even when later items finalize before earlier ones.
- */
-export function splitItems(items: TranscriptItem[]): {
-  committed: TranscriptItem[];
-  live: TranscriptItem[];
-} {
-  let boundary = items.length;
-  for (let i = 0; i < items.length; i += 1) {
-    if (!items[i]!.done) {
-      boundary = i;
-      break;
-    }
-  }
-  return {
-    committed: items.slice(0, boundary),
-    live: items.slice(boundary),
-  };
 }
