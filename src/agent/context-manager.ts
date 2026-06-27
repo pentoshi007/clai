@@ -146,7 +146,10 @@ export async function compactMessagesWithSummary(
       afterTokens: estimateMessagesTokens(compacted),
       summarized: true,
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && (error.name === "AbortError" || error.message?.includes("aborted"))) {
+      throw error;
+    }
     const compacted = compactMessages(messages, { ...options, budgetTokens: 0 });
     return {
       messages: compacted,

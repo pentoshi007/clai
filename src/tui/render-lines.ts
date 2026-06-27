@@ -179,7 +179,13 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
   const top = color("╭ ") + chalk.bold.yellow("✦ Compacted Context");
   const bottom = color("╰ ");
 
-  const rawLines = item.summary ? item.summary.replace(/\n+$/, "").split("\n") : [];
+  let summaryText = item.summary || "";
+  if (summaryText.startsWith("Session memory from compacted earlier turns:\n\n")) {
+    summaryText = summaryText.slice("Session memory from compacted earlier turns:\n\n".length);
+  } else if (summaryText.startsWith("Session memory from compacted earlier turns:")) {
+    summaryText = summaryText.slice("Session memory from compacted earlier turns:".length);
+  }
+  const rawLines = summaryText.replace(/\n+$/, "").split("\n");
   let shown = rawLines;
   let hidden = 0;
   if (!ctx.outputExpanded) {

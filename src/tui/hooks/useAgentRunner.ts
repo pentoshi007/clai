@@ -47,8 +47,7 @@ export interface AgentRunner {
   getMessages: () => ChatMessage[];
   /** Replace the current conversation when resuming a saved session. */
   setMessages: (messages: ChatMessage[]) => void;
-  /** Compact the in-memory history; returns counts before/after. */
-  compact: (sessionTranscript?: string, keepRecent?: number) => Promise<CompactResult>;
+  compact: (sessionTranscript?: string, keepRecent?: number, signal?: AbortSignal) => Promise<CompactResult>;
 }
 
 /**
@@ -88,7 +87,7 @@ export function useAgentRunner({
     sessionRef.current = createSessionPolicy();
   }, []);
 
-  const compact = useCallback(async (sessionTranscript?: string, keepRecent?: number) => {
+  const compact = useCallback(async (sessionTranscript?: string, keepRecent?: number, signal?: AbortSignal) => {
     const ctx = getContext();
     const completeSummary = async (prompt: string): Promise<string> => {
       const response = await completeWithProvider({
@@ -100,6 +99,7 @@ export function useAgentRunner({
         ],
         temperature: 0.1,
         maxTokens: 2_048,
+        signal,
       });
       return response.text;
     };
@@ -114,10 +114,12 @@ export function useAgentRunner({
         );
         const partials: string[] = [];
         for (let index = 0; index < chunks.length; index += 1) {
+          signal?.throwIfAborted();
           partials.push(await completeSummary(
             `Summarize part ${index + 1} of ${chunks.length} of one session. Preserve concrete goals, actions, commands, results, task state, failures, and remaining work.\n\n${chunks[index]}`,
           ));
         }
+        signal?.throwIfAborted();
         return completeSummary(
           "Merge these ordered partial session memories into one non-redundant continuation memory. Preserve all concrete facts and unresolved work. Use sections: User goals, Decisions and constraints, Work completed, Commands/tools and results, Current state, Remaining work.\n\n" +
           partials.map((part, index) => `PART ${index + 1}:\n${part}`).join("\n\n"),

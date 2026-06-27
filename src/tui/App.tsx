@@ -180,6 +180,15 @@ export function App({
   const latestItems = useRef(state.items);
   latestItems.current = state.items;
 
+  const compactAbortRef = useRef<AbortController | undefined>(undefined);
+  const cancelCompaction = useCallback(() => {
+    if (compactAbortRef.current) {
+      compactAbortRef.current.abort();
+      compactAbortRef.current = undefined;
+    }
+    setCompacting(false);
+  }, []);
+
   useEffect(() => {
     if (!process.stdout.isTTY) return;
     process.stdout.write(
@@ -575,11 +584,13 @@ export function App({
           info("mode → agent");
           return true;
         case "/clear":
+          cancelCompaction();
           runner.reset();
           dispatch({ type: "reset" });
           info("context cleared");
           return true;
         case "/new":
+          cancelCompaction();
           void (async () => {
             const messages = runner.getMessages();
             if (!noHistory && !getConfig().privateMode && messages.length > 0)
@@ -592,6 +603,7 @@ export function App({
           })();
           return true;
         case "/clean":
+          cancelCompaction();
           runner.reset();
           dispatch({ type: "reset" });
           info("fresh session started");
@@ -781,16 +793,20 @@ export function App({
           return true;
         }
         case "/compact": {
-          if (runner.isRunning() || compacting) {
+          if (runner.isRunning()) {
             warn("wait for the current operation to finish");
             return true;
           }
+          cancelCompaction();
+          const ac = new AbortController();
+          compactAbortRef.current = ac;
           setCompacting(true);
           info("compacting conversation…");
           const fullSession = serializeTranscriptForCompaction(state.items);
           void runner
-            .compact(fullSession, 2)
+            .compact(fullSession, 2, ac.signal)
             .then((result) => {
+              if (ac.signal.aborted) return;
               if (result.after === result.before) {
                 info(
                   "nothing to compact yet — more messages are required",
@@ -809,12 +825,21 @@ export function App({
                 );
               }
             })
-            .catch((error) =>
-              warn(
-                `compaction failed: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-            )
-            .finally(() => setCompacting(false));
+            .catch((error) => {
+              if (ac.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+                info("compaction cancelled");
+              } else {
+                warn(
+                  `compaction failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
+            })
+            .finally(() => {
+              if (compactAbortRef.current === ac) {
+                compactAbortRef.current = undefined;
+                setCompacting(false);
+              }
+            });
           return true;
         }
         case "/save":
@@ -845,15 +870,15 @@ export function App({
               title: "Session history",
               options: [
                 ...(currentMessages.length
-                  ? [
-                      {
-                        value: "__current__",
-                        label: "Current session",
-                        description: `${currentMessages.length} messages · active now`,
-                        active: true,
-                      },
-                    ]
-                  : []),
+                   ? [
+                       {
+                         value: "__current__",
+                         label: "Current session",
+                         description: `${currentMessages.length} messages · active now`,
+                         active: true,
+                       },
+                     ]
+                   : []),
                 ...sessions.map((session) => ({
                   value: session.id,
                   label: session.name ?? session.id,
@@ -872,6 +897,7 @@ export function App({
                     warn("session not found");
                     return;
                   }
+                  cancelCompaction();
                   runner.setMessages(session.messages);
                   setOverlay({ kind: "none" });
                   dispatch({
@@ -1703,6 +1729,10 @@ export function App({
     }
 
     if (key.escape) {
+      if (compacting) {
+        cancelCompaction();
+        return;
+      }
       if (state.outputExpanded) dispatch({ type: "toggle-output" });
       else if (runner.isRunning()) runner.abort();
       else if (input) {
