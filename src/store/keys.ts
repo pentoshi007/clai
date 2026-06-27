@@ -218,6 +218,12 @@ export async function getSecret(
  * value into the restricted-permission plaintext fallback file at
  * `~/.clai/keys.json`. Returns the chosen storage backend so callers can
  * surface the plaintext-fallback warning.
+ *
+ * When the keychain cannot be written but may still be readable (a common
+ * failure mode on macOS/Linux when the keyring is locked or permission is
+ * denied), any existing keychain entry is deleted best-effort. Otherwise a
+ * stale keychain value would shadow the freshly-written fallback value and
+ * `clai set` would appear to have no effect.
  */
 export async function setSecret(
   namespace: SecretNamespace,
@@ -242,6 +248,16 @@ export async function setSecret(
   fallback[account] = value;
   if (namespace === 'llm') delete fallback[id];
   await writeFallback(fallback);
+
+  // If we land in the plaintext fallback, make sure a pre-existing keychain
+  // entry (which may still be readable) does not win over the value the user
+  // just set. Ignore failures: if the keychain is truly unreachable, both
+  // reads and deletes will be no-ops after the first failure is latched.
+  await withKeytar((keytar) => keytar.deletePassword(serviceName, account));
+  if (namespace === 'llm') {
+    await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
+  }
+
   return 'fallback';
 }
 
@@ -300,25 +316,38 @@ export function envValue(provider: ProviderId): string | undefined {
 /**
  * Resolve an LLM provider's secret using the precedence:
  *
- *   1. Provider env var (e.g. `GROQ_API_KEY`)
- *   2. OS keychain account `llm:<provider>` (with lazy migration of the
- *      legacy bare `<provider>` account)
- *   3. Restricted-permission plaintext fallback file
+ *   1. OS keychain account `llm:<provider>` (with lazy migration of the
+ *      legacy bare `<provider>` account) — i.e. a key the user explicitly
+ *      stored via `clai set <provider> <key>` always wins.
+ *   2. Restricted-permission plaintext fallback file (`~/.clai/keys.json`)
+ *   3. Provider env var (e.g. `GROQ_API_KEY`) — used only when nothing has
+ *      been explicitly stored, so a stale ambient export can never override
+ *      a key the user deliberately set with `clai set`.
  *
  * `ollama` is special-cased: it has no API key, only a base URL drawn from
  * `OLLAMA_HOST` or the user-config `ollamaHost`.
  */
 export async function getProviderSecret(provider: ProviderId): Promise<{ value?: string; source: ProviderStatus['source'] }> {
+  if (provider === 'ollama') {
+    const local = envValue(provider) ?? getConfig().ollamaHost;
+    return { value: local, source: 'local' };
+  }
+
+  // A key the user explicitly stored via `clai set` takes precedence over
+  // an ambient env-var export. This matters in practice: a stale
+  // `export OPENAI_API_KEY=...` in a shell rc file would otherwise shadow
+  // a freshly-set keychain entry and surface as an opaque 401.
+  const stored = await getSecret('llm', provider);
+  if (stored.value) {
+    return stored;
+  }
+
   const env = envValue(provider);
   if (env) {
-    return { value: env, source: provider === 'ollama' ? 'local' : 'env' };
+    return { value: env, source: 'env' };
   }
 
-  if (provider === 'ollama') {
-    return { value: getConfig().ollamaHost, source: 'local' };
-  }
-
-  return getSecret('llm', provider);
+  return { source: 'missing' };
 }
 
 export async function setProviderSecret(provider: ProviderId, secret: string): Promise<'keychain' | 'fallback'> {
