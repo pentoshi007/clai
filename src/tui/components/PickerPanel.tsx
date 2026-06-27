@@ -94,8 +94,8 @@ export function PickerPanel({
         const absolute = start + index;
         const focused = absolute === safeSelected;
         return (
-          <Text key={item.value} wrap="truncate-end">
-            <Text color={focused ? "magenta" : "white"} bold={focused}>
+          <Text key={item.value} wrap="truncate-end" backgroundColor={focused ? "magenta" : index % 2 === 0 ? "gray" : "black"}>
+            <Text color={focused ? "black" : "white"} bold={focused}>
               {focused ? "❯ " : "  "}{item.label}
             </Text>
             {item.active ? <Text color="green">  active</Text> : null}

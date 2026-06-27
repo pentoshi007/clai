@@ -140,9 +140,9 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 }
 
 function renderNotice(level: "info" | "warn", text: string, width: number): string[] {
-  const glyph = level === "warn" ? chalk.yellow("⚠") : chalk.dim("ℹ");
-  const color = level === "warn" ? chalk.yellow : chalk.dim;
-  return wrap(text, width - 2).map((l, i) => (i === 0 ? `${glyph} ${color(l)}` : `  ${color(l)}`));
+  const label = level === "warn" ? chalk.bgYellow.black.bold(" WARN ") : chalk.bgGray.white.bold(" INFO ");
+  const color = level === "warn" ? chalk.yellow : chalk.white;
+  return wrap(text, width - 8).map((l, i) => (i === 0 ? `${label} ${color(l)}` : `       ${color(l)}`));
 }
 
 export function renderItemLines(item: TranscriptItem, ctx: RenderCtx): string[] {

@@ -4,7 +4,8 @@ import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
 import { providerIds } from "../types.js";
 import { assertProvider } from "../llm/provider.js";
 import { getProvider } from "../llm/router.js";
-import { envValue, getProviderSecret, setProviderSecret } from "../store/keys.js";
+import { envValue, getProviderSecret, getSearchProviderKey, listProviderStatuses, maskSecret, setProviderSecret } from "../store/keys.js";
+import { searchProviderIds } from "../tools/web/types.js";
 import { modelSupportsThinking, modelSupportsVision } from "../llm/capabilities.js";
 import {
   getConfig,
@@ -39,6 +40,7 @@ import { PickerPanel, type PickerOption } from "./components/PickerPanel.js";
 import { SecretInputPanel } from "./components/SecretInputPanel.js";
 import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import { addScopeTargets, clearScope, loadScope, saveScope } from "../store/scope.js";
+import { formatKeyStatus } from "./format-keys.js";
 
 export interface AppProps {
   version: string;
@@ -504,10 +506,27 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           if (!on && !off) { info(`providerFallback=${getConfig().providerFallback}`); return true; }
           updateConfig({ providerFallback: on }); info(`providerFallback=${on}`); return true;
         }
+        case "/keys":
+          void (async () => {
+            const llm = await listProviderStatuses(provider);
+            const activeSearch = getConfig().activeSearchProvider;
+            const search = await Promise.all(searchProviderIds.map(async (id) => {
+              const secret = await getSearchProviderKey(id);
+              const keyless = id === "duckduckgo";
+              return {
+                provider: id,
+                active: id === activeSearch,
+                configured: keyless || Boolean(secret.value),
+                source: keyless ? "keyless" : secret.source,
+                maskedKey: secret.value ? maskSecret(secret.value) : undefined,
+              };
+            }));
+            setOverlay({ kind: "pager", title: "Credential status", body: formatKeyStatus(llm, search) });
+          })().catch((error) => warn(`could not read keys: ${error instanceof Error ? error.message : String(error)}`));
+          return true;
         case "/set":
         case "/unset":
         case "/update":
-        case "/keys":
           info(`${cmd} manages external credentials or updates; use the equivalent \`clai ${cmd.slice(1)}\` command outside the TUI`);
           return true;
         case "/help":
@@ -758,8 +777,8 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         paddingX={1}
       >
         <Box justifyContent="space-between">
-          <Text><Text color="magenta" bold>◆ clai</Text><Text dimColor>  v{version}</Text></Text>
-          <Text><Text color="yellow">{mode}</Text><Text dimColor> mode</Text></Text>
+          <Text><Text backgroundColor="magenta" color="black" bold> ◆ clai </Text><Text dimColor>  v{version}</Text></Text>
+          <Text><Text backgroundColor="yellow" color="black" bold>{` ${mode} `}</Text><Text dimColor> mode</Text></Text>
         </Box>
         <Text wrap="truncate-end">
           <Text color="green">{provider}</Text><Text dimColor>  /  </Text><Text color="cyan">{model}</Text>
@@ -790,13 +809,13 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         ? visibleSlashSuggestions.map((cmd, i) => {
             const absoluteIndex = slashWindowStart + i;
             return (
-            <Text key={cmd.command} wrap="truncate-end">
-              <Text color={absoluteIndex === selected ? "magenta" : "cyan"}>
-                {absoluteIndex === selected ? "❯ " : "  "}
-                {cmd.command}
+            <Text key={cmd.command} wrap="truncate-end" backgroundColor={absoluteIndex === selected ? "magenta" : absoluteIndex % 2 === 0 ? "gray" : "black"}>
+              <Text color={absoluteIndex === selected ? "black" : "cyan"} bold>
+                {absoluteIndex === selected ? " ❯ " : "   "}
+                {cmd.command.padEnd(14)}
               </Text>
-              {cmd.usage ? <Text dimColor> {cmd.usage}</Text> : null}
-              <Text dimColor>{"  "}{cmd.description}</Text>
+              {cmd.usage ? <Text color={absoluteIndex === selected ? "black" : "white"}>{cmd.usage} </Text> : null}
+              <Text color={absoluteIndex === selected ? "black" : "white"}>{"  "}{cmd.description}</Text>
               {i === visibleSlashSuggestions.length - 1 && slashWindowStart + menuH < suggestions.length
                 ? <Text dimColor>{`  · ${suggestions.length - slashWindowStart - menuH} more ↓`}</Text>
                 : null}
@@ -806,7 +825,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
         : null}
       {fileMenuOpen && !modalActive
         ? fileSuggestions.map((file, i) => (
-            <Text key={file.value} wrap="truncate-end">
+            <Text key={file.value} wrap="truncate-end" backgroundColor={i === selected ? "magenta" : i % 2 === 0 ? "gray" : "black"}>
               <Text color={i === selected ? "magenta" : file.isDir ? "cyan" : "white"} bold={i === selected}>
                 {i === selected ? "❯ " : "  "}{file.isDir ? "▸ " : "· "}{file.value}
               </Text>
@@ -815,7 +834,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           ))
         : null}
 
-      {/* Status line / confirm modal */}
+      {/* Confirm/secret controls sit directly above the composer. */}
       {secretRequest ? (
         <SecretInputPanel
           title={secretRequest.title}
@@ -837,13 +856,7 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
               <Text dimColor>{` · ${elapsed}s · esc to cancel`}</Text>
               {state.queued.length > 0 ? <Text dimColor>{` · ${state.queued.length} queued`}</Text> : null}
             </Text>
-          ) : (
-            <Text dimColor>
-              ready
-              {state.queued.length > 0 ? ` · ${state.queued.length} queued` : ""}
-              {"  ·  / commands · ctrl+t thinking · ctrl+o output"}
-            </Text>
-          )}
+          ) : null}
         </Box>
       )}
 
@@ -870,6 +883,20 @@ export function App({ version, initialMode, provider: initialProvider, initialMo
           </Text>
         )}
       </Box>
+
+      {/* Persistent chrome belongs below the input, separate from conversation content. */}
+      {!secretRequest && !state.pendingConfirm && !state.status.running && !compacting ? (
+        <Box paddingX={1}>
+          <Text backgroundColor="green" color="black" bold> READY </Text>
+          {state.queued.length > 0 ? <Text backgroundColor="yellow" color="black" bold>{` ${state.queued.length} QUEUED `}</Text> : null}
+          <Text> </Text>
+          <Text backgroundColor="gray" color="white"> / COMMANDS </Text>
+          <Text> </Text>
+          <Text backgroundColor="gray" color="white"> CTRL+T THINKING </Text>
+          <Text> </Text>
+          <Text backgroundColor="gray" color="white"> CTRL+O OUTPUT </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }
