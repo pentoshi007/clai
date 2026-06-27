@@ -68,7 +68,7 @@ function renderUser(text: string, width: number): string[] {
     out.push(...wrap(line, width - 8));
   }
   return out.map((l, i) => {
-    const whiteLine = "\x1b[37m" + l.replace(/\x1b\[39m/g, "\x1b[37m") + "\x1b[39m";
+    const whiteLine = "\x1b[38;2;255;255;255m" + l.replace(/\x1b\[39m/g, "\x1b[38;2;255;255;255m") + "\x1b[39m";
     return i === 0 ? `${tag} ${whiteLine}` : `      ${whiteLine}`;
   });
 }
