@@ -183,34 +183,20 @@ export function reducer(state: TuiState, action: TuiAction): TuiState {
     case "toggle-output":
       return { ...state, outputExpanded: !state.outputExpanded };
     case "compacted": {
-      const keepRecent = action.keepRecent;
-      let userAsstCount = 0;
-      let tailStartIndex = 0;
-      for (let i = state.items.length - 1; i >= 0; i--) {
-        const item = state.items[i]!;
-        if (item.kind === "user" || item.kind === "assistant") {
-          userAsstCount++;
-          if (userAsstCount === keepRecent) {
-            tailStartIndex = i;
-            break;
-          }
-        }
-      }
-      
-      const compactedItems = state.items.slice(0, tailStartIndex);
-      const tailItems = state.items.slice(tailStartIndex);
-      
+      // Replace all visual items with a single compacted context block.
+      // The model context has already been compacted (messages replaced in
+      // the runner); the visual side mirrors this by showing only the summary.
       const compactedItem: CompactedItem = {
         kind: "compacted",
         id: nextId("compacted"),
         summary: action.summary,
-        originalItems: compactedItems,
+        originalItems: [...state.items],
         done: true,
       };
       
       return {
         ...state,
-        items: [compactedItem, ...tailItems],
+        items: [compactedItem],
       };
     }
     case "queue":

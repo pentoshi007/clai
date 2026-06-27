@@ -366,7 +366,7 @@ describe("TUI compaction transcript", () => {
 });
 
 describe("TUI compaction reducer and rendering", () => {
-  it("compacts older items and keeps recent ones in the reducer", () => {
+  it("replaces all visual items with a single compacted block", () => {
     let state = initialState();
     state.items = [
       { kind: "user", id: "u1", text: "query 1", done: true },
@@ -376,13 +376,11 @@ describe("TUI compaction reducer and rendering", () => {
     ];
 
     state = reducer(state, { type: "compacted", summary: "Compacted memory", keepRecent: 2 });
-    expect(state.items).toHaveLength(3);
+    expect(state.items).toHaveLength(1);
     expect(state.items[0]!.kind).toBe("compacted");
     expect((state.items[0] as any).summary).toBe("Compacted memory");
-    expect(state.items[1]!.kind).toBe("user");
-    expect(state.items[1]!.id).toBe("u2");
-    expect(state.items[2]!.kind).toBe("assistant");
-    expect(state.items[2]!.id).toBe("a2");
+    // All original items are preserved inside the compacted block
+    expect((state.items[0] as any).originalItems).toHaveLength(4);
   });
 
   it("renders compacted item with spoiler and full view on toggle", () => {

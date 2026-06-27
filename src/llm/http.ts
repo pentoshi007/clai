@@ -88,7 +88,14 @@ export async function readJson<T>(response: Response): Promise<T> {
           (body as { detail?: string }).detail ??
           "";
       }
-      if (msg) detail = ` — ${msg}`;
+      if (msg) {
+        // Detect NVIDIA DEGRADED function errors and enrich the message.
+        if (/DEGRADED/i.test(msg)) {
+          detail = ` — ${msg} (model is temporarily unavailable on this provider; try a different model with \`/model\`)`;
+        } else {
+          detail = ` — ${msg}`;
+        }
+      }
     } catch {
       if (text.length > 0) detail = ` — ${text.slice(0, 200)}`;
     }
