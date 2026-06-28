@@ -34,6 +34,8 @@ export interface ClaiConfig {
   sandboxReads: boolean;
   /** Active search provider used by the web.search tool. */
   activeSearchProvider: SearchProviderId;
+  /** When true, bypass the OS keychain and always use plaintext file storage. */
+  disableKeychain: boolean;
 }
 
 /**
@@ -75,6 +77,7 @@ const defaults: ClaiConfig = {
   historyRetentionLimit: 200,
   sandboxReads: false,
   activeSearchProvider: "duckduckgo",
+  disableKeychain: false,
 };
 
 const store = new Conf<ClaiConfig>({

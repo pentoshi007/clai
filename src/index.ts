@@ -16,6 +16,7 @@ import { runDoctor } from "./commands/doctor.js";
 import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
 import {
   getConfig,
+  getConfigPath,
   getProviderModel,
   setDefaultMode,
   setProviderModel,
@@ -157,9 +158,70 @@ async function main(): Promise<void> {
 
   program
     .command("config")
-    .description("print config path and current non-secret settings")
-    .action(() => {
-      console.log(JSON.stringify(getConfig(), null, 2));
+    .description("print, set, or get configuration settings")
+    .argument("[key]", "config key to get, or 'set' action")
+    .argument("[value]", "config value to set, or key if first arg is 'set'")
+    .argument("[value2]", "value if using 'config set key value'")
+    .action((key: string | undefined, value: string | undefined, value2: string | undefined) => {
+      const current = getConfig();
+      if (!key) {
+        console.log(`Config path: ${getConfigPath()}`);
+        console.log(JSON.stringify(current, null, 2));
+        return;
+      }
+
+      let targetKey: string | undefined;
+      let targetValue: string | undefined;
+      let isSet = false;
+
+      if (key === "set") {
+        targetKey = value;
+        targetValue = value2;
+        isSet = true;
+      } else if (key === "get") {
+        targetKey = value;
+        isSet = false;
+      } else if (value !== undefined) {
+        targetKey = key;
+        targetValue = value;
+        isSet = true;
+      } else {
+        targetKey = key;
+        isSet = false;
+      }
+
+      if (!targetKey) {
+        console.error(chalk.red("  ✗ Missing configuration key"));
+        process.exit(1);
+      }
+
+      if (!(targetKey in current)) {
+        console.error(chalk.red(`  ✗ Unknown configuration key: ${targetKey}`));
+        console.error(`  Available keys: ${Object.keys(current).join(", ")}`);
+        process.exit(1);
+      }
+
+      if (isSet) {
+        if (targetValue === undefined) {
+          console.error(chalk.red("  ✗ Missing value for key: " + targetKey));
+          process.exit(1);
+        }
+        let typedValue: any = targetValue;
+        const currentType = typeof (current as any)[targetKey];
+        if (currentType === "boolean") {
+          typedValue = targetValue === "true" || targetValue === "1" || targetValue === "yes";
+        } else if (currentType === "number") {
+          typedValue = Number(targetValue);
+          if (isNaN(typedValue)) {
+            console.error(chalk.red(`  ✗ Value for ${targetKey} must be a number`));
+            process.exit(1);
+          }
+        }
+        updateConfig({ [targetKey]: typedValue });
+        console.log(chalk.green(`  ✓ Set ${targetKey} = ${typedValue}`));
+      } else {
+        console.log((getConfig() as any)[targetKey]);
+      }
     });
 
   program

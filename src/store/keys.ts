@@ -92,6 +92,9 @@ async function withKeytar<T>(
   fn: (keytar: KeytarLike) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false }> {
   if (keychainRuntimeUnavailable) return { ok: false };
+  if (process.env.CLAI_DISABLE_KEYCHAIN === "1" || getConfig().disableKeychain) {
+    return { ok: false };
+  }
   const keytar = await loadKeytar();
   if (!keytar) return { ok: false };
   try {

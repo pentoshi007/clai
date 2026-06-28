@@ -65,4 +65,12 @@ describe('config store', () => {
     expect(getProviderModel('groq')).toBe('llama-3.1-8b-instant');
     expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
   });
+
+  it('supports disableKeychain property', async () => {
+    const { getConfig, updateConfig } = await loadConfigStore();
+    expect(getConfig().disableKeychain).toBe(false);
+
+    updateConfig({ disableKeychain: true });
+    expect(getConfig().disableKeychain).toBe(true);
+  });
 });
