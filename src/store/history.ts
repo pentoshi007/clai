@@ -1,4 +1,4 @@
-import { mkdir, appendFile, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, appendFile, readFile, rm, writeFile, chown } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -7,6 +7,7 @@ import type { TranscriptItem } from "../tui/state.js";
 import { redactSecrets } from "../llm/provider.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
+import { fixOwner, fixOwnerSync, handlePermissionError } from "../os/permissions.js";
 
 const historyDir = join(homedir(), ".clai");
 const dbFile = join(historyDir, "history.db");
@@ -67,11 +68,13 @@ async function loadDatabase(): Promise<DatabaseLike | undefined> {
   if (sqliteUnavailable) return undefined;
   try {
     await mkdir(historyDir, { recursive: true });
+    await fixOwner(historyDir);
     const imported = (await import(sqliteModuleName)) as {
       default?: DatabaseCtor;
     } & DatabaseCtor;
     const Ctor = imported.default ?? imported;
     cachedDb = new Ctor(dbFile);
+    fixOwnerSync(dbFile);
     cachedDb.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
@@ -96,7 +99,10 @@ async function loadDatabase(): Promise<DatabaseLike | undefined> {
       CREATE INDEX IF NOT EXISTS idx_tool_calls_session_id ON tool_calls(session_id);
     `);
     return cachedDb;
-  } catch {
+  } catch (err: any) {
+    if (err && err.code === "EACCES") {
+      handlePermissionError(err);
+    }
     sqliteUnavailable = true;
     return undefined;
   }
@@ -151,20 +157,31 @@ function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[]
 }
 
 async function appendJsonl(record: HistoryRecord): Promise<void> {
-  await mkdir(historyDir, { recursive: true });
-  await appendFile(jsonlFile, `${JSON.stringify(record)}\n`, "utf8");
-  await enforceJsonlRetention();
+  try {
+    await mkdir(historyDir, { recursive: true });
+    await fixOwner(historyDir);
+    await appendFile(jsonlFile, `${JSON.stringify(record)}\n`, "utf8");
+    await fixOwner(jsonlFile);
+    await enforceJsonlRetention();
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 async function enforceJsonlRetention(): Promise<void> {
   const limit = getConfig().historyRetentionLimit;
   if (!limit || limit <= 0) return;
   if (!existsSync(jsonlFile)) return;
-  const raw = await readFile(jsonlFile, "utf8");
-  const lines = raw.split("\n").filter(Boolean);
-  if (lines.length <= limit) return;
-  const trimmed = lines.slice(-limit).join("\n");
-  await writeFile(jsonlFile, `${trimmed}\n`, { mode: 0o600 });
+  try {
+    const raw = await readFile(jsonlFile, "utf8");
+    const lines = raw.split("\n").filter(Boolean);
+    if (lines.length <= limit) return;
+    const trimmed = lines.slice(-limit).join("\n");
+    await writeFile(jsonlFile, `${trimmed}\n`, { mode: 0o600 });
+    await fixOwner(jsonlFile);
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 export async function saveSession(
@@ -271,25 +288,31 @@ async function enforceSqliteRetention(db: DatabaseLike): Promise<void> {
 }
 
 async function upsertJsonl(record: HistoryRecord): Promise<void> {
-  await mkdir(historyDir, { recursive: true });
-  const records = existsSync(jsonlFile)
-    ? (await readFile(jsonlFile, "utf8"))
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          try {
-            return JSON.parse(line) as HistoryRecord;
-          } catch {
-            return null;
-          }
-        })
-        .filter((item): item is HistoryRecord => item !== null)
-    : [];
-  const idx = records.findIndex((item) => item.id === record.id);
-  if (idx >= 0) records[idx] = record;
-  else records.push(record);
-  await writeFile(jsonlFile, `${records.map((item) => JSON.stringify(item)).join("\n")}\n`, { mode: 0o600 });
-  await enforceJsonlRetention();
+  try {
+    await mkdir(historyDir, { recursive: true });
+    await fixOwner(historyDir);
+    const records = existsSync(jsonlFile)
+      ? (await readFile(jsonlFile, "utf8"))
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            try {
+              return JSON.parse(line) as HistoryRecord;
+            } catch {
+              return null;
+            }
+          })
+          .filter((item): item is HistoryRecord => item !== null)
+      : [];
+    const idx = records.findIndex((item) => item.id === record.id);
+    if (idx >= 0) records[idx] = record;
+    else records.push(record);
+    await writeFile(jsonlFile, `${records.map((item) => JSON.stringify(item)).join("\n")}\n`, { mode: 0o600 });
+    await fixOwner(jsonlFile);
+    await enforceJsonlRetention();
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 export async function saveToolCall(
@@ -351,20 +374,27 @@ function rowToSession(row: unknown): HistoryRecord {
 
 async function listJsonlSessions(limit: number): Promise<HistoryRecord[]> {
   if (!existsSync(jsonlFile)) return [];
-  const raw = await readFile(jsonlFile, "utf8");
-  return raw
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as HistoryRecord;
-      } catch {
-        return null;
-      }
-    })
-    .filter((record): record is HistoryRecord => record !== null)
-    .slice(-limit)
-    .reverse();
+  try {
+    const raw = await readFile(jsonlFile, "utf8");
+    return raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as HistoryRecord;
+        } catch {
+          return null;
+        }
+      })
+      .filter((record): record is HistoryRecord => record !== null)
+      .slice(-limit)
+      .reverse();
+  } catch (err: any) {
+    if (err && err.code === "EACCES") {
+      handlePermissionError(err);
+    }
+    return [];
+  }
 }
 
 export async function listSessions(limit = 20): Promise<HistoryRecord[]> {

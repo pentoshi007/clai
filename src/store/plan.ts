@@ -1,4 +1,6 @@
-import { mkdir, appendFile, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, appendFile, readFile, writeFile, rm, chown } from "node:fs/promises";
+import { fixOwner, fixOwnerSync, handlePermissionError } from "../os/permissions.js";
+
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -74,11 +76,13 @@ async function loadDatabase(): Promise<DatabaseLike | undefined> {
   if (sqliteUnavailable) return undefined;
   try {
     await mkdir(planDir, { recursive: true });
+    await fixOwner(planDir);
     const imported = (await import(sqliteModuleName)) as {
       default?: DatabaseCtor;
     } & DatabaseCtor;
     const Ctor = imported.default ?? imported;
     cachedDb = new Ctor(dbFile);
+    fixOwnerSync(dbFile);
     cachedDb.exec(`
       CREATE TABLE IF NOT EXISTS plans (
         session_id TEXT PRIMARY KEY,
@@ -92,7 +96,10 @@ async function loadDatabase(): Promise<DatabaseLike | undefined> {
       );
     `);
     return cachedDb;
-  } catch {
+  } catch (err: any) {
+    if (err && err.code === "EACCES") {
+      handlePermissionError(err);
+    }
     sqliteUnavailable = true;
     return undefined;
   }
@@ -156,14 +163,20 @@ export async function savePlan(plan: SessionPlan): Promise<void> {
 }
 
 async function appendJsonl(plan: SessionPlan): Promise<void> {
-  await mkdir(planDir, { recursive: true });
-  // JSONL fallback keeps the latest record per session; we compact on write
-  // so the file does not grow unbounded for a long-lived session.
-  const existing = await readAllJsonl();
-  const map = new Map(existing.map((p) => [p.sessionId, p]));
-  map.set(plan.sessionId, plan);
-  const body = [...map.values()].map((p) => JSON.stringify(p)).join("\n");
-  await writeFile(jsonlFile, body ? `${body}\n` : "", { mode: 0o600 });
+  try {
+    await mkdir(planDir, { recursive: true });
+    await fixOwner(planDir);
+    // JSONL fallback keeps the latest record per session; we compact on write
+    // so the file does not grow unbounded for a long-lived session.
+    const existing = await readAllJsonl();
+    const map = new Map(existing.map((p) => [p.sessionId, p]));
+    map.set(plan.sessionId, plan);
+    const body = [...map.values()].map((p) => JSON.stringify(p)).join("\n");
+    await writeFile(jsonlFile, body ? `${body}\n` : "", { mode: 0o600 });
+    await fixOwner(jsonlFile);
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 async function readAllJsonl(): Promise<SessionPlan[]> {
@@ -174,7 +187,10 @@ async function readAllJsonl(): Promise<SessionPlan[]> {
       .split("\n")
       .filter(Boolean)
       .map((line) => JSON.parse(line) as SessionPlan);
-  } catch {
+  } catch (err: any) {
+    if (err && err.code === "EACCES") {
+      handlePermissionError(err);
+    }
     return [];
   }
 }
@@ -214,17 +230,23 @@ export async function loadPlan(sessionId: string): Promise<SessionPlan | undefin
 }
 
 export async function deletePlan(sessionId: string): Promise<void> {
-  const db = await loadDatabase();
-  if (db) {
-    db.prepare("DELETE FROM plans WHERE session_id = ?").run(sessionId);
-    return;
+  try {
+    const db = await loadDatabase();
+    if (db) {
+      db.prepare("DELETE FROM plans WHERE session_id = ?").run(sessionId);
+      return;
+    }
+    const existing = await readAllJsonl();
+    const remaining = existing.filter((p) => p.sessionId !== sessionId);
+    if (remaining.length === existing.length) return;
+    await mkdir(planDir, { recursive: true });
+    await fixOwner(planDir);
+    const body = remaining.map((p) => JSON.stringify(p)).join("\n");
+    await writeFile(jsonlFile, body ? `${body}\n` : "", { mode: 0o600 });
+    await fixOwner(jsonlFile);
+  } catch (err: any) {
+    handlePermissionError(err);
   }
-  const existing = await readAllJsonl();
-  const remaining = existing.filter((p) => p.sessionId !== sessionId);
-  if (remaining.length === existing.length) return;
-  await mkdir(planDir, { recursive: true });
-  const body = remaining.map((p) => JSON.stringify(p)).join("\n");
-  await writeFile(jsonlFile, body ? `${body}\n` : "", { mode: 0o600 });
 }
 
 export async function clearAllPlans(): Promise<void> {

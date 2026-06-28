@@ -1,4 +1,6 @@
-import { mkdir, readdir, rename, stat, appendFile, rm } from 'node:fs/promises';
+import { mkdir, readdir, rename, stat, appendFile, rm, chown } from 'node:fs/promises';
+import { fixOwner, handlePermissionError } from '../os/permissions.js';
+
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -21,15 +23,23 @@ async function rotateIfNeeded(path: string): Promise<void> {
   if (info.size < maxLogBytes) return;
   const siblings = await readdir(logsDir).catch(() => []);
   const count = siblings.filter((name) => name.startsWith(`clai-${today()}.log.`)).length + 1;
-  await rename(path, `${path}.${count}`);
+  const newPath = `${path}.${count}`;
+  await rename(path, newPath);
+  await fixOwner(newPath);
 }
 
 export async function auditLog(event: string, payload: unknown = {}): Promise<void> {
-  await mkdir(logsDir, { recursive: true });
-  const path = getLogPath();
-  await rotateIfNeeded(path);
-  const entry = redactSecrets(JSON.stringify({ at: new Date().toISOString(), event, payload }));
-  await appendFile(path, `${entry}\n`, 'utf8');
+  try {
+    await mkdir(logsDir, { recursive: true });
+    await fixOwner(logsDir);
+    const path = getLogPath();
+    await rotateIfNeeded(path);
+    const entry = redactSecrets(JSON.stringify({ at: new Date().toISOString(), event, payload }));
+    await appendFile(path, `${entry}\n`, 'utf8');
+    await fixOwner(path);
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 export async function clearAuditLogs(): Promise<{ removed: number }> {

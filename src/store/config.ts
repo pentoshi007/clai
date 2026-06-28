@@ -1,8 +1,10 @@
 import Conf from "conf";
+import { dirname } from "node:path";
 import type { Mode, ProviderId, ReasoningPreference } from "../types.js";
 import type { SearchProviderId } from "../tools/web/types.js";
 import { defaultModels, sanitizeProviderModel } from "../llm/provider.js";
 import { safeCwd } from "../os/cwd.js";
+import { fixOwnerSync, handlePermissionError } from "../os/permissions.js";
 
 export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
 
@@ -80,11 +82,21 @@ const defaults: ClaiConfig = {
   disableKeychain: false,
 };
 
-const store = new Conf<ClaiConfig>({
-  projectName: "clai",
-  ...(process.env.CLAI_CONFIG_DIR ? { cwd: process.env.CLAI_CONFIG_DIR } : {}),
-  defaults,
-});
+const store = (() => {
+  try {
+    const s = new Conf<ClaiConfig>({
+      projectName: "clai",
+      ...(process.env.CLAI_CONFIG_DIR ? { cwd: process.env.CLAI_CONFIG_DIR } : {}),
+      defaults,
+    });
+    const dir = dirname(s.path);
+    fixOwnerSync(dir);
+    fixOwnerSync(s.path);
+    return s;
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
+})();
 
 export function getConfig(): ClaiConfig {
   const current = store.store;
@@ -106,7 +118,12 @@ export function getConfig(): ClaiConfig {
 
 export function updateConfig(patch: Partial<ClaiConfig>): ClaiConfig {
   const next = { ...getConfig(), ...patch } satisfies ClaiConfig;
-  store.set(next);
+  try {
+    store.set(next);
+    fixOwnerSync(store.path);
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
   return getConfig();
 }
 

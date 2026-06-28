@@ -1,4 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, chown } from "node:fs/promises";
+import { fixOwner, handlePermissionError } from "../os/permissions.js";
+
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -34,16 +36,26 @@ export async function loadScope(): Promise<EngagementScope | undefined> {
     const raw = await readFile(scopeFile, "utf8");
     cached = JSON.parse(raw) as EngagementScope;
     return cached;
-  } catch {
+  } catch (err: any) {
+    if (err && err.code === "EACCES") {
+      handlePermissionError(err);
+    }
     return undefined;
   }
 }
 
 export async function saveScope(scope: EngagementScope): Promise<void> {
-  await mkdir(join(homedir(), ".clai"), { recursive: true });
-  await writeFile(scopeFile, `${JSON.stringify(scope, null, 2)}\n`, { mode: 0o600 });
-  cached = scope;
-  cacheLoaded = true;
+  try {
+    const dir = join(homedir(), ".clai");
+    await mkdir(dir, { recursive: true });
+    await fixOwner(dir);
+    await writeFile(scopeFile, `${JSON.stringify(scope, null, 2)}\n`, { mode: 0o600 });
+    await fixOwner(scopeFile);
+    cached = scope;
+    cacheLoaded = true;
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 export function normalizeScopeTarget(target: string): string {

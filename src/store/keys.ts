@@ -1,4 +1,6 @@
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile, chown } from 'node:fs/promises';
+import { fixOwner, handlePermissionError } from '../os/permissions.js';
+
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -109,15 +111,26 @@ async function readFallback(): Promise<FallbackKeys> {
   if (!existsSync(keysFile)) {
     return {};
   }
-  const raw = await readFile(keysFile, 'utf8');
-  return JSON.parse(raw) as FallbackKeys;
+  try {
+    const raw = await readFile(keysFile, 'utf8');
+    return JSON.parse(raw) as FallbackKeys;
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 async function writeFallback(keys: FallbackKeys): Promise<void> {
-  await mkdir(dirname(keysFile), { recursive: true });
-  await writeFile(keysFile, `${JSON.stringify(keys, null, 2)}\n`, { mode: 0o600 });
-  if (process.platform !== 'win32') {
-    await chmod(keysFile, 0o600);
+  try {
+    const dir = dirname(keysFile);
+    await mkdir(dir, { recursive: true });
+    await fixOwner(dir);
+    await writeFile(keysFile, `${JSON.stringify(keys, null, 2)}\n`, { mode: 0o600 });
+    if (process.platform !== 'win32') {
+      await chmod(keysFile, 0o600);
+    }
+    await fixOwner(keysFile);
+  } catch (err: any) {
+    handlePermissionError(err);
   }
 }
 

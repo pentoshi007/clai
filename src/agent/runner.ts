@@ -1,7 +1,9 @@
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, chown } from "node:fs/promises";
 import { homedir } from "node:os";
+import { fixOwner, handlePermissionError } from "../os/permissions.js";
+
 import { join, resolve } from "node:path";
 import type {
   ChatMessage,
@@ -1025,11 +1027,17 @@ async function saveToolOutput(
 ): Promise<string | undefined> {
   if (!output.trim()) return undefined;
   const dir = join(homedir(), ".clai", "outputs");
-  await mkdir(dir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const path = join(dir, `${stamp}-${safeArtifactName(call.name)}.txt`);
-  await writeFile(path, `${output}\n`, "utf8");
-  return path;
+  try {
+    await mkdir(dir, { recursive: true });
+    await fixOwner(dir);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const path = join(dir, `${stamp}-${safeArtifactName(call.name)}.txt`);
+    await writeFile(path, `${output}\n`, "utf8");
+    await fixOwner(path);
+    return path;
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
 }
 
 function summarizeOutput(
