@@ -2614,6 +2614,29 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           "Run real commands (installs, servers, verification) — do not claim anything ran without a successful tool call.";
       }
 
+      // ── Continuation detection ──────────────────────────────────────────
+      // When the user types "continue" after the agent paused at a step limit,
+      // augment the bare keyword with rich resumption context so the model
+      // picks up from where it left off instead of restarting.
+      const REPL_CONTINUE_RE =
+        /^(?:continue|proceed|keep\s+going|go\s+on|resume|finish\s+it|next)$/i;
+      if (
+        REPL_CONTINUE_RE.test(line) &&
+        !implementApproved &&
+        state.messages.length > 0
+      ) {
+        const lastMsg = state.messages[state.messages.length - 1];
+        if (
+          lastMsg?.role === "assistant" &&
+          /Session paused after \d+ steps/i.test(lastMsg.content)
+        ) {
+          effectiveLine =
+            "Continue from where you left off. " +
+            "The previous session summary is in your context — review it and resume the next pending task. " +
+            "Do NOT repeat completed work. Do NOT re-fetch data you already have.";
+        }
+      }
+
       // Only remember real prompts in the history ring. Slash commands
       // are operational toggles (eg /model, /provider) and surfacing them
       // when the user presses ↑ to recall a past prompt is just noise.

@@ -2,7 +2,7 @@ import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type {
   ChatMessage,
   ChatImage,
@@ -53,6 +53,7 @@ import {
 } from "../store/plan.js";
 import { renderPlanChecklist, renderPlanSidePane } from "../ui/plan-pane.js";
 import type { AgentEvent } from "./events.js";
+import { pathInsideSandbox } from "../tools/fs.js";
 
 /** Render the plan as a right-side pane on wide terminals, else inline. */
 function renderPlanForTerminal(plan: SessionPlan): string {
@@ -86,6 +87,8 @@ export function createSessionPolicy(): SessionPolicy {
 export interface ConfirmPort {
   confirmTool(call: ToolCall): Promise<boolean>;
   confirmPentest(): Promise<boolean>;
+  /** Ask the user whether to continue after hitting the step budget. */
+  confirmContinue?(steps: number): Promise<boolean>;
 }
 
 export interface AgentRunOptions {
@@ -647,6 +650,29 @@ const BUILD_TASK_RE =
 const BUILD_STACK_RE =
   /\b(?:react|next(?:\.?js)?|vue|svelte|angular|vite|webpack|express|fastify|nest(?:js)?|django|flask|fastapi|rails|laravel|spring|node(?:\.?js)?|typescript|tailwind|redux|prisma|mongoose|graphql|docker|kubernetes)\b/i;
 
+// Pentest / security keywords — these tasks are inherently multi-step and
+// always deserve the full step budget, just like build tasks.
+const PENTEST_TASK_RE =
+  /\b(?:pentest|pen[\s-]?test|penetration|security\s*(?:test|audit|scan|assess)|csrf|xss|sqli|sql[\s-]?inject|rce|lfi|rfi|ssrf|idor|xxe|brute[\s-]?force|enumerat|exploit|vulnerabilit|recon|bug[\s-]?bounty|ctf|capture[\s-]?the[\s-]?flag|red[\s-]?team|offensive|nmap|nikto|nuclei|ffuf|gobuster|sqlmap|hydra|metasploit)\b/i;
+
+/**
+ * Detect pentest/security tasks that need the full step budget.
+ * Mirrors looksLikeBuildTask but for security work.
+ */
+export function looksLikePentestTask(
+  prompt: string,
+  history?: ChatMessage[] | undefined,
+): boolean {
+  if (PENTEST_TASK_RE.test(prompt)) return true;
+  if (history && history.length > 0) {
+    const recent = history.slice(-6);
+    for (const msg of recent) {
+      if (msg.role === "user" && PENTEST_TASK_RE.test(msg.content)) return true;
+    }
+  }
+  return false;
+}
+
 // Short continuation prompts that, on their own, carry no build signal but
 // clearly mean "keep going with what we were doing".
 const CONTINUATION_RE =
@@ -877,6 +903,74 @@ function restoreInteractiveStdin(): void {
 }
 
 /**
+ * Build a rich summary when the agent stops (user declined to continue or
+ * maxIterations ceiling hit). Includes plan state, key findings, and clear
+ * resume instructions so a later "continue" can pick up exactly here.
+ */
+async function buildRichStopSummary(
+  messages: ChatMessage[],
+  session: SessionPolicy,
+  steps: number,
+): Promise<string> {
+  const plan = await loadPlan(session.sessionId).catch(() => undefined);
+  const parts: string[] = [];
+
+  parts.push(`Session paused after ${steps} steps.\n`);
+
+  // Plan state
+  if (plan) {
+    parts.push("## Plan Status");
+    parts.push(`Goal: ${plan.goal}`);
+    for (const task of plan.tasks) {
+      const icon =
+        task.state === "done"
+          ? "✓"
+          : task.state === "in_progress"
+            ? "▶"
+            : task.state === "failed"
+              ? "✗"
+              : task.state === "skipped"
+                ? "↷"
+                : "·";
+      parts.push(
+        `  ${icon} [${task.id}] (${task.state}) ${task.title}${task.note ? ` — ${task.note}` : ""}`,
+      );
+    }
+    const next = plan.tasks.find(
+      (t) => t.state === "pending" || t.state === "in_progress",
+    );
+    if (next) {
+      parts.push(`\nNext task to resume: ${next.id} — "${next.title}"`);
+    }
+    const doneCount = plan.tasks.filter((t) => t.state === "done").length;
+    parts.push(`\nProgress: ${doneCount}/${plan.tasks.length} tasks done.`);
+  }
+
+  // Key findings from tool results (last 20 tool messages)
+  const toolMsgs = messages.filter((m) => m.role === "tool").slice(-20);
+  if (toolMsgs.length > 0) {
+    parts.push("\n## Key Findings So Far");
+    for (const msg of toolMsgs) {
+      const firstLine = msg.content.split("\n")[0] ?? "";
+      // Extract tool name from the structured format "Tool <name> result ..."
+      const toolMatch = firstLine.match(/^Tool (\S+) result/);
+      if (toolMatch) {
+        parts.push(`- ${toolMatch[1]}: ${firstLine.slice(0, 150)}`);
+      } else {
+        parts.push(`- ${firstLine.slice(0, 150)}`);
+      }
+    }
+  }
+
+  parts.push("\n## To Resume");
+  parts.push(
+    'Type "continue" to pick up from where this session left off.',
+  );
+
+  return parts.join("\n");
+}
+
+/**
  * Tools allowed while an UN-approved plan is active. Before the user runs
  * /implement, the agent may only (re)create the plan and do read-only
  * exploration to refine it — never execute. Everything else is blocked by
@@ -1020,6 +1114,14 @@ const inquirerConfirmPort: ConfirmPort = {
         "clai only assists with security testing on systems you own or have written permission to test. Confirm for this session?",
       ),
       default: false,
+    });
+  },
+  async confirmContinue(steps: number): Promise<boolean> {
+    return confirm({
+      message: chalk.yellow(
+        `  ${steps} steps reached — continue?`,
+      ),
+      default: true,
     });
   },
 };
@@ -1379,8 +1481,10 @@ export async function runAgentLoop(
   // "now"/"latest" that trip the volatile-info regex; without this guard the
   // agent burns its turn searching the date instead of writing files.
   const buildLikeTurn = looksLikeBuildTask(prompt, options.history);
+  const pentestLikeTurn = looksLikePentestTask(prompt, options.history);
   const freshWebSearchRequired =
     !buildLikeTurn &&
+    !pentestLikeTurn &&
     toolNames.includes("web.search") &&
     requiresFreshWebSearch(prompt);
   const systemSections = [renderAgentSystemPrompt(toolNames.join(", "))];
@@ -1510,15 +1614,16 @@ export async function runAgentLoop(
   const analysis = analyzeTask(prompt);
   const hasHistory = (options.history?.length ?? 0) > 0;
   const buildLike = buildLikeTurn;
+  const pentestLike = looksLikePentestTask(prompt, options.history);
   let stepBudget =
     analysis.complexity === "simple"
       ? 20
       : analysis.complexity === "standard"
         ? 40
         : maxSteps;
-  if (buildLike) {
-    // Scaffolding / multi-file work needs room: many file writes plus a
-    // verify/build step. Continuation prompts ("do it") inherit this too.
+  if (buildLike || pentestLike) {
+    // Scaffolding / multi-file work / pentest tasks need room.
+    // Continuation prompts ("do it") inherit this too.
     stepBudget = Math.max(stepBudget, maxSteps);
   } else if (hasHistory) {
     // A follow-up to an ongoing task should never be capped tighter than a
@@ -1527,7 +1632,7 @@ export async function runAgentLoop(
   }
   // Hard ceiling on total loop iterations (productive + recovery) so a model
   // stuck emitting only thinking or malformed calls can't loop indefinitely.
-  const maxIterations = stepBudget * 3;
+  let maxIterations = stepBudget * 3;
 
   let productiveSteps = 0;
   let step = -1;
@@ -1686,7 +1791,22 @@ export async function runAgentLoop(
         pentestJustConfirmed = true;
       }
 
-      const forceManualConfirm = call.name === "fs.delete";
+      let forceManualConfirm = call.name === "fs.delete";
+      if (
+        call.name.startsWith("fs.") &&
+        !isPreApprovalAllowedTool(call.name)
+      ) {
+        const pathArg = typeof call.args.path === "string" ? call.args.path : undefined;
+        if (pathArg) {
+          const expandHomeLocal = (p: string) => p.startsWith("~/") || p.startsWith("~\\") ? join(homedir(), p.slice(2)) : p === "~" ? homedir() : p;
+          const resolved = resolve(expandHomeLocal(pathArg));
+          const mode = (call.name === "fs.read" || call.name === "fs.list" || call.name === "fs.search") ? "read" : "write";
+          if (!pathInsideSandbox(resolved, mode)) {
+            forceManualConfirm = true;
+          }
+        }
+      }
+
       if (decision.level === "confirm" && !pentestJustConfirmed) {
         const ok = await confirmToolExecution(
           call,
@@ -1787,6 +1907,7 @@ export async function runAgentLoop(
           if (toolAc.signal.aborted) return;
           printLive(chunk);
         },
+        confirmed: true,
       });
       if (liveBytes > 0 || liveTruncatedNotified) {
         writeToolOutput(toolEventId, "\n", "\n");
@@ -1884,7 +2005,61 @@ export async function runAgentLoop(
     // `step` is the productive-step index (used for display + audit). It only
     // advances when the previous iteration actually executed a tool.
     step = productiveSteps;
-    if (productiveSteps >= stepBudget) break;
+    // ── Step budget gate: ask the user instead of hard-stopping ────────
+    if (productiveSteps >= stepBudget) {
+      const askContinue = confirmPort.confirmContinue ?? inquirerConfirmPort.confirmContinue!;
+      let shouldContinue = false;
+      try {
+        shouldContinue = await askContinue(productiveSteps);
+        restoreInteractiveStdin();
+      } catch {
+        // Abort / non-interactive — treat as decline.
+        shouldContinue = false;
+      }
+      if (shouldContinue) {
+        // Extend the budget for another chunk of work.
+        const extension = Math.max(40, maxSteps);
+        stepBudget += extension;
+        maxIterations = stepBudget * 3;
+        // Compact older messages to free context space.
+        const compacted = compactMessages(messages, { budgetTokens: 0, keepRecent: 12 });
+        if (compacted.length < messages.length) {
+          messages.splice(0, messages.length, ...compacted);
+          loopGuard.resetReadOnly();
+          await auditLog("agent.compact", {
+            newLength: messages.length,
+            estimatedTokens: estimateMessagesTokens(messages),
+            reason: "step-budget-continue",
+          });
+        }
+        // Inject a progress summary so the model stays focused.
+        const livePlan = await loadPlan(session.sessionId).catch(() => undefined);
+        let progressNote = "The step limit was reached and the user chose to continue. ";
+        progressNote += "Review what you have accomplished so far and continue with the NEXT unfinished step. ";
+        progressNote += "Do NOT repeat work already done. Do NOT re-fetch pages or re-run scans whose results you already have.";
+        if (livePlan) {
+          const doneTasks = livePlan.tasks.filter(t => t.state === "done");
+          const pendingTasks = livePlan.tasks.filter(t => t.state === "pending" || t.state === "in_progress");
+          progressNote += `\n\nPlan progress: ${doneTasks.length}/${livePlan.tasks.length} tasks done.`;
+          if (pendingTasks.length > 0) {
+            progressNote += ` Next: ${pendingTasks[0]!.id} — "${pendingTasks[0]!.title}".`;
+          }
+        }
+        messages.push({ role: "user", content: progressNote });
+        writeNotice(
+          "info",
+          `continuing — budget extended to ${stepBudget} steps`,
+          chalk.dim(`  ℹ continuing — budget extended to ${stepBudget} steps\n`),
+        );
+        // Continue the loop — model doesn't know it paused.
+      } else {
+        // User declined — build a rich summary and return.
+        const richSummary = await buildRichStopSummary(messages, session, productiveSteps);
+        writeAssistantMessage(richSummary);
+        lastAnswer = richSummary;
+        return finishTurn(lastAnswer, productiveSteps);
+      }
+    }
     options.signal?.throwIfAborted();
 
     // `call` and `assistantText` are shared by both paths below: a fresh
@@ -2021,7 +2196,7 @@ export async function runAgentLoop(
     // answer and the user has to re-submit the same prompt.
     if (!assistantText.visible.trim() && !call && assistantText.hasThinking) {
       emptyVisibleRetries += 1;
-      if (emptyVisibleRetries <= 2) {
+      if (emptyVisibleRetries <= 3) {
         writeThinkingBlock(assistantText.thinkContent);
         writeNotice(
           "warn",
@@ -2034,18 +2209,13 @@ export async function runAgentLoop(
           role: "assistant",
           content: collapseRepeatedText(completion.text),
         });
+        // Keep nudges SHORT — cheap models lose the key instruction in long text.
         const buildNudge =
           buildLikeTurn && !activePlan
-            ? "You only produced internal reasoning with no visible answer or tool call. " +
-              "This is a BUILD/SCAFFOLD task with NO plan yet. " +
-              "You MUST call plan.create using the ```tool format to create a comprehensive plan BEFORE writing any files or running any commands. " +
-              "Do NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, or pkg.install yet. " +
-              "Your ONLY allowed action right now is plan.create (or read/list for exploration)."
-            : "You only produced internal reasoning with no visible answer or tool call. " +
-              "You MUST either call a tool using the ```tool format or provide your final answer. " +
-              "Do NOT wrap your tool call inside  considering or reasoning tags — put it in the VISIBLE response, not hidden. " +
-              "If images are attached, inspect them directly for visual details (text, colors, layout, spacing, style) instead of using OCR unless explicitly needed. " +
-              "Do NOT just think — take action NOW.";
+            ? "No visible output. Emit a ```tool block to call plan.create now. " +
+              "Do NOT hide tool calls in <think> tags — put them in the visible response."
+            : "No visible output. Emit a ```tool block or give your final answer. " +
+              "Do NOT hide tool calls in <think> tags — put them in the visible response.";
         messages.push(recoveryUserMessage(buildNudge));
         continue;
       }
@@ -2470,10 +2640,13 @@ export async function runAgentLoop(
       }
 
       // Compact older messages when the running estimate exceeds budget
-      if (estimateMessagesTokens(messages) > 24_000) {
-        const compacted = compactMessages(messages);
+      if (estimateMessagesTokens(messages) > 32_000) {
+        const compacted = compactMessages(messages, { keepRecent: 12 });
         if (compacted.length < messages.length) {
           messages.splice(0, messages.length, ...compacted);
+          // Reset read-only tool counters so the model can re-fetch data
+          // whose results were compacted away.
+          loopGuard.resetReadOnly();
           await auditLog("agent.compact", {
             newLength: messages.length,
             estimatedTokens: estimateMessagesTokens(messages),
@@ -2483,8 +2656,11 @@ export async function runAgentLoop(
     }
   }
 
-    lastAnswer = `Stopped after ${productiveSteps} steps.`;
-    writeNotice("warn", lastAnswer, "  " + chalk.yellow(lastAnswer) + "\n");
+    // maxIterations ceiling reached (safety net — normally the step budget
+    // gate with user confirmation handles stopping gracefully).
+    const richSummary = await buildRichStopSummary(messages, session, productiveSteps);
+    writeAssistantMessage(richSummary);
+    lastAnswer = richSummary;
     return finishTurn(lastAnswer, productiveSteps);
   } catch (error) {
     if (isAbortError(error, options.signal)) {

@@ -45,6 +45,7 @@ export interface ToolRunOptions {
   signal?: AbortSignal | undefined;
   onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
   requestSecret?: ((request: { title: string; prompt: string }) => Promise<string | undefined>) | undefined;
+  confirmed?: boolean | undefined;
 }
 
 export type ToolHandler = (
@@ -352,15 +353,20 @@ export const toolRegistry: Record<string, ToolHandler> = {
       onOutput: options?.onOutput,
     });
   },
-  async "fs.read"(args) {
+  async "fs.read"(args, options) {
     return fsRead(requireString(args, "path"), {
       maxBytes: optionalNumber(args, "maxBytes"),
+      confirmed: options?.confirmed,
     });
   },
-  async "fs.write"(args) {
-    return fsWrite(requireString(args, "path"), requireString(args, "content"));
+  async "fs.write"(args, options) {
+    return fsWrite(
+      requireString(args, "path"),
+      requireString(args, "content"),
+      { confirmed: options?.confirmed },
+    );
   },
-  async "fs.writeMany"(args) {
+  async "fs.writeMany"(args, options) {
     const raw = args.files;
     if (!Array.isArray(raw)) {
       throw new Error(
@@ -368,17 +374,19 @@ export const toolRegistry: Record<string, ToolHandler> = {
       );
     }
     const files = raw as FileWrite[];
-    return fsWriteMany(files);
+    return fsWriteMany(files, { confirmed: options?.confirmed });
   },
-  async "fs.list"(args) {
+  async "fs.list"(args, options) {
     return fsList(optionalString(args, "path") ?? safeCwd(), {
       maxEntries: optionalNumber(args, "maxEntries"),
+      confirmed: options?.confirmed,
     });
   },
-  async "fs.search"(args) {
+  async "fs.search"(args, options) {
     return fsSearch(
       requireString(args, "pattern"),
       optionalString(args, "path"),
+      { confirmed: options?.confirmed },
     );
   },
   async "pkg.install"(args, options) {
@@ -731,18 +739,20 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async "shell.stop"(args) {
     return jobManager.stopJob(requireString(args, "id"));
   },
-  async "fs.edit"(args) {
+  async "fs.edit"(args, options) {
     return fsEdit(
       requireString(args, "path"),
       requireString(args, "oldText"),
       requireString(args, "newText"),
       optionalNumber(args, "expectedReplacements"),
+      { confirmed: options?.confirmed },
     );
   },
-  async "fs.delete"(args) {
+  async "fs.delete"(args, options) {
     return fsDelete(
       requireString(args, "path"),
       typeof args.recursive === "boolean" ? args.recursive : undefined,
+      { confirmed: options?.confirmed },
     );
   },
 };

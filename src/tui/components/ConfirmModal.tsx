@@ -25,7 +25,12 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
   });
 
   const isReset = confirm.kind === "reset";
-  const color = confirm.kind === "pentest" ? "red" : "yellow";
+  const isContinue = confirm.kind === "continue";
+  const color = confirm.kind === "pentest"
+    ? "red"
+    : isContinue
+      ? "cyan"
+      : "yellow";
   return (
     <Box
       borderStyle="double"
@@ -39,7 +44,9 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
           ? " ACTION REQUIRED · AUTHORIZATION "
           : isReset
             ? " ACTION REQUIRED · RESET CONFIRMATION "
-            : " ACTION REQUIRED · CONFIRMATION "}
+            : isContinue
+              ? " STEP LIMIT REACHED "
+              : " ACTION REQUIRED · CONFIRMATION "}
       </Text>
       <Text>{confirm.prompt}</Text>
       {isReset ? (
@@ -48,7 +55,7 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
         </Text>
       ) : (
         <Text bold>
-          Press <Text color="green" inverse> Y </Text> to approve  ·  Press <Text color="red" inverse> N </Text> to deny
+          Press <Text color="green" inverse> Y </Text> to {isContinue ? "continue" : "approve"}  ·  Press <Text color="red" inverse> N </Text> to {isContinue ? "stop" : "deny"}
         </Text>
       )}
     </Box>

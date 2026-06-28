@@ -179,6 +179,7 @@ type Overlay =
       kind: "picker";
       title: string;
       options: PickerOption[];
+      searchDescription?: boolean | undefined;
       onSelect: (value: string) => void;
     };
 
@@ -502,6 +503,7 @@ export function App({
     setOverlay({
       kind: "picker",
       title: "Providers",
+      searchDescription: false,
       options: providerIds.map((value) => ({
         value,
         label: value,
@@ -850,7 +852,7 @@ export function App({
             .compact(fullSession, 2, ac.signal)
             .then((result) => {
               if (ac.signal.aborted) return;
-              if (result.after === result.before) {
+              if (result.after === result.before && !result.summarized) {
                 info(
                   "nothing to compact yet — more messages are required",
                 );
@@ -1936,6 +1938,7 @@ export function App({
         <PickerPanel
           title={overlay.title}
           options={overlay.options}
+          searchDescription={overlay.searchDescription}
           height={viewportH}
           onSelect={overlay.onSelect}
           onClose={closeOverlay}

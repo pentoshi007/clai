@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import { wrapAnsiLine } from "../../ui/markdown.js";
 
 export interface PagerProps {
   title: string;
@@ -16,8 +17,21 @@ export interface PagerProps {
  * is given so it fits inside the pinned-composer layout.
  */
 export function Pager({ title, body, height, onClose }: PagerProps) {
+  const cols = process.stdout.columns ?? 80;
+  // Account for borders, padding, margins, and " 1234 │ " prefix
+  const usableWidth = Math.max(10, cols - 15);
+
+  const rawLines = body.replace(/\n+$/, "").split("\n");
+  const lines: string[] = [];
+  for (const raw of rawLines) {
+    if (raw.trim() === "") {
+      lines.push("");
+    } else {
+      lines.push(...wrapAnsiLine(raw, usableWidth));
+    }
+  }
+
   const viewport = Math.max(3, height - 5);
-  const lines = body.replace(/\n+$/, "").split("\n");
   const maxOffset = Math.max(0, lines.length - viewport);
   const [offset, setOffset] = useState(maxOffset);
 

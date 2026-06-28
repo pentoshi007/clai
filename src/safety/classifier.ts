@@ -19,6 +19,7 @@ import {
   type EngagementScope,
 } from "../store/scope.js";
 import { classifyHost } from "../tools/web/ssrf-guard.js";
+import { pathInsideSandbox } from "../tools/fs.js";
 
 export interface RiskDecision {
   level: RiskLevel;

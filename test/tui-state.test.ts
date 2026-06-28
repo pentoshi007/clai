@@ -310,7 +310,7 @@ describe("tui transcript formatting", () => {
         running: false,
       },
     ).join("\n");
-    expect(rendered).toContain("ERROR");
+    expect(rendered).toContain("WARN");
     expect(rendered).toContain("Provider      Error");
     expect(rendered).toContain("agentrouter  HTTP 401 unauthorized");
   });

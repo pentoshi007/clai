@@ -36,8 +36,8 @@ export interface CompactResult {
   summarized: boolean;
 }
 
-const DEFAULT_BUDGET_TOKENS = 24_000;
-const DEFAULT_KEEP_RECENT = 8;
+const DEFAULT_BUDGET_TOKENS = 32_000;
+const DEFAULT_KEEP_RECENT = 12;
 
 /**
  * Replace older messages with a single condensed "memory" message while
@@ -105,13 +105,30 @@ export async function compactMessagesWithSummary(
 ): Promise<CompactResult> {
   const before = messages.length;
   const beforeTokens = estimateMessagesTokens(messages);
-  const keepRecent = Math.max(2, options.keepRecent ?? DEFAULT_KEEP_RECENT);
-  const start = messages[0]?.role === "system" ? 1 : 0;
-  const tailStart = Math.max(start, messages.length - keepRecent);
-  const older = messages.slice(start, tailStart);
+  const isForced = options.budgetTokens === 0;
 
-  if (older.length === 0) {
-    return { messages: [...messages], before, after: before, beforeTokens, afterTokens: beforeTokens, summarized: false };
+  let keepRecent = Math.max(2, options.keepRecent ?? DEFAULT_KEEP_RECENT);
+  const start = messages[0]?.role === "system" ? 1 : 0;
+  let tailStart = Math.max(start, messages.length - keepRecent);
+  let older = messages.slice(start, tailStart);
+
+  // If forced and the older slice would be empty, try keeping fewer recent
+  // messages (minimum 1) so we have something to compact (e.g. the first user prompt).
+  if (older.length === 0 && isForced && messages.length >= start + 2) {
+    keepRecent = 1;
+    tailStart = messages.length - 1;
+    older = messages.slice(start, tailStart);
+  }
+
+  if (older.length === 0 && !sessionTranscript?.trim()) {
+    return {
+      messages: [...messages],
+      before,
+      after: before,
+      beforeTokens,
+      afterTokens: beforeTokens,
+      summarized: false,
+    };
   }
 
   const messageTranscript = older
@@ -139,7 +156,7 @@ export async function compactMessagesWithSummary(
       ...messages.slice(tailStart),
     ];
     const afterTokens = estimateMessagesTokens(compacted);
-    if (afterTokens >= beforeTokens) {
+    if (afterTokens >= beforeTokens && !isForced) {
       const deterministicCompacted = compactMessages(messages, { ...options, budgetTokens: 0 });
       const detTokens = estimateMessagesTokens(deterministicCompacted);
       if (detTokens < beforeTokens) {
@@ -175,7 +192,7 @@ export async function compactMessagesWithSummary(
     }
     const compacted = compactMessages(messages, { ...options, budgetTokens: 0 });
     const afterTokens = estimateMessagesTokens(compacted);
-    if (afterTokens >= beforeTokens) {
+    if (afterTokens >= beforeTokens && !isForced) {
       return {
         messages: [...messages],
         before,

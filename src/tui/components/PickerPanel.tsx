@@ -11,12 +11,14 @@ export interface PickerOption {
 export function PickerPanel({
   title,
   options,
+  searchDescription = true,
   height,
   onSelect,
   onClose,
 }: {
   title: string;
   options: PickerOption[];
+  searchDescription?: boolean | undefined;
   height: number;
   onSelect: (value: string) => void;
   onClose: () => void;
@@ -31,7 +33,9 @@ export function PickerPanel({
     const needle = query.trim().toLowerCase();
     if (!needle) return options;
     const matches = options.filter((item) => {
-      const haystack = `${item.label} ${item.value} ${item.description ?? ""}`.toLowerCase();
+      const haystack = (searchDescription && item.description)
+        ? `${item.label} ${item.value} ${item.description}`.toLowerCase()
+        : `${item.label} ${item.value}`.toLowerCase();
       return haystack.includes(needle);
     });
     return matches.sort((a, b) => {

@@ -9,6 +9,28 @@ export interface ToolAttempt {
 }
 
 /**
+ * Non-mutating tools that may legitimately need re-calling after context
+ * compaction removes their earlier results. These get a higher dedup
+ * threshold (3 vs 2 for write tools) and their counters can be reset when
+ * context is compacted.
+ */
+const READ_ONLY_TOOLS = new Set([
+  "web.fetch",
+  "http.fetch",
+  "web.search",
+  "dns.lookup",
+  "whois.lookup",
+  "fs.read",
+  "fs.list",
+  "fs.search",
+  "sysinfo",
+  "net.context",
+  "tool.check",
+  "image.ocr",
+  "pdf.read",
+]);
+
+/**
  * Track and detect tool-call repetition patterns so the agent doesn't
  * waste steps in loops.
  */
@@ -64,6 +86,10 @@ export class LoopGuard {
    * expected to fix the cause (install a tool, create a dir) and retry. Only
    * calls that already SUCCEEDED are deduped, since re-running them wastes a
    * step and risks an infinite summarize loop.
+   *
+   * Read-only tools (web.fetch, fs.read, etc.) get a higher threshold (3)
+   * because they may legitimately need re-calling after context compaction
+   * removes their results.
    */
   shouldBlock(
     name: string,
@@ -83,7 +109,11 @@ export class LoopGuard {
     const isWrite =
       name === "fs.write" || name === "fs.writeMany" || name === "fs.edit";
 
-    if (count === 1) {
+    // Read-only tools get a higher threshold — they may need re-calling
+    // after context compaction removes their earlier results.
+    const threshold = READ_ONLY_TOOLS.has(name) ? 3 : 2;
+
+    if (count < threshold) {
       return {
         block: false,
         reason: isWrite
@@ -92,12 +122,12 @@ export class LoopGuard {
       };
     }
 
-    // count >= 2 and at least one success: block
+    // count >= threshold and at least one success: block
     return {
       block: true,
       reason: isWrite
         ? `${name} was already called ${count} time(s) with the identical path and content. That file is already written. Continue with the remaining files/steps or give your final answer.`
-        : `${name} was already called ${count} time(s) with the same arguments. Summarize existing results instead.`,
+        : `${name} was already called ${count} time(s) with the same arguments. The data is already in your context — analyze what you have and move to the next step.`,
     };
   }
 
@@ -117,9 +147,27 @@ export class LoopGuard {
   }
 
   /**
+   * Reset counters for read-only tools. Called after context compaction
+   * so the model can re-fetch data whose results were compacted away.
+   */
+  resetReadOnly(): void {
+    for (const sig of [...this.signatureCount.keys()]) {
+      const name = sig.split("::")[0] ?? "";
+      if (READ_ONLY_TOOLS.has(name)) {
+        this.signatureCount.delete(sig);
+        this.signatureSuccess.delete(sig);
+      }
+    }
+    this.attempts = this.attempts.filter(
+      (a) => !READ_ONLY_TOOLS.has(a.callName),
+    );
+  }
+
+  /**
    * Get the total number of recorded attempts.
    */
   get totalAttempts(): number {
     return this.attempts.length;
   }
 }
+

@@ -82,8 +82,13 @@ function compactField(value: string): string {
 
 /** Plain, detailed session record used as source material for model compaction. */
 export function serializeTranscriptForCompaction(items: TranscriptItem[]): string {
-  return items.map((item): string | undefined => {
-    switch (item.kind) {
+  const lastCompactedIndex = items.map((i) => i.kind).lastIndexOf("compacted");
+  const itemsToSerialize =
+    lastCompactedIndex !== -1 ? items.slice(lastCompactedIndex) : items;
+
+  return itemsToSerialize
+    .map((item): string | undefined => {
+      switch (item.kind) {
       case "user":
         return `USER INTENT/PROMPT:\n${compactField(item.text)}`;
       case "assistant":
@@ -115,7 +120,7 @@ export function serializeTranscriptForCompaction(items: TranscriptItem[]): strin
 
 export interface PendingConfirm {
   id: string;
-  kind: "tool" | "pentest" | "reset";
+  kind: "tool" | "pentest" | "reset" | "continue";
   prompt: string;
 }
 

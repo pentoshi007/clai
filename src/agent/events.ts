@@ -23,7 +23,7 @@ export type AgentEvent =
   | {
       type: "confirm-request";
       id: string;
-      kind: "tool" | "pentest" | "reset";
+      kind: "tool" | "pentest" | "reset" | "continue";
       prompt: string;
     }
   | { type: "turn-end"; finalAnswer: string; steps: number }

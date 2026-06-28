@@ -46,20 +46,19 @@ function ensureNotSecret(resolved: string): void {
  *               sandboxRoots, so a runaway agent can't drop files all over
  *               $HOME.
  */
-function pathInsideSandbox(
+export function pathInsideSandbox(
   resolvedPath: string,
   mode: "read" | "write",
 ): boolean {
   const roots = [
     ...getConfig().sandboxRoots.map((root) => resolve(expandHome(root))),
     safeCwd(),
+    tmpdir(), // ALWAYS allow system temporary folder for both reads and writes
   ];
   if (mode === "read") {
     // For reads we also accept the user's home (so dotfiles are inspectable
-    // by name, modulo the secret-path blocklist) and the OS temp dir
-    // (where shellExec stores its artifacts at ~/.clai/outputs and where
-    // tests mkdtemp into).
-    roots.push(homedir(), tmpdir());
+    // by name, modulo the secret-path blocklist).
+    roots.push(homedir());
   }
   return roots.some((root) => {
     const rel = relative(root, resolvedPath);
@@ -70,8 +69,13 @@ function pathInsideSandbox(
 }
 
 /** Throw with a useful message when a read/list/search escapes the sandbox. */
-function ensureReadAllowed(resolved: string, original: string): void {
+function ensureReadAllowed(
+  resolved: string,
+  original: string,
+  confirmed?: boolean,
+): void {
   ensureNotSecret(resolved);
+  if (confirmed) return; // Bypass sandbox if explicitly confirmed by user
   // Allow opt-out for users who deliberately want unrestricted reads.
   if (getConfig().sandboxReads === false) return;
   if (!pathInsideSandbox(resolved, "read")) {
@@ -82,9 +86,10 @@ function ensureReadAllowed(resolved: string, original: string): void {
 }
 
 /** Resolve + sandbox check for write operations. */
-function ensureWriteAllowed(path: string): string {
+function ensureWriteAllowed(path: string, confirmed?: boolean): string {
   const resolved = resolvePath(path);
   ensureNotSecret(resolved);
+  if (confirmed) return resolved; // Bypass sandbox if explicitly confirmed by user
   if (!pathInsideSandbox(resolved, "write")) {
     throw new Error(`Write blocked — path is outside approved roots: ${path}`);
   }
@@ -93,10 +98,10 @@ function ensureWriteAllowed(path: string): string {
 
 export async function fsRead(
   path: string,
-  options: { maxBytes?: number | undefined } = {},
+  options: { maxBytes?: number | undefined; confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = resolvePath(path);
-  ensureReadAllowed(resolved, path);
+  ensureReadAllowed(resolved, path, options.confirmed);
   const maxBytes = options.maxBytes ?? DEFAULT_READ_MAX_BYTES;
   const handle = await open(resolved, "r");
   try {
@@ -129,8 +134,9 @@ export async function fsRead(
 export async function fsWrite(
   path: string,
   content: string,
+  options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
-  const resolved = ensureWriteAllowed(path);
+  const resolved = ensureWriteAllowed(path, options.confirmed);
   // Create any missing parent directories so writing "src/index.js" into a
   // fresh project just works — the agent should not have to chain a separate
   // mkdir before every file write. This was the most common failure: ENOENT
@@ -157,7 +163,10 @@ const WRITE_MANY_MAX_FILES = 50;
  * abort the whole batch. Parent directories are created automatically, just
  * like fs.write.
  */
-export async function fsWriteMany(files: FileWrite[]): Promise<ToolResult> {
+export async function fsWriteMany(
+  files: FileWrite[],
+  options: { confirmed?: boolean | undefined } = {},
+): Promise<ToolResult> {
   if (!Array.isArray(files) || files.length === 0) {
     return {
       ok: false,
@@ -190,7 +199,7 @@ export async function fsWriteMany(files: FileWrite[]): Promise<ToolResult> {
       continue;
     }
     try {
-      const resolved = ensureWriteAllowed(file.path);
+      const resolved = ensureWriteAllowed(file.path, options.confirmed);
       await mkdir(dirname(resolved), { recursive: true });
       await writeFile(resolved, file.content, "utf8");
       written.push(resolved);
@@ -218,10 +227,10 @@ export async function fsWriteMany(files: FileWrite[]): Promise<ToolResult> {
 
 export async function fsList(
   path: string,
-  options: { maxEntries?: number | undefined } = {},
+  options: { maxEntries?: number | undefined; confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = resolvePath(path);
-  ensureReadAllowed(resolved, path);
+  ensureReadAllowed(resolved, path, options.confirmed);
   const maxEntries = options.maxEntries ?? DEFAULT_LIST_MAX_ENTRIES;
   const entries = await readdir(resolved, { withFileTypes: true });
   const truncated = entries.length > maxEntries;
@@ -244,9 +253,10 @@ export async function fsList(
 export async function fsSearch(
   pattern: string,
   path = safeCwd(),
+  options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = resolvePath(path);
-  ensureReadAllowed(resolved, path);
+  ensureReadAllowed(resolved, path, options.confirmed);
   const maxLines = 50;
   try {
     const result = await execa("rg", ["--max-count", "5", "--max-filesize", "1M", "-l", pattern, resolved], {
@@ -282,8 +292,9 @@ export async function fsEdit(
   oldText: string,
   newText: string,
   expectedReplacements?: number | undefined,
+  options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
-  const resolved = ensureWriteAllowed(path);
+  const resolved = ensureWriteAllowed(path, options.confirmed);
   const content = await readFile(resolved, "utf8");
   const expected = expectedReplacements ?? 1;
 
@@ -338,8 +349,9 @@ export async function fsEdit(
 export async function fsDelete(
   path: string,
   recursive?: boolean | undefined,
+  options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
-  const resolved = ensureWriteAllowed(path);
+  const resolved = ensureWriteAllowed(path, options.confirmed);
   try {
     if (recursive) {
       await rm(resolved, { recursive: true, force: false });

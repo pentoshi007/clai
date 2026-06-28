@@ -94,12 +94,14 @@ function renderBatchSection(
       : wrappedLines.slice(0, COLLAPSED);
     const hidden = wrappedLines.length - shown.length;
     for (const wl of shown) {
-      lines.push(subBar + chalk.dim(wl));
+      lines.push(subBar + chalk.white(wl));
     }
     if (hidden > 0) {
       lines.push(
         subBottom +
-          chalk.dim(` +${hidden} more line(s) · ctrl+o to expand`),
+          chalk.dim.white(` +${hidden} more line(s) · `) +
+          chalk.bold.white("ctrl+o") +
+          chalk.white(" to expand"),
       );
     } else {
       lines.push(subBottom);
@@ -303,7 +305,7 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
   for (const wl of shown) {
     const outputLine = ctx.outputExpanded && item.status !== "running"
       ? chalk.bgHex("#1E293B").hex("#E5E7EB")(`  ${wl} `)
-      : "  " + chalk.dim(wl);
+      : "  " + chalk.white(wl);
     lines.push(bar + outputLine);
   }
 
@@ -312,9 +314,19 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
   }
 
   if (hidden > 0) {
-    lines.push(bottom + chalk.dim(`+${hidden} more line(s) · ctrl+o to expand in place`));
+    lines.push(
+      bottom +
+        chalk.dim.white(`+${hidden} more line(s) · `) +
+        chalk.bold.white("ctrl+o") +
+        chalk.white(" to expand in place"),
+    );
   } else if (ctx.outputExpanded && item.output && item.status !== "running") {
-    lines.push(bottom + chalk.dim("expanded · ctrl+o/esc to collapse"));
+    lines.push(
+      bottom +
+        chalk.dim.white("expanded · ") +
+        chalk.bold.white("ctrl+o/esc") +
+        chalk.white(" to collapse"),
+    );
   } else if (item.output || item.status !== "running") {
     lines.push(color("╰"));
   }
@@ -323,9 +335,9 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 
 function renderNotice(level: "info" | "warn", text: string, width: number): string[] {
   const label = level === "warn"
-    ? chalk.bgHex("#7F1D1D").hex("#FFFFFF").bold(" ERROR ")
+    ? chalk.bgHex("#D97706").hex("#FFFFFF").bold(" WARN ")
     : chalk.bgHex("#334155").hex("#FFFFFF").bold(" INFO ");
-  const color = level === "warn" ? chalk.hex("#FECACA") : chalk.hex("#F8FAFC");
+  const color = level === "warn" ? chalk.hex("#FEF3C7") : chalk.hex("#F8FAFC");
   const rendered: string[] = [];
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd();
@@ -374,9 +386,19 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
   }
 
   if (hidden > 0) {
-    lines.push(bottom + chalk.dim(`+${hidden} more line(s) · ctrl+o to expand in place`));
+    lines.push(
+      bottom +
+        chalk.dim.white(`+${hidden} more line(s) · `) +
+        chalk.bold.white("ctrl+o") +
+        chalk.white(" to expand in place"),
+    );
   } else {
-    lines.push(bottom + chalk.dim("expanded · ctrl+o/esc to collapse"));
+    lines.push(
+      bottom +
+        chalk.dim.white("expanded · ") +
+        chalk.bold.white("ctrl+o/esc") +
+        chalk.white(" to collapse"),
+    );
   }
 
   return lines;

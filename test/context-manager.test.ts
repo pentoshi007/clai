@@ -71,7 +71,7 @@ describe("phase 9 — context manager", () => {
       expect(prompt).toContain("nmap -sT localhost");
       expect(prompt).toContain("Commands/tools and results");
       return "The user selected PostgreSQL and implementation remains pending.";
-    }, {}, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
+    }, { keepRecent: 8 }, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
     expect(result.summarized).toBe(true);
     expect(result.messages[0]?.content).toContain("PostgreSQL");
     expect(result.messages.slice(-8)).toEqual(msgs.slice(-8));

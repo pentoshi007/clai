@@ -21,17 +21,17 @@ export interface TuiConfirmController {
   port: ConfirmPort;
   /** Called by the App to register how confirm requests reach the UI. */
   setHandler: (
-    handler: (req: { kind: "tool" | "pentest"; prompt: string }) => Promise<boolean>,
+    handler: (req: { kind: "tool" | "pentest" | "continue"; prompt: string }) => Promise<boolean>,
   ) => void;
 }
 
 export function createTuiConfirmPort(): TuiConfirmController {
   let handler:
-    | ((req: { kind: "tool" | "pentest"; prompt: string }) => Promise<boolean>)
+    | ((req: { kind: "tool" | "pentest" | "continue"; prompt: string }) => Promise<boolean>)
     | undefined;
 
   const ask = async (req: {
-    kind: "tool" | "pentest";
+    kind: "tool" | "pentest" | "continue";
     prompt: string;
   }): Promise<boolean> => {
     if (!handler) return false;
@@ -51,6 +51,12 @@ export function createTuiConfirmPort(): TuiConfirmController {
         kind: "pentest",
         prompt:
           "This is a security/pentest action. Confirm you are authorized to run it against this target.",
+      });
+    },
+    async confirmContinue(steps: number): Promise<boolean> {
+      return ask({
+        kind: "continue",
+        prompt: `${steps} steps reached — continue running?`,
       });
     },
   };
