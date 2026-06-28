@@ -109,6 +109,48 @@ import {
   stripMouseReports,
 } from "./mouse.js";
 
+function wrapPlainString(
+  text: string,
+  width: number,
+): { lineText: string; startIdx: number; endIdx: number }[] {
+  if (text.length === 0) {
+    return [{ lineText: "", startIdx: 0, endIdx: 0 }];
+  }
+  const lines: { lineText: string; startIdx: number; endIdx: number }[] = [];
+  const paragraphs = text.split("\n");
+  let currentOffset = 0;
+
+  for (let p = 0; p < paragraphs.length; p++) {
+    const para = paragraphs[p]!;
+    if (para.length === 0) {
+      lines.push({ lineText: "", startIdx: currentOffset, endIdx: currentOffset });
+    } else {
+      let idx = 0;
+      while (idx < para.length) {
+        let chunk = para.slice(idx, idx + width);
+        let wrapLen = chunk.length;
+
+        if (idx + width < para.length) {
+          const lastSpace = chunk.lastIndexOf(" ");
+          if (lastSpace > 0) {
+            wrapLen = lastSpace + 1;
+            chunk = para.slice(idx, idx + wrapLen);
+          }
+        }
+
+        lines.push({
+          lineText: chunk,
+          startIdx: currentOffset + idx,
+          endIdx: currentOffset + idx + wrapLen,
+        });
+        idx += wrapLen;
+      }
+    }
+    currentOffset += para.length + 1;
+  }
+  return lines;
+}
+
 export interface AppProps {
   version: string;
   initialMode: Mode;
@@ -819,7 +861,12 @@ export function App({
                     (m.content.startsWith("Session memory") ||
                       m.content.startsWith("Earlier turns")),
                 ) ?? result.messages.find((m, i) => i > 0 && m.role === "system");
-                const summary = memoMsg ? memoMsg.content : "Compacted context";
+                const summary =
+                  !result.summarized && fullSession.trim()
+                    ? `Earlier turns in this session, summarized to fit the context budget. Full local transcript shown for review; the model received a compact fallback memory.\n\n${fullSession}`
+                    : memoMsg
+                      ? memoMsg.content
+                      : "Compacted context";
                 dispatch({ type: "compacted", summary, keepRecent: 2 });
                 info(
                   `compacted ${result.before} → ${result.after} messages · ~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} tokens${result.summarized ? "" : " · local fallback"}`,
@@ -1539,9 +1586,19 @@ export function App({
   const usableRows = Math.max(8, rows - 1);
   const headerH = 0;
   const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 0;
-  const composerH = 3;
   const chromeH = !secretRequest && !state.pendingConfirm ? 1 : 0;
   const gapH = 1;
+
+  const inputWidth = Math.max(10, cols - 6);
+  const wrappedInputLines = wrapPlainString(input, inputWidth);
+  const maxAvailableForComposer = Math.max(
+    3,
+    usableRows - headerH - statusH - chromeH - gapH - 8
+  );
+  const maxComposerTextRows = Math.max(1, maxAvailableForComposer - 2);
+  const composerTextH = Math.min(wrappedInputLines.length, maxComposerTextRows);
+  const composerH = composerTextH + 2;
+
   const maxMenuRows = Math.max(
     3,
     usableRows - headerH - statusH - composerH - chromeH - gapH - 3,
@@ -1635,7 +1692,7 @@ export function App({
   // ── Key handling ────────────────────────────────────────────────────────────
   useInput((ch, key) => {
     if (modalActive) return; // overlay/modal owns input
-    const cleanedChunk = stripMouseReports(ch);
+    const cleanedChunk = stripMouseReports(ch).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     if (isMouseReport(ch) && cleanedChunk.length === 0) return;
 
     // Global shortcuts
@@ -2010,13 +2067,41 @@ export function App({
               : "ask anything · / for commands · @file to attach · esc to cancel"}
           </Text>
         ) : (
-          <Text wrap="truncate-start">
-            <Text color="#F8FAFC">{before}</Text>
-            <Text backgroundColor="#22D3EE" color="#020617" bold>
-              {at}
-            </Text>
-            <Text color="#F8FAFC">{after}</Text>
-          </Text>
+          (() => {
+            let cursorLineIdx = 0;
+            for (let i = 0; i < wrappedInputLines.length; i++) {
+              const line = wrappedInputLines[i]!;
+              if (cursor >= line.startIdx && cursor <= line.endIdx) {
+                cursorLineIdx = i;
+                if (cursor === line.startIdx) {
+                  break;
+                }
+              }
+            }
+
+            let startLine = Math.max(0, cursorLineIdx - Math.floor(composerTextH / 2));
+            let endLine = Math.min(wrappedInputLines.length - 1, startLine + composerTextH - 1);
+            startLine = Math.max(0, endLine - composerTextH + 1);
+
+            const startCharIdx = wrappedInputLines[startLine]!.startIdx;
+            const endCharIdx = wrappedInputLines[endLine]!.endIdx;
+
+            const slicedInput = input.slice(startCharIdx, endCharIdx);
+            const slicedCursor = cursor - startCharIdx;
+            const beforeSliced = slicedInput.slice(0, slicedCursor);
+            const atSliced = slicedInput.slice(slicedCursor, slicedCursor + 1) || " ";
+            const afterSliced = slicedInput.slice(slicedCursor + 1);
+
+            return (
+              <Text wrap="wrap">
+                <Text color="#F8FAFC">{beforeSliced}</Text>
+                <Text backgroundColor="#22D3EE" color="#020617" bold>
+                  {atSliced}
+                </Text>
+                <Text color="#F8FAFC">{afterSliced}</Text>
+              </Text>
+            );
+          })()
         )}
       </Box>
 

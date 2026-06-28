@@ -378,14 +378,12 @@ function validateArgs(args: WebFetchArgs): ValidationResult {
   }
   const includeHeaders = args.includeHeaders ?? DEFAULT_INCLUDE_HEADERS;
 
-  // includeTls: optional boolean. Default depends on scheme: true for
-  // https://, false for http:// (Requirement 2.16, 2.34).
+  // includeTls: optional boolean. Default is false so general browsing stays
+  // lean; callers can opt in when diagnostics matter.
   if (args.includeTls !== undefined && typeof args.includeTls !== "boolean") {
     return validationError("includeTls must be a boolean");
   }
-  const parsedUrl = new URL(args.url);
-  const isHttps = parsedUrl.protocol === "https:";
-  const includeTls = args.includeTls ?? isHttps;
+  const includeTls = args.includeTls ?? false;
 
   // includeTiming: optional boolean (Requirement 2.34).
   if (args.includeTiming !== undefined && typeof args.includeTiming !== "boolean") {
@@ -938,6 +936,7 @@ async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
             contentType,
             body,
             maxBytes: ctx.args.maxBytes,
+            baseUrl: currentUrl,
           });
           finish({
             kind: "terminal",
@@ -1156,6 +1155,7 @@ function classifyAndDecodeBody(input: {
   contentType: string | undefined;
   body: Buffer;
   maxBytes: number;
+  baseUrl?: string;
 }): string {
   const decoded = decodeUtf8WithReplacement(input.body);
 
@@ -1165,7 +1165,7 @@ function classifyAndDecodeBody(input: {
     typeof input.contentType === "string" &&
     HTML_CONTENT_TYPE_PATTERN.test(input.contentType)
   ) {
-    return toReadableText(decoded);
+    return toReadableText(decoded, input.baseUrl);
   }
 
   return decoded;
@@ -1279,9 +1279,7 @@ function errorOutcome(input: ErrorOutcomeInput): WebFetchOutcome {
   const includeTiming = input.includeTiming ?? DEFAULT_INCLUDE_TIMING;
   const includeRedirectChain =
     input.includeRedirectChain ?? DEFAULT_INCLUDE_REDIRECT_CHAIN;
-  // For TLS, default to whether the captured fields produced one (which
-  // implies the URL was https and the handshake completed).
-  const includeTls = input.includeTls ?? captured?.tls !== undefined;
+  const includeTls = input.includeTls ?? false;
   const redactSensitive = input.redactSensitive ?? DEFAULT_REDACT_SENSITIVE;
 
   const args: NormalisedArgs = {

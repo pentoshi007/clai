@@ -135,6 +135,37 @@ describe("web.fetch unit tests", () => {
     expect(result.output).toContain("<h1>Welcome</h1>");
   });
 
+  it("renders default readable output as structured main content without metadata JSON", async () => {
+    const body = Buffer.from(
+      [
+        "<html><head><title>Docs</title><meta name=\"description\" content=\"Useful docs\"></head>",
+        "<body><nav>Skip me</nav><main><h1>Install</h1><p>Run <code>npm i</code>.</p>",
+        "<ul><li>Fast</li><li>Typed</li></ul><table><tr><th>Name</th><th>Use</th></tr><tr><td>web.fetch</td><td>Read pages</td></tr></table>",
+        "</main><footer>Skip footer</footer></body></html>",
+      ].join(""),
+      "utf-8",
+    );
+    const { httpsRequest } = buildHttpsStub({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body,
+    });
+
+    const result = await webFetch(
+      { url: "https://example.com/docs" },
+      { core: { httpsRequest, dnsLookup } },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain("Content:\n# Docs");
+    expect(result.output).toContain("Summary: Useful docs");
+    expect(result.output).not.toContain("\"headers\"");
+    expect(result.output).not.toContain("Skip me");
+    expect(result.output).toContain("# Install");
+    expect(result.output).toContain("- Fast");
+    expect(result.output).toContain("| Name | Use |");
+  });
+
   it("surfaces error.kind=http-error with a ≤4096-byte body preview on 4xx (Requirement 6.4)", async () => {
     // Build a body big enough to force preview truncation.
     const giantBody = Buffer.alloc(HTTP_ERROR_BODY_PREVIEW_BYTES + 2048, 0x41);

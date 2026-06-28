@@ -38,16 +38,15 @@ describe("safety classifier", () => {
     expect(result.level).toBe("confirm");
   });
 
-  it("confirms public scans and keeps scope advisory", () => {
+  it("auto-approves public scans without a y/n prompt", () => {
     const result = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap 8.8.8.8" },
     });
-    expect(result.level).toBe("confirm");
-    expect(result.reason).toMatch(/scope is optional/i);
+    expect(result.level).toBe("safe");
   });
 
-  it("requires confirmation for pentest scan tools even against private targets", () => {
+  it("auto-approves pentest scan tools against private targets", () => {
     const result = classifyToolCall({
       name: "shell.exec",
       args: {
@@ -55,15 +54,15 @@ describe("safety classifier", () => {
           "gobuster dir -u http://192.168.1.1 -w /usr/share/wordlists/common.txt",
       },
     });
-    expect(result.level).toBe("confirm");
+    expect(result.level).toBe("safe");
   });
 
-  it("requires confirmation for ffuf", () => {
+  it("auto-approves ffuf", () => {
     const result = classifyToolCall({
       name: "shell.exec",
       args: { command: "ffuf -u http://192.168.1.1/FUZZ -w wordlist.txt" },
     });
-    expect(result.level).toBe("confirm");
+    expect(result.level).toBe("safe");
   });
 });
 
@@ -306,7 +305,7 @@ describe("phase 1 — secret-leak hardening", () => {
     ).toBe("confirm");
   });
 
-  it("classifies http.fetch GET/HEAD as safe and other methods as confirm", () => {
+  it("classifies http.fetch methods as safe network requests", () => {
     expect(
       classifyToolCall({
         name: "http.fetch",
@@ -330,19 +329,19 @@ describe("phase 1 — secret-leak hardening", () => {
         name: "http.fetch",
         args: { url: "https://example.com", method: "POST" },
       }).level,
-    ).toBe("confirm");
+    ).toBe("safe");
     expect(
       classifyToolCall({
         name: "http.fetch",
         args: { url: "https://example.com", method: "PUT" },
       }).level,
-    ).toBe("confirm");
+    ).toBe("safe");
     expect(
       classifyToolCall({
         name: "http.fetch",
         args: { url: "https://example.com", method: "DELETE" },
       }).level,
-    ).toBe("confirm");
+    ).toBe("safe");
   });
 
   it("blocks fs.write to a secret path", () => {

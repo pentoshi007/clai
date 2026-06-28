@@ -30,25 +30,22 @@ describe("issues.md §23 — sweep", () => {
     ).toBe("safe");
   });
 
-  it("http.fetch POST/PUT/DELETE require confirmation", () => {
+  it("http.fetch POST/PUT/PATCH/DELETE auto-run as network requests", () => {
     for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
       const decision = classifyToolCall({
         name: "http.fetch",
         args: { url: "https://example.com", method },
       });
-      expect(decision.level).toBe("confirm");
+      expect(decision.level).toBe("safe");
     }
   });
 
-  it("public scan with --i-own-this still only reaches confirm", () => {
-    // Legacy --i-own-this substring bypass is gone; the flag does not
-    // auto-safe a public scan, but scope is only advisory.
+  it("public scan with --i-own-this auto-runs like other scanner commands", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap --i-own-this 8.8.8.8" },
     });
-    expect(decision.level).toBe("confirm");
-    expect(decision.reason).toMatch(/scope is optional/i);
+    expect(decision.level).toBe("safe");
   });
 
   it("Ctrl+O uses the same readline shape on macOS, Linux, Windows", () => {

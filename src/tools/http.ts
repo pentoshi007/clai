@@ -2,8 +2,11 @@ import net from "node:net";
 import { lookup } from "node:dns/promises";
 import type { ToolResult } from "../types.js";
 import { isBlockedAddress } from "./web/ssrf-guard.js";
+import { toReadableText } from "./web/readable.js";
 
 const DEFAULT_MAX_BYTES = 256 * 1024;
+const DEFAULT_RETRIES = 2;
+const RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const ALLOWED_METHODS = new Set([
   "GET",
   "HEAD",
@@ -42,6 +45,7 @@ interface FetchOptions {
   headers?: Record<string, string> | undefined;
   maxBytes?: number | undefined;
   iOwnThis?: boolean | undefined;
+  retries?: number | undefined;
 }
 
 export async function httpFetch(
@@ -89,21 +93,67 @@ export async function httpFetch(
     };
   }
 
-  const init: RequestInit = { method };
+  const headers = new Headers(options.headers);
+  if (!headers.has("user-agent")) {
+    headers.set("user-agent", "clai-http-fetch/1.1");
+  }
+  if (!headers.has("accept")) {
+    headers.set(
+      "accept",
+      "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
+    );
+  }
+  if (!headers.has("accept-language")) {
+    headers.set("accept-language", "en-US,en;q=0.8");
+  }
+
+  const init: RequestInit = {
+    method,
+    headers,
+    redirect: "follow",
+  };
   if (options.body !== undefined && method !== "GET" && method !== "HEAD") {
     init.body = options.body;
   }
-  if (options.headers) {
-    init.headers = options.headers;
-  }
 
-  let response: Response;
+  let response: Response | undefined;
+  let attempts = 0;
+  let lastNetworkError: unknown;
+  const retryLimit =
+    method === "GET" || method === "HEAD"
+      ? clampRetries(options.retries ?? DEFAULT_RETRIES)
+      : 0;
   try {
-    response = await fetch(url, init);
+    for (;;) {
+      attempts += 1;
+      try {
+        response = await fetch(url, init);
+        if (
+          attempts <= retryLimit &&
+          RETRY_STATUSES.has(response.status)
+        ) {
+          await drainResponse(response);
+          await sleep(retryDelayMs(attempts));
+          continue;
+        }
+        break;
+      } catch (error) {
+        lastNetworkError = error;
+        if (attempts > retryLimit) throw error;
+        await sleep(retryDelayMs(attempts));
+      }
+    }
   } catch (error) {
     return {
       ok: false,
-      output: `Network error: ${error instanceof Error ? error.message : String(error)}`,
+      output: `Network error after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error instanceof Error ? error.message : String(error)}`,
+      exitCode: 1,
+    };
+  }
+  if (!response) {
+    return {
+      ok: false,
+      output: "Network error: no response was received",
       exitCode: 1,
     };
   }
@@ -155,11 +205,73 @@ export async function httpFetch(
     ? `\n... (truncated at ${limit.toLocaleString()} bytes)`
     : "";
   const body = method === "HEAD" ? "" : collected;
+  const contentType = response.headers.get("content-type") ?? "";
+  const readable =
+    method !== "HEAD" && contentType.toLowerCase().includes("html")
+      ? toReadableText(body)
+      : "";
+  const meta = {
+    requestedUrl: url,
+    finalUrl: response.url || url,
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    method,
+    attempts,
+    retried: attempts > 1,
+    headers: Object.fromEntries(
+      [...response.headers.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    ),
+    contentType,
+    bytesRead,
+    truncated,
+    truncatedAt: truncated ? limit : undefined,
+    lastNetworkError:
+      lastNetworkError instanceof Error
+        ? lastNetworkError.message
+        : lastNetworkError
+          ? String(lastNetworkError)
+          : undefined,
+  };
+  const evidence = [
+    `${response.status} ${response.statusText} ${response.url || url}`,
+    `attempts=${attempts} bytes=${bytesRead}${truncated ? ` truncated@${limit}` : ""}`,
+    "",
+    "Metadata:",
+    JSON.stringify(meta, null, 2),
+    "",
+    headerBlock.trimEnd(),
+    readable ? `\nReadable content:\n${readable}\n` : "",
+    method === "HEAD" ? "" : `Raw body:\n${body}${truncNote}`,
+  ]
+    .filter((part) => part !== "")
+    .join("\n");
 
   return {
-    ok: response.ok,
-    output: `${response.status} ${response.statusText} ${response.url}\n${headerBlock}${body}${truncNote}`,
-    exitCode: response.status,
+    ok: true,
+    output: evidence,
+    exitCode: 0,
     truncated,
   };
+}
+
+function clampRetries(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_RETRIES;
+  return Math.max(0, Math.min(5, Math.floor(value)));
+}
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(250 * 2 ** Math.max(0, attempt - 1), 1000);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function drainResponse(response: Response): Promise<void> {
+  try {
+    await response.arrayBuffer();
+  } catch {
+    // Best effort only; retrying is more important than draining.
+  }
 }

@@ -1,5 +1,13 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import { isMouseReport, stripMouseReports } from "../mouse.js";
+
+export function sanitizeSecretInput(input: string): string {
+  if (!input || isMouseReport(input)) return "";
+  return stripMouseReports(input)
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\x00-\x1f\x7f]/g, "");
+}
 
 export function SecretInputPanel({
   title,
@@ -18,7 +26,10 @@ export function SecretInputPanel({
     if (key.escape) { onCancel(); return; }
     if (key.return) { if (value) onSubmit(value); return; }
     if (key.backspace || key.delete) { setValue((current) => current.slice(0, -1)); return; }
-    if (!key.ctrl && !key.meta && input) setValue((current) => current + input);
+    if (key.ctrl || key.meta || !input) return;
+    if (isMouseReport(input)) return;
+    const cleaned = sanitizeSecretInput(input);
+    if (cleaned) setValue((current) => current + cleaned);
   });
 
   return (

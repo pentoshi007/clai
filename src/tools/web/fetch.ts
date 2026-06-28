@@ -78,8 +78,37 @@ async function emitAudit(outcome: WebFetchOutcome): Promise<void> {
  */
 function renderSuccess(outcome: WebFetchOutcome): ToolResult {
   const meta = outcome.metadata;
+  const hasDiagnostics = Boolean(
+    meta.headers ||
+      meta.tls ||
+      meta.timing ||
+      meta.redirectChain,
+  );
   const summary = `${meta.finalUrl} ${meta.status}${meta.contentType ? ` ${meta.contentType}` : ""}`;
   const second = `mode=${meta.mode}  resolvedIp=${meta.resolvedIp || "?"}  bytes=${meta.bytesReceived}${meta.truncated ? ` (truncated@${meta.truncatedAt ?? meta.bytesReceived})` : ""}`;
+
+  if (!hasDiagnostics && meta.mode === "readable") {
+    const output = [
+      `URL: ${meta.finalUrl}`,
+      `Status: ${meta.status}${meta.contentType ? ` (${meta.contentType})` : ""}`,
+      `Bytes: ${meta.bytesReceived}${meta.truncated ? ` (truncated at ${meta.truncatedAt ?? meta.bytesReceived})` : ""}`,
+      "",
+      "Content:",
+      outcome.body,
+    ].join("\n");
+    return {
+      ok: true,
+      output,
+      exitCode: 0,
+      truncated: meta.truncated || false,
+      stats: {
+        bytesRead: meta.bytesReceived,
+        bytesDropped: 0,
+        linesRead: outcome.body.split("\n").length,
+        elapsedMs: meta.timing?.totalMs ?? 0,
+      },
+    };
+  }
 
   // Stripped metadata for the JSON block — drop the body-shape fields
   // so the agent reads them once on the first line.

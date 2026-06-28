@@ -25,6 +25,39 @@ export class JobManager {
   private jobs = new Map<string, BackgroundJob>();
   private processes = new Map<string, ChildProcess>();
   private streams = new Map<string, WriteStream>();
+  private abortControllers = new Map<string, AbortController>();
+
+  registerJob(
+    id: string,
+    job: BackgroundJob,
+    ac?: AbortController | undefined,
+    process?: ChildProcess | undefined,
+  ): void {
+    this.jobs.set(id, job);
+    if (ac) {
+      this.abortControllers.set(id, ac);
+    }
+    if (process) {
+      this.processes.set(id, process);
+    }
+  }
+
+  updateJobStatus(
+    id: string,
+    status: JobStatus,
+    exitCode?: number | undefined,
+  ): void {
+    const job = this.jobs.get(id);
+    if (job) {
+      job.status = status;
+      if (exitCode !== undefined) {
+        job.exitCode = exitCode;
+      }
+      job.endedAt = new Date().toISOString();
+      this.abortControllers.delete(id);
+      this.processes.delete(id);
+    }
+  }
 
   async startJob(
     command: string,
@@ -161,11 +194,16 @@ export class JobManager {
         exitCode: 1,
       };
     }
+    const ac = this.abortControllers.get(id);
+    if (ac) {
+      ac.abort();
+    }
     const child = this.processes.get(id);
     if (!child?.pid) {
       job.status = "killed";
       job.endedAt = new Date().toISOString();
-      return { ok: true, output: `Job "${id}" marked as killed (no pid).` };
+      this.abortControllers.delete(id);
+      return { ok: true, output: `Job "${id}" killed.` };
     }
     try {
       const sig = signal ?? "SIGTERM";
@@ -176,6 +214,7 @@ export class JobManager {
       }
       job.status = "killed";
       job.endedAt = new Date().toISOString();
+      this.abortControllers.delete(id);
       return { ok: true, output: `Job "${id}" sent ${sig}.` };
     } catch {
       return {

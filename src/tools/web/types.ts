@@ -149,11 +149,10 @@ export const RESPONSE_MODES: readonly ResponseMode[] = [
  *
  * Defaults applied when an optional argument is omitted:
  * - `maxBytes`             → {@link DEFAULT_MAX_BYTES}        (Requirement 2.2)
- * - `includeHeaders`       → `true`                           (Requirement 2.15)
- * - `includeTls`           → `true` for `https://`, `false` for `http://`
- *                             (Requirement 2.16)
- * - `includeTiming`        → `true`                           (Requirement 2.17)
- * - `includeRedirectChain` → `true`                           (Requirement 2.18)
+ * - `includeHeaders`       → `false`
+ * - `includeTls`           → `false`
+ * - `includeTiming`        → `false`
+ * - `includeRedirectChain` → `false`
  * - `responseMode`         → `"readable"`                     (Requirement 2.19)
  * - `redactSensitive`      → `true`                           (Requirement 2.20)
  */
@@ -178,13 +177,13 @@ export const MIN_MAX_BYTES = 1024;
 export const MAX_MAX_BYTES = 1_048_576;
 
 /** Default value applied when `WebFetchArgs.includeHeaders` is omitted. */
-export const DEFAULT_INCLUDE_HEADERS = true;
+export const DEFAULT_INCLUDE_HEADERS = false;
 
 /** Default value applied when `WebFetchArgs.includeTiming` is omitted. */
-export const DEFAULT_INCLUDE_TIMING = true;
+export const DEFAULT_INCLUDE_TIMING = false;
 
 /** Default value applied when `WebFetchArgs.includeRedirectChain` is omitted. */
-export const DEFAULT_INCLUDE_REDIRECT_CHAIN = true;
+export const DEFAULT_INCLUDE_REDIRECT_CHAIN = false;
 
 /** Default value applied when `WebFetchArgs.responseMode` is omitted. */
 export const DEFAULT_RESPONSE_MODE: ResponseMode = "readable";

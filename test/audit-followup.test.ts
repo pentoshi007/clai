@@ -18,12 +18,16 @@ import {
 } from "../src/safety/patterns.js";
 
 /* -------------------------------------------------------------------------
- * Audit follow-up #1 — tool.batch must not run mutating http.fetch calls.
+ * Audit follow-up #1 — tool.batch may run http.fetch calls without y/n prompts.
  * ------------------------------------------------------------------------- */
-describe("audit#1 — tool.batch refuses mutating child calls", () => {
-  it("rejects http.fetch POST inside a batch", async () => {
-    await expect(
-      runToolCall({
+describe("audit#1 — tool.batch permits http.fetch child calls", () => {
+  it("permits http.fetch POST inside a batch", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(
+      async () => new Response("ok", { status: 200 }),
+    ) as unknown as typeof fetch;
+    try {
+      const result = await runToolCall({
         name: "tool.batch",
         args: {
           calls: [
@@ -33,14 +37,21 @@ describe("audit#1 — tool.batch refuses mutating child calls", () => {
             },
           ],
         },
-      }),
-    ).rejects.toThrow(/refuses http\.fetch/i);
+      });
+      expect(result.ok).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
-  it("rejects http.fetch DELETE/PUT/PATCH inside a batch", async () => {
-    for (const method of ["DELETE", "PUT", "PATCH"]) {
-      await expect(
-        runToolCall({
+  it("permits http.fetch DELETE/PUT/PATCH inside a batch", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(
+      async () => new Response("ok", { status: 200 }),
+    ) as unknown as typeof fetch;
+    try {
+      for (const method of ["DELETE", "PUT", "PATCH"]) {
+        const result = await runToolCall({
           name: "tool.batch",
           args: {
             calls: [
@@ -50,8 +61,11 @@ describe("audit#1 — tool.batch refuses mutating child calls", () => {
               },
             ],
           },
-        }),
-      ).rejects.toThrow(/refuses http\.fetch/i);
+        });
+        expect(result.ok).toBe(true);
+      }
+    } finally {
+      globalThis.fetch = original;
     }
   });
 
@@ -81,9 +95,9 @@ describe("audit#1 — tool.batch refuses mutating child calls", () => {
 });
 
 /* -------------------------------------------------------------------------
- * Audit follow-up #2 — public domain scans through shell.exec are scoped.
+ * Audit follow-up #2 — scanner commands through shell.exec auto-run.
  * ------------------------------------------------------------------------- */
-describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
+describe("audit#2 — shell.exec scanner commands auto-run", () => {
   beforeEach(() => {
     resetScopeCache();
   });
@@ -92,24 +106,23 @@ describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
     resetScopeCache();
   });
 
-  it("confirms `nmap example.com` without requiring scope", () => {
+  it("auto-runs `nmap example.com` without requiring scope", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap example.com" },
     });
-    expect(decision.level).toBe("confirm");
-    expect(decision.reason).toMatch(/scope is optional/i);
+    expect(decision.level).toBe("safe");
   });
 
-  it("confirms `nuclei -u https://example.com` without requiring scope", () => {
+  it("auto-runs `nuclei -u https://example.com` without requiring scope", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: { command: "nuclei -u https://example.com -severity high" },
     });
-    expect(decision.level).toBe("confirm");
+    expect(decision.level).toBe("safe");
   });
 
-  it("confirms `ffuf -u https://example.com/FUZZ -w wordlists/common.txt` without requiring scope", () => {
+  it("auto-runs `ffuf -u https://example.com/FUZZ -w wordlists/common.txt` without requiring scope", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: {
@@ -117,10 +130,10 @@ describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
           "ffuf -u https://example.com/FUZZ -w /usr/share/wordlists/common.txt",
       },
     });
-    expect(decision.level).toBe("confirm");
+    expect(decision.level).toBe("safe");
   });
 
-  it("private RFC1918 ffuf with wordlists/*.txt still confirms (not blocked)", () => {
+  it("private RFC1918 ffuf with wordlists/*.txt auto-runs (not blocked)", () => {
     const decision = classifyToolCall({
       name: "shell.exec",
       args: {
@@ -128,7 +141,7 @@ describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
           "ffuf -u http://192.168.1.1/FUZZ -w /usr/share/wordlists/common.txt",
       },
     });
-    expect(decision.level).toBe("confirm");
+    expect(decision.level).toBe("safe");
   });
 
   it("paths like wordlists/common.txt do not count as public hostnames", () => {
@@ -139,10 +152,10 @@ describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
           "gobuster dir -u http://192.168.1.1 -w /usr/share/wordlists/common.txt",
       },
     });
-    expect(decision.level).toBe("confirm");
+    expect(decision.level).toBe("safe");
   });
 
-  it("permits `nmap example.com` once scope covers it", async () => {
+  it("keeps `nmap example.com` safe once scope covers it", async () => {
     await saveScope({
       authorizedTargets: ["example.com"],
     });
@@ -151,7 +164,7 @@ describe("audit#2 — shell.exec public domain scanners suggest scope", () => {
       { name: "shell.exec", args: { command: "nmap example.com" } },
       { scope: { authorizedTargets: ["example.com"] } },
     );
-    expect(decision.level).toBe("confirm");
+    expect(decision.level).toBe("safe");
   });
 });
 

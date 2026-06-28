@@ -4,6 +4,112 @@ import { renderMarkdown, wrapAnsiLine } from "../ui/markdown.js";
 import { renderPlanChecklist } from "../ui/plan-pane.js";
 import { safeCwd } from "../os/cwd.js";
 
+// ── Batch section parser ──────────────────────────────────────────────────────
+
+interface BatchSection {
+  index: number;
+  name: string;
+  ok: boolean;
+  exitCode?: number;
+  body: string;
+}
+
+/**
+ * Split a completed tool.batch output into per-sub-tool sections.
+ * Each section is delimited by a header line like:
+ *   ── #1 dns.lookup [ok exit=0]
+ *   ── #2 web.fetch [fail exit=1]
+ */
+function parseBatchSections(output: string): BatchSection[] {
+  const headerRe = /^──\s+#(\d+)\s+([\w.]+)\s+\[(ok|fail)(?:\s+exit=(\d+))?\]/;
+  const sections: BatchSection[] = [];
+  let current: BatchSection | null = null;
+  const bodyLines: string[] = [];
+
+  for (const line of output.split("\n")) {
+    const m = headerRe.exec(line);
+    if (m) {
+      if (current !== null) {
+        current.body = bodyLines.join("\n").trim();
+        sections.push(current);
+        bodyLines.length = 0;
+      }
+      const exitCode = m[4] !== undefined ? parseInt(m[4], 10) : undefined;
+      current = {
+        index: parseInt(m[1]!, 10),
+        name: m[2]!,
+        ok: m[3] === "ok",
+        ...(exitCode !== undefined ? { exitCode } : {}),
+        body: "",
+      };
+    } else if (current !== null) {
+      bodyLines.push(line);
+    }
+  }
+  if (current !== null) {
+    current.body = bodyLines.join("\n").trim();
+    sections.push(current);
+  }
+  return sections;
+}
+
+/**
+ * Render a single batch sub-tool section as indented lines with its own
+ * status glyph, name, and collapsed/expanded body — nested inside the
+ * parent batch card.
+ */
+function renderBatchSection(
+  section: BatchSection,
+  bar: (s: string) => string,
+  ctx: RenderCtx,
+): string[] {
+  const subColor = section.ok ? chalk.green : chalk.red;
+  const glyph = section.ok ? chalk.green("✓") : chalk.red("✗");
+  const exitSuffix =
+    typeof section.exitCode === "number" && section.exitCode !== 0
+      ? chalk.red(` (exit ${section.exitCode})`)
+      : "";
+  const subHeader =
+    bar("") +
+    chalk.dim("  ") +
+    subColor("┌ ") +
+    glyph +
+    " " +
+    chalk.bold(section.name) +
+    exitSuffix;
+  const subBar = bar("") + chalk.dim("  ") + subColor("│ ");
+  const subBottom = bar("") + chalk.dim("  ") + subColor("└");
+
+  const lines: string[] = [subHeader];
+
+  if (section.body) {
+    const rawLines = section.body.split("\n");
+    const wrappedLines: string[] = [];
+    for (const raw of rawLines) {
+      wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 8)));
+    }
+    const COLLAPSED = 3;
+    const shown = ctx.outputExpanded
+      ? wrappedLines
+      : wrappedLines.slice(0, COLLAPSED);
+    const hidden = wrappedLines.length - shown.length;
+    for (const wl of shown) {
+      lines.push(subBar + chalk.dim(wl));
+    }
+    if (hidden > 0) {
+      lines.push(
+        subBottom +
+          chalk.dim(` +${hidden} more line(s) · ctrl+o to expand`),
+      );
+    } else {
+      lines.push(subBottom);
+    }
+  } else {
+    lines.push(subBottom);
+  }
+  return lines;
+}
+
 export interface RenderCtx {
   width: number;
   thinkingExpanded: boolean;
@@ -50,13 +156,45 @@ function gutterColor(status: ToolItem["status"]): (s: string) => string {
   }
 }
 
-function looksLikeToolFence(text: string): boolean {
-  const t = text.trimStart();
-  return (
-    /^```\s*(tool|json)?/i.test(t) ||
-    /^\{[\s\S]*"name"\s*:/.test(t) ||
-    /^<tool/i.test(t)
-  );
+function stripStreamingToolFence(text: string): string {
+  const indicators = [
+    "```tool",
+    "```json",
+    "<tool",
+    "<|tool",
+    "<|",
+  ];
+
+  let minIdx = -1;
+  for (const ind of indicators) {
+    const idx = text.indexOf(ind);
+    if (idx >= 0 && (minIdx === -1 || idx < minIdx)) {
+      minIdx = idx;
+    }
+  }
+
+  // Code blocks: ``` followed by tool, json, newline, or end of string
+  const matchCode = /```(?:tool|json|\n|$)/i.exec(text);
+  if (matchCode) {
+    const idx = matchCode.index;
+    if (minIdx === -1 || idx < minIdx) {
+      minIdx = idx;
+    }
+  }
+
+  // Raw JSON block start '{' if preceded by whitespace/newline or start of string
+  const jsonMatch = /(?:^|\s)\{/.exec(text);
+  if (jsonMatch) {
+    const idx = jsonMatch.index + jsonMatch[0].indexOf("{");
+    if (minIdx === -1 || idx < minIdx) {
+      minIdx = idx;
+    }
+  }
+
+  if (minIdx >= 0) {
+    return text.slice(0, minIdx);
+  }
+  return text;
 }
 
 function renderUser(text: string, width: number): string[] {
@@ -117,27 +255,56 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
     }
   }
 
-  const rawLines = item.output ? item.output.replace(/\n+$/, "").split("\n") : [];
-  let shown = rawLines;
+  // ── tool.batch: render each sub-tool as its own inline card ─────────────
+  if (item.name === "tool.batch" && item.status !== "running" && item.output) {
+    const sections = parseBatchSections(item.output);
+    if (sections.length > 0) {
+      const allOk = sections.every((s) => s.ok);
+      const summary = allOk
+        ? chalk.dim(`${sections.length} sub-tool(s) — all ok`)
+        : chalk.red(
+            `${sections.filter((s) => !s.ok).length}/${sections.length} sub-tool(s) failed`,
+          );
+      lines.push(bar + summary);
+      for (const section of sections) {
+        const subLines = renderBatchSection(section, () => bar, ctx);
+        lines.push(...subLines);
+      }
+      if (item.artifactPath) {
+        lines.push(bar + chalk.dim("saved: ") + chalk.cyan(item.artifactPath));
+      }
+      lines.push(color("╰"));
+      return lines;
+    }
+    // Fallthrough: if we couldn't parse sections, render normally below.
+  }
+
+  const wrappedLines: string[] = [];
+  if (item.output) {
+    const rawLines = item.output.replace(/\n+$/, "").split("\n");
+    for (const raw of rawLines) {
+      wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 4)));
+    }
+  }
+
+  let shown = wrappedLines;
   let hidden = 0;
   if (!ctx.outputExpanded && item.status !== "running") {
-    if (rawLines.length > COLLAPSED_OUTPUT_LINES) {
-      shown = rawLines.slice(0, COLLAPSED_OUTPUT_LINES);
-      hidden = rawLines.length - shown.length;
+    if (wrappedLines.length > COLLAPSED_OUTPUT_LINES) {
+      shown = wrappedLines.slice(0, COLLAPSED_OUTPUT_LINES);
+      hidden = wrappedLines.length - shown.length;
     }
   } else if (item.status === "running") {
     // While running, follow the tail so progress is visible.
-    shown = rawLines.slice(-8);
+    shown = wrappedLines.slice(-8);
   }
 
   if (shown.length > 0) lines.push(bar + chalk.dim("output:"));
-  for (const raw of shown) {
-    for (const wl of wrapAnsiLine(raw, Math.max(10, ctx.width - 2))) {
-      const outputLine = ctx.outputExpanded && item.status !== "running"
-        ? chalk.bgHex("#1E293B").hex("#E5E7EB")(`  ${wl} `)
-        : "  " + chalk.dim(wl);
-      lines.push(bar + outputLine);
-    }
+  for (const wl of shown) {
+    const outputLine = ctx.outputExpanded && item.status !== "running"
+      ? chalk.bgHex("#1E293B").hex("#E5E7EB")(`  ${wl} `)
+      : "  " + chalk.dim(wl);
+    lines.push(bar + outputLine);
   }
 
   if (item.artifactPath) {
@@ -185,21 +352,25 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
   } else if (summaryText.startsWith("Session memory from compacted earlier turns:")) {
     summaryText = summaryText.slice("Session memory from compacted earlier turns:".length);
   }
+  
   const rawLines = summaryText.replace(/\n+$/, "").split("\n");
-  let shown = rawLines;
+  const wrappedLines: string[] = [];
+  for (const raw of rawLines) {
+    wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 4)));
+  }
+
+  let shown = wrappedLines;
   let hidden = 0;
   if (!ctx.outputExpanded) {
-    if (rawLines.length > 3) {
-      shown = rawLines.slice(0, 3);
-      hidden = rawLines.length - shown.length;
+    if (wrappedLines.length > 3) {
+      shown = wrappedLines.slice(0, 3);
+      hidden = wrappedLines.length - shown.length;
     }
   }
 
   const lines: string[] = [top];
-  for (const raw of shown) {
-    for (const wl of wrapAnsiLine(raw, Math.max(10, ctx.width - 4))) {
-      lines.push(bar + chalk.dim(wl));
-    }
+  for (const wl of shown) {
+    lines.push(bar + chalk.dim(wl));
   }
 
   if (hidden > 0) {
@@ -308,9 +479,16 @@ export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[]
 
   // Transient streaming text for the active step (suppressed when it is a
   // tool-call fence, which will be replaced by a clean tool card).
-  if (state.streaming && !looksLikeToolFence(state.streaming)) {
-    const md = renderMarkdown(state.streaming).replace(/\n+$/, "");
-    blocks.push([chalk.magenta.bold("◆ Response"), ...md.split("\n").map((line) => `  ${line}`), chalk.magenta("  ▌")]);
+  if (state.streaming) {
+    const visibleStreaming = stripStreamingToolFence(state.streaming);
+    if (visibleStreaming.trim().length > 0) {
+      const md = renderMarkdown(visibleStreaming).replace(/\n+$/, "");
+      blocks.push([
+        chalk.magenta.bold("◆ Response"),
+        ...md.split("\n").map((line) => `  ${line}`),
+        chalk.magenta("  ▌"),
+      ]);
+    }
   }
 
   const lines: string[] = [];

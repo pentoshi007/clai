@@ -17,6 +17,7 @@
  */
 
 import * as cheerio from "cheerio";
+import type { AnyNode } from "domhandler";
 
 import type { CookieInfo, CookieSameSite } from "./types.js";
 
@@ -53,31 +54,51 @@ const STRIPPED_SELECTORS = [
  * 5. Collapses every run of ASCII/Unicode whitespace (including newlines,
  *    tabs, NBSPs) into a single space and trims the result so the agent
  *    receives compact prose.
+ * 6. Appends a deduplicated "Links" section so the agent can find the
+ *    correct URL for any link on the page without guessing.
  *
- * Empty input, whitespace-only input, and input that contains only
- * stripped elements all yield the empty string.
+ * @param html     - Raw HTML string to convert.
+ * @param baseUrl  - The final page URL (used to resolve relative hrefs).
+ *                   When provided, all href values are resolved to absolute
+ *                   URLs. When omitted, relative hrefs are included as-is.
  */
-export function toReadableText(html: string): string {
+export function toReadableText(html: string, baseUrl?: string): string {
   if (typeof html !== "string" || html.length === 0) return "";
 
   const $ = cheerio.load(html);
 
-  // 1. Remove non-content elements outright.
   $(STRIPPED_SELECTORS).remove();
+  $("[aria-hidden='true'], [hidden], template, svg, canvas").remove();
 
-  // 2. Remove every comment node still attached to the tree. cheerio
-  //    represents comments with `type === "comment"`; we walk the full
-  //    contents of `*` so nested comments inside any remaining element
-  //    are caught.
-  $("*")
+  $('*')
     .contents()
     .filter(function (this: { type?: string }) {
       return this.type === "comment";
     })
     .remove();
 
-  const raw = $.root().text();
-  return collapseWhitespace(raw);
+  const title = collapseWhitespace($("title").first().text());
+  const description = collapseWhitespace(
+    $("meta[name='description']").attr("content") ?? "",
+  );
+  const root = bestContentRoot($);
+  const lines = renderChildren($, root, baseUrl);
+  const out: string[] = [];
+  if (title) out.push(`# ${title}`);
+  if (description && description !== title) out.push(`Summary: ${description}`);
+  out.push(...lines);
+
+  // Collect all links on the page and append a deduplicated Links section.
+  // This is the canonical source of URLs — the agent must use these rather
+  // than constructing or guessing paths.
+  const linkSection = collectLinks($, baseUrl);
+  if (linkSection.length > 0) {
+    out.push("");
+    out.push("## Links");
+    out.push(...linkSection);
+  }
+
+  return normalizeReadableLines(out);
 }
 
 /**
@@ -95,6 +116,230 @@ function collapseWhitespace(text: string): string {
   return text
     .replace(/[\s\u00a0\u2000-\u200a\u200b\u200c\u200d\u2028\u2029\ufeff]+/g, " ")
     .trim();
+}
+
+/**
+ * Resolve an href (possibly relative) against a base URL string.
+ * Returns the absolute URL string, or the original href if resolution fails.
+ */
+function resolveHref(href: string, baseUrl: string | undefined): string {
+  if (!baseUrl) return href;
+  try {
+    return new URL(href, baseUrl).href;
+  } catch {
+    return href;
+  }
+}
+
+/**
+ * Collect all unique, non-anchor-only `<a href>` links from the page and
+ * return them as `[text](url)` markdown lines for the Links section.
+ * Deduplicates by URL. Fragment-only (#section) links are skipped.
+ * Limits to 80 links to avoid flooding the model context.
+ */
+function collectLinks(
+  $: cheerio.CheerioAPI,
+  baseUrl: string | undefined,
+): string[] {
+  const seen = new Set<string>();
+  const links: string[] = [];
+
+  $("a[href]").each((_, el) => {
+    const rawHref = collapseWhitespace($(el).attr("href") ?? "");
+    if (!rawHref || rawHref.startsWith("#")) return;
+    const resolved = resolveHref(rawHref, baseUrl);
+    // Skip javascript: and mailto: etc.
+    if (/^(javascript|mailto|tel):/i.test(resolved)) return;
+    if (seen.has(resolved)) return;
+    seen.add(resolved);
+    const text = collapseWhitespace($(el).text()) || resolved;
+    links.push(`- [${text}](${resolved})`);
+    if (links.length >= 80) return false; // cheerio each — returning false stops iteration
+  });
+
+  return links;
+}
+
+function bestContentRoot($: cheerio.CheerioAPI): cheerio.Cheerio<AnyNode> {
+  const candidates = [
+    "main",
+    "article",
+    "[role='main']",
+    "#content",
+    "#main",
+    ".content",
+    ".main",
+    "body",
+  ];
+  let best: cheerio.Cheerio<AnyNode> = $("body").first();
+  let bestScore = collapseWhitespace(best.text()).length;
+  for (const selector of candidates) {
+    $(selector).each((_, el) => {
+      const node = $(el);
+      const score = collapseWhitespace(node.text()).length;
+      if (score > bestScore || (score > 200 && selector !== "body")) {
+        best = node;
+        bestScore = score;
+      }
+    });
+    if (selector !== "body" && bestScore > 200 && best.is(selector)) break;
+  }
+  return best.length ? best : $.root();
+}
+
+function renderChildren(
+  $: cheerio.CheerioAPI,
+  node: cheerio.Cheerio<AnyNode>,
+  baseUrl?: string,
+): string[] {
+  const lines: string[] = [];
+  node.contents().each((_, child) => {
+    lines.push(...renderNode($, child, baseUrl));
+  });
+  return lines;
+}
+
+function renderNode($: cheerio.CheerioAPI, node: AnyNode, baseUrl?: string): string[] {
+  const wrapped = $(node);
+  const raw = wrapped.get(0) as { type?: string; tagName?: string; name?: string } | undefined;
+  if (!raw) return [];
+  if (raw.type === "text") {
+    const text = collapseWhitespace(wrapped.text());
+    return text ? [text] : [];
+  }
+  if (raw.type !== "tag") return [];
+
+  const tag = (raw.tagName ?? raw.name ?? "").toLowerCase();
+  if (!tag || STRIPPED_SELECTORS.split(", ").includes(tag)) return [];
+
+  if (/^h[1-6]$/.test(tag)) {
+    const level = Math.min(Number(tag[1]), 6);
+    const text = inlineText($, wrapped, baseUrl);
+    return text ? [`${"#".repeat(level)} ${text}`] : [];
+  }
+
+  if (tag === "p" || tag === "blockquote") {
+    const text = inlineText($, wrapped, baseUrl);
+    if (!text) return [];
+    return [tag === "blockquote" ? `> ${text}` : text];
+  }
+
+  if (tag === "br") return [""];
+
+  if (tag === "pre") {
+    const text = wrapped.text().replace(/\n{3,}/g, "\n\n").trim();
+    return text ? ["```", text, "```"] : [];
+  }
+
+  if (tag === "code") {
+    const text = collapseWhitespace(wrapped.text());
+    return text ? [`\`${text}\``] : [];
+  }
+
+  if (tag === "ul" || tag === "ol") {
+    const ordered = tag === "ol";
+    const items: string[] = [];
+    wrapped.children("li").each((index, li) => {
+      const text = inlineText($, $(li), baseUrl);
+      if (text) items.push(`${ordered ? `${index + 1}.` : "-"} ${text}`);
+    });
+    return items;
+  }
+
+  if (tag === "table") return renderTable($, wrapped, baseUrl);
+
+  if (tag === "img") {
+    const alt = collapseWhitespace(wrapped.attr("alt") ?? "");
+    const src = collapseWhitespace(wrapped.attr("src") ?? "");
+    if (!alt && !src) return [];
+    return [`Image: ${alt || src}${alt && src ? ` (${src})` : ""}`];
+  }
+
+  if (tag === "form") return renderForm($, wrapped);
+
+  if (tag === "a") {
+    const text = inlineText($, wrapped, baseUrl);
+    return text ? [text] : [];
+  }
+
+  return renderChildren($, wrapped, baseUrl);
+}
+
+function inlineText($: cheerio.CheerioAPI, node: cheerio.Cheerio<AnyNode>, baseUrl?: string): string {
+  const clone = node.clone();
+  clone.find("script, style, noscript, svg, canvas").remove();
+  clone.find("a[href]").each((_, el) => {
+    const link = $(el);
+    const text = collapseWhitespace(link.text());
+    const rawHref = collapseWhitespace(link.attr("href") ?? "");
+    if (rawHref && !rawHref.startsWith("#")) {
+      const href = resolveHref(rawHref, baseUrl);
+      if (text) link.text(`${text} (${href})`);
+    }
+  });
+  clone.find("img").each((_, el) => {
+    const img = $(el);
+    const alt = collapseWhitespace(img.attr("alt") ?? "");
+    img.replaceWith(alt ? ` Image: ${alt} ` : " ");
+  });
+  return collapseWhitespace(clone.text());
+}
+
+function renderTable(
+  $: cheerio.CheerioAPI,
+  table: cheerio.Cheerio<AnyNode>,
+  baseUrl?: string,
+): string[] {
+  const rows: string[][] = [];
+  table.find("tr").each((_, tr) => {
+    const cells: string[] = [];
+    $(tr).children("th,td").each((__, cell) => {
+      cells.push(inlineText($, $(cell), baseUrl));
+    });
+    if (cells.some(Boolean)) rows.push(cells);
+  });
+  if (rows.length === 0) return [];
+  const width = Math.max(...rows.map((row) => row.length));
+  const normalized = rows.map((row) => Array.from({ length: width }, (_, i) => row[i] ?? ""));
+  const header = normalized[0]!;
+  return [
+    `| ${header.join(" | ")} |`,
+    `| ${header.map(() => "---").join(" | ")} |`,
+    ...normalized.slice(1).map((row) => `| ${row.join(" | ")} |`),
+  ];
+}
+
+function renderForm(
+  $: cheerio.CheerioAPI,
+  form: cheerio.Cheerio<AnyNode>,
+): string[] {
+  const fields: string[] = [];
+  form.find("input, textarea, select, button").each((_, el) => {
+    const field = $(el);
+    const tag = (field.get(0) as { tagName?: string }).tagName?.toLowerCase() ?? "field";
+    const label = collapseWhitespace(
+      field.attr("aria-label") ??
+        field.attr("placeholder") ??
+        field.attr("name") ??
+        field.text() ??
+        "",
+    );
+    fields.push(`${tag}${label ? `: ${label}` : ""}`);
+  });
+  return fields.length ? [`Form fields: ${fields.join("; ")}`] : [];
+}
+
+function normalizeReadableLines(lines: string[]): string {
+  const out: string[] = [];
+  for (const line of lines) {
+    const text = collapseWhitespace(line);
+    if (!text) {
+      if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+      continue;
+    }
+    if (out[out.length - 1] !== text) out.push(text);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 // ---------------------------------------------------------------------------

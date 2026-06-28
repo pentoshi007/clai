@@ -91,16 +91,15 @@ describe("phase 10 — scope helpers", () => {
 });
 
 describe("phase 10 — classifier scope gating", () => {
-  it("confirms public net.scan without requiring a scope", () => {
+  it("auto-runs public net.scan without requiring a scope prompt", () => {
     const result = classifyToolCall({
       name: "net.scan",
       args: { target: "example.com" },
     });
-    expect(result.level).toBe("confirm");
-    expect(result.reason).toMatch(/scope is optional/i);
+    expect(result.level).toBe("safe");
   });
 
-  it("permits public net.scan when scope covers the target", () => {
+  it("keeps public net.scan safe when scope covers the target", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["example.com"],
     };
@@ -108,10 +107,10 @@ describe("phase 10 — classifier scope gating", () => {
       { name: "net.scan", args: { target: "api.example.com" } },
       { scope },
     );
-    expect(result.level).toBe("confirm");
+    expect(result.level).toBe("safe");
   });
 
-  it("confirms pentest.recon when target is out of scope", () => {
+  it("auto-runs pentest.recon without a y/n prompt", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["myco.com"],
     };
@@ -119,8 +118,7 @@ describe("phase 10 — classifier scope gating", () => {
       { name: "pentest.recon", args: { target: "evil.com" } },
       { scope },
     );
-    expect(result.level).toBe("confirm");
-    expect(result.reason).toMatch(/scope is optional/i);
+    expect(result.level).toBe("safe");
   });
 
   it("extracts the target that can be suggested for scope", () => {
@@ -144,16 +142,15 @@ describe("phase 10 — classifier scope gating", () => {
     ).toBeUndefined();
   });
 
-  it("does not auto-safe shell.exec when legacy --i-own-this is present", () => {
+  it("auto-runs shell.exec scanners even when legacy --i-own-this is present", () => {
     const result = classifyToolCall({
       name: "shell.exec",
       args: { command: "nmap --i-own-this 8.8.8.8" },
     });
-    expect(result.level).toBe("confirm");
-    expect(result.reason).toMatch(/scope is optional/i);
+    expect(result.level).toBe("safe");
   });
 
-  it("permits shell.exec public scan when the trailing target is in scope", () => {
+  it("keeps shell.exec public scan safe when the trailing target is in scope", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["8.8.8.8"],
     };
@@ -161,15 +158,15 @@ describe("phase 10 — classifier scope gating", () => {
       { name: "shell.exec", args: { command: "nmap 8.8.8.8" } },
       { scope },
     );
-    expect(result.level).toBe("confirm");
+    expect(result.level).toBe("safe");
   });
 
-  it("private targets do not need a scope", () => {
+  it("private targets do not need a scope prompt", () => {
     const result = classifyToolCall({
       name: "net.scan",
       args: { target: "192.168.1.1" },
     });
-    expect(result.level).toBe("confirm");
+    expect(result.level).toBe("safe");
   });
 });
 

@@ -447,6 +447,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
       headers,
       maxBytes: optionalNumber(args, "maxBytes"),
       iOwnThis: args.iOwnThis === true || args.own === true,
+      retries: optionalNumber(args, "retries"),
     });
   },
   async "web.search"(args, options) {
@@ -505,14 +506,13 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const maxBytes = optionalNumber(args, "maxBytes");
     if (maxBytes !== undefined) fetchArgs.maxBytes = maxBytes;
     const includeHeaders = optionalBoolean(args, "includeHeaders");
-    if (includeHeaders !== undefined) fetchArgs.includeHeaders = includeHeaders;
+    fetchArgs.includeHeaders = includeHeaders ?? false;
     const includeTls = optionalBoolean(args, "includeTls");
-    if (includeTls !== undefined) fetchArgs.includeTls = includeTls;
+    fetchArgs.includeTls = includeTls ?? false;
     const includeTiming = optionalBoolean(args, "includeTiming");
-    if (includeTiming !== undefined) fetchArgs.includeTiming = includeTiming;
+    fetchArgs.includeTiming = includeTiming ?? false;
     const includeRedirectChain = optionalBoolean(args, "includeRedirectChain");
-    if (includeRedirectChain !== undefined)
-      fetchArgs.includeRedirectChain = includeRedirectChain;
+    fetchArgs.includeRedirectChain = includeRedirectChain ?? false;
     const responseMode = optionalResponseMode(args, "responseMode");
     if (responseMode !== undefined) fetchArgs.responseMode = responseMode;
     const redactSensitive = optionalBoolean(args, "redactSensitive");

@@ -7,6 +7,7 @@ import {
   recognizeBareToolJson,
   isLumpedSingleTask,
   countToolFences,
+  looksLikeActionNarration,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -125,6 +126,14 @@ describe("Kimi K2 sentinel-token tool-call format", () => {
 });
 
 describe("fresh web-search guard", () => {
+  it("treats fetch narration without a tool call as an action stall", () => {
+    expect(
+      looksLikeActionNarration(
+        "Let me fetch that specific blog post to get the exact methods.",
+      ),
+    ).toBe(true);
+  });
+
   it("treats current office-holder questions as volatile even without the word current", () => {
     expect(requiresFreshWebSearch("who is westbengal cm")).toBe(true);
     expect(requiresFreshWebSearch("who is the CEO of Apple")).toBe(true);

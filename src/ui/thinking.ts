@@ -31,12 +31,18 @@ function findCloseTag(text: string): { index: number; length: number } | undefin
 
 export function stripThinking(text: string): ThinkingResult {
   const thinkBlocks: string[] = [];
-  const visible = text
+  let visible = text
     .replace(/<think\b[^>]*>([\s\S]*?)(?:<\/think>|$)/gi, (_match, content: string) => {
       thinkBlocks.push(content);
       return "";
-    })
+    });
+
+  // Strip stray close and open tags
+  visible = visible
+    .replace(/<\/think>/gi, "")
+    .replace(/<think\b[^>]*>/gi, "")
     .trim();
+
   const thinkContent = trimBlocks(thinkBlocks);
   return { visible, hasThinking: thinkContent.length > 0, thinkContent };
 }
@@ -233,12 +239,21 @@ export function createThinkingStreamParser(
         continue;
       }
 
+      // Check for fully matched close tag while NOT in thinking (stray close tag)
+      const closeTag = findCloseTag(pending);
+      if (closeTag) {
+        emitVisible(pending.slice(0, closeTag.index));
+        pending = pending.slice(closeTag.index + closeTag.length);
+        continue;
+      }
+
       if (flush) {
         emitVisible(pending);
         pending = "";
         continue;
       }
 
+      // Hold back partial open tags
       const partialOpen = pending.toLowerCase().lastIndexOf("<think");
       const safeLength = partialOpen >= 0 ? partialOpen : Math.max(0, pending.length - "<think".length + 1);
       if (safeLength === 0) break;

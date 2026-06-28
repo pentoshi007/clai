@@ -44,7 +44,8 @@ const VOLATILE_FACT_RE =
 const CHANGING_TECH_RE =
   /\b(?:best|recommended|latest|new|modern|current)\b.*\b(?:method|approach|practice|library|framework|api|sdk|model|tool|package|dependency|syntax|docs?|documentation)\b/i;
 
-function truncateToolOutput(text: string): string {
+function truncateToolOutput(text: string, toolName?: string): string {
+  if (toolName === "web.fetch") return text;
   return text.length > ASK_TOOL_OUTPUT_CAP
     ? `${text.slice(0, ASK_TOOL_OUTPUT_CAP)}\n…[truncated — call web.fetch on a specific url for more]`
     : text;
@@ -138,7 +139,7 @@ async function resolveAskAnswer(
       role: "user",
       content:
         `Fresh web.search was run before answering because the user requested current/web-backed information.\n` +
-        `Query: ${query}\nResult:\n${truncateToolOutput(output)}\n\n` +
+        `Query: ${query}\nResult:\n${truncateToolOutput(output, "web.search")}\n\n` +
         "Answer from these current results. If the result is insufficient or contradictory, call web.search/web.fetch again before answering. Cite URLs you used.",
     });
   }
@@ -169,7 +170,7 @@ async function resolveAskAnswer(
       }
       messages.push({
         role: "user",
-        content: `Result of ${call.name}(${JSON.stringify(call.args)}):\n${truncateToolOutput(output)}`,
+        content: `Result of ${call.name}(${JSON.stringify(call.args)}):\n${truncateToolOutput(output, call.name)}`,
       });
     }
   }

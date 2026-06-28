@@ -11,6 +11,8 @@ import type {
   ToolResult,
 } from "../types.js";
 import { streamWithProvider } from "../llm/router.js";
+import { randomUUID } from "node:crypto";
+import { jobManager, type BackgroundJob } from "../tools/jobs.js";
 import {
   currentDateTimeContext,
   renderAgentSystemPrompt,
@@ -350,6 +352,41 @@ function stripLoneFence(text: string): string {
 }
 
 /**
+ * Try to recover a bare-args tool call from a single candidate text snippet.
+ * Returns the recognized result or undefined if the text isn't a recoverable
+ * tool call. Used by both the whole-text path and the embedded-fence path.
+ */
+function tryRecognizeBareArgs(
+  inner: string,
+): { call?: ToolCall; argsOnly?: boolean } | undefined {
+  const trimmed = inner.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const obj = parsed as Record<string, unknown>;
+  // Complete {name, args} call the earlier matchers didn't catch.
+  const direct = tryParseCall(trimmed);
+  if (direct) return { call: direct };
+  // Bare args object: every key is a known tool-arg key.
+  const keys = Object.keys(obj);
+  if (keys.length === 0 || keys.length > 6) return undefined;
+  const allKnown = keys.every((key) => TOOL_ARG_KEYS.has(key));
+  if (!allKnown) return undefined;
+  const inferred = inferToolFromArgs(obj);
+  if (inferred) {
+    return { call: { name: inferred, args: obj } };
+  }
+  return { argsOnly: true };
+}
+
+/**
  * When a model means to call a tool but emits ONLY a bare JSON object —
  * either a proper {"name","args"} that the strict matchers missed, or a bare
  * args object like {"path":"file.pdf"} with the wrapper/fence dropped — this
@@ -358,42 +395,39 @@ function stripLoneFence(text: string): string {
  *   - { argsOnly: true } when it looks like a bare args object (so the caller
  *     can nudge the model to re-emit a properly named, fenced tool call).
  * Returns undefined for anything that is plainly a normal prose/JSON answer.
+ *
+ * Also handles the case where a model emits prose followed by a non-`tool`
+ * fenced code block (e.g. ```web\n{"url":"..."}\n```) that contains a bare
+ * args object — the fence is scanned even when it's not the sole content.
  */
 export function recognizeBareToolJson(
   text: string,
 ): { call?: ToolCall; argsOnly?: boolean } | undefined {
+  // ── Primary path: the whole (de-fenced) text is a bare JSON object ──────
   const inner = stripLoneFence(text);
-  // Must be a single JSON object spanning the whole (de-fenced) output.
-  if (!inner.startsWith("{") || !inner.endsWith("}")) return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(inner);
-  } catch {
-    return undefined;
+  const primary = tryRecognizeBareArgs(inner);
+  if (primary) return primary;
+
+  // ── Secondary path: scan for any fenced block embedded in the text ──────
+  // This catches models that prepend prose before emitting a bare-args fence,
+  // e.g. "Let me fetch it.\n\n```web\n{\"url\":\"https://...\"}\n```"
+  // We skip ```tool fences — those are handled by parseToolCall already.
+  const embeddedFenceRe = /```([a-zA-Z]*)\s*\n?([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = embeddedFenceRe.exec(text)) !== null) {
+    const lang = m[1] ?? "";
+    const body = (m[2] ?? "").trim();
+    // Skip ```tool blocks — parseToolCall owns those.
+    if (lang.toLowerCase() === "tool") continue;
+    // Skip empty or multi-line JSON that spans more than a simple object.
+    if (!body.startsWith("{") || !body.endsWith("}")) continue;
+    const result = tryRecognizeBareArgs(body);
+    if (result) return result;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return undefined;
-  }
-  const obj = parsed as Record<string, unknown>;
-  // Complete {name, args} call the earlier matchers didn't catch (e.g. not
-  // anchored to end-of-string). Recover it directly.
-  const direct = tryParseCall(inner);
-  if (direct) return { call: direct };
-  // Bare args object: every key is a known tool-arg key, and it carries at
-  // least one identifying arg. Don't treat huge/odd objects as tool args.
-  const keys = Object.keys(obj);
-  if (keys.length === 0 || keys.length > 6) return undefined;
-  const allKnown = keys.every((key) => TOOL_ARG_KEYS.has(key));
-  if (!allKnown) return undefined;
-  // Try to infer the tool from the arg shape so an unambiguous bare object
-  // (e.g. {"command":"…"}) runs immediately instead of forcing the user to
-  // type "run". Ambiguous shapes fall back to a re-emit nudge.
-  const inferred = inferToolFromArgs(obj);
-  if (inferred) {
-    return { call: { name: inferred, args: obj } };
-  }
-  return { argsOnly: true };
+
+  return undefined;
 }
+
 
 /**
  * Detect an opened-but-unparseable tool call. This happens when the model's
@@ -695,7 +729,7 @@ export function looksLikeBuildTask(
 // Matrix of action-verb narration: the model says it is *about to* do
 // something but hasn't. Used to detect "narrate, don't act" stalls.
 const ACTION_NARRATION_RE =
-  /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:explore|list|read|check|inspect|examine|look|create|run|start|write|build|add|scaffold|set\s*up|setup|install|initialize|init|generate|make|review|open|find|search|verify|update|edit|modify|fix|implement)\b/i;
+  /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:explore|list|read|fetch|browse|check|inspect|examine|look|create|run|start|write|build|add|scaffold|set\s*up|setup|install|initialize|init|generate|make|review|open|find|search|verify|update|edit|modify|fix|implement)\b/i;
 
 /**
  * Detect a message that narrates an *upcoming* action ("let me explore the
@@ -945,6 +979,12 @@ function summarizeOutput(
 function formatToolContext(call: ToolCall, result: ToolResult): string {
   const output = result.output.trim();
   if (!output) return "";
+  if (call.name === "web.fetch" || call.name === "http.fetch") {
+    const saved = result.outputPath
+      ? `\nFull output saved to: ${result.outputPath}`
+      : "";
+    return `${output}${saved}`.trim();
+  }
   let reduced: string | undefined;
   try {
     const command =
@@ -1492,6 +1532,354 @@ export async function runAgentLoop(
   let productiveSteps = 0;
   let step = -1;
   let nextToolEventId = 0;
+
+  const promptMutex = {
+    promise: Promise.resolve(),
+    async acquire(): Promise<() => void> {
+      let release = () => {};
+      const next = new Promise<void>((r) => { release = r; });
+      const current = this.promise;
+      this.promise = current.then(() => next);
+      await current;
+      return release;
+    }
+  };
+
+  async function executeSingleTool(
+    rawCall: ToolCall,
+    toolEventId: string,
+    parentSignal: AbortSignal,
+  ): Promise<{
+    ok: boolean;
+    call: ToolCall;
+    result: ToolResult;
+    contextOutput: string;
+    lastAnswer?: string | undefined;
+    blockOrCancel?: boolean | undefined;
+  }> {
+    let call = normalizeToolCall(rawCall);
+
+    if (call.name === "image.ocr" && !imageOcrEnabled) {
+      writeNotice(
+        "info",
+        "skipped OCR because the original image is attached to the vision model",
+        chalk.dim("  ℹ skipped OCR — inspecting the attached image directly\n"),
+      );
+      const recoveryText =
+        "The original image is attached to this message and you can inspect it directly. " +
+        "Do not call image.ocr or infer text from OCR. Answer the user's question from the actual image pixels now.";
+      const result = { ok: true, output: recoveryText };
+      return { ok: true, call, result, contextOutput: recoveryText };
+    }
+
+    const loopCheck = loopGuard.shouldBlock(call.name, call.args);
+    if (loopCheck.block) {
+      const isWrite =
+        call.name === "fs.write" ||
+        call.name === "fs.writeMany" ||
+        call.name === "fs.edit";
+      const reason = `${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}`;
+      writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+      const result = { ok: false, output: reason, exitCode: 1 };
+      return { ok: false, call, result, contextOutput: reason, blockOrCancel: true };
+    }
+    if (loopCheck.reason) {
+      writeNotice("info", loopCheck.reason, chalk.dim(`  ℹ ${loopCheck.reason}\n`));
+    }
+
+    if (call.name === "plan.create" || call.name === "task.update") {
+      const planResult = await handlePlanTool(call, session, { loopGuard, step });
+      if (planResult.handled) {
+        loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
+        if (planResult.plan) {
+          writePlanUpdate(planResult.plan, planResult.display);
+        }
+        const result = { ok: planResult.ok, output: planResult.modelNote };
+        return { ok: planResult.ok, call, result, contextOutput: planResult.modelNote };
+      }
+    }
+
+    const scope = await loadScope();
+    const decision = classifyToolCall(call, { scope });
+    await auditLog("tool.classified", {
+      call,
+      decision,
+      scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
+    });
+
+    if (
+      activePlan &&
+      !session.planApproved.value &&
+      !isPreApprovalAllowedTool(call.name)
+    ) {
+      const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
+      writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+      const result = { ok: false, output: reason, exitCode: 1 };
+      return { ok: false, call, result, contextOutput: reason, blockOrCancel: true };
+    }
+
+    if (call.name === "web.search") {
+      sawFreshWebSearch = true;
+    }
+
+    const toolCallLine =
+      chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+    writeToolCall(
+      toolEventId,
+      call,
+      styleToolChatter(call, toolCallLine) + "\n",
+    );
+
+    const scopeTarget = scopeTargetForToolCall(call);
+    if (
+      scopeTarget &&
+      (!isScopeActive(scope) || !targetInScope(scopeTarget, scope))
+    ) {
+      writeNotice(
+        "info",
+        `scope optional: ${scopeHint(scopeTarget)}`,
+        chalk.dim(`  scope optional: ${scopeHint(scopeTarget)}\n`),
+      );
+    }
+
+    if (decision.level === "block") {
+      writeToolBlocked(
+        toolEventId,
+        call.name,
+        decision.reason,
+        chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n",
+      );
+      const lastAnswer = `Blocked: ${call.name} — ${decision.reason}`;
+      const result = { ok: false, output: lastAnswer, exitCode: 1 };
+      return { ok: false, call, result, contextOutput: lastAnswer, lastAnswer, blockOrCancel: true };
+    }
+
+    let authorized = true;
+    let pentestJustConfirmed = false;
+
+    const releasePrompt = await promptMutex.acquire();
+    try {
+      parentSignal.throwIfAborted();
+      const needsPentestAuth =
+        isPentestToolCall(call) &&
+        !getConfig().pentestAuthorized &&
+        !session.pentestAuthorized.value;
+      authorized = await ensurePentestAuthorization(
+        call,
+        Boolean(options.autoConfirm),
+        session,
+        confirmPort,
+      );
+      restoreInteractiveStdin();
+      if (!authorized) {
+        const lastAnswer = "Pentest authorization not confirmed.";
+        writeToolBlocked(
+          toolEventId,
+          call.name,
+          lastAnswer,
+          chalk.red(`  ✗ ${lastAnswer}`) + "\n",
+        );
+        const result = { ok: false, output: lastAnswer, exitCode: 1 };
+        return { ok: false, call, result, contextOutput: lastAnswer, lastAnswer, blockOrCancel: true };
+      }
+      if (needsPentestAuth) {
+        pentestJustConfirmed = true;
+      }
+
+      const forceManualConfirm = call.name === "fs.delete";
+      if (decision.level === "confirm" && !pentestJustConfirmed) {
+        const ok = await confirmToolExecution(
+          call,
+          forceManualConfirm ? false : Boolean(options.autoConfirm),
+          session,
+          confirmPort,
+        );
+        restoreInteractiveStdin();
+        if (!ok) {
+          const lastAnswer = "Cancelled.";
+          writeNotice("warn", "cancelled", chalk.yellow(`  ✗ cancelled`) + "\n");
+          const result = { ok: false, output: lastAnswer, exitCode: 1 };
+          return { ok: false, call, result, contextOutput: lastAnswer, lastAnswer, blockOrCancel: true };
+        }
+      }
+    } finally {
+      releasePrompt();
+    }
+
+    parentSignal.throwIfAborted();
+    options.onToolStart?.(call);
+
+    const interactiveCommand =
+      (call.name === "shell.exec" &&
+        typeof call.args.command === "string" &&
+        looksInteractiveStdin(call.args.command)) ||
+      call.name === "net.scan" ||
+      call.name === "pentest.recon";
+    if (interactiveCommand && process.stdin.isTTY) {
+      writeNotice(
+        "warn",
+        "this command may prompt for a password — type it when asked",
+        chalk.yellow(
+          "  ⚠ this command may prompt for a password — type it when asked\n",
+        ),
+      );
+    }
+
+    const toolAc = new AbortController();
+    const onParentAbort = () => toolAc.abort();
+    parentSignal.addEventListener("abort", onParentAbort);
+
+    let result: ToolResult;
+    let liveBytes = 0;
+    const liveCap = 16_000;
+    let liveTruncatedNotified = false;
+    let lastProgressAt = 0;
+    const shouldDimLive = !interactiveCommand;
+    const writeToolInfo = (text: string): void => {
+      writeToolOutput(toolEventId, `${text}\n`, chalk.dim(`  ${text}\n`));
+    };
+    const printLive = (chunk: string): void => {
+      if (
+        call.name === "fs.read" ||
+        call.name === "fs.list" ||
+        call.name === "fs.search"
+      )
+        return;
+      if (liveBytes >= liveCap) {
+        if (!liveTruncatedNotified) {
+          liveTruncatedNotified = true;
+          writeToolInfo("... live preview truncated, full output saved");
+          writeToolInfo("(tool still running — ESC or Ctrl+C to abort)");
+          lastProgressAt = Date.now();
+        }
+        const now = Date.now();
+        if (now - lastProgressAt > 5_000) {
+          lastProgressAt = now;
+          writeToolOutput(toolEventId, ".", chalk.dim("."));
+        }
+        return;
+      }
+      const remaining = liveCap - liveBytes;
+      const slice =
+        chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
+      liveBytes += slice.length;
+      const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
+      const body = indented.startsWith("\n") ? indented : `  ${indented}`;
+      writeToolOutput(toolEventId, slice, shouldDimLive ? chalk.dim(body) : body);
+    };
+
+    const jobId = randomUUID().slice(0, 8);
+    const backgroundJob: BackgroundJob = {
+      id: jobId,
+      command: `${call.name} ${formatToolArgs(call)}`,
+      cwd: safeCwd(),
+      status: "running",
+      startedAt: new Date().toISOString(),
+      artifactPath: "",
+    };
+    jobManager.registerJob(jobId, backgroundJob, toolAc);
+
+    try {
+      result = await runToolCall(call, {
+        signal: toolAc.signal,
+        requestSecret: options.requestSecret,
+        onOutput: (chunk) => {
+          if (toolAc.signal.aborted) return;
+          printLive(chunk);
+        },
+      });
+      if (liveBytes > 0 || liveTruncatedNotified) {
+        writeToolOutput(toolEventId, "\n", "\n");
+      }
+      jobManager.updateJobStatus(jobId, result.ok ? "exited" : "failed", result.exitCode);
+    } catch (toolError) {
+      jobManager.updateJobStatus(jobId, "failed", 1);
+      if (isAbortError(toolError, toolAc.signal)) {
+        writeAbort();
+        return { ok: false, call, result: { ok: false, output: "Aborted." }, contextOutput: "Aborted.", lastAnswer: "Aborted." };
+      }
+      const errMsg =
+        toolError instanceof Error ? toolError.message : String(toolError);
+      result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
+    } finally {
+      parentSignal.removeEventListener("abort", onParentAbort);
+    }
+
+    const output = result.output.trim();
+    const displayMax = 6_000;
+    const savedOutputPath =
+      result.outputPath ??
+      (output.length > displayMax
+        ? await saveToolOutput(call, output)
+        : undefined);
+    const resultWithArtifact: ToolResult = {
+      ...result,
+      outputPath: savedOutputPath,
+      truncated: result.truncated ?? Boolean(savedOutputPath),
+    };
+
+    if (savedOutputPath) {
+      const storedJob = jobManager.getJob(jobId);
+      if (storedJob) {
+        storedJob.artifactPath = savedOutputPath;
+      }
+    }
+
+    const contextOutput = formatToolContext(call, resultWithArtifact);
+    emitToolResult(toolEventId, resultWithArtifact, contextOutput, savedOutputPath);
+    options.onToolResult?.(call, resultWithArtifact);
+    await auditLog("tool.result", {
+      call,
+      ok: result.ok,
+      exitCode: result.exitCode,
+      output: result.output.slice(0, 4_000),
+    });
+
+    loopGuard.recordAttempt(
+      step,
+      call.name,
+      call.args,
+      result.ok,
+      result.exitCode,
+    );
+
+    const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
+    writeToolOutput(toolEventId, result.ok ? "ok\n" : "failed\n", statusIcon + "\n");
+    if (output) {
+      const displaySummary = summarizeOutput(output, displayMax);
+      const displayText = displaySummary.truncated
+        ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : chalk.dim("\n  ... output truncated")}`
+        : displaySummary.text;
+      if (liveBytes > 0) {
+        if (savedOutputPath) {
+          writeToolInfo(`full output saved to ${savedOutputPath}`);
+        }
+      } else {
+        const renderedOutput = indentAndWrapText(displayText);
+        writeToolOutput(
+          toolEventId,
+          displayText,
+          styleToolChatter(call, renderedOutput) + "\n",
+        );
+      }
+    }
+
+    if (output) {
+      const viewport = registerViewport({
+        toolName: call.name,
+        argsDisplay: formatToolArgs(call),
+        artifactPath: savedOutputPath,
+        summary: contextOutput,
+      });
+      if (savedOutputPath) {
+        const viewportHint = `${formatViewportHint(viewport)}\n`;
+        writeStatus(viewportHint, viewportHint);
+      }
+    }
+
+    return { ok: result.ok, call, result, contextOutput };
+  }
+
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     // `step` is the productive-step index (used for display + audit). It only
     // advances when the previous iteration actually executed a tool.
@@ -1839,8 +2227,12 @@ export async function runAgentLoop(
       // … please approve") instead of calling a tool — accepting it as a
       // final answer ends the turn with nothing done and no real plan saved.
       // Nudge it to emit a real tool call, with a concrete example.
+      const narratedAction = looksLikeActionNarration(cleaned);
       const wantsAction =
-        buildLikeTurn || (activePlan && session.planApproved.value);
+        buildLikeTurn ||
+        (activePlan && session.planApproved.value) ||
+        freshWebSearchRequired ||
+        narratedAction;
       const planNarrated =
         buildLikeTurn && !activePlan && looksLikePlanNarration(cleaned);
       if (
@@ -1849,7 +2241,7 @@ export async function runAgentLoop(
         actionIntentRetries < 3 &&
         (productiveSteps === 0 ||
           planNarrated ||
-          looksLikeActionNarration(cleaned))
+          narratedAction)
       ) {
         actionIntentRetries += 1;
         let nudge: string;
@@ -1861,6 +2253,18 @@ export async function runAgentLoop(
             "described an action but emitted no tool call — nudging it to run one",
             chalk.yellow(
               "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
+            ),
+          );
+        } else if (!buildLikeTurn) {
+          nudge =
+            "You wrote that you would fetch/search/read something but emitted NO ```tool block, so NOTHING ran. Do NOT narrate the next browsing step — DO it. Emit exactly one valid ```tool block now. If you know the exact page, use:\n" +
+            '```tool\n{"name":"web.fetch","args":{"url":"https://example.com/page","responseMode":"readable"}}\n```\n' +
+            "If you do not know the exact page URL, use web.search first. After the tool output, answer from the fetched page content.";
+          writeNotice(
+            "warn",
+            "described a web action but emitted no tool call — nudging it to run one",
+            chalk.yellow(
+              "  ⚠ described a web action but emitted no tool call — nudging it to run one\n",
             ),
           );
         } else if (planNarrated || productiveSteps > 0) {
@@ -1996,9 +2400,7 @@ export async function runAgentLoop(
     }
 
       // A valid primary tool call exists for this fresh model turn. Show any
-      // prose / thinking that preceded it, record the assistant message ONCE,
-      // then queue any additional tool calls from the same message so they
-      // run in order on the next iterations (no extra round-trip).
+      // prose / thinking that preceded it, record the assistant message ONCE.
       const beforeTool = recoveredFromBareJson
         ? ""
         : textBeforeToolCall(assistantText.visible);
@@ -2012,520 +2414,71 @@ export async function runAgentLoop(
         role: "assistant",
         content: collapseRepeatedText(assistantText.visible),
       });
-      if (!recoveredFromBareJson && call) {
-        const allCalls = parseAllToolCalls(assistantText.visible);
-        if (
-          allCalls.length > 1 &&
-          allCalls[0] &&
-          sameToolCall(allCalls[0], call)
-        ) {
-          pendingCalls = allCalls.slice(1);
-          writeNotice(
-            "info",
-            `${allCalls.length} tool calls in this message — running them in order`,
-            chalk.dim(
-              `  ℹ ${allCalls.length} tool calls in this message — running them in order\n`,
-            ),
-          );
-        }
+
+      let allCalls = parseAllToolCalls(assistantText.visible || assistantText.thinkContent);
+      if (allCalls.length === 0 && call) {
+        allCalls = [call];
       }
-    }
 
-    // Type guard: every path above either set `call` or returned/continued.
-    if (!call) continue;
+      if (allCalls.length > 1) {
+        writeNotice(
+          "info",
+          `${allCalls.length} tool calls in this message — running them in parallel`,
+          chalk.dim(
+            `  ℹ ${allCalls.length} tool calls in this message — running them in parallel\n`,
+          ),
+        );
+      }
 
-    // Models often emit a bare CLI name as the tool (e.g. {"name":"sed",...})
-    // instead of wrapping it in shell.exec. Rewrite such unknown, un-namespaced
-    // names into a shell.exec call BEFORE classification so the command both
-    // runs and is safety-classified as the shell command it really is —
-    // instead of dead-ending on "Unknown tool: sed".
-    call = normalizeToolCall(call);
-
-    if (call.name === "image.ocr" && !imageOcrEnabled) {
-      pendingCalls = pendingCalls.filter((queued) => queued.name !== "image.ocr");
-      writeNotice(
-        "info",
-        "skipped OCR because the original image is attached to the vision model",
-        chalk.dim("  ℹ skipped OCR — inspecting the attached image directly\n"),
-      );
-      messages.push(
-        recoveryUserMessage(
-          "The original image is attached to this message and you can inspect it directly. " +
-            "Do not call image.ocr or infer text from OCR. Answer the user's question from the actual image pixels now.",
-        ),
-      );
-      continue;
-    }
-    const toolEventId = `tool-${++nextToolEventId}`;
-
-    // ── Duplicate-call detection ──────────────────────────────────────────
-    // If the model calls the exact same tool with the exact same args
-    // repeatedly, it's stuck in a loop. Inject a corrective message
-    // telling it to summarize the results it already has.
-    const loopCheck = loopGuard.shouldBlock(call.name, call.args);
-    if (loopCheck.block) {
-      const isWrite =
-        call.name === "fs.write" ||
-        call.name === "fs.writeMany" ||
-        call.name === "fs.edit";
-      const reason = `${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}`;
-      writeNotice(
-        "warn",
-        reason,
-        chalk.yellow(
-          `  ⚠ ${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}\n`,
-        ),
-      );
-      // A repeat means this batch went off the rails — drop any queued calls
-      // and let the model react. The assistant message was already recorded.
-      pendingCalls = [];
-      messages.push({
-        role: "user",
-        content: isWrite
-          ? `You already wrote that exact file with ${call.name}. It is saved. ` +
-            "Do NOT write it again. Move on to the NEXT file or step. If every file is written, " +
-            "verify the project (list the tree, run the build/install command) and give your final answer."
-          : `You already called ${call.name} with the same arguments and received results. ` +
-            "Do NOT call it again. Summarize the findings you already have and give your final answer NOW.",
+      // Execute all calls in parallel
+      const toolPromises = allCalls.map((c) => {
+        const id = `tool-${++nextToolEventId}`;
+        return executeSingleTool(c, id, options.signal || new AbortController().signal);
       });
-      continue;
-    }
-    if (loopCheck.reason) {
-      writeNotice("info", loopCheck.reason, chalk.dim(`  ℹ ${loopCheck.reason}\n`));
-    }
 
-    // ── Plan / task tools (session-scoped, handled inline) ─────────────
-    // These don't go through the generic registry because they need the
-    // session id and mutate the live plan that the user can view (Ctrl+P).
-    if (call.name === "plan.create" || call.name === "task.update") {
-      const planResult = await handlePlanTool(call, session, {
-        loopGuard,
-        step,
-      });
-      if (planResult.handled) {
-        productiveSteps += 1;
-        loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
-        if (planResult.plan) {
-          writePlanUpdate(planResult.plan, planResult.display);
+      const results = await Promise.all(toolPromises);
+
+      let aborted = false;
+      let blocked = false;
+      let blockedResult: any = null;
+
+      for (const res of results) {
+        if (res.lastAnswer === "Aborted.") {
+          aborted = true;
         }
-        // plan.create means "STOP and wait for /implement" — abandon any
-        // other calls the model batched alongside it.
-        if (call.name === "plan.create") pendingCalls = [];
+        if (res.blockOrCancel) {
+          blocked = true;
+          blockedResult = res;
+        }
+
         messages.push({
           role: "tool",
-          content: `Tool ${call.name} result (ok=${planResult.ok}):\n${planResult.modelNote}`,
+          content: `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${res.contextOutput}`,
         });
-        continue;
+
+        productiveSteps += 1;
       }
-    }
 
-    const scope = await loadScope();
-    const decision = classifyToolCall(call, { scope });
-    await auditLog("tool.classified", {
-      call,
-      decision,
-      scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
-    });
-
-    // ── Plan-awaiting-approval gate ────────────────────────────────────
-    // When an active plan exists but the user has NOT approved it with
-    // /implement, the agent must NOT execute the plan. Any free-text the
-    // user typed after the plan was shown is a PLAN REVISION, not a "go"
-    // signal — the agent should re-plan (plan.create) and wait again. We
-    // hard-block execution tools here so a model that ignores the prompt
-    // directive (or recovers a stray tool call) can't start running the
-    // plan. Read-only exploration is still allowed so it can refine the
-    // plan intelligently.
-    if (
-      activePlan &&
-      !session.planApproved.value &&
-      !isPreApprovalAllowedTool(call.name)
-    ) {
-      const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
-      writeNotice(
-        "warn",
-        reason,
-        chalk.yellow(
-          `  ⚠ plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)\n`,
-        ),
-      );
-      pendingCalls = [];
-      messages.push({
-        role: "user",
-        content:
-          `There is an ACTIVE PLAN that has NOT been approved yet, so you must NOT execute it — ` +
-          `you tried to call ${call.name}, which is blocked. The user's latest message is a PLAN REVISION, ` +
-          `not approval. Update the plan to incorporate their feedback by calling plan.create again with the ` +
-          `revised goal/detail/tasks, then STOP and wait. The user approves with /implement or cancels with /discard. ` +
-          `Do NOT run any execution tool (shell.exec, pkg.install, fs.write, net.scan, tool.check, etc.) until they /implement.`,
-      });
-      continue;
-    }
-
-    if (call.name === "web.search") {
-      sawFreshWebSearch = true;
-    }
-
-    // Show tool call
-    const toolCallLine =
-      chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-    writeToolCall(
-      toolEventId,
-      call,
-      styleToolChatter(call, toolCallLine) + "\n",
-    );
-
-    const scopeTarget = scopeTargetForToolCall(call);
-    if (
-      scopeTarget &&
-      (!isScopeActive(scope) || !targetInScope(scopeTarget, scope))
-    ) {
-      writeNotice(
-        "info",
-        `scope optional: ${scopeHint(scopeTarget)}`,
-        chalk.dim(`  scope optional: ${scopeHint(scopeTarget)}\n`),
-      );
-    }
-
-    if (decision.level === "block") {
-      writeToolBlocked(
-        toolEventId,
-        call.name,
-        decision.reason,
-        chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n",
-      );
-      lastAnswer = `Blocked: ${call.name} — ${decision.reason}`;
-      return finishTurn(lastAnswer, productiveSteps);
-    }
-
-    // Pentest authorization — if user confirms this, skip the per-tool confirm
-    let pentestJustConfirmed = false;
-    const needsPentestAuth =
-      isPentestToolCall(call) &&
-      !getConfig().pentestAuthorized &&
-      !session.pentestAuthorized.value;
-    const authorized = await ensurePentestAuthorization(
-      call,
-      Boolean(options.autoConfirm),
-      session,
-      confirmPort,
-    );
-    // inquirer's confirm() creates its own readline interface which resets
-    // raw mode AND pauses stdin when it finishes. Re-assert raw mode and
-    // resume stdin so the outer keypress handler (ESC/Ctrl+C abort, Ctrl+O
-    // output pane) keeps working during the next streaming/tool phase.
-    restoreInteractiveStdin();
-    if (!authorized) {
-      lastAnswer = "Pentest authorization not confirmed.";
-      writeToolBlocked(
-        toolEventId,
-        call.name,
-        lastAnswer,
-        chalk.red(`  ✗ ${lastAnswer}`) + "\n",
-      );
-      return finishTurn(lastAnswer, productiveSteps);
-    }
-    if (needsPentestAuth) {
-      pentestJustConfirmed = true;
-    }
-
-    // Confirm if needed (safe tools auto-execute, pentest-auth'd tools skip)
-    // fs.delete and shell deletions NEVER auto-confirm even with -y flag.
-    const forceManualConfirm = call.name === "fs.delete";
-    if (decision.level === "confirm" && !pentestJustConfirmed) {
-      const ok = await confirmToolExecution(
-        call,
-        forceManualConfirm ? false : Boolean(options.autoConfirm),
-        session,
-        confirmPort,
-      );
-      // Re-assert raw mode and resume stdin after inquirer's confirm()
-      // (see restoreInteractiveStdin / the comment above).
-      restoreInteractiveStdin();
-      if (!ok) {
-        lastAnswer = "Cancelled.";
-        writeNotice("warn", "cancelled", chalk.yellow(`  ✗ cancelled`) + "\n");
-        return finishTurn(lastAnswer, productiveSteps);
-      }
-    }
-
-    // Execute tool
-    options.signal?.throwIfAborted();
-    options.onToolStart?.(call);
-
-    // Heads-up when the command is about to run something that may pause
-    // for a password prompt (sudo, ssh, gpg, ...). The shell tool already
-    // routes such commands through inherited stdin so the user can type
-    // directly into the controlling TTY; we just warn them to expect it.
-    const interactiveCommand =
-      (call.name === "shell.exec" &&
-        typeof call.args.command === "string" &&
-        looksInteractiveStdin(call.args.command)) ||
-      call.name === "net.scan" ||
-      call.name === "pentest.recon";
-    if (interactiveCommand && process.stdin.isTTY) {
-      writeNotice(
-        "warn",
-        "this command may prompt for a password — type it when asked",
-        chalk.yellow(
-          "  ⚠ this command may prompt for a password — type it when asked\n",
-        ),
-      );
-    }
-    let result: ToolResult;
-    let liveBytes = 0;
-    const liveCap = 16_000; // Stop streaming after this many bytes to avoid flooding the terminal.
-    let liveTruncatedNotified = false;
-    let lastProgressAt = 0;
-    // When the underlying command may pause for a password prompt
-    // (sudo / ssh / etc.) we stream the live preview *without* the dim
-    // attribute so the prompt is fully readable. Otherwise we keep the
-    // dim styling that makes ordinary tool chatter visually distinct
-    // from the model's prose.
-    const shouldDimLive = !interactiveCommand;
-    const printLive = (chunk: string): void => {
-      // Suppress live preview for fs.read / fs.list — those are read-only
-      // and the final summary is already concise. Stream shell-style tools
-      // (shell.exec, net.scan, pentest.recon, pkg.install).
-      if (
-        call.name === "fs.read" ||
-        call.name === "fs.list" ||
-        call.name === "fs.search"
-      )
-        return;
-      if (liveBytes >= liveCap) {
-        if (!liveTruncatedNotified) {
-          liveTruncatedNotified = true;
-          writeNotice(
-            "info",
-            "live preview truncated, full output saved",
-            chalk.dim("\n  … live preview truncated, full output saved\n"),
-          );
-          writeNotice(
-            "info",
-            "tool still running — ESC or Ctrl+C to abort",
-            chalk.dim("  (tool still running — ESC or Ctrl+C to abort)\n"),
-          );
-          lastProgressAt = Date.now();
-        }
-        // After truncation, show a dot every 5 seconds so the user knows
-        // the tool is still running and the terminal isn't frozen.
-        const now = Date.now();
-        if (now - lastProgressAt > 5_000) {
-          lastProgressAt = now;
-          writeToolOutput(toolEventId, ".", chalk.dim("."));
-        }
-        return;
-      }
-      const remaining = liveCap - liveBytes;
-      const slice =
-        chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
-      liveBytes += slice.length;
-      // Indent each line so live output lines up under the tool call.
-      const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
-      const body = indented.startsWith("\n") ? indented : `  ${indented}`;
-      // Skip the dim wrapper for interactive commands so a sudo password
-      // prompt is rendered at full brightness; everything else stays dim
-      // so tool chatter is visually distinct from the model's prose.
-      writeToolOutput(toolEventId, slice, shouldDimLive ? chalk.dim(body) : body);
-    };
-
-    try {
-      result = await runToolCall(call, {
-        signal: options.signal,
-        requestSecret: options.requestSecret,
-        onOutput: (chunk) => {
-          if (options.signal?.aborted) return;
-          printLive(chunk);
-        },
-      });
-      // Newline separator if live output or progress dots didn't already end with one.
-      if (liveBytes > 0 || liveTruncatedNotified) {
-        writeToolOutput(toolEventId, "\n", "\n");
-      }
-    } catch (toolError) {
-      if (isAbortError(toolError, options.signal)) {
+      if (aborted) {
         lastAnswer = "Aborted.";
         writeAbort();
         return lastAnswer;
       }
-      const errMsg =
-        toolError instanceof Error ? toolError.message : String(toolError);
-      result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
-    }
-    // Stop-on-error: if this call failed, abandon any remaining queued calls
-    // from the same message so the model sees the failure and decides what to
-    // do next instead of blindly running steps that depended on it.
-    if (!result.ok && pendingCalls.length > 0) {
-      const cancelledQueuedStatus = `  ↳ ${pendingCalls.length} queued call(s) cancelled because this step failed\n`;
-      writeStatus(
-        cancelledQueuedStatus,
-        chalk.dim(cancelledQueuedStatus),
-      );
-      pendingCalls = [];
-    }
-    const output = result.output.trim();
-    const displayMax = 6_000;
-    // If the tool already produced an artifact (shell.exec now streams to one
-    // as it runs), respect that path. Otherwise, fall back to the post-hoc
-    // save for tools that return their full output in memory.
-    const savedOutputPath =
-      result.outputPath ??
-      (output.length > displayMax
-        ? await saveToolOutput(call, output)
-        : undefined);
-    const resultWithArtifact: ToolResult = {
-      ...result,
-      outputPath: savedOutputPath,
-      truncated: result.truncated ?? Boolean(savedOutputPath),
-    };
-    const contextOutput = formatToolContext(call, resultWithArtifact);
-    emitToolResult(toolEventId, resultWithArtifact, contextOutput, savedOutputPath);
-    options.onToolResult?.(call, resultWithArtifact);
-    await auditLog("tool.result", {
-      call,
-      ok: result.ok,
-      exitCode: result.exitCode,
-      output: result.output.slice(0, 4_000),
-    });
-
-    // Record the attempt in the loop guard for dedup tracking.
-    loopGuard.recordAttempt(
-      step,
-      call.name,
-      call.args,
-      result.ok,
-      result.exitCode,
-    );
-    // A tool actually executed this iteration — count it against the
-    // productive-step budget. Recovery iterations (thinking-only nudges,
-    // malformed-call retries, freshness/loop-guard prompts) reach `continue`
-    // before this point and therefore never consume the budget.
-    productiveSteps += 1;
-
-    // ── Auto-retry on "command not found" ──────────────────────────
-    // Detect missing tools and instruct the model to install + retry.
-    const NOT_FOUND_RE = /command not found|ENOENT.*spawn|is not recognized/i;
-    if (!result.ok && NOT_FOUND_RE.test(output)) {
-      const cmdName =
-        call.name === "shell.exec"
-          ? String(call.args.command ?? "").split(/\s+/)[0]
-          : call.name === "net.scan"
-            ? "nmap"
-            : call.name === "image.ocr"
-              ? "tesseract"
-              : undefined;
-      if (cmdName) {
-        writeNotice(
-          "warn",
-          `${cmdName} not found — asking model to install and retry`,
-          chalk.yellow(
-            `  ⚠ ${cmdName} not found — asking model to install and retry\n`,
-          ),
-        );
-        messages.push({
-          role: "tool",
-          content:
-            `Tool failed: "${cmdName}" is not installed.\n` +
-            `You MUST: 1) use pkg.install to install "${cmdName}", ` +
-            `2) then RETRY the original command. Do NOT stop or give up.`,
-        });
-        continue;
+      if (blocked && blockedResult) {
+        lastAnswer = blockedResult.lastAnswer || "Blocked or Cancelled.";
+        return finishTurn(lastAnswer, productiveSteps);
       }
-    }
 
-    // ── Auto-retry on "a terminal is required" sudo error ──────────────
-    // Older Node versions and some non-TTY contexts can still surface the
-    // canonical sudo "a terminal is required" or "no askpass program"
-    // failure. Tell the model to retry through plain `sudo …` (which the
-    // shell tool now inherits stdin for) instead of getting clever with
-    // -S / askpass / piping a password.
-    const SUDO_NEEDS_TTY_RE =
-      /sudo:\s+a terminal is required to read the password|sudo:\s+a password is required|no askpass program|sudo: \d+ incorrect password attempts|sudo:\s+(?:no tty present|sorry, you must have a tty)/i;
-    if (!result.ok && SUDO_NEEDS_TTY_RE.test(output)) {
-      writeNotice(
-        "warn",
-        "sudo needs an interactive terminal — asking the model to retry without -S/askpass",
-        chalk.yellow(
-          "  ⚠ sudo needs an interactive terminal — asking the model to retry without -S/askpass\n",
-        ),
-      );
-      messages.push({
-        role: "tool",
-        content:
-          "Tool failed: sudo could not read a password.\n" +
-          "On the next attempt: call shell.exec with `sudo <command>` directly. " +
-          "clai inherits stdin from the user's terminal, so the user can type the password live. " +
-          'DO NOT use `echo "<pwd>" | sudo -S`, DO NOT use SUDO_ASKPASS, DO NOT ask the user for the password in chat. ' +
-          "Just run `sudo <command>` and the password prompt will be visible.",
-      });
-      continue;
-    }
-
-    // Print tool result
-    const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
-    writeToolOutput(toolEventId, result.ok ? "ok\n" : "failed\n", statusIcon + "\n");
-    if (output) {
-      const displaySummary = summarizeOutput(output, displayMax);
-      const displayText = displaySummary.truncated
-        ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : chalk.dim("\n  ... output truncated")}`
-        : displaySummary.text;
-      // If we already streamed live output for this call, skip re-printing
-      // the same bytes. Just note where the full output lives if it was saved.
-      if (liveBytes > 0) {
-        if (savedOutputPath) {
-          writeNotice(
-            "info",
-            `full output saved to ${savedOutputPath}`,
-            chalk.dim(`  full output saved to ${savedOutputPath}\n`),
-          );
+      // Compact older messages when the running estimate exceeds budget
+      if (estimateMessagesTokens(messages) > 24_000) {
+        const compacted = compactMessages(messages);
+        if (compacted.length < messages.length) {
+          messages.splice(0, messages.length, ...compacted);
+          await auditLog("agent.compact", {
+            newLength: messages.length,
+            estimatedTokens: estimateMessagesTokens(messages),
+          });
         }
-      } else {
-        const renderedOutput = indentAndWrapText(displayText);
-        writeToolOutput(
-          toolEventId,
-          displayText,
-          styleToolChatter(call, renderedOutput) + "\n",
-        );
-      }
-    }
-    if (isAbortError(undefined, options.signal)) {
-      lastAnswer = "Aborted.";
-      writeAbort();
-      return lastAnswer;
-    }
-
-    // Register a collapse/expand viewport so the user can pull the full raw
-    // output back with Ctrl+O or `/output last` after the AI summary lands.
-    if (output) {
-      const viewport = registerViewport({
-        toolName: call.name,
-        argsDisplay: formatToolArgs(call),
-        artifactPath: savedOutputPath,
-        summary: contextOutput,
-      });
-      // Only print the Ctrl+O hint when there's a real artifact file
-      // (large output saved to disk). Avoid spamming the hint for
-      // every tiny tool call — the user can always use /output last.
-      if (savedOutputPath) {
-        const viewportHint = `${formatViewportHint(viewport)}\n`;
-        writeStatus(viewportHint, viewportHint);
-      }
-    }
-    messages.push({
-      role: "tool",
-      content: `Tool ${call.name} result (exit=${result.exitCode ?? 0}, ok=${result.ok}):\n${contextOutput}`,
-    });
-    // Compact older messages when the running estimate exceeds budget so
-    // free-tier context windows are not blown by long pentest sessions.
-    if (estimateMessagesTokens(messages) > 24_000) {
-      const compacted = compactMessages(messages);
-      if (compacted.length < messages.length) {
-        messages.splice(0, messages.length, ...compacted);
-        await auditLog("agent.compact", {
-          newLength: messages.length,
-          estimatedTokens: estimateMessagesTokens(messages),
-        });
       }
     }
   }

@@ -156,7 +156,7 @@ describe("Property 6: Redirect chain invariants", () => {
 
           const { httpsRequest } = buildRedirectStub(script);
           const result = await webFetchCore(
-            { url: "https://example.com/" },
+            { url: "https://example.com/", includeRedirectChain: true },
             { httpsRequest, dnsLookup: publicDns },
           );
 

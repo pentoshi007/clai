@@ -37,7 +37,7 @@ describe("tools – http.fetch", () => {
       maxBytes: 100,
     });
     expect(result.ok).toBe(true);
-    expect(result.exitCode).toBe(200);
+    expect(result.exitCode).toBe(0);
     expect(result.truncated).toBe(true);
     expect(result.output).toMatch(/truncated at 100 bytes/);
   });
@@ -112,10 +112,37 @@ describe("tools – http.fetch", () => {
     expect(result.output).not.toMatch(/should not see this/);
   });
 
-  it("returns not-ok for 404", async () => {
+  it("captures 404 responses as HTTP evidence instead of tool failures", async () => {
     const result = await httpFetch("https://example.test/status/404");
-    expect(result.ok).toBe(false);
-    expect(result.exitCode).toBe(404);
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("404 Not Found");
+  });
+
+  it("retries transient GET failures before returning evidence", async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      calls += 1;
+      if (calls < 3) {
+        return new Response("try again", {
+          status: 503,
+          statusText: "Service Unavailable",
+        });
+      }
+      return new Response("<html><main>ready now</main></html>", {
+        status: 200,
+        statusText: "OK",
+        headers: { "content-type": "text/html" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await httpFetch("https://example.test/flaky");
+
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(3);
+    expect(result.output).toContain("attempts=3");
+    expect(result.output).toContain("Readable content:");
+    expect(result.output).toContain("ready now");
   });
 });
 

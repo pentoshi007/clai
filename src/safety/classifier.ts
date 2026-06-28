@@ -15,9 +15,7 @@ import {
   commandWritesOrEscalates,
 } from "./patterns.js";
 import {
-  isScopeActive,
   normalizeScopeTarget,
-  targetInScope,
   type EngagementScope,
 } from "../store/scope.js";
 import { classifyHost } from "../tools/web/ssrf-guard.js";
@@ -329,25 +327,11 @@ export function classifyShellCommand(
   if (isVersionOrHelpProbe(command)) {
     return { level: "safe", reason: "Version/help probe is read-only" };
   }
-  // Pentest scan tools always require confirmation even against private targets
+  // Scanner/recon commands are read-only from the local filesystem point of
+  // view. They may touch the network, but they should not trigger the generic
+  // y/n prompt; engagement authorization is handled as session policy instead.
   if (commandContainsNetworkScanner(command)) {
-    const target = scopeTargetForToolCall({
-      name: "shell.exec",
-      args: { command },
-    });
-    if (
-      target &&
-      (!isScopeActive(options.scope) || !targetInScope(target, options.scope))
-    ) {
-      return {
-        level: "confirm",
-        reason: `Public target scan; scope is optional. ${scopeHint(target)}`,
-      };
-    }
-    return {
-      level: "confirm",
-      reason: "Security scan tool requires confirmation",
-    };
+    return { level: "safe", reason: "Read-only network/security command" };
   }
   // Run mutation checks BEFORE the read-only base check: sed/find are
   // read-only bases yet `sed -i` / `find -exec` mutate, and a pipe can hide a
@@ -443,16 +427,9 @@ export function classifyToolCall(
   }
 
   if (call.name === "http.fetch") {
-    const method = (stringArg(call.args, "method") ?? "GET").toUpperCase();
-    if (method !== "GET" && method !== "HEAD") {
-      return {
-        level: "confirm",
-        reason: `HTTP ${method} is mutating and requires confirmation`,
-      };
-    }
     return {
       level: "safe",
-      reason: "HTTP GET/HEAD is read-only",
+      reason: "HTTP fetch is a network request, not a local filesystem mutation",
     };
   }
 
@@ -462,37 +439,11 @@ export function classifyToolCall(
   }
 
   if (call.name === "net.scan") {
-    const scopeTarget = scopeTargetForToolCall(call);
-    if (
-      scopeTarget &&
-      (!isScopeActive(options.scope) ||
-        !targetInScope(scopeTarget, options.scope))
-    ) {
-      return {
-        level: "confirm",
-        reason: `Public target scan; scope is optional. ${scopeHint(scopeTarget)}`,
-      };
-    }
-    return { level: "confirm", reason: "Network scans require confirmation" };
+    return { level: "safe", reason: "Read-only network scan" };
   }
 
   if (call.name === "pentest.recon") {
-    const scopeTarget = scopeTargetForToolCall(call);
-    if (
-      scopeTarget &&
-      (!isScopeActive(options.scope) ||
-        !targetInScope(scopeTarget, options.scope))
-    ) {
-      return {
-        level: "confirm",
-        reason: `Public target recon; scope is optional. ${scopeHint(scopeTarget)}`,
-      };
-    }
-    return {
-      level: "confirm",
-      reason:
-        "Pentest recon requires confirmation and authorization acknowledgement",
-    };
+    return { level: "safe", reason: "Read-only pentest recon" };
   }
 
   if (call.name === "fs.write" || call.name === "pkg.install") {
@@ -595,8 +546,8 @@ export function classifyToolCall(
 
   if (call.name === "net.pingSweep") {
     return {
-      level: "confirm",
-      reason: "Network sweep requires confirmation",
+      level: "safe",
+      reason: "Read-only local network sweep",
     };
   }
 
