@@ -152,10 +152,13 @@ export async function completeWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
+  const providerImpl = providers[requested];
+  const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
+  const fallbackEnabled = config.providerFallback && isDefaultModel;
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
-    config.providerFallback,
+    fallbackEnabled,
   );
   const failures: ProviderFailure[] = [];
 
@@ -201,10 +204,13 @@ export async function streamWithProvider(
 ): Promise<CompletionResult> {
   const config = getConfig();
   const requested = request.provider ?? config.defaultProvider;
+  const providerImpl = providers[requested];
+  const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
+  const fallbackEnabled = config.providerFallback && isDefaultModel;
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
-    config.providerFallback,
+    fallbackEnabled,
   );
   const failures: ProviderFailure[] = [];
   const emitStatus = onStatus ?? ((message) => onToken(message));

@@ -195,7 +195,7 @@ export function useAgentRunner({
       } catch (err) {
         if (ac.signal.aborted) {
           dispatchEvent({ type: "turn-aborted" });
-        } else {
+        } else if (ctx.mode === "ask") {
           dispatchEvent({
             type: "turn-error",
             message: err instanceof Error ? err.message : String(err),
