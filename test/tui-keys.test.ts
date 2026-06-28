@@ -10,7 +10,7 @@ describe("TUI /keys output", () => {
         active: true,
         configured: true,
         source: "keychain",
-        maskedKey: "sk-…1234",
+        maskedKey: "sk-p••••1234",
         model: "gpt-5",
       },
     ], [
@@ -18,8 +18,9 @@ describe("TUI /keys output", () => {
     ]);
     expect(output).toContain("LLM PROVIDERS");
     expect(output).toContain("SEARCH PROVIDERS");
-    expect(output).toContain("sk-…1234");
-    expect(output).toContain("model=gpt-5");
+    expect(output).toContain("sk-p••••1234");
+    expect(output).toContain("gpt-5");
+    expect(output).toContain("◀");
     expect(output).not.toContain("unmasked-secret");
   });
 });

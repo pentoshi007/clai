@@ -3,8 +3,8 @@
 // Validates: Requirements 3.6
 //
 // For arbitrary secret strings of length 0..256:
-//   maskSecret(s) === '*'.repeat(n)                          when n < 8
-//   maskSecret(s) === '*'.repeat(n - 4) + s.slice(-4)        when n >= 8
+//   maskSecret(s) === '••••••••'                               when n < 8
+//   maskSecret(s) === s.slice(0,4) + '••••' + s.slice(-4)      when n >= 8
 
 import { describe, expect, it } from "vitest";
 import * as fc from "fast-check";
@@ -18,7 +18,7 @@ describe("Property 16: Key masking (Requirement 3.6)", () => {
         (s) => {
           const n = s.length;
           const expected =
-            n < 8 ? "*".repeat(n) : "*".repeat(n - 4) + s.slice(-4);
+            n < 8 ? "••••••••" : s.slice(0, 4) + "••••" + s.slice(-4);
           return maskSecret(s) === expected;
         },
       ),

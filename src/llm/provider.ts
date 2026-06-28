@@ -124,14 +124,11 @@ export function sanitizeProviderModel(provider: ProviderId, model: string): stri
 }
 
 export function maskSecret(secret: string): string {
-  // Per Requirement 3.6: for keys shorter than 8 characters, mask every
-  // character with `*`; for keys of length >= 8, expose only the last 4
-  // characters and replace every preceding character with `*`. Shoulder
-  // surfers see only the trailing 4 chars; users can still tell two
-  // configured keys apart at a glance.
+  // Show first 4 and last 4 characters with a fixed-width •••• separator.
+  // Output is always 12 chars for keys >= 8, keeping tables compact.
   const n = secret.length;
-  if (n < 8) return "*".repeat(n);
-  return "*".repeat(n - 4) + secret.slice(-4);
+  if (n < 8) return "••••••••";
+  return secret.slice(0, 4) + "••••" + secret.slice(-4);
 }
 
 export function redactSecrets(value: string): string {

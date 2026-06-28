@@ -431,7 +431,8 @@ export function App({
           });
           return;
         }
-        if (!getProvider(next).validateKey(key)) {
+        const trimmedKey = key.trim();
+        if (!getProvider(next).validateKey(trimmedKey)) {
           dispatch({
             type: "notice",
             level: "warn",
@@ -439,7 +440,7 @@ export function App({
           });
           return;
         }
-        await setProviderSecret(next, key);
+        await setProviderSecret(next, trimmedKey);
       }
       const nextModel = getProviderModel(next);
       setDefaultProvider(next);

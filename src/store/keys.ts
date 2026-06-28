@@ -163,7 +163,46 @@ export async function getSecret(
 ): Promise<{ value?: string; source: SecretSource }> {
   const account = secretAccount(namespace, id);
 
-  // Keychain — primary store.
+  // 1. Fallback file check first (ensures newer keys override keychain desync)
+  const fallback = await readFallback();
+  let fallbackValue = fallback[account];
+  let isLegacyFallback = false;
+
+  if (!fallbackValue && namespace === 'llm') {
+    fallbackValue = fallback[id];
+    if (fallbackValue) {
+      isLegacyFallback = true;
+    }
+  }
+
+  if (fallbackValue) {
+    // Found in fallback file. Try to migrate/save to OS keychain.
+    const keychainResult = await withKeytar((keytar) =>
+      keytar.setPassword(serviceName, account, fallbackValue!),
+    );
+    if (keychainResult.ok) {
+      // Successfully migrated to keychain. Clean up from fallback.
+      delete fallback[account];
+      if (namespace === 'llm') {
+        delete fallback[id];
+        // Also cleanup bare-id from keychain if migrating to namespaced
+        await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
+      }
+      await writeFallback(fallback);
+      return { value: fallbackValue, source: 'keychain' };
+    }
+    
+    // If keychain migration failed, return fallback value.
+    // First, migrate legacy key in fallback file itself.
+    if (isLegacyFallback) {
+      delete fallback[id];
+      fallback[account] = fallbackValue;
+      await writeFallback(fallback);
+    }
+    return { value: fallbackValue, source: 'fallback' };
+  }
+
+  // 2. Keychain — primary store.
   const keychainResult = await withKeytar((keytar) =>
     keytar.getPassword(serviceName, account),
   );
@@ -188,24 +227,6 @@ export async function getSecret(
         );
       }
       return { value: legacy.value, source: 'keychain' };
-    }
-  }
-
-  // Fallback file — accept both namespaced and legacy bare-id keys.
-  const fallback = await readFallback();
-  const namespacedValue = fallback[account];
-  if (namespacedValue) {
-    return { value: namespacedValue, source: 'fallback' };
-  }
-  if (namespace === 'llm') {
-    const legacyValue = fallback[id];
-    if (legacyValue) {
-      // Migrate the legacy key in place so subsequent reads find it
-      // under the namespaced account name.
-      delete fallback[id];
-      fallback[account] = legacyValue;
-      await writeFallback(fallback);
-      return { value: legacyValue, source: 'fallback' };
     }
   }
 
@@ -240,6 +261,22 @@ export async function setSecret(
     // account is the single source of truth going forward.
     if (namespace === 'llm') {
       await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
+    }
+    // Also cleanup fallback file so we don't have stale secrets there shadowing/duplicating
+    if (existsSync(keysFile)) {
+      const fallback = await readFallback();
+      let mutated = false;
+      if (account in fallback) {
+        delete fallback[account];
+        mutated = true;
+      }
+      if (namespace === 'llm' && id in fallback) {
+        delete fallback[id];
+        mutated = true;
+      }
+      if (mutated) {
+        await writeFallback(fallback);
+      }
     }
     return 'keychain';
   }

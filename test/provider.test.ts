@@ -11,11 +11,11 @@ describe('provider helpers', () => {
     expect(normalizeProvider('castai')).toBe('kimchi');
   });
 
-  it('masks secrets per Requirement 3.6 (last 4 chars visible, prefix masked)', () => {
-    expect(maskSecret('sk-proj-secret-middle-OkcA')).toBe('*'.repeat(22) + 'OkcA');
-    expect(maskSecret('gsk_abcdef1234567890')).toBe('*'.repeat(16) + '7890');
-    expect(maskSecret('short')).toBe('*****');
-    expect(maskSecret('')).toBe('');
+  it('masks secrets showing first 4 and last 4 chars with fixed-width separator', () => {
+    expect(maskSecret('sk-proj-secret-middle-OkcA')).toBe('sk-p••••OkcA');
+    expect(maskSecret('gsk_abcdef1234567890')).toBe('gsk_••••7890');
+    expect(maskSecret('short')).toBe('••••••••');
+    expect(maskSecret('')).toBe('••••••••');
   });
 
   it('redacts known key formats', () => {

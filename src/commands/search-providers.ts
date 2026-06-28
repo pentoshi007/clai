@@ -30,7 +30,6 @@ import {
 import {
   getFallbackKeysPath,
   getSearchProviderKey,
-  searchProviderEnvVar,
   setSecret,
   unsetSecret,
   maskSecret,
@@ -117,6 +116,8 @@ export async function setSearchProviderKey(
     return;
   }
 
+  secret = secret.trim();
+
   const storage = await setSecret("search", provider, secret);
   if (storage === "fallback") {
     console.warn(
@@ -154,30 +155,30 @@ export async function useSearchProvider(providerValue: string): Promise<void> {
  * (Requirement 3.6).
  */
 export async function printSearchProviderKeys(): Promise<void> {
+  console.log(chalk.bold("Search Providers:"));
+  console.log(chalk.dim("  PROVIDER      SOURCE    KEY"));
+
   const active = getActiveSearchProvider();
-  // Iterate the registered adapters so display names line up.
   const ids: SearchProviderId[] = ["duckduckgo", "brave", "tavily"];
   for (const id of ids) {
     const adapter = searchProviders[id];
-    const label = adapter?.displayName ?? id;
     const isActive = id === active;
-    const activeMark = isActive ? chalk.green("active") : "      ";
+    const tag = isActive ? chalk.cyan(" ◀") : "";
+
     if (!adapter || !adapter.needsApiKey) {
       console.log(
-        `${activeMark} ${chalk.green("✓")} ${id.padEnd(10)} keyless        ${label}`,
+        `  ${chalk.green("✓")} ${id.padEnd(13)} keyless   —${tag}`
       );
       continue;
     }
 
-    const env = searchProviderEnvVar(id);
     const resolved = await getSearchProviderKey(id);
     const configured = Boolean(resolved.value);
-    const configMark = configured ? chalk.green("✓") : chalk.red("✗");
-    const source = resolved.value ? resolved.source : "missing";
-    const masked = resolved.value ? ` ${maskSecret(resolved.value)}` : "";
-    const envHint = env ? ` (env=${env})` : "";
+    const mark = configured ? chalk.green("✓") : chalk.red("✗");
+    const source = (resolved.value ? resolved.source : "no key").padEnd(9);
+    const key = resolved.value ? maskSecret(resolved.value) : "—";
     console.log(
-      `${activeMark} ${configMark} ${id.padEnd(10)} ${String(source).padEnd(8)}${masked}${envHint}  ${label}`,
+      `  ${mark} ${id.padEnd(13)} ${source} ${key}${tag}`
     );
   }
 }

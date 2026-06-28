@@ -103,6 +103,8 @@ export async function setProviderKey(
     return;
   }
 
+  secret = secret.trim();
+
   if (!providerImpl.validateKey(secret)) {
     process.exitCode = 2;
     throw new Error(
@@ -162,21 +164,21 @@ export async function unsetProviderKey(providerValue: string): Promise<void> {
 export async function printProviderKeys(): Promise<void> {
   const config = getConfig();
   const statuses = await listProviderStatuses(config.defaultProvider);
-  for (const status of statuses) {
-    const active = status.active ? chalk.green("active") : "      ";
-    const configured = status.configured ? chalk.green("✓") : chalk.red("✗");
-    const source = status.source === "missing" ? "no key" : status.source;
-    const secret = status.maskedKey ? ` ${status.maskedKey}` : "";
-    const note = status.note ? ` ${status.note}` : "";
+  
+  console.log(chalk.bold("LLM Providers:"));
+  console.log(chalk.dim("  PROVIDER      SOURCE    KEY           MODEL"));
+  
+  for (const s of statuses) {
+    const mark = s.configured ? chalk.green("✓") : chalk.red("✗");
+    const tag = s.active ? chalk.cyan(" ◀") : "";
+    const key = s.maskedKey || (s.configured ? "••••••••" : "—");
+    const source = (s.source === "missing" ? "no key" : s.source).padEnd(9);
     console.log(
-      `${active} ${configured} ${status.provider.padEnd(10)} ${source}${secret}${note} model=${status.model}`,
+      `  ${mark} ${s.provider.padEnd(13)} ${source} ${key.padEnd(13)} ${s.model}${tag}`
     );
   }
 
-  // Search providers are listed under a separate header so users can
-  // tell LLM and search keyspaces apart at a glance (Requirement 3.6).
   console.log("");
-  console.log(chalk.bold("Search providers:"));
   const { printSearchProviderKeys } = await import(
     "./search-providers.js"
   );

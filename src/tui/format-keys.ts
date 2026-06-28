@@ -8,43 +8,33 @@ export interface SearchKeyStatus {
   maskedKey?: string | undefined;
 }
 
-function row(active: boolean, configured: boolean, name: string, source: string, masked = "", detail = ""): string {
-  return [
-    active ? "ACTIVE" : "      ",
-    configured ? "✓" : "✗",
-    name.padEnd(12),
-    source.padEnd(9),
-    masked.padEnd(18),
-    detail,
-  ].join("  ").trimEnd();
-}
-
 /** Render credential metadata without ever including an unmasked secret. */
 export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]): string {
-  const llmRows = llm.map((status) => row(
-    status.active,
-    status.configured,
-    status.provider,
-    status.source === "missing" ? "no key" : status.source,
-    status.maskedKey ?? "",
-    `model=${status.model}`,
-  ));
-  const searchRows = search.map((status) => row(
-    status.active,
-    status.configured,
-    status.provider,
-    status.source === "missing" ? "no key" : status.source,
-    status.maskedKey ?? "",
-  ));
+  const header = "  PROVIDER      SOURCE    KEY           MODEL";
+
+  const llmRows = llm.map((s) => {
+    const mark = s.configured ? "✓" : "✗";
+    const tag = s.active ? " ◀" : "";
+    const key = s.maskedKey || (s.configured ? "••••••••" : "—");
+    return `  ${mark} ${s.provider.padEnd(13)} ${(s.source === "missing" ? "no key" : s.source).padEnd(9)} ${key.padEnd(13)} ${s.model}${tag}`;
+  });
+
+  const searchRows = search.map((s) => {
+    const mark = s.configured ? "✓" : "✗";
+    const tag = s.active ? " ◀" : "";
+    const key = s.maskedKey || (s.configured ? "••••••••" : "—");
+    return `  ${mark} ${s.provider.padEnd(13)} ${(s.source === "missing" ? "no key" : s.source).padEnd(9)} ${key}${tag}`;
+  });
+
   return [
     "LLM PROVIDERS",
-    "STATE   KEY  PROVIDER      SOURCE     MASKED KEY          DETAILS",
+    header,
     ...llmRows,
     "",
     "SEARCH PROVIDERS",
-    "STATE   KEY  PROVIDER      SOURCE     MASKED KEY",
+    "  PROVIDER      SOURCE    KEY",
     ...searchRows,
     "",
-    "Keys are masked. Use /provider to configure an unconfigured LLM provider.",
+    "◀ = active provider. Use /set or /provider to configure keys.",
   ].join("\n");
 }
