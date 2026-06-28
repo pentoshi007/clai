@@ -1,5 +1,5 @@
-import { chownSync } from "node:fs";
-import { chown } from "node:fs/promises";
+import { chownSync, statSync } from "node:fs";
+import { chown, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
@@ -70,3 +70,34 @@ export function handlePermissionError(err: any): never {
   }
   throw err;
 }
+
+export function safeExistsSync(filePath: string): boolean {
+  try {
+    statSync(filePath);
+    return true;
+  } catch (err: any) {
+    if (err.code === "ENOENT") {
+      return false;
+    }
+    if (err.code === "EACCES") {
+      handlePermissionError(err);
+    }
+    throw err;
+  }
+}
+
+export async function safeExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch (err: any) {
+    if (err.code === "ENOENT") {
+      return false;
+    }
+    if (err.code === "EACCES") {
+      handlePermissionError(err);
+    }
+    throw err;
+  }
+}
+

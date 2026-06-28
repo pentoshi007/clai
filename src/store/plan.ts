@@ -1,7 +1,6 @@
 import { mkdir, appendFile, readFile, writeFile, rm, chown } from "node:fs/promises";
-import { fixOwner, fixOwnerSync, handlePermissionError } from "../os/permissions.js";
+import { fixOwner, fixOwnerSync, handlePermissionError, safeExists } from "../os/permissions.js";
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { getConfig } from "./config.js";
@@ -180,7 +179,7 @@ async function appendJsonl(plan: SessionPlan): Promise<void> {
 }
 
 async function readAllJsonl(): Promise<SessionPlan[]> {
-  if (!existsSync(jsonlFile)) return [];
+  if (!(await safeExists(jsonlFile))) return [];
   try {
     const raw = await readFile(jsonlFile, "utf8");
     return raw
@@ -258,7 +257,7 @@ export async function clearAllPlans(): Promise<void> {
       /* ignore */
     }
   }
-  if (existsSync(jsonlFile)) {
+  if (await safeExists(jsonlFile)) {
     try {
       await rm(jsonlFile, { force: true });
     } catch {

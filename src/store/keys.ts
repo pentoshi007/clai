@@ -1,7 +1,6 @@
 import { chmod, mkdir, readFile, rm, writeFile, chown } from 'node:fs/promises';
-import { fixOwner, handlePermissionError } from '../os/permissions.js';
+import { fixOwner, handlePermissionError, safeExists } from '../os/permissions.js';
 
-import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { ProviderId, ProviderStatus } from '../types.js';
@@ -108,7 +107,7 @@ async function withKeytar<T>(
 }
 
 async function readFallback(): Promise<FallbackKeys> {
-  if (!existsSync(keysFile)) {
+  if (!(await safeExists(keysFile))) {
     return {};
   }
   try {
@@ -118,6 +117,7 @@ async function readFallback(): Promise<FallbackKeys> {
     handlePermissionError(err);
   }
 }
+
 
 async function writeFallback(keys: FallbackKeys): Promise<void> {
   try {
@@ -192,24 +192,15 @@ export async function getSecret(
   }
 
   if (fallbackValue) {
-    // Found in fallback file. Try to migrate/save to OS keychain.
-    const keychainResult = await withKeytar((keytar) =>
+    // Found in fallback file. Try to also store in OS keychain for faster
+    // access, but NEVER delete from fallback — the keychain backend may
+    // become unavailable after an upgrade (e.g. npm → brew switches the
+    // runtime from Node to Bun, which cannot load native keyring binaries).
+    await withKeytar((keytar) =>
       keytar.setPassword(serviceName, account, fallbackValue!),
     );
-    if (keychainResult.ok) {
-      // Successfully migrated to keychain. Clean up from fallback.
-      delete fallback[account];
-      if (namespace === 'llm') {
-        delete fallback[id];
-        // Also cleanup bare-id from keychain if migrating to namespaced
-        await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
-      }
-      await writeFallback(fallback);
-      return { value: fallbackValue, source: 'keychain' };
-    }
-    
-    // If keychain migration failed, return fallback value.
-    // First, migrate legacy key in fallback file itself.
+
+    // Migrate legacy bare-id key to namespaced format in fallback file.
     if (isLegacyFallback) {
       delete fallback[id];
       fallback[account] = fallbackValue;
@@ -223,6 +214,13 @@ export async function getSecret(
     keytar.getPassword(serviceName, account),
   );
   if (keychainResult.ok && keychainResult.value) {
+    // Heal: older versions drained keys.json into the keychain. Write the
+    // key back to the fallback file so it survives keychain backend changes.
+    const fb = await readFallback();
+    if (!(account in fb)) {
+      fb[account] = keychainResult.value;
+      await writeFallback(fb);
+    }
     return { value: keychainResult.value, source: 'keychain' };
   }
 
@@ -242,6 +240,12 @@ export async function getSecret(
           keytar.deletePassword(serviceName, id),
         );
       }
+      // Heal: write the discovered key back to the fallback file.
+      const fb = await readFallback();
+      if (!(account in fb)) {
+        fb[account] = legacy.value;
+        await writeFallback(fb);
+      }
       return { value: legacy.value, source: 'keychain' };
     }
   }
@@ -249,19 +253,6 @@ export async function getSecret(
   return { source: 'missing' };
 }
 
-/**
- * Persist `value` for `(namespace, id)`. Tries the OS keychain first; on
- * failure (module missing, runtime error, or permission denied) writes the
- * value into the restricted-permission plaintext fallback file at
- * `~/.clai/keys.json`. Returns the chosen storage backend so callers can
- * surface the plaintext-fallback warning.
- *
- * When the keychain cannot be written but may still be readable (a common
- * failure mode on macOS/Linux when the keyring is locked or permission is
- * denied), any existing keychain entry is deleted best-effort. Otherwise a
- * stale keychain value would shadow the freshly-written fallback value and
- * `clai set` would appear to have no effect.
- */
 export async function setSecret(
   namespace: SecretNamespace,
   id: string,
@@ -269,43 +260,30 @@ export async function setSecret(
 ): Promise<'keychain' | 'fallback'> {
   const account = secretAccount(namespace, id);
 
+  // Always write to the plaintext fallback file so keys survive keychain
+  // backend changes (e.g. switching from npm/Node to brew/Bun, or moving
+  // between machines). The fallback file (mode 0600) is the durable store;
+  // the OS keychain is an opportunistic layer on top.
+  const fallback = await readFallback();
+  fallback[account] = value;
+  if (namespace === 'llm') delete fallback[id]; // clean up legacy bare-id
+  await writeFallback(fallback);
+
+  // Also write to OS keychain if available (best-effort).
   const keychainResult = await withKeytar((keytar) =>
     keytar.setPassword(serviceName, account, value),
   );
   if (keychainResult.ok) {
-    // Best-effort cleanup of any legacy bare-id entry so the namespaced
-    // account is the single source of truth going forward.
     if (namespace === 'llm') {
+      // Cleanup legacy bare-id entry from keychain.
       await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
-    }
-    // Also cleanup fallback file so we don't have stale secrets there shadowing/duplicating
-    if (existsSync(keysFile)) {
-      const fallback = await readFallback();
-      let mutated = false;
-      if (account in fallback) {
-        delete fallback[account];
-        mutated = true;
-      }
-      if (namespace === 'llm' && id in fallback) {
-        delete fallback[id];
-        mutated = true;
-      }
-      if (mutated) {
-        await writeFallback(fallback);
-      }
     }
     return 'keychain';
   }
 
-  const fallback = await readFallback();
-  fallback[account] = value;
-  if (namespace === 'llm') delete fallback[id];
-  await writeFallback(fallback);
-
-  // If we land in the plaintext fallback, make sure a pre-existing keychain
-  // entry (which may still be readable) does not win over the value the user
-  // just set. Ignore failures: if the keychain is truly unreachable, both
-  // reads and deletes will be no-ops after the first failure is latched.
+  // If we land in the plaintext fallback only, make sure a pre-existing
+  // keychain entry (which may still be readable) does not shadow the
+  // value the user just set.
   await withKeytar((keytar) => keytar.deletePassword(serviceName, account));
   if (namespace === 'llm') {
     await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
@@ -332,7 +310,7 @@ export async function unsetSecret(
     await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
   }
 
-  if (existsSync(keysFile)) {
+  if (await safeExists(keysFile)) {
     const fallback = await readFallback();
     let mutated = false;
     if (account in fallback) {

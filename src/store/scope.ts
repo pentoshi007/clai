@@ -1,7 +1,6 @@
 import { mkdir, readFile, writeFile, chown } from "node:fs/promises";
-import { fixOwner, handlePermissionError } from "../os/permissions.js";
+import { fixOwner, handlePermissionError, safeExists } from "../os/permissions.js";
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import net from "node:net";
@@ -31,7 +30,7 @@ let cacheLoaded = false;
 export async function loadScope(): Promise<EngagementScope | undefined> {
   if (cacheLoaded) return cached;
   cacheLoaded = true;
-  if (!existsSync(scopeFile)) return undefined;
+  if (!(await safeExists(scopeFile))) return undefined;
   try {
     const raw = await readFile(scopeFile, "utf8");
     cached = JSON.parse(raw) as EngagementScope;
@@ -112,7 +111,7 @@ export async function addScopeTargets(
 export async function clearScope(): Promise<void> {
   cached = undefined;
   cacheLoaded = true;
-  if (existsSync(scopeFile)) {
+  if (await safeExists(scopeFile)) {
     await writeFile(scopeFile, "", "utf8");
   }
 }

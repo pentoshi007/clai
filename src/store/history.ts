@@ -1,5 +1,4 @@
 import { mkdir, appendFile, readFile, rm, writeFile, chown } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ChatMessage, ToolCall, ToolResult } from "../types.js";
@@ -7,7 +6,7 @@ import type { TranscriptItem } from "../tui/state.js";
 import { redactSecrets } from "../llm/provider.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
-import { fixOwner, fixOwnerSync, handlePermissionError } from "../os/permissions.js";
+import { fixOwner, fixOwnerSync, handlePermissionError, safeExists } from "../os/permissions.js";
 
 const historyDir = join(homedir(), ".clai");
 const dbFile = join(historyDir, "history.db");
@@ -171,7 +170,7 @@ async function appendJsonl(record: HistoryRecord): Promise<void> {
 async function enforceJsonlRetention(): Promise<void> {
   const limit = getConfig().historyRetentionLimit;
   if (!limit || limit <= 0) return;
-  if (!existsSync(jsonlFile)) return;
+  if (!(await safeExists(jsonlFile))) return;
   try {
     const raw = await readFile(jsonlFile, "utf8");
     const lines = raw.split("\n").filter(Boolean);
@@ -291,7 +290,7 @@ async function upsertJsonl(record: HistoryRecord): Promise<void> {
   try {
     await mkdir(historyDir, { recursive: true });
     await fixOwner(historyDir);
-    const records = existsSync(jsonlFile)
+    const records = (await safeExists(jsonlFile))
       ? (await readFile(jsonlFile, "utf8"))
           .split("\n")
           .filter(Boolean)
@@ -373,7 +372,7 @@ function rowToSession(row: unknown): HistoryRecord {
 }
 
 async function listJsonlSessions(limit: number): Promise<HistoryRecord[]> {
-  if (!existsSync(jsonlFile)) return [];
+  if (!(await safeExists(jsonlFile))) return [];
   try {
     const raw = await readFile(jsonlFile, "utf8");
     return raw
@@ -447,7 +446,7 @@ export async function clearAllHistory(): Promise<{
   } catch (error) {
     detail += `sqlite error: ${error instanceof Error ? error.message : String(error)}; `;
   }
-  if (existsSync(jsonlFile)) {
+  if (await safeExists(jsonlFile)) {
     try {
       await rm(jsonlFile, { force: true });
       detail += "jsonl removed";
