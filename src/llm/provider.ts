@@ -52,12 +52,12 @@ export const providerAliases: Record<string, ProviderId> = {
 
 export const defaultModels: Record<ProviderId, string> = {
   groq: "llama-3.3-70b-versatile",
-  gemini: "gemini-2.0-flash",
+  gemini: "gemini-3.5-flash",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-5.4-mini",
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "openai/gpt-oss-20b",
-  agentrouter: "claude-haiku-4-5-20251001",
+  agentrouter: "claude-opus-4-6",
   kimchi: "kimi-k2.6",
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.1:8b",
@@ -72,6 +72,10 @@ const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string
     "llama3-8b-8192": "llama-3.1-8b-instant",
     "meta-llama/llama-4-maverick-17b-128e-instruct":
       "meta-llama/llama-4-scout-17b-16e-instruct",
+  },
+  gemini: {
+    "gemini-2.0-flash": "gemini-3.5-flash",
+    "gemini-2.0-flash-lite": "gemini-3.1-flash-lite",
   },
   nvidia: {
     // Older default; redirect existing configs to the new openai/gpt-oss-20b

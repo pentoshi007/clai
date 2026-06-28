@@ -44,7 +44,7 @@ describe('config store', () => {
     const { getProviderModel } = await loadConfigStore();
 
     expect(getProviderModel('groq')).toBe('llama-3.3-70b-versatile');
-    expect(getProviderModel('gemini')).toBe('gemini-2.0-flash');
+    expect(getProviderModel('gemini')).toBe('gemini-3.5-flash');
     expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
     expect(getProviderModel('ollama')).toBe('llama3.1:8b');
   });

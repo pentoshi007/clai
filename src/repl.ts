@@ -324,11 +324,11 @@ export const knownModels: Record<string, string[]> = {
     "codellama:7b",
   ],
   agentrouter: [
-    "claude-haiku-4-5-20251001",
     "claude-opus-4-6",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-    "glm-5.1",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "glm-5.2",
+    "gpt-5.5",
   ],
   kimchi: [
     "kimi-k2.6",

@@ -67,11 +67,12 @@ function geminiThinkingBudget(
 export function geminiBody(request: CompletionRequest): string {
   const model = request.model ?? defaultModels.gemini;
   const thinkingBudget = geminiThinkingBudget(request.thinking, model);
+  const defaultMaxTokens = thinkingBudget !== undefined ? 8_192 : 4_096;
   const body: Record<string, unknown> = {
     contents: geminiContents(request.messages),
     generationConfig: {
       temperature: request.temperature ?? 0.2,
-      maxOutputTokens: request.maxTokens ?? 1_024,
+      maxOutputTokens: request.maxTokens ?? defaultMaxTokens,
       ...(thinkingBudget !== undefined
         ? { thinkingConfig: { thinkingBudget, includeThoughts: true } }
         : {}),
@@ -88,6 +89,27 @@ export const geminiProvider: LlmProvider = {
   defaultModel: defaultModels.gemini,
   envVar: "GEMINI_API_KEY",
   validateKey: (key: string) => /^AIza[0-9A-Za-z_-]{12,}$/.test(key),
+  async listModels(auth: ProviderAuth): Promise<string[]> {
+    if (!auth.apiKey) throw new Error("Gemini API key is required");
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(auth.apiKey)}`,
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to list Gemini models: HTTP ${response.status}`);
+    }
+    const data = await readJson<{
+      models?: Array<{
+        name?: string;
+        supportedGenerationMethods?: string[];
+      }>;
+    }>(response);
+    return (
+      data.models
+        ?.filter((m) => m.name && m.supportedGenerationMethods?.includes("generateContent"))
+        .map((m) => m.name!.replace(/^models\//, ""))
+        .sort() ?? []
+    );
+  },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("Gemini API key is required");
     const response = await fetch(

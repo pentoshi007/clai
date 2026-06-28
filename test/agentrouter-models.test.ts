@@ -29,6 +29,7 @@ describe("AgentRouter model discovery", () => {
     const options = fetchCallArgs[1] as RequestInit;
     expect(options.headers).toMatchObject({
       "authorization": "Bearer sk-testkey",
+      "User-Agent": "@openai/codex",
     });
   });
 

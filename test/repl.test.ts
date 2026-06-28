@@ -89,11 +89,11 @@ describe("REPL known model lists", () => {
   it("exposes only the documented AgentRouter models (5 listed in provider docs)", () => {
     const models = getKnownModels("agentrouter");
     expect(models).toEqual([
-      "claude-haiku-4-5-20251001",
       "claude-opus-4-6",
-      "deepseek-v4-flash",
-      "deepseek-v4-pro",
-      "glm-5.1",
+      "claude-opus-4-7",
+      "claude-opus-4-8",
+      "glm-5.2",
+      "gpt-5.5",
     ]);
   });
 });

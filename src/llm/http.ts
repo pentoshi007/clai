@@ -479,15 +479,20 @@ function buildChatBody(options: {
   // thinking is on, 2K otherwise — keep small for fast non-reasoning
   // paths so kimi-k2.6 etc. respond instantly).
   const reasoningOn = Boolean(options.reasoning?.enabled);
-  const defaultMaxTokens = reasoningOn ? 8_192 : 4_096;
+  const isMinimaxM3 = options.model === "minimaxai/minimax-m3";
+  const defaultMaxTokens = isMinimaxM3 ? 8_192 : (reasoningOn ? 8_192 : 4_096);
+  const defaultTemperature = isMinimaxM3 ? 1.00 : 0.2;
   const body: Record<string, unknown> = {
     model: options.model,
     messages: toOpenAiMessages(options.messages),
     max_tokens: options.maxTokens ?? defaultMaxTokens,
-    temperature: options.temperature ?? 0.2,
+    temperature: options.temperature ?? defaultTemperature,
     stream: options.stream,
     ...reasoning,
   };
+  if (isMinimaxM3) {
+    body.top_p = 0.95;
+  }
   return JSON.stringify(body);
 }
 
@@ -511,6 +516,7 @@ export async function openAiCompatibleComplete(options: {
       signal: options.signal ?? null,
       headers: {
         "content-type": "application/json",
+        accept: "application/json",
         authorization: `Bearer ${options.apiKey}`,
         ...options.headers,
       },

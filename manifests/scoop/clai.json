@@ -1,12 +1,12 @@
 {
   "_comment": "This Scoop manifest is a template. Real release manifests are produced from .github/workflows/release.yml; consumers should subscribe to the Scoop bucket pentoshi007/clai-scoop or fall back to the install.ps1 script which verifies the SHA256 sidecar.",
-  "version": "2.0.16",
+  "version": "2.0.17",
   "description": "Cross-platform terminal AI assistant with ask and agent modes",
   "homepage": "https://github.com/pentoshi007/clai",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/pentoshi007/clai/releases/download/v2.0.16/clai-bun-windows-x64.exe#/clai.exe",
+      "url": "https://github.com/pentoshi007/clai/releases/download/v2.0.17/clai-bun-windows-x64.exe#/clai.exe",
       "hash": "sha256:TO_BE_FILLED_BY_RELEASE_WORKFLOW"
     }
   },

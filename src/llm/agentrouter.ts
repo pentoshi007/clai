@@ -18,6 +18,10 @@ import {
 // Reference: https://agentrouter.org/console/token
 const baseUrl = "https://agentrouter.org/v1";
 
+const agentRouterHeaders: Record<string, string> = {
+  "User-Agent": "@openai/codex",
+};
+
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
@@ -38,7 +42,10 @@ export const agentrouterProvider: LlmProvider = {
       return cachedModels;
     }
     const response = await fetch(`${baseUrl}/models`, {
-      headers: { authorization: `Bearer ${auth.apiKey}` },
+      headers: {
+        authorization: `Bearer ${auth.apiKey}`,
+        ...agentRouterHeaders,
+      },
     });
     const data = await readJson<{ data?: Array<{ id: string }> }>(response);
     const models = data.data?.map((m) => m.id).sort() ?? [];
@@ -50,7 +57,7 @@ export const agentrouterProvider: LlmProvider = {
   },
   async ping(auth: ProviderAuth): Promise<void> {
     if (!auth.apiKey) throw new Error("AgentRouter API key is required");
-    await openAiCompatiblePing(baseUrl, auth.apiKey);
+    await openAiCompatiblePing(baseUrl, auth.apiKey, agentRouterHeaders);
   },
   async complete(
     request: CompletionRequest,
@@ -69,6 +76,7 @@ export const agentrouterProvider: LlmProvider = {
       signal: request.signal,
       reasoning: request.thinking,
       reasoningStyle: "openai",
+      headers: agentRouterHeaders,
     });
     return { text, provider: "agentrouter", model };
   },
@@ -95,6 +103,7 @@ export const agentrouterProvider: LlmProvider = {
       // 30-60s on initial reasoning before the first token; mirror Codex's
       // recommended 5-minute idle timeout so the UI doesn't bail early.
       idleTimeoutMs: 300_000,
+      headers: agentRouterHeaders,
     });
     return { text, provider: "agentrouter", model };
   },

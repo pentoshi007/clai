@@ -35,7 +35,7 @@ describe("modelSupportsVision", () => {
 
   it("chooses a same-provider vision fallback for text-only image prompts", () => {
     expect(preferredVisionModel("agentrouter", "deepseek-v4-pro")).toBe(
-      "claude-haiku-4-5-20251001",
+      "claude-opus-4-6",
     );
     expect(preferredVisionModel("nvidia", "openai/gpt-oss-20b")).toBe(
       "meta/llama-4-maverick-17b-128e-instruct",

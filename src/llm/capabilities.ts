@@ -136,12 +136,12 @@ export function modelSupportsVision(
 // Code/Codex without changing the user's configured default model.
 const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   groq: "meta-llama/llama-4-scout-17b-16e-instruct",
-  gemini: "gemini-2.0-flash",
+  gemini: "gemini-3.5-flash",
   openrouter: "google/gemini-2.5-flash",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "meta/llama-4-maverick-17b-128e-instruct",
-  agentrouter: "claude-haiku-4-5-20251001",
+  agentrouter: "claude-opus-4-6",
   kimchi: "kimi-k2.6",
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.2-vision",

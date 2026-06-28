@@ -238,4 +238,24 @@ describe("NVIDIA NIM model classification", () => {
     ) as { generationConfig?: Record<string, unknown> };
     expect(body.generationConfig).not.toHaveProperty("thinkingConfig");
   });
+
+  it("defaults maxOutputTokens correctly based on Gemini thinking status", () => {
+    const bodyThinking = JSON.parse(
+      geminiBody({
+        model: "gemini-2.5-flash",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "high" },
+      }),
+    ) as { generationConfig?: Record<string, unknown> };
+    expect(bodyThinking.generationConfig?.maxOutputTokens).toBe(8192);
+
+    const bodyNonThinking = JSON.parse(
+      geminiBody({
+        model: "gemini-2.5-flash",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: false, effort: "high" },
+      }),
+    ) as { generationConfig?: Record<string, unknown> };
+    expect(bodyNonThinking.generationConfig?.maxOutputTokens).toBe(4096);
+  });
 });
