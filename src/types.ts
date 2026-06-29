@@ -9,6 +9,7 @@ export const providerIds = [
   "kimchi",
   "aws-mantle",
   "ollama",
+  "bynara",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

@@ -12,6 +12,7 @@ import { ProviderError } from "./http.js";
 import { nvidiaProvider } from "./nvidia.js";
 import { agentrouterProvider } from "./agentrouter.js";
 import { kimchiProvider } from "./kimchi.js";
+import { bynaraProvider } from "./bynara.js";
 import { mantleProvider } from "./aws-mantle.js";
 import { ollamaProvider } from "./ollama.js";
 import { openaiProvider } from "./openai.js";
@@ -56,9 +57,9 @@ function retryWaitMs(error: unknown, attempt: number): number {
 
 function summarizeProviderError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  // Collapse newlines and excess whitespace; cap length so logs stay readable.
-  const flattened = message.replace(/\s+/g, " ").trim();
-  return flattened.length > 240 ? `${flattened.slice(0, 237)}...` : flattened;
+  // Collapse newlines and excess whitespace. Keep the full message in the
+  // main chat so users can see the provider's actual error details.
+  return message.replace(/\s+/g, " ").trim();
 }
 
 interface ProviderFailure {
@@ -97,6 +98,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   kimchi: kimchiProvider,
   "aws-mantle": mantleProvider,
   ollama: ollamaProvider,
+  bynara: bynaraProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -106,6 +108,7 @@ const fallbackOrder: ProviderId[] = [
   "openrouter",
   "agentrouter",
   "kimchi",
+  "bynara",
   "openai",
   "anthropic",
   "aws-mantle",

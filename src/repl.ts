@@ -42,7 +42,7 @@ import {
   clearAllHistory,
   getSession,
 } from "./store/history.js";
-import { assertProvider, defaultModels } from "./llm/provider.js";
+import { assertProvider, defaultModels, getProviderInfoText } from "./llm/provider.js";
 import { getProvider, providerAuth } from "./llm/router.js";
 import { nvidiaFallbackModels } from "./llm/nvidia.js";
 import { providerIds } from "./types.js";
@@ -146,6 +146,11 @@ export const slashCommands: SlashCommand[] = [
   { command: "/set", usage: "[provider] [key]", description: "store API key or open picker" },
   { command: "/unset", usage: "[provider]", description: "remove key or open picker" },
   { command: "/keys", description: "list configured providers" },
+  {
+    command: "/info",
+    usage: "[provider]",
+    description: "show info for the active or specified provider",
+  },
   {
     command: "/search",
     usage: "[provider]",
@@ -336,6 +341,41 @@ export const knownModels: Record<string, string[]> = {
     "nemotron-3-super-fp4",
   ],
   "aws-mantle": [],
+  bynara: [
+    // Free tier models
+    "mimo-v2.5-free",
+    "mimo-v2.5-pro-free",
+    "mistral-large",
+    "mistral-medium-3-5",
+    // Pay-as-you-go / subscription models (from https://router.bynara.id/pricing)
+    "mimo-v2.5",
+    "mimo-v2.5-pro",
+    "mimo-v2.5-hermes",
+    "mimo-v2.5-pro-hermes",
+    "mimo-v2.5-pro-ultraspeed",
+    "claude-opus-4.7",
+    "claude-opus-4.8",
+    "claude-sonnet-4.6",
+    "claude-sonnet-4.5",
+    "claude-haiku-4.5",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "gemini-3-flash",
+    "gemini-3.1-pro",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "glm-5.1",
+    "glm-5.2",
+    "gpt-5.4",
+    "gpt-5.5",
+    "kimi-k2.6",
+    "kimi-k2.7-code",
+    "minimax-m3",
+    "qwen-3.7-max",
+    "qwen-3.7-plus",
+    "qwen-3.7-plus-1m",
+    "bynara-max",
+  ],
 };
 
 export function getKnownModels(provider: string): string[] {
@@ -1473,6 +1513,7 @@ async function pickModelInteractively(
   currentModel: string,
 ): Promise<string | undefined> {
   let models: string[] = [];
+  let fetchedDynamically = false;
   const def = defaultModels[provider] ?? "";
 
   const providerImpl = getProvider(provider);
@@ -1480,6 +1521,7 @@ async function pickModelInteractively(
     try {
       const auth = await providerAuth(provider);
       models = await providerImpl.listModels(auth);
+      fetchedDynamically = models.length > 0;
     } catch (error) {
       console.warn(
         chalk.yellow(
@@ -1491,6 +1533,13 @@ async function pickModelInteractively(
 
   if (models.length === 0) {
     models = knownModels[provider] ?? [];
+    if (models.length > 0 && providerImpl.listModels) {
+      console.warn(
+        chalk.yellow(
+          `  Warning: ${provider} model list could not be refreshed; showing known models.`,
+        ),
+      );
+    }
   }
 
   if (models.length === 0) {
@@ -1501,6 +1550,10 @@ async function pickModelInteractively(
     );
     return undefined;
   }
+
+  const header = fetchedDynamically
+    ? chalk.dim(`  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`)
+    : chalk.dim(`  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`);
 
   const items = models.map((model, index) => {
     const tags: string[] = [];
@@ -1513,15 +1566,14 @@ async function pickModelInteractively(
 
   return pickInline({
     items,
-    header: chalk.dim(
-      `  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`,
-    ),
+    header,
     pageSize: Math.min(15, models.length),
   });
 }
 
 async function showModelList(provider: string, currentModel: string): Promise<void> {
   let models: string[] = [];
+  let fetchedDynamically = false;
   const def = defaultModels[provider as ProviderId] ?? "";
 
   const providerImpl = getProvider(provider as ProviderId);
@@ -1529,6 +1581,7 @@ async function showModelList(provider: string, currentModel: string): Promise<vo
     try {
       const auth = await providerAuth(provider as ProviderId);
       models = await providerImpl.listModels(auth);
+      fetchedDynamically = models.length > 0;
     } catch {
       // Silently fall back to empty array on error
     }
@@ -1536,6 +1589,13 @@ async function showModelList(provider: string, currentModel: string): Promise<vo
 
   if (models.length === 0) {
     models = knownModels[provider] ?? [];
+    if (models.length > 0 && providerImpl.listModels) {
+      console.warn(
+        chalk.yellow(
+          `  Warning: ${provider} model list could not be refreshed; showing known models.`,
+        ),
+      );
+    }
   }
 
   if (models.length === 0) {
@@ -1546,7 +1606,10 @@ async function showModelList(provider: string, currentModel: string): Promise<vo
     );
     return;
   }
-  console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:`));
+  const sourceSuffix = fetchedDynamically
+    ? chalk.dim(" (fetched live)")
+    : chalk.dim(" (known models)");
+  console.log(chalk.dim(`  Available models for ${chalk.cyan(provider)}:${sourceSuffix}`));
   models.forEach((m, i) => {
     const tags: string[] = [];
     if (m === currentModel) tags.push("active");
@@ -1654,6 +1717,21 @@ async function handleSlash(
     case "/keys":
       await printProviderKeys();
       return true;
+    case "/info": {
+      const providerVal = args.join(" ").trim().toLowerCase();
+      let targetProvider: string = state.provider;
+      if (providerVal) {
+        try {
+          targetProvider = assertProvider(providerVal);
+        } catch {
+          console.log(chalk.dim(`  unknown provider: ${providerVal}`));
+          return true;
+        }
+      }
+      const infoText = getProviderInfoText(targetProvider);
+      console.log(infoText);
+      return true;
+    }
     case "/search":
     case "/search-provider":
       if (!args[0] || args[0] === "list" || args[0] === "ls") {

@@ -216,7 +216,7 @@ describe("toggle actions", () => {
       id: "tool-expand",
       name: "shell.exec",
       argsDisplay: "printf lines",
-      output: "one\ntwo\nthree\nfour\nfive\n",
+      output: "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n",
       status: "ok",
       done: true,
     };
@@ -385,7 +385,7 @@ describe("TUI compaction reducer and rendering", () => {
     const item = {
       kind: "compacted" as const,
       id: "c1",
-      summary: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5",
+      summary: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8",
       originalItems: [],
       done: true,
     };

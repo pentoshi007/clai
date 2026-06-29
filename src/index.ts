@@ -65,7 +65,6 @@ async function oneShot(
   const activeProvider = provider ?? config.defaultProvider;
   const mode = options.mode ?? config.defaultMode;
   const model = options.model ?? getProviderModel(activeProvider);
-  await ensureProviderConfigured(activeProvider);
 
   if (!prompt) {
     if (shouldUseTui(options)) {

@@ -36,7 +36,13 @@ export function PickerPanel({
       const haystack = (searchDescription && item.description)
         ? `${item.label} ${item.value} ${item.description}`.toLowerCase()
         : `${item.label} ${item.value}`.toLowerCase();
-      return haystack.includes(needle);
+      let j = 0;
+      for (let i = 0; i < haystack.length && j < needle.length; i++) {
+        if (haystack[i] === needle[j]) {
+          j++;
+        }
+      }
+      return j === needle.length;
     });
     return matches.sort((a, b) => {
       const aText = `${a.label} ${a.value}`.toLowerCase();

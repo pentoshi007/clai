@@ -48,6 +48,10 @@ export const providerAliases: Record<string, ProviderId> = {
   "aws-mantle": "aws-mantle",
   ollama: "ollama",
   local: "ollama",
+  bynara: "bynara",
+  "bynara-router": "bynara",
+  nararouter: "bynara",
+  nara: "bynara",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -61,6 +65,7 @@ export const defaultModels: Record<ProviderId, string> = {
   kimchi: "kimi-k2.6",
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.1:8b",
+  bynara: "mimo-v2.5-free",
 };
 
 const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
@@ -100,6 +105,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   kimchi: "CASTAI_API_KEY",
   "aws-mantle": "ANTHROPIC_API_KEY",
   ollama: "OLLAMA_HOST",
+  bynara: "BYNARA_API_KEY",
 };
 
 export function normalizeProvider(value: string): ProviderId | undefined {
@@ -143,4 +149,27 @@ export function redactSecrets(value: string): string {
     .replace(/sk-or-[A-Za-z0-9_-]+/g, "sk-or-••••••")
     .replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-••••••")
     .replace(/nvapi-[A-Za-z0-9_-]+/g, "nvapi-••••••");
+}
+
+export const providerInfo: Record<string, string> = {
+  bynara: `Current Plan
+
+Free
+Daily token cap
+0 / 7,000,000 used
+7,000,000 remaining
+
+Rate limit
+
+10 req/min
+Reset time
+
+07.00 WIB
+Plan expires
+
+No expiry`,
+};
+
+export function getProviderInfoText(provider: string): string {
+  return providerInfo[provider.toLowerCase()] ?? "no info available";
 }

@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { Mode, ProviderId, ReasoningEffort } from "../types.js";
 import { providerIds } from "../types.js";
-import { assertProvider } from "../llm/provider.js";
+import { assertProvider, getProviderInfoText } from "../llm/provider.js";
 import { getProvider } from "../llm/router.js";
 import {
   envValue,
@@ -1106,6 +1106,26 @@ export function App({
           info(`providerFallback=${on}`);
           return true;
         }
+        case "/info":
+          void (async () => {
+            const providerVal = arg.trim().toLowerCase();
+            let targetProvider: string = provider;
+            if (providerVal) {
+              try {
+                targetProvider = assertProvider(providerVal);
+              } catch {
+                warn(`unknown provider: ${providerVal}`);
+                return;
+              }
+            }
+            const infoText = getProviderInfoText(targetProvider);
+            setOverlay({
+              kind: "pager",
+              title: `${targetProvider} Info`,
+              body: infoText,
+            });
+          })();
+          return true;
         case "/keys":
           void (async () => {
             const llm = await listProviderStatuses(provider);
@@ -1591,7 +1611,7 @@ export function App({
   const chromeH = !secretRequest && !state.pendingConfirm ? 1 : 0;
   const gapH = 1;
 
-  const inputWidth = Math.max(10, cols - 6);
+  const inputWidth = Math.max(10, cols - 10);
   const wrappedInputLines = wrapPlainString(input, inputWidth);
   const maxAvailableForComposer = Math.max(
     3,
@@ -1626,7 +1646,7 @@ export function App({
   );
 
   const transcriptLines = renderTranscriptLines(state, {
-    width: cols,
+    width: cols - 4,
     thinkingExpanded: state.thinkingExpanded,
     outputExpanded: state.outputExpanded,
     running: state.status.running,
@@ -1921,7 +1941,7 @@ export function App({
   const after = input.slice(cursor + 1);
 
   return (
-    <Box flexDirection="column" width={cols} height={usableRows}>
+    <Box flexDirection="column" width={cols} height={usableRows} paddingX={2}>
 
 
       {/* Transcript viewport OR overlay */}
@@ -1946,7 +1966,7 @@ export function App({
       ) : (
         <Box flexDirection="column" height={viewportH}>
           {visible.map((line, i) => (
-            <Text key={i} wrap="wrap">
+            <Text key={i} wrap="truncate-end">
               {line === "" ? " " : line}
             </Text>
           ))}

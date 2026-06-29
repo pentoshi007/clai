@@ -88,18 +88,27 @@ function renderBatchSection(
     for (const raw of rawLines) {
       wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 8)));
     }
-    const COLLAPSED = 3;
-    const shown = ctx.outputExpanded
-      ? wrappedLines
-      : wrappedLines.slice(0, COLLAPSED);
-    const hidden = wrappedLines.length - shown.length;
+    const HEAD = 3;
+    const TAIL = 3;
+    let shown: string[];
+    let hiddenCount = 0;
+    if (ctx.outputExpanded) {
+      shown = wrappedLines;
+    } else if (wrappedLines.length <= HEAD + TAIL) {
+      shown = wrappedLines;
+    } else {
+      const head = wrappedLines.slice(0, HEAD);
+      const tail = wrappedLines.slice(-TAIL);
+      hiddenCount = wrappedLines.length - HEAD - TAIL;
+      shown = [...head, chalk.dim(`    ··· ${hiddenCount} more lines ···`), ...tail];
+    }
     for (const wl of shown) {
       lines.push(subBar + chalk.white(wl));
     }
-    if (hidden > 0) {
+    if (hiddenCount > 0) {
       lines.push(
         subBottom +
-          chalk.dim.white(` +${hidden} more line(s) · `) +
+          chalk.dim.white(`+${hiddenCount + HEAD + TAIL} total line(s) · `) +
           chalk.bold.white("ctrl+o") +
           chalk.white(" to expand"),
       );
@@ -216,7 +225,7 @@ function renderUser(text: string, width: number): string[] {
 function renderAssistant(text: string, width: number): string[] {
   const label = chalk.magenta.bold("◆ Response");
   const md = renderMarkdown(text).replace(/\n+$/, "");
-  return [label, ...md.split("\n").map((line) => `  ${line}`)];
+  return [label, "", ...md.split("\n").map((line) => `  ${line}`)];
 }
 
 function renderThinking(content: string, ctx: RenderCtx): string[] {
@@ -248,7 +257,11 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 
   if (item.argsDisplay) {
     const label = item.name === "shell.exec" ? "command" : "input";
-    lines.push(bar + chalk.dim(`${label}: `) + chalk.white(item.argsDisplay));
+    const maxArgsWidth = Math.max(10, ctx.width - 6 - label.length);
+    const truncatedArgs = item.argsDisplay.length > maxArgsWidth
+      ? item.argsDisplay.slice(0, maxArgsWidth - 1) + "…"
+      : item.argsDisplay;
+    lines.push(bar + chalk.dim(`${label}: `) + chalk.white(truncatedArgs));
   }
 
   if (item.status === "blocked" && item.summary) {
@@ -289,16 +302,33 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
     }
   }
 
+  const COLLAPSED_HEAD = 3;
+  const COLLAPSED_TAIL = 3;
   let shown = wrappedLines;
-  let hidden = 0;
-  if (!ctx.outputExpanded && item.status !== "running") {
-    if (wrappedLines.length > COLLAPSED_OUTPUT_LINES) {
-      shown = wrappedLines.slice(0, COLLAPSED_OUTPUT_LINES);
-      hidden = wrappedLines.length - shown.length;
-    }
+  let hiddenCount = 0;
+  if (ctx.outputExpanded && item.status !== "running") {
+    // Fully expanded — show everything
+    shown = wrappedLines;
   } else if (item.status === "running") {
-    // While running, follow the tail so progress is visible.
-    shown = wrappedLines.slice(-8);
+    // While running: show first 3 + gap + last 3 (tail updates live)
+    if (wrappedLines.length <= COLLAPSED_HEAD + COLLAPSED_TAIL) {
+      shown = wrappedLines;
+    } else {
+      const head = wrappedLines.slice(0, COLLAPSED_HEAD);
+      const tail = wrappedLines.slice(-COLLAPSED_TAIL);
+      hiddenCount = wrappedLines.length - COLLAPSED_HEAD - COLLAPSED_TAIL;
+      shown = [...head, chalk.dim(`    ··· ${hiddenCount} more lines ···`), ...tail];
+    }
+  } else {
+    // Collapsed finished tool
+    if (wrappedLines.length <= COLLAPSED_HEAD + COLLAPSED_TAIL) {
+      shown = wrappedLines;
+    } else {
+      const head = wrappedLines.slice(0, COLLAPSED_HEAD);
+      const tail = wrappedLines.slice(-COLLAPSED_TAIL);
+      hiddenCount = wrappedLines.length - COLLAPSED_HEAD - COLLAPSED_TAIL;
+      shown = [...head, chalk.dim(`    ··· ${hiddenCount} more lines ···`), ...tail];
+    }
   }
 
   if (shown.length > 0) lines.push(bar + chalk.dim("output:"));
@@ -313,10 +343,10 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
     lines.push(bar + chalk.dim("saved: ") + chalk.cyan(item.artifactPath));
   }
 
-  if (hidden > 0) {
+  if (hiddenCount > 0 && item.status !== "running") {
     lines.push(
       bottom +
-        chalk.dim.white(`+${hidden} more line(s) · `) +
+        chalk.dim.white(`+${hiddenCount} more line(s) · `) +
         chalk.bold.white("ctrl+o") +
         chalk.white(" to expand in place"),
     );
@@ -342,9 +372,7 @@ function renderNotice(level: "info" | "warn", text: string, width: number): stri
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd();
     const available = width - 8;
-    const wrapped = /^\s*\S+\s{2,}\S+/.test(line) || /^-+$/.test(line)
-      ? [line]
-      : wrap(line, available);
+    const wrapped = wrap(line, available);
     for (const part of wrapped.length ? wrapped : [""]) {
       rendered.push(rendered.length === 0 ? `${label} ${color(part)}` : `       ${color(part)}`);
     }
@@ -371,12 +399,16 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
     wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 4)));
   }
 
+  const HEAD = 3;
+  const TAIL = 3;
   let shown = wrappedLines;
-  let hidden = 0;
+  let hiddenCount = 0;
   if (!ctx.outputExpanded) {
-    if (wrappedLines.length > 3) {
-      shown = wrappedLines.slice(0, 3);
-      hidden = wrappedLines.length - shown.length;
+    if (wrappedLines.length > HEAD + TAIL) {
+      const head = wrappedLines.slice(0, HEAD);
+      const tail = wrappedLines.slice(-TAIL);
+      hiddenCount = wrappedLines.length - HEAD - TAIL;
+      shown = [...head, chalk.dim(`    ··· ${hiddenCount} more lines ···`), ...tail];
     }
   }
 
@@ -385,20 +417,22 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
     lines.push(bar + chalk.dim(wl));
   }
 
-  if (hidden > 0) {
+  if (hiddenCount > 0) {
     lines.push(
       bottom +
-        chalk.dim.white(`+${hidden} more line(s) · `) +
+        chalk.dim.white(`+${hiddenCount} more line(s) · `) +
         chalk.bold.white("ctrl+o") +
         chalk.white(" to expand in place"),
     );
-  } else {
+  } else if (ctx.outputExpanded) {
     lines.push(
       bottom +
         chalk.dim.white("expanded · ") +
         chalk.bold.white("ctrl+o/esc") +
         chalk.white(" to collapse"),
     );
+  } else {
+    lines.push(bottom);
   }
 
   return lines;

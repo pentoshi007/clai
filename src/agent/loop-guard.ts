@@ -147,6 +147,58 @@ export class LoopGuard {
   }
 
   /**
+   * Count consecutive failures trailing the most recent attempts.
+   * Stops at the first success (or the start of the history).
+   */
+  consecutiveFailureCount(): number {
+    let count = 0;
+    for (let i = this.attempts.length - 1; i >= 0; i--) {
+      if (!this.attempts[i]!.ok) count++;
+      else break;
+    }
+    return count;
+  }
+
+  /**
+   * Returns a reflection prompt when recent failures suggest the agent may
+   * be stuck, or null if everything looks fine.
+   *
+   * Unlike hardcoded thresholds, this provides context for the MODEL to
+   * decide whether to continue (lengthy but progressing approach) or
+   * switch/stop (genuinely stuck approach).
+   */
+  getFailureReflection(): string | null {
+    const consecutiveFailures = this.consecutiveFailureCount();
+    if (consecutiveFailures < 3) return null;
+
+    // Build context: what tools failed and what they were trying
+    const recentFails = this.attempts.slice(-consecutiveFailures);
+    const toolSummary = recentFails
+      .map((a) => `  - ${a.callName}: ${a.canonicalSignature.slice(0, 120)}`)
+      .slice(-5) // Show last 5 max
+      .join("\n");
+
+    const severity = consecutiveFailures >= 6 ? "CRITICAL" : "WARNING";
+
+    return `⚠ APPROACH EVALUATION REQUIRED (${severity}) — ${consecutiveFailures} consecutive tool calls have FAILED.
+
+Recent failures:
+${toolSummary}
+
+You MUST now pause and evaluate:
+1. Are these failures all related to the SAME approach/method? If yes, this approach may not be viable.
+2. Is there a DIFFERENT approach that could work? (different tool, different protocol, different technique)
+3. Or is this a series of unrelated small issues that are being fixed incrementally?
+
+DECIDE one of:
+- CONTINUE: if you're making real progress and each failure teaches you something new
+- SWITCH: describe the new approach before trying it
+- STOP: if you've exhausted viable approaches — tell the user honestly what you tried and why it didn't work
+
+Do NOT keep trying variations of the same failing approach without explicitly deciding to SWITCH or STOP first.`;
+  }
+
+  /**
    * Reset counters for read-only tools. Called after context compaction
    * so the model can re-fetch data whose results were compacted away.
    */

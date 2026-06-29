@@ -57,6 +57,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   agentrouter: "paid-cloud",
   kimchi: "free-cloud",
   "aws-mantle": "paid-cloud",
+  bynara: "free-cloud",
 };
 
 const defaults: ClaiConfig = {

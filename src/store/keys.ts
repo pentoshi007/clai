@@ -192,14 +192,16 @@ export async function getSecret(
   }
 
   if (fallbackValue) {
-    // Found in fallback file. Try to also store in OS keychain for faster
-    // access, but NEVER delete from fallback — the keychain backend may
-    // become unavailable after an upgrade (e.g. npm → brew switches the
-    // runtime from Node to Bun, which cannot load native keyring binaries).
-    await withKeytar((keytar) =>
-      keytar.setPassword(serviceName, account, fallbackValue!),
-    );
-
+    // Found in the durable fallback file — return it directly WITHOUT
+    // touching the OS keychain. Writing to the keychain on every read
+    // triggers a native authorization prompt on macOS (the calling
+    // process is not in the keychain item's access-control list), which
+    // made every LLM request AND every `/keys` listing re-prompt the
+    // user for a password — even after clicking "Always Allow", because
+    // each write re-asked. The fallback file (mode 0600) is the source
+    // of truth; the keychain is written only when a key is explicitly
+    // set via setSecret, never on read.
+    //
     // Migrate legacy bare-id key to namespaced format in fallback file.
     if (isLegacyFallback) {
       delete fallback[id];

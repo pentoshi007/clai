@@ -1907,6 +1907,17 @@ export async function runAgentLoop(
     };
     jobManager.registerJob(jobId, backgroundJob, toolAc);
 
+    const TOOL_STALL_WARNING_MS = 60_000; // 1 minute
+    const stallTimer = setTimeout(() => {
+      if (!toolAc.signal.aborted) {
+        writeNotice(
+          "info",
+          `${call.name} has been running for >60s — still waiting (ESC to abort)`,
+          chalk.yellow(`  ⏳ ${call.name} still running — ESC to abort\n`),
+        );
+      }
+    }, TOOL_STALL_WARNING_MS);
+
     try {
       result = await runToolCall(call, {
         signal: toolAc.signal,
@@ -1931,6 +1942,7 @@ export async function runAgentLoop(
         toolError instanceof Error ? toolError.message : String(toolError);
       result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
     } finally {
+      clearTimeout(stallTimer);
       parentSignal.removeEventListener("abort", onParentAbort);
     }
 
@@ -1971,6 +1983,23 @@ export async function runAgentLoop(
       result.ok,
       result.exitCode,
     );
+
+    // Inject approach evaluation when consecutive failures are detected.
+    // Lets the MODEL decide (with full context) whether to continue a
+    // legitimately long approach, switch, or stop — instead of a
+    // hardcoded kill threshold.
+    if (!result.ok) {
+      const reflection = loopGuard.getFailureReflection();
+      if (reflection) {
+        messages.push({ role: "system", content: reflection });
+        const failCount = loopGuard.consecutiveFailureCount();
+        writeNotice(
+          "warn",
+          `${failCount} consecutive failures — model evaluating approach`,
+          chalk.yellow(`  ⚠ ${failCount} consecutive failures — evaluating approach\n`),
+        );
+      }
+    }
 
     const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
     writeToolOutput(toolEventId, result.ok ? "ok\n" : "failed\n", statusIcon + "\n");
@@ -2197,22 +2226,35 @@ export async function runAgentLoop(
       }
     }
 
-    // ── Thinking-only recovery ────────────────────────────────────────
-    // Some models (eg gpt-oss-20b on NVIDIA NIM) occasionally spend their
-    // entire budget on hidden <think> reasoning and emit no visible text
-    // or tool call. Without this guard the agent silently returns an empty
-    // answer and the user has to re-submit the same prompt.
-    if (!assistantText.visible.trim() && !call && assistantText.hasThinking) {
+    // ── Empty-response recovery ───────────────────────────────────────
+    // Some models occasionally return an empty completion: a reasoning
+    // model that spent its whole budget on hidden &lt;think&gt; reasoning and emitted
+    // no visible text, OR (more perniciously) a gateway hiccup that
+    // streamed [DONE] with no content deltas at all. Without this guard
+    // the agent silently ends the turn with no answer, no warning, and no
+    // error — the user just sees the spinner stop. Catch BOTH cases
+    // (thinking-only AND truly empty) and nudge the model to retry.
+    if (!assistantText.visible.trim() && !call) {
       emptyVisibleRetries += 1;
       if (emptyVisibleRetries <= 3) {
-        writeThinkingBlock(assistantText.thinkContent);
-        writeNotice(
-          "warn",
-          "model produced only thinking — nudging it to take action",
-          chalk.yellow(
-            "  ⚠ model produced only thinking — nudging it to take action\n",
-          ),
-        );
+        if (assistantText.hasThinking) {
+          writeThinkingBlock(assistantText.thinkContent);
+          writeNotice(
+            "warn",
+            "model produced only thinking — nudging it to take action",
+            chalk.yellow(
+              "  ⚠ model produced only thinking — nudging it to take action\n",
+            ),
+          );
+        } else {
+          writeNotice(
+            "warn",
+            "model returned an empty response — nudging it to answer",
+            chalk.yellow(
+              "  ⚠ model returned an empty response — nudging it to answer\n",
+            ),
+          );
+        }
         messages.push({
           role: "assistant",
           content: collapseRepeatedText(completion.text),
@@ -2227,8 +2269,16 @@ export async function runAgentLoop(
         messages.push(recoveryUserMessage(buildNudge));
         continue;
       }
-      // Exhausted retries — fall through to the normal empty-answer path
-      // which will print a warning and return.
+      // Exhausted retries — surface a clear notice instead of ending the
+      // turn silently with no answer (which left the user staring at a
+      // stopped spinner with no clue what happened).
+      writeNotice(
+        "warn",
+        "model returned an empty response after retries — no answer produced",
+        chalk.yellow(
+          "  ⚠ model returned an empty response after retries — no answer produced\n",
+        ),
+      );
     } else {
       // Reset the counter on any successful visible output or recovered call.
       emptyVisibleRetries = 0;

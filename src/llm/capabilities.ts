@@ -38,6 +38,7 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
   ],
   kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
+  bynara: [],
 };
 
 export function modelSupportsThinking(
@@ -116,6 +117,7 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
   ],
   kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i],
+  bynara: [/mimo-v2\.5-free/i, /mistral-medium-3-5/i],
 };
 
 /**
@@ -145,6 +147,7 @@ const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   kimchi: "kimi-k2.6",
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.2-vision",
+  bynara: "mimo-v2.5-free",
 };
 
 /**

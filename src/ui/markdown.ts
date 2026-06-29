@@ -312,7 +312,7 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   for (const token of tokens) {
     if (token.type === "space") {
       pushWord();
-      words.push({ text: token.value, visibleLength: 0 });
+      words.push({ text: token.value, visibleLength: token.value.length });
     } else {
       currentWordTokens.push(token);
       if (token.type === "char") {
@@ -327,10 +327,13 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   let currentLineVisibleLength = 0;
 
   for (const word of words) {
-    if (word.text === " ") {
+    if (/^\s+$/.test(word.text)) {
       if (currentLineVisibleLength > 0) {
-        currentLineText += " ";
-        currentLineVisibleLength += 1;
+        currentLineText += word.text;
+        currentLineVisibleLength += word.visibleLength;
+      } else {
+        currentLineText = word.text;
+        currentLineVisibleLength = word.visibleLength;
       }
       continue;
     }
@@ -342,13 +345,15 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
       currentLineText += word.text;
       currentLineVisibleLength += word.visibleLength;
     } else {
-      lines.push(currentLineText);
+      // Remove trailing spaces before pushing
+      const trimmedLine = currentLineText.replace(/\s+$/, "");
+      lines.push(trimmedLine);
       currentLineText = word.text;
       currentLineVisibleLength = word.visibleLength;
     }
   }
   if (currentLineVisibleLength > 0) {
-    lines.push(currentLineText);
+    lines.push(currentLineText.replace(/\s+$/, ""));
   }
 
   return lines.length > 0 ? lines : [line];

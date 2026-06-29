@@ -57,6 +57,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Kimchi keys are alphanumeric (at least 8 characters)";
   if (provider === "aws-mantle")
     return "Mantle keys are alphanumeric with base64 characters (at least 8 characters)";
+  if (provider === "bynara")
+    return "Bynara keys usually start with sk_nry_ (at least 8 characters)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

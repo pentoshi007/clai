@@ -9,6 +9,8 @@ describe('provider helpers', () => {
     expect(normalizeProvider('kimchi')).toBe('kimchi');
     expect(normalizeProvider('aws-mantle')).toBe('aws-mantle');
     expect(normalizeProvider('castai')).toBe('kimchi');
+    expect(normalizeProvider('bynara-router')).toBe('bynara');
+    expect(normalizeProvider('nara')).toBe('bynara');
   });
 
   it('masks secrets showing first 4 and last 4 chars with fixed-width separator', () => {
