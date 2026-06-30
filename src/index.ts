@@ -13,7 +13,11 @@ import {
   ensureProviderConfigured,
 } from "./commands/providers.js";
 import { runDoctor } from "./commands/doctor.js";
-import { runUpdate, checkForUpdateSilent, getCurrentVersion } from "./commands/update.js";
+import {
+  runUpdate,
+  checkForUpdateSilent,
+  getCurrentVersion,
+} from "./commands/update.js";
 import {
   getConfig,
   getConfigPath,
@@ -91,15 +95,21 @@ async function oneShot(
   let answer = "";
   if (mode === "ask") {
     let sawToken = false;
-    const markdown = createMarkdownStreamWriter((chunk) => process.stdout.write(chunk));
+    const markdown = createMarkdownStreamWriter((chunk) =>
+      process.stdout.write(chunk),
+    );
     const parser = createThinkingStreamParser((text) => markdown.push(text));
-    const raw = await runAskStream(prompt, (token) => {
-      sawToken = true;
-      parser.push(token);
-    }, {
-      provider,
-      model,
-    });
+    const raw = await runAskStream(
+      prompt,
+      (token) => {
+        sawToken = true;
+        parser.push(token);
+      },
+      {
+        provider,
+        model,
+      },
+    );
     const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
     if (sawToken) {
       markdown.finish();
@@ -107,13 +117,20 @@ async function oneShot(
       process.stdout.write(renderMarkdown(result.visible));
     }
     if (result.hasThinking) {
-      const prefix = result.visible && !result.visible.endsWith("\n") ? "\n" : "";
-      process.stdout.write(`${prefix}${renderThinkingSummary(result.thinkContent)}\n`);
+      const prefix =
+        result.visible && !result.visible.endsWith("\n") ? "\n" : "";
+      process.stdout.write(
+        `${prefix}${renderThinkingSummary(result.thinkContent)}\n`,
+      );
     }
     process.stdout.write("\n");
     answer = result.visible;
   } else {
-    answer = await runAgent(prompt, { provider, model, autoConfirm: options.yes });
+    answer = await runAgent(prompt, {
+      provider,
+      model,
+      autoConfirm: options.yes,
+    });
   }
   if (!options.noHistory) {
     await saveSession([
@@ -121,6 +138,7 @@ async function oneShot(
       { role: "assistant", content: answer },
     ]);
   }
+  process.exit(0);
 }
 
 function printError(error: unknown): void {
@@ -161,67 +179,80 @@ async function main(): Promise<void> {
     .argument("[key]", "config key to get, or 'set' action")
     .argument("[value]", "config value to set, or key if first arg is 'set'")
     .argument("[value2]", "value if using 'config set key value'")
-    .action((key: string | undefined, value: string | undefined, value2: string | undefined) => {
-      const current = getConfig();
-      if (!key) {
-        console.log(`Config path: ${getConfigPath()}`);
-        console.log(JSON.stringify(current, null, 2));
-        return;
-      }
+    .action(
+      (
+        key: string | undefined,
+        value: string | undefined,
+        value2: string | undefined,
+      ) => {
+        const current = getConfig();
+        if (!key) {
+          console.log(`Config path: ${getConfigPath()}`);
+          console.log(JSON.stringify(current, null, 2));
+          return;
+        }
 
-      let targetKey: string | undefined;
-      let targetValue: string | undefined;
-      let isSet = false;
+        let targetKey: string | undefined;
+        let targetValue: string | undefined;
+        let isSet = false;
 
-      if (key === "set") {
-        targetKey = value;
-        targetValue = value2;
-        isSet = true;
-      } else if (key === "get") {
-        targetKey = value;
-        isSet = false;
-      } else if (value !== undefined) {
-        targetKey = key;
-        targetValue = value;
-        isSet = true;
-      } else {
-        targetKey = key;
-        isSet = false;
-      }
+        if (key === "set") {
+          targetKey = value;
+          targetValue = value2;
+          isSet = true;
+        } else if (key === "get") {
+          targetKey = value;
+          isSet = false;
+        } else if (value !== undefined) {
+          targetKey = key;
+          targetValue = value;
+          isSet = true;
+        } else {
+          targetKey = key;
+          isSet = false;
+        }
 
-      if (!targetKey) {
-        console.error(chalk.red("  ✗ Missing configuration key"));
-        process.exit(1);
-      }
-
-      if (!(targetKey in current)) {
-        console.error(chalk.red(`  ✗ Unknown configuration key: ${targetKey}`));
-        console.error(`  Available keys: ${Object.keys(current).join(", ")}`);
-        process.exit(1);
-      }
-
-      if (isSet) {
-        if (targetValue === undefined) {
-          console.error(chalk.red("  ✗ Missing value for key: " + targetKey));
+        if (!targetKey) {
+          console.error(chalk.red("  ✗ Missing configuration key"));
           process.exit(1);
         }
-        let typedValue: any = targetValue;
-        const currentType = typeof (current as any)[targetKey];
-        if (currentType === "boolean") {
-          typedValue = targetValue === "true" || targetValue === "1" || targetValue === "yes";
-        } else if (currentType === "number") {
-          typedValue = Number(targetValue);
-          if (isNaN(typedValue)) {
-            console.error(chalk.red(`  ✗ Value for ${targetKey} must be a number`));
+
+        if (!(targetKey in current)) {
+          console.error(
+            chalk.red(`  ✗ Unknown configuration key: ${targetKey}`),
+          );
+          console.error(`  Available keys: ${Object.keys(current).join(", ")}`);
+          process.exit(1);
+        }
+
+        if (isSet) {
+          if (targetValue === undefined) {
+            console.error(chalk.red("  ✗ Missing value for key: " + targetKey));
             process.exit(1);
           }
+          let typedValue: any = targetValue;
+          const currentType = typeof (current as any)[targetKey];
+          if (currentType === "boolean") {
+            typedValue =
+              targetValue === "true" ||
+              targetValue === "1" ||
+              targetValue === "yes";
+          } else if (currentType === "number") {
+            typedValue = Number(targetValue);
+            if (isNaN(typedValue)) {
+              console.error(
+                chalk.red(`  ✗ Value for ${targetKey} must be a number`),
+              );
+              process.exit(1);
+            }
+          }
+          updateConfig({ [targetKey]: typedValue });
+          console.log(chalk.green(`  ✓ Set ${targetKey} = ${typedValue}`));
+        } else {
+          console.log((getConfig() as any)[targetKey]);
         }
-        updateConfig({ [targetKey]: typedValue });
-        console.log(chalk.green(`  ✓ Set ${targetKey} = ${typedValue}`));
-      } else {
-        console.log((getConfig() as any)[targetKey]);
-      }
-    });
+      },
+    );
 
   program
     .command("set")
@@ -283,7 +314,8 @@ async function main(): Promise<void> {
     .description("set the active search provider for web.search")
     .argument("<provider>", "search provider id (brave, tavily, duckduckgo)")
     .action(async (provider: string) => {
-      const { useSearchProvider } = await import("./commands/search-providers.js");
+      const { useSearchProvider } =
+        await import("./commands/search-providers.js");
       await useSearchProvider(provider);
     });
 
@@ -385,10 +417,7 @@ async function main(): Promise<void> {
       "--targets <list>",
       "comma-separated authorized targets (domains, IPs, CIDRs)",
     )
-    .option(
-      "--exclude <list>",
-      "comma-separated excluded targets",
-    )
+    .option("--exclude <list>", "comma-separated excluded targets")
     .option(
       "--phases <list>",
       "comma-separated phases (recon,enumeration,exploitation,post-exploitation)",
@@ -423,17 +452,20 @@ async function main(): Promise<void> {
                 .filter(Boolean);
         const phases = split(options.phases);
         const allowedPhases = phases
-          ? (phases.filter((phase): phase is
-              | "recon"
-              | "enumeration"
-              | "exploitation"
-              | "post-exploitation" =>
-              [
-                "recon",
-                "enumeration",
-                "exploitation",
-                "post-exploitation",
-              ].includes(phase),
+          ? (phases.filter(
+              (
+                phase,
+              ): phase is
+                | "recon"
+                | "enumeration"
+                | "exploitation"
+                | "post-exploitation" =>
+                [
+                  "recon",
+                  "enumeration",
+                  "exploitation",
+                  "post-exploitation",
+                ].includes(phase),
             ) as Array<
               "recon" | "enumeration" | "exploitation" | "post-exploitation"
             >)
@@ -523,7 +555,9 @@ async function main(): Promise<void> {
 
   privacyCommand
     .command("retention")
-    .description("set or show how many sessions to keep in history (0=unlimited)")
+    .description(
+      "set or show how many sessions to keep in history (0=unlimited)",
+    )
     .argument("[limit]", "numeric limit")
     .action((limit?: string) => {
       if (limit === undefined) {
@@ -533,7 +567,8 @@ async function main(): Promise<void> {
         return;
       }
       const n = Math.max(0, Math.floor(Number(limit)));
-      if (!Number.isFinite(n)) throw new Error("limit must be a non-negative number");
+      if (!Number.isFinite(n))
+        throw new Error("limit must be a non-negative number");
       updateConfig({ historyRetentionLimit: n });
       console.log(`historyRetentionLimit=${n || "unlimited"}`);
     });
@@ -570,9 +605,8 @@ async function main(): Promise<void> {
     .description("delete history, logs, and artifacts")
     .action(async () => {
       const { clearAllHistory } = await import("./store/history.js");
-      const { clearAuditLogs, clearArtifacts } = await import(
-        "./store/logs.js"
-      );
+      const { clearAuditLogs, clearArtifacts } =
+        await import("./store/logs.js");
       const a = await clearAllHistory();
       const b = await clearAuditLogs();
       const c = await clearArtifacts();
