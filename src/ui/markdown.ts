@@ -594,14 +594,15 @@ function renderTableBlock(rawLines: string[], availWidth: number): string[] {
   return out;
 }
 
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, width?: number): string {
   if (!text) return text;
   const state: BlockState = { inFence: false, fenceLang: "" };
   const lines = text.split("\n");
   const resultLines: string[] = [];
 
-  const cols = process.stdout.columns || 80;
-  const wrapWidth = Math.max(40, cols - 6);
+  const hasWidth = typeof width === "number";
+  const cols = width ?? (process.stdout.columns || 80);
+  const wrapWidth = hasWidth ? Math.max(20, cols - 2) : Math.max(40, cols - 6);
 
   let i = 0;
   while (i < lines.length) {

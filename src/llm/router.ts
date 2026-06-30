@@ -19,9 +19,9 @@ import { openaiProvider } from "./openai.js";
 import { openrouterProvider } from "./openrouter.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 
-const MAX_RETRIES = 2;
-// Wait at most this long before giving up on a provider and falling through.
-const MAX_RETRY_WAIT_MS = 8_000;
+const MAX_RETRIES = 6;
+// Wait at most this long overall per attempt (up to 2 minutes total wait budget).
+const MAX_RETRY_WAIT_MS = 120_000;
 
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
@@ -52,10 +52,14 @@ function retryWaitMs(error: unknown, attempt: number): number {
   if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
     return Math.ceil(error.retryAfterSeconds * 1000);
   }
-  return (attempt + 1) * 2_000;
+  // Exponential backoff: 2s, 6s, 18s, 54s, etc.
+  return Math.pow(3, attempt) * 2_000;
 }
 
 function summarizeProviderError(error: unknown): string {
+  if (error instanceof ProviderError && error.status === 429) {
+    return "Model is rate limited (429). Try another provider/model or switch to a paid plan.";
+  }
   const message = error instanceof Error ? error.message : String(error);
   // Collapse newlines and excess whitespace. Keep the full message in the
   // main chat so users can see the provider's actual error details.
@@ -177,21 +181,39 @@ export async function completeWithProvider(
     }
 
     try {
-      const model =
-        providerId === requested
-          ? (request.model ?? provider.defaultModel)
-          : provider.defaultModel;
-      return await provider.complete(
-        { ...request, provider: providerId, model },
-        auth,
-      );
-    } catch (error) {
-      failures.push({ provider: providerId, message: summarizeProviderError(error) });
-      if (shouldStopFallback(error)) {
-        throw new Error(
-          `No provider could complete the request.${formatFailures(failures)}`,
-        );
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const model =
+            providerId === requested
+              ? (request.model ?? provider.defaultModel)
+              : provider.defaultModel;
+          return await provider.complete(
+            { ...request, provider: providerId, model },
+            auth,
+          );
+        } catch (error) {
+          if (isRateLimited(error)) {
+            const wait = retryWaitMs(error, attempt);
+            if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
+              await sleep(wait, request.signal);
+              continue;
+            }
+            failures.push({ provider: providerId, message: summarizeProviderError(error) });
+            throw new Error(
+              `No provider could complete the request.${formatFailures(failures)}`,
+            );
+          }
+          failures.push({ provider: providerId, message: summarizeProviderError(error) });
+          if (shouldStopFallback(error)) {
+            throw new Error(
+              `No provider could complete the request.${formatFailures(failures)}`,
+            );
+          }
+          break;
+        }
       }
+    } catch (err) {
+      failures.push({ provider: providerId, message: summarizeProviderError(err) });
     }
   }
 
@@ -251,7 +273,6 @@ export async function streamWithProvider(
         onToken(result.text);
         return result;
       } catch (error) {
-        if (request.signal?.aborted) throw error;
         if (isRateLimited(error)) {
           const wait = retryWaitMs(error, attempt);
           if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {

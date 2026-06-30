@@ -1,4 +1,5 @@
-import type { ChatMessage, ReasoningPreference } from "../types.js";
+import type { ChatMessage, ReasoningPreference, ProviderId } from "../types.js";
+import { modelSupportsVision } from "./capabilities.js";
 
 export class ProviderError extends Error {
   constructor(
@@ -286,13 +287,14 @@ type OpenAiContentPart =
 
 export function toOpenAiMessages(
   messages: ChatMessage[],
+  supportsVision = true,
 ): Array<{ role: string; content: string | OpenAiContentPart[] }> {
   return messages.map((message) => {
     const role = message.role === "tool" ? "user" : message.role;
     // Attach images as OpenAI-style multimodal content parts (data URLs).
     // Only user messages carry images; everything else stays a plain string
     // so we don't disturb providers/models that expect string content.
-    if (role === "user" && message.images && message.images.length > 0) {
+    if (role === "user" && supportsVision && message.images && message.images.length > 0) {
       const parts: OpenAiContentPart[] = [];
       if (message.content) parts.push({ type: "text", text: message.content });
       for (const img of message.images) {
@@ -373,10 +375,11 @@ export function buildReasoningPayload(
   };
 
   switch (style) {
-    case "openai":
-      // OpenAI supports none/minimal/low/medium/high/xhigh natively.
+    case "openai": {
       if (!enabled) return {};
-      return { reasoning_effort: effort, reasoning: { effort } };
+      const clamped = clampEffort(effort);
+      return { reasoning_effort: clamped, reasoning: { effort: clamped } };
+    }
     case "openrouter":
       if (!enabled) return {};
       if (!supportsOpenRouterReasoning(model ?? "")) return {};
@@ -467,6 +470,7 @@ function buildChatBody(options: {
   stream: boolean;
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
+  supportsVision?: boolean | undefined;
 }): string {
   const reasoning = buildReasoningPayload(
     options.reasoning,
@@ -484,7 +488,7 @@ function buildChatBody(options: {
   const defaultTemperature = isMinimaxM3 ? 1.00 : 0.2;
   const body: Record<string, unknown> = {
     model: options.model,
-    messages: toOpenAiMessages(options.messages),
+    messages: toOpenAiMessages(options.messages, options.supportsVision),
     max_tokens: options.maxTokens ?? defaultMaxTokens,
     temperature: options.temperature ?? defaultTemperature,
     stream: options.stream,
@@ -509,6 +513,20 @@ export async function openAiCompatibleComplete(options: {
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
 }): Promise<string> {
+  const supportsVision = modelSupportsVision(
+    options.provider.toLowerCase() as ProviderId,
+    options.model,
+  );
+  const requestBody = buildChatBody({
+    model: options.model,
+    messages: options.messages,
+    maxTokens: options.maxTokens,
+    temperature: options.temperature,
+    stream: false,
+    reasoning: options.reasoning,
+    reasoningStyle: options.reasoningStyle,
+    supportsVision,
+  });
   let response: Response;
   try {
     response = await fetch(`${options.baseUrl}/chat/completions`, {
@@ -520,15 +538,7 @@ export async function openAiCompatibleComplete(options: {
         authorization: `Bearer ${options.apiKey}`,
         ...options.headers,
       },
-      body: buildChatBody({
-        model: options.model,
-        messages: options.messages,
-        maxTokens: options.maxTokens,
-        temperature: options.temperature,
-        stream: false,
-        reasoning: options.reasoning,
-        reasoningStyle: options.reasoningStyle,
-      }),
+      body: requestBody,
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
@@ -608,6 +618,20 @@ export async function openAiCompatibleStream(options: {
   const onCallerAbort = (): void => idleController.abort();
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
 
+  const supportsVision = modelSupportsVision(
+    options.provider.toLowerCase() as ProviderId,
+    options.model,
+  );
+  const requestBody = buildChatBody({
+    model: options.model,
+    messages: options.messages,
+    maxTokens: options.maxTokens,
+    temperature: options.temperature,
+    stream: true,
+    reasoning: options.reasoning,
+    reasoningStyle: options.reasoningStyle,
+    supportsVision,
+  });
   let response: Response;
   try {
     response = await fetch(`${options.baseUrl}/chat/completions`, {
@@ -623,15 +647,7 @@ export async function openAiCompatibleStream(options: {
         authorization: `Bearer ${options.apiKey}`,
         ...options.headers,
       },
-      body: buildChatBody({
-        model: options.model,
-        messages: options.messages,
-        maxTokens: options.maxTokens,
-        temperature: options.temperature,
-        stream: true,
-        reasoning: options.reasoning,
-        reasoningStyle: options.reasoningStyle,
-      }),
+      body: requestBody,
     });
   } catch (error) {
     if (idleTimer) clearTimeout(idleTimer);

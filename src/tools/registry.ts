@@ -46,6 +46,7 @@ export interface ToolRunOptions {
   onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
   requestSecret?: ((request: { title: string; prompt: string }) => Promise<string | undefined>) | undefined;
   confirmed?: boolean | undefined;
+  userPrompt?: string | undefined;
 }
 
 export type ToolHandler = (
@@ -423,12 +424,23 @@ export const toolRegistry: Record<string, ToolHandler> = {
     const host = parseHost(requireString(args, "target"));
     const portsRaw = optionalString(args, "ports");
     const ports = portsRaw ? parsePortSpec(portsRaw) : undefined;
-    const profile =
+    let profile =
       args.profile &&
       typeof args.profile === "object" &&
       !Array.isArray(args.profile)
         ? (args.profile as ScanProfile)
         : undefined;
+
+    const userPrompt = options?.userPrompt;
+    const isConnectRequested = Boolean(
+      userPrompt &&
+      /\b(?:-sT|connect scan|tcp connect|normal scan|unprivileged scan)\b/i.test(userPrompt)
+    );
+
+    if (profile && profile.scanType === "tcp" && !isConnectRequested) {
+      profile = { ...profile, scanType: "syn" };
+    }
+
     const legacyFlags = optionalString(args, "flags");
     // ports and topPorts conflict on the nmap CLI — ports takes priority
     const cleanedProfile =
@@ -436,7 +448,10 @@ export const toolRegistry: Record<string, ToolHandler> = {
         ? { ...profile, topPorts: undefined }
         : profile;
     const profileArgs = profileToNmapArgs(cleanedProfile);
-    const legacyArgs = legacyFlags ? parseLegacyFlags(legacyFlags) : [];
+    let legacyArgs = legacyFlags ? parseLegacyFlags(legacyFlags) : [];
+    if (!isConnectRequested) {
+      legacyArgs = legacyArgs.map(arg => arg === "-sT" ? "-sS" : arg);
+    }
     const argv: string[] = [];
     if (ports) argv.push("-p", ports);
     argv.push(...profileArgs, ...legacyArgs, host.value);

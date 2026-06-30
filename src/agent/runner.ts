@@ -109,9 +109,53 @@ export interface AgentRunOptions {
   session?: SessionPolicy | undefined;
 }
 
+export function preprocessJson(raw: string): string {
+  let inString = false;
+  let escaped = false;
+  let result = "";
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i]!;
+    if (char === '"' && !escaped) {
+      inString = !inString;
+      result += char;
+    } else if (inString) {
+      if (char === '\n') {
+        result += '\\n';
+      } else if (char === '\r') {
+        result += '\\r';
+      } else if (char === '\t') {
+        result += '\\t';
+      } else {
+        result += char;
+      }
+    } else {
+      if (char === ',' && i + 1 < raw.length) {
+        let nextNonWs = "";
+        for (let j = i + 1; j < raw.length; j++) {
+          if (!/\s/.test(raw[j]!)) {
+            nextNonWs = raw[j]!;
+            break;
+          }
+        }
+        if (nextNonWs === '}' || nextNonWs === ']') {
+          continue;
+        }
+      }
+      result += char;
+    }
+    if (char === '\\' && inString) {
+      escaped = !escaped;
+    } else {
+      escaped = false;
+    }
+  }
+  return result;
+}
+
 function tryParseCall(raw: string): ToolCall | undefined {
   try {
-    const parsed = JSON.parse(raw.trim()) as Partial<ToolCall>;
+    const preprocessed = preprocessJson(raw);
+    const parsed = JSON.parse(preprocessed.trim()) as Partial<ToolCall>;
     if (
       typeof parsed.name === "string" &&
       parsed.args &&
@@ -147,9 +191,93 @@ function parseKimiToolCall(text: string): ToolCall | undefined {
   return tryParseCall(JSON.stringify({ name, args: tryJson(match[2]!) ?? {} }));
 }
 
+function parseXmlToolCall(text: string): ToolCall | undefined {
+  // Pattern 1:
+  // <tool_call>
+  // <name>tool.name</name>
+  // <args>{...}</args>
+  // </tool_call>
+  const xmlNameArgs = text.match(
+    /<tool_call>[\s\S]*?<name>\s*([\w.]+?)\s*<\/name>\s*<args>\s*(\{[\s\S]*?\})\s*<\/args>[\s\S]*?<\/tool_call>/i
+  );
+  if (xmlNameArgs?.[1] && xmlNameArgs?.[2]) {
+    try {
+      const args = JSON.parse(preprocessJson(xmlNameArgs[2]));
+      return {
+        name: xmlNameArgs[1],
+        args: args as Record<string, unknown>,
+      };
+    } catch {}
+  }
+
+  // Pattern 1b (MiMo alternative):
+  // <tool_call>
+  // <tool_name>tool.name</tool_name>
+  // <parameters>{...}</parameters>
+  // </tool_call>
+  const xmlToolNameParams = text.match(
+    /<tool_call>[\s\S]*?<tool_name>\s*([\w.]+?)\s*<\/tool_name>\s*<parameters>\s*(\{[\s\S]*?\})\s*<\/parameters>[\s\S]*?<\/tool_call>/i
+  );
+  if (xmlToolNameParams?.[1] && xmlToolNameParams?.[2]) {
+    try {
+      const args = JSON.parse(preprocessJson(xmlToolNameParams[2]));
+      return {
+        name: xmlToolNameParams[1],
+        args: args as Record<string, unknown>,
+      };
+    } catch {}
+  }
+
+  // Pattern 1c (MiMo function/parameter format):
+  // <tool_call>
+  // <function=tool.name>
+  // <parameter=name>value</parameter>
+  // </function>
+  // </tool_call>
+  const xmlFunctionBlock = text.match(
+    /<tool_call>[\s\S]*?<function=([\w.]+?)>([\s\S]*?)<\/function>[\s\S]*?<\/tool_call>/i
+  );
+  if (xmlFunctionBlock?.[1] && xmlFunctionBlock?.[2]) {
+    const name = xmlFunctionBlock[1];
+    const inner = xmlFunctionBlock[2];
+    const args: Record<string, unknown> = {};
+    const paramRegex = /<parameter=([\w.]+?)>([\s\S]*?)<\/parameter>/gi;
+    let paramMatch;
+    while ((paramMatch = paramRegex.exec(inner)) !== null) {
+      const paramName = paramMatch[1]!;
+      const paramValueStr = paramMatch[2]!.trim();
+      let paramValue: any = paramValueStr;
+      try {
+        if (/^(?:\[|\{|true|false|null|\d+(\.\d+)?$)/i.test(paramValueStr)) {
+          paramValue = JSON.parse(preprocessJson(paramValueStr));
+        }
+      } catch {}
+      args[paramName] = paramValue;
+    }
+    return { name, args };
+  }
+
+  // Pattern 2:
+  // <tool_call>
+  // <tool>
+  // {"name": "...", "args": {...}}
+  // </tool_call>
+  // or simply <tool_call> {"name": "...", "args": {...}} </tool_call>
+  const xmlJson = text.match(
+    /<tool_call>[\s\S]*?(?:<tool>)?\s*(\{[\s\S]*?\})\s*<\/tool_call>/i
+  );
+  if (xmlJson?.[1]) {
+    const call = tryParseCall(xmlJson[1]);
+    if (call) return call;
+  }
+
+  return undefined;
+}
+
 function tryJson(raw: string): Record<string, unknown> | undefined {
   try {
-    const parsed = JSON.parse(raw) as unknown;
+    const preprocessed = preprocessJson(raw);
+    const parsed = JSON.parse(preprocessed) as unknown;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
@@ -197,12 +325,9 @@ export function parseToolCall(
     if (call) return call;
   }
 
-  // 2. <tool_call>...</tool_call>
-  const xml = text.match(/<tool_call>([\s\S]*?)<\/tool_call>/i);
-  if (xml?.[1]) {
-    const call = tryParseCall(xml[1]);
-    if (call) return call;
-  }
+  // 2. <tool_call>...</tool_call> (XML formats)
+  const xmlCall = parseXmlToolCall(text);
+  if (xmlCall) return xmlCall;
 
   // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
   const kimi = parseKimiToolCall(text);
@@ -520,7 +645,7 @@ export function parseAllToolCalls(text: string): ToolCall[] {
 
   const xmlRe = /<tool_call>([\s\S]*?)<\/tool_call>/gi;
   while ((m = xmlRe.exec(text)) !== null) {
-    const call = tryParseCall(m[1] ?? "");
+    const call = parseXmlToolCall(m[0]);
     if (call) found.push({ index: m.index, call });
   }
 
@@ -571,16 +696,16 @@ export function collapseRepeatedText(text: string): string {
 /** Extract the text before the tool call block for display purposes */
 function textBeforeToolCall(text: string): string {
   const patterns = [
-    /```tool\s*\n?[\s\S]*?```/i,
-    /<tool_call>[\s\S]*?<\/tool_call>/i,
+    /```tool\s*\n?[\s\S]*$/i,
+    /<tool_call>[\s\S]*$/i,
     // Kimi/Moonshot sentinel block — strip from the section opener
     // (or the first call opener if the section header is missing).
     /<\|tool_calls_section_begin\|>[\s\S]*$/i,
     /<\|tool_call_begin\|>[\s\S]*$/i,
-    /#{1,3}\s*tool\s*\n\s*\{[\s\S]*\}/i,
-    /\*\*tool\*\*\s*\n\s*\{[\s\S]*\}/i,
-    /```\w*\s*\n?\{[\s\S]*?"name"[\s\S]*?\}[\s\S]*?```/,
-    /\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*?\}\s*\}\s*$/,
+    /#{1,3}\s*tool\s*\n\s*\{[\s\S]*$/i,
+    /\*\*tool\*\*\s*\n\s*\{[\s\S]*$/i,
+    /```\w*\s*\n?\{[\s\S]*?"name"[\s\S]*$/i,
+    /\{"name"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[\s\S]*$/i,
   ];
   for (const pattern of patterns) {
     const idx = text.search(pattern);
@@ -757,7 +882,7 @@ export function looksLikeBuildTask(
 // Matrix of action-verb narration: the model says it is *about to* do
 // something but hasn't. Used to detect "narrate, don't act" stalls.
 const ACTION_NARRATION_RE =
-  /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:explore|list|read|fetch|browse|check|inspect|examine|look|create|run|start|write|build|add|scaffold|set\s*up|setup|install|initialize|init|generate|make|review|open|find|search|verify|update|edit|modify|fix|implement)\b/i;
+  /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:explore|list|read|fetch|browse|check|inspect|examine|look|create|run|start|write|build|add|scaffold|set\s*up|setup|install|initialize|init|generate|make|review|open|find|search|verify|update|edit|modify|fix|implement|gather|assess|scan|audit)\b/i;
 
 /**
  * Detect a message that narrates an *upcoming* action ("let me explore the
@@ -1927,6 +2052,7 @@ export async function runAgentLoop(
           printLive(chunk);
         },
         confirmed: true,
+        userPrompt: prompt,
       });
       if (liveBytes > 0 || liveTruncatedNotified) {
         writeToolOutput(toolEventId, "\n", "\n");
@@ -2458,6 +2584,7 @@ export async function runAgentLoop(
       const narratedAction = looksLikeActionNarration(cleaned);
       const wantsAction =
         buildLikeTurn ||
+        pentestLikeTurn ||
         (activePlan && session.planApproved.value) ||
         freshWebSearchRequired ||
         narratedAction;
@@ -2481,6 +2608,18 @@ export async function runAgentLoop(
             "described an action but emitted no tool call — nudging it to run one",
             chalk.yellow(
               "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
+            ),
+          );
+        } else if (pentestLikeTurn) {
+          nudge =
+            "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW (e.g. net.scan / sysinfo / shell.exec). For example, to scan local network or read system settings:\n" +
+            '```tool\n{"name":"sysinfo","args":{}}\n```\n' +
+            "Every turn MUST contain a ```tool block until the task is done.";
+          writeNotice(
+            "warn",
+            "described a security/pentest action but emitted no tool call — nudging it to run one",
+            chalk.yellow(
+              "  ⚠ described a security/pentest action but emitted no tool call — nudging it to run one\n",
             ),
           );
         } else if (!buildLikeTurn) {
@@ -2638,15 +2777,18 @@ export async function runAgentLoop(
       if (assistantText.hasThinking) {
         writeThinkingBlock(assistantText.thinkContent);
       }
-      messages.push({
-        role: "assistant",
-        content: collapseRepeatedText(assistantText.visible),
-      });
-
       let allCalls = parseAllToolCalls(assistantText.visible || assistantText.thinkContent);
       if (allCalls.length === 0 && call) {
         allCalls = [call];
       }
+
+      const standardizedContent = (beforeTool ? beforeTool.trim() + "\n\n" : "") +
+        allCalls.map(c => `\`\`\`tool\n${JSON.stringify(c)}\n\`\`\``).join("\n\n");
+
+      messages.push({
+        role: "assistant",
+        content: standardizedContent,
+      });
 
       if (allCalls.length > 1) {
         writeNotice(

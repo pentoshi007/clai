@@ -8,9 +8,24 @@ import {
   isLumpedSingleTask,
   countToolFences,
   looksLikeActionNarration,
+  preprocessJson,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
+  it("preprocesses JSON to escape control characters and strip trailing commas", () => {
+    const rawInput = `{
+      "name": "shell.exec",
+      "args": {
+        "command": "echo 'hello'\necho 'world'",
+        "timeoutMs": 1000,
+      },
+    }`;
+    const preprocessed = preprocessJson(rawInput);
+    const parsed = JSON.parse(preprocessed);
+    expect(parsed.name).toBe("shell.exec");
+    expect(parsed.args.command).toBe("echo 'hello'\necho 'world'");
+    expect(parsed.args.timeoutMs).toBe(1000);
+  });
   it("extracts tool calls from fenced code blocks", () => {
     const text =
       'I will run the command.\n```tool\n{"name":"shell.exec","args":{"command":"ls -la"}}\n```';
@@ -27,6 +42,45 @@ describe("agent tool-call parser", () => {
     expect(call).toBeDefined();
     expect(call!.name).toBe("sysinfo");
     expect(call!.args).toEqual({});
+  });
+
+  it("extracts tool calls from XML-style tags with name and args elements (MiMo Pro)", () => {
+    const text =
+      'Response:\n<tool_call>\n<name>web.search</name>\n<args>{"query":"current UK Prime Minister 2026"}</args>\n</tool_call>\n</tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("web.search");
+    expect(call!.args).toEqual({ query: "current UK Prime Minister 2026" });
+  });
+
+  it("extracts tool calls from XML-style tags with nested tool element (MiMo Free)", () => {
+    const text =
+      'Response:\n<tool_call>\n<tool>\n{"name": "web.search", "args": {"query": "who is the current UK prime minister 2026", "fetchTop": 2}}\n</tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("web.search");
+    expect(call!.args).toEqual({ query: "who is the current UK prime minister 2026", fetchTop: 2 });
+  });
+
+  it("extracts tool calls from XML-style tags with tool_name and parameters elements", () => {
+    const text =
+      'Response:\n<tool_call>\n<tool_name>web.fetch</tool_name>\n<parameters>\n{"url":"https://aniketpandey.website","responseMode":"readable","includeHeaders":true,"includeTls":true}\n</parameters>\n</tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("web.fetch");
+    expect(call!.args).toEqual({ url: "https://aniketpandey.website", responseMode: "readable", includeHeaders: true, includeTls: true });
+  });
+
+  it("extracts tool calls from XML-style tags using function and parameter elements (MiMo 1c)", () => {
+    const text =
+      'Response:\n<tool_call>\n<function=shell.exec>\n<parameter=command>sudo lsof -i -P -n | grep LISTEN | sort -t: -k2 -n</parameter>\n<parameter=timeoutMs>15000</parameter>\n</function>\n</tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("shell.exec");
+    expect(call!.args).toEqual({
+      command: "sudo lsof -i -P -n | grep LISTEN | sort -t: -k2 -n",
+      timeoutMs: 15000,
+    });
   });
 
   it("extracts tool calls from ### heading format", () => {

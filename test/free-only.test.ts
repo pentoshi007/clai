@@ -95,7 +95,7 @@ describe("provider fallback rate limits", () => {
           "Provider request failed with HTTP 429 (retry after 35s)",
           429,
           "",
-          35,
+          0.001,
         );
       },
     } as LlmProvider;
@@ -122,7 +122,7 @@ describe("provider fallback rate limits", () => {
         () => undefined,
         (message) => statuses.push(message),
       ),
-    ).rejects.toThrow(/Provider\s+Error[\s\S]*groq\s+Provider request failed with HTTP 429/);
+    ).rejects.toThrow(/Provider\s+Error[\s\S]*groq\s+Model is rate limited/);
 
     expect(nvidiaCalled).toBe(false);
     expect(statuses.join("")).toMatch(/staying on selected provider/);

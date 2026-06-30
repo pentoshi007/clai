@@ -210,7 +210,7 @@ function stripStreamingToolFence(text: string): string {
 
 function renderUser(text: string, width: number): string[] {
   const tag = chalk.bgHex("#22D3EE").hex("#020617").bold(" you ");
-  const md = renderMarkdown(text).replace(/\n+$/, "");
+  const md = renderMarkdown(text, width - 8).replace(/\n+$/, "");
   const lines = md.split("\n").map((line) => line.startsWith("  ") ? line.slice(2) : line);
   const out: string[] = [];
   for (const line of lines) {
@@ -224,7 +224,7 @@ function renderUser(text: string, width: number): string[] {
 
 function renderAssistant(text: string, width: number): string[] {
   const label = chalk.magenta.bold("◆ Response");
-  const md = renderMarkdown(text).replace(/\n+$/, "");
+  const md = renderMarkdown(text, width - 2).replace(/\n+$/, "");
   return [label, "", ...md.split("\n").map((line) => `  ${line}`)];
 }
 
@@ -257,11 +257,16 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 
   if (item.argsDisplay) {
     const label = item.name === "shell.exec" ? "command" : "input";
-    const maxArgsWidth = Math.max(10, ctx.width - 6 - label.length);
-    const truncatedArgs = item.argsDisplay.length > maxArgsWidth
-      ? item.argsDisplay.slice(0, maxArgsWidth - 1) + "…"
-      : item.argsDisplay;
-    lines.push(bar + chalk.dim(`${label}: `) + chalk.white(truncatedArgs));
+    const prefix = chalk.dim(`${label}: `);
+    const prefixLen = `${label}: `.length;
+    const wrappedArgs = wrap(item.argsDisplay, ctx.width - 4 - prefixLen);
+    wrappedArgs.forEach((l, idx) => {
+      if (idx === 0) {
+        lines.push(bar + prefix + chalk.white(l));
+      } else {
+        lines.push(bar + " ".repeat(prefixLen) + chalk.white(l));
+      }
+    });
   }
 
   if (item.status === "blocked" && item.summary) {
@@ -538,7 +543,7 @@ export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[]
   if (state.streaming) {
     const visibleStreaming = stripStreamingToolFence(state.streaming);
     if (visibleStreaming.trim().length > 0) {
-      const md = renderMarkdown(visibleStreaming).replace(/\n+$/, "");
+      const md = renderMarkdown(visibleStreaming, ctx.width - 2).replace(/\n+$/, "");
       blocks.push([
         chalk.magenta.bold("◆ Response"),
         ...md.split("\n").map((line) => `  ${line}`),

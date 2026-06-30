@@ -1607,11 +1607,15 @@ export function App({
   // screen flash on every keypress/spinner frame.
   const usableRows = Math.max(8, rows - 1);
   const headerH = 0;
-  const statusH = state.pendingConfirm ? 6 : secretRequest ? 7 : 0;
+  const inputWidth = Math.max(10, cols - 10);
+  let statusH = secretRequest ? 7 : 0;
+  if (state.pendingConfirm) {
+    const wrappedPromptLines = wrapPlainString(state.pendingConfirm.prompt, cols - 6);
+    statusH = 3 + wrappedPromptLines.length; // Title row (1) + instructions row (1) + prompt contents + borders (2) + spacing
+  }
   const chromeH = !secretRequest && !state.pendingConfirm ? 1 : 0;
   const gapH = 1;
 
-  const inputWidth = Math.max(10, cols - 10);
   const wrappedInputLines = wrapPlainString(input, inputWidth);
   const maxAvailableForComposer = Math.max(
     3,

@@ -38,7 +38,7 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
   ],
   kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
-  bynara: [],
+  bynara: [/mimo-/i, /deepseek-v4/i, /deepseek-r1/i, /bynara-max/i],
 };
 
 export function modelSupportsThinking(
