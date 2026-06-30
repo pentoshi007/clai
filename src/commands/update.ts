@@ -14,7 +14,7 @@ const REPO = "pentoshi007/clai";
  * in the compiled dist layout). Falls back to a baked constant only if the
  * file can't be read.
  */
-const FALLBACK_VERSION = "2.0.24";
+const FALLBACK_VERSION = "2.0.25";
 
 function resolvePackageVersion(): string {
   try {

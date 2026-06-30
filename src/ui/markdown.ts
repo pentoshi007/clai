@@ -372,20 +372,81 @@ export function indentAndWrapText(text: string, indent = "  "): string {
     .join("\n");
 }
 
-function isParagraph(line: string, inFence: boolean): boolean {
-  if (inFence) return false;
-  const trimmed = line.trim();
-  if (!trimmed) return false;
-  if (/^(\s*)```/.test(line)) return false;
-  if (/^(#{1,6})\s+/.test(line)) return false;
-  if (/^\s*[-*_]{3,}\s*$/.test(line)) return false;
-  if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) return false;
-  if (/^\s*\|.*\|\s*$/.test(line)) return false;
-  if (line.startsWith("> ")) return false;
-  if (/^(\s*)[-*+]\s+\[([ xX])\]\s+/.test(line)) return false;
-  if (/^(\s*)(\d+)\.\s+/.test(line)) return false;
-  if (/^(\s*)[-*+]\s+/.test(line)) return false;
-  return true;
+function wrapMarkdownLine(line: string, wrapWidth: number, state: BlockState): string[] {
+  // If it's a fence, don't wrap it
+  if (/^(\s*)```/.test(line)) {
+    return [renderBlockLine(line, state)];
+  }
+
+  // If it's a horizontal rule, don't wrap it
+  if (/^\s*[-*_]{3,}\s*$/.test(line)) {
+    return [renderBlockLine(line, state)];
+  }
+
+  // Check if it's a blockquote
+  if (line.startsWith("> ")) {
+    const content = line.slice(2);
+    const prefix = chalk.dim("│ ");
+    const renderedContent = renderInlineMarkdown(content);
+    // Wrap the content at wrapWidth - 2 (since prefix is 2 chars)
+    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - 2));
+    return wrapped.map((wl) => prefix + chalk.dim.italic(wl));
+  }
+
+  // Check if it's a task list
+  const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
+  if (task) {
+    const indent = task[1] ?? "";
+    const checked = /[xX]/.test(task[2]!);
+    const box = checked ? chalk.green("☑") : chalk.dim("☐");
+    const content = task[3] ?? "";
+    const prefix = `${indent}${box} `;
+    const prefixLength = indent.length + 2;
+    let renderedContent = renderInlineMarkdown(content);
+    if (checked) {
+      renderedContent = chalk.dim(renderedContent);
+    }
+    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - prefixLength));
+    return wrapped.map((wl, idx) => {
+      if (idx === 0) return prefix + wl;
+      return " ".repeat(prefixLength) + wl;
+    });
+  }
+
+  // Check if it's an ordered list
+  const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+  if (ordered) {
+    const indent = ordered[1] ?? "";
+    const num = ordered[2] ?? "";
+    const content = ordered[3] ?? "";
+    const prefix = `${indent}${chalk.cyan(`${num}.`)} `;
+    const prefixLength = indent.length + num.length + 2;
+    const renderedContent = renderInlineMarkdown(content);
+    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - prefixLength));
+    return wrapped.map((wl, idx) => {
+      if (idx === 0) return prefix + wl;
+      return " ".repeat(prefixLength) + wl;
+    });
+  }
+
+  // Check if it's an unordered list
+  const unordered = line.match(/^(\s*)[-*+]\s+(.*)$/);
+  if (unordered) {
+    const indent = unordered[1] ?? "";
+    const content = unordered[2] ?? "";
+    const prefix = `${indent}${chalk.cyan("•")} `;
+    const prefixLength = indent.length + 2;
+    const renderedContent = renderInlineMarkdown(content);
+    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - prefixLength));
+    return wrapped.map((wl, idx) => {
+      if (idx === 0) return prefix + wl;
+      return " ".repeat(prefixLength) + wl;
+    });
+  }
+
+  // Otherwise, treat as a normal paragraph/line
+  const rendered = renderBlockLine(line, state);
+  return wrapAnsiLine(rendered, wrapWidth);
 }
 
 // ── Markdown tables ────────────────────────────────────────────────
@@ -636,13 +697,8 @@ export function renderMarkdown(text: string, width?: number): string {
     const pieces =
       !state.inFence && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
     for (const piece of pieces) {
-      if (isParagraph(piece, state.inFence)) {
-        const rendered = renderBlockLine(piece, state);
-        for (const wl of wrapAnsiLine(rendered, wrapWidth)) {
-          resultLines.push(`${OUTPUT_INDENT}${wl}`);
-        }
-      } else {
-        resultLines.push(`${OUTPUT_INDENT}${renderBlockLine(piece, state)}`);
+      for (const wl of wrapMarkdownLine(piece, wrapWidth, state)) {
+        resultLines.push(`${OUTPUT_INDENT}${wl}`);
       }
     }
     i++;
@@ -672,13 +728,9 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
     for (let p = 0; p < pieces.length; p++) {
       const piece = pieces[p]!;
       const lastPiece = p === pieces.length - 1;
-      const physical = isParagraph(piece, state.inFence)
-        ? wrapAnsiLine(renderBlockLine(piece, state), wrapWidth).map(
-            (wl) => `${OUTPUT_INDENT}${wl}`,
-          )
-        : [`${OUTPUT_INDENT}${renderBlockLine(piece, state)}`];
+      const physical = wrapMarkdownLine(piece, wrapWidth, state);
       for (let q = 0; q < physical.length; q++) {
-        write(physical[q]!);
+        write(`${OUTPUT_INDENT}${physical[q]!}`);
         const isVeryLast = lastPiece && q === physical.length - 1;
         if (!isVeryLast || withNewline) write("\n");
       }

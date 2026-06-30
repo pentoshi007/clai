@@ -187,4 +187,24 @@ describe("markdown extras", () => {
     expect(strip(out)).not.toContain("**");
     expect(strip(out)).toContain("comprehensive guide");
   });
+
+  it("wraps and aligns ordered and unordered list items to avoid truncation", () => {
+    const md = "1. OpenCode + GitHub Copilot — Terminal-based AI coding agent; connect it to your free Copilot account and select Claude Opus/Sonnet/H";
+    const out = renderMarkdown(md, 40);
+    expect(strip(out)).toContain("1. OpenCode +");
+    // The wrapped lines should be indented by 3 spaces (since prefix is '1. ')
+    const lines = out.split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines[1]).toMatch(/^\s{5}\w+/); // 2 spaces (OUTPUT_INDENT) + 3 spaces (prefix length)
+  });
+
+  it("wraps and aligns blockquotes correctly", () => {
+    const md = "> This is a very long blockquote line that should be wrapped across multiple lines of text.";
+    const out = renderMarkdown(md, 40);
+    const lines = out.split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    for (const l of lines) {
+      expect(strip(l)).toContain("│");
+    }
+  });
 });
