@@ -59,7 +59,7 @@ clai --classic      # start the legacy line-based REPL
 CLAI_CLASSIC=1 clai # persistent shell-level opt-out (CLAI_TUI=0 also works)
 
 # One-shot ask mode (explains but doesn't execute)
-clai --mode ask "create a python venv and install requests"
+clai --mode ask "how to create a python venv and install requests"
 
 # One-shot agent mode (executes)
 clai --mode agent "find all PDFs larger than 10MB in ~/Documents"
