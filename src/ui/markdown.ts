@@ -637,8 +637,9 @@ export function renderMarkdown(text: string, width?: number): string {
       !state.inFence && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
     for (const piece of pieces) {
       if (isParagraph(piece, state.inFence)) {
-        for (const wl of wrapAnsiLine(piece, wrapWidth)) {
-          resultLines.push(`${OUTPUT_INDENT}${renderBlockLine(wl, state)}`);
+        const rendered = renderBlockLine(piece, state);
+        for (const wl of wrapAnsiLine(rendered, wrapWidth)) {
+          resultLines.push(`${OUTPUT_INDENT}${wl}`);
         }
       } else {
         resultLines.push(`${OUTPUT_INDENT}${renderBlockLine(piece, state)}`);
@@ -672,8 +673,8 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
       const piece = pieces[p]!;
       const lastPiece = p === pieces.length - 1;
       const physical = isParagraph(piece, state.inFence)
-        ? wrapAnsiLine(piece, wrapWidth).map(
-            (wl) => `${OUTPUT_INDENT}${renderBlockLine(wl, state)}`,
+        ? wrapAnsiLine(renderBlockLine(piece, state), wrapWidth).map(
+            (wl) => `${OUTPUT_INDENT}${wl}`,
           )
         : [`${OUTPUT_INDENT}${renderBlockLine(piece, state)}`];
       for (let q = 0; q < physical.length; q++) {

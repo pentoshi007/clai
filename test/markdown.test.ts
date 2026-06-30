@@ -179,4 +179,12 @@ describe("markdown extras", () => {
     expect(out).toContain("• item two");
     expect(out).toContain("1. item three");
   });
+
+  it("renders formatting properly even when text spans across wrap boundaries", () => {
+    const md = "This is a **comprehensive guide for students to access premium AI models** that spans a long line.";
+    const out = renderMarkdown(md, 40);
+    // The rendered output should have the bold markers stripped (because it was parsed first)
+    expect(strip(out)).not.toContain("**");
+    expect(strip(out)).toContain("comprehensive guide");
+  });
 });
