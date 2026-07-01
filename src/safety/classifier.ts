@@ -555,7 +555,7 @@ export function classifyToolCall(
     };
   }
 
-  // ── New tools ──────────────────────────────────────────────────────
+  // New tools
 
   if (call.name === "net.context") {
     return { level: "safe", reason: "Read-only local network info" };

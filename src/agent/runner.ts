@@ -296,7 +296,7 @@ export async function runAgentLoop(
     let lastAnswer = "";
     const session: SessionPolicy = options.session ?? createSessionPolicy();
 
-    // ── Active plan context ────────────────────────────────────────────
+    // Active plan context
     // If this session already has a plan, inject it so the model keeps it in
     // context. When the user has approved it (via /implement) we instruct the
     // agent to execute task by task; otherwise the agent should refine/wait.
@@ -380,7 +380,7 @@ export async function runAgentLoop(
     // still terminates.
     let actionIntentRetries = 0;
 
-    // ── Multi-tool execution queue ─────────────────────────────────────
+    // Multi-tool execution queue
     // Models naturally emit several tool calls in one message — e.g. the
     // plan-execution rhythm "task.update in_progress → do the work →
     // task.update done", or a batch of fs.write calls. Rather than running
@@ -392,7 +392,7 @@ export async function runAgentLoop(
     // so the model always sees errors and stays in control.
     let pendingCalls: ToolCall[] = [];
 
-    // ── Step budget ───────────────────────────────────────────────────
+    // Step budget
     // The budget governs how many *productive* steps (a tool execution or a
     // final answer) the agent may take. Recovery iterations — nudging a model
     // that only produced thinking, asking it to re-emit a malformed tool call,
@@ -545,7 +545,7 @@ export async function runAgentLoop(
         };
       }
 
-      // ── Task-scoped execution gate ───────────────────────────────────
+      // Task-scoped execution gate
       // Once a plan is approved, every non-plan tool call must run while
       // exactly one task is "in_progress". This stops a model from batching
       // tool calls for many/all tasks in one turn and only touching task
@@ -960,7 +960,7 @@ export async function runAgentLoop(
       return { ok: result.ok, call, result, contextOutput };
     }
 
-    // ── Automatic context compaction ───────────────────────────────────────
+    // Automatic context compaction
     // As a long turn accumulates tool outputs and reasoning, the context can
     // grow past what the model can hold. We proactively summarize the older
     // turns into a single continuation memory (the SAME model-written summary
@@ -1057,7 +1057,7 @@ export async function runAgentLoop(
       // `step` is the productive-step index (used for display + audit). It only
       // advances when the previous iteration actually executed a tool.
       step = productiveSteps;
-      // ── Step budget gate: ask the user instead of hard-stopping ────────
+      // Step budget gate: ask the user instead of hard-stopping
       if (productiveSteps >= stepBudget) {
         const askContinue =
           confirmPort.confirmContinue ?? inquirerConfirmPort.confirmContinue!;
@@ -1264,7 +1264,7 @@ export async function runAgentLoop(
           }
         }
 
-        // ── Empty-response recovery ───────────────────────────────────────
+        // Empty-response recovery
         // Some models occasionally return an empty completion: a reasoning
         // model that spent its whole budget on hidden &lt;think&gt; reasoning and emitted
         // no visible text, OR (more perniciously) a gateway hiccup that
@@ -1499,7 +1499,7 @@ export async function runAgentLoop(
           // somehow leaked into prose so the answer renders cleanly.
           const cleaned = stripSentinelTokens(assistantText.visible);
 
-          // ── Act, don't narrate ────────────────────────────────────────────
+          // Act, don't narrate
           // Build/scaffold/plan turns must DO something. If the model returns
           // prose with NO tool call, it is narrating intent ("Let me first
           // explore the directory…") or writing a PLAN as prose ("Goal: … Tasks:
@@ -1618,7 +1618,7 @@ export async function runAgentLoop(
             });
             continue;
           }
-          // ── Premature-completion guard (approved plan still has work) ──────
+          // Premature-completion guard (approved plan still has work)
           // If the user approved a plan and the model now gives a final answer
           // while tasks are still pending/in_progress — without having run the
           // work — it is fabricating completion (the exact "all tasks completed,
@@ -1735,7 +1735,7 @@ export async function runAgentLoop(
           );
         }
 
-        // ── Scoped-parallel batch execution ────────────────────────────────
+        // Scoped-parallel batch execution
         // The model may emit several calls in one message. We partition them,
         // IN DOCUMENT ORDER, into segments:
         //   • A run of consecutive READ-ONLY, safe-classified calls (the same

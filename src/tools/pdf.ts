@@ -113,7 +113,7 @@ export async function pdfRead(
     };
   }
 
-  // ── Step 1: fast text extraction for born-digital PDFs ────────────────
+  // Step 1: fast text extraction for born-digital PDFs
   let textLayerOutput = "";
   if (await commandAvailable("pdftotext")) {
     const direct = await spawnArgv({
@@ -140,7 +140,7 @@ export async function pdfRead(
     return { ok: false, output: "pdf.read aborted.", exitCode: 130 };
   }
 
-  // ── Step 2: scanned PDF → render pages then OCR each one ──────────────
+  // Step 2: scanned PDF → render pages then OCR each one
   const missing: string[] = [];
   if (!(await commandAvailable("pdftoppm"))) missing.push("pdftoppm (poppler)");
   if (!(await commandAvailable("tesseract"))) missing.push("tesseract");

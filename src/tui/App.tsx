@@ -217,7 +217,7 @@ export function App({
     };
   }, [mouseMode]);
 
-  // ── Confirm port → in-app modal ────────────────────────────────────────────
+  // Confirm port → in-app modal
   const confirmController = useMemo(() => createTuiConfirmPort(), []);
   const confirmResolver = useRef<((ok: boolean) => void) | undefined>(
     undefined,
@@ -1720,7 +1720,7 @@ export function App({
     setSecretRequest(undefined);
   }, []);
 
-  // ── Layout math (keep the composer pinned to the bottom) ────────────────────
+  // Layout math (keep the composer pinned to the bottom)
   const suggestions: SlashCommand[] = input.startsWith("/")
     ? getSlashCommandSuggestions(input)
     : [];
@@ -1852,7 +1852,7 @@ export function App({
     };
   }, [stdin, modalActive, maxOffset, mouseMode, viewportH]);
 
-  // ── Key handling ────────────────────────────────────────────────────────────
+  // Key handling
   useInput((ch, key) => {
     if (modalActive) return; // overlay/modal owns input
     const cleanedChunk = stripMouseReports(ch)
@@ -2074,7 +2074,7 @@ export function App({
 
   const closeOverlay = useCallback(() => setOverlay({ kind: "none" }), []);
 
-  // ── Render ───────────────────────────────────────────────────────────────────
+  // Render
   const elapsed = state.status.startedAt
     ? Math.max(0, Math.floor((Date.now() - state.status.startedAt) / 1000))
     : 0;

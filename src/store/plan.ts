@@ -266,7 +266,7 @@ export async function clearAllPlans(): Promise<void> {
   }
 }
 
-// ── Task mutations ────────────────────────────────────────────────────────
+// Task mutations
 
 export function markTask(
   plan: SessionPlan,

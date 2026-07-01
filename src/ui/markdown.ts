@@ -499,7 +499,7 @@ function wrapMarkdownLine(
   return wrapAnsiLine(rendered, wrapWidth);
 }
 
-// ── Markdown tables ────────────────────────────────────────────────
+// Markdown tables
 // `<br>` (and `<br/>`, `<br />`) inside cells become stacked lines.
 const BR_RE = /<br\s*\/?>/i;
 const BR_RE_GLOBAL = /<br\s*\/?>/gi;

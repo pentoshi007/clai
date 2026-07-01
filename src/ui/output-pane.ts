@@ -123,11 +123,9 @@ export function formatViewportHint(v: OutputViewport): string {
   );
 }
 
-// ── Alternate-screen pager (less / more style) ──────────────────────────────
-// When the user presses Ctrl+O on a TTY we open the full tool output in a
-// scrollable pager that lives in the alternate screen buffer, leaving the
-// REPL session below intact. Closing with `q`, ESC, or Ctrl+O drops back
-// to the REPL with the previous prompt redrawn by the caller.
+// Alternate-screen pager (less/more style): Ctrl+O opens full tool output
+// in the alt-screen buffer, leaving the REPL session below intact; q/ESC/
+// Ctrl+O closes it and the caller redraws the previous prompt.
 
 interface KeypressKey {
   ctrl?: boolean;

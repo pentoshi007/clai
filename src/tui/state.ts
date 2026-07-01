@@ -2,7 +2,7 @@ import type { AgentEvent } from "../agent/events.js";
 import type { SessionPlan } from "../store/plan.js";
 import type { ChatMessage } from "../types.js";
 
-// ── Transcript items ─────────────────────────────────────────────────────────
+// Transcript items
 
 export type ToolStatus = "running" | "ok" | "fail" | "blocked";
 
@@ -116,7 +116,7 @@ export function serializeTranscriptForCompaction(items: TranscriptItem[]): strin
   }).filter(Boolean).join("\n\n---\n\n");
 }
 
-// ── Confirm requests ─────────────────────────────────────────────────────────
+// Confirm requests
 
 export interface PendingConfirm {
   id: string;
@@ -124,7 +124,7 @@ export interface PendingConfirm {
   prompt: string;
 }
 
-// ── App state ────────────────────────────────────────────────────────────────
+// App state
 
 export interface TurnStatus {
   running: boolean;
@@ -158,7 +158,7 @@ export function initialState(): TuiState {
   };
 }
 
-// ── Actions ──────────────────────────────────────────────────────────────────
+// Actions
 
 export type TuiAction =
   | { type: "event"; event: AgentEvent }
@@ -179,7 +179,7 @@ function nextId(prefix: string): string {
   return `${prefix}-${idCounter}`;
 }
 
-// ── Reducer ──────────────────────────────────────────────────────────────────
+// Reducer
 
 export function reducer(state: TuiState, action: TuiAction): TuiState {
   switch (action.type) {
@@ -496,7 +496,7 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 const TOOL_OUTPUT_CAP = 20000;
 function capOutput(text: string): string {

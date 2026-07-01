@@ -405,7 +405,7 @@ export async function readPromptLine(options: {
       // here so the user's navigation keys don't bleed into the input line.
       if (isPagerActive()) return;
 
-      // ── Bracketed paste ───────────────────────────────────────────────
+      // Bracketed paste
       // The terminal brackets a paste with paste-start / paste-end markers.
       // Buffer everything in between (including embedded newlines) and insert
       // it literally, so a long multi-line prompt is captured in full and the

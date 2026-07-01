@@ -195,7 +195,7 @@ async function buildImageOcrGrounding(
   );
 }
 
-// ── Abort controller for streaming cancellation ─────────────────────────────
+// Abort controller for streaming cancellation
 let currentAbortController: AbortController | null = null;
 
 class AbortRunError extends Error {
@@ -1602,7 +1602,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   process.on("unhandledRejection", handleUnhandledRejection);
   process.on("uncaughtException", handleUncaughtException);
 
-  // ── ESC / Ctrl+C abort; Ctrl+T toggles hidden thinking ──────────────────
+  // ESC / Ctrl+C abort; Ctrl+T toggles hidden thinking
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
   }
@@ -1743,7 +1743,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   };
   process.on("SIGINT", handleSigint);
 
-  // ── Startup intro card ───────────────────────────────────────────────────
+  // Startup intro card
   console.log(
     renderIntroCard({
       version: getCurrentVersion(),
@@ -1789,7 +1789,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       isReadingPrompt = false;
       if (!line) continue;
 
-      // ── /implement — approve the active plan and execute it ──────────
+      // /implement — approve the active plan and execute it
       // Handled here (not in handleSlash) because it must trigger a full
       // agent run with the plan marked approved, not just print something.
       let implementApproved = false;
@@ -1829,7 +1829,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           "Run real commands (installs, servers, verification) — do not claim anything ran without a successful tool call.";
       }
 
-      // ── Continuation detection ──────────────────────────────────────────
+      // Continuation detection
       // When the user types "continue" after the agent paused at a step limit,
       // augment the bare keyword with rich resumption context so the model
       // picks up from where it left off instead of restarting.

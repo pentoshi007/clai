@@ -646,12 +646,12 @@ function tryRecognizeBareArgs(
 export function recognizeBareToolJson(
   text: string,
 ): { call?: ToolCall; argsOnly?: boolean } | undefined {
-  // ── Primary path: the whole (de-fenced) text is a bare JSON object ──────
+  // Primary path: the whole (de-fenced) text is a bare JSON object
   const inner = stripLoneFence(text);
   const primary = tryRecognizeBareArgs(inner);
   if (primary) return primary;
 
-  // ── Secondary path: scan for any fenced block embedded in the text ──────
+  // Secondary path: scan for any fenced block embedded in the text
   // This catches models that prepend prose before emitting a bare-args fence,
   // e.g. "Let me fetch it.\n\n```web\n{\"url\":\"https://...\"}\n```"
   // We skip ```tool fences — those are handled by parseToolCall already.
@@ -734,16 +734,9 @@ export function countToolFences(text: string): number {
 }
 
 /**
- * Parse EVERY explicitly-delimited tool call in a message, in document
- * order. Unlike parseToolCall (which returns only the first), this lets the
- * runner execute a batch the model emitted in one turn — e.g. the natural
- * "task.update in_progress → do the work → task.update done" sequence, or
- * several fs.write calls. Only the unambiguous, delimited formats are
- * collected (```tool fences, <tool_call> XML, and Kimi sentinel blocks) so a
- * worked example in prose is far less likely to be mistaken for a call.
- * The runner executes them sequentially and STOPS the batch on the first
- * failure so the model can react, mirroring how Claude Code batches reads
- * and edits but pauses when something breaks.
+ * Parse every explicitly-delimited tool call in a message (```tool fences,
+ * <tool_call> XML, Kimi sentinel blocks), in document order, so the runner
+ * can execute a batch emitted in one turn instead of only the first call.
  */
 export function parseAllToolCalls(text: string): ToolCall[] {
   const found: Array<{ index: number; call: ToolCall }> = [];

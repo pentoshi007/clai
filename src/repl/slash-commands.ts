@@ -133,7 +133,7 @@ export const slashCommands: SlashCommand[] = [
   { command: "/help", description: "list commands" },
 ];
 
-// ── Well-known models per provider (refreshed May 2026) ───────────────────
+// Well-known models per provider (refreshed May 2026)
 /** Curated model choices used by both frontends. */
 export const knownModels: Record<string, string[]> = {
   groq: [
