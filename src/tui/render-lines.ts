@@ -494,65 +494,6 @@ function renderItemLinesCached(item: TranscriptItem, ctx: RenderCtx): string[] {
 }
 
 /** Compact one-box header shown once a conversation is under way. */
-function renderCompactHeader(ctx: RenderCtx): string[] {
-  const version = ctx.version ?? "0.0.0";
-  const mode = ctx.mode ?? "agent";
-  const provider = ctx.provider ?? "openai";
-  const model = ctx.model ?? "gpt-4";
-
-  const width = Math.max(40, ctx.width - 4);
-  const innerWidth = width - 4;
-  
-  // Left part: " ◆ clai  v{version}" — high-contrast slate chip matching the
-  // startup intro card so the header keeps the same visual language once the
-  // conversation begins (no jump back to the old blue/yellow badges).
-  const leftPlain = ` ◆ clai  v${version}`;
-  const leftColored =
-    chalk.bgHex("#334155").whiteBright.bold(" ◆ clai ") +
-    chalk.gray(` v${version}`);
-
-  // Right part: " {mode}  MODE"
-  const rightPlain = ` ${mode.toUpperCase()}  MODE`;
-  const rightColored =
-    chalk.bgHex("#334155").whiteBright.bold(` ${mode.toUpperCase()} `) +
-    chalk.gray(" MODE");
-  
-  // Line 1: space between
-  const spaceCount = Math.max(1, innerWidth - leftPlain.length - rightPlain.length);
-  const line1 = " " + leftColored + " ".repeat(spaceCount) + rightColored + " ";
-  
-  // Line 2: "{provider} / {model} · {cwd}"
-  const cwd = safeCwd();
-  const providerPart = chalk.green(provider);
-  const modelPart = chalk.cyan(model);
-  const cwdPart = chalk.gray(` ·  ${cwd}`);
-  const line2Inner = `${provider} / ${model} ·  ${cwd}`;
-  const line2ColoredInner = providerPart + chalk.gray(" / ") + modelPart + cwdPart;
-  
-  // Truncate line 2 if it's too long
-  let line2PlainInner = line2Inner;
-  let finalLine2Inner = line2ColoredInner;
-  if (line2Inner.length > innerWidth) {
-    const spaceForCwd = Math.max(5, innerWidth - provider.length - model.length - 12);
-    const truncatedCwd = cwd.slice(0, spaceForCwd) + "…";
-    line2PlainInner = `${provider} / ${model} ·  ${truncatedCwd}`;
-    finalLine2Inner = providerPart + chalk.gray(" / ") + modelPart + chalk.gray(" ·  ") + chalk.gray(truncatedCwd);
-  }
-  const line2Pad = Math.max(0, innerWidth - line2PlainInner.length);
-  const line2Content = " " + finalLine2Inner + " ".repeat(line2Pad) + " ";
-
-  const topStr = "  " + chalk.gray("╭" + "─".repeat(innerWidth + 2) + "╮");
-  const botStr = "  " + chalk.gray("╰" + "─".repeat(innerWidth + 2) + "╯");
-  
-  return [
-    "", // Blank line to prevent the header from getting cut off at the terminal top edge
-    topStr,
-    "  " + chalk.gray("│") + line1 + chalk.gray("│"),
-    "  " + chalk.gray("│") + line2Content + chalk.gray("│"),
-    botStr
-  ];
-}
-
 function stripAnsiLen(s: string): number {
   return s.replace(/\x1b\[[0-9;]*m/g, "").length;
 }
@@ -577,9 +518,9 @@ function centerCell(content: string, width: number): string {
  * Full startup intro card: one big two-partition box — a gradient "CLAI"
  * wordmark on the left, and a session-info panel (workdir/model/provider/
  * mode/version + quick-start hints) on the right — with the tagline and
- * welcome line centered below it. Only shown while the transcript is empty;
- * once the conversation starts, the compact header takes over so the
- * wordmark doesn't eat scroll space.
+ * welcome line centered below it. This is the persistent transcript header:
+ * it always renders as the first block and scrolls up naturally with the
+ * conversation, so the branding stays consistent for the whole session.
  *
  * The wordmark's own width is fixed (it's dot-matrix ASCII art), but the
  * right partition — and therefore the whole card — stretches or shrinks
@@ -712,9 +653,11 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
  */
 export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[] {
   const blocks: string[][] = [];
-  blocks.push(
-    state.items.length === 0 ? renderIntroHeader(ctx) : renderCompactHeader(ctx),
-  );
+  // The modern intro card is always the first block of the transcript. It
+  // stays at the top and scrolls up naturally as the conversation grows,
+  // rather than being swapped for a separate compact header once a turn
+  // begins.
+  blocks.push(renderIntroHeader(ctx));
 
   for (const item of state.items) {
     blocks.push(renderItemLinesCached(item, ctx));
