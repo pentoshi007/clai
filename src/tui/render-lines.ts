@@ -549,8 +549,9 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
   const wmWidth = wordmarkWidth("CLAI");
 
   const available = Math.max(48, totalWidth - OVERHEAD); // combined cell width
-  const halfWidth = Math.floor(available / 2);
-  const leftWidth = Math.max(wmWidth + 6, halfWidth); // +6 → breathing room
+  // Logo column takes ~40% of the available width, the info panel the rest.
+  // Never shrink below the wordmark's own width (+6 for breathing room).
+  const leftWidth = Math.max(wmWidth + 6, Math.floor(available * 0.4));
   const rightWidth = Math.max(24, available - leftWidth);
 
   // High-contrast label chip (solid background + bright bold text), matching
