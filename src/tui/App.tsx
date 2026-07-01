@@ -115,6 +115,7 @@ import {
   relativeTime,
   shortCwd,
 } from "./text-format.js";
+import { isComposerNewline, newlineHint } from "./key-intent.js";
 
 export interface AppProps {
   version: string;
@@ -1987,10 +1988,10 @@ export function App({
       setSelected(0);
       return;
     }
-    // Shift+Enter (and Alt/Option+Enter, which some terminals report as
-    // meta) inserts a literal newline so users can compose multi-line
-    // prompts instead of submitting. Plain Enter still submits below.
-    if (key.return && (key.shift || key.meta)) {
+    // Insert a newline instead of submitting. Works on every OS/terminal:
+    // Ctrl+J (universal line feed) and Alt/Option+Enter, plus Shift/Meta+Enter
+    // where the terminal reports the modifier. Plain Enter still submits below.
+    if (isComposerNewline(ch, key)) {
       const next = input.slice(0, cursor) + "\n" + input.slice(cursor);
       setInput(next);
       setCursor(cursor + 1);
@@ -2270,7 +2271,7 @@ export function App({
           <Text dimColor>
             {state.status.running
               ? "type to queue a message…"
-              : "ask anything · / for commands · @file to attach · shift+enter for newline · esc to cancel"}
+              : `ask anything · / for commands · @file to attach · ${newlineHint()} · esc to cancel`}
           </Text>
         ) : (
           (() => {
