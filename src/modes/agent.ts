@@ -26,6 +26,7 @@ export interface AgentOptions {
       ) => void)
     | undefined;
   onEvent?: ((event: AgentEvent) => void) | undefined;
+  onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   confirm?: ConfirmPort | undefined;
 }
 

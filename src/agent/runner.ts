@@ -38,6 +38,7 @@ import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import {
   compactMessagesWithSummary,
   estimateMessagesTokens,
+  isCompactionMemoryMessage,
 } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
@@ -123,6 +124,14 @@ export interface AgentRunOptions {
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
   onEvent?: ((event: AgentEvent) => void) | undefined;
+  /**
+   * Called when a turn ends with the FULL conversation for the turn — the user
+   * message, every assistant tool-call, every tool result, and the final
+   * answer (system prompts excluded). Callers persist this so a resumed
+   * session gives the model back what it actually did (commands, outputs,
+   * results), not just its prose answers.
+   */
+  onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   confirm?: ConfirmPort | undefined;
   requestSecret?:
     | ((request: {
@@ -970,6 +979,34 @@ export function groupToolCallsForExecution(
     cursor += group.length;
   }
   return groups;
+}
+
+/**
+ * Build the conversation to hand back to the caller at turn end. Strips system
+ * prompts (they're re-added each turn) but keeps the user turn plus every
+ * assistant tool-call and tool result, then appends the final answer if it
+ * isn't already the last message. Persisting this is what lets a resumed
+ * session give the model back what it actually did — commands, outputs, and
+ * results — instead of only its prose answers.
+ */
+export function buildTurnHistory(
+  messages: ChatMessage[],
+  answer: string,
+): ChatMessage[] {
+  // Drop system messages (the main prompt, plan context, and reflections are
+  // all re-injected each turn) EXCEPT compacted session memory, which is the
+  // only record of summarized older turns and must survive a resume.
+  const convo = messages.filter(
+    (m) => m.role !== "system" || isCompactionMemoryMessage(m),
+  );
+  const last = convo[convo.length - 1];
+  if (
+    answer &&
+    !(last && last.role === "assistant" && last.content === answer)
+  ) {
+    convo.push({ role: "assistant", content: answer });
+  }
+  return convo;
 }
 
 /**
@@ -1961,7 +1998,18 @@ export async function runAgentLoop(
     }
     emit(event);
   };
+  // Points at the live message array so finishTurn can hand the full
+  // conversation back to the caller. Assigned once `messages` is built below;
+  // all later mutations are in-place so this reference stays current.
+  let liveMessages: ChatMessage[] = [];
   const finishTurn = (answer: string, steps: number): string => {
+    if (options.onMessages) {
+      try {
+        options.onMessages(buildTurnHistory(liveMessages, answer));
+      } catch {
+        // Persisting history must never break the turn.
+      }
+    }
     emit({ type: "turn-end", finalAnswer: answer, steps });
     return answer;
   };
@@ -2039,6 +2087,7 @@ export async function runAgentLoop(
       ...(options.history ?? []),
       userMessage,
     ];
+    liveMessages = messages;
     const recoveryUserMessage = (content: string): ChatMessage => {
       const message: ChatMessage = { role: "user", content };
       if (options.images && options.images.length > 0) {

@@ -40,6 +40,26 @@ const DEFAULT_BUDGET_TOKENS = 32_000;
 const DEFAULT_KEEP_RECENT = 12;
 
 /**
+ * Content prefixes that mark a `role:"system"` message as compacted session
+ * memory (vs. the main system prompt or transient injected guidance). Exported
+ * so history-persistence can KEEP this memory when it drops other system
+ * messages — otherwise a resumed session that compacted mid-run would lose all
+ * summarized context.
+ */
+export const COMPACTION_MEMORY_PREFIX =
+  "Session memory from compacted earlier turns:";
+export const MECHANICAL_MEMORY_PREFIX =
+  "Earlier turns in this session, summarized";
+
+export function isCompactionMemoryMessage(message: ChatMessage): boolean {
+  return (
+    message.role === "system" &&
+    (message.content.startsWith(COMPACTION_MEMORY_PREFIX) ||
+      message.content.startsWith(MECHANICAL_MEMORY_PREFIX))
+  );
+}
+
+/**
  * Replace older messages with a single condensed "memory" message while
  * preserving the system prompt and the most recent N messages.
  *
@@ -85,7 +105,7 @@ export function compactMessages(
   const memo: ChatMessage = {
     role: "system",
     content:
-      `Earlier turns in this session, summarized to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
+      `${MECHANICAL_MEMORY_PREFIX} to fit the context budget. Full artifacts (when produced) are saved on disk and can be expanded with /output.\n\n` +
       bullets.join("\n"),
   };
 
@@ -158,7 +178,7 @@ export async function compactMessagesWithSummary(
   const head = start === 1 ? [messages[0]!] : [];
   const compacted: ChatMessage[] = [
     ...head,
-    { role: "system", content: `Session memory from compacted earlier turns:\n\n${summary}` },
+    { role: "system", content: `${COMPACTION_MEMORY_PREFIX}\n\n${summary}` },
     ...messages.slice(tailStart),
   ];
   const afterTokens = estimateMessagesTokens(compacted);

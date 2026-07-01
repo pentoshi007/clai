@@ -235,6 +235,7 @@ export function useAgentRunner({
 
       try {
         let answer = "";
+        let capturedMessages: ChatMessage[] | undefined;
         if (ctx.mode === "ask") {
           throttled.dispatch({ type: "turn-start", prompt: input });
           throttled.dispatch({ type: "status", text: "thinking" });
@@ -300,6 +301,9 @@ export function useAgentRunner({
                 onEvent: throttled.dispatch,
                 confirm,
                 requestSecret,
+                onMessages: (msgs: ChatMessage[]) => {
+                  capturedMessages = msgs;
+                },
               });
             } else {
               answer =
@@ -338,9 +342,20 @@ export function useAgentRunner({
             onEvent: throttled.dispatch,
             confirm,
             requestSecret,
+            onMessages: (msgs: ChatMessage[]) => {
+              capturedMessages = msgs;
+            },
           });
         }
-        messagesRef.current.push({ role: "assistant", content: answer });
+        // Prefer the full conversation the agent handed back (user turn + every
+        // tool call/result + final answer) so follow-ups AND resumed sessions
+        // give the model what it actually did. Fall back to appending the
+        // answer for turns that don't hand messages back (e.g. pure ask mode).
+        if (capturedMessages) {
+          messagesRef.current = capturedMessages;
+        } else {
+          messagesRef.current.push({ role: "assistant", content: answer });
+        }
       } catch (err) {
         if (ac.signal.aborted) {
           throttled.dispatch({ type: "turn-aborted" });

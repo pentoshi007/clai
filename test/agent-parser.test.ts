@@ -10,6 +10,7 @@ import {
   looksLikeActionNarration,
   preprocessJson,
   groupToolCallsForExecution,
+  buildTurnHistory,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -540,5 +541,56 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
       ["fs.write"],
       ["fs.read"],
     ]);
+  });
+});
+
+describe("resumable turn history (buildTurnHistory)", () => {
+  const sys = { role: "system" as const, content: "you are clai" };
+  const user = { role: "user" as const, content: "find issues on example.com" };
+  const toolCall = {
+    role: "assistant" as const,
+    content: '```tool\n{"name":"dns.lookup","args":{"target":"example.com"}}\n```',
+  };
+  const toolResult = {
+    role: "tool" as const,
+    content: "Tool dns.lookup result (exit=0, ok=true):\nA 93.184.216.34",
+  };
+
+  it("drops system prompts but keeps the user turn, tool calls, and tool results", () => {
+    const out = buildTurnHistory([sys, user, toolCall, toolResult], "Found 1 record.");
+    expect(out.some((m) => m.role === "system")).toBe(false);
+    // The tool call AND its result survive so a resumed model sees what ran.
+    expect(out).toContainEqual(toolCall);
+    expect(out).toContainEqual(toolResult);
+    expect(out[0]).toEqual(user);
+    // Final answer appended as the last assistant message.
+    expect(out[out.length - 1]).toEqual({
+      role: "assistant",
+      content: "Found 1 record.",
+    });
+  });
+
+  it("does not duplicate the final answer when it is already the last message", () => {
+    const finalAsst = { role: "assistant" as const, content: "All done." };
+    const out = buildTurnHistory([sys, user, finalAsst], "All done.");
+    const assistantCount = out.filter(
+      (m) => m.role === "assistant" && m.content === "All done.",
+    ).length;
+    expect(assistantCount).toBe(1);
+  });
+
+  it("appends nothing extra for an empty answer (e.g. aborted turn)", () => {
+    const out = buildTurnHistory([sys, user, toolCall, toolResult], "");
+    expect(out).toEqual([user, toolCall, toolResult]);
+  });
+
+  it("keeps compacted session memory but drops the main system prompt", () => {
+    const memo = {
+      role: "system" as const,
+      content: "Session memory from compacted earlier turns:\n\n- did recon",
+    };
+    const out = buildTurnHistory([sys, memo, user, toolResult], "done");
+    expect(out).toContainEqual(memo); // summarized older context survives
+    expect(out).not.toContainEqual(sys); // main prompt dropped (re-added each turn)
   });
 });
