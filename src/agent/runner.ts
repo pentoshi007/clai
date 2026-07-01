@@ -1,8 +1,5 @@
-import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
-import { mkdir, writeFile, chown } from "node:fs/promises";
 import { homedir } from "node:os";
-import { fixOwner, handlePermissionError } from "../os/permissions.js";
 
 import { join, resolve } from "node:path";
 import type {
@@ -32,7 +29,6 @@ import {
   BATCH_SAFE_TOOLS,
 } from "../tools/registry.js";
 import { looksInteractiveStdin } from "../tools/shell.js";
-import { reduceToolOutput } from "../tools/policies/output-policy.js";
 import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import {
   compactMessagesWithSummary,
@@ -52,15 +48,7 @@ import { startThinkingSpinner, type ThinkingSpinner } from "../ui/spinner.js";
 import { safeCwd } from "../os/cwd.js";
 import { analyzeTask } from "./task-analyzer.js";
 import { LoopGuard } from "./loop-guard.js";
-import {
-  createPlan,
-  loadPlan,
-  savePlan,
-  markTask,
-  type SessionPlan,
-  type TaskState,
-} from "../store/plan.js";
-import { renderPlanChecklist, renderPlanSidePane } from "../ui/plan-pane.js";
+import { loadPlan, type SessionPlan } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
 import { pathInsideSandbox } from "../tools/fs.js";
 import {
@@ -80,61 +68,51 @@ import {
   looksLikeActionNarration,
   looksLikePlanNarration,
   requiresFreshWebSearch,
-  isLumpedSingleTask,
   freshnessGuardMessage,
   buildWorkflowDirective,
   shouldDimToolChatter,
 } from "./tool-call-parser.js";
+import {
+  createSessionPolicy,
+  isPreApprovalAllowedTool,
+  isAbortError,
+  shouldEnableImageOcr,
+  type SessionPolicy,
+} from "./session-policy.js";
+import {
+  saveToolOutput,
+  summarizeOutput,
+  formatToolContext,
+} from "./tool-output-formatting.js";
+import {
+  renderPlanForTerminal,
+  planContextMessage,
+  handlePlanTool,
+} from "./plan-tool.js";
+import {
+  inquirerConfirmPort,
+  restoreInteractiveStdin,
+  ensurePentestAuthorization,
+  confirmToolExecution,
+  type ConfirmPort,
+} from "./confirm-port.js";
+import { buildRichStopSummary } from "./stop-summary.js";
+
 // Re-exported so existing imports of these names from "./runner.js" keep
 // working unchanged — the parsing/classification engine now lives in
-// tool-call-parser.ts.
+// tool-call-parser.ts, and the session/plan/confirm/formatting helpers now
+// live in their own dedicated modules.
 export * from "./tool-call-parser.js";
+export {
+  createSessionPolicy,
+  isPreApprovalAllowedTool,
+  shouldEnableImageOcr,
+  type SessionPolicy,
+} from "./session-policy.js";
+export { type ConfirmPort } from "./confirm-port.js";
 
-/** Render the plan as a right-side pane on wide terminals, else inline. */
-function renderPlanForTerminal(plan: SessionPlan): string {
-  const cols = process.stdout.columns ?? 0;
-  const side = process.stdout.isTTY
-    ? renderPlanSidePane(plan, cols)
-    : undefined;
-  return side ?? renderPlanChecklist(plan);
-}
-
-export interface SessionPolicy {
-  /** Tools the user authorized once during this REPL session. Not persisted. */
-  allow: Set<string>;
-  /** Mutable flag so the runner can flip pentest auth for this session only. */
-  pentestAuthorized: { value: boolean };
-  /** Stable id used to scope the session's plan/tasks in the plan store. */
-  sessionId: string;
-  /** When true, the agent must follow its approved plan (set by /implement). */
-  planApproved: { value: boolean };
-}
-
-export function createSessionPolicy(sessionId?: string): SessionPolicy {
-  return {
-    allow: new Set(),
-    pentestAuthorized: { value: false },
-    sessionId:
-      sessionId ??
-      `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    planApproved: { value: false },
-  };
-}
-
-export interface ConfirmPort {
-  confirmTool(call: ToolCall): Promise<boolean>;
-  confirmPentest(): Promise<boolean>;
-  /** Ask the user whether to continue after hitting the step budget. */
-  confirmContinue?(steps: number): Promise<boolean>;
-  /**
-   * Ask whether to leave ask mode and run an action task in agent mode.
-   * Optional so existing ports keep working; ask-mode handoff falls back to a
-   * default "no" when a port doesn't implement it.
-   */
-  confirmAgentSwitch?(info: {
-    reason: string;
-    tools: string[];
-  }): Promise<boolean>;
+export function styleToolChatter(call: ToolCall, text: string): string {
+  return shouldDimToolChatter(call) ? chalk.dim(text) : text;
 }
 
 export interface AgentRunOptions {
@@ -164,564 +142,6 @@ export interface AgentRunOptions {
       }) => Promise<string | undefined>)
     | undefined;
   session?: SessionPolicy | undefined;
-}
-
-/**
- * Re-assert raw mode AND resume stdin after an inquirer prompt
- * (confirm/password). inquirer's readline interface pauses stdin and
- * switches it to cooked mode when it closes; if we only flip raw mode back
- * on but leave stdin paused, no `keypress`/`data` events flow to the REPL's
- * ESC/Ctrl+C abort handler — so a long-running tool launched right after a
- * confirmation can no longer be aborted (the user had to kill the terminal).
- * Calling resume() restores the event flow.
- */
-function restoreInteractiveStdin(): void {
-  if (!process.stdin.isTTY) return;
-  try {
-    if (!(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.resume();
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Build a rich summary when the agent stops (user declined to continue or
- * maxIterations ceiling hit). Includes plan state, key findings, and clear
- * resume instructions so a later "continue" can pick up exactly here.
- */
-async function buildRichStopSummary(
-  messages: ChatMessage[],
-  session: SessionPolicy,
-  steps: number,
-): Promise<string> {
-  const plan = await loadPlan(session.sessionId).catch(() => undefined);
-  const parts: string[] = [];
-
-  parts.push(`Session paused after ${steps} steps.\n`);
-
-  // Plan state
-  if (plan) {
-    parts.push("## Plan Status");
-    parts.push(`Goal: ${plan.goal}`);
-    for (const task of plan.tasks) {
-      const icon =
-        task.state === "done"
-          ? "✓"
-          : task.state === "in_progress"
-            ? "▶"
-            : task.state === "failed"
-              ? "✗"
-              : task.state === "skipped"
-                ? "↷"
-                : "·";
-      parts.push(
-        `  ${icon} [${task.id}] (${task.state}) ${task.title}${task.note ? ` — ${task.note}` : ""}`,
-      );
-    }
-    const next = plan.tasks.find(
-      (t) => t.state === "pending" || t.state === "in_progress",
-    );
-    if (next) {
-      parts.push(`\nNext task to resume: ${next.id} — "${next.title}"`);
-    }
-    const doneCount = plan.tasks.filter((t) => t.state === "done").length;
-    parts.push(`\nProgress: ${doneCount}/${plan.tasks.length} tasks done.`);
-  }
-
-  // Key findings from tool results (last 20 tool messages)
-  const toolMsgs = messages.filter((m) => m.role === "tool").slice(-20);
-  if (toolMsgs.length > 0) {
-    parts.push("\n## Key Findings So Far");
-    for (const msg of toolMsgs) {
-      const firstLine = msg.content.split("\n")[0] ?? "";
-      // Extract tool name from the structured format "Tool <name> result ..."
-      const toolMatch = firstLine.match(/^Tool (\S+) result/);
-      if (toolMatch) {
-        parts.push(`- ${toolMatch[1]}: ${firstLine.slice(0, 150)}`);
-      } else {
-        parts.push(`- ${firstLine.slice(0, 150)}`);
-      }
-    }
-  }
-
-  parts.push("\n## To Resume");
-  parts.push('Type "continue" to pick up from where this session left off.');
-
-  return parts.join("\n");
-}
-
-/**
- * Tools allowed while an UN-approved plan is active. Before the user runs
- * /implement, the agent may only (re)create the plan and do read-only
- * exploration to refine it — never execute. Everything else is blocked by
- * the plan-awaiting-approval gate so a stray/recovered tool call can't start
- * running the plan, and so free-text after a plan is treated as a revision.
- */
-const PRE_APPROVAL_ALLOWED_TOOLS = new Set<string>([
-  "plan.create",
-  "task.update",
-  "fs.read",
-  "fs.list",
-  "fs.search",
-  "sysinfo",
-  "tool.batch",
-  "net.context",
-]);
-
-export function isPreApprovalAllowedTool(name: string): boolean {
-  return PRE_APPROVAL_ALLOWED_TOOLS.has(name);
-}
-
-export function styleToolChatter(call: ToolCall, text: string): string {
-  return shouldDimToolChatter(call) ? chalk.dim(text) : text;
-}
-
-function isAbortError(error: unknown, signal?: AbortSignal): boolean {
-  return (
-    Boolean(signal?.aborted) ||
-    (error instanceof Error && error.name === "AbortError")
-  );
-}
-
-/** OCR is opt-in when real image pixels are already attached to the model. */
-export function shouldEnableImageOcr(
-  prompt: string,
-  hasAttachedImages: boolean,
-): boolean {
-  if (!hasAttachedImages) return true;
-  return /\b(?:ocr|optical character recognition|tesseract)\b/i.test(prompt);
-}
-
-function safeArtifactName(name: string): string {
-  return (
-    name.replace(/[^a-z0-9_.-]+/gi, "-").replace(/^-+|-+$/g, "") ||
-    "tool-output"
-  );
-}
-
-async function saveToolOutput(
-  call: ToolCall,
-  output: string,
-): Promise<string | undefined> {
-  if (!output.trim()) return undefined;
-  const dir = join(homedir(), ".clai", "outputs");
-  try {
-    await mkdir(dir, { recursive: true });
-    await fixOwner(dir);
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const path = join(dir, `${stamp}-${safeArtifactName(call.name)}.txt`);
-    await writeFile(path, `${output}\n`, "utf8");
-    await fixOwner(path);
-    return path;
-  } catch (err: any) {
-    handlePermissionError(err);
-  }
-}
-
-function summarizeOutput(
-  output: string,
-  maxChars = 8_000,
-): { text: string; truncated: boolean } {
-  if (output.length <= maxChars) return { text: output, truncated: false };
-
-  const lines = output.split(/\r?\n/);
-  const head: string[] = [];
-  const tail: string[] = [];
-  let used = 0;
-  const half = Math.floor(maxChars / 2);
-
-  for (const line of lines) {
-    const cost = line.length + 1;
-    if (used + cost > half) break;
-    head.push(line);
-    used += cost;
-  }
-
-  used = 0;
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]!;
-    const cost = line.length + 1;
-    if (used + cost > half) break;
-    tail.unshift(line);
-    used += cost;
-  }
-
-  return {
-    text: [
-      ...head,
-      `... (${lines.length.toLocaleString()} output lines truncated) ...`,
-      ...tail,
-    ].join("\n"),
-    truncated: true,
-  };
-}
-
-// Tools whose output is the actual content the model needs verbatim (file
-// bodies, listings, search hits). Running these through the security-signal
-// `genericReducer` was wrong: it ranks lines by pentest keywords and drops
-// the rest, so source code came back as a fragmentary head+tail — the model
-// saw a "truncated" file and kept re-reading it in wasted retries. For these
-// we pass the raw content through (up to a generous cap) and point the model
-// at the saved artifact when it exceeds the cap.
-const PASSTHROUGH_TOOLS = new Set<string>([
-  "fs.read",
-  "fs.list",
-  "fs.search",
-  "fs.edit",
-  "pdf.read",
-]);
-const PASSTHROUGH_CAP_CHARS = 400_000;
-// web.fetch/http.fetch pull in arbitrary third-party pages/API responses that
-// can be hundreds of KB (e.g. a large OpenAPI spec). Unlike local files the
-// model asked to read, this content is never bounded by the user's own
-// project, so it must be capped like every other tool's context output —
-// otherwise a single fetch can single-handedly blow the context budget and
-// starve the model of room to actually respond (observed as empty/garbled
-// completions on smaller-context-window models after a big fetch).
-const WEB_FETCH_CAP_CHARS = 20_000;
-
-function formatToolContext(call: ToolCall, result: ToolResult): string {
-  const output = result.output.trim();
-  if (!output) return "";
-  if (call.name === "web.fetch" || call.name === "http.fetch") {
-    const { text, truncated } = summarizeOutput(output, WEB_FETCH_CAP_CHARS);
-    if (!truncated) return text;
-    const saved = result.outputPath
-      ? `\n\n[Response exceeds ${WEB_FETCH_CAP_CHARS.toLocaleString()} chars; showing the head and tail. The FULL response is saved at: ${result.outputPath} — re-fetch a narrower URL or read the saved file if you need the middle.]`
-      : `\n\n[Response exceeds ${WEB_FETCH_CAP_CHARS.toLocaleString()} chars; only head and tail shown.]`;
-    return `${text}${saved}`.trim();
-  }
-  // Pass-through tools: never reduce — the model needs the real content.
-  if (PASSTHROUGH_TOOLS.has(call.name)) {
-    const { text, truncated } = summarizeOutput(output, PASSTHROUGH_CAP_CHARS);
-    if (!truncated) return text;
-    const saved = result.outputPath
-      ? `\n\n[File content exceeds ${PASSTHROUGH_CAP_CHARS.toLocaleString()} chars; showing the head and tail. The FULL content is saved at: ${result.outputPath} — re-read specific line ranges with fs.read if you need the middle.]`
-      : `\n\n[File content exceeds ${PASSTHROUGH_CAP_CHARS.toLocaleString()} chars; only head and tail shown. Read it in smaller chunks if the middle is needed.]`;
-    return `${text}${saved}`.trim();
-  }
-  let reduced: string | undefined;
-  try {
-    const command =
-      call.name === "shell.exec" ? String(call.args.command ?? "") : call.name;
-    const policy = reduceToolOutput(output, {
-      toolName: call.name,
-      command,
-    });
-    reduced = policy.summary.trim();
-  } catch {
-    reduced = undefined;
-  }
-  // Hard cap on the reduced text — reducers should already be small, but
-  // never let one accidentally explode model context.
-  const base = reduced && reduced.length > 0 ? reduced : output;
-  const summary = summarizeOutput(base, 8_000);
-  const saved = result.outputPath
-    ? `\nFull output saved to: ${result.outputPath}`
-    : "";
-  return `${summary.text}${saved}`.trim();
-}
-
-const inquirerConfirmPort: ConfirmPort = {
-  async confirmTool(call: ToolCall): Promise<boolean> {
-    return confirm({
-      message: chalk.yellow(`  run ${call.name}: ${formatToolArgs(call)}?`),
-      default: true,
-    });
-  },
-  async confirmPentest(): Promise<boolean> {
-    return confirm({
-      message: chalk.red(
-        "clai only assists with security testing on systems you own or have written permission to test. Confirm for this session?",
-      ),
-      default: false,
-    });
-  },
-  async confirmContinue(steps: number): Promise<boolean> {
-    return confirm({
-      message: chalk.yellow(`  ${steps} steps reached — continue?`),
-      default: true,
-    });
-  },
-  async confirmAgentSwitch(info: {
-    reason: string;
-    tools: string[];
-  }): Promise<boolean> {
-    const tools = info.tools.length > 0 ? ` (${info.tools.join(", ")})` : "";
-    return confirm({
-      message: chalk.yellow(
-        `  this needs agent mode${tools} — switch and run it?`,
-      ),
-      default: true,
-    });
-  },
-};
-
-async function ensurePentestAuthorization(
-  call: ToolCall,
-  autoConfirm: boolean,
-  session: SessionPolicy,
-  confirmPort: ConfirmPort,
-): Promise<boolean> {
-  if (!isPentestToolCall(call)) return true;
-  // Persistent auth (via `clai authorize-pentest AGREE`) wins.
-  if (getConfig().pentestAuthorized) return true;
-  // Session auth flipped earlier in this session — no re-prompt.
-  if (session.pentestAuthorized.value) return true;
-
-  if (autoConfirm) {
-    // -y is session-scoped only. We do NOT touch the persistent config so
-    // a one-shot `-y` cannot silently authorize later interactive runs.
-    session.pentestAuthorized.value = true;
-    return true;
-  }
-
-  const ok = await confirmPort.confirmPentest();
-  if (!ok) return false;
-  session.pentestAuthorized.value = true;
-  return true;
-}
-
-async function confirmToolExecution(
-  call: ToolCall,
-  autoConfirm: boolean,
-  session: SessionPolicy,
-  confirmPort: ConfirmPort,
-): Promise<boolean> {
-  const config = getConfig();
-  if (autoConfirm) return true;
-  if (session.allow.has(call.name)) return true;
-  // Persistent allowlist kept for backwards compat with users who set it
-  // through `clai config` directly, but `/allow` only mutates the session
-  // set so authorizations never leak across processes.
-  if (config.allowAlwaysTools.includes(call.name)) return true;
-
-  return confirmPort.confirmTool(call);
-}
-
-interface PlanToolResult {
-  handled: boolean;
-  ok: boolean;
-  plan?: SessionPlan | undefined;
-  /** What to print to the user's terminal. */
-  display: string;
-  /** What to feed back to the model as the tool result. */
-  modelNote: string;
-}
-
-/** Build the system-context block describing the session's active plan. */
-function planContextMessage(plan: SessionPlan, approved: boolean): string {
-  const lines: string[] = [];
-  lines.push(
-    `ACTIVE PLAN for this session (goal: ${plan.goal}, status: ${plan.status}):`,
-  );
-  if (plan.detail.trim()) lines.push(plan.detail.trim());
-  lines.push("Tasks:");
-  plan.tasks.forEach((t, i) => {
-    lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}`);
-  });
-  if (approved) {
-    const firstPending = plan.tasks.find((t) => t.state === "pending");
-    lines.push("The user APPROVED this plan. Execute it task by task NOW.");
-    if (firstPending) {
-      lines.push(
-        `START WITH TASK ${firstPending.id} (${firstPending.title}). ` +
-          "Do NOT re-do tasks already marked done, and do NOT skip ahead to later tasks.",
-      );
-    }
-    lines.push(
-      "STRICT ORDER: call task.update {taskId, state:'in_progress'} → do the real work → " +
-        "call task.update {taskId, state:'done'} ONLY after the tool calls actually succeed. " +
-        "If a tool fails, mark the task 'failed' with a note, fix the problem, then retry. " +
-        "Do NOT mark a task done when its commands error out. " +
-        "Never claim something ran without a successful tool call.",
-    );
-  } else {
-    lines.push(
-      "This plan is NOT yet approved, so you MUST NOT execute any of its tasks yet. " +
-        "Any new free-text message from the user right now is a PLAN REVISION, not approval — even if it " +
-        "sounds like an instruction (e.g. 'do not install new tools', 'use only X', 'also add Y', 'skip task 2'). " +
-        "Treat it as feedback: call plan.create AGAIN with the revised goal/detail/tasks to produce an updated " +
-        "plan, then STOP and wait. Do NOT call shell.exec, pkg.install, net.scan, tool.check, fs.write, or any " +
-        "other execution tool. The user will APPROVE with /implement, or CANCEL with /discard. Only after " +
-        "/implement may you begin executing.",
-    );
-  }
-  return lines.join("\n");
-}
-
-/**
- * Handle plan.create / task.update inline. These are session-scoped and
- * persisted via the plan store so the user can view the plan (Ctrl+P) and
- * the agent keeps it in context across the whole session.
- */
-async function handlePlanTool(
-  call: ToolCall,
-  session: SessionPolicy,
-  ctx: { loopGuard: LoopGuard; step: number },
-): Promise<PlanToolResult> {
-  void ctx;
-  if (call.name === "plan.create") {
-    const goal = typeof call.args.goal === "string" ? call.args.goal : "";
-    const detail = typeof call.args.detail === "string" ? call.args.detail : "";
-    const kind =
-      typeof call.args.kind === "string" ? call.args.kind : "general";
-    const rawTasks = Array.isArray(call.args.tasks) ? call.args.tasks : [];
-    const taskTitles = rawTasks
-      .map((t) => (typeof t === "string" ? t : ""))
-      .filter(Boolean);
-    if (!goal || taskTitles.length === 0) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(
-          "  ✗ plan.create needs a non-empty goal and at least one task title\n",
-        ),
-        modelNote:
-          "plan.create failed: provide a string goal and a non-empty tasks array of step titles.",
-      };
-    }
-    // Reject a low-quality "everything in one step" plan. A single task that
-    // itself enumerates many files/actions (commas, "and", slashes) is a sign
-    // the model lumped the whole build into one checkbox — split it so the
-    // user gets a real, trackable checklist and the executor works step by step.
-    if (isLumpedSingleTask(taskTitles)) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(
-          "  ✗ plan.create: that single task lumps the whole build into one step\n",
-        ),
-        modelNote:
-          "plan.create rejected: you put everything into ONE task. Break it into 3-8 SEPARATE, " +
-          "ordered tasks — each a distinct action, e.g. 'scaffold package.json + vite config', " +
-          "'create index.html + entry (main.jsx)', 'build App + Post components', 'add posts data + styles', " +
-          "'install deps and run dev server to verify'. Call plan.create again with that tasks array.",
-      };
-    }
-    const plan = createPlan({
-      sessionId: session.sessionId,
-      goal,
-      detail,
-      taskTitles,
-      kind,
-    });
-    await savePlan(plan).catch(() => undefined);
-    // A freshly (re)created plan resets approval — the user must /implement.
-    session.planApproved.value = false;
-    const checklist = renderPlanForTerminal(plan);
-    const display =
-      chalk.cyan("  ● planning\n") +
-      checklist +
-      "\n" +
-      chalk.dim(
-        "  ✦ plan created — press Ctrl+P to view it, /implement to approve and run it,\n" +
-          "    or /discard to cancel it. Any other message refines this plan.\n",
-      );
-    return {
-      handled: true,
-      ok: true,
-      plan,
-      display,
-      modelNote:
-        `Plan saved with ${plan.tasks.length} task(s). STOP here and wait — produce NO other tool calls now. ` +
-        "Do NOT start executing tasks until the user approves with /implement. " +
-        "If the user's next message gives feedback instead of /implement, that is a REVISION: call plan.create " +
-        "again with the updated plan and STOP again. The user may cancel the whole plan with /discard. " +
-        "Only after /implement do you begin, working task by task, calling task.update to mark each " +
-        "in_progress before and done after you finish it.",
-    };
-  }
-
-  // task.update
-  const plan = await loadPlan(session.sessionId).catch(() => undefined);
-  if (!plan) {
-    return {
-      handled: true,
-      ok: false,
-      display: chalk.red(
-        "  ✗ task.update: no active plan — call plan.create first\n",
-      ),
-      modelNote:
-        "task.update failed: there is no active plan. Call plan.create first.",
-    };
-  }
-  const taskId = typeof call.args.taskId === "string" ? call.args.taskId : "";
-  const stateRaw = typeof call.args.state === "string" ? call.args.state : "";
-  const note = typeof call.args.note === "string" ? call.args.note : undefined;
-  const validStates: TaskState[] = [
-    "pending",
-    "in_progress",
-    "done",
-    "failed",
-    "skipped",
-  ];
-  if (!validStates.includes(stateRaw as TaskState)) {
-    return {
-      handled: true,
-      ok: false,
-      display: chalk.red(
-        `  ✗ task.update: state must be one of ${validStates.join(", ")}\n`,
-      ),
-      modelNote: `task.update failed: state must be one of ${validStates.join(", ")}.`,
-    };
-  }
-  // Only one task may be in_progress at a time. This forces genuine
-  // task-by-task execution: the model must close (done/failed/skipped) the
-  // current task before opening the next one, instead of leaving a task
-  // "in_progress" as an umbrella while it quietly works through the rest
-  // of the plan underneath it.
-  if (stateRaw === "in_progress") {
-    const otherInProgress = plan.tasks.find(
-      (t) => t.id !== taskId && t.state === "in_progress",
-    );
-    if (otherInProgress) {
-      return {
-        handled: true,
-        ok: false,
-        display: chalk.red(
-          `  \u2717 task.update: task [${otherInProgress.id}] "${otherInProgress.title}" is still in_progress\n`,
-        ),
-        modelNote:
-          `task.update failed: task [${otherInProgress.id}] "${otherInProgress.title}" is still in_progress. ` +
-          "Finish it first \u2014 call task.update with state 'done' (or 'failed'/'skipped' with a note) " +
-          `for [${otherInProgress.id}] before starting [${taskId}].`,
-      };
-    }
-  }
-  const ok = markTask(plan, taskId, stateRaw as TaskState, note);
-  if (!ok) {
-    const ids = plan.tasks.map((t) => t.id).join(", ");
-    return {
-      handled: true,
-      ok: false,
-      display: chalk.red(
-        `  ✗ task.update: unknown taskId "${taskId}" (have: ${ids})\n`,
-      ),
-      modelNote: `task.update failed: unknown taskId. Valid ids: ${ids}.`,
-    };
-  }
-  if (plan.status === "draft" || plan.status === "approved") {
-    plan.status = "in_progress";
-  }
-  const allDone = plan.tasks.every(
-    (t) => t.state === "done" || t.state === "skipped" || t.state === "failed",
-  );
-  if (allDone) plan.status = "completed";
-  await savePlan(plan).catch(() => undefined);
-  const checklist = renderPlanForTerminal(plan);
-  return {
-    handled: true,
-    ok: true,
-    plan,
-    display: checklist + "\n",
-    modelNote: allDone
-      ? "Task updated. ALL tasks are now finished. Verify the result and give your final summary."
-      : "Task updated. Continue with the next pending task.",
-  };
 }
 
 export async function runAgentLoop(
