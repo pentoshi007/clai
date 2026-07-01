@@ -1987,6 +1987,18 @@ export function App({
       setSelected(0);
       return;
     }
+    // Shift+Enter (and Alt/Option+Enter, which some terminals report as
+    // meta) inserts a literal newline so users can compose multi-line
+    // prompts instead of submitting. Plain Enter still submits below.
+    if (key.return && (key.shift || key.meta)) {
+      const next = input.slice(0, cursor) + "\n" + input.slice(cursor);
+      setInput(next);
+      setCursor(cursor + 1);
+      setSelected(0);
+      historyIdx.current = -1;
+      historyDraft.current = "";
+      return;
+    }
     if (key.return) {
       if (slashMenuOpen) {
         submitText(suggestions[selected]!.command);
@@ -2258,7 +2270,7 @@ export function App({
           <Text dimColor>
             {state.status.running
               ? "type to queue a message…"
-              : "ask anything · / for commands · @file to attach · esc to cancel"}
+              : "ask anything · / for commands · @file to attach · shift+enter for newline · esc to cancel"}
           </Text>
         ) : (
           (() => {
