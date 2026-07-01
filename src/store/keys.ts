@@ -160,9 +160,7 @@ export function searchProviderEnvVar(id: SearchProviderId): string | undefined {
   return searchProviderEnvVars[id];
 }
 
-// ---------------------------------------------------------------------------
 // Low-level namespaced secret API
-// ---------------------------------------------------------------------------
 
 /**
  * Read a secret out of the OS keychain (preferred) or the restricted-permission
@@ -333,9 +331,7 @@ export async function unsetSecret(
   }
 }
 
-// ---------------------------------------------------------------------------
 // Provider-facing helpers
-// ---------------------------------------------------------------------------
 
 export function envValue(provider: ProviderId): string | undefined {
   const envVar = envVars[provider];
