@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
 
 import { PROMPT } from "../ui/banner.js";
+import { stripAnsi } from "../ui/ansi-box.js";
 import { isPagerActive } from "../ui/output-pane.js";
 import { isCtrlC, isCtrlO, isCtrlP, isCtrlT, isEscape } from "../ui/keys.js";
 import {
@@ -24,9 +25,7 @@ export interface KeypressKey {
   sequence?: string;
 }
 
-export function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, "");
-}
+export { stripAnsi };
 
 function fitPlain(text: string, maxWidth: number): string {
   if (maxWidth <= 0) return "";

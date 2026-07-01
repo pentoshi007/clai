@@ -1,25 +1,19 @@
 import chalk from "chalk";
+import { stripAnsi, ANSI_SGR_PATTERN } from "./ansi-box.js";
 
-// Live, dependency-free thinking indicator. Renders below the prompt as
-// up to two dim lines:
+const ANSI_RE = new RegExp(ANSI_SGR_PATTERN);
+
+// Dependency-free spinner shown below the prompt while the model thinks:
 //   ⠋ thinking 12.3s · 240 reasoning tokens
 //      tail of the most recent reasoning text…
-// On stop() it erases its own lines so subsequent output starts clean.
+// stop() erases its own lines so later output starts clean.
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const FRAME_INTERVAL_MS = 80;
 const PREVIEW_TAIL_CHARS = 220;
 
-/**
- * Hard SGR reset emitted at the end of every spinner-rendered line and
- * before/after every erase. Without this the dim+italic style chalk
- * applies to the preview line can leak past the spinner's lifetime —
- * e.g. when {@link truncateForWidth} slices off the closing reset
- * sequence — and the next thing written to the terminal (the model's
- * visible answer, the markdown header, etc.) renders dim until the
- * next ANSI sequence happens to reset it. Always emitting `\x1b[0m`
- * here makes the leak impossible.
- */
+// Emitted after every spinner-rendered line/erase so a truncated dim/italic
+// style never leaks into whatever the terminal prints next.
 const SGR_RESET = "\x1b[0m";
 
 export interface ThinkingSpinner {
@@ -28,12 +22,6 @@ export interface ThinkingSpinner {
   /** Append visible-but-dim "what the model is thinking" text. */
   pushPreview(text: string): void;
   stop(): void;
-}
-
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, "");
 }
 
 function clamp(n: number, lo: number, hi: number): number {

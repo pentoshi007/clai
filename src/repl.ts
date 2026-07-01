@@ -47,13 +47,11 @@ import {
   getCurrentVersion,
 } from "./commands/update.js";
 import {
-  renderBanner,
-  renderSessionInfo,
-  renderSuggestions,
   renderModeSwitch,
   renderProviderSwitch,
   PROMPT,
 } from "./ui/banner.js";
+import { renderIntroCard } from "./ui/intro-card.js";
 import {
   clearThinking,
   createThinkingStreamParser,
@@ -1536,22 +1534,17 @@ async function handleSlash(
       clearThinking();
       // Clear the entire screen and move cursor to top
       process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
-      // Re-render the startup banner
-      console.log(renderBanner(getCurrentVersion()));
+      // Re-render the startup intro card
       console.log(
-        renderSessionInfo({
+        renderIntroCard({
+          version: getCurrentVersion(),
           workdir: safeCwd(),
           model: state.model,
           provider: state.provider,
           mode: state.mode,
         }),
       );
-      console.log(renderSuggestions());
-      console.log(
-        chalk.dim(
-          "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output  │  Ctrl+P plan (q to close)\n",
-        ),
-      );
+      console.log();
       return true;
     }
     case "/update":
@@ -1750,22 +1743,17 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   };
   process.on("SIGINT", handleSigint);
 
-  // ── Startup banner ──────────────────────────────────────────────────────
-  console.log(renderBanner(getCurrentVersion()));
+  // ── Startup intro card ───────────────────────────────────────────────────
   console.log(
-    renderSessionInfo({
+    renderIntroCard({
+      version: getCurrentVersion(),
       workdir: safeCwd(),
       model: state.model,
       provider: state.provider,
       mode: state.mode,
     }),
   );
-  console.log(renderSuggestions());
-  console.log(
-    chalk.dim(
-      "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output  │  Ctrl+P plan (q to close)\n",
-    ),
-  );
+  console.log();
 
   // Hint thinking-capable users that the toggle exists. We default it to
   // off for speed, since on NIM many models route through a much slower
