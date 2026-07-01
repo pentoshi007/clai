@@ -503,13 +503,19 @@ function renderCompactHeader(ctx: RenderCtx): string[] {
   const width = Math.max(40, ctx.width - 4);
   const innerWidth = width - 4;
   
-  // Left part: " ◆ clai  v{version}"
+  // Left part: " ◆ clai  v{version}" — high-contrast slate chip matching the
+  // startup intro card so the header keeps the same visual language once the
+  // conversation begins (no jump back to the old blue/yellow badges).
   const leftPlain = ` ◆ clai  v${version}`;
-  const leftColored = chalk.bgBlue.white.bold(" ◆ clai ") + chalk.gray(` v${version}`);
-  
+  const leftColored =
+    chalk.bgHex("#334155").whiteBright.bold(" ◆ clai ") +
+    chalk.gray(` v${version}`);
+
   // Right part: " {mode}  MODE"
   const rightPlain = ` ${mode.toUpperCase()}  MODE`;
-  const rightColored = chalk.bgYellow.black.bold(` ${mode.toUpperCase()} `) + chalk.gray(" MODE");
+  const rightColored =
+    chalk.bgHex("#334155").whiteBright.bold(` ${mode.toUpperCase()} `) +
+    chalk.gray(" MODE");
   
   // Line 1: space between
   const spaceCount = Math.max(1, innerWidth - leftPlain.length - rightPlain.length);
