@@ -21,17 +21,17 @@ export interface TuiConfirmController {
   port: ConfirmPort;
   /** Called by the App to register how confirm requests reach the UI. */
   setHandler: (
-    handler: (req: { kind: "tool" | "pentest" | "continue"; prompt: string }) => Promise<boolean>,
+    handler: (req: { kind: "tool" | "pentest" | "continue" | "switch"; prompt: string }) => Promise<boolean>,
   ) => void;
 }
 
 export function createTuiConfirmPort(): TuiConfirmController {
   let handler:
-    | ((req: { kind: "tool" | "pentest" | "continue"; prompt: string }) => Promise<boolean>)
+    | ((req: { kind: "tool" | "pentest" | "continue" | "switch"; prompt: string }) => Promise<boolean>)
     | undefined;
 
   const ask = async (req: {
-    kind: "tool" | "pentest" | "continue";
+    kind: "tool" | "pentest" | "continue" | "switch";
     prompt: string;
   }): Promise<boolean> => {
     if (!handler) return false;
@@ -57,6 +57,17 @@ export function createTuiConfirmPort(): TuiConfirmController {
       return ask({
         kind: "continue",
         prompt: `${steps} steps reached — continue running?`,
+      });
+    },
+    async confirmAgentSwitch(info: {
+      reason: string;
+      tools: string[];
+    }): Promise<boolean> {
+      const tools = info.tools.length > 0 ? ` (${info.tools.join(", ")})` : "";
+      const why = info.reason ? `${info.reason}\n\n` : "";
+      return ask({
+        kind: "switch",
+        prompt: `${why}This needs agent mode${tools}, which ask mode can't do. Switch to agent mode and run it?`,
       });
     },
   };

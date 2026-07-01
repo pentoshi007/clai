@@ -462,6 +462,35 @@ export function renderItemLines(item: TranscriptItem, ctx: RenderCtx): string[] 
   }
 }
 
+/**
+ * Per-item render cache. Rendering a transcript item (markdown parse + ANSI
+ * styling + wrapping) is the dominant cost when streaming, because the whole
+ * transcript is re-flattened on every render. Committed items never change,
+ * so we cache their rendered lines keyed by the item's object identity (the
+ * reducer keeps the same reference for unchanged items) plus a signature of
+ * the render context that actually affects output. Only finished, non-running
+ * items are cached — streaming/running items are cheap to recompute and change
+ * every tick anyway.
+ */
+const itemLineCache = new WeakMap<TranscriptItem, { sig: string; lines: string[] }>();
+
+function ctxSignature(ctx: RenderCtx): string {
+  return `${ctx.width}|${ctx.thinkingExpanded ? 1 : 0}|${ctx.outputExpanded ? 1 : 0}`;
+}
+
+function renderItemLinesCached(item: TranscriptItem, ctx: RenderCtx): string[] {
+  const isRunningTool = item.kind === "tool" && item.status === "running";
+  if (!item.done || isRunningTool) {
+    return renderItemLines(item, ctx);
+  }
+  const sig = ctxSignature(ctx);
+  const cached = itemLineCache.get(item);
+  if (cached && cached.sig === sig) return cached.lines;
+  const lines = renderItemLines(item, ctx);
+  itemLineCache.set(item, { sig, lines });
+  return lines;
+}
+
 function renderHeader(ctx: RenderCtx): string[] {
   const version = ctx.version ?? "0.0.0";
   const mode = ctx.mode ?? "agent";
@@ -526,7 +555,7 @@ export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[]
   blocks.push(renderHeader(ctx));
 
   for (const item of state.items) {
-    blocks.push(renderItemLines(item, ctx));
+    blocks.push(renderItemLinesCached(item, ctx));
   }
 
   // While generating: show the live thinking preview (before any response

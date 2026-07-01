@@ -1,4 +1,4 @@
-import { mkdir, appendFile, readFile, rm, writeFile, chown } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile, chown, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { ChatMessage, ToolCall, ToolResult } from "../types.js";
@@ -156,31 +156,81 @@ function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[]
 }
 
 async function appendJsonl(record: HistoryRecord): Promise<void> {
-  try {
-    await mkdir(historyDir, { recursive: true });
-    await fixOwner(historyDir);
-    await appendFile(jsonlFile, `${JSON.stringify(record)}\n`, "utf8");
-    await fixOwner(jsonlFile);
-    await enforceJsonlRetention();
-  } catch (err: any) {
-    handlePermissionError(err);
-  }
+  await mutateJsonl((records) => {
+    records.push(record);
+    return records;
+  });
 }
 
-async function enforceJsonlRetention(): Promise<void> {
+/**
+ * Serializes every JSONL mutation through a single promise chain so concurrent
+ * autosaves never interleave a read with another writer's truncating write.
+ * Without this, a reader could observe a half-written (or momentarily empty)
+ * file and then persist back only its own record, wiping every other session.
+ */
+let jsonlWriteChain: Promise<void> = Promise.resolve();
+
+function mutateJsonl(
+  update: (records: HistoryRecord[]) => HistoryRecord[],
+): Promise<void> {
+  const run = jsonlWriteChain.then(async () => {
+    try {
+      const current = await readJsonlRecords();
+      const next = update(current);
+      await writeJsonlAtomic(next);
+    } catch (err: any) {
+      handlePermissionError(err);
+    }
+  });
+  // Keep the chain alive even if this task rejects, so later writes still run.
+  jsonlWriteChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+/** Read and parse all valid JSONL records, silently skipping malformed lines. */
+async function readJsonlRecords(): Promise<HistoryRecord[]> {
+  if (!(await safeExists(jsonlFile))) return [];
+  const raw = await readFile(jsonlFile, "utf8");
+  return raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line) as HistoryRecord;
+      } catch {
+        return null;
+      }
+    })
+    .filter((record): record is HistoryRecord => record !== null);
+}
+
+/**
+ * Apply retention and write the whole file atomically: write a temp file and
+ * rename it over the target. `rename` is atomic on the same filesystem, so a
+ * concurrent reader sees either the old file or the new one — never a partial.
+ */
+async function writeJsonlAtomic(records: HistoryRecord[]): Promise<void> {
+  await mkdir(historyDir, { recursive: true });
+  await fixOwner(historyDir);
   const limit = getConfig().historyRetentionLimit;
-  if (!limit || limit <= 0) return;
-  if (!(await safeExists(jsonlFile))) return;
+  const kept = limit && limit > 0 ? records.slice(-limit) : records;
+  const body = kept.length
+    ? `${kept.map((item) => JSON.stringify(item)).join("\n")}\n`
+    : "";
+  const tmpFile = `${jsonlFile}.${process.pid}.${Date.now().toString(36)}.${Math.random()
+    .toString(36)
+    .slice(2, 8)}.tmp`;
+  await writeFile(tmpFile, body, { mode: 0o600 });
   try {
-    const raw = await readFile(jsonlFile, "utf8");
-    const lines = raw.split("\n").filter(Boolean);
-    if (lines.length <= limit) return;
-    const trimmed = lines.slice(-limit).join("\n");
-    await writeFile(jsonlFile, `${trimmed}\n`, { mode: 0o600 });
-    await fixOwner(jsonlFile);
-  } catch (err: any) {
-    handlePermissionError(err);
+    await rename(tmpFile, jsonlFile);
+  } catch (err) {
+    await rm(tmpFile, { force: true }).catch(() => undefined);
+    throw err;
   }
+  await fixOwner(jsonlFile);
 }
 
 export async function saveSession(
@@ -287,31 +337,12 @@ async function enforceSqliteRetention(db: DatabaseLike): Promise<void> {
 }
 
 async function upsertJsonl(record: HistoryRecord): Promise<void> {
-  try {
-    await mkdir(historyDir, { recursive: true });
-    await fixOwner(historyDir);
-    const records = (await safeExists(jsonlFile))
-      ? (await readFile(jsonlFile, "utf8"))
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            try {
-              return JSON.parse(line) as HistoryRecord;
-            } catch {
-              return null;
-            }
-          })
-          .filter((item): item is HistoryRecord => item !== null)
-      : [];
+  await mutateJsonl((records) => {
     const idx = records.findIndex((item) => item.id === record.id);
     if (idx >= 0) records[idx] = record;
     else records.push(record);
-    await writeFile(jsonlFile, `${records.map((item) => JSON.stringify(item)).join("\n")}\n`, { mode: 0o600 });
-    await fixOwner(jsonlFile);
-    await enforceJsonlRetention();
-  } catch (err: any) {
-    handlePermissionError(err);
-  }
+    return records;
+  });
 }
 
 export async function saveToolCall(

@@ -110,7 +110,11 @@ async function oneShot(
         model,
       },
     );
-    const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
+    // Flush the live-display pipeline, but trust the returned text as the
+    // authoritative answer (the live stream may briefly mirror a tool-call
+    // preamble during research rounds).
+    parser.finish();
+    const result = rememberThinkingFromText(raw);
     if (sawToken) {
       markdown.finish();
     } else if (result.visible) {

@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChatImage, ChatMessage, ProviderId } from "../../types.js";
 import type { AgentEvent } from "../../agent/events.js";
 import { runAgent } from "../../modes/agent.js";
-import { runAskStream } from "../../modes/ask.js";
+import { runAskStream, type AskActionRequired } from "../../modes/ask.js";
 import {
   createSessionPolicy,
   type SessionPolicy,
@@ -14,6 +14,75 @@ import {
   rememberThinkingFromText,
 } from "../../ui/thinking.js";
 import type { ConfirmPort } from "../../agent/runner.js";
+
+/**
+ * High-frequency streaming events (`assistant-delta`, `thinking-delta`) can
+ * arrive dozens of times per second from fast providers like Gemini Flash.
+ * Dispatching each one to the reducer triggers a full Ink re-render, and the
+ * TUI re-renders the entire transcript per render — so an unbatched stream
+ * makes the screen crawl and appear to hang as the answer grows.
+ *
+ * This wrapper coalesces consecutive delta tokens into a single dispatch on a
+ * short timer (so the screen updates ~25x/sec instead of per token), while
+ * forwarding every other event immediately. Pending deltas are always flushed
+ * *before* a non-delta event so transcript ordering is preserved (e.g. the
+ * streamed prose lands before the tool card that supersedes it).
+ */
+export interface ThrottledDispatch {
+  dispatch: (event: AgentEvent) => void;
+  /** Flush any buffered deltas immediately (call when a turn ends/aborts). */
+  flush: () => void;
+}
+
+export function createThrottledDispatch(
+  dispatch: (event: AgentEvent) => void,
+  intervalMs = 40,
+): ThrottledDispatch {
+  let pendingAssistant = "";
+  let pendingThinking = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const flush = (): void => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    if (pendingAssistant) {
+      const text = pendingAssistant;
+      pendingAssistant = "";
+      dispatch({ type: "assistant-delta", text });
+    }
+    if (pendingThinking) {
+      const text = pendingThinking;
+      pendingThinking = "";
+      dispatch({ type: "thinking-delta", text });
+    }
+  };
+
+  const schedule = (): void => {
+    if (timer) return;
+    timer = setTimeout(flush, intervalMs);
+  };
+
+  const throttled = (event: AgentEvent): void => {
+    if (event.type === "assistant-delta") {
+      pendingAssistant += event.text;
+      schedule();
+      return;
+    }
+    if (event.type === "thinking-delta") {
+      pendingThinking += event.text;
+      schedule();
+      return;
+    }
+    // Any other event: flush buffered deltas first to keep ordering, then
+    // forward the event so it commits after the text it follows.
+    flush();
+    dispatch(event);
+  };
+
+  return { dispatch: throttled, flush };
+}
 
 export interface RunnerContext {
   mode: "ask" | "agent";
@@ -30,6 +99,12 @@ export interface UseAgentRunnerArgs {
   confirm: ConfirmPort;
   getContext: () => RunnerContext;
   requestSecret: (request: { title: string; prompt: string }) => Promise<string | undefined>;
+  /**
+   * Called when the user confirms switching from ask mode into agent mode for
+   * an action task. The App uses this to flip its mode state (and persist the
+   * default) so subsequent turns stay in agent mode.
+   */
+  onSwitchToAgent?: () => void;
 }
 
 export interface AgentRunner {
@@ -46,7 +121,7 @@ export interface AgentRunner {
   /** Snapshot of the conversation messages (for /context, /save). */
   getMessages: () => ChatMessage[];
   /** Replace the current conversation when resuming a saved session. */
-  setMessages: (messages: ChatMessage[]) => void;
+  setMessages: (messages: ChatMessage[], sessionId?: string) => void;
   compact: (sessionTranscript?: string, keepRecent?: number, signal?: AbortSignal) => Promise<CompactResult>;
 }
 
@@ -61,11 +136,22 @@ export function useAgentRunner({
   confirm,
   getContext,
   requestSecret,
+  onSwitchToAgent,
 }: UseAgentRunnerArgs): AgentRunner {
   const messagesRef = useRef<ChatMessage[]>([]);
   const sessionRef = useRef<SessionPolicy>(createSessionPolicy());
   const abortRef = useRef<AbortController | undefined>(undefined);
   const runningRef = useRef(false);
+
+  // Coalesce high-frequency streaming deltas so a fast provider doesn't force
+  // a full-transcript Ink re-render per token. Recreated only if the
+  // underlying dispatch changes (it shouldn't during a session).
+  const throttled = useMemo(
+    () => createThrottledDispatch(dispatchEvent),
+    [dispatchEvent],
+  );
+  // Belt-and-braces: flush any buffered deltas if the hook unmounts mid-stream.
+  useEffect(() => () => throttled.flush(), [throttled]);
 
   const isRunning = useCallback(() => runningRef.current, []);
 
@@ -82,9 +168,9 @@ export function useAgentRunner({
 
   const getMessages = useCallback(() => [...messagesRef.current], []);
 
-  const setMessages = useCallback((messages: ChatMessage[]) => {
+  const setMessages = useCallback((messages: ChatMessage[], sessionId?: string) => {
     messagesRef.current = [...messages];
-    sessionRef.current = createSessionPolicy();
+    sessionRef.current = createSessionPolicy(sessionId);
   }, []);
 
   const compact = useCallback(async (sessionTranscript?: string, keepRecent?: number, signal?: AbortSignal) => {
@@ -150,13 +236,14 @@ export function useAgentRunner({
       try {
         let answer = "";
         if (ctx.mode === "ask") {
-          dispatchEvent({ type: "turn-start", prompt: input });
-          dispatchEvent({ type: "status", text: "thinking" });
+          throttled.dispatch({ type: "turn-start", prompt: input });
+          throttled.dispatch({ type: "status", text: "thinking" });
           const parser = createThinkingStreamParser(
-            (visible) => dispatchEvent({ type: "assistant-delta", text: visible }),
-            (think) => dispatchEvent({ type: "thinking-delta", text: think }),
+            (visible) => throttled.dispatch({ type: "assistant-delta", text: visible }),
+            (think) => throttled.dispatch({ type: "thinking-delta", text: think }),
           );
           let sawToken = false;
+          let actionInfo: AskActionRequired | undefined;
           const raw = await runAskStream(
             input,
             (token) => {
@@ -169,15 +256,77 @@ export function useAgentRunner({
               history: messagesRef.current.slice(0, -1),
               signal: ac.signal,
               images: opts?.images,
+              onActionRequired: (info) => {
+                actionInfo = info;
+              },
+              // Render read-only research (web.search/web.fetch/…) as tool
+              // cards, exactly like agent-mode tool activity.
+              onEvent: throttled.dispatch,
             },
           );
-          const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
-          if (result.hasThinking && result.thinkContent) {
-            dispatchEvent({ type: "thinking-block", content: result.thinkContent });
+          // Flush the live-display parser, but trust the returned text as the
+          // authoritative answer: when ask mode runs research rounds the live
+          // stream may briefly mirror a tool-call preamble, whereas the return
+          // value is always the clean final answer.
+          if (sawToken) parser.finish();
+
+          if (actionInfo) {
+            // Ask mode can't perform the requested action. Show the model's
+            // explanation, then offer to switch into agent mode and run it.
+            throttled.flush();
+            if (actionInfo.preamble) {
+              throttled.dispatch({
+                type: "assistant-message",
+                text: actionInfo.preamble,
+              });
+            }
+            const proceed = confirm.confirmAgentSwitch
+              ? await confirm.confirmAgentSwitch({
+                  reason: actionInfo.preamble,
+                  tools: actionInfo.tools,
+                })
+              : false;
+            if (proceed) {
+              onSwitchToAgent?.();
+              // Re-run the original request through the agent loop. runAgent
+              // emits its own turn-start/turn-end via onEvent.
+              answer = await runAgent(actionInfo.prompt, {
+                provider: ctx.provider,
+                model: ctx.model,
+                history: messagesRef.current.slice(0, -1),
+                signal: ac.signal,
+                session: sessionRef.current,
+                images: opts?.images,
+                onEvent: throttled.dispatch,
+                confirm,
+                requestSecret,
+              });
+            } else {
+              answer =
+                "Staying in ask mode; the task wasn't run. Use /agent to run tasks that take actions.";
+              throttled.dispatch({ type: "assistant-message", text: answer });
+              throttled.dispatch({
+                type: "turn-end",
+                finalAnswer: answer,
+                steps: 1,
+              });
+            }
+          } else {
+            const result = rememberThinkingFromText(raw);
+            if (result.hasThinking && result.thinkContent) {
+              throttled.dispatch({
+                type: "thinking-block",
+                content: result.thinkContent,
+              });
+            }
+            answer = result.visible;
+            throttled.dispatch({ type: "assistant-message", text: answer });
+            throttled.dispatch({
+              type: "turn-end",
+              finalAnswer: answer,
+              steps: 1,
+            });
           }
-          answer = result.visible;
-          dispatchEvent({ type: "assistant-message", text: answer });
-          dispatchEvent({ type: "turn-end", finalAnswer: answer, steps: 1 });
         } else {
           answer = await runAgent(input, {
             provider: ctx.provider,
@@ -186,7 +335,7 @@ export function useAgentRunner({
             signal: ac.signal,
             session: sessionRef.current,
             images: opts?.images,
-            onEvent: dispatchEvent,
+            onEvent: throttled.dispatch,
             confirm,
             requestSecret,
           });
@@ -194,20 +343,21 @@ export function useAgentRunner({
         messagesRef.current.push({ role: "assistant", content: answer });
       } catch (err) {
         if (ac.signal.aborted) {
-          dispatchEvent({ type: "turn-aborted" });
+          throttled.dispatch({ type: "turn-aborted" });
         } else if (ctx.mode === "ask") {
-          dispatchEvent({
+          throttled.dispatch({
             type: "turn-error",
             message: err instanceof Error ? err.message : String(err),
           });
         }
       } finally {
+        throttled.flush();
         process.off("SIGINT", onSigint);
         runningRef.current = false;
         abortRef.current = undefined;
       }
     },
-    [dispatchEvent, confirm, getContext, requestSecret],
+    [throttled, confirm, getContext, requestSecret, onSwitchToAgent],
   );
 
   return useMemo<AgentRunner>(

@@ -294,7 +294,12 @@ export function toOpenAiMessages(
     // Attach images as OpenAI-style multimodal content parts (data URLs).
     // Only user messages carry images; everything else stays a plain string
     // so we don't disturb providers/models that expect string content.
-    if (role === "user" && supportsVision && message.images && message.images.length > 0) {
+    if (
+      role === "user" &&
+      supportsVision &&
+      message.images &&
+      message.images.length > 0
+    ) {
       const parts: OpenAiContentPart[] = [];
       if (message.content) parts.push({ type: "text", text: message.content });
       for (const img of message.images) {
@@ -410,7 +415,11 @@ export function buildReasoningPayload(
           return {
             chat_template_kwargs: {
               thinking: enabled,
-              reasoning_effort: enabled ? (clampEffort(effort) === "low" ? "none" : "high") : "none",
+              reasoning_effort: enabled
+                ? clampEffort(effort) === "low"
+                  ? "none"
+                  : "high"
+                : "none",
             },
           };
         case "thinking":
@@ -484,8 +493,8 @@ function buildChatBody(options: {
   // paths so kimi-k2.6 etc. respond instantly).
   const reasoningOn = Boolean(options.reasoning?.enabled);
   const isMinimaxM3 = options.model === "minimaxai/minimax-m3";
-  const defaultMaxTokens = isMinimaxM3 ? 8_192 : (reasoningOn ? 8_192 : 4_096);
-  const defaultTemperature = isMinimaxM3 ? 1.00 : 0.2;
+  const defaultMaxTokens = isMinimaxM3 ? 8_192 : reasoningOn ? 8_192 : 4_096;
+  const defaultTemperature = isMinimaxM3 ? 1.0 : 0.2;
   const body: Record<string, unknown> = {
     model: options.model,
     messages: toOpenAiMessages(options.messages, options.supportsVision),
@@ -832,9 +841,16 @@ export async function openAiCompatibleStream(options: {
     }
     exitReasoning();
     cleanup();
-    if (!visible.trim() && reasoningSeen.trim()) {
+    // Only treat "reasoning only, no visible answer" as a hard error when the
+    // model actually ran out of budget (finish_reason "length") — mirroring
+    // the [DONE] branch above. Some providers close the socket normally
+    // (finish_reason "stop"/undefined, no explicit [DONE] line) after a
+    // reasoning-only turn; throwing there discarded the reasoning entirely
+    // and surfaced a confusing error instead of the graceful "model produced
+    // only thinking" recovery the caller already has for this exact case.
+    if (!visible.trim() && reasoningSeen.trim() && finishReason === "length") {
       throw new ProviderError(
-        `${options.provider} ended the stream after only emitting hidden reasoning. Try /variants off, lower the effort, or raise max_tokens.`,
+        `${options.provider} hit the max_tokens limit while still thinking (no visible answer). Try /variants off, lower the effort, or raise max_tokens.`,
       );
     }
     return full;

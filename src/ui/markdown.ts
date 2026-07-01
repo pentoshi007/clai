@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import stringWidth from "string-width";
 
 // Lightweight terminal markdown renderer that styles **bold**, *italic*,
 // `code`, links, headings, lists, blockquotes, hrules, and ```fenced```
@@ -85,7 +86,11 @@ export function renderInlineMarkdown(text: string): string {
       const end = text.indexOf("*", i + 1);
       if (end > i + 1 && text[end + 1] !== "*") {
         const inner = text.slice(i + 1, end);
-        if (inner.length > 0 && !inner.startsWith(" ") && !inner.endsWith(" ")) {
+        if (
+          inner.length > 0 &&
+          !inner.startsWith(" ") &&
+          !inner.endsWith(" ")
+        ) {
           out += chalk.italic(renderInlineMarkdown(inner));
           i = end + 1;
           continue;
@@ -121,7 +126,9 @@ export function renderInlineMarkdown(text: string): string {
     if (text.startsWith("~~", i)) {
       const end = text.indexOf("~~", i + 2);
       if (end > i + 2) {
-        out += chalk.strikethrough(renderInlineMarkdown(text.slice(i + 2, end)));
+        out += chalk.strikethrough(
+          renderInlineMarkdown(text.slice(i + 2, end)),
+        );
         i = end + 2;
         continue;
       }
@@ -203,7 +210,9 @@ function renderBlockLine(line: string, state: BlockState): string {
 
   // Blockquote
   if (line.startsWith("> ")) {
-    return chalk.dim("│ ") + chalk.dim.italic(renderInlineMarkdown(line.slice(2)));
+    return (
+      chalk.dim("│ ") + chalk.dim.italic(renderInlineMarkdown(line.slice(2)))
+    );
   }
 
   // GitHub-style task list: - [ ] todo  /  - [x] done
@@ -233,14 +242,21 @@ function renderBlockLine(line: string, state: BlockState): string {
 /** Left margin for all rendered output so text doesn't go edge-to-edge. */
 const OUTPUT_INDENT = "  ";
 
-function stripAnsi(str: string): string {
-  // biome-ignore lint: escape sequences are intentional
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+// Visible column width of a string, accounting for ANSI escapes (stripped)
+// AND wide characters (emoji, CJK) that occupy 2 terminal columns each but
+// only 1 JS string index. Using `.length` here under-counts glyphs like
+// ✅/⚠️/❓, which desynced column math and let table borders drift and get
+// clipped by the TUI's width-aware truncation.
+function visibleWidth(str: string): number {
+  return stringWidth(str);
 }
 
-type Token = { type: "space" | "ansi" | "char"; value: string };
+type Token = { type: "space" | "ansi" | "char"; value: string; width: number };
 
-function splitWord(tokens: Token[], maxWidth: number): { text: string; visibleLength: number }[] {
+function splitWord(
+  tokens: Token[],
+  maxWidth: number,
+): { text: string; visibleLength: number }[] {
   const segments: { text: string; visibleLength: number }[] = [];
   let currentSegmentText = "";
   let currentSegmentVisibleLength = 0;
@@ -248,24 +264,34 @@ function splitWord(tokens: Token[], maxWidth: number): { text: string; visibleLe
   for (const token of tokens) {
     if (token.type === "ansi") {
       currentSegmentText += token.value;
-    } else { // type === "char"
-      if (currentSegmentVisibleLength >= maxWidth) {
-        segments.push({ text: currentSegmentText, visibleLength: currentSegmentVisibleLength });
+    } else {
+      // type === "char" (may be a wide glyph worth 2 columns)
+      if (
+        currentSegmentVisibleLength > 0 &&
+        currentSegmentVisibleLength + token.width > maxWidth
+      ) {
+        segments.push({
+          text: currentSegmentText,
+          visibleLength: currentSegmentVisibleLength,
+        });
         currentSegmentText = "";
         currentSegmentVisibleLength = 0;
       }
       currentSegmentText += token.value;
-      currentSegmentVisibleLength += 1;
+      currentSegmentVisibleLength += token.width;
     }
   }
   if (currentSegmentText) {
-    segments.push({ text: currentSegmentText, visibleLength: currentSegmentVisibleLength });
+    segments.push({
+      text: currentSegmentText,
+      visibleLength: currentSegmentVisibleLength,
+    });
   }
   return segments;
 }
 
 export function wrapAnsiLine(line: string, maxWidth: number): string[] {
-  const visibleLength = stripAnsi(line).length;
+  const visibleLength = visibleWidth(line);
   if (visibleLength <= maxWidth) return [line];
 
   const tokens: Token[] = [];
@@ -277,18 +303,29 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
         j++;
       }
       const val = line.slice(i, j + 1);
-      tokens.push({ type: "ansi", value: val });
+      tokens.push({ type: "ansi", value: val, width: 0 });
       i = j + 1;
     } else if (/\s/.test(line[i]!)) {
       let j = i;
       while (j < line.length && /\s/.test(line[j]!)) {
         j++;
       }
-      tokens.push({ type: "space", value: line.slice(i, j) });
+      const val = line.slice(i, j);
+      tokens.push({ type: "space", value: val, width: val.length });
       i = j;
     } else {
-      tokens.push({ type: "char", value: line[i]! });
-      i++;
+      // Advance by a full Unicode code point (not a UTF-16 code unit) so a
+      // surrogate-pair emoji is never split in half, then measure its real
+      // terminal column width (many emoji/symbols render as 2 columns).
+      const codePoint = line.codePointAt(i)!;
+      const charLength = codePoint > 0xffff ? 2 : 1;
+      const val = line.slice(i, i + charLength);
+      tokens.push({
+        type: "char",
+        value: val,
+        width: Math.max(1, visibleWidth(val)),
+      });
+      i += charLength;
     }
   }
 
@@ -312,11 +349,11 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   for (const token of tokens) {
     if (token.type === "space") {
       pushWord();
-      words.push({ text: token.value, visibleLength: token.value.length });
+      words.push({ text: token.value, visibleLength: token.width });
     } else {
       currentWordTokens.push(token);
       if (token.type === "char") {
-        currentWordVisibleLength += 1;
+        currentWordVisibleLength += token.width;
       }
     }
   }
@@ -372,7 +409,11 @@ export function indentAndWrapText(text: string, indent = "  "): string {
     .join("\n");
 }
 
-function wrapMarkdownLine(line: string, wrapWidth: number, state: BlockState): string[] {
+function wrapMarkdownLine(
+  line: string,
+  wrapWidth: number,
+  state: BlockState,
+): string[] {
   // If it's a fence, don't wrap it
   if (/^(\s*)```/.test(line)) {
     return [renderBlockLine(line, state)];
@@ -406,7 +447,10 @@ function wrapMarkdownLine(line: string, wrapWidth: number, state: BlockState): s
     if (checked) {
       renderedContent = chalk.dim(renderedContent);
     }
-    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - prefixLength));
+    const wrapped = wrapAnsiLine(
+      renderedContent,
+      Math.max(10, wrapWidth - prefixLength),
+    );
     return wrapped.map((wl, idx) => {
       if (idx === 0) return prefix + wl;
       return " ".repeat(prefixLength) + wl;
@@ -422,7 +466,10 @@ function wrapMarkdownLine(line: string, wrapWidth: number, state: BlockState): s
     const prefix = `${indent}${chalk.cyan(`${num}.`)} `;
     const prefixLength = indent.length + num.length + 2;
     const renderedContent = renderInlineMarkdown(content);
-    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - prefixLength));
+    const wrapped = wrapAnsiLine(
+      renderedContent,
+      Math.max(10, wrapWidth - prefixLength),
+    );
     return wrapped.map((wl, idx) => {
       if (idx === 0) return prefix + wl;
       return " ".repeat(prefixLength) + wl;
@@ -437,7 +484,10 @@ function wrapMarkdownLine(line: string, wrapWidth: number, state: BlockState): s
     const prefix = `${indent}${chalk.cyan("•")} `;
     const prefixLength = indent.length + 2;
     const renderedContent = renderInlineMarkdown(content);
-    const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - prefixLength));
+    const wrapped = wrapAnsiLine(
+      renderedContent,
+      Math.max(10, wrapWidth - prefixLength),
+    );
     return wrapped.map((wl, idx) => {
       if (idx === 0) return prefix + wl;
       return " ".repeat(prefixLength) + wl;
@@ -513,11 +563,11 @@ interface CellLine {
 
 function padCell(
   rendered: string,
-  visibleWidth: number,
+  contentWidth: number,
   columnWidth: number,
   align: ColumnAlign,
 ): string {
-  const slack = Math.max(0, columnWidth - visibleWidth);
+  const slack = Math.max(0, columnWidth - contentWidth);
   if (align === "right") return " ".repeat(slack) + rendered;
   if (align === "center") {
     const left = Math.floor(slack / 2);
@@ -538,7 +588,9 @@ function padCell(
 function renderTableBlock(rawLines: string[], availWidth: number): string[] {
   const separatorIndex = rawLines.findIndex(isTableSeparatorLine);
   const headerLines =
-    separatorIndex > 0 ? rawLines.slice(0, separatorIndex) : [rawLines[0] ?? ""];
+    separatorIndex > 0
+      ? rawLines.slice(0, separatorIndex)
+      : [rawLines[0] ?? ""];
   const separatorLine = separatorIndex >= 0 ? rawLines[separatorIndex]! : "";
   const bodyLines = (
     separatorIndex >= 0 ? rawLines.slice(separatorIndex + 1) : rawLines.slice(1)
@@ -554,25 +606,23 @@ function renderTableBlock(rawLines: string[], availWidth: number): string[] {
   const aligns = parseColumnAligns(separatorLine, columns);
 
   const toCell = (text: string): CellLine[] =>
-    text
-      .split(BR_RE_GLOBAL)
-      .map((part) => {
-        const trimmed = part.trim();
-        const bulletMatch = trimmed.match(/^([-\*+])\s+(.*)$/);
-        if (bulletMatch) {
-          const content = renderInlineMarkdown(bulletMatch[2]!);
-          const rendered = `${chalk.cyan("•")} ${content}`;
-          return { rendered, width: stripAnsi(rendered).length };
-        }
-        const numberMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
-        if (numberMatch) {
-          const content = renderInlineMarkdown(numberMatch[2]!);
-          const rendered = `${chalk.cyan(`${numberMatch[1]}.`)} ${content}`;
-          return { rendered, width: stripAnsi(rendered).length };
-        }
-        const rendered = renderInlineMarkdown(trimmed);
-        return { rendered, width: stripAnsi(rendered).length };
-      });
+    text.split(BR_RE_GLOBAL).map((part) => {
+      const trimmed = part.trim();
+      const bulletMatch = trimmed.match(/^([-\*+])\s+(.*)$/);
+      if (bulletMatch) {
+        const content = renderInlineMarkdown(bulletMatch[2]!);
+        const rendered = `${chalk.cyan("•")} ${content}`;
+        return { rendered, width: visibleWidth(rendered) };
+      }
+      const numberMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+      if (numberMatch) {
+        const content = renderInlineMarkdown(numberMatch[2]!);
+        const rendered = `${chalk.cyan(`${numberMatch[1]}.`)} ${content}`;
+        return { rendered, width: visibleWidth(rendered) };
+      }
+      const rendered = renderInlineMarkdown(trimmed);
+      return { rendered, width: visibleWidth(rendered) };
+    });
 
   const buildRow = (cells: string[]): CellLine[][] => {
     const row: CellLine[][] = [];
@@ -594,8 +644,11 @@ function renderTableBlock(rawLines: string[], availWidth: number): string[] {
   }
 
   // Shrink to fit: each column costs width + 2 padding spaces, plus one
-  // vertical border per column and a leading border (3*columns + 1).
-  const budget = Math.max(columns, availWidth - (3 * columns + 1));
+  // vertical border per column and a leading border (3*columns + 1). Reserve
+  // one extra column of margin so an exact-fit table can't be clipped by the
+  // TUI's own width-aware truncation (e.g. small rounding differences
+  // between this module's width math and the terminal renderer's).
+  const budget = Math.max(columns, availWidth - (3 * columns + 1) - 1);
   let total = colWidths.reduce((a, b) => a + b, 0);
   while (total > budget) {
     let widest = 0;
@@ -614,7 +667,7 @@ function renderTableBlock(rawLines: string[], availWidth: number): string[] {
         // Drop any trailing spaces a wrap left behind so the cell's
         // right border stays aligned (padCell re-adds exact padding).
         const trimmed = piece.replace(/ +$/, "");
-        out.push({ rendered: trimmed, width: stripAnsi(trimmed).length });
+        out.push({ rendered: trimmed, width: visibleWidth(trimmed) });
       }
     }
     return out.length > 0 ? out : [{ rendered: "", width: 0 }];
@@ -631,7 +684,11 @@ function renderTableBlock(rawLines: string[], availWidth: number): string[] {
         const piece = wrapped[c]![h] ?? { rendered: "", width: 0 };
         const content =
           bold && piece.rendered ? chalk.bold(piece.rendered) : piece.rendered;
-        s += " " + padCell(content, piece.width, colWidths[c]!, aligns[c]!) + " " + dim("│");
+        s +=
+          " " +
+          padCell(content, piece.width, colWidths[c]!, aligns[c]!) +
+          " " +
+          dim("│");
       }
       lines.push(s);
     }
@@ -792,4 +849,3 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
     },
   };
 }
-

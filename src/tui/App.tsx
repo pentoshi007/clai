@@ -55,6 +55,7 @@ import {
   saveSession,
   upsertSession,
 } from "../store/history.js";
+import { generateSessionTitle } from "../agent/session-title.js";
 import { safeCwd } from "../os/cwd.js";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
@@ -109,6 +110,16 @@ import {
   stripMouseReports,
 } from "./mouse.js";
 
+function truncateMiddle(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (text.length <= maxWidth) return text;
+  if (maxWidth <= 1) return "…";
+  const keep = maxWidth - 1;
+  const head = Math.ceil(keep * 0.6);
+  const tail = Math.floor(keep * 0.4);
+  return `${text.slice(0, head)}…${text.slice(Math.max(0, text.length - tail))}`;
+}
+
 function wrapPlainString(
   text: string,
   width: number,
@@ -123,7 +134,11 @@ function wrapPlainString(
   for (let p = 0; p < paragraphs.length; p++) {
     const para = paragraphs[p]!;
     if (para.length === 0) {
-      lines.push({ lineText: "", startIdx: currentOffset, endIdx: currentOffset });
+      lines.push({
+        lineText: "",
+        startIdx: currentOffset,
+        endIdx: currentOffset,
+      });
     } else {
       let idx = 0;
       while (idx < para.length) {
@@ -180,8 +195,35 @@ type Overlay =
       title: string;
       options: PickerOption[];
       searchDescription?: boolean | undefined;
+      twoLine?: boolean | undefined;
       onSelect: (value: string) => void;
     };
+
+/** Compact "time ago" label for history rows, e.g. "3m", "5h", "2d". */
+function relativeTime(iso: string): string {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "";
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return "just now";
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  const mon = Math.floor(day / 30);
+  if (mon < 12) return `${mon}mo ago`;
+  return `${Math.floor(mon / 12)}y ago`;
+}
+
+/** Last path segment of a cwd, for a short location hint in history rows. */
+function shortCwd(cwd: string): string {
+  const trimmed = cwd.replace(/[\\/]+$/, "");
+  const base = trimmed.split(/[\\/]/).pop() ?? trimmed;
+  return base || trimmed;
+}
 
 export function App({
   version,
@@ -222,6 +264,15 @@ export function App({
   );
   const latestItems = useRef(state.items);
   latestItems.current = state.items;
+
+  // Tracks model-generated session titles. `titledAtUserCount` records the
+  // number of user turns the current title was generated from, so we can
+  // refresh the title as the conversation grows past it without regenerating
+  // on every single turn. Reset whenever a fresh session starts.
+  const titleRef = useRef<{ titledAtUserCount: number; inFlight: boolean }>({
+    titledAtUserCount: 0,
+    inFlight: false,
+  });
 
   const compactAbortRef = useRef<AbortController | undefined>(undefined);
   const cancelCompaction = useCallback(() => {
@@ -275,6 +326,11 @@ export function App({
     confirm: confirmController.port,
     getContext: useCallback(() => ctxRef.current, []),
     requestSecret,
+    onSwitchToAgent: useCallback(() => {
+      setMode("agent");
+      setDefaultMode("agent");
+      dispatch({ type: "notice", level: "info", text: "mode → agent" });
+    }, []),
   });
 
   const exitTui = useCallback(() => {
@@ -292,24 +348,72 @@ export function App({
     })();
   }, [exit, noHistory, runner, state.items]);
 
+  // Generate (and later refresh) a concise, model-written title for the
+  // active session. Runs only when a real exchange exists, throttles by user
+  // turn count, and guards against overlapping requests and session resets.
+  const maybeUpdateTitle = useCallback(
+    (sessionId: string) => {
+      if (noHistory || getConfig().privateMode) return;
+      if (titleRef.current.inFlight) return;
+      const messages = runner.getMessages();
+      const userCount = messages.filter((m) => m.role === "user").length;
+      const hasAssistant = messages.some(
+        (m) => m.role === "assistant" && m.content.trim().length > 0,
+      );
+      if (userCount === 0 || !hasAssistant) return;
+      const titledAt = titleRef.current.titledAtUserCount;
+      // Title on the first completed exchange, then refresh once two more
+      // user turns have accumulated so the name tracks the evolving topic.
+      const shouldGenerate = titledAt === 0 || userCount - titledAt >= 2;
+      if (!shouldGenerate) return;
+
+      titleRef.current.inFlight = true;
+      const targetCount = userCount;
+      const ctx = ctxRef.current;
+      void generateSessionTitle(messages, {
+        provider: ctx.provider,
+        model: ctx.model,
+      })
+        .then((title) => {
+          titleRef.current.inFlight = false;
+          if (!title) return;
+          // Discard if the user started a new session while we were waiting.
+          if (runner.getSession().sessionId !== sessionId) return;
+          titleRef.current.titledAtUserCount = targetCount;
+          void upsertSession(
+            sessionId,
+            runner.getMessages(),
+            title,
+            latestItems.current,
+          ).catch(() => undefined);
+        })
+        .catch(() => {
+          titleRef.current.inFlight = false;
+        });
+    },
+    [noHistory, runner],
+  );
+
   useEffect(() => {
     if (noHistory || getConfig().privateMode) return;
     if (state.items.length === 0) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
       const messages = runner.getMessages();
-      if (messages.length === 0 && state.items.length === 0) return;
-      void upsertSession(
-        runner.getSession().sessionId,
-        messages,
-        undefined,
-        state.items,
-      ).catch(() => undefined);
+      // Only persist sessions that contain an actual conversation. This keeps
+      // `/new` with no input, or a cleared-then-exited session (notices only,
+      // no user turns), out of the history list.
+      if (!messages.some((m) => m.role === "user")) return;
+      const sessionId = runner.getSession().sessionId;
+      void upsertSession(sessionId, messages, undefined, state.items).catch(
+        () => undefined,
+      );
+      maybeUpdateTitle(sessionId);
     }, 250);
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
-  }, [noHistory, runner, state.items]);
+  }, [noHistory, runner, state.items, maybeUpdateTitle]);
 
   useEffect(
     () => () => {
@@ -318,7 +422,7 @@ export function App({
       if (
         !noHistory &&
         !getConfig().privateMode &&
-        (messages.length > 0 || latestItems.current.length > 0)
+        messages.some((m) => m.role === "user")
       ) {
         void upsertSession(
           runner.getSession().sessionId,
@@ -363,6 +467,7 @@ export function App({
   useEffect(() => {
     if (
       !state.status.running &&
+      !state.pendingConfirm &&
       state.queued.length > 0 &&
       !runner.isRunning()
     ) {
@@ -370,7 +475,13 @@ export function App({
       dispatch({ type: "dequeue" });
       beginTurn(next);
     }
-  }, [state.status.running, state.queued, runner, beginTurn]);
+  }, [
+    state.status.running,
+    state.pendingConfirm,
+    state.queued,
+    runner,
+    beginTurn,
+  ]);
 
   const lastToolOutput = useCallback((): ToolItem | undefined => {
     for (let i = state.items.length - 1; i >= 0; i -= 1) {
@@ -417,6 +528,50 @@ export function App({
     });
     void startTurn("/implement", IMPLEMENT_PROMPT);
   }, [runner, startTurn]);
+
+  // After a turn ends, if the agent just created (or revised) a plan that is
+  // still a draft awaiting approval, prompt the user with a yes/no modal to
+  // implement it now or discard it. /implement and /discard remain available.
+  const maybePromptPlanApproval = useCallback(async () => {
+    const session = runner.getSession();
+    if (session.planApproved.value) return;
+    if (confirmResolver.current) return; // a confirm is already on screen
+    const plan = await loadPlan(session.sessionId).catch(() => undefined);
+    if (!plan || plan.status !== "draft" || plan.tasks.length === 0) return;
+    const ok = await new Promise<boolean>((res) => {
+      confirmResolver.current = res;
+      dispatch({
+        type: "event",
+        event: {
+          type: "confirm-request",
+          id: "plan",
+          kind: "plan",
+          prompt: `Implement this plan now? "${plan.goal}" — ${plan.tasks.length} task(s). (Y to implement · N to discard)`,
+        },
+      });
+    });
+    if (ok) {
+      await runImplement();
+    } else {
+      await deletePlan(session.sessionId).catch(() => undefined);
+      session.planApproved.value = false;
+      dispatch({
+        type: "notice",
+        level: "info",
+        text: `plan discarded · ${plan.goal}`,
+      });
+    }
+  }, [runner, runImplement]);
+
+  // Detect a turn finishing (running true → false) and offer plan approval.
+  const prevRunningRef = useRef(false);
+  useEffect(() => {
+    const wasRunning = prevRunningRef.current;
+    prevRunningRef.current = state.status.running;
+    if (wasRunning && !state.status.running) {
+      void maybePromptPlanApproval();
+    }
+  }, [state.status.running, maybePromptPlanApproval]);
 
   const chooseModel = useCallback(async () => {
     const providerImpl = getProvider(provider);
@@ -643,6 +798,7 @@ export function App({
                 () => undefined,
               );
             runner.reset();
+            titleRef.current = { titledAtUserCount: 0, inFlight: false };
             dispatch({ type: "reset" });
             info("fresh session started");
           })();
@@ -650,6 +806,7 @@ export function App({
         case "/clean":
           cancelCompaction();
           runner.reset();
+          titleRef.current = { titledAtUserCount: 0, inFlight: false };
           dispatch({ type: "reset" });
           info("fresh session started");
           return true;
@@ -852,31 +1009,38 @@ export function App({
             .compact(fullSession, 2, ac.signal)
             .then((result) => {
               if (ac.signal.aborted) return;
-              if (result.after === result.before && !result.summarized) {
-                info(
-                  "nothing to compact yet — more messages are required",
-                );
-              } else {
-                const memoMsg = result.messages.find(
+              if (!result.summarized || result.after === result.before) {
+                info("nothing to compact yet — more conversation is needed");
+                return;
+              }
+              const memoMsg =
+                result.messages.find(
                   (m) =>
                     m.role === "system" &&
-                    (m.content.startsWith("Session memory") ||
-                      m.content.startsWith("Earlier turns")),
-                ) ?? result.messages.find((m, i) => i > 0 && m.role === "system");
-                const summary =
-                  !result.summarized && fullSession.trim()
-                    ? `Earlier turns in this session, summarized to fit the context budget. Full local transcript shown for review; the model received a compact fallback memory.\n\n${fullSession}`
-                    : memoMsg
-                      ? memoMsg.content
-                      : "Compacted context";
-                dispatch({ type: "compacted", summary, keepRecent: 2 });
-                info(
-                  `compacted ${result.before} → ${result.after} messages · ~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} tokens${result.summarized ? "" : " · local fallback"}`,
-                );
-              }
+                    m.content.startsWith("Session memory"),
+                ) ??
+                result.messages.find((m, i) => i > 0 && m.role === "system");
+              const summary = memoMsg ? memoMsg.content : "Compacted context";
+              dispatch({ type: "compacted", summary, keepRecent: 2 });
+              const freed = Math.max(
+                0,
+                result.beforeTokens - result.afterTokens,
+              );
+              const pct =
+                result.beforeTokens > 0
+                  ? Math.round((freed / result.beforeTokens) * 100)
+                  : 0;
+              info(
+                `context compacted — earlier turns summarized into a memory · ` +
+                  `freed ~${freed.toLocaleString()} tokens (${pct}% smaller, ` +
+                  `~${result.beforeTokens.toLocaleString()} → ~${result.afterTokens.toLocaleString()} est.)`,
+              );
             })
             .catch((error) => {
-              if (ac.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+              if (
+                ac.signal.aborted ||
+                (error instanceof Error && error.name === "AbortError")
+              ) {
                 info("compaction cancelled");
               } else {
                 warn(
@@ -918,22 +1082,38 @@ export function App({
             setOverlay({
               kind: "picker",
               title: "Session history",
+              twoLine: true,
               options: [
                 ...(currentMessages.length
-                   ? [
-                       {
-                         value: "__current__",
-                         label: "Current session",
-                         description: `${currentMessages.length} messages · active now`,
-                         active: true,
-                       },
-                     ]
-                   : []),
-                ...sessions.map((session) => ({
-                  value: session.id,
-                  label: session.name ?? session.id,
-                  description: `${session.createdAt.slice(0, 16).replace("T", " ")} · ${session.transcript?.length ?? session.messages.length} items`,
-                })),
+                  ? [
+                      {
+                        value: "__current__",
+                        label: "Current session",
+                        description: `active now · ${currentMessages.length} messages`,
+                        active: true,
+                      },
+                    ]
+                  : []),
+                ...sessions.map((session) => {
+                  const date = session.updatedAt ?? session.createdAt;
+                  const when = relativeTime(date);
+                  const stamp = date.slice(0, 16).replace("T", " ");
+                  const count =
+                    session.transcript?.length ?? session.messages.length;
+                  const where = shortCwd(session.cwd);
+                  const meta = [
+                    when ? `${when} · ${stamp}` : stamp,
+                    `${count} msgs`,
+                    where,
+                  ]
+                    .filter(Boolean)
+                    .join("  ·  ");
+                  return {
+                    value: session.id,
+                    label: session.name ?? session.id,
+                    description: meta,
+                  };
+                }),
               ],
               onSelect: (id) => {
                 void (async () => {
@@ -948,7 +1128,15 @@ export function App({
                     return;
                   }
                   cancelCompaction();
-                  runner.setMessages(session.messages);
+                  runner.setMessages(session.messages, session.id);
+                  // Keep the resumed session's existing title; only refresh
+                  // once the user adds new turns on top of it.
+                  titleRef.current = {
+                    titledAtUserCount: session.messages.filter(
+                      (m) => m.role === "user",
+                    ).length,
+                    inFlight: false,
+                  };
                   setOverlay({ kind: "none" });
                   dispatch({
                     type: "load-history",
@@ -1171,7 +1359,9 @@ export function App({
                   return {
                     provider: id,
                     configured: keyless || Boolean(secret.value),
-                    maskedKey: secret.value ? maskSecret(secret.value) : undefined,
+                    maskedKey: secret.value
+                      ? maskSecret(secret.value)
+                      : undefined,
                   };
                 }),
               );
@@ -1203,18 +1393,20 @@ export function App({
                       }
                       const secret = await getSearchProviderKey(next);
                       if (secret.value) {
-                        const reset = await new Promise<boolean>((resolveConfirm) => {
-                          confirmResolver.current = resolveConfirm;
-                          dispatch({
-                            type: "event",
-                            event: {
-                              type: "confirm-request",
-                              id: "c",
-                              kind: "reset",
-                              prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
-                            },
-                          });
-                        });
+                        const reset = await new Promise<boolean>(
+                          (resolveConfirm) => {
+                            confirmResolver.current = resolveConfirm;
+                            dispatch({
+                              type: "event",
+                              event: {
+                                type: "confirm-request",
+                                id: "c",
+                                kind: "reset",
+                                prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                              },
+                            });
+                          },
+                        );
                         if (!reset) {
                           info("cancelled");
                           return;
@@ -1247,18 +1439,20 @@ export function App({
                       }
                       const secret = await getProviderSecret(next);
                       if (secret.value) {
-                        const reset = await new Promise<boolean>((resolveConfirm) => {
-                          confirmResolver.current = resolveConfirm;
-                          dispatch({
-                            type: "event",
-                            event: {
-                              type: "confirm-request",
-                              id: "c",
-                              kind: "reset",
-                              prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
-                            },
-                          });
-                        });
+                        const reset = await new Promise<boolean>(
+                          (resolveConfirm) => {
+                            confirmResolver.current = resolveConfirm;
+                            dispatch({
+                              type: "event",
+                              event: {
+                                type: "confirm-request",
+                                id: "c",
+                                kind: "reset",
+                                prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                              },
+                            });
+                          },
+                        );
                         if (!reset) {
                           info("cancelled");
                           return;
@@ -1284,7 +1478,9 @@ export function App({
               });
             } else {
               try {
-                const isSearch = ["brave", "tavily", "duckduckgo"].includes(providerVal);
+                const isSearch = ["brave", "tavily", "duckduckgo"].includes(
+                  providerVal,
+                );
                 if (isSearch) {
                   const next = providerVal as SearchProviderId;
                   if (next === "duckduckgo") {
@@ -1295,18 +1491,20 @@ export function App({
                   if (!key) {
                     const secret = await getSearchProviderKey(next);
                     if (secret.value) {
-                      const reset = await new Promise<boolean>((resolveConfirm) => {
-                        confirmResolver.current = resolveConfirm;
-                        dispatch({
-                          type: "event",
-                          event: {
-                            type: "confirm-request",
-                            id: "c",
-                            kind: "reset",
-                            prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
-                          },
-                        });
-                      });
+                      const reset = await new Promise<boolean>(
+                        (resolveConfirm) => {
+                          confirmResolver.current = resolveConfirm;
+                          dispatch({
+                            type: "event",
+                            event: {
+                              type: "confirm-request",
+                              id: "c",
+                              kind: "reset",
+                              prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                            },
+                          });
+                        },
+                      );
                       if (!reset) {
                         info("cancelled");
                         return;
@@ -1345,18 +1543,20 @@ export function App({
                   if (!key) {
                     const secret = await getProviderSecret(next);
                     if (secret.value) {
-                      const reset = await new Promise<boolean>((resolveConfirm) => {
-                        confirmResolver.current = resolveConfirm;
-                        dispatch({
-                          type: "event",
-                          event: {
-                            type: "confirm-request",
-                            id: "c",
-                            kind: "reset",
-                            prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
-                          },
-                        });
-                      });
+                      const reset = await new Promise<boolean>(
+                        (resolveConfirm) => {
+                          confirmResolver.current = resolveConfirm;
+                          dispatch({
+                            type: "event",
+                            event: {
+                              type: "confirm-request",
+                              id: "c",
+                              kind: "reset",
+                              prompt: `${next} already has a key (${maskSecret(secret.value!)}). Reset it?`,
+                            },
+                          });
+                        },
+                      );
                       if (!reset) {
                         info("cancelled");
                         return;
@@ -1399,7 +1599,9 @@ export function App({
                   return {
                     provider: id,
                     configured: keyless || Boolean(secret.value),
-                    maskedKey: secret.value ? maskSecret(secret.value) : undefined,
+                    maskedKey: secret.value
+                      ? maskSecret(secret.value)
+                      : undefined,
                   };
                 }),
               );
@@ -1426,7 +1628,9 @@ export function App({
                     if (isSearch) {
                       const next = id as SearchProviderId;
                       if (next === "duckduckgo") {
-                        info("duckduckgo requires no credentials and cannot be unset");
+                        info(
+                          "duckduckgo requires no credentials and cannot be unset",
+                        );
                         return;
                       }
                       const secret = await getSearchProviderKey(next);
@@ -1434,7 +1638,8 @@ export function App({
                         warn(`${next} has no key to unset`);
                         return;
                       }
-                      const { unsetSearchProviderKey } = await import("../commands/search-providers.js");
+                      const { unsetSearchProviderKey } =
+                        await import("../commands/search-providers.js");
                       await unsetSearchProviderKey(next);
                       info(`unset ${next}`);
                     } else {
@@ -1456,11 +1661,15 @@ export function App({
               });
             } else {
               try {
-                const isSearch = ["brave", "tavily", "duckduckgo"].includes(providerVal);
+                const isSearch = ["brave", "tavily", "duckduckgo"].includes(
+                  providerVal,
+                );
                 if (isSearch) {
                   const next = providerVal as SearchProviderId;
                   if (next === "duckduckgo") {
-                    info("duckduckgo requires no credentials and cannot be unset");
+                    info(
+                      "duckduckgo requires no credentials and cannot be unset",
+                    );
                     return;
                   }
                   const secret = await getSearchProviderKey(next);
@@ -1468,7 +1677,8 @@ export function App({
                     warn(`${next} has no key to unset`);
                     return;
                   }
-                  const { unsetSearchProviderKey } = await import("../commands/search-providers.js");
+                  const { unsetSearchProviderKey } =
+                    await import("../commands/search-providers.js");
                   await unsetSearchProviderKey(next);
                   info(`unset ${next}`);
                 } else {
@@ -1610,7 +1820,10 @@ export function App({
   const inputWidth = Math.max(10, cols - 10);
   let statusH = secretRequest ? 7 : 0;
   if (state.pendingConfirm) {
-    const wrappedPromptLines = wrapPlainString(state.pendingConfirm.prompt, cols - 6);
+    const wrappedPromptLines = wrapPlainString(
+      state.pendingConfirm.prompt,
+      cols - 6,
+    );
     statusH = 3 + wrappedPromptLines.length; // Title row (1) + instructions row (1) + prompt contents + borders (2) + spacing
   }
   const chromeH = !secretRequest && !state.pendingConfirm ? 1 : 0;
@@ -1619,7 +1832,7 @@ export function App({
   const wrappedInputLines = wrapPlainString(input, inputWidth);
   const maxAvailableForComposer = Math.max(
     3,
-    usableRows - headerH - statusH - chromeH - gapH - 8
+    usableRows - headerH - statusH - chromeH - gapH - 8,
   );
   const maxComposerTextRows = Math.max(1, maxAvailableForComposer - 2);
   const composerTextH = Math.min(wrappedInputLines.length, maxComposerTextRows);
@@ -1718,7 +1931,9 @@ export function App({
   // ── Key handling ────────────────────────────────────────────────────────────
   useInput((ch, key) => {
     if (modalActive) return; // overlay/modal owns input
-    const cleanedChunk = stripMouseReports(ch).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const cleanedChunk = stripMouseReports(ch)
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
     if (isMouseReport(ch) && cleanedChunk.length === 0) return;
 
     // Global shortcuts
@@ -1944,10 +2159,37 @@ export function App({
   const at = input.slice(cursor, cursor + 1) || " ";
   const after = input.slice(cursor + 1);
 
+  const footerInnerWidth = Math.max(20, cols - 6); // outer paddingX(2) + footer paddingX(1)
+  const runningBadgeWidth = compacting
+    ? " COMPACTING ".length
+    : " RUNNING ".length;
+  const cancelBadgeWidth = " ESC CANCEL ".length;
+  const queuedBadgeWidth =
+    state.queued.length > 0 ? ` ${state.queued.length} QUEUED `.length + 1 : 0;
+  const scrollBadgeWidth =
+    (maxOffset > offset ? ` ▲ ${maxOffset - offset} `.length + 1 : 0) +
+    (offset > 0 ? ` ▼ ${offset} `.length + 1 : 0);
+  const spinnerWidth = 3; // spinner plus following space
+  const fixedRunningFooterWidth =
+    runningBadgeWidth +
+    1 +
+    spinnerWidth +
+    1 +
+    cancelBadgeWidth +
+    queuedBadgeWidth +
+    scrollBadgeWidth;
+  const runningActivityWidth = Math.max(
+    12,
+    footerInnerWidth - fixedRunningFooterWidth,
+  );
+  const rawRunningActivity = `${compacting ? "compacting conversation" : state.status.activity || "working"}${state.status.step > 0 ? ` (step ${state.status.step})` : ""} · ${elapsed}s`;
+  const runningActivity = truncateMiddle(
+    rawRunningActivity.replace(/\s+/g, " ").trim(),
+    runningActivityWidth,
+  );
+
   return (
     <Box flexDirection="column" width={cols} height={usableRows} paddingX={2}>
-
-
       {/* Transcript viewport OR overlay */}
       {overlay.kind === "pager" ? (
         <Pager
@@ -1963,6 +2205,7 @@ export function App({
           title={overlay.title}
           options={overlay.options}
           searchDescription={overlay.searchDescription}
+          twoLine={overlay.twoLine}
           height={viewportH}
           onSelect={overlay.onSelect}
           onClose={closeOverlay}
@@ -2106,8 +2349,14 @@ export function App({
               }
             }
 
-            let startLine = Math.max(0, cursorLineIdx - Math.floor(composerTextH / 2));
-            let endLine = Math.min(wrappedInputLines.length - 1, startLine + composerTextH - 1);
+            let startLine = Math.max(
+              0,
+              cursorLineIdx - Math.floor(composerTextH / 2),
+            );
+            let endLine = Math.min(
+              wrappedInputLines.length - 1,
+              startLine + composerTextH - 1,
+            );
             startLine = Math.max(0, endLine - composerTextH + 1);
 
             const startCharIdx = wrappedInputLines[startLine]!.startIdx;
@@ -2116,7 +2365,8 @@ export function App({
             const slicedInput = input.slice(startCharIdx, endCharIdx);
             const slicedCursor = cursor - startCharIdx;
             const beforeSliced = slicedInput.slice(0, slicedCursor);
-            const atSliced = slicedInput.slice(slicedCursor, slicedCursor + 1) || " ";
+            const atSliced =
+              slicedInput.slice(slicedCursor, slicedCursor + 1) || " ";
             const afterSliced = slicedInput.slice(slicedCursor + 1);
 
             return (
@@ -2143,11 +2393,11 @@ export function App({
               </Text>
               <Text> </Text>
               <Text color="magenta">{spinner} </Text>
-              <Text color="yellow">
-                {compacting ? "compacting conversation" : (state.status.activity || "working")}
-                {state.status.step > 0 ? ` (step ${state.status.step})` : ""}
-                {` · ${elapsed}s`}
-              </Text>
+              <Box width={runningActivityWidth} flexShrink={1}>
+                <Text color="yellow" wrap="truncate-end">
+                  {runningActivity}
+                </Text>
+              </Box>
               <Text> </Text>
               <Text backgroundColor="#334155" color="#F8FAFC">
                 {" "}
@@ -2156,7 +2406,11 @@ export function App({
               {state.queued.length > 0 ? (
                 <>
                   <Text> </Text>
-                  <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ${state.queued.length} QUEUED `}</Text>
+                  <Text
+                    backgroundColor="#854D0E"
+                    color="#FFFFFF"
+                    bold
+                  >{` ${state.queued.length} QUEUED `}</Text>
                 </>
               ) : null}
             </>
@@ -2198,13 +2452,21 @@ export function App({
           {maxOffset > offset ? (
             <>
               <Text> </Text>
-              <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ▲ ${maxOffset - offset} `}</Text>
+              <Text
+                backgroundColor="#854D0E"
+                color="#FFFFFF"
+                bold
+              >{` ▲ ${maxOffset - offset} `}</Text>
             </>
           ) : null}
           {offset > 0 ? (
             <>
               <Text> </Text>
-              <Text backgroundColor="#854D0E" color="#FFFFFF" bold>{` ▼ ${offset} `}</Text>
+              <Text
+                backgroundColor="#854D0E"
+                color="#FFFFFF"
+                bold
+              >{` ▼ ${offset} `}</Text>
             </>
           ) : null}
         </Box>

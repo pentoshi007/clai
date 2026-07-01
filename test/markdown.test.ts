@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import stringWidth from "string-width";
 import {
   renderInlineMarkdown,
   renderMarkdown,
@@ -172,16 +173,56 @@ describe("markdown extras", () => {
   });
 
   it("renders list items formatted inside table cells", () => {
-    const md = "| Key points |\n| --- |\n| * item one<br>- item two<br>1. item three |";
-    const out = renderMarkdown(md);
+    const md =
+      "| Key points |\n| --- |\n| * item one<br>- item two<br>1. item three |";
+    const out = strip(renderMarkdown(md));
     // Should render a cyan bullet (•) or number (1.)
     expect(out).toContain("• item one");
     expect(out).toContain("• item two");
     expect(out).toContain("1. item three");
   });
 
+  it("keeps table borders aligned when cells contain wide emoji glyphs", () => {
+    // Emoji like ✅/⚠️/❓ render as 2 terminal columns but are 1-2 JS chars;
+    // under-counting them used to desync column widths and let the TUI's
+    // own width-aware truncation clip borders on some rows but not others.
+    const md =
+      "| Vulnerability | Status |\n| --- | --- |\n" +
+      "| UUID Enumeration | ✅ CONFIRMED |\n" +
+      "| Document Endpoints | ⚠️ PARTIAL |\n" +
+      "| Email Sending | ❓ UNVERIFIED |";
+    const out = strip(renderMarkdown(md, 80));
+    const lines = out.split("\n").filter((l) => l.trim().length > 0);
+    const widths = lines.map((l) => stringWidth(l));
+    // Every row (borders, header, body) must be the exact same visible width
+    // so the box stays a clean rectangle instead of a jagged/clipped shape.
+    expect(new Set(widths).size).toBe(1);
+    for (const line of lines) {
+      expect(
+        line.endsWith("│") ||
+          line.endsWith("┐") ||
+          line.endsWith("┘") ||
+          line.endsWith("┤"),
+      ).toBe(true);
+    }
+  });
+
+  it("never renders a table wider than the requested width, even with wide glyphs", () => {
+    const md =
+      "| Vulnerability | Status | Evidence |\n| --- | --- | --- |\n" +
+      "| UUID Enumeration | ✅ CONFIRMED | /api/v1/data_layer/patients/by-image/{uuid} returns not found for valid UUID format vs validation error for invalid format |\n" +
+      "| Debug Mode Enabled | ⚠️ PARTIAL | Error responses leak internal validation details and field requirements |";
+    const width = 60;
+    const out = strip(renderMarkdown(md, width));
+    for (const line of out.split("\n")) {
+      if (!line.trim()) continue;
+      expect(stringWidth(line)).toBeLessThanOrEqual(width);
+    }
+  });
+
   it("renders formatting properly even when text spans across wrap boundaries", () => {
-    const md = "This is a **comprehensive guide for students to access premium AI models** that spans a long line.";
+    const md =
+      "This is a **comprehensive guide for students to access premium AI models** that spans a long line.";
     const out = renderMarkdown(md, 40);
     // The rendered output should have the bold markers stripped (because it was parsed first)
     expect(strip(out)).not.toContain("**");
@@ -189,7 +230,8 @@ describe("markdown extras", () => {
   });
 
   it("wraps and aligns ordered and unordered list items to avoid truncation", () => {
-    const md = "1. OpenCode + GitHub Copilot — Terminal-based AI coding agent; connect it to your free Copilot account and select Claude Opus/Sonnet/H";
+    const md =
+      "1. OpenCode + GitHub Copilot — Terminal-based AI coding agent; connect it to your free Copilot account and select Claude Opus/Sonnet/H";
     const out = renderMarkdown(md, 40);
     expect(strip(out)).toContain("1. OpenCode +");
     // The wrapped lines should be indented by 3 spaces (since prefix is '1. ')
@@ -199,7 +241,8 @@ describe("markdown extras", () => {
   });
 
   it("wraps and aligns blockquotes correctly", () => {
-    const md = "> This is a very long blockquote line that should be wrapped across multiple lines of text.";
+    const md =
+      "> This is a very long blockquote line that should be wrapped across multiple lines of text.";
     const out = renderMarkdown(md, 40);
     const lines = out.split("\n");
     expect(lines.length).toBeGreaterThan(1);

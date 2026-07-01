@@ -15,6 +15,13 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
       } else if (key.escape) {
         onAnswer(false);
       }
+    } else if (confirm.kind === "plan") {
+      // y / i → implement · n / d / Esc → discard
+      if (ch === "y" || ch === "i") {
+        onAnswer(true);
+      } else if (ch === "n" || ch === "d" || key.escape) {
+        onAnswer(false);
+      }
     } else {
       if (ch === "y") {
         onAnswer(true);
@@ -26,9 +33,10 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
 
   const isReset = confirm.kind === "reset";
   const isContinue = confirm.kind === "continue";
+  const isPlan = confirm.kind === "plan";
   const color = confirm.kind === "pentest"
     ? "red"
-    : isContinue
+    : isContinue || isPlan
       ? "cyan"
       : "yellow";
   return (
@@ -46,12 +54,18 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
             ? " ACTION REQUIRED · RESET CONFIRMATION "
             : isContinue
               ? " STEP LIMIT REACHED "
-              : " ACTION REQUIRED · CONFIRMATION "}
+              : isPlan
+                ? " PLAN READY · IMPLEMENT OR DISCARD "
+                : " ACTION REQUIRED · CONFIRMATION "}
       </Text>
       <Text>{confirm.prompt}</Text>
       {isReset ? (
         <Text bold>
           Press <Text color="green" inverse> R </Text> to reset  ·  Press <Text color="red" inverse> Esc </Text> to cancel
+        </Text>
+      ) : isPlan ? (
+        <Text bold>
+          Press <Text color="green" inverse> Y </Text> to implement  ·  Press <Text color="red" inverse> N </Text> to discard
         </Text>
       ) : (
         <Text bold>

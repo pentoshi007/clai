@@ -16,6 +16,12 @@ function apply(state: TuiState, events: AgentEvent[]): TuiState {
   return events.reduce((s, event) => reducer(s, { type: "event", event }), state);
 }
 
+// Rendered lines carry ANSI styling (e.g. the `ctrl+o` hint is bolded), so
+// assertions on hint text strip the escape codes first.
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
 describe("tui reducer — submit & turn lifecycle", () => {
   it("adds a user item and marks the turn running on submit", () => {
     const s = reducer(initialState(), { type: "submit", text: "hello" });
@@ -220,21 +226,25 @@ describe("toggle actions", () => {
       status: "ok",
       done: true,
     };
-    const collapsed = renderItemLines(item, {
-      width: 100,
-      thinkingExpanded: false,
-      outputExpanded: false,
-      running: false,
-    }).join("\n");
+    const collapsed = stripAnsi(
+      renderItemLines(item, {
+        width: 100,
+        thinkingExpanded: false,
+        outputExpanded: false,
+        running: false,
+      }).join("\n"),
+    );
     expect(collapsed).toContain("+2 more line(s) · ctrl+o to expand in place");
     expect(collapsed).not.toContain("five");
 
-    const expanded = renderItemLines(item, {
-      width: 100,
-      thinkingExpanded: false,
-      outputExpanded: true,
-      running: false,
-    }).join("\n");
+    const expanded = stripAnsi(
+      renderItemLines(item, {
+        width: 100,
+        thinkingExpanded: false,
+        outputExpanded: true,
+        running: false,
+      }).join("\n"),
+    );
     expect(expanded).toContain("five");
     expect(expanded).toContain("expanded · ctrl+o/esc to collapse");
   });
@@ -405,9 +415,11 @@ describe("TUI compaction reducer and rendering", () => {
       outputExpanded: true,
       running: false,
     });
-    expect(renderedExpanded.join("\n")).toContain("✦ Compacted Context");
-    expect(renderedExpanded.join("\n")).toContain("Line 4");
-    expect(renderedExpanded.join("\n")).toContain("Line 5");
-    expect(renderedExpanded.join("\n")).toContain("expanded · ctrl+o");
+    expect(stripAnsi(renderedExpanded.join("\n"))).toContain(
+      "✦ Compacted Context",
+    );
+    expect(stripAnsi(renderedExpanded.join("\n"))).toContain("Line 4");
+    expect(stripAnsi(renderedExpanded.join("\n"))).toContain("Line 5");
+    expect(stripAnsi(renderedExpanded.join("\n"))).toContain("expanded · ctrl+o");
   });
 });

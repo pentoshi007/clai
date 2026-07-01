@@ -77,16 +77,15 @@ describe("phase 9 — context manager", () => {
     expect(result.messages.slice(-8)).toEqual(msgs.slice(-8));
   });
 
-  it("falls back locally when model summarization fails", async () => {
+  it("throws on summarization failure instead of dumping a fallback transcript", async () => {
     const msgs: ChatMessage[] = Array.from({ length: 12 }, (_, index) => ({
       role: index % 2 === 0 ? "user" as const : "assistant" as const,
       content: `message-${index}-` + "very-long-dummy-content-to-exceed-token-limits-and-make-compaction-worthwhile-".repeat(10),
     }));
-    const result = await compactMessagesWithSummary(msgs, async () => {
-      throw new Error("offline");
-    }, { keepRecent: 4 });
-    expect(result.summarized).toBe(false);
-    expect(result.after).toBeLessThan(result.before);
-    expect(result.messages.slice(-4)).toEqual(msgs.slice(-4));
+    await expect(
+      compactMessagesWithSummary(msgs, async () => {
+        throw new Error("offline");
+      }, { keepRecent: 4 }),
+    ).rejects.toThrow("offline");
   });
 });

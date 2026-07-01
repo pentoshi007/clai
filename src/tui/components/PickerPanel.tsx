@@ -8,10 +8,34 @@ export interface PickerOption {
   active?: boolean;
 }
 
+/**
+ * Returns the span (last matched index - first matched index) of `needle` as a
+ * subsequence of `text`, or `null` when `text` does not contain every character
+ * of `needle` in order. A subsequence requires all query characters to appear,
+ * left to right, but not consecutively — so `mini3` matches `minimax-m3`, while
+ * `free` only matches fields that actually contain f-r-e-e in order. A smaller
+ * span means the matched characters are packed more tightly, which ranks higher.
+ */
+function subsequenceSpan(needle: string, text: string): number | null {
+  let j = 0;
+  let firstIdx = -1;
+  let lastIdx = -1;
+  for (let i = 0; i < text.length && j < needle.length; i++) {
+    if (text[i] === needle[j]) {
+      if (firstIdx === -1) firstIdx = i;
+      lastIdx = i;
+      j++;
+    }
+  }
+  if (j !== needle.length) return null;
+  return lastIdx - firstIdx;
+}
+
 export function PickerPanel({
   title,
   options,
   searchDescription = true,
+  twoLine = false,
   height,
   onSelect,
   onClose,
@@ -19,6 +43,7 @@ export function PickerPanel({
   title: string;
   options: PickerOption[];
   searchDescription?: boolean | undefined;
+  twoLine?: boolean | undefined;
   height: number;
   onSelect: (value: string) => void;
   onClose: () => void;
@@ -30,28 +55,39 @@ export function PickerPanel({
   useEffect(() => setSelected(initial), [initial, options]);
 
   const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    // Collapse whitespace so multi-word queries ("gpt 4o") match ids ("gpt-4o").
+    const needle = query.trim().toLowerCase().replace(/\s+/g, "");
     if (!needle) return options;
-    const matches = options.filter((item) => {
-      const haystack = (searchDescription && item.description)
-        ? `${item.label} ${item.value} ${item.description}`.toLowerCase()
-        : `${item.label} ${item.value}`.toLowerCase();
-      let j = 0;
-      for (let i = 0; i < haystack.length && j < needle.length; i++) {
-        if (haystack[i] === needle[j]) {
-          j++;
-        }
+
+    const scored: Array<{ item: PickerOption; score: number }> = [];
+    for (const item of options) {
+      // Match each field on its own. Concatenating fields would let a query
+      // borrow characters across field boundaries (and across the duplicated
+      // label/value pair), producing matches that share only scattered chars.
+      const fields = [item.label, item.value];
+      if (searchDescription && item.description) fields.push(item.description);
+
+      let best: number | null = null;
+      const seen = new Set<string>();
+      for (let rank = 0; rank < fields.length; rank++) {
+        const field = fields[rank]!.toLowerCase();
+        if (seen.has(field)) continue;
+        seen.add(field);
+        const span = subsequenceSpan(needle, field);
+        if (span === null) continue;
+        // Lower score = better. Reward tight matches and substring/prefix hits,
+        // and prefer label/value (lower rank) over description.
+        let score = span + rank * 10_000;
+        if (field.startsWith(needle)) score -= 1_000_000;
+        else if (field.includes(needle)) score -= 500_000;
+        if (best === null || score < best) best = score;
       }
-      return j === needle.length;
-    });
-    return matches.sort((a, b) => {
-      const aText = `${a.label} ${a.value}`.toLowerCase();
-      const bText = `${b.label} ${b.value}`.toLowerCase();
-      const aStarts = aText.startsWith(needle) ? 0 : 1;
-      const bStarts = bText.startsWith(needle) ? 0 : 1;
-      return aStarts - bStarts;
-    });
-  }, [options, query]);
+      if (best !== null) scored.push({ item, score: best });
+    }
+
+    scored.sort((a, b) => a.score - b.score);
+    return scored.map((entry) => entry.item);
+  }, [options, query, searchDescription]);
 
   useEffect(() => {
     const active = filtered.findIndex((item) => item.active);
@@ -85,7 +121,10 @@ export function PickerPanel({
     }
   });
 
-  const pageSize = Math.max(1, height - 6);
+  // In two-line mode each row spans a name line plus a dim meta line, so half
+  // as many rows fit. The remaining lines cover the border and the 3-line header.
+  const linesPerItem = twoLine ? 2 : 1;
+  const pageSize = Math.max(1, Math.floor((height - 6) / linesPerItem));
   const safeSelected = Math.min(selected, Math.max(0, filtered.length - 1));
   const start = Math.max(0, Math.min(safeSelected - Math.floor(pageSize / 2), filtered.length - pageSize));
   const visible = filtered.slice(start, start + pageSize);
@@ -103,8 +142,28 @@ export function PickerPanel({
       {visible.map((item, index) => {
         const absolute = start + index;
         const focused = absolute === safeSelected;
+        const background = focused
+          ? "#2563EB"
+          : index % 2 === 0
+            ? "#1E293B"
+            : "#0F172A";
+        if (twoLine) {
+          return (
+            <Box key={item.value} flexDirection="column">
+              <Text wrap="truncate-end" backgroundColor={background}>
+                <Text color="#FFFFFF" bold={focused}>
+                  {focused ? "❯ " : "  "}{item.label}
+                </Text>
+                {item.active ? <Text color="green">  active</Text> : null}
+              </Text>
+              <Text wrap="truncate-end" backgroundColor={background} dimColor>
+                {item.description ? `    ${item.description}` : " "}
+              </Text>
+            </Box>
+          );
+        }
         return (
-          <Text key={item.value} wrap="truncate-end" backgroundColor={focused ? "#2563EB" : index % 2 === 0 ? "#1E293B" : "#0F172A"}>
+          <Text key={item.value} wrap="truncate-end" backgroundColor={background}>
             <Text color="#FFFFFF" bold={focused}>
               {focused ? "❯ " : "  "}{item.label}
             </Text>

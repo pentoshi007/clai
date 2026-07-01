@@ -7,7 +7,12 @@ import { getConfig } from "../store/config.js";
 import { isSecretPath } from "../safety/patterns.js";
 import { safeCwd } from "../os/cwd.js";
 
-const DEFAULT_READ_MAX_BYTES = 256 * 1024;
+// Read the WHOLE file by default. Models repeatedly complained that fs.read
+// returned a truncated body and then wasted turns re-reading with other
+// methods, so the cap is set high enough to return any normal source/text
+// file in one shot. Only genuinely huge files (logs, dumps, minified bundles)
+// exceed it, and those should be paged with offset/limit on purpose.
+const DEFAULT_READ_MAX_BYTES = 8 * 1024 * 1024;
 const DEFAULT_LIST_MAX_ENTRIES = 500;
 
 function expandHome(path: string): string {
@@ -98,11 +103,52 @@ function ensureWriteAllowed(path: string, confirmed?: boolean): string {
 
 export async function fsRead(
   path: string,
-  options: { maxBytes?: number | undefined; confirmed?: boolean | undefined } = {},
+  options: {
+    maxBytes?: number | undefined;
+    confirmed?: boolean | undefined;
+    /** 1-indexed first line to return (inclusive). Lets the model page a large file instead of re-reading the whole thing. */
+    offset?: number | undefined;
+    /** Max number of lines to return from `offset`. */
+    limit?: number | undefined;
+  } = {},
 ): Promise<ToolResult> {
   const resolved = resolvePath(path);
   ensureReadAllowed(resolved, path, options.confirmed);
   const maxBytes = options.maxBytes ?? DEFAULT_READ_MAX_BYTES;
+  const useLines =
+    typeof options.offset === "number" || typeof options.limit === "number";
+  if (useLines) {
+    const offset = Math.max(1, options.offset ?? 1);
+    const limit = options.limit && options.limit > 0 ? options.limit : 2000;
+    const handle = await open(resolved, "r");
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile()) {
+        return { ok: false, output: `Not a regular file: ${resolved}`, exitCode: 1 };
+      }
+      const full = await readFile(resolved, "utf8");
+      const lines = full.split(/\r?\n/);
+      const totalLines = lines.length;
+      const startIdx = Math.min(offset - 1, totalLines);
+      const endIdx = Math.min(startIdx + limit, totalLines);
+      const slice = lines.slice(startIdx, endIdx);
+      const numbered = slice.map((line, i) => `${startIdx + i + 1}: ${line}`);
+      const shown = endIdx - startIdx;
+      const hasMore = endIdx < totalLines;
+      const prefix =
+        startIdx > 0 ? `[lines ${startIdx + 1}-${endIdx} of ${totalLines}]\n` : "";
+      const suffix = hasMore
+        ? `\n... (${totalLines - endIdx} more line(s); call fs.read with offset=${endIdx + 1} to continue)`
+        : "";
+      return {
+        ok: true,
+        output: `${prefix}${numbered.join("\n")}${suffix}`,
+        truncated: hasMore,
+      };
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  }
   const handle = await open(resolved, "r");
   try {
     const stat = await handle.stat();
@@ -119,7 +165,7 @@ export async function fsRead(
     const truncated = stat.size > maxBytes;
     const text = buffer.subarray(0, bytesRead).toString("utf8");
     const suffix = truncated
-      ? `\n... (truncated at ${maxBytes.toLocaleString()} bytes of ${stat.size.toLocaleString()})`
+      ? `\n... (truncated at ${maxBytes.toLocaleString()} bytes of ${stat.size.toLocaleString()} — the file is larger than the read cap; call fs.read with offset=1 and limit=N to page through it in line ranges instead of re-reading the whole file)`
       : "";
     return {
       ok: true,

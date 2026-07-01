@@ -120,7 +120,7 @@ export function serializeTranscriptForCompaction(items: TranscriptItem[]): strin
 
 export interface PendingConfirm {
   id: string;
-  kind: "tool" | "pentest" | "reset" | "continue";
+  kind: "tool" | "pentest" | "reset" | "continue" | "plan" | "switch";
   prompt: string;
 }
 

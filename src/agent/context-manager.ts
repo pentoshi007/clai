@@ -94,8 +94,11 @@ export function compactMessages(
 
 /**
  * Compact older turns into a model-written memory while retaining recent
- * messages verbatim. If summarization fails, the deterministic compactor is
- * used so `/compact` still reduces context without losing the recent tail.
+ * messages verbatim. The model summary is the ONLY compaction path: if the
+ * model fails to produce a summary we DO NOT fall back to a mechanical dump
+ * of the transcript (that historically produced an enormous, low-quality
+ * "memory" of tens of thousands of lines). Instead we throw, so the caller
+ * can report the failure and the original messages stay untouched.
  */
 export async function compactMessagesWithSummary(
   messages: ChatMessage[],
@@ -121,6 +124,7 @@ export async function compactMessagesWithSummary(
   }
 
   if (older.length === 0 && !sessionTranscript?.trim()) {
+    // Genuinely nothing to compact yet — return a no-op result.
     return {
       messages: [...messages],
       before,
@@ -146,71 +150,26 @@ export async function compactMessagesWithSummary(
     transcript,
   ].join("\n");
 
-  try {
-    const summary = redactSecrets((await summarize(prompt)).trim());
-    if (!summary) throw new Error("empty summary");
-    const head = start === 1 ? [messages[0]!] : [];
-    const compacted: ChatMessage[] = [
-      ...head,
-      { role: "system", content: `Session memory from compacted earlier turns:\n\n${summary}` },
-      ...messages.slice(tailStart),
-    ];
-    const afterTokens = estimateMessagesTokens(compacted);
-    if (afterTokens >= beforeTokens && !isForced) {
-      const deterministicCompacted = compactMessages(messages, { ...options, budgetTokens: 0 });
-      const detTokens = estimateMessagesTokens(deterministicCompacted);
-      if (detTokens < beforeTokens) {
-        return {
-          messages: deterministicCompacted,
-          before,
-          after: deterministicCompacted.length,
-          beforeTokens,
-          afterTokens: detTokens,
-          summarized: false,
-        };
-      }
-      return {
-        messages: [...messages],
-        before,
-        after: before,
-        beforeTokens,
-        afterTokens: beforeTokens,
-        summarized: false,
-      };
-    }
-    return {
-      messages: compacted,
-      before,
-      after: compacted.length,
-      beforeTokens,
-      afterTokens,
-      summarized: true,
-    };
-  } catch (error) {
-    if (error instanceof Error && (error.name === "AbortError" || error.message?.includes("aborted"))) {
-      throw error;
-    }
-    const compacted = compactMessages(messages, { ...options, budgetTokens: 0 });
-    const afterTokens = estimateMessagesTokens(compacted);
-    if (afterTokens >= beforeTokens && !isForced) {
-      return {
-        messages: [...messages],
-        before,
-        after: before,
-        beforeTokens,
-        afterTokens: beforeTokens,
-        summarized: false,
-      };
-    }
-    return {
-      messages: compacted,
-      before,
-      after: compacted.length,
-      beforeTokens,
-      afterTokens,
-      summarized: false,
-    };
-  }
+  // The summary is the only path. Any failure propagates to the caller —
+  // there is deliberately NO deterministic fallback.
+  const summary = redactSecrets((await summarize(prompt)).trim());
+  if (!summary) throw new Error("compaction failed: model returned an empty summary");
+
+  const head = start === 1 ? [messages[0]!] : [];
+  const compacted: ChatMessage[] = [
+    ...head,
+    { role: "system", content: `Session memory from compacted earlier turns:\n\n${summary}` },
+    ...messages.slice(tailStart),
+  ];
+  const afterTokens = estimateMessagesTokens(compacted);
+  return {
+    messages: compacted,
+    before,
+    after: compacted.length,
+    beforeTokens,
+    afterTokens,
+    summarized: true,
+  };
 }
 
 function oneLine(text: string, maxChars: number): string {

@@ -357,6 +357,8 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async "fs.read"(args, options) {
     return fsRead(requireString(args, "path"), {
       maxBytes: optionalNumber(args, "maxBytes"),
+      offset: optionalNumber(args, "offset"),
+      limit: optionalNumber(args, "limit"),
       confirmed: options?.confirmed,
     });
   },
@@ -897,7 +899,7 @@ export async function runToolCall(
  * GET/HEAD enforcement still happens in the classifier when individual
  * calls are routed.
  */
-const BATCH_SAFE_TOOLS = new Set([
+export const BATCH_SAFE_TOOLS = new Set([
   "fs.read",
   "fs.list",
   "fs.search",

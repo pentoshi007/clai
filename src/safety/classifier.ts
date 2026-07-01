@@ -14,10 +14,7 @@ import {
   commandIsMutating,
   commandWritesOrEscalates,
 } from "./patterns.js";
-import {
-  normalizeScopeTarget,
-  type EngagementScope,
-} from "../store/scope.js";
+import { normalizeScopeTarget, type EngagementScope } from "../store/scope.js";
 import { classifyHost } from "../tools/web/ssrf-guard.js";
 import { pathInsideSandbox } from "../tools/fs.js";
 
@@ -178,8 +175,14 @@ export function isPentestToolCall(call: ToolCall): boolean {
  * the base command (cat, head, tail, less, etc.) is otherwise safe.
  */
 function extractPathLikeTokens(command: string): string[] {
-  // Match tilde paths, absolute paths, and dotted relative paths.
-  const matches = command.match(/(?:~|\.{1,2}|\/)?[\w./~-]+/g) ?? [];
+  // Match tilde paths, absolute paths, and dotted relative paths. URL paths
+  // are intentionally stripped first: this check protects LOCAL secrets
+  // (~/.ssh, ~/.clai/keys.json, project .env). A remote URL like
+  // https://example.com/.env must not be resolved as if it were a local
+  // filesystem path (that false-positive blocked normal pentest verification
+  // probes against scoped external targets).
+  const withoutUrls = command.replace(/\bhttps?:\/\/[^\s'"`<>]+/gi, " ");
+  const matches = withoutUrls.match(/(?:~|\.{1,2}|\/)?[\w./~-]+/g) ?? [];
   return matches.filter((token) => /[\\/~]/.test(token));
 }
 
@@ -191,6 +194,57 @@ function commandTouchesSecretPath(command: string): boolean {
       return false;
     }
   });
+}
+
+// Absolute roots whose contents are part of the OS / shared system. A
+// redirect that writes into one of these is worth a confirmation; a redirect
+// into the project dir, a relative path, or a temp dir is ordinary output
+// capture. Paths are normalized to forward slashes before matching so the
+// same patterns work on macOS, Linux, and Windows.
+const SENSITIVE_WRITE_ROOTS_UNIX =
+  /^\/(?:etc|usr|bin|sbin|var|lib|lib64|boot|dev|sys|proc|root|opt|System|Library|Applications)(?:\/|$)/i;
+// Windows system locations: <drive>:/Windows, /Program Files, /ProgramData.
+const SENSITIVE_WRITE_ROOTS_WIN =
+  /^[A-Za-z]:\/(?:Windows|Program Files(?: \(x86\))?|ProgramData)(?:\/|$)/i;
+
+/**
+ * Inspect the redirection targets in a command and report whether any writes
+ * into a sensitive system directory or a home dotfile. Discards / fd-dups are
+ * already stripped by {@link commandWritesOrEscalates}; here we just look at
+ * the resolved target paths so ordinary `> out.json` style captures stay
+ * frictionless while `> /etc/hosts`, `> C:\Windows\...`, or `> ~/.bashrc`
+ * ask first. Works across macOS, Linux, and Windows.
+ */
+function redirectTargetIsSensitive(command: string): boolean {
+  const withoutDup = command.replace(/\d*>&\d+|&>&\d+/g, " ");
+  const re = /(?:&?>>?)\s*('[^']*'|"[^"]*"|[^\s;|&<>()]+)/g;
+  let match: RegExpExecArray | null;
+  const home = homedir().replace(/\\/g, "/").replace(/\/+$/, "");
+  while ((match = re.exec(withoutDup)) !== null) {
+    const raw = (match[1] ?? "").replace(/^['"]|['"]$/g, "");
+    if (!raw) continue;
+    // Unix discards / device sinks are never real writes.
+    if (/^\/dev\/(null|stdout|stderr|tty|fd\/\d+)$/.test(raw)) continue;
+    // Windows null/console sinks (NUL, CON, $null) are not real writes either.
+    if (/^(?:nul|con|\$null)$/i.test(raw)) continue;
+    // Normalize backslashes so Windows paths match the same way isSecretPath
+    // normalizes (the classifier already treats both styles uniformly).
+    const resolved = resolveForSecretCheck(raw).replace(/\\/g, "/");
+    if (
+      SENSITIVE_WRITE_ROOTS_UNIX.test(resolved) ||
+      SENSITIVE_WRITE_ROOTS_WIN.test(resolved)
+    ) {
+      return true;
+    }
+    // Home dotfiles (~/.bashrc, ~/.zshrc, ~/.config/..., ~/.ssh/...) are
+    // sensitive. Path comparison is case-insensitive so Windows (where the
+    // filesystem and drive letter case do not matter) is handled too.
+    if (home && resolved.toLowerCase().startsWith(home.toLowerCase())) {
+      const rest = resolved.slice(home.length);
+      if (/^\/+\.[^/]/.test(rest)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -349,12 +403,16 @@ export function classifyShellCommand(
         "Command argument mutates state or escapes into another shell (sed -i, awk system(), find -exec/-delete, git config --global, npm config set, docker/kubectl mutators)",
     };
   }
-  // Confirm only when a redirection writes to a REAL file (2>/dev/null and
-  // 2>&1 are NOT real writes and auto-run).
-  if (commandWritesOrEscalates(command)) {
+  // A plain output redirection (`curl ... > out.json`, `python x.py > log`)
+  // is benign output capture — the same kind of write fs.write does without a
+  // prompt — so it auto-runs. We only confirm when the redirect target is a
+  // SENSITIVE location (a system directory or a home dotfile), where an
+  // accidental clobber would be hard to undo. Discards (2>/dev/null) and
+  // fd-dups (2>&1) were already excluded by commandWritesOrEscalates.
+  if (commandWritesOrEscalates(command) && redirectTargetIsSensitive(command)) {
     return {
       level: "confirm",
-      reason: "Command writes output to a file (redirect to a real path)",
+      reason: "Command redirects output into a system or sensitive path",
     };
   }
   // Confirm for a base whose job is to install / delete / modify / move / copy
@@ -430,7 +488,8 @@ export function classifyToolCall(
   if (call.name === "http.fetch") {
     return {
       level: "safe",
-      reason: "HTTP fetch is a network request, not a local filesystem mutation",
+      reason:
+        "HTTP fetch is a network request, not a local filesystem mutation",
     };
   }
 

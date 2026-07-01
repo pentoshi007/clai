@@ -9,6 +9,7 @@ import {
   countToolFences,
   looksLikeActionNarration,
   preprocessJson,
+  groupToolCallsForExecution,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -131,6 +132,35 @@ describe("agent tool-call parser", () => {
 
   it("returns undefined when args is missing", () => {
     const text = '```tool\n{"name":"shell.exec"}\n```';
+    expect(parseToolCall(text)).toBeUndefined();
+  });
+
+  it("parses the flattened form where args are siblings of name (dobbe.ai repro)", () => {
+    // The exact shape that sent v2.0.26 into a parse-retry loop: a well-formed
+    // ```tool fence whose args sit next to `name` instead of nested under it.
+    const text =
+      'I will check dobbe.ai for issues. Let me fetch the page first.\n' +
+      '```tool\n{"name":"web.fetch","url":"https://dobbe.ai","responseMode":"raw","includeHeaders":true,"includeTls":true}\n```';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("web.fetch");
+    expect(call!.args).toEqual({
+      url: "https://dobbe.ai",
+      responseMode: "raw",
+      includeHeaders: true,
+      includeTls: true,
+    });
+  });
+
+  it("parses a flattened shell.exec call", () => {
+    const text = '```tool\n{"name":"shell.exec","command":"ls -la"}\n```';
+    const call = parseToolCall(text);
+    expect(call).toEqual({ name: "shell.exec", args: { command: "ls -la" } });
+  });
+
+  it("does not treat a plain data object carrying a name as a tool call", () => {
+    // No sibling key is a known tool-arg, so this must NOT become a call.
+    const text = '```tool\n{"name":"John","age":30}\n```';
     expect(parseToolCall(text)).toBeUndefined();
   });
 
@@ -425,5 +455,90 @@ describe("malformed fenced tool block detection", () => {
       name: "fs.read",
       args: { path: "a" },
     });
+  });
+});
+
+describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
+  // Read-only lookups are parallel-safe; task.update and writes/commands are
+  // barriers. Mirrors the runner's real predicate at the shape level.
+  const READ_ONLY = new Set([
+    "fs.read",
+    "fs.list",
+    "fs.search",
+    "dns.lookup",
+    "whois.lookup",
+    "http.fetch",
+    "web.fetch",
+    "web.search",
+    "sysinfo",
+  ]);
+  const safe = (c: { name: string }) => READ_ONLY.has(c.name);
+  const call = (name: string) => ({ name, args: {} });
+
+  it("groups consecutive read-only calls to run in parallel", () => {
+    const groups = groupToolCallsForExecution(
+      [call("dns.lookup"), call("whois.lookup"), call("http.fetch")],
+      safe,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.map((c) => c.name)).toEqual([
+      "dns.lookup",
+      "whois.lookup",
+      "http.fetch",
+    ]);
+  });
+
+  it("keeps task.update as a sequential barrier around the work it gates", () => {
+    // in_progress → parallel recon → done must be 3 ordered groups: the
+    // task.update calls never merge with the work, so plan state can't race.
+    const groups = groupToolCallsForExecution(
+      [
+        call("task.update"),
+        call("dns.lookup"),
+        call("whois.lookup"),
+        call("task.update"),
+      ],
+      safe,
+    );
+    expect(groups.map((g) => g.map((c) => c.name))).toEqual([
+      ["task.update"],
+      ["dns.lookup", "whois.lookup"],
+      ["task.update"],
+    ]);
+  });
+
+  it("never parallelizes writes/commands — each is its own barrier", () => {
+    const groups = groupToolCallsForExecution(
+      [call("fs.write"), call("shell.exec"), call("pkg.install")],
+      safe,
+    );
+    expect(groups.map((g) => g.length)).toEqual([1, 1, 1]);
+  });
+
+  it("caps a parallel group at maxGroupSize (spilling into a second group)", () => {
+    const groups = groupToolCallsForExecution(
+      [
+        call("dns.lookup"),
+        call("dns.lookup"),
+        call("dns.lookup"),
+        call("dns.lookup"),
+        call("dns.lookup"),
+      ],
+      safe,
+      4,
+    );
+    expect(groups.map((g) => g.length)).toEqual([4, 1]);
+  });
+
+  it("splits a read-only run when a write appears mid-batch", () => {
+    const groups = groupToolCallsForExecution(
+      [call("fs.read"), call("fs.read"), call("fs.write"), call("fs.read")],
+      safe,
+    );
+    expect(groups.map((g) => g.map((c) => c.name))).toEqual([
+      ["fs.read", "fs.read"],
+      ["fs.write"],
+      ["fs.read"],
+    ]);
   });
 });

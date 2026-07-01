@@ -117,6 +117,27 @@ describe("phase 1 — secret-leak hardening", () => {
     expect(result.level).toBe("block");
   });
 
+  it("does not treat remote URL paths as local secret paths", () => {
+    const result = classifyToolCall({
+      name: "shell.exec",
+      args: {
+        command:
+          'curl -s "https://example.com/.env" -w "\\nHTTP_CODE:%{http_code}\\n"',
+      },
+    });
+    expect(result.level).toBe("safe");
+  });
+
+  it("still blocks local .env paths even when a URL is also present", () => {
+    const result = classifyToolCall({
+      name: "shell.exec",
+      args: {
+        command: 'curl -s "https://example.com/health" && cat ./project/.env',
+      },
+    });
+    expect(result.level).toBe("block");
+  });
+
   it("blocks fs.read for ~/.clai/keys.json", () => {
     const result = classifyToolCall({
       name: "fs.read",
@@ -250,8 +271,8 @@ describe("phase 1 — secret-leak hardening", () => {
     ).toBe("confirm");
   });
 
-  it("confirms commands that write to disk or escalate, allows read-only chains", () => {
-    // tee writes a file → mutating → confirm
+  it("confirms disk-mutating commands and sensitive redirects, allows ordinary output capture", () => {
+    // tee writes a file via a mutating base → confirm
     expect(
       classifyToolCall({
         name: "shell.exec",
@@ -263,11 +284,19 @@ describe("phase 1 — secret-leak hardening", () => {
       classifyToolCall({ name: "shell.exec", args: { command: "ls && pwd" } })
         .level,
     ).toBe("safe");
-    // output redirection writes a file → confirm
+    // ordinary output capture into a temp/working file is benign → safe
+    // (only modify/delete/install and sensitive-path writes prompt)
     expect(
       classifyToolCall({
         name: "shell.exec",
         args: { command: "echo hi > /tmp/y" },
+      }).level,
+    ).toBe("safe");
+    // but redirecting into a system path is sensitive → confirm
+    expect(
+      classifyToolCall({
+        name: "shell.exec",
+        args: { command: "echo hi > /etc/motd" },
       }).level,
     ).toBe("confirm");
   });

@@ -7,8 +7,9 @@ import {
 import { stdin as input, stdout as output } from "node:process";
 import chalk from "chalk";
 
-import type { ChatMessage, Mode, ProviderId, ReasoningEffort } from "./types.js";
-import { runAskStream } from "./modes/ask.js";
+import type { ChatImage, ChatMessage, Mode, ProviderId, ReasoningEffort } from "./types.js";
+import { confirm } from "@inquirer/prompts";
+import { runAskStream, type AskActionRequired } from "./modes/ask.js";
 import {
   runAgent,
   createSessionPolicy,
@@ -1167,13 +1168,49 @@ async function readPromptLine(options: {
   });
 }
 
+// Build a concise, width-bounded spinner label for ask-mode research so the
+// user sees what's being searched/fetched without the line overflowing.
+function askResearchLabel(name: string, argsDisplay: string): string {
+  const verb =
+    name === "web.search"
+      ? "searching the web"
+      : name === "web.fetch"
+        ? "fetching"
+        : name === "tool.batch"
+          ? "researching"
+          : name === "fs.read"
+            ? "reading"
+            : name === "fs.list"
+              ? "listing"
+              : name === "fs.search"
+                ? "searching files"
+                : name;
+  const detail = argsDisplay.trim().replace(/\s+/g, " ");
+  const full = detail ? `${verb}: ${detail}` : verb;
+  // Leave room for the spinner frame, elapsed time, and padding so the head
+  // line never wraps. Columns can be undefined on non-TTY; default to 80.
+  const cols = Math.max(40, process.stdout.columns ?? 80);
+  const max = Math.max(20, cols - 18);
+  return full.length > max ? `${full.slice(0, max - 1)}…` : full;
+}
+
 // Stream a response while hiding <think> blocks and handling ESC abort
 async function streamWithAbort(
-  run: (signal: AbortSignal, onToken: (t: string) => void) => Promise<string>,
+  run: (
+    signal: AbortSignal,
+    onToken: (t: string) => void,
+    setStatus: (label: string) => void,
+  ) => Promise<string>,
   signal: AbortSignal,
 ): Promise<string> {
   let sawToken = false;
   const spinner = startThinkingSpinner("waiting for model", signal);
+  // Lets the run function surface progress (e.g. ask-mode research activity)
+  // on the spinner's label line. Ignored once visible tokens have started
+  // since the spinner is stopped at that point.
+  const setStatus = (label: string): void => {
+    if (!sawToken && label) spinner.setLabel(label);
+  };
   const markdown = createMarkdownStreamWriter((chunk) =>
     process.stdout.write(chunk),
   );
@@ -1204,9 +1241,13 @@ async function streamWithAbort(
   };
 
   try {
-    const raw = await run(signal, onToken);
+    const raw = await run(signal, onToken, setStatus);
     spinner.stop();
-    const result = sawToken ? parser.finish() : rememberThinkingFromText(raw);
+    // Flush the live-display pipeline, but trust the returned text as the
+    // authoritative answer (the live stream may briefly mirror a tool-call
+    // preamble during ask-mode research rounds).
+    parser.finish();
+    const result = rememberThinkingFromText(raw);
     if (sawToken) {
       markdown.finish();
     } else if (result.visible) {
@@ -1630,6 +1671,75 @@ function maybePrintThinkingTip(provider: ProviderId, model: string): void {
       chalk.dim(" to pick an effort level or ") +
       chalk.cyan("/variants high") +
       chalk.dim(" to enable directly."),
+  );
+}
+
+/**
+ * Ask mode hit a task that needs actions it can't perform. Show the model's
+ * (cleaned) explanation, then prompt the user to switch into agent mode and
+ * run the task there. Returns the text to record as the assistant turn.
+ */
+async function offerAgentSwitch(
+  info: AskActionRequired,
+  state: {
+    mode: Mode;
+    provider: ProviderId;
+    model: string;
+    messages: ChatMessage[];
+    session: SessionPolicy;
+  },
+  requestModel: string,
+  images: ChatImage[],
+): Promise<string> {
+  if (info.preamble) {
+    process.stdout.write(`${renderMarkdown(info.preamble)}\n`);
+  }
+  const toolsNote =
+    info.tools.length > 0 ? ` (${info.tools.join(", ")})` : "";
+  console.log(
+    chalk.yellow(
+      `  This needs to take actions${toolsNote}, which ask mode can't do — it's read-only.`,
+    ),
+  );
+
+  // inquirer expects cooked mode; mirror the slash-command path so the
+  // prompt reads cleanly, then restore raw mode for the next run/prompt.
+  input.pause();
+  if (input.isTTY) input.setRawMode(false);
+  let switchNow = false;
+  try {
+    switchNow = await confirm({
+      message: chalk.yellow("switch to agent mode and run it?"),
+      default: true,
+    });
+  } catch {
+    // Treat an aborted/failed prompt as "no".
+    switchNow = false;
+  } finally {
+    if (input.isTTY) input.setRawMode(true);
+    input.resume();
+  }
+
+  if (!switchNow) {
+    console.log(chalk.dim("  Staying in ask mode."));
+    return "Staying in ask mode; the task wasn't run. Use /agent to run tasks that take actions.";
+  }
+
+  state.mode = "agent";
+  setDefaultMode("agent");
+  console.log(renderModeSwitch("agent"));
+
+  const classicRenderer = attachClassicRenderer();
+  return withAbortableInput(async (signal) =>
+    runAgent(info.prompt, {
+      provider: state.provider,
+      model: requestModel,
+      history: state.messages,
+      signal,
+      session: state.session,
+      images,
+      onEvent: classicRenderer.onEvent,
+    }),
   );
 }
 
@@ -2803,18 +2913,38 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           }
         }
         if (state.mode === "ask") {
+          let actionRequired: AskActionRequired | undefined;
           assistantContent = await withAbortableInput(async (signal) =>
-            streamWithAbort(async (runSignal, onToken) => {
+            streamWithAbort(async (runSignal, onToken, setStatus) => {
               return await runAskStream(modelInput, onToken, {
                 provider: state.provider,
                 model: requestModel,
                 history: state.messages,
                 signal: runSignal,
                 images,
+                onActionRequired: (info) => {
+                  actionRequired = info;
+                },
+                onEvent: (event) => {
+                  if (event.type === "tool-call") {
+                    setStatus(askResearchLabel(event.name, event.argsDisplay));
+                  }
+                },
               });
             }, signal),
           );
           process.stdout.write("\n");
+          if (actionRequired) {
+            // The task needs actions ask mode can't perform. Offer to switch
+            // into agent mode and run it there. On confirm, state.mode flips
+            // so subsequent turns stay in agent mode too.
+            assistantContent = await offerAgentSwitch(
+              actionRequired,
+              state,
+              requestModel,
+              images,
+            );
+          }
         } else {
           const classicRenderer = attachClassicRenderer();
           assistantContent = await withAbortableInput(async (signal) =>
