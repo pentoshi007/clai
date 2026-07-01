@@ -1,30 +1,10 @@
 /**
- * `web.fetch` core orchestration.
- *
- * This module is the deterministic, dependency-injected pipeline that
- * `src/tools/web/fetch.ts` (added in task 4.x) wraps in a `ToolResult`
- * adapter and audit-log emitter. The core itself returns a typed
- * {@link WebFetchOutcome} and never touches the registry, the safety
- * classifier, or `auditLog`.
- *
- * The pipeline implements the design's "Pipeline steps in detail"
- * sequence (`.kiro/specs/web-search-and-fetch/design.md`):
- *
- *   1. argument validation
- *   2. URL parse + SSRF pre-check on hostname literal
- *   3. DNS resolve + IP pin
- *   4. SSRF check on resolved IP
- *   5. pinned `https.request` (or `http.request`) with custom `lookup`
- *   6. TLS handshake capture
- *   7. response headers + body stream with `maxBytes` cap
- *   8. redirect handling (≤ {@link MAX_REDIRECT_HOPS}, re-running
- *      validation + SSRF + DNS at each hop)
- *   9. body classification (binary / raw / readable)
- *  10. metadata assembly + 64 KiB budget enforcement
- *
- * Every outbound transport call (DNS, HTTP, HTTPS) is injectable via
- * {@link WebFetchCoreOptions} so tests in epics 3.x, 4.x and 6.x can
- * stub the network deterministically without spinning up a real server.
+ * `web.fetch` core orchestration: validate → resolve + pin DNS → SSRF-check
+ * → fetch (following redirects) → classify body → assemble metadata.
+ * `src/tools/web/fetch.ts` wraps this in a `ToolResult` adapter and
+ * audit-log emitter; this module never touches the registry, the safety
+ * classifier, or `auditLog`. All transport calls are injectable via
+ * {@link WebFetchCoreOptions} so tests can stub the network deterministically.
  */
 
 import { Buffer } from "node:buffer";

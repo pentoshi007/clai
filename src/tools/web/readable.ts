@@ -1,19 +1,13 @@
 /**
- * HTML-to-readable-text conversion and a permissive `Set-Cookie` parser.
+ * HTML-to-readable-text conversion and a permissive `Set-Cookie` parser,
+ * shared by `web.fetch` (via `capture.ts`) and DuckDuckGo's lite-HTML adapter.
  *
- * Two helpers live here so both `web.fetch` (via `capture.ts`) and the
- * DuckDuckGo provider's lite-HTML adapter share one implementation:
- *
- * - {@link toReadableText} strips obvious chrome and non-rendering content
- *   from an HTML document and returns the visible prose with whitespace
- *   collapsed. It satisfies Requirements 2.4, 2.5, and 2.28 and follows
- *   the design's "HTML-to-readable-text strategy" (cheerio-based, no
+ * - {@link toReadableText} strips chrome/non-rendering content from HTML and
+ *   returns visible prose with whitespace collapsed (cheerio-based, no
  *   browser/jsdom dependency).
- * - {@link parseSetCookie} parses one `Set-Cookie` header value into a
- *   {@link CookieInfo}, supporting only the public attributes the
- *   `web.fetch` tool surfaces. It is regex-driven and intentionally
- *   permissive: missing or malformed attributes are simply absent in the
- *   returned object instead of producing a hard error.
+ * - {@link parseSetCookie} parses one `Set-Cookie` value into a
+ *   {@link CookieInfo}; regex-driven and permissive — malformed or missing
+ *   attributes are simply absent rather than a hard error.
  */
 
 import * as cheerio from "cheerio";

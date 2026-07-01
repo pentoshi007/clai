@@ -1,34 +1,12 @@
 /**
- * Audit-log payload builders for the `web.search` and `web.fetch` tools.
+ * Audit-log payload builders for `web.search` and `web.fetch`. Single
+ * source of truth for the entry shape; `search.ts`/`fetch.ts` pass the
+ * result straight to `auditLog`.
  *
- * Both tools must emit exactly one structured `auditLog` entry per
- * invocation (Requirements 5.5 / 5.6). This module is the single source
- * of truth for the *shape* of those entries; `search.ts` and `fetch.ts`
- * call these builders and pass the result straight to `auditLog`.
- *
- * The payloads enforce two non-negotiable invariants on top of the
- * field lists in the requirements:
- *
- *  1. **No secret leaks**. Header values and cookie values are routed
- *     through {@link stripForAudit} before they hit the payload, so
- *     sensitive headers (`Cookie`, `Set-Cookie`, `Authorization`,
- *     `Proxy-Authorization`) are removed entirely and cookies are
- *     reduced to `{name, domain, path, httpOnly, secure, sameSite}` —
- *     never the cookie value, regardless of `redactSensitive`
- *     (Requirements 5.11–5.13).
- *  2. **Stable shape**. Every field listed in the requirements is
- *     either always present (requested/final URL, status, byte count,
- *     resolved IP, final hostname, response mode, hop count) or guarded
- *     by the corresponding `metadata.<field>` having been produced
- *     (TLS, timing, redirect chain, cookies). Optional fields are
- *     emitted iff their underlying metadata exists, so property tests
- *     can assert presence/absence deterministically.
- *
- * The query *text* is intentionally never put on the payload — the
- * search audit log carries `queryLength` only, per Requirement 5.5.
- * The fetch response body, request body, and any `Authorization`
- * / `Cookie` request header values are likewise excluded by
- * construction (Requirements 5.12, 5.13).
+ * Two invariants matter here: header/cookie values always go through
+ * {@link stripForAudit} (sensitive headers dropped entirely, cookies
+ * reduced to name/domain/path/flags — never the value), and the search
+ * query text is never logged, only its length.
  */
 
 import { stripForAudit, type AuditSafeCookie } from "./redact.js";

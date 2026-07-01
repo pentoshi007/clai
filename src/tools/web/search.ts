@@ -1,25 +1,12 @@
 /**
- * `web.search` registry handler.
+ * `web.search` registry handler: resolves the active
+ * {@link SearchProviderId}, looks up its API key, dispatches a single
+ * outbound request (no retry on failure), validates/truncates the hits to
+ * `maxResults`, and emits one audit-log entry per invocation. Failures
+ * surface as `ok=false` with a categorical `error.kind` naming the provider.
  *
- * Resolves the active {@link SearchProviderId}, looks up the API key (if
- * needed), dispatches a single outbound request via the registered
- * adapter, validates each returned hit per Requirement 7.3, truncates to
- * `maxResults`, and emits exactly one structured audit-log entry per
- * invocation (Requirement 5.5).
- *
- * Error handling mirrors the design's error matrix: timeouts (1.8),
- * missing keys (3.4), provider auth failures (6.1), rate limiting (6.2),
- * network failures (6.3), parse failures (6.5), 5xx (6.6), and other
- * non-2xx (1.9). Every failure surfaces as `ok=false` with a categorical
- * `error.kind` and a human-readable message that names the active
- * provider.
- *
- * Per Requirement 6.7 the handler issues exactly one outbound request
- * attempt — there is no retry on transient failure.
- *
- * The provider modules register themselves into the shared
- * {@link searchProviders} registry on import; we eagerly import them
- * here so `web.search` can be invoked without any lazy-load surprises.
+ * Provider modules self-register into {@link searchProviders} on import,
+ * so they're eagerly imported here.
  */
 
 import type { ToolResult } from "../../types.js";

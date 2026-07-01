@@ -1,41 +1,14 @@
 /**
  * `Capture` — pure observation builder for a single `web.fetch` invocation.
+ * The transport in `fetch-core.ts` feeds it DNS/TCP/TLS/header/redirect/
+ * cookie events; it accumulates them into the {@link WebFetchMetadata}
+ * fields (timing, TLS info, headers, redirect chain, resolved IP/hostname,
+ * cookies — each capped, see MAX_REDIRECT_HOPS/MAX_COOKIES_CAPTURED).
  *
- * The fetch transport in `fetch-core.ts` feeds events into this builder
- * (DNS resolution, TCP connect, TLS handshake, response headers, redirect
- * hops, `Set-Cookie` lines) and the builder accumulates the structured
- * fields the {@link WebFetchMetadata} envelope needs:
- *
- * - {@link TimingInfo}: `dnsMs`, `tcpMs`, `tlsMs`, `ttfbMs`, `totalMs`
- * - {@link TlsInfo} from the final hop's `tls.TLSSocket`
- *   (`getProtocol()`, `getCipher().name`, `getPeerCertificate(true)`)
- * - response headers (lowercased keys, repeat values joined with `, `)
- * - the redirect chain (capped at {@link MAX_REDIRECT_HOPS})
- * - the resolved IP and the final hostname
- * - `Set-Cookie` cookies (capped at {@link MAX_COOKIES_CAPTURED})
- *
- * The builder performs **no I/O** — it never touches the network, the
- * filesystem, or `auditLog`. It is a pure data sink so the transport
- * layer in `fetch-core.ts` can be tested independently of the
- * Node `https`/`tls` machinery.
- *
- * Per-hop semantics:
- * - `setHopContext(hostname)` is called by the transport at the start of
- *   each hop; the value of the *last* hop becomes
- *   {@link CapturedFields.finalHostname}.
- * - {@link Capture.markDnsResolved} replaces the running `dnsMs` /
- *   `resolvedIp` so the values surfaced in {@link CapturedFields}
- *   correspond to the *final* hop. Same for `tcpMs`, `tlsMs`, and
- *   `ttfbMs` — only the last hop's measurements are returned.
- * - {@link Capture.addRedirectHop} appends one entry per intermediate
- *   3xx hop; the array is bounded at {@link MAX_REDIRECT_HOPS}.
- * - {@link Capture.addSetCookieHeader} parses every observed
- *   `Set-Cookie` line via {@link parseSetCookie}; the resulting array is
- *   bounded at {@link MAX_COOKIES_CAPTURED}.
- *
- * Redaction and 4096-char header-value truncation are applied later by
- * `redact.applyToHeaders` / `redact.applyToCookies` and the 64 KiB
- * metadata budget by `budget.enforce`. This module only collects.
+ * Only the last hop's timing/DNS/TLS values are kept on redirect. No I/O
+ * happens here — it's a pure data sink so the transport layer can be
+ * tested independently. Redaction and the 64 KiB metadata budget are
+ * applied later by `redact.ts` / `budget.ts`.
  */
 
 import { createHash } from "node:crypto";

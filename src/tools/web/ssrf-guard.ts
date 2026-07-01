@@ -1,21 +1,9 @@
 /**
- * SSRF guard — classifies an address (or a hostname literal) as belonging
- * to a private/loopback/link-local/cloud-metadata/CGNAT range.
- *
- * The structured {@link classify} / {@link classifyHost} helpers are used
- * by the `web.fetch` pipeline (synchronous classifier branch + per-hop
- * resolution check) and by the safety classifier in
- * `src/safety/classifier.ts`.
- *
- * The boolean {@link isBlockedAddress} re-export preserves the legacy shape
- * used by `src/tools/http.ts` so existing `http.fetch` semantics are
- * unchanged.
- *
- * Per the design (see `.kiro/specs/web-search-and-fetch/design.md`,
- * "Sequencing of changes" step 2 and "Safety classifier integration"), this
- * module is the single source of truth for address classification — both
- * the legacy `http.fetch` SSRF check and the new `web.fetch` checks
- * delegate here.
+ * SSRF guard — classifies an address (or hostname literal) as
+ * private/loopback/link-local/cloud-metadata/CGNAT. Single source of truth
+ * for address classification: `web.fetch` (classifier branch + per-hop
+ * resolution check), `src/safety/classifier.ts`, and the legacy
+ * `http.fetch` check (via {@link isBlockedAddress}) all delegate here.
  */
 
 import net from "node:net";
@@ -50,16 +38,9 @@ export interface AddressClassification {
 }
 
 /**
- * Return `true` iff `url` parses as an absolute URL whose scheme is exactly
- * `http:` or `https:`. Returns `false` for any other scheme (including
- * `ftp:`, `file:`, `data:`, `javascript:`, `gopher:`), for empty strings,
- * for malformed inputs that fail `new URL()` parsing, and for non-string
- * inputs.
- *
- * This is the synchronous half of the "scheme allowlist" check enforced
- * by the `web.fetch` pipeline (see Requirement 5.4 / 2.1). It is the
- * single source of truth for the scheme allow-list so the safety
- * classifier branch and the fetch-core argument validator stay in sync.
+ * `true` iff `url` parses as an absolute URL with scheme `http:`/`https:`.
+ * Single source of truth for the scheme allow-list so the safety classifier
+ * and the fetch-core argument validator stay in sync.
  */
 export function isAllowedScheme(url: string): boolean {
   if (typeof url !== "string" || url.length === 0) return false;

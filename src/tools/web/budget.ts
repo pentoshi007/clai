@@ -1,32 +1,9 @@
 /**
- * 64 KiB metadata budget enforcement for `web.fetch`.
- *
- * Requirement 2.35 caps the combined serialized size of the
- * {@link HeaderMap}, {@link TlsInfo}, {@link TimingInfo},
- * {@link RedirectChain}, and `cookies` array at
- * {@link METADATA_BUDGET_BYTES} (64 KiB). When the assembled metadata
- * exceeds the cap, this module reduces it deterministically using the
- * order documented in `.kiro/specs/web-search-and-fetch/design.md`,
- * "Truncation order at the 64 KiB cap":
- *
- * 1. Drop trailing cookies (last entry first) — Requirement 2.35.
- * 2. Halve the longest header value (with the literal
- *    {@link TRUNCATION_MARKER} appended) until every header value's
- *    "content" portion is ≤ 1024 characters. Header keys are never
- *    removed so the agent always sees which headers were present.
- * 3. Drop trailing redirect hops one at a time.
- *
- * `tls` and `timing` are well under 1 KiB combined and are never touched
- * by this loop. The function is pure: caller inputs are not mutated; the
- * returned object holds fresh copies of any arrays/maps that were
- * shortened.
- *
- * The implementation is bounded to a fixed iteration count so a
- * pathological input (for example, hundreds of header values that are
- * all ≤ 1024 chars yet collectively still exceed the cap) cannot wedge
- * the agent. In that edge case the returned `metadataBytes` may exceed
- * {@link METADATA_BUDGET_BYTES} — the caller can decide whether to
- * surface the overflow or treat it as a soft warning.
+ * Caps the combined serialized size of `web.fetch` metadata (headers, TLS,
+ * timing, redirect chain, cookies) at {@link METADATA_BUDGET_BYTES} (64 KiB),
+ * trimming in order: trailing cookies, then longest header values (down to
+ * 1024 chars, keys always kept), then trailing redirect hops. Pure function;
+ * bounded iteration count so a pathological input can't loop indefinitely.
  */
 
 import {
