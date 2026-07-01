@@ -691,10 +691,10 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
     ...middle,
     bottom,
     "",
-    centerIndent(tagline.length) + chalk.dim(tagline),
+    centerIndent(tagline.length) + chalk.white(tagline),
     centerIndent(welcome.length + welcomeHint.length) +
       chalk.green.bold(welcome) +
-      chalk.dim(welcomeHint),
+      chalk.cyan(welcomeHint),
   ];
 }
 
