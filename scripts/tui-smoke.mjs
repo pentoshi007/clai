@@ -5,8 +5,8 @@ import { App } from "../dist/tui/App.js";
 
 let last = "";
 const stdout = new EventEmitter();
-stdout.columns = 100;
-stdout.rows = 30;
+stdout.columns = Number(process.env.SMOKE_COLS || 100);
+stdout.rows = Number(process.env.SMOKE_ROWS || 30);
 stdout.write = (s) => { last = s; return true; };
 
 const stdin = new EventEmitter();

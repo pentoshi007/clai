@@ -1,37 +1,7 @@
 import chalk from "chalk";
 import { homedir } from "node:os";
 import { box } from "./ansi-box.js";
-
-// A 5x7 dot-matrix rendering of "CLAI", plain data so no figlet dependency
-// is needed for a one-time startup card.
-const GLYPHS: Record<string, string[]> = {
-  C: [" ███ ", "█   █", "█    ", "█    ", "█    ", "█   █", " ███ "],
-  L: ["█    ", "█    ", "█    ", "█    ", "█    ", "█    ", "█████"],
-  A: [" ███ ", "█   █", "█   █", "█████", "█   █", "█   █", "█   █"],
-  I: ["█████", "  █  ", "  █  ", "  █  ", "  █  ", "  █  ", "█████"],
-};
-
-/** Per-row colors, applied top-to-bottom for a subtle vertical gradient. */
-const GRADIENT = [
-  chalk.magentaBright,
-  chalk.magenta,
-  chalk.blueBright,
-  chalk.cyanBright,
-  chalk.cyan,
-  chalk.blueBright,
-  chalk.magenta,
-];
-
-function renderWordmark(word: string): string {
-  const letters = word.toUpperCase().split("");
-  const rows = 7;
-  const lines: string[] = [];
-  for (let r = 0; r < rows; r++) {
-    const cells = letters.map((ch) => GLYPHS[ch] ?? GLYPHS.I ?? []).map((g) => g[r] ?? "");
-    lines.push(GRADIENT[r]?.(cells.join("  ")) ?? cells.join("  "));
-  }
-  return lines.map((l) => `  ${l}`).join("\n");
-}
+import { renderWordmark } from "./wordmark.js";
 
 export interface IntroCardOptions {
   version: string;
