@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { looksLikeBuildTask } from "../src/agent/runner.js";
+import { looksLikePentestTask, looksLikeInformationalQuery } from "../src/agent/tool-call-parser.js";
 import type { ChatMessage } from "../src/types.js";
 
 describe("looksLikeBuildTask", () => {
@@ -82,5 +83,62 @@ describe("looksLikeBuildTask", () => {
     expect(looksLikeBuildTask("you just have to tell me, do not write anything", history)).toBe(
       false,
     );
+  });
+});
+
+describe("looksLikePentestTask", () => {
+  it("detects vulnerability/vulnerabilities despite the word not ending on the bare stem", () => {
+    // Regression: the stem regex (\bvulnerabilit\b) required a word boundary
+    // right after "vulnerabilit", which never matches "vulnerability" or
+    // "vulnerabilities" — only the nonsense fragment "vulnerabilit" itself.
+    expect(
+      looksLikePentestTask("perform a vulnerability assessment on example.com"),
+    ).toBe(true);
+    expect(
+      looksLikePentestTask("scan for vulnerabilities on the target"),
+    ).toBe(true);
+  });
+
+  it("detects other truncated-stem keywords (enumerate, exploit, recon)", () => {
+    expect(looksLikePentestTask("enumerate subdomains for the target")).toBe(true);
+    expect(looksLikePentestTask("exploit the login endpoint")).toBe(true);
+    expect(looksLikePentestTask("run reconnaissance on the target")).toBe(true);
+  });
+
+  it("detects explicit pentest/security-assessment phrasing", () => {
+    expect(looksLikePentestTask("do a pentest on 10.0.0.1")).toBe(true);
+    expect(looksLikePentestTask("run a security assessment on aniketpandey.website")).toBe(true);
+    expect(looksLikePentestTask("check for xss and sqli")).toBe(true);
+  });
+
+  it("does not flag unrelated prompts", () => {
+    expect(looksLikePentestTask("what is the latest iPhone price")).toBe(false);
+    expect(looksLikePentestTask("build a react app now")).toBe(false);
+  });
+});
+
+describe("looksLikeInformationalQuery", () => {
+  it("treats plain follow-up questions as informational, not work requests", () => {
+    // Regression: "what do u know till now" in a resumed pentest session
+    // was treated as "must act" and forced explore→plan, creating a brand-new
+    // unrelated plan instead of answering from context.
+    expect(looksLikeInformationalQuery("what do u know till now")).toBe(true);
+    expect(looksLikeInformationalQuery("what did you find")).toBe(true);
+    expect(looksLikeInformationalQuery("summarize the results")).toBe(true);
+    expect(looksLikeInformationalQuery("tell me what you learned")).toBe(true);
+  });
+
+  it("treats explicit build/continuation phrasing as NOT informational", () => {
+    // Even when they open with a question word, these are work requests.
+    expect(looksLikeInformationalQuery("can you build the api")).toBe(false);
+    expect(looksLikeInformationalQuery("should I add auth")).toBe(false);
+    expect(looksLikeInformationalQuery("finish it")).toBe(false);
+    expect(looksLikeInformationalQuery("do it")).toBe(false);
+  });
+
+  it("treats informational signals as informational even without a question mark", () => {
+    expect(looksLikeInformationalQuery("compare react and vue")).toBe(true);
+    expect(looksLikeInformationalQuery("explain the security headers")).toBe(true);
+    expect(looksLikeInformationalQuery("overview of the findings")).toBe(true);
   });
 });

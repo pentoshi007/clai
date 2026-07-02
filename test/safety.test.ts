@@ -395,4 +395,37 @@ describe("phase 1 — secret-leak hardening", () => {
       }).level,
     ).toBe("block");
   });
+
+  it("auto-approves pkg.install when the binary is already on PATH (no-op check)", () => {
+    // `node` is running this test, so it's guaranteed to be on PATH.
+    const result = classifyToolCall({
+      name: "pkg.install",
+      args: { tool: "node" },
+    });
+    expect(result.level).toBe("safe");
+  });
+
+  it("auto-approves pkg.install via an explicit checkBinary that is on PATH", () => {
+    const result = classifyToolCall({
+      name: "pkg.install",
+      args: { tool: "coreutils", checkBinary: "node" },
+    });
+    expect(result.level).toBe("safe");
+  });
+
+  it("requires confirmation for pkg.install when the binary is genuinely missing", () => {
+    const result = classifyToolCall({
+      name: "pkg.install",
+      args: { tool: "definitely-not-a-real-cli-xyz123" },
+    });
+    expect(result.level).toBe("confirm");
+  });
+
+  it("auto-approves wordlist.find (read-only local lookup)", () => {
+    const result = classifyToolCall({
+      name: "wordlist.find",
+      args: { query: "common.txt" },
+    });
+    expect(result.level).toBe("safe");
+  });
 });

@@ -1,5 +1,6 @@
 import net from "node:net";
-import { homedir } from "node:os";
+import { execSync } from "node:child_process";
+import { homedir, platform } from "node:os";
 import { resolve } from "node:path";
 import type { RiskLevel, ToolCall } from "../types.js";
 import {
@@ -17,6 +18,24 @@ import {
 import { normalizeScopeTarget, type EngagementScope } from "../store/scope.js";
 import { classifyHost } from "../tools/web/ssrf-guard.js";
 import { pathInsideSandbox } from "../tools/fs.js";
+import { packageBinaryName } from "../tools/package-binary.js";
+
+/**
+ * Sync PATH probe so the classifier can tell whether pkg.install is about to
+ * be a real install or the no-op "already on PATH — skipping" branch it runs
+ * itself. Mirrors the same `command -v` / `where.exe` pattern already used by
+ * net-ping-sweep's own sync availability check.
+ */
+function isBinaryOnPath(binary: string): boolean {
+  try {
+    const probe =
+      platform() === "win32" ? `where.exe ${binary}` : `command -v ${binary}`;
+    execSync(probe, { timeout: 3_000, stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface RiskDecision {
   level: RiskLevel;
@@ -506,25 +525,45 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only pentest recon" };
   }
 
-  if (call.name === "fs.write" || call.name === "pkg.install") {
-    if (call.name === "fs.write") {
-      const pathArg = stringArg(call.args, "path");
-      if (pathArg) {
-        try {
-          if (isSecretPath(resolveForSecretCheck(pathArg))) {
-            return {
-              level: "block",
-              reason: "Refusing to write to a known secret path",
-            };
-          }
-        } catch {
-          // fall through
+  if (call.name === "fs.write") {
+    const pathArg = stringArg(call.args, "path");
+    if (pathArg) {
+      try {
+        if (isSecretPath(resolveForSecretCheck(pathArg))) {
+          return {
+            level: "block",
+            reason: "Refusing to write to a known secret path",
+          };
         }
+      } catch {
+        // fall through
       }
     }
     return {
       level: "confirm",
       reason: "Mutating operation requires confirmation",
+    };
+  }
+
+  if (call.name === "pkg.install") {
+    // pkg.install already no-ops when the binary is on PATH — checking
+    // "is X installed" this way is a read, not a mutation. Probe the same
+    // way the tool itself will, so that check-then-skip never prompts; only
+    // an actual install (binary genuinely missing) requires confirmation.
+    const tool = stringArg(call.args, "tool");
+    const checkBinary = stringArg(call.args, "checkBinary");
+    if (tool) {
+      const binary = checkBinary ?? packageBinaryName(tool);
+      if (isBinaryOnPath(binary)) {
+        return {
+          level: "safe",
+          reason: `${binary} is already installed — pkg.install will no-op`,
+        };
+      }
+    }
+    return {
+      level: "confirm",
+      reason: "Package install requires confirmation",
     };
   }
 
@@ -563,6 +602,10 @@ export function classifyToolCall(
 
   if (call.name === "tool.check") {
     return { level: "safe", reason: "Read-only tool availability check" };
+  }
+
+  if (call.name === "wordlist.find") {
+    return { level: "safe", reason: "Read-only local wordlist lookup" };
   }
 
   if (call.name === "image.ocr") {

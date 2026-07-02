@@ -26,6 +26,7 @@ const READ_ONLY_TOOLS = new Set([
   "sysinfo",
   "net.context",
   "tool.check",
+  "wordlist.find",
   "image.ocr",
   "pdf.read",
 ]);

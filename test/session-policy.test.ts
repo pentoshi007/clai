@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createSessionPolicy,
   isPreApprovalAllowedTool,
+  isPlanApprovedByStatus,
+  planHasOpenWork,
 } from "../src/agent/runner.js";
 import { getConfig } from "../src/store/config.js";
 
@@ -73,5 +75,42 @@ describe("plan-awaiting-approval gate — allowed tools", () => {
     ]) {
       expect(isPreApprovalAllowedTool(tool)).toBe(false);
     }
+  });
+});
+
+describe("isPlanApprovedByStatus — resumed-session plan gate", () => {
+  it("treats any non-draft status as approved (the plan already ran /implement)", () => {
+    // Regression: session.planApproved is in-memory only and resets to false
+    // on every fresh SessionPolicy (a /history resume, or a new policy after
+    // context compaction). The gate must instead trust the plan's own
+    // persisted status, which survives a resume.
+    expect(isPlanApprovedByStatus("approved")).toBe(true);
+    expect(isPlanApprovedByStatus("in_progress")).toBe(true);
+    expect(isPlanApprovedByStatus("completed")).toBe(true);
+    expect(isPlanApprovedByStatus("abandoned")).toBe(true);
+  });
+
+  it("treats a draft plan as NOT approved", () => {
+    expect(isPlanApprovedByStatus("draft")).toBe(false);
+  });
+});
+
+describe("planHasOpenWork — act-don't-narrate nudge scoping", () => {
+  it("is false once the plan's own status is completed", () => {
+    // Regression: after a pentest/build plan finished, a plain follow-up
+    // question (e.g. "what do you know so far") kept getting force-nudged
+    // into emitting another tool call instead of being answered, because
+    // the nudge treated ANY approved plan as still needing action.
+    expect(planHasOpenWork("completed")).toBe(false);
+  });
+
+  it("is true for a plan still in progress or only approved", () => {
+    expect(planHasOpenWork("approved")).toBe(true);
+    expect(planHasOpenWork("in_progress")).toBe(true);
+    expect(planHasOpenWork("draft")).toBe(true);
+  });
+
+  it("is false when there is no active plan at all", () => {
+    expect(planHasOpenWork(undefined)).toBe(false);
   });
 });

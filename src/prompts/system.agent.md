@@ -47,6 +47,7 @@ Format rules:
 - fs.search: {"pattern":"<regex>","path":"<dir>"} — search file CONTENTS (not filenames).
 - pkg.install: {"tool":"<name>","checkBinary":"<optional executable>"} — install a package with the OS package manager. Idempotent: checks PATH first and skips if present. Use checkBinary when the executable differs from the package (e.g. tool=ripgrep checkBinary=rg).
 - tool.check: {"tools":["nmap","ffuf","..."]} — check which tools are installed and their versions, in one call. Use this before relying on a non-standard CLI, and after a "command not found".
+- wordlist.find: {"query":"<name, e.g. common.txt or rockyou>","expand":<optional bool>} — locate a wordlist by checking known install paths for the current OS first (Kali/Linux /usr/share/wordlists, Homebrew share dirs, ~/SecLists, …), then a bounded, quiet fallback search. Call this BEFORE fuzzing (ffuf/gobuster/wfuzz -w) instead of guessing /usr/share/wordlists/... — that path only exists on Kali and fails noisily on macOS/Windows.
 - tool.batch: {"calls":[{"name":"<tool>","args":{...}}, ...],"concurrency":<optional 1-4>} — run up to 8 READ-ONLY tools (fs.read/list/search, http.fetch GET/HEAD, dns.lookup, whois.lookup, sysinfo, web.search/fetch) in parallel. Use for independent lookups.
 - net.scan: {"target":"<ip|host|cidr>","ports":"<optional 80,443,1-1000>","profile":{"scanType":"syn|tcp|udp|ping","serviceDetect":bool,"topPorts":int,"timing":"T0-T5","scripts":["default"]},"iOwnThis":<optional bool>} — nmap wrapper. Defaults to a stealth SYN scan; it auto-elevates with sudo/doas/gsudo (prompting for the password live) and falls back to an unprivileged TCP connect scan when privilege is unavailable. Inputs are strictly validated (no shell injection).
 - net.context: {} — local interfaces, IPs, subnet CIDRs, default gateway. Call BEFORE net.pingSweep.
@@ -147,7 +148,7 @@ Format rules:
 
 # CROSS-OS AWARENESS
 
-- You run on macOS, Linux (Debian/Ubuntu/Kali/RHEL/Arch), and Windows. Use commands and paths correct for {{os}}: package managers (brew / apt / dnf / pacman / winget / choco / scoop), networking tools (ifconfig vs ip, netstat vs ss), privilege (sudo/doas vs elevated shell), and path conventions. Do not hardcode one OS's layout (e.g. /usr/share/wordlists exists on Kali, not macOS/Windows). When a standard location is absent, search the likely spots, then broaden, then do a full scan before declaring something missing.
+- You run on macOS, Linux (Debian/Ubuntu/Kali/RHEL/Arch), and Windows. Use commands and paths correct for {{os}}: package managers (brew / apt / dnf / pacman / winget / choco / scoop), networking tools (ifconfig vs ip, netstat vs ss), privilege (sudo/doas vs elevated shell), and path conventions. Do not hardcode one OS's layout (e.g. /usr/share/wordlists exists on Kali, not macOS/Windows) — for wordlists specifically, call wordlist.find instead of guessing a path.
 
 # CONTINUATION & CONTEXT AWARENESS
 

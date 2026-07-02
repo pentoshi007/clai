@@ -52,7 +52,6 @@ import {
   clearAllHistory,
   getSession,
   listSessions,
-  saveSession,
   upsertSession,
 } from "../store/history.js";
 import { generateSessionTitle } from "../agent/session-title.js";
@@ -718,10 +717,20 @@ export function App({
           cancelCompaction();
           void (async () => {
             const messages = runner.getMessages();
-            if (!noHistory && !getConfig().privateMode && messages.length > 0)
-              await saveSession(messages, undefined, state.items).catch(
-                () => undefined,
-              );
+            if (
+              !noHistory &&
+              !getConfig().privateMode &&
+              messages.some((m) => m.role === "user")
+            )
+              // Continuous autosave already persists this conversation under
+              // its live sessionId — upsert that same row instead of
+              // minting a fresh, unnamed duplicate.
+              await upsertSession(
+                runner.getSession().sessionId,
+                messages,
+                undefined,
+                state.items,
+              ).catch(() => undefined);
             runner.reset();
             titleRef.current = { titledAtUserCount: 0, inFlight: false };
             dispatch({ type: "reset" });
@@ -988,7 +997,11 @@ export function App({
               info("nothing to save yet");
               return;
             }
-            const rec = await saveSession(
+            // Continuous autosave already persists this conversation under
+            // its live sessionId — upsert that same row (optionally renaming
+            // it) instead of minting a separate duplicate entry.
+            const rec = await upsertSession(
+              runner.getSession().sessionId,
               msgs,
               arg || undefined,
               state.items,
@@ -1001,7 +1014,7 @@ export function App({
             const sessions = await listSessions(50);
             const currentMessages = runner.getMessages();
             if (sessions.length === 0 && currentMessages.length === 0) {
-              info("no session history yet");
+              info("no session history yet — start chatting to create one");
               return;
             }
             setOverlay({
@@ -1009,16 +1022,18 @@ export function App({
               title: "Session history",
               twoLine: true,
               options: [
-                ...(currentMessages.length
-                  ? [
-                      {
-                        value: "__current__",
-                        label: "Current session",
-                        description: `active now · ${currentMessages.length} messages`,
-                        active: true,
-                      },
-                    ]
-                  : []),
+                // Always show where the user currently is, even a brand-new
+                // /new session with nothing sent yet — otherwise the picker
+                // can look like it's viewing whichever past session happens
+                // to sort first, with no indication of "you are here".
+                {
+                  value: "__current__",
+                  label: "Current session",
+                  description: currentMessages.length
+                    ? `active now · ${currentMessages.length} messages`
+                    : "active now · new, empty session",
+                  active: true,
+                },
                 ...sessions.map((session) => {
                   const date = session.updatedAt ?? session.createdAt;
                   const when = relativeTime(date);
@@ -1809,8 +1824,13 @@ export function App({
 
   // SGR mouse reporting keeps wheel/trackpad events distinct from cursor-key
   // sequences, so scrolling the transcript never walks prompt history.
+  // Mouse wheel scroll stays enabled while a confirm box is showing (so the
+  // user can review context before answering); it's disabled for overlays/
+  // secret prompts, which own their own content and scrolling.
   useEffect(() => {
-    if (!stdin || modalActive) return;
+    const confirmOnlyModal =
+      Boolean(state.pendingConfirm) && !secretRequest && !overlayOpen;
+    if (!stdin || (modalActive && !confirmOnlyModal)) return;
     const onData = (chunk: Buffer | string): void => {
       const data = String(chunk);
       const direction = mouseWheelDirection(data);
@@ -1851,11 +1871,46 @@ export function App({
     return () => {
       stdin.off("data", onData);
     };
-  }, [stdin, modalActive, maxOffset, mouseMode, viewportH]);
+  }, [stdin, modalActive, maxOffset, mouseMode, viewportH, state.pendingConfirm, secretRequest, overlayOpen]);
 
   // Key handling
   useInput((ch, key) => {
-    if (modalActive) return; // overlay/modal owns input
+    // While a confirmation box (sudo/mutating command/plan implement/etc.) is
+    // showing, ConfirmModal owns y/n/Esc — but the main transcript behind it
+    // should still be scrollable so the user can review context before
+    // deciding. Only scroll keys pass through; everything else (including
+    // plain text) stays blocked so it can't leak into the confirm prompt.
+    // Overlays (pager/picker/jobs) and the secret prompt are excluded here:
+    // they render their own content and already handle their own scrolling.
+    if (modalActive) {
+      if (state.pendingConfirm && !secretRequest && !overlayOpen) {
+        if (key.pageUp) {
+          setScroll((s) => Math.min(maxOffset, s + viewportH));
+          return;
+        }
+        if (key.pageDown) {
+          setScroll((s) => Math.max(0, s - viewportH));
+          return;
+        }
+        if (key.ctrl && ch === "u") {
+          setScroll((s) => Math.min(maxOffset, s + Math.floor(viewportH / 2)));
+          return;
+        }
+        if (key.ctrl && ch === "d") {
+          setScroll((s) => Math.max(0, s - Math.floor(viewportH / 2)));
+          return;
+        }
+        if (ch === "j" || (key.downArrow && (key.shift || key.ctrl || key.meta))) {
+          setScroll((s) => Math.max(0, s - 1));
+          return;
+        }
+        if (ch === "k" || (key.upArrow && (key.shift || key.ctrl || key.meta))) {
+          setScroll((s) => Math.min(maxOffset, s + 1));
+          return;
+        }
+      }
+      return; // everything else: overlay/modal owns input
+    }
     const cleanedChunk = stripMouseReports(ch)
       .replace(/\r\n/g, "\n")
       .replace(/\r/g, "\n");
@@ -2243,7 +2298,27 @@ export function App({
           onCancel={() => answerSecret(undefined)}
         />
       ) : state.pendingConfirm ? (
-        <ConfirmModal confirm={state.pendingConfirm} onAnswer={answerConfirm} />
+        <ConfirmModal
+          confirm={state.pendingConfirm}
+          onAnswer={answerConfirm}
+          onViewPlan={
+            state.pendingConfirm.kind === "plan"
+              ? () => {
+                  void (async () => {
+                    const plan = await loadPlan(
+                      runner.getSession().sessionId,
+                    ).catch(() => undefined);
+                    if (plan)
+                      setOverlay({
+                        kind: "pager",
+                        title: "Plan",
+                        body: renderPlanDocument(plan),
+                      });
+                  })();
+                }
+              : undefined
+          }
+        />
       ) : null}
 
       {/* Composer (pinned bottom) */}

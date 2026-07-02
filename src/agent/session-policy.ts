@@ -42,6 +42,33 @@ export function isPreApprovalAllowedTool(name: string): boolean {
   return PRE_APPROVAL_ALLOWED_TOOLS.has(name);
 }
 
+/**
+ * A plan's persisted status is the durable source of truth for "has this
+ * plan been approved" — session.planApproved is in-memory only and resets to
+ * false on every fresh SessionPolicy (a /history resume, or a new policy
+ * created after context compaction). Without re-deriving from the plan's own
+ * status, a resumed session for an already-approved/executed/completed plan
+ * would re-block every tool call behind the "awaiting approval" gate even
+ * though /implement already ran before the app was closed.
+ */
+export function isPlanApprovedByStatus(status: PlanStatusLike): boolean {
+  return status !== "draft";
+}
+
+/**
+ * Whether a plan still has work left to force via the "act, don't narrate"
+ * nudge. A plan whose persisted status is "completed" should be treated like
+ * having no active plan for that purpose — otherwise a plain follow-up
+ * question after the plan finished (e.g. "what do you know so far") keeps
+ * getting pushed to emit another tool call instead of being answered.
+ */
+export function planHasOpenWork(status: PlanStatusLike | undefined): boolean {
+  return status !== undefined && status !== "completed";
+}
+
+/** Subset of PlanStatus this module needs, kept local to avoid a store import. */
+type PlanStatusLike = "draft" | "approved" | "in_progress" | "completed" | "abandoned";
+
 export function isAbortError(error: unknown, signal?: AbortSignal): boolean {
   return (
     Boolean(signal?.aborted) ||

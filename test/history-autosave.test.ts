@@ -90,4 +90,39 @@ describe("history autosave upsert", () => {
     expect(sessions).toHaveLength(2);
     expect(sessions.map((s) => s.id).sort()).toEqual(["sess-valid", "sess-valid-2"]);
   });
+
+  it("names a session from the first user message on its very first write", async () => {
+    const { upsertSession, listSessions } = await import("../src/store/history.js");
+
+    // This mirrors the TUI autosave: no explicit name, called the moment the
+    // first user turn lands (before the assistant has replied).
+    await upsertSession(
+      "fresh-session",
+      [{ role: "user", content: "how do I reverse a linked list in python" }],
+      undefined,
+      [{ kind: "user", id: "u1", text: "how do I reverse a linked list in python", done: true }],
+    );
+
+    const sessions = await listSessions(10);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.name).toBe("how do I reverse a linked list in python");
+  });
+
+  it("keeps an existing name across later upserts instead of blanking it", async () => {
+    const { upsertSession, listSessions } = await import("../src/store/history.js");
+
+    await upsertSession(
+      "titled-session",
+      [{ role: "user", content: "explain kubernetes" }],
+      "Kubernetes basics",
+    );
+    // A later autosave (no explicit name) must not overwrite the title.
+    await upsertSession("titled-session", [
+      { role: "user", content: "explain kubernetes" },
+      { role: "assistant", content: "Kubernetes is a container orchestrator…" },
+    ]);
+
+    const sessions = await listSessions(10);
+    expect(sessions[0]?.name).toBe("Kubernetes basics");
+  });
 });

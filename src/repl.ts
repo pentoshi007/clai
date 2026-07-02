@@ -35,6 +35,7 @@ import {
 import {
   listSessions,
   saveSession,
+  upsertSession,
   clearAllHistory,
   getSession,
 } from "./store/history.js";
@@ -780,6 +781,27 @@ async function offerAgentSwitch(
   );
 }
 
+/**
+ * Save or update the classic REPL's single history row for this run. The
+ * first call creates a record and remembers its id on `state.historyId`;
+ * every later call (a further /new flush, /history resume, or exit) updates
+ * that same row instead of minting a fresh, unnamed duplicate.
+ */
+async function persistSession(
+  state: {
+    messages: ChatMessage[];
+    historyId: string | undefined;
+  },
+  name?: string,
+): Promise<void> {
+  if (state.historyId) {
+    await upsertSession(state.historyId, state.messages, name);
+    return;
+  }
+  const record = await saveSession(state.messages, name);
+  state.historyId = record.id;
+}
+
 async function handleSlash(
   line: string,
   state: {
@@ -789,6 +811,7 @@ async function handleSlash(
     messages: ChatMessage[];
     session: SessionPolicy;
     resumedMessageCount: number;
+    historyId: string | undefined;
   },
 ): Promise<boolean> {
   const [command, ...args] = splitCommand(line);
@@ -1007,12 +1030,13 @@ async function handleSlash(
       // Save the current session if it has new messages, then start fresh
       if (state.messages.length > state.resumedMessageCount) {
         if (!getConfig().privateMode) {
-          await saveSession(state.messages);
+          await persistSession(state);
           console.log(chalk.dim("  current session saved"));
         }
       }
       state.messages.length = 0;
       state.resumedMessageCount = 0;
+      state.historyId = undefined;
       console.log(chalk.dim("  ✦ fresh session started"));
       return true;
     }
@@ -1071,7 +1095,7 @@ async function handleSlash(
       // Save current session first if it has new messages
       if (state.messages.length > state.resumedMessageCount) {
         if (!getConfig().privateMode) {
-          await saveSession(state.messages);
+          await persistSession(state);
         }
       }
 
@@ -1087,16 +1111,23 @@ async function handleSlash(
       }
       console.log(chalk.dim(`  ── end of history · continue below ──\n`));
 
-      // Load into state so the user can continue
+      // Load into state so the user can continue. Adopt the resumed record's
+      // id so continuing the conversation updates that same row instead of
+      // minting a new, unnamed duplicate on the next save/exit.
       state.messages.splice(0, state.messages.length, ...session.messages);
       state.resumedMessageCount = session.messages.length;
+      state.historyId = session.id;
       return true;
     }
     case "/save": {
-      const record = await saveSession(
-        state.messages,
-        args.join(" ") || undefined,
-      );
+      const name = args.join(" ") || undefined;
+      if (state.historyId) {
+        await upsertSession(state.historyId, state.messages, name);
+        console.log(chalk.dim(`  saved session ${state.historyId}`));
+        return true;
+      }
+      const record = await saveSession(state.messages, name);
+      state.historyId = record.id;
       console.log(chalk.dim(`  saved session ${record.id}`));
       return true;
     }
@@ -1571,6 +1602,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     messages: [] as ChatMessage[],
     session: createSessionPolicy(),
     resumedMessageCount: 0,
+    historyId: undefined as string | undefined,
   };
 
   const promptHistory: string[] = [];
@@ -2024,7 +2056,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       // also bails early when privateMode is on, but checking here keeps
       // intent obvious in the call site.
       if (!options.noHistory && !getConfig().privateMode) {
-        await saveSession(state.messages);
+        await persistSession(state);
       }
     }
     if (input.isTTY) input.setRawMode(false);

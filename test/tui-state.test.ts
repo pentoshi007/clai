@@ -422,4 +422,32 @@ describe("TUI compaction reducer and rendering", () => {
     expect(stripAnsi(renderedExpanded.join("\n"))).toContain("Line 5");
     expect(stripAnsi(renderedExpanded.join("\n"))).toContain("expanded · ctrl+o");
   });
+
+  it("renders markdown in the compacted summary instead of raw ** and # markup", () => {
+    const item = {
+      kind: "compacted" as const,
+      id: "c2",
+      summary:
+        "### Consolidated Continuation Memory\n\n" +
+        "**User goals**\n" +
+        "*   Perform a vulnerability assessment on example.com.\n",
+      originalItems: [],
+      done: true,
+    };
+
+    const rendered = renderItemLines(item, {
+      width: 80,
+      thinkingExpanded: false,
+      outputExpanded: true,
+      running: false,
+    });
+    const plain = stripAnsi(rendered.join("\n"));
+
+    // The heading/bold markers must be styled away, not printed literally.
+    expect(plain).not.toContain("###");
+    expect(plain).not.toContain("**User goals**");
+    expect(plain).toContain("Consolidated Continuation Memory");
+    expect(plain).toContain("User goals");
+    expect(plain).toContain("Perform a vulnerability assessment on example.com.");
+  });
 });

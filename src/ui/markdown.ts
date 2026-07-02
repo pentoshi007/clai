@@ -247,7 +247,7 @@ const OUTPUT_INDENT = "  ";
 // only 1 JS string index. Using `.length` here under-counts glyphs like
 // ✅/⚠️/❓, which desynced column math and let table borders drift and get
 // clipped by the TUI's width-aware truncation.
-function visibleWidth(str: string): number {
+export function visibleWidth(str: string): number {
   return stringWidth(str);
 }
 

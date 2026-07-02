@@ -18,8 +18,14 @@ export interface PagerProps {
  */
 export function Pager({ title, body, height, onClose }: PagerProps) {
   const cols = process.stdout.columns ?? 80;
-  // Account for borders, padding, margins, and " 1234 │ " prefix
-  const usableWidth = Math.max(10, cols - 15);
+  // Account for the pager's own border/padding AND the " 1234 │ " line-number
+  // prefix rendered before every line (4-digit gutter + " │ " = 7 columns).
+  // Previously only the border/padding was subtracted, so a fully-wrapped
+  // line (at the wider budget) plus the prefix still overflowed the
+  // terminal width — Ink's own wrap="truncate-end" then silently truncated
+  // it with "…" even though wrapAnsiLine had already "wrapped" it.
+  const LINE_PREFIX_WIDTH = 7;
+  const usableWidth = Math.max(10, cols - 15 - LINE_PREFIX_WIDTH);
 
   const rawLines = body.replace(/\n+$/, "").split("\n");
   const lines: string[] = [];

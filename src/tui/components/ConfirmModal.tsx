@@ -4,9 +4,11 @@ import type { PendingConfirm } from "../state.js";
 export interface ConfirmModalProps {
   confirm: PendingConfirm;
   onAnswer: (ok: boolean) => void;
+  /** Called for the plan-implement prompt's "p" shortcut to view the full plan. */
+  onViewPlan?: (() => void) | undefined;
 }
 
-export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
+export function ConfirmModal({ confirm, onAnswer, onViewPlan }: ConfirmModalProps) {
   useInput((input, key) => {
     const ch = input.toLowerCase();
     if (confirm.kind === "reset") {
@@ -16,11 +18,13 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
         onAnswer(false);
       }
     } else if (confirm.kind === "plan") {
-      // y / i → implement · n / d / Esc → discard
+      // y / i → implement · n / d / Esc → discard · p → view the full plan
       if (ch === "y" || ch === "i") {
         onAnswer(true);
       } else if (ch === "n" || ch === "d" || key.escape) {
         onAnswer(false);
+      } else if (ch === "p") {
+        onViewPlan?.();
       }
     } else {
       if (ch === "y") {
@@ -65,7 +69,7 @@ export function ConfirmModal({ confirm, onAnswer }: ConfirmModalProps) {
         </Text>
       ) : isPlan ? (
         <Text bold>
-          Press <Text color="green" inverse> Y </Text> to implement  ·  Press <Text color="red" inverse> N </Text> to discard
+          Press <Text color="green" inverse> Y </Text> to implement  ·  Press <Text color="red" inverse> N </Text> to discard  ·  Press <Text color="cyan" inverse> P </Text> to view plan
         </Text>
       ) : (
         <Text bold>

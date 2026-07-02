@@ -35,6 +35,7 @@ import {
 import { getNetworkContext } from "./network-context.js";
 import { pingSweep } from "./net-ping-sweep.js";
 import { toolCheckHandler } from "./capabilities.js";
+import { wordlistFind } from "./wordlists.js";
 import { jobManager } from "./jobs.js";
 import { looksLongRunning } from "./command-intent.js";
 import { packageBinaryName } from "./package-binary.js";
@@ -503,6 +504,13 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async "tool.check"(args) {
     return toolCheckHandler(args);
   },
+  async "wordlist.find"(args) {
+    const expand = typeof args.expand === "boolean" ? args.expand : undefined;
+    return wordlistFind({
+      query: requireString(args, "query"),
+      ...(expand !== undefined ? { expand } : {}),
+    });
+  },
   async "image.ocr"(args, options) {
     return imageOcr(args, options);
   },
@@ -681,6 +689,7 @@ export const BATCH_SAFE_TOOLS = new Set([
   "whois.lookup",
   "net.context",
   "tool.check",
+  "wordlist.find",
   "image.ocr",
   "pdf.read",
   "web.search",

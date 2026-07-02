@@ -972,7 +972,7 @@ const LOCAL_RUNTIME_RE =
 // (the loop still stops as soon as the model gives a final answer) while
 // under-budgeting silently truncates a half-built project.
 const BUILD_TASK_RE =
-  /\b(?:build|create|scaffold|generate|make|set\s*up|setup|bootstrap|init(?:ialize)?|implement|add|write|develop|code|refactor|migrate|convert|wire\s*up|integrate)\b[\s\S]{0,80}\b(?:app|application|project|site|website|web\s*app|server|api|service|component|page|module|feature|cli|script|library|package|frontend|backend|fullstack|game|bot|dashboard|form|endpoint|database|schema|test|tests|suite)\b/i;
+  /\b(?:build|create|scaffold|generate|make|set\s*up|setup|bootstrap|init(?:ialize)?|implement|add|write|develop|code|refactor|migrate|convert|wire\s*up|integrate)\b[\s\S]{0,80}\b(?:app|application|project|site|website|web\s*app|server|api|service|component|page|module|feature|cli|script|library|package|frontend|backend|fullstack|game|bot|dashboard|form|endpoint|database|schema|test|tests|suite|auth|authentication|authorization|login|signup|middleware|route|routes|routing|handler|controller|model|view)\b/i;
 
 const BUILD_STACK_RE =
   /\b(?:react|next(?:\.?js)?|vue|svelte|angular|vite|webpack|express|fastify|nest(?:js)?|django|flask|fastapi|rails|laravel|spring|node(?:\.?js)?|typescript|tailwind|redux|prisma|mongoose|graphql|docker|kubernetes)\b/i;
@@ -980,7 +980,7 @@ const BUILD_STACK_RE =
 // Pentest / security keywords — these tasks are inherently multi-step and
 // always deserve the full step budget, just like build tasks.
 const PENTEST_TASK_RE =
-  /\b(?:pentest|pen[\s-]?test|penetration|security\s*(?:test|audit|scan|assess)|csrf|xss|sqli|sql[\s-]?inject|rce|lfi|rfi|ssrf|idor|xxe|brute[\s-]?force|enumerat|exploit|vulnerabilit|recon|bug[\s-]?bounty|ctf|capture[\s-]?the[\s-]?flag|red[\s-]?team|offensive|nmap|nikto|nuclei|ffuf|gobuster|sqlmap|hydra|metasploit)\b/i;
+  /\b(?:pentest|pen[\s-]?test|penetration|security\s*(?:test|audit|scan|assess(?:ment)?)|csrf|xss|sqli|sql[\s-]?inject|rce|lfi|rfi|ssrf|idor|xxe|brute[\s-]?force|enumerat\w*|exploit\w*|vulnerabilit\w*|recon\w*|bug[\s-]?bounty|ctf|capture[\s-]?the[\s-]?flag|red[\s-]?team|offensive|nmap|nikto|nuclei|ffuf|gobuster|sqlmap|hydra|metasploit)\b/i;
 
 /**
  * Detect pentest/security tasks that need the full step budget.
@@ -1022,7 +1022,7 @@ const PLAN_EXECUTION_RE =
 // tailwind", "tailwind 3 vs 4"). They must NOT trigger the explore→plan
 // build workflow.
 const INFORMATIONAL_SIGNAL_RE =
-  /\b(?:compare|comparison|contrast|differ(?:ence|ences|s)?|pros\s+and\s+cons|trade-?offs?|versus|vs\.?|cheat\s*sheet|explain|describe|summari[sz]e|overview)\b/i;
+  /\b(?:compare|comparison|contrast|differ(?:ence|ences|s)?|pros\s+and\s+cons|trade-?offs?|versus|vs\.?|cheat\s*sheet|explain|describe|summari[sz]e|overview|tell\s+me)\b/i;
 const INTERROGATIVE_LEAD_RE =
   /^(?:what|which|why|how|when|who|where|is|are|do|does|did|can|could|should|would|will)\b/i;
 
@@ -1077,6 +1077,37 @@ export function looksLikeBuildTask(
     }
   }
   return false;
+}
+
+/**
+ * Is THIS prompt a plain informational question (as opposed to a request to
+ * do work)? Used to stop a resumed/continuing build or pentest session from
+ * forcing "act, don't narrate" behavior — and the explore→plan build
+ * workflow — onto a question like "what do you know so far", "what did you
+ * find", or "summarize the results". A follow-up question in a work session
+ * should be ANSWERED from context, not treated as a signal to start executing
+ * or to invent a brand-new plan.
+ *
+ * Explicit build/continuation/plan-execution phrasing is NOT informational,
+ * even when it opens with a question word (e.g. "can you build the api",
+ * "should I add auth" → those still want work).
+ */
+export function looksLikeInformationalQuery(prompt: string): boolean {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (
+    BUILD_TASK_RE.test(text) ||
+    CONTINUATION_RE.test(text) ||
+    INCOMPLETE_RE.test(text) ||
+    PLAN_EXECUTION_RE.test(text)
+  ) {
+    return false;
+  }
+  return (
+    text.endsWith("?") ||
+    INTERROGATIVE_LEAD_RE.test(text) ||
+    INFORMATIONAL_SIGNAL_RE.test(text)
+  );
 }
 
 // Matrix of action-verb narration: the model says it is *about to* do

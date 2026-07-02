@@ -65,6 +65,7 @@ import {
   formatToolArgs,
   looksLikePentestTask,
   looksLikeBuildTask,
+  looksLikeInformationalQuery,
   looksLikeActionNarration,
   looksLikePlanNarration,
   requiresFreshWebSearch,
@@ -75,6 +76,8 @@ import {
 import {
   createSessionPolicy,
   isPreApprovalAllowedTool,
+  isPlanApprovedByStatus,
+  planHasOpenWork,
   isAbortError,
   shouldEnableImageOcr,
   type SessionPolicy,
@@ -106,6 +109,8 @@ export * from "./tool-call-parser.js";
 export {
   createSessionPolicy,
   isPreApprovalAllowedTool,
+  isPlanApprovedByStatus,
+  planHasOpenWork,
   shouldEnableImageOcr,
   type SessionPolicy,
 } from "./session-policy.js";
@@ -275,6 +280,13 @@ export async function runAgentLoop(
     // agent burns its turn searching the date instead of writing files.
     const buildLikeTurn = looksLikeBuildTask(prompt, options.history);
     const pentestLikeTurn = looksLikePentestTask(prompt, options.history);
+    // A plain informational follow-up ("what do you know so far", "summarize
+    // the findings") in a resumed/continuing build or pentest session must
+    // NOT inherit that session's "must act" behavior — it should be answered
+    // from context, not treated as a signal to start executing or to invent a
+    // brand-new plan (the exact failure where "what do u know till now"
+    // triggered explore→plan and created an unrelated "Enhance clai" plan).
+    const informationalQuery = looksLikeInformationalQuery(prompt);
     const freshWebSearchRequired =
       !buildLikeTurn &&
       !pentestLikeTurn &&
@@ -302,6 +314,16 @@ export async function runAgentLoop(
     // agent to execute task by task; otherwise the agent should refine/wait.
     const activePlan = await loadPlan(session.sessionId).catch(() => undefined);
     if (activePlan) {
+      // session.planApproved is in-memory only (never persisted), so a
+      // resumed session (via /history) or a fresh SessionPolicy after
+      // context compaction always starts it back at false — even when the
+      // plan's OWN durable status shows it was already approved/executed/
+      // completed via /implement. Re-derive the flag from the plan's status
+      // on every load so resuming a session never re-blocks tool calls
+      // behind a stale "awaiting approval" gate for a plan that already ran.
+      if (isPlanApprovedByStatus(activePlan.status)) {
+        session.planApproved.value = true;
+      }
       systemSections.push(
         planContextMessage(activePlan, session.planApproved.value),
       );
@@ -313,7 +335,7 @@ export async function runAgentLoop(
     // what's already there, create a comprehensive multi-task plan, then
     // implement task by task until the goal is met. This mirrors how a careful
     // coding agent (Claude Code) operates.
-    if (buildLikeTurn && !activePlan) {
+    if (buildLikeTurn && !activePlan && !informationalQuery) {
       systemSections.push(buildWorkflowDirective());
     }
 
@@ -1507,12 +1529,22 @@ export async function runAgentLoop(
           // final answer ends the turn with nothing done and no real plan saved.
           // Nudge it to emit a real tool call, with a concrete example.
           const narratedAction = looksLikeActionNarration(cleaned);
+          // A plan whose OWN persisted status is "completed" has no more
+          // work to force — treat this like "no active plan" for the
+          // act-don't-narrate nudge so a plain follow-up question (e.g. "what
+          // do you know so far") after the plan finished gets answered
+          // instead of being pushed to emit another tool call.
+          const planHasOpenWorkNow = planHasOpenWork(activePlan?.status);
+          // History-inherited build/pentest intent only forces action when
+          // THIS prompt is not itself a plain question. If the model does
+          // narrate a concrete next step ("let me read X"), narratedAction
+          // still forces it to actually run that step — even for a question —
+          // which is the desired "do what you said" behavior.
           const wantsAction =
-            buildLikeTurn ||
-            pentestLikeTurn ||
-            (activePlan && session.planApproved.value) ||
+            narratedAction ||
             freshWebSearchRequired ||
-            narratedAction;
+            (planHasOpenWorkNow && session.planApproved.value) ||
+            (!informationalQuery && (buildLikeTurn || pentestLikeTurn));
           const planNarrated =
             buildLikeTurn && !activePlan && looksLikePlanNarration(cleaned);
           if (
@@ -1523,7 +1555,7 @@ export async function runAgentLoop(
           ) {
             actionIntentRetries += 1;
             let nudge: string;
-            if (activePlan && session.planApproved.value) {
+            if (planHasOpenWorkNow && session.planApproved.value) {
               nudge =
                 "You wrote a message but emitted NO ```tool block, so NOTHING ran. Do NOT narrate what you will do — DO it. Emit the next tool call now (task.update / fs.writeMany / shell.exec) in a single ```tool block.";
               writeNotice(

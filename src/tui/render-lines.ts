@@ -399,11 +399,16 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
   } else if (summaryText.startsWith("Session memory from compacted earlier turns:")) {
     summaryText = summaryText.slice("Session memory from compacted earlier turns:".length);
   }
-  
-  const rawLines = summaryText.replace(/\n+$/, "").split("\n");
+
+  // The model writes this summary as markdown (###, **bold**, * bullets).
+  // Render it the same way assistant responses are rendered instead of
+  // dumping the raw markup, then wrap the resulting ANSI-styled lines.
+  const availableWidth = Math.max(10, ctx.width - 4);
+  const rendered = renderMarkdown(summaryText, availableWidth).replace(/\n+$/, "");
+  const rawLines = rendered.split("\n");
   const wrappedLines: string[] = [];
   for (const raw of rawLines) {
-    wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 4)));
+    wrappedLines.push(...wrapAnsiLine(raw, availableWidth));
   }
 
   const HEAD = 3;
@@ -421,7 +426,7 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
 
   const lines: string[] = [top];
   for (const wl of shown) {
-    lines.push(bar + chalk.dim(wl));
+    lines.push(bar + wl);
   }
 
   if (hiddenCount > 0) {
