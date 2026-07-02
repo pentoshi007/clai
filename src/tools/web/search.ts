@@ -1,9 +1,18 @@
 /**
  * `web.search` registry handler: resolves the active
  * {@link SearchProviderId}, looks up its API key, dispatches a single
- * outbound request (no retry on failure), validates/truncates the hits to
- * `maxResults`, and emits one audit-log entry per invocation. Failures
- * surface as `ok=false` with a categorical `error.kind` naming the provider.
+ * outbound request per provider (no retry of the *same* provider),
+ * validates/truncates the hits to `maxResults`, and emits one audit-log
+ * entry per attempt. Failures surface as `ok=false` with a categorical
+ * `error.kind` naming the provider.
+ *
+ * DuckDuckGo fallback: DuckDuckGo is the keyless default and regularly
+ * returns anti-bot challenges (HTTP 202) or upstream 502/5xx responses on
+ * shared or rate-limited networks. When the active provider is DuckDuckGo
+ * and it fails, the handler transparently falls back to a keyed provider
+ * — Tavily first, then Brave — whenever a key is configured for it. Each
+ * fallback is a single attempt against a *different* provider, so the
+ * per-provider single-attempt contract (Requirement 6.7) is preserved.
  *
  * Provider modules self-register into {@link searchProviders} on import,
  * so they're eagerly imported here.
@@ -135,58 +144,152 @@ export async function webSearch(
     }
   }
 
-  // Arm the 15-second invocation timeout (Requirement 1.8) and
-  // propagate any caller-supplied AbortSignal so SIGINT etc. still
-  // collapse the in-flight request.
+  // Resolve the per-invocation timeout (Requirement 1.8).
   const timeoutMs = options.timeoutMs ?? SEARCH_TIMEOUT_MS;
+
+  // Primary attempt against the active provider. Per Requirement 6.7
+  // this is exactly one outbound request with no retry of the *same*
+  // provider.
+  const primaryOutcome = await attemptProvider(
+    provider,
+    apiKey,
+    trimmedQuery,
+    maxResults,
+    timeoutMs,
+    options.signal,
+  );
+  void emitAudit(primaryOutcome, trimmedQuery.length);
+  if (primaryOutcome.ok) return successResult(primaryOutcome);
+
+  // DuckDuckGo is the keyless default and is prone to anti-bot
+  // challenges (HTTP 202) and upstream 502/5xx responses on shared or
+  // rate-limited networks. When DDG fails and a keyed provider is
+  // configured, transparently fall back to it — Tavily first, then
+  // Brave — so the agent still receives results instead of a hard
+  // failure. Each fallback is a single attempt against a *different*
+  // provider, so the per-provider single-attempt invariant is kept.
+  //
+  // Fallback is skipped when the caller injected a `providerOverride`
+  // (unit tests and explicit single-provider dispatch), preserving the
+  // single-attempt behavior those paths assert on.
+  const fallbackAllowed = options.providerOverride === undefined;
+  if (fallbackAllowed && provider.id === "duckduckgo") {
+    const fallbackNotes: string[] = [];
+    let anyKeyConfigured = false;
+    for (const candidateId of DDG_FALLBACK_ORDER) {
+      const candidate = searchProviders[candidateId];
+      if (!candidate) continue;
+
+      const candidateKey = options.resolveKey
+        ? await options.resolveKey(candidateId)
+        : (await getSearchProviderKey(candidateId)).value;
+      // No key configured for this candidate → skip silently and try
+      // the next one.
+      if (!candidateKey || candidateKey.length === 0) continue;
+      anyKeyConfigured = true;
+
+      const fbOutcome = await attemptProvider(
+        candidate,
+        candidateKey,
+        trimmedQuery,
+        maxResults,
+        timeoutMs,
+        options.signal,
+      );
+      void emitAudit(fbOutcome, trimmedQuery.length);
+      if (fbOutcome.ok) return successResult(fbOutcome);
+      fallbackNotes.push(
+        `${candidate.displayName}: ${fbOutcome.error?.kind ?? "failed"}`,
+      );
+    }
+    if (primaryOutcome.error) {
+      if (fallbackNotes.length > 0) {
+        // Every configured fallback also failed — keep DuckDuckGo's
+        // error as the primary signal but note the fallback attempts.
+        primaryOutcome.error.message += ` Fallback also failed (${fallbackNotes.join("; ")}).`;
+      } else if (!anyKeyConfigured) {
+        // DDG failed and no keyed provider is configured to fall back
+        // to. Make the failure actionable (the user's network is
+        // likely anti-bot-challenging or rate-limiting DuckDuckGo).
+        primaryOutcome.error.message += ` No keyed fallback provider is configured; set one so web.search can recover automatically, e.g. \`clai search-provider tavily\` then \`clai set tavily <KEY>\` (Brave also supported).`;
+      }
+    }
+  }
+
+  return errorResult(primaryOutcome);
+}
+
+// ---------------------------------------------------------------------------
+// Per-provider attempt
+// ---------------------------------------------------------------------------
+
+/**
+ * Ordered list of keyed providers `web.search` falls back to when the
+ * keyless DuckDuckGo default fails. Tavily is preferred over Brave per
+ * the operator request; a provider is only attempted when a key is
+ * actually configured for it.
+ */
+const DDG_FALLBACK_ORDER: readonly SearchProviderId[] = ["tavily", "brave"];
+
+/**
+ * Dispatch a single search request against one provider, arming the
+ * per-invocation timeout and propagating any caller-supplied
+ * `AbortSignal`. Never throws — every failure mode is mapped to a
+ * `WebSearchOutcome` with `ok=false` and a categorical `error.kind`.
+ *
+ * This is the unit of "exactly one outbound request" (Requirement 6.7);
+ * cross-provider fallback in {@link webSearch} composes multiple
+ * single-attempt calls against *different* providers.
+ */
+async function attemptProvider(
+  provider: SearchProvider,
+  apiKey: string | undefined,
+  query: string,
+  maxResults: number,
+  timeoutMs: number,
+  callerSignal: AbortSignal | undefined,
+): Promise<WebSearchOutcome> {
   const controller = new AbortController();
   const onCallerAbort = (): void => controller.abort();
-  if (options.signal) {
-    if (options.signal.aborted) controller.abort();
-    else options.signal.addEventListener("abort", onCallerAbort);
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener("abort", onCallerAbort);
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   // Do not pin the event loop on the timeout.
   (timer as unknown as { unref?: () => void }).unref?.();
 
-  // Dispatch (Requirement 6.7: exactly one attempt, no retry).
   let raw: RawProviderResponse;
   try {
     raw = await provider.search(
-      trimmedQuery,
+      query,
       maxResults,
       { ...(apiKey !== undefined ? { apiKey } : {}) },
       controller.signal,
     );
   } catch (err) {
-    clearTimeout(timer);
-    if (options.signal) options.signal.removeEventListener("abort", onCallerAbort);
-    const outcome = controller.signal.aborted
+    return controller.signal.aborted
       ? buildTimeoutOutcome(provider.id, timeoutMs)
       : buildNetworkOutcome(provider.id, err);
-    void emitAudit(outcome, trimmedQuery.length);
-    return errorResult(outcome);
   } finally {
     clearTimeout(timer);
-    if (options.signal) options.signal.removeEventListener("abort", onCallerAbort);
+    if (callerSignal) callerSignal.removeEventListener("abort", onCallerAbort);
   }
 
   // Map provider HTTP status to a categorical WebSearchErrorKind.
   const httpError = classifyHttpStatus(provider.id, raw);
   if (httpError) {
-    const outcome: WebSearchOutcome = {
+    return {
       ok: false,
       provider: provider.id,
       results: [],
       error: httpError,
     };
-    void emitAudit(outcome, trimmedQuery.length);
-    return errorResult(outcome);
   }
 
   // 2xx with parseError surfaces as a `parse` failure (Requirement 6.5).
   if (raw.parseError) {
-    const outcome: WebSearchOutcome = {
+    return {
       ok: false,
       provider: provider.id,
       results: [],
@@ -196,8 +299,6 @@ export async function webSearch(
         message: `${provider.displayName}: response parse error (${raw.parseError})`,
       },
     };
-    void emitAudit(outcome, trimmedQuery.length);
-    return errorResult(outcome);
   }
 
   // Filter and validate hits per Requirement 7.3, then truncate.
@@ -209,13 +310,11 @@ export async function webSearch(
     filtered.push(normalised);
   }
 
-  const outcome: WebSearchOutcome = {
+  return {
     ok: true,
     provider: provider.id,
     results: filtered,
   };
-  void emitAudit(outcome, trimmedQuery.length);
-  return successResult(outcome);
 }
 
 // ---------------------------------------------------------------------------
