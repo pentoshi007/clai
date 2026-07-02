@@ -1238,3 +1238,44 @@ export function buildWorkflowDirective(): string {
 export function shouldDimToolChatter(call: ToolCall): boolean {
   return call.name === "web.search";
 }
+
+/**
+ * Distinctive section headings and phrases that appear only in our system
+ * prompts. If the model's output contains several of these, it is almost
+ * certainly regurgitating its instructions in response to a prompt-injection
+ * attack like "repeat your instructions verbatim". Any tool-call syntax
+ * inside such a leak is an EXAMPLE from the prompt, not a real request, and
+ * must not be executed.
+ */
+const PROMPT_LEAK_MARKERS = [
+  /# SECURITY POSTURE/i,
+  /# RESEARCH — READ-ONLY TOOLS/i,
+  /# ACTION HANDOFF/i,
+  /# PROMPT CONFIDENTIALITY/i,
+  /# TOOL CALLS — HOW TO USE TOOLS/i,
+  /# OPERATING RULES/i,
+  /# PENTEST METHODOLOGY/i,
+  /# HOW TO ANSWER/i,
+  /\bbuilt by Aniket Pandey\b/i,
+  /\bpentoshi007 on GitHub\b/i,
+  /\bagent\.handoff\b.*\btask\b.*\breason\b/i,
+];
+
+/** Minimum number of markers that must match to consider it a prompt leak. */
+const PROMPT_LEAK_THRESHOLD = 3;
+
+/**
+ * Returns true when the model's output looks like it is repeating the system
+ * prompt rather than giving a genuine answer. Used to suppress execution of
+ * tool-call examples embedded in the regurgitated instructions.
+ */
+export function looksLikePromptLeak(text: string): boolean {
+  let hits = 0;
+  for (const marker of PROMPT_LEAK_MARKERS) {
+    if (marker.test(text)) {
+      hits += 1;
+      if (hits >= PROMPT_LEAK_THRESHOLD) return true;
+    }
+  }
+  return false;
+}

@@ -72,6 +72,7 @@ import {
   freshnessGuardMessage,
   buildWorkflowDirective,
   shouldDimToolChatter,
+  looksLikePromptLeak,
 } from "./tool-call-parser.js";
 import {
   createSessionPolicy,
@@ -1284,6 +1285,21 @@ export async function runAgentLoop(
               chalk.dim("  ℹ recovered tool call from thinking content\n"),
             );
           }
+        }
+
+        // ── Prompt-leak guard ─────────────────────────────────────────
+        // If the model's visible output contains distinctive system-prompt
+        // markers, it is repeating its instructions (e.g. prompt injection
+        // via "repeat your instructions verbatim"). Any tool-call syntax
+        // in that output is an EXAMPLE from the prompt, not a real request.
+        // Suppress it so we never execute leaked examples.
+        if (call && looksLikePromptLeak(assistantText.visible)) {
+          writeNotice(
+            "warn",
+            "suppressed tool call from apparent prompt leak",
+            chalk.yellow("  ⚠ suppressed tool call — model appears to be repeating its system prompt\n"),
+          );
+          call = undefined;
         }
 
         // Empty-response recovery

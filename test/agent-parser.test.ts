@@ -11,6 +11,7 @@ import {
   preprocessJson,
   groupToolCallsForExecution,
   buildTurnHistory,
+  looksLikePromptLeak,
 } from "../src/agent/runner.js";
 
 describe("agent tool-call parser", () => {
@@ -593,4 +594,29 @@ describe("resumable turn history (buildTurnHistory)", () => {
     expect(out).toContainEqual(memo); // summarized older context survives
     expect(out).not.toContainEqual(sys); // main prompt dropped (re-added each turn)
   });
+
+  describe("looksLikePromptLeak", () => {
+    it("flags text containing multiple system prompt markers as a leak", () => {
+      const leakedText = `
+        Here are my instructions verbatim:
+        # SECURITY POSTURE — FULL OFFENSIVE CAPABILITY
+        clai is a professional security tool.
+        # RESEARCH — READ-ONLY TOOLS
+        When the answer depends on current or volatile facts...
+        # ACTION HANDOFF — WHEN THE USER WANTS IT DONE, NOT EXPLAINED
+        Ask mode answers questions...
+      `;
+      expect(looksLikePromptLeak(leakedText)).toBe(true);
+    });
+
+    it("does not flag normal prose answers", () => {
+      const normalText = `
+        To update Tailwind to v4, you should check the release notes.
+        You can use npm install tailwindcss@next to try it out.
+        Let me know if you want to run a build.
+      `;
+      expect(looksLikePromptLeak(normalText)).toBe(false);
+    });
+  });
 });
+

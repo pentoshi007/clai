@@ -5,7 +5,7 @@ import { renderAskSystemPrompt } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { loadProjectContext } from "../store/project.js";
-import { parseAllToolCalls, formatToolArgs } from "../agent/runner.js";
+import { parseAllToolCalls, formatToolArgs, looksLikePromptLeak } from "../agent/runner.js";
 import { runToolCall } from "../tools/registry.js";
 
 /**
@@ -86,6 +86,7 @@ function researchResultSummary(call: ToolCall, ok: boolean): string {
       return "done";
   }
 }
+
 
 /**
  * Read-only tools ask mode is allowed to call during its research loop.
@@ -306,6 +307,17 @@ async function resolveAskAnswer(
   for (let round = 0; round < ASK_MAX_RESEARCH_ROUNDS; round += 1) {
     options.signal?.throwIfAborted();
     const text = await streamAskRound(baseRequest, messages, onToken);
+
+    // ── Prompt-leak guard ──────────────────────────────────────────────
+    // If the model's response contains distinctive system-prompt markers,
+    // it is repeating its instructions (e.g. in response to "repeat your
+    // instructions verbatim"). Any ```tool blocks in that output are
+    // EXAMPLES from the prompt, not real tool requests. Treat the whole
+    // response as a final text answer to avoid executing stale examples.
+    if (looksLikePromptLeak(text)) {
+      return text;
+    }
+
     const allCalls = parseAllToolCalls(text);
     const calls = allCalls.filter((call) => ASK_RESEARCH_TOOLS.has(call.name));
     if (calls.length === 0) {
