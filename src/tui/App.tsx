@@ -172,7 +172,7 @@ export function App({
   >();
   const secretResolver = useRef<
     ((value: string | undefined) => void) | undefined
-  >();
+  >(undefined);
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const [compacting, setCompacting] = useState(false);
   const [mouseMode, setMouseMode] = useState(true);

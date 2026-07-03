@@ -2,10 +2,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { ToolResult } from "../types.js";
 import { safeCwd } from "../os/cwd.js";
+import { getJobsDir } from "../store/paths.js";
 
 export type JobStatus = "running" | "exited" | "killed" | "failed";
 
@@ -65,7 +65,7 @@ export class JobManager {
   ): Promise<ToolResult> {
     const id = randomUUID().slice(0, 8);
     const cwd = options?.cwd ?? safeCwd();
-    const dir = join(homedir(), ".clai", "jobs");
+    const dir = getJobsDir();
     await mkdir(dir, { recursive: true });
     const artifactPath = join(
       dir,

@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "ui/**"
+
+jobs:
+  node:
+    name: Node semantic suite
+    runs-on: ubuntu-latest
+    env:
+      CLAI_CONFIG_DIR: ${{ runner.temp }}/clai/config
+      CLAI_DATA_DIR: ${{ runner.temp }}/clai/data
+      CLAI_ARTIFACT_DIR: ${{ runner.temp }}/clai/artifacts
+      CLAI_LOG_DIR: ${{ runner.temp }}/clai/logs
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  bun-v2-placeholder:
+    name: Bun v2 placeholder
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v3
+        with:
+          bun-version: latest
+      - run: bun --version
+      - run: test ! -d src/tui-v2 || bun --version

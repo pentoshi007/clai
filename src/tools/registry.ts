@@ -422,8 +422,8 @@ export const toolRegistry: Record<string, ToolHandler> = {
     // would render "(no artifact file — only the summary is available)".
     const { mkdir, writeFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
-    const { homedir } = await import("node:os");
-    const artifactDir = join(homedir(), ".clai", "outputs");
+    const { getArtifactDir } = await import("../store/paths.js");
+    const artifactDir = getArtifactDir();
     let artifactPath: string | undefined;
     try {
       await mkdir(artifactDir, { recursive: true });

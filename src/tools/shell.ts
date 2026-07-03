@@ -2,10 +2,10 @@ import { spawn } from "node:child_process";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import type { ToolResult, ToolStats } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
 import { safeCwd } from "../os/cwd.js";
+import { getArtifactDir } from "../store/paths.js";
 
 export interface ShellExecArgs {
   command: string;
@@ -208,7 +208,7 @@ async function openArtifact(
   try {
     const dir = override
       ? join(override, "..")
-      : join(homedir(), ".clai", "outputs");
+      : getArtifactDir();
     await mkdir(dir, { recursive: true });
     const path =
       override ??

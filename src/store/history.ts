@@ -1,14 +1,14 @@
 import { mkdir, readFile, rm, writeFile, chown, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import type { ChatMessage, ToolCall, ToolResult } from "../types.js";
 import type { TranscriptItem } from "../tui/state.js";
 import { redactSecrets } from "../llm/provider.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
 import { fixOwner, fixOwnerSync, handlePermissionError, safeExists } from "../os/permissions.js";
+import { getHistoryDir } from "./paths.js";
 
-const historyDir = join(homedir(), ".clai");
+const historyDir = getHistoryDir();
 const dbFile = join(historyDir, "history.db");
 const jsonlFile = join(historyDir, "history.jsonl");
 // We keep this string here (not as a literal) so the bundler doesn't try
