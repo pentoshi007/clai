@@ -28,7 +28,7 @@ function parseBatchSections(output: string): BatchSection[] {
   let current: BatchSection | null = null;
   const bodyLines: string[] = [];
 
-  for (const line of output.split("\n")) {
+  for (const line of output.replace(/\r/g, "").split("\n")) {
     const m = headerRe.exec(line);
     if (m) {
       if (current !== null) {
@@ -85,7 +85,7 @@ function renderBatchSection(
   const lines: string[] = [subHeader];
 
   if (section.body) {
-    const rawLines = section.body.split("\n");
+    const rawLines = section.body.replace(/\r/g, "").split("\n");
     const wrappedLines: string[] = [];
     for (const raw of rawLines) {
       wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 8)));
@@ -140,7 +140,7 @@ const COLLAPSED_OUTPUT_LINES = 3;
 
 function wrap(text: string, width: number): string[] {
   const out: string[] = [];
-  for (const line of text.split("\n")) {
+  for (const line of text.replace(/\r/g, "").split("\n")) {
     out.push(...wrapAnsiLine(line, Math.max(10, width)));
   }
   return out;
@@ -305,7 +305,7 @@ function renderTool(item: ToolItem, ctx: RenderCtx): string[] {
 
   const wrappedLines: string[] = [];
   if (item.output) {
-    const rawLines = item.output.replace(/\n+$/, "").split("\n");
+    const rawLines = item.output.replace(/\r/g, "").replace(/\n+$/, "").split("\n");
     for (const raw of rawLines) {
       wrappedLines.push(...wrapAnsiLine(raw, Math.max(10, ctx.width - 4)));
     }
@@ -378,7 +378,7 @@ function renderNotice(level: "info" | "warn", text: string, width: number): stri
     : chalk.bgHex("#334155").hex("#FFFFFF").bold(" INFO ");
   const color = level === "warn" ? chalk.hex("#FEF3C7") : chalk.hex("#F8FAFC");
   const rendered: string[] = [];
-  for (const raw of text.split("\n")) {
+  for (const raw of text.replace(/\r/g, "").split("\n")) {
     const line = raw.trimEnd();
     const available = width - 8;
     const wrapped = wrap(line, available);
@@ -407,7 +407,7 @@ function renderCompacted(item: CompactedItem, ctx: RenderCtx): string[] {
   // dumping the raw markup, then wrap the resulting ANSI-styled lines.
   const availableWidth = Math.max(10, ctx.width - 4);
   const rendered = renderMarkdown(summaryText, availableWidth).replace(/\n+$/, "");
-  const rawLines = rendered.split("\n");
+  const rawLines = rendered.replace(/\r/g, "").split("\n");
   const wrappedLines: string[] = [];
   for (const raw of rawLines) {
     wrappedLines.push(...wrapAnsiLine(raw, availableWidth));

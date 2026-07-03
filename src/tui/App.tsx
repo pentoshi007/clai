@@ -68,6 +68,7 @@ import {
 } from "../ui/mentions.js";
 import { deletePlan, loadPlan, savePlan } from "../store/plan.js";
 import { renderPlanDocument } from "../ui/plan-pane.js";
+import { visibleWidth } from "../ui/markdown.js";
 import {
   getSlashCommandSuggestions,
   isKnownSlashCommand,
@@ -92,7 +93,7 @@ import { Pager } from "./components/Pager.js";
 import { JobsPanel } from "./components/JobsPanel.js";
 import { PickerPanel, type PickerOption } from "./components/PickerPanel.js";
 import { SecretInputPanel } from "./components/SecretInputPanel.js";
-import { PlanSidebar } from "./components/PlanSidebar.js";
+import { renderPlanSidebarLines } from "./plan-sidebar-lines.js";
 import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import {
   addScopeTargets,
@@ -150,6 +151,53 @@ type Overlay =
       onSelect: (value: string) => void;
     };
 
+function truncateAnsi(line: string, maxWidth: number): string {
+  let visibleLen = 0;
+  let result = "";
+  let i = 0;
+  while (i < line.length) {
+    if (line.startsWith("\x1b[", i)) {
+      let j = i + 2;
+      while (j < line.length && !/[a-zA-Z]/.test(line[j]!)) {
+        j++;
+      }
+      result += line.slice(i, j + 1);
+      i = j + 1;
+    } else {
+      const codePoint = line.codePointAt(i)!;
+      const charLength = codePoint > 0xffff ? 2 : 1;
+      const char = line.slice(i, i + charLength);
+      const w = Math.max(1, visibleWidth(char));
+      if (visibleLen + w > maxWidth) {
+        let k = i;
+        while (k < line.length) {
+          if (line.startsWith("\x1b[", k)) {
+            let j = k + 2;
+            while (j < line.length && !/[a-zA-Z]/.test(line[j]!)) {
+              j++;
+            }
+            result += line.slice(k, j + 1);
+            k = j + 1;
+          } else {
+            k++;
+          }
+        }
+        break;
+      }
+      result += char;
+      visibleLen += w;
+      i += charLength;
+    }
+  }
+  return result;
+}
+
+/** Pad an ANSI string to a visible width (measuring wide glyphs correctly). */
+function padVisible(line: string, width: number): string {
+  const w = visibleWidth(line);
+  return w < width ? line + " ".repeat(width - w) : line;
+}
+
 export function App({
   version,
   initialMode,
@@ -183,6 +231,7 @@ export function App({
   const historyDraft = useRef("");
   const lastCtrlC = useRef(0);
   const lastDragTime = useRef(0);
+  const isCtrlHPressed = useRef(false);
   const jobs = useJobs(overlay.kind === "jobs");
   const spinner = useSpinner(state.status.running);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -1817,11 +1866,11 @@ export function App({
     planPaneVisible && livePlan && cols >= 100 && overlay.kind === "none",
   );
   const planSidebarWidth = showPlanSidebar
-    ? Math.min(48, Math.max(32, Math.floor((cols - 5) * 0.32)))
+    ? Math.min(48, Math.max(32, Math.floor((cols - 7) * 0.32)))
     : 0;
   const transcriptWidth = showPlanSidebar
-    ? cols - 4 - planSidebarWidth - 1
-    : cols - 4;
+    ? cols - 6 - planSidebarWidth - 1
+    : cols - 6;
 
   const transcriptLines = renderTranscriptLines(state, {
     width: transcriptWidth,
@@ -1843,6 +1892,12 @@ export function App({
   if (visible.length < viewportH) {
     visible = [...visible, ...Array(viewportH - visible.length).fill("")];
   }
+  // Sidebar rendered to strings (not an Ink flex column) so each viewport row
+  // can be composed as ONE Text node — see renderPlanSidebarLines for why.
+  const planSidebarLines =
+    showPlanSidebar && livePlan
+      ? renderPlanSidebarLines(livePlan, planSidebarWidth, viewportH)
+      : [];
 
   // SGR mouse reporting keeps wheel/trackpad events distinct from cursor-key
   // sequences, so scrolling the transcript never walks prompt history.
@@ -1855,6 +1910,11 @@ export function App({
     if (!stdin || (modalActive && !confirmOnlyModal)) return;
     const onData = (chunk: Buffer | string): void => {
       const data = String(chunk);
+      if (data === "\x08" || data === "\b") {
+        isCtrlHPressed.current = true;
+        setPlanPaneVisible((visible) => !visible);
+        return;
+      }
       const direction = mouseWheelDirection(data);
       if (direction < 0) {
         setScroll((value) => Math.min(maxOffset, value + 3));
@@ -1889,7 +1949,7 @@ export function App({
         }
       }
     };
-    stdin.on("data", onData);
+    stdin.prependListener("data", onData);
     return () => {
       stdin.off("data", onData);
     };
@@ -1897,6 +1957,10 @@ export function App({
 
   // Key handling
   useInput((ch, key) => {
+    if (key.backspace && isCtrlHPressed.current) {
+      isCtrlHPressed.current = false;
+      return;
+    }
     // While a confirmation box (sudo/mutating command/plan implement/etc.) is
     // showing, ConfirmModal owns y/n/Esc — but the main transcript behind it
     // should still be scrollable so the user can review context before
@@ -1962,7 +2026,10 @@ export function App({
     // version it arrives either as ctrl+h or as a backspace key event.
     // A normal Backspace is usually DEL (0x7f), so do not consume that.
     const isPlanToggle =
-      (key.ctrl && (ch.toLowerCase() === "h" || key.backspace)) || ch === "\b";
+      (key.ctrl && (ch.toLowerCase() === "h" || ch.toLowerCase() === "b" || key.backspace)) ||
+      ch === "\b" ||
+      (key as any).sequence === "\x08" ||
+      (key as any).sequence === "\b";
     if (isPlanToggle) {
       setPlanPaneVisible((visible) => !visible);
       return;
@@ -2233,8 +2300,29 @@ export function App({
           onSelect={overlay.onSelect}
           onClose={closeOverlay}
         />
+      ) : showPlanSidebar && livePlan ? (
+        // Compose the transcript and the plan sidebar into a SINGLE column of
+        // pre-padded lines. Ink under-measures wide emoji (✅) by one cell when
+        // it pads a flex column to fill width, which shoved the sidebar one cell
+        // right on emoji rows and bowed its border. Merging each row into one
+        // Text (no sibling column for Ink to pad) keeps every border straight.
+        <Box flexDirection="column" height={viewportH} width={cols - 6} overflow="hidden">
+          {visible.map((line, i) => {
+            const cleanLine = line.replace(/\r?\n/g, "");
+            const left = padVisible(
+              truncateAnsi(cleanLine, transcriptWidth),
+              transcriptWidth,
+            );
+            const right = planSidebarLines[i] ?? "";
+            return (
+              <Text key={i} wrap="truncate-end">
+                {`${left} ${right}`}
+              </Text>
+            );
+          })}
+        </Box>
       ) : (
-        <Box flexDirection="row" height={viewportH}>
+        <Box flexDirection="row" height={viewportH} width={cols - 6} overflow="hidden">
           <Box
             flexDirection="column"
             width={transcriptWidth}
@@ -2242,27 +2330,15 @@ export function App({
             flexShrink={0}
             overflow="hidden"
           >
-            {visible.map((line, i) => (
-              <Text key={i} wrap="truncate-end">
-                {line === "" ? " " : line}
-              </Text>
-            ))}
+            {visible.map((line, i) => {
+              const truncated = truncateAnsi(line, transcriptWidth);
+              return (
+                <Text key={i} wrap="wrap">
+                  {truncated === "" ? " " : truncated}
+                </Text>
+              );
+            })}
           </Box>
-          {showPlanSidebar && livePlan ? (
-            <Box
-              marginLeft={1}
-              width={planSidebarWidth}
-              height={viewportH}
-              flexShrink={0}
-              overflow="hidden"
-            >
-              <PlanSidebar
-                plan={livePlan}
-                width={planSidebarWidth}
-                height={viewportH}
-              />
-            </Box>
-          ) : null}
         </Box>
       )}
 

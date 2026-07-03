@@ -291,6 +291,7 @@ function splitWord(
 }
 
 export function wrapAnsiLine(line: string, maxWidth: number): string[] {
+  line = line.replace(/\r/g, "");
   const visibleLength = visibleWidth(line);
   if (visibleLength <= maxWidth) return [line];
 

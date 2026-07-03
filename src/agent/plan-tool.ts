@@ -118,6 +118,7 @@ export async function handlePlanTool(
           "'install deps and run dev server to verify'. Call plan.create again with that tasks array.",
       };
     }
+    const existingPlan = await loadPlan(session.sessionId).catch(() => undefined);
     const plan = createPlan({
       sessionId: session.sessionId,
       goal,
@@ -125,6 +126,39 @@ export async function handlePlanTool(
       taskTitles,
       kind,
     });
+    if (existingPlan) {
+      const mappedNewTasks = plan.tasks.map((task) => {
+        const match = existingPlan.tasks.find((t) => {
+          const t1 = t.title.trim().toLowerCase();
+          const t2 = task.title.trim().toLowerCase();
+          return (
+            t1 === t2 ||
+            (t1.length > 8 && t2.length > 8 && (t1.includes(t2) || t2.includes(t1)))
+          );
+        });
+        if (match) {
+          return {
+            ...task,
+            state: match.state,
+            note: match.note,
+          };
+        }
+        return task;
+      });
+
+      const oldTasksToKeep = existingPlan.tasks.filter((oldTask) => {
+        return !mappedNewTasks.some((newTask) => {
+          const t1 = oldTask.title.trim().toLowerCase();
+          const t2 = newTask.title.trim().toLowerCase();
+          return (
+            t1 === t2 ||
+            (t1.length > 8 && t2.length > 8 && (t1.includes(t2) || t2.includes(t1)))
+          );
+        });
+      });
+
+      plan.tasks = [...oldTasksToKeep, ...mappedNewTasks];
+    }
     await savePlan(plan).catch(() => undefined);
     // A freshly (re)created plan resets approval — the user must /implement.
     session.planApproved.value = false;
