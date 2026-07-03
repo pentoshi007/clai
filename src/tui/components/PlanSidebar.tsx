@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import stringWidth from "string-width";
 import type { SessionPlan, TaskState } from "../../store/plan.js";
+import { wrapAnsiLine } from "../../ui/markdown.js";
 
 const taskGlyph: Record<TaskState, string> = {
   pending: "○",
@@ -32,36 +33,71 @@ export function PlanSidebar({
     ? Math.round((done / plan.tasks.length) * 100)
     : 0;
   const contentWidth = Math.max(8, width - 4);
+
   const rowHeight = (index: number) => {
     const task = plan.tasks[index]!;
     const prefix = `${taskGlyph[task.state]} ${index + 1}. `;
-    const text = `${task.title}${task.note ? ` — ${task.note}` : ""}`;
-    return Math.max(1, Math.ceil((stringWidth(prefix) + stringWidth(text)) / contentWidth));
+    const prefixWidth = stringWidth(prefix);
+    const textWidth = Math.max(4, contentWidth - prefixWidth);
+    const fullText = `${task.title}${task.note ? ` — ${task.note}` : ""}`;
+    return Math.max(1, wrapAnsiLine(fullText, textWidth).length);
   };
-  // Header/footer/borders consume seven lines. Fit whole wrapped task rows in
-  // the remainder and keep the active (or first unfinished) task in view.
-  const taskBudget = Math.max(1, height - 7);
+
   const focus = Math.max(
     0,
     plan.tasks.findIndex((task) => task.state === "in_progress") >= 0
       ? plan.tasks.findIndex((task) => task.state === "in_progress")
       : plan.tasks.findIndex((task) => task.state === "pending"),
   );
-  let start = Math.min(focus, Math.max(0, plan.tasks.length - 1));
-  let used = 0;
-  while (start > 0 && used + rowHeight(start - 1) <= Math.floor(taskBudget / 3)) {
-    start -= 1;
-    used += rowHeight(start);
+
+  const headerLines = wrapAnsiLine(plan.goal, contentWidth).length;
+  const nonTaskHeight = 2 + 1 + headerLines + 1 + 1 + 1;
+  const tasksSectionBudget = Math.max(1, height - nonTaskHeight);
+
+  const getSliceHeight = (startIdx: number, endIdx: number) => {
+    let h = 0;
+    if (startIdx > 0) h += 1;
+    for (let i = startIdx; i <= endIdx; i++) {
+      h += rowHeight(i);
+    }
+    if (endIdx < plan.tasks.length - 1) h += 1;
+    return h;
+  };
+
+  let start = focus;
+  let end = focus;
+
+  if (plan.tasks.length > 0) {
+    let currentHeight = getSliceHeight(start, end);
+    while (true) {
+      let expanded = false;
+      if (end < plan.tasks.length - 1) {
+        const nextHeight = getSliceHeight(start, end + 1);
+        if (nextHeight <= tasksSectionBudget) {
+          end += 1;
+          currentHeight = nextHeight;
+          expanded = true;
+        }
+      }
+      if (start > 0) {
+        const nextHeight = getSliceHeight(start - 1, end);
+        if (nextHeight <= tasksSectionBudget) {
+          start -= 1;
+          currentHeight = nextHeight;
+          expanded = true;
+        }
+      }
+      if (!expanded) break;
+    }
   }
+
   const visible: Array<{ task: SessionPlan["tasks"][number]; index: number }> = [];
-  used = start > 0 ? 1 : 0;
-  for (let index = start; index < plan.tasks.length; index += 1) {
-    const reserveBottom = index < plan.tasks.length - 1 ? 1 : 0;
-    const needed = rowHeight(index);
-    if (visible.length > 0 && used + needed + reserveBottom > taskBudget) break;
-    visible.push({ task: plan.tasks[index]!, index });
-    used += needed;
+  if (plan.tasks.length > 0) {
+    for (let index = start; index <= end; index++) {
+      visible.push({ task: plan.tasks[index]!, index });
+    }
   }
+
   const hiddenBelow = visible.length
     ? plan.tasks.length - visible[visible.length - 1]!.index - 1
     : 0;
@@ -77,38 +113,69 @@ export function PlanSidebar({
       overflow="hidden"
     >
       <Text bold color="cyan">● LIVE PLAN VIEW</Text>
-      <Text bold wrap="wrap">{plan.goal}</Text>
-      <Text dimColor wrap="wrap">
-        {plan.status.replace("_", " ")} · {done}/{plan.tasks.length} · {percent}%
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        {start > 0 ? <Text dimColor>↑ {start} earlier task{start === 1 ? "" : "s"}</Text> : null}
-        {visible.map(({ task, index }) => (
-          <Box key={task.id} flexDirection="row" flexShrink={0}>
-            <Text color={taskColor[task.state]} bold={task.state === "in_progress"}>
-              {taskGlyph[task.state]} {index + 1}.{" "}
-            </Text>
-            <Box flexGrow={1} flexShrink={1}>
-              <Text
-                color={taskColor[task.state]}
-                dimColor={task.state === "done" || task.state === "skipped"}
-                bold={task.state === "in_progress"}
-                wrap="wrap"
-              >
-                {task.title}
-                {task.note ? ` — ${task.note}` : ""}
-              </Text>
-            </Box>
+      <Box width={contentWidth}>
+        <Text bold wrap="wrap">{plan.goal}</Text>
+      </Box>
+      <Box width={contentWidth}>
+        <Text dimColor wrap="wrap">
+          {plan.status.replace("_", " ")} · {done}/{plan.tasks.length} · {percent}%
+        </Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column" width={contentWidth}>
+        {start > 0 ? (
+          <Box width={contentWidth}>
+            <Text dimColor>↑ {start} earlier task{start === 1 ? "" : "s"}</Text>
           </Box>
-        ))}
-        {hiddenBelow > 0 ? <Text dimColor>↓ {hiddenBelow} more task{hiddenBelow === 1 ? "" : "s"}</Text> : null}
+        ) : null}
+        {visible.map(({ task, index }) => {
+          const prefix = `${taskGlyph[task.state]} ${index + 1}. `;
+          const prefixWidth = stringWidth(prefix);
+          const textWidth = Math.max(4, contentWidth - prefixWidth);
+          const fullText = `${task.title}${task.note ? ` — ${task.note}` : ""}`;
+          const textLines = wrapAnsiLine(fullText, textWidth);
+
+          return (
+            <Box key={task.id} flexDirection="column" width={contentWidth}>
+              {textLines.map((line, lineIdx) => {
+                const isFirst = lineIdx === 0;
+                return (
+                  <Box key={lineIdx} flexDirection="row" width={contentWidth}>
+                    {isFirst ? (
+                      <Text color={taskColor[task.state]} bold={task.state === "in_progress"}>
+                        {prefix}
+                      </Text>
+                    ) : (
+                      <Text>
+                        {" ".repeat(prefixWidth)}
+                      </Text>
+                    )}
+                    <Text
+                      color={taskColor[task.state]}
+                      dimColor={task.state === "done" || task.state === "skipped"}
+                      bold={task.state === "in_progress"}
+                    >
+                      {line}
+                    </Text>
+                  </Box>
+                );
+              })}
+            </Box>
+          );
+        })}
+        {hiddenBelow > 0 ? (
+          <Box width={contentWidth}>
+            <Text dimColor>↓ {hiddenBelow} more task{hiddenBelow === 1 ? "" : "s"}</Text>
+          </Box>
+        ) : null}
       </Box>
       <Box flexGrow={1} />
-      <Text dimColor wrap="wrap">
-        {plan.status === "draft"
-          ? "/implement to approve · Ctrl+H to hide"
-          : "Ctrl+H to hide · Ctrl+P for details"}
-      </Text>
+      <Box width={contentWidth}>
+        <Text dimColor wrap="wrap">
+          {plan.status === "draft"
+            ? "/implement to approve · Ctrl+H to hide"
+            : "Ctrl+H to hide · Ctrl+P for details"}
+        </Text>
+      </Box>
     </Box>
   );
 }
