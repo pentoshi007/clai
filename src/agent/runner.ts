@@ -458,6 +458,7 @@ export async function runAgentLoop(
     let productiveSteps = 0;
     let step = -1;
     let nextToolEventId = 0;
+    const alreadyPrintedIds = new Set<string>();
 
     const promptMutex = {
       promise: Promise.resolve(),
@@ -508,7 +509,8 @@ export async function runAgentLoop(
           call.name === "fs.write" ||
           call.name === "fs.writeMany" ||
           call.name === "fs.edit" ||
-          call.name === "fs.replaceLines";
+          call.name === "fs.replaceLines" ||
+          call.name === "fs.append";
         const reason = `${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}`;
         writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
         const result = { ok: false, output: reason, exitCode: 1 };
@@ -535,10 +537,31 @@ export async function runAgentLoop(
         });
         if (planResult.handled) {
           loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
+
+          if (!alreadyPrintedIds.has(toolEventId)) {
+            const toolCallLine =
+              chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+            writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(call, toolCallLine) + "\n",
+            );
+            alreadyPrintedIds.add(toolEventId);
+          }
+
           if (planResult.plan) {
             writePlanUpdate(planResult.plan, planResult.display);
           }
+
           const result = { ok: planResult.ok, output: planResult.modelNote };
+          emitToolResult(toolEventId, result, planResult.modelNote);
+          const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
+          writeToolOutput(
+            toolEventId,
+            result.ok ? "ok\n" : "failed\n",
+            statusIcon + "\n",
+          );
+
           return {
             ok: planResult.ok,
             call,
@@ -556,21 +579,35 @@ export async function runAgentLoop(
         scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
       });
 
-      if (
-        activePlan &&
-        !session.planApproved.value &&
-        !isPreApprovalAllowedTool(call.name)
-      ) {
-        const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
-        writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
-        const result = { ok: false, output: reason, exitCode: 1 };
-        return {
-          ok: false,
-          call,
-          result,
-          contextOutput: reason,
-          blockOrCancel: true,
-        };
+      const isMutatingAction =
+        (decision.level === "confirm" || decision.level === "block") &&
+        !isPreApprovalAllowedTool(call.name);
+
+      if (isMutatingAction) {
+        if (!activePlan) {
+          const reason = `No active plan — ${call.name} is blocked. You must first create a plan using plan.create before executing mutating actions.`;
+          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+          const result = { ok: false, output: reason, exitCode: 1 };
+          return {
+            ok: false,
+            call,
+            result,
+            contextOutput: reason,
+            blockOrCancel: true,
+          };
+        }
+        if (!session.planApproved.value) {
+          const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
+          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+          const result = { ok: false, output: reason, exitCode: 1 };
+          return {
+            ok: false,
+            call,
+            result,
+            contextOutput: reason,
+            blockOrCancel: true,
+          };
+        }
       }
 
       // Task-scoped execution gate
@@ -619,13 +656,16 @@ export async function runAgentLoop(
         sawFreshWebSearch = true;
       }
 
-      const toolCallLine =
-        chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-      writeToolCall(
-        toolEventId,
-        call,
-        styleToolChatter(call, toolCallLine) + "\n",
-      );
+      if (!alreadyPrintedIds.has(toolEventId)) {
+        const toolCallLine =
+          chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+        writeToolCall(
+          toolEventId,
+          call,
+          styleToolChatter(call, toolCallLine) + "\n",
+        );
+        alreadyPrintedIds.add(toolEventId);
+      }
 
       const scopeTarget = scopeTargetForToolCall(call);
       if (
@@ -738,10 +778,11 @@ export async function runAgentLoop(
           restoreInteractiveStdin();
           if (!ok) {
             const lastAnswer = "Cancelled.";
-            writeNotice(
-              "warn",
-              "cancelled",
-              chalk.yellow(`  ✗ cancelled`) + "\n",
+            writeToolBlocked(
+              toolEventId,
+              call.name,
+              lastAnswer,
+              chalk.red(`  ✗ cancelled`) + "\n",
             );
             const result = { ok: false, output: lastAnswer, exitCode: 1 };
             return {
@@ -1177,7 +1218,7 @@ export async function runAgentLoop(
         // models like glm-5.1 / deepseek-v4-flash that stream reasoning first.
         const streamLabel =
           step === 0 ? "waiting for model" : `step ${step + 1}`;
-        const spinner = writesDirectly
+        let spinner = writesDirectly
           ? startThinkingSpinner(streamLabel, options.signal)
           : noopSpinner;
         if (!writesDirectly) {
@@ -1186,6 +1227,10 @@ export async function runAgentLoop(
         let sawReasoning = false;
         let inThinking = false;
         let emittedThinkingStatus = false;
+        let generatedTokens = 0;
+        let accumulatedText = "";
+        const callIds: string[] = [];
+        let streamedCallsCount = 0;
         const deltaParser = writesDirectly
           ? undefined
           : createThinkingStreamParser(
@@ -1223,6 +1268,38 @@ export async function runAgentLoop(
             },
             (token) => {
               deltaParser?.push(token);
+              generatedTokens += 1;
+              accumulatedText += token;
+
+              const parsedCalls = parseAllToolCalls(accumulatedText);
+              if (parsedCalls.length > streamedCallsCount) {
+                if (writesDirectly) {
+                  spinner.stop();
+                }
+                while (streamedCallsCount < parsedCalls.length) {
+                  const call = parsedCalls[streamedCallsCount]!;
+                  const eventId = `tool-${++nextToolEventId}`;
+                  callIds.push(eventId);
+                  alreadyPrintedIds.add(eventId);
+
+                  const toolCallLine =
+                    chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+                  writeToolCall(
+                    eventId,
+                    call,
+                    styleToolChatter(call, toolCallLine) + "\n",
+                  );
+
+                  streamedCallsCount += 1;
+                }
+                if (writesDirectly) {
+                  spinner = startThinkingSpinner(
+                    `generating response (${generatedTokens} tokens)`,
+                    options.signal,
+                  );
+                }
+              }
+
               // Heuristic: <think>… markers and reasoning_content tokens flow
               // through onToken. Surface activity in the spinner so the screen
               // is never empty for minutes.
@@ -1234,6 +1311,8 @@ export async function runAgentLoop(
               }
               if (/<\/think>/i.test(token)) {
                 inThinking = false;
+                spinner.setLabel("generating response (0 tokens)");
+                generatedTokens = 0;
               }
               // Only push reasoning tokens to the spinner preview. Visible
               // answer / tool-call tokens should NOT go through the dim
@@ -1246,6 +1325,10 @@ export async function runAgentLoop(
                   spinner.pushPreview(cleaned);
                   const approx = cleaned.split(/\s+/).filter(Boolean).length;
                   if (approx > 0) spinner.bumpReasoning(approx);
+                }
+              } else {
+                if (generatedTokens % 10 === 0) {
+                  spinner.setLabel(`generating response (${generatedTokens} tokens)`);
                 }
               }
             },
@@ -1710,9 +1793,7 @@ export async function runAgentLoop(
               messages.push({
                 role: "user",
                 content:
-                  "Runtime verification is incomplete. Do not claim the app is running. " +
-                  `Missing evidence: ${missing.join(", ")}. ` +
-                  "Run the missing checks now. Stop the job afterward unless the user explicitly asked to keep it running, and report whether it remains running truthfully.",
+                  "Run the missing checks now. Keep the dev server/job running in the background so that the user can interact with the live application, and print the localhost link. Report whether it remains running truthfully.",
               });
               continue;
             }
@@ -1744,6 +1825,15 @@ export async function runAgentLoop(
                 role: "assistant",
                 content: assistantText.visible,
               });
+
+              let instruction = `Resume now with the NEXT task ${next.id} ("${next.title}"): `;
+              if (next.state === "pending") {
+                instruction += `call task.update {taskId:"${next.id}", state:"in_progress"}, then do the real work with a tool call (fs.writeMany / shell.exec / shell.start), VERIFY it, and mark it done. `;
+              } else {
+                instruction += `do the real work with a tool call (fs.writeMany / shell.exec / shell.start) to complete it, VERIFY it, and mark it done (call task.update {taskId:"${next.id}", state:"done"}). `;
+              }
+              instruction += `Continue task by task until EVERY task is actually finished.`;
+
               messages.push({
                 role: "user",
                 content:
@@ -1751,9 +1841,7 @@ export async function runAgentLoop(
                   `(${unfinished.map((t) => `[${t.id}] ${t.title}`).join("; ")}). ` +
                   `Do NOT claim the work is complete, that files were created, or that a server is running ` +
                   `unless a tool call actually succeeded and you saw the output. ` +
-                  `Resume now with the NEXT task ${next.id} ("${next.title}"): call task.update {taskId:"${next.id}", state:"in_progress"}, ` +
-                  `then do the real work with a tool call (fs.writeMany / shell.exec / shell.start), VERIFY it, and mark it done. ` +
-                  `Continue task by task until EVERY task is actually finished.`,
+                  instruction,
               });
               continue;
             }
@@ -1916,9 +2004,14 @@ export async function runAgentLoop(
         for (const group of groups) {
           if (aborted || blocked || failed || awaitingPlanApproval) break;
           if (group.length === 1) {
-            const id = `tool-${++nextToolEventId}`;
+            const call = group[0]!;
+            const idx = allCalls.indexOf(call);
+            if (idx >= 0 && !callIds[idx]) {
+              callIds[idx] = `tool-${++nextToolEventId}`;
+            }
+            const id = (idx >= 0 ? callIds[idx] : undefined) ?? `tool-${++nextToolEventId}`;
             const res = await executeSingleTool(
-              group[0]!,
+              call,
               id,
               options.signal || new AbortController().signal,
             );
@@ -1926,7 +2019,13 @@ export async function runAgentLoop(
           } else {
             // Concurrent group — assign ids in document order, then push their
             // results in document order for a stable transcript.
-            const ids = group.map(() => `tool-${++nextToolEventId}`);
+            const ids = group.map((c) => {
+              const idx = allCalls.indexOf(c);
+              if (idx >= 0 && !callIds[idx]) {
+                callIds[idx] = `tool-${++nextToolEventId}`;
+              }
+              return (idx >= 0 ? callIds[idx] : undefined) ?? `tool-${++nextToolEventId}`;
+            });
             const results = await Promise.all(
               group.map((c, k) =>
                 executeSingleTool(

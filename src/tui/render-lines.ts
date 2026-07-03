@@ -132,6 +132,7 @@ export interface RenderCtx {
   mode?: string | undefined;
   provider?: string | undefined;
   model?: string | undefined;
+  permissions?: string | undefined;
   /** The dedicated live-plan pane owns plan rendering when one exists. */
   hidePlanItems?: boolean | undefined;
 }
@@ -539,6 +540,7 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
   const mode = ctx.mode ?? "agent";
   const provider = ctx.provider ?? "openai";
   const model = ctx.model ?? "gpt-4";
+  const permissions = ctx.permissions ?? "default";
   const cwd = safeCwd();
 
   // Overall available width for the card (2-space left/right margin).
@@ -579,13 +581,18 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
     `  ${mode.toUpperCase()} MODE  `,
   );
 
+  const permissionsColor = permissions === "allow-all" ? "#16a34a" : "#475569";
+  const permissionsBanner = chalk.bgHex(permissionsColor).whiteBright.bold(
+    `  ${permissions.toUpperCase()} PERMISSION  `,
+  );
+
   const rightRows: string[] = [
     infoRow("workdir", cwd, chalk.white),
     infoRow("model", model, chalk.cyan),
     infoRow("provider", provider, chalk.green),
     infoRow("version", version, chalk.white),
     "",
-    modeBanner,
+    `${modeBanner}  ${permissionsBanner}`,
   ];
 
   // Both columns render exactly 7 rows (wordmark height), so they line up.

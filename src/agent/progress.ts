@@ -89,7 +89,13 @@ export function evaluateProgress(
   }
 
   // File edit/write goals
-  if ((call.name === "fs.edit" || call.name === "fs.replaceLines" || call.name === "fs.write") && ok) {
+  if (
+    (call.name === "fs.edit" ||
+      call.name === "fs.replaceLines" ||
+      call.name === "fs.write" ||
+      call.name === "fs.append") &&
+    ok
+  ) {
     return {
       madeProgress: true,
       goalSatisfied: true,

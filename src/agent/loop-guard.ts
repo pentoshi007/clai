@@ -96,6 +96,9 @@ export class LoopGuard {
     name: string,
     args: Record<string, unknown>,
   ): { block: boolean; reason?: string | undefined } {
+    if (name === "task.update" || name === "plan.create") {
+      return { block: false };
+    }
     const sig = this.canonicalize(name, args);
     const count = this.signatureCount.get(sig) ?? 0;
 
@@ -108,7 +111,11 @@ export class LoopGuard {
     // that just wrote a file to "use the results you already have" is
     // nonsensical and has caused models to assume the whole task is done.
     const isWrite =
-      name === "fs.write" || name === "fs.writeMany" || name === "fs.edit" || name === "fs.replaceLines";
+      name === "fs.write" ||
+      name === "fs.writeMany" ||
+      name === "fs.edit" ||
+      name === "fs.replaceLines" ||
+      name === "fs.append";
 
     // Read-only tools get a higher threshold — they may need re-calling
     // after context compaction removes their earlier results.

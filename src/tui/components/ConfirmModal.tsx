@@ -6,10 +6,12 @@ export interface ConfirmModalProps {
   onAnswer: (ok: boolean) => void;
   /** Called for the plan-implement prompt's "p" shortcut to view the full plan. */
   onViewPlan?: (() => void) | undefined;
+  overlayOpen?: boolean | undefined;
 }
 
-export function ConfirmModal({ confirm, onAnswer, onViewPlan }: ConfirmModalProps) {
+export function ConfirmModal({ confirm, onAnswer, onViewPlan, overlayOpen }: ConfirmModalProps) {
   useInput((input, key) => {
+    if (overlayOpen) return;
     const ch = input.toLowerCase();
     if (confirm.kind === "reset") {
       if (ch === "r") {

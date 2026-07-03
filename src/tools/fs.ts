@@ -445,3 +445,57 @@ export async function fsDelete(
     return { ok: false, output: `Delete failed: ${msg}`, exitCode: 1 };
   }
 }
+
+export async function fsAppend(
+  path: string,
+  content: string,
+  options: {
+    position?: "start" | "end" | undefined;
+    confirmed?: boolean | undefined;
+  } = {},
+): Promise<ToolResult> {
+  const resolved = ensureWriteAllowed(path, options.confirmed);
+  const position = options.position ?? "end";
+  if (position !== "start" && position !== "end") {
+    return {
+      ok: false,
+      output: `Invalid position: "${position}". Must be "start" or "end".`,
+      exitCode: 1,
+    };
+  }
+
+  let original = "";
+  try {
+    original = await readFile(resolved, "utf8");
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+    // File does not exist: create missing parent directories and write content
+    await mkdir(dirname(resolved), { recursive: true });
+    await writeFile(resolved, content, "utf8");
+    return { ok: true, output: `Created and wrote to ${resolved}` };
+  }
+
+  let next = "";
+  if (position === "start") {
+    next = content + original;
+  } else {
+    next = original + content;
+  }
+
+  // Atomic write: write to temp file in same directory, then rename
+  const tempPath = join(dirname(resolved), `.${basename(resolved)}.clai-tmp`);
+  try {
+    await writeFile(tempPath, next, "utf8");
+    await rename(tempPath, resolved);
+  } catch (error) {
+    try { await unlink(tempPath); } catch { /* ignore */ }
+    throw error;
+  }
+
+  return {
+    ok: true,
+    output: `Appended text to the ${position} of ${resolved}.`,
+  };
+}

@@ -123,6 +123,11 @@ export const slashCommands: SlashCommand[] = [
     usage: "[status|clear-history|clear-logs|clear-artifacts|clear-all|on|off]",
     description: "control retention and private mode (in-memory only)",
   },
+  {
+    command: "/permissions",
+    usage: "[default|allow-all]",
+    description: "control permission level for tool confirmation prompts",
+  },
   { command: "/update", description: "check for updates" },
   {
     command: "/clean",

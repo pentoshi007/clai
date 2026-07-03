@@ -85,8 +85,10 @@ export async function ensurePentestAuthorization(
   confirmPort: ConfirmPort,
 ): Promise<boolean> {
   if (!isPentestToolCall(call)) return true;
+  const config = getConfig();
+  if (config.permissions === "allow-all") return true;
   // Persistent auth (via `clai authorize-pentest AGREE`) wins.
-  if (getConfig().pentestAuthorized) return true;
+  if (config.pentestAuthorized) return true;
   // Session auth flipped earlier in this session — no re-prompt.
   if (session.pentestAuthorized.value) return true;
 
@@ -110,6 +112,7 @@ export async function confirmToolExecution(
   confirmPort: ConfirmPort,
 ): Promise<boolean> {
   const config = getConfig();
+  if (config.permissions === "allow-all") return true;
   if (autoConfirm) return true;
   if (session.allow.has(call.name)) return true;
   // Persistent allowlist kept for backwards compat with users who set it

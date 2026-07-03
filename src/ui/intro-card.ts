@@ -9,6 +9,7 @@ export interface IntroCardOptions {
   model: string;
   provider: string;
   mode: string;
+  permissions: string;
 }
 
 /** Startup intro: wordmark, tagline, and a session-info card. */
@@ -33,18 +34,22 @@ export function renderIntroCard(opts: IntroCardOptions): string {
   parts.push(
     box(
       [
-        `${chalk.dim("↳ workdir:")}  ${workdir}`,
-        `${chalk.dim("↳ model:")}    ${chalk.cyan(opts.model)}`,
-        `${chalk.dim("↳ provider:")} ${chalk.green(opts.provider)}`,
-        `${chalk.dim("↳ mode:")}     ${chalk.yellow(opts.mode)}`,
-        `${chalk.dim("↳ version:")}  ${chalk.white(opts.version)}`,
+        `${chalk.dim("↳ workdir:")}     ${workdir}`,
+        `${chalk.dim("↳ model:")}       ${chalk.cyan(opts.model)}`,
+        `${chalk.dim("↳ provider:")}    ${chalk.green(opts.provider)}`,
+        `${chalk.dim("↳ mode:")}        ${chalk.yellow(opts.mode)}`,
+        `${chalk.dim("↳ version:")}     ${chalk.white(opts.version)}`,
       ],
       { minWidth: 58 },
     ),
   );
   parts.push("");
+  const permColor = opts.permissions === "allow-all" ? "#16a34a" : "#475569";
+  const permBanner = chalk.bgHex(permColor).whiteBright.bold(
+    `  ${opts.permissions.toUpperCase()} PERMISSION  `,
+  );
   parts.push(
-    `  ${chalk.bgHex("#B45309").whiteBright.bold(`  ${opts.mode.toUpperCase()} MODE  `)} ${chalk.dim("execution policy is active")}`,
+    `  ${chalk.bgHex("#B45309").whiteBright.bold(`  ${opts.mode.toUpperCase()} MODE  `)}  ${permBanner}`,
   );
   parts.push(
     chalk.dim(

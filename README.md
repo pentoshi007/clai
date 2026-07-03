@@ -204,6 +204,7 @@ export OLLAMA_HOST=http://localhost:11434
 | `/reset`                | Clear all saved history                            |
 | `/cwd <path>`           | Change working directory                           |
 | `/allow <tool>`         | Whitelist a tool for the session                   |
+| `/permissions [default\|allow-all]` | Toggle confirmation prompting (allow-all bypasses confirm gates except passwords) |
 | `/plan`                 | View the current session plan (also `Ctrl+P`)      |
 | `/implement`            | Approve the current plan and have clai execute it  |
 | `/discard`              | Discard the current plan so later messages ignore it |

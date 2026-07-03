@@ -464,9 +464,17 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
     case "turn-end":
     case "turn-aborted":
     case "turn-error": {
-      const items = state.items.map((item) =>
-        item.done ? item : { ...item, done: true, streaming: false },
-      );
+      const items = state.items.map((item) => {
+        if (item.done) return item;
+        if (item.kind === "tool" && item.status === "running") {
+          return {
+            ...item,
+            done: true,
+            status: (event.type === "turn-aborted" ? "blocked" : "fail") as ToolStatus,
+          };
+        }
+        return { ...item, done: true, streaming: false };
+      });
       if (event.type === "turn-aborted") {
         items.push({
           kind: "notice",

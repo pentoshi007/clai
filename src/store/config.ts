@@ -38,6 +38,8 @@ export interface ClaiConfig {
   activeSearchProvider: SearchProviderId;
   /** When true, bypass the OS keychain and always use plaintext file storage. */
   disableKeychain: boolean;
+  /** Permissions mode for auto-confirming tool calls ("default" or "allow-all"). */
+  permissions?: "default" | "allow-all";
 }
 
 /**
@@ -81,6 +83,7 @@ const defaults: ClaiConfig = {
   sandboxReads: false,
   activeSearchProvider: "duckduckgo",
   disableKeychain: false,
+  permissions: "default",
 };
 
 const store = (() => {

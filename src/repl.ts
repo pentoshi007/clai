@@ -1573,9 +1573,63 @@ async function handleSlash(
           model: state.model,
           provider: state.provider,
           mode: state.mode,
+          permissions: getConfig().permissions ?? "default",
         }),
       );
       console.log();
+      return true;
+    }
+    case "/permissions": {
+      const arg = (args[0] ?? "").toLowerCase().trim();
+      const current = getConfig().permissions ?? "default";
+      const allPermissions = [
+        { value: "default", label: "default", desc: "normal behavior (prompts for confirmation on mutating actions)" },
+        { value: "allow-all", label: "allow-all", desc: "run everything without confirmation (except passwords)" }
+      ] as const;
+
+      if (!arg) {
+        console.log(
+          chalk.dim("  current permissions: ") + chalk.cyan(current)
+        );
+
+        const items = allPermissions.map((p) => {
+          const isActive = p.value === current;
+          const activeTag = isActive ? chalk.green(" (active)") : "";
+          const label = `  ${chalk.cyan(p.label.padEnd(12))} ${chalk.dim(p.desc)}${activeTag}`;
+          return { label, value: p.value, filterText: p.label };
+        });
+
+        const picked = await pickInline({
+          items,
+          header: chalk.dim(
+            "  ↑/↓ navigate · Enter to select · ESC to cancel",
+          ),
+          pageSize: allPermissions.length,
+        });
+
+        if (!picked) {
+          console.log(chalk.dim("  permissions unchanged"));
+          return true;
+        }
+
+        updateConfig({ permissions: picked });
+        console.log(chalk.dim(`  permissions → ${chalk.cyan(picked)}`));
+        return true;
+      }
+
+      if (arg === "default" || arg === "normal") {
+        updateConfig({ permissions: "default" });
+        console.log(chalk.dim(`  permissions → ${chalk.cyan("default")}`));
+        return true;
+      }
+
+      if (arg === "allow-all" || arg === "allowall" || arg === "all") {
+        updateConfig({ permissions: "allow-all" });
+        console.log(chalk.dim(`  permissions → ${chalk.cyan("allow-all")}`));
+        return true;
+      }
+
+      console.log(chalk.dim("  usage: /permissions [default|allow-all]"));
       return true;
     }
     case "/update":
@@ -1783,6 +1837,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       model: state.model,
       provider: state.provider,
       mode: state.mode,
+      permissions: getConfig().permissions ?? "default",
     }),
   );
   console.log();

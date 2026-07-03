@@ -15,6 +15,7 @@ import {
   fsWrite,
   fsWriteMany,
   fsReplaceLines,
+  fsAppend,
   type FileWrite,
 } from "./fs.js";
 import { httpFetch } from "./http.js";
@@ -561,6 +562,16 @@ export const toolRegistry: Record<string, ToolHandler> = {
       requireNumber(args, "endLine"),
       requireString(args, "content"),
       { confirmed: options?.confirmed },
+    );
+  },
+  async "fs.append"(args, options) {
+    return fsAppend(
+      requireString(args, "path"),
+      requireString(args, "content"),
+      {
+        position: optionalString(args, "position") as "start" | "end" | undefined,
+        confirmed: options?.confirmed,
+      },
     );
   },
   async "fs.delete"(args, options) {

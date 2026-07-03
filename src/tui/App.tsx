@@ -1693,6 +1693,46 @@ export function App({
           })();
           return true;
         }
+        case "/permissions": {
+          const current = getConfig().permissions ?? "default";
+          if (!arg) {
+            setOverlay({
+              kind: "picker",
+              title: "Permissions mode",
+              options: [
+                {
+                  value: "default",
+                  label: "default",
+                  description: "normal behavior (prompts for confirmation on mutating actions)",
+                  active: current === "default",
+                },
+                {
+                  value: "allow-all",
+                  label: "allow-all",
+                  description: "run everything without confirmation (except passwords)",
+                  active: current === "allow-all",
+                },
+              ],
+              onSelect: (val) => {
+                updateConfig({ permissions: val as "default" | "allow-all" });
+                info(`permissions → ${val}`);
+                setOverlay({ kind: "none" });
+              },
+            });
+            return true;
+          }
+          const value = arg.toLowerCase().trim();
+          if (value === "default" || value === "normal") {
+            updateConfig({ permissions: "default" });
+            info("permissions → default");
+          } else if (["allow-all", "allowall", "all"].includes(value)) {
+            updateConfig({ permissions: "allow-all" });
+            info("permissions → allow-all");
+          } else {
+            warn("usage: /permissions [default|allow-all]");
+          }
+          return true;
+        }
         case "/update":
           info(
             `${cmd} manages updates; use the equivalent \`clai update\` command outside the TUI`,
@@ -1809,13 +1849,19 @@ export function App({
   const usableRows = Math.max(8, rows - 1);
   const headerH = 0;
   const inputWidth = Math.max(10, cols - 10);
-  let statusH = secretRequest ? 7 : 0;
-  if (state.pendingConfirm) {
+  let statusH = 0;
+  if (secretRequest) {
+    const wrappedPromptLines = wrapPlainString(
+      secretRequest.prompt,
+      cols - 6,
+    );
+    statusH = 5 + wrappedPromptLines.length; // 1 (header) + 1 (password) + 1 (help) + 2 (borders) = 5, plus prompt lines
+  } else if (state.pendingConfirm) {
     const wrappedPromptLines = wrapPlainString(
       state.pendingConfirm.prompt,
       cols - 6,
     );
-    statusH = 3 + wrappedPromptLines.length; // Title row (1) + instructions row (1) + prompt contents + borders (2) + spacing
+    statusH = 4 + wrappedPromptLines.length; // 1 (header) + 1 (help) + 2 (borders) = 4, plus prompt lines
   }
   const chromeH = !secretRequest && !state.pendingConfirm ? 1 : 0;
   const gapH = 1;
@@ -1881,6 +1927,7 @@ export function App({
     mode,
     provider,
     model,
+    permissions: getConfig().permissions ?? "default",
     hidePlanItems: Boolean(livePlan),
   });
   const total = transcriptLines.length;
@@ -2431,6 +2478,7 @@ export function App({
         <ConfirmModal
           confirm={state.pendingConfirm}
           onAnswer={answerConfirm}
+          overlayOpen={overlayOpen}
           onViewPlan={
             state.pendingConfirm.kind === "plan"
               ? () => {

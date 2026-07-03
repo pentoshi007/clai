@@ -61,6 +61,58 @@ export function preprocessJson(raw: string): string {
  * wholly single-quoted. We only apply these transforms when a strict parse
  * has already failed, so well-formed JSON is never touched.
  */
+function repairMixedQuotes(text: string): string {
+  let inString: false | "double" | "single" = false;
+  let escaped = false;
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (inString === "double") {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+      } else if (ch === "\\") {
+        out += ch;
+        escaped = true;
+      } else if (ch === '"') {
+        out += ch;
+        inString = false;
+      } else {
+        out += ch;
+      }
+    } else if (inString === "single") {
+      if (escaped) {
+        if (ch === "'") {
+          out += "'";
+        } else {
+          out += "\\" + ch;
+        }
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "'") {
+        out += '"';
+        inString = false;
+      } else if (ch === '"') {
+        out += '\\"';
+      } else {
+        out += ch;
+      }
+    } else {
+      if (ch === '"') {
+        out += ch;
+        inString = "double";
+      } else if (ch === "'") {
+        out += '"';
+        inString = "single";
+      } else {
+        out += ch;
+      }
+    }
+  }
+  return out;
+}
+
 function lenientJsonParse(text: string): unknown | undefined {
   const candidates: string[] = [];
   // 1. Normalize unicode/smart quotes to ASCII quotes.
@@ -70,7 +122,11 @@ function lenientJsonParse(text: string): unknown | undefined {
   candidates.push(deSmart);
   // 2. Python/JS literals → JSON literals (outside of double-quoted strings).
   candidates.push(replaceOutsideStrings(deSmart));
-  // 3. Single-quoted object → double-quoted (only when there are no double
+  // 3. Mixed quotes repair (convert '...' strings to "..." strings)
+  const mixedRepaired = repairMixedQuotes(deSmart);
+  candidates.push(mixedRepaired);
+  candidates.push(replaceOutsideStrings(mixedRepaired));
+  // 4. Single-quoted object → double-quoted (only when there are no double
   //    quotes already, so we don't corrupt strings that contain apostrophes).
   if (!deSmart.includes('"') && deSmart.includes("'")) {
     candidates.push(deSmart.replace(/'/g, '"'));
@@ -265,6 +321,40 @@ function extractBalancedJson(text: string): string | undefined {
 }
 
 function parseXmlToolCall(text: string): ToolCall | undefined {
+  // Pattern 1d (GLM arg_key / arg_value format):
+  // <tool_call>tool.name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>
+  const glmMatch = text.match(/<tool_call>\s*([\w.-]+)\s*([\s\S]*?)(?:<\/tool_call>|$)/i);
+  if (glmMatch && glmMatch[1] !== undefined && glmMatch[2] !== undefined) {
+    const toolName = glmMatch[1];
+    const rest = glmMatch[2].trim();
+    if (rest.includes("<arg_key>") && rest.includes("<arg_value>")) {
+      const args: Record<string, unknown> = {};
+      const keyValRegex = /<arg_key>([\s\S]*?)<\/arg_key>\s*<arg_value>([\s\S]*?)<\/arg_value>/gi;
+      let match;
+      let hasArgs = false;
+      while ((match = keyValRegex.exec(rest)) !== null) {
+        const key = match[1];
+        const rawVal = match[2];
+        if (key === undefined || rawVal === undefined) continue;
+        const keyTrimmed = key.trim();
+        const rawValTrimmed = rawVal.trim();
+        let val: any = rawValTrimmed;
+        try {
+          val = JSON.parse(preprocessJson(rawValTrimmed));
+        } catch {
+          // Keep as string
+        }
+        args[keyTrimmed] = val;
+        hasArgs = true;
+      }
+      if (hasArgs) {
+        return { name: toolName, args };
+      }
+    } else if (rest === "") {
+      return { name: toolName, args: {} };
+    }
+  }
+
   // Pattern 1 (name + args/arguments/parameters JSON):
   //  <tool_call>
   // <name>tool.name</name>
@@ -569,6 +659,7 @@ export function inferToolFromArgs(
   if (has("calls")) return "tool.batch";
   if (has("startLine") && has("endLine") && has("path")) return "fs.replaceLines";
   if (has("oldText") || has("newText")) return "fs.edit";
+  if (has("position") && has("content") && has("path")) return "fs.append";
   if (has("content") && has("path")) return "fs.write";
   if (has("pattern")) return "fs.search";
   if (has("query")) return "web.search";
@@ -925,7 +1016,7 @@ export function formatToolArgs(call: ToolCall): string {
   if (call.name === "dns.lookup")
     return `${call.args.target ?? ""}${call.args.record ? ` ${call.args.record}` : " A"}`;
   if (call.name === "whois.lookup") return String(call.args.target ?? "");
-  if (call.name === "fs.read" || call.name === "fs.write")
+  if (call.name === "fs.read" || call.name === "fs.write" || call.name === "fs.append")
     return String(call.args.path ?? "");
   if (call.name === "fs.writeMany") {
     const files = Array.isArray(call.args.files) ? call.args.files : [];
@@ -966,7 +1057,7 @@ const STATIC_DISAMBIGUATION_RE =
   /\b(?:stand\s+for|stands\s+for|meaning|definition|define|abbreviation|centimeters?|centimetres?)\b/i;
 
 const LOCAL_RUNTIME_RE =
-  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami)\b/i;
+  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami|server|jobs?|process(?:es)?|ports?|localhost|git)\b/i;
 
 // Signals that the current turn is (or continues) a coding / scaffolding
 // task. These are intentionally broad — over-budgeting a build is cheap
@@ -1153,6 +1244,9 @@ export function looksLikePlanNarration(text: string): boolean {
 export function requiresFreshWebSearch(prompt: string): boolean {
   const text = prompt.replace(/\s+/g, " ").trim();
   if (!text) return false;
+  if (EXPLICIT_WEB_LOOKUP_RE.test(text)) {
+    return true;
+  }
   if (STATIC_DISAMBIGUATION_RE.test(text) || LOCAL_RUNTIME_RE.test(text)) {
     return false;
   }
@@ -1167,8 +1261,7 @@ export function requiresFreshWebSearch(prompt: string): boolean {
   return (
     VOLATILE_SIGNAL_RE.test(text) ||
     VOLATILE_ROLE_QUERY_RE.test(text) ||
-    ROLE_OF_ENTITY_RE.test(text) ||
-    EXPLICIT_WEB_LOOKUP_RE.test(text)
+    ROLE_OF_ENTITY_RE.test(text)
   );
 }
 
@@ -1225,14 +1318,17 @@ export function buildWorkflowDirective(): string {
     "- Do NOT re-explore. Step 1 (EXPLORE) was already completed during planning. Start executing the first pending task immediately.",
     "- ONE task at a time, in ORDER. Do NOT skip ahead to task 3 before task 2 is done.",
     "- Write complete, production-quality files; never shorten code merely to fit a tool call. Prefer fs.writeMany for several normal files, fs.write for one large/new file, fs.edit for exact-text atomic changes, and fs.replaceLines only after fs.read has established precise line coordinates. If fs.writeMany is cut off, split only the FILE LIST into smaller batches. If one fs.write is cut off, retry that file alone and split the component into cohesive modules only when that improves the design. A truncated call never ran, so never move on until a complete write succeeds.",
-    "- VERIFY each step before marking it done: after writing files, fs.read the file back and confirm it is COMPLETE and syntactically valid (balanced braces/parens/JSX tags); after an install, check it exited 0. Marking a task done without a successful, verified tool call is the worst failure.",
+    "- VERIFY each step before marking it done: you MUST NOT mark a task 'done' in advance or assume it is complete. You must first verify and have full, absolute knowledge that all commands, operations, and file changes scoped to that task have been successfully executed and are correct. After writing/editing files, you MUST call fs.read to verify that the file contents are complete, syntactically correct (braces, tags, parens are balanced), and exactly what you intended. After running commands or packages, confirm they completed with exit code 0. Only when you have verified all work for a task should you call task.update to mark it 'done' and move on to the next task. Marking a task done without a successful, verified tool call is the worst failure.",
     "- VERIFY THE BUILD, not just the dev server. `vite` / `npm run dev` reports 'ready' even when your App.jsx has syntax errors (the error only shows in the browser). To actually confirm the app works, run `npm run build` (it fails on real syntax/JSX errors) and check it exits 0. Seeing 'VITE ready' is NOT proof the app renders.",
     "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY, fix it, and retry until it succeeds.",
+    "- ERROR ANALYSIS: If an error is given (build failure, compilation error, or runtime crash), do NOT jump directly into editing. You must first analyze which file has the error, what is causing it, and what needs to change. Make sure to read the relevant file context if you don't already have it.",
+    "- ATOMIC AND PRECISE EDITS: You must perform precise, atomic edits instead of replacing or regenerating entire files. Use fs.edit, fs.replaceLines, or fs.append to modify only the specific lines of code that need fixing. Keep your changes focused and precise so that the existing code remains intact and the editing process is perfectly reliable.",
     "- NEVER claim a task is done, files were created, a dependency is installed, or a server is running unless the tool call ACTUALLY succeeded and you saw the success output. If you have not run it, say so.",
-    "- After the production build passes, start the app with shell.start (background job), NOT `npm run dev &` via shell.exec. Check readiness with shell.tail AND make one bounded local HTTP request (curl with a short timeout or http.fetch). A build passing does not prove a server is running. Never print a localhost link or say `running` unless shell.start returned a live job and the HTTP probe succeeded. Stop the job after verification unless the user explicitly asked to keep it running; if stopped, clearly say it was verified and stopped, not that it is still running. Do not spend time polling repeatedly.",
+    "- After the production build passes, start the dev server / app with shell.start (background job) so it keeps running, NOT `npm run dev &` via shell.exec. Check readiness with shell.tail AND make one bounded local HTTP request (curl with a short timeout or http.fetch). A build passing does not prove a server is running. Never print a localhost link or say `running` unless shell.start returned a live job and the HTTP probe succeeded. Keep the server running so the user can interact with the live application, and print the localhost link. Do not spend time polling repeatedly.",
     "- THE DELIVERABLE IS THE WORKING FEATURE, NOT THE SCAFFOLD. After scaffolding you MUST replace the starter boilerplate (Vite's default App.jsx counter, Next's starter page, etc.) with the actual app the user asked for. If the user asked for a todo app, src/App.jsx must contain a real todo UI with state — finishing with the untouched Vite starter page is a FAILURE even if the build passes.",
+    "- REVISING PLANS FOR NEW USER REQUESTS: If the user asks for new features, modifications, or additions after a plan has already been created/implemented, you MUST update/revise the plan. Call plan.create to create/overwrite the plan. In the revised plan, preserve all previously completed tasks (retaining their order and descriptions) and append the new tasks needed for the new features/modifications at the end of the task list. Do NOT skip plan revision or start implementing new features directly in existing completed tasks. After calling plan.create, STOP and wait for user approval. Once approved, resume execution of the revised plan from the first new/uncompleted task; do NOT execute completed tasks again.",
     "",
-    "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
+    "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, fs.append, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
     "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
   ].join("\n");
 }

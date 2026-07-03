@@ -81,6 +81,7 @@ const PASSTHROUGH_TOOLS = new Set<string>([
   "fs.list",
   "fs.search",
   "fs.edit",
+  "fs.append",
   "pdf.read",
 ]);
 const PASSTHROUGH_CAP_CHARS = 400_000;

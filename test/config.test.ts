@@ -73,4 +73,12 @@ describe('config store', () => {
     updateConfig({ disableKeychain: true });
     expect(getConfig().disableKeychain).toBe(true);
   });
+
+  it('supports permissions property and defaults to default', async () => {
+    const { getConfig, updateConfig } = await loadConfigStore();
+    expect(getConfig().permissions).toBe('default');
+
+    updateConfig({ permissions: 'allow-all' });
+    expect(getConfig().permissions).toBe('allow-all');
+  });
 });
