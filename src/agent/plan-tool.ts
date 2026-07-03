@@ -7,19 +7,15 @@ import {
   type SessionPlan,
   type TaskState,
 } from "../store/plan.js";
-import { renderPlanChecklist, renderPlanSidePane } from "../ui/plan-pane.js";
+import { renderPlanChecklist } from "../ui/plan-pane.js";
 import type { LoopGuard } from "./loop-guard.js";
 import type { SessionPolicy } from "./session-policy.js";
 import { isLumpedSingleTask } from "./tool-call-parser.js";
 import type { ToolCall } from "../types.js";
 
-/** Render the plan as a right-side pane on wide terminals, else inline. */
+/** Render the portable inline form; the Ink TUI owns its responsive sidebar. */
 export function renderPlanForTerminal(plan: SessionPlan): string {
-  const cols = process.stdout.columns ?? 0;
-  const side = process.stdout.isTTY
-    ? renderPlanSidePane(plan, cols)
-    : undefined;
-  return side ?? renderPlanChecklist(plan);
+  return renderPlanChecklist(plan);
 }
 
 export interface PlanToolResult {

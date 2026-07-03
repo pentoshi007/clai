@@ -108,7 +108,7 @@ export class LoopGuard {
     // that just wrote a file to "use the results you already have" is
     // nonsensical and has caused models to assume the whole task is done.
     const isWrite =
-      name === "fs.write" || name === "fs.writeMany" || name === "fs.edit";
+      name === "fs.write" || name === "fs.writeMany" || name === "fs.edit" || name === "fs.replaceLines";
 
     // Read-only tools get a higher threshold — they may need re-calling
     // after context compaction removes their earlier results.
@@ -223,4 +223,3 @@ Do NOT keep trying variations of the same failing approach without explicitly de
     return this.attempts.length;
   }
 }
-

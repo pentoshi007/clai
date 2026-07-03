@@ -14,6 +14,7 @@ import {
   fsSearch,
   fsWrite,
   fsWriteMany,
+  fsReplaceLines,
   type FileWrite,
 } from "./fs.js";
 import { httpFetch } from "./http.js";
@@ -66,6 +67,14 @@ function optionalNumber(
 ): number | undefined {
   const value = args[key];
   return typeof value === "number" ? value : undefined;
+}
+
+function requireNumber(args: Record<string, unknown>, key: string): number {
+  const value = args[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Tool argument "${key}" must be a finite number`);
+  }
+  return value;
 }
 
 function optionalBoolean(
@@ -542,6 +551,15 @@ export const toolRegistry: Record<string, ToolHandler> = {
       requireString(args, "oldText"),
       requireString(args, "newText"),
       optionalNumber(args, "expectedReplacements"),
+      { confirmed: options?.confirmed },
+    );
+  },
+  async "fs.replaceLines"(args, options) {
+    return fsReplaceLines(
+      requireString(args, "path"),
+      requireNumber(args, "startLine"),
+      requireNumber(args, "endLine"),
+      requireString(args, "content"),
       { confirmed: options?.confirmed },
     );
   },

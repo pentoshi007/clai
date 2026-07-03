@@ -76,39 +76,3 @@ export function renderPlanDocument(plan: SessionPlan): string {
   );
   return lines.join("\n");
 }
-
-/**
- * Right-aligned side pane for wide terminals (Claude-Code style). Returns
- * undefined when the terminal is too narrow; callers fall back to the inline
- * checklist. The pane is a self-contained block the caller prints; we do not
- * try to anchor it to the right column across redraws (that fights the
- * streaming output), instead we render a clearly delimited panel.
- */
-export function renderPlanSidePane(plan: SessionPlan, columns: number): string | undefined {
-  const PANE_WIDTH = 34;
-  if (columns < PANE_WIDTH + 24) return undefined; // not enough room
-  const done = plan.tasks.filter((t) => t.state === "done").length;
-  const total = plan.tasks.length;
-  const inner = PANE_WIDTH - 2;
-  const top = "╭" + "─".repeat(inner) + "╮";
-  const bottom = "╰" + "─".repeat(inner) + "╯";
-  const rows: string[] = [top];
-  const header = fit(`Plan  [${done}/${total}]`, inner - 2);
-  rows.push("│ " + chalk.bold(header.padEnd(inner - 2)) + " │");
-  rows.push("│" + " ".repeat(inner) + "│");
-  plan.tasks.forEach((task) => {
-    const color = STATE_COLOR[task.state];
-    const box = CHECKBOX[task.state];
-    const text = fit(`${box} ${task.title}`, inner - 2);
-    rows.push("│ " + color(text.padEnd(inner - 2)) + " │");
-  });
-  rows.push(bottom);
-  return rows.join("\n");
-}
-
-function fit(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width === 1) return "…";
-  return text.slice(0, width - 1) + "…";
-}

@@ -6,7 +6,7 @@ import {
   rmSync,
 } from "node:fs";
 import { join } from "node:path";
-import { fsWriteMany } from "../src/tools/fs.js";
+import { fsReplaceLines, fsWriteMany } from "../src/tools/fs.js";
 import { classifyToolCall } from "../src/safety/classifier.js";
 import { toolRegistry, availableToolNames } from "../src/tools/registry.js";
 
@@ -85,5 +85,35 @@ describe("fsWriteMany", () => {
       },
     });
     expect(decision.level).toBe("block");
+  });
+});
+
+describe("fsReplaceLines", () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+    dirs.length = 0;
+  });
+
+  it("atomically replaces an inclusive line range and preserves final newline", async () => {
+    const dir = makeTempDir("replace-lines");
+    dirs.push(dir);
+    const path = join(dir, "App.tsx");
+    const seeded = await fsWriteMany([{ path, content: "one\ntwo\nthree\nfour\n" }]);
+    expect(seeded.ok).toBe(true);
+    const result = await fsReplaceLines(path, 2, 3, "TWO\nTHREE");
+    expect(result.ok).toBe(true);
+    expect(readFileSync(path, "utf8")).toBe("one\nTWO\nTHREE\nfour\n");
+  });
+
+  it("rejects an out-of-range edit without changing the file", async () => {
+    const dir = makeTempDir("replace-lines");
+    dirs.push(dir);
+    const path = join(dir, "small.txt");
+    await fsWriteMany([{ path, content: "one\ntwo" }]);
+    const result = await fsReplaceLines(path, 2, 9, "bad");
+    expect(result.ok).toBe(false);
+    expect(readFileSync(path, "utf8")).toBe("one\ntwo");
   });
 });

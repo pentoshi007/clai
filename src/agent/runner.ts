@@ -394,6 +394,10 @@ export async function runAgentLoop(
     // tasks are still pending and it never ran the work. We nudge it back to
     // executing the next task a bounded number of times before giving up.
     let prematureCompletionRetries = 0;
+    let runtimeVerificationRetries = 0;
+    let sawServerStart = false;
+    let sawServerTail = false;
+    let sawLocalHttpProbe = false;
 
     // Guard against a model that NARRATES intent ("let me explore the
     // directory…") but emits no tool call, so nothing runs and the turn ends
@@ -503,7 +507,8 @@ export async function runAgentLoop(
         const isWrite =
           call.name === "fs.write" ||
           call.name === "fs.writeMany" ||
-          call.name === "fs.edit";
+          call.name === "fs.edit" ||
+          call.name === "fs.replaceLines";
         const reason = `${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}`;
         writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
         const result = { ok: false, output: reason, exitCode: 1 };
@@ -1208,7 +1213,11 @@ export async function runAgentLoop(
               // payload — a truncated tool-call JSON fails to parse and leaks a
               // broken (and syntactically invalid) file. 8k was too small for a
               // full component, so allow more room for the visible tool call.
-              maxTokens: config.thinking?.enabled ? 16_384 : 12_288,
+              // Code-generation calls frequently contain an entire source file
+              // inside JSON.  A 12k visible-token ceiling cut otherwise valid
+              // fs.write calls in half. Keep enough output headroom for a
+              // substantial source file; providers with a lower limit clamp it.
+              maxTokens: 32_768,
               signal: options.signal,
               thinking: config.thinking,
             },
@@ -1471,9 +1480,9 @@ export async function runAgentLoop(
             if (truncatedToolRetries <= 3) {
               writeNotice(
                 "warn",
-                "tool call was cut off (output too long) — asking the model to retry in smaller pieces",
+                "tool call was cut off (output too long) — asking the model to retry safely",
                 chalk.yellow(
-                  "  ⚠ tool call was cut off (output too long) — asking the model to retry in smaller pieces\n",
+                  "  ⚠ tool call was cut off (output too long) — asking the model to retry safely\n",
                 ),
               );
               messages.push({
@@ -1485,8 +1494,8 @@ export async function runAgentLoop(
                 content:
                   "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
                   "Retry now with a COMPLETE, valid ```tool block. " +
-                  "If it was a large fs.writeMany, split it into SMALLER batches (3-5 files per call, and keep each file's content concise) " +
-                  "so the whole JSON fits in one response. Do NOT claim any file was written until a tool call actually succeeds.",
+                  "If it was fs.writeMany, split the FILE LIST into smaller batches. Do not shorten, truncate, or simplify file contents. " +
+                  "For one large file, retry that file alone as one complete fs.write call. Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
             }
@@ -1666,6 +1675,48 @@ export async function runAgentLoop(
             });
             continue;
           }
+          // A passing build is not evidence that an app is serving requests.
+          // On completed build plans, require start → logs → HTTP verification
+          // before accepting the model's final claim.
+          if (
+            buildLike &&
+            session.planApproved.value &&
+            (!sawServerStart || !sawServerTail || !sawLocalHttpProbe) &&
+            runtimeVerificationRetries < 2
+          ) {
+            const runtimePlan = await loadPlan(session.sessionId).catch(
+              () => undefined,
+            );
+            const tasksFinished = Boolean(
+              runtimePlan &&
+                runtimePlan.tasks.length > 0 &&
+                runtimePlan.tasks.every(
+                  (task) => task.state === "done" || task.state === "skipped",
+                ),
+            );
+            if (tasksFinished) {
+              runtimeVerificationRetries += 1;
+              messages.push({
+                role: "assistant",
+                content: assistantText.visible,
+              });
+              const missing = [
+                !sawServerStart ? "shell.start" : "",
+                !sawServerTail ? "shell.tail" : "",
+                !sawLocalHttpProbe
+                  ? "a successful bounded localhost HTTP probe"
+                  : "",
+              ].filter(Boolean);
+              messages.push({
+                role: "user",
+                content:
+                  "Runtime verification is incomplete. Do not claim the app is running. " +
+                  `Missing evidence: ${missing.join(", ")}. ` +
+                  "Run the missing checks now. Stop the job afterward unless the user explicitly asked to keep it running, and report whether it remains running truthfully.",
+              });
+              continue;
+            }
+          }
           // Premature-completion guard (approved plan still has work)
           // If the user approved a plan and the model now gives a final answer
           // while tasks are still pending/in_progress — without having run the
@@ -1817,6 +1868,7 @@ export async function runAgentLoop(
         let blocked = false;
         let blockedResult: any = null;
         let failed = false;
+        let awaitingPlanApproval = false;
 
         const recordResult = (res: {
           call: ToolCall;
@@ -1831,6 +1883,24 @@ export async function runAgentLoop(
             content: `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${res.contextOutput}`,
           });
           productiveSteps += 1;
+          if (res.ok && res.call.name === "shell.start") sawServerStart = true;
+          if (res.ok && res.call.name === "shell.tail") sawServerTail = true;
+          if (
+            res.ok &&
+            ((res.call.name === "http.fetch" &&
+              /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(
+                String(res.call.args.url ?? ""),
+              )) ||
+              (res.call.name === "shell.exec" &&
+                /\bcurl\b[\s\S]*\b(?:localhost|127\.0\.0\.1|\[::1\])\b/i.test(
+                  String(res.call.args.command ?? ""),
+                )))
+          ) {
+            sawLocalHttpProbe = true;
+          }
+          if (res.call.name === "plan.create" && res.ok) {
+            awaitingPlanApproval = true;
+          }
           if (res.lastAnswer === "Aborted.") aborted = true;
           else if (res.blockOrCancel) {
             blocked = true;
@@ -1844,7 +1914,7 @@ export async function runAgentLoop(
           PARALLEL_LIMIT,
         );
         for (const group of groups) {
-          if (aborted || blocked || failed) break;
+          if (aborted || blocked || failed || awaitingPlanApproval) break;
           if (group.length === 1) {
             const id = `tool-${++nextToolEventId}`;
             const res = await executeSingleTool(
@@ -1868,6 +1938,16 @@ export async function runAgentLoop(
             );
             for (const res of results) recordResult(res);
           }
+        }
+
+        // plan.create is a hard transaction boundary. Its successful handler
+        // persists and displays the plan; returning immediately prevents a
+        // stale pre-loop activePlan snapshot from nudging a duplicate plan and
+        // prevents calls accidentally batched after plan.create from executing
+        // before /implement approval.
+        if (awaitingPlanApproval) {
+          pendingCalls = [];
+          return finishTurn("", productiveSteps);
         }
 
         if (aborted) {

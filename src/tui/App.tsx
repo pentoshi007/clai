@@ -92,6 +92,7 @@ import { Pager } from "./components/Pager.js";
 import { JobsPanel } from "./components/JobsPanel.js";
 import { PickerPanel, type PickerOption } from "./components/PickerPanel.js";
 import { SecretInputPanel } from "./components/SecretInputPanel.js";
+import { PlanSidebar } from "./components/PlanSidebar.js";
 import { clearArtifacts, clearAuditLogs } from "../store/logs.js";
 import {
   addScopeTargets,
@@ -176,6 +177,7 @@ export function App({
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const [compacting, setCompacting] = useState(false);
   const [mouseMode, setMouseMode] = useState(true);
+  const [planPaneVisible, setPlanPaneVisible] = useState(true);
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
   const historyDraft = useRef("");
@@ -1802,8 +1804,27 @@ export function App({
     slashWindowStart + menuH,
   );
 
+  const livePlan = useMemo(() => {
+    for (let i = state.items.length - 1; i >= 0; i -= 1) {
+      const item = state.items[i];
+      if (item?.kind === "plan") return item.plan;
+    }
+    return undefined;
+  }, [state.items]);
+  // Two columns only when both remain genuinely readable. Below this content-
+  // based breakpoint the plan stays available inline and through Ctrl+P.
+  const showPlanSidebar = Boolean(
+    planPaneVisible && livePlan && cols >= 100 && overlay.kind === "none",
+  );
+  const planSidebarWidth = showPlanSidebar
+    ? Math.min(48, Math.max(32, Math.floor((cols - 5) * 0.32)))
+    : 0;
+  const transcriptWidth = showPlanSidebar
+    ? cols - 4 - planSidebarWidth - 1
+    : cols - 4;
+
   const transcriptLines = renderTranscriptLines(state, {
-    width: cols - 4,
+    width: transcriptWidth,
     thinkingExpanded: state.thinkingExpanded,
     outputExpanded: state.outputExpanded,
     running: state.status.running,
@@ -1811,6 +1832,7 @@ export function App({
     mode,
     provider,
     model,
+    hidePlanItems: Boolean(livePlan),
   });
   const total = transcriptLines.length;
   const maxOffset = Math.max(0, total - viewportH);
@@ -1934,6 +1956,15 @@ export function App({
           level: "info",
           text: "no tool output or compacted context yet",
         });
+      return;
+    }
+    // Ctrl+H is ASCII backspace (0x08). Depending on the terminal/Ink
+    // version it arrives either as ctrl+h or as a backspace key event.
+    // A normal Backspace is usually DEL (0x7f), so do not consume that.
+    const isPlanToggle =
+      (key.ctrl && (ch.toLowerCase() === "h" || key.backspace)) || ch === "\b";
+    if (isPlanToggle) {
+      setPlanPaneVisible((visible) => !visible);
       return;
     }
     if (key.ctrl && ch === "p") {
@@ -2203,12 +2234,35 @@ export function App({
           onClose={closeOverlay}
         />
       ) : (
-        <Box flexDirection="column" height={viewportH}>
-          {visible.map((line, i) => (
-            <Text key={i} wrap="truncate-end">
-              {line === "" ? " " : line}
-            </Text>
-          ))}
+        <Box flexDirection="row" height={viewportH}>
+          <Box
+            flexDirection="column"
+            width={transcriptWidth}
+            height={viewportH}
+            flexShrink={0}
+            overflow="hidden"
+          >
+            {visible.map((line, i) => (
+              <Text key={i} wrap="truncate-end">
+                {line === "" ? " " : line}
+              </Text>
+            ))}
+          </Box>
+          {showPlanSidebar && livePlan ? (
+            <Box
+              marginLeft={1}
+              width={planSidebarWidth}
+              height={viewportH}
+              flexShrink={0}
+              overflow="hidden"
+            >
+              <PlanSidebar
+                plan={livePlan}
+                width={planSidebarWidth}
+                height={viewportH}
+              />
+            </Box>
+          ) : null}
         </Box>
       )}
 
@@ -2454,6 +2508,15 @@ export function App({
                 {" "}
                 CTRL+O OUTPUT{" "}
               </Text>
+              {livePlan ? (
+                <>
+                  <Text> </Text>
+                  <Text
+                    backgroundColor={planPaneVisible ? "#7E22CE" : "#334155"}
+                    color="#F8FAFC"
+                  >{` CTRL+H PLAN ${planPaneVisible ? "ON" : "OFF"} `}</Text>
+                </>
+              ) : null}
               <Text> </Text>
               <Text
                 backgroundColor={mouseMode ? "#155E75" : "#334155"}

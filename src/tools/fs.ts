@@ -192,6 +192,41 @@ export async function fsWrite(
   return { ok: true, output: `Wrote ${resolved}` };
 }
 
+/** Atomically replace an inclusive, 1-indexed line range in an existing file. */
+export async function fsReplaceLines(
+  path: string,
+  startLine: number,
+  endLine: number,
+  content: string,
+  options: { confirmed?: boolean | undefined } = {},
+): Promise<ToolResult> {
+  const resolved = ensureWriteAllowed(path, options.confirmed);
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
+    return { ok: false, output: "fs.replaceLines requires integers with 1 <= startLine <= endLine", exitCode: 1 };
+  }
+  const original = await readFile(resolved, "utf8");
+  const newline = original.includes("\r\n") ? "\r\n" : "\n";
+  const hadFinalNewline = original.endsWith("\n");
+  const lines = original.split(/\r?\n/);
+  if (hadFinalNewline) lines.pop();
+  if (endLine > lines.length) {
+    return { ok: false, output: `fs.replaceLines range ${startLine}-${endLine} exceeds ${lines.length} lines`, exitCode: 1 };
+  }
+  const replacement = content === "" ? [] : content.split(/\r?\n/);
+  if (replacement.at(-1) === "") replacement.pop();
+  lines.splice(startLine - 1, endLine - startLine + 1, ...replacement);
+  const next = lines.join(newline) + (hadFinalNewline ? newline : "");
+  const temp = join(dirname(resolved), `.${basename(resolved)}.clai-${process.pid}-${Date.now()}.tmp`);
+  try {
+    await writeFile(temp, next, "utf8");
+    await rename(temp, resolved);
+  } catch (error) {
+    await unlink(temp).catch(() => undefined);
+    throw error;
+  }
+  return { ok: true, output: `Replaced lines ${startLine}-${endLine} in ${resolved}` };
+}
+
 export interface FileWrite {
   path: string;
   content: string;

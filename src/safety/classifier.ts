@@ -670,7 +670,7 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only job management" };
   }
 
-  if (call.name === "fs.edit") {
+  if (call.name === "fs.edit" || call.name === "fs.replaceLines") {
     const pathArg = stringArg(call.args, "path");
     if (pathArg) {
       try {

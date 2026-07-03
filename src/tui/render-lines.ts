@@ -132,6 +132,8 @@ export interface RenderCtx {
   mode?: string | undefined;
   provider?: string | undefined;
   model?: string | undefined;
+  /** The dedicated live-plan pane owns plan rendering when one exists. */
+  hidePlanItems?: boolean | undefined;
 }
 
 const COLLAPSED_OUTPUT_LINES = 3;
@@ -573,29 +575,17 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
     return chip(label) + " " + colorFn(shownValue);
   };
 
-  const suggestions = [
-    "scan my network",
-    "recon example.com",
-    "create a react app here",
-    "explain @file.ts",
-  ];
-  const tryChip = chalk.bgHex("#334155").whiteBright.bold(" try ");
-  const TRY_WIDTH = 5; // visible width of " try "
-  const suggestionsAvailable = Math.max(4, rightWidth - TRY_WIDTH - 1);
-  const suggestionsJoined = suggestions.join(" │ ");
-  const suggestionsShown =
-    suggestionsJoined.length > suggestionsAvailable
-      ? truncateMiddle(suggestionsJoined, suggestionsAvailable)
-      : suggestionsJoined;
+  const modeBanner = chalk.bgHex("#B45309").whiteBright.bold(
+    `  ${mode.toUpperCase()} MODE  `,
+  );
 
   const rightRows: string[] = [
     infoRow("workdir", cwd, chalk.white),
     infoRow("model", model, chalk.cyan),
     infoRow("provider", provider, chalk.green),
-    infoRow("mode", mode, chalk.yellow),
     infoRow("version", version, chalk.white),
     "",
-    tryChip + " " + chalk.cyan.italic(suggestionsShown),
+    modeBanner,
   ];
 
   // Both columns render exactly 7 rows (wordmark height), so they line up.
@@ -666,6 +656,7 @@ export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[]
   blocks.push(renderIntroHeader(ctx));
 
   for (const item of state.items) {
+    if (ctx.hidePlanItems && item.kind === "plan") continue;
     blocks.push(renderItemLinesCached(item, ctx));
   }
 

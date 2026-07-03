@@ -43,7 +43,9 @@ export function renderIntroCard(opts: IntroCardOptions): string {
     ),
   );
   parts.push("");
-  parts.push(renderIntroSuggestions());
+  parts.push(
+    `  ${chalk.bgHex("#B45309").whiteBright.bold(`  ${opts.mode.toUpperCase()} MODE  `)} ${chalk.dim("execution policy is active")}`,
+  );
   parts.push(
     chalk.dim(
       "  ESC abort  │  Ctrl+C clears input  │  @ to attach files  │  Ctrl+T thinking  │  Ctrl+O tool output  │  Ctrl+P plan (q to close)",
@@ -54,11 +56,5 @@ export function renderIntroCard(opts: IntroCardOptions): string {
 }
 
 export function renderIntroSuggestions(): string {
-  const suggestions = [
-    "scan my network",
-    "recon example.com",
-    "create a react app here",
-    "explain @file.ts",
-  ];
-  return chalk.dim("  try: ") + chalk.dim.italic(suggestions.join(" │ "));
+  return "";
 }
