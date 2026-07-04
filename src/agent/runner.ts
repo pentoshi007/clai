@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { homedir } from "node:os";
 
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type {
   ChatMessage,
   ChatImage,
@@ -14,6 +14,7 @@ import { randomUUID } from "node:crypto";
 import { jobManager, type BackgroundJob } from "../tools/jobs.js";
 import {
   renderAgentSystemPrompt,
+  scratchDirFor,
 } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
 import {
@@ -33,6 +34,7 @@ import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import {
   compactMessagesWithSummary,
   estimateMessagesTokens,
+  COMPACTION_MEMORY_PREFIX,
 } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
@@ -71,6 +73,7 @@ import {
   requiresFreshWebSearch,
   freshnessGuardMessage,
   buildWorkflowDirective,
+  pentestWorkflowDirective,
   shouldDimToolChatter,
   looksLikePromptLeak,
 } from "./tool-call-parser.js";
@@ -119,6 +122,76 @@ export { type ConfirmPort } from "./confirm-port.js";
 
 export function styleToolChatter(call: ToolCall, text: string): string {
   return shouldDimToolChatter(call) ? chalk.dim(text) : text;
+}
+
+/**
+ * Tool names that may write into the project tree. Writes restricted to the
+ * per-project scratch directory (under tmpdir()/clai/<name>) are exempted
+ * from the active-plan and plan-approved gates so the model can use scratch
+ * space to build / inspect / stage work without first creating a plan.
+ */
+const SCRATCH_WRITABLE_TOOLS = new Set([
+  "fs.write",
+  "fs.writeMany",
+  "fs.edit",
+  "fs.replaceLines",
+  "fs.append",
+  "fs.delete",
+]);
+
+/**
+ * Expand `~` the same way `src/tools/fs.ts` does so callers can compare an
+ * already-expanded scratch path against paths supplied by the model.
+ */
+function expandHomeLocal(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return resolve(homedir(), path.slice(2));
+  }
+  return path;
+}
+
+/**
+ * Extract the target path(s) a write-shaped tool call would touch. Returns
+ * an empty array when the call has no resolvable path (so the caller can
+ * treat it as NOT scratch-only and fall through to the normal gates).
+ */
+function scratchWriteTargetPaths(call: ToolCall): string[] {
+  if (call.name === "fs.writeMany") {
+    const files = call.args.files;
+    if (!Array.isArray(files)) return [];
+    const paths: string[] = [];
+    for (const entry of files) {
+      if (entry && typeof entry === "object" && "path" in entry) {
+        const p = (entry as { path?: unknown }).path;
+        if (typeof p === "string" && p.length > 0) paths.push(p);
+      }
+    }
+    return paths;
+  }
+  const pathArg = call.args.path;
+  if (typeof pathArg !== "string" || pathArg.length === 0) return [];
+  return [pathArg];
+}
+
+/**
+ * True iff every target path this call would write is inside the resolved
+ * scratch directory. A path is considered inside when its `path.relative`
+ * against the scratch root is empty (the scratch root itself) or does not
+ * start with `..` (no parent traversal). Calls without a recognizable
+ * target path return false so they fall through to the normal gates.
+ */
+function isScratchOnlyWrite(call: ToolCall, scratchDir: string): boolean {
+  if (!SCRATCH_WRITABLE_TOOLS.has(call.name)) return false;
+  const paths = scratchWriteTargetPaths(call);
+  if (paths.length === 0) return false;
+  const resolvedScratch = resolve(scratchDir);
+  return paths.every((raw) => {
+    const expanded = expandHomeLocal(raw);
+    const resolved = resolve(expanded);
+    const rel = relative(resolvedScratch, resolved);
+    return rel === "" || (!rel.startsWith("..") && rel !== "..");
+  });
 }
 
 export interface AgentRunOptions {
@@ -244,6 +317,29 @@ export async function runAgentLoop(
     }
     emit(event);
   };
+  /** Strip a known prefix from a string, returning the remainder unchanged. */
+  const insertedText = (value: string, prefix: string): string =>
+    value.startsWith(prefix) ? value.slice(prefix.length) : value;
+  /**
+   * Surface the compacted-context summary to both the TUI (via an event)
+   * and, when running with a direct stdout writer, as a rendered box.
+   * Token-count stats are always emitted for logs.
+   */
+  const writeCompacted = (
+    summary: string,
+    beforeTokens: number,
+    afterTokens: number,
+  ): void => {
+    emit({ type: "compacted", summary, beforeTokens, afterTokens });
+    if (writesDirectly) {
+      const header = chalk.dim("  \u2726 Compacted Context");
+      const footer = chalk.dim(
+        `  ~${beforeTokens.toLocaleString()} \u2192 ~${afterTokens.toLocaleString()} tokens`,
+      );
+      const body = summary ? renderMarkdown(summary) : "(empty summary)";
+      process.stdout.write(`${header}\n\n${body}\n${footer}\n`);
+    }
+  };
   // Points at the live message array so finishTurn can hand the full
   // conversation back to the caller. Assigned once `messages` is built below;
   // all later mutations are in-place so this reference stays current.
@@ -338,6 +434,16 @@ export async function runAgentLoop(
     // coding agent (Claude Code) operates.
     if (buildLikeTurn && !activePlan && !informationalQuery) {
       systemSections.push(buildWorkflowDirective());
+    }
+
+    // Pentest / security engagements need a different shape than a coding
+    // build: recon first, then a plan built from real findings, then
+    // incremental task additions as new attack surface appears. The
+    // directive is only injected before a plan exists; once a plan is in
+    // place (or being refined), the ACTIVE PLAN block already carries the
+    // current task state and recon-vs-active-tool guidance.
+    if (pentestLikeTurn && !activePlan && !informationalQuery) {
+      systemSections.push(pentestWorkflowDirective());
     }
 
     const fullSystemPrompt = systemSections.join("\n\n");
@@ -486,6 +592,9 @@ export async function runAgentLoop(
       lastAnswer?: string | undefined;
       blockOrCancel?: boolean | undefined;
     }> {
+      // Resolved once per call so the scratch-only exemption can compare the
+      // model-supplied paths against the canonical per-project scratch root.
+      const scratchDir = scratchDirFor(safeCwd());
       let call = normalizeToolCall(rawCall);
 
       if (call.name === "image.ocr" && !imageOcrEnabled) {
@@ -581,7 +690,8 @@ export async function runAgentLoop(
 
       const isMutatingAction =
         (decision.level === "confirm" || decision.level === "block") &&
-        !isPreApprovalAllowedTool(call.name);
+        !isPreApprovalAllowedTool(call.name) &&
+        !isScratchOnlyWrite(call, scratchDir);
 
       if (isMutatingAction) {
         if (!activePlan) {
@@ -1100,6 +1210,22 @@ export async function runAgentLoop(
           estimatedTokens: afterTokens,
           reason,
         });
+        // Extract the inserted compaction memory so we can surface the
+        // summary itself (not just token-count stats). The summary lives in
+        // the first system message whose content begins with
+        // COMPACTION_MEMORY_PREFIX.
+        const insertedSummary =
+          messages.find(
+            (m) =>
+              m.role === "system" &&
+              m.content.startsWith(COMPACTION_MEMORY_PREFIX),
+          )?.content ?? "";
+        const summaryText = insertedSummary.startsWith(
+          `${COMPACTION_MEMORY_PREFIX}\n\n`,
+        )
+          ? insertedText(insertedSummary, `${COMPACTION_MEMORY_PREFIX}\n\n`)
+          : insertedText(insertedSummary, COMPACTION_MEMORY_PREFIX);
+        writeCompacted(summaryText, beforeTokens, afterTokens);
         writeNotice(
           "info",
           `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)`,

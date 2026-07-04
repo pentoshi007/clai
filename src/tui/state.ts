@@ -461,6 +461,12 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
           prompt: event.prompt,
         },
       };
+    case "compacted":
+      return reducer(state, {
+        type: "compacted",
+        summary: event.summary,
+        keepRecent: 12,
+      });
     case "turn-end":
     case "turn-aborted":
     case "turn-error": {

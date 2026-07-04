@@ -1333,6 +1333,42 @@ export function buildWorkflowDirective(): string {
   ].join("\n");
 }
 
+/**
+ * Directive injected for pentest / security engagements when no plan exists
+ * yet. A pentest has a different shape than a coding build: you do NOT have
+ * a clear scope, stack, or feature list up front. The plan must be BUILT
+ * FROM recon findings, not invented in advance. This directive tells the
+ * agent that recon is allowed before a plan exists, that the first plan
+ * comes after real findings, that incremental task additions are expected
+ * as new attack surface appears, and that any out-of-scope discovery must
+ * be flagged to the user rather than acted on.
+ */
+export function pentestWorkflowDirective(): string {
+  return [
+    "PENTEST WORKFLOW (this is a security / pentest engagement — follow this order EXACTLY; deviation is a failure):",
+    "1. RECON FIRST, NO PLAN YET. For pentest engagements, run reconnaissance and discovery DIRECTLY before creating a plan. Read-only recon (whois.lookup, dns.lookup, net.context, http.fetch GET, tool.batch of read-only lookups, net.scan, pentest.recon) is allowed BEFORE any plan exists — these calls do not require an active plan or an in-progress task, because recon is what the plan is built FROM. Batch independent lookups with tool.batch to parallelize. Do NOT skip recon to 'get the plan started'.",
+    "2. PLAN FROM REAL FINDINGS. Call plan.create ONLY after you have real findings — open ports, services and versions, endpoints, technologies, weaknesses, exposed surfaces. A pentest plan without findings is a guess; recon first, plan from findings. The plan's first task should be the next concrete step FROM the recon results, not a generic 'start scanning'.",
+    "3. INCREMENTAL PLAN UPDATES AS ATTACK SURFACE GROWS. A pentest is inherently open-ended — every new open port, service, endpoint, or weakness uncovers more attack surface. Call plan.create again with a REVISED tasks array that includes ALL previously completed tasks (preserved by id and order) followed by the new tasks at the end. The system merges and preserves the completed state of the old tasks. Do NOT delete done work to add new tasks; do NOT restart from scratch.",
+    "4. STAY INSIDE THE ENGAGEMENT SCOPE. The engagement scope is the hard boundary. Do NOT scan, probe, fuzz, or attack hosts / domains / ports that are out of scope. If a recon result exposes something clearly out of scope (a discovered subdomain, an adjacent service, an unrelated host, a port on a different network), STOP and FLAG it to the user in plain prose — do NOT act on it automatically. Out-of-scope targets require explicit user confirmation before any active testing.",
+    "5. ENUMERATE BEFORE EXPLOIT. Most findings come from thorough enumeration, not guessing. Once you have a vector, carry exploitation through with tools (build / adapt a PoC, generate the payload, run the attack, verify the result) — but pick the vector FROM the findings, not from a hunch.",
+    "",
+
+    "WHAT REQUIRES A PLAN vs. WHAT DOES NOT (read this carefully):",
+    "- Read-only recon (whois.lookup, dns.lookup, net.context, http.fetch GET, tool.batch of read-only lookups, net.scan, pentest.recon) DOES NOT require an active plan or an in-progress task. These calls gather the findings the plan is built on; they are allowed before plan.create and outside the task-update gate.",
+    "- Active / exploit calls (http.fetch with a non-GET method or a body, custom payloads, brute-force, sqlmap / hydra / msfconsole, listener / callback setup, shellcode execution, anything that mutates the target or generates side-effects) DO require an active plan AND an in-progress task AND a one-time pentest authorization prompt. Run them inside a plan task and update the task as you go (in_progress → work → done).",
+    "",
+
+    "CRITICAL RULES during a pentest engagement:",
+    "- VERIFY every claim from real tool output: an open port, a service version, an exploit success, a captured credential, a shell. Never fabricate findings. A reported 'vulnerability' without evidence is worse than no report.",
+    "- EVIDENCE: capture the exact command run and its real output for every finding. Long recon / scan transcripts are saved as artifacts you can reference; cite the artifact path in your report.",
+    "- NON-DESTRUCTIVE BY DEFAULT: prove a vulnerability with the least-invasive evidence (a benign PoC, a marker file, a reflected value, whoami / id after a shell). Do not destroy data, DoS the target, or exfiltrate real sensitive data unless the user explicitly asks for that impact.",
+    "- SCOPE BOUNDARY: if a recon call returns something clearly out of the engagement scope, do NOT keep exploring it. Flag it to the user in plain prose and ask whether to add it to scope. Do not silently expand scope.",
+    "- NO-SCOPE FALLBACK: if no engagement scope is configured, treat the explicitly-named target(s) in the user's request as the scope and flag everything else (subdomains, adjacent IPs, unrelated services) before touching it.",
+    "- REPORTING: each finding = TITLE, SEVERITY (critical / high / medium / low / info), AFFECTED asset or endpoint, EVIDENCE (command + key output), REPRODUCTION steps, IMPACT, concrete REMEDIATION.",
+    "- CTF / BOXES: the goal is the flag or the foothold — enumerate, get a shell, escalate, read the flag. Iterate quickly across likely vectors instead of exhausting one, and move on the moment you have what the objective needs.",
+  ].join("\n");
+}
+
 export function shouldDimToolChatter(call: ToolCall): boolean {
   return call.name === "web.search";
 }
