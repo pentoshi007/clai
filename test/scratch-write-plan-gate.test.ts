@@ -80,16 +80,18 @@ describe("scratch-only writes bypass the plan gate", () => {
     expect(result).not.toBe("Blocked or Cancelled.");
   });
 
-  it("blocks fs.write to a project path when no plan exists", async () => {
-    stream.mockImplementationOnce(
-      streamReply(
-        '```tool\n{"name":"fs.write","args":{"path":"src/index.ts","content":"export const x = 1;"}}\n```',
-      ),
-    );
+  it("allows fs.write to a project path through to confirmation when no plan exists", async () => {
+    stream
+      .mockImplementationOnce(
+        streamReply(
+          '```tool\n{"name":"fs.write","args":{"path":"src/index.ts","content":"export const x = 1;"}}\n```',
+        ),
+      )
+      .mockImplementationOnce(streamReply("wrote src/index.ts"));
 
     runTool.mockResolvedValueOnce({ ok: true, output: "wrote src/index.ts" });
 
-    const result = await runAgent("edit the source", {
+    await runAgent("edit the source", {
       session: {
         sessionId: "session-123",
         planApproved: { value: false },
@@ -100,8 +102,8 @@ describe("scratch-only writes bypass the plan gate", () => {
       autoConfirm: true,
     });
 
-    expect(runTool).not.toHaveBeenCalled();
-    expect(result).toBe("Blocked or Cancelled.");
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "fs.write" });
   });
 
   it("allows fs.list (read-only) when no plan exists", async () => {

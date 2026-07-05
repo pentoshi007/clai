@@ -66,7 +66,7 @@ describe("auto-compaction display (Chunk 3)", () => {
         const role: ChatMessage["role"] = i % 2 === 0 ? "user" : "assistant";
         history.push({
           role,
-          content: `${role}-${i} ${"x".repeat(6_000)}`,
+          content: `${role}-${i} ${"x".repeat(12_000)}`,
         });
       }
 

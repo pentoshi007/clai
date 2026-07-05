@@ -45,20 +45,24 @@ describe("agent plan gate enforcement", () => {
     vi.restoreAllMocks();
   });
 
-  it("blocks mutating tool calls when no active plan exists", async () => {
-    stream.mockImplementationOnce(
-      streamReply('```tool\n{"name":"shell.exec","args":{"command":"npm create vite@latest todo-app"}}\n```')
-    );
+  it("allows mutating tool calls through to confirmation when no plan exists", async () => {
+    stream
+      .mockImplementationOnce(
+        streamReply('```tool\n{"name":"shell.exec","args":{"command":"npm create vite@latest todo-app"}}\n```')
+      )
+      .mockImplementationOnce(
+        streamReply("Done.")
+      );
 
     runTool.mockResolvedValueOnce({ ok: true, output: "vite setup done" });
 
-    const result = await runAgent("create a todo app", {
+    await runAgent("create a todo app", {
       session: { sessionId: "session-123", planApproved: { value: false }, allow: new Set(), pentestAuthorized: { value: false } } as any,
       maxSteps: 2,
     });
 
-    expect(runTool).not.toHaveBeenCalled();
-    expect(result).toBe("Blocked or Cancelled.");
+    expect(runTool).toHaveBeenCalledTimes(1);
+    expect(runTool.mock.calls[0]![0]).toMatchObject({ name: "shell.exec" });
   });
 
   it("allows safe read-only tool calls when no active plan exists", async () => {

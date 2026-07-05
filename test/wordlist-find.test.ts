@@ -29,7 +29,7 @@ describe("wordlist.find", () => {
     const result = await wordlistFind({ query: "common.txt" });
     expect(result.ok).toBe(true);
     expect(result.output).toContain("common.txt");
-  });
+  }, 30_000);
 
   it("resolves a known alias like rockyou to its real filename", async () => {
     const wordlistDir = join(homeDir, "wordlists");

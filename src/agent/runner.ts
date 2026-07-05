@@ -694,19 +694,7 @@ export async function runAgentLoop(
         !isScratchOnlyWrite(call, scratchDir);
 
       if (isMutatingAction) {
-        if (!activePlan) {
-          const reason = `No active plan — ${call.name} is blocked. You must first create a plan using plan.create before executing mutating actions.`;
-          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
-          const result = { ok: false, output: reason, exitCode: 1 };
-          return {
-            ok: false,
-            call,
-            result,
-            contextOutput: reason,
-            blockOrCancel: true,
-          };
-        }
-        if (!session.planApproved.value) {
+        if (activePlan && !session.planApproved.value) {
           const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
           writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
           const result = { ok: false, output: reason, exitCode: 1 };
@@ -1148,7 +1136,7 @@ export async function runAgentLoop(
     // what is done, and what remains. The estimate is chars/4; the budget is
     // deliberately conservative so we compact a little early rather than hit a
     // provider context-window error mid-task.
-    const AUTO_COMPACT_TOKEN_BUDGET = 60_000;
+    const AUTO_COMPACT_TOKEN_BUDGET = 120_000;
     const AUTO_COMPACT_KEEP_RECENT = 12;
     let lastCompactionMsgCount = 0;
 
