@@ -11,23 +11,26 @@ import type { ToolResult } from "../types.js";
 
 const IS_WIN = platform() === "win32";
 const IS_MAC = platform() === "darwin";
-const HOME = homedir();
+function getHome(): string {
+  return process.env.HOME || process.env.USERPROFILE || homedir();
+}
 
 // --- Known roots per OS ---
 
 function knownRoots(): string[] {
+  const home = getHome();
   const common = [
-    join(HOME, "wordlists"),
-    join(HOME, "SecLists"),
-    join(HOME, "seclists"),
-    join(HOME, ".wordlists"),
-    join(HOME, "Documents", "wordlists"),
-    join(HOME, "Documents", "SecLists"),
-    join(HOME, "projects"),
-    join(HOME, "github"),
-    join(HOME, "repos"),
-    join(HOME, "pentesting"),
-    join(HOME, "pentest"),
+    join(home, "wordlists"),
+    join(home, "SecLists"),
+    join(home, "seclists"),
+    join(home, ".wordlists"),
+    join(home, "Documents", "wordlists"),
+    join(home, "Documents", "SecLists"),
+    join(home, "projects"),
+    join(home, "github"),
+    join(home, "repos"),
+    join(home, "pentesting"),
+    join(home, "pentest"),
   ];
   if (IS_WIN) {
     return [
@@ -35,7 +38,7 @@ function knownRoots(): string[] {
       "C:\\SecLists",
       "C:\\Tools\\SecLists",
       "C:\\Tools\\wordlists",
-      join(HOME, "Tools", "SecLists"),
+      join(home, "Tools", "SecLists"),
     ];
   }
   if (IS_MAC) {
@@ -239,12 +242,13 @@ export async function wordlistFind(args: WordlistFindArgs): Promise<ToolResult> 
   }
 
   // Pass 2: broader user directories.
+  const home = getHome();
   const broaderRoots = [
-    join(HOME, "Downloads"), join(HOME, "Desktop"),
-    join(HOME, "Documents"), join(HOME, "Projects"),
-    join(HOME, "tools"), join(HOME, "Tools"),
-    join(HOME, "github"), join(HOME, "repos"),
-    join(HOME, "pentesting"), join(HOME, "pentest"),
+    join(home, "Downloads"), join(home, "Desktop"),
+    join(home, "Documents"), join(home, "Projects"),
+    join(home, "tools"), join(home, "Tools"),
+    join(home, "github"), join(home, "repos"),
+    join(home, "pentesting"), join(home, "pentest"),
     "/opt",
   ].filter((r) => !roots.includes(r));
 

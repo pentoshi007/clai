@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   providerCategory,
   updateConfig,
@@ -14,7 +14,15 @@ import type { LlmProvider } from "../src/llm/provider.js";
 
 describe("phase 7 — free-only provider categories", () => {
   const before = getConfig().freeOnly;
-  afterEach(() => updateConfig({ freeOnly: before }));
+
+  beforeEach(() => {
+    // Reset to defaults to prevent cross-test pollution from other files
+    updateConfig({ freeOnly: false });
+  });
+
+  afterEach(() => {
+    updateConfig({ freeOnly: before });
+  });
 
   it("labels each built-in provider with a category", () => {
     expect(providerCategory.nvidia).toBe("free-cloud");
@@ -27,6 +35,9 @@ describe("phase 7 — free-only provider categories", () => {
   });
 
   it("freeOnly defaults to false and is persisted via updateConfig", () => {
+    // Make sure we explicitly start from false
+    updateConfig({ freeOnly: false });
+    expect(getConfig().freeOnly).toBe(false);
     updateConfig({ freeOnly: true });
     expect(getConfig().freeOnly).toBe(true);
     updateConfig({ freeOnly: false });
@@ -45,7 +56,6 @@ describe("phase 7 — free-only provider categories", () => {
   it("buildFallbackChain still honors explicit paid provider as first attempt", () => {
     const chain = buildFallbackChain("openai", true, true);
     expect(chain[0]).toBe("openai");
-    // Subsequent fallbacks should still drop the other paid provider.
     expect(chain.slice(1)).not.toContain("anthropic");
   });
 
@@ -66,6 +76,10 @@ describe("provider fallback rate limits", () => {
   const beforeFallback = getConfig().providerFallback;
   const beforeGroqKey = process.env.GROQ_API_KEY;
   const beforeNvidiaKey = process.env.NVIDIA_API_KEY;
+
+  beforeEach(() => {
+    updateConfig({ providerFallback: false });
+  });
 
   afterEach(() => {
     providers.groq = originalGroq;
