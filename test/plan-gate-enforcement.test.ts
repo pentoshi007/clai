@@ -59,6 +59,7 @@ describe("agent plan gate enforcement", () => {
     await runAgent("create a todo app", {
       session: { sessionId: "session-123", planApproved: { value: false }, allow: new Set(), pentestAuthorized: { value: false } } as any,
       maxSteps: 2,
+      autoConfirm: true,
     });
 
     expect(runTool).toHaveBeenCalledTimes(1);
