@@ -40,9 +40,16 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
     lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}`);
   });
   if (approved) {
+    const inProgress = plan.tasks.find((t) => t.state === "in_progress");
     const firstPending = plan.tasks.find((t) => t.state === "pending");
     lines.push("The user APPROVED this plan. Execute it task by task NOW.");
-    if (firstPending) {
+    if (inProgress) {
+      lines.push(
+        `RESUME TASK ${inProgress.id} (${inProgress.title}) — it was started but interrupted. ` +
+          "Retry what was in progress; do NOT restart completed work from scratch. " +
+          "Do NOT re-do tasks already marked done, and do NOT skip ahead to later tasks.",
+      );
+    } else if (firstPending) {
       lines.push(
         `START WITH TASK ${firstPending.id} (${firstPending.title}). ` +
           "Do NOT re-do tasks already marked done, and do NOT skip ahead to later tasks.",

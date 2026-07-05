@@ -1702,9 +1702,10 @@ export async function runAgentLoop(
                 role: "user",
                 content:
                   "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Retry now with a COMPLETE, valid ```tool block. " +
-                  "If it was fs.writeMany, split the FILE LIST into smaller batches. Do not shorten, truncate, or simplify file contents. " +
-                  "For one large file, retry that file alone as one complete fs.write call. Do NOT claim any file was written until a tool call actually succeeds.",
+                  "Keep your reasoning SHORT and emit the ```tool block as early as possible. " +
+                  "If it was fs.writeMany, split the FILE LIST into smaller batches (3-5 files per call). " +
+                  "For one large file (e.g. a report), write it in sections: use fs.write for the first section, then shell.exec with 'cat >> file' or separate fs.write calls for remaining sections. " +
+                  "Do not shorten, truncate, or simplify file contents. Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
             }
@@ -2097,6 +2098,10 @@ export async function runAgentLoop(
             content: `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${res.contextOutput}`,
           });
           productiveSteps += 1;
+          // Reset retry counters — they track consecutive failures, not cumulative.
+          truncatedToolRetries = 0;
+          malformedFenceRetries = 0;
+          bareToolJsonRetries = 0;
           if (res.ok && res.call.name === "shell.start") sawServerStart = true;
           if (res.ok && res.call.name === "shell.tail") sawServerTail = true;
           if (

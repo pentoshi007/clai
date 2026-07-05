@@ -182,40 +182,49 @@ export OLLAMA_HOST=http://localhost:11434
 
 ## REPL Commands
 
-| Command                 | Action                                             |
-|-------------------------|--------------------------------------------------  |
-| `/ask`                  | Switch to ask mode                                 |
-| `/agent`                | Switch to agent mode                               |
-| `/model`                | Open interactive model picker (type/↑/↓, Tab fills, Enter selects) |
-| `/model <name\|#>`      | Switch model by name or number (e.g. `/model 2`)   |
-| `/provider [name]`      | Switch provider or open interactive picker          |
-| `/use <provider>`       | Alias for `/provider <name>`                       |
-| `/set <provider> [key]` | Store API key (masked input if key omitted)        |
-| `/unset <provider>`     | Remove stored key                                  |
-| `/keys`                 | List configured providers, masked                  |
-| `/info [provider]`      | Show details & usage plan for a provider           |
-| `/variants [on|off|low|medium|high]` | Toggle model thinking/reasoning variants |
-| `/think`                | Show hidden thinking from last response            |
-| `/output [last|id|list]`| Toggle full saved tool output                      |
-| `/clear`                | Clear conversation context                         |
-| `/new`                  | Save current session & start fresh                 |
-| `/history`              | Browse & resume past sessions (interactive picker) |
-| `/save <name>`          | Save current session                               |
-| `/reset`                | Clear all saved history                            |
-| `/cwd <path>`           | Change working directory                           |
-| `/allow <tool>`         | Whitelist a tool for the session                   |
-| `/permissions [default\|allow-all]` | Toggle confirmation prompting (allow-all bypasses confirm gates except passwords) |
-| `/plan`                 | View the current session plan (also `Ctrl+P`)      |
-| `/implement`            | Approve the current plan and have clai execute it  |
-| `/discard`              | Discard the current plan so later messages ignore it |
-| `/scope add <targets>`  | Add authorized pentest targets                     |
-| `/fallback [on|off]`    | Try other configured providers after a failure     |
-| `/update`               | Check for updates                                  |
-| `/exit`                 | Quit                                               |
-| `/help`                 | List commands                                      |
-| `Ctrl+C`                | Abort current response (second Ctrl+C exits)       |
-| `Ctrl+O`                | Toggle full tool output (same keys on all OSes)    |
-| `Ctrl+P`                | View the current session plan                      |
+| Command | Action |
+|---------|--------|
+| `/ask` | Switch to read-only ask mode (suggests commands/steps but does not execute them) |
+| `/agent` | Switch to active agent mode (proposes plans, executes commands, installs tools) |
+| `/model` | Open the interactive model picker to select a model (press Enter to open) |
+| `/model <name\|#>` | Switch active model by model name or index number (e.g. `/model 2`) |
+| `/provider [name]` | Switch LLM provider or open interactive provider picker |
+| `/use <provider>` | Alias for `/provider <name>` |
+| `/set <provider> [key]` | Store API key for a provider (prompts with masked input if key is omitted) |
+| `/unset <provider>` | Remove stored API key for a provider |
+| `/keys` | List configured providers with their API keys masked |
+| `/info [provider]` | Show model parameters, token/thinking limits, and usage details for a provider |
+| `/search [provider]` | Switch search provider (Brave, Tavily, etc.) or open interactive picker |
+| `/search-provider [name]`| Alias for `/search` |
+| `/mouse [on\|off]` | Enable (`on`) or disable (`off`) REPL mouse tracking for scrolling vs native copy-paste selection |
+| `/variants [on\|off\|none\|minimal\|low\|medium\|high\|xhigh]` | Configure reasoning effort. Use `on`/`off` to toggle, or set reasoning effort level (opens picker if no arg) |
+| `/reasoning [...]` | Alias for `/variants` |
+| `/think` / `/thinking` | Print the full, hidden reasoning/thinking trace from the last LLM response |
+| `/output [last\|id\|list]`| Toggle full tool output pager (`Ctrl+O`) or list saved output files |
+| `/clear` | Clear the current conversation messages and active state in memory |
+| `/new` / `/clean` | Save current session to history and start a fresh session with cleared context |
+| `/history` | Open interactive session browser to search and restore past conversation sessions |
+| `/save <name>` | Manually save the current session under a custom name |
+| `/reset` | Clear all saved history sessions permanently |
+| `/cwd <path>` | Change the current working directory for shell and tool executions |
+| `/allow <tool>` | Whitelist a tool for the current session to run without prompting for confirmation |
+| `/disallow <tool>` | Revoke session authorization for a tool |
+| `/freeonly [on\|off]` | Toggle (`on` to restrict, `off` to permit) paid providers when automatic fallback is active |
+| `/fallback [on\|off]` | Toggle (`on` to try other providers after a primary failure, `off` to fail immediately) |
+| `/compact` | Compress session history to fit context window constraints |
+| `/context` | Display estimated current context size in tokens |
+| `/plan` | View the current session plan checklist (also `Ctrl+P`) |
+| `/implement` | Approve the proposed plan and begin automated execution |
+| `/discard` | Discard the current plan and return to normal conversational mode |
+| `/scope [show\|clear\|new\|add <targets>]` | View or adjust authorized penetration testing target scopes |
+| `/privacy [status\|clear-history\|clear-logs\|clear-artifacts\|clear-all\|on\|off]` | Toggle private mode (`on` disables all disk writing, `off` enables) or purge logs/history |
+| `/permissions [default\|allow-all]` | Set confirmation prompt behavior (`allow-all` bypasses confirm prompts for mutating tasks except keys) |
+| `/update` | Check for updates and upgrade clai |
+| `/exit` / `/quit` | Quit and close the REPL |
+| `/help` | Print this command reference guide |
+| `Ctrl+C` | Abort current response (second Ctrl+C exits) |
+| `Ctrl+O` | Toggle full tool output (same keys on all OSes) |
+| `Ctrl+P` | View the current session plan |
 
 ### Plan → Implement workflow
 
