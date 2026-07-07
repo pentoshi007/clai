@@ -303,6 +303,7 @@ export function useAgentRunner({
                 requestSecret,
                 onMessages: (msgs: ChatMessage[]) => {
                   capturedMessages = msgs;
+                  messagesRef.current = msgs;
                 },
               });
             } else {
@@ -344,6 +345,7 @@ export function useAgentRunner({
             requestSecret,
             onMessages: (msgs: ChatMessage[]) => {
               capturedMessages = msgs;
+              messagesRef.current = msgs;
             },
           });
         }

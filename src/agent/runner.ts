@@ -2280,7 +2280,7 @@ export async function runAgentLoop(
         if (aborted) {
           lastAnswer = "Aborted.";
           writeAbort();
-          return lastAnswer;
+          return finishTurn(lastAnswer, productiveSteps);
         }
         if (blocked && blockedResult) {
           lastAnswer = blockedResult.lastAnswer || "Blocked or Cancelled.";
@@ -2293,6 +2293,14 @@ export async function runAgentLoop(
         // the model-written summary path (with plan re-injection) — never a
         // mechanical transcript dump.
         await maybeAutoCompact("post-tool-token-budget");
+
+        if (options.onMessages) {
+          try {
+            options.onMessages(buildTurnHistory(liveMessages, lastAnswer));
+          } catch {
+            // ignore
+          }
+        }
       }
     }
 
@@ -2307,7 +2315,16 @@ export async function runAgentLoop(
     lastAnswer = richSummary;
     return finishTurn(lastAnswer, productiveSteps);
   } catch (error) {
-    if (isAbortError(error, options.signal)) {
+    const isAbort = isAbortError(error, options.signal);
+    const msg = isAbort ? "Aborted." : `Error: ${error instanceof Error ? error.message : String(error)}`;
+    if (options.onMessages) {
+      try {
+        options.onMessages(buildTurnHistory(liveMessages, msg));
+      } catch {
+        // ignore
+      }
+    }
+    if (isAbort) {
       writeAbort();
       return "Aborted.";
     }

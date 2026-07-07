@@ -728,6 +728,7 @@ async function offerAgentSwitch(
   },
   requestModel: string,
   images: ChatImage[],
+  onMessages?: (msgs: ChatMessage[]) => void,
 ): Promise<string> {
   if (info.preamble) {
     process.stdout.write(`${renderMarkdown(info.preamble)}\n`);
@@ -777,6 +778,7 @@ async function offerAgentSwitch(
       session: state.session,
       images,
       onEvent: classicRenderer.onEvent,
+      onMessages,
     }),
   );
 }
@@ -1975,6 +1977,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         continue;
       }
 
+      let stateMessagesUpdated = false;
+      const onMessages = (msgs: ChatMessage[]): void => {
+        stateMessagesUpdated = true;
+        state.messages = msgs;
+      };
+
       try {
         clearThinking();
         abortPressCount = 0;
@@ -2042,6 +2050,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             console.log(chalk.dim(`  ↳ ${tag}: `) + chalk.dim(att.path));
           }
         }
+
         if (state.mode === "ask") {
           let actionRequired: AskActionRequired | undefined;
           assistantContent = await withAbortableInput(async (signal) =>
@@ -2064,32 +2073,36 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             }, signal),
           );
           process.stdout.write("\n");
+
           if (actionRequired) {
-            // The task needs actions ask mode can't perform. Offer to switch
-            // into agent mode and run it there. On confirm, state.mode flips
-            // so subsequent turns stay in agent mode too.
-            assistantContent = await offerAgentSwitch(
-              actionRequired,
-              state,
-              requestModel,
-              images,
-            );
-          }
-        } else {
-          const classicRenderer = attachClassicRenderer();
-          assistantContent = await withAbortableInput(async (signal) =>
-            runAgent(modelInput, {
-              provider: state.provider,
-              model: requestModel,
-              history: state.messages,
-              signal,
-              session: state.session,
-              images,
-              onEvent: classicRenderer.onEvent,
-            }),
+          // The task needs actions ask mode can't perform. Offer to switch
+          // into agent mode and run it there. On confirm, state.mode flips
+          // so subsequent turns stay in agent mode too.
+          assistantContent = await offerAgentSwitch(
+            actionRequired,
+            state,
+            requestModel,
+            images,
+            onMessages,
           );
         }
-        console.log();
+      } else {
+        const classicRenderer = attachClassicRenderer();
+        assistantContent = await withAbortableInput(async (signal) =>
+          runAgent(modelInput, {
+            provider: state.provider,
+            model: requestModel,
+            history: state.messages,
+            signal,
+            session: state.session,
+            images,
+            onEvent: classicRenderer.onEvent,
+            onMessages,
+          }),
+        );
+      }
+      console.log();
+      if (!stateMessagesUpdated) {
         const userHistoryMessage: ChatMessage = {
           role: "user",
           content: modelInput,
@@ -2099,20 +2112,25 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           role: "assistant",
           content: assistantContent,
         });
-      } catch (error) {
-        if (error instanceof AbortRunError) {
-          process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
-          continue;
-        }
-        // Still save the exchange so /history doesn't lose conversations
-        // that hit transient errors (e.g. "requires root", network timeout).
-        const errMsg = error instanceof Error ? error.message : String(error);
+      }
+    } catch (error) {
+      if (error instanceof AbortRunError) {
+        process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
+        await persistSession(state, line);
+        continue;
+      }
+      // Still save the exchange so /history doesn't lose conversations
+      // that hit transient errors (e.g. "requires root", network timeout).
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if (!stateMessagesUpdated) {
         state.messages.push(
           { role: "user", content: line },
           { role: "assistant", content: `[error: ${errMsg}]` },
         );
-        console.error(chalk.red(errMsg));
       }
+      console.error(chalk.red(errMsg));
+      await persistSession(state, line);
+    }
     }
   } finally {
     isReadingPrompt = false;
