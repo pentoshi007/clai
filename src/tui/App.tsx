@@ -224,6 +224,7 @@ export function App({
   >();
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const [compacting, setCompacting] = useState(false);
+  const [compactStartedAt, setCompactStartedAt] = useState<number | undefined>(undefined);
   const [mouseMode, setMouseMode] = useState(true);
   const [planPaneVisible, setPlanPaneVisible] = useState(true);
   const history = useRef<string[]>([]);
@@ -233,7 +234,7 @@ export function App({
   const lastDragTime = useRef(0);
   const isCtrlHPressed = useRef(false);
   const jobs = useJobs(overlay.kind === "jobs");
-  const spinner = useSpinner(state.status.running);
+  const spinner = useSpinner(state.status.running || compacting);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -256,6 +257,7 @@ export function App({
       compactAbortRef.current = undefined;
     }
     setCompacting(false);
+    setCompactStartedAt(undefined);
   }, []);
 
   useEffect(() => {
@@ -988,6 +990,7 @@ export function App({
           const ac = new AbortController();
           compactAbortRef.current = ac;
           setCompacting(true);
+          setCompactStartedAt(Date.now());
           info("compacting conversation…");
           const fullSession = serializeTranscriptForCompaction(state.items);
           void runner
@@ -1037,6 +1040,7 @@ export function App({
               if (compactAbortRef.current === ac) {
                 compactAbortRef.current = undefined;
                 setCompacting(false);
+                setCompactStartedAt(undefined);
               }
             });
           return true;
@@ -2295,8 +2299,9 @@ export function App({
   const closeOverlay = useCallback(() => setOverlay({ kind: "none" }), []);
 
   // Render
-  const elapsed = state.status.startedAt
-    ? Math.max(0, Math.floor((Date.now() - state.status.startedAt) / 1000))
+  const timerStart = compacting ? compactStartedAt : state.status.startedAt;
+  const elapsed = timerStart
+    ? Math.max(0, Math.floor((Date.now() - timerStart) / 1000))
     : 0;
 
   const before = input.slice(0, cursor);
