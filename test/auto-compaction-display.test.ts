@@ -62,7 +62,7 @@ describe("auto-compaction display (Chunk 3)", () => {
       const history: ChatMessage[] = [
         { role: "system", content: "system prompt" },
       ];
-      for (let i = 0; i < 40; i += 1) {
+      for (let i = 0; i < 60; i += 1) {
         const role: ChatMessage["role"] = i % 2 === 0 ? "user" : "assistant";
         history.push({
           role,

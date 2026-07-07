@@ -2003,7 +2003,8 @@ export function App({
   }, [stdin, modalActive, maxOffset, mouseMode, viewportH, state.pendingConfirm, secretRequest, overlayOpen]);
 
   // Key handling
-  useInput((ch, key) => {
+  const onInputRef = useRef<(ch: string, key: any) => void>(undefined as any);
+  onInputRef.current = (ch, key) => {
     if (key.backspace && isCtrlHPressed.current) {
       isCtrlHPressed.current = false;
       return;
@@ -2283,7 +2284,13 @@ export function App({
       historyIdx.current = -1;
       historyDraft.current = "";
     }
-  });
+  };
+
+  const handleInputStable = useCallback((ch: string, key: any) => {
+    onInputRef.current?.(ch, key);
+  }, []);
+
+  useInput(handleInputStable);
 
   const closeOverlay = useCallback(() => setOverlay({ kind: "none" }), []);
 

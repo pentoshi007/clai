@@ -1790,7 +1790,12 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       // hint that force-kill is in progress.
       if (abortPressCount === 1) {
         process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
-      } else if (abortPressCount >= 2) {
+      } else if (abortPressCount >= 3) {
+        // The abort didn't complete fast enough. Force-exit so the
+        // user is never stuck.
+        process.stdout.write(chalk.yellow("  ⏹ force-exiting…\n"));
+        process.exit(0);
+      } else {
         process.stdout.write(chalk.yellow("  ⏹ force-killing…\n"));
       }
     }
@@ -1805,21 +1810,32 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     // SIGINFO is macOS/BSD-specific; other platforms can still use /think.
   }
   let lastSigintAt = 0;
+  let sigintCount = 0;
   // Ctrl+C while streaming → abort. While idle at a prompt, the
   // readPromptLine handler clears the line on first press and exits on
   // second press within 1s; so SIGINT here only acts as a fallback for
   // the rare case where no prompt or stream is active.
   const handleSigint = (): void => {
+    const now = Date.now();
     if (currentAbortController) {
+      sigintCount += 1;
       currentAbortController.abort();
+      // After 3 Ctrl+C presses during a turn, force-exit.
+      // The abort may not propagate fast enough (long-running tool,
+      // network hang, stuck child process) — never leave the user trapped.
+      if (sigintCount >= 3) {
+        console.log(chalk.yellow("\n  ⏹ force-exiting…"));
+        process.exit(0);
+      }
       return;
     }
+    // Reset the in-turn counter when we're no longer in a turn.
+    sigintCount = 0;
     if (isReadingPrompt) {
       // readPromptLine's keypress handler owns the prompt-level Ctrl+C
       // semantics; do nothing here so the two paths never fight.
       return;
     }
-    const now = Date.now();
     if (now - lastSigintAt < 1_000) {
       console.log();
       process.exit(0);

@@ -44,6 +44,7 @@ import {
   createThinkingStreamParser,
   rememberThinkingFromText,
   renderThinkingSummary,
+  stripThinking,
 } from "../ui/thinking.js";
 import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
 import { startThinkingSpinner, type ThinkingSpinner } from "../ui/spinner.js";
@@ -52,12 +53,13 @@ import { analyzeTask } from "./task-analyzer.js";
 import { LoopGuard } from "./loop-guard.js";
 import { loadPlan, type SessionPlan } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
-import { pathInsideSandbox } from "../tools/fs.js";
+import { pathInsideSandbox, fsWrite } from "../tools/fs.js";
 import {
   stripSentinelTokens,
   parseToolCall,
   recognizeBareToolJson,
   looksLikeTruncatedToolCall,
+  salvageTruncatedWrite,
   countToolFences,
   parseAllToolCalls,
   groupToolCallsForExecution,
@@ -1136,8 +1138,8 @@ export async function runAgentLoop(
     // what is done, and what remains. The estimate is chars/4; the budget is
     // deliberately conservative so we compact a little early rather than hit a
     // provider context-window error mid-task.
-    const AUTO_COMPACT_TOKEN_BUDGET = 120_000;
-    const AUTO_COMPACT_KEEP_RECENT = 12;
+    const AUTO_COMPACT_TOKEN_BUDGET = 200_000;
+    const AUTO_COMPACT_KEEP_RECENT = 6;
     let lastCompactionMsgCount = 0;
 
     const summarizeForCompaction = async (
@@ -1192,10 +1194,13 @@ export async function runAgentLoop(
           });
         }
         lastCompactionMsgCount = messages.length;
-        const afterTokens = estimateMessagesTokens(messages);
+        // Report the compacted token count BEFORE plan re-injection so the
+        // compaction stats accurately show the reduction. Then report the
+        // final count (which is what the model actually receives) separately.
+        const compactedTokens = estimateMessagesTokens(messages);
         await auditLog("agent.compact", {
           newLength: messages.length,
-          estimatedTokens: afterTokens,
+          estimatedTokens: compactedTokens,
           reason,
         });
         // Extract the inserted compaction memory so we can surface the
@@ -1213,12 +1218,16 @@ export async function runAgentLoop(
         )
           ? insertedText(insertedSummary, `${COMPACTION_MEMORY_PREFIX}\n\n`)
           : insertedText(insertedSummary, COMPACTION_MEMORY_PREFIX);
+        const afterTokens = estimateMessagesTokens(messages);
         writeCompacted(summaryText, beforeTokens, afterTokens);
+        const planNote = afterTokens > compactedTokens
+          ? ` (compacted to ~${compactedTokens.toLocaleString()}, +plan → ~${afterTokens.toLocaleString()})`
+          : "";
         writeNotice(
           "info",
-          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)`,
+          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens${planNote})`,
           chalk.dim(
-            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)\n`,
+            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens${planNote})\n`,
           ),
         );
       } catch (error) {
@@ -1345,6 +1354,10 @@ export async function runAgentLoop(
         let accumulatedText = "";
         const callIds: string[] = [];
         let streamedCallsCount = 0;
+        // Deferred tool-call events: collect tool calls parsed from the stream
+        // and emit them AFTER thinking + assistant text, so the display order
+        // is correct: thinking → model text → tool-call cards.
+        const deferredToolCalls: { eventId: string; call: ToolCall; rendered: string }[] = [];
         const deltaParser = writesDirectly
           ? undefined
           : createThinkingStreamParser(
@@ -1398,12 +1411,17 @@ export async function runAgentLoop(
 
                   const toolCallLine =
                     chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-                  writeToolCall(
+                  // Defer the writeToolCall emission — collect it so we can
+                  // emit after thinking + assistant text for correct order.
+                  deferredToolCalls.push({
                     eventId,
                     call,
-                    styleToolChatter(call, toolCallLine) + "\n",
-                  );
-
+                    rendered: styleToolChatter(call, toolCallLine) + "\n",
+                  });
+                  // Still update spinner label for user feedback during streaming.
+                  if (!writesDirectly) {
+                    emit({ type: "status", text: call.name });
+                  }
                   streamedCallsCount += 1;
                 }
                 if (writesDirectly) {
@@ -1538,7 +1556,7 @@ export async function runAgentLoop(
             }
             messages.push({
               role: "assistant",
-              content: collapseRepeatedText(completion.text),
+              content: stripThinking(collapseRepeatedText(completion.text)).visible,
             });
             // Keep nudges SHORT — cheap models lose the key instruction in long text.
             const buildNudge =
@@ -1669,11 +1687,56 @@ export async function runAgentLoop(
             continue;
           }
           // Detect a tool call that opened but was cut off by the token limit
-          // (most common with a large multi-file fs.writeMany). Retrying with a
-          // nudge to split the work is far better than rendering broken JSON as
-          // a final answer and leaving the project half-created.
+          // (most common with large fs.write/fs.writeMany for reports).
+          // Instead of asking the model to retry (which will just truncate
+          // again at the same limit), we SALVAGE the partial content from the
+          // truncated JSON and write it, then tell the model to CONTINUE with
+          // fs.append from where it was cut off.
           if (looksLikeTruncatedToolCall(assistantText.visible)) {
             truncatedToolRetries += 1;
+
+            // Try to salvage a partial fs.write / fs.append from the truncated JSON.
+            // The pattern is: {"name":"fs.write","args":{"path":"...","content":"...
+            // We extract the path and whatever content was produced before truncation.
+            const salvaged = salvageTruncatedWrite(assistantText.visible);
+
+            if (salvaged && truncatedToolRetries <= 5) {
+              // Write the salvaged partial content
+              try {
+                const writeResult = await fsWrite(salvaged.path, salvaged.content, {
+                  confirmed: true,
+                });
+                if (writeResult.ok) {
+                  const lineCount = salvaged.content.split("\n").length;
+                  writeNotice(
+                    "info",
+                    `tool call was truncated — salvaged ${lineCount} lines and wrote to ${salvaged.path}`,
+                    chalk.cyan(
+                      `  ℹ tool call was truncated — salvaged ${lineCount} lines to ${salvaged.path}\n`,
+                    ),
+                  );
+                  messages.push({
+                    role: "assistant",
+                    content: stripThinking(assistantText.visible).visible,
+                  });
+                  messages.push({
+                    role: "user",
+                    content:
+                      `Your fs.write tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines to ${salvaged.path}. ` +
+                      `The file now exists with content up to: "${salvaged.lastLine}"\n\n` +
+                      `CONTINUE writing the rest of the content using fs.append:\n` +
+                      '```tool\n{"name":"fs.append","args":{"path":"' + salvaged.path + '","content":"...remaining content..."}}\n```\n' +
+                      `Write the NEXT section of content starting from where it was cut off. ` +
+                      `Keep each fs.append call to ~100 lines max so it fits in the output window. ` +
+                      `Use multiple fs.append calls if needed. Do NOT re-write content that was already saved.`,
+                  });
+                  continue;
+                }
+              } catch {
+                // Salvage failed — fall through to standard retry
+              }
+            }
+
             if (truncatedToolRetries <= 3) {
               writeNotice(
                 "warn",
@@ -1684,16 +1747,18 @@ export async function runAgentLoop(
               );
               messages.push({
                 role: "assistant",
-                content: assistantText.visible,
+                content: stripThinking(assistantText.visible).visible,
               });
               messages.push({
                 role: "user",
                 content:
                   "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Keep your reasoning SHORT and emit the ```tool block as early as possible. " +
-                  "If it was fs.writeMany, split the FILE LIST into smaller batches (3-5 files per call). " +
-                  "For one large file (e.g. a report), write it in sections: use fs.write for the first section, then shell.exec with 'cat >> file' or separate fs.write calls for remaining sections. " +
-                  "Do not shorten, truncate, or simplify file contents. Do NOT claim any file was written until a tool call actually succeeds.",
+                  "Your output token limit is ~32k tokens. For LARGE files (reports, docs, long code), you MUST write in chunks:\n" +
+                  "1. Use fs.write to create the file with the FIRST ~100 lines\n" +
+                  "2. Use fs.append to add the NEXT ~100 lines\n" +
+                  "3. Repeat fs.append for each remaining section\n" +
+                  "Keep your reasoning SHORT — emit the ```tool block as early as possible to maximize content space. " +
+                  "Do NOT try to write the entire file in one call. Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
             }
@@ -1714,6 +1779,42 @@ export async function runAgentLoop(
               assistantText.visible,
             );
           if (hasFencedCallShape) {
+            // Before treating as a generic malformed fence, check if this is
+            // actually a truncated write call that should be salvaged.
+            const salvaged = salvageTruncatedWrite(assistantText.visible);
+            if (salvaged) {
+              try {
+                const writeResult = await fsWrite(salvaged.path, salvaged.content, {
+                  confirmed: true,
+                });
+                if (writeResult.ok) {
+                  const lineCount = salvaged.content.split("\n").length;
+                  writeNotice(
+                    "info",
+                    `malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}`,
+                    chalk.cyan(
+                      `  ℹ malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}\n`,
+                    ),
+                  );
+                  messages.push({
+                    role: "assistant",
+                    content: stripThinking(assistantText.visible).visible,
+                  });
+                  messages.push({
+                    role: "user",
+                    content:
+                      `The system extracted and wrote ${lineCount} lines to ${salvaged.path} from your malformed tool call. ` +
+                      `The file content ends at: "${salvaged.lastLine}"\n\n` +
+                      `If the file is complete, proceed with the next step. ` +
+                      `If more content is needed, use fs.append to add the remaining sections (~100 lines per call).`,
+                  });
+                  continue;
+                }
+              } catch {
+                // Salvage failed — fall through to standard malformed retry
+              }
+            }
+
             malformedFenceRetries += 1;
             if (malformedFenceRetries <= 3) {
               writeNotice(
@@ -1725,15 +1826,18 @@ export async function runAgentLoop(
               );
               messages.push({
                 role: "assistant",
-                content: assistantText.visible,
+                content: stripThinking(assistantText.visible).visible,
               });
               messages.push({
                 role: "user",
                 content:
                   "Your previous message contained a ```tool block, but its JSON was INVALID, so NOTHING ran. " +
-                  "Common causes: an extra or missing `}` / `]`, a trailing brace after the closing `}`, or unescaped quotes/newlines inside a string value. " +
+                  "Common causes: unescaped newlines or quotes inside a string value, an extra or missing `}` / `]`, or content too large for the output window. " +
                   'Re-emit ONE valid ```tool block of the exact form {"name":"<tool>","args":{...}} with balanced braces. ' +
-                  "If it was a large fs.writeMany, split it into SMALLER batches (3-5 files) so the JSON is easy to keep valid. " +
+                  "IMPORTANT: For large file content (reports, docs), write in chunks:\n" +
+                  "1. fs.write with the FIRST ~100 lines only\n" +
+                  "2. fs.append for each subsequent ~100-line section\n" +
+                  "Keep reasoning SHORT to maximize output space for the tool call JSON. " +
                   "Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
@@ -2008,6 +2112,11 @@ export async function runAgentLoop(
           : textBeforeToolCall(assistantText.visible);
         if (beforeTool) {
           writeAssistantMessage(beforeTool);
+        }
+        // Now emit deferred tool-call events (collected during streaming)
+        // so the display order is: thinking → text → tool-call cards.
+        for (const deferred of deferredToolCalls) {
+          writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
         }
         let allCalls = parseAllToolCalls(
           assistantText.visible || assistantText.thinkContent,

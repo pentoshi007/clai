@@ -725,9 +725,9 @@ export const BATCH_SAFE_TOOLS = new Set([
   "web.fetch",
 ]);
 
-const BATCH_MAX_CALLS = 8;
+const BATCH_MAX_CALLS = 20;
 const BATCH_DEFAULT_CONCURRENCY = 3;
-const BATCH_MAX_CONCURRENCY = 4;
+const BATCH_MAX_CONCURRENCY = 6;
 
 interface BatchCallSpec {
   name: string;

@@ -581,21 +581,25 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
     `  ${mode.toUpperCase()} MODE  `,
   );
 
-  const permissionsColor = permissions === "allow-all" ? "#16a34a" : "#475569";
-  const permissionsBanner = chalk.bgHex(permissionsColor).whiteBright.bold(
-    `  ${permissions.toUpperCase()} PERMISSION  `,
+  // Permission badge: green bg for allow-all, slate bg for default
+  const permBgColor = permissions === "allow-all" ? "#15803d" : "#334155";
+  const permissionsBanner = chalk.bgHex(permBgColor).whiteBright.bold(
+    `  ${permissions.toUpperCase()}  `,
   );
+  const permLabel = chalk.bgHex("#334155").whiteBright.bold(` PERMISSION `)
 
   const rightRows: string[] = [
+    "",                                        // top padding
     infoRow("workdir", cwd, chalk.white),
     infoRow("model", model, chalk.cyan),
     infoRow("provider", provider, chalk.green),
     infoRow("version", version, chalk.white),
     "",
-    `${modeBanner}  ${permissionsBanner}`,
+    modeBanner,
+    "",
+    `${permLabel} ${permissionsBanner}`,
+    "",                                        // bottom padding
   ];
-
-  // Both columns render exactly 7 rows (wordmark height), so they line up.
   const rowCount = Math.max(wmLines.length, rightRows.length);
 
   const top =
@@ -610,8 +614,18 @@ function renderIntroHeader(ctx: RenderCtx): string[] {
     );
 
   const middle: string[] = [];
+  // Vertically center the wordmark: pad the wmLines array with blank rows
+  // on top and bottom so the logo always sits in the vertical middle of the
+  // box, regardless of how many info rows the right panel has.
+  const wmPadTop = Math.floor((rowCount - wmLines.length) / 2);
+  const wmPadBot = rowCount - wmLines.length - wmPadTop;
+  const paddedWm = [
+    ...Array<string>(wmPadTop).fill(""),
+    ...wmLines,
+    ...Array<string>(wmPadBot).fill(""),
+  ];
   for (let i = 0; i < rowCount; i++) {
-    const leftCell = centerCell(wmLines[i] ?? "", leftWidth);
+    const leftCell = centerCell(paddedWm[i] ?? "", leftWidth);
     const rightCell = padCell(rightRows[i] ?? "", rightWidth);
     middle.push(
       "  " +

@@ -1,21 +1,26 @@
 import type { ChatMessage } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
+import { stripThinking } from "../ui/thinking.js";
 
 /**
- * Crude per-char token estimator. Production-grade tokenization differs by
- * provider, but for budgeting an order-of-magnitude heuristic ("chars / 4")
- * is enough to decide when to compact. We deliberately err on the side of
- * over-estimating — better to compact one turn too early than to lose state
- * to a provider context-window error.
+ * Per-char token estimator. Real tokenization varies by provider, but for
+ * budgeting a chars/3.3 heuristic is close enough for mixed text/code/JSON
+ * (which tokenizes less efficiently than pure English prose). We
+ * deliberately over-estimate — better to compact one turn too early than to
+ * lose state to a provider context-window error.
  */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return Math.ceil(text.length / 3.3);
 }
 
 export function estimateMessagesTokens(messages: ChatMessage[]): number {
   let sum = 0;
   for (const message of messages) {
     sum += estimateTokens(message.content) + 4; // role overhead
+    // Images contribute tokens too — a typical image is ~1k tokens.
+    if (message.images) {
+      sum += message.images.length * 1000;
+    }
   }
   return sum;
 }
@@ -37,7 +42,7 @@ export interface CompactResult {
 }
 
 const DEFAULT_BUDGET_TOKENS = 32_000;
-const DEFAULT_KEEP_RECENT = 12;
+const DEFAULT_KEEP_RECENT = 6;
 
 /**
  * Content prefixes that mark a `role:"system"` message as compacted session
@@ -156,7 +161,15 @@ export async function compactMessagesWithSummary(
   }
 
   const messageTranscript = older
-    .map((message) => `${message.role.toUpperCase()}: ${redactSecrets(message.content)}`)
+    .map((message) => {
+      let content = redactSecrets(message.content);
+      // Strip <think> tags from assistant messages so thinking content
+      // never leaks into the compaction summary or model context.
+      if (message.role === "assistant") {
+        content = stripThinking(content).visible;
+      }
+      return `${message.role.toUpperCase()}: ${content}`;
+    })
     .join("\n\n");
   const transcript = sessionTranscript?.trim()
     ? redactSecrets(sessionTranscript.trim())
@@ -172,14 +185,25 @@ export async function compactMessagesWithSummary(
 
   // The summary is the only path. Any failure propagates to the caller —
   // there is deliberately NO deterministic fallback.
-  const summary = redactSecrets((await summarize(prompt)).trim());
+  // Strip <think> tags from the summary — the summarizer model may itself
+  // produce reasoning tags that would leak into the compacted context.
+  const rawSummary = redactSecrets((await summarize(prompt)).trim());
+  const summary = stripThinking(rawSummary).visible.trim();
   if (!summary) throw new Error("compaction failed: model returned an empty summary");
 
   const head = start === 1 ? [messages[0]!] : [];
+  // Strip <think> tags from tail messages so thinking content never
+  // survives compaction into the model's context.
+  const tail = messages.slice(tailStart).map((msg) => {
+    if (msg.role === "assistant" && /<think/i.test(msg.content)) {
+      return { ...msg, content: stripThinking(msg.content).visible };
+    }
+    return msg;
+  });
   const compacted: ChatMessage[] = [
     ...head,
     { role: "system", content: `${COMPACTION_MEMORY_PREFIX}\n\n${summary}` },
-    ...messages.slice(tailStart),
+    ...tail,
   ];
   const afterTokens = estimateMessagesTokens(compacted);
   return {

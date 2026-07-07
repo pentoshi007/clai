@@ -812,6 +812,120 @@ export function looksLikeTruncatedToolCall(text: string): boolean {
 }
 
 /**
+ * Attempt to extract usable content from a truncated fs.write / fs.append /
+ * fs.writeMany tool call. When the model's output is cut off mid-JSON, the
+ * tool call fails to parse — but typically a large chunk of the intended file
+ * content is already present in the raw text. This function extracts:
+ *   - path: the target file path
+ *   - content: the partial file content (up to the truncation point)
+ *   - lastLine: the last complete line (for telling the model where to resume)
+ *
+ * Returns undefined if the text doesn't look like a salvageable write call.
+ */
+export function salvageTruncatedWrite(text: string): {
+  path: string;
+  content: string;
+  lastLine: string;
+} | undefined {
+  // Match fs.write or fs.append: {"name":"fs.write","args":{"path":"...","content":"...
+  // Also handle "fs.append" and cases where content comes before path.
+  // Try both orderings: path before content, and content before path.
+  // Use a simpler approach: find the tool name, then extract path and content separately.
+  const toolNameMatch = text.match(
+    /\{\s*"name"\s*:\s*"fs\.(?:write|append)"\s*,\s*"args"\s*:\s*\{/,
+  );
+  if (toolNameMatch) {
+    const argsStart = text.indexOf(toolNameMatch[0]) + toolNameMatch[0].length;
+    const afterArgs = text.slice(argsStart);
+
+    // Extract path value
+    const pathMatch = afterArgs.match(/"path"\s*:\s*"([^"]+)"/);
+    if (!pathMatch?.[1]) return undefined;
+    const path = pathMatch[1];
+
+    // Find where "content":" starts and extract everything after its opening quote
+    const contentKeyMatch = afterArgs.match(/"content"\s*:\s*"/);
+    if (!contentKeyMatch) return undefined;
+    const contentStart = argsStart + afterArgs.indexOf(contentKeyMatch[0]) + contentKeyMatch[0].length;
+    let raw = text.slice(contentStart);
+
+    // The content is JSON-encoded (escaped). Unescape what we can.
+    // Remove any trailing incomplete escape sequence or quote.
+    raw = raw.replace(/\\?$/, "");
+
+    // Unescape JSON string escapes
+    try {
+      // Add closing quote to make it parseable, but don't rely on JSON.parse
+      // for the whole thing since it may be truncated mid-escape.
+      const unescaped = raw
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\");
+
+      // Trim to the last complete line
+      const lastNewline = unescaped.lastIndexOf("\n");
+      const content =
+        lastNewline > 0 ? unescaped.slice(0, lastNewline + 1) : unescaped;
+
+      if (content.trim().length < 50) return undefined; // Too little to salvage
+
+      const lines = content.trimEnd().split("\n");
+      const lastLine =
+        lines[lines.length - 1]?.trim().slice(0, 80) ?? "(unknown)";
+
+      return { path, content, lastLine };
+    } catch {
+      return undefined;
+    }
+  }
+
+  // Match fs.writeMany: look for the first file entry
+  const writeManyMatch = text.match(
+    /\{\s*"name"\s*:\s*"fs\.writeMany"\s*,\s*"args"\s*:\s*\{\s*"files"\s*:\s*\[/,
+  );
+  if (writeManyMatch) {
+    // Extract the first file's path and content
+    const firstFile = text.match(
+      /\{\s*"path"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"/,
+    );
+    if (firstFile?.[1]) {
+      const path = firstFile[1];
+      const contentStart =
+        text.indexOf(firstFile[0]) + firstFile[0].length;
+      let raw = text.slice(contentStart);
+      // Find the end of this file's content (closing quote + })
+      const endQuote = raw.indexOf('"}');
+      if (endQuote > 0) {
+        raw = raw.slice(0, endQuote);
+      }
+      raw = raw.replace(/\\?$/, "");
+      try {
+        const unescaped = raw
+          .replace(/\\n/g, "\n")
+          .replace(/\\r/g, "\r")
+          .replace(/\\t/g, "\t")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\");
+        const lastNewline = unescaped.lastIndexOf("\n");
+        const content =
+          lastNewline > 0 ? unescaped.slice(0, lastNewline + 1) : unescaped;
+        if (content.trim().length < 50) return undefined;
+        const lines = content.trimEnd().split("\n");
+        const lastLine =
+          lines[lines.length - 1]?.trim().slice(0, 80) ?? "(unknown)";
+        return { path, content, lastLine };
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Count the number of ```tool fenced blocks in a message. Models sometimes
  * emit MULTIPLE tool calls in one response (e.g. fs.writeMany + npm install +
  * npm run dev). Only the FIRST is parsed and executed; the rest are silently
@@ -1347,10 +1461,11 @@ export function pentestWorkflowDirective(): string {
   return [
     "PENTEST WORKFLOW (this is a security / pentest engagement — follow this order EXACTLY; deviation is a failure):",
     "1. RECON FIRST, NO PLAN YET. For pentest engagements, run reconnaissance and discovery DIRECTLY before creating a plan. Read-only recon (whois.lookup, dns.lookup, net.context, http.fetch GET, tool.batch of read-only lookups, net.scan, pentest.recon) is allowed BEFORE any plan exists — these calls do not require an active plan or an in-progress task, because recon is what the plan is built FROM. Batch independent lookups with tool.batch to parallelize. Do NOT skip recon to 'get the plan started'.",
-    "2. PLAN FROM REAL FINDINGS. Call plan.create ONLY after you have real findings — open ports, services and versions, endpoints, technologies, weaknesses, exposed surfaces. A pentest plan without findings is a guess; recon first, plan from findings. The plan's first task should be the next concrete step FROM the recon results, not a generic 'start scanning'.",
-    "3. INCREMENTAL PLAN UPDATES AS ATTACK SURFACE GROWS. A pentest is inherently open-ended — every new open port, service, endpoint, or weakness uncovers more attack surface. Call plan.create again with a REVISED tasks array that includes ALL previously completed tasks (preserved by id and order) followed by the new tasks at the end. The system merges and preserves the completed state of the old tasks. Do NOT delete done work to add new tasks; do NOT restart from scratch.",
-    "4. STAY INSIDE THE ENGAGEMENT SCOPE. The engagement scope is the hard boundary. Do NOT scan, probe, fuzz, or attack hosts / domains / ports that are out of scope. If a recon result exposes something clearly out of scope (a discovered subdomain, an adjacent service, an unrelated host, a port on a different network), STOP and FLAG it to the user in plain prose — do NOT act on it automatically. Out-of-scope targets require explicit user confirmation before any active testing.",
-    "5. ENUMERATE BEFORE EXPLOIT. Most findings come from thorough enumeration, not guessing. Once you have a vector, carry exploitation through with tools (build / adapt a PoC, generate the payload, run the attack, verify the result) — but pick the vector FROM the findings, not from a hunch.",
+    "2. FINGERPRINT THE TECH STACK. After initial recon, identify the target's technology stack FROM REAL EVIDENCE (http.fetch output includes a 'Tech Stack Detected' summary with Server, Framework, Frontend, CDN, Languages, Security Headers). Read this summary carefully. Once identified, ALL subsequent enumeration and exploitation MUST target that specific stack. Do NOT throw PHP wordlists at a Next.js target, .aspx payloads at a Python app, or Java exploits at a Node.js service. If the stack is unclear, probe a few discriminating endpoints (/_next/data, /wp-login.php, /api/, /elmah.axd) to confirm before committing.",
+    "3. PLAN FROM REAL FINDINGS. Call plan.create ONLY after you have real findings — open ports, services and versions, endpoints, technologies (identified stack), weaknesses, exposed surfaces. A pentest plan without findings is a guess; recon first, fingerprint the stack, plan from findings. The plan should reference the identified tech stack and scope tool/wordlist/payload choices to it.",
+    "4. INCREMENTAL PLAN UPDATES AS ATTACK SURFACE GROWS. A pentest is inherently open-ended — every new open port, service, endpoint, or weakness uncovers more attack surface. Call plan.create again with a REVISED tasks array that includes ALL previously completed tasks (preserved by id and order) followed by the new tasks at the end. The system merges and preserves the completed state of the old tasks. Do NOT delete done work to add new tasks; do NOT restart from scratch.",
+    "5. STAY INSIDE THE ENGAGEMENT SCOPE. The engagement scope is the hard boundary. Do NOT scan, probe, fuzz, or attack hosts / domains / ports that are out of scope. If a recon result exposes something clearly out of scope (a discovered subdomain, an adjacent service, an unrelated host, a port on a different network), STOP and FLAG it to the user in plain prose — do NOT act on it automatically. Out-of-scope targets require explicit user confirmation before any active testing.",
+    "6. ENUMERATE WITH STACK-TARGETED TOOLS. Most findings come from thorough, STACK-TARGETED enumeration — not from blindly fuzzing with every extension (.php, .asp, .aspx, .jsp, .cgi). Once you know the stack from step 2, use the right wordlists, extensions, and payloads for THAT stack ONLY. Once you have a vector, carry exploitation through with tools (build / adapt a PoC, generate the payload, run the attack, verify the result) — but pick the vector FROM the findings, not from a hunch.",
     "",
 
     "WHAT REQUIRES A PLAN vs. WHAT DOES NOT (read this carefully):",
@@ -1359,6 +1474,7 @@ export function pentestWorkflowDirective(): string {
     "",
 
     "CRITICAL RULES during a pentest engagement:",
+    "- TECH STACK AWARENESS: Every enumeration/exploit tool call MUST be relevant to the identified tech stack. If you detected Next.js, do NOT fuzz for .php, .asp, or .jsp files — focus on /_next/data, /api/ routes, .env, client-side JS analysis, SSR endpoints. If you detected WordPress, focus on wp-admin, wp-content, xmlrpc.php, plugin/theme enumeration. Wrong-stack tool calls waste context tokens and produce zero findings.",
     "- VERIFY every claim from real tool output: an open port, a service version, an exploit success, a captured credential, a shell. Never fabricate findings. A reported 'vulnerability' without evidence is worse than no report.",
     "- EVIDENCE: capture the exact command run and its real output for every finding. Long recon / scan transcripts are saved as artifacts you can reference; cite the artifact path in your report.",
     "- NON-DESTRUCTIVE BY DEFAULT: prove a vulnerability with the least-invasive evidence (a benign PoC, a marker file, a reflected value, whoami / id after a shell). Do not destroy data, DoS the target, or exfiltrate real sensitive data unless the user explicitly asks for that impact.",

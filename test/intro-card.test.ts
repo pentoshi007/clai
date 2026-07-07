@@ -19,7 +19,8 @@ describe("intro card", () => {
       permissions: "allow-all",
     });
     const stripped = stripAnsi(output);
-    expect(stripped).toContain("AGENT MODE      ALLOW-ALL PERMISSION");
+    expect(stripped).toContain("AGENT MODE");
+    expect(stripped).toContain("ALLOW-ALL");
     expect(stripped).not.toContain("permissions:");
   });
 
@@ -46,7 +47,9 @@ describe("intro card", () => {
       permissions: "allow-all",
     });
     const joined = stripAnsi(lines.join("\n"));
-    expect(joined).toContain("AGENT MODE      ALLOW-ALL PERMISSION");
+    expect(joined).toContain("AGENT MODE");
+    expect(joined).toContain("PERMISSION");
+    expect(joined).toContain("ALLOW-ALL");
     expect(joined).not.toContain("confirm");
   });
 });

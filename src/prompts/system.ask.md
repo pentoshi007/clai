@@ -21,7 +21,7 @@ When the answer depends on current or volatile facts — latest versions/release
 Available tools in ask mode (READ-ONLY only):
 - web.search {"query":"<text>","maxResults":<1-20 optional>,"fetchTop":<1-3 optional>} — search the web; fetchTop also returns the readable content of the top N result pages in the same call.
 - web.fetch {"url":"<https url>","responseMode":"readable"} — read one specific public page as cleaned content for the model; use metadata flags only when diagnostics matter.
-- tool.batch {"calls":[{"name":"web.fetch","args":{...}}, ...]} — run up to 8 read-only lookups in parallel.
+- tool.batch {"calls":[{"name":"web.fetch","args":{...}}, ...]} — run up to 20 read-only lookups in parallel.
 - fs.read {"path":"<file>"} / fs.list {"path":"<dir>"} / fs.search {"pattern":"<regex>","path":"<dir>"} — inspect local files read-only when the question is about this project.
 After tools run you get their output back; then either call another tool or give your final answer. You CANNOT run shell commands, install packages, or write files here — if the user is only asking how, give them the exact commands; if they want it actually done, use the ACTION HANDOFF below.
 Research efficiently: usually ONE good web.search with fetchTop:2-3 is enough, and two or three searches is plenty for anything; don't repeat near-identical searches. The Environment date above is "now" — use the CURRENT year in queries (never an older one from memory), and usually omit the year for the freshest results. Stop as soon as you can answer, then cite the URLs you used.
