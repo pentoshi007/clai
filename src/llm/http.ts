@@ -548,7 +548,7 @@ export async function openAiCompatibleComplete(options: {
         ...options.headers,
       },
       body: requestBody,
-      verbose: true,
+      verbose: process.env.CLAI_VERBOSE === "true",
     } as any);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
@@ -658,7 +658,7 @@ export async function openAiCompatibleStream(options: {
         ...options.headers,
       },
       body: requestBody,
-      verbose: true,
+      verbose: process.env.CLAI_VERBOSE === "true",
     } as any);
   } catch (error) {
     if (idleTimer) clearTimeout(idleTimer);
@@ -891,7 +891,7 @@ export async function openAiCompatiblePing(
       authorization: `Bearer ${apiKey}`,
       ...headers,
     },
-    verbose: true,
+    verbose: process.env.CLAI_VERBOSE === "true",
   } as any);
   await readJson<unknown>(response);
 }

@@ -65,6 +65,17 @@ function isTransientNetworkError(error: unknown): boolean {
   );
 }
 
+function isRetriableError(error: unknown): boolean {
+  if (isRateLimited(error)) return true;
+  if (error instanceof ProviderError) {
+    const status = error.status ?? 0;
+    if (status >= 500 && status <= 504) {
+      return true;
+    }
+  }
+  return isTransientNetworkError(error);
+}
+
 function retryWaitMs(error: unknown, attempt: number): number {
   if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
     return Math.ceil(error.retryAfterSeconds * 1000);
@@ -213,7 +224,7 @@ export async function completeWithProvider(
             auth,
           );
         } catch (error) {
-          if (isRateLimited(error) || isTransientNetworkError(error)) {
+          if (isRetriableError(error)) {
             const wait = isRateLimited(error)
               ? retryWaitMs(error, attempt)
               : networkRetryWaitMs(attempt);
@@ -296,12 +307,16 @@ export async function streamWithProvider(
         onToken(result.text);
         return result;
       } catch (error) {
-        if (isRateLimited(error) || isTransientNetworkError(error)) {
+        if (isRetriableError(error)) {
           const wait = isRateLimited(error)
             ? retryWaitMs(error, attempt)
             : networkRetryWaitMs(attempt);
           if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
-            const reason = isRateLimited(error) ? "rate limited" : "connection glitch";
+            const reason = isRateLimited(error)
+              ? "rate limited"
+              : error instanceof ProviderError && error.status
+                ? `server error (${error.status})`
+                : "connection glitch";
             emitStatus(
               `\n  ⏳ ${providerId} ${reason}, retrying in ${Math.ceil(wait / 1000)}s...\n`,
             );
