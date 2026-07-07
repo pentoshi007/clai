@@ -48,12 +48,33 @@ function isRateLimited(error: unknown): boolean {
   return error instanceof ProviderError && error.status === 429;
 }
 
+function isTransientNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("socket connection was closed unexpectedly") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network error") ||
+    msg.includes("timeout") ||
+    msg.includes("unexpected end of file") ||
+    msg.includes("premature close")
+  );
+}
+
 function retryWaitMs(error: unknown, attempt: number): number {
   if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
     return Math.ceil(error.retryAfterSeconds * 1000);
   }
   // Exponential backoff: 2s, 6s, 18s, 54s, etc.
   return Math.pow(3, attempt) * 2_000;
+}
+
+function networkRetryWaitMs(attempt: number): number {
+  return Math.pow(2, attempt) * 1_000;
 }
 
 function summarizeProviderError(error: unknown): string {
@@ -192,8 +213,10 @@ export async function completeWithProvider(
             auth,
           );
         } catch (error) {
-          if (isRateLimited(error)) {
-            const wait = retryWaitMs(error, attempt);
+          if (isRateLimited(error) || isTransientNetworkError(error)) {
+            const wait = isRateLimited(error)
+              ? retryWaitMs(error, attempt)
+              : networkRetryWaitMs(attempt);
             if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
               await sleep(wait, request.signal);
               continue;
@@ -273,22 +296,27 @@ export async function streamWithProvider(
         onToken(result.text);
         return result;
       } catch (error) {
-        if (isRateLimited(error)) {
-          const wait = retryWaitMs(error, attempt);
+        if (isRateLimited(error) || isTransientNetworkError(error)) {
+          const wait = isRateLimited(error)
+            ? retryWaitMs(error, attempt)
+            : networkRetryWaitMs(attempt);
           if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
+            const reason = isRateLimited(error) ? "rate limited" : "connection glitch";
             emitStatus(
-              `\n  ⏳ ${providerId} rate limited, retrying in ${Math.ceil(wait / 1000)}s...\n`,
+              `\n  ⏳ ${providerId} ${reason}, retrying in ${Math.ceil(wait / 1000)}s...\n`,
             );
             await sleep(wait, request.signal);
             continue;
           }
-          const suffix =
-            wait > MAX_RETRY_WAIT_MS
-              ? ` (~${Math.ceil(wait / 1000)}s)`
-              : "";
-          emitStatus(
-            `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
-          );
+          if (isRateLimited(error)) {
+            const suffix =
+              wait > MAX_RETRY_WAIT_MS
+                ? ` (~${Math.ceil(wait / 1000)}s)`
+                : "";
+            emitStatus(
+              `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
+            );
+          }
           failures.push({ provider: providerId, message: summarizeProviderError(error) });
           throw new Error(
             `No provider could stream the request.${formatFailures(failures)}`,
