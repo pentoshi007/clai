@@ -1873,7 +1873,9 @@ export async function runAgentLoop(
             (planHasOpenWorkNow && session.planApproved.value) ||
             (!informationalQuery && (buildLikeTurn || pentestLikeTurn));
           const planNarrated =
-            buildLikeTurn && !activePlan && looksLikePlanNarration(cleaned);
+            (buildLikeTurn || pentestLikeTurn) &&
+            !activePlan &&
+            looksLikePlanNarration(cleaned);
           if (
             wantsAction &&
             cleaned.trim().length > 0 &&
@@ -1917,12 +1919,10 @@ export async function runAgentLoop(
                 ),
               );
             } else if (planNarrated || productiveSteps > 0) {
-              // It explored and/or wrote a plan as prose but never called
-              // plan.create — emit the plan as a real tool call so the user gets
-              // a checklist and the /implement gate.
+              const kind = pentestLikeTurn ? "pentest" : "coding";
               nudge =
                 "You wrote the plan as PROSE but did NOT call plan.create, so no plan was saved and the user cannot /implement it. Emit it as a real tool call NOW — exactly one ```tool block:\n" +
-                '```tool\n{"name":"plan.create","args":{"goal":"<short goal>","detail":"<stack/approach and how you\'ll verify>","tasks":["task 1","task 2","task 3"],"kind":"coding"}}\n```\n' +
+                `\`\`\`tool\n{"name":"plan.create","args":{"goal":"<short goal>","detail":"<stack/approach and how you'll verify>","tasks":["task 1","task 2","task 3"],"kind":"${kind}"}}\n\`\`\`\n` +
                 "Do not describe the plan again in prose — just emit the plan.create tool block.";
               writeNotice(
                 "warn",
@@ -1932,10 +1932,15 @@ export async function runAgentLoop(
                 ),
               );
             } else {
-              nudge =
-                "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
-                '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
-                "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              if (pentestLikeTurn) {
+                nudge =
+                  "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this pentest task, explore/recon first, then call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              } else {
+                nudge =
+                  "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
+                  '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
+                  "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              }
               writeNotice(
                 "warn",
                 "described an action but emitted no tool call — nudging it to run one",
