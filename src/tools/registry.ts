@@ -242,7 +242,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
     argv.push(...profileArgs, ...legacyArgs, host.value);
     return runNmapScan(argv, options);
   },
-  async "http.fetch"(args) {
+  async "http.fetch"(args, options) {
     const headers =
       args.headers &&
       typeof args.headers === "object" &&
@@ -256,6 +256,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
       maxBytes: optionalNumber(args, "maxBytes"),
       iOwnThis: args.iOwnThis === true || args.own === true,
       retries: optionalNumber(args, "retries"),
+      signal: options?.signal,
     });
   },
   async "web.search"(args, options) {

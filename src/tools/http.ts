@@ -46,6 +46,7 @@ interface FetchOptions {
   maxBytes?: number | undefined;
   iOwnThis?: boolean | undefined;
   retries?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export async function httpFetch(
@@ -126,8 +127,20 @@ export async function httpFetch(
   try {
     for (;;) {
       attempts += 1;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const onParentAbort = () => controller.abort();
+      if (options.signal) {
+        if (options.signal.aborted) {
+          throw options.signal.reason ?? new Error("Aborted");
+        }
+        options.signal.addEventListener("abort", onParentAbort);
+      }
       try {
-        response = await fetch(url, init);
+        response = await fetch(url, {
+          ...init,
+          signal: controller.signal,
+        });
         if (
           attempts <= retryLimit &&
           RETRY_STATUSES.has(response.status)
@@ -139,8 +152,17 @@ export async function httpFetch(
         break;
       } catch (error) {
         lastNetworkError = error;
-        if (attempts > retryLimit) throw error;
+        const isTimeout = error instanceof Error && error.name === "AbortError" && !options.signal?.aborted;
+        const errMsg = isTimeout ? "Request timed out after 15s" : (error instanceof Error ? error.message : String(error));
+        if (attempts > retryLimit || options.signal?.aborted) {
+          throw new Error(errMsg);
+        }
         await sleep(retryDelayMs(attempts));
+      } finally {
+        clearTimeout(timer);
+        if (options.signal) {
+          options.signal.removeEventListener("abort", onParentAbort);
+        }
       }
     }
   } catch (error) {

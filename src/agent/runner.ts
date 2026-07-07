@@ -1568,9 +1568,8 @@ export async function runAgentLoop(
             messages.push(recoveryUserMessage(buildNudge));
             continue;
           }
-          // Exhausted retries — surface a clear notice instead of ending the
-          // turn silently with no answer (which left the user staring at a
-          // stopped spinner with no clue what happened).
+          // Exhausted retries — surface a clear notice and exit the turn instead
+          // of falling through and triggering premature-completion loops.
           writeNotice(
             "warn",
             "model returned an empty response after retries — no answer produced",
@@ -1578,6 +1577,7 @@ export async function runAgentLoop(
               "  ⚠ model returned an empty response after retries — no answer produced\n",
             ),
           );
+          return finishTurn("Model returned an empty response after retries.", step + 1);
         } else {
           // Reset the counter on any successful visible output or recovered call.
           emptyVisibleRetries = 0;
