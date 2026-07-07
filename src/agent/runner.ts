@@ -1138,7 +1138,7 @@ export async function runAgentLoop(
     // what is done, and what remains. The estimate is chars/4; the budget is
     // deliberately conservative so we compact a little early rather than hit a
     // provider context-window error mid-task.
-    const AUTO_COMPACT_TOKEN_BUDGET = 200_000;
+    const AUTO_COMPACT_TOKEN_BUDGET = 150_000;
     const AUTO_COMPACT_KEEP_RECENT = 6;
     let lastCompactionMsgCount = 0;
 
@@ -1157,7 +1157,7 @@ export async function runAgentLoop(
           { role: "user", content: summaryPrompt },
         ],
         temperature: 0.1,
-        maxTokens: 2_048,
+        maxTokens: 4_096,
         signal: options.signal,
       });
       return response.text;

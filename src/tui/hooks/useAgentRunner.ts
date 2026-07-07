@@ -184,7 +184,7 @@ export function useAgentRunner({
           { role: "user", content: prompt },
         ],
         temperature: 0.1,
-        maxTokens: 2_048,
+        maxTokens: 4_096,
         signal,
       });
       return response.text;
