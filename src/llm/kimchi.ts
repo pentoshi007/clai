@@ -35,7 +35,8 @@ export const kimchiProvider: LlmProvider = {
         headers: auth.apiKey
           ? { authorization: `Bearer ${auth.apiKey}` }
           : {},
-      });
+        verbose: true,
+      } as any);
       const data = await readJson<{ data?: Array<{ id: string }> }>(resp);
       const models = data.data?.map((m) => m.id).sort() ?? [];
       if (models.length > 0) {

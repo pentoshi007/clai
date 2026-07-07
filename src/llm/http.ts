@@ -548,7 +548,8 @@ export async function openAiCompatibleComplete(options: {
         ...options.headers,
       },
       body: requestBody,
-    });
+      verbose: true,
+    } as any);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
     const msg = error instanceof Error ? error.message : String(error);
@@ -657,7 +658,8 @@ export async function openAiCompatibleStream(options: {
         ...options.headers,
       },
       body: requestBody,
-    });
+      verbose: true,
+    } as any);
   } catch (error) {
     if (idleTimer) clearTimeout(idleTimer);
     options.signal?.removeEventListener("abort", onCallerAbort);
@@ -889,6 +891,7 @@ export async function openAiCompatiblePing(
       authorization: `Bearer ${apiKey}`,
       ...headers,
     },
-  });
+    verbose: true,
+  } as any);
   await readJson<unknown>(response);
 }
