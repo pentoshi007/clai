@@ -14,9 +14,11 @@ import { randomUUID } from "node:crypto";
 import { jobManager, type BackgroundJob } from "../tools/jobs.js";
 import {
   renderAgentSystemPrompt,
+  renderCompactAgentSystemPrompt,
   scratchDirFor,
 } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
+import { groqInputTokenBudget } from "../llm/groq.js";
 import {
   classifyToolCall,
   isPentestToolCall,
@@ -33,6 +35,7 @@ import { looksInteractiveStdin } from "../tools/shell.js";
 import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import {
   compactMessagesWithSummary,
+  estimateTokens,
   estimateMessagesTokens,
   COMPACTION_MEMORY_PREFIX,
 } from "./context-manager.js";
@@ -391,7 +394,21 @@ export async function runAgentLoop(
       !pentestLikeTurn &&
       toolNames.includes("web.search") &&
       requiresFreshWebSearch(prompt);
-    const systemSections = [renderAgentSystemPrompt(toolNames.join(", "))];
+    let provider = options.provider ?? config.defaultProvider;
+    await ensureProviderConfigured(provider);
+    let model = options.model ?? config.defaultModel;
+    // Some Groq free-tier models have a per-request/per-minute input budget
+    // below the normal agent prompt alone. Select a purpose-built compact
+    // instruction set before the request is made, rather than treating the
+    // provider's 413 as a context-window failure after the fact.
+    const inputTokenBudget =
+      provider === "groq" ? groqInputTokenBudget(model) : undefined;
+    const useCompactSystemPrompt = inputTokenBudget !== undefined;
+    const systemSections = [
+      (useCompactSystemPrompt
+        ? renderCompactAgentSystemPrompt
+        : renderAgentSystemPrompt)(toolNames.join(", ")),
+    ];
     if (projectContext) {
       systemSections.push(
         `Project context from .clai/context.md:\n${projectContext}`,
@@ -401,9 +418,6 @@ export async function runAgentLoop(
       systemSections.push(freshnessGuardMessage());
     }
 
-    let provider = options.provider ?? config.defaultProvider;
-    await ensureProviderConfigured(provider);
-    let model = options.model ?? config.defaultModel;
     let lastAnswer = "";
     const session: SessionPolicy = options.session ?? createSessionPolicy();
 
@@ -448,7 +462,27 @@ export async function runAgentLoop(
       systemSections.push(pentestWorkflowDirective());
     }
 
-    const fullSystemPrompt = systemSections.join("\n\n");
+    const renderedSystemPrompt = systemSections.join("\n\n");
+    // Reserve most of a constrained model's input budget for the user message,
+    // recent conversation, tool results, and provider framing. Dynamic project
+    // context or a saved plan must not silently grow the compact base prompt
+    // back above the model's TPM ceiling.
+    const maxSystemTokens = inputTokenBudget
+      ? Math.min(2_000, Math.floor(inputTokenBudget * 0.4))
+      : undefined;
+    const systemTruncationNote =
+      "\n\n[Additional system context omitted to fit the provider input budget.]";
+    const fullSystemPrompt =
+      maxSystemTokens !== undefined &&
+      estimateTokens(renderedSystemPrompt) > maxSystemTokens
+        ? renderedSystemPrompt.slice(
+            0,
+            Math.max(
+              0,
+              Math.floor(maxSystemTokens * 3.3) - systemTruncationNote.length,
+            ),
+          ) + systemTruncationNote
+        : renderedSystemPrompt;
     const userMessage: ChatMessage = { role: "user", content: prompt };
     if (options.images && options.images.length > 0) {
       userMessage.images = options.images;
@@ -469,6 +503,20 @@ export async function runAgentLoop(
       }
       return message;
     };
+    // Every provider must receive a syntactically valid assistant turn between
+    // the original user prompt and a recovery nudge. In particular, Gemini
+    // serializes an empty assistant message as an empty `model` text part,
+    // which can cause every retry to return empty as well. Keep hidden thinking
+    // out of history, but record a compact non-empty sentinel when there was no
+    // visible output.
+    const pushAssistantHistory = (content: string): void => {
+      messages.push({
+        role: "assistant",
+        content: content.trim()
+          ? content
+          : "[No visible assistant response was produced.]",
+      });
+    };
 
     // Track recent tool calls to detect models stuck in a loop calling the
     // same tool with the same arguments over and over (e.g. pentest.recon
@@ -478,6 +526,10 @@ export async function runAgentLoop(
     // Track consecutive thinking-only responses so we can nudge the model
     // to actually act instead of silently returning an empty answer.
     let emptyVisibleRetries = 0;
+    // A model that spent an entire completion in hidden reasoning gets one
+    // visible-output retry with provider thinking disabled. This is per-turn
+    // only: a subsequent successful response restores the configured setting.
+    let retryWithoutThinking = false;
 
     // Track tool calls truncated by the token limit so we can ask the model
     // to retry in smaller pieces instead of leaking broken JSON as an answer.
@@ -976,16 +1028,25 @@ export async function runAgentLoop(
       };
       jobManager.registerJob(jobId, backgroundJob, toolAc);
 
-      const TOOL_STALL_WARNING_MS = 60_000; // 1 minute
-      const stallTimer = setTimeout(() => {
-        if (!toolAc.signal.aborted) {
-          writeNotice(
-            "info",
-            `${call.name} has been running for >60s — still waiting (ESC to abort)`,
-            chalk.yellow(`  ⏳ ${call.name} still running — ESC to abort\n`),
-          );
-        }
-      }, TOOL_STALL_WARNING_MS);
+      // Long-lived commands should use shell.start/background jobs. Reset this
+      // watchdog whenever a blocking tool emits output so only a genuinely
+      // stalled operation is cancelled.
+      const TOOL_STALL_ABORT_MS = 60_000; // 1 minute
+      let stallTimer: NodeJS.Timeout | undefined;
+      const resetStallTimer = (): void => {
+        if (stallTimer) clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+          if (!toolAc.signal.aborted) {
+            writeNotice(
+              "warn",
+              `${call.name} has been running for >60s — cancelling stalled tool`,
+              chalk.yellow(`  ⏳ ${call.name} stalled for >60s — cancelling\n`),
+            );
+            toolAc.abort();
+          }
+        }, TOOL_STALL_ABORT_MS);
+      };
+      resetStallTimer();
 
       try {
         result = await runToolCall(call, {
@@ -993,6 +1054,7 @@ export async function runAgentLoop(
           requestSecret: options.requestSecret,
           onOutput: (chunk) => {
             if (toolAc.signal.aborted) return;
+            resetStallTimer();
             printLive(chunk);
           },
           confirmed: true,
@@ -1022,7 +1084,7 @@ export async function runAgentLoop(
           toolError instanceof Error ? toolError.message : String(toolError);
         result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
       } finally {
-        clearTimeout(stallTimer);
+        if (stallTimer) clearTimeout(stallTimer);
         parentSignal.removeEventListener("abort", onParentAbort);
       }
 
@@ -1376,8 +1438,15 @@ export async function runAgentLoop(
             {
               provider,
               model,
+              // The selected model is the first choice, but an agent must not
+              // end a turn with no answer if it only emits reasoning. Honor
+              // the user's providerFallback setting for that recovery path.
+              allowModelFallback: true,
               messages,
-              temperature: 0.2,
+              // MiniMax M3 degenerates at the generic agent temperature. The
+              // HTTP layer also applies its `top_p` override for both the
+              // NVIDIA long ID and Kimchi's short `minimax-m3` ID.
+              temperature: /minimax-m3/i.test(model) ? 1.0 : 0.2,
               // Reasoning models can spend a lot on hidden thinking; give
               // them headroom so the visible answer / tool call isn't
               // truncated to silence. The non-thinking budget must be large
@@ -1391,7 +1460,9 @@ export async function runAgentLoop(
               // substantial source file; providers with a lower limit clamp it.
               maxTokens: 32_768,
               signal: options.signal,
-              thinking: config.thinking,
+              thinking: retryWithoutThinking
+                ? { ...config.thinking, enabled: false }
+                : config.thinking,
             },
             (token) => {
               deltaParser?.push(token);
@@ -1554,17 +1625,19 @@ export async function runAgentLoop(
                 ),
               );
             }
-            messages.push({
-              role: "assistant",
-              content: stripThinking(collapseRepeatedText(completion.text)).visible,
-            });
+            if (assistantText.hasThinking) retryWithoutThinking = true;
+            pushAssistantHistory(
+              stripThinking(collapseRepeatedText(completion.text)).visible,
+            );
             // Keep nudges SHORT — cheap models lose the key instruction in long text.
             const buildNudge =
-              buildLikeTurn && !activePlan
-                ? "No visible output. Emit a ```tool block to call plan.create now. " +
-                  "Do NOT hide tool calls in <think> tags — put them in the visible response."
-                : "No visible output. Emit a ```tool block or give your final answer. " +
-                  "Do NOT hide tool calls in <think> tags — put them in the visible response.";
+              freshWebSearchRequired && !sawFreshWebSearch
+                ? "No visible output. This is current or scheduled information: emit exactly one valid ```tool block for web.search now. Do NOT answer from memory or hide the tool call in <think> tags."
+                : buildLikeTurn && !activePlan
+                  ? "No visible output. Emit a ```tool block to call plan.create now. " +
+                    "Do NOT hide tool calls in <think> tags — put them in the visible response."
+                  : "No visible output. Emit a ```tool block or give your final answer. " +
+                    "Do NOT hide tool calls in <think> tags — put them in the visible response.";
             messages.push(recoveryUserMessage(buildNudge));
             continue;
           }
@@ -1581,6 +1654,7 @@ export async function runAgentLoop(
         } else {
           // Reset the counter on any successful visible output or recovered call.
           emptyVisibleRetries = 0;
+          retryWithoutThinking = false;
         }
 
         // `call` was already extracted above (from visible text or thinking content).
@@ -1633,10 +1707,7 @@ export async function runAgentLoop(
                   "  ⚠ tool call missing its name/fence — asking the model to re-emit a proper ```tool block\n",
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(assistantText.visible);
               messages.push(
                 recoveryUserMessage(
                   buildLikeTurn && !activePlan
@@ -1672,10 +1743,7 @@ export async function runAgentLoop(
                 "  ⚠ tool call was malformed or cut off — asking the model to retry in JSON form\n",
               ),
             );
-            messages.push({
-              role: "assistant",
-              content: assistantText.visible,
-            });
+            pushAssistantHistory(assistantText.visible);
             messages.push(
               recoveryUserMessage(
                 "Your previous tool call was malformed or truncated. " +
@@ -1715,10 +1783,9 @@ export async function runAgentLoop(
                       `  ℹ tool call was truncated — salvaged ${lineCount} lines to ${salvaged.path}\n`,
                     ),
                   );
-                  messages.push({
-                    role: "assistant",
-                    content: stripThinking(assistantText.visible).visible,
-                  });
+                  pushAssistantHistory(
+                    stripThinking(assistantText.visible).visible,
+                  );
                   messages.push({
                     role: "user",
                     content:
@@ -1745,10 +1812,9 @@ export async function runAgentLoop(
                   "  ⚠ tool call was cut off (output too long) — asking the model to retry safely\n",
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: stripThinking(assistantText.visible).visible,
-              });
+              pushAssistantHistory(
+                stripThinking(assistantText.visible).visible,
+              );
               messages.push({
                 role: "user",
                 content:
@@ -1796,10 +1862,9 @@ export async function runAgentLoop(
                       `  ℹ malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}\n`,
                     ),
                   );
-                  messages.push({
-                    role: "assistant",
-                    content: stripThinking(assistantText.visible).visible,
-                  });
+                  pushAssistantHistory(
+                    stripThinking(assistantText.visible).visible,
+                  );
                   messages.push({
                     role: "user",
                     content:
@@ -1824,10 +1889,9 @@ export async function runAgentLoop(
                   "  ⚠ tool block present but its JSON didn't parse — asking the model to re-emit valid JSON\n",
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: stripThinking(assistantText.visible).visible,
-              });
+              pushAssistantHistory(
+                stripThinking(assistantText.visible).visible,
+              );
               messages.push({
                 role: "user",
                 content:
@@ -1949,10 +2013,7 @@ export async function runAgentLoop(
                 ),
               );
             }
-            messages.push({
-              role: "assistant",
-              content: assistantText.visible,
-            });
+            pushAssistantHistory(assistantText.visible);
             messages.push(recoveryUserMessage(nudge));
             continue;
           }
@@ -1970,10 +2031,7 @@ export async function runAgentLoop(
                 "  ℹ current-info question detected — searching the web before answering\n",
               ),
             );
-            messages.push({
-              role: "assistant",
-              content: assistantText.visible,
-            });
+            pushAssistantHistory(assistantText.visible);
             messages.push({
               role: "user",
               content:
@@ -2003,10 +2061,7 @@ export async function runAgentLoop(
             );
             if (tasksFinished) {
               runtimeVerificationRetries += 1;
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(assistantText.visible);
               const missing = [
                 !sawServerStart ? "shell.start" : "",
                 !sawServerTail ? "shell.tail" : "",
@@ -2045,10 +2100,7 @@ export async function runAgentLoop(
                   `  ⚠ ${unfinished.length} plan task(s) still unfinished — not accepting a "done" claim; resuming execution\n`,
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(assistantText.visible);
 
               let instruction = `Resume now with the NEXT task ${next.id} ("${next.title}"): `;
               if (next.state === "pending") {
@@ -2136,10 +2188,7 @@ export async function runAgentLoop(
             .map((c) => `\`\`\`tool\n${JSON.stringify(c)}\n\`\`\``)
             .join("\n\n");
 
-        messages.push({
-          role: "assistant",
-          content: standardizedContent,
-        });
+        pushAssistantHistory(standardizedContent);
 
         if (allCalls.length > 1) {
           writeNotice(

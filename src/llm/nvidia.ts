@@ -131,7 +131,11 @@ export const nvidiaProvider: LlmProvider = {
       onToken,
       reasoning: request.thinking,
       reasoningStyle: "nvidia",
-      idleTimeoutMs: 45_000,
+      // NIM queues/cold starts and the large agent prompt can take longer
+      // than 45s before the first SSE byte. After the first byte, retain a
+      // short watchdog so a genuinely wedged stream is still cancellable.
+      initialIdleTimeoutMs: 90_000,
+      idleTimeoutMs: 30_000,
     });
     return { text, provider: "nvidia", model };
   },

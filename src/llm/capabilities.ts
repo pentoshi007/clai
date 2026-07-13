@@ -36,7 +36,7 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
     /kimi-k2/i,
     /o[134]/i,
   ],
-  kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
+  kimchi: [/kimi-k2/i, /minimax-m2/i, /minimax-m3/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
   bynara: [/mimo-/i, /deepseek-v4/i, /deepseek-r1/i, /bynara-max/i],
 };
@@ -115,7 +115,7 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /qwen2?\.?5?-vl/i,
     /glm-4\.?\d*v/i,
   ],
-  kimchi: [/kimi-k2/i, /minimax-m2/i, /nemotron-3-super/i],
+  kimchi: [/kimi-k2/i, /minimax-m2/i, /minimax-m3/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i],
   bynara: [/mimo-v2\.5-free/i, /mistral-medium-3-5/i],
 };

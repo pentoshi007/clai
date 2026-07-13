@@ -9,7 +9,7 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
-import { readJson, readStreamLines } from "./http.js";
+import { ProviderError, readJson, readStreamLines } from "./http.js";
 
 type GeminiPart =
   | { text: string }
@@ -18,23 +18,34 @@ type GeminiPart =
 function geminiContents(
   messages: ChatMessage[],
 ): Array<{ role: "user" | "model"; parts: GeminiPart[] }> {
-  return messages
-    .filter((message) => message.role !== "system")
-    .map((message) => {
-      const role = message.role === "assistant" ? "model" : "user";
-      const parts: GeminiPart[] = [];
-      if (message.content) parts.push({ text: message.content });
-      if (role === "user" && message.images) {
-        for (const img of message.images) {
-          parts.push({
-            inlineData: { mimeType: img.mediaType, data: img.dataBase64 },
-          });
-        }
+  const contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }> = [];
+
+  for (const message of messages) {
+    if (message.role === "system") continue;
+    const role = message.role === "assistant" ? "model" : "user";
+    const parts: GeminiPart[] = [];
+    if (message.content.trim()) parts.push({ text: message.content });
+    if (role === "user" && message.images) {
+      for (const img of message.images) {
+        parts.push({
+          inlineData: { mimeType: img.mediaType, data: img.dataBase64 },
+        });
       }
-      // Gemini requires at least one part per content entry.
-      if (parts.length === 0) parts.push({ text: "" });
-      return { role, parts };
-    });
+    }
+
+    // Never serialize an empty content part. Apart from being meaningless,
+    // Gemini can subsequently return empty candidates after an empty `model`
+    // turn. If a caller omitted an assistant turn, merge the adjacent user
+    // instructions instead to retain Gemini's alternating-role invariant.
+    if (parts.length === 0) continue;
+    const previous = contents.at(-1);
+    if (previous?.role === role) {
+      previous.parts.push(...parts);
+    } else {
+      contents.push({ role, parts });
+    }
+  }
+  return contents;
 }
 
 function systemInstruction(
@@ -44,37 +55,71 @@ function systemInstruction(
   return system ? { parts: [{ text: system.content }] } : undefined;
 }
 
-function geminiSupportsThinking(model: string): boolean {
-  return /gemini-(?:2\.5|3|3\.\d)/i.test(model);
+function isGemini3Model(model: string): boolean {
+  return /gemini-3(?:[.-]|$)/i.test(model);
 }
 
-function geminiThinkingBudget(
+function geminiThinkingConfig(
   reasoning: ReasoningPreference | undefined,
   model: string,
-): number | undefined {
-  if (!reasoning?.enabled) return undefined;
-  if (!geminiSupportsThinking(model)) return undefined;
+): Record<string, unknown> | undefined {
+  if (!reasoning) return undefined;
+  if (isGemini3Model(model)) {
+    // Gemini 3 models use `thinkingLevel`, not Gemini 2.5's token budget.
+    // Flash-Lite supports `minimal`, which is the closest available recovery
+    // mode when the runner needs a visible answer instead of a long thought.
+    // 3.1 Pro does not support `minimal`, so `low` is its least costly mode.
+    const effort = reasoning?.effort ?? "medium";
+    const wantsMinimal = !reasoning?.enabled || effort === "none" || effort === "minimal";
+    const isPro = /gemini-3(?:\.\d)?-pro/i.test(model);
+    const thinkingLevel = wantsMinimal
+      ? isPro
+        ? "low"
+        : "minimal"
+      : effort === "low"
+        ? "low"
+        : effort === "high" || effort === "xhigh"
+          ? "high"
+          : "medium";
+    return {
+      thinkingLevel,
+      // On a recovery retry, keep Gemini's minimal internal reasoning but do
+      // not stream thought summaries back as an apparent empty completion.
+      ...(reasoning?.enabled ? { includeThoughts: true } : {}),
+    };
+  }
+
+  if (!/gemini-2\.5/i.test(model)) return undefined;
+  if (!reasoning?.enabled) {
+    // Flash and Flash-Lite support an explicit zero budget. Gemini 2.5 Pro
+    // cannot disable thinking, so omit the control rather than send an
+    // invalid value.
+    return /gemini-2\.5-(?:flash|flash-lite)/i.test(model)
+      ? { thinkingBudget: 0 }
+      : undefined;
+  }
   switch (reasoning.effort) {
     case "low":
-      return 1_024;
+      return { thinkingBudget: 1_024, includeThoughts: true };
     case "high":
-      return 16_384;
+    case "xhigh":
+      return { thinkingBudget: 16_384, includeThoughts: true };
     default:
-      return 4_096;
+      return { thinkingBudget: 4_096, includeThoughts: true };
   }
 }
 
 export function geminiBody(request: CompletionRequest): string {
   const model = request.model ?? defaultModels.gemini;
-  const thinkingBudget = geminiThinkingBudget(request.thinking, model);
-  const defaultMaxTokens = thinkingBudget !== undefined ? 8_192 : 4_096;
+  const thinkingConfig = geminiThinkingConfig(request.thinking, model);
+  const defaultMaxTokens = request.thinking?.enabled ? 8_192 : 4_096;
   const body: Record<string, unknown> = {
     contents: geminiContents(request.messages),
     generationConfig: {
       temperature: request.temperature ?? 0.2,
       maxOutputTokens: request.maxTokens ?? defaultMaxTokens,
-      ...(thinkingBudget !== undefined
-        ? { thinkingConfig: { thinkingBudget, includeThoughts: true } }
+      ...(thinkingConfig !== undefined
+        ? { thinkingConfig }
         : {}),
     },
   };
@@ -151,7 +196,7 @@ export const geminiProvider: LlmProvider = {
       .join("")
       .trim();
     if (!text) {
-      throw new Error("Gemini returned no completion text");
+      throw new ProviderError("Gemini completed without a visible answer.");
     }
     const final = thought ? `<think>${thought}</think>${text}` : text;
     return { text: final, provider: "gemini", model };
@@ -179,6 +224,7 @@ export const geminiProvider: LlmProvider = {
       throw new Error("Gemini returned no stream body");
     }
     let full = "";
+    let visible = "";
     let inThought = false;
 
     const enterThought = (): void => {
@@ -202,6 +248,9 @@ export const geminiProvider: LlmProvider = {
       const payload = trimmed.slice(5).trim();
       if (payload === "[DONE]") {
         exitThought();
+        if (!visible.trim()) {
+          throw new ProviderError("Gemini completed without a visible answer.");
+        }
         return { text: full, provider: "gemini", model };
       }
       try {
@@ -221,6 +270,7 @@ export const geminiProvider: LlmProvider = {
             onToken(part.text);
           } else {
             if (inThought) exitThought();
+            visible += part.text;
             full += part.text;
             onToken(part.text);
           }
@@ -230,6 +280,9 @@ export const geminiProvider: LlmProvider = {
       }
     }
     exitThought();
+    if (!visible.trim()) {
+      throw new ProviderError("Gemini completed without a visible answer.");
+    }
     return { text: full, provider: "gemini", model };
   },
 };

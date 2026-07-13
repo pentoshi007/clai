@@ -3,7 +3,7 @@ import {
   buildReasoningPayload,
   classifyNvidiaModel,
 } from "../src/llm/http.js";
-import { groqMaxTokens } from "../src/llm/groq.js";
+import { groqInputTokenBudget, groqMaxTokens } from "../src/llm/groq.js";
 import { geminiBody } from "../src/llm/gemini.js";
 
 describe("NVIDIA NIM model classification", () => {
@@ -183,10 +183,16 @@ describe("NVIDIA NIM model classification", () => {
         "groq",
         "openai/gpt-oss-120b",
       ),
-    ).toEqual({ reasoning_effort: "low" });
+    ).toEqual({ reasoning_effort: "low", include_reasoning: true });
     expect(groqMaxTokens("openai/gpt-oss-120b", 8_192)).toBe(1_024);
     expect(groqMaxTokens("openai/gpt-oss-20b", 8_192)).toBe(2_048);
     expect(groqMaxTokens("qwen/qwen3-32b", 8_192)).toBe(2_048);
+  });
+
+  it("reserves input headroom for Groq's low-TPM models", () => {
+    expect(groqInputTokenBudget("qwen/qwen3-32b")).toBe(5_500);
+    expect(groqInputTokenBudget("openai/gpt-oss-20b")).toBe(7_500);
+    expect(groqInputTokenBudget("llama-3.3-70b-versatile")).toBeUndefined();
   });
 
   it("keeps OpenRouter reasoning payloads separate from Groq and NVIDIA fields", () => {
@@ -226,6 +232,37 @@ describe("NVIDIA NIM model classification", () => {
     expect(body).not.toHaveProperty("reasoning");
     expect(body).not.toHaveProperty("reasoning_effort");
     expect(body).not.toHaveProperty("chat_template_kwargs");
+  });
+
+  it("uses thinkingLevel for Gemini 3 rather than the Gemini 2.5 token budget", () => {
+    const body = JSON.parse(
+      geminiBody({
+        model: "gemini-3.1-flash-lite",
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { enabled: true, effort: "low" },
+      }),
+    ) as { generationConfig?: Record<string, unknown> };
+    expect(body.generationConfig?.thinkingConfig).toEqual({
+      thinkingLevel: "low",
+      includeThoughts: true,
+    });
+  });
+
+  it("keeps GPT-OSS retries at the lowest supported reasoning effort", () => {
+    expect(
+      buildReasoningPayload(
+        { enabled: false, effort: "low" },
+        "nvidia",
+        "openai/gpt-oss-20b",
+      ),
+    ).toEqual({ reasoning_effort: "low" });
+    expect(
+      buildReasoningPayload(
+        { enabled: false, effort: "low" },
+        "groq",
+        "openai/gpt-oss-20b",
+      ),
+    ).toEqual({ reasoning_effort: "low", include_reasoning: false });
   });
 
   it("does not send Gemini thinkingConfig to non-thinking Gemini models", () => {

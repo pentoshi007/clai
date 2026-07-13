@@ -322,6 +322,11 @@ describe("fresh web-search guard", () => {
     expect(requiresFreshWebSearch("look up the npm package status")).toBe(true);
   });
 
+  it("treats dated exam and event schedules as fresh-search cases", () => {
+    expect(requiresFreshWebSearch("when is SSC CGL 2026")).toBe(true);
+    expect(requiresFreshWebSearch("UPSC exam date 2027")).toBe(true);
+  });
+
   it("does not route static abbreviation questions through web.search", () => {
     expect(requiresFreshWebSearch("what does cm stand for")).toBe(false);
     expect(requiresFreshWebSearch("define cm")).toBe(false);
@@ -722,4 +727,3 @@ describe("resumable turn history (buildTurnHistory)", () => {
     });
   });
 });
-

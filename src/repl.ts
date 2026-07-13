@@ -198,12 +198,42 @@ async function buildImageOcrGrounding(
 
 // Abort controller for streaming cancellation
 let currentAbortController: AbortController | null = null;
+let abortPressCount = 0;
+let lastAbortPressAt = 0;
+const ABORT_PRESS_DEDUP_MS = 40;
+const FORCE_EXIT_AFTER_ABORT_PRESSES = 2;
 
 class AbortRunError extends Error {
   constructor() {
     super("Aborted.");
     this.name = "AbortRunError";
   }
+}
+
+function resetAbortEscalation(): void {
+  abortPressCount = 0;
+  lastAbortPressAt = 0;
+}
+
+/**
+ * Shared by raw input, readline keypresses, and SIGINT. A single terminal
+ * Ctrl+C can produce both a raw `data` event and a `keypress` event, so dedupe
+ * those notifications before counting presses. The raw-data path is the only
+ * reliable fallback in some terminals and must retain the same force-exit
+ * behavior as the normalized keypress path.
+ */
+function abortCurrentRun(): void {
+  if (!currentAbortController) return;
+  const now = Date.now();
+  if (now - lastAbortPressAt < ABORT_PRESS_DEDUP_MS) return;
+  lastAbortPressAt = now;
+  abortPressCount += 1;
+  currentAbortController.abort();
+  if (abortPressCount >= FORCE_EXIT_AFTER_ABORT_PRESSES) {
+    process.stdout.write(chalk.yellow("\n  ⏹ force-exiting…\n"));
+    process.exit(130);
+  }
+  process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
 }
 
 // Build a concise, width-bounded spinner label for ask-mode research so the
@@ -319,10 +349,11 @@ async function withAbortableInput<T>(
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const ac = new AbortController();
+  resetAbortEscalation();
   const abortFromRawData = (chunk: Buffer | string): void => {
     const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     if (text.includes("\x03") || text === "\x1b") {
-      ac.abort();
+      abortCurrentRun();
     }
   };
 
@@ -1665,8 +1696,6 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   let isReadingPrompt = false;
   let outputShortcutBusy = false;
   let lastOutputShortcutAt = 0;
-  let abortPressCount = 0;
-
   emitKeypressEvents(input);
 
   // Survive stray promise rejections (eg AbortError from a cancelled
@@ -1783,23 +1812,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       void handlePlanShortcut();
     }
     if ((isEscape(key) || isCtrlC(key)) && currentAbortController) {
-      abortPressCount += 1;
-      currentAbortController.abort();
-      // Escalate: after the first abort attempt the child process
-      // receives SIGTERM, which tools like ffuf may catch and handle
-      // gracefully (taking several seconds). Show feedback so the
-      // user knows the abort registered, and on subsequent presses
-      // hint that force-kill is in progress.
-      if (abortPressCount === 1) {
-        process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
-      } else if (abortPressCount >= 3) {
-        // The abort didn't complete fast enough. Force-exit so the
-        // user is never stuck.
-        process.stdout.write(chalk.yellow("  ⏹ force-exiting…\n"));
-        process.exit(0);
-      } else {
-        process.stdout.write(chalk.yellow("  ⏹ force-killing…\n"));
-      }
+      abortCurrentRun();
     }
   };
   input.on("keypress", handleKeypress);
@@ -1812,7 +1825,6 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     // SIGINFO is macOS/BSD-specific; other platforms can still use /think.
   }
   let lastSigintAt = 0;
-  let sigintCount = 0;
   // Ctrl+C while streaming → abort. While idle at a prompt, the
   // readPromptLine handler clears the line on first press and exits on
   // second press within 1s; so SIGINT here only acts as a fallback for
@@ -1820,19 +1832,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   const handleSigint = (): void => {
     const now = Date.now();
     if (currentAbortController) {
-      sigintCount += 1;
-      currentAbortController.abort();
-      // After 3 Ctrl+C presses during a turn, force-exit.
-      // The abort may not propagate fast enough (long-running tool,
-      // network hang, stuck child process) — never leave the user trapped.
-      if (sigintCount >= 3) {
-        console.log(chalk.yellow("\n  ⏹ force-exiting…"));
-        process.exit(0);
-      }
+      abortCurrentRun();
       return;
     }
-    // Reset the in-turn counter when we're no longer in a turn.
-    sigintCount = 0;
     if (isReadingPrompt) {
       // readPromptLine's keypress handler owns the prompt-level Ctrl+C
       // semantics; do nothing here so the two paths never fight.
@@ -1985,7 +1987,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
 
       try {
         clearThinking();
-        abortPressCount = 0;
+        resetAbortEscalation();
         let assistantContent = "";
         // Expand @file mentions and drag-and-dropped paths into real context.
         // The user-visible `line` stays readable in history; the model gets

@@ -117,7 +117,10 @@ function formatFailures(failures: ProviderFailure[]): string {
 
 function shouldStopFallback(error: unknown): boolean {
   if (error instanceof ProviderError) {
-    return [401, 403, 404, 413, 422, 429].includes(error.status ?? 0);
+    // A 413 can be a free-tier input/TPM ceiling rather than an invalid
+    // request. Let configured fallback providers try a smaller/roomier
+    // request path instead of treating it as a credential or body error.
+    return [401, 403, 404, 422, 429].includes(error.status ?? 0);
   }
   const message = error instanceof Error ? error.message : String(error);
   return /no completion text|response was empty|empty response|returned no text/i.test(message);
@@ -193,7 +196,8 @@ export async function completeWithProvider(
   const requested = request.provider ?? config.defaultProvider;
   const providerImpl = providers[requested];
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
-  const fallbackEnabled = config.providerFallback && isDefaultModel;
+  const fallbackEnabled =
+    config.providerFallback && (isDefaultModel || request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
@@ -265,7 +269,8 @@ export async function streamWithProvider(
   const requested = request.provider ?? config.defaultProvider;
   const providerImpl = providers[requested];
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
-  const fallbackEnabled = config.providerFallback && isDefaultModel;
+  const fallbackEnabled =
+    config.providerFallback && (isDefaultModel || request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nvidiaProvider } from "../src/llm/nvidia.js";
+import { kimchiProvider } from "../src/llm/kimchi.js";
 
 describe("NVIDIA NIM minimax-m3 payload alignment", () => {
   afterEach(() => {
@@ -63,6 +64,28 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
 
     expect(body.max_tokens).toBe(100);
     expect(body.temperature).toBe(0.5);
+    expect(body.top_p).toBe(0.95);
+  });
+
+  it("applies MiniMax M3 sampling to Kimchi's short model ID", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "hello world" } }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await kimchiProvider.complete(
+      {
+        model: "minimax-m3",
+        messages: [{ role: "user", content: "hello" }],
+      },
+      { apiKey: "kimchi-test-key" },
+    );
+
+    const options = fetchMock.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(options.body as string);
+    expect(body.model).toBe("minimax-m3");
+    expect(body.max_tokens).toBe(8_192);
+    expect(body.temperature).toBe(1);
     expect(body.top_p).toBe(0.95);
   });
 });

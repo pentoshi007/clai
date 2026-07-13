@@ -175,4 +175,39 @@ describe("provider fallback rate limits", () => {
 
     expect(nvidiaCalled).toBe(false);
   });
+
+  it("allows configured fallback after a provider input-limit 413", async () => {
+    updateConfig({ providerFallback: true });
+    process.env.GROQ_API_KEY = "gsk_test";
+    process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
+    let nvidiaCalled = false;
+    providers.groq = {
+      ...originalGroq,
+      async stream() {
+        throw new ProviderError("Provider request failed with HTTP 413", 413);
+      },
+    } as LlmProvider;
+    providers.nvidia = {
+      ...originalNvidia,
+      async stream() {
+        nvidiaCalled = true;
+        return { text: "fallback", provider: "nvidia", model: "fallback-model" };
+      },
+    } as LlmProvider;
+
+    const result = await streamWithProvider(
+      {
+        provider: "groq",
+        // Agent turns opt in to a fallback model even when users selected a
+        // non-default model, such as GPT-OSS.
+        model: "openai/gpt-oss-20b",
+        allowModelFallback: true,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      () => undefined,
+    );
+
+    expect(result.text).toBe("fallback");
+    expect(nvidiaCalled).toBe(true);
+  });
 });

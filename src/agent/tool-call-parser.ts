@@ -1161,6 +1161,12 @@ const VOLATILE_SIGNAL_RE =
 const VOLATILE_ROLE_QUERY_RE =
   /\b(?:who(?:\s+is|'s)?|whos|name|tell\s+me|what(?:\s+is|'s)?)\b[\s\S]{0,120}\b(?:cm|chief\s+minister|prime\s+minister|president|governor|mayor|ministers?|cabinet|leader|head\s+of|ceo|cto|cfo|coo|chair(?:man|woman|person)?|coach|captain)\b/i;
 
+// A dated schedule (exam, application, event, release, etc.) is not stable
+// knowledge even when the user does not say "latest". In particular, terse
+// prompts such as "when is SSC CGL 2026" must be checked rather than guessed.
+const DATED_SCHEDULE_QUERY_RE =
+  /\bwhen\s+(?:is|are|does|will|do)\b[\s\S]{0,120}\b20\d{2}\b|\b(?:exam|test|application|admission|registration|notification|recruitment|event|match|release|launch)\b[\s\S]{0,80}\b(?:date|schedule|calendar|20\d{2})\b/i;
+
 const ROLE_OF_ENTITY_RE =
   /\b(?:cm|chief\s+minister|prime\s+minister|president|governor|mayor|ministers?|ceo|cto|cfo|coo|chair(?:man|woman|person)?|coach|captain)\s+(?:of|for|in)\b/i;
 
@@ -1375,7 +1381,8 @@ export function requiresFreshWebSearch(prompt: string): boolean {
   return (
     VOLATILE_SIGNAL_RE.test(text) ||
     VOLATILE_ROLE_QUERY_RE.test(text) ||
-    ROLE_OF_ENTITY_RE.test(text)
+    ROLE_OF_ENTITY_RE.test(text) ||
+    DATED_SCHEDULE_QUERY_RE.test(text)
   );
 }
 

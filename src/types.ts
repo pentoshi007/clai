@@ -47,6 +47,13 @@ export interface ChatMessage {
 export interface CompletionRequest {
   provider?: ProviderId | undefined;
   model?: string | undefined;
+  /**
+   * Permit the configured provider chain to use each fallback provider's
+   * default model when the explicitly selected model cannot produce a usable
+   * completion. Agent turns opt in so a reasoning-only stream never ends the
+   * user's turn without an answer.
+   */
+  allowModelFallback?: boolean | undefined;
   messages: ChatMessage[];
   temperature?: number | undefined;
   maxTokens?: number | undefined;
