@@ -6,10 +6,12 @@ import { printResult, type SpikeResult } from "./harness.js";
 import { runStreamingMarkdownSpike } from "./streaming-markdown.spike.js";
 import { runViewportCullingSpike } from "./viewport-culling.spike.js";
 import { runPaneSelectionSpike } from "./pane-selection.spike.js";
+import { runShellRenderSpike } from "./shell-render.spike.js";
 
 const spikes: Array<() => Promise<SpikeResult>> = [
   runViewportCullingSpike,
   runStreamingMarkdownSpike,
+  runShellRenderSpike,
   runPaneSelectionSpike,
 ];
 

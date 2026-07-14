@@ -37,6 +37,7 @@ import {
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { canUseTui } from "./tui/can-use-tui.js";
 import { shouldUseTui } from "./tui/default.js";
+import { isV2Requested } from "./tui-v2/bootstrap/ui-selection.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -46,6 +47,7 @@ interface GlobalOptions {
   noHistory?: boolean | undefined;
   tui?: boolean | undefined;
   classic?: boolean | undefined;
+  ui?: string | undefined;
 }
 
 function modeOption(): Option {
@@ -71,6 +73,24 @@ async function oneShot(
   const model = options.model ?? getProviderModel(activeProvider);
 
   if (!prompt) {
+    if (isV2Requested(options)) {
+      const gate = canUseTui();
+      if (gate.ok) {
+        const { startTuiV2 } = await import("./tui-v2/bootstrap/start-tui-v2.js");
+        await startTuiV2({
+          mode,
+          provider,
+          model,
+          noHistory: options.noHistory,
+        });
+        return;
+      }
+      console.error(
+        chalk.dim(`  v2 UI unavailable (${gate.reason}); using classic REPL.`),
+      );
+      await startRepl({ mode, provider, model, noHistory: options.noHistory });
+      return;
+    }
     if (shouldUseTui(options)) {
       const gate = canUseTui();
       if (gate.ok) {
@@ -170,6 +190,12 @@ async function main(): Promise<void> {
     )
     .option("--tui", "launch the full-screen terminal UI (default)")
     .option("--classic", "launch the legacy line-based REPL")
+    .addOption(
+      new Option(
+        "--ui <mode>",
+        "select the interactive frontend (v2 is opt-in and experimental)",
+      ).choices(["legacy", "tui", "v2"]),
+    )
     .argument("[prompt...]", "one-shot prompt")
     .action(
       async (promptParts: string[] | undefined, options: GlobalOptions) => {
