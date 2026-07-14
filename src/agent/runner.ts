@@ -1033,10 +1033,12 @@ export async function runAgentLoop(
       // stalled operation is cancelled.
       const TOOL_STALL_ABORT_MS = 60_000; // 1 minute
       let stallTimer: NodeJS.Timeout | undefined;
+      let stalledByWatchdog = false;
       const resetStallTimer = (): void => {
         if (stallTimer) clearTimeout(stallTimer);
         stallTimer = setTimeout(() => {
           if (!toolAc.signal.aborted) {
+            stalledByWatchdog = true;
             writeNotice(
               "warn",
               `${call.name} has been running for >60s — cancelling stalled tool`,
@@ -1071,18 +1073,32 @@ export async function runAgentLoop(
       } catch (toolError) {
         jobManager.updateJobStatus(jobId, "failed", 1);
         if (isAbortError(toolError, toolAc.signal)) {
-          writeAbort();
-          return {
+          // Only the parent signal represents a user/session cancellation.
+          // A watchdog abort is a local tool timeout; treating it as a global
+          // abort used to end the entire agent turn and strand sibling recon
+          // calls in an incomplete state.
+          if (parentSignal.aborted) {
+            writeAbort();
+            return {
+              ok: false,
+              call,
+              result: { ok: false, output: "Aborted." },
+              contextOutput: "Aborted.",
+              lastAnswer: "Aborted.",
+            };
+          }
+          result = {
             ok: false,
-            call,
-            result: { ok: false, output: "Aborted." },
-            contextOutput: "Aborted.",
-            lastAnswer: "Aborted.",
+            output: stalledByWatchdog
+              ? `Tool timed out after ${TOOL_STALL_ABORT_MS / 1_000}s without output.`
+              : "Tool aborted before it could complete.",
+            exitCode: stalledByWatchdog ? 124 : 130,
           };
+        } else {
+          const errMsg =
+            toolError instanceof Error ? toolError.message : String(toolError);
+          result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
         }
-        const errMsg =
-          toolError instanceof Error ? toolError.message : String(toolError);
-        result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
       } finally {
         if (stallTimer) clearTimeout(stallTimer);
         parentSignal.removeEventListener("abort", onParentAbort);
@@ -2215,8 +2231,9 @@ export async function runAgentLoop(
         // closes. That keeps execution strictly task-by-task and eliminates the
         // plan-state races / overlapping writes that a blanket Promise.all
         // caused, while still letting one task's independent lookups run in
-        // parallel. The whole batch stops on the first abort, block, or failure
-        // so the model always sees and reacts to an error.
+        // parallel. A failed independent read-only lookup does not prevent
+        // later recon from running; aborts, blocks, and sequential-barrier
+        // failures still stop the batch so the model can react safely.
         const scopeForBatch = await loadScope().catch(() => undefined);
         const isParallelSafe = (c: ToolCall): boolean => {
           if (!BATCH_SAFE_TOOLS.has(c.name)) return false;
@@ -2243,7 +2260,7 @@ export async function runAgentLoop(
           ok: boolean;
           lastAnswer?: string | undefined;
           blockOrCancel?: boolean | undefined;
-        }): void => {
+        }, continueAfterFailure = false): void => {
           messages.push({
             role: "tool",
             content: `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${res.contextOutput}`,
@@ -2275,7 +2292,7 @@ export async function runAgentLoop(
           else if (res.blockOrCancel) {
             blocked = true;
             blockedResult = res;
-          } else if (!res.ok) failed = true;
+          } else if (!res.ok && !continueAfterFailure) failed = true;
         };
 
         const groups = groupToolCallsForExecution(
@@ -2317,7 +2334,10 @@ export async function runAgentLoop(
                 ),
               ),
             );
-            for (const res of results) recordResult(res);
+            // These calls are explicitly safe and independent. Preserve every
+            // result for the model, but do not abandon remaining reconnaissance
+            // merely because one lookup times out or a remote service fails.
+            for (const res of results) recordResult(res, true);
           }
         }
 
