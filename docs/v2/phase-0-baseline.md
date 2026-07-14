@@ -112,8 +112,38 @@ with the required filesystem permission.
 
 Phase 0 gate status: passed locally.
 
+## Addendum 2026-07-13 — re-verification after worktree relocation
+
+The `CL/` parent directory was moved, which broke the git worktree gitdir link
+for this worktree. Repaired with `git worktree repair`; branch `ui/v2-opentui`
+and a clean working tree were restored. The original `clai` worktree keeps its
+own unrelated uncommitted changes and was not modified.
+
+Re-ran the Phase 0 gate in two configurations:
+
+```text
+# default isolated run (VITEST_WORKER_ID tmpdir routing)
+npx vitest run  -> 97 files, 717/717 passed
+
+# exact CI env (CLAI_CONFIG_DIR/CLAI_DATA_DIR/CLAI_ARTIFACT_DIR/CLAI_LOG_DIR)
+CLAI_CONFIG_DIR=... CLAI_DATA_DIR=... CLAI_ARTIFACT_DIR=... CLAI_LOG_DIR=... \
+  npx vitest run -> 97 files, 717/717 passed
+```
+
+### Fix: hermetic history-autosave isolation
+
+`test/history-autosave.test.ts` previously isolated only via a temp `HOME` and
+`CLAI_CONFIG_DIR`. Under the CI env (which injects a global `CLAI_DATA_DIR`),
+`getDataDir()` returned the shared injected root instead of `HOME/.clai`, so the
+JSONL history file accumulated records across cases and three assertions failed
+(observed 3–5 records where 1–2 were expected). The test now allocates its own
+per-test temp data root and neutralizes every ambient `CLAI_*` data-root env var
+in `beforeEach`, restoring the originals in `afterEach`. No assertion was
+weakened; the test is now hermetic regardless of ambient environment.
+
 ## Next step
 
-Start Phase 1 with V2-010 in the v2 worktree: add pinned Bun/OpenTUI/Solid
-dependencies and build config only after reviewing exact package versions and
-license/runtime impact.
+Phase 1 (V2-010) is intentionally NOT started. Do not install OpenTUI/Solid or
+begin feature code until directed. Resume at V2-010 in the v2 worktree: add
+pinned Bun/OpenTUI/Solid dependencies and build config only after reviewing
+exact package versions and license/runtime impact.

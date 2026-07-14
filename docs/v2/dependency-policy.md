@@ -22,20 +22,24 @@ For v2 UI packages:
 
 ## Current Phase 1 selection
 
-Registry metadata checked on 2026-07-03:
+Registry metadata re-checked on 2026-07-13 (V2-010). See ADR-006 for the
+adapter decision and ADR-007 for the runtime/spike evidence.
 
 | Package | Selected | Latest checked | Deprecation | Reason |
 |---|---:|---:|---|---|
-| `@opentui/core` | `0.4.2` | `0.4.2` | none returned | Latest OpenTUI core. |
-| `@opentui/react` | `0.4.2` | `0.4.2` | none returned | Latest React binding; no deprecated transitive packages. |
+| `@opentui/core` | `0.4.3` | `0.4.3` | none returned | Latest OpenTUI core. |
+| `@opentui/react` | `0.4.3` | `0.4.3` | none returned | React binding (ADR-006). |
+| `@opentui/keymap` | `0.4.3` | `0.4.3` | none returned | Action/key bindings; peer-optionally accepts the React adapter alone. |
 | `react` | `19.2.7` | `19.2.7` | none returned | Latest stable; satisfies Ink and OpenTUI. |
 | `ink` | `6.8.0` | `7.1.0` | none returned | Newest Node 20-compatible release; 7.x requires Node 22. |
 | `commander` | `14.0.3` | `15.0.0` | none returned | Newest Node 20-compatible release; 15.x requires Node 22.12. |
 
-The Solid adapter and keymap package were rejected because their latest release
-pulls `glob@9.3.5`, which npm marks deprecated, and an affected Babel 7 release
-with no compatible patched version. CLAI already uses React, so the React
-adapter is also the smaller migration.
+Installing the `0.4.3` set produced no `npm warn deprecated` lines and 0
+vulnerabilities. The `@opentui/solid` adapter (re-checked 2026-07-13) is no
+longer flagged deprecated at the top level but still carries a full Babel 7 +
+`babel-preset-solid` runtime toolchain; combined with clai already using React
+(via Ink), the React adapter remains the smaller migration. Decision recorded in
+ADR-006.
 
 ## Upgrade process
 
