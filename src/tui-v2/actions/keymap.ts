@@ -50,7 +50,8 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("ctrl+c", "app.cancel", "global"),
   binding("ctrl+d", "app.quit", "global"),
   binding("ctrl+g", "app.help", "global"),
-  binding("ctrl+p", "app.toggle-plan", "global"),
+  binding("ctrl+h", "app.toggle-plan", "global"),
+  binding("ctrl+p", "plan.toggle-detail", "global"),
   binding("ctrl+j", "app.jobs", "global"),
   binding("tab", "focus.next-region", "global"),
 

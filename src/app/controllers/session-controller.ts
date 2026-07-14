@@ -134,6 +134,26 @@ export class SessionController implements Disposable {
     if (index >= 0 && index < this.queue.length) this.queue.splice(index, 1);
   }
 
+  /** Edit a queued draft in place before it runs (INPUT-007). */
+  editQueued(index: number, text: string): void {
+    if (index >= 0 && index < this.queue.length) this.queue[index] = text;
+  }
+
+  /** Move a queued draft to a new position before it runs (INPUT-007). */
+  reorderQueued(fromIndex: number, toIndex: number): void {
+    if (
+      fromIndex < 0 ||
+      fromIndex >= this.queue.length ||
+      toIndex < 0 ||
+      toIndex >= this.queue.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const [moved] = this.queue.splice(fromIndex, 1);
+    if (moved !== undefined) this.queue.splice(toIndex, 0, moved);
+  }
+
   abort(): void {
     this.turn.abort();
   }

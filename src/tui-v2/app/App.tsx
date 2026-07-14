@@ -9,15 +9,18 @@
  * Real content arrives in later phases.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTerminalDimensions } from "@opentui/react";
 import { computeLayout } from "../layout/compute-layout.js";
+import { ComposerEditor } from "../composer/composer-editor.js";
 import { useServices, useTheme } from "./providers.js";
 
 export function App(): ReactNode {
   const { width, height } = useTerminalDimensions();
   const services = useServices();
   const theme = useTheme();
+  const [focusContext, setFocusContext] = useState(services.focus.activeContext());
+  useEffect(() => services.focus.onChange(setFocusContext), [services.focus]);
   const layout = computeLayout({
     columns: width,
     rows: height,
@@ -83,7 +86,13 @@ export function App(): ReactNode {
           borderColor: theme.border,
         }}
       >
-        <text style={{ fg: theme.muted }}>Type a message…</text>
+        <ComposerEditor
+          services={services}
+          theme={theme}
+          width={layout.composer.width}
+          height={layout.composer.height}
+          focused={focusContext === "composer"}
+        />
       </box>
     </box>
   );
