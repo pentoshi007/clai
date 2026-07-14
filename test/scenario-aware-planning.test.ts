@@ -24,6 +24,14 @@ describe("pentestWorkflowDirective", () => {
     expect(directive.toLowerCase()).toContain("finding");
   });
 
+  it("requires a separate evidence-analysis response for plan.create", () => {
+    const directive = pentestWorkflowDirective();
+    expect(directive).toContain("RECON RESPONSE");
+    expect(directive).toContain("ANALYSIS + PLAN RESPONSE");
+    expect(directive).toContain("standalone plan.create");
+    expect(directive).toContain("returned tool output");
+  });
+
   it("allows incremental plan updates as attack surface grows", () => {
     const directive = pentestWorkflowDirective();
     expect(directive.toLowerCase()).toContain("incremental");
@@ -82,6 +90,7 @@ describe("renderAgentSystemPrompt — pentest planning guidance", () => {
     expect(prompt.toLowerCase()).toContain("incremental");
     // The PENTEST METHODOLOGY section now leads with a recon-before-plan rule.
     expect(prompt).toContain("RECON BEFORE PLAN");
+    expect(prompt).toContain("MANDATORY RESPONSE SHAPES");
   });
 });
 
