@@ -2201,7 +2201,11 @@ export async function runAgentLoop(
         // are intentionally discarded: they were proposed before a plan was
         // created or approved.
         const planCallIndex = allCalls.findIndex((candidate) => candidate.name === "plan.create");
-        if (planCallIndex >= 0) {
+        if (planCallIndex > 0) {
+          // plan.create is bundled AFTER gathering calls in the SAME message,
+          // so its reconnaissance results do not exist yet. Run only the
+          // preceding gathering calls, then let the next turn analyse their
+          // actual results and emit one standalone plan.create.
           const gatheringCalls = allCalls.slice(0, planCallIndex);
           const deferredCount = allCalls.length - gatheringCalls.length;
           allCalls = gatheringCalls;
@@ -2220,7 +2224,33 @@ export async function runAgentLoop(
               `Only the ${gatheringCalls.length} gathering call(s) before it were run; ${deferredCount} plan/follow-on call(s) were not run. ` +
               "Now analyse the tool results. If a plan is appropriate, emit exactly one standalone plan.create tool call based only on those results. Do not include any other tool calls in that response.",
           });
+        } else if (planCallIndex === 0 && allCalls.length > 1) {
+          // plan.create is the FIRST call but bundled with follow-on calls.
+          // The plan is based on reconnaissance from prior turns (already in
+          // history), so execute the plan.create now and defer only the calls
+          // proposed after it — those were proposed before the plan was
+          // created or approved.
+          const deferredCount = allCalls.length - 1;
+          allCalls = allCalls.slice(0, 1);
+          activeDeferredToolCalls = deferredToolCalls.slice(0, 1);
+          writeNotice(
+            "info",
+            "creating the plan now; deferring follow-on calls until it is approved",
+            chalk.dim(
+              `  ℹ running plan.create from prior reconnaissance; ${deferredCount} follow-on call(s) deferred until after approval\n`,
+            ),
+          );
+          messages.push({
+            role: "system",
+            content:
+              `You emitted plan.create alongside ${deferredCount} follow-on call(s). Only plan.create was run; ` +
+              `the follow-on call(s) were not. Wait for the plan to be reviewed, then proceed task by task.`,
+          });
         }
+        // planCallIndex === 0 && allCalls.length === 1: a standalone plan.create
+        // built from prior reconnaissance. Execute it normally — deferring it
+        // here (as the previous `>= 0` guard did) ran zero calls and looped the
+        // agent forever without ever creating the plan.
         // A single model message can contain an unbounded number of calls.
         // Even with read-only calls fanned out, a giant batch can tie up the
         // session for minutes and makes cancellation feel broken. Keep each
