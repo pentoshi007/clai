@@ -459,6 +459,55 @@ describe("audit#6 — http helpers cap responses and watchdog streams", () => {
     }
   });
 
+  it("does not let SSE keepalives postpone the no-model-output timeout", async () => {
+    const { openAiCompatibleStream } = await import("../src/llm/http.js");
+    const originalFetch = globalThis.fetch;
+    const encoder = new TextEncoder();
+    globalThis.fetch = vi.fn(async () => {
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let closed = false;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          heartbeat = setInterval(() => {
+            controller.enqueue(encoder.encode(": keepalive\\n\\n"));
+          }, 5);
+          setTimeout(() => {
+            if (heartbeat) clearInterval(heartbeat);
+            if (!closed) {
+              closed = true;
+              controller.close();
+            }
+          }, 500);
+        },
+        cancel() {
+          closed = true;
+          if (heartbeat) clearInterval(heartbeat);
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        openAiCompatibleStream({
+          provider: "test",
+          baseUrl: "https://example.invalid/v1",
+          apiKey: "test-key",
+          model: "test-model",
+          messages: [{ role: "user", content: "hi" }],
+          onToken: () => {},
+          initialIdleTimeoutMs: 40,
+          idleTimeoutMs: 40,
+        }),
+      ).rejects.toThrow(/no model output/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("rejects a stream that contains reasoning but no visible completion", async () => {
     const { openAiCompatibleStream } = await import("../src/llm/http.js");
     const originalFetch = globalThis.fetch;

@@ -2186,16 +2186,70 @@ export async function runAgentLoop(
         if (beforeTool) {
           writeAssistantMessage(beforeTool);
         }
-        // Now emit deferred tool-call events (collected during streaming)
-        // so the display order is: thinking → text → tool-call cards.
-        for (const deferred of deferredToolCalls) {
-          writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
-        }
         let allCalls = parseAllToolCalls(
           assistantText.visible || assistantText.thinkContent,
         );
         if (allCalls.length === 0 && call) {
           allCalls = [call];
+        }
+        let activeDeferredToolCalls = deferredToolCalls;
+        // A plan must be based on the outputs of prior reconnaissance, never
+        // on calls the model merely proposed in the same response. If a model
+        // emits plan.create alongside gathering calls, run only the calls
+        // before it, then let the next model turn analyse their actual results
+        // and emit one standalone plan.create. Calls after the attempted plan
+        // are intentionally discarded: they were proposed before a plan was
+        // created or approved.
+        const planCallIndex = allCalls.findIndex((candidate) => candidate.name === "plan.create");
+        if (planCallIndex >= 0) {
+          const gatheringCalls = allCalls.slice(0, planCallIndex);
+          const deferredCount = allCalls.length - gatheringCalls.length;
+          allCalls = gatheringCalls;
+          activeDeferredToolCalls = deferredToolCalls.slice(0, gatheringCalls.length);
+          writeNotice(
+            "info",
+            "deferring plan.create until reconnaissance results are available",
+            chalk.dim(
+              `  ℹ running ${gatheringCalls.length} gathering call(s); ${deferredCount} plan/follow-on call(s) deferred for evidence-based planning\n`,
+            ),
+          );
+          messages.push({
+            role: "system",
+            content:
+              `The prior response included plan.create before its reconnaissance results existed. ` +
+              `Only the ${gatheringCalls.length} gathering call(s) before it were run; ${deferredCount} plan/follow-on call(s) were not run. ` +
+              "Now analyse the tool results. If a plan is appropriate, emit exactly one standalone plan.create tool call based only on those results. Do not include any other tool calls in that response.",
+          });
+        }
+        // A single model message can contain an unbounded number of calls.
+        // Even with read-only calls fanned out, a giant batch can tie up the
+        // session for minutes and makes cancellation feel broken. Keep each
+        // model turn bounded; after these results the agent gets another turn
+        // to prioritise the remaining work from real evidence.
+        const MAX_CALLS_PER_MODEL_TURN = 12;
+        const omittedCallCount = Math.max(0, allCalls.length - MAX_CALLS_PER_MODEL_TURN);
+        if (omittedCallCount > 0) {
+          allCalls = allCalls.slice(0, MAX_CALLS_PER_MODEL_TURN);
+          activeDeferredToolCalls = activeDeferredToolCalls.slice(0, MAX_CALLS_PER_MODEL_TURN);
+          writeNotice(
+            "warn",
+            `limited this model response to ${MAX_CALLS_PER_MODEL_TURN} tool calls`,
+            chalk.yellow(
+              `  ⚠ executing the first ${MAX_CALLS_PER_MODEL_TURN} tool calls; ${omittedCallCount} more were deferred for reprioritisation\n`,
+            ),
+          );
+          messages.push({
+            role: "system",
+            content:
+              `You emitted too many tool calls in one response. Only the first ${MAX_CALLS_PER_MODEL_TURN} were executed; ` +
+              `${omittedCallCount} were not run. After reviewing results, issue a small, prioritized next batch.`,
+          });
+        }
+
+        // Now emit only the calls that will actually execute, after thinking
+        // + assistant text so transcript order remains correct.
+        for (const deferred of activeDeferredToolCalls.slice(0, allCalls.length)) {
+          writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
         }
 
         const standardizedContent =

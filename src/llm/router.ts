@@ -67,6 +67,14 @@ function isTransientNetworkError(error: unknown): boolean {
 }
 
 function isRetriableError(error: unknown): boolean {
+  // The stream watchdog has already waited long enough for useful model
+  // output. Retrying it six times turns one stalled provider call into a
+  // multi-minute frozen-looking TUI, so fail promptly (or use configured
+  // provider fallback) instead.
+  const message = error instanceof Error ? error.message : String(error);
+  if (/stream stalled|request timed out before any response/i.test(message)) {
+    return false;
+  }
   if (isRateLimited(error)) return true;
   if (error instanceof ProviderError) {
     const status = error.status ?? 0;

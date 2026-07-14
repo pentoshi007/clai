@@ -690,11 +690,14 @@ export async function openAiCompatibleStream(options: {
   const idleController = new AbortController();
   let idleTimer: NodeJS.Timeout | undefined;
   let idleFired = false;
-  let sawStreamBytes = false;
+  // Some gateways send SSE comments/heartbeats while their upstream model is
+  // wedged. Those bytes only prove the socket is open, not that a model is
+  // making progress, so they must not postpone the watchdog indefinitely.
+  let sawStreamProgress = false;
   let activeIdleTimeoutMs = initialIdleTimeoutMs;
   const resetIdleTimer = (): void => {
     if (idleTimer) clearTimeout(idleTimer);
-    activeIdleTimeoutMs = sawStreamBytes ? idleTimeoutMs : initialIdleTimeoutMs;
+    activeIdleTimeoutMs = sawStreamProgress ? idleTimeoutMs : initialIdleTimeoutMs;
     idleTimer = setTimeout(() => {
       idleFired = true;
       idleController.abort();
@@ -857,8 +860,6 @@ export async function openAiCompatibleStream(options: {
         throw new Error("Stream aborted");
       }
       if (done) break;
-      sawStreamBytes = true;
-      resetIdleTimer();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -892,10 +893,17 @@ export async function openAiCompatibleStream(options: {
                 content?: string;
                 reasoning_content?: string;
                 reasoning?: string;
+                role?: string;
               };
             }>;
           };
           const choice = parsed.choices?.[0];
+          // Reset only for an actual completion event. Blank SSE heartbeats
+          // and comments otherwise keep a frozen request alive forever.
+          if (choice?.delta || choice?.finish_reason) {
+            sawStreamProgress = true;
+            resetIdleTimer();
+          }
           if (choice?.finish_reason) finishReason = choice.finish_reason;
           const delta = choice?.delta;
           const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
@@ -947,7 +955,7 @@ export async function openAiCompatibleStream(options: {
     }
     if (idleFired) {
       throw new ProviderError(
-        `${options.provider} stream stalled — no data for ${Math.round(activeIdleTimeoutMs / 1000)}s. Try a smaller model or disable thinking with /variants off.`,
+        `${options.provider} stream stalled — no model output for ${Math.round(activeIdleTimeoutMs / 1000)}s. Try a smaller model or disable thinking with /variants off.`,
       );
     }
     throw error;
