@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { homedir } from "node:os";
 
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type {
   ChatMessage,
   ChatImage,
@@ -14,8 +14,11 @@ import { randomUUID } from "node:crypto";
 import { jobManager, type BackgroundJob } from "../tools/jobs.js";
 import {
   renderAgentSystemPrompt,
+  renderCompactAgentSystemPrompt,
+  scratchDirFor,
 } from "../prompts/index.js";
 import { getConfig } from "../store/config.js";
+import { groqInputTokenBudget } from "../llm/groq.js";
 import {
   classifyToolCall,
   isPentestToolCall,
@@ -32,7 +35,9 @@ import { looksInteractiveStdin } from "../tools/shell.js";
 import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import {
   compactMessagesWithSummary,
+  estimateTokens,
   estimateMessagesTokens,
+  COMPACTION_MEMORY_PREFIX,
 } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
@@ -42,6 +47,7 @@ import {
   createThinkingStreamParser,
   rememberThinkingFromText,
   renderThinkingSummary,
+  stripThinking,
 } from "../ui/thinking.js";
 import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
 import { startThinkingSpinner, type ThinkingSpinner } from "../ui/spinner.js";
@@ -50,12 +56,13 @@ import { analyzeTask } from "./task-analyzer.js";
 import { LoopGuard } from "./loop-guard.js";
 import { loadPlan, type SessionPlan } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
-import { pathInsideSandbox } from "../tools/fs.js";
+import { pathInsideSandbox, fsWrite } from "../tools/fs.js";
 import {
   stripSentinelTokens,
   parseToolCall,
   recognizeBareToolJson,
   looksLikeTruncatedToolCall,
+  salvageTruncatedWrite,
   countToolFences,
   parseAllToolCalls,
   groupToolCallsForExecution,
@@ -71,6 +78,7 @@ import {
   requiresFreshWebSearch,
   freshnessGuardMessage,
   buildWorkflowDirective,
+  pentestWorkflowDirective,
   shouldDimToolChatter,
   looksLikePromptLeak,
 } from "./tool-call-parser.js";
@@ -119,6 +127,76 @@ export { type ConfirmPort } from "./confirm-port.js";
 
 export function styleToolChatter(call: ToolCall, text: string): string {
   return shouldDimToolChatter(call) ? chalk.dim(text) : text;
+}
+
+/**
+ * Tool names that may write into the project tree. Writes restricted to the
+ * per-project scratch directory (under tmpdir()/clai/<name>) are exempted
+ * from the active-plan and plan-approved gates so the model can use scratch
+ * space to build / inspect / stage work without first creating a plan.
+ */
+const SCRATCH_WRITABLE_TOOLS = new Set([
+  "fs.write",
+  "fs.writeMany",
+  "fs.edit",
+  "fs.replaceLines",
+  "fs.append",
+  "fs.delete",
+]);
+
+/**
+ * Expand `~` the same way `src/tools/fs.ts` does so callers can compare an
+ * already-expanded scratch path against paths supplied by the model.
+ */
+function expandHomeLocal(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return resolve(homedir(), path.slice(2));
+  }
+  return path;
+}
+
+/**
+ * Extract the target path(s) a write-shaped tool call would touch. Returns
+ * an empty array when the call has no resolvable path (so the caller can
+ * treat it as NOT scratch-only and fall through to the normal gates).
+ */
+function scratchWriteTargetPaths(call: ToolCall): string[] {
+  if (call.name === "fs.writeMany") {
+    const files = call.args.files;
+    if (!Array.isArray(files)) return [];
+    const paths: string[] = [];
+    for (const entry of files) {
+      if (entry && typeof entry === "object" && "path" in entry) {
+        const p = (entry as { path?: unknown }).path;
+        if (typeof p === "string" && p.length > 0) paths.push(p);
+      }
+    }
+    return paths;
+  }
+  const pathArg = call.args.path;
+  if (typeof pathArg !== "string" || pathArg.length === 0) return [];
+  return [pathArg];
+}
+
+/**
+ * True iff every target path this call would write is inside the resolved
+ * scratch directory. A path is considered inside when its `path.relative`
+ * against the scratch root is empty (the scratch root itself) or does not
+ * start with `..` (no parent traversal). Calls without a recognizable
+ * target path return false so they fall through to the normal gates.
+ */
+function isScratchOnlyWrite(call: ToolCall, scratchDir: string): boolean {
+  if (!SCRATCH_WRITABLE_TOOLS.has(call.name)) return false;
+  const paths = scratchWriteTargetPaths(call);
+  if (paths.length === 0) return false;
+  const resolvedScratch = resolve(scratchDir);
+  return paths.every((raw) => {
+    const expanded = expandHomeLocal(raw);
+    const resolved = resolve(expanded);
+    const rel = relative(resolvedScratch, resolved);
+    return rel === "" || (!rel.startsWith("..") && rel !== "..");
+  });
 }
 
 export interface AgentRunOptions {
@@ -244,6 +322,29 @@ export async function runAgentLoop(
     }
     emit(event);
   };
+  /** Strip a known prefix from a string, returning the remainder unchanged. */
+  const insertedText = (value: string, prefix: string): string =>
+    value.startsWith(prefix) ? value.slice(prefix.length) : value;
+  /**
+   * Surface the compacted-context summary to both the TUI (via an event)
+   * and, when running with a direct stdout writer, as a rendered box.
+   * Token-count stats are always emitted for logs.
+   */
+  const writeCompacted = (
+    summary: string,
+    beforeTokens: number,
+    afterTokens: number,
+  ): void => {
+    emit({ type: "compacted", summary, beforeTokens, afterTokens });
+    if (writesDirectly) {
+      const header = chalk.dim("  \u2726 Compacted Context");
+      const footer = chalk.dim(
+        `  ~${beforeTokens.toLocaleString()} \u2192 ~${afterTokens.toLocaleString()} tokens`,
+      );
+      const body = summary ? renderMarkdown(summary) : "(empty summary)";
+      process.stdout.write(`${header}\n\n${body}\n${footer}\n`);
+    }
+  };
   // Points at the live message array so finishTurn can hand the full
   // conversation back to the caller. Assigned once `messages` is built below;
   // all later mutations are in-place so this reference stays current.
@@ -293,7 +394,21 @@ export async function runAgentLoop(
       !pentestLikeTurn &&
       toolNames.includes("web.search") &&
       requiresFreshWebSearch(prompt);
-    const systemSections = [renderAgentSystemPrompt(toolNames.join(", "))];
+    let provider = options.provider ?? config.defaultProvider;
+    await ensureProviderConfigured(provider);
+    let model = options.model ?? config.defaultModel;
+    // Some Groq free-tier models have a per-request/per-minute input budget
+    // below the normal agent prompt alone. Select a purpose-built compact
+    // instruction set before the request is made, rather than treating the
+    // provider's 413 as a context-window failure after the fact.
+    const inputTokenBudget =
+      provider === "groq" ? groqInputTokenBudget(model) : undefined;
+    const useCompactSystemPrompt = inputTokenBudget !== undefined;
+    const systemSections = [
+      (useCompactSystemPrompt
+        ? renderCompactAgentSystemPrompt
+        : renderAgentSystemPrompt)(toolNames.join(", ")),
+    ];
     if (projectContext) {
       systemSections.push(
         `Project context from .clai/context.md:\n${projectContext}`,
@@ -303,9 +418,6 @@ export async function runAgentLoop(
       systemSections.push(freshnessGuardMessage());
     }
 
-    let provider = options.provider ?? config.defaultProvider;
-    await ensureProviderConfigured(provider);
-    let model = options.model ?? config.defaultModel;
     let lastAnswer = "";
     const session: SessionPolicy = options.session ?? createSessionPolicy();
 
@@ -340,7 +452,37 @@ export async function runAgentLoop(
       systemSections.push(buildWorkflowDirective());
     }
 
-    const fullSystemPrompt = systemSections.join("\n\n");
+    // Pentest / security engagements need a different shape than a coding
+    // build: recon first, then a plan built from real findings, then
+    // incremental task additions as new attack surface appears. The
+    // directive is only injected before a plan exists; once a plan is in
+    // place (or being refined), the ACTIVE PLAN block already carries the
+    // current task state and recon-vs-active-tool guidance.
+    if (pentestLikeTurn && !activePlan && !informationalQuery) {
+      systemSections.push(pentestWorkflowDirective());
+    }
+
+    const renderedSystemPrompt = systemSections.join("\n\n");
+    // Reserve most of a constrained model's input budget for the user message,
+    // recent conversation, tool results, and provider framing. Dynamic project
+    // context or a saved plan must not silently grow the compact base prompt
+    // back above the model's TPM ceiling.
+    const maxSystemTokens = inputTokenBudget
+      ? Math.min(2_000, Math.floor(inputTokenBudget * 0.4))
+      : undefined;
+    const systemTruncationNote =
+      "\n\n[Additional system context omitted to fit the provider input budget.]";
+    const fullSystemPrompt =
+      maxSystemTokens !== undefined &&
+      estimateTokens(renderedSystemPrompt) > maxSystemTokens
+        ? renderedSystemPrompt.slice(
+            0,
+            Math.max(
+              0,
+              Math.floor(maxSystemTokens * 3.3) - systemTruncationNote.length,
+            ),
+          ) + systemTruncationNote
+        : renderedSystemPrompt;
     const userMessage: ChatMessage = { role: "user", content: prompt };
     if (options.images && options.images.length > 0) {
       userMessage.images = options.images;
@@ -361,6 +503,20 @@ export async function runAgentLoop(
       }
       return message;
     };
+    // Every provider must receive a syntactically valid assistant turn between
+    // the original user prompt and a recovery nudge. In particular, Gemini
+    // serializes an empty assistant message as an empty `model` text part,
+    // which can cause every retry to return empty as well. Keep hidden thinking
+    // out of history, but record a compact non-empty sentinel when there was no
+    // visible output.
+    const pushAssistantHistory = (content: string): void => {
+      messages.push({
+        role: "assistant",
+        content: content.trim()
+          ? content
+          : "[No visible assistant response was produced.]",
+      });
+    };
 
     // Track recent tool calls to detect models stuck in a loop calling the
     // same tool with the same arguments over and over (e.g. pentest.recon
@@ -370,6 +526,10 @@ export async function runAgentLoop(
     // Track consecutive thinking-only responses so we can nudge the model
     // to actually act instead of silently returning an empty answer.
     let emptyVisibleRetries = 0;
+    // A model that spent an entire completion in hidden reasoning gets one
+    // visible-output retry with provider thinking disabled. This is per-turn
+    // only: a subsequent successful response restores the configured setting.
+    let retryWithoutThinking = false;
 
     // Track tool calls truncated by the token limit so we can ask the model
     // to retry in smaller pieces instead of leaking broken JSON as an answer.
@@ -394,6 +554,10 @@ export async function runAgentLoop(
     // tasks are still pending and it never ran the work. We nudge it back to
     // executing the next task a bounded number of times before giving up.
     let prematureCompletionRetries = 0;
+    let runtimeVerificationRetries = 0;
+    let sawServerStart = false;
+    let sawServerTail = false;
+    let sawLocalHttpProbe = false;
 
     // Guard against a model that NARRATES intent ("let me explore the
     // directory…") but emits no tool call, so nothing runs and the turn ends
@@ -454,6 +618,7 @@ export async function runAgentLoop(
     let productiveSteps = 0;
     let step = -1;
     let nextToolEventId = 0;
+    const alreadyPrintedIds = new Set<string>();
 
     const promptMutex = {
       promise: Promise.resolve(),
@@ -481,6 +646,9 @@ export async function runAgentLoop(
       lastAnswer?: string | undefined;
       blockOrCancel?: boolean | undefined;
     }> {
+      // Resolved once per call so the scratch-only exemption can compare the
+      // model-supplied paths against the canonical per-project scratch root.
+      const scratchDir = scratchDirFor(safeCwd());
       let call = normalizeToolCall(rawCall);
 
       if (call.name === "image.ocr" && !imageOcrEnabled) {
@@ -503,7 +671,9 @@ export async function runAgentLoop(
         const isWrite =
           call.name === "fs.write" ||
           call.name === "fs.writeMany" ||
-          call.name === "fs.edit";
+          call.name === "fs.edit" ||
+          call.name === "fs.replaceLines" ||
+          call.name === "fs.append";
         const reason = `${call.name} was already called with the same arguments — ${isWrite ? "moving on" : "forcing summary"}`;
         writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
         const result = { ok: false, output: reason, exitCode: 1 };
@@ -530,10 +700,31 @@ export async function runAgentLoop(
         });
         if (planResult.handled) {
           loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
+
+          if (!alreadyPrintedIds.has(toolEventId)) {
+            const toolCallLine =
+              chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+            writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(call, toolCallLine) + "\n",
+            );
+            alreadyPrintedIds.add(toolEventId);
+          }
+
           if (planResult.plan) {
             writePlanUpdate(planResult.plan, planResult.display);
           }
+
           const result = { ok: planResult.ok, output: planResult.modelNote };
+          emitToolResult(toolEventId, result, planResult.modelNote);
+          const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
+          writeToolOutput(
+            toolEventId,
+            result.ok ? "ok\n" : "failed\n",
+            statusIcon + "\n",
+          );
+
           return {
             ok: planResult.ok,
             call,
@@ -551,21 +742,24 @@ export async function runAgentLoop(
         scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
       });
 
-      if (
-        activePlan &&
-        !session.planApproved.value &&
-        !isPreApprovalAllowedTool(call.name)
-      ) {
-        const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
-        writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
-        const result = { ok: false, output: reason, exitCode: 1 };
-        return {
-          ok: false,
-          call,
-          result,
-          contextOutput: reason,
-          blockOrCancel: true,
-        };
+      const isMutatingAction =
+        (decision.level === "confirm" || decision.level === "block") &&
+        !isPreApprovalAllowedTool(call.name) &&
+        !isScratchOnlyWrite(call, scratchDir);
+
+      if (isMutatingAction) {
+        if (activePlan && !session.planApproved.value) {
+          const reason = `plan awaiting approval — ${call.name} is blocked until you /implement (or /discard)`;
+          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+          const result = { ok: false, output: reason, exitCode: 1 };
+          return {
+            ok: false,
+            call,
+            result,
+            contextOutput: reason,
+            blockOrCancel: true,
+          };
+        }
       }
 
       // Task-scoped execution gate
@@ -614,13 +808,16 @@ export async function runAgentLoop(
         sawFreshWebSearch = true;
       }
 
-      const toolCallLine =
-        chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-      writeToolCall(
-        toolEventId,
-        call,
-        styleToolChatter(call, toolCallLine) + "\n",
-      );
+      if (!alreadyPrintedIds.has(toolEventId)) {
+        const toolCallLine =
+          chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+        writeToolCall(
+          toolEventId,
+          call,
+          styleToolChatter(call, toolCallLine) + "\n",
+        );
+        alreadyPrintedIds.add(toolEventId);
+      }
 
       const scopeTarget = scopeTargetForToolCall(call);
       if (
@@ -733,10 +930,11 @@ export async function runAgentLoop(
           restoreInteractiveStdin();
           if (!ok) {
             const lastAnswer = "Cancelled.";
-            writeNotice(
-              "warn",
-              "cancelled",
-              chalk.yellow(`  ✗ cancelled`) + "\n",
+            writeToolBlocked(
+              toolEventId,
+              call.name,
+              lastAnswer,
+              chalk.red(`  ✗ cancelled`) + "\n",
             );
             const result = { ok: false, output: lastAnswer, exitCode: 1 };
             return {
@@ -830,16 +1028,27 @@ export async function runAgentLoop(
       };
       jobManager.registerJob(jobId, backgroundJob, toolAc);
 
-      const TOOL_STALL_WARNING_MS = 60_000; // 1 minute
-      const stallTimer = setTimeout(() => {
-        if (!toolAc.signal.aborted) {
-          writeNotice(
-            "info",
-            `${call.name} has been running for >60s — still waiting (ESC to abort)`,
-            chalk.yellow(`  ⏳ ${call.name} still running — ESC to abort\n`),
-          );
-        }
-      }, TOOL_STALL_WARNING_MS);
+      // Long-lived commands should use shell.start/background jobs. Reset this
+      // watchdog whenever a blocking tool emits output so only a genuinely
+      // stalled operation is cancelled.
+      const TOOL_STALL_ABORT_MS = 60_000; // 1 minute
+      let stallTimer: NodeJS.Timeout | undefined;
+      let stalledByWatchdog = false;
+      const resetStallTimer = (): void => {
+        if (stallTimer) clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => {
+          if (!toolAc.signal.aborted) {
+            stalledByWatchdog = true;
+            writeNotice(
+              "warn",
+              `${call.name} has been running for >60s — cancelling stalled tool`,
+              chalk.yellow(`  ⏳ ${call.name} stalled for >60s — cancelling\n`),
+            );
+            toolAc.abort();
+          }
+        }, TOOL_STALL_ABORT_MS);
+      };
+      resetStallTimer();
 
       try {
         result = await runToolCall(call, {
@@ -847,6 +1056,7 @@ export async function runAgentLoop(
           requestSecret: options.requestSecret,
           onOutput: (chunk) => {
             if (toolAc.signal.aborted) return;
+            resetStallTimer();
             printLive(chunk);
           },
           confirmed: true,
@@ -863,20 +1073,34 @@ export async function runAgentLoop(
       } catch (toolError) {
         jobManager.updateJobStatus(jobId, "failed", 1);
         if (isAbortError(toolError, toolAc.signal)) {
-          writeAbort();
-          return {
+          // Only the parent signal represents a user/session cancellation.
+          // A watchdog abort is a local tool timeout; treating it as a global
+          // abort used to end the entire agent turn and strand sibling recon
+          // calls in an incomplete state.
+          if (parentSignal.aborted) {
+            writeAbort();
+            return {
+              ok: false,
+              call,
+              result: { ok: false, output: "Aborted." },
+              contextOutput: "Aborted.",
+              lastAnswer: "Aborted.",
+            };
+          }
+          result = {
             ok: false,
-            call,
-            result: { ok: false, output: "Aborted." },
-            contextOutput: "Aborted.",
-            lastAnswer: "Aborted.",
+            output: stalledByWatchdog
+              ? `Tool timed out after ${TOOL_STALL_ABORT_MS / 1_000}s without output.`
+              : "Tool aborted before it could complete.",
+            exitCode: stalledByWatchdog ? 124 : 130,
           };
+        } else {
+          const errMsg =
+            toolError instanceof Error ? toolError.message : String(toolError);
+          result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
         }
-        const errMsg =
-          toolError instanceof Error ? toolError.message : String(toolError);
-        result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
       } finally {
-        clearTimeout(stallTimer);
+        if (stallTimer) clearTimeout(stallTimer);
         parentSignal.removeEventListener("abort", onParentAbort);
       }
 
@@ -992,8 +1216,8 @@ export async function runAgentLoop(
     // what is done, and what remains. The estimate is chars/4; the budget is
     // deliberately conservative so we compact a little early rather than hit a
     // provider context-window error mid-task.
-    const AUTO_COMPACT_TOKEN_BUDGET = 60_000;
-    const AUTO_COMPACT_KEEP_RECENT = 12;
+    const AUTO_COMPACT_TOKEN_BUDGET = 150_000;
+    const AUTO_COMPACT_KEEP_RECENT = 6;
     let lastCompactionMsgCount = 0;
 
     const summarizeForCompaction = async (
@@ -1011,7 +1235,7 @@ export async function runAgentLoop(
           { role: "user", content: summaryPrompt },
         ],
         temperature: 0.1,
-        maxTokens: 2_048,
+        maxTokens: 4_096,
         signal: options.signal,
       });
       return response.text;
@@ -1048,17 +1272,40 @@ export async function runAgentLoop(
           });
         }
         lastCompactionMsgCount = messages.length;
-        const afterTokens = estimateMessagesTokens(messages);
+        // Report the compacted token count BEFORE plan re-injection so the
+        // compaction stats accurately show the reduction. Then report the
+        // final count (which is what the model actually receives) separately.
+        const compactedTokens = estimateMessagesTokens(messages);
         await auditLog("agent.compact", {
           newLength: messages.length,
-          estimatedTokens: afterTokens,
+          estimatedTokens: compactedTokens,
           reason,
         });
+        // Extract the inserted compaction memory so we can surface the
+        // summary itself (not just token-count stats). The summary lives in
+        // the first system message whose content begins with
+        // COMPACTION_MEMORY_PREFIX.
+        const insertedSummary =
+          messages.find(
+            (m) =>
+              m.role === "system" &&
+              m.content.startsWith(COMPACTION_MEMORY_PREFIX),
+          )?.content ?? "";
+        const summaryText = insertedSummary.startsWith(
+          `${COMPACTION_MEMORY_PREFIX}\n\n`,
+        )
+          ? insertedText(insertedSummary, `${COMPACTION_MEMORY_PREFIX}\n\n`)
+          : insertedText(insertedSummary, COMPACTION_MEMORY_PREFIX);
+        const afterTokens = estimateMessagesTokens(messages);
+        writeCompacted(summaryText, beforeTokens, afterTokens);
+        const planNote = afterTokens > compactedTokens
+          ? ` (compacted to ~${compactedTokens.toLocaleString()}, +plan → ~${afterTokens.toLocaleString()})`
+          : "";
         writeNotice(
           "info",
-          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)`,
+          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens${planNote})`,
           chalk.dim(
-            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)\n`,
+            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens${planNote})\n`,
           ),
         );
       } catch (error) {
@@ -1172,7 +1419,7 @@ export async function runAgentLoop(
         // models like glm-5.1 / deepseek-v4-flash that stream reasoning first.
         const streamLabel =
           step === 0 ? "waiting for model" : `step ${step + 1}`;
-        const spinner = writesDirectly
+        let spinner = writesDirectly
           ? startThinkingSpinner(streamLabel, options.signal)
           : noopSpinner;
         if (!writesDirectly) {
@@ -1181,6 +1428,14 @@ export async function runAgentLoop(
         let sawReasoning = false;
         let inThinking = false;
         let emittedThinkingStatus = false;
+        let generatedTokens = 0;
+        let accumulatedText = "";
+        const callIds: string[] = [];
+        let streamedCallsCount = 0;
+        // Deferred tool-call events: collect tool calls parsed from the stream
+        // and emit them AFTER thinking + assistant text, so the display order
+        // is correct: thinking → model text → tool-call cards.
+        const deferredToolCalls: { eventId: string; call: ToolCall; rendered: string }[] = [];
         const deltaParser = writesDirectly
           ? undefined
           : createThinkingStreamParser(
@@ -1199,8 +1454,15 @@ export async function runAgentLoop(
             {
               provider,
               model,
+              // The selected model is the first choice, but an agent must not
+              // end a turn with no answer if it only emits reasoning. Honor
+              // the user's providerFallback setting for that recovery path.
+              allowModelFallback: true,
               messages,
-              temperature: 0.2,
+              // MiniMax M3 degenerates at the generic agent temperature. The
+              // HTTP layer also applies its `top_p` override for both the
+              // NVIDIA long ID and Kimchi's short `minimax-m3` ID.
+              temperature: /minimax-m3/i.test(model) ? 1.0 : 0.2,
               // Reasoning models can spend a lot on hidden thinking; give
               // them headroom so the visible answer / tool call isn't
               // truncated to silence. The non-thinking budget must be large
@@ -1208,12 +1470,55 @@ export async function runAgentLoop(
               // payload — a truncated tool-call JSON fails to parse and leaks a
               // broken (and syntactically invalid) file. 8k was too small for a
               // full component, so allow more room for the visible tool call.
-              maxTokens: config.thinking?.enabled ? 16_384 : 12_288,
+              // Code-generation calls frequently contain an entire source file
+              // inside JSON.  A 12k visible-token ceiling cut otherwise valid
+              // fs.write calls in half. Keep enough output headroom for a
+              // substantial source file; providers with a lower limit clamp it.
+              maxTokens: 32_768,
               signal: options.signal,
-              thinking: config.thinking,
+              thinking: retryWithoutThinking
+                ? { ...config.thinking, enabled: false, effort: "low" }
+                : config.thinking,
             },
             (token) => {
               deltaParser?.push(token);
+              generatedTokens += 1;
+              accumulatedText += token;
+
+              const parsedCalls = parseAllToolCalls(accumulatedText);
+              if (parsedCalls.length > streamedCallsCount) {
+                if (writesDirectly) {
+                  spinner.stop();
+                }
+                while (streamedCallsCount < parsedCalls.length) {
+                  const call = parsedCalls[streamedCallsCount]!;
+                  const eventId = `tool-${++nextToolEventId}`;
+                  callIds.push(eventId);
+                  alreadyPrintedIds.add(eventId);
+
+                  const toolCallLine =
+                    chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
+                  // Defer the writeToolCall emission — collect it so we can
+                  // emit after thinking + assistant text for correct order.
+                  deferredToolCalls.push({
+                    eventId,
+                    call,
+                    rendered: styleToolChatter(call, toolCallLine) + "\n",
+                  });
+                  // Still update spinner label for user feedback during streaming.
+                  if (!writesDirectly) {
+                    emit({ type: "status", text: call.name });
+                  }
+                  streamedCallsCount += 1;
+                }
+                if (writesDirectly) {
+                  spinner = startThinkingSpinner(
+                    `generating response (${generatedTokens} tokens)`,
+                    options.signal,
+                  );
+                }
+              }
+
               // Heuristic: <think>… markers and reasoning_content tokens flow
               // through onToken. Surface activity in the spinner so the screen
               // is never empty for minutes.
@@ -1225,6 +1530,8 @@ export async function runAgentLoop(
               }
               if (/<\/think>/i.test(token)) {
                 inThinking = false;
+                spinner.setLabel("generating response (0 tokens)");
+                generatedTokens = 0;
               }
               // Only push reasoning tokens to the spinner preview. Visible
               // answer / tool-call tokens should NOT go through the dim
@@ -1237,6 +1544,10 @@ export async function runAgentLoop(
                   spinner.pushPreview(cleaned);
                   const approx = cleaned.split(/\s+/).filter(Boolean).length;
                   if (approx > 0) spinner.bumpReasoning(approx);
+                }
+              } else {
+                if (generatedTokens % 10 === 0) {
+                  spinner.setLabel(`generating response (${generatedTokens} tokens)`);
                 }
               }
             },
@@ -1330,23 +1641,24 @@ export async function runAgentLoop(
                 ),
               );
             }
-            messages.push({
-              role: "assistant",
-              content: collapseRepeatedText(completion.text),
-            });
+            if (assistantText.hasThinking) retryWithoutThinking = true;
+            pushAssistantHistory(
+              stripThinking(collapseRepeatedText(completion.text)).visible,
+            );
             // Keep nudges SHORT — cheap models lose the key instruction in long text.
             const buildNudge =
-              buildLikeTurn && !activePlan
-                ? "No visible output. Emit a ```tool block to call plan.create now. " +
-                  "Do NOT hide tool calls in <think> tags — put them in the visible response."
-                : "No visible output. Emit a ```tool block or give your final answer. " +
-                  "Do NOT hide tool calls in <think> tags — put them in the visible response.";
+              freshWebSearchRequired && !sawFreshWebSearch
+                ? "No visible output. This is current or scheduled information: emit exactly one valid ```tool block for web.search now. Do NOT answer from memory or hide the tool call in <think> tags."
+                : buildLikeTurn && !activePlan
+                  ? "No visible output. Emit a ```tool block to call plan.create now. " +
+                    "Do NOT hide tool calls in <think> tags — put them in the visible response."
+                  : "No visible output. Emit a ```tool block or give your final answer. " +
+                    "Do NOT hide tool calls in <think> tags — put them in the visible response.";
             messages.push(recoveryUserMessage(buildNudge));
             continue;
           }
-          // Exhausted retries — surface a clear notice instead of ending the
-          // turn silently with no answer (which left the user staring at a
-          // stopped spinner with no clue what happened).
+          // Exhausted retries — surface a clear notice and exit the turn instead
+          // of falling through and triggering premature-completion loops.
           writeNotice(
             "warn",
             "model returned an empty response after retries — no answer produced",
@@ -1354,9 +1666,11 @@ export async function runAgentLoop(
               "  ⚠ model returned an empty response after retries — no answer produced\n",
             ),
           );
+          return finishTurn("Model returned an empty response after retries.", step + 1);
         } else {
           // Reset the counter on any successful visible output or recovered call.
           emptyVisibleRetries = 0;
+          retryWithoutThinking = false;
         }
 
         // `call` was already extracted above (from visible text or thinking content).
@@ -1409,10 +1723,7 @@ export async function runAgentLoop(
                   "  ⚠ tool call missing its name/fence — asking the model to re-emit a proper ```tool block\n",
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(assistantText.visible);
               messages.push(
                 recoveryUserMessage(
                   buildLikeTurn && !activePlan
@@ -1448,10 +1759,7 @@ export async function runAgentLoop(
                 "  ⚠ tool call was malformed or cut off — asking the model to retry in JSON form\n",
               ),
             );
-            messages.push({
-              role: "assistant",
-              content: assistantText.visible,
-            });
+            pushAssistantHistory(assistantText.visible);
             messages.push(
               recoveryUserMessage(
                 "Your previous tool call was malformed or truncated. " +
@@ -1463,30 +1771,76 @@ export async function runAgentLoop(
             continue;
           }
           // Detect a tool call that opened but was cut off by the token limit
-          // (most common with a large multi-file fs.writeMany). Retrying with a
-          // nudge to split the work is far better than rendering broken JSON as
-          // a final answer and leaving the project half-created.
+          // (most common with large fs.write/fs.writeMany for reports).
+          // Instead of asking the model to retry (which will just truncate
+          // again at the same limit), we SALVAGE the partial content from the
+          // truncated JSON and write it, then tell the model to CONTINUE with
+          // fs.append from where it was cut off.
           if (looksLikeTruncatedToolCall(assistantText.visible)) {
             truncatedToolRetries += 1;
+
+            // Try to salvage a partial fs.write / fs.append from the truncated JSON.
+            // The pattern is: {"name":"fs.write","args":{"path":"...","content":"...
+            // We extract the path and whatever content was produced before truncation.
+            const salvaged = salvageTruncatedWrite(assistantText.visible);
+
+            if (salvaged && truncatedToolRetries <= 5) {
+              // Write the salvaged partial content
+              try {
+                const writeResult = await fsWrite(salvaged.path, salvaged.content, {
+                  confirmed: true,
+                });
+                if (writeResult.ok) {
+                  const lineCount = salvaged.content.split("\n").length;
+                  writeNotice(
+                    "info",
+                    `tool call was truncated — salvaged ${lineCount} lines and wrote to ${salvaged.path}`,
+                    chalk.cyan(
+                      `  ℹ tool call was truncated — salvaged ${lineCount} lines to ${salvaged.path}\n`,
+                    ),
+                  );
+                  pushAssistantHistory(
+                    stripThinking(assistantText.visible).visible,
+                  );
+                  messages.push({
+                    role: "user",
+                    content:
+                      `Your fs.write tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines to ${salvaged.path}. ` +
+                      `The file now exists with content up to: "${salvaged.lastLine}"\n\n` +
+                      `CONTINUE writing the rest of the content using fs.append:\n` +
+                      '```tool\n{"name":"fs.append","args":{"path":"' + salvaged.path + '","content":"...remaining content..."}}\n```\n' +
+                      `Write the NEXT section of content starting from where it was cut off. ` +
+                      `Keep each fs.append call to ~100 lines max so it fits in the output window. ` +
+                      `Use multiple fs.append calls if needed. Do NOT re-write content that was already saved.`,
+                  });
+                  continue;
+                }
+              } catch {
+                // Salvage failed — fall through to standard retry
+              }
+            }
+
             if (truncatedToolRetries <= 3) {
               writeNotice(
                 "warn",
-                "tool call was cut off (output too long) — asking the model to retry in smaller pieces",
+                "tool call was cut off (output too long) — asking the model to retry safely",
                 chalk.yellow(
-                  "  ⚠ tool call was cut off (output too long) — asking the model to retry in smaller pieces\n",
+                  "  ⚠ tool call was cut off (output too long) — asking the model to retry safely\n",
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(
+                stripThinking(assistantText.visible).visible,
+              );
               messages.push({
                 role: "user",
                 content:
                   "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Retry now with a COMPLETE, valid ```tool block. " +
-                  "If it was a large fs.writeMany, split it into SMALLER batches (3-5 files per call, and keep each file's content concise) " +
-                  "so the whole JSON fits in one response. Do NOT claim any file was written until a tool call actually succeeds.",
+                  "Your output token limit is ~32k tokens. For LARGE files (reports, docs, long code), you MUST write in chunks:\n" +
+                  "1. Use fs.write to create the file with the FIRST ~100 lines\n" +
+                  "2. Use fs.append to add the NEXT ~100 lines\n" +
+                  "3. Repeat fs.append for each remaining section\n" +
+                  "Keep your reasoning SHORT — emit the ```tool block as early as possible to maximize content space. " +
+                  "Do NOT try to write the entire file in one call. Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
             }
@@ -1507,6 +1861,41 @@ export async function runAgentLoop(
               assistantText.visible,
             );
           if (hasFencedCallShape) {
+            // Before treating as a generic malformed fence, check if this is
+            // actually a truncated write call that should be salvaged.
+            const salvaged = salvageTruncatedWrite(assistantText.visible);
+            if (salvaged) {
+              try {
+                const writeResult = await fsWrite(salvaged.path, salvaged.content, {
+                  confirmed: true,
+                });
+                if (writeResult.ok) {
+                  const lineCount = salvaged.content.split("\n").length;
+                  writeNotice(
+                    "info",
+                    `malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}`,
+                    chalk.cyan(
+                      `  ℹ malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}\n`,
+                    ),
+                  );
+                  pushAssistantHistory(
+                    stripThinking(assistantText.visible).visible,
+                  );
+                  messages.push({
+                    role: "user",
+                    content:
+                      `The system extracted and wrote ${lineCount} lines to ${salvaged.path} from your malformed tool call. ` +
+                      `The file content ends at: "${salvaged.lastLine}"\n\n` +
+                      `If the file is complete, proceed with the next step. ` +
+                      `If more content is needed, use fs.append to add the remaining sections (~100 lines per call).`,
+                  });
+                  continue;
+                }
+              } catch {
+                // Salvage failed — fall through to standard malformed retry
+              }
+            }
+
             malformedFenceRetries += 1;
             if (malformedFenceRetries <= 3) {
               writeNotice(
@@ -1516,17 +1905,19 @@ export async function runAgentLoop(
                   "  ⚠ tool block present but its JSON didn't parse — asking the model to re-emit valid JSON\n",
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(
+                stripThinking(assistantText.visible).visible,
+              );
               messages.push({
                 role: "user",
                 content:
                   "Your previous message contained a ```tool block, but its JSON was INVALID, so NOTHING ran. " +
-                  "Common causes: an extra or missing `}` / `]`, a trailing brace after the closing `}`, or unescaped quotes/newlines inside a string value. " +
+                  "Common causes: unescaped newlines or quotes inside a string value, an extra or missing `}` / `]`, or content too large for the output window. " +
                   'Re-emit ONE valid ```tool block of the exact form {"name":"<tool>","args":{...}} with balanced braces. ' +
-                  "If it was a large fs.writeMany, split it into SMALLER batches (3-5 files) so the JSON is easy to keep valid. " +
+                  "IMPORTANT: For large file content (reports, docs), write in chunks:\n" +
+                  "1. fs.write with the FIRST ~100 lines only\n" +
+                  "2. fs.append for each subsequent ~100-line section\n" +
+                  "Keep reasoning SHORT to maximize output space for the tool call JSON. " +
                   "Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
@@ -1562,7 +1953,9 @@ export async function runAgentLoop(
             (planHasOpenWorkNow && session.planApproved.value) ||
             (!informationalQuery && (buildLikeTurn || pentestLikeTurn));
           const planNarrated =
-            buildLikeTurn && !activePlan && looksLikePlanNarration(cleaned);
+            (buildLikeTurn || pentestLikeTurn) &&
+            !activePlan &&
+            looksLikePlanNarration(cleaned);
           if (
             wantsAction &&
             cleaned.trim().length > 0 &&
@@ -1606,12 +1999,10 @@ export async function runAgentLoop(
                 ),
               );
             } else if (planNarrated || productiveSteps > 0) {
-              // It explored and/or wrote a plan as prose but never called
-              // plan.create — emit the plan as a real tool call so the user gets
-              // a checklist and the /implement gate.
+              const kind = pentestLikeTurn ? "pentest" : "coding";
               nudge =
                 "You wrote the plan as PROSE but did NOT call plan.create, so no plan was saved and the user cannot /implement it. Emit it as a real tool call NOW — exactly one ```tool block:\n" +
-                '```tool\n{"name":"plan.create","args":{"goal":"<short goal>","detail":"<stack/approach and how you\'ll verify>","tasks":["task 1","task 2","task 3"],"kind":"coding"}}\n```\n' +
+                `\`\`\`tool\n{"name":"plan.create","args":{"goal":"<short goal>","detail":"<stack/approach and how you'll verify>","tasks":["task 1","task 2","task 3"],"kind":"${kind}"}}\n\`\`\`\n` +
                 "Do not describe the plan again in prose — just emit the plan.create tool block.";
               writeNotice(
                 "warn",
@@ -1621,10 +2012,15 @@ export async function runAgentLoop(
                 ),
               );
             } else {
-              nudge =
-                "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
-                '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
-                "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              if (pentestLikeTurn) {
+                nudge =
+                  "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this pentest task, explore/recon first, then call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              } else {
+                nudge =
+                  "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
+                  '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
+                  "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              }
               writeNotice(
                 "warn",
                 "described an action but emitted no tool call — nudging it to run one",
@@ -1633,10 +2029,7 @@ export async function runAgentLoop(
                 ),
               );
             }
-            messages.push({
-              role: "assistant",
-              content: assistantText.visible,
-            });
+            pushAssistantHistory(assistantText.visible);
             messages.push(recoveryUserMessage(nudge));
             continue;
           }
@@ -1654,10 +2047,7 @@ export async function runAgentLoop(
                 "  ℹ current-info question detected — searching the web before answering\n",
               ),
             );
-            messages.push({
-              role: "assistant",
-              content: assistantText.visible,
-            });
+            pushAssistantHistory(assistantText.visible);
             messages.push({
               role: "user",
               content:
@@ -1665,6 +2055,43 @@ export async function runAgentLoop(
                 " Reply with ONLY a fenced ```tool block for web.search now.",
             });
             continue;
+          }
+          // A passing build is not evidence that an app is serving requests.
+          // On completed build plans, require start → logs → HTTP verification
+          // before accepting the model's final claim.
+          if (
+            buildLike &&
+            session.planApproved.value &&
+            (!sawServerStart || !sawServerTail || !sawLocalHttpProbe) &&
+            runtimeVerificationRetries < 2
+          ) {
+            const runtimePlan = await loadPlan(session.sessionId).catch(
+              () => undefined,
+            );
+            const tasksFinished = Boolean(
+              runtimePlan &&
+                runtimePlan.tasks.length > 0 &&
+                runtimePlan.tasks.every(
+                  (task) => task.state === "done" || task.state === "skipped",
+                ),
+            );
+            if (tasksFinished) {
+              runtimeVerificationRetries += 1;
+              pushAssistantHistory(assistantText.visible);
+              const missing = [
+                !sawServerStart ? "shell.start" : "",
+                !sawServerTail ? "shell.tail" : "",
+                !sawLocalHttpProbe
+                  ? "a successful bounded localhost HTTP probe"
+                  : "",
+              ].filter(Boolean);
+              messages.push({
+                role: "user",
+                content:
+                  "Run the missing checks now. Keep the dev server/job running in the background so that the user can interact with the live application, and print the localhost link. Report whether it remains running truthfully.",
+              });
+              continue;
+            }
           }
           // Premature-completion guard (approved plan still has work)
           // If the user approved a plan and the model now gives a final answer
@@ -1689,10 +2116,16 @@ export async function runAgentLoop(
                   `  ⚠ ${unfinished.length} plan task(s) still unfinished — not accepting a "done" claim; resuming execution\n`,
                 ),
               );
-              messages.push({
-                role: "assistant",
-                content: assistantText.visible,
-              });
+              pushAssistantHistory(assistantText.visible);
+
+              let instruction = `Resume now with the NEXT task ${next.id} ("${next.title}"): `;
+              if (next.state === "pending") {
+                instruction += `call task.update {taskId:"${next.id}", state:"in_progress"}, then do the real work with a tool call (fs.writeMany / shell.exec / shell.start), VERIFY it, and mark it done. `;
+              } else {
+                instruction += `do the real work with a tool call (fs.writeMany / shell.exec / shell.start) to complete it, VERIFY it, and mark it done (call task.update {taskId:"${next.id}", state:"done"}). `;
+              }
+              instruction += `Continue task by task until EVERY task is actually finished.`;
+
               messages.push({
                 role: "user",
                 content:
@@ -1700,9 +2133,7 @@ export async function runAgentLoop(
                   `(${unfinished.map((t) => `[${t.id}] ${t.title}`).join("; ")}). ` +
                   `Do NOT claim the work is complete, that files were created, or that a server is running ` +
                   `unless a tool call actually succeeded and you saw the output. ` +
-                  `Resume now with the NEXT task ${next.id} ("${next.title}"): call task.update {taskId:"${next.id}", state:"in_progress"}, ` +
-                  `then do the real work with a tool call (fs.writeMany / shell.exec / shell.start), VERIFY it, and mark it done. ` +
-                  `Continue task by task until EVERY task is actually finished.`,
+                  instruction,
               });
               continue;
             }
@@ -1761,6 +2192,65 @@ export async function runAgentLoop(
         if (allCalls.length === 0 && call) {
           allCalls = [call];
         }
+        let activeDeferredToolCalls = deferredToolCalls;
+        // A plan must be based on the outputs of prior reconnaissance, never
+        // on calls the model merely proposed in the same response. If a model
+        // emits plan.create alongside gathering calls, run only the calls
+        // before it, then let the next model turn analyse their actual results
+        // and emit one standalone plan.create. Calls after the attempted plan
+        // are intentionally discarded: they were proposed before a plan was
+        // created or approved.
+        const planCallIndex = allCalls.findIndex((candidate) => candidate.name === "plan.create");
+        if (planCallIndex >= 0) {
+          const gatheringCalls = allCalls.slice(0, planCallIndex);
+          const deferredCount = allCalls.length - gatheringCalls.length;
+          allCalls = gatheringCalls;
+          activeDeferredToolCalls = deferredToolCalls.slice(0, gatheringCalls.length);
+          writeNotice(
+            "info",
+            "deferring plan.create until reconnaissance results are available",
+            chalk.dim(
+              `  ℹ running ${gatheringCalls.length} gathering call(s); ${deferredCount} plan/follow-on call(s) deferred for evidence-based planning\n`,
+            ),
+          );
+          messages.push({
+            role: "system",
+            content:
+              `The prior response included plan.create before its reconnaissance results existed. ` +
+              `Only the ${gatheringCalls.length} gathering call(s) before it were run; ${deferredCount} plan/follow-on call(s) were not run. ` +
+              "Now analyse the tool results. If a plan is appropriate, emit exactly one standalone plan.create tool call based only on those results. Do not include any other tool calls in that response.",
+          });
+        }
+        // A single model message can contain an unbounded number of calls.
+        // Even with read-only calls fanned out, a giant batch can tie up the
+        // session for minutes and makes cancellation feel broken. Keep each
+        // model turn bounded; after these results the agent gets another turn
+        // to prioritise the remaining work from real evidence.
+        const MAX_CALLS_PER_MODEL_TURN = 12;
+        const omittedCallCount = Math.max(0, allCalls.length - MAX_CALLS_PER_MODEL_TURN);
+        if (omittedCallCount > 0) {
+          allCalls = allCalls.slice(0, MAX_CALLS_PER_MODEL_TURN);
+          activeDeferredToolCalls = activeDeferredToolCalls.slice(0, MAX_CALLS_PER_MODEL_TURN);
+          writeNotice(
+            "warn",
+            `limited this model response to ${MAX_CALLS_PER_MODEL_TURN} tool calls`,
+            chalk.yellow(
+              `  ⚠ executing the first ${MAX_CALLS_PER_MODEL_TURN} tool calls; ${omittedCallCount} more were deferred for reprioritisation\n`,
+            ),
+          );
+          messages.push({
+            role: "system",
+            content:
+              `You emitted too many tool calls in one response. Only the first ${MAX_CALLS_PER_MODEL_TURN} were executed; ` +
+              `${omittedCallCount} were not run. After reviewing results, issue a small, prioritized next batch.`,
+          });
+        }
+
+        // Now emit only the calls that will actually execute, after thinking
+        // + assistant text so transcript order remains correct.
+        for (const deferred of activeDeferredToolCalls.slice(0, allCalls.length)) {
+          writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
+        }
 
         const standardizedContent =
           (beforeTool ? beforeTool.trim() + "\n\n" : "") +
@@ -1768,10 +2258,7 @@ export async function runAgentLoop(
             .map((c) => `\`\`\`tool\n${JSON.stringify(c)}\n\`\`\``)
             .join("\n\n");
 
-        messages.push({
-          role: "assistant",
-          content: standardizedContent,
-        });
+        pushAssistantHistory(standardizedContent);
 
         if (allCalls.length > 1) {
           writeNotice(
@@ -1798,8 +2285,9 @@ export async function runAgentLoop(
         // closes. That keeps execution strictly task-by-task and eliminates the
         // plan-state races / overlapping writes that a blanket Promise.all
         // caused, while still letting one task's independent lookups run in
-        // parallel. The whole batch stops on the first abort, block, or failure
-        // so the model always sees and reacts to an error.
+        // parallel. A failed independent read-only lookup does not prevent
+        // later recon from running; aborts, blocks, and sequential-barrier
+        // failures still stop the batch so the model can react safely.
         const scopeForBatch = await loadScope().catch(() => undefined);
         const isParallelSafe = (c: ToolCall): boolean => {
           if (!BATCH_SAFE_TOOLS.has(c.name)) return false;
@@ -1817,6 +2305,7 @@ export async function runAgentLoop(
         let blocked = false;
         let blockedResult: any = null;
         let failed = false;
+        let awaitingPlanApproval = false;
 
         const recordResult = (res: {
           call: ToolCall;
@@ -1825,17 +2314,39 @@ export async function runAgentLoop(
           ok: boolean;
           lastAnswer?: string | undefined;
           blockOrCancel?: boolean | undefined;
-        }): void => {
+        }, continueAfterFailure = false): void => {
           messages.push({
             role: "tool",
             content: `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${res.contextOutput}`,
           });
           productiveSteps += 1;
+          // Reset retry counters — they track consecutive failures, not cumulative.
+          truncatedToolRetries = 0;
+          malformedFenceRetries = 0;
+          bareToolJsonRetries = 0;
+          if (res.ok && res.call.name === "shell.start") sawServerStart = true;
+          if (res.ok && res.call.name === "shell.tail") sawServerTail = true;
+          if (
+            res.ok &&
+            ((res.call.name === "http.fetch" &&
+              /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(
+                String(res.call.args.url ?? ""),
+              )) ||
+              (res.call.name === "shell.exec" &&
+                /\bcurl\b[\s\S]*\b(?:localhost|127\.0\.0\.1|\[::1\])\b/i.test(
+                  String(res.call.args.command ?? ""),
+                )))
+          ) {
+            sawLocalHttpProbe = true;
+          }
+          if (res.call.name === "plan.create" && res.ok) {
+            awaitingPlanApproval = true;
+          }
           if (res.lastAnswer === "Aborted.") aborted = true;
           else if (res.blockOrCancel) {
             blocked = true;
             blockedResult = res;
-          } else if (!res.ok) failed = true;
+          } else if (!res.ok && !continueAfterFailure) failed = true;
         };
 
         const groups = groupToolCallsForExecution(
@@ -1844,11 +2355,16 @@ export async function runAgentLoop(
           PARALLEL_LIMIT,
         );
         for (const group of groups) {
-          if (aborted || blocked || failed) break;
+          if (aborted || blocked || failed || awaitingPlanApproval) break;
           if (group.length === 1) {
-            const id = `tool-${++nextToolEventId}`;
+            const call = group[0]!;
+            const idx = allCalls.indexOf(call);
+            if (idx >= 0 && !callIds[idx]) {
+              callIds[idx] = `tool-${++nextToolEventId}`;
+            }
+            const id = (idx >= 0 ? callIds[idx] : undefined) ?? `tool-${++nextToolEventId}`;
             const res = await executeSingleTool(
-              group[0]!,
+              call,
               id,
               options.signal || new AbortController().signal,
             );
@@ -1856,7 +2372,13 @@ export async function runAgentLoop(
           } else {
             // Concurrent group — assign ids in document order, then push their
             // results in document order for a stable transcript.
-            const ids = group.map(() => `tool-${++nextToolEventId}`);
+            const ids = group.map((c) => {
+              const idx = allCalls.indexOf(c);
+              if (idx >= 0 && !callIds[idx]) {
+                callIds[idx] = `tool-${++nextToolEventId}`;
+              }
+              return (idx >= 0 ? callIds[idx] : undefined) ?? `tool-${++nextToolEventId}`;
+            });
             const results = await Promise.all(
               group.map((c, k) =>
                 executeSingleTool(
@@ -1866,14 +2388,27 @@ export async function runAgentLoop(
                 ),
               ),
             );
-            for (const res of results) recordResult(res);
+            // These calls are explicitly safe and independent. Preserve every
+            // result for the model, but do not abandon remaining reconnaissance
+            // merely because one lookup times out or a remote service fails.
+            for (const res of results) recordResult(res, true);
           }
+        }
+
+        // plan.create is a hard transaction boundary. Its successful handler
+        // persists and displays the plan; returning immediately prevents a
+        // stale pre-loop activePlan snapshot from nudging a duplicate plan and
+        // prevents calls accidentally batched after plan.create from executing
+        // before /implement approval.
+        if (awaitingPlanApproval) {
+          pendingCalls = [];
+          return finishTurn("", productiveSteps);
         }
 
         if (aborted) {
           lastAnswer = "Aborted.";
           writeAbort();
-          return lastAnswer;
+          return finishTurn(lastAnswer, productiveSteps);
         }
         if (blocked && blockedResult) {
           lastAnswer = blockedResult.lastAnswer || "Blocked or Cancelled.";
@@ -1886,6 +2421,14 @@ export async function runAgentLoop(
         // the model-written summary path (with plan re-injection) — never a
         // mechanical transcript dump.
         await maybeAutoCompact("post-tool-token-budget");
+
+        if (options.onMessages) {
+          try {
+            options.onMessages(buildTurnHistory(liveMessages, lastAnswer));
+          } catch {
+            // ignore
+          }
+        }
       }
     }
 
@@ -1900,7 +2443,16 @@ export async function runAgentLoop(
     lastAnswer = richSummary;
     return finishTurn(lastAnswer, productiveSteps);
   } catch (error) {
-    if (isAbortError(error, options.signal)) {
+    const isAbort = isAbortError(error, options.signal);
+    const msg = isAbort ? "Aborted." : `Error: ${error instanceof Error ? error.message : String(error)}`;
+    if (options.onMessages) {
+      try {
+        options.onMessages(buildTurnHistory(liveMessages, msg));
+      } catch {
+        // ignore
+      }
+    }
+    if (isAbort) {
       writeAbort();
       return "Aborted.";
     }

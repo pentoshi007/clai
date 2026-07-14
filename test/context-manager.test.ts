@@ -8,8 +8,8 @@ import {
 import type { ChatMessage } from "../src/types.js";
 
 describe("phase 9 — context manager", () => {
-  it("estimateTokens approximates chars / 4", () => {
-    expect(estimateTokens("a".repeat(100))).toBe(25);
+  it("estimateTokens approximates chars / 3.3", () => {
+    expect(estimateTokens("a".repeat(100))).toBe(31);
     expect(estimateTokens("")).toBe(0);
   });
 

@@ -123,6 +123,11 @@ export const slashCommands: SlashCommand[] = [
     usage: "[status|clear-history|clear-logs|clear-artifacts|clear-all|on|off]",
     description: "control retention and private mode (in-memory only)",
   },
+  {
+    command: "/permissions",
+    usage: "[default|allow-all]",
+    description: "control permission level for tool confirmation prompts",
+  },
   { command: "/update", description: "check for updates" },
   {
     command: "/clean",
@@ -258,6 +263,13 @@ export const knownModels: Record<string, string[]> = {
     "qwen-3.7-plus",
     "qwen-3.7-plus-1m",
     "bynara-max",
+  ],
+  "qwen-cloud": [
+    "qwen3.7-plus",
+    "qwen3.7-max",
+    "qwen3.6-flash",
+    "qwen3.5-plus",
+    "qwen3.5-flash",
   ],
 };
 

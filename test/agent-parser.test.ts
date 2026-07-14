@@ -38,6 +38,22 @@ describe("agent tool-call parser", () => {
     expect(call!.args).toEqual({ command: "ls -la" });
   });
 
+  it("repairs and parses JSON with mixed single and double quotes (common in Kimi)", () => {
+    const text1 =
+      '```tool\n{"name": "shell.exec", "args": {"command": \'echo "hello"\'}}\n```';
+    const call1 = parseToolCall(text1);
+    expect(call1).toBeDefined();
+    expect(call1!.name).toBe("shell.exec");
+    expect(call1!.args).toEqual({ command: 'echo "hello"' });
+
+    const text2 =
+      '```tool\n{"name": "fs.write", "args": {"path": "file.txt", "content": \'It\\\'s a beautiful day\'}}\n```';
+    const call2 = parseToolCall(text2);
+    expect(call2).toBeDefined();
+    expect(call2!.name).toBe("fs.write");
+    expect(call2!.args).toEqual({ path: "file.txt", content: "It's a beautiful day" });
+  });
+
   it("extracts tool calls from XML-style tags", () => {
     const text =
       'Planning.\n<tool_call>{"name":"sysinfo","args":{}}</tool_call>';
@@ -83,6 +99,81 @@ describe("agent tool-call parser", () => {
     expect(call!.args).toEqual({
       command: "sudo lsof -i -P -n | grep LISTEN | sort -t: -k2 -n",
       timeoutMs: 15000,
+    });
+  });
+
+  it("extracts tool calls from GLM-style XML tags using arg_key and arg_value elements", () => {
+    const text =
+      '<tool_call>shell.exec<arg_key>command</arg_key><arg_value>whois dobbe.ai</arg_value></tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("shell.exec");
+    expect(call!.args).toEqual({
+      command: "whois dobbe.ai",
+    });
+  });
+
+  it("extracts multi-argument tool calls from GLM-style XML tags", () => {
+    const text =
+      '<tool_call>calculator<arg_key>operation</arg_key><arg_value>add</arg_value><arg_key>a</arg_key><arg_value>15</arg_value></tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("calculator");
+    expect(call!.args).toEqual({
+      operation: "add",
+      a: 15,
+    });
+  });
+
+  it("extracts parameterless tool calls from GLM-style XML tags", () => {
+    const text = '<tool_call>sysinfo</tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("sysinfo");
+    expect(call!.args).toEqual({});
+  });
+
+  it("extracts unclosed parameterless tool calls from GLM-style XML tags", () => {
+    const text = 'Let me query <tool_call>sysinfo';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("sysinfo");
+    expect(call!.args).toEqual({});
+  });
+
+  it("extracts complex nested array/object args from GLM-style XML tags (fs.writeMany shape)", () => {
+    const text =
+      '<tool_call>fs.writeMany<arg_key>files</arg_key><arg_value>[{"path":"test.ts","content":"const x = 1;"}]</arg_value></tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("fs.writeMany");
+    expect(call!.args).toEqual({
+      files: [{ path: "test.ts", content: "const x = 1;" }],
+    });
+  });
+
+  it("extracts HTTP fetch tool calls with nested header objects and string bodies", () => {
+    const text =
+      '<tool_call>http.fetch<arg_key>url</arg_key><arg_value>https://api.example.com</arg_value><arg_key>method</arg_key><arg_value>POST</arg_value><arg_key>headers</arg_key><arg_value>{"Authorization":"Bearer abc"}</arg_value></tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("http.fetch");
+    expect(call!.args).toEqual({
+      url: "https://api.example.com",
+      method: "POST",
+      headers: { Authorization: "Bearer abc" },
+    });
+  });
+
+  it("extracts shell.exec with redirect operators and numbers in GLM-style XML tags", () => {
+    const text =
+      '<tool_call>shell.exec<arg_key>command</arg_key><arg_value>echo "hello" > test.txt</arg_value><arg_key>timeoutMs</arg_key><arg_value>3000</arg_value></tool_call>';
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("shell.exec");
+    expect(call!.args).toEqual({
+      command: 'echo "hello" > test.txt',
+      timeoutMs: 3000,
     });
   });
 
@@ -231,9 +322,26 @@ describe("fresh web-search guard", () => {
     expect(requiresFreshWebSearch("look up the npm package status")).toBe(true);
   });
 
+  it("treats dated exam and event schedules as fresh-search cases", () => {
+    expect(requiresFreshWebSearch("when is SSC CGL 2026")).toBe(true);
+    expect(requiresFreshWebSearch("UPSC exam date 2027")).toBe(true);
+  });
+
   it("does not route static abbreviation questions through web.search", () => {
     expect(requiresFreshWebSearch("what does cm stand for")).toBe(false);
     expect(requiresFreshWebSearch("define cm")).toBe(false);
+  });
+
+  it("does not treat local runtime/process/server questions as fresh-search", () => {
+    expect(requiresFreshWebSearch("stat server")).toBe(false);
+    expect(requiresFreshWebSearch("is the server running")).toBe(false);
+    expect(requiresFreshWebSearch("check localhost port 5173")).toBe(false);
+    expect(requiresFreshWebSearch("list running jobs")).toBe(false);
+    expect(requiresFreshWebSearch("git status")).toBe(false);
+    expect(requiresFreshWebSearch("check server status")).toBe(false);
+    
+    // Explicit web search queries containing local terms should still be routed to search
+    expect(requiresFreshWebSearch("search web for dev server port issues")).toBe(true);
   });
 
   it("never treats a plan-execution / build turn as a fresh-search turn", () => {
@@ -619,4 +727,3 @@ describe("resumable turn history (buildTurnHistory)", () => {
     });
   });
 });
-

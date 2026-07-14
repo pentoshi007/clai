@@ -9,7 +9,9 @@ const ANSI_RE = new RegExp(ANSI_SGR_PATTERN);
 // stop() erases its own lines so later output starts clean.
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const FRAME_INTERVAL_MS = 80;
+// Terminal redraws are expensive on laptops; a status spinner needs only a
+// modest frame rate.
+const FRAME_INTERVAL_MS = 250;
 const PREVIEW_TAIL_CHARS = 220;
 
 // Emitted after every spinner-rendered line/erase so a truncated dim/italic

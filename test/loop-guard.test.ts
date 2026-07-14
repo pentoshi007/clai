@@ -89,4 +89,22 @@ describe("LoopGuard", () => {
     const warn = guard.shouldBlock("fs.writeMany", args);
     expect(warn.reason).toMatch(/NEXT file|move on/i);
   });
+
+  it("does not block or warn for task.update or plan.create", () => {
+    const guard = new LoopGuard();
+    const args = { taskId: "1", state: "in_progress" };
+    guard.recordAttempt(0, "task.update", args, true);
+    guard.recordAttempt(1, "task.update", args, true);
+    guard.recordAttempt(2, "task.update", args, true);
+    const result = guard.shouldBlock("task.update", args);
+    expect(result.block).toBe(false);
+    expect(result.reason).toBeUndefined();
+
+    const planArgs = { tasks: [] };
+    guard.recordAttempt(0, "plan.create", planArgs, true);
+    guard.recordAttempt(1, "plan.create", planArgs, true);
+    const planResult = guard.shouldBlock("plan.create", planArgs);
+    expect(planResult.block).toBe(false);
+    expect(planResult.reason).toBeUndefined();
+  });
 });

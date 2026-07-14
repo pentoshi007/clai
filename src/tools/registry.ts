@@ -14,6 +14,8 @@ import {
   fsSearch,
   fsWrite,
   fsWriteMany,
+  fsReplaceLines,
+  fsAppend,
   type FileWrite,
 } from "./fs.js";
 import { httpFetch } from "./http.js";
@@ -66,6 +68,14 @@ function optionalNumber(
 ): number | undefined {
   const value = args[key];
   return typeof value === "number" ? value : undefined;
+}
+
+function requireNumber(args: Record<string, unknown>, key: string): number {
+  const value = args[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`Tool argument "${key}" must be a finite number`);
+  }
+  return value;
 }
 
 function optionalBoolean(
@@ -232,7 +242,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
     argv.push(...profileArgs, ...legacyArgs, host.value);
     return runNmapScan(argv, options);
   },
-  async "http.fetch"(args) {
+  async "http.fetch"(args, options) {
     const headers =
       args.headers &&
       typeof args.headers === "object" &&
@@ -246,6 +256,7 @@ export const toolRegistry: Record<string, ToolHandler> = {
       maxBytes: optionalNumber(args, "maxBytes"),
       iOwnThis: args.iOwnThis === true || args.own === true,
       retries: optionalNumber(args, "retries"),
+      signal: options?.signal,
     });
   },
   async "web.search"(args, options) {
@@ -545,6 +556,25 @@ export const toolRegistry: Record<string, ToolHandler> = {
       { confirmed: options?.confirmed },
     );
   },
+  async "fs.replaceLines"(args, options) {
+    return fsReplaceLines(
+      requireString(args, "path"),
+      requireNumber(args, "startLine"),
+      requireNumber(args, "endLine"),
+      requireString(args, "content"),
+      { confirmed: options?.confirmed },
+    );
+  },
+  async "fs.append"(args, options) {
+    return fsAppend(
+      requireString(args, "path"),
+      requireString(args, "content"),
+      {
+        position: optionalString(args, "position") as "start" | "end" | undefined,
+        confirmed: options?.confirmed,
+      },
+    );
+  },
   async "fs.delete"(args, options) {
     return fsDelete(
       requireString(args, "path"),
@@ -696,9 +726,9 @@ export const BATCH_SAFE_TOOLS = new Set([
   "web.fetch",
 ]);
 
-const BATCH_MAX_CALLS = 8;
+const BATCH_MAX_CALLS = 20;
 const BATCH_DEFAULT_CONCURRENCY = 3;
-const BATCH_MAX_CONCURRENCY = 4;
+const BATCH_MAX_CONCURRENCY = 6;
 
 interface BatchCallSpec {
   name: string;

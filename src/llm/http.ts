@@ -49,7 +49,7 @@ function statusCodeHint(status: number): string {
     return " — the provider rejected the request body (model name or parameter mismatch)";
   }
   if (status === 413) {
-    return " — request too large; try `/compact` or pick a model with a larger context window";
+    return " — request exceeded the provider input limit; retry with a compact prompt or pick another model";
   }
   if (status >= 500 && status < 600) {
     return " — upstream provider error; try again or switch with `/provider`";
@@ -168,9 +168,12 @@ async function readBodyCapped(
   return collected;
 }
 
+/** Default no-byte watchdog for provider streams. */
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 30_000;
+
 /**
  * Shared SSE/JSONL stream reader. Wraps a fetch response body in:
- *  - an idle watchdog (default 90s, configurable per call) that aborts
+ *  - an idle watchdog (default 30s, configurable per call) that aborts
  *    when no bytes arrive,
  *  - a hard total-byte cap (default 16MB) so a runaway provider can't
  *    grow our memory unbounded,
@@ -189,12 +192,52 @@ export interface StreamLineReaderOptions {
   onActivity?: (() => void) | undefined;
 }
 
+/**
+ * Read one chunk without allowing a wedged ReadableStream implementation to
+ * hide a caller abort. `reader.cancel()` is best-effort: some sockets do not
+ * settle an already-pending `read()` promptly, so the abort signal also races
+ * the read and rejects the awaiting request immediately.
+ */
+function readWithAbort(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new Error("Stream aborted"));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = (): void => signal.removeEventListener("abort", abort);
+    const succeed = (value: ReadableStreamReadResult<Uint8Array>): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const abort = (): void => {
+      fail(signal.reason ?? new Error("Stream aborted"));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    try {
+      void reader.read().then(succeed, fail);
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+
 export async function* readStreamLines(
   response: Response,
   options: StreamLineReaderOptions = {},
 ): AsyncGenerator<string, void, void> {
   if (!response.body) return;
-  const idleTimeoutMs = options.idleTimeoutMs ?? 90_000;
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
   const idleController = new AbortController();
   let idleTimer: NodeJS.Timeout | undefined;
@@ -207,7 +250,7 @@ export async function* readStreamLines(
     }, idleTimeoutMs);
   };
   resetIdleTimer();
-  const onCallerAbort = (): void => idleController.abort();
+  const onCallerAbort = (): void => idleController.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
   // If either signal is already aborted, bail before starting the loop.
   if (idleController.signal.aborted) {
@@ -239,7 +282,18 @@ export async function* readStreamLines(
         }
         break;
       }
-      const { done, value } = await reader.read();
+      let readResult: ReadableStreamReadResult<Uint8Array>;
+      try {
+        readResult = await readWithAbort(reader, idleController.signal);
+      } catch (error) {
+        if (idleFired) {
+          throw new ProviderError(
+            `Provider stream stalled — no data for ${Math.round(idleTimeoutMs / 1000)}s.`,
+          );
+        }
+        throw error;
+      }
+      const { done, value } = readResult;
       if (done) {
         if (idleFired) {
           throw new ProviderError(
@@ -268,11 +322,9 @@ export async function* readStreamLines(
     if (idleTimer) clearTimeout(idleTimer);
     options.signal?.removeEventListener("abort", onCallerAbort);
     idleController.signal.removeEventListener("abort", cancelReaderOnAbort);
-    try {
-      await reader.cancel().catch(() => undefined);
-    } catch {
-      // best-effort
-    }
+    // Do not await cancellation here. A wedged transport can leave
+    // `reader.cancel()` pending too; the caller's abort must still return.
+    void reader.cancel().catch(() => undefined);
     try {
       reader.releaseLock();
     } catch {
@@ -395,8 +447,12 @@ export function buildReasoningPayload(
         return { reasoning_effort: enabled ? "default" : "none" };
       }
       if (/openai\/gpt-oss-(?:20b|120b)/.test(m)) {
-        if (!enabled) return {};
-        return { reasoning_effort: clampEffort(effort) };
+        // GPT-OSS cannot disable reasoning effort, but it can hide reasoning
+        // from the response. Retrying an empty visible answer must not silently
+        // fall back to the provider's medium default effort.
+        return enabled
+          ? { reasoning_effort: clampEffort(effort), include_reasoning: true }
+          : { reasoning_effort: "low", include_reasoning: false };
       }
       return {};
     }
@@ -459,7 +515,15 @@ export function buildReasoningPayload(
             chat_template_kwargs: { enable_thinking: enabled },
           };
         case "effort-only":
-          if (!enabled) return {};
+          // NVIDIA GPT-OSS accepts only low/medium/high, so a retry cannot
+          // fully disable it. Keep it at the lowest supported effort instead
+          // of omitting the field and reverting to NVIDIA's medium default.
+          if (!enabled && /gpt-oss/i.test(model ?? "")) {
+            return { reasoning_effort: "low" };
+          }
+          if (!enabled && /qwen3|mistral-/i.test(model ?? "")) {
+            return { reasoning_effort: "none" };
+          }
           return { reasoning_effort: clampEffort(effort) };
         case "none":
         default:
@@ -492,7 +556,9 @@ function buildChatBody(options: {
   // thinking is on, 2K otherwise — keep small for fast non-reasoning
   // paths so kimi-k2.6 etc. respond instantly).
   const reasoningOn = Boolean(options.reasoning?.enabled);
-  const isMinimaxM3 = options.model === "minimaxai/minimax-m3";
+  // Kimchi exposes this model as `minimax-m3`; NVIDIA uses the longer
+  // `minimaxai/minimax-m3` ID. Both require the same sampling settings.
+  const isMinimaxM3 = /minimax-m3/i.test(options.model);
   const defaultMaxTokens = isMinimaxM3 ? 8_192 : reasoningOn ? 8_192 : 4_096;
   const defaultTemperature = isMinimaxM3 ? 1.0 : 0.2;
   const body: Record<string, unknown> = {
@@ -548,7 +614,8 @@ export async function openAiCompatibleComplete(options: {
         ...options.headers,
       },
       body: requestBody,
-    });
+      verbose: process.env.CLAI_VERBOSE === "true",
+    } as any);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
     const msg = error instanceof Error ? error.message : String(error);
@@ -607,24 +674,37 @@ export async function openAiCompatibleStream(options: {
   onToken: (token: string) => void;
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
-  /** Abort a stream that produces no bytes for this long. Default 90s. */
+  /** Abort a stream that produces no bytes for this long. Default 30s. */
   idleTimeoutMs?: number | undefined;
+  /**
+   * Allow a slower cold start before the first SSE byte. Once streaming has
+   * begun, `idleTimeoutMs` takes over so a wedged connection still aborts
+   * promptly. Defaults to the regular idle timeout.
+   */
+  initialIdleTimeoutMs?: number | undefined;
 }): Promise<string> {
   // Combine the caller's abort signal with an idle watchdog so a stuck
   // connection on a thinking model can't wedge the REPL forever.
-  const idleTimeoutMs = options.idleTimeoutMs ?? 90_000;
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+  const initialIdleTimeoutMs = options.initialIdleTimeoutMs ?? idleTimeoutMs;
   const idleController = new AbortController();
   let idleTimer: NodeJS.Timeout | undefined;
   let idleFired = false;
+  // Some gateways send SSE comments/heartbeats while their upstream model is
+  // wedged. Those bytes only prove the socket is open, not that a model is
+  // making progress, so they must not postpone the watchdog indefinitely.
+  let sawStreamProgress = false;
+  let activeIdleTimeoutMs = initialIdleTimeoutMs;
   const resetIdleTimer = (): void => {
     if (idleTimer) clearTimeout(idleTimer);
+    activeIdleTimeoutMs = sawStreamProgress ? idleTimeoutMs : initialIdleTimeoutMs;
     idleTimer = setTimeout(() => {
       idleFired = true;
       idleController.abort();
-    }, idleTimeoutMs);
+    }, activeIdleTimeoutMs);
   };
   resetIdleTimer();
-  const onCallerAbort = (): void => idleController.abort();
+  const onCallerAbort = (): void => idleController.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
 
   const supportsVision = modelSupportsVision(
@@ -657,13 +737,14 @@ export async function openAiCompatibleStream(options: {
         ...options.headers,
       },
       body: requestBody,
-    });
+      verbose: process.env.CLAI_VERBOSE === "true",
+    } as any);
   } catch (error) {
     if (idleTimer) clearTimeout(idleTimer);
     options.signal?.removeEventListener("abort", onCallerAbort);
     if (idleFired) {
       throw new ProviderError(
-        `${options.provider} request timed out before any response (${Math.round(idleTimeoutMs / 1000)}s)`,
+        `${options.provider} request timed out before any response (${Math.round(activeIdleTimeoutMs / 1000)}s)`,
       );
     }
     throw error;
@@ -773,13 +854,12 @@ export async function openAiCompatibleStream(options: {
       if (idleController.signal.aborted) {
         throw new Error("Stream aborted");
       }
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithAbort(reader, idleController.signal);
       options.signal?.throwIfAborted();
       if (idleController.signal.aborted) {
         throw new Error("Stream aborted");
       }
       if (done) break;
-      resetIdleTimer();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -790,17 +870,17 @@ export async function openAiCompatibleStream(options: {
         if (payload === "[DONE]") {
           exitReasoning();
           cleanup();
-          if (
-            !visible.trim() &&
-            reasoningSeen.trim() &&
-            finishReason === "length"
-          ) {
-            // The model spent its entire budget on hidden reasoning and
-            // never produced a visible answer. Surfacing this as an error
-            // — instead of an empty string — is far less confusing than
-            // a frozen-looking REPL.
+          if (!visible.trim()) {
+            const cause = reasoningSeen.trim()
+              ? finishReason === "length"
+                ? "hit the max_tokens limit while still thinking"
+                : "completed after reasoning without a visible answer"
+              : "completed without a visible answer";
+            // Do not return a reasoning-only completion to the agent. It
+            // would poison recovery history and cause no-op retry loops.
+            // Router-level fallback can now try a healthy provider instead.
             throw new ProviderError(
-              `${options.provider} hit the max_tokens limit while still thinking (no visible answer). Try /variants off, lower the effort, or raise max_tokens.`,
+              `${options.provider} ${cause}.`,
             );
           }
           return full;
@@ -813,10 +893,17 @@ export async function openAiCompatibleStream(options: {
                 content?: string;
                 reasoning_content?: string;
                 reasoning?: string;
+                role?: string;
               };
             }>;
           };
           const choice = parsed.choices?.[0];
+          // Reset only for an actual completion event. Blank SSE heartbeats
+          // and comments otherwise keep a frozen request alive forever.
+          if (choice?.delta || choice?.finish_reason) {
+            sawStreamProgress = true;
+            resetIdleTimer();
+          }
           if (choice?.finish_reason) finishReason = choice.finish_reason;
           const delta = choice?.delta;
           const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
@@ -841,16 +928,14 @@ export async function openAiCompatibleStream(options: {
     }
     exitReasoning();
     cleanup();
-    // Only treat "reasoning only, no visible answer" as a hard error when the
-    // model actually ran out of budget (finish_reason "length") — mirroring
-    // the [DONE] branch above. Some providers close the socket normally
-    // (finish_reason "stop"/undefined, no explicit [DONE] line) after a
-    // reasoning-only turn; throwing there discarded the reasoning entirely
-    // and surfaced a confusing error instead of the graceful "model produced
-    // only thinking" recovery the caller already has for this exact case.
-    if (!visible.trim() && reasoningSeen.trim() && finishReason === "length") {
+    if (!visible.trim()) {
+      const cause = reasoningSeen.trim()
+        ? finishReason === "length"
+          ? "hit the max_tokens limit while still thinking"
+          : "completed after reasoning without a visible answer"
+        : "completed without a visible answer";
       throw new ProviderError(
-        `${options.provider} hit the max_tokens limit while still thinking (no visible answer). Try /variants off, lower the effort, or raise max_tokens.`,
+        `${options.provider} ${cause}.`,
       );
     }
     return full;
@@ -860,11 +945,9 @@ export async function openAiCompatibleStream(options: {
     // stream is already errored (eg from the same abort that triggered
     // this catch). Swallow it so it never escalates to an unhandled
     // rejection that kills the whole REPL.
-    try {
-      await reader.cancel().catch(() => undefined);
-    } catch {
-      // best-effort cleanup
-    }
+    // Do not await cancellation here. Some stalled sockets never settle the
+    // pending cancel promise, and waiting for it would negate the abort race.
+    void reader.cancel().catch(() => undefined);
     try {
       reader.releaseLock();
     } catch {
@@ -872,7 +955,7 @@ export async function openAiCompatibleStream(options: {
     }
     if (idleFired) {
       throw new ProviderError(
-        `${options.provider} stream stalled — no data for ${Math.round(idleTimeoutMs / 1000)}s. Try a smaller model or disable thinking with /variants off.`,
+        `${options.provider} stream stalled — no model output for ${Math.round(activeIdleTimeoutMs / 1000)}s. Try a smaller model or disable thinking with /variants off.`,
       );
     }
     throw error;
@@ -889,6 +972,7 @@ export async function openAiCompatiblePing(
       authorization: `Bearer ${apiKey}`,
       ...headers,
     },
-  });
+    verbose: process.env.CLAI_VERBOSE === "true",
+  } as any);
   await readJson<unknown>(response);
 }

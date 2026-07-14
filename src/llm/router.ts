@@ -17,6 +17,7 @@ import { mantleProvider } from "./aws-mantle.js";
 import { ollamaProvider } from "./ollama.js";
 import { openaiProvider } from "./openai.js";
 import { openrouterProvider } from "./openrouter.js";
+import { qwenCloudProvider } from "./qwen-cloud.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 
 const MAX_RETRIES = 6;
@@ -48,12 +49,52 @@ function isRateLimited(error: unknown): boolean {
   return error instanceof ProviderError && error.status === 429;
 }
 
+function isTransientNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("socket connection was closed unexpectedly") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network error") ||
+    msg.includes("timeout") ||
+    msg.includes("unexpected end of file") ||
+    msg.includes("premature close")
+  );
+}
+
+function isRetriableError(error: unknown): boolean {
+  // The stream watchdog has already waited long enough for useful model
+  // output. Retrying it six times turns one stalled provider call into a
+  // multi-minute frozen-looking TUI, so fail promptly (or use configured
+  // provider fallback) instead.
+  const message = error instanceof Error ? error.message : String(error);
+  if (/stream stalled|request timed out before any response/i.test(message)) {
+    return false;
+  }
+  if (isRateLimited(error)) return true;
+  if (error instanceof ProviderError) {
+    const status = error.status ?? 0;
+    if (status >= 500 && status <= 504) {
+      return true;
+    }
+  }
+  return isTransientNetworkError(error);
+}
+
 function retryWaitMs(error: unknown, attempt: number): number {
   if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
     return Math.ceil(error.retryAfterSeconds * 1000);
   }
   // Exponential backoff: 2s, 6s, 18s, 54s, etc.
   return Math.pow(3, attempt) * 2_000;
+}
+
+function networkRetryWaitMs(attempt: number): number {
+  return Math.pow(2, attempt) * 1_000;
 }
 
 function summarizeProviderError(error: unknown): string {
@@ -85,7 +126,10 @@ function formatFailures(failures: ProviderFailure[]): string {
 
 function shouldStopFallback(error: unknown): boolean {
   if (error instanceof ProviderError) {
-    return [401, 403, 404, 413, 422, 429].includes(error.status ?? 0);
+    // A 413 can be a free-tier input/TPM ceiling rather than an invalid
+    // request. Let configured fallback providers try a smaller/roomier
+    // request path instead of treating it as a credential or body error.
+    return [401, 403, 404, 422, 429].includes(error.status ?? 0);
   }
   const message = error instanceof Error ? error.message : String(error);
   return /no completion text|response was empty|empty response|returned no text/i.test(message);
@@ -103,6 +147,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   "aws-mantle": mantleProvider,
   ollama: ollamaProvider,
   bynara: bynaraProvider,
+  "qwen-cloud": qwenCloudProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -117,6 +162,7 @@ const fallbackOrder: ProviderId[] = [
   "anthropic",
   "aws-mantle",
   "ollama",
+  "qwen-cloud",
 ];
 
 /**
@@ -161,7 +207,8 @@ export async function completeWithProvider(
   const requested = request.provider ?? config.defaultProvider;
   const providerImpl = providers[requested];
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
-  const fallbackEnabled = config.providerFallback && isDefaultModel;
+  const fallbackEnabled =
+    config.providerFallback && (isDefaultModel || request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
@@ -192,8 +239,10 @@ export async function completeWithProvider(
             auth,
           );
         } catch (error) {
-          if (isRateLimited(error)) {
-            const wait = retryWaitMs(error, attempt);
+          if (isRetriableError(error)) {
+            const wait = isRateLimited(error)
+              ? retryWaitMs(error, attempt)
+              : networkRetryWaitMs(attempt);
             if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
               await sleep(wait, request.signal);
               continue;
@@ -231,7 +280,8 @@ export async function streamWithProvider(
   const requested = request.provider ?? config.defaultProvider;
   const providerImpl = providers[requested];
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
-  const fallbackEnabled = config.providerFallback && isDefaultModel;
+  const fallbackEnabled =
+    config.providerFallback && (isDefaultModel || request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
@@ -273,22 +323,31 @@ export async function streamWithProvider(
         onToken(result.text);
         return result;
       } catch (error) {
-        if (isRateLimited(error)) {
-          const wait = retryWaitMs(error, attempt);
+        if (isRetriableError(error)) {
+          const wait = isRateLimited(error)
+            ? retryWaitMs(error, attempt)
+            : networkRetryWaitMs(attempt);
           if (attempt < MAX_RETRIES && wait <= MAX_RETRY_WAIT_MS) {
+            const reason = isRateLimited(error)
+              ? "rate limited"
+              : error instanceof ProviderError && error.status
+                ? `server error (${error.status})`
+                : "connection glitch";
             emitStatus(
-              `\n  ⏳ ${providerId} rate limited, retrying in ${Math.ceil(wait / 1000)}s...\n`,
+              `\n  ⏳ ${providerId} ${reason}, retrying in ${Math.ceil(wait / 1000)}s...\n`,
             );
             await sleep(wait, request.signal);
             continue;
           }
-          const suffix =
-            wait > MAX_RETRY_WAIT_MS
-              ? ` (~${Math.ceil(wait / 1000)}s)`
-              : "";
-          emitStatus(
-            `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
-          );
+          if (isRateLimited(error)) {
+            const suffix =
+              wait > MAX_RETRY_WAIT_MS
+                ? ` (~${Math.ceil(wait / 1000)}s)`
+                : "";
+            emitStatus(
+              `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
+            );
+          }
           failures.push({ provider: providerId, message: summarizeProviderError(error) });
           throw new Error(
             `No provider could stream the request.${formatFailures(failures)}`,

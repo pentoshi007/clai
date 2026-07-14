@@ -28,4 +28,5 @@ export type AgentEvent =
     }
   | { type: "turn-end"; finalAnswer: string; steps: number }
   | { type: "turn-aborted" }
-  | { type: "turn-error"; message: string };
+  | { type: "turn-error"; message: string }
+  | { type: "compacted"; summary: string; beforeTokens: number; afterTokens: number };

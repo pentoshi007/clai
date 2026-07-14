@@ -7,19 +7,15 @@ import {
   type SessionPlan,
   type TaskState,
 } from "../store/plan.js";
-import { renderPlanChecklist, renderPlanSidePane } from "../ui/plan-pane.js";
+import { renderPlanChecklist } from "../ui/plan-pane.js";
 import type { LoopGuard } from "./loop-guard.js";
 import type { SessionPolicy } from "./session-policy.js";
 import { isLumpedSingleTask } from "./tool-call-parser.js";
 import type { ToolCall } from "../types.js";
 
-/** Render the plan as a right-side pane on wide terminals, else inline. */
+/** Render the portable inline form; the Ink TUI owns its responsive sidebar. */
 export function renderPlanForTerminal(plan: SessionPlan): string {
-  const cols = process.stdout.columns ?? 0;
-  const side = process.stdout.isTTY
-    ? renderPlanSidePane(plan, cols)
-    : undefined;
-  return side ?? renderPlanChecklist(plan);
+  return renderPlanChecklist(plan);
 }
 
 export interface PlanToolResult {
@@ -44,9 +40,16 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
     lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}`);
   });
   if (approved) {
+    const inProgress = plan.tasks.find((t) => t.state === "in_progress");
     const firstPending = plan.tasks.find((t) => t.state === "pending");
     lines.push("The user APPROVED this plan. Execute it task by task NOW.");
-    if (firstPending) {
+    if (inProgress) {
+      lines.push(
+        `RESUME TASK ${inProgress.id} (${inProgress.title}) — it was started but interrupted. ` +
+          "Retry what was in progress; do NOT restart completed work from scratch. " +
+          "Do NOT re-do tasks already marked done, and do NOT skip ahead to later tasks.",
+      );
+    } else if (firstPending) {
       lines.push(
         `START WITH TASK ${firstPending.id} (${firstPending.title}). ` +
           "Do NOT re-do tasks already marked done, and do NOT skip ahead to later tasks.",
@@ -122,6 +125,7 @@ export async function handlePlanTool(
           "'install deps and run dev server to verify'. Call plan.create again with that tasks array.",
       };
     }
+    const existingPlan = await loadPlan(session.sessionId).catch(() => undefined);
     const plan = createPlan({
       sessionId: session.sessionId,
       goal,
@@ -129,6 +133,39 @@ export async function handlePlanTool(
       taskTitles,
       kind,
     });
+    if (existingPlan) {
+      const mappedNewTasks = plan.tasks.map((task) => {
+        const match = existingPlan.tasks.find((t) => {
+          const t1 = t.title.trim().toLowerCase();
+          const t2 = task.title.trim().toLowerCase();
+          return (
+            t1 === t2 ||
+            (t1.length > 8 && t2.length > 8 && (t1.includes(t2) || t2.includes(t1)))
+          );
+        });
+        if (match) {
+          return {
+            ...task,
+            state: match.state,
+            note: match.note,
+          };
+        }
+        return task;
+      });
+
+      const oldTasksToKeep = existingPlan.tasks.filter((oldTask) => {
+        return !mappedNewTasks.some((newTask) => {
+          const t1 = oldTask.title.trim().toLowerCase();
+          const t2 = newTask.title.trim().toLowerCase();
+          return (
+            t1 === t2 ||
+            (t1.length > 8 && t2.length > 8 && (t1.includes(t2) || t2.includes(t1)))
+          );
+        });
+      });
+
+      plan.tasks = [...oldTasksToKeep, ...mappedNewTasks];
+    }
     await savePlan(plan).catch(() => undefined);
     // A freshly (re)created plan resets approval — the user must /implement.
     session.planApproved.value = false;

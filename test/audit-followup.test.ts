@@ -396,6 +396,144 @@ describe("audit#6 — http helpers cap responses and watchdog streams", () => {
     expect(Date.now() - start).toBeLessThan(2_000);
   });
 
+  it("returns promptly when the caller aborts a wedged stream read", async () => {
+    const { readStreamLines } = await import("../src/llm/http.js");
+    const controller = new AbortController();
+    const stream = new ReadableStream<Uint8Array>({
+      // Keep both read and cancellation pending to emulate a transport that
+      // does not unblock its ReadableStream when the socket is aborted.
+      pull: () => new Promise<void>(() => {}),
+      cancel: () => new Promise<void>(() => {}),
+    });
+    const pending = (async () => {
+      for await (const _line of readStreamLines(new Response(stream), {
+        signal: controller.signal,
+        idleTimeoutMs: 10_000,
+      })) {
+        // consume
+      }
+    })();
+
+    controller.abort(new Error("user cancelled"));
+    await expect(pending).rejects.toThrow("user cancelled");
+  });
+
+  it("allows a longer first-byte wait while retaining a short streaming idle timeout", async () => {
+    const { openAiCompatibleStream } = await import("../src/llm/http.js");
+    const originalFetch = globalThis.fetch;
+    const encoder = new TextEncoder();
+    globalThis.fetch = vi.fn(async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            controller.enqueue(
+              encoder.encode(
+                'data: {"choices":[{"delta":{"content":"ready"}}]}\n\ndata: [DONE]\n',
+              ),
+            );
+            controller.close();
+          }, 40);
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        openAiCompatibleStream({
+          provider: "test",
+          baseUrl: "https://example.invalid/v1",
+          apiKey: "test-key",
+          model: "test-model",
+          messages: [{ role: "user", content: "hi" }],
+          onToken: () => {},
+          initialIdleTimeoutMs: 100,
+          idleTimeoutMs: 10,
+        }),
+      ).resolves.toBe("ready");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does not let SSE keepalives postpone the no-model-output timeout", async () => {
+    const { openAiCompatibleStream } = await import("../src/llm/http.js");
+    const originalFetch = globalThis.fetch;
+    const encoder = new TextEncoder();
+    globalThis.fetch = vi.fn(async () => {
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let closed = false;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          heartbeat = setInterval(() => {
+            controller.enqueue(encoder.encode(": keepalive\\n\\n"));
+          }, 5);
+          setTimeout(() => {
+            if (heartbeat) clearInterval(heartbeat);
+            if (!closed) {
+              closed = true;
+              controller.close();
+            }
+          }, 500);
+        },
+        cancel() {
+          closed = true;
+          if (heartbeat) clearInterval(heartbeat);
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        openAiCompatibleStream({
+          provider: "test",
+          baseUrl: "https://example.invalid/v1",
+          apiKey: "test-key",
+          model: "test-model",
+          messages: [{ role: "user", content: "hi" }],
+          onToken: () => {},
+          initialIdleTimeoutMs: 40,
+          idleTimeoutMs: 40,
+        }),
+      ).rejects.toThrow(/no model output/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("rejects a stream that contains reasoning but no visible completion", async () => {
+    const { openAiCompatibleStream } = await import("../src/llm/http.js");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () =>
+      new Response(
+        'data: {"choices":[{"delta":{"reasoning":"I should search."}}]}\n\ndata: [DONE]\n',
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      ),
+    ) as unknown as typeof fetch;
+
+    try {
+      await expect(
+        openAiCompatibleStream({
+          provider: "test",
+          baseUrl: "https://example.invalid/v1",
+          apiKey: "test-key",
+          model: "test-model",
+          messages: [{ role: "user", content: "hi" }],
+          onToken: () => {},
+        }),
+      ).rejects.toThrow(/without a visible answer/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("readStreamLines yields lines as they arrive", async () => {
     const { readStreamLines } = await import("../src/llm/http.js");
     const encoder = new TextEncoder();

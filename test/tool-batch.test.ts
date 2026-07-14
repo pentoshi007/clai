@@ -43,14 +43,14 @@ describe("phase 12 — tool.batch", () => {
     }
   });
 
-  it("caps the number of calls at 8", async () => {
-    const calls = Array.from({ length: 9 }, () => ({
+  it("caps the number of calls at 20", async () => {
+    const calls = Array.from({ length: 21 }, () => ({
       name: "sysinfo",
       args: {},
     }));
     await expect(
       runToolCall({ name: "tool.batch", args: { calls } }),
-    ).rejects.toThrow(/at most 8/);
+    ).rejects.toThrow(/at most 20/);
   });
 
   it("runs allowed read-only tools and aggregates their outputs", async () => {

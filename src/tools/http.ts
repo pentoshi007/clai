@@ -46,6 +46,7 @@ interface FetchOptions {
   maxBytes?: number | undefined;
   iOwnThis?: boolean | undefined;
   retries?: number | undefined;
+  signal?: AbortSignal | undefined;
 }
 
 export async function httpFetch(
@@ -126,8 +127,20 @@ export async function httpFetch(
   try {
     for (;;) {
       attempts += 1;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const onParentAbort = () => controller.abort();
+      if (options.signal) {
+        if (options.signal.aborted) {
+          throw options.signal.reason ?? new Error("Aborted");
+        }
+        options.signal.addEventListener("abort", onParentAbort);
+      }
       try {
-        response = await fetch(url, init);
+        response = await fetch(url, {
+          ...init,
+          signal: controller.signal,
+        });
         if (
           attempts <= retryLimit &&
           RETRY_STATUSES.has(response.status)
@@ -139,8 +152,17 @@ export async function httpFetch(
         break;
       } catch (error) {
         lastNetworkError = error;
-        if (attempts > retryLimit) throw error;
+        const isTimeout = error instanceof Error && error.name === "AbortError" && !options.signal?.aborted;
+        const errMsg = isTimeout ? "Request timed out after 15s" : (error instanceof Error ? error.message : String(error));
+        if (attempts > retryLimit || options.signal?.aborted) {
+          throw new Error(errMsg);
+        }
         await sleep(retryDelayMs(attempts));
+      } finally {
+        clearTimeout(timer);
+        if (options.signal) {
+          options.signal.removeEventListener("abort", onParentAbort);
+        }
       }
     }
   } catch (error) {
@@ -204,11 +226,15 @@ export async function httpFetch(
   const truncNote = truncated
     ? `\n... (truncated at ${limit.toLocaleString()} bytes)`
     : "";
-  const body = method === "HEAD" ? "" : collected;
   const contentType = response.headers.get("content-type") ?? "";
+  const isBinary = isBinaryContentType(contentType) || isBinaryContent(collected);
+  const displayBody = isBinary
+    ? `[Binary content (${contentType || "unknown content type"}) - raw body suppressed]`
+    : collected;
+  const body = method === "HEAD" ? "" : displayBody;
   const readable =
-    method !== "HEAD" && contentType.toLowerCase().includes("html")
-      ? toReadableText(body)
+    method !== "HEAD" && !isBinary && contentType.toLowerCase().includes("html")
+      ? toReadableText(collected)
       : "";
   const meta = {
     requestedUrl: url,
@@ -274,4 +300,38 @@ async function drainResponse(response: Response): Promise<void> {
   } catch {
     // Best effort only; retrying is more important than draining.
   }
+}
+
+function isBinaryContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase().trim();
+  if (ct.includes("image/svg+xml")) return false; // SVGs are xml text
+  if (
+    ct.startsWith("image/") ||
+    ct.startsWith("video/") ||
+    ct.startsWith("audio/") ||
+    ct.startsWith("application/octet-stream") ||
+    ct.startsWith("application/zip") ||
+    ct.startsWith("application/pdf") ||
+    ct.startsWith("application/x-")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isBinaryContent(text: string): boolean {
+  const sample = text.slice(0, 2048);
+  if (sample.includes("\u0000")) return true;
+  let nonPrintableCount = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const code = sample.charCodeAt(i);
+    // Control chars other than tab (9), lf (10), cr (13)
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
+      nonPrintableCount++;
+      if (nonPrintableCount > 5) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

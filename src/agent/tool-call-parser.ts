@@ -61,6 +61,58 @@ export function preprocessJson(raw: string): string {
  * wholly single-quoted. We only apply these transforms when a strict parse
  * has already failed, so well-formed JSON is never touched.
  */
+function repairMixedQuotes(text: string): string {
+  let inString: false | "double" | "single" = false;
+  let escaped = false;
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (inString === "double") {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+      } else if (ch === "\\") {
+        out += ch;
+        escaped = true;
+      } else if (ch === '"') {
+        out += ch;
+        inString = false;
+      } else {
+        out += ch;
+      }
+    } else if (inString === "single") {
+      if (escaped) {
+        if (ch === "'") {
+          out += "'";
+        } else {
+          out += "\\" + ch;
+        }
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "'") {
+        out += '"';
+        inString = false;
+      } else if (ch === '"') {
+        out += '\\"';
+      } else {
+        out += ch;
+      }
+    } else {
+      if (ch === '"') {
+        out += ch;
+        inString = "double";
+      } else if (ch === "'") {
+        out += '"';
+        inString = "single";
+      } else {
+        out += ch;
+      }
+    }
+  }
+  return out;
+}
+
 function lenientJsonParse(text: string): unknown | undefined {
   const candidates: string[] = [];
   // 1. Normalize unicode/smart quotes to ASCII quotes.
@@ -70,7 +122,11 @@ function lenientJsonParse(text: string): unknown | undefined {
   candidates.push(deSmart);
   // 2. Python/JS literals → JSON literals (outside of double-quoted strings).
   candidates.push(replaceOutsideStrings(deSmart));
-  // 3. Single-quoted object → double-quoted (only when there are no double
+  // 3. Mixed quotes repair (convert '...' strings to "..." strings)
+  const mixedRepaired = repairMixedQuotes(deSmart);
+  candidates.push(mixedRepaired);
+  candidates.push(replaceOutsideStrings(mixedRepaired));
+  // 4. Single-quoted object → double-quoted (only when there are no double
   //    quotes already, so we don't corrupt strings that contain apostrophes).
   if (!deSmart.includes('"') && deSmart.includes("'")) {
     candidates.push(deSmart.replace(/'/g, '"'));
@@ -265,6 +321,40 @@ function extractBalancedJson(text: string): string | undefined {
 }
 
 function parseXmlToolCall(text: string): ToolCall | undefined {
+  // Pattern 1d (GLM arg_key / arg_value format):
+  // <tool_call>tool.name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>
+  const glmMatch = text.match(/<tool_call>\s*([\w.-]+)\s*([\s\S]*?)(?:<\/tool_call>|$)/i);
+  if (glmMatch && glmMatch[1] !== undefined && glmMatch[2] !== undefined) {
+    const toolName = glmMatch[1];
+    const rest = glmMatch[2].trim();
+    if (rest.includes("<arg_key>") && rest.includes("<arg_value>")) {
+      const args: Record<string, unknown> = {};
+      const keyValRegex = /<arg_key>([\s\S]*?)<\/arg_key>\s*<arg_value>([\s\S]*?)<\/arg_value>/gi;
+      let match;
+      let hasArgs = false;
+      while ((match = keyValRegex.exec(rest)) !== null) {
+        const key = match[1];
+        const rawVal = match[2];
+        if (key === undefined || rawVal === undefined) continue;
+        const keyTrimmed = key.trim();
+        const rawValTrimmed = rawVal.trim();
+        let val: any = rawValTrimmed;
+        try {
+          val = JSON.parse(preprocessJson(rawValTrimmed));
+        } catch {
+          // Keep as string
+        }
+        args[keyTrimmed] = val;
+        hasArgs = true;
+      }
+      if (hasArgs) {
+        return { name: toolName, args };
+      }
+    } else if (rest === "") {
+      return { name: toolName, args: {} };
+    }
+  }
+
   // Pattern 1 (name + args/arguments/parameters JSON):
   //  <tool_call>
   // <name>tool.name</name>
@@ -567,7 +657,9 @@ export function inferToolFromArgs(
   if (has("command")) return "shell.exec";
   if (has("files")) return "fs.writeMany";
   if (has("calls")) return "tool.batch";
+  if (has("startLine") && has("endLine") && has("path")) return "fs.replaceLines";
   if (has("oldText") || has("newText")) return "fs.edit";
+  if (has("position") && has("content") && has("path")) return "fs.append";
   if (has("content") && has("path")) return "fs.write";
   if (has("pattern")) return "fs.search";
   if (has("query")) return "web.search";
@@ -717,6 +809,120 @@ export function looksLikeTruncatedToolCall(text: string): boolean {
     if (!balanced) return true;
   }
   return false;
+}
+
+/**
+ * Attempt to extract usable content from a truncated fs.write / fs.append /
+ * fs.writeMany tool call. When the model's output is cut off mid-JSON, the
+ * tool call fails to parse — but typically a large chunk of the intended file
+ * content is already present in the raw text. This function extracts:
+ *   - path: the target file path
+ *   - content: the partial file content (up to the truncation point)
+ *   - lastLine: the last complete line (for telling the model where to resume)
+ *
+ * Returns undefined if the text doesn't look like a salvageable write call.
+ */
+export function salvageTruncatedWrite(text: string): {
+  path: string;
+  content: string;
+  lastLine: string;
+} | undefined {
+  // Match fs.write or fs.append: {"name":"fs.write","args":{"path":"...","content":"...
+  // Also handle "fs.append" and cases where content comes before path.
+  // Try both orderings: path before content, and content before path.
+  // Use a simpler approach: find the tool name, then extract path and content separately.
+  const toolNameMatch = text.match(
+    /\{\s*"name"\s*:\s*"fs\.(?:write|append)"\s*,\s*"args"\s*:\s*\{/,
+  );
+  if (toolNameMatch) {
+    const argsStart = text.indexOf(toolNameMatch[0]) + toolNameMatch[0].length;
+    const afterArgs = text.slice(argsStart);
+
+    // Extract path value
+    const pathMatch = afterArgs.match(/"path"\s*:\s*"([^"]+)"/);
+    if (!pathMatch?.[1]) return undefined;
+    const path = pathMatch[1];
+
+    // Find where "content":" starts and extract everything after its opening quote
+    const contentKeyMatch = afterArgs.match(/"content"\s*:\s*"/);
+    if (!contentKeyMatch) return undefined;
+    const contentStart = argsStart + afterArgs.indexOf(contentKeyMatch[0]) + contentKeyMatch[0].length;
+    let raw = text.slice(contentStart);
+
+    // The content is JSON-encoded (escaped). Unescape what we can.
+    // Remove any trailing incomplete escape sequence or quote.
+    raw = raw.replace(/\\?$/, "");
+
+    // Unescape JSON string escapes
+    try {
+      // Add closing quote to make it parseable, but don't rely on JSON.parse
+      // for the whole thing since it may be truncated mid-escape.
+      const unescaped = raw
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\");
+
+      // Trim to the last complete line
+      const lastNewline = unescaped.lastIndexOf("\n");
+      const content =
+        lastNewline > 0 ? unescaped.slice(0, lastNewline + 1) : unescaped;
+
+      if (content.trim().length < 50) return undefined; // Too little to salvage
+
+      const lines = content.trimEnd().split("\n");
+      const lastLine =
+        lines[lines.length - 1]?.trim().slice(0, 80) ?? "(unknown)";
+
+      return { path, content, lastLine };
+    } catch {
+      return undefined;
+    }
+  }
+
+  // Match fs.writeMany: look for the first file entry
+  const writeManyMatch = text.match(
+    /\{\s*"name"\s*:\s*"fs\.writeMany"\s*,\s*"args"\s*:\s*\{\s*"files"\s*:\s*\[/,
+  );
+  if (writeManyMatch) {
+    // Extract the first file's path and content
+    const firstFile = text.match(
+      /\{\s*"path"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"/,
+    );
+    if (firstFile?.[1]) {
+      const path = firstFile[1];
+      const contentStart =
+        text.indexOf(firstFile[0]) + firstFile[0].length;
+      let raw = text.slice(contentStart);
+      // Find the end of this file's content (closing quote + })
+      const endQuote = raw.indexOf('"}');
+      if (endQuote > 0) {
+        raw = raw.slice(0, endQuote);
+      }
+      raw = raw.replace(/\\?$/, "");
+      try {
+        const unescaped = raw
+          .replace(/\\n/g, "\n")
+          .replace(/\\r/g, "\r")
+          .replace(/\\t/g, "\t")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\");
+        const lastNewline = unescaped.lastIndexOf("\n");
+        const content =
+          lastNewline > 0 ? unescaped.slice(0, lastNewline + 1) : unescaped;
+        if (content.trim().length < 50) return undefined;
+        const lines = content.trimEnd().split("\n");
+        const lastLine =
+          lines[lines.length - 1]?.trim().slice(0, 80) ?? "(unknown)";
+        return { path, content, lastLine };
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -924,7 +1130,7 @@ export function formatToolArgs(call: ToolCall): string {
   if (call.name === "dns.lookup")
     return `${call.args.target ?? ""}${call.args.record ? ` ${call.args.record}` : " A"}`;
   if (call.name === "whois.lookup") return String(call.args.target ?? "");
-  if (call.name === "fs.read" || call.name === "fs.write")
+  if (call.name === "fs.read" || call.name === "fs.write" || call.name === "fs.append")
     return String(call.args.path ?? "");
   if (call.name === "fs.writeMany") {
     const files = Array.isArray(call.args.files) ? call.args.files : [];
@@ -955,6 +1161,12 @@ const VOLATILE_SIGNAL_RE =
 const VOLATILE_ROLE_QUERY_RE =
   /\b(?:who(?:\s+is|'s)?|whos|name|tell\s+me|what(?:\s+is|'s)?)\b[\s\S]{0,120}\b(?:cm|chief\s+minister|prime\s+minister|president|governor|mayor|ministers?|cabinet|leader|head\s+of|ceo|cto|cfo|coo|chair(?:man|woman|person)?|coach|captain)\b/i;
 
+// A dated schedule (exam, application, event, release, etc.) is not stable
+// knowledge even when the user does not say "latest". In particular, terse
+// prompts such as "when is SSC CGL 2026" must be checked rather than guessed.
+const DATED_SCHEDULE_QUERY_RE =
+  /\bwhen\s+(?:is|are|does|will|do)\b[\s\S]{0,120}\b20\d{2}\b|\b(?:exam|test|application|admission|registration|notification|recruitment|event|match|release|launch)\b[\s\S]{0,80}\b(?:date|schedule|calendar|20\d{2})\b/i;
+
 const ROLE_OF_ENTITY_RE =
   /\b(?:cm|chief\s+minister|prime\s+minister|president|governor|mayor|ministers?|ceo|cto|cfo|coo|chair(?:man|woman|person)?|coach|captain)\s+(?:of|for|in)\b/i;
 
@@ -965,7 +1177,7 @@ const STATIC_DISAMBIGUATION_RE =
   /\b(?:stand\s+for|stands\s+for|meaning|definition|define|abbreviation|centimeters?|centimetres?)\b/i;
 
 const LOCAL_RUNTIME_RE =
-  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami)\b/i;
+  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami|server|jobs?|process(?:es)?|ports?|localhost|git)\b/i;
 
 // Signals that the current turn is (or continues) a coding / scaffolding
 // task. These are intentionally broad — over-budgeting a build is cheap
@@ -1152,6 +1364,9 @@ export function looksLikePlanNarration(text: string): boolean {
 export function requiresFreshWebSearch(prompt: string): boolean {
   const text = prompt.replace(/\s+/g, " ").trim();
   if (!text) return false;
+  if (EXPLICIT_WEB_LOOKUP_RE.test(text)) {
+    return true;
+  }
   if (STATIC_DISAMBIGUATION_RE.test(text) || LOCAL_RUNTIME_RE.test(text)) {
     return false;
   }
@@ -1167,7 +1382,7 @@ export function requiresFreshWebSearch(prompt: string): boolean {
     VOLATILE_SIGNAL_RE.test(text) ||
     VOLATILE_ROLE_QUERY_RE.test(text) ||
     ROLE_OF_ENTITY_RE.test(text) ||
-    EXPLICIT_WEB_LOOKUP_RE.test(text)
+    DATED_SCHEDULE_QUERY_RE.test(text)
   );
 }
 
@@ -1212,6 +1427,7 @@ export function buildWorkflowDirective(): string {
     "4. IMPLEMENT: once approved, work task by task in STRICT ORDER. For each task: call task.update {taskId, state:'in_progress'} → do the real work → VERIFY it actually succeeded (read a file you wrote, check the command's exit/output) → call task.update {taskId, state:'done'}, then move to the NEXT task. You MAY emit several tool calls in one message; they run in document order (independent read-only lookups run in parallel, while task.update and any write/command runs one at a time), and the batch STOPS if one fails. Keep every batch scoped to ONE task. A clean rhythm is: task.update in_progress + the work + task.update done together. Keep going until EVERY task is done. Do NOT claim work you didn't actually run.",
     "",
     "INITIALIZE WITH THE OFFICIAL SCAFFOLDER FIRST (do NOT hand-write build configs):",
+    "- DESTINATION PATHS ARE LITERAL. If the user names an absolute destination such as `/Users/alice/Desktop`, use that exact absolute path as the shell cwd and file prefix. Never remove its leading slash or recreate it under the current project (for example, `Users/alice/Desktop` would incorrectly become `<cwd>/Users/alice/Desktop`). Resolve and state the final absolute project directory before scaffolding, create directly there, and do not scaffold in cwd then move it. If the destination is outside the approved write roots, request confirmation instead of silently falling back to cwd. Clean up only empty directories that your failed attempt created.",
     '- React/Vue/Svelte/vanilla → `npm create vite@latest <appname> -- --template react` (templates: react, react-ts, vue, vue-ts, svelte, vanilla). Next.js → `npx --yes create-next-app@latest <appname> --yes --eslint --no-tailwind --app --src-dir --import-alias "@/*"`. Node API → `npm init -y`.',
     "- GET THE TEMPLATE FLAG RIGHT. With `npm create vite@latest NAME -- --template react` the `--` IS required (it forwards --template to create-vite). With `npx create-vite@latest NAME --template react` do NOT add `--` (npx passes args straight through, so `-- --template react` makes npx DROP the flag and you silently get the WRONG, vanilla template). Pick ONE form and keep the template flag attached. After scaffolding, fs.read the generated index.html / src entry to CONFIRM you got React (a src/main.jsx + App.jsx, not a vanilla main.js/counter.js). If it's the wrong template, delete the folder and re-run with the correct command.",
     "- RUN SCAFFOLDERS NON-INTERACTIVELY and into a NEW SUBFOLDER (`<appname>`). Scaffolders REFUSE to run in a non-empty directory and then print 'Operation cancelled' — and the current dir frequently already has a file like .DS_Store. So scaffold into a subfolder (always works). `--yes` does NOT fix the non-empty-dir cancel; a subfolder does. NEVER background a scaffolder with `&` or pipe `yes |` into it.",
@@ -1222,16 +1438,58 @@ export function buildWorkflowDirective(): string {
     "- You may batch tool calls: emit one or several ```tool blocks in a message. They run in document order — independent READ-ONLY lookups (fs.read/list/search, dns/whois, http.fetch GET, web.search/fetch, sysinfo) run in parallel, while task.update and any write/command (fs.write*, shell.exec, pkg.install, net.scan) run one at a time. If any call fails, the rest of that batch is cancelled so you can react — so order dependent steps correctly and keep every batch scoped to ONE task. A good batch is task.update(in_progress) + the work + task.update(done) for ONE task.",
     "- Do NOT re-explore. Step 1 (EXPLORE) was already completed during planning. Start executing the first pending task immediately.",
     "- ONE task at a time, in ORDER. Do NOT skip ahead to task 3 before task 2 is done.",
-    "- KEEP EACH FILE SMALL ENOUGH TO WRITE IN ONE CALL. If a fs.write is reported as 'cut off (output too long)', the file was NOT fully written and is likely broken/invalid — re-write it, splitting a large component into smaller files if needed. NEVER leave a half-written file and move on.",
-    "- VERIFY each step before marking it done: after writing files, fs.read the file back and confirm it is COMPLETE and syntactically valid (balanced braces/parens/JSX tags); after an install, check it exited 0. Marking a task done without a successful, verified tool call is the worst failure.",
+    "- Write complete, production-quality files; never shorten code merely to fit a tool call. Prefer fs.writeMany for several normal files, fs.write for one large/new file, fs.edit for exact-text atomic changes, and fs.replaceLines only after fs.read has established precise line coordinates. If fs.writeMany is cut off, split only the FILE LIST into smaller batches. If one fs.write is cut off, retry that file alone and split the component into cohesive modules only when that improves the design. A truncated call never ran, so never move on until a complete write succeeds.",
+    "- VERIFY each step before marking it done: you MUST NOT mark a task 'done' in advance or assume it is complete. You must first verify and have full, absolute knowledge that all commands, operations, and file changes scoped to that task have been successfully executed and are correct. After writing/editing files, you MUST call fs.read to verify that the file contents are complete, syntactically correct (braces, tags, parens are balanced), and exactly what you intended. After running commands or packages, confirm they completed with exit code 0. Only when you have verified all work for a task should you call task.update to mark it 'done' and move on to the next task. Marking a task done without a successful, verified tool call is the worst failure.",
     "- VERIFY THE BUILD, not just the dev server. `vite` / `npm run dev` reports 'ready' even when your App.jsx has syntax errors (the error only shows in the browser). To actually confirm the app works, run `npm run build` (it fails on real syntax/JSX errors) and check it exits 0. Seeing 'VITE ready' is NOT proof the app renders.",
     "- If a tool call FAILS (error output, non-zero exit, file missing), the task is NOT done. Mark it 'failed', diagnose WHY, fix it, and retry until it succeeds.",
+    "- ERROR ANALYSIS: If an error is given (build failure, compilation error, or runtime crash), do NOT jump directly into editing. You must first analyze which file has the error, what is causing it, and what needs to change. Make sure to read the relevant file context if you don't already have it.",
+    "- ATOMIC AND PRECISE EDITS: You must perform precise, atomic edits instead of replacing or regenerating entire files. Use fs.edit, fs.replaceLines, or fs.append to modify only the specific lines of code that need fixing. Keep your changes focused and precise so that the existing code remains intact and the editing process is perfectly reliable.",
     "- NEVER claim a task is done, files were created, a dependency is installed, or a server is running unless the tool call ACTUALLY succeeded and you saw the success output. If you have not run it, say so.",
-    "- Start a dev server with shell.start (background job), NOT `npm run dev &` via shell.exec.",
+    "- After the production build passes, start the dev server / app with shell.start (background job) so it keeps running, NOT `npm run dev &` via shell.exec. Check readiness with shell.tail AND make one bounded local HTTP request (curl with a short timeout or http.fetch). A build passing does not prove a server is running. Never print a localhost link or say `running` unless shell.start returned a live job and the HTTP probe succeeded. Keep the server running so the user can interact with the live application, and print the localhost link. Do not spend time polling repeatedly.",
     "- THE DELIVERABLE IS THE WORKING FEATURE, NOT THE SCAFFOLD. After scaffolding you MUST replace the starter boilerplate (Vite's default App.jsx counter, Next's starter page, etc.) with the actual app the user asked for. If the user asked for a todo app, src/App.jsx must contain a real todo UI with state — finishing with the untouched Vite starter page is a FAILURE even if the build passes.",
+    "- REVISING PLANS FOR NEW USER REQUESTS: If the user asks for new features, modifications, or additions after a plan has already been created/implemented, you MUST update/revise the plan. Call plan.create to create/overwrite the plan. In the revised plan, preserve all previously completed tasks (retaining their order and descriptions) and append the new tasks needed for the new features/modifications at the end of the task list. Do NOT skip plan revision or start implementing new features directly in existing completed tasks. After calling plan.create, STOP and wait for user approval. Once approved, resume execution of the revised plan from the first new/uncompleted task; do NOT execute completed tasks again.",
     "",
-    "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
+    "FORBIDDEN before plan approval (/implement): you MUST NOT use fs.write, fs.writeMany, fs.edit, fs.append, shell.exec, shell.start, pkg.install, or pkg.uninstall. The ONLY tool allowed before approval is plan.create (and the read/list tools for exploration). If you are nudged to 'take action' before a plan exists, your action MUST be plan.create.",
     "If the task is genuinely trivial (a single tiny file), you may skip the plan — but for an app/feature, ALWAYS plan first.",
+  ].join("\n");
+}
+
+/**
+ * Directive injected for pentest / security engagements when no plan exists
+ * yet. A pentest has a different shape than a coding build: you do NOT have
+ * a clear scope, stack, or feature list up front. The plan must be BUILT
+ * FROM recon findings, not invented in advance. This directive tells the
+ * agent that recon is allowed before a plan exists, that the first plan
+ * comes after real findings, that incremental task additions are expected
+ * as new attack surface appears, and that any out-of-scope discovery must
+ * be flagged to the user rather than acted on.
+ */
+export function pentestWorkflowDirective(): string {
+  return [
+    "PENTEST WORKFLOW (this is a security / pentest engagement — follow this order EXACTLY; deviation is a failure):",
+    "1. RECON FIRST, NO PLAN YET. For pentest engagements, run reconnaissance and discovery DIRECTLY before creating a plan. Read-only recon (whois.lookup, dns.lookup, net.context, http.fetch GET, tool.batch of read-only lookups, net.scan, pentest.recon) is allowed BEFORE any plan exists — these calls do not require an active plan or an in-progress task, because recon is what the plan is built FROM. Batch independent lookups with tool.batch to parallelize. Do NOT skip recon to 'get the plan started'.",
+    "2. FINGERPRINT THE TECH STACK. After initial recon, identify the target's technology stack FROM REAL EVIDENCE (http.fetch output includes a 'Tech Stack Detected' summary with Server, Framework, Frontend, CDN, Languages, Security Headers). Read this summary carefully. Once identified, ALL subsequent enumeration and exploitation MUST target that specific stack. Do NOT throw PHP wordlists at a Next.js target, .aspx payloads at a Python app, or Java exploits at a Node.js service. If the stack is unclear, probe a few discriminating endpoints (/_next/data, /wp-login.php, /api/, /elmah.axd) to confirm before committing.",
+    "3. PLAN FROM REAL FINDINGS. Call plan.create ONLY after you have real findings — open ports, services and versions, endpoints, technologies (identified stack), weaknesses, exposed surfaces. A pentest plan without findings is a guess. Use these exact response shapes: (A) RECON RESPONSE = one or more gathering calls only; NEVER include plan.create. (B) ANALYSIS + PLAN RESPONSE = reason from the returned tool output, then emit EXACTLY ONE standalone plan.create call; NEVER attach recon, exploitation, task.update, or any follow-on call. (C) AFTER PLAN RESPONSE = stop and wait for /implement approval. A plan based on proposed calls rather than returned evidence is invalid. The plan should reference the identified tech stack and scope tool/wordlist/payload choices to it.",
+    "4. INCREMENTAL PLAN UPDATES AS ATTACK SURFACE GROWS. A pentest is inherently open-ended — every new open port, service, endpoint, or weakness uncovers more attack surface. Call plan.create again with a REVISED tasks array that includes ALL previously completed tasks (preserved by id and order) followed by the new tasks at the end. The system merges and preserves the completed state of the old tasks. Do NOT delete done work to add new tasks; do NOT restart from scratch.",
+    "5. STAY INSIDE THE ENGAGEMENT SCOPE. The engagement scope is the hard boundary. Do NOT scan, probe, fuzz, or attack hosts / domains / ports that are out of scope. If a recon result exposes something clearly out of scope (a discovered subdomain, an adjacent service, an unrelated host, a port on a different network), STOP and FLAG it to the user in plain prose — do NOT act on it automatically. Out-of-scope targets require explicit user confirmation before any active testing.",
+    "6. ENUMERATE WITH STACK-TARGETED TOOLS. Most findings come from thorough, STACK-TARGETED enumeration — not from blindly fuzzing with every extension (.php, .asp, .aspx, .jsp, .cgi). Once you know the stack from step 2, use the right wordlists, extensions, and payloads for THAT stack ONLY. Once you have a vector, carry exploitation through with tools (build / adapt a PoC, generate the payload, run the attack, verify the result) — but pick the vector FROM the findings, not from a hunch.",
+    "7. DISCOVERY HYGIENE AND SIGNAL CONTROL. Do not guess dozens of directories/endpoints or wordlist paths and send speculative fetches. Derive candidates from returned links, robots.txt, sitemap, assets, banners, and the identified stack; use a dedicated, bounded discovery tool when one is warranted. For directory/content discovery, select an appropriate fuzzer (ffuf, gobuster, feroxbuster, dirsearch, or dirb) only after stack fingerprinting and a verified wordlist. Before using a non-standard binary call tool.check; if missing and appropriate, install only that needed tool via pkg.install and verify it before use. Before wordlist-driven discovery call wordlist.find. Configure scanners for quiet/structured output, include only candidate hits or relevant status codes, and filter known negative/wildcard responses at the scanner. Return successes and unusual findings; retain one representative failure only when there are no findings. Never spend model context on progress bars, verbose banners, or thousands of repeated failures.",
+    "",
+
+    "WHAT REQUIRES A PLAN vs. WHAT DOES NOT (read this carefully):",
+    "- Read-only recon (whois.lookup, dns.lookup, net.context, http.fetch GET, tool.batch of read-only lookups, net.scan, pentest.recon) DOES NOT require an active plan or an in-progress task. These calls gather the findings the plan is built on; they are allowed before plan.create and outside the task-update gate.",
+    "- Active / exploit calls (http.fetch with a non-GET method or a body, custom payloads, brute-force, sqlmap / hydra / msfconsole, listener / callback setup, shellcode execution, anything that mutates the target or generates side-effects) DO require an active plan AND an in-progress task AND a one-time pentest authorization prompt. Run them inside a plan task and update the task as you go (in_progress → work → done).",
+    "",
+
+    "CRITICAL RULES during a pentest engagement:",
+    "- TECH STACK AWARENESS: Every enumeration/exploit tool call MUST be relevant to the identified tech stack. If you detected Next.js, do NOT fuzz for .php, .asp, or .jsp files — focus on /_next/data, /api/ routes, .env, client-side JS analysis, SSR endpoints. If you detected WordPress, focus on wp-admin, wp-content, xmlrpc.php, plugin/theme enumeration. Wrong-stack tool calls waste context tokens and produce zero findings.",
+    "- VERIFY every claim from real tool output: an open port, a service version, an exploit success, a captured credential, a shell. Never fabricate findings. A reported 'vulnerability' without evidence is worse than no report.",
+    "- EVIDENCE: capture the exact command run and its real output for every finding. Long recon / scan transcripts are saved as artifacts you can reference; cite the artifact path in your report.",
+    "- NON-DESTRUCTIVE BY DEFAULT: prove a vulnerability with the least-invasive evidence (a benign PoC, a marker file, a reflected value, whoami / id after a shell). Do not destroy data, DoS the target, or exfiltrate real sensitive data unless the user explicitly asks for that impact.",
+    "- SCOPE BOUNDARY: if a recon call returns something clearly out of the engagement scope, do NOT keep exploring it. Flag it to the user in plain prose and ask whether to add it to scope. Do not silently expand scope.",
+    "- NO-SCOPE FALLBACK: if no engagement scope is configured, treat the explicitly-named target(s) in the user's request as the scope and flag everything else (subdomains, adjacent IPs, unrelated services) before touching it.",
+    "- REPORTING: each finding = TITLE, SEVERITY (critical / high / medium / low / info), AFFECTED asset or endpoint, EVIDENCE (command + key output), REPRODUCTION steps, IMPACT, concrete REMEDIATION.",
+    "- CTF / BOXES: the goal is the flag or the foothold — enumerate, get a shell, escalate, read the flag. Iterate quickly across likely vectors instead of exhausting one, and move on the moment you have what the objective needs.",
   ].join("\n");
 }
 
