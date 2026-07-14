@@ -1477,7 +1477,7 @@ export async function runAgentLoop(
               maxTokens: 32_768,
               signal: options.signal,
               thinking: retryWithoutThinking
-                ? { ...config.thinking, enabled: false }
+                ? { ...config.thinking, enabled: false, effort: "low" }
                 : config.thinking,
             },
             (token) => {

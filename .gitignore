@@ -19,3 +19,4 @@ AGENT_STATUS1.md
 .worktrees/
 .kimchi/
 *.bun-build
+.vscode/
