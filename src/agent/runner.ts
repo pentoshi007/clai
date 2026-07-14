@@ -234,6 +234,13 @@ export async function runAgentLoop(
 ): Promise<string> {
   const writesDirectly = !options.onEvent;
   const emit = (event: AgentEvent): void => options.onEvent?.(event);
+  // Whether the CURRENT model iteration has already committed its visible
+  // prose to the transcript with an `assistant-message` event. The recovery
+  // paths preserve streamed prose before retrying (so it isn't wiped by the
+  // next tool-call/turn event); this flag stops them from re-committing prose
+  // the normal tool path already surfaced, which would render it twice. Reset
+  // at the top of every loop iteration.
+  let visibleCommitted = false;
   const noopSpinner: ThinkingSpinner = {
     setLabel: () => {},
     bumpReasoning: () => {},
@@ -253,6 +260,10 @@ export async function runAgentLoop(
     if (writesDirectly) process.stdout.write(rendered);
   };
   const writeAssistantMessage = (text: string): void => {
+    // Never surface an empty message: the reducer drops it and a direct
+    // stdout writer would print a stray blank line.
+    if (!text.trim()) return;
+    visibleCommitted = true;
     emit({ type: "assistant-message", text });
     const rendered = renderMarkdown(text);
     if (writesDirectly) {
@@ -509,7 +520,35 @@ export async function runAgentLoop(
     // which can cause every retry to return empty as well. Keep hidden thinking
     // out of history, but record a compact non-empty sentinel when there was no
     // visible output.
+    //
+    // The Ink reducer intentionally keeps streamed text transient until it
+    // receives `assistant-message`, because a stream may turn out to be raw
+    // tool JSON. Recovery paths used to add prose to model history and retry
+    // without that event, so the user could watch a valid-looking response
+    // vanish when the retry emitted its first tool call. Surface only prose
+    // that is safe to render; malformed/bare tool payloads remain hidden.
+    const recoveryProse = (content: string): string | undefined => {
+      const text = textBeforeToolCall(stripSentinelTokens(content)).trim();
+      if (
+        !text ||
+        /^```|^\{|<tool_call>|<\|tool_call(?:s_section)?_begin\|>/i.test(
+          text,
+        ) ||
+        /\n\s*\{[\s\S]*\}\s*$/.test(text)
+      ) {
+        return undefined;
+      }
+      return text;
+    };
     const pushAssistantHistory = (content: string): void => {
+      // Preserve genuine streamed prose before a recovery retry so the visible
+      // text isn't wiped by the next tool-call/turn event. Skip when this
+      // iteration already surfaced its prose (the normal tool path commits
+      // `beforeTool` itself) so the same text is never rendered twice.
+      if (!visibleCommitted) {
+        const prose = recoveryProse(content);
+        if (prose) writeAssistantMessage(prose);
+      }
       messages.push({
         role: "assistant",
         content: content.trim()
@@ -1324,6 +1363,10 @@ export async function runAgentLoop(
     }
 
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      // Each model round-trip re-decides whether its visible prose has been
+      // committed, so recovery-prose preservation applies to THIS turn's
+      // stream and not a prior one.
+      visibleCommitted = false;
       // `step` is the productive-step index (used for display + audit). It only
       // advances when the previous iteration actually executed a tool.
       step = productiveSteps;
@@ -1936,31 +1979,47 @@ export async function runAgentLoop(
           // final answer ends the turn with nothing done and no real plan saved.
           // Nudge it to emit a real tool call, with a concrete example.
           const narratedAction = looksLikeActionNarration(cleaned);
-          // A plan whose OWN persisted status is "completed" has no more
-          // work to force — treat this like "no active plan" for the
-          // act-don't-narrate nudge so a plain follow-up question (e.g. "what
-          // do you know so far") after the plan finished gets answered
-          // instead of being pushed to emit another tool call.
-          const planHasOpenWorkNow = planHasOpenWork(activePlan?.status);
+          // `activePlan` is the snapshot loaded at the start of this turn.
+          // A final task.update mutates and persists a separate plan instance,
+          // so re-read it here before deciding whether a final response should
+          // be forced back into execution. Without this, a completed plan
+          // still appeared open and a short final summary such as "I'll
+          // summarize the findings" could be discarded for an unnecessary
+          // recovery turn.
+          const livePlanAtCompletion = await loadPlan(session.sessionId).catch(
+            () => undefined,
+          );
+          const planStatusAtCompletion =
+            livePlanAtCompletion?.status ?? activePlan?.status;
+          const completedPlanDuringThisTurn =
+            activePlan?.status !== "completed" &&
+            planStatusAtCompletion === "completed";
+          const planHasOpenWorkNow = planHasOpenWork(planStatusAtCompletion);
           // History-inherited build/pentest intent only forces action when
-          // THIS prompt is not itself a plain question. If the model does
-          // narrate a concrete next step ("let me read X"), narratedAction
-          // still forces it to actually run that step — even for a question —
-          // which is the desired "do what you said" behavior.
+          // THIS prompt is not itself a plain question. Once this turn has
+          // completed its plan, however, its next visible response is the
+          // final answer — not narration to recover into more work.
           const wantsAction =
-            narratedAction ||
-            freshWebSearchRequired ||
-            (planHasOpenWorkNow && session.planApproved.value) ||
-            (!informationalQuery && (buildLikeTurn || pentestLikeTurn));
+            !completedPlanDuringThisTurn &&
+            (narratedAction ||
+              freshWebSearchRequired ||
+              (planHasOpenWorkNow && session.planApproved.value) ||
+              (!informationalQuery && (buildLikeTurn || pentestLikeTurn)));
           const planNarrated =
             (buildLikeTurn || pentestLikeTurn) &&
             !activePlan &&
             looksLikePlanNarration(cleaned);
+          // Once a real tool step has run, a no-plan task has no durable task
+          // state to prove whether another action is needed. A tool-free reply
+          // must therefore be allowed to finalize instead of turning a short
+          // summary containing “I'll” into an implicit recovery request.
+          const shouldRetryBeforeFinalizing =
+            productiveSteps === 0 || planNarrated;
           if (
             wantsAction &&
             cleaned.trim().length > 0 &&
             actionIntentRetries < 3 &&
-            (productiveSteps === 0 || planNarrated || narratedAction)
+            shouldRetryBeforeFinalizing
           ) {
             actionIntentRetries += 1;
             let nudge: string;

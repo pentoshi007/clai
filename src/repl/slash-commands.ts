@@ -277,6 +277,22 @@ export function getKnownModels(provider: string): string[] {
   return [...(knownModels[provider] ?? [])];
 }
 
+/**
+ * Given a model string, return the provider that owns it in `knownModels`.
+ * Returns undefined if the model is not found in any provider's list.
+ * Used to auto-switch the provider when the user picks a model that belongs
+ * to a different provider (e.g. `minimaxai/minimax-m3` is an NVIDIA model).
+ */
+export function inferProviderForModel(model: string): string | undefined {
+  const lower = model.toLowerCase();
+  for (const [provider, models] of Object.entries(knownModels)) {
+    if (models.some((m) => m.toLowerCase() === lower)) {
+      return provider;
+    }
+  }
+  return undefined;
+}
+
 /** Set of known slash-command names (without the leading "/"). */
 const knownSlashNames = new Set(
   slashCommands.map((c) => c.command.slice(1).toLowerCase()),

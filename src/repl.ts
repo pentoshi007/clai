@@ -117,6 +117,7 @@ export {
   slashCommands,
   knownModels,
   getKnownModels,
+  inferProviderForModel,
   looksLikeSlashCommand,
   getSlashCommandSuggestions,
   isKnownSlashCommand,
