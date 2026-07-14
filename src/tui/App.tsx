@@ -71,6 +71,7 @@ import { renderPlanDocument } from "../ui/plan-pane.js";
 import { visibleWidth } from "../ui/markdown.js";
 import {
   getSlashCommandSuggestions,
+  inferProviderForModel,
   isKnownSlashCommand,
   knownModels,
   slashCommands,
@@ -610,7 +611,15 @@ export function App({
         setModel(value);
         setProviderModel(provider, value);
         setOverlay({ kind: "none" });
-        dispatch({ type: "notice", level: "info", text: `model → ${value}` });
+        // If the selected model belongs to a different provider, auto-switch
+        // so requests are sent to the right endpoint (e.g. minimaxai/minimax-m3
+        // is an NVIDIA model and must not be sent to the Gemini API).
+        const inferred = inferProviderForModel(value);
+        if (inferred && inferred !== provider) {
+          void activateProvider(assertProvider(inferred));
+        } else {
+          dispatch({ type: "notice", level: "info", text: `model → ${value}` });
+        }
       },
     });
   }, [model, provider]);
@@ -920,7 +929,14 @@ export function App({
                 : arg;
             setModel(nextModel);
             setProviderModel(provider, nextModel);
-            info(`model → ${nextModel}`);
+            // If the model lives under a different provider's list, switch to
+            // that provider so the request goes to the right endpoint.
+            const inferred = inferProviderForModel(nextModel);
+            if (inferred && inferred !== provider) {
+              void activateProvider(assertProvider(inferred));
+            } else {
+              info(`model → ${nextModel}`);
+            }
             return true;
           }
         case "/provider":
