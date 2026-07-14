@@ -60,6 +60,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   kimchi: "free-cloud",
   "aws-mantle": "paid-cloud",
   bynara: "free-cloud",
+  "qwen-cloud": "paid-cloud",
 };
 
 const defaults: ClaiConfig = {

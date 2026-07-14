@@ -10,6 +10,7 @@ export const providerIds = [
   "aws-mantle",
   "ollama",
   "bynara",
+  "qwen-cloud",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

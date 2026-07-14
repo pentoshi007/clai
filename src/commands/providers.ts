@@ -59,6 +59,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Mantle keys are alphanumeric with base64 characters (at least 8 characters)";
   if (provider === "bynara")
     return "Bynara keys usually start with sk_nry_ (at least 8 characters)";
+  if (provider === "qwen-cloud")
+    return "Qwen Cloud keys usually start with sk- (from https://home.qwencloud.com)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

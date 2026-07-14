@@ -264,6 +264,13 @@ export const knownModels: Record<string, string[]> = {
     "qwen-3.7-plus-1m",
     "bynara-max",
   ],
+  "qwen-cloud": [
+    "qwen3.7-plus",
+    "qwen3.7-max",
+    "qwen3.6-flash",
+    "qwen3.5-plus",
+    "qwen3.5-flash",
+  ],
 };
 
 export function getKnownModels(provider: string): string[] {

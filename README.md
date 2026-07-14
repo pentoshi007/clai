@@ -106,7 +106,7 @@ classic REPL automatically.
 
 - **`/ask` mode** — Read-only. AI explains, gives commands & step-by-step guidance, but does NOT execute anything.
 - **`/agent` mode** — Agentic. AI plans, waits for approval, then executes shell commands, edits files, installs missing tools, parses output, and continues until the goal is met. Tasks run on an approve/refine/discard plan workflow (`/implement`, free-text to refine, `/discard` to cancel).
-- **11 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, AgentRouter, Kimchi, AWS Mantle, Ollama (local), and Bynara. All with streaming.
+- **12 LLM providers** — Groq, Google Gemini, OpenRouter, OpenAI, Anthropic, NVIDIA NIM, AgentRouter, Kimchi, AWS Mantle, Ollama (local), Bynara, and Qwen Cloud. All with streaming.
 - **10 built-in tools** — `shell.exec`, `fs.read`, `fs.write`, `fs.list`, `fs.search`, `pkg.install`, `net.scan`, `http.fetch`, `sysinfo`, `pentest.recon`.
 - **Smart safety gate** — Read-only commands auto-execute; mutating commands require confirmation; destructive patterns are blocked.
 - **OS-aware & tool-frugal** — Picks the best approach for your OS, prefers tools already installed (installs only when nothing suitable exists), broadens its approach and escalates privileges as needed to finish the task.
@@ -122,7 +122,7 @@ classic REPL automatically.
 
 ## Provider Setup
 
-clai supports 11 LLM providers (9 with free tiers):
+clai supports 12 LLM providers (9 with free tiers):
 
 | Provider    | Default Model                                | Free? | API Key Prefix |
 |-------------|----------------------------------------------|-------|----------------|
@@ -137,6 +137,7 @@ clai supports 11 LLM providers (9 with free tiers):
 | AWS Mantle  | `anthropic.claude-haiku-4-5`                 | —     | `sk-ant-`      |
 | Ollama      | `llama3.1:8b`                                | ✓     | (local URL)    |
 | Bynara      | `mimo-v2.5-free`                             | ✓     | `sk_nry_`      |
+| Qwen Cloud  | `qwen3.7-plus`                               | —     | `sk-`          |
 
 ```sh
 # Store an API key
@@ -178,6 +179,7 @@ export NVIDIA_API_KEY=nvapi-...
 export CASTAI_API_KEY=...
 export ANTHROPIC_WORKSPACE_ID=default  # optional, for AWS Mantle
 export OLLAMA_HOST=http://localhost:11434
+export DASHSCOPE_API_KEY=sk-...
 ```
 
 ## REPL Commands
@@ -434,7 +436,8 @@ clai/
 │  │   ├─ openai.ts         # OpenAI provider (streaming)
 │  │   ├─ anthropic.ts      # Anthropic provider (streaming)
 │  │   ├─ nvidia.ts         # NVIDIA NIM provider (streaming)
-│  │   └─ openrouter.ts     # OpenRouter provider (streaming)
+│  │   ├─ openrouter.ts     # OpenRouter provider (streaming)
+│  │   └─ qwen-cloud.ts     # Qwen Cloud provider (streaming + live models)
 │  ├─ tools/
 │  │   ├─ registry.ts       # Tool dispatch table
 │  │   ├─ shell.ts          # shell.exec via execa

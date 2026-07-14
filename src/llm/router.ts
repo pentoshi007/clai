@@ -17,6 +17,7 @@ import { mantleProvider } from "./aws-mantle.js";
 import { ollamaProvider } from "./ollama.js";
 import { openaiProvider } from "./openai.js";
 import { openrouterProvider } from "./openrouter.js";
+import { qwenCloudProvider } from "./qwen-cloud.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 
 const MAX_RETRIES = 6;
@@ -138,6 +139,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   "aws-mantle": mantleProvider,
   ollama: ollamaProvider,
   bynara: bynaraProvider,
+  "qwen-cloud": qwenCloudProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -152,6 +154,7 @@ const fallbackOrder: ProviderId[] = [
   "anthropic",
   "aws-mantle",
   "ollama",
+  "qwen-cloud",
 ];
 
 /**

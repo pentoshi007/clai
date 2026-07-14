@@ -222,6 +222,11 @@ export function App({
   const secretResolver = useRef<
     ((value: string | undefined) => void) | undefined
   >();
+  // Provider picker selection is asynchronous when a key is required. Keep
+  // repeated Enter events (or a fast double-submit) from opening a second
+  // secret prompt before the first activation has finished persisting.
+  const providerActivationRef = useRef<ProviderId | undefined>(undefined);
+  const exitRef = useRef<(() => void) | undefined>(undefined);
   const [scroll, setScroll] = useState(0); // lines scrolled up from bottom
   const [compacting, setCompacting] = useState(false);
   const [compactStartedAt, setCompactStartedAt] = useState<number | undefined>(undefined);
@@ -245,9 +250,14 @@ export function App({
   // number of user turns the current title was generated from, so we can
   // refresh the title as the conversation grows past it without regenerating
   // on every single turn. Reset whenever a fresh session starts.
-  const titleRef = useRef<{ titledAtUserCount: number; inFlight: boolean }>({
+  const titleRef = useRef<{
+    titledAtUserCount: number;
+    inFlight: boolean;
+    requestId: number;
+  }>({
     titledAtUserCount: 0,
     inFlight: false,
+    requestId: 0,
   });
 
   const compactAbortRef = useRef<AbortController | undefined>(undefined);
@@ -308,22 +318,29 @@ export function App({
       setDefaultMode("agent");
       dispatch({ type: "notice", level: "info", text: "mode → agent" });
     }, []),
+    onForceExit: useCallback(() => exitRef.current?.(), []),
   });
 
   const exitTui = useCallback(() => {
-    void (async () => {
-      const messages = runner.getMessages();
-      if (!noHistory && !getConfig().privateMode && messages.length > 0) {
-        await upsertSession(
-          runner.getSession().sessionId,
-          messages,
-          undefined,
-          state.items,
-        ).catch(() => undefined);
-      }
-      exit();
-    })();
-  }, [exit, noHistory, runner, state.items]);
+    cancelCompaction();
+    runner.abort();
+    if (autosaveTimer.current) {
+      clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = undefined;
+    }
+    const messages = runner.getMessages();
+    if (!noHistory && !getConfig().privateMode && messages.length > 0) {
+      // Shutdown must not wait for a slow history backend.
+      void upsertSession(
+        runner.getSession().sessionId,
+        messages,
+        undefined,
+        latestItems.current,
+      ).catch(() => undefined);
+    }
+    exit();
+  }, [cancelCompaction, exit, noHistory, runner]);
+  exitRef.current = exitTui;
 
   // Generate (and later refresh) a concise, model-written title for the
   // active session. Runs only when a real exchange exists, throttles by user
@@ -345,27 +362,38 @@ export function App({
       if (!shouldGenerate) return;
 
       titleRef.current.inFlight = true;
+      const requestId = ++titleRef.current.requestId;
       const targetCount = userCount;
       const ctx = ctxRef.current;
+      // Keep immutable snapshots. The user may start `/new`, resume another
+      // session, or exit while the title request is in flight.
+      const titleMessages = messages.map((message) => ({ ...message }));
+      const titleTranscript = latestItems.current.map((item) => ({ ...item }));
       void generateSessionTitle(messages, {
         provider: ctx.provider,
         model: ctx.model,
       })
         .then((title) => {
-          titleRef.current.inFlight = false;
+          if (titleRef.current.requestId === requestId) {
+            titleRef.current.inFlight = false;
+          }
           if (!title) return;
-          // Discard if the user started a new session while we were waiting.
-          if (runner.getSession().sessionId !== sessionId) return;
-          titleRef.current.titledAtUserCount = targetCount;
+          if (titleRef.current.requestId === requestId) {
+            titleRef.current.titledAtUserCount = targetCount;
+          }
+          // Persist against the original session, not whatever session is
+          // currently visible in the TUI.
           void upsertSession(
             sessionId,
-            runner.getMessages(),
+            titleMessages,
             title,
-            latestItems.current,
+            titleTranscript,
           ).catch(() => undefined);
         })
         .catch(() => {
-          titleRef.current.inFlight = false;
+          if (titleRef.current.requestId === requestId) {
+            titleRef.current.inFlight = false;
+          }
         });
     },
     [noHistory, runner],
@@ -589,44 +617,62 @@ export function App({
 
   const activateProvider = useCallback(
     async (next: ProviderId): Promise<void> => {
-      const configured =
-        next === "ollama" ||
-        Boolean(envValue(next)) ||
-        Boolean((await getProviderSecret(next)).value);
-      if (!configured) {
-        const key = await requestSecret({
-          title: `${next} API key`,
-          prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
-        });
-        if (!key) {
-          dispatch({
-            type: "notice",
-            level: "warn",
-            text: `provider unchanged · ${next} needs an API key`,
-          });
-          return;
-        }
-        const trimmedKey = key.trim();
-        if (!getProvider(next).validateKey(trimmedKey)) {
-          dispatch({
-            type: "notice",
-            level: "warn",
-            text: `invalid API key format for ${next}`,
-          });
-          return;
-        }
-        await setProviderSecret(next, trimmedKey);
-      }
-      const nextModel = getProviderModel(next);
-      setDefaultProvider(next);
-      setProvider(next);
-      setModel(nextModel);
+      if (providerActivationRef.current) return;
+      providerActivationRef.current = next;
+      // Unmount the picker before opening the secret prompt. This makes the
+      // prompt the sole owner of stdin while activation is in progress.
       setOverlay({ kind: "none" });
-      dispatch({
-        type: "notice",
-        level: "info",
-        text: `provider → ${next} · model → ${nextModel}`,
-      });
+      try {
+        const configured =
+          next === "ollama" ||
+          Boolean(envValue(next)) ||
+          Boolean((await getProviderSecret(next)).value);
+        if (!configured) {
+          const key = await requestSecret({
+            title: `${next} API key`,
+            prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+          });
+          if (!key) {
+            dispatch({
+              type: "notice",
+              level: "warn",
+              text: `provider unchanged · ${next} needs an API key`,
+            });
+            return;
+          }
+          const trimmedKey = key.trim();
+          if (!getProvider(next).validateKey(trimmedKey)) {
+            dispatch({
+              type: "notice",
+              level: "warn",
+              text: `invalid API key format for ${next}`,
+            });
+            return;
+          }
+          await setProviderSecret(next, trimmedKey);
+          const saved = await getProviderSecret(next);
+          if (saved.value !== trimmedKey) {
+            throw new Error(`could not persist the ${next} API key; provider was not changed`);
+          }
+        }
+        const nextModel = getProviderModel(next);
+        setDefaultProvider(next);
+        setProvider(next);
+        setModel(nextModel);
+        dispatch({
+          type: "notice",
+          level: "info",
+          text: `provider → ${next} · model → ${nextModel}`,
+        });
+      } catch (error) {
+        dispatch({
+          type: "notice",
+          level: "warn",
+          text: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        providerActivationRef.current = undefined;
+      }
     },
     [requestSecret],
   );
@@ -768,32 +814,43 @@ export function App({
           return true;
         case "/new":
           cancelCompaction();
-          void (async () => {
-            const messages = runner.getMessages();
-            if (
-              !noHistory &&
-              !getConfig().privateMode &&
-              messages.some((m) => m.role === "user")
-            )
-              // Continuous autosave already persists this conversation under
-              // its live sessionId — upsert that same row instead of
-              // minting a fresh, unnamed duplicate.
-              await upsertSession(
-                runner.getSession().sessionId,
-                messages,
-                undefined,
-                state.items,
-              ).catch(() => undefined);
-            runner.reset();
-            titleRef.current = { titledAtUserCount: 0, inFlight: false };
-            dispatch({ type: "reset" });
-            info("fresh session started");
-          })();
+          runner.abort();
+          if (autosaveTimer.current) {
+            clearTimeout(autosaveTimer.current);
+            autosaveTimer.current = undefined;
+          }
+          const messages = runner.getMessages();
+          if (
+            !noHistory &&
+            !getConfig().privateMode &&
+            messages.some((m) => m.role === "user")
+          ) {
+            // Persist in the background; the new session must be interactive
+            // immediately even if the history backend is slow or locked.
+            void upsertSession(
+              runner.getSession().sessionId,
+              messages,
+              undefined,
+              latestItems.current,
+            ).catch(() => undefined);
+          }
+          runner.reset();
+          titleRef.current = {
+            titledAtUserCount: 0,
+            inFlight: false,
+            requestId: titleRef.current.requestId + 1,
+          };
+          dispatch({ type: "reset" });
+          info("fresh session started");
           return true;
         case "/clean":
           cancelCompaction();
           runner.reset();
-          titleRef.current = { titledAtUserCount: 0, inFlight: false };
+          titleRef.current = {
+            titledAtUserCount: 0,
+            inFlight: false,
+            requestId: titleRef.current.requestId + 1,
+          };
           dispatch({ type: "reset" });
           info("fresh session started");
           return true;
@@ -1131,6 +1188,7 @@ export function App({
                       (m) => m.role === "user",
                     ).length,
                     inFlight: false,
+                    requestId: titleRef.current.requestId + 1,
                   };
                   setOverlay({ kind: "none" });
                   dispatch({
@@ -2160,13 +2218,13 @@ export function App({
       return;
     }
     if (key.ctrl && ch === "c") {
-      if (runner.isRunning()) {
-        runner.abort();
+      const now = Date.now();
+      if (now - lastCtrlC.current < 1500) {
+        exitTui();
         return;
       }
-      const now = Date.now();
-      if (now - lastCtrlC.current < 1500) exitTui();
-      else lastCtrlC.current = now;
+      lastCtrlC.current = now;
+      if (runner.isRunning()) runner.abort();
       return;
     }
 

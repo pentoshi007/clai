@@ -52,6 +52,10 @@ export const providerAliases: Record<string, ProviderId> = {
   "bynara-router": "bynara",
   nararouter: "bynara",
   nara: "bynara",
+  qwen: "qwen-cloud",
+  "qwen-cloud": "qwen-cloud",
+  dashscope: "qwen-cloud",
+  qwencloud: "qwen-cloud",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -66,6 +70,7 @@ export const defaultModels: Record<ProviderId, string> = {
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.1:8b",
   bynara: "mimo-v2.5-free",
+  "qwen-cloud": "qwen3.7-plus",
 };
 
 const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
@@ -106,6 +111,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   "aws-mantle": "ANTHROPIC_API_KEY",
   ollama: "OLLAMA_HOST",
   bynara: "BYNARA_API_KEY",
+  "qwen-cloud": "DASHSCOPE_API_KEY",
 };
 
 export function normalizeProvider(value: string): ProviderId | undefined {
@@ -145,7 +151,7 @@ export function redactSecrets(value: string): string {
   return value
     .replace(/gsk_[A-Za-z0-9_-]+/g, "gsk_••••••")
     .replace(/AIza[0-9A-Za-z_-]+/g, "AIza••••••")
-    .replace(/sk-[A-Za-z0-9_-]+/g, "sk-••••••")
+    .replace(/sk-[A-Za-z0-9._-]+/g, "sk-••••••")
     .replace(/sk-or-[A-Za-z0-9_-]+/g, "sk-or-••••••")
     .replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-••••••")
     .replace(/nvapi-[A-Za-z0-9_-]+/g, "nvapi-••••••");

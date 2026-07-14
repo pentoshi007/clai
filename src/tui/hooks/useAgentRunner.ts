@@ -105,6 +105,8 @@ export interface UseAgentRunnerArgs {
    * default) so subsequent turns stay in agent mode.
    */
   onSwitchToAgent?: () => void;
+  /** Called when Ctrl+C is pressed again while an aborted turn unwinds. */
+  onForceExit?: () => void;
 }
 
 export interface AgentRunner {
@@ -137,6 +139,7 @@ export function useAgentRunner({
   getContext,
   requestSecret,
   onSwitchToAgent,
+  onForceExit,
 }: UseAgentRunnerArgs): AgentRunner {
   const messagesRef = useRef<ChatMessage[]>([]);
   const sessionRef = useRef<SessionPolicy>(createSessionPolicy());
@@ -229,7 +232,10 @@ export function useAgentRunner({
       // mode. In that state Ink cannot receive Ctrl+C as a keypress, so catch
       // SIGINT here and translate it into the same turn abort. This prevents a
       // password prompt from requiring a second Ctrl+C that exits clai.
-      const onSigint = (): void => ac.abort();
+      const onSigint = (): void => {
+        if (ac.signal.aborted) onForceExit?.();
+        else ac.abort();
+      };
       process.on("SIGINT", onSigint);
       messagesRef.current.push({ role: "user", content: input });
 
@@ -374,7 +380,7 @@ export function useAgentRunner({
         abortRef.current = undefined;
       }
     },
-    [throttled, confirm, getContext, requestSecret, onSwitchToAgent],
+    [throttled, confirm, getContext, requestSecret, onSwitchToAgent, onForceExit],
   );
 
   return useMemo<AgentRunner>(
