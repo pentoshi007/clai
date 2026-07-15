@@ -1,6 +1,6 @@
 {
   "name": "@pentoshi/clai",
-  "version": "2.0.33",
+  "version": "3.0.0",
   "description": "A fast, cross-platform AI CLI assistant with ask and agent modes for shell tasks, file operations, and cybersecurity workflows.",
   "type": "module",
   "license": "MIT",
@@ -35,8 +35,7 @@
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "dev:v2": "tsx src/index.ts --ui=v2",
-    "dev:v2:bun": "bun run src/index.ts --ui=v2",
+    "dev:bun": "bun run src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
@@ -56,7 +55,6 @@
     "commander": "14.0.3",
     "conf": "15.1.0",
     "execa": "^9.5.2",
-    "ink": "6.8.0",
     "react": "19.2.7",
     "string-width": "8.2.1"
   },

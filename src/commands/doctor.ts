@@ -7,7 +7,6 @@ import { getFallbackKeysPath, probeKeychain } from '../store/keys.js';
 import { loadScope, isScopeActive, getScopePath } from '../store/scope.js';
 import { canUseTui } from '../tui/can-use-tui.js';
 import {
-  UI_CUTOVER_STAGE,
   describeUiDefault,
   resolveUiChoice,
 } from '../tui-v2/bootstrap/ui-selection.js';
@@ -31,9 +30,7 @@ export async function runDoctor(): Promise<void> {
   console.log(`History: ${getHistoryPath()}`);
   const tuiGate = canUseTui();
   const resolvedUi = resolveUiChoice({});
-  console.log(
-    `UI default: ${describeUiDefault()} ${chalk.dim(`(cutover=${UI_CUTOVER_STAGE})`)}`,
-  );
+  console.log(`UI default: ${describeUiDefault()}`);
   console.log(
     `UI resolved now: ${resolvedUi}` +
       (process.env.CLAI_UI ? chalk.dim(` (CLAI_UI=${process.env.CLAI_UI})`) : ''),
@@ -42,7 +39,7 @@ export async function runDoctor(): Promise<void> {
     `UI host: ${tuiGate.ok ? chalk.green('ok for full-screen TUI') : chalk.yellow(`unavailable — ${tuiGate.reason}`)}`,
   );
   console.log(
-    chalk.dim('  opt-in OpenTUI: clai --ui=v2  ·  rollback: --ui=tui | --ui=legacy | --classic'),
+    chalk.dim('  full-screen: clai  ·  line REPL: clai --classic | --ui=legacy'),
   );
   const keychain = await probeKeychain();
   if (keychain.available) {

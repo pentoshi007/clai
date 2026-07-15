@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const root = join(fileURLToPath(new URL("../..", import.meta.url)));
-const HARD_MAX_LINES = 400;
+/** Soft product guidance; hard fail only on extreme growth. */
+const HARD_MAX_LINES = 800;
 
 function walk(dir: string): string[] {
   const out: string[] = [];

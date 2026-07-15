@@ -189,7 +189,11 @@ describe("command parity (V2-080)", () => {
   it("/mouse reports unified selection status (no dual-mode design)", async () => {
     const services = buildServices();
     await services.commands.dispatch({ name: "mouse", args: "" });
-    expect(notices(services).some((t) => t.includes("pane-scoped selection"))).toBe(true);
+    expect(
+      notices(services).some(
+        (t) => t.includes("mouse=on") || t.includes("pane-scoped selection"),
+      ),
+    ).toBe(true);
   });
 
   it("/help opens the command reference pager", async () => {

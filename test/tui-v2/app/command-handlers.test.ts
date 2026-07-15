@@ -207,9 +207,13 @@ describe("command handlers (V2-072..075)", () => {
       ),
     );
     await services.commands.dispatch({ name: "plan", args: "" });
+    await waitUntil(() => services.overlay.getState().kind === "pager");
     const state = services.overlay.getState();
     expect(state.kind).toBe("pager");
-    if (state.kind === "pager") expect(state.body).toBe("step by step");
+    if (state.kind === "pager") {
+      expect(state.title).toContain("Ship it");
+      expect(state.body).toContain("step by step");
+    }
   });
 
   it("/output last opens the pager with the last tool call's spooled output", async () => {

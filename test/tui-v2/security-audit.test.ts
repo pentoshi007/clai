@@ -167,6 +167,7 @@ describe("V2-094 security audit", () => {
       const allowed =
         rel.endsWith("selection-controller.ts") ||
         rel.endsWith("osc52-clipboard.ts") ||
+        rel.endsWith("use-native-selection-copy.ts") ||
         // Explicit user-triggered copy (pager `c`, prompt actions).
         rel.endsWith("pager.tsx") ||
         rel.endsWith("prompt-actions-modal.tsx");
