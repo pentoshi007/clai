@@ -289,15 +289,11 @@ export const toolRegistry: Record<string, ToolHandler> = {
             { url, responseMode: "readable", includeHeaders: false },
             { ...(options?.signal ? { signal: options.signal } : {}) },
           );
+          // Never truncate page bodies for the tool result — the UI pager and
+          // artifacts must keep the full text. Model context is still budgeted
+          // separately in formatToolContext / context compaction.
           const text = page.output.trim();
-          // Keep each appended page modest so several fit within the model's
-          // tool-output budget. For the full text of one page, the model can
-          // call web.fetch on that single URL (it then gets the larger cap).
-          const capped =
-            text.length > 3500
-              ? `${text.slice(0, 3500)}\n…[truncated — call web.fetch on this url for the full page]`
-              : text;
-          return `── PAGE: ${url} ${page.ok ? "" : "(fetch failed)"}\n${capped}`;
+          return `── PAGE: ${url} ${page.ok ? "" : "(fetch failed)"}\n${text}`;
         } catch (error) {
           return `── PAGE: ${url} (fetch error: ${error instanceof Error ? error.message : String(error)})`;
         }
@@ -729,6 +725,10 @@ export const BATCH_SAFE_TOOLS = new Set([
 const BATCH_MAX_CALLS = 20;
 const BATCH_DEFAULT_CONCURRENCY = 3;
 const BATCH_MAX_CONCURRENCY = 6;
+/** Hard ceiling so tool.batch never sits on "running" forever (hang DNS/HTTP). */
+const BATCH_HARD_TIMEOUT_MS = 90_000;
+/** Progress heartbeats keep the outer tool stall watchdog alive. */
+const BATCH_HEARTBEAT_MS = 5_000;
 
 interface BatchCallSpec {
   name: string;
@@ -831,45 +831,112 @@ async function runToolBatch(
       BATCH_MAX_CONCURRENCY,
     ),
   );
-  const outcomes: BatchOutcome[] = new Array(calls.length);
-  await runWithLimit(calls, concurrency, async (spec, index) => {
-    if (options?.signal?.aborted) {
-      outcomes[index] = {
-        index,
-        name: spec.name,
-        ok: false,
-        output: "Aborted before execution.",
-        exitCode: 130,
-      };
-      return;
-    }
-    try {
-      const result = await runToolCall(
-        { name: spec.name, args: spec.args },
-        // Skip onOutput streaming: batch results are summarized after all
-        // members complete to keep the live preview readable.
-        { signal: options?.signal },
-      );
-      outcomes[index] = {
-        index,
-        name: spec.name,
-        ok: result.ok,
-        output: result.output,
-        exitCode: result.exitCode,
-      };
-    } catch (error) {
-      outcomes[index] = {
-        index,
-        name: spec.name,
-        ok: false,
-        output: "",
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  });
 
-  const allOk = outcomes.every((outcome) => outcome.ok);
-  const sections = outcomes.map((outcome) => {
+  // Local abort that fires on parent cancel OR the batch hard timeout.
+  // Children receive this signal so a hung http.fetch/dns cannot pin the UI
+  // on "● tool.batch running" forever.
+  const batchAc = new AbortController();
+  const onParentAbort = (): void => {
+    if (!batchAc.signal.aborted) batchAc.abort();
+  };
+  if (options?.signal) {
+    if (options.signal.aborted) batchAc.abort();
+    else options.signal.addEventListener("abort", onParentAbort, { once: true });
+  }
+  const hardTimer = setTimeout(() => {
+    if (!batchAc.signal.aborted) batchAc.abort();
+  }, BATCH_HARD_TIMEOUT_MS);
+  (hardTimer as unknown as { unref?: () => void }).unref?.();
+
+  let finished = 0;
+  const tick = (line: string): void => {
+    // Heartbeats also reset the runner's 60s "stalled tool" watchdog, which
+    // previously aborted silent batches mid-flight and left no tool-result.
+    options?.onOutput?.(line.endsWith("\n") ? line : `${line}\n`, "stdout");
+  };
+  tick(`[batch] starting ${calls.length} call(s), concurrency=${concurrency}`);
+  const heartbeat = setInterval(() => {
+    tick(`[batch] still running — ${finished}/${calls.length} finished`);
+  }, BATCH_HEARTBEAT_MS);
+  (heartbeat as unknown as { unref?: () => void }).unref?.();
+
+  const outcomes: Array<BatchOutcome | undefined> = new Array(calls.length);
+  try {
+    await runWithLimit(calls, concurrency, async (spec, index) => {
+      if (batchAc.signal.aborted) {
+        outcomes[index] = {
+          index,
+          name: spec.name,
+          ok: false,
+          output: "Aborted before execution.",
+          exitCode: 130,
+        };
+        finished += 1;
+        return;
+      }
+      tick(`[batch] #${index + 1} ${spec.name} starting`);
+      try {
+        const result = await runToolCall(
+          { name: spec.name, args: spec.args },
+          // Do not fan child stdout into the card (keeps parseable sections
+          // clean). Progress lines above are enough for the stall watchdog.
+          { signal: batchAc.signal },
+        );
+        outcomes[index] = {
+          index,
+          name: spec.name,
+          ok: result.ok,
+          output: result.output,
+          exitCode: result.exitCode,
+        };
+        tick(
+          `[batch] #${index + 1} ${spec.name} ${result.ok ? "ok" : "fail"}` +
+            (result.exitCode !== undefined ? ` exit=${result.exitCode}` : ""),
+        );
+      } catch (error) {
+        outcomes[index] = {
+          index,
+          name: spec.name,
+          ok: false,
+          output: "",
+          error: error instanceof Error ? error.message : String(error),
+        };
+        tick(
+          `[batch] #${index + 1} ${spec.name} error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      } finally {
+        finished += 1;
+      }
+    });
+  } finally {
+    clearInterval(heartbeat);
+    clearTimeout(hardTimer);
+    if (options?.signal) {
+      options.signal.removeEventListener("abort", onParentAbort);
+    }
+  }
+
+  // Fill any holes left by a mid-batch abort/timeout so we always emit a
+  // complete sectioned body and a tool-result (never stuck "running").
+  const timedOut = batchAc.signal.aborted && !options?.signal?.aborted;
+  for (let i = 0; i < calls.length; i += 1) {
+    if (outcomes[i]) continue;
+    outcomes[i] = {
+      index: i,
+      name: calls[i]!.name,
+      ok: false,
+      output: timedOut
+        ? `Not run — tool.batch timed out after ${BATCH_HARD_TIMEOUT_MS / 1000}s.`
+        : "Not run — batch aborted.",
+      exitCode: timedOut ? 124 : 130,
+    };
+  }
+
+  const finalOutcomes = outcomes as BatchOutcome[];
+  const allOk = finalOutcomes.every((outcome) => outcome.ok);
+  const sections = finalOutcomes.map((outcome) => {
     const status = outcome.ok ? "ok" : "fail";
     const head = `── #${outcome.index + 1} ${outcome.name} [${status}${outcome.exitCode !== undefined ? ` exit=${outcome.exitCode}` : ""}]`;
     const body = outcome.error
@@ -877,9 +944,15 @@ async function runToolBatch(
       : outcome.output.trim();
     return `${head}\n${body}`;
   });
+  let output = sections.join("\n\n");
+  if (timedOut && !allOk) {
+    output =
+      `[batch] timed out after ${BATCH_HARD_TIMEOUT_MS / 1000}s — partial results below\n\n` +
+      output;
+  }
   return {
     ok: allOk,
-    output: sections.join("\n\n"),
-    exitCode: allOk ? 0 : 1,
+    output,
+    exitCode: allOk ? 0 : timedOut ? 124 : 1,
   };
 }

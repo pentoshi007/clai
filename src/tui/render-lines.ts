@@ -3,8 +3,7 @@ import type { TranscriptItem, ToolItem, TuiState, CompactedItem } from "./state.
 import { renderMarkdown, wrapAnsiLine } from "../ui/markdown.js";
 import { renderPlanChecklist } from "../ui/plan-pane.js";
 import { safeCwd } from "../os/cwd.js";
-import { renderWordmark, wordmarkWidth } from "../ui/wordmark.js";
-import { truncateMiddle } from "./text-format.js";
+import { renderIntroHeaderLines } from "../ui/intro-header.js";
 
 // ── Batch section parser ──────────────────────────────────────────────────────
 
@@ -132,6 +131,9 @@ export interface RenderCtx {
   mode?: string | undefined;
   provider?: string | undefined;
   model?: string | undefined;
+  permissions?: string | undefined;
+  /** The dedicated live-plan pane owns plan rendering when one exists. */
+  hidePlanItems?: boolean | undefined;
 }
 
 const COLLAPSED_OUTPUT_LINES = 3;
@@ -498,157 +500,16 @@ function renderItemLinesCached(item: TranscriptItem, ctx: RenderCtx): string[] {
   return lines;
 }
 
-/** Compact one-box header shown once a conversation is under way. */
-function stripAnsiLen(s: string): number {
-  return s.replace(/\x1b\[[0-9;]*m/g, "").length;
-}
-
-/** Pad a (possibly ANSI-colored) cell string to a visible width. */
-function padCell(content: string, width: number): string {
-  const len = stripAnsiLen(content);
-  if (len >= width) return content;
-  return content + " ".repeat(width - len);
-}
-
-/** Center a (possibly ANSI-colored) cell string within a visible width. */
-function centerCell(content: string, width: number): string {
-  const len = stripAnsiLen(content);
-  if (len >= width) return content;
-  const total = width - len;
-  const left = Math.floor(total / 2);
-  return " ".repeat(left) + content + " ".repeat(total - left);
-}
-
-/**
- * Full startup intro card: one big two-partition box — a gradient "CLAI"
- * wordmark on the left, and a session-info panel (workdir/model/provider/
- * mode/version + quick-start hints) on the right — with the tagline and
- * welcome line centered below it. This is the persistent transcript header:
- * it always renders as the first block and scrolls up naturally with the
- * conversation, so the branding stays consistent for the whole session.
- *
- * The wordmark's own width is fixed (it's dot-matrix ASCII art), but the
- * right partition — and therefore the whole card — stretches or shrinks
- * with the terminal width, so the card scales without ever breaking its
- * box-drawing alignment.
- */
 function renderIntroHeader(ctx: RenderCtx): string[] {
-  const version = ctx.version ?? "0.0.0";
-  const mode = ctx.mode ?? "agent";
-  const provider = ctx.provider ?? "openai";
-  const model = ctx.model ?? "gpt-4";
-  const cwd = safeCwd();
-
-  // Overall available width for the card (2-space left/right margin).
-  const totalWidth = Math.max(56, ctx.width - 4);
-
-  // Left partition: the wordmark (fixed-width ASCII art). We give the left
-  // column a bit more room than the wordmark itself so the logo has some
-  // breathing space and isn't sandwiched against the box borders, and we
-  // aim for the two partitions to be roughly equal width.
-  //
-  // Fixed overhead per row: "│ " + leftCell + " │ " + rightCell + " │"
-  //   = 2 borders + 1 separator + 4 padding spaces = 7 columns.
-  const OVERHEAD = 7;
-  const wmLines = renderWordmark("CLAI", "").split("\n");
-  const wmWidth = wordmarkWidth("CLAI");
-
-  const available = Math.max(48, totalWidth - OVERHEAD); // combined cell width
-  // Logo column takes ~40% of the available width, the info panel the rest.
-  // Never shrink below the wordmark's own width (+6 for breathing room).
-  const leftWidth = Math.max(wmWidth + 6, Math.floor(available * 0.4));
-  const rightWidth = Math.max(24, available - leftWidth);
-
-  // High-contrast label chip (solid background + bright bold text), matching
-  // the visual language used by the compact header's badges. The longest
-  // label ("provider") is padded so every chip has the same visible width.
-  const CHIP_LABEL = 8;
-  const chip = (label: string): string =>
-    chalk.bgHex("#334155").whiteBright.bold(` ${label.padEnd(CHIP_LABEL)} `);
-  const CHIP_WIDTH = CHIP_LABEL + 2; // padding inside the chip
-
-  const infoRow = (label: string, value: string, colorFn: (s: string) => string): string => {
-    const available = Math.max(4, rightWidth - CHIP_WIDTH - 1);
-    const shownValue = value.length > available ? truncateMiddle(value, available) : value;
-    return chip(label) + " " + colorFn(shownValue);
-  };
-
-  const suggestions = [
-    "scan my network",
-    "recon example.com",
-    "create a react app here",
-    "explain @file.ts",
-  ];
-  const tryChip = chalk.bgHex("#334155").whiteBright.bold(" try ");
-  const TRY_WIDTH = 5; // visible width of " try "
-  const suggestionsAvailable = Math.max(4, rightWidth - TRY_WIDTH - 1);
-  const suggestionsJoined = suggestions.join(" │ ");
-  const suggestionsShown =
-    suggestionsJoined.length > suggestionsAvailable
-      ? truncateMiddle(suggestionsJoined, suggestionsAvailable)
-      : suggestionsJoined;
-
-  const rightRows: string[] = [
-    infoRow("workdir", cwd, chalk.white),
-    infoRow("model", model, chalk.cyan),
-    infoRow("provider", provider, chalk.green),
-    infoRow("mode", mode, chalk.yellow),
-    infoRow("version", version, chalk.white),
-    "",
-    tryChip + " " + chalk.cyan.italic(suggestionsShown),
-  ];
-
-  // Both columns render exactly 7 rows (wordmark height), so they line up.
-  const rowCount = Math.max(wmLines.length, rightRows.length);
-
-  const top =
-    "  " +
-    chalk.gray(
-      `╭${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}╮`,
-    );
-  const bottom =
-    "  " +
-    chalk.gray(
-      `╰${"─".repeat(leftWidth + 2)}┴${"─".repeat(rightWidth + 2)}╯`,
-    );
-
-  const middle: string[] = [];
-  for (let i = 0; i < rowCount; i++) {
-    const leftCell = centerCell(wmLines[i] ?? "", leftWidth);
-    const rightCell = padCell(rightRows[i] ?? "", rightWidth);
-    middle.push(
-      "  " +
-        chalk.gray("│") +
-        ` ${leftCell} ` +
-        chalk.gray("│") +
-        ` ${rightCell} ` +
-        chalk.gray("│"),
-    );
-  }
-
-  const boxOuterWidth = leftWidth + rightWidth + OVERHEAD;
-
-  const centerIndent = (plainLen: number): string => {
-    const indent = Math.max(0, Math.floor((boxOuterWidth - plainLen) / 2));
-    return " ".repeat(2 + indent);
-  };
-
-  const tagline =
-    "AI-powered terminal assistant · ask & agent modes for shell, files & security workflows";
-  const welcome = `Welcome to clai v${version}! `;
-  const welcomeHint = "/help for commands.";
-
-  return [
-    "",
-    top,
-    ...middle,
-    bottom,
-    "",
-    centerIndent(tagline.length) + chalk.white(tagline),
-    centerIndent(welcome.length + welcomeHint.length) +
-      chalk.green.bold(welcome) +
-      chalk.cyan(welcomeHint),
-  ];
+  return renderIntroHeaderLines({
+    width: ctx.width,
+    version: ctx.version ?? "0.0.0",
+    mode: ctx.mode ?? "agent",
+    provider: ctx.provider ?? "openai",
+    model: ctx.model ?? "gpt-4",
+    permissions: ctx.permissions ?? "default",
+    workdir: safeCwd(),
+  });
 }
 
 /**
@@ -666,6 +527,7 @@ export function renderTranscriptLines(state: TuiState, ctx: RenderCtx): string[]
   blocks.push(renderIntroHeader(ctx));
 
   for (const item of state.items) {
+    if (ctx.hidePlanItems && item.kind === "plan") continue;
     blocks.push(renderItemLinesCached(item, ctx));
   }
 

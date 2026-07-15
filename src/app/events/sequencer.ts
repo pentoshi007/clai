@@ -49,15 +49,24 @@ export function createRandomIdFactory(): IdFactory {
  */
 export class EventSequencer {
   private seq = 0;
+  private sessionId: SessionId;
 
   constructor(
-    private readonly sessionId: SessionId,
+    sessionId: SessionId,
     readonly ids: IdFactory = createRandomIdFactory(),
     private readonly clock: Clock = systemClock,
-  ) {}
+  ) {
+    this.sessionId = sessionId;
+  }
 
   get current(): number {
     return this.seq;
+  }
+
+  /** Start a fresh sequence (e.g. after /new remints the session id). */
+  rebind(sessionId: SessionId): void {
+    this.sessionId = sessionId;
+    this.seq = 0;
   }
 
   build<K extends AppEventType>(

@@ -3,6 +3,7 @@ import {
   APP_EVENT_VERSION,
   asSessionId,
   asToolCallId,
+  asTurnId,
   isDeltaEvent,
   isStructuralEvent,
 } from "../../src/app/events/app-event.js";
@@ -161,6 +162,26 @@ describe("V2-021 AgentEventAdapter", () => {
   it("parses step numbers from status text", () => {
     const [status] = collectFrom([{ type: "status", text: "step 7" }]);
     expect(status?.payload).toEqual({ text: "step 7", step: 7 });
+  });
+
+  it("scopes legacy tool counters to their turn", () => {
+    const spool = new OutputSpool();
+    const out: AnyAppEvent[] = [];
+    const adapter = new AgentEventAdapter(sequencer(), spool, (event) => out.push(event));
+
+    adapter.setTurn(asTurnId("turn-1"));
+    adapter.ingest({ type: "tool-call", id: "tool-1", name: "fs.read", argsDisplay: "one" });
+    adapter.ingest({ type: "tool-output", id: "tool-1", chunk: "first" });
+    adapter.setTurn(asTurnId("turn-2"));
+    adapter.ingest({ type: "tool-call", id: "tool-1", name: "fs.read", argsDisplay: "two" });
+    adapter.ingest({ type: "tool-output", id: "tool-1", chunk: "second" });
+
+    const ids = out
+      .filter((event) => event.type === "tool-call")
+      .map((event) => event.payload.toolCallId);
+    expect(ids).toEqual(["turn-1:tool-1", "turn-2:tool-1"]);
+    expect(spool.tail(asToolCallId("turn-1:tool-1"))).toBe("first");
+    expect(spool.tail(asToolCallId("turn-2:tool-1"))).toBe("second");
   });
 
   it("produces byte-identical output on replay with a deterministic id factory", () => {

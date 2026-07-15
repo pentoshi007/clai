@@ -108,9 +108,36 @@ export class CommandRegistry {
     const boundary = rest.search(/\s/);
     const rawName = boundary === -1 ? rest : rest.slice(0, boundary);
     const args = boundary === -1 ? "" : rest.slice(boundary + 1).trim();
-    const name = this.resolve(rawName);
-    if (!name) return undefined;
-    return { name, args, context };
+    // Absolute paths (/Users/..., /tmp/foo) are prompts, not commands.
+    if (!rawName || rawName.includes("/") || rawName.includes("\\")) {
+      return undefined;
+    }
+    const exact = this.resolve(rawName);
+    if (exact) return { name: exact, args, context };
+    // Unique prefix match so a broken completion menu still dispatches
+    // "/mod" → /model, "/imp" → /implement, etc.
+    if (rawName.length === 0) return undefined;
+    const matches = this.suggestions(rawName);
+    if (matches.length === 1) {
+      return { name: matches[0]!.name, args, context };
+    }
+    return undefined;
+  }
+
+  /**
+   * True when a submitted line should be treated as a slash-command attempt
+   * (known name, unique prefix, or command-shaped word) rather than a prompt.
+   * Paths like `/Users/...` return false.
+   */
+  looksLikeCommand(line: string): boolean {
+    if (!line.startsWith("/") || line.length < 2) return false;
+    const firstToken = line.slice(1).split(/\s/)[0] ?? "";
+    if (!firstToken || firstToken.includes("/") || firstToken.includes("\\")) {
+      return false;
+    }
+    if (this.resolve(firstToken)) return true;
+    if (this.suggestions(firstToken).length > 0) return true;
+    return /^[a-z][a-z0-9-]*$/i.test(firstToken);
   }
 
   /** Resolve + run the registered handler. Returns false if unknown/unhandled. */

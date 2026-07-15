@@ -33,6 +33,7 @@ describe("default keymap", () => {
     // Guard that the core interactive actions are bound.
     expect(missing).not.toContain("editor.submit");
     expect(missing).not.toContain("app.cancel");
+    expect(missing).not.toContain("app.interrupt");
   });
 });
 
@@ -75,8 +76,17 @@ describe("ActionRouter", () => {
 
   it("falls back to global bindings when the context has none", () => {
     const router = new ActionRouter();
-    expect(router.resolve("ctrl+c", "composer")).toBe("app.cancel");
-    expect(router.resolve("ctrl+c", "transcript")).toBe("app.cancel");
+    expect(router.resolve("ctrl+c", "composer")).toBe("app.interrupt");
+    expect(router.resolve("ctrl+c", "transcript")).toBe("app.interrupt");
+    expect(router.resolve("escape", "composer")).toBe("app.cancel");
+  });
+
+  it("resolves the always-on thinking/output toggles from any context (V2-050..057)", () => {
+    const router = new ActionRouter();
+    expect(router.resolve("ctrl+t", "composer")).toBe("transcript.toggle-thinking");
+    expect(router.resolve("ctrl+t", "transcript")).toBe("transcript.toggle-thinking");
+    expect(router.resolve("ctrl+o", "composer")).toBe("transcript.toggle-output");
+    expect(router.resolve("ctrl+r", "transcript")).toBe("transcript.search");
   });
 
   it("normalizes the incoming chord before lookup", () => {

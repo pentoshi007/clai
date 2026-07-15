@@ -87,4 +87,65 @@ describe("SessionController queued-draft management (INPUT-007)", () => {
     session.removeQueued(0);
     expect(session.queued()).toEqual(["a"]);
   });
+
+  it("takeQueued removes and returns the draft for composer edit", () => {
+    const session = buildSession();
+    session.enqueue("alpha");
+    session.enqueue("beta");
+    expect(session.takeQueued(0)).toBe("alpha");
+    expect(session.queued()).toEqual(["beta"]);
+    expect(session.takeQueued(9)).toBeUndefined();
+  });
+
+  it("sendQueuedNow while idle submits that prompt and leaves the rest queued", async () => {
+    const session = buildSession();
+    session.enqueue("first");
+    session.enqueue("second");
+    session.sendQueuedNow(0);
+    // Idle path is async via submit().then(continueQueue).
+    await new Promise((r) => setTimeout(r, 20));
+    // first was taken; after submit completes continueQueue drains second.
+    expect(session.queued()).toEqual([]);
+    expect(session.getState().running).toBe(false);
+  });
+
+  it("sendQueuedNow while running aborts and prioritizes that prompt", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const seen: string[] = [];
+    const agent: AgentPort = {
+      async runTurn(req, handlers) {
+        seen.push(req.prompt);
+        if (req.prompt === "slow") await gate;
+        handlers.onMessages?.([]);
+        return "";
+      },
+    };
+    const session = new SessionController({
+      agent,
+      persistence: fakePersistence(),
+      sessionId: "sess-send-now",
+      emit: () => {},
+    });
+    const running = session.submit("slow");
+    // Let the turn mark itself running.
+    await new Promise((r) => setTimeout(r, 5));
+    session.enqueue("queued-a");
+    session.enqueue("queued-b");
+    session.sendQueuedNow(1); // take queued-b as priority
+    expect(session.queued()).toEqual(["queued-a"]);
+    release();
+    await running;
+    // continueQueue is caller's job after onTurnEnd in the app; call it here.
+    await session.continueQueue();
+    expect(seen).toContain("slow");
+    expect(seen).toContain("queued-b");
+    // priority then remaining queue
+    const bIdx = seen.indexOf("queued-b");
+    const aIdx = seen.indexOf("queued-a");
+    expect(bIdx).toBeGreaterThan(seen.indexOf("slow"));
+    expect(aIdx).toBeGreaterThan(bIdx);
+  });
 });

@@ -65,15 +65,27 @@ export function ConfirmModal({ confirm, onAnswer, onViewPlan }: ConfirmModalProp
       <Text>{confirm.prompt}</Text>
       {isReset ? (
         <Text bold>
-          Press <Text color="green" inverse> R </Text> to reset  ·  Press <Text color="red" inverse> Esc </Text> to cancel
+          <Text color="green" inverse> r:reset </Text>
+          {"  ·  "}
+          <Text color="red" inverse> esc:cancel </Text>
         </Text>
       ) : isPlan ? (
         <Text bold>
-          Press <Text color="green" inverse> Y </Text> to implement  ·  Press <Text color="red" inverse> N </Text> to discard  ·  Press <Text color="cyan" inverse> P </Text> to view plan
+          <Text color="green" inverse> y:implement </Text>
+          {"  ·  "}
+          <Text color="red" inverse> n:discard </Text>
+          {"  ·  "}
+          <Text color="cyan" inverse> p:view-plan </Text>
         </Text>
       ) : (
         <Text bold>
-          Press <Text color="green" inverse> Y </Text> to {isContinue ? "continue" : "approve"}  ·  Press <Text color="red" inverse> N </Text> to {isContinue ? "stop" : "deny"}
+          <Text color="green" inverse>
+            {isContinue ? " y:continue " : " y:approve "}
+          </Text>
+          {"  ·  "}
+          <Text color="red" inverse>
+            {isContinue ? " n:stop " : " n:deny "}
+          </Text>
         </Text>
       )}
     </Box>

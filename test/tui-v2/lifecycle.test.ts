@@ -89,11 +89,22 @@ describe("RendererLifecycle teardown", () => {
 });
 
 describe("RendererLifecycle signal handling", () => {
-  it("shuts down and exits with the signal code on SIGINT", async () => {
+  it("first SIGINT is cooperative (onSigint), second SIGINT exits", async () => {
     const log: string[] = [];
+    const onSigint = vi.fn();
     const proc = new FakeProcess();
-    const life = new RendererLifecycle({ handle: makeHandle(log), process: proc });
+    const life = new RendererLifecycle({
+      handle: makeHandle(log),
+      process: proc,
+      onSigint,
+    });
     await life.start();
+    proc.emit("SIGINT");
+    await Promise.resolve();
+    expect(onSigint).toHaveBeenCalledTimes(1);
+    expect(proc.exitCalls).toEqual([]);
+    expect(log).not.toContain("destroy");
+
     proc.emit("SIGINT");
     await Promise.resolve();
     await Promise.resolve();

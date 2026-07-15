@@ -16,6 +16,8 @@ export const ACTION_CONTEXTS = [
   "secret",
   "plan",
   "transcript-search",
+  "pager",
+  "jobs",
 ] as const;
 
 export type ActionContext = (typeof ACTION_CONTEXTS)[number];
@@ -23,7 +25,13 @@ export type ActionContext = (typeof ACTION_CONTEXTS)[number];
 export const ACTION_IDS = [
   // global
   "app.quit",
+  /** Esc: abort a running turn / dismiss — never exits the process. */
   "app.cancel",
+  /**
+   * Ctrl+C: first press aborts a running turn (or arms quit); second press
+   * within a short window exits the process.
+   */
+  "app.interrupt",
   "app.help",
   "app.toggle-plan",
   "app.jobs",
@@ -45,6 +53,20 @@ export const ACTION_IDS = [
   "transcript.bottom",
   "transcript.search",
   "transcript.expand-toggle",
+  "transcript.toggle-thinking",
+  "transcript.toggle-output",
+  // pane selection
+  "selection.copy",
+  "selection.clear",
+  "selection.select-all",
+  "selection.extend-left",
+  "selection.extend-right",
+  "selection.extend-up",
+  "selection.extend-down",
+  "selection.extend-word-left",
+  "selection.extend-word-right",
+  "selection.extend-line-start",
+  "selection.extend-line-end",
   // picker
   "picker.up",
   "picker.down",
@@ -59,6 +81,28 @@ export const ACTION_IDS = [
   "plan.next-task",
   "plan.prev-task",
   "plan.toggle-detail",
+  // pager
+  "pager.line-up",
+  "pager.line-down",
+  "pager.page-up",
+  "pager.page-down",
+  "pager.half-page-up",
+  "pager.half-page-down",
+  "pager.top",
+  "pager.bottom",
+  "pager.search",
+  "pager.next-match",
+  "pager.prev-match",
+  "pager.export-scrollback",
+  "pager.export-editor",
+  "pager.copy",
+  "pager.close",
+  // jobs
+  "jobs.up",
+  "jobs.down",
+  "jobs.tail",
+  "jobs.stop",
+  "jobs.close",
 ] as const;
 
 export type ActionId = (typeof ACTION_IDS)[number];

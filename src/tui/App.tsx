@@ -1811,6 +1811,7 @@ export function App({
     mode,
     provider,
     model,
+    permissions: getConfig().permissions ?? "default",
   });
   const total = transcriptLines.length;
   const maxOffset = Math.max(0, total - viewportH);

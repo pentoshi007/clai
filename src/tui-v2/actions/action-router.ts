@@ -15,6 +15,21 @@ import {
   type KeyBinding,
 } from "./keymap.js";
 
+/**
+ * Blocking-overlay contexts trap input (PICK-002): an unbound chord does
+ * nothing rather than falling through to a global action like Ctrl+H. Base
+ * regions (composer/transcript/plan) intentionally keep the global fallback
+ * so app-wide shortcuts work no matter which region has focus.
+ */
+const TRAPPING_CONTEXTS: ReadonlySet<ActionContext> = new Set([
+  "picker",
+  "modal",
+  "secret",
+  "transcript-search",
+  "pager",
+  "jobs",
+]);
+
 export class ActionRouter {
   private readonly byContext = new Map<
     ActionContext,
@@ -36,12 +51,12 @@ export class ActionRouter {
     }
   }
 
-  /** Resolve a chord in `context`, then fall back to `global`. */
+  /** Resolve a chord in `context`, then fall back to `global` unless `context` traps input. */
   resolve(chord: string, context: ActionContext): ActionId | undefined {
     const normalized = normalizeChord(chord);
     const contextHit = this.byContext.get(context)?.get(normalized);
     if (contextHit) return contextHit;
-    if (context === "global") return undefined;
+    if (context === "global" || TRAPPING_CONTEXTS.has(context)) return undefined;
     return this.byContext.get("global")?.get(normalized);
   }
 

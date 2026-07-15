@@ -137,9 +137,9 @@ describe("V2-025 controllers run a complete scripted turn (Phase 2 gate)", () =>
     // Tool output is referenced through the spool, not inlined in the event.
     const output = events.find((e) => e.type === "tool-output");
     expect(output?.payload).toEqual({
-      ref: { toolCallId: "c1", chunkBytes: 9, totalBytes: 9 },
+      ref: { toolCallId: "turn-1:c1", chunkBytes: 9, totalBytes: 9 },
     });
-    expect(session.spool.tail(asToolCallId("c1"))).toBe("file data");
+    expect(session.spool.tail(asToolCallId("turn-1:c1"))).toBe("file data");
 
     // Plan controller tracked the plan; history + persistence updated.
     expect(plans.current()?.goal).toBe("do the thing");

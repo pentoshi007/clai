@@ -11,7 +11,7 @@
 import type { ActionContext } from "../actions/action-id.js";
 
 export type FocusRegion = "composer" | "transcript" | "plan";
-export type OverlayContext = "picker" | "modal" | "secret" | "transcript-search";
+export type OverlayContext = "picker" | "modal" | "secret" | "transcript-search" | "pager" | "jobs";
 
 const DEFAULT_REGION_ORDER: readonly FocusRegion[] = [
   "composer",

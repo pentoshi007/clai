@@ -63,7 +63,7 @@ export async function runComposerSpike(): Promise<SpikeResult> {
   const result = makeResult("V2-040", "Composer editing, submit, history, paste, completion");
   const services = buildServices();
   const node = createElement(ServicesProvider, { services, children: createElement(App) });
-  const setup = await testRender(node, { width: 120, height: 40, kittyKeyboard: true });
+  const setup = await testRender(node, { width: 120, height: 40, kittyKeyboard: true, useMouse: true });
   const keys = setup.mockInput;
 
   try {
@@ -78,6 +78,20 @@ export async function runComposerSpike(): Promise<SpikeResult> {
     await wait(50);
     check(result, "plain Enter submits the prompt", prompts[0] === "hello world");
     check(result, "composer clears after submit", !setup.captureCharFrame().includes("hello world"));
+    check(
+      result,
+      "composer returns to its idle hint after the response",
+      setup.captureCharFrame().includes("ask anything"),
+    );
+    const promptFrame = setup.captureCharFrame();
+    const promptY = promptFrame.split("\n").findIndex((line) => line.includes("YOU"));
+    const promptX = promptY < 0 ? -1 : promptFrame.split("\n")[promptY]!.indexOf("YOU");
+    if (promptX >= 0 && promptY >= 0) await setup.mockMouse.click(promptX, promptY);
+    await setup.flush();
+    check(result, "clicking a user prompt opens its action modal", setup.captureCharFrame().includes(" C COPY "));
+    keys.pressKey("c");
+    await setup.flush();
+    check(result, "prompt modal copies the original text", (await services.ports.clipboard.readText?.()) === "hello world");
 
     await keys.typeText("line one");
     keys.pressEnter({ shift: true });
@@ -97,6 +111,10 @@ export async function runComposerSpike(): Promise<SpikeResult> {
     await setup.flush();
     check(result, "ctrl+j did not submit or insert a newline", prompts.length === 2);
     check(result, "ctrl+j left the composer empty (jobs owns it, not newline)", !setup.captureCharFrame().includes("line one"));
+    // Ctrl+J intentionally opens the jobs overlay. Close that explicit modal
+    // before exercising the remaining composer behaviors.
+    keys.pressEscape();
+    await setup.flush();
 
     await keys.typeText("to be cleared");
     await setup.flush();
@@ -142,9 +160,26 @@ export async function runComposerSpike(): Promise<SpikeResult> {
     keys.pressKey("u", { ctrl: true });
     await setup.flush();
 
-    await keys.typeText("/mod");
+    await keys.typeText("/mo");
     await setup.flush();
-    check(result, "typing a slash command shows a completion menu", setup.captureCharFrame().includes("/model"));
+    const completionFrame = setup.captureCharFrame();
+    check(
+      result,
+      "completion shows every /mo match rather than a single clipped row",
+      completionFrame.includes("/model") && completionFrame.includes("/mouse"),
+    );
+    keys.pressTab();
+    await setup.flush();
+    const acceptedFrame = setup.captureCharFrame();
+    check(
+      result,
+      "Tab accepts /model while keeping its selected suggestion visible",
+      acceptedFrame.includes("❯ /model") && acceptedFrame.includes("commands ·"),
+    );
+    keys.pressEnter();
+    await setup.flush();
+    await wait(50);
+    check(result, "Enter submits an already completed command", prompts[2] === "/model");
   } finally {
     let threw = false;
     try {

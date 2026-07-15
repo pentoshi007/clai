@@ -5,6 +5,12 @@ import { getConfig, getConfigPath } from '../store/config.js';
 import { getHistoryPath } from '../store/history.js';
 import { getFallbackKeysPath, probeKeychain } from '../store/keys.js';
 import { loadScope, isScopeActive, getScopePath } from '../store/scope.js';
+import { canUseTui } from '../tui/can-use-tui.js';
+import {
+  UI_CUTOVER_STAGE,
+  describeUiDefault,
+  resolveUiChoice,
+} from '../tui-v2/bootstrap/ui-selection.js';
 import { printProviderKeys } from './providers.js';
 
 const pentestTools = [
@@ -23,6 +29,21 @@ export async function runDoctor(): Promise<void> {
   console.log(`CWD: ${system.cwd}`);
   console.log(`Config: ${getConfigPath()}`);
   console.log(`History: ${getHistoryPath()}`);
+  const tuiGate = canUseTui();
+  const resolvedUi = resolveUiChoice({});
+  console.log(
+    `UI default: ${describeUiDefault()} ${chalk.dim(`(cutover=${UI_CUTOVER_STAGE})`)}`,
+  );
+  console.log(
+    `UI resolved now: ${resolvedUi}` +
+      (process.env.CLAI_UI ? chalk.dim(` (CLAI_UI=${process.env.CLAI_UI})`) : ''),
+  );
+  console.log(
+    `UI host: ${tuiGate.ok ? chalk.green('ok for full-screen TUI') : chalk.yellow(`unavailable — ${tuiGate.reason}`)}`,
+  );
+  console.log(
+    chalk.dim('  opt-in OpenTUI: clai --ui=v2  ·  rollback: --ui=tui | --ui=legacy | --classic'),
+  );
   const keychain = await probeKeychain();
   if (keychain.available) {
     console.log(`Keychain: ${chalk.green('available')} (OS keystore)`);

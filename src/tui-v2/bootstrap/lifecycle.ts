@@ -31,10 +31,18 @@ export interface LifecycleOptions {
   readonly disposers?: readonly Disposer[] | undefined;
   /** Surfaced errors from signals/uncaught exceptions before shutdown. */
   readonly onError?: ((error: unknown) => void) | undefined;
+  /**
+   * Optional cooperative first-SIGINT hook (e.g. abort the agent). A second
+   * SIGINT within {@link SIGINT_QUIT_WINDOW_MS} still shuts down and exits so
+   * `kill -INT` remains a reliable way to leave the TUI.
+   */
+  readonly onSigint?: (() => void) | undefined;
 }
 
+/** Double-SIGINT quit window — matches the App Ctrl+C exit window. */
+export const SIGINT_QUIT_WINDOW_MS = 1500;
+
 const FATAL_SIGNALS: Record<string, number> = {
-  SIGINT: 130,
   SIGTERM: 143,
   SIGHUP: 129,
 };
@@ -45,6 +53,7 @@ export class RendererLifecycle {
   private started = false;
   private shuttingDown = false;
   private destroyed = false;
+  private lastSigintAt = 0;
   private readonly listeners: Array<{
     event: string;
     fn: (...args: unknown[]) => void;
@@ -103,6 +112,25 @@ export class RendererLifecycle {
   }
 
   private installHandlers(): void {
+    // SIGINT is cooperative: first press aborts / arms quit, second exits.
+    // Immediate-exit on SIGINT made the first Ctrl+C kill clai even when the
+    // App only wanted to abort the agent.
+    this.addListener("SIGINT", () => {
+      const now = Date.now();
+      if (
+        this.lastSigintAt > 0 &&
+        now - this.lastSigintAt < SIGINT_QUIT_WINDOW_MS
+      ) {
+        void this.shutdownAndExit(130);
+        return;
+      }
+      this.lastSigintAt = now;
+      try {
+        this.options.onSigint?.();
+      } catch (error) {
+        this.options.onError?.(error);
+      }
+    });
     for (const [signal, code] of Object.entries(FATAL_SIGNALS)) {
       this.addListener(signal, () => {
         void this.shutdownAndExit(code);

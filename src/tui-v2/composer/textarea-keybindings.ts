@@ -26,9 +26,12 @@ const ENTER_NAMES = ["return", "kpenter"] as const;
 export function buildComposerTextareaOverrides(): TextareaKeyBindingLike[] {
   const overrides: TextareaKeyBindingLike[] = [];
   for (const name of ENTER_NAMES) {
+    // Bare Enter → submit. Newline chords cover every OS/terminal that can
+    // report a modifier on Return (Shift, Alt/Option/meta, Ctrl).
     overrides.push({ name, action: "submit" });
     overrides.push({ name, shift: true, action: "newline" });
     overrides.push({ name, meta: true, action: "newline" });
+    overrides.push({ name, ctrl: true, action: "newline" });
   }
   return overrides;
 }

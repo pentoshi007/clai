@@ -47,12 +47,16 @@ function binding(
 
 export const defaultKeymap: readonly KeyBinding[] = [
   // global
-  binding("ctrl+c", "app.cancel", "global"),
+  // Ctrl+C: abort-then-quit (double press). Esc: abort/dismiss only — never quit.
+  binding("ctrl+c", "app.interrupt", "global"),
+  binding("escape", "app.cancel", "global"),
   binding("ctrl+d", "app.quit", "global"),
   binding("ctrl+g", "app.help", "global"),
   binding("ctrl+h", "app.toggle-plan", "global"),
   binding("ctrl+p", "plan.toggle-detail", "global"),
   binding("ctrl+j", "app.jobs", "global"),
+  binding("ctrl+t", "transcript.toggle-thinking", "global"),
+  binding("ctrl+o", "transcript.toggle-output", "global"),
   binding("tab", "focus.next-region", "global"),
 
   // composer
@@ -70,8 +74,20 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("pagedown", "transcript.page-down", "transcript"),
   binding("g", "transcript.top", "transcript"),
   binding("shift+g", "transcript.bottom", "transcript"),
-  binding("ctrl+f", "transcript.search", "transcript"),
+  binding("ctrl+r", "transcript.search", "transcript"),
   binding("enter", "transcript.expand-toggle", "transcript"),
+  // Terminals that reserve Ctrl+C for copy use Ctrl+Shift+C for selection copy.
+  binding("ctrl+shift+c", "selection.copy", "transcript"),
+  binding("escape", "selection.clear", "transcript"),
+  binding("ctrl+a", "selection.select-all", "transcript"),
+  binding("shift+left", "selection.extend-left", "transcript"),
+  binding("shift+right", "selection.extend-right", "transcript"),
+  binding("shift+up", "selection.extend-up", "transcript"),
+  binding("shift+down", "selection.extend-down", "transcript"),
+  binding("ctrl+shift+left", "selection.extend-word-left", "transcript"),
+  binding("ctrl+shift+right", "selection.extend-word-right", "transcript"),
+  binding("shift+home", "selection.extend-line-start", "transcript"),
+  binding("shift+end", "selection.extend-line-end", "transcript"),
 
   // picker
   binding("up", "picker.up", "picker"),
@@ -92,6 +108,41 @@ export const defaultKeymap: readonly KeyBinding[] = [
   // transcript search
   binding("escape", "picker.dismiss", "transcript-search"),
   binding("enter", "picker.accept", "transcript-search"),
+
+  // pager
+  binding("up", "pager.line-up", "pager"),
+  binding("k", "pager.line-up", "pager"),
+  binding("down", "pager.line-down", "pager"),
+  binding("j", "pager.line-down", "pager"),
+  binding("pageup", "pager.page-up", "pager"),
+  binding("pagedown", "pager.page-down", "pager"),
+  binding("ctrl+u", "pager.half-page-up", "pager"),
+  binding("ctrl+d", "pager.half-page-down", "pager"),
+  binding("g", "pager.top", "pager"),
+  binding("shift+g", "pager.bottom", "pager"),
+  binding("ctrl+r", "pager.search", "pager"),
+  binding("n", "pager.next-match", "pager"),
+  binding("shift+n", "pager.prev-match", "pager"),
+  // Many terminals drop Shift on Ctrl chords, so bind both forms. Bare `s`
+  // is also available (pager traps input; no conflict with transcript search).
+  binding("ctrl+shift+s", "pager.export-scrollback", "pager"),
+  binding("ctrl+s", "pager.export-scrollback", "pager"),
+  binding("s", "pager.export-scrollback", "pager"),
+  binding("ctrl+shift+e", "pager.export-editor", "pager"),
+  binding("ctrl+e", "pager.export-editor", "pager"),
+  binding("e", "pager.export-editor", "pager"),
+  binding("c", "pager.copy", "pager"),
+  binding("q", "pager.close", "pager"),
+  binding("escape", "pager.close", "pager"),
+
+  // jobs
+  binding("up", "jobs.up", "jobs"),
+  binding("down", "jobs.down", "jobs"),
+  binding("enter", "jobs.tail", "jobs"),
+  binding("t", "jobs.tail", "jobs"),
+  binding("k", "jobs.stop", "jobs"),
+  binding("q", "jobs.close", "jobs"),
+  binding("escape", "jobs.close", "jobs"),
 ];
 
 export function validateKeymap(

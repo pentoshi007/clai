@@ -51,9 +51,15 @@ export const CHAT_MIN_WIDTH_SPLIT = 72;
 export const DIVIDER_WIDTH = 1;
 export const MIN_CHAT_ROWS = 6;
 export const STATUS_HEIGHT = 1;
-export const COMPOSER_MAX_HEIGHT = 6;
+/**
+ * Cap on editable composer text rows (not including border chrome).
+ * Grows with Shift+Enter / wrap up to this; classic could take most of the
+ * terminal — 16 keeps multi-line usable without eating the transcript.
+ */
+export const COMPOSER_MAX_HEIGHT = 16;
 export const COMPOSER_MIN_HEIGHT = 1;
-export const COMPOSER_PREFERRED_HEIGHT = 3;
+/** Single editable line by default (classic Ink). Grows only if content needs it. */
+export const COMPOSER_PREFERRED_HEIGHT = 1;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -81,6 +87,26 @@ function computeVertical(rows: number): {
   showOptionalChrome: boolean;
 } {
   const usableRows = Math.max(rows, 0);
+  // Pathological heights: never allocate more rows than the terminal has.
+  if (usableRows === 0) {
+    return {
+      statusHeight: 0,
+      composerHeight: 0,
+      chatHeight: 0,
+      chatY: 0,
+      showOptionalChrome: false,
+    };
+  }
+  if (usableRows === 1) {
+    return {
+      statusHeight: 0,
+      composerHeight: 1,
+      chatHeight: 0,
+      chatY: 0,
+      showOptionalChrome: false,
+    };
+  }
+
   const statusHeight = usableRows >= STATUS_HEIGHT ? STATUS_HEIGHT : 0;
   let composerHeight = COMPOSER_PREFERRED_HEIGHT;
 
@@ -90,12 +116,14 @@ function computeVertical(rows: number): {
 
   if (!showOptionalChrome) {
     // Shrink the composer (optional multi-line height is chrome) so chat keeps
-    // its floor; never drop the composer below a single editable line.
-    const nonComposer = statusHeight + MIN_CHAT_ROWS;
+    // its floor; never drop the composer below a single editable line, and
+    // never exceed the remaining rows after status.
+    const remaining = Math.max(usableRows - statusHeight, 0);
+    const nonComposer = Math.min(MIN_CHAT_ROWS, Math.max(remaining - COMPOSER_MIN_HEIGHT, 0));
     composerHeight = clamp(
-      usableRows - nonComposer,
-      COMPOSER_MIN_HEIGHT,
-      COMPOSER_PREFERRED_HEIGHT,
+      remaining - nonComposer,
+      Math.min(COMPOSER_MIN_HEIGHT, remaining),
+      Math.min(COMPOSER_PREFERRED_HEIGHT, remaining),
     );
   }
 

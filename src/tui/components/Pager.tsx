@@ -64,7 +64,7 @@ export function Pager({ title, body, height, onClose }: PagerProps) {
         <Text bold color="cyan">{title}</Text>
         <Text dimColor>{`${off + 1}-${Math.min(off + viewport, lines.length)} / ${lines.length} · ${pct}%`}</Text>
       </Box>
-      <Text dimColor>↑/↓ or j/k scroll · PgUp/PgDn page · g/G jump · q/Esc close</Text>
+      <Text dimColor>↑↓/jk:scroll  ·  pg↑↓:page  ·  g/G:jump  ·  q/esc:close</Text>
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
         {visible.map((line, i) => (
           <Text key={off + i} wrap="truncate-end" backgroundColor="black">

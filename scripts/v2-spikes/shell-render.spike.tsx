@@ -73,9 +73,14 @@ export async function runShellRenderSpike(): Promise<SpikeResult> {
     await setup.flush();
     const wide = setup.captureCharFrame();
     check(result, "wide frame is non-blank", compact(wide).length > 0);
-    check(result, "wide frame shows status line", wide.includes("clai"));
-    check(result, "wide frame shows provider in status", wide.includes("groq"));
-    check(result, "wide frame labels the composer", wide.includes("Composer"));
+    check(result, "wide frame has no status strip", !/^clai ·/m.test(wide));
+    check(result, "wide frame has no Chat chrome title", !wide.includes("Chat"));
+    check(result, "wide frame has no Composer chrome title", !wide.includes("Composer"));
+    check(result, "wide frame shows intro model card", wide.includes("model"));
+    check(result, "wide frame shows intro welcome", wide.includes("Welcome to clai"));
+    check(result, "wide frame shows mode badge", wide.includes("AGENT MODE"));
+    check(result, "wide frame shows provider on intro card", wide.includes("groq"));
+    check(result, "wide frame no longer shows empty placeholder", !wide.includes("No messages yet"));
     check(
       result,
       "wide frame height matches terminal",
@@ -86,7 +91,8 @@ export async function runShellRenderSpike(): Promise<SpikeResult> {
     await setup.flush();
     const single = setup.captureCharFrame();
     check(result, "single-column frame non-blank after resize", compact(single).length > 0);
-    check(result, "single-column status is condensed (no provider)", !single.includes("groq"));
+    check(result, "single-column has no status strip", !/^clai ·/m.test(single));
+    check(result, "single-column intro still shows provider", single.includes("groq"));
 
     setup.resize(70, 16);
     await setup.flush();

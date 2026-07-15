@@ -30,11 +30,26 @@ import {
 } from "../../app/commands/registry.js";
 import { ActionRouter } from "../actions/action-router.js";
 import { FocusController } from "../controllers/focus-controller.js";
+import { SelectionController } from "../controllers/selection-controller.js";
+import { ToastController } from "../controllers/toast-controller.js";
+import { OverlayController } from "../controllers/overlay-controller.js";
+import { TranscriptStore } from "../state/transcript-store.js";
+import { serializeForHistory } from "../state/transcript-hydrate.js";
+import { PlanController } from "../../app/controllers/plan-controller.js";
+import type { PagerExportPort } from "./pager-export.js";
+import { createOverlayConfirmPort, createOverlaySecretPort } from "./overlay-ports.js";
 import {
   detectCapabilities,
   readCapabilitiesFromProcess,
   type TerminalCapabilityReport,
 } from "./capabilities.js";
+
+function noopPagerExportPort(): PagerExportPort {
+  return {
+    exportToScrollback: () => ({ ok: false, error: "no renderer attached" }),
+    exportToEditor: async () => ({ ok: false, error: "no renderer attached" }),
+  };
+}
 
 export interface AppPorts {
   readonly agent: AgentPort;
@@ -56,9 +71,16 @@ export interface CompositionOptions {
   readonly requestSecret?: SecretPort["request"] | undefined;
   readonly emit?: ((event: AnyAppEvent) => void) | undefined;
   readonly capabilities?: TerminalCapabilityReport | undefined;
+  /** SEL-006: auto-copy a non-empty mouse selection on release. Default true. */
+  readonly copyOnRelease?: boolean | undefined;
+  readonly pagerExport?: PagerExportPort | undefined;
+  /** Signals the renderer to tear down and exit (Ctrl+D / second Ctrl+C). */
+  readonly requestExit?: (() => void) | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly mode?: Mode | undefined;
+  /** Skip session persistence + AI titles (CLI --no-history). */
+  readonly noHistory?: boolean | undefined;
   readonly sessionId?: string | undefined;
   readonly idFactory?: IdFactory | undefined;
   readonly clock?: Clock | undefined;
@@ -70,6 +92,16 @@ export interface AppServices {
   readonly session: SessionController;
   readonly focus: FocusController;
   readonly router: ActionRouter;
+  /** Single owner for pane-scoped semantic selection and copy requests. */
+  readonly selection: SelectionController;
+  /** Ephemeral right-edge toasts (copy confirmation, short status). */
+  readonly toast: ToastController;
+  readonly transcript: TranscriptStore;
+  readonly plan: PlanController;
+  /** Single owner for the one blocking overlay (picker/confirm/secret/pager/jobs). */
+  readonly overlay: OverlayController;
+  readonly pagerExport: PagerExportPort;
+  readonly requestExit: () => void;
   readonly capabilities: TerminalCapabilityReport;
   /** Events captured when no external `emit` sink is supplied (test aid). */
   readonly recordedEvents: readonly AnyAppEvent[];
@@ -80,18 +112,41 @@ export function createCompositionRoot(
   options: CompositionOptions = {},
 ): AppServices {
   const recorded: AnyAppEvent[] = [];
-  const emit = options.emit ?? ((event) => void recorded.push(event));
+  const transcript = new TranscriptStore();
+  const persistence = options.persistence ?? createCurrentPersistencePort();
+  const plan = new PlanController(persistence);
+  const externalEmit = options.emit;
+  // The transcript store and plan controller observe every event
+  // unconditionally; the recorder/external sink split below is unrelated to
+  // that (it is only about where raw AppEvents surface for tests/consumers).
+  const emit = (event: AnyAppEvent): void => {
+    transcript.dispatch(event);
+    plan.observe(event);
+    if (externalEmit) externalEmit(event);
+    else recorded.push(event);
+  };
+
+  const focus = new FocusController();
+  const overlay = new OverlayController(focus);
 
   const ports: AppPorts = {
     agent: options.agent ?? createCurrentAgentPort(),
-    persistence: options.persistence ?? createCurrentPersistencePort(),
+    persistence,
     jobs: options.jobs ?? createCurrentJobsPort(),
     updates: options.updates ?? createCurrentUpdatesPort(),
     clipboard: options.clipboard ?? createInMemoryClipboardPort(),
-    confirm: options.confirm,
-    requestSecret: options.requestSecret,
+    confirm: options.confirm ?? createOverlayConfirmPort(overlay),
+    requestSecret: options.requestSecret ?? createOverlaySecretPort(overlay),
   };
+  const toast = new ToastController();
+  // Auto-copy-on-release disabled — it fought touch/focus/history.
+  // Explicit copy remains via Ctrl+Shift+C (selection.copy).
+  const selection = new SelectionController(ports.clipboard, {
+    copyOnRelease: options.copyOnRelease ?? false,
+  });
 
+  // Late-bound: session is constructed below; snapshot closes over it.
+  let sessionRef: SessionController | undefined;
   const session = new SessionController({
     agent: ports.agent,
     persistence: ports.persistence,
@@ -104,11 +159,18 @@ export function createCompositionRoot(
     sessionId: options.sessionId,
     idFactory: options.idFactory,
     clock: options.clock,
+    noHistory: options.noHistory,
+    getTranscriptSnapshot: () => {
+      const live = sessionRef;
+      if (!live) return undefined;
+      return serializeForHistory(transcript.getState(), (id) => live.spool.tail(id));
+    },
   });
+  sessionRef = session;
 
   const commands = buildDefaultCommandRegistry();
-  const focus = new FocusController();
   const router = new ActionRouter();
+  const pagerExport = options.pagerExport ?? noopPagerExportPort();
   const capabilities =
     options.capabilities ??
     (typeof process !== "undefined"
@@ -128,11 +190,22 @@ export function createCompositionRoot(
     session,
     focus,
     router,
+    selection,
+    toast,
+    transcript,
+    plan,
+    overlay,
+    pagerExport,
+    requestExit: options.requestExit ?? (() => {}),
     capabilities,
     recordedEvents: recorded,
     dispose() {
       if (disposed) return;
       disposed = true;
+      overlay.dispose();
+      selection.dispose();
+      toast.dispose();
+      plan.dispose();
       session.dispose();
     },
   };

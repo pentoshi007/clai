@@ -36,8 +36,7 @@ import {
 } from "./ui/thinking.js";
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { canUseTui } from "./tui/can-use-tui.js";
-import { shouldUseTui } from "./tui/default.js";
-import { isV2Requested } from "./tui-v2/bootstrap/ui-selection.js";
+import { resolveUiChoice } from "./tui-v2/bootstrap/ui-selection.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -73,7 +72,9 @@ async function oneShot(
   const model = options.model ?? getProviderModel(activeProvider);
 
   if (!prompt) {
-    if (isV2Requested(options)) {
+    // Phase 10: single resolution path (opt-in v2 today; default-v2 when stage flips).
+    const ui = resolveUiChoice(options);
+    if (ui === "v2") {
       const gate = canUseTui();
       if (gate.ok) {
         const { startTuiV2 } = await import("./tui-v2/bootstrap/start-tui-v2.js");
@@ -86,12 +87,23 @@ async function oneShot(
         return;
       }
       console.error(
-        chalk.dim(`  v2 UI unavailable (${gate.reason}); using classic REPL.`),
+        chalk.dim(`  v2 UI unavailable (${gate.reason}); falling back to Ink TUI.`),
       );
+      const inkGate = canUseTui();
+      if (inkGate.ok) {
+        const { startTui } = await import("./tui/index.js");
+        await startTui({
+          mode,
+          provider,
+          model,
+          noHistory: options.noHistory,
+        });
+        return;
+      }
       await startRepl({ mode, provider, model, noHistory: options.noHistory });
       return;
     }
-    if (shouldUseTui(options)) {
+    if (ui === "tui") {
       const gate = canUseTui();
       if (gate.ok) {
         const { startTui } = await import("./tui/index.js");
@@ -188,12 +200,12 @@ async function main(): Promise<void> {
       "--no-history",
       "do not persist this session to history (in-memory only)",
     )
-    .option("--tui", "launch the full-screen terminal UI (default)")
+    .option("--tui", "launch the Ink full-screen TUI (current default)")
     .option("--classic", "launch the legacy line-based REPL")
     .addOption(
       new Option(
         "--ui <mode>",
-        "select the interactive frontend (v2 is opt-in and experimental)",
+        "select the interactive frontend: tui (Ink, default), v2 (OpenTUI opt-in), legacy (line REPL)",
       ).choices(["legacy", "tui", "v2"]),
     )
     .argument("[prompt...]", "one-shot prompt")

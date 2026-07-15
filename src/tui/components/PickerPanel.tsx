@@ -122,9 +122,9 @@ export function PickerPanel({
   });
 
   // In two-line mode each row spans a name line plus a dim meta line, so half
-  // as many rows fit. The remaining lines cover the border and the 3-line header.
+  // as many rows fit. Remaining lines cover border + header (title/filter/hint/rule/gap).
   const linesPerItem = twoLine ? 2 : 1;
-  const pageSize = Math.max(1, Math.floor((height - 6) / linesPerItem));
+  const pageSize = Math.max(1, Math.floor((height - 8) / linesPerItem));
   const safeSelected = Math.min(selected, Math.max(0, filtered.length - 1));
   const start = Math.max(0, Math.min(safeSelected - Math.floor(pageSize / 2), filtered.length - pageSize));
   const visible = filtered.slice(start, start + pageSize);
@@ -134,10 +134,11 @@ export function PickerPanel({
       <Text bold color="magenta">{title}</Text>
       <Text>
         <Text color="cyan">filter › </Text>
-        {query ? <Text color="white">{query}</Text> : <Text dimColor>type to search</Text>}
+        {query ? <Text color="white">{query}</Text> : <Text dimColor>type:filter</Text>}
         <Text dimColor>{`  ·  ${filtered.length}/${options.length}`}</Text>
       </Text>
-      <Text dimColor>↑/↓ select · type filters · backspace edits · ctrl+u clears · enter confirm · esc close</Text>
+      <Text dimColor>↑↓:select  ·  type:filter  ·  ⌫:edit  ·  ^u:clear  ·  enter:confirm  ·  esc:close</Text>
+      <Text color="#334155">{"─".repeat(48)}</Text>
       {filtered.length === 0 ? <Text color="yellow">No matches</Text> : null}
       {visible.map((item, index) => {
         const absolute = start + index;

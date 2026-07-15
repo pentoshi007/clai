@@ -25,8 +25,16 @@ describe("buildComposerTextareaOverrides", () => {
     });
   });
 
-  it("never leaves Ctrl+J bound to newline (jobs owns it globally)", () => {
+  it("binds Ctrl+Enter to newline as a cross-OS fallback", () => {
+    expect(overrides).toContainEqual({
+      name: "return",
+      ctrl: true,
+      action: "newline",
+    });
+  });
+
+  it("never leaves Ctrl+J / linefeed bound to newline (jobs owns it globally)", () => {
     expect(overrides.some((o) => o.name === "linefeed")).toBe(false);
-    expect(overrides.some((o) => o.ctrl)).toBe(false);
+    expect(overrides.some((o) => o.name === "j" && o.ctrl)).toBe(false);
   });
 });

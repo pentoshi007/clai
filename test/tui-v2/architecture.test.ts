@@ -8,16 +8,55 @@ const tuiV2Root = join(here, "..", "..", "src", "tui-v2");
 
 /**
  * The renderer-independent core of the v2 UI (layout, actions, capabilities,
- * lifecycle, composition root, ui-selection) must not import the renderer
- * framework — only `src/tui-v2/app/**` and `bootstrap/start-tui-v2.ts` may.
- * This keeps the application/controller logic testable under Node and
- * swappable behind the same ports if the adapter ever changes.
+ * lifecycle, composition root, ui-selection, transcript/plan store/reducer)
+ * must not import the renderer framework — only the shell (`app/**`), the
+ * composer/transcript/picker/modal/pager/jobs/plan/overlay renderable
+ * adapters, and the React store bindings may. This keeps the application/
+ * controller/reducer logic testable under Node and swappable behind the same
+ * ports if the adapter ever changes. `pager-export.ts` is a deliberate,
+ * narrow exception to the raw-terminal-write rule: exporting pager content to
+ * real scrollback/`$EDITOR` needs the actual stdout, gated behind the
+ * `RendererSuspendPort` it's injected rather than importing `@opentui/*`.
  */
 const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "app", "App.tsx"),
   join(tuiV2Root, "app", "providers.tsx"),
   join(tuiV2Root, "bootstrap", "start-tui-v2.ts"),
+  join(tuiV2Root, "bootstrap", "disable-native-selection.ts"),
+  join(tuiV2Root, "bootstrap", "pager-export.ts"),
+  join(tuiV2Root, "components", "transcript", "use-native-selection-copy.ts"),
+  join(tuiV2Root, "components", "transcript", "use-click-without-drag.ts"),
+  join(tuiV2Root, "components", "toast", "toast-host.tsx"),
+  join(tuiV2Root, "state", "use-toast.ts"),
   join(tuiV2Root, "composer", "composer-editor.tsx"),
+  join(tuiV2Root, "rendering", "ansi-to-styled.ts"),
+  join(tuiV2Root, "state", "use-transcript-store.ts"),
+  join(tuiV2Root, "state", "use-plan.ts"),
+  join(tuiV2Root, "state", "use-overlay.ts"),
+  join(tuiV2Root, "state", "use-session-state.ts"),
+  join(tuiV2Root, "components", "transcript", "user-message.tsx"),
+  join(tuiV2Root, "components", "transcript", "assistant-message.tsx"),
+  join(tuiV2Root, "components", "transcript", "thinking-block.tsx"),
+  join(tuiV2Root, "components", "transcript", "tool-card.tsx"),
+  join(tuiV2Root, "components", "transcript", "notice-row.tsx"),
+  join(tuiV2Root, "components", "transcript", "compacted-row.tsx"),
+  join(tuiV2Root, "components", "transcript", "transcript-row.tsx"),
+  join(tuiV2Root, "components", "transcript", "search-bar.tsx"),
+  join(tuiV2Root, "components", "transcript", "transcript-view.tsx"),
+  join(tuiV2Root, "components", "transcript", "linkable-text.tsx"),
+  join(tuiV2Root, "components", "transcript", "use-transcript-selection.ts"),
+  join(tuiV2Root, "components", "transcript", "intro-card.tsx"),
+  join(tuiV2Root, "components", "completion", "completion-menu.tsx"),
+  join(tuiV2Root, "components", "status", "status-line.tsx"),
+  join(tuiV2Root, "components", "queue", "queue-panel.tsx"),
+  join(tuiV2Root, "components", "picker", "picker.tsx"),
+  join(tuiV2Root, "components", "modal", "confirm-modal.tsx"),
+  join(tuiV2Root, "components", "modal", "secret-modal.tsx"),
+  join(tuiV2Root, "components", "modal", "prompt-actions-modal.tsx"),
+  join(tuiV2Root, "components", "pager", "pager.tsx"),
+  join(tuiV2Root, "components", "jobs", "jobs-panel.tsx"),
+  join(tuiV2Root, "components", "plan", "plan-view.tsx"),
+  join(tuiV2Root, "components", "overlay", "overlay-host.tsx"),
 ]);
 
 function walk(dir: string): string[] {

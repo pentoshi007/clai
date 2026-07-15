@@ -632,8 +632,8 @@ async function pickModelInteractively(
   }
 
   const header = fetchedDynamically
-    ? chalk.dim(`  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`)
-    : chalk.dim(`  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`);
+    ? chalk.dim(`  ↑↓:navigate  ·  type:filter  ·  tab:fill  ·  enter:select  ·  esc:cancel`)
+    : chalk.dim(`  ↑↓:navigate  ·  type:filter  ·  tab:fill  ·  enter:select  ·  esc:cancel`);
 
   const items = models.map((model, index) => {
     const tags: string[] = [];
@@ -954,7 +954,7 @@ async function handleSlash(
         const picked = await pickInline({
           items,
           header: chalk.dim(
-            "  ↑/↓ navigate · Enter to select · ESC to cancel",
+            "  ↑↓:navigate  ·  enter:select  ·  esc:cancel",
           ),
           pageSize: allEfforts.length,
         });
@@ -1076,7 +1076,7 @@ async function handleSlash(
       const selectedId = await pickInline({
         items,
         header: chalk.dim(
-          `  ↑/↓ navigate · type to filter · Enter to resume · ESC to cancel`,
+          `  ↑↓:navigate  ·  type:filter  ·  enter:resume  ·  esc:cancel`,
         ),
         pageSize: Math.min(15, items.length),
       });
@@ -1574,6 +1574,7 @@ async function handleSlash(
           model: state.model,
           provider: state.provider,
           mode: state.mode,
+          permissions: getConfig().permissions ?? "default",
         }),
       );
       console.log();
@@ -1784,6 +1785,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       model: state.model,
       provider: state.provider,
       mode: state.mode,
+      permissions: getConfig().permissions ?? "default",
     }),
   );
   console.log();

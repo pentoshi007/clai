@@ -25,6 +25,12 @@ export function estimateMessagesTokens(messages: ChatMessage[]): number {
   return sum;
 }
 
+/**
+ * Agent-loop auto-compact threshold (estimated tokens). Shared with `/context`
+ * so the reported % of budget matches when auto-compaction fires.
+ */
+export const AUTO_COMPACT_TOKEN_BUDGET = 150_000;
+
 export interface CompactOptions {
   /** Soft budget (tokens). When estimated tokens exceed this, compact. */
   budgetTokens?: number | undefined;
@@ -171,11 +177,19 @@ export async function compactMessagesWithSummary(
       return `${message.role.toUpperCase()}: ${content}`;
     })
     .join("\n\n");
-  const transcript = sessionTranscript?.trim()
+  // Prefer combining visual session material (tools/prompts) with older model
+  // turns so /compact after /history + new messages never loses either side.
+  const visual = sessionTranscript?.trim()
     ? redactSecrets(sessionTranscript.trim())
-    : messageTranscript;
+    : "";
+  const fromMessages = messageTranscript.trim();
+  const transcript =
+    visual && fromMessages
+      ? `${visual}\n\n---\n\nOLDER MODEL TURNS:\n\n${fromMessages}`
+      : visual || fromMessages;
   const prompt = [
     "Create a complete but compact continuation memory of the entire session below for another assistant that will continue it.",
+    "The material may include a resumed history session plus newer turns — treat it as one continuous conversation.",
     "Preserve user intentions and prompts, decisions, constraints, file paths, commands/tools run, steps taken, task states, outputs and results, errors and failed approaches, completed work, and exactly what remains.",
     "Organize the memory under concise sections: User goals, Decisions and constraints, Work completed, Commands/tools and results, Current state, Remaining work.",
     "Do not add facts, commentary, or markdown framing. Be concise but specific. Never include secrets or credentials.",

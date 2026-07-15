@@ -37,7 +37,7 @@ export function SecretInputPanel({
       <Text color="yellow" bold inverse> SECURE INPUT · {title.toUpperCase()} </Text>
       <Text>{prompt}</Text>
       <Text><Text color="yellow">password › </Text>{"•".repeat(value.length)}<Text inverse> </Text></Text>
-      <Text dimColor>Enter submits · Esc cancels · input is never saved or displayed</Text>
+      <Text dimColor>enter:submit  ·  esc:cancel  ·  never saved or displayed</Text>
     </Box>
   );
 }

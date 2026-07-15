@@ -69,19 +69,22 @@ export class AgentEventAdapter {
         return;
       case "tool-call":
         this.push("tool-call", {
-          toolCallId: asToolCallId(event.id),
+          toolCallId: this.toolCallId(event.id),
           name: event.name,
           argsDisplay: event.argsDisplay,
         });
         return;
       case "tool-output": {
-        const ref = this.spool.append(asToolCallId(event.id), event.chunk);
+        const id = this.toolCallId(event.id);
+        const ref = event.replace
+          ? this.spool.replace(id, event.chunk)
+          : this.spool.append(id, event.chunk);
         this.push("tool-output", { ref });
         return;
       }
       case "tool-result":
         this.push("tool-result", {
-          toolCallId: asToolCallId(event.id),
+          toolCallId: this.toolCallId(event.id),
           ok: event.ok,
           exitCode: event.exitCode,
           summary: event.summary,
@@ -90,7 +93,7 @@ export class AgentEventAdapter {
         return;
       case "tool-blocked":
         this.push("tool-blocked", {
-          toolCallId: asToolCallId(event.id),
+          toolCallId: this.toolCallId(event.id),
           name: event.name,
           reason: event.reason,
         });
@@ -144,5 +147,15 @@ export class AgentEventAdapter {
     // prove a generic member is assignable to the distributive `AnyAppEvent`
     // union; the narrowing is sound because K ranges over the same keys.
     this.emit(this.sequencer.build(type, payload, this.turnId) as AnyAppEvent);
+  }
+
+  /**
+   * Legacy agents restart their display counter at `tool-1` for every turn.
+   * It is only locally unique, while the transcript and output spool retain a
+   * whole session. Namespace it at the application boundary so tool rows and
+   * output stay correlated without ever reusing a semantic document id.
+   */
+  private toolCallId(sourceId: string) {
+    return asToolCallId(this.turnId ? `${this.turnId}:${sourceId}` : sourceId);
   }
 }

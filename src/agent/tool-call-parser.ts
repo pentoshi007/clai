@@ -279,6 +279,59 @@ function parseKimiToolCall(text: string): ToolCall | undefined {
   return tryParseCall(JSON.stringify({ name, args: tryJson(match[2]!) ?? {} }));
 }
 
+/**
+ * GLM / Tencent / some OpenAI-compat gateways emit:
+ *   <tool_calls:6124c78e>
+ *   <tool_call:6124c78e>web.search
+ *   {"query":"…"}
+ *   </tool_call:6124c78e>
+ *   </tool_calls:6124c78e>
+ * Closing tags and the outer wrapper are optional on truncated streams.
+ * Name may sit on the same line as the opener or the next line; args are a
+ * balanced JSON object (bare args, not necessarily {"name","args"} wrapper).
+ */
+const ID_TOOL_CALL_RE =
+  /<tool_call:([A-Za-z0-9_-]+)>\s*([\w.-]+)\s*/gi;
+
+function parseIdTaggedToolCall(text: string): ToolCall | undefined {
+  const match = /<tool_call:([A-Za-z0-9_-]+)>\s*([\w.-]+)\s*/i.exec(text);
+  if (!match) return undefined;
+  const name = match[2]!;
+  const after = text.slice(match.index + match[0].length);
+  const json = extractBalancedJson(after);
+  if (json) {
+    const parsed = tryJson(json);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      // Full {"name","args"} form inside the block.
+      if (typeof obj.name === "string" && obj.args && typeof obj.args === "object") {
+        return tryParseCall(json);
+      }
+      // Bare args object: {"query":"…"}
+      return { name, args: obj };
+    }
+  }
+  // No-args tool (e.g. net.context / sysinfo)
+  if (/^[\s\n]*(?:<\/tool_call|$)/i.test(after) || after.trim() === "") {
+    return { name, args: {} };
+  }
+  return { name, args: {} };
+}
+
+function parseAllIdTaggedToolCalls(
+  text: string,
+): Array<{ index: number; call: ToolCall }> {
+  const found: Array<{ index: number; call: ToolCall }> = [];
+  const re = new RegExp(ID_TOOL_CALL_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const slice = text.slice(m.index);
+    const call = parseIdTaggedToolCall(slice);
+    if (call) found.push({ index: m.index, call });
+  }
+  return found;
+}
+
 // Recognized XML-ish tool-call wrappers some models emit (with or without a
 // matching close tag). Used so we can recover a call even when the model
 // forgot the closing tag, while plain prose never matches.
@@ -503,6 +556,10 @@ export function stripSentinelTokens(text: string): string {
     .replace(/<\|tool_calls?(?:_section)?_(?:begin|end)\|>/gi, "")
     .replace(/<\|tool_call_argument_begin\|>/gi, "")
     .replace(/<\|tool_[a-z_]*\|>/gi, "")
+    // GLM/Tencent id-tagged blocks (and bare openers left after a partial strip).
+    .replace(/<tool_calls:[A-Za-z0-9_-]+>[\s\S]*?(?:<\/tool_calls:[A-Za-z0-9_-]+>|$)/gi, "")
+    .replace(/<tool_call:[A-Za-z0-9_-]+>[\s\S]*?(?:<\/tool_call:[A-Za-z0-9_-]+>|$)/gi, "")
+    .replace(/<\/?tool_calls?:[A-Za-z0-9_-]+>/gi, "")
     .trim();
 }
 
@@ -531,6 +588,10 @@ export function parseToolCall(
   // 2. <tool_call>...</tool_call> (XML formats)
   const xmlCall = parseXmlToolCall(text);
   if (xmlCall) return xmlCall;
+
+  // 2b. <tool_call:id>name\n{args} (GLM / Tencent / some gateways)
+  const idTagged = parseIdTaggedToolCall(text);
+  if (idTagged) return idTagged;
 
   // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
   const kimi = parseKimiToolCall(text);
@@ -960,6 +1021,10 @@ export function parseAllToolCalls(text: string): ToolCall[] {
     if (call) found.push({ index: m.index, call });
   }
 
+  for (const entry of parseAllIdTaggedToolCalls(text)) {
+    found.push(entry);
+  }
+
   const kimiRe = new RegExp(KIMI_TOOL_CALL_RE.source, "gi");
   while ((m = kimiRe.exec(text)) !== null) {
     const call = tryParseCall(
@@ -1104,6 +1169,9 @@ export function textBeforeToolCall(text: string): string {
   const patterns = [
     /```tool\s*\n?[\s\S]*$/i,
     /<tool_call>[\s\S]*$/i,
+    // GLM/Tencent id-tagged tool blocks — never show raw XML as ◆ Response.
+    /<tool_calls:[A-Za-z0-9_-]+>[\s\S]*$/i,
+    /<tool_call:[A-Za-z0-9_-]+>[\s\S]*$/i,
     // Kimi/Moonshot sentinel block — strip from the section opener
     // (or the first call opener if the section header is missing).
     /<\|tool_calls_section_begin\|>[\s\S]*$/i,
@@ -1152,6 +1220,21 @@ export function formatToolArgs(call: ToolCall): string {
   if (call.name === "web.search") return String(call.args.query ?? "");
   if (call.name === "pkg.install") return String(call.args.tool ?? "");
   if (call.name === "fs.list") return String(call.args.path ?? safeCwd());
+  if (call.name === "tool.batch") {
+    // Compact summary — never dump the full nested JSON into the card header.
+    const raw = call.args.calls;
+    const list = Array.isArray(raw) ? raw : [];
+    const names = list
+      .map((entry) =>
+        entry && typeof entry === "object"
+          ? String((entry as { name?: unknown }).name ?? "")
+          : "",
+      )
+      .filter(Boolean);
+    if (names.length === 0) return `${list.length || 0} call(s)`;
+    const preview = names.slice(0, 4).join(", ");
+    return `${names.length} call(s): ${preview}${names.length > 4 ? ", …" : ""}`;
+  }
   return JSON.stringify(call.args);
 }
 
@@ -1177,7 +1260,20 @@ const STATIC_DISAMBIGUATION_RE =
   /\b(?:stand\s+for|stands\s+for|meaning|definition|define|abbreviation|centimeters?|centimetres?)\b/i;
 
 const LOCAL_RUNTIME_RE =
-  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree)|pwd|whoami|server|jobs?|process(?:es)?|ports?|localhost|git)\b/i;
+  /\b(?:current\s+(?:directory|dir|cwd|working\s+directory|folder|path|user|shell|process(?:es)?|branch|git\s+branch|network|ip|interfaces?|working\s+tree|project|repo(?:sitory)?|codebase|code|app|application|stack|setup|config|implementation|architecture|state|status|file|files|tree)|pwd|whoami|server|jobs?|process(?:es)?|ports?|localhost|git)\b/i;
+
+// Session-retrospective / in-conversation questions. Words like "now" or
+// "current" appear, but the user wants local context — not a web search.
+const SESSION_CONTEXT_RE =
+  /\b(?:so\s+far|till\s+now|until\s+now|up\s+to\s+now|what\s+do\s+(?:you|u)\s+know|what\s+have\s+you\s+(?:done|found|learned|checked)|in\s+this\s+(?:session|conversation|chat|project|repo|codebase)|this\s+(?:session|conversation|chat))\b/i;
+
+// Capability / identity questions about the agent itself.
+const SELF_CAPABILITY_RE =
+  /\b(?:what\s+can\s+you\s+do|what\s+do\s+you\s+do|your\s+capabilities|how\s+can\s+you\s+help|who\s+are\s+you|what\s+are\s+you)\b/i;
+
+// Pure social / idle turns — never force tools or freshness retries.
+const SOCIAL_OR_IDLE_PROMPT_RE =
+  /^(?:hi|hii+|hello|hey(?:\s+there)?|yo|sup|howdy|hiya|good\s+(?:morning|afternoon|evening|night)|thanks?(?:\s+you)?|thx|ty|ok(?:ay)?|cool|great|nice|awesome|perfect|bye|goodbye|see\s+ya|cheers|gm|gn|how\s+are\s+you(?:\s+doing)?|what'?s\s+up|wassup)(?:\s*[!.?]*)?$/i;
 
 // Signals that the current turn is (or continues) a coding / scaffolding
 // task. These are intentionally broad — over-budgeting a build is cheap
@@ -1327,18 +1423,101 @@ export function looksLikeInformationalQuery(prompt: string): boolean {
 const ACTION_NARRATION_RE =
   /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:explore|list|read|fetch|browse|check|inspect|examine|look|create|run|start|write|build|add|scaffold|set\s*up|setup|install|initialize|init|generate|make|review|open|find|search|verify|update|edit|modify|fix|implement|gather|assess|scan|audit)\b/i;
 
+// Web-specific upcoming action (used to pick the right recovery nudge).
+const WEB_ACTION_NARRATION_RE =
+  /\b(?:let me|let's|i'?ll|i will|i'?m going to|i am going to|i need to|i should|i'?m about to|going to|now i'?ll|first[,]?\s*i'?ll)\s+(?:now\s+|first\s+|quickly\s+|just\s+|go\s+ahead\s+and\s+)?(?:fetch|browse|search(?:\s+(?:the\s+)?(?:web|internet|online))?|look\s*up|google|open\s+(?:the\s+)?(?:page|url|site|link)|read\s+(?:the\s+)?(?:page|url|site|article|blog|docs?))\b/i;
+
+// Capability menus / offers: the model is inviting the user to pick a task,
+// not stalling mid-work. Must not trigger "act, don't narrate" recovery.
+const CAPABILITY_OFFER_RE =
+  /\b(?:what\s+do\s+you\s+(?:want|need)|what\s+would\s+you\s+(?:like|actually\s+like)|how\s+can\s+i\s+help|just\s+tell\s+me|tell\s+me\s+the\s+task|when\s+you(?:'re|\s+are)\s+ready|if\s+you\s+(?:want|need|like|have|give)|a\s+few\s+things\s+i\s+can|here'?s\s+what\s+i\s+can|i\s+can\s+(?:help|jump|assist|build|scan|investigate|research|look)|ready\s+(?:when|whenever)\s+you|what\s+would\s+you\s+(?:actually\s+)?like\s+me\s+to|i'?m\s+ready\s+to)\b/i;
+
+// After a bad recovery nudge the model often clarifies there is no real task.
+// Accept that as a final answer instead of looping more web.search nudges.
+const DENIES_PENDING_WORK_RE =
+  /\b(?:didn'?t\s+(?:actually\s+)?(?:promise|claim|make\s+any)|haven'?t\s+made\s+any|no\s+(?:pending|real)\s+(?:task|browse|research|fetch|job)|non-existent\s+(?:job|task)|there'?s\s+no\s+pending|no\s+tool\s+call\s+for\s+a\s+non)\b/i;
+
+// Soft generic offers without a concrete work object ("I'll start executing",
+// "I'll help you") — common in greetings, not mid-task stalls.
+const GENERIC_OFFER_NARRATION_RE =
+  /\b(?:i'?ll|i will|i'?m going to)\s+(?:start\s+executing|start\s+working|help(?:\s+you)?|jump\s+in|get\s+started|wait\s+for|be\s+here|stand\s+by)\b/i;
+
+// Educational framing ("I'll start with the basics", "I'll start by explaining")
+// is not a tool-call stall.
+const EDUCATIONAL_START_RE =
+  /\b(?:i'?ll|i will|i'?m going to|let me)\s+start\s+(?:with|by)\b/i;
+
+/**
+ * Detect a pure social / idle user prompt (greetings, thanks, short acks).
+ * These must never force tool use, plan workflows, or freshness retries.
+ */
+export function looksLikeIdleOrSocialPrompt(prompt: string): boolean {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (!text) return true;
+  return SOCIAL_OR_IDLE_PROMPT_RE.test(text);
+}
+
+/**
+ * True when the assistant message is a capability menu / "what do you want"
+ * invitation rather than a mid-task action stall.
+ */
+function looksLikeCapabilityMenu(text: string): boolean {
+  const bullets = (text.match(/(?:^|\n)\s*[•\-\*]|\n\s*\d+[.)]\s+/g) || [])
+    .length;
+  const asksUser =
+    /\?\s*$/m.test(text) ||
+    /\bwhat\s+(?:do|would|can)\s+you\b/i.test(text) ||
+    /\btell\s+me\s+(?:the\s+)?(?:task|what)\b/i.test(text);
+  return bullets >= 2 && asksUser;
+}
+
 /**
  * Detect a message that narrates an *upcoming* action ("let me explore the
  * directory", "I'll create the components") rather than an actual answer or
  * tool call. Used to catch models that describe intent but emit no tool call,
  * which would otherwise end the turn with nothing done. A real completion
  * summary (past tense, longer, or containing a code block) is NOT flagged.
+ *
+ * Capability offers, greetings, educational framing, and explicit denials of
+ * pending work are intentionally NOT flagged — those false positives used to
+ * burn recovery turns (and tokens) on web.search nudges after a simple "hi".
  */
 export function looksLikeActionNarration(text: string): boolean {
   const t = text.trim();
   if (t.length === 0 || t.length > 600) return false;
   if (t.includes("```")) return false;
+  if (CAPABILITY_OFFER_RE.test(t)) return false;
+  if (DENIES_PENDING_WORK_RE.test(t)) return false;
+  if (looksLikeCapabilityMenu(t)) return false;
+  if (EDUCATIONAL_START_RE.test(t) && !WEB_ACTION_NARRATION_RE.test(t)) {
+    // "I'll start with bubble sort" is teaching, not a tool stall — unless
+    // the same message also claims a concrete web fetch/search.
+    // Still allow other non-start action verbs in the same message.
+    const withoutEducational = t.replace(EDUCATIONAL_START_RE, " ");
+    if (!ACTION_NARRATION_RE.test(withoutEducational)) return false;
+  }
+  if (GENERIC_OFFER_NARRATION_RE.test(t)) {
+    // Generic offer alone is not a stall; a separate concrete action verb is.
+    const withoutOffer = t.replace(GENERIC_OFFER_NARRATION_RE, " ");
+    if (!ACTION_NARRATION_RE.test(withoutOffer)) return false;
+  }
   return ACTION_NARRATION_RE.test(t);
+}
+
+/**
+ * Narration specifically about an upcoming web/browse/search action. Used to
+ * choose the web-oriented recovery nudge instead of treating every non-build
+ * stall as a web action.
+ */
+export function looksLikeWebActionNarration(text: string): boolean {
+  const t = text.trim();
+  if (t.length === 0 || t.length > 600) return false;
+  if (t.includes("```")) return false;
+  if (CAPABILITY_OFFER_RE.test(t) || DENIES_PENDING_WORK_RE.test(t)) {
+    return false;
+  }
+  if (looksLikeCapabilityMenu(t)) return false;
+  return WEB_ACTION_NARRATION_RE.test(t);
 }
 
 /**
@@ -1364,10 +1543,19 @@ export function looksLikePlanNarration(text: string): boolean {
 export function requiresFreshWebSearch(prompt: string): boolean {
   const text = prompt.replace(/\s+/g, " ").trim();
   if (!text) return false;
+  // Social / idle prompts never need the web.
+  if (looksLikeIdleOrSocialPrompt(text)) {
+    return false;
+  }
   if (EXPLICIT_WEB_LOOKUP_RE.test(text)) {
     return true;
   }
-  if (STATIC_DISAMBIGUATION_RE.test(text) || LOCAL_RUNTIME_RE.test(text)) {
+  if (
+    STATIC_DISAMBIGUATION_RE.test(text) ||
+    LOCAL_RUNTIME_RE.test(text) ||
+    SESSION_CONTEXT_RE.test(text) ||
+    SELF_CAPABILITY_RE.test(text)
+  ) {
     return false;
   }
   // Plan-execution and terse continuation turns are never "fetch current

@@ -8,12 +8,16 @@ import { runViewportCullingSpike } from "./viewport-culling.spike.js";
 import { runPaneSelectionSpike } from "./pane-selection.spike.js";
 import { runShellRenderSpike } from "./shell-render.spike.js";
 import { runComposerSpike } from "./composer.spike.js";
+import { runTranscriptRenderSpike } from "./transcript-render.spike.js";
+import { runSelectionControllerSpike } from "./selection-controller.spike.js";
 
 const spikes: Array<() => Promise<SpikeResult>> = [
   runViewportCullingSpike,
   runStreamingMarkdownSpike,
   runShellRenderSpike,
   runComposerSpike,
+  runTranscriptRenderSpike,
+  runSelectionControllerSpike,
   runPaneSelectionSpike,
 ];
 

@@ -14,7 +14,7 @@ export const slashCommands: SlashCommand[] = [
     command: "/model",
     usage: "[name|#]",
     description:
-      "open searchable picker (type/↑/↓ + Enter), or pass a name/number",
+      "open searchable picker (type:filter · ↑↓:select · enter:confirm), or pass a name/number",
   },
   {
     command: "/provider",

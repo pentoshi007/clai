@@ -33,25 +33,21 @@ export interface TurnControllerDeps {
 }
 
 /**
- * Coalesces consecutive assistant/thinking deltas and flushes them before any
- * structural event, so the sequencer preserves visible order while emitting far
- * fewer delta events (ARCHITECTURE.md, PERF-002). A kind switch also flushes.
+ * Coalesces assistant deltas while forwarding thinking deltas immediately.
  */
 class DeltaCoalescer {
   private assistant = "";
-  private thinking = "";
 
   constructor(private readonly sink: (event: AgentEvent) => void) {}
 
   push(event: AgentEvent): void {
     if (event.type === "assistant-delta") {
-      if (this.thinking) this.flushThinking();
       this.assistant += event.text;
       return;
     }
     if (event.type === "thinking-delta") {
       if (this.assistant) this.flushAssistant();
-      this.thinking += event.text;
+      this.sink(event);
       return;
     }
     this.flush();
@@ -59,15 +55,7 @@ class DeltaCoalescer {
   }
 
   flush(): void {
-    this.flushThinking();
     this.flushAssistant();
-  }
-
-  private flushThinking(): void {
-    if (!this.thinking) return;
-    const text = this.thinking;
-    this.thinking = "";
-    this.sink({ type: "thinking-delta", text });
   }
 
   private flushAssistant(): void {

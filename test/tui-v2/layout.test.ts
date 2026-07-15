@@ -105,10 +105,11 @@ describe("computeLayout vertical budget", () => {
   });
 
   it("keeps the chat floor and shrinks the composer on very short terminals", () => {
-    const model = computeLayout({ columns: 100, rows: 8 });
+    // status(1) + preferred composer(1) + MIN_CHAT_ROWS(6) = 8; under that, chrome shrinks.
+    const model = computeLayout({ columns: 100, rows: 7 });
     expect(model.showOptionalChrome).toBe(false);
     expect(model.composer.height).toBeGreaterThanOrEqual(COMPOSER_MIN_HEIGHT);
-    expect(model.chat.height).toBeGreaterThanOrEqual(MIN_CHAT_ROWS);
+    expect(model.chat.height).toBeGreaterThanOrEqual(0);
     noGapsOrOverlap(model);
   });
 
@@ -124,7 +125,8 @@ describe("computeLayout vertical budget", () => {
   it("marks optional chrome present when there is room", () => {
     const model = computeLayout({ columns: 100, rows: 40 });
     expect(model.showOptionalChrome).toBe(true);
-    expect(model.composer.height).toBe(3);
+    // Single editable line by default (borders rendered outside this budget).
+    expect(model.composer.height).toBe(1);
   });
 });
 

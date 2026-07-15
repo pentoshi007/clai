@@ -1,12 +1,9 @@
 /**
  * Cursor-aware slash and file-mention completion (INPUT-008, V2-044/045).
  *
- * Slash commands are only recognized while the cursor is still inside the
- * command token on the first line — once the cursor moves past it (typing
- * arguments) or onto a later line, the menu closes even though the value
- * still starts with "/". File mentions reuse the existing renderer-independent
- * detector (`src/ui/mentions.ts`) so v2 and the classic REPL agree on the
- * token/suggestion rules.
+ * Slash commands are recognized through the command token and its trailing
+ * whitespace on the first line. File mentions reuse the existing
+ * renderer-independent detector (`src/ui/mentions.ts`).
  */
 
 import { getMentionQuery, findFileSuggestions, type FileSuggestion } from "../../ui/mentions.js";
@@ -27,8 +24,13 @@ export function detectSlashToken(value: string, cursorOffset: number): SlashToke
   const line = value.slice(0, lineEnd);
   const boundary = line.search(/\s/);
   const tokenEnd = boundary === -1 ? line.length : boundary;
-  if (cursorOffset > tokenEnd) return undefined;
-  return { token: line.slice(0, tokenEnd), start: 0, end: tokenEnd };
+  if (cursorOffset > tokenEnd && /\S/.test(line.slice(tokenEnd))) return undefined;
+  const token = line.slice(0, tokenEnd);
+  // Absolute/relative path drops (`/Users/...`, `/\...`) are not commands —
+  // leave the menu free for normal prompt + @-mention flow.
+  const name = token.slice(1);
+  if (name.includes("/") || name.includes("\\")) return undefined;
+  return { token, start: 0, end: tokenEnd };
 }
 
 export function slashSuggestions(
@@ -74,8 +76,19 @@ export function resolveCompletionMenu(
   const slashToken = detectSlashToken(value, cursorOffset);
   if (slashToken) {
     const items = registry.suggestions(slashToken.token);
-    if (items.length > 0) {
-      return { kind: "slash", start: slashToken.start, end: slashToken.end, items };
+    // Always surface the slash menu while the token is active — including a
+    // bare `/` (full catalogue) — so the user never loses command discovery
+    // after a focus glitch or an @-mention session.
+    if (items.length > 0 || slashToken.token === "/") {
+      return {
+        kind: "slash",
+        start: slashToken.start,
+        end: slashToken.end,
+        items:
+          items.length > 0
+            ? items
+            : registry.suggestions(""), // full catalogue fallback
+      };
     }
   }
   const mention = mentionSuggestions(value, cursorOffset, baseDir);

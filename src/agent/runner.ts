@@ -37,6 +37,7 @@ import {
   compactMessagesWithSummary,
   estimateTokens,
   estimateMessagesTokens,
+  AUTO_COMPACT_TOKEN_BUDGET,
   COMPACTION_MEMORY_PREFIX,
 } from "./context-manager.js";
 import { auditLog } from "../store/logs.js";
@@ -73,7 +74,9 @@ import {
   looksLikePentestTask,
   looksLikeBuildTask,
   looksLikeInformationalQuery,
+  looksLikeIdleOrSocialPrompt,
   looksLikeActionNarration,
+  looksLikeWebActionNarration,
   looksLikePlanNarration,
   requiresFreshWebSearch,
   freshnessGuardMessage,
@@ -248,7 +251,9 @@ export async function runAgentLoop(
     stop: () => {},
   };
   const writeStatus = (text: string, rendered = chalk.dim(text)): void => {
-    emit({ type: "status", text });
+    // Footer activity is single-line; strip classic stdout newlines/indents.
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    emit({ type: "status", text: cleaned || text });
     if (writesDirectly) process.stdout.write(rendered);
   };
   const writeNotice = (
@@ -279,9 +284,15 @@ export async function runAgentLoop(
     id: string,
     chunk: string,
     rendered: string,
+    options?: { replace?: boolean },
   ): void => {
-    emit({ type: "tool-output", id, chunk });
-    if (writesDirectly) process.stdout.write(rendered);
+    emit({
+      type: "tool-output",
+      id,
+      chunk,
+      ...(options?.replace ? { replace: true } : {}),
+    });
+    if (writesDirectly && rendered) process.stdout.write(rendered);
   };
   const writeToolCall = (
     id: string,
@@ -400,9 +411,14 @@ export async function runAgentLoop(
     // brand-new plan (the exact failure where "what do u know till now"
     // triggered explore→plan and created an unrelated "Enhance clai" plan).
     const informationalQuery = looksLikeInformationalQuery(prompt);
+    // Greetings / thanks / short acks must never force tools, plans, or
+    // freshness retries — a false "act don't narrate" path burned tokens on
+    // web.search recovery loops after a simple "hi".
+    const idleOrSocialPrompt = looksLikeIdleOrSocialPrompt(prompt);
     const freshWebSearchRequired =
       !buildLikeTurn &&
       !pentestLikeTurn &&
+      !idleOrSocialPrompt &&
       toolNames.includes("web.search") &&
       requiresFreshWebSearch(prompt);
     let provider = options.provider ?? config.defaultProvider;
@@ -459,7 +475,12 @@ export async function runAgentLoop(
     // what's already there, create a comprehensive multi-task plan, then
     // implement task by task until the goal is met. This mirrors how a careful
     // coding agent (Claude Code) operates.
-    if (buildLikeTurn && !activePlan && !informationalQuery) {
+    if (
+      buildLikeTurn &&
+      !activePlan &&
+      !informationalQuery &&
+      !idleOrSocialPrompt
+    ) {
       systemSections.push(buildWorkflowDirective());
     }
 
@@ -469,7 +490,12 @@ export async function runAgentLoop(
     // directive is only injected before a plan exists; once a plan is in
     // place (or being refined), the ACTIVE PLAN block already carries the
     // current task state and recon-vs-active-tool guidance.
-    if (pentestLikeTurn && !activePlan && !informationalQuery) {
+    if (
+      pentestLikeTurn &&
+      !activePlan &&
+      !informationalQuery &&
+      !idleOrSocialPrompt
+    ) {
       systemSections.push(pentestWorkflowDirective());
     }
 
@@ -1015,13 +1041,9 @@ export async function runAgentLoop(
 
       let result: ToolResult;
       let liveBytes = 0;
-      const liveCap = 16_000;
-      let liveTruncatedNotified = false;
-      let lastProgressAt = 0;
       const shouldDimLive = !interactiveCommand;
-      const writeToolInfo = (text: string): void => {
-        writeToolOutput(toolEventId, `${text}\n`, chalk.dim(`  ${text}\n`));
-      };
+      // Stream every live byte — never drop mid-run. After the tool finishes we
+      // still replace the spool with the authoritative full `result.output`.
       const printLive = (chunk: string): void => {
         if (
           call.name === "fs.read" ||
@@ -1029,29 +1051,13 @@ export async function runAgentLoop(
           call.name === "fs.search"
         )
           return;
-        if (liveBytes >= liveCap) {
-          if (!liveTruncatedNotified) {
-            liveTruncatedNotified = true;
-            writeToolInfo("... live preview truncated, full output saved");
-            writeToolInfo("(tool still running — ESC or Ctrl+C to abort)");
-            lastProgressAt = Date.now();
-          }
-          const now = Date.now();
-          if (now - lastProgressAt > 5_000) {
-            lastProgressAt = now;
-            writeToolOutput(toolEventId, ".", chalk.dim("."));
-          }
-          return;
-        }
-        const remaining = liveCap - liveBytes;
-        const slice =
-          chunk.length > remaining ? chunk.slice(0, remaining) : chunk;
-        liveBytes += slice.length;
-        const indented = slice.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
+        if (!chunk) return;
+        liveBytes += chunk.length;
+        const indented = chunk.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
         const body = indented.startsWith("\n") ? indented : `  ${indented}`;
         writeToolOutput(
           toolEventId,
-          slice,
+          chunk,
           shouldDimLive ? chalk.dim(body) : body,
         );
       };
@@ -1101,7 +1107,7 @@ export async function runAgentLoop(
           confirmed: true,
           userPrompt: prompt,
         });
-        if (liveBytes > 0 || liveTruncatedNotified) {
+        if (liveBytes > 0) {
           writeToolOutput(toolEventId, "\n", "\n");
         }
         jobManager.updateJobStatus(
@@ -1144,12 +1150,11 @@ export async function runAgentLoop(
       }
 
       const output = result.output.trim();
-      const displayMax = 6_000;
+      // Always keep a full on-disk copy of tool output (any size) so the
+      // pager never depends on a truncated in-memory preview.
       const savedOutputPath =
         result.outputPath ??
-        (output.length > displayMax
-          ? await saveToolOutput(call, output)
-          : undefined);
+        (output ? await saveToolOutput(call, output) : undefined);
       const resultWithArtifact: ToolResult = {
         ...result,
         outputPath: savedOutputPath,
@@ -1206,27 +1211,31 @@ export async function runAgentLoop(
       }
 
       const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
-      writeToolOutput(
-        toolEventId,
-        result.ok ? "ok\n" : "failed\n",
-        statusIcon + "\n",
-      );
+      // Classic stdout gets a short status glyph; the event stream / spool
+      // must NOT be polluted with "ok"/"failed" (the card already shows status).
+      if (writesDirectly) {
+        process.stdout.write(statusIcon + "\n");
+      }
       if (output) {
-        const displaySummary = summarizeOutput(output, displayMax);
-        const displayText = displaySummary.truncated
-          ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : chalk.dim("\n  ... output truncated")}`
-          : displaySummary.text;
-        if (liveBytes > 0) {
-          if (savedOutputPath) {
-            writeToolInfo(`full output saved to ${savedOutputPath}`);
-          }
+        // Authoritative FULL body — replace any live stream so the pager
+        // never shows a truncated mid-run preview. Never cap for the UI.
+        const fullChunk = output.endsWith("\n") ? output : `${output}\n`;
+        if (!writesDirectly) {
+          writeToolOutput(toolEventId, fullChunk, "", { replace: true });
         } else {
+          // Classic stdout: short preview only; full text is on disk.
+          const displayMax = 6_000;
+          const displaySummary = summarizeOutput(output, displayMax);
+          const displayText = displaySummary.truncated
+            ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : ""}`
+            : displaySummary.text;
           const renderedOutput = indentAndWrapText(displayText);
-          writeToolOutput(
-            toolEventId,
-            displayText,
-            styleToolChatter(call, renderedOutput) + "\n",
-          );
+          process.stdout.write(styleToolChatter(call, renderedOutput) + "\n");
+          if (savedOutputPath && displaySummary.truncated) {
+            process.stdout.write(
+              chalk.dim(`  full output saved to ${savedOutputPath}\n`),
+            );
+          }
         }
       }
 
@@ -1255,7 +1264,6 @@ export async function runAgentLoop(
     // what is done, and what remains. The estimate is chars/4; the budget is
     // deliberately conservative so we compact a little early rather than hit a
     // provider context-window error mid-task.
-    const AUTO_COMPACT_TOKEN_BUDGET = 150_000;
     const AUTO_COMPACT_KEEP_RECENT = 6;
     let lastCompactionMsgCount = 0;
 
@@ -1299,6 +1307,8 @@ export async function runAgentLoop(
         if (!result.summarized || result.afterTokens >= beforeTokens) return;
         messages.splice(0, messages.length, ...result.messages);
         loopGuard.resetReadOnly();
+        // Token stats BEFORE plan re-injection so the reduction is accurate.
+        const compactedTokens = estimateMessagesTokens(messages);
         // Re-inject the live plan so the model keeps full plan awareness even
         // after older turns (which carried the plan context) were summarized.
         const livePlan = await loadPlan(session.sessionId).catch(
@@ -1311,13 +1321,11 @@ export async function runAgentLoop(
           });
         }
         lastCompactionMsgCount = messages.length;
-        // Report the compacted token count BEFORE plan re-injection so the
-        // compaction stats accurately show the reduction. Then report the
-        // final count (which is what the model actually receives) separately.
-        const compactedTokens = estimateMessagesTokens(messages);
+        // Final count the model actually receives (may include re-injected plan).
+        const afterTokens = estimateMessagesTokens(messages);
         await auditLog("agent.compact", {
           newLength: messages.length,
-          estimatedTokens: compactedTokens,
+          estimatedTokens: afterTokens,
           reason,
         });
         // Extract the inserted compaction memory so we can surface the
@@ -1335,16 +1343,17 @@ export async function runAgentLoop(
         )
           ? insertedText(insertedSummary, `${COMPACTION_MEMORY_PREFIX}\n\n`)
           : insertedText(insertedSummary, COMPACTION_MEMORY_PREFIX);
-        const afterTokens = estimateMessagesTokens(messages);
-        writeCompacted(summaryText, beforeTokens, afterTokens);
-        const planNote = afterTokens > compactedTokens
-          ? ` (compacted to ~${compactedTokens.toLocaleString()}, +plan → ~${afterTokens.toLocaleString()})`
-          : "";
+        // Card shows pre/post of the summarization; plan re-injection is noted.
+        writeCompacted(summaryText, beforeTokens, compactedTokens);
+        const planNote =
+          afterTokens > compactedTokens
+            ? ` (compacted to ~${compactedTokens.toLocaleString()}, +plan → ~${afterTokens.toLocaleString()})`
+            : "";
         writeNotice(
           "info",
-          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens${planNote})`,
+          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${compactedTokens.toLocaleString()} tokens${planNote})`,
           chalk.dim(
-            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens${planNote})\n`,
+            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${compactedTokens.toLocaleString()} tokens${planNote})\n`,
           ),
         );
       } catch (error) {
@@ -1497,10 +1506,11 @@ export async function runAgentLoop(
             {
               provider,
               model,
-              // The selected model is the first choice, but an agent must not
-              // end a turn with no answer if it only emits reasoning. Honor
-              // the user's providerFallback setting for that recovery path.
-              allowModelFallback: true,
+              // Stay on the user's selected provider/model. Cross-provider
+              // hops (e.g. bynara → gemini on a 429) only happen when the
+              // user has explicitly enabled `providerFallback` AND this is
+              // the provider's default model. Never force fallback mid-turn.
+              allowModelFallback: false,
               messages,
               // MiniMax M3 degenerates at the generic agent temperature. The
               // HTTP layer also applies its `top_p` override for both the
@@ -1979,6 +1989,7 @@ export async function runAgentLoop(
           // final answer ends the turn with nothing done and no real plan saved.
           // Nudge it to emit a real tool call, with a concrete example.
           const narratedAction = looksLikeActionNarration(cleaned);
+          const narratedWebAction = looksLikeWebActionNarration(cleaned);
           // `activePlan` is the snapshot loaded at the start of this turn.
           // A final task.update mutates and persists a separate plan instance,
           // so re-read it here before deciding whether a final response should
@@ -1995,16 +2006,26 @@ export async function runAgentLoop(
             activePlan?.status !== "completed" &&
             planStatusAtCompletion === "completed";
           const planHasOpenWorkNow = planHasOpenWork(planStatusAtCompletion);
+          // User-driven reasons to require tools this turn (build/pentest/
+          // approved plan / freshness). Idle greetings never qualify.
+          const userExpectsWork =
+            freshWebSearchRequired ||
+            (planHasOpenWorkNow && session.planApproved.value) ||
+            (!informationalQuery &&
+              !idleOrSocialPrompt &&
+              (buildLikeTurn || pentestLikeTurn));
           // History-inherited build/pentest intent only forces action when
-          // THIS prompt is not itself a plain question. Once this turn has
-          // completed its plan, however, its next visible response is the
-          // final answer — not narration to recover into more work.
+          // THIS prompt is not itself a plain question/idle turn. Narration
+          // stalls ("I'll list the files") still force a tool when the user
+          // is not asking an informational question — but capability menus
+          // and greetings are filtered out by looksLikeActionNarration /
+          // idleOrSocialPrompt so they cannot burn recovery turns.
           const wantsAction =
             !completedPlanDuringThisTurn &&
-            (narratedAction ||
-              freshWebSearchRequired ||
-              (planHasOpenWorkNow && session.planApproved.value) ||
-              (!informationalQuery && (buildLikeTurn || pentestLikeTurn)));
+            !idleOrSocialPrompt &&
+            (userExpectsWork ||
+              (narratedAction && !informationalQuery) ||
+              (narratedWebAction && !informationalQuery));
           const planNarrated =
             (buildLikeTurn || pentestLikeTurn) &&
             !activePlan &&
@@ -2045,7 +2066,12 @@ export async function runAgentLoop(
                   "  ⚠ described a security/pentest action but emitted no tool call — nudging it to run one\n",
                 ),
               );
-            } else if (!buildLikeTurn) {
+            } else if (freshWebSearchRequired || narratedWebAction) {
+              // Web-specific recovery ONLY when the user asked for current
+              // info or the model explicitly claimed a fetch/search step.
+              // Previously every non-build stall used this path, so a "hi"
+              // greeting that said "I'll start executing" was forced into
+              // pointless web.search recovery loops.
               nudge =
                 "You wrote that you would fetch/search/read something but emitted NO ```tool block, so NOTHING ran. Do NOT narrate the next browsing step — DO it. Emit exactly one valid ```tool block now. If you know the exact page, use:\n" +
                 '```tool\n{"name":"web.fetch","args":{"url":"https://example.com/page","responseMode":"readable"}}\n```\n' +
@@ -2057,7 +2083,10 @@ export async function runAgentLoop(
                   "  ⚠ described a web action but emitted no tool call — nudging it to run one\n",
                 ),
               );
-            } else if (planNarrated || productiveSteps > 0) {
+            } else if (
+              buildLikeTurn &&
+              (planNarrated || productiveSteps > 0)
+            ) {
               const kind = pentestLikeTurn ? "pentest" : "coding";
               nudge =
                 "You wrote the plan as PROSE but did NOT call plan.create, so no plan was saved and the user cannot /implement it. Emit it as a real tool call NOW — exactly one ```tool block:\n" +
@@ -2070,16 +2099,22 @@ export async function runAgentLoop(
                   "  ⚠ plan was written as text, not created — nudging it to call plan.create\n",
                 ),
               );
+            } else if (buildLikeTurn) {
+              nudge =
+                "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
+                '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
+                "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
+              writeNotice(
+                "warn",
+                "described an action but emitted no tool call — nudging it to run one",
+                chalk.yellow(
+                  "  ⚠ described an action but emitted no tool call — nudging it to run one\n",
+                ),
+              );
             } else {
-              if (pentestLikeTurn) {
-                nudge =
-                  "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this pentest task, explore/recon first, then call plan.create. Every turn MUST contain a ```tool block until the task is done.";
-              } else {
-                nudge =
-                  "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW. For this build task, explore first like this:\n" +
-                  '```tool\n{"name":"fs.list","args":{"path":"."}}\n```\n' +
-                  "Then read key files, and once you understand the directory, call plan.create. Every turn MUST contain a ```tool block until the task is done.";
-              }
+              // Generic non-build, non-web stall (e.g. "I'll list the files").
+              nudge =
+                "You described what you will do but emitted NO ```tool block, so NOTHING actually happened — narration is not action. Emit a real tool call NOW for the step you just described. Every turn that claims an action MUST contain a ```tool block.";
               writeNotice(
                 "warn",
                 "described an action but emitted no tool call — nudging it to run one",
@@ -2335,7 +2370,19 @@ export async function runAgentLoop(
           });
         }
 
-        // Now emit only the calls that will actually execute, after thinking
+        // Notice BEFORE tool cards so the transcript reads:
+        // thinking → response → "N tool calls…" → tool cards (not tools then info).
+        if (allCalls.length > 1) {
+          writeNotice(
+            "info",
+            `${allCalls.length} tool calls in this message — running scoped (independent read-only lookups in parallel, everything else in order)`,
+            chalk.dim(
+              `  ℹ ${allCalls.length} tool calls — read-only lookups in parallel, the rest in order\n`,
+            ),
+          );
+        }
+
+        // Emit only the calls that will actually execute, after thinking
         // + assistant text so transcript order remains correct.
         for (const deferred of activeDeferredToolCalls.slice(0, allCalls.length)) {
           writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
@@ -2348,16 +2395,6 @@ export async function runAgentLoop(
             .join("\n\n");
 
         pushAssistantHistory(standardizedContent);
-
-        if (allCalls.length > 1) {
-          writeNotice(
-            "info",
-            `${allCalls.length} tool calls in this message — running scoped (independent read-only lookups in parallel, everything else in order)`,
-            chalk.dim(
-              `  ℹ ${allCalls.length} tool calls — read-only lookups in parallel, the rest in order\n`,
-            ),
-          );
-        }
 
         // Scoped-parallel batch execution
         // The model may emit several calls in one message. We partition them,
@@ -2395,6 +2432,8 @@ export async function runAgentLoop(
         let blockedResult: any = null;
         let failed = false;
         let awaitingPlanApproval = false;
+        /** Indices into allCalls that actually ran (got a tool-result). */
+        const executedIndices = new Set<number>();
 
         const recordResult = (res: {
           call: ToolCall;
@@ -2404,6 +2443,8 @@ export async function runAgentLoop(
           lastAnswer?: string | undefined;
           blockOrCancel?: boolean | undefined;
         }, continueAfterFailure = false): void => {
+          const idx = allCalls.indexOf(res.call);
+          if (idx >= 0) executedIndices.add(idx);
           messages.push({
             role: "tool",
             content: `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${res.contextOutput}`,
@@ -2482,6 +2523,41 @@ export async function runAgentLoop(
             // merely because one lookup times out or a remote service fails.
             for (const res of results) recordResult(res, true);
           }
+        }
+
+        // Cards were emitted for every call up front. If the batch stopped
+        // early (failure / abort / plan gate), any card still on "running"
+        // must get a terminal result so the TUI never spins forever.
+        for (let i = 0; i < allCalls.length; i += 1) {
+          if (executedIndices.has(i)) continue;
+          const call = allCalls[i]!;
+          if (i >= 0 && !callIds[i]) {
+            callIds[i] = `tool-${++nextToolEventId}`;
+          }
+          const id = callIds[i]!;
+          if (!alreadyPrintedIds.has(id)) {
+            // Never shown in the transcript — skip.
+            continue;
+          }
+          const reason = aborted
+            ? "Cancelled — turn aborted before this call ran."
+            : blocked
+              ? "Cancelled — earlier tool was blocked or declined."
+              : awaitingPlanApproval
+                ? "Deferred — waiting for plan approval."
+                : failed
+                  ? "Cancelled — earlier tool in this batch failed."
+                  : "Cancelled — not executed.";
+          const result: ToolResult = {
+            ok: false,
+            output: reason,
+            exitCode: 130,
+          };
+          emitToolResult(id, result, reason);
+          messages.push({
+            role: "tool",
+            content: `Tool ${call.name} result (exit=130, ok=false):\n${reason}`,
+          });
         }
 
         // plan.create is a hard transaction boundary. Its successful handler

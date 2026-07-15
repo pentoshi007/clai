@@ -8,6 +8,8 @@ import {
   isLumpedSingleTask,
   countToolFences,
   looksLikeActionNarration,
+  looksLikeWebActionNarration,
+  looksLikeIdleOrSocialPrompt,
   preprocessJson,
   groupToolCallsForExecution,
   buildTurnHistory,
@@ -36,6 +38,27 @@ describe("agent tool-call parser", () => {
     expect(call).toBeDefined();
     expect(call!.name).toBe("shell.exec");
     expect(call!.args).toEqual({ command: "ls -la" });
+  });
+
+  it("extracts GLM/Tencent id-tagged tool calls (<tool_call:hex>name + JSON args)", () => {
+    const text = `<tool_calls:6124c78e>
+<tool_call:6124c78e>web.search
+{"query":"who is the current UK Prime Minister 2026"}
+</tool_call:6124c78e>
+</tool_calls:6124c78e>`;
+    const call = parseToolCall(text);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("web.search");
+    expect(call!.args).toEqual({ query: "who is the current UK Prime Minister 2026" });
+  });
+
+  it("does not leave id-tagged tool XML in textBeforeToolCall prose", async () => {
+    const { textBeforeToolCall } = await import("../src/agent/tool-call-parser.js");
+    const text = `I'll search now.
+<tool_call:abc>web.search
+{"query":"uk pm"}
+`;
+    expect(textBeforeToolCall(text)).toBe("I'll search now.");
   });
 
   it("repairs and parses JSON with mixed single and double quotes (common in Kimi)", () => {
@@ -309,6 +332,74 @@ describe("fresh web-search guard", () => {
         "Let me fetch that specific blog post to get the exact methods.",
       ),
     ).toBe(true);
+    expect(
+      looksLikeWebActionNarration(
+        "Let me fetch that specific blog post to get the exact methods.",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not treat greeting / capability-menu replies as action stalls", () => {
+    const greeting = [
+      "Hey! I'm clai — your autonomous terminal agent for building software.",
+      "",
+      "What do you want to get done? A few things I can jump on right now:",
+      "• Build/refactor code in the current project",
+      "• Recon/scan/exploit a target you're authorized to test",
+      "• Investigate a system, debug something, or run shell work",
+      "• Research a current topic and report back",
+      "",
+      "Just tell me the task and I'll start executing.",
+    ].join("\n");
+    expect(looksLikeActionNarration(greeting)).toBe(false);
+    expect(looksLikeWebActionNarration(greeting)).toBe(false);
+  });
+
+  it("does not treat educational framing or soft offers as action stalls", () => {
+    expect(
+      looksLikeActionNarration(
+        "I'll start with the basics of how quicksort works, then walk through an example.",
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeActionNarration(
+        "I'm ready when you are — just tell me what you'd like me to do.",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat denials of pending work as action stalls (breaks recovery loops)", () => {
+    expect(
+      looksLikeActionNarration(
+        "I didn't actually promise to fetch or search anything — that was just a greeting. There's no pending browse/research task.",
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeWebActionNarration(
+        "I haven't made any promise to fetch, search, or read anything. There's no real task, so I won't emit a tool call for a non-existent job.",
+      ),
+    ).toBe(false);
+  });
+
+  it("still treats concrete tool-intent narration as a stall", () => {
+    expect(
+      looksLikeActionNarration("I'll explore the directory and list the files."),
+    ).toBe(true);
+    expect(
+      looksLikeActionNarration("Let me create the components next."),
+    ).toBe(true);
+    expect(looksLikeWebActionNarration("I'll list the files now.")).toBe(
+      false,
+    );
+  });
+
+  it("detects idle/social prompts so the runner can skip forced tool use", () => {
+    expect(looksLikeIdleOrSocialPrompt("hi")).toBe(true);
+    expect(looksLikeIdleOrSocialPrompt("Hello!")).toBe(true);
+    expect(looksLikeIdleOrSocialPrompt("hey there")).toBe(true);
+    expect(looksLikeIdleOrSocialPrompt("thanks")).toBe(true);
+    expect(looksLikeIdleOrSocialPrompt("what can you do")).toBe(false);
+    expect(looksLikeIdleOrSocialPrompt("build a todo app")).toBe(false);
   });
 
   it("treats current office-holder questions as volatile even without the word current", () => {
@@ -342,6 +433,17 @@ describe("fresh web-search guard", () => {
     
     // Explicit web search queries containing local terms should still be routed to search
     expect(requiresFreshWebSearch("search web for dev server port issues")).toBe(true);
+  });
+
+  it("does not route greetings, session retrospectives, or local project questions through web.search", () => {
+    expect(requiresFreshWebSearch("hi")).toBe(false);
+    expect(requiresFreshWebSearch("hello")).toBe(false);
+    expect(requiresFreshWebSearch("what do you know till now")).toBe(false);
+    expect(requiresFreshWebSearch("what have you found so far")).toBe(false);
+    expect(requiresFreshWebSearch("explain the current project architecture")).toBe(
+      false,
+    );
+    expect(requiresFreshWebSearch("what can you do right now")).toBe(false);
   });
 
   it("never treats a plan-execution / build turn as a fresh-search turn", () => {
