@@ -70,11 +70,52 @@ describe("phase 9 — context manager", () => {
     const result = await compactMessagesWithSummary(msgs, async (prompt) => {
       expect(prompt).toContain("nmap -sT localhost");
       expect(prompt).toContain("Commands/tools and results");
+      // Visual + older model turns are both fed to the summarizer.
+      expect(prompt).toContain("OLDER MODEL TURNS");
+      expect(prompt).toContain("message-0-");
       return "The user selected PostgreSQL and implementation remains pending.";
     }, { keepRecent: 8 }, "TOOL/COMMAND: shell.exec\nINPUT: nmap -sT localhost\nOUTPUT/RESULT: port 5000 open");
     expect(result.summarized).toBe(true);
     expect(result.messages[0]?.content).toContain("PostgreSQL");
     expect(result.messages.slice(-8)).toEqual(msgs.slice(-8));
+  });
+
+  it("compacts resumed history together with newer turns", async () => {
+    // Simulate /history load (older turns) + follow-up chat, then /compact.
+    const history: ChatMessage[] = [
+      { role: "user", content: "from history: map the network" },
+      { role: "assistant", content: "from history: found 3 hosts" },
+      { role: "user", content: "new after resume: exploit host A" },
+      { role: "assistant", content: "new after resume: shell obtained" },
+      { role: "user", content: "new: dump creds" },
+      { role: "assistant", content: "new: got hashes" },
+    ];
+    const visual =
+      "USER INTENT/PROMPT:\nfrom history: map the network\n\n---\n\n" +
+      "ASSISTANT RESPONSE:\nfrom history: found 3 hosts\n\n---\n\n" +
+      "USER INTENT/PROMPT:\nnew after resume: exploit host A";
+
+    let seenPrompt = "";
+    const result = await compactMessagesWithSummary(
+      history,
+      async (prompt) => {
+        seenPrompt = prompt;
+        return "User goals: map network and exploit host A. Work completed: 3 hosts found, shell, hashes.";
+      },
+      { budgetTokens: 0, keepRecent: 2 },
+      visual,
+    );
+
+    expect(result.summarized).toBe(true);
+    expect(seenPrompt).toContain("from history: map the network");
+    expect(seenPrompt).toContain("new after resume: exploit host A");
+    // Older model turns (not in the keepRecent tail) must still be summarized.
+    expect(seenPrompt).toMatch(/from history: found 3 hosts|OLDER MODEL TURNS/);
+    // keepRecent=2 → last user+assistant preserved verbatim.
+    expect(result.messages.slice(-2)).toEqual(history.slice(-2));
+    expect(result.messages.some((m) => m.content.includes("User goals: map network"))).toBe(
+      true,
+    );
   });
 
   it("throws on summarization failure instead of dumping a fallback transcript", async () => {

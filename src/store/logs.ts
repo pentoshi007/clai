@@ -3,10 +3,10 @@ import { fixOwner, handlePermissionError } from '../os/permissions.js';
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { redactSecrets } from '../llm/provider.js';
+import { getArtifactDir, getLogsDirRoot } from './paths.js';
 
-const logsDir = join(homedir(), '.clai', 'logs');
+const logsDir = getLogsDirRoot();
 const maxLogBytes = 10 * 1024 * 1024;
 
 function today(): string {
@@ -63,7 +63,7 @@ export function getLogsDir(): string {
 }
 
 export async function clearArtifacts(): Promise<{ removed: number }> {
-  const dir = join(homedir(), '.clai', 'outputs');
+  const dir = getArtifactDir();
   if (!existsSync(dir)) return { removed: 0 };
   const entries = await readdir(dir).catch(() => []);
   let removed = 0;

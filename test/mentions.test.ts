@@ -70,10 +70,12 @@ describe("findFileSuggestions", () => {
     expect(out.map((s) => s.value)).toEqual(["package.json"]);
   });
 
-  it("descends into a directory query", () => {
+  it("descends into a directory query and offers ../ to walk up", () => {
     const out = findFileSuggestions("src/", dir);
-    const values = out.map((s) => s.value).sort();
-    expect(values).toEqual(["src/App.tsx", "src/main.ts"]);
+    const values = out.map((s) => s.value);
+    expect(values).toContain("src/App.tsx");
+    expect(values).toContain("src/main.ts");
+    expect(out.some((s) => s.label === "../")).toBe(true);
   });
 
   it("filters inside a directory", () => {
@@ -172,6 +174,26 @@ describe("expandMentions", () => {
   it("preserves the original text", () => {
     const out = expandMentions("read @notes.txt please", dir);
     expect(out.text).toBe("read @notes.txt please");
+  });
+
+  it("attaches a whole directory as a listing, not a binary stub", () => {
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "a.ts"), "export {}");
+    writeFileSync(join(dir, "src", "b.ts"), "export {}");
+    const out = expandMentions("review @src", dir);
+    expect(out.attachments).toHaveLength(1);
+    expect(out.attachments[0]!.kind).toBe("directory");
+    expect(out.attachments[0]!.content).toContain("a.ts");
+    expect(out.contextBlock).toContain("directory");
+    expect(out.contextBlock).toContain("a.ts");
+  });
+
+  it("accepts a directory mention with a trailing slash", () => {
+    mkdirSync(join(dir, "lib"));
+    writeFileSync(join(dir, "lib", "x.js"), "1");
+    const out = expandMentions("see @lib/", dir);
+    expect(out.attachments[0]!.kind).toBe("directory");
+    expect(out.attachments[0]!.content).toContain("x.js");
   });
 
   it("resolves a dropped absolute path with spaces before trailing prompt text", () => {

@@ -39,9 +39,9 @@ describe("phase 11 — retention config", () => {
     updateConfig({ privateMode: true, historyRetentionLimit: 42 });
     expect(getConfig().privateMode).toBe(true);
     expect(getConfig().historyRetentionLimit).toBe(42);
-    updateConfig({ privateMode: false, historyRetentionLimit: 200 });
+    updateConfig({ privateMode: false, historyRetentionLimit: 0 });
     expect(getConfig().privateMode).toBe(false);
-    expect(getConfig().historyRetentionLimit).toBe(200);
+    expect(getConfig().historyRetentionLimit).toBe(0);
   });
 });
 

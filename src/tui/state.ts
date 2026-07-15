@@ -461,26 +461,32 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
           prompt: event.prompt,
         },
       };
-    case "compacted":
-      return reducer(state, {
-        type: "compacted",
+    case "compacted": {
+      // The runner emits this after replacing the model context with a
+      // summary. App.tsx normally intercepts it and dispatches the richer
+      // `compacted` TuiAction (with keepRecent); this branch keeps the
+      // reducer exhaustive and provides sensible default behavior: append a
+      // compacted-context block while preserving the scrollable history.
+      const compactedItem: CompactedItem = {
+        kind: "compacted",
+        id: nextId("compacted"),
         summary: event.summary,
-        keepRecent: 12,
-      });
+        originalItems: [],
+        done: true,
+      };
+      return {
+        ...state,
+        streaming: "",
+        thinkingPreview: "",
+        items: [...state.items, compactedItem],
+      };
+    }
     case "turn-end":
     case "turn-aborted":
     case "turn-error": {
-      const items = state.items.map((item) => {
-        if (item.done) return item;
-        if (item.kind === "tool" && item.status === "running") {
-          return {
-            ...item,
-            done: true,
-            status: (event.type === "turn-aborted" ? "blocked" : "fail") as ToolStatus,
-          };
-        }
-        return { ...item, done: true, streaming: false };
-      });
+      const items = state.items.map((item) =>
+        item.done ? item : { ...item, done: true, streaming: false },
+      );
       if (event.type === "turn-aborted") {
         items.push({
           kind: "notice",

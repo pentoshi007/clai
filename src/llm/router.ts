@@ -333,8 +333,11 @@ export async function streamWithProvider(
               : error instanceof ProviderError && error.status
                 ? `server error (${error.status})`
                 : "connection glitch";
+            // Single-line status for the TUI footer (no leading newlines).
+            const from =
+              providerId !== requested ? ` (fallback from ${requested})` : "";
             emitStatus(
-              `\n  ⏳ ${providerId} ${reason}, retrying in ${Math.ceil(wait / 1000)}s...\n`,
+              `⏳ ${providerId}${from} ${reason}, retrying in ${Math.ceil(wait / 1000)}s…`,
             );
             await sleep(wait, request.signal);
             continue;
@@ -345,7 +348,7 @@ export async function streamWithProvider(
                 ? ` (~${Math.ceil(wait / 1000)}s)`
                 : "";
             emitStatus(
-              `\n  ⏳ ${providerId} rate limited${suffix}; staying on selected provider.\n`,
+              `⏳ ${providerId} rate limited${suffix}; staying on selected provider.`,
             );
           }
           failures.push({ provider: providerId, message: summarizeProviderError(error) });

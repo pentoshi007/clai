@@ -9,7 +9,8 @@ export type AgentEvent =
   | { type: "assistant-message"; text: string }
   | { type: "notice"; level: "info" | "warn"; text: string }
   | { type: "tool-call"; id: string; name: string; argsDisplay: string }
-  | { type: "tool-output"; id: string; chunk: string }
+  /** `replace: true` sets the full body (never append) so the UI never keeps a truncated live preview. */
+  | { type: "tool-output"; id: string; chunk: string; replace?: boolean }
   | {
       type: "tool-result";
       id: string;

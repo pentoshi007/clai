@@ -9,9 +9,15 @@ const GLYPHS: Record<string, string[]> = {
   I: ["█████", "  █  ", "  █  ", "  █  ", "  █  ", "  █  ", "█████"],
 };
 
+/**
+ * Truecolor hex for the top row of the wordmark (chalk.magentaBright) — the
+ * top of the "I". Shared by intro-card + plan/task pane borders.
+ */
+export const WORDMARK_TOP_HEX = "#FF55FF";
+
 /** Per-row colors, applied top-to-bottom for a subtle vertical gradient. */
 const GRADIENT = [
-  chalk.magentaBright,
+  chalk.hex(WORDMARK_TOP_HEX), // top of "I"
   chalk.magenta,
   chalk.blueBright,
   chalk.cyanBright,

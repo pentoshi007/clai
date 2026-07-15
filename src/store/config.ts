@@ -80,7 +80,9 @@ const defaults: ClaiConfig = {
   offline: false,
   parserStrict: false,
   privateMode: false,
-  historyRetentionLimit: 200,
+  // 0 = unlimited. A low cap used to hard-delete older chats on every
+  // autosave (slice-and-rewrite), which wiped classic clai history.
+  historyRetentionLimit: 0,
   sandboxReads: false,
   activeSearchProvider: "duckduckgo",
   disableKeychain: false,

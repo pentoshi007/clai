@@ -255,7 +255,7 @@ export async function openPager(options: PagerOptions): Promise<void> {
     ): string => {
       const help =
         options.footer ??
-        "↑/↓ j/k · PgUp/PgDn space · g/G top/bottom · q or Ctrl+O to close";
+        "↑↓/jk:scroll  ·  pg↑↓/space:page  ·  g/G:jump  ·  q/^o:close";
       const ratio =
         total === 0 ? 100 : Math.round((visibleEnd / total) * 100);
       const counter = `${visibleStart + 1}-${visibleEnd}/${total} (${ratio}%)`;

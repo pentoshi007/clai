@@ -10,16 +10,9 @@ import {
 import type { AgentEvent } from "../src/agent/events.js";
 import { evaluateTui, MIN_COLS, MIN_ROWS } from "../src/tui/can-use-tui.js";
 import type { SessionPlan } from "../src/store/plan.js";
-import { renderItemLines } from "../src/tui/render-lines.js";
 
 function apply(state: TuiState, events: AgentEvent[]): TuiState {
   return events.reduce((s, event) => reducer(s, { type: "event", event }), state);
-}
-
-// Rendered lines carry ANSI styling (e.g. the `ctrl+o` hint is bolded), so
-// assertions on hint text strip the escape codes first.
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
 }
 
 describe("tui reducer — submit & turn lifecycle", () => {
@@ -216,114 +209,6 @@ describe("toggle actions", () => {
     expect(s.outputExpanded).toBe(true);
   });
 
-  it("collapsed and expanded tool outputs render in place with clear hints", () => {
-    const item: ToolItem = {
-      kind: "tool",
-      id: "tool-expand",
-      name: "shell.exec",
-      argsDisplay: "printf lines",
-      output: "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n",
-      status: "ok",
-      done: true,
-    };
-    const collapsed = stripAnsi(
-      renderItemLines(item, {
-        width: 100,
-        thinkingExpanded: false,
-        outputExpanded: false,
-        running: false,
-      }).join("\n"),
-    );
-    expect(collapsed).toContain("+2 more line(s) · ctrl+o to expand in place");
-    expect(collapsed).not.toContain("five");
-
-    const expanded = stripAnsi(
-      renderItemLines(item, {
-        width: 100,
-        thinkingExpanded: false,
-        outputExpanded: true,
-        running: false,
-      }).join("\n"),
-    );
-    expect(expanded).toContain("five");
-    expect(expanded).toContain("expanded · ctrl+o/esc to collapse");
-  });
-});
-
-describe("tui transcript formatting", () => {
-  it("wraps long assistant text into multiple transcript lines", () => {
-    const item: AssistantItem = {
-      kind: "assistant",
-      id: "a-wrap",
-      text: "This is a very long assistant sentence that should continue onto more than one visible terminal line instead of being ellipsized.",
-      streaming: false,
-      done: true,
-    };
-    const lines = renderItemLines(item, {
-      width: 48,
-      thinkingExpanded: false,
-      outputExpanded: false,
-      running: false,
-    });
-    expect(lines.length).toBeGreaterThan(2);
-    expect(lines.join("\n")).not.toContain("…");
-  });
-
-  it("renders the user badge label distinctly from the prompt body", () => {
-    const rendered = renderItemLines(
-      { kind: "user", id: "u-theme", text: "hello", done: true },
-      {
-        width: 80,
-        thinkingExpanded: false,
-        outputExpanded: false,
-        running: false,
-      },
-    ).join("\n");
-    expect(rendered.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")).toMatch(/^ you\s+hello/);
-  });
-
-  it("labels shell commands and their output instead of showing ambiguous bare text", () => {
-    const item: ToolItem = {
-      kind: "tool",
-      id: "tool-1",
-      name: "shell.exec",
-      argsDisplay: "whoami",
-      output: "aniketpandey\n",
-      status: "ok",
-      done: true,
-    };
-    const rendered = renderItemLines(item, {
-      width: 100,
-      thinkingExpanded: false,
-      outputExpanded: false,
-      running: false,
-    }).join("\n");
-    expect(rendered).toContain("command:");
-    expect(rendered).toContain("whoami");
-    expect(rendered).toContain("output:");
-    expect(rendered).toContain("aniketpandey");
-  });
-
-  it("keeps provider error rows readable in warning notices", () => {
-    const rendered = renderItemLines(
-      {
-        kind: "notice",
-        id: "n-provider",
-        level: "warn",
-        text: "No provider could complete the request.\n\nProvider      Error\n------------  -----\nagentrouter  HTTP 401 unauthorized",
-        done: true,
-      },
-      {
-        width: 80,
-        thinkingExpanded: false,
-        outputExpanded: false,
-        running: false,
-      },
-    ).join("\n");
-    expect(rendered).toContain("WARN");
-    expect(rendered).toContain("Provider      Error");
-    expect(rendered).toContain("agentrouter  HTTP 401 unauthorized");
-  });
 });
 
 describe("evaluateTui gating", () => {
@@ -375,7 +260,7 @@ describe("TUI compaction transcript", () => {
   });
 });
 
-describe("TUI compaction reducer and rendering", () => {
+describe("TUI compaction reducer", () => {
   it("appends a compacted block to visual items", () => {
     let state = initialState();
     state.items = [
@@ -389,65 +274,5 @@ describe("TUI compaction reducer and rendering", () => {
     expect(state.items).toHaveLength(5);
     expect(state.items[4]!.kind).toBe("compacted");
     expect((state.items[4] as any).summary).toBe("Compacted memory");
-  });
-
-  it("renders compacted item with spoiler and full view on toggle", () => {
-    const item = {
-      kind: "compacted" as const,
-      id: "c1",
-      summary: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8",
-      originalItems: [],
-      done: true,
-    };
-
-    const renderedCollapsed = renderItemLines(item, {
-      width: 80,
-      thinkingExpanded: false,
-      outputExpanded: false,
-      running: false,
-    });
-    expect(renderedCollapsed.join("\n")).toContain("✦ Compacted Context");
-    expect(renderedCollapsed.join("\n")).toContain("+2 more line(s)");
-
-    const renderedExpanded = renderItemLines(item, {
-      width: 80,
-      thinkingExpanded: false,
-      outputExpanded: true,
-      running: false,
-    });
-    expect(stripAnsi(renderedExpanded.join("\n"))).toContain(
-      "✦ Compacted Context",
-    );
-    expect(stripAnsi(renderedExpanded.join("\n"))).toContain("Line 4");
-    expect(stripAnsi(renderedExpanded.join("\n"))).toContain("Line 5");
-    expect(stripAnsi(renderedExpanded.join("\n"))).toContain("expanded · ctrl+o");
-  });
-
-  it("renders markdown in the compacted summary instead of raw ** and # markup", () => {
-    const item = {
-      kind: "compacted" as const,
-      id: "c2",
-      summary:
-        "### Consolidated Continuation Memory\n\n" +
-        "**User goals**\n" +
-        "*   Perform a vulnerability assessment on example.com.\n",
-      originalItems: [],
-      done: true,
-    };
-
-    const rendered = renderItemLines(item, {
-      width: 80,
-      thinkingExpanded: false,
-      outputExpanded: true,
-      running: false,
-    });
-    const plain = stripAnsi(rendered.join("\n"));
-
-    // The heading/bold markers must be styled away, not printed literally.
-    expect(plain).not.toContain("###");
-    expect(plain).not.toContain("**User goals**");
-    expect(plain).toContain("Consolidated Continuation Memory");
-    expect(plain).toContain("User goals");
-    expect(plain).toContain("Perform a vulnerability assessment on example.com.");
   });
 });

@@ -2,8 +2,9 @@ import { mkdir, appendFile, readFile, writeFile, rm, chown } from "node:fs/promi
 import { fixOwner, fixOwnerSync, handlePermissionError, safeExists } from "../os/permissions.js";
 
 import { join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { getConfig } from "./config.js";
+import { getPlanDir } from "./paths.js";
 
 /**
  * Session-scoped plan + task persistence.
@@ -19,10 +20,12 @@ import { getConfig } from "./config.js";
  * each REPL session keeps its own plan, and resuming a session reloads it.
  */
 
-const planDir = join(homedir(), ".clai");
+const planDir = getPlanDir();
 const jsonlFile =
   process.env.CLAI_PLAN_FILE ??
-  (process.env.VITEST_WORKER_ID
+  (process.env.CLAI_PLAN_DIR || process.env.CLAI_DATA_DIR
+    ? join(planDir, "plans.jsonl")
+    : process.env.VITEST_WORKER_ID
     ? join(tmpdir(), `clai-plans-${process.env.VITEST_WORKER_ID}.jsonl`)
     : join(planDir, "plans.jsonl"));
 const dbFile = join(planDir, "history.db");

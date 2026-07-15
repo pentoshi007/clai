@@ -4,18 +4,40 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Any ambient data-root override (e.g. a CI-injected CLAI_DATA_DIR) would
+// defeat the per-test HOME isolation below and let history.jsonl accumulate
+// across cases. Route every data root through the fresh per-test temp dir and
+// restore the originals afterwards so the test is hermetic regardless of env.
+const dataEnvKeys = [
+  "CLAI_DATA_DIR",
+  "CLAI_HISTORY_DIR",
+  "CLAI_PLAN_DIR",
+  "CLAI_LOG_DIR",
+  "CLAI_ARTIFACT_DIR",
+  "CLAI_JOBS_DIR",
+] as const;
+
 let originalHome: string | undefined;
 let originalConfigDir: string | undefined;
+let originalDataEnv: Partial<Record<(typeof dataEnvKeys)[number], string | undefined>>;
 let homeDir: string;
 let configDir: string;
+let dataDir: string;
 
 beforeEach(() => {
   originalHome = process.env.HOME;
   originalConfigDir = process.env.CLAI_CONFIG_DIR;
+  originalDataEnv = {};
+  for (const key of dataEnvKeys) originalDataEnv[key] = process.env[key];
   homeDir = mkdtempSync(join(tmpdir(), "clai-history-home-"));
   configDir = mkdtempSync(join(tmpdir(), "clai-history-config-"));
+  dataDir = mkdtempSync(join(tmpdir(), "clai-history-data-"));
   process.env.HOME = homeDir;
   process.env.CLAI_CONFIG_DIR = configDir;
+  process.env.CLAI_DATA_DIR = dataDir;
+  for (const key of dataEnvKeys) {
+    if (key !== "CLAI_DATA_DIR") delete process.env[key];
+  }
   vi.resetModules();
 });
 
@@ -24,8 +46,14 @@ afterEach(async () => {
   else process.env.HOME = originalHome;
   if (originalConfigDir === undefined) delete process.env.CLAI_CONFIG_DIR;
   else process.env.CLAI_CONFIG_DIR = originalConfigDir;
+  for (const key of dataEnvKeys) {
+    const value = originalDataEnv[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   await rm(homeDir, { recursive: true, force: true });
   await rm(configDir, { recursive: true, force: true });
+  await rm(dataDir, { recursive: true, force: true });
   vi.resetModules();
 });
 

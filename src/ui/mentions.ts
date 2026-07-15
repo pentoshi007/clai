@@ -159,6 +159,7 @@ export type AttachmentKind =
   | "image"
   | "document"
   | "binary"
+  | "directory"
   | "missing";
 
 export interface Attachment {
@@ -170,7 +171,7 @@ export interface Attachment {
   /** Inlined text contents (text kind only). */
   content?: string;
   truncated?: boolean;
-  /** Human-readable note (binary/missing). */
+  /** Human-readable note (binary/missing/directory). */
   note?: string;
 }
 
@@ -308,6 +309,25 @@ export function findFileSuggestions(
 
   const lowerPrefix = prefix.toLowerCase();
   const matched: FileSuggestion[] = [];
+
+  // When browsing inside a path (`@src/` or `@src/comp`), offer `../` so the
+  // user can walk back up without backspacing the whole token.
+  if (dirPart !== "" && (prefix === "" || "..".startsWith(lowerPrefix))) {
+    const parentRaw = dirPart.replace(/\/+$/, "");
+    const parentDir = dirname(parentRaw);
+    const parentValue =
+      parentDir === "." || parentDir === ""
+        ? ""
+        : parentDir.endsWith("/")
+          ? parentDir
+          : `${parentDir}/`;
+    matched.push({
+      value: parentValue,
+      label: "../",
+      isDir: true,
+    });
+  }
+
   for (const name of entries) {
     if (prefix === "" && NOISE_DIRS.has(name)) continue;
     if (prefix === "" && name.startsWith(".")) continue; // hide dotfiles unless typed
@@ -333,6 +353,9 @@ export function findFileSuggestions(
   }
 
   matched.sort((a, b) => {
+    // Keep "../" first when present, then other dirs, then files.
+    if (a.label === "../") return -1;
+    if (b.label === "../") return 1;
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
     return a.label.localeCompare(b.label);
   });
@@ -341,18 +364,72 @@ export function findFileSuggestions(
 
 function classifyPath(absPath: string): AttachmentKind {
   if (!existsSync(absPath)) return "missing";
-  let isFile = false;
+  let st: ReturnType<typeof statSync>;
   try {
-    isFile = statSync(absPath).isFile();
+    st = statSync(absPath);
   } catch {
     return "missing";
   }
-  if (!isFile) return "binary"; // directory or special; treated as a path note
+  if (st.isDirectory()) return "directory";
+  if (!st.isFile()) return "binary";
   const ext = extname(absPath).toLowerCase();
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
   if (DOC_EXTENSIONS.has(ext)) return "document";
   if (TEXT_EXTENSIONS.has(ext) || ext === "") return "text";
   return "binary";
+}
+
+/** Max entries listed when the user attaches a whole directory with @. */
+const MAX_DIR_LISTING = 120;
+/** Max depth when summarizing a directory attachment (shallow tree). */
+const MAX_DIR_DEPTH = 3;
+
+/**
+ * Build a compact directory listing for an @-attached folder so the model
+ * can see structure and pick files with tools — without inlining every file.
+ */
+export function listDirectoryAttachment(
+  absPath: string,
+  baseDir: string = absPath,
+  depth = 0,
+  budget = { left: MAX_DIR_LISTING },
+): string[] {
+  if (budget.left <= 0 || depth > MAX_DIR_DEPTH) return [];
+  let entries: string[];
+  try {
+    entries = readdirSync(absPath);
+  } catch {
+    return [`(unreadable: ${displayPath(absPath, baseDir)})`];
+  }
+  entries.sort((a, b) => a.localeCompare(b));
+  const lines: string[] = [];
+  for (const name of entries) {
+    if (budget.left <= 0) {
+      lines.push("… (listing truncated)");
+      break;
+    }
+    if (NOISE_DIRS.has(name)) continue;
+    if (name.startsWith(".") && depth === 0) continue;
+    const child = join(absPath, name);
+    let isDir = false;
+    try {
+      isDir = statSync(child).isDirectory();
+    } catch {
+      continue;
+    }
+    budget.left -= 1;
+    const rel = displayPath(child, baseDir);
+    if (isDir) {
+      lines.push(`${rel}/`);
+      if (depth < MAX_DIR_DEPTH) {
+        const nested = listDirectoryAttachment(child, baseDir, depth + 1, budget);
+        for (const line of nested) lines.push(`  ${line}`);
+      }
+    } else {
+      lines.push(rel);
+    }
+  }
+  return lines;
 }
 
 /**
@@ -494,6 +571,9 @@ function tokenToPath(token: string, baseDir: string): string {
   let t = token;
   if (t.startsWith("@")) t = t.slice(1);
   t = normalizeDroppedPath(t);
+  // Trailing slash is fine for directories in the prompt (`@src/`) but
+  // path.resolve/stat work cleaner without it.
+  t = t.replace(/\/+$/, "") || t;
   t = expandHome(t);
   return isAbsolute(t) ? t : resolve(baseDir, t);
 }
@@ -588,6 +668,20 @@ export function expandMentions(
         note: isPdf
           ? "PDF file — read it with pdf.read {\"path\":\"<pdf>\"} (extracts the text layer and auto-OCRs scanned PDFs)"
           : "document file — the agent can extract text with shell tools (e.g. textutil/pandoc/libreoffice) if needed",
+      });
+    } else if (kind === "directory") {
+      const listing = listDirectoryAttachment(absPath, absPath);
+      const body =
+        listing.length > 0
+          ? listing.join("\n")
+          : "(empty directory)";
+      attachments.push({
+        raw: token,
+        path: absPath,
+        kind: "directory",
+        content: body,
+        note:
+          "directory — listing included below; use fs.read / fs.list on paths you need",
       });
     } else if (kind === "missing") {
       attachments.push({
@@ -696,6 +790,11 @@ function renderContextBlock(
       parts.push(`\n----- ${shown}${trunc} -----`);
       parts.push(att.content);
       parts.push(`----- end ${shown} -----`);
+    } else if (att.kind === "directory" && att.content !== undefined) {
+      parts.push(`\n----- ${shown}/ (directory) -----`);
+      parts.push(`[directory] ${att.note ?? ""}`.trim());
+      parts.push(att.content);
+      parts.push(`----- end ${shown}/ -----`);
     } else {
       parts.push(`\n----- ${shown} -----`);
       parts.push(`[${att.kind}] ${att.note ?? ""}`.trim());

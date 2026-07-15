@@ -199,42 +199,12 @@ async function buildImageOcrGrounding(
 
 // Abort controller for streaming cancellation
 let currentAbortController: AbortController | null = null;
-let abortPressCount = 0;
-let lastAbortPressAt = 0;
-const ABORT_PRESS_DEDUP_MS = 40;
-const FORCE_EXIT_AFTER_ABORT_PRESSES = 2;
 
 class AbortRunError extends Error {
   constructor() {
     super("Aborted.");
     this.name = "AbortRunError";
   }
-}
-
-function resetAbortEscalation(): void {
-  abortPressCount = 0;
-  lastAbortPressAt = 0;
-}
-
-/**
- * Shared by raw input, readline keypresses, and SIGINT. A single terminal
- * Ctrl+C can produce both a raw `data` event and a `keypress` event, so dedupe
- * those notifications before counting presses. The raw-data path is the only
- * reliable fallback in some terminals and must retain the same force-exit
- * behavior as the normalized keypress path.
- */
-function abortCurrentRun(): void {
-  if (!currentAbortController) return;
-  const now = Date.now();
-  if (now - lastAbortPressAt < ABORT_PRESS_DEDUP_MS) return;
-  lastAbortPressAt = now;
-  abortPressCount += 1;
-  currentAbortController.abort();
-  if (abortPressCount >= FORCE_EXIT_AFTER_ABORT_PRESSES) {
-    process.stdout.write(chalk.yellow("\n  ⏹ force-exiting…\n"));
-    process.exit(130);
-  }
-  process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
 }
 
 // Build a concise, width-bounded spinner label for ask-mode research so the
@@ -350,11 +320,10 @@ async function withAbortableInput<T>(
   run: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   const ac = new AbortController();
-  resetAbortEscalation();
   const abortFromRawData = (chunk: Buffer | string): void => {
     const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     if (text.includes("\x03") || text === "\x1b") {
-      abortCurrentRun();
+      ac.abort();
     }
   };
 
@@ -663,8 +632,8 @@ async function pickModelInteractively(
   }
 
   const header = fetchedDynamically
-    ? chalk.dim(`  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`)
-    : chalk.dim(`  ↑/↓ navigate · type to filter · Tab to fill · Enter to select · ESC to cancel`);
+    ? chalk.dim(`  ↑↓:navigate  ·  type:filter  ·  tab:fill  ·  enter:select  ·  esc:cancel`)
+    : chalk.dim(`  ↑↓:navigate  ·  type:filter  ·  tab:fill  ·  enter:select  ·  esc:cancel`);
 
   const items = models.map((model, index) => {
     const tags: string[] = [];
@@ -760,7 +729,6 @@ async function offerAgentSwitch(
   },
   requestModel: string,
   images: ChatImage[],
-  onMessages?: (msgs: ChatMessage[]) => void,
 ): Promise<string> {
   if (info.preamble) {
     process.stdout.write(`${renderMarkdown(info.preamble)}\n`);
@@ -810,7 +778,6 @@ async function offerAgentSwitch(
       session: state.session,
       images,
       onEvent: classicRenderer.onEvent,
-      onMessages,
     }),
   );
 }
@@ -987,7 +954,7 @@ async function handleSlash(
         const picked = await pickInline({
           items,
           header: chalk.dim(
-            "  ↑/↓ navigate · Enter to select · ESC to cancel",
+            "  ↑↓:navigate  ·  enter:select  ·  esc:cancel",
           ),
           pageSize: allEfforts.length,
         });
@@ -1109,7 +1076,7 @@ async function handleSlash(
       const selectedId = await pickInline({
         items,
         header: chalk.dim(
-          `  ↑/↓ navigate · type to filter · Enter to resume · ESC to cancel`,
+          `  ↑↓:navigate  ·  type:filter  ·  enter:resume  ·  esc:cancel`,
         ),
         pageSize: Math.min(15, items.length),
       });
@@ -1613,59 +1580,6 @@ async function handleSlash(
       console.log();
       return true;
     }
-    case "/permissions": {
-      const arg = (args[0] ?? "").toLowerCase().trim();
-      const current = getConfig().permissions ?? "default";
-      const allPermissions = [
-        { value: "default", label: "default", desc: "normal behavior (prompts for confirmation on mutating actions)" },
-        { value: "allow-all", label: "allow-all", desc: "run everything without confirmation (except passwords)" }
-      ] as const;
-
-      if (!arg) {
-        console.log(
-          chalk.dim("  current permissions: ") + chalk.cyan(current)
-        );
-
-        const items = allPermissions.map((p) => {
-          const isActive = p.value === current;
-          const activeTag = isActive ? chalk.green(" (active)") : "";
-          const label = `  ${chalk.cyan(p.label.padEnd(12))} ${chalk.dim(p.desc)}${activeTag}`;
-          return { label, value: p.value, filterText: p.label };
-        });
-
-        const picked = await pickInline({
-          items,
-          header: chalk.dim(
-            "  ↑/↓ navigate · Enter to select · ESC to cancel",
-          ),
-          pageSize: allPermissions.length,
-        });
-
-        if (!picked) {
-          console.log(chalk.dim("  permissions unchanged"));
-          return true;
-        }
-
-        updateConfig({ permissions: picked });
-        console.log(chalk.dim(`  permissions → ${chalk.cyan(picked)}`));
-        return true;
-      }
-
-      if (arg === "default" || arg === "normal") {
-        updateConfig({ permissions: "default" });
-        console.log(chalk.dim(`  permissions → ${chalk.cyan("default")}`));
-        return true;
-      }
-
-      if (arg === "allow-all" || arg === "allowall" || arg === "all") {
-        updateConfig({ permissions: "allow-all" });
-        console.log(chalk.dim(`  permissions → ${chalk.cyan("allow-all")}`));
-        return true;
-      }
-
-      console.log(chalk.dim("  usage: /permissions [default|allow-all]"));
-      return true;
-    }
     case "/update":
       await runUpdate();
       return true;
@@ -1697,6 +1611,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   let isReadingPrompt = false;
   let outputShortcutBusy = false;
   let lastOutputShortcutAt = 0;
+  let abortPressCount = 0;
+
   emitKeypressEvents(input);
 
   // Survive stray promise rejections (eg AbortError from a cancelled
@@ -1813,7 +1729,18 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       void handlePlanShortcut();
     }
     if ((isEscape(key) || isCtrlC(key)) && currentAbortController) {
-      abortCurrentRun();
+      abortPressCount += 1;
+      currentAbortController.abort();
+      // Escalate: after the first abort attempt the child process
+      // receives SIGTERM, which tools like ffuf may catch and handle
+      // gracefully (taking several seconds). Show feedback so the
+      // user knows the abort registered, and on subsequent presses
+      // hint that force-kill is in progress.
+      if (abortPressCount === 1) {
+        process.stdout.write(chalk.yellow("\n  ⏹ aborting…\n"));
+      } else if (abortPressCount >= 2) {
+        process.stdout.write(chalk.yellow("  ⏹ force-killing…\n"));
+      }
     }
   };
   input.on("keypress", handleKeypress);
@@ -1831,9 +1758,8 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
   // second press within 1s; so SIGINT here only acts as a fallback for
   // the rare case where no prompt or stream is active.
   const handleSigint = (): void => {
-    const now = Date.now();
     if (currentAbortController) {
-      abortCurrentRun();
+      currentAbortController.abort();
       return;
     }
     if (isReadingPrompt) {
@@ -1841,6 +1767,7 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
       // semantics; do nothing here so the two paths never fight.
       return;
     }
+    const now = Date.now();
     if (now - lastSigintAt < 1_000) {
       console.log();
       process.exit(0);
@@ -1980,15 +1907,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
         continue;
       }
 
-      let stateMessagesUpdated = false;
-      const onMessages = (msgs: ChatMessage[]): void => {
-        stateMessagesUpdated = true;
-        state.messages = msgs;
-      };
-
       try {
         clearThinking();
-        resetAbortEscalation();
+        abortPressCount = 0;
         let assistantContent = "";
         // Expand @file mentions and drag-and-dropped paths into real context.
         // The user-visible `line` stays readable in history; the model gets
@@ -2053,7 +1974,6 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             console.log(chalk.dim(`  ↳ ${tag}: `) + chalk.dim(att.path));
           }
         }
-
         if (state.mode === "ask") {
           let actionRequired: AskActionRequired | undefined;
           assistantContent = await withAbortableInput(async (signal) =>
@@ -2076,36 +1996,32 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
             }, signal),
           );
           process.stdout.write("\n");
-
           if (actionRequired) {
-          // The task needs actions ask mode can't perform. Offer to switch
-          // into agent mode and run it there. On confirm, state.mode flips
-          // so subsequent turns stay in agent mode too.
-          assistantContent = await offerAgentSwitch(
-            actionRequired,
-            state,
-            requestModel,
-            images,
-            onMessages,
+            // The task needs actions ask mode can't perform. Offer to switch
+            // into agent mode and run it there. On confirm, state.mode flips
+            // so subsequent turns stay in agent mode too.
+            assistantContent = await offerAgentSwitch(
+              actionRequired,
+              state,
+              requestModel,
+              images,
+            );
+          }
+        } else {
+          const classicRenderer = attachClassicRenderer();
+          assistantContent = await withAbortableInput(async (signal) =>
+            runAgent(modelInput, {
+              provider: state.provider,
+              model: requestModel,
+              history: state.messages,
+              signal,
+              session: state.session,
+              images,
+              onEvent: classicRenderer.onEvent,
+            }),
           );
         }
-      } else {
-        const classicRenderer = attachClassicRenderer();
-        assistantContent = await withAbortableInput(async (signal) =>
-          runAgent(modelInput, {
-            provider: state.provider,
-            model: requestModel,
-            history: state.messages,
-            signal,
-            session: state.session,
-            images,
-            onEvent: classicRenderer.onEvent,
-            onMessages,
-          }),
-        );
-      }
-      console.log();
-      if (!stateMessagesUpdated) {
+        console.log();
         const userHistoryMessage: ChatMessage = {
           role: "user",
           content: modelInput,
@@ -2115,25 +2031,20 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
           role: "assistant",
           content: assistantContent,
         });
-      }
-    } catch (error) {
-      if (error instanceof AbortRunError) {
-        process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
-        await persistSession(state, line);
-        continue;
-      }
-      // Still save the exchange so /history doesn't lose conversations
-      // that hit transient errors (e.g. "requires root", network timeout).
-      const errMsg = error instanceof Error ? error.message : String(error);
-      if (!stateMessagesUpdated) {
+      } catch (error) {
+        if (error instanceof AbortRunError) {
+          process.stdout.write(chalk.yellow("\n  ⏹ Aborted.\n"));
+          continue;
+        }
+        // Still save the exchange so /history doesn't lose conversations
+        // that hit transient errors (e.g. "requires root", network timeout).
+        const errMsg = error instanceof Error ? error.message : String(error);
         state.messages.push(
           { role: "user", content: line },
           { role: "assistant", content: `[error: ${errMsg}]` },
         );
+        console.error(chalk.red(errMsg));
       }
-      console.error(chalk.red(errMsg));
-      await persistSession(state, line);
-    }
     }
   } finally {
     isReadingPrompt = false;

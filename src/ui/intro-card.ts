@@ -86,11 +86,11 @@ export function renderIntroCard(opts: IntroCardOptions): string {
 
   // Shortcuts — pick a set that fits the terminal width
   const fullShortcuts =
-    "ESC abort  │  Ctrl+C clears input  │  @ attach files  │  Ctrl+T thinking  │  Ctrl+O output  │  Ctrl+P plan";
+    "ESC abort  │  Ctrl+C quit  │  @ files  │  /history past chats  │  Ctrl+T thinking  │  Ctrl+O output";
   const shortShortcuts =
-    "ESC abort │ Ctrl+C clear │ @ files │ Ctrl+T think │ Ctrl+O out │ Ctrl+P plan";
+    "ESC abort │ Ctrl+C quit │ @ files │ /history │ Ctrl+T think │ Ctrl+O out";
   const miniShortcuts =
-    "ESC abort │ Ctrl+C clear │ /help";
+    "ESC abort │ /history │ /help";
   const shortcutsText =
     cols >= 110
       ? fullShortcuts

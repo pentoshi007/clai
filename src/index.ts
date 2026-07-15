@@ -36,7 +36,7 @@ import {
 } from "./ui/thinking.js";
 import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
 import { canUseTui } from "./tui/can-use-tui.js";
-import { shouldUseTui } from "./tui/default.js";
+import { resolveUiChoice } from "./tui-v2/bootstrap/ui-selection.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -46,6 +46,7 @@ interface GlobalOptions {
   noHistory?: boolean | undefined;
   tui?: boolean | undefined;
   classic?: boolean | undefined;
+  ui?: string | undefined;
 }
 
 function modeOption(): Option {
@@ -71,11 +72,13 @@ async function oneShot(
   const model = options.model ?? getProviderModel(activeProvider);
 
   if (!prompt) {
-    if (shouldUseTui(options)) {
+    // Interactive: OpenTUI by default; classic line REPL on --classic / non-TTY.
+    const ui = resolveUiChoice(options);
+    if (ui === "tui") {
       const gate = canUseTui();
       if (gate.ok) {
-        const { startTui } = await import("./tui/index.js");
-        await startTui({
+        const { startTuiV2 } = await import("./tui-v2/bootstrap/start-tui-v2.js");
+        await startTuiV2({
           mode,
           provider,
           model,
@@ -168,8 +171,14 @@ async function main(): Promise<void> {
       "--no-history",
       "do not persist this session to history (in-memory only)",
     )
-    .option("--tui", "launch the full-screen terminal UI (default)")
-    .option("--classic", "launch the legacy line-based REPL")
+    .option("--tui", "launch the full-screen TUI (default)")
+    .option("--classic", "launch the line-based REPL")
+    .addOption(
+      new Option(
+        "--ui <mode>",
+        "interactive frontend: tui (OpenTUI, default), legacy (line REPL). v2 is an alias for tui",
+      ).choices(["legacy", "tui", "v2"]),
+    )
     .argument("[prompt...]", "one-shot prompt")
     .action(
       async (promptParts: string[] | undefined, options: GlobalOptions) => {
