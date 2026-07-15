@@ -33,6 +33,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+      # npm only installs the host platform optional native. Bun --compile still
+      # resolves every @opentui/core-* import, so install all platforms first.
+      - name: Install OpenTUI natives for cross-compile
+        run: bun run scripts/install-opentui-natives.ts
       - name: Build binary
         run: bun build ./src/index.ts --compile --target ${{ matrix.target }} --outfile release/clai-${{ matrix.target }}${{ contains(matrix.target, 'windows') && '.exe' || '' }}
       - name: Compute SHA256 sidecar

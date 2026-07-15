@@ -40,6 +40,7 @@
     "build": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run build",
     "compile": "bun run scripts/build.ts",
+    "install:opentui-natives": "bun run scripts/install-opentui-natives.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "doctor": "tsx src/index.ts doctor"
