@@ -1,36 +1,28 @@
-/**
- * Cap in-memory / re-sent message bulk from native toolCalls.
- *
- * fs.write / writeMany put entire file bodies in tool-call args. Those were
- * stored verbatim in history and LoopGuard signatures, so a scaffold turn
- * could hold many multi-MB strings — memory climbed into the multi-GB range
- * and Macs heated under GC. Full file bodies remain on disk; tool results
- * still report paths/bytes.
- */
-
 import { createHash } from "node:crypto";
 
-/** Strings at or above this are replaced with a length+hash stub. */
 export const SLIM_ARG_STRING_CHARS = 400;
-/** Hard ceiling for a single string kept as-is in history (safety). */
 export const SLIM_ARG_ABSOLUTE_MAX_CHARS = 8_000;
-/** Max depth when walking args trees (writeMany files[]). */
 const SLIM_MAX_DEPTH = 6;
+
+const BULK_ARG_KEYS = new Set(["content", "body"]);
+
+const ELIDED_STUB_PATTERN = /^«\d+ chars sha256=[0-9a-f]{12}(?:\s+—.*)?»$/s;
 
 function shortHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
-/**
- * Replace large string values with a compact stub so history/loop-guard
- * never retains full write payloads. Small strings and structure stay intact
- * so path-based identity still works for loop detection.
- */
-export function slimValue(value: unknown, depth = 0): unknown {
+function slimLimitForKey(key: string | undefined): number {
+  return key !== undefined && BULK_ARG_KEYS.has(key)
+    ? SLIM_ARG_STRING_CHARS
+    : SLIM_ARG_ABSOLUTE_MAX_CHARS;
+}
+
+export function slimValue(value: unknown, depth = 0, key?: string): unknown {
   if (typeof value === "string") {
-    if (value.length < SLIM_ARG_STRING_CHARS) return value;
+    if (value.length < slimLimitForKey(key)) return value;
     const hash = shortHash(value);
-    return `«${value.length} chars sha256=${hash}»`;
+    return `«${value.length} chars sha256=${hash} — elided from history; never reuse this stub, regenerate the full value»`;
   }
   if (value === null || value === undefined) return value;
   if (typeof value !== "object") return value;
@@ -42,8 +34,12 @@ export function slimValue(value: unknown, depth = 0): unknown {
     return value.map((entry) => slimValue(entry, depth + 1));
   }
   const out: Record<string, unknown> = {};
-  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
-    out[key] = slimValue((value as Record<string, unknown>)[key], depth + 1);
+  for (const childKey of Object.keys(value as Record<string, unknown>).sort()) {
+    out[childKey] = slimValue(
+      (value as Record<string, unknown>)[childKey],
+      depth + 1,
+      childKey,
+    );
   }
   return out;
 }
@@ -58,7 +54,46 @@ export function slimToolArgs(
   return {};
 }
 
-/** Approximate UTF-16 code units for token budgeting (same basis as content). */
+export function findElidedStubArg(
+  value: unknown,
+  path = "args",
+  depth = 0,
+): { key: string; value: string } | undefined {
+  if (typeof value === "string") {
+    return ELIDED_STUB_PATTERN.test(value) ? { key: path, value } : undefined;
+  }
+  if (value === null || value === undefined || typeof value !== "object") {
+    return undefined;
+  }
+  if (depth >= SLIM_MAX_DEPTH) return undefined;
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      const found = findElidedStubArg(value[i], `${path}[${i}]`, depth + 1);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  for (const [childKey, childValue] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    const found = findElidedStubArg(
+      childValue,
+      path ? `${path}.${childKey}` : childKey,
+      depth + 1,
+    );
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function elidedStubReuseMessage(key: string): string {
+  return (
+    `Tool call rejected: argument "${key}" is an elided history placeholder («N chars sha256=…»), not a real value. ` +
+    "Compressed history replaces long arguments with those stubs and the original text cannot be recovered from them. " +
+    "Re-issue the tool call with the complete literal value — never copy «…» stubs from earlier context."
+  );
+}
+
 export function measureToolCallsChars(
   toolCalls:
     | readonly {

@@ -64,6 +64,10 @@ import { compareAuthorizationContexts, discoverWebSurface, enumerateApi } from "
 import { nativeDnsLookup } from "./dns-native.js";
 import { nativeWhoisLookup } from "./whois-native.js";
 import { type ToolRunOptions, type ToolHandler } from "./tool-types.js";
+import {
+  elidedStubReuseMessage,
+  findElidedStubArg,
+} from "../agent/message-slim.js";
 import { fromWireName, sanitizeToolName } from "../llm/tool-protocol.js";
 import {
   prepareElevatedBackgroundCommand,
@@ -333,14 +337,15 @@ export const toolRegistry: Record<string, ToolHandler> = {
         requestSecret: options?.requestSecret,
       });
       if (elevated) return elevated;
-      if (!getAllowInteractiveStdinInherit()) {
+      const isRoot = process.getuid?.() === 0;
+      if (!isRoot && !getAllowInteractiveStdinInherit()) {
         return {
           ok: false,
           exitCode: 1,
           output:
-            "This command needs an interactive password prompt, which would freeze the TUI. " +
-            "Use a simple `sudo <command>` so clai can open the secure password modal, " +
-            "or run without elevation (e.g. nmap -sT).",
+            "This command needs an interactive password prompt, which this frontend cannot show without freezing the UI. " +
+            "Run it in an interactive session (terminal.start, then answer the prompt via terminal.send), " +
+            "or re-run from the clai TUI where the secure password modal is available.",
         };
       }
     }
@@ -1327,6 +1332,14 @@ export async function runToolCall(
   const handler = toolRegistry[normalized.name];
   if (!handler) {
     throw new Error(`Unknown tool: ${normalized.name}`);
+  }
+  const elidedStub = findElidedStubArg(normalized.args);
+  if (elidedStub) {
+    return {
+      ok: false,
+      exitCode: 1,
+      output: elidedStubReuseMessage(elidedStub.key),
+    };
   }
   return normalizeToolResult(
     normalized.name,

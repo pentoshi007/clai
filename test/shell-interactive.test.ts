@@ -4,7 +4,10 @@
 // so a sudo / ssh / gpg password prompt can reach the user.
 
 import { describe, expect, it } from "vitest";
-import { looksInteractiveStdin } from "../src/tools/shell.js";
+import {
+  interactiveStdinKind,
+  looksInteractiveStdin,
+} from "../src/tools/shell.js";
 
 describe("looksInteractiveStdin", () => {
   it("flags bare sudo invocations", () => {
@@ -57,5 +60,42 @@ describe("looksInteractiveStdin", () => {
     // The helper accepts any value defensively — non-string returns false.
     expect(looksInteractiveStdin(undefined as unknown as string)).toBe(false);
     expect(looksInteractiveStdin(null as unknown as string)).toBe(false);
+  });
+
+  it("keeps scanning later segments after an opted-out segment", () => {
+    expect(looksInteractiveStdin("sudo -n true && sudo whoami")).toBe(true);
+    expect(looksInteractiveStdin("ssh -o BatchMode=yes a && sudo whoami")).toBe(
+      true,
+    );
+    expect(looksInteractiveStdin("sudo -n true && ls")).toBe(false);
+  });
+});
+
+describe("interactiveStdinKind", () => {
+  it("classifies sudo-family segments as elevate anywhere in the line", () => {
+    expect(interactiveStdinKind("sudo whoami")).toBe("elevate");
+    expect(interactiveStdinKind("cd /tmp && sudo nmap -sS x")).toBe("elevate");
+    expect(interactiveStdinKind("echo hi | sudo tee /root/out")).toBe("elevate");
+    expect(interactiveStdinKind("su -c whoami")).toBe("elevate");
+    expect(interactiveStdinKind("doas pkg upgrade")).toBe("elevate");
+  });
+
+  it("classifies ssh/gpg/passwd as tty-only", () => {
+    expect(interactiveStdinKind("ssh user@host")).toBe("tty");
+    expect(interactiveStdinKind("gpg --decrypt x.gpg")).toBe("tty");
+    expect(interactiveStdinKind("passwd")).toBe("tty");
+  });
+
+  it("prefers elevate when both kinds appear", () => {
+    expect(interactiveStdinKind("ssh a && sudo ls")).toBe("elevate");
+  });
+
+  it("returns undefined for non-interactive and opted-out commands", () => {
+    expect(interactiveStdinKind("ls -la")).toBeUndefined();
+    expect(interactiveStdinKind("sudo -n whoami")).toBeUndefined();
+    expect(interactiveStdinKind("echo pw | sudo -S whoami")).toBeUndefined();
+    expect(
+      interactiveStdinKind("ssh -o BatchMode=yes user@host uptime"),
+    ).toBeUndefined();
   });
 });

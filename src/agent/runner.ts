@@ -98,6 +98,10 @@ import {
   RUNNER_META_TOOL_NAMES,
 } from "../tools/definitions.js";
 import {
+  elidedStubReuseMessage,
+  findElidedStubArg,
+} from "./message-slim.js";
+import {
   appendAssistantWithTools,
   ensureUniqueToolCallIds,
   toolCallIdsInHistory,
@@ -1889,6 +1893,14 @@ export async function runAgentTurn(
           "Tool call arguments were not valid JSON (truncated or malformed). " +
           "Retry with smaller content, or use fs.writeMany / fs.append continuation. " +
           (raw ? `Partial: ${raw}` : "");
+        const result = { ok: false, output: reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, reason);
+        return { ok: false, call, result, contextOutput: reason };
+      }
+
+      const elidedStub = findElidedStubArg(call.args);
+      if (elidedStub) {
+        const reason = elidedStubReuseMessage(elidedStub.key);
         const result = { ok: false, output: reason, exitCode: 1 };
         emitToolResult(toolEventId, result, reason);
         return { ok: false, call, result, contextOutput: reason };

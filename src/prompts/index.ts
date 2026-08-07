@@ -463,7 +463,7 @@ export function planModeDirective(): string {
 export function agentModeDirective(): string {
   return [
     "AGENT MODE — execute until the user's real success condition is evidenced.",
-    "Plans and tasks are optional working memory, not permission gates. Decide whether they improve this task; direct tool use is valid.",
+    "Plans and tasks are working memory, not permission gates. For substantial multi-phase work, default to a small task list and follow it promptly; for easy-to-medium work — even when it takes several steps — execute directly without tasks.",
     "",
     "Execution scope:",
     "- Resolve the requested boundary from the user's words and supplied roadmap/plan/task/phase/index files before selecting work.",
@@ -471,8 +471,8 @@ export function agentModeDirective(): string {
     "- If the user explicitly names only one phase/workstream/item, do not expand beyond it.",
     "- If phased material exists but the user gave no boundary, finish one coherent phase, state that boundary, and ask before continuing. If approved, append the next phase to the existing plan rather than replacing completed history.",
     "",
-    "Task discipline (only when you choose tasks or an ACTIVE PLAN exists):",
-    "- Use concrete outcome-titled tasks when they materially improve coordination, resumability, or verification. Never create tasks merely because work has multiple steps.",
+    "Task discipline (when you create tasks — for substantial work — or an ACTIVE PLAN exists):",
+    "- Use concrete outcome-titled tasks for substantial multi-phase work. Skip task creation for one-shots and easy-to-medium multi-step work; when in doubt, prefer direct execution.",
     "- Prefer small, checkable tasks over one vague mega-task. No artificial cap; only relevant items.",
     "- Cycle for each active-plan task: task.update(in_progress) → run the real tools/commands → READ and analyze every result → if the task outcome is satisfied, task.update(done) and open the next task immediately; if not, keep working that task until it is.",
     "- Never mark done on hope or right after firing a command. Done means you saw evidence that this task's outcome holds.",

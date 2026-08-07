@@ -83,12 +83,13 @@ describe("prompt rendering", () => {
     expect(currentDateTimeContext(a)).toBe(currentDateTimeContext(b));
   });
 
-  it("agent prompt makes tasks optional while preserving verify-before-done", () => {
+  it("agent prompt reserves tasks for substantial work while preserving verify-before-done", () => {
     const prompt = renderAgentSystemPrompt("task.update, plan.create, shell.exec");
     expect(prompt).toMatch(/AGENT-MODE TASKS vs PLAN-MODE TASKS/i);
-    expect(prompt).toMatch(/optional working memory|not a prerequisite/i);
-    expect(prompt).toMatch(/Never create tasks merely because work has multiple steps/i);
-    expect(prompt).toMatch(/read\/analyze results|read tool results|READ results/i);
+    expect(prompt).toMatch(/working memory, not a permission gate/i);
+    expect(prompt).toMatch(/Create a small outcome-titled task list[\s\S]*for substantial work/i);
+    expect(prompt).toMatch(/Do NOT create tasks for easy-to-medium work, even when it takes several steps/i);
+    expect(prompt).toMatch(/read\/analyze results|read tool results|READ results|read the results/i);
     expect(prompt).toMatch(/typecheck|automated checks/i);
     expect(prompt).toMatch(/Never mark done before evidence|done only when|Never mark done because/i);
   });
@@ -102,10 +103,11 @@ describe("prompt rendering", () => {
     expect(prompt).toMatch(/append the next phase.*instead of replacing completed work/is);
   });
 
-  it("agentModeDirective requires evidence and keeps task usage model-directed", () => {
+  it("agentModeDirective requires evidence and reserves tasks for substantial work", () => {
     const d = agentModeDirective();
-    expect(d).toMatch(/optional working memory/i);
-    expect(d).toMatch(/Never create tasks merely because work has multiple steps/i);
+    expect(d).toMatch(/working memory, not permission gates/i);
+    expect(d).toMatch(/substantial multi-phase work, default to a small task list/i);
+    expect(d).toMatch(/easy-to-medium work[\s\S]*execute directly without tasks/i);
     expect(d).toMatch(/entire roadmap\/folder\/program/i);
     expect(d).toMatch(/Never mark done on hope/i);
     expect(d).toMatch(/typecheck|automated checks/i);

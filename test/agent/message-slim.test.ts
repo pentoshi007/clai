@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  elidedStubReuseMessage,
+  findElidedStubArg,
   measureToolCallsChars,
   slimToolArgs,
   slimValue,
+  SLIM_ARG_ABSOLUTE_MAX_CHARS,
   SLIM_ARG_STRING_CHARS,
 } from "../../src/agent/message-slim.js";
 import { estimateMessagesTokens } from "../../src/agent/context-manager.js";
@@ -13,12 +16,48 @@ import type { ChatMessage } from "../../src/types.js";
 describe("message-slim", () => {
   it("fingerprints large strings but keeps small ones", () => {
     const small = "hello";
-    const large = "x".repeat(SLIM_ARG_STRING_CHARS + 50);
+    const large = "x".repeat(SLIM_ARG_ABSOLUTE_MAX_CHARS + 50);
     expect(slimValue(small)).toBe(small);
     const slimmed = String(slimValue(large));
     expect(slimmed).toMatch(/«\d+ chars sha256=/);
-    expect(slimmed.length).toBeLessThan(80);
+    expect(slimmed).toMatch(/never reuse this stub/);
+    expect(slimmed.length).toBeLessThan(140);
     expect(slimmed).not.toContain("x".repeat(20));
+  });
+
+  it("stubs bulk body keys aggressively but preserves command args", () => {
+    const bulk = slimToolArgs({
+      path: "a.ts",
+      content: "c".repeat(SLIM_ARG_STRING_CHARS + 50),
+    });
+    expect(String(bulk.content)).toMatch(/«450 chars sha256=/);
+
+    const command = "nmap " + "-sS ".repeat(200) + "example.com";
+    const slimmed = slimToolArgs({ command });
+    expect(slimmed.command).toBe(command);
+
+    const hugeCommand = "x".repeat(SLIM_ARG_ABSOLUTE_MAX_CHARS + 10);
+    expect(String(slimToolArgs({ command: hugeCommand }).command)).toMatch(
+      /«\d+ chars sha256=/,
+    );
+  });
+
+  it("findElidedStubArg detects old and new stub formats recursively", () => {
+    const legacy = "«522 chars sha256=acb3f2e19221»";
+    const modern =
+      "«522 chars sha256=acb3f2e19221 — elided from history; never reuse this stub, regenerate the full value»";
+    expect(findElidedStubArg({ command: legacy })?.key).toBe("args.command");
+    expect(
+      findElidedStubArg({ files: [{ path: "a", content: modern }] })?.key,
+    ).toBe("args.files[0].content");
+    expect(findElidedStubArg({ command: "nmap -sS example.com" })).toBeUndefined();
+    expect(findElidedStubArg(undefined)).toBeUndefined();
+    expect(findElidedStubArg({ command: "prefix «522 chars sha256=acb3f2e19221» suffix" })).toBeUndefined();
+  });
+
+  it("elidedStubReuseMessage names the offending argument", () => {
+    expect(elidedStubReuseMessage("args.command")).toContain("args.command");
+    expect(elidedStubReuseMessage("args.command")).toMatch(/complete literal value/);
   });
 
   it("slims writeMany file contents while keeping paths", () => {

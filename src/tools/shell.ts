@@ -118,35 +118,21 @@ export function getAllowInteractiveStdinInherit(): boolean {
   return allowInteractiveStdinInherit;
 }
 
-/**
- * Heuristic: does this command line need to read from a real TTY so a
- * password / passphrase / yes-no prompt can reach the user?
- *
- * The classic case is `sudo`: with `stdio: ["ignore", ...]` sudo prints
- * "a terminal is required to read the password" and exits with code 1.
- * We catch the same family of tools (su/doas/ssh/gpg/passwd, plus the
- * Windows elevation helpers `gsudo` / `sudo` / `runas`) so the agent
- * can run them like a human would.
- *
- * Returns `false` when the command explicitly opts out of prompts
- * (`sudo -n`, `sudo --non-interactive`, `sudo -S`, `ssh -o BatchMode=yes`)
- * because in those cases inheriting stdin would only confuse things.
- */
-export function looksInteractiveStdin(command: string): boolean {
-  if (typeof command !== "string" || command.length === 0) return false;
+export type InteractiveStdinKind = "elevate" | "tty";
 
-  // Tokenize on shell metacharacters so `foo && sudo bar` and
-  // `cat x | sudo tee y` both register a sudo segment. We split on the
-  // raw command (preserving case) because some flags differ only in
-  // case — `sudo -S` means "read password from stdin" while `sudo -s`
-  // means "run a login shell"; conflating them is a real bug.
+export function interactiveStdinKind(
+  command: string,
+): InteractiveStdinKind | undefined {
+  if (typeof command !== "string" || command.length === 0) return undefined;
+
   const segments = command
     .split(/\s*(?:\|\||&&|;|\|)\s*/g)
     .map((s) => s.trim())
     .filter(Boolean);
 
+  let tty = false;
+
   for (const segment of segments) {
-    // Strip env-var prefixes ("FOO=bar sudo …") and leading `command`/`exec`.
     const tokens = segment.split(/\s+/);
     let i = 0;
     while (i < tokens.length && /^[A-Za-z_][\w]*=.*$/.test(tokens[i]!)) i += 1;
@@ -158,44 +144,43 @@ export function looksInteractiveStdin(command: string): boolean {
     }
     const head = tokens[i];
     if (!head) continue;
-    // Strip absolute paths so `/usr/bin/sudo` matches `sudo`.
     const base = head.replace(/^.*[\\\/]/, "").toLowerCase();
-    if (
-      base !== "sudo" &&
-      base !== "su" &&
-      base !== "doas" &&
-      base !== "ssh" &&
-      base !== "scp" &&
-      base !== "rsync" &&
-      base !== "gpg" &&
-      base !== "passwd" &&
-      base !== "gsudo" &&
-      base !== "runas"
-    ) {
-      continue;
-    }
-
-    // Honor opt-outs so non-interactive flags don't get bypassed. We
-    // check `tokens` directly (preserving case) so `-S` and `-s` stay
-    // distinguishable.
     const rest = tokens.slice(i + 1);
     const restJoined = rest.join(" ");
-    if (base === "sudo" || base === "doas") {
+
+    if (base === "sudo" || base === "doas" || base === "su") {
       if (
         rest.includes("-n") ||
         rest.includes("--non-interactive") ||
         rest.includes("-S") ||
         rest.includes("--stdin")
       ) {
-        return false;
+        continue;
       }
+      return "elevate";
     }
+
     if (base === "ssh" || base === "scp" || base === "rsync") {
-      if (/-o\s+batchmode=yes/i.test(restJoined)) return false;
+      if (/-o\s+batchmode=yes/i.test(restJoined)) continue;
+      tty = true;
+      continue;
     }
-    return true;
+
+    if (
+      base === "gpg" ||
+      base === "passwd" ||
+      base === "gsudo" ||
+      base === "runas"
+    ) {
+      tty = true;
+    }
   }
-  return false;
+
+  return tty ? "tty" : undefined;
+}
+
+export function looksInteractiveStdin(command: string): boolean {
+  return interactiveStdinKind(command) !== undefined;
 }
 
 /**
