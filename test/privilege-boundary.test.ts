@@ -17,7 +17,11 @@ describe("universal managed privilege boundary", () => {
       { name: "shell.exec", args: { command: "sudo whoami" } },
       { requestSecret: async () => { void secret; return undefined; } },
     );
-    expect(result).toMatchObject({ ok: false, exitCode: 130 });
+    if (process.platform === "win32") {
+      expect(result).toMatchObject({ ok: false, exitCode: 1 });
+    } else {
+      expect(result).toMatchObject({ ok: false, exitCode: 130 });
+    }
     expect(JSON.stringify(result)).not.toContain(secret);
   });
 });
