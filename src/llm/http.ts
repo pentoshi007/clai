@@ -676,7 +676,9 @@ export function buildReasoningPayload(
       return { reasoning_effort: metaEffort(effort) };
     }
     case "openai": {
-      if (!enabled) return {};
+      if (!enabled) {
+        return effort === "none" ? { reasoning_effort: "none" } : {};
+      }
       // `reasoning_effort` is the Chat Completions knob. The nested
       // `reasoning` object belongs to the Responses API; strict gateways reject
       // unknown top-level fields with a hard 400.

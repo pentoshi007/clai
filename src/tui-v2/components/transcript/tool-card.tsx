@@ -650,7 +650,7 @@ export function ToolCard(props: {
         </box>
       ) : null}
 
-      {/* Skip SAVED line for file mutations — path is already in the title. */}
+      {/* Skip the saved-path line for file mutations — path is already in the title. */}
       {item.artifactPath && !isFileDiff && !isMutation ? (
         <box
           style={{
@@ -662,10 +662,6 @@ export function ToolCard(props: {
             overflow: "hidden",
           }}
         >
-          <text selectable style={{ fg: theme.white, bg: theme.chipTeal, attributes: TextAttributes.BOLD }}>
-            {" SAVED "}
-          </text>
-          <text content=" " selectable />
           <LinkableText text={item.artifactPath} theme={theme} fg={theme.cyan} selectable />
         </box>
       ) : null}

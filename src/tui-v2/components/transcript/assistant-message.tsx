@@ -22,6 +22,9 @@ import {
 } from "../../rendering/streaming-markdown.js";
 import { selectableRowStyle } from "./selectable-line.js";
 
+/** Body indent under the ◆ Response label (paddingLeft below). */
+const BODY_INDENT = 2;
+
 export function AssistantMessage(props: {
   item: AssistantItem;
   theme: Theme;
@@ -31,10 +34,13 @@ export function AssistantMessage(props: {
   const { item, theme, contentWidth } = props;
   const { width: termWidth } = useTerminalDimensions();
   // Prefer shell chat width so tables reflow beside the plan pane; fall back
-  // to classic term−chrome when contentWidth is not threaded yet.
+  // to classic term−chrome when contentWidth is not threaded yet. The body
+  // renders inside paddingLeft: BODY_INDENT, so the wrap budget must exclude
+  // the indent or full-length lines paint past the chat column's right edge.
   const wrapWidth = Math.max(
     20,
-    contentWidth != null ? contentWidth : Math.max(40, termWidth - 8),
+    (contentWidth != null ? contentWidth : Math.max(40, termWidth - 8)) -
+      BODY_INDENT,
   );
 
   const cacheRef = useRef<MarkdownStreamCache>(EMPTY_MARKDOWN_STREAM_CACHE);
@@ -72,7 +78,7 @@ export function AssistantMessage(props: {
       {/* Breathing room under the label (classic Ink blank line after ◆ Response). */}
       <text content=" " selectable />
       {lines.length > 0 ? (
-        <box style={{ flexDirection: "column", paddingLeft: 2, width: "100%", marginBottom: 1 }}>
+        <box style={{ flexDirection: "column", paddingLeft: BODY_INDENT, width: "100%", marginBottom: 1 }}>
           {lines.map((content, i) => (
             // Body is selectable — drag to select, release copies (OSC 52).
             // Never pass null/undefined content — OpenTUI crashes on text.chunks.

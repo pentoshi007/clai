@@ -2,7 +2,7 @@
  * Ephemeral toast queue (UI chrome, not transcript history).
  *
  * Lifecycle (host animates enter/exit):
- *   enter (~200ms) → hold (default 3500ms) → exit (~200ms) → dismiss
+ *   enter (~200ms) → hold (default 5000ms) → exit (~200ms) → dismiss
  *
  * Same-key shows replace the previous toast so rapid toggles do not stack.
  */
@@ -24,7 +24,7 @@ export interface ToastItem {
 
 export interface ShowToastOptions {
   readonly level?: ToastLevel | undefined;
-  /** Visible hold at rest; default 3500ms (enter/exit are added on top). */
+  /** Visible hold at rest; default 5000ms (enter/exit are added on top). */
   readonly durationMs?: number | undefined;
   /**
    * Replace any existing toast with this key (e.g. "thinking", "scroll").
@@ -38,7 +38,7 @@ export interface ShowToastOptions {
 export type ToastListener = () => void;
 
 /** Time at rest in the final on-screen position. */
-export const DEFAULT_TOAST_DURATION_MS = 3500;
+export const DEFAULT_TOAST_DURATION_MS = 5000;
 /** Slide-in from top. */
 export const TOAST_ENTER_MS = 200;
 /** Slide-out back to top. */

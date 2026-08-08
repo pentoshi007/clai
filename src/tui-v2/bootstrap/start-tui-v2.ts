@@ -23,6 +23,7 @@ import { createOsc52ClipboardPort } from "./osc52-clipboard.js";
 import { createPagerExportPort } from "./pager-export.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
+import { isSuppressedConsoleMessage } from "./console-suppress.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -97,6 +98,7 @@ export async function startTuiV2(
     logDir: getLogsDirRoot(),
     onCapture: (level, message) => {
       if (level === "error" || level === "warn") {
+        if (isSuppressedConsoleMessage(message)) return;
         services.session.notice("warn", message.split("\n")[0]!.slice(0, 200));
       }
     },

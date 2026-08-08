@@ -409,6 +409,48 @@ async function redactArtifactInPlace(path: string): Promise<boolean> {
   }
 }
 
+const NO_MATCH_EXIT_COMMANDS = new Set([
+  "grep",
+  "egrep",
+  "fgrep",
+  "zgrep",
+  "rg",
+  "findstr",
+  "ack",
+  "ag",
+]);
+
+function finalPipelineStageName(command: string): string | undefined {
+  const lastInChain = command.split(/;|&&|\|\|/).pop() ?? "";
+  const lastStage = lastInChain.split("|").pop() ?? "";
+  const tokens = lastStage.trim().split(/\s+/).filter(Boolean);
+  let index = 0;
+  while (
+    index < tokens.length &&
+    (tokens[index] === "sudo" ||
+      tokens[index] === "command" ||
+      tokens[index] === "builtin" ||
+      /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index]!))
+  ) {
+    index += 1;
+  }
+  const first = tokens[index];
+  if (!first) return undefined;
+  return first.split("/").pop();
+}
+
+/** grep-family exit 1 means "no lines selected" (POSIX), not a command failure. */
+function benignNoMatchTool(
+  command: string,
+  code: number | null,
+): string | undefined {
+  if (code !== 1) return undefined;
+  const name = finalPipelineStageName(command);
+  return name !== undefined && NO_MATCH_EXIT_COMMANDS.has(name)
+    ? name
+    : undefined;
+}
+
 async function shellExecAttempt(args: ShellExecArgs): Promise<ShellExecAttemptResult> {
   if (args.signal?.aborted) {
     return { ok: false, output: "Command aborted.", exitCode: 130 };
@@ -683,9 +725,12 @@ async function shellExecAttempt(args: ShellExecArgs): Promise<ShellExecAttemptRe
         });
         return;
       }
+      const noMatchTool = benignNoMatchTool(args.command, code);
       finalize({
-        ok: code === 0,
-        output,
+        ok: code === 0 || noMatchTool !== undefined,
+        output: noMatchTool
+          ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (no matching lines) — not an error]`
+          : output,
         exitCode: code ?? undefined,
         ...(artifact ? { outputPath: artifact.path } : {}),
         truncated: bytesRead > inMemory,
@@ -958,9 +1003,12 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
         });
         return;
       }
+      const noMatchTool = benignNoMatchTool(args.command, code);
       finalize({
-        ok: code === 0,
-        output,
+        ok: code === 0 || noMatchTool !== undefined,
+        output: noMatchTool
+          ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (no matching lines) — not an error]`
+          : output,
         exitCode: code ?? undefined,
         ...(artifact ? { outputPath: artifact.path } : {}),
         truncated: bytesRead > inMemory,

@@ -47,6 +47,7 @@ import { formatShortcutsReference } from "../actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../rendering/format-help.js";
 import { notify, notifyWarn } from "../notify.js";
 import { setDefaultMode } from "../../store/config.js";
+import { maybeShowUpdateToast } from "./startup-update.js";
 import { modeSwitchSummary, nextMode } from "./mode-cycle.js";
 
 const CTRL_C_QUIT_WINDOW_MS = 1500;
@@ -118,6 +119,18 @@ export function App(): ReactNode {
       if (escapeCancelTimer.current) clearTimeout(escapeCancelTimer.current);
     };
   }, []);
+
+  // Startup update notice: one toast when a newer release exists. Respects the
+  // 4h check interval and offline/disabled flags so it never spams every launch.
+  useEffect(() => {
+    let cancelled = false;
+    void maybeShowUpdateToast(services, () => cancelled).catch(() => {
+      // never let a startup check crash the shell
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [services]);
 
   useEffect(() => {
     if (!plan) {

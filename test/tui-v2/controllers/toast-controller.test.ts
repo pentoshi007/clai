@@ -72,11 +72,11 @@ describe("ToastController", () => {
     toast.dispose();
   });
 
-  it("defaults to a 3.5s hold", () => {
-    expect(DEFAULT_TOAST_DURATION_MS).toBe(3500);
+  it("defaults to a 5s hold", () => {
+    expect(DEFAULT_TOAST_DURATION_MS).toBe(5000);
     const toast = new ToastController();
     toast.show("plain");
-    expect(toast.getToasts()[0]?.durationMs).toBe(3500);
+    expect(toast.getToasts()[0]?.durationMs).toBe(5000);
     toast.dispose();
   });
 

@@ -3,6 +3,7 @@
  */
 
 import { getConfig, updateConfig } from "../../../store/config.js";
+import { installUpdate } from "../../../commands/update.js";
 import { clearAllHistory } from "../../../store/history.js";
 import { clearAuditLogs, clearArtifacts } from "../../../store/logs.js";
 import {
@@ -196,26 +197,43 @@ export async function handlePrivacy(
 export async function handleUpdate(services: AppServices): Promise<void> {
   try {
     const status = await services.ports.updates.check();
-    if (status.state === "update-available" && status.latestVersion) {
-      notice(
-        services,
-        "info",
-        `update available: ${status.currentVersion} → ${status.latestVersion} · run \`clai update\` outside the TUI`,
-      );
-    } else if (status.state === "current") {
-      notice(services, "info", `up to date · ${status.currentVersion}`);
-    } else {
-      notice(
-        services,
-        "warn",
-        `update status unknown · ${status.currentVersion}${status.detail ? ` (${status.detail})` : ""}`,
-      );
+    if (status.state !== "update-available" || !status.latestVersion) {
+      if (status.state === "current") {
+        notice(services, "info", `up to date · ${status.currentVersion}`);
+      } else {
+        notice(
+          services,
+          "warn",
+          `update status unknown · ${status.currentVersion}${status.detail ? ` (${status.detail})` : ""}`,
+        );
+      }
+      return;
     }
+
+    const target = status.latestVersion;
+    notice(services, "info", `updating ${status.currentVersion} → ${target}…`);
+    const result = await installUpdate(target, (line) => {
+      const clean = line
+        // eslint-disable-next-line no-control-regex
+        .replace(/\x1b\[[0-9;]*m/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (clean) notice(services, "info", `update: ${clean}`);
+    }, "pipe");
+
+    if (!result.ok) {
+      notice(services, "warn", `update not applied · ${result.message}`);
+      return;
+    }
+    notice(services, "info", `updated to ${target} · restarting…`);
+    updateConfig({ lastUpdateCheck: Date.now() });
+    // Let the success toast paint before the renderer tears down.
+    setTimeout(() => services.requestExit(), 900);
   } catch (error) {
     notice(
       services,
       "warn",
-      `update check failed: ${error instanceof Error ? error.message : String(error)}`,
+      `update failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }

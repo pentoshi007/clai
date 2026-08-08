@@ -4,6 +4,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { getConfig, updateConfig } from "../store/config.js";
 import { VERSION as GENERATED_VERSION } from "../version.generated.js";
+import {
+  detectInstallMethod,
+  performUpdate,
+  resolveInstallEnv,
+  type InstallMethod,
+} from "./update-install.js";
 
 const REPO = "pentoshi007/clai";
 
@@ -41,7 +47,8 @@ function resolvePackageVersion(): string {
 }
 
 const CURRENT_VERSION = resolvePackageVersion();
-const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const CHECK_INTERVAL_MS = UPDATE_CHECK_INTERVAL_MS;
 
 interface GitHubRelease {
   tag_name: string;
@@ -139,7 +146,37 @@ export function checkForUpdateSilent(): void {
     .catch(() => {});
 }
 
-/** Interactive update command */
+/** Resolve how this installation was put on the machine (npm/bun/brew/…). */
+export function detectInstallMethodOrDev(): InstallMethod {
+  try {
+    return detectInstallMethod(resolveInstallEnv());
+  } catch {
+    return { type: "unknown", detail: "detection failed" };
+  }
+}
+
+/** Download and install the given version using the detected method. */
+export async function installUpdate(
+  version: string,
+  log?: (line: string) => void,
+  stdio: "inherit" | "pipe" = "inherit",
+): Promise<{ ok: boolean; message: string; method: string; needsRestart: boolean }> {
+  const method = detectInstallMethodOrDev();
+  const result = await performUpdate({
+    version,
+    method,
+    stdio,
+    ...(log ? { log } : {}),
+  });
+  return {
+    ok: result.ok,
+    message: result.message,
+    method: result.method,
+    needsRestart: result.needsRestart,
+  };
+}
+
+/** Interactive `clai update` command — performs the upgrade in-process. */
 export async function runUpdate(): Promise<void> {
   console.log(chalk.dim("  Checking for updates..."));
   const release = await fetchLatestRelease();
@@ -165,63 +202,32 @@ export async function runUpdate(): Promise<void> {
       `  ⬆ New version available: ${CURRENT_VERSION} → ${remoteVer}`,
     ),
   );
-  console.log(chalk.dim(`  Released: ${release.published_at}\n`));
+  console.log(chalk.dim(`  Released: ${release.published_at}`));
 
-  // Detect install method and give specific instructions
-  const methods = detectInstallMethod();
-
-  if (methods.includes("npm")) {
-    console.log(chalk.cyan("  npm:"));
-    console.log(chalk.white("    npm update -g clai\n"));
-  }
-  if (methods.includes("brew")) {
-    console.log(chalk.cyan("  Homebrew:"));
-    console.log(chalk.white("    brew upgrade clai\n"));
-  }
-
-  // Always show binary download for the current platform
-  const platform =
-    process.platform === "darwin"
-      ? "darwin"
-      : process.platform === "win32"
-        ? "windows"
-        : "linux";
-  const arch = process.arch === "arm64" ? "arm64" : "x64";
-  const suffix = platform === "windows" ? ".exe" : "";
-  const assetName = `clai-bun-${platform}-${arch}${suffix}`;
-  const asset = release.assets.find((a) => a.name === assetName);
-  if (asset) {
-    console.log(chalk.cyan("  Direct download:"));
-    if (platform === "windows") {
-      console.log(
-        chalk.white(
-          `    curl -fsSL ${asset.browser_download_url} -o %LOCALAPPDATA%\\\\clai\\\\clai.exe\n`,
-        ),
-      );
+  try {
+    const result = await installUpdate(remoteVer, (line) => console.log(line));
+    if (result.ok) {
+      console.log(chalk.green(`  ✓ Updated to ${remoteVer} (${result.message})`));
+      if (result.needsRestart) {
+        console.log(
+          chalk.dim("  Restart clai to use the new version."),
+        );
+      }
     } else {
+      console.log(chalk.yellow(`  ${result.message}`));
       console.log(
-        chalk.white(
-          `    curl -fsSL ${asset.browser_download_url} -o /usr/local/bin/clai && chmod +x /usr/local/bin/clai\n`,
-        ),
+        chalk.dim(`  Manual: ${release.html_url}`),
       );
     }
+    updateConfig({ lastUpdateCheck: Date.now() });
+  } catch (error) {
+    console.log(
+      chalk.red(
+        `  ✗ Update failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+    console.log(
+      chalk.dim(`  Manual: ${release.html_url}`),
+    );
   }
-
-  console.log(chalk.cyan("  GitHub release:"));
-  console.log(chalk.white(`    ${release.html_url}\n`));
-  console.log(
-    chalk.dim("  After updating, restart clai to use the new version."),
-  );
-  updateConfig({ lastUpdateCheck: Date.now() });
-}
-
-function detectInstallMethod(): string[] {
-  const methods: string[] = [];
-  const argv1 = process.argv[1] ?? "";
-  // npm global install paths
-  if (argv1.includes("node_modules") || argv1.includes("npm"))
-    methods.push("npm");
-  if (process.platform === "darwin") methods.push("brew");
-  methods.push("binary");
-  return methods;
 }

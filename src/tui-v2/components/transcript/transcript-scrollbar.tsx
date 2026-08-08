@@ -42,6 +42,13 @@ export function scrollbarSegments(
   return { above, thumb, below };
 }
 
+const TRACK_GLYPH = "│";
+const THUMB_GLYPH = "┃";
+
+function glyphRows(glyph: string, rows: number): string {
+  return Array<string>(Math.max(0, rows)).fill(glyph).join("\n");
+}
+
 export function TranscriptScrollbar(props: {
   readonly scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   readonly theme: Theme;
@@ -184,11 +191,10 @@ export function TranscriptScrollbar(props: {
         position: "absolute",
         top: metrics.y,
         right: 0,
-        width: 2,
+        width: 1,
         height: trackHeight,
         zIndex: 50,
         flexDirection: "column",
-        alignItems: "flex-end",
       }}
       onMouseDown={onMouseDown}
       onMouseDrag={onMouseDrag}
@@ -199,11 +205,23 @@ export function TranscriptScrollbar(props: {
       onMouseScroll={onWheel}
     >
       {segments.above > 0 ? (
-        <box style={{ width: 1, height: segments.above, backgroundColor: trackColor }} />
+        <text
+          selectable={false}
+          content={glyphRows(TRACK_GLYPH, segments.above)}
+          style={{ fg: trackColor }}
+        />
       ) : null}
-      <box style={{ width: 1, height: segments.thumb, backgroundColor: thumbColor }} />
+      <text
+        selectable={false}
+        content={glyphRows(THUMB_GLYPH, segments.thumb)}
+        style={{ fg: thumbColor }}
+      />
       {segments.below > 0 ? (
-        <box style={{ width: 1, height: segments.below, backgroundColor: trackColor }} />
+        <text
+          selectable={false}
+          content={glyphRows(TRACK_GLYPH, segments.below)}
+          style={{ fg: trackColor }}
+        />
       ) : null}
     </box>
   );

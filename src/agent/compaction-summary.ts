@@ -170,7 +170,7 @@ export const COMPACTION_TRANSCRIPT_CHAR_BUDGET = 48_000;
  * so its allowance must comfortably exceed the ~1400–2400 token target while
  * still discouraging hidden reasoning blowout.
  */
-export const COMPACTION_MAX_COMPLETION_TOKENS = 8_192;
+export const COMPACTION_MAX_COMPLETION_TOKENS = 12_288;
 
 export const COMPACTION_INPUT_SAFETY_TOKENS = 4_096;
 
@@ -186,7 +186,7 @@ export function compactionSinglePassInputBudget(
   );
 }
 
-export const COMPACTION_MAP_MAX_COMPLETION_TOKENS = 3_072;
+export const COMPACTION_MAP_MAX_COMPLETION_TOKENS = 4_096;
 
 export const COMPACTION_CHUNK_CHAR_BUDGET = 64_000;
 
@@ -322,7 +322,9 @@ export function isCompactionCompletionTruncated(
   },
   maxTokens: number,
 ): boolean {
-  if (response.finishReason?.toLowerCase() === "length") return true;
+  const finish = response.finishReason?.toLowerCase();
+  if (finish === "length") return true;
+  if (finish === "stop") return false;
   const used = response.usage?.completionTokens;
   return typeof used === "number" && used >= Math.max(1, maxTokens - 32);
 }
