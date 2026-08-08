@@ -14,6 +14,7 @@ import type {
   ToastItem,
   ToastLevel,
 } from "../../controllers/toast-controller.js";
+import { TOAST_ENTER_MS } from "../../controllers/toast-controller.js";
 import type { Theme } from "../../rendering/theme.js";
 import { useToastState } from "../../state/use-toast.js";
 import {
@@ -285,7 +286,9 @@ export function ToastHost(props: ToastHostProps): ReactNode {
         const boxHeight = 2 + bodyLines.length;
         const left = Math.max(0, Math.floor((termWidth - toastWidth) / 2));
         const anim = toastAnimAt(
-          now - item.createdAt,
+          item.sticky
+            ? Math.min(now - item.createdAt, TOAST_ENTER_MS)
+            : now - item.createdAt,
           item.durationMs,
           boxHeight,
         );

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_TOAST_DURATION_MS,
   ToastController,
   toastTotalLifetimeMs,
 } from "../../../src/tui-v2/controllers/toast-controller.js";
@@ -68,6 +69,41 @@ describe("ToastController", () => {
     const toast = new ToastController();
     expect(toast.show("   ")).toBe("");
     expect(toast.getToasts()).toHaveLength(0);
+    toast.dispose();
+  });
+
+  it("defaults to a 3.5s hold", () => {
+    expect(DEFAULT_TOAST_DURATION_MS).toBe(3500);
+    const toast = new ToastController();
+    toast.show("plain");
+    expect(toast.getToasts()[0]?.durationMs).toBe(3500);
+    toast.dispose();
+  });
+
+  it("sticky toasts never auto-dismiss and leave by explicit dismiss", async () => {
+    vi.useFakeTimers();
+    const toast = new ToastController();
+    const id = toast.info("fetching provider models…", {
+      key: "model-fetch",
+      sticky: true,
+    });
+    expect(id).not.toBe("");
+    expect(toast.getToasts()[0]?.sticky).toBe(true);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(toast.getToasts()).toHaveLength(1);
+    toast.dismiss(id);
+    expect(toast.getToasts()).toHaveLength(0);
+    toast.dispose();
+  });
+
+  it("a same-key show replaces a sticky toast", () => {
+    vi.useFakeTimers();
+    const toast = new ToastController();
+    toast.info("fetching provider models…", { key: "model-fetch", sticky: true });
+    toast.success("provider · 42 models (live)", { key: "model-fetch" });
+    expect(toast.getToasts()).toHaveLength(1);
+    expect(toast.getToasts()[0]?.message).toBe("provider · 42 models (live)");
+    expect(toast.getToasts()[0]?.sticky).toBeUndefined();
     toast.dispose();
   });
 });

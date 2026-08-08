@@ -33,7 +33,7 @@ import {
 import { ActionRouter } from "../actions/action-router.js";
 import { FocusController } from "../controllers/focus-controller.js";
 import { SelectionController } from "../controllers/selection-controller.js";
-import { ToastController } from "../controllers/toast-controller.js";
+import { ToastController, DEFAULT_TOAST_DURATION_MS } from "../controllers/toast-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
 import { TranscriptStore } from "../state/transcript-store.js";
 import { serializeForHistory } from "../state/transcript-hydrate.js";
@@ -165,7 +165,7 @@ export function createCompositionRoot(
       toast.show(text, {
         level: apiKeyRotation ? "warn" : level,
         key: apiKeyRotation ? "api-key-rotation" : `notice-${level}`,
-        durationMs: apiKeyRotation ? 3000 : level === "info" ? 2000 : 2500,
+        durationMs: apiKeyRotation ? 3000 : DEFAULT_TOAST_DURATION_MS,
       });
     }
     if (captureEvents) {

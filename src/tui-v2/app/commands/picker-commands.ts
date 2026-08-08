@@ -123,8 +123,12 @@ export async function handleModel(
     return;
   }
 
-  services.session.notice("info", `fetching ${provider} models…`);
+  const fetchingToastId = services.toast.info(`fetching ${provider} models…`, {
+    key: "model-fetch",
+    sticky: true,
+  });
   const { models, source, error } = await resolveModelsForProvider(provider, state.model);
+  services.toast.dismiss(fetchingToastId);
   if (error) {
     services.session.notice(
       "warn",
@@ -428,7 +432,10 @@ async function addCustomProviderFlow(services: AppServices): Promise<void> {
     defaultModel: "", // filled after the model pick
   };
   const tempProvider = materializeCustomProvider(tempDef);
-  services.session.notice("info", `fetching ${displayName} models…`);
+  const fetchingToastId = services.toast.info(`fetching ${displayName} models…`, {
+    key: "model-fetch",
+    sticky: true,
+  });
   let models: string[] = [];
   try {
     const list = tempProvider.listModels;
@@ -438,6 +445,8 @@ async function addCustomProviderFlow(services: AppServices): Promise<void> {
       "warn",
       `could not fetch models from ${displayName}: ${err instanceof Error ? err.message : String(err)} · you can set one manually with /model <name>`,
     );
+  } finally {
+    services.toast.dismiss(fetchingToastId);
   }
 
   let defaultModel = "";

@@ -69,6 +69,7 @@ import {
   findElidedStubArg,
 } from "../agent/message-slim.js";
 import { fromWireName, sanitizeToolName } from "../llm/tool-protocol.js";
+import { NON_REGISTRY_TOOL_NAMES } from "./definitions.js";
 import {
   prepareElevatedBackgroundCommand,
   preparePrivilegedBackgroundArgv,
@@ -1086,6 +1087,20 @@ export function availableToolNames(): string[] {
   return Object.keys(toolRegistry);
 }
 
+export function knownToolNames(): string[] {
+  return [...Object.keys(toolRegistry), ...NON_REGISTRY_TOOL_NAMES].sort();
+}
+
+export function unknownToolErrorMessage(name: string): string {
+  const known = knownToolNames();
+  const mapped = fromWireName(name);
+  const hint =
+    mapped && mapped !== name && known.includes(mapped)
+      ? ` Did you mean ${mapped}?`
+      : "";
+  return `Unknown tool: ${name}.${hint} Tool names are dotted namespace.action pairs (task.update, not task_update). Available tools: ${known.join(", ")}`;
+}
+
 /**
  * Keys that mean "this is a file/content payload, not a command line". When a
  * hallucinated call carries one of these, we refuse to synthesize shell text
@@ -1263,7 +1278,7 @@ export function normalizeToolCall(call: ToolCall): ToolCall {
   if (name && !toolRegistry[name]) {
     const cleaned = sanitizeToolName(name);
     const mapped = fromWireName(cleaned) ?? fromWireName(name) ?? cleaned;
-    if (mapped && toolRegistry[mapped]) {
+    if (mapped && (toolRegistry[mapped] || NON_REGISTRY_TOOL_NAMES.has(mapped))) {
       return { name: mapped, args: unwrapGatewayToolArgs(originalArgs) };
     }
     if (cleaned && cleaned !== name) name = cleaned;
@@ -1331,7 +1346,7 @@ export async function runToolCall(
   const normalized = normalizeToolCall(call);
   const handler = toolRegistry[normalized.name];
   if (!handler) {
-    throw new Error(`Unknown tool: ${normalized.name}`);
+    throw new Error(unknownToolErrorMessage(normalized.name));
   }
   const elidedStub = findElidedStubArg(normalized.args);
   if (elidedStub) {
@@ -1414,14 +1429,14 @@ interface BatchCallSpec {
 export function normalizeBatchToolName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return trimmed;
-  if (toolRegistry[trimmed]) return trimmed;
+  if (toolRegistry[trimmed] || NON_REGISTRY_TOOL_NAMES.has(trimmed)) return trimmed;
   const mapped = fromWireName(trimmed);
-  if (mapped && toolRegistry[mapped]) return mapped;
+  if (mapped && (toolRegistry[mapped] || NON_REGISTRY_TOOL_NAMES.has(mapped))) return mapped;
   // Underscore-all form that fromWireName may still leave as-is if unregistered
   // mid-name (tool_check → tool.check via first underscore heuristic).
   if (!trimmed.includes(".") && trimmed.includes("_")) {
     const dotted = trimmed.replace(/_/g, ".");
-    if (toolRegistry[dotted]) return dotted;
+    if (toolRegistry[dotted] || NON_REGISTRY_TOOL_NAMES.has(dotted)) return dotted;
   }
   return trimmed;
 }
@@ -1464,7 +1479,8 @@ function parseBatchCalls(value: unknown): BatchCallSpec[] {
     if (!toolRegistry[name]) {
       throw new Error(
         `tool.batch refuses unknown tool "${rawName}"` +
-          (name !== rawName ? ` (normalized to "${name}")` : ""),
+          (name !== rawName ? ` (normalized to "${name}")` : "") +
+          `. Available tools: ${knownToolNames().join(", ")}`,
       );
     }
     const id = resolveBatchCallId(rec, index, seenIds);

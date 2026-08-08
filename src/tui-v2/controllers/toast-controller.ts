@@ -2,7 +2,7 @@
  * Ephemeral toast queue (UI chrome, not transcript history).
  *
  * Lifecycle (host animates enter/exit):
- *   enter (~200ms) → hold (default 2000ms) → exit (~200ms) → dismiss
+ *   enter (~200ms) → hold (default 3500ms) → exit (~200ms) → dismiss
  *
  * Same-key shows replace the previous toast so rapid toggles do not stack.
  */
@@ -18,23 +18,27 @@ export interface ToastItem {
   readonly durationMs: number;
   /** Optional replace key — new shows with the same key dismiss the old one. */
   readonly key?: string | undefined;
+  /** Sticky toasts never auto-dismiss; the caller dismisses them by id. */
+  readonly sticky?: boolean | undefined;
 }
 
 export interface ShowToastOptions {
   readonly level?: ToastLevel | undefined;
-  /** Visible hold at rest; default 2000ms (enter/exit are added on top). */
+  /** Visible hold at rest; default 3500ms (enter/exit are added on top). */
   readonly durationMs?: number | undefined;
   /**
    * Replace any existing toast with this key (e.g. "thinking", "scroll").
    * Prevents spam when the user hammers a toggle.
    */
   readonly key?: string | undefined;
+  /** Keep the toast on screen until explicitly dismissed (no auto-dismiss timer). */
+  readonly sticky?: boolean | undefined;
 }
 
 export type ToastListener = () => void;
 
 /** Time at rest in the final on-screen position. */
-export const DEFAULT_TOAST_DURATION_MS = 2000;
+export const DEFAULT_TOAST_DURATION_MS = 3500;
 /** Slide-in from top. */
 export const TOAST_ENTER_MS = 200;
 /** Slide-out back to top. */
@@ -103,6 +107,7 @@ export class ToastController {
       createdAt: Date.now(),
       durationMs,
       ...(key ? { key } : {}),
+      ...(options.sticky === true ? { sticky: true } : {}),
     };
 
     this.items = [...this.items, item].slice(-MAX_VISIBLE_TOASTS);
@@ -111,6 +116,11 @@ export class ToastController {
         clearTimeout(timer);
         this.timers.delete(timerId);
       }
+    }
+
+    if (options.sticky === true) {
+      this.emit();
+      return id;
     }
 
     // Dismiss after enter + hold + exit so the host can finish exit animation.

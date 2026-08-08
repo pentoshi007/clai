@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeToolCall } from "../src/tools/registry.js";
+import {
+  normalizeBatchToolName,
+  normalizeToolCall,
+  runToolCall,
+  unknownToolErrorMessage,
+} from "../src/tools/registry.js";
 
 describe("normalizeToolCall — unknown CLI names → shell.exec", () => {
   it("reroutes a bare command name, prefixing the binary", () => {
@@ -134,5 +139,63 @@ describe("normalizeToolCall — unknown CLI names → shell.exec", () => {
     const call = { name: "fs.reed", args: { path: "x" } };
     const out = normalizeToolCall(call);
     expect(out.name).toBe("fs.reed");
+  });
+});
+
+describe("normalizeToolCall — runner meta tools", () => {
+  it("maps underscore wire names of runner meta tools to canonical dots", () => {
+    for (const [wire, canonical] of [
+      ["task_update", "task.update"],
+      ["task_add", "task.add"],
+      ["task_move", "task.move"],
+      ["task_read", "task.read"],
+      ["plan_create", "plan.create"],
+      ["job_read", "job.read"],
+      ["agent_handoff", "agent.handoff"],
+      ["loop_reset", "loop.reset"],
+    ] as const) {
+      const out = normalizeToolCall({ name: wire, args: { note: "x" } });
+      expect(out.name).toBe(canonical);
+    }
+  });
+
+  it("keeps args when canonicalizing meta tools", () => {
+    const out = normalizeToolCall({
+      name: "task_update",
+      args: { taskId: "t2", state: "done" },
+    });
+    expect(out).toEqual({
+      name: "task.update",
+      args: { taskId: "t2", state: "done" },
+    });
+  });
+
+  it("normalizeBatchToolName canonicalizes meta tool wire names", () => {
+    expect(normalizeBatchToolName("task_update")).toBe("task.update");
+    expect(normalizeBatchToolName("fs_read")).toBe("fs.read");
+    expect(normalizeBatchToolName("task.update")).toBe("task.update");
+  });
+});
+
+describe("unknown tool errors", () => {
+  it("runToolCall rejects with the available tool list", async () => {
+    await expect(
+      runToolCall({ name: "fs.reed", args: { path: "x" } }),
+    ).rejects.toThrow(/Unknown tool: fs\.reed/);
+    await expect(
+      runToolCall({ name: "fs.reed", args: { path: "x" } }),
+    ).rejects.toThrow(/Available tools: .*fs\.read/);
+    await expect(
+      runToolCall({ name: "fs.reed", args: { path: "x" } }),
+    ).rejects.toThrow(/task\.update/);
+  });
+
+  it("unknownToolErrorMessage explains the dotted format and lists tools", () => {
+    const message = unknownToolErrorMessage("task_updat");
+    expect(message).toContain("Unknown tool: task_updat");
+    expect(message).toContain("task.update, not task_update");
+    expect(message).toContain("Available tools:");
+    expect(message).toContain("task.update");
+    expect(message).toContain("shell.exec");
   });
 });
