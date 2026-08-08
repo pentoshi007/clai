@@ -120,9 +120,6 @@ export function presentTool(item: ToolItem): ToolPresentation {
         item.status === "failed" || item.status === "blocked" ? "files" : "";
     } else {
       pathOrDisplay = pathFromArgsDisplay(item.name, item.argsDisplay);
-      if (!pathOrDisplay) {
-        pathOrDisplay = item.name.replace(/^fs\./, "");
-      }
     }
     const titled = fileToolTitle(item.name, item.status, pathOrDisplay, kind);
     name = titled.title;
@@ -172,7 +169,7 @@ export function presentTool(item: ToolItem): ToolPresentation {
     argsDisplay,
     detail,
     pathLine,
-    isFileDiff: Boolean(item.fileChanges && item.fileChanges.length > 0),
+    isFileDiff: item.name !== "fs.delete" && Boolean(item.fileChanges?.length),
   };
 }
 

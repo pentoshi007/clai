@@ -53,6 +53,7 @@ import {
   type CustomProviderDef,
 } from "../../../llm/custom-providers.js";
 import {
+  deleteSession,
   getSession,
   listSessionSummaries,
 } from "../../../store/history.js";
@@ -729,12 +730,25 @@ function applyReasoning(services: AppServices, value: string): void {
     services.session.notice("info", `thinking → ${lower}`);
     return;
   }
-  services.session.notice("warn", "usage: /variants [on|off|minimal|low|medium|high|xhigh|max]");
+  services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
 }
 
-export async function handleHistory(services: AppServices): Promise<void> {
-  // listSessions performs one-time crash/archive recovery internally. Calling
-  // recovery again here rescanned archives and backups on every picker open.
+export async function handleHistory(services: AppServices, invocation?: CommandInvocation): Promise<void> {
+  const rawArgs = invocation?.args?.trim() ?? "";
+  if (rawArgs) {
+    const [sub, ...rest] = rawArgs.split(/\s+/);
+    const subLower = sub?.toLowerCase() ?? "";
+    if (["delete", "remove", "rm", "del"].includes(subLower)) {
+      const finalId = rest.join(" ").trim();
+      if (!finalId) {
+        services.session.notice("warn", "usage: /history delete <session-id>");
+        return;
+      }
+      const result = await deleteSession(finalId);
+      services.session.notice(result.deleted ? "info" : "warn", result.deleted ? `deleted ${finalId}` : result.detail);
+      return;
+    }
+  }
   const sessions = await listSessionSummaries(200, { recovery: "background" });
   const currentMessages = services.session.messages;
   const currentId = services.session.sessionId;

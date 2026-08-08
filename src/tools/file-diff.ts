@@ -645,7 +645,10 @@ export function fileToolTitle(
   pathOrDisplay: string,
   kind?: FileChangeKind | undefined,
 ): { title: string; pathLine: string | undefined } {
-  const path = pathOrDisplay.trim();
+  const rawPath = pathOrDisplay.trim();
+  const path = /^(?:edit|write|append|delete|replaceLines)$/i.test(rawPath)
+    ? ""
+    : rawPath;
   const base = path ? basename(path.split(/\s|,/)[0] ?? path) : "file";
   const fullPath = path && path.includes("/") ? path : undefined;
 
@@ -696,6 +699,7 @@ export function fileToolTitle(
         ? "failed"
         : "ok";
   const verb = changeVerb(inferred, st);
+  if (!path) return { title: verb, pathLine: undefined };
   const sep = st === "failed" ? " · " : " ";
   return {
     title: `${verb}${sep}${base}`,

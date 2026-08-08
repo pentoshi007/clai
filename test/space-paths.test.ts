@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   extractExistingPathsFs,
+  formatAttachmentReference,
   loadImageAttachments,
   expandMentions,
 } from "../src/ui/mentions.js";
@@ -81,7 +82,7 @@ describe("extractExistingPathsFs — filenames with spaces", () => {
     const dir = tmp();
     const file = join(dir, "my screenshot.png");
     writeFileSync(file, Buffer.from(PNG_HEX, "hex"));
-    const imgs = loadImageAttachments(`${file} what is this`, dir);
+    const imgs = loadImageAttachments(`${formatAttachmentReference(file, dir)} what is this`, dir);
     expect(imgs).toHaveLength(1);
     expect(imgs[0]!.mediaType).toBe("image/png");
   });
@@ -90,7 +91,7 @@ describe("extractExistingPathsFs — filenames with spaces", () => {
     const dir = tmp();
     const file = join(dir, "my screenshot.png");
     writeFileSync(file, Buffer.from(PNG_HEX, "hex"));
-    const exp = expandMentions(`${file} what is this`, dir, true);
+    const exp = expandMentions(`${formatAttachmentReference(file, dir)} what is this`, dir, true);
     const img = exp.attachments.find((a) => a.kind === "image");
     expect(img).toBeDefined();
     expect(img!.note).toMatch(/attached as multimodal input/i);

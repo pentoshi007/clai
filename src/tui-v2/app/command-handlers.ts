@@ -75,8 +75,8 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("model", (i) => handleModel(services, i));
   c.setHandler("provider", (i) => handleProvider(services, i));
   c.setHandler("search", (i) => handleSearch(services, i));
-  c.setHandler("variants", (i) => handleReasoning(services, i));
-  c.setHandler("history", () => void handleHistory(services));
+  c.setHandler("effort", (i) => handleReasoning(services, i));
+  c.setHandler("history", (i) => void handleHistory(services, i));
   c.setHandler("permissions", (i) => handlePermissions(services, i));
   c.setHandler("output", (i) => handleOutput(services, i));
   c.setHandler("plan", (i) => handlePlan(services, i));

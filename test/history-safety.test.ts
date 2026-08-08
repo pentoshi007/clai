@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mkdtempSync,
+  readFileSync,
   writeFileSync,
   existsSync,
   mkdirSync,
@@ -286,5 +287,43 @@ describe("destructive history clear", () => {
           (name.startsWith("history.jsonl.") && name.endsWith(".tmp")),
       ),
     ).toEqual([]);
+  });
+
+  it("permanently removes one session from active, archived, and backup history", async () => {
+    const {
+      deleteSession,
+      getHistoryArchivePath,
+      getHistoryBackupDir,
+      getJsonlHistoryPath,
+      getSession,
+      listSessions,
+    } = await import("../src/store/history.js");
+    const target = sample("remove-me", "2026-08-08T00:00:00.000Z");
+    const retained = sample("keep-me", "2026-08-08T00:01:00.000Z");
+    const backupDir = getHistoryBackupDir();
+    mkdirSync(backupDir, { recursive: true });
+    writeFileSync(
+      getJsonlHistoryPath(),
+      `${JSON.stringify(target)}\n${JSON.stringify(retained)}\n`,
+    );
+    writeFileSync(
+      getHistoryArchivePath(),
+      `${JSON.stringify(target)}\n${JSON.stringify(retained)}\n`,
+    );
+    writeFileSync(
+      join(backupDir, "history-before-delete.jsonl"),
+      `${JSON.stringify(target)}\n${JSON.stringify(retained)}\n`,
+    );
+
+    expect(await deleteSession("remove-me")).toMatchObject({ deleted: true });
+    expect(await getSession("remove-me")).toBeUndefined();
+    expect((await listSessions(10)).map((record) => record.id)).toEqual(["keep-me"]);
+    for (const file of [
+      getJsonlHistoryPath(),
+      getHistoryArchivePath(),
+      join(backupDir, "history-before-delete.jsonl"),
+    ]) {
+      expect(readFileSync(file, "utf8")).not.toContain("remove-me");
+    }
   });
 });

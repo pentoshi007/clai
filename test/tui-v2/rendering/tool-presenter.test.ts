@@ -133,6 +133,37 @@ describe("presentTool (CHAT-004)", () => {
     expect(p.argsDisplay).toBeUndefined();
     expect(p.isFileDiff).toBe(false);
   });
+
+  it("keeps a deleted file card title-only", () => {
+    const p = presentTool(
+      toolItem({
+        name: "fs.delete",
+        argsDisplay: "/Users/me/todo-app/src/obsolete.ts",
+        status: "ok",
+        fileChanges: [
+          {
+            path: "/Users/me/todo-app/src/obsolete.ts",
+            basename: "obsolete.ts",
+            kind: "delete",
+            stats: { oldLines: 1, newLines: 0, added: 0, removed: 1 },
+            previewHunks: [],
+            addedNewLines: [],
+            deletedAt: [],
+            afterText: "",
+          },
+        ],
+      }),
+    );
+    expect(p.name).toBe("Deleted obsolete.ts");
+    expect(p.isFileDiff).toBe(false);
+  });
+
+  it("does not turn an incomplete edit path into a filename", () => {
+    const p = presentTool(
+      toolItem({ name: "fs.edit", argsDisplay: "edit", status: "queued" }),
+    );
+    expect(p.name).toBe("Editing");
+  });
 });
 
 describe("cleanToolOutputLines", () => {

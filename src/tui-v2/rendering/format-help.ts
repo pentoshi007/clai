@@ -16,7 +16,7 @@ function sectionFor(command: string): string {
     return "Mode & plan";
   }
   if (
-    ["model", "provider", "use", "search", "search-provider", "variants", "reasoning"].includes(
+    ["model", "provider", "use", "search", "search-provider", "effort", "reasoning"].includes(
       name,
     )
   ) {

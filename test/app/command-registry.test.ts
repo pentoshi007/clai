@@ -17,7 +17,8 @@ describe("V2-024 command registry", () => {
     const registry = buildDefaultCommandRegistry();
     expect(registry.resolve("/use")).toBe("provider");
     expect(registry.resolve("/search-provider")).toBe("search");
-    expect(registry.resolve("/reasoning")).toBe("variants");
+    expect(registry.resolve("/reasoning")).toBe("effort");
+    expect(registry.resolve("/legacy-effort")).toBeUndefined();
     expect(registry.resolve("/thinking")).toBe("think");
     expect(registry.resolve("/quit")).toBe("exit");
     expect(registry.resolve("/model")).toBe("model");

@@ -1020,6 +1020,50 @@ export function buildChatBody(options: {
   return JSON.stringify(body);
 }
 
+function sentReasoningEffort(requestBody: string): string | undefined {
+  try {
+    const body = JSON.parse(requestBody) as Record<string, unknown>;
+    if (typeof body.reasoning_effort === "string" && body.reasoning_effort) {
+      return body.reasoning_effort;
+    }
+    const nested = body.reasoning;
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      const effort = (nested as Record<string, unknown>).effort;
+      if (typeof effort === "string" && effort) return effort;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function privateReasoningNote(
+  provider: string,
+  requestBody: string,
+  reasoningTokens: number,
+): string {
+  const effort = sentReasoningEffort(requestBody);
+  const effortText = effort ? ` at ${effort} effort` : "";
+  return `Reasoning is private on ${provider}: the model reasoned${effortText} and used ${reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
+}
+
+function foldReasoning(
+  provider: string,
+  requestBody: string,
+  text: string,
+  reasoning: string | undefined,
+  usage: TokenUsage | undefined,
+): string {
+  if (reasoning && reasoning.trim()) {
+    return `<think>${reasoning}</think>${text}`;
+  }
+  const tokens = usage?.reasoningTokens ?? 0;
+  if (tokens > 0) {
+    return `<think>${privateReasoningNote(provider, requestBody, tokens)}</think>${text}`;
+  }
+  return text;
+}
+
 export async function openAiCompatibleComplete(options: {
   provider: string;
   /** Canonical provider id used for capability lookups. */
@@ -1109,17 +1153,20 @@ export async function openAiCompatibleComplete(options: {
   const text = message?.content ?? "";
   if (!text && toolCalls.length === 0) {
     throw new ProviderError(
-      `${options.provider} returned no completion text (model=${options.model}). The response was empty — try /variants off, raise max_tokens, or pick another model with /model.`,
+      `${options.provider} returned no completion text (model=${options.model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
     );
   }
   // If the API returns reasoning separately, prepend it inside <think>
   // tags so the existing thinking parser can pick it up uniformly.
-  const reasoning = message?.reasoning_content ?? message?.reasoning;
-  const full =
-    reasoning && reasoning.trim()
-      ? `<think>${reasoning}</think>${text}`
-      : text;
   const usage = parseOpenAiUsage(data.usage);
+  const reasoning = message?.reasoning_content ?? message?.reasoning;
+  const full = foldReasoning(
+    options.provider,
+    requestBody,
+    text,
+    reasoning,
+    usage,
+  );
   return {
     text: full,
     ...(toolCalls.length ? { toolCalls } : {}),
@@ -1356,12 +1403,15 @@ export async function openAiCompatibleStream(options: {
     const message = choice?.message;
     const toolCalls = parseOpenAiMessageToolCalls(message?.tool_calls);
     const text = message?.content ?? "";
-    const reasoning = message?.reasoning_content ?? message?.reasoning;
-    const full =
-      reasoning && reasoning.trim()
-        ? `<think>${reasoning}</think>${text}`
-        : text;
     const jsonUsage = parseOpenAiUsage(data.usage);
+    const reasoning = message?.reasoning_content ?? message?.reasoning;
+    const full = foldReasoning(
+      options.provider,
+      requestBody,
+      text,
+      reasoning,
+      jsonUsage,
+    );
     if (full.trim() || toolCalls.length > 0) {
       if (full.trim()) options.onToken(full);
       return {
@@ -1407,6 +1457,17 @@ export async function openAiCompatibleStream(options: {
     inReasoning = false;
     full += "</think>";
     options.onToken("</think>");
+  };
+  const emitPrivateReasoningNote = (hasToolCalls: boolean): void => {
+    if (reasoningSeen.trim()) return;
+    if (!visible.trim() && !hasToolCalls) return;
+    const tokens = streamUsage?.reasoningTokens ?? 0;
+    if (tokens <= 0) return;
+    const note = privateReasoningNote(options.provider, requestBody, tokens);
+    enterReasoning();
+    full += note;
+    options.onToken(note);
+    exitReasoning();
   };
 
   /**
@@ -1544,6 +1605,7 @@ export async function openAiCompatibleStream(options: {
           exitReasoning();
           cleanup();
           const toolCalls = finalizeOpenAiToolCalls(toolCallState);
+          emitPrivateReasoningNote(toolCalls.length > 0);
           if (!visible.trim() && toolCalls.length === 0) {
             // Thinking models (Kimi/Moonshot via Mantle, etc.) often emit only
             // reasoning, sometimes with tool sentinels inside <think>. Returning
@@ -1679,6 +1741,7 @@ export async function openAiCompatibleStream(options: {
     exitReasoning();
     cleanup();
     const toolCalls = finalizeOpenAiToolCalls(toolCallState);
+    emitPrivateReasoningNote(toolCalls.length > 0);
     if (!visible.trim() && toolCalls.length === 0) {
       // See [DONE] branch — hand thinking-only streams to the runner so it can
       // salvage sentinel tool blocks (or nudge) instead of hard-failing.
@@ -1728,9 +1791,9 @@ export async function openAiCompatibleStream(options: {
           (sawStreamProgress
             ? " after it had already started producing output. " +
               "The connection stayed open, so the model was most likely buffering one very large tool call. " +
-              "Split large writes into smaller sequential calls, or try a smaller model / disable thinking with /variants off."
+              "Split large writes into smaller sequential calls, or try a smaller model / disable thinking with /effort off."
             : " — the connection stayed open but the model never produced anything. " +
-              "Try another model, or disable thinking with /variants off."),
+              "Try another model, or disable thinking with /effort off."),
       );
     }
     throw error;

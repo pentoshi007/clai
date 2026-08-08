@@ -318,7 +318,7 @@ MANAGING KEYS AND ENDPOINTS IN CLAI
 
 GOOD TO KNOW
   - Reasoning models return their thinking in reasoning_content; clai folds it
-    into the usual thinking block, so /think and /variants behave normally.
+    into the usual thinking block, so /think and /effort behave normally.
   - max_tokens above a model's ceiling is clamped by the gateway rather than
     rejected, but prompt + max_tokens must still fit the context window.
   - The model field in responses may echo a fully-qualified upstream path
@@ -509,7 +509,7 @@ GOOD TO KNOW
   - Endpoint URLs are stored as a list, so several deployments can live side
     by side; only the active one is used. "clai keys" shows them all.
   - Streaming, native tool calling, structured outputs and thinking all work.
-    /variants on|off maps to Modal's reasoning toggle.
+    /effort on|off maps to Modal's reasoning toggle.
   - Finished experimenting? "modal endpoint stop <name>" tears the endpoint
     down so no stray request can wake it and spend credit.
   - Modal counts as paid-cloud, so /freeonly on keeps it out of the
@@ -560,7 +560,7 @@ MODELS
   muse-spark-1.2-contributor contributor tier (see /model for the live list)
 
   Muse Spark is a reasoning-first model: it always thinks internally before
-  answering. /variants maps clai's effort onto the API's reasoning_effort
+  answering. /effort maps clai's effort onto the API's reasoning_effort
   (minimal/low/medium/high/xhigh; "off" degrades to minimal because Muse does
   not support disabling reasoning — "none" returns HTTP 400).
 

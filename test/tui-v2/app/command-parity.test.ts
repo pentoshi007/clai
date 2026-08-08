@@ -115,7 +115,7 @@ describe("command parity (V2-080)", () => {
       "model",
       "provider",
       "search",
-      "variants",
+      "effort",
       "plan",
       "implement",
       "discard",

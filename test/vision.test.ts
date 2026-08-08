@@ -12,6 +12,7 @@ import {
   loadImageAttachments,
   expandMentions,
   imageAttachmentPaths,
+  formatAttachmentReference,
 } from "../src/ui/mentions.js";
 import type { ChatMessage } from "../src/types.js";
 import { shouldEnableImageOcr } from "../src/agent/runner.js";
@@ -173,7 +174,7 @@ describe("loadImageAttachments", () => {
     const png = join(dir, "shot.png");
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
 
-    const imgs = loadImageAttachments(`${png} what is this`, dir);
+    const imgs = loadImageAttachments(`${formatAttachmentReference(png, dir)} what is this`, dir);
     expect(imgs).toHaveLength(1);
     expect(imgs[0]!.mediaType).toBe("image/png");
     expect(imgs[0]!.dataBase64.length).toBeGreaterThan(0);
@@ -184,7 +185,7 @@ describe("loadImageAttachments", () => {
     dirs.push(dir);
     const png = join(dir, "shot.png");
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
-    const exp = expandMentions(`${png} hi`, dir, true);
+    const exp = expandMentions(`${formatAttachmentReference(png, dir)} hi`, dir, true);
     expect(exp.attachments[0]!.note).toMatch(/attached as multimodal input/i);
     expect(exp.attachments[0]!.note).toMatch(/inspect it directly/i);
   });
@@ -194,7 +195,7 @@ describe("loadImageAttachments", () => {
     dirs.push(dir);
     const png = join(dir, "shot.png");
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
-    const exp = expandMentions(`${png} hi`, dir, false);
+    const exp = expandMentions(`${formatAttachmentReference(png, dir)} hi`, dir, false);
     expect(exp.attachments[0]!.note).toMatch(/not viewable/i);
   });
 
@@ -205,7 +206,7 @@ describe("loadImageAttachments", () => {
     writeFileSync(png, Buffer.from(PNG_HEX, "hex"));
     const txt = join(dir, "notes.txt");
     writeFileSync(txt, "hello");
-    const paths = imageAttachmentPaths(`${png} and ${txt} what is this`, dir);
+    const paths = imageAttachmentPaths(`${formatAttachmentReference(png, dir)} and ${txt} what is this`, dir);
     // Paths are stabilized into scratch/attachments for vision reliability.
     expect(paths).toHaveLength(1);
     expect(paths[0]).toMatch(/shot\.png$/);

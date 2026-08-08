@@ -115,15 +115,13 @@ describe("extractMentionTokens", () => {
     ]);
   });
 
-  it("extracts quoted dropped paths", () => {
-    expect(extractMentionTokens("'/Users/me/foo bar.png'")).toEqual([
-      "'/Users/me/foo bar.png'",
-    ]);
+  it("does not infer quoted paths as attachments", () => {
+    expect(extractMentionTokens("'/Users/me/foo bar.png'")).toEqual([]);
   });
 
-  it("extracts bare absolute paths", () => {
-    expect(extractMentionTokens("check /etc/hosts now")).toEqual([
-      "/etc/hosts",
+  it("extracts explicit file references", () => {
+    expect(extractMentionTokens("check file:///etc/hosts now")).toEqual([
+      "file:///etc/hosts",
     ]);
   });
 
@@ -144,13 +142,12 @@ describe("expandMentions", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("inlines a referenced text file", () => {
+  it("keeps a referenced text file out of the prompt body", () => {
     const out = expandMentions("read @notes.txt", dir);
     expect(out.attachments).toHaveLength(1);
     expect(out.attachments[0]!.kind).toBe("text");
-    expect(out.attachments[0]!.content).toBe("hello notes");
-    expect(out.contextBlock).toContain("hello notes");
-    expect(out.contextBlock).toContain("attached-files");
+    expect(out.attachments[0]!.content).toBeUndefined();
+    expect(out.contextBlock).toBe("");
   });
 
   it("notes a missing @ mention", () => {
@@ -186,8 +183,7 @@ describe("expandMentions", () => {
     expect(out.attachments[0]!.content).toBeUndefined();
     expect(out.attachments[0]!.note).toContain("not expanded");
     expect(out.attachments[0]!.note).toContain("fs.list");
-    expect(out.contextBlock).toContain("dir://src/");
-    expect(out.contextBlock).not.toContain("a.ts");
+    expect(out.contextBlock).toBe("");
   });
 
   it("accepts a directory mention with a trailing slash", () => {
@@ -198,7 +194,7 @@ describe("expandMentions", () => {
     expect(out.attachments[0]!.content).toBeUndefined();
   });
 
-  it("renders reference-style image:// headers for image attachments", () => {
+  it("does not generate image context headers", () => {
     writeFileSync(
       join(dir, "pic.png"),
       Buffer.from(
@@ -207,19 +203,14 @@ describe("expandMentions", () => {
       ),
     );
     const out = expandMentions("describe @pic.png", dir);
-    expect(out.contextBlock).toMatch(/image:\/\/.*-pic\.png|image:\/\/pic\.png/);
-    expect(out.contextBlock).not.toMatch(/\n----- pic\.png -----/);
+    expect(out.contextBlock).toBe("");
   });
 
-  it("resolves a dropped absolute path with spaces before trailing prompt text", () => {
+  it("does not infer an attachment from a path embedded in prompt text", () => {
     const image = join(dir, "Screenshot 2026-06-27 at 10.44.32 AM.png");
     writeFileSync(image, Buffer.from([0x89, 0x50]));
     const line = `${image.replaceAll(" ", "\\ ")} what is it`;
     expect(extractExistingPathsFs(line, dir)).toEqual([image]);
-    const att = expandMentions(line, dir, true).attachments[0];
-    expect(att?.kind).toBe("image");
-    // Stabilized into scratch/attachments so TemporaryItems/spaces don't break vision.
-    expect(att?.path).toMatch(/Screenshot.*\.png$/i);
-    expect(att?.path).toContain("attachments");
+    expect(expandMentions(line, dir, true).attachments).toEqual([]);
   });
 });

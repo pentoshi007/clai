@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { shellExec } from "../src/tools/shell.js";
 
@@ -53,5 +56,24 @@ describe("shell exec — grep-family no-match exit classification", () => {
     });
     expect(result.ok).toBe(true);
     expect(result.exitCode).toBe(1);
+  });
+
+  it("treats a diff result as successful comparison output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-diff-"));
+    try {
+      const left = join(dir, "left.txt");
+      const right = join(dir, "right.txt");
+      await Promise.all([writeFile(left, "before\n"), writeFile(right, "after\n")]);
+      const result = await shellExec({
+        command: `diff ${left} ${right}`,
+        noArtifact: true,
+        timeoutMs: 5_000,
+      });
+      expect(result.ok).toBe(true);
+      expect(result.exitCode).toBe(1);
+      expect(result.output).toContain("files differ");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -6,6 +6,7 @@ import {
   readdir,
   open,
   readFile,
+  rename,
   rm,
   stat,
   utimes,
@@ -1532,6 +1533,85 @@ export async function clearAllHistory(): Promise<{
   }
   invalidateSessionListCache();
   return { cleared: true, detail: details.join("; ") };
+}
+
+async function removeSessionFromHistoryFile(
+  path: string,
+  sessionId: string,
+): Promise<boolean> {
+  const records = await readJsonlRecordsFrom(path);
+  const retained = records.filter((record) => record.id !== sessionId);
+  if (retained.length === records.length) return false;
+  if (retained.length === 0) {
+    await rm(path, { force: true });
+    return true;
+  }
+  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(
+    temporary,
+    `${retained.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    { mode: 0o600 },
+  );
+  await rename(temporary, path);
+  await fixOwner(path);
+  return true;
+}
+
+export async function deleteSession(sessionId: string): Promise<{ deleted: boolean; detail: string }> {
+  const id = sessionId.trim();
+  if (!id) return { deleted: false, detail: "missing session id" };
+  await ensureHistoryRecovered();
+  let deletedFromJsonl = false;
+  let deletedFromArchive = false;
+  let deletedFromBackup = false;
+  let deletedFromSqlite = false;
+  let historyWriteFailed = false;
+  await queueJsonlWrite(async () => {
+    const current = await readJsonlRecordsFrom(jsonlFilePath());
+    const filtered = current.filter((r) => r.id !== id);
+    deletedFromJsonl = filtered.length !== current.length;
+    if (deletedFromJsonl) {
+      await writeJsonlAtomic(filtered, current.length);
+    }
+    deletedFromArchive = await removeSessionFromHistoryFile(archiveFilePath(), id);
+    const backupNames = (await readdir(backupDirPath()).catch(() => [] as string[]))
+      .filter((name) => name.startsWith("history-") && name.endsWith(".jsonl"));
+    for (const name of backupNames) {
+      deletedFromBackup =
+        (await removeSessionFromHistoryFile(join(backupDirPath(), name), id)) ||
+        deletedFromBackup;
+    }
+  }, () => {
+    historyWriteFailed = true;
+  });
+  if (historyWriteFailed) {
+    return { deleted: false, detail: "could not remove the session from history files" };
+  }
+  try {
+    const db = await loadDatabase();
+    if (db) {
+      db.prepare("DELETE FROM tool_calls WHERE session_id = ?").run(id);
+      const result = db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
+      const changes = (result as unknown as { changes: number }).changes ?? 0;
+      if (changes > 0) deletedFromSqlite = true;
+      try {
+        db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+      } catch {}
+      invalidateSessionListCache();
+    }
+  } catch (error) {
+    return {
+      deleted: false,
+      detail: `could not remove the session from the history database: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  invalidateSessionListCache();
+  if (!deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite) {
+    const existing = await getSession(id);
+    if (existing) return { deleted: false, detail: "failed to delete" };
+    return { deleted: false, detail: "session not found" };
+  }
+  return { deleted: true, detail: `deleted ${id}` };
 }
 
 export function getJsonlHistoryPath(): string {

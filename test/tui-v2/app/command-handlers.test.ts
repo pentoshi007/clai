@@ -47,9 +47,9 @@ describe("command handlers (V2-072..075)", () => {
     updateConfig({ disableKeychain: true });
   });
 
-  it("/variants with no args opens a reasoning picker; selecting applies it", async () => {
+  it("/effort with no args opens a reasoning picker; selecting applies it", async () => {
     const services = buildServices();
-    await services.commands.dispatch({ name: "variants", args: "" });
+    await services.commands.dispatch({ name: "effort", args: "" });
     const state = services.overlay.getState();
     expect(state.kind).toBe("picker");
     if (state.kind === "picker") {
@@ -60,10 +60,10 @@ describe("command handlers (V2-072..075)", () => {
     expect(services.overlay.getState().kind).toBe("none");
   });
 
-  it("/variants off disables thinking directly, without opening a picker", async () => {
+  it("/effort off disables thinking directly, without opening a picker", async () => {
     const services = buildServices();
     updateConfig({ thinking: { enabled: true, effort: "medium" } });
-    await services.commands.dispatch({ name: "variants", args: "off" });
+    await services.commands.dispatch({ name: "effort", args: "off" });
     expect(getConfig().thinking.enabled).toBe(false);
     expect(services.overlay.getState().kind).toBe("none");
   });

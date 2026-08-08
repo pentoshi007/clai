@@ -418,6 +418,12 @@ const NO_MATCH_EXIT_COMMANDS = new Set([
   "findstr",
   "ack",
   "ag",
+  "diff",
+  "diff3",
+  "cmp",
+  "comm",
+  "test",
+  "[",
 ]);
 
 function finalPipelineStageName(command: string): string | undefined {
@@ -439,7 +445,6 @@ function finalPipelineStageName(command: string): string | undefined {
   return first.split("/").pop();
 }
 
-/** grep-family exit 1 means "no lines selected" (POSIX), not a command failure. */
 function benignNoMatchTool(
   command: string,
   code: number | null,
@@ -726,10 +731,16 @@ async function shellExecAttempt(args: ShellExecArgs): Promise<ShellExecAttemptRe
         return;
       }
       const noMatchTool = benignNoMatchTool(args.command, code);
+      const benignNote = (() => {
+        if (!noMatchTool) return undefined;
+        if (["diff", "diff3", "cmp", "comm"].includes(noMatchTool)) return `files differ`;
+        if (["test", "["].includes(noMatchTool)) return `condition false`;
+        return `no matching lines`;
+      })();
       finalize({
         ok: code === 0 || noMatchTool !== undefined,
         output: noMatchTool
-          ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (no matching lines) — not an error]`
+          ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (${benignNote}) — not an error]`
           : output,
         exitCode: code ?? undefined,
         ...(artifact ? { outputPath: artifact.path } : {}),
@@ -1004,10 +1015,16 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
         return;
       }
       const noMatchTool = benignNoMatchTool(args.command, code);
+      const benignNote2 = (() => {
+        if (!noMatchTool) return undefined;
+        if (["diff", "diff3", "cmp", "comm"].includes(noMatchTool)) return `files differ`;
+        if (["test", "["].includes(noMatchTool)) return `condition false`;
+        return `no matching lines`;
+      })();
       finalize({
         ok: code === 0 || noMatchTool !== undefined,
         output: noMatchTool
-          ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (no matching lines) — not an error]`
+          ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (${benignNote2}) — not an error]`
           : output,
         exitCode: code ?? undefined,
         ...(artifact ? { outputPath: artifact.path } : {}),

@@ -56,14 +56,14 @@ export const slashCommands: SlashCommand[] = [
     description: "alias for /search",
   },
   {
-    command: "/variants",
+    command: "/effort",
     usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
     description: "toggle thinking/effort (interactive picker if no arg)",
   },
   {
     command: "/reasoning",
     usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
-    description: "alias for /variants",
+    description: "alias for /effort",
   },
   { command: "/clear", description: "clear context" },
   {
@@ -72,7 +72,8 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/history",
-    description: "browse & resume past sessions (interactive picker)",
+    usage: "[delete <id>]",
+    description: "browse & resume past sessions (interactive picker) · /history delete <id> to permanently remove",
   },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/reset", description: "clear all saved history" },

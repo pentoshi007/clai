@@ -208,7 +208,7 @@ clai use tokenrouter                    # model defaults to kimi-k2p6
 /model deepseek-v4-pro                  # 1M context · or kimi-k2p7-code, glm-5p1, minimax-m3
 ```
 
-Model ids are short and case-sensitive (`kimi-k2p6`, not `Kimi K2.6`), and `/model` reads the live `/models` list, which is filtered to the channels your key can reach. clai carries the real per-model context windows — 1M for DeepSeek V4, 512K for MiniMax M3, 256K for Kimi/Qwen, 200K for GLM — so the context meter and auto-compaction are accurate instead of guessing 128K. Reasoning arrives as `reasoning_content` and is folded into the normal thinking block, so `/think` and `/variants` work. Base URL defaults to `https://api.tokenrouter.com/v1` and is overridable with `clai set tokenrouter --url <url>` or `TOKENROUTER_BASE_URL` if your account uses a different host.
+Model ids are short and case-sensitive (`kimi-k2p6`, not `Kimi K2.6`), and `/model` reads the live `/models` list, which is filtered to the channels your key can reach. clai carries the real per-model context windows — 1M for DeepSeek V4, 512K for MiniMax M3, 256K for Kimi/Qwen, 200K for GLM — so the context meter and auto-compaction are accurate instead of guessing 128K. Reasoning arrives as `reasoning_content` and is folded into the normal thinking block, so `/think` and `/effort` work. Base URL defaults to `https://api.tokenrouter.com/v1` and is overridable with `clai set tokenrouter --url <url>` or `TOKENROUTER_BASE_URL` if your account uses a different host.
 
 ### Manage keys
 
@@ -309,7 +309,7 @@ Three modes, switchable anytime with a slash command, `Shift+Tab`, or `clai --mo
 | **agent** | Executes: edits, installs, scans, verifies, works the plan. |
 | **plan** | Research and design a durable plan; approve with `/implement` before execution. |
 
-**Reasoning / thinking** is controlled with `/variants` (alias `/reasoning`), accepting `on`, `off`, `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. clai only sends reasoning options to models that support them — and if a model rejects them at runtime, it marks that model, retries once without them, and tells you (`… rejected reasoning options — retrying without them`) so a session never hangs on an unsupported knob.
+**Reasoning / thinking** is controlled with `/effort` (alias `/reasoning`), accepting `on`, `off`, `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. clai only sends reasoning options to models that support them — and if a model rejects them at runtime, it marks that model, retries once without them, and tells you (`… rejected reasoning options — retrying without them`) so a session never hangs on an unsupported knob.
 
 ---
 
@@ -357,7 +357,7 @@ Tool cards show the command/input clearly and keep long scan tails in an expanda
 | `/implement` · `/discard` | Approve+execute or drop the current plan |
 | `/model [name\|#]` · `/provider [name]` · `/use <provider>` | Pick model / switch provider |
 | `/set [provider]` · `/unset [provider]` · `/keys` · `/info [provider]` | Manage API keys, endpoint URLs, and view provider setup / pricing info |
-| `/variants [level]` · `/reasoning [level]` | Thinking / reasoning effort |
+| `/effort [level]` · `/reasoning [level]` | Thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |
 | `/scope [show\|add\|new\|clear]` | Engagement scope |

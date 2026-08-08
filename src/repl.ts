@@ -38,6 +38,7 @@ import {
   listSessionSummaries,
   upsertSession,
   clearAllHistory,
+  deleteSession,
   getSession,
 } from "./store/history.js";
 import { beginSessionWorkspace } from "./store/session-workspace.js";
@@ -723,9 +724,9 @@ function maybePrintThinkingTip(provider: ProviderId, model: string): void {
   console.log(
     chalk.dim("  💡 ") +
       chalk.dim(`${model} supports reasoning. Run `) +
-      chalk.cyan("/variants") +
+      chalk.cyan("/effort") +
       chalk.dim(" to pick an effort level or ") +
-      chalk.cyan("/variants high") +
+      chalk.cyan("/effort high") +
       chalk.dim(" to enable directly."),
   );
 }
@@ -923,7 +924,7 @@ async function handleSlash(
         await useSearchProvider(args[0]);
       }
       return true;
-    case "/variants":
+    case "/effort":
     case "/reasoning": {
       const arg = (args[0] ?? "").toLowerCase().trim();
       const current = getConfig().thinking;
@@ -973,7 +974,7 @@ async function handleSlash(
         });
 
         if (!picked) {
-          console.log(chalk.dim("  variants unchanged"));
+          console.log(chalk.dim("  effort unchanged"));
           return true;
         }
 
@@ -1031,7 +1032,7 @@ async function handleSlash(
         return true;
       }
 
-      console.log(chalk.dim("  usage: /variants on|off|none|minimal|low|medium|high|xhigh|max"));
+      console.log(chalk.dim("  usage: /effort on|off|none|minimal|low|medium|high|xhigh|max"));
       return true;
     }
     case "/clear":
@@ -1056,6 +1057,16 @@ async function handleSlash(
       return true;
     }
     case "/history": {
+      if (args[0] && ["delete", "remove", "rm", "del"].includes(args[0].toLowerCase())) {
+        const targetId = args[1]?.trim() ?? args.slice(1).join(" ").trim();
+        if (!targetId) {
+          console.log(chalk.dim("  usage: /history delete <session-id>"));
+          return true;
+        }
+        const result = await deleteSession(targetId);
+        console.log(result.deleted ? chalk.green(`  deleted ${targetId}`) : chalk.yellow(`  ${result.detail}`));
+        return true;
+      }
       const sessions = await listSessionSummaries(50, { recovery: "background" });
       if (sessions.length === 0) {
         console.log(chalk.dim("  no saved sessions"));
@@ -1885,9 +1896,9 @@ export async function startRepl(options: ReplOptions = {}): Promise<void> {
     console.log(
       chalk.dim("  💡 ") +
         chalk.dim(`${state.model} supports reasoning. Run `) +
-        chalk.cyan("/variants") +
+        chalk.cyan("/effort") +
         chalk.dim(" to pick an effort level or ") +
-        chalk.cyan("/variants high") +
+        chalk.cyan("/effort high") +
         chalk.dim(" to enable directly.\n"),
     );
   }

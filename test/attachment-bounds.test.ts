@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, writeFileSync, truncateSync, openSync, closeSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,26 +21,25 @@ function workspace(): string {
   return dir;
 }
 
-describe("text attachment bounds (LIFE-007)", () => {
-  it("reads only the cap even for a very large file", () => {
+describe("text attachments", () => {
+  it("never reads a referenced text file into the prompt", () => {
     const dir = workspace();
-    const path = join(dir, "huge.log");
-    // Sparse file: 512 MiB apparent size, no data blocks.
-    const handle = openSync(path, "w");
-    closeSync(handle);
+    const path = join(dir, "notes.txt");
     writeFileSync(path, "head-marker\n");
-    truncateSync(path, 512 * 1024 * 1024);
 
-    const startedAt = Date.now();
     const result = expandMentions(`look at @${path}`, dir, false);
-    const elapsed = Date.now() - startedAt;
     const attachment = result.attachments.find((item) => item.kind === "text");
 
-    expect(attachment?.truncated).toBe(true);
-    expect(attachment?.content?.startsWith("head-marker")).toBe(true);
-    expect(attachment?.content?.length).toBeLessThanOrEqual(64 * 1024);
-    // Reading 512 MiB into memory would dominate this budget.
-    expect(elapsed).toBeLessThan(1_000);
+    expect(attachment?.truncated).toBeUndefined();
+    expect(attachment?.content).toBeUndefined();
+    const resolved = resolveTurnInput({
+      prompt: `look at @${path}`,
+      mode: "ask",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      baseDir: dir,
+    });
+    expect(resolved.prompt).toBe(`look at @${path}`);
   });
 });
 

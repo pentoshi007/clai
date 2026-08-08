@@ -11,7 +11,7 @@ import {
 const ALIAS_GROUPS: Record<string, readonly string[]> = {
   provider: ["use"],
   search: ["search-provider"],
-  variants: ["reasoning"],
+  effort: ["reasoning"],
   think: ["thinking"],
   exit: ["quit"],
 };

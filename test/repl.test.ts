@@ -47,7 +47,8 @@ describe("REPL slash command suggestions", () => {
   });
 
   it("distinguishes real slash commands from absolute dropped paths", () => {
-    expect(isKnownSlashCommand("/variants high")).toBe(true);
+    expect(isKnownSlashCommand("/effort high")).toBe(true);
+    expect(isKnownSlashCommand("/legacy-effort high")).toBe(false);
     expect(isKnownSlashCommand("/var/folders/screenshot.png what is it")).toBe(false);
   });
 

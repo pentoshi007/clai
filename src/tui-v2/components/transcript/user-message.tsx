@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 /** Renders a `UserItem` (CHAT-001, V2-051). */
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import type { UserItem } from "../../state/transcript-types.js";
@@ -9,6 +9,9 @@ import type { Theme } from "../../rendering/theme.js";
 import { wrapUserPrompt } from "../../rendering/user-message-wrap.js";
 import { LinkableText } from "./linkable-text.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
+import { DiffActionButton } from "./file-diff-card.js";
+
+const COLLAPSED_PROMPT_LINES = 6;
 
 export function UserMessage(props: {
   item: UserItem;
@@ -18,6 +21,7 @@ export function UserMessage(props: {
   contentWidth?: number | undefined;
 }): ReactNode {
   const { item, theme, onOpen, contentWidth } = props;
+  const [expanded, setExpanded] = useState(false);
   const { width: termWidth } = useTerminalDimensions();
   // Prefer shell chat width so prompts reflow when the tasks pane is open;
   // fall back to term−chrome when contentWidth is not threaded yet.
@@ -32,6 +36,8 @@ export function UserMessage(props: {
 
   // Text is selectable for drag-copy; click (no drag) opens prompt actions.
   const click = useClickWithoutDrag(() => onOpen(item.text));
+  const canToggle = lines.length > COLLAPSED_PROMPT_LINES;
+  const visibleLines = expanded ? lines : lines.slice(0, COLLAPSED_PROMPT_LINES);
 
   return (
     <box
@@ -72,7 +78,7 @@ export function UserMessage(props: {
           width: "100%",
         }}
       >
-        {lines.map((line, i) => (
+        {visibleLines.map((line, i) => (
           // Pre-wrapped to chat width — never clip mid-sentence when the
           // tasks pane narrows the chat column.
           <LinkableText
@@ -83,6 +89,20 @@ export function UserMessage(props: {
             wrapMode="none"
           />
         ))}
+        {canToggle ? (
+          <box
+            style={{ flexDirection: "row", alignItems: "center", marginTop: 1 }}
+          >
+            <text selectable={false} style={{ fg: theme.muted, flexGrow: 1 }}>
+              {expanded ? "full prompt" : `+${lines.length - visibleLines.length} more lines`}
+            </text>
+            <DiffActionButton
+              label={expanded ? "collapse" : "expand"}
+              theme={theme}
+              onClick={() => setExpanded((value) => !value)}
+            />
+          </box>
+        ) : null}
       </box>
     </box>
   );

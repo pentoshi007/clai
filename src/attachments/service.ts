@@ -112,11 +112,8 @@ export function resolveTurnInput(input: {
     );
   }
 
-  const prompt = expansion.contextBlock
-    ? `${expansion.text}\n\n${expansion.contextBlock}`
-    : expansion.text;
   return {
-    prompt,
+    prompt: expansion.text,
     mode: input.mode,
     provider: input.provider,
     model,

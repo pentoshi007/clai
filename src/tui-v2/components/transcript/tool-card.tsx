@@ -578,7 +578,7 @@ export function ToolCard(props: {
         : null}
 
       {/* writeMany + single-file mutations: green/red hunk previews (not name-only lists). */}
-      {!isBatch && !isBatchLive && isFileDiff && fileChanges ? (
+      {!isBatch && !isBatchLive && isFileDiff && fileChanges && fileChanges[0]?.kind !== "delete" ? (
         <box
           style={{
             flexDirection: "column",
