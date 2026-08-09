@@ -11,6 +11,8 @@ import {
   modelAcceptsImages,
   modelSupportsThinking,
   isReasoningUnsupported,
+  modelReasoningEfforts,
+  learnModelEmitsReasoning,
   registerModelCatalog,
   type CatalogModel,
 } from "./capabilities.js";
@@ -26,6 +28,11 @@ import {
   toOpenAiToolMessages,
 } from "./adapters/openai-tools.js";
 import { parseOpenAiUsage } from "./token-usage.js";
+import {
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  wrapReasoning,
+} from "./reasoning-marker.js";
 
 export class ProviderError extends Error {
   constructor(
@@ -134,6 +141,69 @@ export function catalogEntryVision(entry: unknown): boolean | undefined {
   return undefined;
 }
 
+const REASONING_FEATURE_RE =
+  /^(?:reasoning|reasoning_effort|include_reasoning|thinking|reasoning_content)$/i;
+
+function catalogEntryReasoning(entry: unknown): boolean | undefined {
+  const raw = entry as
+    | {
+        reasoning?: unknown;
+        reasoning_options?: unknown;
+        supported_features?: unknown;
+        supported_parameters?: unknown;
+        features?: unknown;
+        capabilities?: unknown;
+      }
+    | undefined;
+  if (typeof raw?.reasoning === "boolean") return raw.reasoning;
+  if (Array.isArray(raw?.reasoning_options) && raw.reasoning_options.length > 0) {
+    return true;
+  }
+  for (const container of [
+    raw?.supported_features,
+    raw?.supported_parameters,
+    raw?.features,
+    raw?.capabilities,
+  ]) {
+    if (!Array.isArray(container)) continue;
+    const names = container.filter(
+      (value): value is string => typeof value === "string",
+    );
+    if (names.length === 0) continue;
+    return names.some((name) => REASONING_FEATURE_RE.test(name.trim()));
+  }
+  return undefined;
+}
+
+function catalogEntryReasoningEfforts(entry: unknown): string[] | undefined {
+  const raw = entry as
+    | {
+        reasoning_options?: unknown;
+        supported_reasoning_efforts?: unknown;
+        reasoning_effort?: unknown;
+      }
+    | undefined;
+  const collected: string[] = [];
+  const pushValues = (values: unknown): void => {
+    if (!Array.isArray(values)) return;
+    for (const value of values) {
+      if (typeof value === "string" && value.trim()) collected.push(value.trim());
+    }
+  };
+  if (Array.isArray(raw?.reasoning_options)) {
+    for (const option of raw.reasoning_options) {
+      const shaped = option as { type?: unknown; values?: unknown } | undefined;
+      if (shaped?.type !== undefined && shaped.type !== "effort") continue;
+      pushValues(shaped?.values);
+    }
+  }
+  pushValues(raw?.supported_reasoning_efforts);
+  if (raw?.reasoning_effort && typeof raw.reasoning_effort === "object") {
+    pushValues((raw.reasoning_effort as { values?: unknown }).values);
+  }
+  return collected.length > 0 ? collected : undefined;
+}
+
 export function ingestModelCatalogEntries(
   provider: ProviderId,
   entries: readonly unknown[],
@@ -147,7 +217,16 @@ export function ingestModelCatalogEntries(
     if (id.length === 0 || seen.has(id)) continue;
     seen.add(id);
     const vision = typeof entry === "string" ? undefined : catalogEntryVision(entry);
-    models.push(vision === undefined ? { id } : { id, vision });
+    const reasoning =
+      typeof entry === "string" ? undefined : catalogEntryReasoning(entry);
+    const reasoningEfforts =
+      typeof entry === "string" ? undefined : catalogEntryReasoningEfforts(entry);
+    models.push({
+      id,
+      ...(vision === undefined ? {} : { vision }),
+      ...(reasoning === undefined ? {} : { reasoning }),
+      ...(reasoningEfforts === undefined ? {} : { reasoningEfforts }),
+    });
   }
   if (models.length > 0) registerModelCatalog(provider, models);
   return models.map((model) => model.id).sort();
@@ -613,6 +692,7 @@ export type ReasoningStyle =
   | "modal"
   | "stepfun"
   | "meta"
+  | "bynara"
   | "none";
 
 
@@ -648,10 +728,49 @@ function supportsOpenRouterReasoning(model: string): boolean {
   );
 }
 
+export type BynaraReasoningKind =
+  | "kimi"
+  | "deepseek"
+  | "agnes"
+  | "stepfun"
+  | "none";
+
+export function classifyBynaraModel(model: string): BynaraReasoningKind {
+  const m = model.toLowerCase();
+  if (/kimi/.test(m)) return "kimi";
+  if (/deepseek/.test(m)) return "deepseek";
+  if (/agnes/.test(m)) return "agnes";
+  if (/stepfun|step-3/.test(m)) return "stepfun";
+  return "none";
+}
+
+const MODAL_DEFAULT_EFFORTS = ["low", "high", "max"];
+
+const MODAL_EFFORT_PREFERENCE: Record<string, string[]> = {
+  minimal: ["minimal", "low", "medium", "high", "max"],
+  low: ["low", "minimal", "medium", "high", "max"],
+  medium: ["medium", "high", "low", "max"],
+  high: ["high", "max", "medium", "low"],
+  xhigh: ["xhigh", "max", "high", "medium", "low"],
+  max: ["max", "xhigh", "high", "medium", "low"],
+};
+
+function pickAdvertisedEffort(
+  effort: string,
+  advertised: readonly string[],
+): string {
+  const order = MODAL_EFFORT_PREFERENCE[effort] ?? MODAL_EFFORT_PREFERENCE.medium!;
+  return (
+    order.find((candidate) => advertised.includes(candidate)) ??
+    advertised[advertised.length - 1]!
+  );
+}
+
 export function buildReasoningPayload(
   reasoning: ReasoningPreference | undefined,
   style: ReasoningStyle,
   model?: string,
+  providerId?: ProviderId | undefined,
 ): Record<string, unknown> {
   if (style === "none") return {};
   const enabled = Boolean(reasoning?.enabled);
@@ -683,6 +802,37 @@ export function buildReasoningPayload(
       // `reasoning` object belongs to the Responses API; strict gateways reject
       // unknown top-level fields with a hard 400.
       return { reasoning_effort: clampEffort(effort) };
+    }
+    case "bynara": {
+      const kind = classifyBynaraModel(model ?? "");
+      const noThinking = !enabled || effort === "none" || effort === "minimal";
+      switch (kind) {
+        case "kimi":
+          if (noThinking) return { chat_template_kwargs: { thinking: false } };
+          if (effort === "high" || effort === "xhigh" || effort === "max") {
+            return {
+              chat_template_kwargs: { thinking: true },
+              reasoning_effort: "high",
+            };
+          }
+          if (effort === "low") {
+            return {
+              chat_template_kwargs: { thinking: true },
+              reasoning_effort: "low",
+            };
+          }
+          return { chat_template_kwargs: { thinking: true } };
+        case "deepseek":
+        case "agnes":
+          if (noThinking) return { reasoning_effort: "none" };
+          return { reasoning_effort: clampEffort(effort) };
+        case "stepfun":
+          if (noThinking) return {};
+          return { reasoning_effort: clampEffort(effort) };
+        case "none":
+          return {};
+      }
+      return {};
     }
     case "agentrouter": {
       // AgentRouter proxies three families, each with a *different* reasoning
@@ -727,12 +877,27 @@ export function buildReasoningPayload(
       if (!enabled) return {};
       if (!supportsOpenRouterReasoning(model ?? "")) return {};
       return { reasoning: { enabled: true, effort: clampEffort(effort) } };
-    case "modal":
-      // Modal Endpoints expose a single documented boolean toggle
-      // (`reasoning: {enabled}`). Several catalog models think by default, so
-      // "off" must send `false` explicitly rather than omit the field. No
-      // effort knob is documented — sending one risks a hard 400.
-      return { reasoning: { enabled } };
+    case "modal": {
+      const advertised =
+        providerId !== undefined && model
+          ? modelReasoningEfforts(providerId, model)
+          : undefined;
+      if (
+        !advertised &&
+        providerId !== undefined &&
+        model &&
+        !modelSupportsThinking(providerId, model)
+      ) {
+        return {};
+      }
+      if (!enabled || effort === "none") return { reasoning_effort: "none" };
+      return {
+        reasoning_effort: pickAdvertisedEffort(
+          effort,
+          advertised ?? MODAL_DEFAULT_EFFORTS,
+        ),
+      };
+    }
     case "stepfun":
       // Step 3.5/3.7 Flash enables a <think> block by default on compatible
       // hosts. Omitting an OpenAI reasoning field does not turn that default
@@ -963,6 +1128,7 @@ export function buildChatBody(options: {
           options.reasoning,
           options.reasoningStyle ?? "none",
           options.model,
+          options.providerId,
         );
   
   const reasoningOn = Boolean(options.reasoning?.enabled);
@@ -1055,11 +1221,11 @@ function foldReasoning(
   usage: TokenUsage | undefined,
 ): string {
   if (reasoning && reasoning.trim()) {
-    return `<think>${reasoning}</think>${text}`;
+    return `${wrapReasoning(reasoning)}${text}`;
   }
   const tokens = usage?.reasoningTokens ?? 0;
   if (tokens > 0) {
-    return `<think>${privateReasoningNote(provider, requestBody, tokens)}</think>${text}`;
+    return `${wrapReasoning(privateReasoningNote(provider, requestBody, tokens))}${text}`;
   }
   return text;
 }
@@ -1160,6 +1326,9 @@ export async function openAiCompatibleComplete(options: {
   // tags so the existing thinking parser can pick it up uniformly.
   const usage = parseOpenAiUsage(data.usage);
   const reasoning = message?.reasoning_content ?? message?.reasoning;
+  if (typeof reasoning === "string" && reasoning.trim()) {
+    learnModelEmitsReasoning(options.providerId, options.model);
+  }
   const full = foldReasoning(
     options.provider,
     requestBody,
@@ -1449,14 +1618,14 @@ export async function openAiCompatibleStream(options: {
   const enterReasoning = (): void => {
     if (inReasoning) return;
     inReasoning = true;
-    full += "<think>";
-    options.onToken("<think>");
+    full += REASONING_OPEN;
+    options.onToken(REASONING_OPEN);
   };
   const exitReasoning = (): void => {
     if (!inReasoning) return;
     inReasoning = false;
-    full += "</think>";
-    options.onToken("</think>");
+    full += REASONING_CLOSE;
+    options.onToken(REASONING_CLOSE);
   };
   const emitPrivateReasoningNote = (hasToolCalls: boolean): void => {
     if (reasoningSeen.trim()) return;
@@ -1700,6 +1869,9 @@ export async function openAiCompatibleStream(options: {
           }
           if (choice?.finish_reason) finishReason = choice.finish_reason;
           if (reasoningToken) {
+            if (!reasoningSeen) {
+              learnModelEmitsReasoning(options.providerId, options.model);
+            }
             enterReasoning();
             reasoningSeen += reasoningToken;
             full += reasoningToken;

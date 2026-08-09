@@ -36,6 +36,11 @@ import {
 } from "./system-messages.js";
 import { anthropicMaxTokens } from "./anthropic.js";
 import {
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  wrapReasoning,
+} from "./reasoning-marker.js";
+import {
   mergeAnthropicStreamUsage,
   parseAnthropicUsage,
 } from "./token-usage.js";
@@ -196,7 +201,7 @@ export const mantleProvider: LlmProvider = {
         ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
         : undefined;
     const final = parsed.thinkingText
-      ? `<thinking>${parsed.thinkingText}</thinking>${parsed.text}`
+      ? `${wrapReasoning(parsed.thinkingText)}${parsed.text}`
       : parsed.text;
     return {
       text: final,
@@ -293,14 +298,14 @@ export const mantleProvider: LlmProvider = {
     const enterThinking = (): void => {
       if (inThinking) return;
       inThinking = true;
-      full += "<thinking>";
-      onToken("<thinking>");
+      full += REASONING_OPEN;
+      onToken(REASONING_OPEN);
     };
     const exitThinking = (): void => {
       if (!inThinking) return;
       inThinking = false;
-      full += "</thinking>";
-      onToken("</thinking>");
+      full += REASONING_CLOSE;
+      onToken(REASONING_CLOSE);
     };
 
     const sseFrames = createSseFrameAssembler();

@@ -17,6 +17,12 @@ export const slashCommands: SlashCommand[] = [
       "open searchable picker (type:filter · ↑↓:select · enter:confirm), or pass a name/number",
   },
   {
+    command: "/models",
+    usage: "[filter]",
+    description:
+      "every model across all configured providers · pick one to switch provider + model",
+  },
+  {
     command: "/provider",
     usage: "[name]",
     description: "switch provider or open picker",

@@ -3,6 +3,10 @@ import { readImageDimensions } from "../attachments/image-content.js";
 import { redactSecrets } from "../llm/provider.js";
 import { stripThinking } from "../ui/thinking.js";
 import {
+  hasReasoningMarker,
+  stripReasoningMarkers,
+} from "../llm/reasoning-marker.js";
+import {
   expandKeepStartForToolPairs,
   hasOrphanToolMessages,
 } from "./tool-history.js";
@@ -193,6 +197,21 @@ export function compactionMemoryPrefixForPurpose(
  * tool calls that produced output. This is conservative and reversible
  * (the artifact files still hold the raw outputs).
  */
+function assistantVisibleOnly(message: ChatMessage): ChatMessage {
+  if (message.role !== "assistant") return message;
+  if (
+    !hasReasoningMarker(message.content) &&
+    !/^\s*<think(?:ing)?\b/i.test(message.content)
+  ) {
+    return message;
+  }
+  const visible = stripThinking(message.content).visible;
+  return {
+    ...message,
+    content: visible || stripReasoningMarkers(message.content),
+  };
+}
+
 export function compactMessages(
   messages: ChatMessage[],
   options: CompactOptions = {},
@@ -216,12 +235,13 @@ export function compactMessages(
 
   let tailStart = Math.max(start, messages.length - keepRecent);
   tailStart = expandKeepStartForToolPairs(messages, tailStart);
-  const tail = messages.slice(tailStart);
+  const tail = messages.slice(tailStart).map(assistantVisibleOnly);
   const middle = messages.slice(start, tailStart);
   if (middle.length === 0) return messages;
 
   const bullets: string[] = [];
-  for (const msg of middle) {
+  for (const raw of middle) {
+    const msg = assistantVisibleOnly(raw);
     if (msg.role === "user") {
       bullets.push(`- user asked: ${oneLine(msg.content, 200)}`);
     } else if (msg.role === "assistant") {
@@ -333,7 +353,7 @@ export async function compactMessagesWithSummary(
     ? redactSecrets(sessionTranscript.trim())
     : "";
 
-  const historyRecords = older
+  const historyRecords = (visual ? older : messages.slice(start))
     .filter(
       (message) => !(message.role === "system" && isDurableSystem(message.content)),
     )
@@ -402,9 +422,7 @@ export async function compactMessagesWithSummary(
     ...(durableState ? { durableState } : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
-  const directSourceMessages = visual
-    ? undefined
-    : messages.slice(0, tailStart);
+  const directSourceMessages = visual ? undefined : messages;
   const singlePassInputBudget = Math.max(
     0,
     options.singlePassInputBudgetTokens ?? 0,
@@ -451,34 +469,17 @@ export async function compactMessagesWithSummary(
     if (!visible) {
       throw new Error("compaction failed: model returned an empty summary");
     }
-    const replayed = looksLikeTranscriptReplay(visible);
-    const incomplete = looksLikeIncompleteCompactionSummary(visible);
-    if (!replayed && !incomplete) return visible;
-    const repaired = await summarize(
-      `${prompt}\n\nQUALITY CORRECTION: The previous result was unusable because it ${
-        replayed
-          ? "replayed raw source or pseudo-tool material"
-          : "ended abruptly before the memory was complete"
-      }. Rewrite the entire memory from the source, preserve every consequential fact once, finish all bullets and sections, and return only the completed structured memory.`,
-      stage,
-    );
-    const repairedVisible = normalizeCompactionSummary(
-      stripThinking(repaired ?? "").visible,
-    );
-    if (!repairedVisible) {
-      throw new Error("compaction failed: model returned an empty summary");
-    }
-    if (looksLikeTranscriptReplay(repairedVisible)) {
+    if (looksLikeTranscriptReplay(visible)) {
       throw new Error(
         "compaction failed: model replayed the transcript instead of summarizing — original context retained",
       );
     }
-    if (looksLikeIncompleteCompactionSummary(repairedVisible)) {
+    if (looksLikeIncompleteCompactionSummary(visible)) {
       throw new Error(
         "compaction failed: model returned an incomplete summary — original context retained",
       );
     }
-    return repairedVisible;
+    return visible;
   };
 
   let modelSummary: string;
@@ -691,9 +692,10 @@ function leanTailMessages(
         return { ...msg, content: preferTrimContent(msg.content, preferMax.tool) };
       }
       if (msg.role === "assistant") {
-        const visible = /<think/i.test(msg.content)
-          ? stripThinking(msg.content).visible
-          : msg.content;
+        const visible =
+          /<think/i.test(msg.content) || hasReasoningMarker(msg.content)
+            ? stripThinking(msg.content).visible
+            : msg.content;
         const slimCalls = msg.toolCalls?.map((tc) => ({
           ...tc,
           args: slimToolArgs(tc.args ?? {}),

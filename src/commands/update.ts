@@ -9,6 +9,7 @@ import {
   performUpdate,
   resolveInstallEnv,
   type InstallMethod,
+  type UpdateProgress,
 } from "./update-install.js";
 
 const REPO = "pentoshi007/clai";
@@ -160,6 +161,7 @@ export async function installUpdate(
   version: string,
   log?: (line: string) => void,
   stdio: "inherit" | "pipe" = "inherit",
+  onProgress?: (progress: UpdateProgress) => void,
 ): Promise<{ ok: boolean; message: string; method: string; needsRestart: boolean }> {
   const method = detectInstallMethodOrDev();
   const result = await performUpdate({
@@ -167,6 +169,7 @@ export async function installUpdate(
     method,
     stdio,
     ...(log ? { log } : {}),
+    ...(onProgress ? { onProgress } : {}),
   });
   return {
     ok: result.ok,

@@ -9,6 +9,7 @@
  */
 
 import { completeWithProvider } from "../llm/router.js";
+import { stripThinking } from "../ui/thinking.js";
 import type { ChatMessage, ProviderId } from "../types.js";
 
 const SYSTEM_PROMPT =
@@ -35,12 +36,8 @@ function truncate(text: string, max: number): string {
  * stray second line. Returns `undefined` when nothing usable remains.
  */
 export function sanitizeTitle(raw: string): string | undefined {
-  let title = raw;
-  // Drop any reasoning the model leaked inline (<think>…</think> or Kimi's
-  // <thinking>…</thinking>), including an unclosed block — reasoning models
-  // sometimes emit these before the answer.
-  title = title.replace(/<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?>/gi, "");
-  title = title.replace(/<think(?:ing)?\b[^>]*>[\s\S]*$/i, "");
+  let title = stripThinking(raw).visible;
+  title = title.replace(/^\s*<think(?:ing)?\b[^>]*>[\s\S]*$/i, "");
   title = title.trim();
   if (!title) return undefined;
   // Keep only the first non-empty line — some models add an explanation below.

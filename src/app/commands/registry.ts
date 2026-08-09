@@ -112,6 +112,15 @@ export class CommandRegistry {
     if (matches.length === 1) {
       return { name: matches[0]!.name, args, context };
     }
+    if (matches.length > 1) {
+      const shortest = matches.reduce((best, candidate) =>
+        candidate.name.length < best.name.length ? candidate : best,
+      );
+      const tied = matches.filter(
+        (candidate) => candidate.name.length === shortest.name.length,
+      );
+      if (tied.length === 1) return { name: shortest.name, args, context };
+    }
     return undefined;
   }
 

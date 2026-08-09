@@ -144,6 +144,12 @@ import {
   renderThinkingSummary,
   stripThinking,
 } from "../ui/thinking.js";
+import {
+  hasReasoningMarker,
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  stripReasoningMarkers,
+} from "../llm/reasoning-marker.js";
 import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
 import { startThinkingSpinner, type ThinkingSpinner } from "../ui/spinner.js";
 import { safeCwd } from "../os/cwd.js";
@@ -1415,8 +1421,9 @@ export async function runAgentTurn(
       return text;
     };
     const pushAssistantHistory = (content: string): void => {
-
-      const cleaned = sanitizeAssistantText(content);
+      const cleaned = sanitizeAssistantText(
+        hasReasoningMarker(content) ? stripThinking(content).visible : content,
+      );
       if (!visibleCommitted) {
         const prose = recoveryProse(cleaned);
         if (prose) writeAssistantMessage(prose);
@@ -4536,20 +4543,30 @@ export async function runAgentTurn(
                 }
               }
 
-              if (!sawReasoning && /<think(?:ing)?\b/i.test(token)) {
+              if (
+                !sawReasoning &&
+                (token.includes(REASONING_OPEN) ||
+                  /^\s*<think(?:ing)?\b/i.test(accumulatedText))
+              ) {
                 sawReasoning = true;
                 inThinking = true;
                 spinner.setLabel("thinking");
                 if (!writesDirectly) emit({ type: "status", text: "thinking" });
               }
-              if (/<\/think(?:ing)?>/i.test(token)) {
+              if (
+                token.includes(REASONING_CLOSE) ||
+                (inThinking && /<\/think(?:ing)?>/i.test(token))
+              ) {
                 inThinking = false;
                 spinner.setLabel("generating response (0 tokens)");
                 generatedTokens = 0;
               }
 
               if (inThinking) {
-                const cleaned = token.replace(/<\/?think(?:ing)?[^>]*>/gi, "");
+                const cleaned = stripReasoningMarkers(token).replace(
+                  /<\/?think(?:ing)?[^>]*>/gi,
+                  "",
+                );
                 if (cleaned) {
                   spinner.pushPreview(cleaned);
                   const approx = cleaned.split(/\s+/).filter(Boolean).length;
@@ -5275,7 +5292,7 @@ export async function runAgentTurn(
           }
 
           if (
-            /<\|tool_call(?:s_section)?_begin\|>|<\|tool_call_argument_begin\|>|<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b/i.test(
+            /<\|tool_call(?:s_section)?_begin\|>|<\|tool_call_argument_begin\|>|<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b|<[|｜]+tool[_▁](?:calls?[_▁]begin|sep)[|｜]+>/i.test(
               assistantText.visible,
             )
           ) {

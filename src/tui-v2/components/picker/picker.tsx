@@ -160,6 +160,12 @@ export function Picker(props: PickerProps): ReactNode {
       setQuery("");
       return;
     }
+    if (request.rowAction && chord === request.rowAction.chord) {
+      key.preventDefault();
+      const option = filtered[selected];
+      if (option) services.overlay.actOnPickerRow(option.value);
+      return;
+    }
     if (isPrintableFilterChar(key)) {
       key.preventDefault();
       setQuery((q) => q + key.sequence);
@@ -191,9 +197,15 @@ export function Picker(props: PickerProps): ReactNode {
     innerW,
   );
   const hintText = pad(
-    isHistory
-      ? "  ↑↓:move  ·  type:filter  ·  ⌫:edit  ·  ^u:clear  ·  enter:open  ·  esc:close  ·  click:select"
-      : "  ↑↓:select  ·  type:filter  ·  ⌫:edit  ·  ^u:clear  ·  enter:confirm  ·  esc:close",
+    [
+      isHistory
+        ? "  ↑↓:move  ·  type:filter  ·  ⌫:edit  ·  ^u:clear  ·  enter:open"
+        : "  ↑↓:select  ·  type:filter  ·  ⌫:edit  ·  ^u:clear  ·  enter:confirm",
+      request.rowAction ? request.rowAction.hint : "",
+      "esc:close",
+    ]
+      .filter(Boolean)
+      .join("  ·  "),
     innerW,
   );
 

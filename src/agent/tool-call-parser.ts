@@ -279,6 +279,17 @@ function parseKimiToolCall(text: string): ToolCall | undefined {
   return tryParseCall(JSON.stringify({ name, args: tryJson(match[2]!) ?? {} }));
 }
 
+const DEEPSEEK_TOOL_CALL_RE =
+  /<[|｜]+tool[_▁]call[_▁]begin[|｜]+>\s*(?:[A-Za-z]+\s*)?<[|｜]+tool[_▁]sep[|｜]+>\s*(?:functions\.)?([A-Za-z][\w.]*?)(?::\d+)?\s*(?:\n|\s)*(?:```(?:json)?\s*)?(\{[\s\S]*?\})\s*(?:```)?\s*(?:<[|｜]+tool[_▁]call[_▁]end[|｜]+>|$)/i;
+
+function parseDeepseekToolCall(text: string): ToolCall | undefined {
+  const match = text.match(DEEPSEEK_TOOL_CALL_RE);
+  if (!match) return undefined;
+  return tryParseCall(
+    JSON.stringify({ name: match[1]!, args: tryJson(match[2]!) ?? {} }),
+  );
+}
+
 const DSML_INVOKE_OPEN_RE = /<[|｜]+DSML[|｜]+invoke\b([^>]*)>/gi;
 const DSML_PARAMETER_OPEN_RE = /<[|｜]+DSML[|｜]+parameter\b([^>]*)>/gi;
 
@@ -783,6 +794,15 @@ export function stripSentinelTokens(text: string): string {
     .replace(/<\|tool_calls?(?:_section)?_(?:begin|end)\|>/gi, "")
     .replace(/<\|tool_call_argument_begin\|>/gi, "")
     .replace(/<\|tool_[a-z_]*\|>/gi, "")
+    .replace(
+      /<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*?(?:<[|｜]+tool[_▁]calls[_▁]end[|｜]+>|$)/gi,
+      "",
+    )
+    .replace(
+      /<[|｜]+tool[_▁]call[_▁]begin[|｜]+>[\s\S]*?(?:<[|｜]+tool[_▁]call[_▁]end[|｜]+>|$)/gi,
+      "",
+    )
+    .replace(/<[|｜]+tool[_▁](?:calls?[_▁](?:begin|end)|sep)[|｜]+>/gi, "")
     // GLM/Tencent id-tagged blocks (and bare openers left after a partial strip).
     .replace(/<tool_calls:[A-Za-z0-9_-]+>[\s\S]*?(?:<\/tool_calls:[A-Za-z0-9_-]+>|$)/gi, "")
     .replace(/<tool_call:[A-Za-z0-9_-]+>[\s\S]*?(?:<\/tool_call:[A-Za-z0-9_-]+>|$)/gi, "")
@@ -836,6 +856,9 @@ export function parseToolCall(
   // 3. Kimi/Moonshot sentinel format (used by kimi-k2 family on NIM).
   const kimi = parseKimiToolCall(text);
   if (kimi) return kimi;
+
+  const deepseek = parseDeepseekToolCall(text);
+  if (deepseek) return deepseek;
 
   // In strict mode, stop here. Headings, generic fenced blocks, and trailing
   // JSON are too easy to accidentally trigger when the model is showing a
@@ -1367,6 +1390,14 @@ export function parseAllToolCalls(text: string): ToolCall[] {
     if (call) found.push({ index: m.index, call });
   }
 
+  const deepseekRe = new RegExp(DEEPSEEK_TOOL_CALL_RE.source, "gi");
+  while ((m = deepseekRe.exec(text)) !== null) {
+    const call = tryParseCall(
+      JSON.stringify({ name: m[1], args: tryJson(m[2] ?? "{}") ?? {} }),
+    );
+    if (call) found.push({ index: m.index, call });
+  }
+
   // Bare <function=name>…</function> blocks (no <tool_call> wrapper) — some
   // models emit one or several of these. Route each through parseXmlToolCall
   // so the <parameter=…> args are decoded. Skip any that overlap a
@@ -1547,8 +1578,11 @@ export function textBeforeToolCall(text: string): string {
     /<[|｜]+open[|｜]+>?call\b[\s\S]*$/i,
     // Kimi/Moonshot sentinel block — strip from the section opener
     // (or the first call opener if the section header is missing).
+    /<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*$/i,
     /<\|tool_calls_section_begin\|>[\s\S]*$/i,
+    /<[|｜]+tool[_▁]call[_▁]begin[|｜]+>[\s\S]*$/i,
     /<\|tool_call_begin\|>[\s\S]*$/i,
+    /<[|｜]+tool[_▁]sep[|｜]+>[\s\S]*$/i,
     /#{1,3}\s*tool\s*\n\s*\{[\s\S]*$/i,
     /\*\*tool\*\*\s*\n\s*\{[\s\S]*$/i,
     /```\w*\s*\n?\{[\s\S]*?"name"[\s\S]*$/i,

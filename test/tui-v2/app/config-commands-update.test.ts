@@ -97,6 +97,7 @@ describe("/update in the running TUI", () => {
       "3.14.0",
       expect.any(Function),
       "pipe",
+      expect.any(Function),
     );
     expect(requestExit).not.toHaveBeenCalled();
     vi.runAllTimers();

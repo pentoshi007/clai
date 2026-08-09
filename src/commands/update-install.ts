@@ -189,9 +189,15 @@ export function resolveInstallEnv(): DetectEnv {
   return env;
 }
 
+export interface DownloadProgress {
+  readonly receivedBytes: number;
+  readonly totalBytes?: number | undefined;
+}
+
 export async function downloadBinary(
   url: string,
   timeoutMs = 120_000,
+  onProgress?: (progress: DownloadProgress) => void,
 ): Promise<Buffer> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -204,7 +210,25 @@ export async function downloadBinary(
     if (!res.ok) {
       throw new Error(`download failed (HTTP ${res.status}) for ${url}`);
     }
-    return Buffer.from(await res.arrayBuffer());
+    if (!onProgress || !res.body) {
+      return Buffer.from(await res.arrayBuffer());
+    }
+    const header = res.headers.get("content-length");
+    const parsed = header ? Number.parseInt(header, 10) : Number.NaN;
+    const totalBytes = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    const reader = res.body.getReader();
+    const chunks: Buffer[] = [];
+    let receivedBytes = 0;
+    onProgress({ receivedBytes: 0, totalBytes });
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      chunks.push(Buffer.from(value));
+      receivedBytes += value.byteLength;
+      onProgress({ receivedBytes, totalBytes });
+    }
+    return Buffer.concat(chunks);
   } finally {
     clearTimeout(timeout);
   }
@@ -231,7 +255,17 @@ export interface PerformUpdateOptions {
   readonly log?: (line: string) => void;
   /** inherit: let the child write to the terminal (CLI). pipe: capture + log (TUI). */
   readonly stdio?: "inherit" | "pipe";
+  readonly onProgress?: ((progress: UpdateProgress) => void) | undefined;
 }
+
+export type UpdateProgress =
+  | {
+      readonly phase: "downloading";
+      readonly receivedBytes: number;
+      readonly totalBytes?: number | undefined;
+    }
+  | { readonly phase: "verifying" }
+  | { readonly phase: "installing"; readonly detail?: string | undefined };
 
 function logOf(log: ((line: string) => void) | undefined): (line: string) => void {
   return log ?? ((line) => console.log(line));
@@ -294,8 +328,11 @@ export async function installDirectBinary(
   const sumUrl = `${base}/${target.file}.sha256`;
 
   log(chalk.dim(`  ⬇ Downloading ${target.file} (v${options.version})…`));
-  const bin = await downloadBinary(url);
+  const bin = await downloadBinary(url, 120_000, (progress) =>
+    options.onProgress?.({ phase: "downloading", ...progress }),
+  );
   log(chalk.dim(`  🔐 Verifying sha256…`));
+  options.onProgress?.({ phase: "verifying" });
   const expected = (await downloadBinary(sumUrl)).toString("utf8").trim().split(/\s+/)[0] ?? "";
   const actual = sha256(bin);
   if (!expected || expected !== actual) {
@@ -303,6 +340,7 @@ export async function installDirectBinary(
   }
   log(chalk.green(`  ✓ checksum ok (${actual})`));
 
+  options.onProgress?.({ phase: "installing", detail: target.file });
   const dir = mkdtempSync(join(tmpdir(), "clai-update-"));
   try {
     const tmp = join(dir, target.file);
@@ -358,6 +396,7 @@ export async function installViaPackageManager(
       break;
   }
   log(chalk.dim(`  ⬆ Running: ${cmd} ${args.join(" ")}`));
+  options.onProgress?.({ phase: "installing", detail: `${cmd} ${args[0] ?? ""}`.trim() });
   const stdio = options.stdio ?? "inherit";
   const r =
     stdio === "inherit"

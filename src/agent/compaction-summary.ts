@@ -3,6 +3,8 @@
  * The model produces structured continuation memory — not a raw transcript dump.
  */
 
+import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
+
 export const COMPACTION_SYSTEM_PROMPT = `You are a session-memory compressor for an autonomous coding and security agent.
 
 Write a dense, accurate CONTINUATION MEMORY for another assistant that will resume this work with no other history.
@@ -137,6 +139,15 @@ export function buildCompactionUserPrompt(parts: CompactionPromptParts): string 
     );
   }
 
+  sections.push(
+    "",
+    "RECENCY (correctness-critical):",
+    "- The material runs to the END of the session, including the most recent tool call and the most recent answer. Read the material to its final line before writing anything.",
+    "- Anything the material shows as already done belongs under Work completed / Current state. NEVER list completed work under Remaining work, In flight, or as a next step — a resuming agent will redo it.",
+    "- Take the LATEST state of any fact that changed during the session. If an approach was adopted and later reverted, replaced, or abandoned, record the final choice as current and the earlier one as superseded with the reason.",
+    "- Remaining work must contain only steps the material shows as genuinely not yet performed. If nothing remains, say so explicitly.",
+  );
+
   const target =
     "Be specific over short. Target ~1800–3600 tokens of dense continuation memory (~900–1600 for plan-mode handoffs), using more only when required to preserve verified state. Finish every bullet and section. End on a complete sentence. No secrets, fabricated successes, raw pseudo-tool syntax, or full tool dumps.";
   sections.push(target);
@@ -155,7 +166,7 @@ export function buildDirectCompactionPrompt(input: {
 }): string {
   return buildCompactionUserPrompt({
     messageTranscript:
-      "The session material is the exact conversation-message prefix immediately before this instruction. Summarize that prefix only; do not treat this instruction as session content.",
+      "The session material is the entire conversation above this instruction, up to and including the most recent turn. Summarize all of it; do not treat this instruction as session content.",
     ...(input.durableState ? { durableState: input.durableState } : {}),
     ...(input.purpose ? { purpose: input.purpose } : {}),
   });
@@ -280,18 +291,13 @@ export function trimTranscriptForCompaction(
 }
 
 
-/**
- * Detects a "summary" that is really the model continuing the task or replaying
- * the raw transcript instead of compressing it. Weak models sometimes echo tool
- * receipts (bytes/lines/sha256), "TOOL:" lines, or "[tools: …]" markers, or
- * narrate the next step with fabricated tool calls. A faithful memory never
- * contains these artifacts, so their presence means the summary is unusable and
- * compaction should fail loudly rather than persist garbage.
- */
+
 export function normalizeCompactionSummary(summary: string): string {
   const seenBullets = new Set<string>();
   const output: string[] = [];
-  for (const line of summary.replace(/\r\n?/g, "\n").split("\n")) {
+  for (const line of stripReasoningMarkers(summary)
+    .replace(/\r\n?/g, "\n")
+    .split("\n")) {
     const trimmed = line.trim();
     const bullet = /^(?:[-*+]|\d+[.)])\s+(.+)$/.exec(trimmed);
     if (bullet) {
@@ -350,7 +356,9 @@ export function looksLikeTranscriptReplay(summary: string): boolean {
     /Do NOT re-read this file/i,
     /\(\s*exit\s*=\s*-?\d+\s*,\s*ok\s*=\s*(?:true|false)\s*\)/i,
     /<tool_calls?(?::[^>]+)?>|<arg_key>|<arg_value>|<\/tool_call/i,
+    /[\ue000\ue001]/,
     /<\|tool_(?:calls_section|call|call_argument)_(?:begin|end)\|>/i,
+    /<[|｜]+tool[_▁](?:calls?[_▁](?:begin|end)|sep)[|｜]+>/i,
     /<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b/i,
     /<[|｜]+(?:open|close|sep)[|｜]+>/i,
     /\bbytes\s*=\s*\d+\s+lines\s*=\s*\d+/i,

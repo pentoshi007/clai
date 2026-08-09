@@ -27,13 +27,16 @@ import {
   useSearchProvider,
 } from "./commands/search-providers.js";
 import {
+  getActiveProviderEndpoint,
   getConfig,
+  getCustomProviders,
   getProviderModel,
   setDefaultMode,
   setProviderModel,
   setThinking,
   updateConfig,
 } from "./store/config.js";
+import { envValue, getProviderSecret } from "./store/keys.js";
 import {
   listSessionSummaries,
   upsertSession,
@@ -718,6 +721,80 @@ async function showModelList(provider: string, currentModel: string): Promise<vo
   console.log(chalk.dim("  Use /model <name> or /model <#> to select."));
 }
 
+async function showAllProviderModels(filter: string): Promise<void> {
+  const custom = getCustomProviders().map((def) => def.id as ProviderId);
+  const candidates: ProviderId[] = [...providerIds, ...custom];
+  const configured: ProviderId[] = [];
+  for (const provider of candidates) {
+    if (provider === "ollama") {
+      configured.push(provider);
+      continue;
+    }
+    const hasKey =
+      Boolean(envValue(provider)) ||
+      Boolean((await getProviderSecret(provider)).value);
+    if (!hasKey) continue;
+    if (provider === "modal" && !getActiveProviderEndpoint("modal")) continue;
+    configured.push(provider);
+  }
+  if (configured.length === 0) {
+    console.log(
+      chalk.dim("  No providers configured. Add a key with: clai set <provider>"),
+    );
+    return;
+  }
+
+  const needle = filter.trim().toLowerCase().replace(/\s+/g, "/");
+  const results = await Promise.all(
+    configured.map(async (provider) => {
+      const providerImpl = getProvider(provider);
+      let models: string[] = [];
+      let live = false;
+      if (providerImpl.listModels) {
+        try {
+          models = await providerImpl.listModels(await providerAuth(provider));
+          live = models.length > 0;
+        } catch {
+          models = [];
+        }
+      }
+      if (models.length === 0) models = knownModels[provider] ?? [];
+      return { provider, models, live };
+    }),
+  );
+
+  let total = 0;
+  const lines: string[] = [];
+  for (const { provider, models, live } of results) {
+    const matching = needle
+      ? models.filter((model) =>
+          `${provider}/${model}`.toLowerCase().includes(needle),
+        )
+      : models;
+    if (matching.length === 0) continue;
+    lines.push(
+      `  ${chalk.cyan(provider)}${chalk.dim(live ? " · live" : " · known")}`,
+    );
+    for (const model of matching) {
+      total += 1;
+      lines.push(`    ${chalk.white(`${provider}/${model}`)}`);
+    }
+  }
+  if (total === 0) {
+    console.log(chalk.dim(`  No model matches "${filter.trim()}".`));
+    return;
+  }
+  console.log(
+    chalk.dim(
+      `  ${total} models across ${configured.length} configured provider${configured.length === 1 ? "" : "s"}:`,
+    ),
+  );
+  for (const line of lines) console.log(line);
+  console.log(
+    chalk.dim("  Use /provider <name> then /model <name> to switch."),
+  );
+}
+
 function maybePrintThinkingTip(provider: ProviderId, model: string): void {
   if (getConfig().thinking.enabled) return;
   if (!modelSupportsThinking(provider, model)) return;
@@ -877,6 +954,10 @@ async function handleSlash(
         console.log(renderProviderSwitch(state.provider, arg));
         maybePrintThinkingTip(state.provider, arg);
       }
+      return true;
+    }
+    case "/models": {
+      await showAllProviderModels(args.join(" ").trim());
       return true;
     }
     case "/provider":

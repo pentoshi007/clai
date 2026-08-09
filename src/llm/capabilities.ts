@@ -46,7 +46,7 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
   ],
   kimchi: [/kimi-k2/i, /minimax-m2/i, /minimax-m3/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
-  bynara: [/mimo-/i, /deepseek-v4/i, /deepseek-r1/i, /bynara-max/i],
+  bynara: [/kimi/i, /deepseek/i, /agnes/i, /stepfun/i],
   "qwen-cloud": [/qwen3/i, /qwen2/i],
   // Modal Endpoints serve the open-weight catalog (Kimi, Qwen, DeepSeek, GLM,
   // Gemma, GPT-OSS, Nemotron); the thinking families among them are matched by
@@ -107,11 +107,61 @@ export function clearReasoningUnsupported(): void {
   reasoningUnsupportedModels.clear();
 }
 
+const catalogReasoningSupport = new Map<string, boolean>();
+const observedReasoningModels = new Set<string>();
+
+export function registerModelReasoningSupport(
+  provider: ProviderId,
+  model: string,
+  supported: boolean,
+): void {
+  if (!model.trim()) return;
+  catalogReasoningSupport.set(reasoningKey(provider, model), supported);
+}
+
+export function learnModelEmitsReasoning(
+  provider: ProviderId,
+  model: string,
+): void {
+  if (!model.trim()) return;
+  observedReasoningModels.add(reasoningKey(provider, model));
+}
+
+export type ReasoningEvidence =
+  | "rejected"
+  | "observed"
+  | "catalog"
+  | "pattern"
+  | "unknown";
+
+export function modelReasoningEvidence(
+  provider: ProviderId,
+  model: string,
+): ReasoningEvidence {
+  const key = reasoningKey(provider, model);
+  if (reasoningUnsupportedModels.has(key)) return "rejected";
+  if (observedReasoningModels.has(key)) return "observed";
+  if (catalogReasoningSupport.has(key)) return "catalog";
+  const patterns = reasoningPatterns[provider] ?? [];
+  return patterns.some((pattern) => pattern.test(model)) ? "pattern" : "unknown";
+}
+
+export function resetReasoningKnowledge(): void {
+  reasoningUnsupportedModels.clear();
+  catalogReasoningSupport.clear();
+  observedReasoningModels.clear();
+  catalogReasoningEfforts.clear();
+}
+
 export function modelSupportsThinking(
   provider: ProviderId,
   model: string,
 ): boolean {
-  if (isReasoningUnsupported(provider, model)) return false;
+  const key = reasoningKey(provider, model);
+  if (reasoningUnsupportedModels.has(key)) return false;
+  if (observedReasoningModels.has(key)) return true;
+  const declared = catalogReasoningSupport.get(key);
+  if (declared !== undefined) return declared;
   const patterns = reasoningPatterns[provider] ?? [];
   return patterns.some((pattern) => pattern.test(model));
 }
@@ -287,6 +337,33 @@ export function registerProviderModels(
 export interface CatalogModel {
   readonly id: string;
   readonly vision?: boolean | undefined;
+  readonly reasoning?: boolean | undefined;
+  readonly reasoningEfforts?: readonly string[] | undefined;
+}
+
+const catalogReasoningEfforts = new Map<string, readonly string[]>();
+
+export function registerModelReasoningEfforts(
+  provider: ProviderId,
+  model: string,
+  efforts: readonly string[],
+): void {
+  const normalized = efforts
+    .map((effort) => effort.trim().toLowerCase())
+    .filter(Boolean);
+  if (normalized.length === 0) return;
+  catalogReasoningEfforts.set(reasoningKey(provider, model), normalized);
+}
+
+export function modelReasoningEfforts(
+  provider: ProviderId,
+  model: string,
+): readonly string[] | undefined {
+  return catalogReasoningEfforts.get(reasoningKey(provider, model));
+}
+
+export function clearModelReasoningEfforts(): void {
+  catalogReasoningEfforts.clear();
 }
 
 export function registerModelCatalog(
@@ -298,7 +375,14 @@ export function registerModelCatalog(
     models.map((model) => model.id).filter((id) => id.length > 0),
   );
   for (const model of models) {
-    if (model.vision === undefined || !model.id) continue;
+    if (!model.id) continue;
+    if (model.reasoningEfforts?.length) {
+      registerModelReasoningEfforts(provider, model.id, model.reasoningEfforts);
+    }
+    if (model.reasoning !== undefined) {
+      registerModelReasoningSupport(provider, model.id, model.reasoning);
+    }
+    if (model.vision === undefined) continue;
     registerModelVisionCapability({
       provider,
       model: model.id,

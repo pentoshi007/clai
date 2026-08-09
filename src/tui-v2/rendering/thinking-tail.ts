@@ -27,6 +27,10 @@ const SURFACE_OPENERS = [
   "\ninvoke_tool(",
   "<|tool_calls_section_begin|>",
   "<|tool_call_begin|>",
+  "<|tool▁calls▁begin|>",
+  "<｜tool▁calls▁begin｜>",
+  "<｜tool▁call▁begin｜>",
+  "<｜tool▁sep｜>",
 ];
 
 export function liveThinkingDisplay(

@@ -49,7 +49,30 @@ function flushBoundary(text: string, limit: number): number {
 // last one can be stripped once and flushed; the remaining prose returns to the
 // cheap append path instead of being rescanned forever.
 const COMPLETE_SURFACE =
-  /```(?:tool|json\s*tool)\b[^\n]*\n[\s\S]*?```|<tool_call\b(?!:)[^>]*>[\s\S]*?<\/tool_call>|<tool_calls:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_calls:\1>|<tool_call:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_call:\2>|<[|｜]+DSML[|｜]+tool_calls\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+tool_calls>|<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>|<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>|<[|｜]+open[|｜]+>?tools\b[\s\S]*?<[|｜]+close[|｜]+>?tools(?:\s*>|(?=\s*\n))|<[|｜]+open[|｜]+>?call\b[\s\S]*?<[|｜]+close[|｜]+>?call(?:\s*>|(?=\s*\n))/gi;
+  /```(?:tool|json\s*tool)\b[^\n]*\n[\s\S]*?```|<tool_call\b(?!:)[^>]*>[\s\S]*?<\/tool_call>|<tool_calls:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_calls:\1>|<tool_call:([A-Za-z0-9_-]+)>[\s\S]*?<\/tool_call:\2>|<[|｜]+DSML[|｜]+tool_calls\b[^>]*>[\s\S]*?<\/[|｜]+DSML[|｜]+tool_calls>|<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*?<[|｜]+tool[_▁]calls[_▁]end[|｜]+>|<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>|<\|tool_call_begin\|>[\s\S]*?<\|tool_call_end\|>|<[|｜]+open[|｜]+>?tools\b[\s\S]*?<[|｜]+close[|｜]+>?tools(?:\s*>|(?=\s*\n))|<[|｜]+open[|｜]+>?call\b[\s\S]*?<[|｜]+close[|｜]+>?call(?:\s*>|(?=\s*\n))/gi;
+
+const FENCE_WINDOW = 512;
+
+function withheldTail(text: string): number {
+  if (text.length === 0) return 0;
+  const from = Math.max(0, text.length - FENCE_WINDOW);
+  const newline = text.lastIndexOf("\n");
+  if (newline >= from || from === 0) {
+    let cursor = newline + 1;
+    while (cursor < text.length && (text[cursor] === " " || text[cursor] === "\t")) {
+      cursor += 1;
+    }
+    if (text.startsWith("```", cursor)) return text.length - (newline + 1);
+  }
+  let ticks = 0;
+  while (ticks < 3 && text[text.length - 1 - ticks] === "`") ticks += 1;
+  return ticks;
+}
+
+function visibleText(text: string): string {
+  const withheld = withheldTail(text);
+  return withheld > 0 ? text.slice(0, text.length - withheld) : text;
+}
 
 function settleCompletedSurfaces(
   stableText: string,
@@ -81,7 +104,10 @@ function pushSettled(settled: {
   rawTail: string;
 }): { stream: StripStream; text: string } {
   const text = settled.stableText + settled.rawTail;
-  return { stream: { ...settled, text, clean: true }, text };
+  return {
+    stream: { ...settled, text, clean: true },
+    text: visibleText(text),
+  };
 }
 
 export function pushStripChunk(
@@ -110,5 +136,8 @@ export function pushStripChunk(
   }
 
   const text = clean ? stream.text + chunk : stableText + stripToolCallSurfaces(tail);
-  return { stream: { stableText, rawTail: tail, text, clean }, text };
+  return {
+    stream: { stableText, rawTail: tail, text, clean },
+    text: visibleText(text),
+  };
 }

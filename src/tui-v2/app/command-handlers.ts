@@ -37,6 +37,7 @@ import { handleInfo, handleKeys, handleSet, handleUnset } from "./commands/key-c
 import {
   handleHistory,
   handleModel,
+  handleModels,
   handleOutput,
   handlePermissions,
   handlePlanPager,
@@ -113,6 +114,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("fallback", (i) => handleFallback(services, i));
   c.setHandler("scope", (i) => void handleScope(services, i));
   c.setHandler("privacy", (i) => void handlePrivacy(services, i));
+  c.setHandler("models", (i) => void handleModels(services, i));
   c.setHandler("update", () => void handleUpdate(services));
   c.setHandler("help", () => handleHelp(services));
   c.setHandler("shortcuts", () => handleShortcuts(services));

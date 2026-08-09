@@ -14,6 +14,11 @@ import { modelAcceptsImages } from "./capabilities.js";
 import { resolveSampling } from "./sampling.js";
 import { toWireName, fromWireName, parseToolArguments } from "./tool-protocol.js";
 import { normalizeTokenUsage } from "./token-usage.js";
+import {
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  wrapReasoning,
+} from "./reasoning-marker.js";
 import type { TokenUsage } from "./token-usage.js";
 import type { NativeToolCall, ToolDefinition } from "../types.js";
 import type { ReasoningPreference } from "../types.js";
@@ -261,13 +266,13 @@ function parseResponsesOutput(data: {
 
 function foldResponsesReasoning(text: string, reasoningSummary: string, usage?: TokenUsage | undefined, effort?: string | undefined): string {
   if (reasoningSummary && reasoningSummary.trim()) {
-    return `<think>${reasoningSummary}</think>${text}`;
+    return `${wrapReasoning(reasoningSummary)}${text}`;
   }
   const tokens = usage?.reasoningTokens ?? 0;
   if (tokens > 0) {
     const effortText = effort ? ` at ${effort} effort` : "";
     const note = `Reasoning is private on Meta Model API: the model reasoned${effortText} and used ${tokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
-    return `<think>${note}</think>${text}`;
+    return `${wrapReasoning(note)}${text}`;
   }
   return text;
 }
@@ -548,14 +553,14 @@ export const metaProvider: LlmProvider = {
     const enterReasoning = (): void => {
       if (inReasoning) return;
       inReasoning = true;
-      full += "<think>";
-      onToken("<think>");
+      full += REASONING_OPEN;
+      onToken(REASONING_OPEN);
     };
     const exitReasoning = (): void => {
       if (!inReasoning) return;
       inReasoning = false;
-      full += "</think>";
-      onToken("</think>");
+      full += REASONING_CLOSE;
+      onToken(REASONING_CLOSE);
     };
     const emitVisible = (text: string): void => {
       if (!text) return;
@@ -825,15 +830,15 @@ export const metaProvider: LlmProvider = {
         const effortText = effort ? ` at ${effort} effort` : "";
         const note = `Reasoning is private on Meta Model API: the model reasoned${effortText} and used ${streamUsage.reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
         if (!inReasoning) {
-          full += "<think>";
+          full += REASONING_OPEN;
           visible = full;
-          onToken("<think>");
+          onToken(REASONING_OPEN);
         }
         full += note;
         reasoningSeen += note;
         onToken(note);
-        full += "</think>";
-        onToken("</think>");
+        full += REASONING_CLOSE;
+        onToken(REASONING_CLOSE);
         inReasoning = false;
       } else {
         exitReasoning();

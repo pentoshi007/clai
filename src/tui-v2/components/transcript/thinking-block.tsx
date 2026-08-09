@@ -40,9 +40,7 @@ export function ThinkingBlock(props: {
 }): ReactNode {
   const { item, theme, expanded, liveBody = true, contentWidth, onToggle } = props;
   const { width: termWidth } = useTerminalDimensions();
-  // Always show reasoning while it streams so the user sees live progress,
-  // then collapse once the block is finalized if thinking is toggled off.
-  const showBody = expanded || item.streaming;
+  const showBody = expanded || (item.streaming && liveBody);
   const onMouseUp = (event: MouseEvent): void => {
     event.preventDefault();
     // Only allow collapse/expand once the block is complete.

@@ -18,6 +18,14 @@ const COMPLETE_TOOL_DSML_PARAMETER =
 const TRAILING_TOOL_DSML =
   /<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b[\s\S]*$/i;
 const STRAY_TOOL_DSML = /<\/?[|｜]+DSML[|｜]+[A-Za-z0-9_]*\b[^>]*>/gi;
+const COMPLETE_TOOL_DEEPSEEK =
+  /<[|｜]+tool[_▁]calls[_▁]begin[|｜]+>[\s\S]*?<[|｜]+tool[_▁]calls[_▁]end[|｜]+>/gi;
+const COMPLETE_TOOL_DEEPSEEK_CALL =
+  /<[|｜]+tool[_▁]call[_▁]begin[|｜]+>[\s\S]*?<[|｜]+tool[_▁]call[_▁]end[|｜]+>/gi;
+const TRAILING_TOOL_DEEPSEEK =
+  /<[|｜]+tool[_▁](?:calls?[_▁](?:begin|end)|sep)[\s\S]*$/i;
+const STRAY_TOOL_DEEPSEEK =
+  /<[|｜]+tool[_▁](?:calls?[_▁](?:begin|end)|sep)[|｜]+>/gi;
 const COMPLETE_TOOL_KIMI_SECTION =
   /<\|tool_calls_section_begin\|>[\s\S]*?<\|tool_calls_section_end\|>/gi;
 const COMPLETE_TOOL_KIMI_CALL =
@@ -39,7 +47,7 @@ const COMPLETE_TOOL_FUNCTION =
 const TRAILING_TOOL_FUNCTION =
   /(?:^|\n)\s*(?:tool_call|invoke_tool)\s*\([\s\S]*$/i;
 const TRAILING_PARTIAL_TAG =
-  /(?:<[|｜]+[A-Za-z0-9_|｜]*|<[|｜]+(?:open|close)[|｜]+>?[A-Za-z_]*|<\/?|<\/?t|<\/?to|<\/?too|<\/?tool[^>]*)$/i;
+  /(?:<[|｜]+[A-Za-z0-9_|｜▁]*|<[|｜]+(?:open|close)[|｜]+>?[A-Za-z_]*|<\/?|<\/?t|<\/?to|<\/?too|<\/?tool[^>]*)$/i;
 
 export function stripToolCallSurfaces(text: string): string {
   if (!text) return text;
@@ -57,6 +65,10 @@ export function stripToolCallSurfaces(text: string): string {
   s = s.replace(COMPLETE_TOOL_DSML_PARAMETER, "");
   s = s.replace(TRAILING_TOOL_DSML, "");
   s = s.replace(STRAY_TOOL_DSML, "");
+  s = s.replace(COMPLETE_TOOL_DEEPSEEK, "");
+  s = s.replace(COMPLETE_TOOL_DEEPSEEK_CALL, "");
+  s = s.replace(TRAILING_TOOL_DEEPSEEK, "");
+  s = s.replace(STRAY_TOOL_DEEPSEEK, "");
   s = s.replace(COMPLETE_TOOL_KIMI_SECTION, "");
   s = s.replace(COMPLETE_TOOL_KIMI_CALL, "");
   s = s.replace(TRAILING_TOOL_KIMI, "");

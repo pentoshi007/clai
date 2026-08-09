@@ -261,6 +261,20 @@ function closePendingAssistant(state: TranscriptState): TranscriptState {
   return { ...next, pendingAssistantId: undefined };
 }
 
+function turnThinkingContent(
+  state: TranscriptState,
+  turnId: string | undefined,
+): string {
+  const parts: string[] = [];
+  for (const id of state.order) {
+    const item = state.byId.get(id);
+    if (item?.kind !== "thinking" || item.turnId !== turnId) continue;
+    const trimmed = item.content.trim();
+    if (trimmed) parts.push(trimmed);
+  }
+  return parts.join("\n\n");
+}
+
 /** Close open thinking so tool cards never sit under a still-streaming block. */
 function closePendingThinking(state: TranscriptState): TranscriptState {
   if (!state.pendingThinkingId) return state;
@@ -297,33 +311,37 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "status":
       return { ...withSeq, runningStatus: event.payload.text };
 
-    case "assistant-delta":
+    case "assistant-delta": {
+      const visible = event.payload.text.trim().length > 0;
+      const base = visible ? closePendingThinking(withSeq) : withSeq;
       return {
-        ...appendDelta(withSeq, event, "assistant", event.payload.text),
+        ...appendDelta(base, event, "assistant", event.payload.text),
         runningStatus: "responding",
       };
+    }
 
     case "assistant-message": {
+      const closed = closePendingThinking(withSeq);
       // Never finalize a Response card that is only tool-call fences.
       const text = stripToolCallSurfaces(event.payload.text).trim();
       if (!text || isToolFenceOnlyText(event.payload.text)) {
-        if (withSeq.pendingAssistantId) {
+        if (closed.pendingAssistantId) {
           return {
             ...clearStripStream(
-              removeItem(withSeq, withSeq.pendingAssistantId),
-              withSeq.pendingAssistantId,
+              removeItem(closed, closed.pendingAssistantId),
+              closed.pendingAssistantId,
             ),
             pendingAssistantId: undefined,
             runningStatus: undefined,
           };
         }
         return {
-          ...withSeq,
+          ...closed,
           runningStatus: undefined,
         };
       }
       return {
-        ...finalizeMessage(withSeq, event, "assistant", text),
+        ...finalizeMessage(closed, event, "assistant", text),
         runningStatus: undefined,
       };
     }
@@ -334,8 +352,16 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         runningStatus: "thinking",
       };
 
-    case "thinking-block":
+    case "thinking-block": {
+      if (
+        !withSeq.pendingThinkingId &&
+        turnThinkingContent(withSeq, event.turnId) ===
+          event.payload.content.trim()
+      ) {
+        return withSeq;
+      }
       return finalizeMessage(withSeq, event, "thinking", event.payload.content);
+    }
 
     case "notice":
       // Chrome feedback only — composition-root surfaces these as toasts.

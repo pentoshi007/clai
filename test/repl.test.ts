@@ -39,7 +39,7 @@ describe("REPL slash command suggestions", () => {
       (item) => item.command,
     );
 
-    expect(commands).toEqual(["/model"]);
+    expect(commands).toEqual(["/model", "/models"]);
   });
 
   it("stops suggesting after command arguments begin", () => {

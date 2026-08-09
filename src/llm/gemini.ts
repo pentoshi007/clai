@@ -27,6 +27,11 @@ import {
 import { fromWireName } from "./tool-protocol.js";
 import { parseGeminiUsage } from "./token-usage.js";
 import {
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  wrapReasoning,
+} from "./reasoning-marker.js";
+import {
   firstSystemPrompt,
   requestContextSystemPrompts,
   withoutRequestContextSystemMessages,
@@ -287,7 +292,7 @@ export const geminiProvider: LlmProvider = {
       throw new ProviderError("Gemini completed without a visible answer.");
     }
     const final = thought
-      ? `<think>${thought}</think>${parsed.text}`
+      ? `${wrapReasoning(thought)}${parsed.text}`
       : parsed.text;
     const usage = parseGeminiUsage(data.usageMetadata);
     return {
@@ -344,14 +349,14 @@ export const geminiProvider: LlmProvider = {
     const enterThought = (): void => {
       if (inThought) return;
       inThought = true;
-      full += "<think>";
-      onToken("<think>");
+      full += REASONING_OPEN;
+      onToken(REASONING_OPEN);
     };
     const exitThought = (): void => {
       if (!inThought) return;
       inThought = false;
-      full += "</think>";
-      onToken("</think>");
+      full += REASONING_CLOSE;
+      onToken(REASONING_CLOSE);
     };
 
     const sseFrames = createSseFrameAssembler();

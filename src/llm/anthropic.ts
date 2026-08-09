@@ -31,6 +31,11 @@ import {
   withoutRequestContextSystemMessages,
 } from "./system-messages.js";
 import { resolveSampling } from "./sampling.js";
+import {
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  wrapReasoning,
+} from "./reasoning-marker.js";
 import type { TokenUsage } from "../types.js";
 
 const baseUrl = "https://api.anthropic.com/v1";
@@ -219,7 +224,7 @@ export const anthropicProvider: LlmProvider = {
         ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
         : undefined;
     const final = parsed.thinkingText
-      ? `<think>${parsed.thinkingText}</think>${parsed.text}`
+      ? `${wrapReasoning(parsed.thinkingText)}${parsed.text}`
       : parsed.text;
     const usage = parseAnthropicUsage(data.usage);
     return {
@@ -271,14 +276,14 @@ export const anthropicProvider: LlmProvider = {
     const enterThinking = (): void => {
       if (inThinking) return;
       inThinking = true;
-      full += "<think>";
-      onToken("<think>");
+      full += REASONING_OPEN;
+      onToken(REASONING_OPEN);
     };
     const exitThinking = (): void => {
       if (!inThinking) return;
       inThinking = false;
-      full += "</think>";
-      onToken("</think>");
+      full += REASONING_CLOSE;
+      onToken(REASONING_CLOSE);
     };
 
     const sseFrames = createSseFrameAssembler();

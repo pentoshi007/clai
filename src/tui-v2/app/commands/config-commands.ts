@@ -136,11 +136,64 @@ export async function handleScope(
   }
 }
 
+function openPrivacyOptions(services: AppServices): void {
+  const privateMode = Boolean(getConfig().privateMode);
+  services.overlay.openPicker(
+    {
+      title: `Privacy · private mode ${privateMode ? "on" : "off"}`,
+      twoLine: true,
+      options: [
+        {
+          value: privateMode ? "off" : "on",
+          label: privateMode ? "private mode → off" : "private mode → on",
+          description: privateMode
+            ? "resume normal history, audit logs and artifact retention"
+            : "stop writing prompts and outputs to history, logs and artifacts",
+          active: true,
+        },
+        {
+          value: "clear-history",
+          label: "clear history",
+          description: "drop sessions from the active list (archived, recoverable)",
+        },
+        {
+          value: "clear-logs",
+          label: "clear audit logs",
+          description: "delete audit log files from disk",
+        },
+        {
+          value: "clear-artifacts",
+          label: "clear artifacts",
+          description: "delete saved tool-output artifacts from disk",
+        },
+        {
+          value: "clear-all",
+          label: "clear everything",
+          description: "history, audit logs and artifacts in one pass",
+        },
+      ],
+    },
+    (value) => {
+      services.overlay.close();
+      void applyPrivacy(services, value);
+    },
+  );
+}
+
 export async function handlePrivacy(
   services: AppServices,
   invocation: CommandInvocation,
 ): Promise<void> {
-  const sub = (invocation.args.trim() || "status").toLowerCase();
+  const raw = invocation.args.trim();
+  if (!raw) {
+    openPrivacyOptions(services);
+    return;
+  }
+  await applyPrivacy(services, raw);
+}
+
+async function applyPrivacy(services: AppServices, raw: string): Promise<void> {
+  const sub = raw.trim().toLowerCase();
   if (["on", "enable"].includes(sub)) {
     updateConfig({ privateMode: true });
     notice(services, "info", "private mode → on");
@@ -190,50 +243,105 @@ export async function handlePrivacy(
   notice(
     services,
     "warn",
-    "usage: /privacy [status|on|off|clear-history|clear-logs|clear-artifacts|clear-all]",
+    "usage: /privacy  ·  /privacy [status|on|off|clear-history|clear-logs|clear-artifacts|clear-all]",
   );
 }
 
+const UPDATE_TOAST_KEY = "update";
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function progressBar(fraction: number, width = 14): string {
+  const filled = Math.max(0, Math.min(width, Math.round(fraction * width)));
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
+}
+
 export async function handleUpdate(services: AppServices): Promise<void> {
+  const sticky = (message: string): void => {
+    services.toast.info(message, { key: UPDATE_TOAST_KEY, sticky: true });
+  };
+  const settle = (
+    level: "success" | "warn" | "error",
+    message: string,
+  ): void => {
+    services.toast[level](message, { key: UPDATE_TOAST_KEY, durationMs: 6000 });
+  };
+
+  sticky("checking for updates…");
   try {
     const status = await services.ports.updates.check();
     if (status.state !== "update-available" || !status.latestVersion) {
       if (status.state === "current") {
-        notice(services, "info", `up to date · ${status.currentVersion}`);
+        settle("success", `up to date · v${status.currentVersion}`);
       } else {
-        notice(
-          services,
+        settle(
           "warn",
-          `update status unknown · ${status.currentVersion}${status.detail ? ` (${status.detail})` : ""}`,
+          `update status unknown · v${status.currentVersion}${status.detail ? ` (${status.detail})` : ""}`,
         );
       }
       return;
     }
 
     const target = status.latestVersion;
-    notice(services, "info", `updating ${status.currentVersion} → ${target}…`);
-    const result = await installUpdate(target, (line) => {
-      const clean = line
-        // eslint-disable-next-line no-control-regex
-        .replace(/\x1b\[[0-9;]*m/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (clean) notice(services, "info", `update: ${clean}`);
-    }, "pipe");
+    const route = `v${status.currentVersion} → v${target}`;
+    sticky(`update available · ${route} · starting download…`);
+
+    let lastPaint = 0;
+    const result = await installUpdate(
+      target,
+      (line) => {
+        const clean = line
+          // eslint-disable-next-line no-control-regex
+          .replace(/\x1b\[[0-9;]*m/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (clean && !/^[⬇🔐✓]/u.test(clean)) sticky(`${route} · ${clean}`);
+      },
+      "pipe",
+      (progress) => {
+        if (progress.phase === "verifying") {
+          sticky(`${route} · verifying checksum…`);
+          return;
+        }
+        if (progress.phase === "installing") {
+          sticky(`${route} · installing…`);
+          return;
+        }
+        const now = Date.now();
+        const complete =
+          progress.totalBytes !== undefined &&
+          progress.receivedBytes >= progress.totalBytes;
+        if (!complete && now - lastPaint < 120) return;
+        lastPaint = now;
+        if (progress.totalBytes === undefined) {
+          sticky(
+            `${route} · downloading ${formatBytes(progress.receivedBytes)}…`,
+          );
+          return;
+        }
+        const fraction = progress.receivedBytes / progress.totalBytes;
+        sticky(
+          `${route} · downloading ${progressBar(fraction)} ${Math.round(fraction * 100)}% · ${formatBytes(progress.receivedBytes)}/${formatBytes(progress.totalBytes)}`,
+        );
+      },
+    );
 
     if (!result.ok) {
-      notice(services, "warn", `update not applied · ${result.message}`);
+      settle("warn", `update not applied · ${result.message}`);
       return;
     }
-    notice(services, "info", `updated to ${target} · restarting…`);
     updateConfig({ lastUpdateCheck: Date.now() });
+    settle("success", `updated to v${target} · restarting…`);
     // Let the success toast paint before the renderer tears down.
-    setTimeout(() => services.requestExit(), 900);
+    setTimeout(() => services.requestExit(), 1200);
   } catch (error) {
-    notice(
-      services,
-      "warn",
-      `update failed: ${error instanceof Error ? error.message : String(error)}`,
+    settle(
+      "error",
+      `update failed · ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }

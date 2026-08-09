@@ -34,7 +34,11 @@ import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
 import { fixOwner, fixOwnerSync, handlePermissionError, safeExists } from "../os/permissions.js";
 import { getHistoryDir } from "./paths.js";
-import { getActiveSessionWorkspace } from "./session-workspace.js";
+import {
+  getActiveSessionWorkspace,
+  isUnderSessionWorkspaceParent,
+  sessionWorkspaceRoot,
+} from "./session-workspace.js";
 import {
   appendIndexedHistoryRecord,
   findHistoryRecordStreaming,
@@ -1612,6 +1616,61 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
     return { deleted: false, detail: "session not found" };
   }
   return { deleted: true, detail: `deleted ${id}` };
+}
+
+export async function purgeSession(sessionId: string): Promise<{
+  deleted: boolean;
+  detail: string;
+  removedWorkspace: boolean;
+  removedPlan: boolean;
+}> {
+  const id = sessionId.trim();
+  if (!id) {
+    return {
+      deleted: false,
+      detail: "missing session id",
+      removedWorkspace: false,
+      removedPlan: false,
+    };
+  }
+  const record = await getSession(id);
+  const workspaceFolder = record?.workspaceFolder?.trim();
+  const result = await deleteSession(id);
+  if (!result.deleted) {
+    return { ...result, removedWorkspace: false, removedPlan: false };
+  }
+
+  let removedPlan = false;
+  try {
+    const { deletePlan } = await import("./plan.js");
+    await deletePlan(id);
+    removedPlan = true;
+  } catch {
+    removedPlan = false;
+  }
+
+  let removedWorkspace = false;
+  if (workspaceFolder) {
+    try {
+      const root = sessionWorkspaceRoot(workspaceFolder);
+      if (isUnderSessionWorkspaceParent(root)) {
+        await rm(root, { recursive: true, force: true });
+        removedWorkspace = true;
+      }
+    } catch {
+      removedWorkspace = false;
+    }
+  }
+
+  const extras: string[] = [];
+  if (removedWorkspace) extras.push("artifacts");
+  if (removedPlan) extras.push("plan");
+  return {
+    deleted: true,
+    detail: extras.length > 0 ? `${result.detail} + ${extras.join(" + ")}` : result.detail,
+    removedWorkspace,
+    removedPlan,
+  };
 }
 
 export function getJsonlHistoryPath(): string {

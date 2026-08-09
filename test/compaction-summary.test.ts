@@ -253,8 +253,9 @@ describe("LLM compaction integration shape", () => {
       1_000_000 - COMPACTION_MAX_COMPLETION_TOKENS - 4_096,
     );
     expect(stages).toHaveLength(1);
-    expect(stages[0]?.sourceMessages).toHaveLength(3);
+    expect(stages[0]?.sourceMessages).toHaveLength(messages.length);
     expect(stages[0]?.sourceMessages?.[1]).toBe(messages[1]);
+    expect(stages[0]?.sourceMessages?.at(-1)).toBe(messages.at(-1));
     expect(stages[0]?.prompt).not.toContain("large history");
     expect(result.summarized).toBe(true);
     expect(result.messages.slice(-2)).toEqual(messages.slice(-2));

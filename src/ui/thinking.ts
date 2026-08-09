@@ -1,4 +1,9 @@
 import chalk from "chalk";
+import {
+  REASONING_CLOSE,
+  REASONING_OPEN,
+  stripReasoningMarkers,
+} from "../llm/reasoning-marker.js";
 
 export interface ThinkingResult {
   visible: string;
@@ -29,20 +34,52 @@ function findCloseTag(text: string): { index: number; length: number } | undefin
   return { index: match.index, length: match[0].length };
 }
 
+const LEGACY_TAG_PREFIX = "<thinking";
+
+function takeMarkerBlocks(text: string, blocks: string[]): string {
+  if (!text.includes(REASONING_OPEN)) return text;
+  let visible = "";
+  let rest = text;
+  for (;;) {
+    const open = rest.indexOf(REASONING_OPEN);
+    if (open < 0) {
+      visible += rest;
+      return visible;
+    }
+    visible += rest.slice(0, open);
+    const after = rest.slice(open + REASONING_OPEN.length);
+    const close = after.indexOf(REASONING_CLOSE);
+    if (close < 0) {
+      blocks.push(after);
+      return visible;
+    }
+    blocks.push(after.slice(0, close));
+    rest = after.slice(close + REASONING_CLOSE.length);
+  }
+}
+
+function takeLeadingLegacyBlocks(text: string, blocks: string[]): string {
+  let rest = text;
+  for (;;) {
+    const open = findOpenTag(rest);
+    if (!open || rest.slice(0, open.index).trim()) return rest;
+    const after = rest.slice(open.index + open.length);
+    const close = findCloseTag(after);
+    if (!close) {
+      blocks.push(after);
+      return "";
+    }
+    blocks.push(after.slice(0, close.index));
+    rest = after.slice(close.index + close.length);
+  }
+}
+
 export function stripThinking(text: string): ThinkingResult {
   const thinkBlocks: string[] = [];
-  let visible = text
-    .replace(/<think(?:ing)?\b[^>]*>([\s\S]*?)(?:<\/think(?:ing)?>|$)/gi, (_match, content: string) => {
-      thinkBlocks.push(content);
-      return "";
-    });
-
-  // Strip stray close and open tags
-  visible = visible
-    .replace(/<\/think(?:ing)?>/gi, "")
-    .replace(/<think(?:ing)?\b[^>]*>/gi, "")
-    .trim();
-
+  const withoutMarkers = takeMarkerBlocks(text, thinkBlocks);
+  const visible = stripReasoningMarkers(
+    takeLeadingLegacyBlocks(withoutMarkers, thinkBlocks),
+  ).trim();
   const thinkContent = trimBlocks(thinkBlocks);
   return { visible, hasThinking: thinkContent.length > 0, thinkContent };
 }
@@ -188,13 +225,18 @@ export function createThinkingStreamParser(
   let pending = "";
   let visible = "";
   let inThink = false;
+  let legacyRegion = false;
+  let sawVisible = false;
   let thinkBuffer = "";
   const thinkBlocks: string[] = [];
 
   const emitVisible = (text: string): void => {
     if (!text) return;
-    visible += text;
-    onVisible(text);
+    const clean = stripReasoningMarkers(text);
+    if (!clean) return;
+    if (clean.trim()) sawVisible = true;
+    visible += clean;
+    onVisible(clean);
   };
 
   const emitThinking = (text: string): void => {
@@ -208,48 +250,76 @@ export function createThinkingStreamParser(
     thinkBuffer = "";
   };
 
+  const leadingLegacyTag = (
+    text: string,
+  ): { index: number; length: number } | undefined => {
+    if (sawVisible) return undefined;
+    const tag = findOpenTag(text);
+    if (!tag || text.slice(0, tag.index).trim()) return undefined;
+    return tag;
+  };
+
+  const mayStillOpenLegacyTag = (text: string): boolean => {
+    if (sawVisible) return false;
+    const trimmed = text.replace(/^\s+/, "");
+    if (!trimmed) return true;
+    if (LEGACY_TAG_PREFIX.startsWith(trimmed.toLowerCase())) return true;
+    return /^<think(?:ing)?\b[^>]*$/i.test(trimmed);
+  };
+
   const processPending = (flush: boolean): void => {
-    while (pending.length > 0) {
+    for (;;) {
+      if (pending.length === 0) return;
       if (inThink) {
-        const closeTag = findCloseTag(pending);
-        if (closeTag) {
-          emitThinking(pending.slice(0, closeTag.index));
+        let closeIndex = pending.indexOf(REASONING_CLOSE);
+        let closeLength = closeIndex >= 0 ? REASONING_CLOSE.length : 0;
+        if (legacyRegion) {
+          const closeTag = findCloseTag(pending);
+          if (closeTag && (closeIndex < 0 || closeTag.index < closeIndex)) {
+            closeIndex = closeTag.index;
+            closeLength = closeTag.length;
+          }
+        }
+        if (closeIndex >= 0) {
+          emitThinking(pending.slice(0, closeIndex));
           finishThinkingBlock();
-          pending = pending.slice(closeTag.index + closeTag.length);
+          pending = pending.slice(closeIndex + closeLength);
           inThink = false;
+          legacyRegion = false;
           continue;
         }
-
-        if (flush) {
+        if (flush || !legacyRegion) {
           emitThinking(pending);
           pending = "";
-          continue;
+          if (flush) continue;
+          return;
         }
-
         const partialClose = pending.toLowerCase().lastIndexOf("</think");
-        const safeLength = partialClose >= 0
-          ? partialClose
-          : Math.max(0, pending.length - "</thinking>".length + 1);
-        if (safeLength === 0) break;
+        const safeLength =
+          partialClose >= 0
+            ? partialClose
+            : Math.max(0, pending.length - "</thinking>".length + 1);
+        if (safeLength === 0) return;
         emitThinking(pending.slice(0, safeLength));
         pending = pending.slice(safeLength);
-        continue;
+        return;
       }
 
-      const openTag = findOpenTag(pending);
-      if (openTag) {
-        emitVisible(pending.slice(0, openTag.index));
-        pending = pending.slice(openTag.index + openTag.length);
+      let openIndex = pending.indexOf(REASONING_OPEN);
+      let openLength = openIndex >= 0 ? REASONING_OPEN.length : 0;
+      let legacy = false;
+      const legacyTag = leadingLegacyTag(pending);
+      if (legacyTag && (openIndex < 0 || legacyTag.index < openIndex)) {
+        openIndex = legacyTag.index;
+        openLength = legacyTag.length;
+        legacy = true;
+      }
+      if (openIndex >= 0) {
+        emitVisible(pending.slice(0, openIndex));
+        pending = pending.slice(openIndex + openLength);
         inThink = true;
+        legacyRegion = legacy;
         thinkBuffer = "";
-        continue;
-      }
-
-      // Check for fully matched close tag while NOT in thinking (stray close tag)
-      const closeTag = findCloseTag(pending);
-      if (closeTag) {
-        emitVisible(pending.slice(0, closeTag.index));
-        pending = pending.slice(closeTag.index + closeTag.length);
         continue;
       }
 
@@ -258,15 +328,10 @@ export function createThinkingStreamParser(
         pending = "";
         continue;
       }
-
-      // Hold back partial open tags
-      const partialOpen = pending.toLowerCase().lastIndexOf("<think");
-      const safeLength = partialOpen >= 0
-        ? partialOpen
-        : Math.max(0, pending.length - "<thinking".length + 1);
-      if (safeLength === 0) break;
-      emitVisible(pending.slice(0, safeLength));
-      pending = pending.slice(safeLength);
+      if (mayStillOpenLegacyTag(pending)) return;
+      emitVisible(pending);
+      pending = "";
+      return;
     }
   };
 

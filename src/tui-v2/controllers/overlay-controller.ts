@@ -27,9 +27,15 @@ export interface ConfirmRequest {
   readonly viewPath?: string | undefined;
 }
 
+export interface PickerRowAction {
+  readonly chord: string;
+  readonly hint: string;
+}
+
 export interface PickerRequest {
   readonly title: string;
   readonly options: readonly PickerOption[];
+  readonly rowAction?: PickerRowAction | undefined;
   readonly searchDescription?: boolean | undefined;
   readonly twoLine?: boolean | undefined;
   /**
@@ -92,7 +98,12 @@ export interface PromptActionsRequest {
 
 export type OverlayState =
   | { readonly kind: "none" }
-  | { readonly kind: "picker"; readonly request: PickerRequest; readonly onSelect: (value: string) => void }
+  | {
+      readonly kind: "picker";
+      readonly request: PickerRequest;
+      readonly onSelect: (value: string) => void;
+      readonly onRowAction?: ((value: string) => void) | undefined;
+    }
   | {
       readonly kind: "confirm";
       readonly request: ConfirmRequest;
@@ -158,8 +169,29 @@ export class OverlayController {
     return () => this.listeners.delete(listener);
   }
 
-  openPicker(request: PickerRequest, onSelect: (value: string) => void): boolean {
-    return this.open({ kind: "picker", request, onSelect }, "picker");
+  openPicker(
+    request: PickerRequest,
+    onSelect: (value: string) => void,
+    onRowAction?: (value: string) => void,
+  ): boolean {
+    return this.open(
+      {
+        kind: "picker",
+        request,
+        onSelect,
+        ...(onRowAction ? { onRowAction } : {}),
+      },
+      "picker",
+    );
+  }
+
+  replacePickerOptions(options: readonly PickerOption[]): void {
+    if (this.state.kind !== "picker") return;
+    this.state = {
+      ...this.state,
+      request: { ...this.state.request, options },
+    };
+    this.notify();
   }
 
   /**
@@ -372,6 +404,11 @@ export class OverlayController {
   selectPicker(value: string): void {
     if (this.state.kind !== "picker") return;
     this.state.onSelect(value);
+  }
+
+  actOnPickerRow(value: string): void {
+    if (this.state.kind !== "picker") return;
+    this.state.onRowAction?.(value);
   }
 
   close(): void {
