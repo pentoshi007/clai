@@ -25,18 +25,22 @@ export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]
         ? s.note
           ? s.note
           : "local"
-        : count === 0
-          ? "—"
-          : count === 1
-            ? s.maskedKey || "••••••••"
-            : `${count} keys`;
+        : s.provider === "free"
+          ? s.note
+            ? s.note
+            : "keyless"
+          : count === 0
+            ? "—"
+            : count === 1
+              ? s.maskedKey || "••••••••"
+              : `${count} keys`;
     const source = (s.source === "missing" ? "no key" : s.source).padEnd(9);
     llmRows.push(
       `  ${mark} ${s.provider.padEnd(13)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
     );
     // Endpoint providers need a base URL alongside the key, so a key on its own
     // is not enough to make a request — show where it points.
-    if (s.provider !== "ollama" && s.note) {
+    if (s.provider !== "ollama" && s.provider !== "free" && s.note) {
       llmRows.push(`      endpoint: ${s.note}`);
     }
     if (s.endpoints && s.endpoints.length > 1) {

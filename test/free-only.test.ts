@@ -80,6 +80,7 @@ describe("phase 7 — free-only provider categories", () => {
 describe("provider fallback rate limits", () => {
   const originalGroq = providers.groq;
   const originalNvidia = providers.nvidia;
+  const originalFree = providers.free;
   const beforeFallback = getConfig().providerFallback;
   const beforeGroqKey = process.env.GROQ_API_KEY;
   const beforeNvidiaKey = process.env.NVIDIA_API_KEY;
@@ -91,6 +92,7 @@ describe("provider fallback rate limits", () => {
   afterEach(() => {
     providers.groq = originalGroq;
     providers.nvidia = originalNvidia;
+    providers.free = originalFree;
     updateConfig({ providerFallback: beforeFallback });
     if (beforeGroqKey === undefined) {
       delete process.env.GROQ_API_KEY;
@@ -203,6 +205,12 @@ describe("provider fallback rate limits", () => {
       async stream() {
         nvidiaCalled = true;
         return { text: "fallback", provider: "nvidia", model: "fallback-model" };
+      },
+    } as LlmProvider;
+    providers.free = {
+      ...originalFree,
+      async stream() {
+        throw new Error("provider returned HTTP 503: service unavailable");
       },
     } as LlmProvider;
 

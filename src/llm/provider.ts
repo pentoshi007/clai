@@ -30,6 +30,10 @@ export interface ProviderAuth {
 }
 
 export const providerAliases: Record<string, ProviderId> = {
+  free: "free",
+  zen: "free",
+  opencode: "free",
+  "opencode-zen": "free",
   groq: "groq",
   gemini: "gemini",
   google: "gemini",
@@ -77,6 +81,7 @@ export const providerAliases: Record<string, ProviderId> = {
 };
 
 export const defaultModels: Record<ProviderId, string> = {
+  free: "free-1/deepseek-v4-flash-free",
   groq: "llama-3.3-70b-versatile",
   gemini: "gemini-3.5-flash",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
@@ -125,6 +130,7 @@ const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string
 };
 
 export const envVars: Record<ProviderId, string | undefined> = {
+  free: "FREE_API_KEY",
   groq: "GROQ_API_KEY",
   gemini: "GEMINI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
@@ -261,6 +267,53 @@ export function redactSecrets(value: string): string {
 }
 
 export const providerInfo: Record<string, string> = {
+  free: `Free (opencode zen + kilo gateway) — keyless OpenAI-compatible models
+
+WHAT IT IS
+  The default provider for a fresh clai install. It bundles two keyless
+  gateways behind one provider id, namespaced by source:
+    free-1/<model>   opencode zen   https://opencode.ai/zen/v1
+    free-2/<model>   kilo gateway   https://api.kilo.ai/api/gateway
+  Both serve free models with NO API key — requests are forwarded without an
+  Authorization header. Chat Completions with SSE streaming, native tool
+  calling and reasoning_content thinking all work. A bare model id with no
+  free-N/ prefix routes to free-1.
+
+  Auth       none for free models (Bearer only if you add a key)
+  Endpoints  /models · /chat/completions on both gateways
+
+MODELS
+  /model lists the live catalogs from both gateways (each cached for an
+  hour), namespaced by source:
+    free-1/deepseek-v4-flash-free              (clai default)
+    free-1/mimo-v2.5-free
+    free-1/hy3-free
+    free-2/kilo-auto/free
+    free-2/stepfun/step-3.7-flash:free
+    free-2/nvidia/nemotron-3-ultra-550b-a55b:free
+  zen free ids end in -free; kilo free ids end in :free or /free (the kilo
+  catalog also flags them with isFree). Premium models stay hidden unless
+  you add a key. The free sets rotate upstream and models can be delisted
+  without notice — treat availability as transient and just pick another id
+  from /model.
+
+COST
+  Free. No signup, no key, no card. The trade-off is reliability: free tiers
+  are capacity-constrained, rate limited and occasionally down. If a request
+  fails, retry once — and for dependable daily use set a key for any other
+  provider (clai set <provider> <key>, then clai use <provider>).
+
+SETUP
+  None. A fresh install already uses this provider.
+  Optional: clai set free <key>   unlock premium zen models on your account
+  Optional env var: FREE_API_KEY  (used when nothing is stored)
+
+GOOD TO KNOW
+  - Premium models without a key fail fast with a 402-style message instead
+    of proxying an upstream 401.
+  - Reasoning models stream thinking as reasoning_content; clai folds it
+    into the usual thinking block, so /think and /effort behave normally.
+  - Classed as free-cloud, so /freeonly on keeps it in the fallback chain.`,
   tokenrouter: `TokenRouter — one key for frontier open models
 
 WHAT IT IS

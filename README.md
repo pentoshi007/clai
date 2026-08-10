@@ -6,14 +6,14 @@
 
 Two things make it practical for everyday use:
 
-- **It's cheap-to-free to run.** Point it at Groq, Google Gemini, NVIDIA NIM, OpenRouter, Bynara, Kimchi, or a local Ollama — all have free access — and clai stacks them. Add several keys per provider; when one hits a rate limit, it rotates to the next automatically. Want frontier models instead? Serve **Kimi K3 on your own Modal endpoint** on Modal's **$30/month of free credit**, or start on **Lightning AI's 40M free tokens**.
+- **It's cheap-to-free to run.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key. Point it at Groq, Google Gemini, NVIDIA NIM, OpenRouter, Bynara, Kimchi, or a local Ollama — all have free access — and clai stacks them. Add several keys per provider; when one hits a rate limit, it rotates to the next automatically. Want frontier models instead? Serve **Kimi K3 on your own Modal endpoint** on Modal's **$30/month of free credit**, or start on **Lightning AI's 40M free tokens**.
 - **It's honest.** Findings need real tool output. Builds get typechecked/run before "done." Compaction and history keep long sessions coherent instead of hallucinating progress.
 
 ---
 
 ## Highlights
 
-- **Free-tier first.** 15 providers wired in, 6 cloud free tiers + local Ollama. Default provider is NVIDIA NIM (`openai/gpt-oss-20b`) so a fresh install can run at no cost.
+- **Free-tier first.** 17 providers wired in, 7 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Optional cross-provider fallback and a free-only filter.
 - **Bring your own endpoint.** Deploy Kimi K3 (or Qwen / DeepSeek / GLM / GPT-OSS / your own fine-tune) to a [Modal](#modal--run-kimi-k3-on-your-own-endpoint-on-30month-of-free-credit) endpoint and drive it from clai on **$30/month of free compute credit**. Modal, Lightning AI and TokenRouter each keep a list of up to 10 base URLs with a sticky active one, so several deployments live side by side and you switch with one command — same editor, same ★ active row as keys.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -98,11 +98,18 @@ The full-screen TUI uses mouse tracking and hover events via OpenTUI's Zig FFI r
 
 ## Quick start
 
-Get a free key from any supported provider, add it, and go:
+Out of the box, clai runs **keyless** on the built-in Free provider — no signup, no API key:
+
+```sh
+clai          # launch the full-screen agent console (already on the free provider)
+```
+
+Prefer a different provider? Get a free key, add it, and go:
 
 ```sh
 # Add a free key (Groq shown; NVIDIA/Gemini/OpenRouter/Bynara/Kimchi work the same)
 clai set groq gsk_your_key_here
+clai use groq
 
 # Launch the full-screen agent console
 clai
@@ -131,6 +138,7 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 
 | Provider | Default model | Tier | Env var |
 |----------|---------------|------|---------|
+| Free (keyless) | `free-1/deepseek-v4-flash-free` | Free · keyless | — (no key needed) |
 | NVIDIA NIM | `openai/gpt-oss-20b` | Free | `NVIDIA_API_KEY` |
 | Groq | `llama-3.3-70b-versatile` | Free | `GROQ_API_KEY` |
 | Google Gemini | `gemini-3.5-flash` | Free | `GEMINI_API_KEY` |
@@ -146,8 +154,23 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 | Modal | `moonshotai/Kimi-K3` | Usage-based ($30/mo credit) | `MODAL_PROXY_TOKEN_ID` + `MODAL_PROXY_TOKEN_SECRET` |
 | Lightning AI | `openai/gpt-5` | Per token (40M free to start) | `LIGHTNING_API_KEY` |
 | TokenRouter | `kimi-k2p6` | Per token (prepaid) | `TOKENROUTER_API_KEY` |
+| Meta (Muse Spark) | `muse-spark-1.2` | Paid (per token) | `MODEL_API_KEY` |
 
 Several "paid" providers also expose limited free allowances — the tier label reflects what the default keys usually buy you. Flip `freeOnly` off to include paid providers in fallback.
+
+#### Free — keyless, zero setup
+
+clai's default provider needs **no account, no API key, and no config**. It bundles **two keyless gateways** under one provider, namespaced by source so overlapping model names never collide: `free-1/…` ids come from the primary gateway and `free-2/…` ids from the [Kilo gateway](https://api.kilo.ai/api/gateway). Both serve rotating catalogs of free OpenAI-compatible models — `free-1/deepseek-v4-flash-free` (default), `free-1/mimo-v2.5-free`, `free-1/hy3-free`, `free-2/kilo-auto/free`, `free-2/stepfun/step-3.7-flash:free`, `free-2/nvidia/nemotron-3-ultra-550b-a55b:free` — with SSE streaming, native tool calling, and `reasoning_content` thinking folded into the normal `/think` block.
+
+```sh
+clai                          # already on free — nothing to set up
+/model                        # live catalogs from both gateways, free-1/… + free-2/… (cached 1h)
+```
+
+- **Keyless by design.** Requests go out with no `Authorization` header; `/model` lists only the keyless models from each gateway, so premium ids stay hidden until you add a key.
+- **Two sources, one provider.** Pick `free-1/…` or `free-2/…` in `/model`; a bare id with no prefix routes to `free-1`. If one gateway is rate limited, switching to the other is one `/model` pick away.
+- **Optional key upgrades you.** `clai set free <key>` (or `FREE_API_KEY`) unlocks premium models on your account. Premium ids without a key fail fast with a clear 402-style message instead of a confusing upstream error.
+- **Best-effort tier.** The free sets rotate upstream and are capacity-constrained / rate limited — if a request fails, retry once. For dependable daily use, add a key for any other provider (`clai set <provider> <key>`, then `clai use <provider>`).
 
 #### Modal — run Kimi K3 on your own endpoint, on $30/month of free credit
 
@@ -222,6 +245,7 @@ clai set modal --url https://ws--ep-kimi-k3-server.us-west.modal.direct   # endp
 clai set modal wk-tokenId:ws-tokenSecret   # …then the proxy token pair
 clai set lightning <key>               # Lightning AI Model APIs
 clai set tokenrouter sk-your-key       # TokenRouter
+clai set free <key>                    # optional: unlock premium models (free is keyless by default)
 clai unset modal --url                 # drop stored endpoint URLs, keep the keys
 clai keys                              # providers + masked keys (★ active) + endpoint URLs
 clai use groq                          # set active provider
@@ -519,7 +543,7 @@ clai/
 ├─ src/
 │  ├─ index.ts          # CLI entry + subcommands
 │  ├─ agent/            # loop, plans, compaction, resume orientation, tool parsing
-│  ├─ llm/              # 15 providers, streaming, native tools, key rotation + fallback
+│  ├─ llm/              # 17 providers, streaming, native tools, key rotation + fallback
 │  ├─ tools/            # fs, shell, net, http, web, pentest, batch, plan
 │  ├─ safety/           # risk classifier + engagement (scope) policy
 │  ├─ store/            # config, history, keys, plans, scope

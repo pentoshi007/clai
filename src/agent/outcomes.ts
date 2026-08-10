@@ -432,12 +432,40 @@ export function isCompletedReadOperation(
     !/(?:-X|--request)\s*(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-raw|-binary)?|-F|--form)(?:\s|=)/i.test(command);
 }
 
+export function normalizeOperationArgs(
+  tool: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  if (tool !== "fs.read") return args;
+  const normalized = { ...args };
+  if (
+    typeof normalized.startLine === "number" &&
+    typeof normalized.offset !== "number"
+  ) {
+    normalized.offset = normalized.startLine;
+  }
+  delete normalized.startLine;
+  if (normalized.offset === 0) normalized.offset = 1;
+  if (
+    typeof normalized.endLine === "number" &&
+    typeof normalized.limit !== "number"
+  ) {
+    const start =
+      typeof normalized.offset === "number" ? normalized.offset : 1;
+    normalized.limit = normalized.endLine - start + 1;
+    delete normalized.endLine;
+  }
+  return normalized;
+}
+
 export function completedOperationSignature(
   tool: string,
   args: Record<string, unknown> = {},
 ): string | undefined {
   if (!isCompletedReadOperation(tool, args)) return undefined;
-  const canonicalArgs = JSON.stringify(canonicalOperationValue(args));
+  const canonicalArgs = JSON.stringify(
+    canonicalOperationValue(normalizeOperationArgs(tool, args)),
+  );
   return createHash("sha256")
     .update(`${tool}\0${canonicalArgs}`)
     .digest("hex")
@@ -479,7 +507,7 @@ export function recordCompletedOperation(
     stateKey?: string;
   },
 ): CompletedOperation | undefined {
-  const args = input.args ?? {};
+  const args = normalizeOperationArgs(input.tool, input.args ?? {});
   const signature = completedOperationSignature(input.tool, args);
   if (!signature) return undefined;
   const canonicalArgs = JSON.stringify(canonicalOperationValue(args));

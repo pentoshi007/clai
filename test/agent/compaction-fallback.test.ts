@@ -32,6 +32,19 @@ vi.mock("../../src/llm/nvidia.js", () => ({
   },
 }));
 
+vi.mock("../../src/llm/free.js", () => ({
+  freeProvider: {
+    id: "free",
+    displayName: "Free (zen + kilo)",
+    defaultModel: "free-1/deepseek-v4-flash-free",
+    validateKey: () => true,
+    ping: async () => undefined,
+    complete: async () => {
+      throw new Error("provider returned HTTP 503: service unavailable");
+    },
+  },
+}));
+
 vi.mock("../../src/store/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/store/config.js")>();
   return {

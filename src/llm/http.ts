@@ -1271,7 +1271,9 @@ export async function openAiCompatibleComplete(options: {
       headers: {
         "content-type": "application/json",
         accept: "application/json",
-        authorization: `Bearer ${options.apiKey}`,
+        ...(options.apiKey
+          ? { authorization: `Bearer ${options.apiKey}` }
+          : {}),
         ...options.headers,
       },
       body: requestBody,
@@ -1496,9 +1498,11 @@ export async function openAiCompatibleStream(options: {
       signal: idleController.signal,
       headers: {
         "content-type": "application/json",
-    
+
         accept: "text/event-stream",
-        authorization: `Bearer ${options.apiKey}`,
+        ...(options.apiKey
+          ? { authorization: `Bearer ${options.apiKey}` }
+          : {}),
         ...options.headers,
       },
       body: requestBody,
@@ -1990,7 +1994,7 @@ export async function openAiCompatiblePing(
 ): Promise<void> {
   const response = await fetch(`${baseUrl}/models`, {
     headers: {
-      authorization: `Bearer ${apiKey}`,
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
       ...headers,
     },
     verbose: process.env.CLAI_VERBOSE === "true",

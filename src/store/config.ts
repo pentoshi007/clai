@@ -146,6 +146,7 @@ export interface ClaiConfig {
  * freeOnly off to opt back into them.
  */
 export const providerCategory: Record<ProviderId, ProviderCategory> = {
+  free: "free-cloud",
   groq: "free-cloud",
   gemini: "free-cloud",
   openrouter: "free-cloud",
@@ -180,8 +181,8 @@ export function resolveProviderCategory(provider: ProviderId): ProviderCategory 
 }
 
 const defaults: ClaiConfig = {
-  defaultProvider: "nvidia",
-  defaultModel: defaultModels.nvidia,
+  defaultProvider: "free",
+  defaultModel: defaultModels.free,
   defaultMode: "ask",
   providerModels: {},
   allowAlwaysTools: [],

@@ -182,7 +182,7 @@ async function configuredProviderIds(): Promise<ProviderId[]> {
   const candidates: ProviderId[] = [...providerIds, ...custom];
   const configured = await Promise.all(
     candidates.map(async (provider) => {
-      if (provider === "ollama") return provider;
+      if (provider === "ollama" || provider === "free") return provider;
       const hasKey =
         Boolean(envValue(provider)) ||
         Boolean((await getProviderSecret(provider)).value);
@@ -440,7 +440,7 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
     if (!(await ensureModalCredentials(services))) return;
   } else {
     const configured =
-      next === "ollama" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
+      next === "ollama" || next === "free" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
     if (!configured) {
       services.overlay.close();
       const key = await services.overlay.openSecret({

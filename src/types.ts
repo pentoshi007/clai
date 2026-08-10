@@ -1,4 +1,5 @@
 export const providerIds = [
+  "free",
   "groq",
   "gemini",
   "openrouter",

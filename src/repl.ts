@@ -726,7 +726,7 @@ async function showAllProviderModels(filter: string): Promise<void> {
   const candidates: ProviderId[] = [...providerIds, ...custom];
   const configured: ProviderId[] = [];
   for (const provider of candidates) {
-    if (provider === "ollama") {
+    if (provider === "ollama" || provider === "free") {
       configured.push(provider);
       continue;
     }

@@ -505,6 +505,14 @@ export async function getProviderKeys(provider: ProviderId): Promise<ProviderKey
     };
   }
 
+  if (provider === 'free') {
+    return {
+      keys: [{ id: 'keyless', value: '', createdAt: 0 }],
+      activeIndex: 0,
+      source: 'local',
+    };
+  }
+
   return { keys: [], activeIndex: 0, source: 'missing' };
 }
 
@@ -824,11 +832,12 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
   const allIds: ProviderId[] = [...providerIds, ...customIds];
   for (const provider of allIds) {
     const multi = await getProviderKeys(provider);
+    const keyless = provider === 'ollama' || provider === 'free';
     const configured = multi.keys.length > 0 || provider === 'ollama';
     const activeIdx = clampActiveIndex(multi.activeIndex, multi.keys.length);
     const activeValue = multi.keys[activeIdx]?.value;
     const maskedKeys =
-      provider !== 'ollama' && multi.keys.length > 0
+      !keyless && multi.keys.length > 0
         ? multi.keys.map((k) => maskSecret(k.value))
         : undefined;
     statuses.push({
@@ -838,20 +847,22 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
       configured,
       source: multi.keys.length > 0 ? multi.source : 'missing',
       maskedKey:
-        activeValue && provider !== 'ollama' ? maskSecret(activeValue) : undefined,
-      keyCount: provider === 'ollama' ? undefined : multi.keys.length || undefined,
+        activeValue && !keyless ? maskSecret(activeValue) : undefined,
+      keyCount: keyless ? undefined : multi.keys.length || undefined,
       maskedKeys,
       activeMaskedKey:
-        activeValue && provider !== 'ollama' && multi.keys.length > 1
+        activeValue && !keyless && multi.keys.length > 1
           ? maskSecret(activeValue)
           : undefined,
       model: getDefaultModel(provider),
       note:
         provider === 'ollama'
           ? activeValue
-          : providerUsesEndpoints(provider)
-            ? endpointNote(provider)
-            : undefined,
+          : provider === 'free'
+            ? 'keyless · no API key needed'
+            : providerUsesEndpoints(provider)
+              ? endpointNote(provider)
+              : undefined,
       endpoints: providerUsesEndpoints(provider)
         ? getProviderEndpoints(provider).urls
         : undefined,

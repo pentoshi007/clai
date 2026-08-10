@@ -20,6 +20,7 @@ import {
   type CompactResult,
 } from "../../agent/context-manager.js";
 import { completeWithProvider, streamWithProvider } from "../../llm/router.js";
+import { streamAlreadyEmitted } from "../../llm/stream-progress.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
 import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
 import type {
@@ -27,6 +28,17 @@ import type {
   AppEventPayloads,
 } from "../events/app-event.js";
 import type { EventSequencer } from "../events/sequencer.js";
+
+function isCompactionServerError(error: unknown): boolean {
+  if (streamAlreadyEmitted(error)) return false;
+  const status =
+    error && typeof error === "object" && "status" in error
+      ? Number((error as { status?: number }).status)
+      : 0;
+  if (status >= 500 && status <= 504) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /internal server error/i.test(message);
+}
 
 export async function summarizeForSessionCompact(
   prompt: string,
@@ -74,7 +86,7 @@ export async function summarizeForSessionCompact(
       thinking: { enabled: false, effort: "none" as const },
       signal: opts.signal,
     };
-    const runAttempt = async (
+    const runProviderAttempt = async (
       attemptRequest: typeof request,
       replace = false,
     ) => {
@@ -94,6 +106,17 @@ export async function summarizeForSessionCompact(
       );
       parser.finish();
       return result;
+    };
+    const runAttempt = async (
+      attemptRequest: typeof request,
+      replace = false,
+    ) => {
+      try {
+        return await runProviderAttempt(attemptRequest, replace);
+      } catch (error) {
+        if (!isCompactionServerError(error)) throw error;
+        return await runProviderAttempt(attemptRequest, replace);
+      }
     };
     const first = await runAttempt(request);
     let visible = normalizeCompactionSummary(

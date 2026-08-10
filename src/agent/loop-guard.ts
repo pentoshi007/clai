@@ -3,6 +3,7 @@ import { slimToolArgs } from "./message-slim.js";
 import {
   completedOperationObservationDigest,
   completedOperationSignature,
+  normalizeOperationArgs,
   type CompletedOperation,
 } from "./outcomes.js";
 
@@ -170,7 +171,7 @@ export class LoopGuard {
   }
 
   canonicalize(name: string, args: Record<string, unknown>): string {
-    const slimmed = slimToolArgs(args);
+    const slimmed = slimToolArgs(normalizeOperationArgs(name, args));
     if (
       (name === "shell.exec" || name === "shell.start") &&
       typeof slimmed.command === "string"

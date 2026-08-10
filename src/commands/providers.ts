@@ -284,18 +284,20 @@ export async function printProviderKeys(): Promise<void> {
     const keySummary =
       s.provider === "ollama"
         ? s.note || "local"
-        : count === 0
-          ? "—"
-          : count === 1
-            ? s.maskedKey || "••••••••"
-            : `${count} keys`;
+        : s.provider === "free"
+          ? s.note || "keyless"
+          : count === 0
+            ? "—"
+            : count === 1
+              ? s.maskedKey || "••••••••"
+              : `${count} keys`;
     const source = (s.source === "missing" ? "no key" : s.source).padEnd(9);
     console.log(
       `  ${mark} ${s.provider.padEnd(13)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
     );
     // A key is not enough for endpoint providers — show where it points, and
     // list every stored endpoint with the active one starred.
-    if (s.provider !== "ollama" && s.note) {
+    if (s.provider !== "ollama" && s.provider !== "free" && s.note) {
       console.log(chalk.dim(`      endpoint: ${s.note}`));
     }
     if (s.endpoints && s.endpoints.length > 1) {
@@ -357,7 +359,7 @@ export async function ensureProviderConfigured(
     return;
   }
   const secret = await getProviderSecret(provider);
-  if (secret.value || envValue(provider) || provider === "ollama") return;
+  if (secret.value || envValue(provider) || provider === "ollama" || provider === "free") return;
   if (!process.stdin.isTTY) return;
   const entered = await promptForSecret(provider);
   if (!entered) return;
@@ -376,7 +378,7 @@ export async function useProvider(providerValue: string): Promise<void> {
     return;
   }
   const secret = await getProviderSecret(provider);
-  if (!secret.value && !envValue(provider) && provider !== "ollama") {
+  if (!secret.value && !envValue(provider) && provider !== "ollama" && provider !== "free") {
     const entered = await promptForSecret(provider);
     if (!entered) {
       console.log("provider unchanged");

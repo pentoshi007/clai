@@ -11,6 +11,7 @@ import {
 // Patterns of model names that support an explicit reasoning/thinking
 // toggle. The match is case-insensitive substring or regex.
 const reasoningPatterns: Record<ProviderId, RegExp[]> = {
+  free: [/deepseek/i, /kimi/i, /minimax/i, /mimo/i, /nemotron/i],
   groq: [/qwen\/qwen3-32b/i, /gpt-oss/i],
   gemini: [/gemini-2\.5/i, /gemini-3/i, /gemini-3\.5/i],
   openrouter: [
@@ -212,6 +213,7 @@ const universalVisionPatterns: RegExp[] = [
 ];
 
 const visionPatterns: Record<ProviderId, RegExp[]> = {
+  free: [],
   groq: [
     // Llama 4 (scout/maverick) and llama-3.2 vision models on Groq.
     /llama-4/i,
@@ -682,6 +684,7 @@ export function preferredVisionModel(
 
 /** Default wire dialect for each provider. */
 const providerToolDialect: Record<ProviderId, ToolDialect> = {
+  free: "openai",
   openai: "openai",
   groq: "openai",
   openrouter: "openai",

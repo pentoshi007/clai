@@ -52,6 +52,7 @@ import {
   isQuotaKeyError,
   type ProviderKeyEvent,
 } from "./key-rotation.js";
+import { freeProvider } from "./free.js";
 import { nvidiaProvider } from "./nvidia.js";
 import { agentrouterProvider } from "./agentrouter.js";
 import { kimchiProvider } from "./kimchi.js";
@@ -271,6 +272,14 @@ function summarizeProviderError(error: unknown): string {
   return formatProviderFailureForUser(error);
 }
 
+const FREE_PROVIDER_HINT =
+  "the free tier (opencode zen / kilo gateway) is keyless and best-effort, so it is often rate limited or unavailable — set an API key for another provider (clai set <provider> <key>, then clai use <provider>) for reliable access";
+
+function failureMessageFor(providerId: ProviderId, error: unknown): string {
+  const base = summarizeProviderError(error);
+  return providerId === "free" ? `${base} — ${FREE_PROVIDER_HINT}` : base;
+}
+
 interface ProviderFailure {
   provider: ProviderId;
   message: string;
@@ -368,6 +377,7 @@ export function isEmptyCompletionError(error: unknown): boolean {
 }
 
 export const providers: Record<ProviderId, LlmProvider> = {
+  free: freeProvider,
   groq: groqProvider,
   gemini: geminiProvider,
   openrouter: openrouterProvider,
@@ -387,6 +397,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
 };
 
 const fallbackOrder: ProviderId[] = [
+  "free",
   "nvidia",
   "groq",
   "gemini",
@@ -933,6 +944,27 @@ async function runWithKeyRotation<T>(opts: {
         break;
       }
     }
+
+    // Endpoint providers pair each key with a workspace URL (a Modal token
+    // only works on its own workspace's endpoint). Advancing the key without
+    // advancing the endpoint guarantees a workspace-mismatch 401, so move to
+    // the next endpoint first and let the next key pair with it. Auth/quota
+    // errors keep their dedicated endpoint-rotation path above.
+    if (
+      planIdx >= 0 &&
+      endpointCount > 1 &&
+      planIdx + 1 < plan.length &&
+      lastError &&
+      !isImmediateKeySwitchError(lastError)
+    ) {
+      endpointOffset += 1;
+      emitKey({
+        type: "endpoint",
+        provider: providerId,
+        maskedTail: tail,
+        reason: failureReason(lastError),
+      });
+    }
   }
 
   // Single-key rate-limit exhaustion: preserve historical UX string.
@@ -1003,7 +1035,7 @@ export async function completeWithProvider(
     } catch (error) {
       failures.push({
         provider: providerId,
-        message: summarizeProviderError(error),
+        message: failureMessageFor(providerId, error),
         error,
       });
       if (isKeyCircleStopError(error) || shouldStopProviderFallback(error)) {
@@ -1078,7 +1110,7 @@ export async function streamWithProvider(
     } catch (error) {
       failures.push({
         provider: providerId,
-        message: summarizeProviderError(error),
+        message: failureMessageFor(providerId, error),
         error,
       });
       if (
