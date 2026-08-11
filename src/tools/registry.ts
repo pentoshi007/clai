@@ -26,6 +26,7 @@ import {
 import { shellExec, spawnArgv } from "./shell.js";
 import {
   isLongQuietInstallOrScaffoldCommand,
+  isLongRunningTestOrBuildCommand,
 } from "../agent/task-evidence.js";
 import { imageOcr, imageView } from "./image.js";
 import { pdfRead } from "./pdf.js";
@@ -131,7 +132,13 @@ function optionalNumber(
   key: string,
 ): number | undefined {
   const value = args[key];
-  return typeof value === "number" ? value : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  // Handle string numbers (e.g. "300000" from JSON) and coerce to number
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 function requireNumber(args: Record<string, unknown>, key: string): number {
@@ -323,9 +330,25 @@ export const toolRegistry: Record<string, ToolHandler> = {
       }
       return job;
     }
-    const timeoutMs =
-      requestedTimeoutMs ??
-      (isLongQuietInstallOrScaffoldCommand(command) ? 15 * 60_000 : undefined);
+    let timeoutMs = requestedTimeoutMs;
+    // Handle seconds vs milliseconds confusion for long-running commands
+    // If model sends 300 thinking 300s, but code expects ms, convert small values to ms
+    if (
+      timeoutMs !== undefined &&
+      timeoutMs > 0 &&
+      timeoutMs < 1000 &&
+      (isLongQuietInstallOrScaffoldCommand(command) ||
+        isLongRunningTestOrBuildCommand(command))
+    ) {
+      timeoutMs = timeoutMs * 1000;
+    }
+    timeoutMs =
+      timeoutMs ??
+      (isLongQuietInstallOrScaffoldCommand(command)
+        ? 15 * 60_000
+        : isLongRunningTestOrBuildCommand(command)
+          ? 120_000
+          : undefined);
 
     // Password tools must never steal the TTY in OpenTUI (freezes Esc/clicks).
     // Prefer secure modal + sudo -S; otherwise refuse interactive elevation.
