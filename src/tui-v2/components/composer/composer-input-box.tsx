@@ -11,7 +11,7 @@ import {
   type MouseEvent,
   type TextareaRenderable,
 } from "@opentui/core";
-import type { Theme } from "../../rendering/theme.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 
 export function ComposerInputBox(props: {
   readonly theme: Theme;

@@ -43,7 +43,7 @@ This project and everyone participating in it is governed by our [Code of Conduc
 
 | Tool | Version |
 |------|---------|
-| Node.js | ≥ 20 |
+| Node.js | ≥ 22 |
 | npm | ≥ 9 |
 | Git | ≥ 2.30 |
 
@@ -60,7 +60,10 @@ npm install
 | `npm run dev` | Start in development mode |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run typecheck` | Run type checking without emitting files |
-| `npm test` | Run the test suite via Vitest |
+| `npm test` | Run the full test suite via Vitest |
+| `npm run test:classic:pty` | Run the provider-independent POSIX classic PTY smoke |
+| `npm run compile` | Compile the five Bun release targets |
+| `npm run release:verify` | Validate release metadata and artifact declarations |
 | `npm run doctor` | Run built-in diagnostics |
 
 ### Environment Variables
@@ -76,6 +79,11 @@ cp .env.example .env
 ```
 clai/
 ├── src/            # TypeScript source code
+│   ├── app/        # renderer-neutral controllers, commands, events, and ports
+│   ├── ui-core/    # renderer-neutral state, actions, layout, rendering, and React hooks
+│   ├── classic/    # React + Ink classic UI and terminal bootstrap
+│   ├── tui-v2/     # OpenTUI full-screen renderer
+│   └── noninteractive/ # stdout/stderr-split one-shot renderer
 ├── dist/           # Compiled JavaScript output
 ├── bin/            # CLI entry point (clai.mjs)
 ├── scripts/        # Build, release, and utility scripts
@@ -96,6 +104,20 @@ clai/
    npm test
    ```
 4. **Update documentation.** If your change affects user-facing behavior, update `README.md` or other relevant docs.
+
+### Renderer boundaries
+
+- `src/app/` and `src/ui-core/` are renderer-neutral. They may define state, actions,
+  layout models, pure presenters, and explicit ports, but must not import Ink, OpenTUI,
+  renderer-specific components, or write directly to the terminal.
+- `src/classic/` owns the React + Ink surface and POSIX terminal lifecycle. `src/tui-v2/`
+  owns OpenTUI components and native terminal integration. `src/noninteractive/` owns the
+  append-only one-shot stream surface and its stdout/stderr policy.
+- Raw terminal reads/writes belong only in the approved bootstrap or port modules. Keep
+  renderer-neutral behavior behind app ports so both interactive frontends consume the same
+  session, transcript, command, safety, and persistence contracts.
+- Use strict TypeScript, explicit `.js` extensions for relative ESM imports, and small
+  focused modules. Keep classic source files at or below the 400-line architecture guard.
 
 ## Commit Guidelines
 

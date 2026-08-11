@@ -9,11 +9,11 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import type { Theme } from "../../rendering/theme.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   pastePreviewLines,
   type PastePlaceholderEntry,
-} from "../../composer/paste-placeholder.js";
+} from "../../../ui-core/composer/paste-placeholder.js";
 
 const DOUBLE_CLICK_MS = 400;
 

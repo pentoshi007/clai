@@ -13,15 +13,15 @@ import {
 } from "../../src/app/events/app-event.js";
 import { OutputSpool } from "../../src/app/events/event-buffer.js";
 import { createCountingIdFactory, EventSequencer } from "../../src/app/events/sequencer.js";
-import { computeLayout } from "../../src/tui-v2/layout/compute-layout.js";
-import { presentOutput } from "../../src/tui-v2/rendering/tool-presenter.js";
-import { extractTranscriptSemanticDocument } from "../../src/tui-v2/rendering/transcript-semantic.js";
-import { applyAppEvent } from "../../src/tui-v2/state/transcript-reducer.js";
-import { TranscriptStore } from "../../src/tui-v2/state/transcript-store.js";
+import { computeLayout } from "../../src/ui-core/layout/compute-layout.js";
+import { presentOutput } from "../../src/ui-core/rendering/tool-presenter.js";
+import { extractTranscriptSemanticDocument } from "../../src/ui-core/rendering/transcript-semantic.js";
+import { applyAppEvent } from "../../src/ui-core/state/transcript-reducer.js";
+import { TranscriptStore } from "../../src/ui-core/state/transcript-store.js";
 import {
   EMPTY_TRANSCRIPT_STATE,
   type TranscriptState,
-} from "../../src/tui-v2/state/transcript-types.js";
+} from "../../src/ui-core/state/transcript-types.js";
 
 const TEN_K = 10_000;
 // Generous CI budgets — fail only pathological O(n²) regressions.

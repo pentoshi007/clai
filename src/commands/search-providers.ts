@@ -1,6 +1,6 @@
-import { password } from "@inquirer/prompts";
 import chalk from "chalk";
 
+import { askSecret } from "../noninteractive/readline-prompts.js";
 import {
   assertSearchProvider,
   searchProviders,
@@ -34,10 +34,10 @@ async function readStdin(): Promise<string> {
 }
 
 async function promptForSecret(id: SearchProviderId): Promise<string> {
-  return password({
-    message: `Enter API key for ${id} (input hidden, leave blank to cancel):`,
-    mask: "•",
-  });
+  const value = await askSecret(
+    `Enter API key for ${id} (input hidden, leave blank to cancel):`,
+  );
+  return value ?? "";
 }
 
 export function isSearchProviderId(value: string): boolean {

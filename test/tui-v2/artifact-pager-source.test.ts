@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createArtifactPagerSource } from "../../src/tui-v2/rendering/artifact-pager-source.js";
+import { createArtifactPagerSource } from "../../src/ui-core/rendering/artifact-pager-source.js";
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });

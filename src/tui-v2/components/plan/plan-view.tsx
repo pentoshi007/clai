@@ -10,8 +10,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import type { PlanTask, SessionPlan, TaskState } from "../../../store/plan.js";
-import type { Theme } from "../../rendering/theme.js";
-import type { AppServices } from "../../bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import {
   activeTaskId,
   cleanTaskTitle,
@@ -25,8 +25,8 @@ import {
   orderPlanTasksForDisplay,
   wrapPlanText,
   type PlanColorToken,
-} from "../../rendering/plan-view.js";
-import { discardPlan, implementPlan } from "../../app/plan-lifecycle.js";
+} from "../../../ui-core/rendering/plan-view.js";
+import { discardPlan, implementPlan } from "../../../ui-core/plan/plan-lifecycle.js";
 
 export interface PlanViewProps {
   readonly theme: Theme;

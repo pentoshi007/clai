@@ -4,7 +4,7 @@ import {
   responderStatusText,
   statusDensityForWidth,
   tasksToggleLabel,
-} from "../../src/tui-v2/components/status/status-line.js";
+} from "../../src/ui-core/rendering/status-segments.js";
 
 describe("composer mode indicator", () => {
   it("maps width to density tiers", () => {

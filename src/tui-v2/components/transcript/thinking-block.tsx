@@ -15,12 +15,12 @@
 import { useMemo, type ReactNode } from "react";
 import { TextAttributes, type MouseEvent } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { renderColumns } from "../../../ui/text-width.js";
-import type { ThinkingItem } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
+import { renderColumns } from "../../../ui-core/rendering/text-width.js";
+import type { ThinkingItem } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { selectableRowStyle } from "./selectable-line.js";
-import { liveThinkingDisplay } from "../../rendering/thinking-tail.js";
-import { wrapPagerLine } from "../../rendering/pager-chrome.js";
+import { liveThinkingDisplay } from "../../../ui-core/rendering/thinking-tail.js";
+import { wrapPagerLine } from "../../../ui-core/rendering/pager-chrome.js";
 
 /** Body indent inside the block (paddingLeft below). */
 const BODY_INDENT = 2;

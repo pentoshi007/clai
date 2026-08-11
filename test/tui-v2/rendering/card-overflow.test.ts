@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   clampArgsDisplay,
   presentTool,
-} from "../../../src/tui-v2/rendering/tool-presenter.js";
+} from "../../../src/ui-core/rendering/tool-presenter.js";
 import { scrollbarSegments } from "../../../src/tui-v2/components/transcript/transcript-scrollbar.js";
-import type { ToolItem } from "../../../src/tui-v2/state/transcript-types.js";
+import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 
 /**
  * A heredoc (`cat > main.py << 'EOF' … EOF`) puts a whole source file into the
@@ -28,11 +28,10 @@ describe("oversized tool args never blow the card layout", () => {
     expect(lines.at(-1)).toMatch(/\+\d+ more lines · click for full/);
   });
 
-  it("clips an extremely long single line", () => {
+  it("passes an extremely long single line through for the card to wrap", () => {
     const clamped = clampArgsDisplay("x".repeat(5_000))!;
     expect(clamped.split("\n")).toHaveLength(1);
-    expect(clamped.length).toBeLessThanOrEqual(200);
-    expect(clamped.endsWith("…")).toBe(true);
+    expect(clamped).toHaveLength(5_000);
   });
 
   it("leaves a normal command untouched", () => {

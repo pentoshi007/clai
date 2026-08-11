@@ -17,10 +17,10 @@ import type {
   RunTurnRequest,
 } from "../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
-import { createCompositionRoot } from "../../src/tui-v2/bootstrap/composition-root.js";
-import { detectCapabilities } from "../../src/tui-v2/bootstrap/capabilities.js";
+import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
+import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { App } from "../../src/tui-v2/app/App.js";
-import { ServicesProvider } from "../../src/tui-v2/app/providers.js";
+import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { check, makeResult, printResult, type SpikeResult } from "./harness.js";
 
 const scriptedEvents: AgentEvent[] = [

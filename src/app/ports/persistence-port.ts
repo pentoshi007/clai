@@ -2,7 +2,7 @@ import type { ChatMessage } from "../../types.js";
 import type { SessionPlan } from "../../store/plan.js";
 import type { PersistedContextUsage } from "../../store/history.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
-import type { TranscriptItem } from "../../tui/state.js";
+import type { TranscriptItem } from "./transcript-item.js";
 
 export interface SaveSessionOptions {
   /** When set, upsert this session id (continuous autosave) instead of minting a new row. */

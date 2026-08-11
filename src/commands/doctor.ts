@@ -5,16 +5,18 @@ import { getConfig, getConfigPath } from '../store/config.js';
 import { getHistoryPath } from '../store/history.js';
 import { getFallbackKeysPath, probeKeychain } from '../store/keys.js';
 import { loadScope, isScopeActive, getScopePath } from '../store/scope.js';
-import { canUseTui } from '../tui/can-use-tui.js';
+import { canUseTui } from '../ui-core/bootstrap/can-use-tui.js';
 import {
   findBunExecutable,
   isBunRuntime,
   openTuiRuntimeHint,
-} from '../tui/runtime.js';
+} from '../os/bun-runtime.js';
 import {
+  currentPlatformProbe,
+  defaultUiForPlatform,
   describeUiDefault,
-  resolveUiChoice,
-} from '../tui-v2/bootstrap/ui-selection.js';
+  explainUiChoice,
+} from '../ui-core/bootstrap/ui-selection.js';
 import { printProviderKeys } from './providers.js';
 import { resolveToolDialect } from '../llm/capabilities.js';
 
@@ -35,11 +37,18 @@ export async function runDoctor(): Promise<void> {
   console.log(`Config: ${getConfigPath()}`);
   console.log(`History: ${getHistoryPath()}`);
   const tuiGate = canUseTui();
-  const resolvedUi = resolveUiChoice({});
+  const probe = currentPlatformProbe();
+  const selection = explainUiChoice({}, process.env, probe);
   console.log(`UI default: ${describeUiDefault()}`);
   console.log(
-    `UI resolved now: ${resolvedUi}` +
-      (process.env.CLAI_UI ? chalk.dim(` (CLAI_UI=${process.env.CLAI_UI})`) : ''),
+    `UI resolved now: ${chalk.bold(selection.choice)} ${chalk.dim(`(${selection.source}: ${selection.reason})`)}`,
+  );
+  console.log(
+    `UI platform default: ${defaultUiForPlatform(probe)} ${chalk.dim(
+      `(${probe.platform}, ${probe.columns ?? 0}x${probe.rows ?? 0}, stdout ${
+        probe.stdoutIsTTY ? 'tty' : 'not a tty'
+      }, stdin ${probe.stdinIsTTY ? 'tty' : 'not a tty'})`,
+    )}`,
   );
   console.log(
     `UI host: ${tuiGate.ok ? chalk.green('ok for full-screen TUI') : chalk.yellow(`unavailable — ${tuiGate.reason}`)}`,
@@ -58,9 +67,9 @@ export async function runDoctor(): Promise<void> {
     console.log(chalk.dim(openTuiRuntimeHint().split('\n').slice(1).join('\n')));
   }
   console.log(
-    chalk.dim('  full-screen: clai (needs Bun)  ·  line REPL: clai --classic'),
+    chalk.dim('  OpenTUI: clai (Bun/native runtime)  ·  classic Ink UI: clai --classic'),
   );
-  // node-pty availability check — optional, but improves classic REPL shell features
+  // node-pty is optional; classic Ink UI remains usable with basic pipes.
   let nodePtyOk = false;
   try {
     await import('node-pty');

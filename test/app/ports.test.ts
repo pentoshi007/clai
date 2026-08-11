@@ -1,7 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createCurrentPersistencePort } from "../../src/app/adapters/current-store-adapter.js";
 import { createCurrentJobsPort } from "../../src/app/adapters/current-jobs-adapter.js";
-import { createCurrentTerminalPort } from "../../src/app/adapters/current-terminal-adapter.js";
 import { createInMemoryClipboardPort } from "../../src/app/adapters/in-memory-clipboard-adapter.js";
 import { createCurrentUpdatesPort } from "../../src/app/adapters/current-updates-adapter.js";
 import type { JobManager } from "../../src/tools/jobs.js";
@@ -52,23 +51,6 @@ describe("V2-022 jobs port", () => {
       "stop:c",
       "start:echo hi",
     ]);
-  });
-});
-
-describe("V2-022 terminal port", () => {
-  const originalNoColor = process.env.NO_COLOR;
-  afterEach(() => {
-    if (originalNoColor === undefined) delete process.env.NO_COLOR;
-    else process.env.NO_COLOR = originalNoColor;
-  });
-
-  it("reports numeric dimensions and honors NO_COLOR", () => {
-    process.env.NO_COLOR = "1";
-    const caps = createCurrentTerminalPort().capabilities();
-    expect(typeof caps.columns).toBe("number");
-    expect(typeof caps.rows).toBe("number");
-    expect(caps.colorMode).toBe("none");
-    expect(caps.canDistinguishShiftEnter).toBe(false);
   });
 });
 

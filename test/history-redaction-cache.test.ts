@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { TranscriptItem } from "../src/tui/state.js";
+import type { TranscriptItem } from "../app/ports/transcript-item.js";
 
 const dataEnvKeys = [
   "CLAI_DATA_DIR",

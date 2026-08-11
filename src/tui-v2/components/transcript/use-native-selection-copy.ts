@@ -8,7 +8,7 @@
  */
 
 import { useRenderer, useSelectionHandler } from "@opentui/react";
-import type { AppServices } from "../../bootstrap/composition-root.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import { transcriptScrollPort } from "./transcript-scroll-port.js";
 
 export function useNativeSelectionCopy(services: AppServices): void {

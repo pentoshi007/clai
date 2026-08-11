@@ -4,7 +4,7 @@ import {
   serializeProviderKeysPayload,
 } from "../../src/store/keys.js";
 import { maskSecret, maskSecretTail } from "../../src/llm/provider.js";
-import { formatKeyStatus } from "../../src/tui/format-keys.js";
+import { formatKeyStatus } from "../../src/ui-core/rendering/format-keys.js";
 import type { ProviderStatus } from "../../src/types.js";
 
 describe("parseProviderKeysPayload", () => {

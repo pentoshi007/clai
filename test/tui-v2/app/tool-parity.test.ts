@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { availableToolNames } from "../../../src/tools/registry.js";
-import { presentTool } from "../../../src/tui-v2/rendering/tool-presenter.js";
-import type { ToolItem } from "../../../src/tui-v2/state/transcript-types.js";
+import { presentTool } from "../../../src/ui-core/rendering/tool-presenter.js";
+import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 import { asToolCallId, asTurnId } from "../../../src/app/events/app-event.js";
 
 /** FEATURE_PARITY "Tool registry parity" minimum set (V2-082). */

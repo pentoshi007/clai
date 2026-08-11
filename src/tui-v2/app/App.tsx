@@ -17,22 +17,22 @@ import {
   COMPOSER_MAX_HEIGHT,
   MIN_CHAT_ROWS,
   computeLayout,
-} from "../layout/compute-layout.js";
+} from "../../ui-core/layout/compute-layout.js";
 import { ComposerEditor } from "../composer/composer-editor.js";
-import { maxComposerTextRows } from "../composer/composer-height.js";
+import { maxComposerTextRows } from "../../ui-core/composer/composer-height.js";
 import { TranscriptView, useTranscriptFollowKey } from "../components/transcript/transcript-view.js";
 import { TranscriptScrollbar } from "../components/transcript/transcript-scrollbar.js";
 import { PlanView } from "../components/plan/plan-view.js";
 import { OverlayHost } from "../components/overlay/overlay-host.js";
 import { QueuePanel } from "../components/queue/queue-panel.js";
 import { ResponderPanel } from "../components/jobs/jobs-panel.js";
-import { chordFromKeyEvent } from "../actions/chord-from-key.js";
-import { usePlan } from "../state/use-plan.js";
-import { useOverlayState } from "../state/use-overlay.js";
-import { useTranscriptState } from "../state/use-transcript-store.js";
-import { useSessionState } from "../state/use-session-state.js";
-import { useServices, useTheme } from "./providers.js";
-import { promptPlanApprovalIfNeeded } from "./plan-lifecycle.js";
+import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
+import { usePlan } from "../../ui-core/react/use-plan.js";
+import { useOverlayState } from "../../ui-core/react/use-overlay.js";
+import { useTranscriptState } from "../../ui-core/react/use-transcript-store.js";
+import { useSessionState } from "../../ui-core/react/use-session-state.js";
+import { useServices, useTheme } from "../../ui-core/react/providers.js";
+import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js";
 import { StatusLine } from "../components/status/status-line.js";
 import { ToastHost } from "../components/toast/toast-host.js";
 import {
@@ -41,14 +41,14 @@ import {
 } from "../components/plan/plan-pane-anim.js";
 import { usePanePresence } from "../components/plan/use-pane-presence.js";
 import { transcriptScrollPort } from "../components/transcript/transcript-scroll-port.js";
-import { composerActionPort } from "../composer/composer-action-port.js";
-import { useHasDraft } from "../state/use-has-draft.js";
-import { formatShortcutsReference } from "../actions/format-shortcuts.js";
-import { formatCommandHelpMarkdown } from "../rendering/format-help.js";
-import { notify, notifyWarn } from "../notify.js";
+import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
+import { useHasDraft } from "../../ui-core/react/use-has-draft.js";
+import { formatShortcutsReference } from "../../ui-core/actions/format-shortcuts.js";
+import { formatCommandHelpMarkdown } from "../../ui-core/rendering/format-help.js";
+import { notify, notifyWarn } from "../../ui-core/notify.js";
 import { setDefaultMode } from "../../store/config.js";
-import { maybeShowUpdateToast } from "./startup-update.js";
-import { modeSwitchSummary, nextMode } from "./mode-cycle.js";
+import { maybeShowUpdateToast } from "../../ui-core/commands/startup-update.js";
+import { modeSwitchSummary, nextMode } from "../../ui-core/actions/mode-cycle.js";
 
 const CTRL_C_QUIT_WINDOW_MS = 1500;
 const ESC_CANCEL_WINDOW_MS = 1500;
@@ -344,7 +344,7 @@ export function App(): ReactNode {
           }
           if (live) {
             const { formatPlanPagerDocument } = await import(
-              "../rendering/plan-view.js"
+              "../../ui-core/rendering/plan-view.js"
             );
             services.overlay.openPager(
               `Plan · ${live.goal}`,
@@ -598,13 +598,6 @@ export function App(): ReactNode {
     notify(services, "Chat · end · ^D", { key: "scroll", durationMs: 1200 });
   }
 
-  function clearDraft(): void {
-    composerActionPort.clear();
-    notify(services, "Draft cleared · ^X", { key: "draft", durationMs: 1400 });
-  }
-
-
-
   function openShortcutsPager(): void {
     services.overlay.openPager(
       "Keyboard shortcuts",
@@ -773,7 +766,6 @@ export function App(): ReactNode {
           onTogglePlan={toggleTasksPane}
           onJumpTop={jumpChatTop}
           onJumpBottom={jumpChatBottom}
-          onClearDraft={clearDraft}
           onCutDraft={composerActionPort.cut}
           onOpenCommands={composerActionPort.openCommands}
           hasDraft={hasDraft}

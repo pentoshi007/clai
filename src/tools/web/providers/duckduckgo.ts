@@ -25,7 +25,7 @@ import { Buffer } from "node:buffer";
 import https from "node:https";
 import type { ClientRequest, IncomingMessage } from "node:http";
 
-import * as cheerio from "cheerio";
+import * as cheerio from "cheerio/slim";
 
 import type { RawProviderResponse, SearchProvider } from "./provider.js";
 import { searchProviders } from "./provider.js";

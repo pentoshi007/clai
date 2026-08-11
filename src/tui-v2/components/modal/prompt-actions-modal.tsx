@@ -9,11 +9,11 @@
 import { useMemo, useRef, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { PromptActionsRequest } from "../../controllers/overlay-controller.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import { preparePromptPreview } from "../../rendering/prompt-preview.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { PromptActionsRequest } from "../../../ui-core/controllers/overlay-controller.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import { preparePromptPreview } from "../../../ui-core/rendering/prompt-preview.js";
 
 const HIDDEN_SCROLLBARS = {
   visible: false,

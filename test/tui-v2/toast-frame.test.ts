@@ -7,8 +7,8 @@ import {
   TOAST_BOX_HEIGHT,
   toastAnimAt,
 } from "../../src/tui-v2/components/toast/toast-anim.js";
-import { MAX_TOAST_MESSAGE_CHARS } from "../../src/tui-v2/controllers/toast-controller.js";
-import { TOAST_ENTER_MS } from "../../src/tui-v2/controllers/toast-controller.js";
+import { MAX_TOAST_MESSAGE_CHARS } from "../../src/ui-core/controllers/toast-controller.js";
+import { TOAST_ENTER_MS } from "../../src/ui-core/controllers/toast-controller.js";
 
 describe("toast notification chip", () => {
   it("min chip height is 3 (pad + body + pad)", () => {

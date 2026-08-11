@@ -8,8 +8,8 @@
 
 import type { ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import type { NoticeItem, NoticeLevel } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
+import type { NoticeItem, NoticeLevel } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { LinkableText } from "./linkable-text.js";
 
 function badge(level: NoticeLevel): { label: string; fg: string; bg: string } {

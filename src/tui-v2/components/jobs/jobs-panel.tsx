@@ -15,16 +15,16 @@ import type {
   ResponderNotification,
 } from "../../../app/ports/jobs-port.js";
 import { formatJobElapsed } from "../../../tools/jobs.js";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import { useSessionState } from "../../state/use-session-state.js";
-import { responderStatusText } from "../status/status-line.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import { useSessionState } from "../../../ui-core/react/use-session-state.js";
+import { responderStatusText } from "../../../ui-core/rendering/status-segments.js";
 import {
   createJobTailPagerSource,
   isLiveJobStatus,
   jobTailTitle,
-} from "../../rendering/job-tail-source.js";
+} from "../../../ui-core/rendering/job-tail-source.js";
 
 export interface JobsPanelProps {
   readonly services: AppServices;

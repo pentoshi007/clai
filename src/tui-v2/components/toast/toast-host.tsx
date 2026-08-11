@@ -13,10 +13,10 @@ import type {
   ToastController,
   ToastItem,
   ToastLevel,
-} from "../../controllers/toast-controller.js";
-import { TOAST_ENTER_MS } from "../../controllers/toast-controller.js";
-import type { Theme } from "../../rendering/theme.js";
-import { useToastState } from "../../state/use-toast.js";
+} from "../../../ui-core/controllers/toast-controller.js";
+import { TOAST_ENTER_MS } from "../../../ui-core/controllers/toast-controller.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { useToastState } from "../../../ui-core/react/use-toast.js";
 import {
   TOAST_BOX_HEIGHT,
   toastAnimAt,

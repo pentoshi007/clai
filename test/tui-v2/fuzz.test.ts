@@ -10,21 +10,21 @@ import {
   type AnyAppEvent,
 } from "../../src/app/events/app-event.js";
 import { createCountingIdFactory, EventSequencer } from "../../src/app/events/sequencer.js";
-import { normalizeChord } from "../../src/tui-v2/actions/keymap.js";
-import { computeLayout } from "../../src/tui-v2/layout/compute-layout.js";
-import { detectLinks } from "../../src/tui-v2/rendering/link-detector.js";
-import { sanitizeDisplayText } from "../../src/tui-v2/rendering/sanitize-display.js";
+import { normalizeChord } from "../../src/ui-core/actions/keymap.js";
+import { computeLayout } from "../../src/ui-core/layout/compute-layout.js";
+import { detectLinks } from "../../src/ui-core/rendering/link-detector.js";
+import { sanitizeDisplayText } from "../../src/ui-core/rendering/sanitize-display.js";
 import {
   clampSemanticAnchor,
   normalizeSemanticDocument,
   semanticRangeText,
   type SemanticDocument,
-} from "../../src/tui-v2/state/semantic-document.js";
-import { applyAppEvent } from "../../src/tui-v2/state/transcript-reducer.js";
+} from "../../src/ui-core/state/semantic-document.js";
+import { applyAppEvent } from "../../src/ui-core/state/transcript-reducer.js";
 import {
   EMPTY_TRANSCRIPT_STATE,
   type TranscriptState,
-} from "../../src/tui-v2/state/transcript-types.js";
+} from "../../src/ui-core/state/transcript-types.js";
 
 function fold(events: readonly AnyAppEvent[]): TranscriptState {
   return events.reduce(applyAppEvent, EMPTY_TRANSCRIPT_STATE);

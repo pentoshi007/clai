@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wrapAnsiLine, visibleWidth } from "../src/ui/markdown.js";
+import { wrapAnsiLine, visibleWidth } from "../src/ui-core/rendering/markdown.js";
 
 /**
  * Regression test for the Ctrl+P plan pager truncating long lines with "…"

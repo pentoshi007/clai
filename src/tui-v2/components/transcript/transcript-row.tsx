@@ -9,10 +9,10 @@
 
 import { memo, type ReactNode } from "react";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { TranscriptStore } from "../../state/transcript-store.js";
-import { type TranscriptItem } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { TranscriptStore } from "../../../ui-core/state/transcript-store.js";
+import { type TranscriptItem } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { shouldHideQuietMetaToolInChat } from "../../../app/adapters/quiet-meta-tools.js";
 import { UserMessage } from "./user-message.js";
 import { AssistantMessage } from "./assistant-message.js";

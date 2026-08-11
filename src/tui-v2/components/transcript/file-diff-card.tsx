@@ -7,14 +7,14 @@
 import { useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import type { MouseEvent } from "@opentui/core";
-import type { Theme } from "../../rendering/theme.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   collapsedFileChangesLabel,
   presentFileChangePreview,
   relativeDisplayPath,
   rowBackground,
   syntaxColor,
-} from "../../rendering/file-diff-view.js";
+} from "../../../ui-core/rendering/file-diff-view.js";
 import type { FileChange } from "../../../tools/file-diff.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 
@@ -75,7 +75,7 @@ export function DiffActionButton(props: {
 function DiffCodeRow(props: {
   gutter: string;
   spans: readonly {
-    kind: import("../../rendering/syntax-highlight.js").SyntaxKind;
+    kind: import("../../../ui-core/rendering/syntax-highlight.js").SyntaxKind;
     text: string;
   }[];
   displayText: string;

@@ -5,10 +5,9 @@ import type { Mode, ProviderId } from "./types.js";
 
 /** Absolute path to this module — used to re-exec under Bun for OpenTUI. */
 const CLAI_ENTRY = fileURLToPath(import.meta.url);
-import { runAgent } from "./modes/agent.js";
-import { interactiveSessionManager } from "./interactive-session/manager.js";
 import { resolveTurnInput } from "./attachments/service.js";
-import { startRepl } from "./repl.js";
+import { startNoninteractive } from "./noninteractive/start-noninteractive.js";
+import { readStdinText } from "./noninteractive/read-stdin.js";
 import {
   providerSwitcher,
   printProviderKeys,
@@ -32,22 +31,19 @@ import {
   updateConfig,
 } from "./store/config.js";
 import { assertProvider } from "./llm/provider.js";
-import { listSessionSummaries, saveSession, getSession } from "./store/history.js";
-import {
-  clearThinking,
-  createThinkingStreamParser,
-  rememberThinkingFromText,
-  renderThinkingSummary,
-} from "./ui/thinking.js";
-import { createMarkdownStreamWriter, renderMarkdown } from "./ui/markdown.js";
-import { canUseTui } from "./tui/can-use-tui.js";
+import { listSessionSummaries, getSession } from "./store/history.js";
+import { canUseTui } from "./ui-core/bootstrap/can-use-tui.js";
 import {
   isBunRuntime,
   isOpenTuiFfiError,
   openTuiRuntimeHint,
   reexecWithBunIfNeeded,
-} from "./tui/runtime.js";
-import { resolveUiChoice } from "./tui-v2/bootstrap/ui-selection.js";
+} from "./os/bun-runtime.js";
+import {
+  UI_FLAG_CHOICES,
+  resolveUiChoice,
+} from "./ui-core/bootstrap/ui-selection.js";
+import { warnOnce } from "./ui/warn-once.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -55,6 +51,9 @@ interface GlobalOptions {
   model?: string | undefined;
   yes?: boolean | undefined;
   noHistory?: boolean | undefined;
+  showThinking?: boolean | undefined;
+  verbose?: boolean | undefined;
+  quiet?: boolean | undefined;
   tui?: boolean | undefined;
   classic?: boolean | undefined;
   ui?: string | undefined;
@@ -72,70 +71,80 @@ function resolveProvider(value?: string): ProviderId | undefined {
   return value ? assertProvider(value) : undefined;
 }
 
+async function startInteractive(
+  options: GlobalOptions,
+  resolved: {
+    mode: Mode;
+    provider: ProviderId | undefined;
+    model: string;
+    noHistory: boolean | undefined;
+  },
+): Promise<void> {
+  const ui = resolveUiChoice(options);
+
+  if (ui === "noninteractive") {
+    throw new Error("No prompt supplied; pass a prompt or pipe one on stdin.");
+  }
+
+  if (ui === "classic") {
+    const { startClassic } = await import("./classic/bootstrap/start-classic.js");
+    await startClassic(resolved);
+    return;
+  }
+
+  const gate = canUseTui();
+  if (!gate.ok) {
+    warnOnce(`TUI unavailable (${gate.reason}); using classic.`);
+    const { startClassic } = await import("./classic/bootstrap/start-classic.js");
+    await startClassic(resolved);
+    return;
+  }
+
+  if (!isBunRuntime()) {
+    if (reexecWithBunIfNeeded(CLAI_ENTRY)) return;
+    warnOnce(openTuiRuntimeHint());
+    const { startClassic } = await import("./classic/bootstrap/start-classic.js");
+    await startClassic(resolved);
+    return;
+  }
+
+  try {
+    const { startTuiV2 } = await import("./tui-v2/bootstrap/start-tui-v2.js");
+    await startTuiV2(resolved);
+  } catch (error) {
+    if (!isOpenTuiFfiError(error)) throw error;
+    warnOnce("Failed to start OpenTUI renderer; using classic.");
+    const { startClassic } = await import("./classic/bootstrap/start-classic.js");
+    await startClassic(resolved);
+  }
+}
+
 async function oneShot(
   promptParts: string[] | undefined,
   options: GlobalOptions,
 ): Promise<void> {
-  const prompt = promptParts?.join(" ").trim();
+  const promptFromArgs = promptParts?.join(" ").trim() ?? "";
   const config = getConfig();
   const provider = resolveProvider(options.provider);
   const activeProvider = provider ?? config.defaultProvider;
   const mode = options.mode ?? config.defaultMode;
   const model = options.model ?? getProviderModel(activeProvider);
+  const prompt =
+    promptFromArgs ||
+    (resolveUiChoice(options) === "noninteractive" && !process.stdin.isTTY
+      ? await readStdinText(process.stdin)
+      : "");
 
   if (!prompt) {
-    // Interactive: OpenTUI by default; classic line REPL on --classic / non-TTY.
-    const ui = resolveUiChoice(options);
-    if (ui === "tui") {
-      const gate = canUseTui();
-      if (gate.ok) {
-        // OpenTUI's Zig FFI only loads under Bun. `npm run dev` (tsx/Node)
-        // re-execs with Bun when available so `dev` "just works".
-        if (!isBunRuntime()) {
-          if (reexecWithBunIfNeeded(CLAI_ENTRY)) return;
-          console.error(chalk.yellow(`  ${openTuiRuntimeHint().split("\n")[0]}`));
-          console.error(chalk.dim(openTuiRuntimeHint().split("\n").slice(1).join("\n")));
-          console.error(chalk.dim("  Falling back to classic REPL."));
-          await startRepl({ mode, provider, model, noHistory: options.noHistory });
-          return;
-        }
-        try {
-          const { startTuiV2 } = await import(
-            "./tui-v2/bootstrap/start-tui-v2.js"
-          );
-          await startTuiV2({
-            mode,
-            provider,
-            model,
-            noHistory: options.noHistory,
-          });
-          return;
-        } catch (error) {
-          if (isOpenTuiFfiError(error)) {
-            console.error(chalk.yellow("  Failed to start OpenTUI renderer."));
-            console.error(chalk.dim(openTuiRuntimeHint()));
-            console.error(chalk.dim("  Falling back to classic REPL."));
-            await startRepl({
-              mode,
-              provider,
-              model,
-              noHistory: options.noHistory,
-            });
-            return;
-          }
-          throw error;
-        }
-      }
-      console.error(
-        chalk.dim(`  TUI unavailable (${gate.reason}); using classic REPL.`),
-      );
-    }
-    await startRepl({ mode, provider, model, noHistory: options.noHistory });
+    await startInteractive(options, {
+      mode,
+      provider,
+      model,
+      noHistory: options.noHistory,
+    });
     return;
   }
 
-  clearThinking();
-  let answer = "";
   const resolved = resolveTurnInput({
     prompt,
     mode,
@@ -148,34 +157,21 @@ async function oneShot(
   for (const issue of resolved.imageIssues) {
     console.error(chalk.yellow(`  ${issue}`));
   }
-  try {
-    answer = await runAgent(resolved.prompt, {
-      provider: resolved.provider,
-      model: resolved.model,
-      autoConfirm: options.yes,
-      mode: resolved.mode,
-      images: [...resolved.images],
-      visionProven: resolved.capability.support === "yes",
-    });
-    if (!options.noHistory) {
-      await saveSession([
-        { role: "user", content: prompt },
-        { role: "assistant", content: answer },
-      ]);
-    }
-  } finally {
-    const cleanup = await interactiveSessionManager
-      .closeAll("app-shutdown")
-      .catch(() => undefined);
-    for (const failure of cleanup?.failures ?? []) {
-      console.error(
-        chalk.dim(
-          `  interactive-session cleanup: [${failure.code}] ${failure.message}`,
-        ),
-      );
-    }
-  }
-  process.exit(0);
+  const result = await startNoninteractive({
+    prompt: resolved.prompt,
+    historyPrompt: prompt,
+    provider: resolved.provider,
+    model: resolved.model,
+    mode: resolved.mode,
+    yes: options.yes,
+    noHistory: options.noHistory,
+    showThinking: options.showThinking,
+    verbose: options.verbose,
+    quiet: options.quiet,
+    images: [...resolved.images],
+    visionProven: resolved.capability.support === "yes",
+  });
+  process.exitCode = result.exitCode;
 }
 
 function printError(error: unknown): void {
@@ -201,13 +197,19 @@ async function main(): Promise<void> {
       "--no-history",
       "do not persist this session to history (in-memory only)",
     )
-    .option("--tui", "launch the full-screen TUI (default)")
-    .option("--classic", "launch the line-based REPL")
+    .option(
+      "--show-thinking",
+      "print reasoning to stderr (or set CLAI_SHOW_THINKING=1)",
+    )
+    .option("--verbose", "show expanded tool output and diff hunks")
+    .option("--quiet", "write only the final answer to stdout")
+    .option("--tui", "launch OpenTUI; ignored when a prompt is supplied")
+    .option("--classic", "launch classic UI; ignored when a prompt is supplied")
     .addOption(
       new Option(
         "--ui <mode>",
-        "interactive frontend: tui (OpenTUI, default), legacy (line REPL). v2 is an alias for tui",
-      ).choices(["legacy", "tui", "v2"]),
+        "interactive frontend: tui (OpenTUI) or classic. v2/opentui alias tui; legacy/ink alias classic; ignored when a prompt is supplied",
+      ).choices([...UI_FLAG_CHOICES]),
     )
     .argument("[prompt...]", "one-shot prompt")
     .action(

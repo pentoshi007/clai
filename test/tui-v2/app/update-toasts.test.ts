@@ -6,9 +6,9 @@ import { updateConfig } from "../../../src/store/config.js";
 import {
   createCompositionRoot,
   type AppServices,
-} from "../../../src/tui-v2/bootstrap/composition-root.js";
-import { attachCommandHandlers } from "../../../src/tui-v2/app/command-handlers.js";
-import { detectCapabilities } from "../../../src/tui-v2/bootstrap/capabilities.js";
+} from "../../../src/ui-core/bootstrap/composition-root.js";
+import { attachCommandHandlers } from "../../../src/ui-core/commands/command-handlers.js";
+import { detectCapabilities } from "../../../src/ui-core/bootstrap/capabilities.js";
 import * as update from "../../../src/commands/update.js";
 
 function fakePersistence(): PersistencePort {

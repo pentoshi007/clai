@@ -1,6 +1,6 @@
 import stringWidth from "string-width";
 import { describe, expect, it } from "vitest";
-import { renderIntroHeaderLines } from "../src/ui/intro-header.js";
+import { renderIntroHeaderLines } from "../src/ui-core/rendering/intro-header.js";
 
 const stripAnsi = (value: string): string =>
   value.replace(/\x1b\[[0-9;]*m/g, "");

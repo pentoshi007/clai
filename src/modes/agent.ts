@@ -6,7 +6,7 @@ import type {
   ToolCall,
 } from "../types.js";
 import type { AgentEvent } from "../agent/events.js";
-import { renderTurnOutcome } from "../agent/turn-outcome.js";
+import type { TurnOutcome } from "../agent/turn-outcome.js";
 import {
   runAgentTurn,
   parseToolCall,
@@ -34,9 +34,11 @@ export interface AgentOptions {
       ) => void)
     | undefined;
   onEvent?: ((event: AgentEvent) => void) | undefined;
+  onOutcome?: ((outcome: TurnOutcome) => void) | undefined;
   onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   confirm?: ConfirmPort | undefined;
   mode?: Mode | undefined;
+  displayPrompt?: string | null | undefined;
 }
 
 export { parseToolCall, createSessionPolicy };
@@ -46,6 +48,13 @@ export async function runAgent(
   prompt: string,
   options: AgentOptions = {},
 ): Promise<string> {
-  const outcome = await runAgentTurn(prompt, options);
-  return renderTurnOutcome(outcome);
+  let finalAnswer: string | undefined;
+  const outcome = await runAgentTurn(prompt, {
+    ...options,
+    onEvent: (event) => {
+      if (event.type === "turn-end") finalAnswer = event.finalAnswer;
+      options.onEvent?.(event);
+    },
+  });
+  return finalAnswer ?? outcome.answer;
 }

@@ -21,9 +21,9 @@ import { useMemo, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { ToolItem } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { ToolItem } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   batchSummaryLine,
   buildBatchCardsFromSpool,
@@ -31,12 +31,12 @@ import {
   isBatchToolName,
   presentBatchSection,
   type BatchSection,
-} from "../../rendering/batch-sections.js";
-import { presentOutput, presentTool } from "../../rendering/tool-presenter.js";
+} from "../../../ui-core/rendering/batch-sections.js";
+import { presentOutput, presentTool } from "../../../ui-core/rendering/tool-presenter.js";
 import {
   openToolOutputPager,
   pathFromArgsDisplay,
-} from "../../rendering/open-tool-output.js";
+} from "../../../ui-core/rendering/open-tool-output.js";
 import {
   isFileMutationTool,
   type FileChange,
@@ -44,9 +44,9 @@ import {
 import { LinkableText } from "./linkable-text.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 import { DiffActionButton, FileDiffBody } from "./file-diff-card.js";
-import { renderMarkdownLines } from "../../rendering/render-markdown-lines.js";
-import { shouldDefaultFormattedView } from "../../rendering/pager-view-policy.js";
-import { extractFsReadFileBody } from "../../rendering/pager-markdown.js";
+import { renderStyledMarkdownLines } from "../../rendering/styled-markdown.js";
+import { shouldDefaultFormattedView } from "../../../ui-core/rendering/pager-view-policy.js";
+import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.js";
 import { selectableRowStyle } from "./selectable-line.js";
 
 /** Border / status accent: green ok · yellow running · red failed. */
@@ -273,7 +273,7 @@ export function ToolCard(props: {
     const clean = extractFsReadFileBody(tail);
     if (!clean.trim()) return null;
     const budget = expanded ? 60 : 10;
-    return renderMarkdownLines(clean, {
+    return renderStyledMarkdownLines(clean, {
       width: Math.max(24, termWidth - 12),
       defaultFg: theme.toolOutput,
       stripOuterIndent: true,

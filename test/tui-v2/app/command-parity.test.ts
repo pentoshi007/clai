@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentPort } from "../../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../../src/app/ports/persistence-port.js";
 import { getConfig, updateConfig } from "../../../src/store/config.js";
-import { createCompositionRoot, type AppServices } from "../../../src/tui-v2/bootstrap/composition-root.js";
-import { attachCommandHandlers } from "../../../src/tui-v2/app/command-handlers.js";
-import { detectCapabilities } from "../../../src/tui-v2/bootstrap/capabilities.js";
-import { slashCommands } from "../../../src/repl/slash-commands.js";
+import { createCompositionRoot, type AppServices } from "../../../src/ui-core/bootstrap/composition-root.js";
+import { attachCommandHandlers } from "../../../src/ui-core/commands/command-handlers.js";
+import { detectCapabilities } from "../../../src/ui-core/bootstrap/capabilities.js";
+import { slashCommands } from "../../../src/app/commands/catalog.js";
 import { normalizeCommandName } from "../../../src/app/commands/command.js";
 import { createCurrentUpdatesPort } from "../../../src/app/adapters/current-updates-adapter.js";
 import {
@@ -46,7 +46,7 @@ function buildServices(overrides: { requestExit?: () => void } = {}): AppService
     requestExit: overrides.requestExit,
     // Deterministic, offline update check (production injects the real fetcher).
     updates: createCurrentUpdatesPort(
-      async () => "999.0.0",
+      async () => "0.0.0",
       () => undefined,
     ),
   });
@@ -289,7 +289,7 @@ describe("command parity (V2-080)", () => {
   it("/update checks the updates port without throwing", async () => {
     const services = buildServices();
     await services.commands.dispatch({ name: "update", args: "" });
-    // The check is a real network call now, so the notice can land a tick later.
+    // The handler publishes the sticky checking notice before its async check settles.
     await vi.waitFor(() => expect(notices(services).length).toBeGreaterThan(0), {
       timeout: 10_000,
     });

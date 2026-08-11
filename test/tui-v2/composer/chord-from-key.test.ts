@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chordFromKeyEvent } from "../../../src/tui-v2/actions/chord-from-key.js";
+import { chordFromKeyEvent } from "../../../src/tui-v2/input/chord-from-opentui-key.js";
 
 describe("chordFromKeyEvent", () => {
   it("maps a plain letter key", () => {

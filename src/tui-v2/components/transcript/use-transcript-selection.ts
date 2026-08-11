@@ -4,16 +4,16 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { KeyEvent, MouseEvent, Renderable, ScrollBoxRenderable } from "@opentui/core";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
-import type { AppServices } from "../../bootstrap/composition-root.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import {
   documentEnd,
   documentStart,
   type SemanticAnchor,
   type SemanticDocument,
-} from "../../state/semantic-document.js";
-import { isItemExpanded, type TranscriptState } from "../../state/transcript-types.js";
+} from "../../../ui-core/state/semantic-document.js";
+import { isItemExpanded, type TranscriptState } from "../../../ui-core/state/transcript-types.js";
 
-import { extractTranscriptSemanticDocument } from "../../rendering/transcript-semantic.js";
+import { extractTranscriptSemanticDocument } from "../../../ui-core/rendering/transcript-semantic.js";
 
 interface TranscriptSelectionOptions {
   readonly services: AppServices;

@@ -12,8 +12,12 @@ permissions:
 
 jobs:
   node:
-    name: Node 20 semantic suite
+    name: Node ${{ matrix.node }} semantic suite
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v5
       # `runner` context isn't available in job-level `env:` (GitHub Actions
@@ -26,7 +30,7 @@ jobs:
           echo "CLAI_LOG_DIR=${RUNNER_TEMP}/clai/logs" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run embed-prompts:check
@@ -42,7 +46,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: node-failure-artifacts
+          name: node-failure-artifacts-${{ matrix.node }}
           path: |
             ${{ runner.temp }}/clai/logs
             ${{ runner.temp }}/clai/artifacts
@@ -65,7 +69,7 @@ jobs:
           bun-version: 1.3.14
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: bun --version
@@ -101,7 +105,7 @@ jobs:
           echo "CLAI_LOG_DIR=${RUNNER_TEMP}/clai/logs" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npx vitest run test/privilege-boundary.test.ts --reporter=dot
@@ -113,3 +117,29 @@ jobs:
         run: |
           npm run build
           node dist/index.js --version
+
+
+  classic-posix:
+    name: Classic POSIX (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set CI directories
+        shell: bash
+        run: |
+          echo "CLAI_CONFIG_DIR=${RUNNER_TEMP}/clai/config" >> "$GITHUB_ENV"
+          echo "CLAI_DATA_DIR=${RUNNER_TEMP}/clai/data" >> "$GITHUB_ENV"
+          echo "CLAI_ARTIFACT_DIR=${RUNNER_TEMP}/clai/artifacts" >> "$GITHUB_ENV"
+          echo "CLAI_LOG_DIR=${RUNNER_TEMP}/clai/logs" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx vitest run test/classic test/ui-core test/noninteractive --reporter=dot
+      - run: npm run test:classic:pty

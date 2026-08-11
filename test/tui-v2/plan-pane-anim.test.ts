@@ -8,7 +8,7 @@ import {
   paneSlideTop,
   paneSlideWidth,
 } from "../../src/tui-v2/components/plan/plan-pane-anim.js";
-import { easeInCubic, easeOutCubic } from "../../src/tui-v2/motion/ease.js";
+import { easeInCubic, easeOutCubic } from "../../src/ui-core/motion/ease.js";
 
 describe("plan pane animation", () => {
   it("enters from 0 to 1 with ease-out over enter ms", () => {

@@ -1,4 +1,4 @@
-import { slashCommands } from "../../repl/slash-commands.js";
+import { slashCommands } from "./catalog.js";
 import {
   normalizeCommandName,
   type CommandContext,

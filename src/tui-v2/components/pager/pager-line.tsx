@@ -5,16 +5,16 @@
 
 import type { ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import type { Theme } from "../../rendering/theme.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   segmentPagerLine,
   type PagerMatch,
-} from "../../state/pager-search.js";
-import { syntaxColor } from "../../rendering/file-diff-view.js";
+} from "../../../ui-core/state/pager-search.js";
+import { syntaxColor } from "../../../ui-core/rendering/file-diff-view.js";
 import {
   emptyCarry,
   highlightLineForPath,
-} from "../../rendering/syntax-highlight.js";
+} from "../../../ui-core/rendering/syntax-highlight.js";
 import type { PagerDisplayLine } from "../../rendering/pager-markdown.js";
 
 /**

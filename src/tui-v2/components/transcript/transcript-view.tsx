@@ -19,25 +19,25 @@ import {
 } from "react";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import { useTranscriptState } from "../../state/use-transcript-store.js";
-import { useSessionState } from "../../state/use-session-state.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import { useTranscriptState } from "../../../ui-core/react/use-transcript-store.js";
+import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 import { getConfig } from "../../../store/config.js";
 import {
   isFileDiffExpanded,
   isItemExpanded,
   transcriptItems,
-} from "../../state/transcript-types.js";
+} from "../../../ui-core/state/transcript-types.js";
 import {
   findMatches,
   nextMatchIndex,
   prevMatchIndex,
-} from "../../state/transcript-search.js";
+} from "../../../ui-core/state/transcript-search.js";
 import { TranscriptRow } from "./transcript-row.js";
 import { SearchBar } from "./search-bar.js";
-import { notify } from "../../notify.js";
+import { notify } from "../../../ui-core/notify.js";
 import { IntroCard } from "./intro-card.js";
 import {
   EMPTY_SCROLL_METRICS,

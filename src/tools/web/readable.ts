@@ -10,7 +10,7 @@
  *   attributes are simply absent rather than a hard error.
  */
 
-import * as cheerio from "cheerio";
+import * as cheerio from "cheerio/slim";
 import type { AnyNode } from "domhandler";
 
 import type { CookieInfo, CookieSameSite } from "./types.js";

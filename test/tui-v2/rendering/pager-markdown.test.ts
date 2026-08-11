@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { preparePagerDisplay } from "../../../src/tui-v2/rendering/pager-markdown.js";
 import {
   extractFsReadFileBody,
   looksLikeMarkdown,
-  preparePagerDisplay,
   stripPagerLineGutters,
-} from "../../../src/tui-v2/rendering/pager-markdown.js";
-import { formatShortcutsReference } from "../../../src/tui-v2/actions/format-shortcuts.js";
-import { formatCommandHelpMarkdown } from "../../../src/tui-v2/rendering/format-help.js";
-import { renderMarkdown } from "../../../src/ui/markdown.js";
-import { stripAnsiSequences } from "../../../src/tui-v2/rendering/sanitize-display.js";
-import { findPagerMatches } from "../../../src/tui-v2/state/pager-search.js";
+} from "../../../src/ui-core/rendering/pager-source.js";
+import { formatShortcutsReference } from "../../../src/ui-core/actions/format-shortcuts.js";
+import { formatCommandHelpMarkdown } from "../../../src/ui-core/rendering/format-help.js";
+import { renderMarkdown } from "../../../src/ui-core/rendering/markdown.js";
+import { stripAnsiSequences } from "../../../src/ui-core/rendering/sanitize-display.js";
+import { findPagerMatches } from "../../../src/ui-core/state/pager-search.js";
 
 describe("stripPagerLineGutters", () => {
   it("removes file-modal line numbers so markdown can render", () => {

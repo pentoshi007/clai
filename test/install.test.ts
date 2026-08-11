@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { shouldSkipBunInstall } from "../bin/postinstall-policy.mjs";
+
+describe("postinstall Bun policy", () => {
+  it("skips Bun setup on Windows", () => {
+    expect(shouldSkipBunInstall("win32")).toBe(true);
+  });
+
+  it("keeps Bun setup enabled on supported OpenTUI hosts", () => {
+    expect(shouldSkipBunInstall("darwin")).toBe(false);
+    expect(shouldSkipBunInstall("linux")).toBe(false);
+  });
+
+  it("gates every Bun install and warning path", () => {
+    const postinstall = readFileSync(resolve(__dirname, "../bin/postinstall.mjs"), "utf8");
+    expect(postinstall).toContain("shouldSkipBunInstall");
+    expect(postinstall).toContain("!skipBunInstall");
+  });
+});
 
 describe("phase 11 — install scripts verify SHA256", () => {
   const sh = readFileSync(

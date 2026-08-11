@@ -5,8 +5,8 @@ import type { AgentPort } from "../../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../../src/app/ports/persistence-port.js";
 import type { SessionPlan } from "../../../src/store/plan.js";
 import type { ChatMessage } from "../../../src/types.js";
-import { createCompositionRoot } from "../../../src/tui-v2/bootstrap/composition-root.js";
-import { detectCapabilities } from "../../../src/tui-v2/bootstrap/capabilities.js";
+import { createCompositionRoot } from "../../../src/ui-core/bootstrap/composition-root.js";
+import { detectCapabilities } from "../../../src/ui-core/bootstrap/capabilities.js";
 import { createTurnOutcome } from "../../../src/agent/turn-outcome.js";
 import {
   beginPlanSuggestion,
@@ -17,9 +17,9 @@ import {
   implementPlan,
   isAwaitingPlanSuggestion,
   promptPlanApprovalIfNeeded,
-} from "../../../src/tui-v2/app/plan-lifecycle.js";
+} from "../../../src/ui-core/plan/plan-lifecycle.js";
 import { shouldBlockPlanModeMutate } from "../../../src/agent/plan-decision.js";
-import { hydrateSessionVisual } from "../../../src/tui-v2/state/transcript-hydrate.js";
+import { hydrateSessionVisual } from "../../../src/ui-core/state/transcript-hydrate.js";
 
 const completeWithProvider = vi.hoisted(() => vi.fn());
 vi.mock("../../../src/llm/router.js", async (importActual) => {

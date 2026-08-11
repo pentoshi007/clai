@@ -3,8 +3,8 @@ import {
   formatAttachmentReference,
   stabilizeDroppedImagesInText,
 } from "../../ui/mentions.js";
-import type { AppServices } from "../bootstrap/composition-root.js";
-import { notify } from "../notify.js";
+import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
+import { notify } from "../../ui-core/notify.js";
 
 interface ComposerEditor {
   readonly plainText: string;

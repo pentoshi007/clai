@@ -3,7 +3,7 @@ import {
   CommandRegistry,
   buildDefaultCommandRegistry,
 } from "../../src/app/commands/registry.js";
-import { slashCommands } from "../../src/repl/slash-commands.js";
+import { slashCommands } from "../../src/app/commands/catalog.js";
 
 describe("V2-024 command registry", () => {
   it("covers every legacy slash command exactly once (via canonical or alias)", () => {

@@ -13,8 +13,8 @@
 
 import { homedir } from "node:os";
 import type { ReactNode } from "react";
-import { detectLinks, type LinkSpan } from "../../rendering/link-detector.js";
-import type { Theme } from "../../rendering/theme.js";
+import { detectLinks, type LinkSpan } from "../../../ui-core/rendering/link-detector.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { SELECTABLE_LINE_STYLE } from "./selectable-line.js";
 
 function resolveHref(span: LinkSpan): string | undefined {

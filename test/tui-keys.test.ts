@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatKeyStatus } from "../src/tui/format-keys.js";
+import { formatKeyStatus } from "../src/ui-core/rendering/format-keys.js";
 
 describe("TUI /keys output", () => {
   it("shows provider state and only masked credentials", () => {

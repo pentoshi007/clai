@@ -1,0 +1,24 @@
+{
+  "id": "vscode-terminal",
+  "host": "VS Code integrated terminal (Windows)",
+  "recorded": false,
+  "skip": "W17 — capture on a real Windows runner; see classic-revamp/05-INPUT.md §10",
+  "expected": {
+    "unicode": true
+  },
+  "keys": [
+    { "chord": "shift+enter", "bytes": null },
+    { "chord": "alt+enter", "bytes": null },
+    { "chord": "shift+tab", "bytes": null },
+    { "chord": "ctrl+h", "bytes": null },
+    { "chord": "ctrl+j", "bytes": null },
+    { "chord": "ctrl+o", "bytes": null },
+    { "chord": "ctrl+t", "bytes": null },
+    { "chord": "ctrl+g", "bytes": null },
+    { "chord": "ctrl+p", "bytes": null },
+    { "chord": "ctrl+r", "bytes": null },
+    { "chord": "escape", "bytes": null },
+    { "chord": "ctrl+c", "bytes": null }
+  ],
+  "paste": { "lines": 500, "bytes": null }
+}

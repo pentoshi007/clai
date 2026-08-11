@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   shouldNavigateHistoryDown,
   shouldNavigateHistoryUp,
-} from "../../../src/tui-v2/composer/history-nav.js";
+} from "../../../src/ui-core/composer/history-nav.js";
 
 describe("shouldNavigateHistoryUp", () => {
   it("is true on the first line", () => {

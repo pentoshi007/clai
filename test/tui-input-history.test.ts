@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldStoreInPromptHistory } from "../src/tui/input-history.js";
+import { shouldStoreInPromptHistory } from "../src/ui-core/composer/input-history.js";
 
 describe("TUI prompt history", () => {
   it("stores user prompts but excludes recognized slash commands", () => {

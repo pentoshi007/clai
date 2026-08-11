@@ -4,9 +4,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import type { UserItem } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
-import { wrapUserPrompt } from "../../rendering/user-message-wrap.js";
+import type { UserItem } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { wrapUserPrompt } from "../../../ui-core/rendering/user-message-wrap.js";
 import { LinkableText } from "./linkable-text.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 import { DiffActionButton } from "./file-diff-card.js";

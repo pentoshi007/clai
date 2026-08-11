@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
-import type { Theme } from "../../rendering/theme.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 
 export interface ScrollbarMetrics {
   readonly scrollTop: number;

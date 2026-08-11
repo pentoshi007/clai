@@ -14,10 +14,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes, type InputRenderable, type KeyEvent } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import type { KeysEditorRequest } from "../../controllers/overlay-controller.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import type { KeysEditorRequest } from "../../../ui-core/controllers/overlay-controller.js";
 import { MAX_PROVIDER_KEYS } from "../../../llm/key-rotation.js";
 
 export interface KeysModalProps {

@@ -42,7 +42,7 @@
     "embed-prompts": "node scripts/embed-prompts.mjs",
     "embed-prompts:check": "node scripts/embed-prompts.mjs --check",
     "prebuild": "node scripts/sync-version.mjs",
-    "build": "node scripts/embed-prompts.mjs && tsc -p tsconfig.json && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/prompts',{recursive:true});for(const f of['system.agent.md','system.ask.md'])cpSync('src/prompts/'+f,'dist/prompts/'+f);\"",
+    "build": "node scripts/embed-prompts.mjs && node -e \"const{rmSync}=require('fs');rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"const{cpSync,mkdirSync}=require('fs');mkdirSync('dist/prompts',{recursive:true});for(const f of['system.agent.md','system.ask.md'])cpSync('src/prompts/'+f,'dist/prompts/'+f);\"",
     "prepublishOnly": "npm run build",
     "precompile": "node scripts/sync-version.mjs",
     "compile": "node scripts/embed-prompts.mjs && bun run scripts/build.ts",
@@ -51,6 +51,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "node scripts/sync-version.mjs",
     "test": "vitest run",
+    "test:classic:pty": "python3 scripts/pty-smoke.py",
     "test:bun:v2": "bun run scripts/v2-spikes/ci-smoke.ts",
     "test:bun:parity": "bun x vitest run test/tui-v2 test/god-mode-phase1.test.ts test/mentions.test.ts",
     "test:bun": "bun run test:bun:v2 && bun run test:bun:parity",
@@ -58,16 +59,15 @@
     "doctor": "tsx src/index.ts doctor"
   },
   "dependencies": {
-    "@inquirer/prompts": "8.5.2",
     "@opentui/core": "0.4.5",
-    "@opentui/keymap": "0.4.5",
     "@opentui/react": "0.4.5",
     "chalk": "5.6.2",
     "cheerio": "1.2.0",
     "commander": "14.0.3",
     "conf": "15.1.0",
     "execa": "9.6.1",
-    "react": "19.2.7",
+    "ink": "7.1.1",
+    "react": "19.2.8",
     "string-width": "8.2.1"
   },
   "optionalDependencies": {
@@ -78,23 +78,27 @@
     "@opentui/core-linux-arm64-musl": "0.4.5",
     "@opentui/core-linux-x64": "0.4.5",
     "@opentui/core-linux-x64-musl": "0.4.5",
-    "@opentui/core-win32-arm64": "0.4.5",
-    "@opentui/core-win32-x64": "0.4.5",
     "node-pty": "1.1.0"
   },
   "overrides": {
     "encoding-sniffer": "1.0.2"
   },
   "devDependencies": {
-    "@types/node": "26.1.0",
-    "@types/react": "19.2.17",
-    "fast-check": "4.8.0",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "fast-check": "4.9.0",
+    "ink-testing-library": "4.0.0",
     "react-devtools-core": "7.0.1",
-    "tsx": "4.22.5",
+    "tsx": "4.23.12",
     "typescript": "6.0.3",
-    "vitest": "4.1.9"
+    "vitest": "4.1.10"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
+    "node-pty@1.1.0": true
   }
 }

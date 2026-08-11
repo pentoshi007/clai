@@ -2,7 +2,7 @@
 
 > A fast, terminal-native AI agent that runs real tools — built to run on **free API tiers**, stay alive across rate limits with **multi-key + multi-provider switching**, and do serious work: **building, debugging, and scope-based pentesting / bug bounty**.
 
-`clai` is an agentic CLI. It doesn't just describe what to do — it edits files, runs shell commands, scans hosts, fetches HTTP evidence, keeps a durable task plan, and verifies its own work before claiming success. It runs entirely in your terminal with a full-screen console UI (and a classic line REPL fallback).
+`clai` is an agentic CLI. It doesn't just describe what to do — it edits files, runs shell commands, scans hosts, fetches HTTP evidence, keeps a durable task plan, and verifies its own work before claiming success. It runs in your terminal with an OpenTUI full-screen console, a classic Ink UI fallback, or a noninteractive stream surface for prompts and pipes.
 
 Two things make it practical for everyday use:
 
@@ -54,23 +54,21 @@ git clone https://github.com/pentoshi007/clai.git
 cd clai && npm install && npm run build && npm start
 ```
 
-Node.js ≥ 20. Type `clai` in any terminal to start.
+Node.js ≥ 22. Type `clai` in any terminal to start.
 
 ### Platform notes
 
-<table>
-<tr><th>Platform</th><th>Full-screen TUI (OpenTUI)</th><th>Classic REPL (<code>--classic</code>)</th></tr>
-<tr><td>macOS</td><td>✅ Full support</td><td>✅</td></tr>
-<tr><td>Linux</td><td>✅ Full support</td><td>✅</td></tr>
-<tr><td>Windows</td><td>❌ Not available yet</td><td>✅ Automatic fallback</td></tr>
-</table>
+| Environment | Default surface | Explicit alternative |
+|---|---|---|
+| Interactive macOS/Linux terminal at least 60×14 | OpenTUI full-screen console | `clai --classic` for the Ink UI |
+| Interactive Windows terminal | Classic Ink UI | `--ui classic` / `--classic` |
+| stdin or stdout is not a TTY | Noninteractive stream renderer | use a prompt or pipe stdin |
 
-**Windows:** OpenTUI's native renderer does not ship Windows binaries yet, so clai automatically starts in classic REPL mode — no extra flags needed. All core features (ask, agent, multi-key rotation, pentesting, plans, history) work identically; only the full-screen UI is absent.
-
-> **Note:** The standalone Windows binary (`clai.exe` via `install.ps1` / Scoop) may crash silently on some Windows builds. If `clai` returns without output after the raw-URL install, use the **npm method** instead — it is the most reliable way to run clai on Windows:
-> ```powershell
-> npm i -g @pentoshi/clai
-> ```
+**Windows:** the platform-selection code chooses the classic Ink UI before any Bun/OpenTUI
+startup probe. This repository's macOS validation does not claim Windows Terminal,
+PowerShell, cmd.exe/conhost, VS Code terminal, ConPTY, or Windows-binary runtime evidence;
+those target-host checks remain release gates. Use `clai --classic` explicitly when you want
+the same selection on any platform.
 
 **Linux — terminal recommendations for full mouse & hover support:**
 
@@ -353,7 +351,7 @@ You own authorization; clai still gates risk on every action:
 
 ## Terminal UI
 
-A full-screen console by default: streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts. It falls back to a classic REPL when the terminal can't host the UI.
+An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts.
 
 | Action | Key |
 |--------|-----|
@@ -400,9 +398,12 @@ Tool cards show the command/input clearly and keep long scan tails in an expanda
 ## CLI commands
 
 ```sh
-clai [prompt...]                       # interactive console, or one-shot with a prompt
+clai [prompt...]                       # interactive UI, or one-shot with a prompt
   --mode <ask|agent|plan>  --provider <p>  --model <m>
-  -y/--yes  --no-history  --classic  --ui <legacy|tui|v2>
+  -y/--yes  --no-history
+  --show-thinking  --verbose  --quiet    # one-shot stream controls
+  --tui  --classic
+  --ui <tui|v2|opentui|classic|legacy|ink> # aliases; ignored with a prompt
 
 clai set <provider> [key]              # --from-env <VAR> | --stdin | --url <url> (repeatable) | --skip-ping
 clai unset <provider>                  # remove all keys for a provider (--url = endpoint URLs instead)
@@ -421,6 +422,18 @@ clai scope <show|new|add|clear>        # engagement scope (new: --targets --excl
                                        #   --name --note --expires --max-rate --max-concurrency)
 clai privacy <status|on|off|retention|clear-history|clear-logs|clear-artifacts|clear-all>
 ```
+
+### One-shot output and exit status
+
+`clai "prompt"` and piped prompts use the noninteractive stream renderer. The final
+assistant answer is written to **stdout**; progress, tool cards, diffs, thinking (when
+`--show-thinking` is enabled), confirmations, and errors are written to **stderr**. `--quiet`
+suppresses progress while retaining the final answer on stdout, and `--verbose` expands tool
+output and diff hunks. `--no-history` disables persistence for that run.
+
+A completed, partially completed, blocked, or failed turn returns exit code `0`; an aborted
+turn returns `130`; an unhandled or loader error returns `1`. `--show-thinking` can also be
+enabled with `CLAI_SHOW_THINKING=1`.
 
 ---
 
@@ -514,8 +527,11 @@ npm install
 npm run dev          # run from source
 npm run typecheck
 npm run build
-npm test             # full vitest suite
+npm test             # full Vitest suite
+npm run test:classic:pty  # provider-independent POSIX PTY smoke
 npm run compile      # native binaries (Bun)
+npm run release:verify
+npm pack --dry-run
 ```
 
 ---
@@ -547,8 +563,11 @@ clai/
 │  ├─ tools/            # fs, shell, net, http, web, pentest, batch, plan
 │  ├─ safety/           # risk classifier + engagement (scope) policy
 │  ├─ store/            # config, history, keys, plans, scope
-│  ├─ tui-v2/           # full-screen OpenTUI console (primary)
-│  ├─ app/              # session controllers, commands, events
+│  ├─ ui-core/         # renderer-neutral state, actions, layout, rendering, and ports
+│  ├─ classic/         # React + Ink classic UI and POSIX terminal bootstrap
+│  ├─ tui-v2/           # OpenTUI full-screen renderer
+│  ├─ noninteractive/   # stdout/stderr-split one-shot stream renderer
+│  ├─ app/              # session controllers, commands, events, and ports
 │  └─ prompts/          # agent methodology (embedded for the compiled binary)
 ├─ install/ · manifests/
 └─ package.json

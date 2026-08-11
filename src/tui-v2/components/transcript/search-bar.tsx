@@ -10,7 +10,7 @@
 
 import type { ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import type { Theme } from "../../rendering/theme.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 
 export interface SearchBarProps {
   readonly theme: Theme;

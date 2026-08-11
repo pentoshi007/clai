@@ -46,4 +46,13 @@ describe("V2-025 src/app stays renderer-independent", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("no source file imports the removed line REPL", () => {
+    const srcDir = join(fileURLToPath(new URL("../../src", import.meta.url)));
+    const replImport = /\b(?:from\s+|import\s*(?:\(\s*)?)["'](?:[^"']*\/)?repl(?:\.js|\/)/;
+    const offenders = walk(srcDir).filter((file) =>
+      replImport.test(readFileSync(file, "utf8")),
+    );
+    expect(offenders).toEqual([]);
+  });
 });

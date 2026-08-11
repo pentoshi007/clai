@@ -1,0 +1,419 @@
+import { nvidiaFallbackModels } from "../../llm/nvidia.js";
+
+export interface SlashCommand {
+  command: string;
+  usage?: string;
+  description: string;
+}
+
+/** Shared command catalogue used by both the classic REPL and the Ink TUI. */
+export const slashCommands: SlashCommand[] = [
+  { command: "/ask", description: "switch to ask mode" },
+  { command: "/agent", description: "switch to agent mode" },
+  {
+    command: "/model",
+    usage: "[name|#]",
+    description:
+      "open searchable picker (type:filter · ↑↓:select · enter:confirm), or pass a name/number",
+  },
+  {
+    command: "/models",
+    usage: "[filter]",
+    description:
+      "every model across all configured providers · pick one to switch provider + model",
+  },
+  {
+    command: "/provider",
+    usage: "[name]",
+    description: "switch provider or open picker",
+  },
+  {
+    command: "/use",
+    usage: "<provider>",
+    description: "alias for /provider <name>",
+  },
+  {
+    command: "/set",
+    usage: "[provider] [key]",
+    description: "manage multi API keys (editor) or append one key",
+  },
+  {
+    command: "/unset",
+    usage: "[provider]",
+    description: "remove all API keys for a provider",
+  },
+  {
+    command: "/keys",
+    description: "list providers and multi-keys (masked)",
+  },
+  {
+    command: "/info",
+    usage: "[provider]",
+    description: "show info for the active or specified provider",
+  },
+  {
+    command: "/search",
+    usage: "[provider]",
+    description: "switch web.search provider or open picker",
+  },
+  {
+    command: "/search-provider",
+    usage: "[provider]",
+    description: "alias for /search",
+  },
+  {
+    command: "/effort",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
+    description: "toggle thinking/effort (interactive picker if no arg)",
+  },
+  {
+    command: "/reasoning",
+    usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
+    description: "alias for /effort",
+  },
+  { command: "/clear", description: "clear context" },
+  {
+    command: "/new",
+    description: "start a fresh session (clear context, no history carryover)",
+  },
+  {
+    command: "/history",
+    usage: "[delete <id>]",
+    description: "browse & resume past sessions (interactive picker) · /history delete <id> to permanently remove",
+  },
+  { command: "/save", usage: "<name>", description: "save session" },
+  { command: "/reset", description: "clear all saved history" },
+  { command: "/cwd", usage: "<path>", description: "change working directory" },
+  {
+    command: "/allow",
+    usage: "<tool>|list",
+    description: "allow a tool for this session (not persisted)",
+  },
+  {
+    command: "/disallow",
+    usage: "<tool>",
+    description: "revoke a session allow",
+  },
+  { command: "/think", description: "show thinking from last response" },
+  { command: "/thinking", description: "alias for /think" },
+  {
+    command: "/output",
+    usage: "[last|<id>|list]",
+    description: "open full tool output (Ctrl+O); q closes the pager",
+  },
+  {
+    command: "/jobs",
+    usage: "/jobs",
+    description: "background jobs and responder status",
+  },
+  {
+    command: "/freeonly",
+    usage: "[on|off]",
+    description: "skip paid providers when fallback is enabled",
+  },
+  {
+    command: "/fallback",
+    usage: "[on|off]",
+    description:
+      "try other configured providers after a failure (off by default)",
+  },
+  { command: "/compact", description: "compact session history now" },
+  { command: "/context", description: "show estimated context size" },
+  {
+    command: "/plan",
+    usage: "[view|off]",
+    description:
+      "enter plan mode; use /plan view or Ctrl+P to view current tasks",
+  },
+  {
+    command: "/implement",
+    description: "approve the current plan and have clai execute it",
+  },
+  {
+    command: "/discard",
+    description: "discard the current plan so later messages ignore it",
+  },
+  {
+    command: "/scope",
+    usage: "[show|clear|new|add <targets>]",
+    description: "manage pentest engagement scope",
+  },
+  {
+    command: "/privacy",
+    usage: "[status|clear-history|clear-logs|clear-artifacts|clear-all|on|off]",
+    description: "control retention and private mode (in-memory only)",
+  },
+  {
+    command: "/permissions",
+    usage: "[default|allow-all]",
+    description: "control permission level for tool confirmation prompts",
+  },
+  { command: "/update", description: "check for updates" },
+  {
+    command: "/clean",
+    description: "clear screen and reset chat (fresh start)",
+  },
+  { command: "/exit", description: "quit" },
+  { command: "/quit", description: "alias for /exit" },
+  { command: "/help", description: "list commands" },
+  {
+    command: "/shortcuts",
+    description: "list keyboard shortcuts (keys, chords, contexts)",
+  },
+];
+
+// Well-known models per provider (refreshed May 2026)
+/** Curated model choices used by both frontends. */
+export const knownModels: Record<string, string[]> = {
+  groq: [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-safeguard-20b",
+    "qwen/qwen3-32b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "groq/compound-mini",
+    "groq/compound",
+  ],
+  gemini: [
+    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-3-pro-preview",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+  ],
+  openrouter: [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-v4-flash:free",
+    "openai/gpt-oss-20b:free",
+    "qwen/qwen3-coder:free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "z-ai/glm-4.5-air:free",
+    "moonshotai/kimi-k2.6",
+    "meta-llama/llama-4-maverick",
+    "google/gemini-2.5-flash",
+  ],
+  openai: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-rosalind",
+    "gpt-realtime-2",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-4o-mini",
+    "gpt-4o",
+  ],
+  anthropic: [
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-opus-4-6",
+    "claude-sonnet-4-5",
+    "claude-3-5-sonnet-latest",
+    "claude-3-5-haiku-latest",
+  ],
+  nvidia: nvidiaFallbackModels,
+  ollama: [
+    "llama3.3:70b",
+    "llama3.2:3b",
+    "llama3.1:8b",
+    "qwen2.5:7b",
+    "qwen2.5-coder:7b",
+    "deepseek-r1:7b",
+    "mistral:7b",
+    "gemma3:9b",
+    "phi4:14b",
+    "codellama:7b",
+  ],
+  agentrouter: [
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "glm-5.2",
+    "gpt-5.5",
+  ],
+  kimchi: [
+    "kimi-k2.6",
+    "minimax-m2.7",
+    "nemotron-3-super-fp4",
+  ],
+  "aws-mantle": [],
+  bynara: [
+    // Free tier models
+    "mimo-v2.5-free",
+    "mimo-v2.5-pro-free",
+    "mistral-large",
+    "mistral-medium-3-5",
+    // Pay-as-you-go / subscription models (from https://router.bynara.id/pricing)
+    "mimo-v2.5",
+    "mimo-v2.5-pro",
+    "mimo-v2.5-hermes",
+    "mimo-v2.5-pro-hermes",
+    "mimo-v2.5-pro-ultraspeed",
+    "claude-opus-4.7",
+    "claude-opus-4.8",
+    "claude-sonnet-4.6",
+    "claude-sonnet-4.5",
+    "claude-haiku-4.5",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "gemini-3-flash",
+    "gemini-3.1-pro",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "glm-5.1",
+    "glm-5.2",
+    "gpt-5.4",
+    "gpt-5.5",
+    "kimi-k2.6",
+    "kimi-k2.7-code",
+    "minimax-m3",
+    "qwen-3.7-max",
+    "qwen-3.7-plus",
+    "qwen-3.7-plus-1m",
+    "bynara-max",
+  ],
+  "qwen-cloud": [
+    "qwen3.7-plus",
+    "qwen3.7-max",
+    "qwen3.6-flash",
+    "qwen3.5-plus",
+    "qwen3.5-flash",
+  ],
+  // A Modal endpoint serves exactly the model it was deployed with, named by
+  // its source repo id, so the live `/models` list is authoritative. These are
+  // only the documented examples used when the endpoint can't be reached.
+  modal: ["moonshotai/Kimi-K3", "Qwen/Qwen3.5-4B"],
+  // Lightning AI Model APIs; ids are vendor-namespaced. The live catalog at
+  // lightning.ai/api/v1/models is authoritative — this is the offline subset.
+  lightning: [
+    "openai/gpt-5",
+    "openai/gpt-5-mini",
+    "openai/gpt-5-nano",
+    "openai/gpt-5.4-2026-03-05",
+    "openai/gpt-5.4-mini-2026-03-17",
+    "openai/gpt-5.5-2026-04-23",
+    "openai/gpt-5.6-sol",
+    "openai/gpt-5.6-luna",
+    "openai/gpt-4.1",
+    "openai/gpt-4o",
+    "openai/o3",
+    "openai/o3-mini",
+    "anthropic/claude-opus-4-8",
+    "anthropic/claude-opus-4-7",
+    "anthropic/claude-sonnet-4-6",
+    "anthropic/claude-haiku-4-5-20251001",
+    "anthropic/claude-fable-5",
+    "google/gemini-3.5-flash",
+    "google/gemini-3.1-pro-preview",
+    "google/gemini-3-flash-preview",
+    "google/gemini-2.5-pro",
+    "google/gemini-2.5-flash",
+    "lightning-ai/gpt-oss-120b",
+    "lightning-ai/gpt-oss-20b",
+    "lightning-ai/deepseek-v4-pro",
+    "lightning-ai/gemma-4-31B-it",
+    "lightning-ai/nemotron-3-ultra-550b-a55b",
+    "lightning-ai/nemotron-3-nano-omni-30b-a3b-reasoning",
+  ],
+  // TokenRouter ids are short and case-sensitive; /model reads the live list
+  // (which is filtered to the channels your key can reach).
+  tokenrouter: [
+    "kimi-k2p7-code",
+    "kimi-k2p7-code-fast",
+    "kimi-k2p6",
+    "kimi-k2p5",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    "qwen3p7-plus",
+    "qwen3p6-plus",
+    "glm-5p1",
+    "glm-5p1-fast",
+    "gpt-oss-120b",
+    "minimax-m3",
+    "minimax-m2p7",
+  ],
+};
+
+export function getKnownModels(provider: string): string[] {
+  return [...(knownModels[provider] ?? [])];
+}
+
+/**
+ * Given a model string, return the provider that owns it in `knownModels`.
+ * Returns undefined if the model is not found in any provider's list.
+ * Used to auto-switch the provider when the user picks a model that belongs
+ * to a different provider (e.g. `minimaxai/minimax-m3` is an NVIDIA model).
+ */
+export function inferProviderForModel(model: string): string | undefined {
+  const lower = model.toLowerCase();
+  for (const [provider, models] of Object.entries(knownModels)) {
+    if (models.some((m) => m.toLowerCase() === lower)) {
+      return provider;
+    }
+  }
+  return undefined;
+}
+
+/** Set of known slash-command names (without the leading "/"). */
+const knownSlashNames = new Set(
+  slashCommands.map((c) => c.command.slice(1).toLowerCase()),
+);
+
+
+export function looksLikeSlashCommand(line: string): boolean {
+  if (!line.startsWith("/") || line.length < 2) return false;
+  // First whitespace-delimited token, minus the leading slash.
+  const firstToken = line.slice(1).split(/\s/)[0] ?? "";
+  // A path-like first token (contains another "/" or a backslash escape, or
+  // looks like a filename with an extension) is never a command.
+  if (firstToken.includes("/") || firstToken.includes("\\")) return false;
+  const name = firstToken.toLowerCase();
+  
+  if (knownSlashNames.has(name)) return true;
+  
+  return /^[a-z][a-z0-9-]*$/i.test(firstToken);
+}
+
+export function slashCommandLabel(command: SlashCommand): string {
+  return command.usage
+    ? `${command.command} ${command.usage}`
+    : command.command;
+}
+
+export function slashCommandFilter(line: string): string | null {
+  
+  if (!line.startsWith("/") || line.length < 1 || /\s/.test(line)) return null;
+ 
+  const firstToken = line.slice(1).split(/\s/)[0] ?? "";
+  if (firstToken.includes("/") || firstToken.includes("\\")) return null;
+  return line.slice(1).toLowerCase();
+}
+
+export function getSlashCommandSuggestions(line: string): SlashCommand[] {
+  const filter = slashCommandFilter(line);
+  if (filter === null) return [];
+  return slashCommands.filter((command) =>
+    command.command.slice(1).toLowerCase().startsWith(filter),
+  );
+}
+
+export function isKnownSlashCommand(command: string): boolean {
+  const normalized = command.trim().split(/\s+/, 1)[0]?.toLowerCase();
+  return slashCommands.some((item) => item.command === normalized);
+}

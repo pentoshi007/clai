@@ -1,5 +1,5 @@
-import { input, password, select } from "@inquirer/prompts";
 import chalk from "chalk";
+import { askChoice, askLine, askSecret } from "../noninteractive/readline-prompts.js";
 import { getProvider, pingProvider } from "../llm/router.js";
 import {
   assertProvider,
@@ -66,11 +66,8 @@ async function promptForSecret(provider: ProviderId): Promise<string> {
     provider === "modal"
       ? "Enter Modal proxy token as <token-id>:<token-secret> (input hidden, leave blank to cancel):"
       : `Enter API key for ${provider} (input hidden, leave blank to cancel):`;
-  const raw = await password({
-    message,
-    mask: "•",
-  });
-  return raw.trim();
+  const raw = await askSecret(message);
+  return (raw ?? "").trim();
 }
 
 function invalidFormatHint(provider: ProviderId): string {
@@ -333,11 +330,10 @@ export async function printProviderKeys(): Promise<void> {
 async function promptModalSetup(): Promise<boolean> {
   if (!getActiveProviderEndpoint("modal")) {
     if (!process.stdin.isTTY) return false;
-    const raw = await input({
-      message:
-        "Modal endpoint URL (e.g. https://<workspace>--ep-kimi-k3.us-west.modal.direct, blank to cancel):",
-    });
-    const url = raw.trim();
+    const raw = await askLine(
+      "Modal endpoint URL (e.g. https://<workspace>--ep-kimi-k3.us-west.modal.direct, blank to cancel):",
+    );
+    const url = (raw ?? "").trim();
     if (!url) return false;
     addEndpoint("modal", url);
   }
@@ -400,16 +396,17 @@ export async function providerSwitcher(
 
   const config = getConfig();
   const statuses = await listProviderStatuses(config.defaultProvider);
-  const pageSize = 15;
-  const selected = await select({
-    message: "Select provider:",
-    pageSize,
-    choices: statuses.map((status) => ({
+  const selected = await askChoice<ProviderId>(
+    "Select provider:",
+    statuses.map((status) => ({
       name: `${status.provider.padEnd(10)} ${status.configured ? "✓ key set" : "✗ no key"}${status.active ? " (active)" : ""}`,
       value: status.provider,
     })),
-    loop: false,
-  });
+  );
+  if (!selected) {
+    console.log("provider unchanged");
+    return;
+  }
   await useProvider(selected);
 }
 
@@ -424,11 +421,9 @@ export async function setKeyPicker(
 
   const config = getConfig();
   const statuses = await listProviderStatuses(config.defaultProvider);
-  const pageSize = 15;
-  const selected = await select({
-    message: "Set / add API key for provider:",
-    pageSize,
-    choices: statuses.map((status) => {
+  const selected = await askChoice<ProviderId>(
+    "Set / add API key for provider:",
+    statuses.map((status) => {
       const count = status.keyCount ?? (status.configured ? 1 : 0);
       const label =
         count > 1
@@ -441,8 +436,11 @@ export async function setKeyPicker(
         value: status.provider,
       };
     }),
-    loop: false,
-  });
+  );
+  if (!selected) {
+    console.log("cancelled");
+    return;
+  }
 
   const multi = await getProviderKeys(selected);
   const storedCount = multi.source === "env" ? 0 : multi.keys.length;
@@ -467,16 +465,17 @@ export async function unsetKeyPicker(
 
   const config = getConfig();
   const statuses = await listProviderStatuses(config.defaultProvider);
-  const pageSize = 15;
-  const selected = await select({
-    message: "Unset API key for provider:",
-    pageSize,
-    choices: statuses.map((status) => ({
+  const selected = await askChoice<ProviderId>(
+    "Unset API key for provider:",
+    statuses.map((status) => ({
       name: `${status.provider.padEnd(12)} ${status.configured ? chalk.green("✓ ") + (status.maskedKey ?? "key set") : chalk.red("✗ no key")}${status.active ? chalk.cyan(" (active)") : ""}`,
       value: status.provider,
     })),
-    loop: false,
-  });
+  );
+  if (!selected) {
+    console.log("cancelled");
+    return;
+  }
 
   const secret = await getProviderSecret(selected);
   if (!secret.value && selected !== "ollama") {

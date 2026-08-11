@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveNewlineHint } from "../../../src/tui-v2/composer/newline-hint.js";
+import { resolveNewlineHint } from "../../../src/ui-core/composer/newline-hint.js";
 
 describe("resolveNewlineHint", () => {
   it("always advertises Shift+Enter (primary on every OS)", () => {

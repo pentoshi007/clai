@@ -96,13 +96,16 @@ stay readable.
 - Exactly one blank row between committed blocks. Zero blank rows inside a block.
 - Zero blank rows anywhere in the chrome block.
 - Body indent is 2 columns. Nested (batch sub-card, diff hunk) indent is 4.
-- Content width is `columns - 2`: 1 column of left gutter, 1 column reserved at the right
-  so no glyph lands in the final cell.
+- The terminal-wide root computes `shellPadding = horizontalPadding(terminalColumns)` and
+  `shellWidth = innerShellWidth(terminalColumns)`. Every feed, chrome, composer, panel,
+  status, directory, and branch surface receives `shellWidth`; no child subtracts an
+  additional raw-terminal gutter. Every content row is wrapped or otherwise bounded before
+  it reaches Ink.
 
 ## 2. Region map
 
 ```
-┌ scrollback (terminal-owned) ─────────────────────────────────────────┐
+┌ owned alternate-screen shell ───────────────────────────────────────┐
 │  intro card                                                          │
 │                                                                      │
 │  ▌ YOU  add pagination to the users endpoint                         │
@@ -112,7 +115,7 @@ stay readable.
 │  ✓ read_files(src/routes/users.ts)                                   │
 │    └ 142 lines                                                       │
 └──────────────────────────────────────────────────────────────────────┘
-┌ Ink dynamic frame ───────────────────────────────────────────────────┐
+├ re-rendered live/chrome regions ────────────────────────────────────┤
 │  ● shell.exec(npm test -- --run)                      running · 7s   │  live tail
 │    └ PASS src/routes/users.test.ts                                   │
 │    … +18 lines · ^O                                                  │
@@ -133,13 +136,13 @@ stay readable.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Vertical order inside the dynamic frame is fixed and nothing inserts between regions:
-live tail → plan → overlay panel → queue → responder → toast → composer → status.
-Row counts come from `allocateChrome`.
+Vertical order inside the owned shell is fixed and nothing inserts between regions:
+live tail → plan → overlay panel → queue → responder → toast → composer/directory → status.
+Row counts come from `allocateChrome`, which may use every terminal row.
 
-Horizontal rule: everything is left-aligned at the 1-column gutter. The only right-aligned
-elements are the tool status suffix (`running · 7s`), the panel row counter, and the scroll
-badges in the status line. Centring is used only inside the intro card.
+Horizontal rule: all surfaces share the same left and right shell margins and wrap to
+`shellWidth`. The only right-aligned elements are tool/status suffixes, panel counters,
+and context/scroll badges. Centering is used only inside the intro card.
 
 ## 3. Committed blocks
 
@@ -186,7 +189,9 @@ This is where clai's identity lives. Do not restyle it.
 - `◆ ` in `magenta` on the first row only. Continuation rows indent 2.
 - Body in `response`. Markdown comes from
   `renderStreamingMarkdown` / `renderMarkdownLines` (`AnsiLine[]` after the W02 seam
-  change) at width `columns - 4`.
+  change) at the bounded block width supplied by the classic shell. Prefixes and gutters are
+  included in each block's local wrapping budget; no renderer clips prose at the terminal
+  edge.
 - While streaming, the first row reads `◆ ` plus the text; a dim `…` is appended to the
   final visible row. No label text, no "Response" header — Claude Code does not have one and
   the bullet already identifies the speaker.
@@ -251,9 +256,10 @@ Blocked:
 
 - Glyph from `STATUS_GLYPH` in `tool-presenter.ts`, coloured: queued `muted`, running
   `activity`, ok `success`, failed `diffDel`, blocked `activity`.
-- Tool name in `cyan` bold. Args in `muted`, inside `(…)`, clamped by
-  `clampArgsDisplay` (3 rows, 200 chars each) and then truncated to the remaining width
-  with `…`.
+- Tool name in `cyan` bold. Args in `muted`, inside `(…)`. `clampArgsDisplay` limits the
+  preview to three logical rows / 200 characters per row; each resulting row is then wrapped
+  to the remaining shell width. That preview cap is intentional, but a line that reaches a
+  boundary is wrapped rather than discarded.
 - Right-aligned suffix: `statusLabel` from `STATUS_LABEL`, then exit code when non-zero,
   then elapsed. Dropped entirely below 68 columns.
 - Body: `└ ` on the first row, 4-space indent after, `toolOutput` colour. Collapsed preview
@@ -275,8 +281,9 @@ Blocked:
 
 Sub-rows come from `parseBatchSections` / `presentBatchSection` /
 `buildBatchCardsFromSpool` in `ui-core/rendering/batch-sections.ts`. One row per sub-tool
-at indent 2, glyph plus name plus args truncated hard. Expanded state adds each completed
-sub-tool's 1-row summary at indent 4. `batchSummaryLine` supplies the footer.
+at indent 2, glyph plus name plus a bounded preview of args. Expanded state adds each
+completed sub-tool's 1-row summary at indent 4. `batchSummaryLine` supplies the footer;
+content inside a selected preview wraps to the shell width.
 
 ### 3.7 Diff block
 
@@ -352,18 +359,20 @@ Multi-line, with a paste chip and a meta row:
 ╰──────────────────────────────────────────────────────────────────────╯
 ```
 
-- Ink `<Box borderStyle="round" borderColor={inputBorder}>`. Ink draws the frame through
-  Yoga, so it is always exactly `columns - 2` wide and can never bow. When
-  `capabilities.unicode` is false use `borderStyle="classic"`.
+- The composer receives the already-bounded `shellWidth` from `innerShellWidth()`. Its
+  frame and directory row are allocated together by `allocateChrome`; the frame consumes
+  its own border columns internally, but no component derives width from raw terminal
+  `columns - 2`. When `capabilities.unicode` is false use `borderStyle="classic"`.
 - `❯ ` in `inputBorder`. Continuation rows indent 2 with no mark.
 - Placeholder in `muted`, mode-aware: `Ask anything...` / `Describe the task...` /
   `What should I plan?`.
 - Caret: reverse-video single cell on the character at the cursor, or a `▏`-style block at
   end of line. Implemented in `editor-view.ts` by splitting the row into
   before / at / after and applying `inverse` to the middle. Ink's own cursor stays hidden.
-- Height = `clamp(logical rows, 1, allocateChrome().composer - 2)`. When the draft is taller
-  than the allowance, scroll internally and keep the caret row visible; show `↕` in
-  `muted` at the right edge of the top or bottom row to indicate clipping.
+- Height = the text rows returned by `composerFrame`, after reserving the optional directory
+  row and two border rows from `allocateChrome().composer`. When the draft is taller than
+  the allowance, scroll internally and keep the caret row visible; show `↕` in `muted` at
+  the right edge of the top or bottom row to indicate clipping.
 - Paste placeholders render as `[pasted N lines]` in `cyan` via
   `ui-core/composer/paste-placeholder.ts`. Expansion happens at submit, unchanged.
 - Attachment indicator for images: `[image 1]` in `magenta` inline where the mention was.
@@ -374,54 +383,41 @@ Multi-line, with a paste chip and a meta row:
 
 ### 4.2 Status bar
 
-Content model in `ui-core/rendering/status-segments.ts`, extracted from
-`status-line.tsx` so both renderers show identical information. Reuse
-`statusDensityForWidth` exactly as it is: `xs < 48`, `sm < 68`, `md < 96`, `lg >= 96`.
-
-Row 1 — identity and budget, left to right:
+The status model in `ui-core/rendering/status-segments.ts` is shared by both frontends.
+Classic keeps the status surface to one bounded row (`statusRowsWanted() === 1`):
 
 ```
-AGENT · groq/kimi-k2-thinking · ctx 24.1k/128k · ~/dev/clai (main)
+AGENT · / commands · ^T thinking · ^O output · ⇧⇥ mode              ctx 24.1k/128k
 ```
 
-`AGENT` / `ASK` / `PLAN` in `mode` bold. Provider/model in `cyan`. Context chip from
-`contextChipForDensity` (`ctx 24.1k/128k`) coloured `muted` under 60 % usage, `activity`
-from 60 %, `diffDel` from 85 %. Cwd home-relativized in `muted`, git branch in parentheses,
-cached and refreshed on turn end and cwd change only.
+The mode badge and idle/activity hints occupy the left side. The context chip is flush
+right and uses `contextChipForDensity`, with `muted`, `activity`, and `diffDel` severity
+colours. Provider/model/permission metadata lives on the composer's top border; the cwd
+and cached git branch live on the directory row immediately above the composer.
 
-Row 2 — hints, from `idleHintIds(density, hasDraft)` so the two frontends never drift:
-
-```
-^G help · ^T thinking · ^O output · ^H tasks · ⇧⇥ mode · ^X clear
-```
-
-While a turn runs, row 2 becomes the activity row instead:
+While a turn runs, the left side becomes the activity row:
 
 ```
-⠋ generating response · 12s · esc to cancel
+AGENT · ⠋ generating response · 12s · esc to cancel                  ctx 24.1k/128k
 ```
 
-and when Esc is armed: `esc again to cancel turn, queue, and jobs` in `activity`.
+At narrow widths the shared density ladder drops hints and shortens the context chip, but
+it never allows a row to cross the shell boundary. Scroll badges `▲ N` / `▼ N` appear only
+when the live tail is internally clipped.
 
-Row 3 — permission and scope, only at `lg` and only when there is something to say:
+`Ctrl+L` opens the inline context-limit editor in this same status row:
 
 ```
-▸ auto-approve all · scope: 10.0.0.0/24 · free-tier only
+ctx limit 253k▎  ⏎ save · esc cancel · empty reset
 ```
 
-Density ladder:
+Enter parses and persists a token count through `SessionController`; Escape cancels;
+backspace/delete and paste edit the draft; an empty draft resets the configured limit. The
+editor replaces the normal context chip and has no percentage fallback.
 
-| Density | Width | Rows | Content |
-|---|---|---|---|
-| `lg` | ≥ 96 | up to 3 | everything above |
-| `md` | 68–95 | 2 | row 1 without the branch; row 2 with `commands`, `thinking`, `output` hints |
-| `sm` | 48–67 | 2 | row 1 as `AGENT · kimi-k2 · 24.1k`; row 2 only `^X clear` when a draft exists, else the activity row |
-| `xs` | < 48 | 1 | `AGENT · 24k · ▲▼` |
-
-`allocateChrome` may grant fewer rows than the density wants. Rows are dropped from the
-bottom: row 3 first, then row 2. Row 1 is never dropped.
-
-Scroll badges `▲ N` / `▼ N` appear only when the live tail is internally clipped.
+`allocateChrome` may grant no status row on a severely degraded terminal, but it never
+allocates an extra status stack merely to show metadata. The full width contract remains
+`shellWidth`, not a raw `columns - 1` or `columns - 2` calculation.
 
 ### 4.3 Toasts
 
@@ -433,11 +429,13 @@ Zero to two rows directly above the composer, no border:
 ```
 
 One leading space, then the message on a plate: `success` → `successBg`, `warn` →
-`activityBg`, `error` → `failedBg`, `info` → `chip`; white bold text. Truncate with `…` at
-`columns - 2`. `ToastController` already owns lifetimes (200 ms enter, 5000 ms hold, 200 ms
-exit, `MAX_VISIBLE_TOASTS = 3`) and already replaces same-`key` toasts, so API-key rotation
-never stacks. Classic shows at most `MAX_TOAST_ROWS = 2` of the three and appends
-` (+1)` to the last row when one is hidden.
+`activityBg`, `error` → `failedBg`, `info` → `chip`; white bold text. The fixed one-line
+notice is bounded to `shellWidth` and may use an ellipsis only when the notice itself cannot
+fit; transcript and pager content never uses this fixed-row shortcut. `ToastController`
+already owns lifetimes (200 ms enter, 5000 ms hold, 200 ms exit, `MAX_VISIBLE_TOASTS = 3`)
+and already replaces same-`key` toasts, so API-key rotation never stacks. Classic shows at
+most `MAX_TOAST_ROWS = 2` of the three and appends ` (+1)` to the last row when one is
+hidden.
 
 No slide animation. `capabilities.reducedMotion` is irrelevant because there is nothing to
 reduce; the enter/exit phases simply gate visibility.
@@ -450,9 +448,10 @@ reduce; the enter/exit phases simply gate visibility.
   2   and update the changelog
 ```
 
-Header in `activity`. Selected row marked `❯` in `inputBorder`; others two spaces. Rows
-truncated with `…`. Max `QUEUE_MAX_ROWS = 5`, header plus four items, then
-`… +N more` on the last row.
+Header in `activity`. Selected row marked `❯` in `inputBorder`; others two spaces. Queue
+entries are compact one-line control rows bounded to `shellWidth`; the intentional preview
+ellipsis is used only for an entry that cannot fit in its allocated row. Max
+`QUEUE_MAX_ROWS = 5`, header plus four items, then `… +N more` on the last row.
 
 ### 4.5 Responder strip
 
@@ -467,8 +466,10 @@ One row, from `responderStatusText` (already exported by `jobs-panel.tsx`; move 
 
 ## 5. Panels
 
-Every overlay is a bounded panel in the dynamic frame. There is no full-screen wash, no
-absolute positioning, and no `zIndex` — the row allocator guarantees they fit.
+Every overlay is a bounded panel inside the owned alternate-screen shell. There is no
+full-screen wash, no absolute positioning, and no `zIndex` — the row allocator guarantees
+the panel fits its granted rows. Panel content receives `shellWidth`; the shared frame
+consumes its border/cell columns and exposes `shellWidth - 4` for body text.
 
 ### 5.1 Shared frame
 
@@ -488,9 +489,12 @@ absolute positioning, and no `zIndex` — the row allocator guarantees they fit.
   counter when the panel is a list: `3/18`.
 - The bottom border carries the key hints in `muted`. If they do not fit, they are truncated
   from the right with `…`; the full set is always in `/shortcuts`.
-- Width is always `columns - 2`. Height is exactly `allocateChrome().overlay`, body height
-  therefore `overlay - 2`.
-- Body never scrolls the frame; it windows its own content and shows the counter.
+- Width is the bounded `shellWidth` supplied by the root, not raw terminal `columns - 2`.
+  Height is exactly `allocateChrome().overlay`; the body width is the frame's
+  `shellWidth - 4` interior and body height is `overlay - 2`.
+- Body content is pre-wrapped and then windowed; the frame does not silently clip prose at
+  its boundary. Bottom hints are fixed affordances and may be ellipsized when they cannot
+  fit; the full set remains in `/shortcuts`.
 
 ### 5.2 Picker — the selection pane
 
@@ -575,24 +579,27 @@ Mention:
 ╰ ↑↓ jk · ^R find · n/N · f fmt · r raw · s scroll · e ed · c copy · q ─╯
 ```
 
-- Rows from `ui-core/rendering/pager-chrome.ts` (`wrapPagerLine`, `fitOneLine`) and
-  `pager-view-policy.ts`. Large bodies stream through
-  `ui-core/rendering/artifact-pager-source.ts`; live job feeds through `job-tail-source.ts`.
-  Never load a whole artifact into memory.
+- Lines are prepared by classic `pagerLines(body, shellWidth, rows, format)`, using
+  `wrapPagerLine` for raw text and shared markdown rendering for formatted text. The
+  number-gutter width is iterated with wrapping so the final line count and digit width
+  agree; no body row is clipped a second time at the frame boundary.
+- The initial mode comes from `resolvePagerMarkdownMode` / `defaultPagerMarkdownMode`:
+  help/system/compacted documents and clear Markdown `fs.read` bodies start formatted;
+  shell output and file mutations start raw. `f` / `r` still toggle explicitly.
+- Formatted fs.read bodies remove tool headers and `N: ` prefixes. Formatted diff bodies
+  remove source gutters and markers; raw mode preserves the source. Large bodies stream
+  through `ui-core/rendering/artifact-pager-source.ts`; live job feeds use
+  `job-tail-source.ts`.
 - Caret row marked `▎` in `inputBorder`. This is the one surface with a caret, which is why
   `selection.extend-*` is live here.
-- Search matches painted `inverse`; the active match additionally bold. Segmentation from
-  `ui-core/state/pager-search.ts` (`segmentPagerLine`).
-- `f` / `r` toggle markdown and raw; the current mode appears in the top border as
-  `· md` or `· raw`.
+- Search matches are found against ANSI-stripped lines, painted `inverse`, and the active
+  match is additionally bold. Segmentation comes from `ui-core/state/pager-search.ts`
+  (`segmentPagerLine`).
 - `l` toggles follow for live feeds; when following, the top border shows `· follow`.
 - `s` exports to scrollback and `e` to `$EDITOR`, both through `PagerExportPort`, which
-  suspends via `classic/bootstrap/suspend-port.ts`: unmount Ink → `terminal-session.leave()`
-  → run the child with `stdio: "inherit"` → `terminal-session.enter()` → remount. The prior
-  spike proved unmount/remount is clean.
-- Line numbers are shown only when the body has more rows than the body height.
-- Diff bodies keep the gutter split regex from `pager-line.tsx`
-  (`/^(?<gutter>[\d ]{0,8}) │ (?<rest>.*)$/`) so gutters never copy with code.
+  leaves the alternate screen before the child and re-enters it before remounting Ink.
+- Line numbers are shown only when the body has more rows than the body height. Diff/source
+  gutters remain part of raw content but are not copied into formatted code.
 
 ### 5.5 Confirm
 
@@ -802,8 +809,11 @@ Ink never mounts. `src/noninteractive` handles it. See [06-ONESHOT.md](06-ONESHO
   `sanitizeDisplayText` before it reaches a frame, so no injected escape can move the
   cursor, clear the screen, or repaint chrome.
 - Secrets are masked at the buffer boundary, not at the render boundary.
-- Truncation happens on plain text before styling, so no frame can contain a severed SGR
-  sequence.
+- Prose, transcript rows, composer text, picker entries, and pager bodies wrap at the
+  shared shell boundary. Ellipses are reserved for intentional preview caps and fixed
+  chrome affordances (for example a one-line toast or footer hint), not for silently
+  discarding text merely because it reached the edge. Any styled row is sealed after
+  wrapping so it cannot leak an SGR into the next row.
 
 ## 8. Kill switch
 

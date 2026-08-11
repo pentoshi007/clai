@@ -13,13 +13,13 @@
 import { useMemo, useRef, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import type { AssistantItem } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
+import type { AssistantItem } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
   EMPTY_MARKDOWN_STREAM_CACHE,
-  renderStreamingMarkdown,
   type MarkdownStreamCache,
-} from "../../rendering/streaming-markdown.js";
+} from "../../../ui-core/rendering/streaming-markdown.js";
+import { renderStyledStreamingMarkdown } from "../../rendering/styled-markdown.js";
 import { selectableRowStyle } from "./selectable-line.js";
 
 /** Body indent under the ◆ Response label (paddingLeft below). */
@@ -45,7 +45,7 @@ export function AssistantMessage(props: {
 
   const cacheRef = useRef<MarkdownStreamCache>(EMPTY_MARKDOWN_STREAM_CACHE);
   const lines = useMemo(() => {
-    const rendered = renderStreamingMarkdown({
+    const rendered = renderStyledStreamingMarkdown({
       text: item.text,
       streaming: item.streaming,
       options: {

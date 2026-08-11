@@ -15,11 +15,11 @@ import {
   decodePasteBytes,
   stripAnsiSequences,
 } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import type { SecretRequestView } from "../../controllers/overlay-controller.js";
-import { SecretBuffer } from "../../composer/secret-buffer.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import type { SecretRequestView } from "../../../ui-core/controllers/overlay-controller.js";
+import { SecretBuffer } from "../../../ui-core/composer/secret-buffer.js";
 
 export interface SecretModalProps {
   readonly services: AppServices;

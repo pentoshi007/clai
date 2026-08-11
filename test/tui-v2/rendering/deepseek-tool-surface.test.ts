@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   isToolFenceOnlyText,
   stripToolCallSurfaces,
-} from "../../../src/tui-v2/rendering/strip-tool-surfaces.js";
+} from "../../../src/ui-core/rendering/strip-tool-surfaces.js";
 import {
   EMPTY_STRIP_STREAM,
   pushStripChunk,
   type StripStream,
-} from "../../../src/tui-v2/rendering/incremental-strip.js";
+} from "../../../src/ui-core/rendering/incremental-strip.js";
 import {
   parseAllToolCalls,
   parseToolCall,

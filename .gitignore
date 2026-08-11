@@ -25,4 +25,6 @@ improvements/
 audit/
 semantic-review/
 prompt.txt
-meta-api/
+meta-api/*.bun-build
+
+*.bun-build

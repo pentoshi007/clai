@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { asSessionId, asToolCallId } from "../../../src/app/events/app-event.js";
 import { EventSequencer } from "../../../src/app/events/sequencer.js";
-import { applyAppEvent } from "../../../src/tui-v2/state/transcript-reducer.js";
-import { EMPTY_TRANSCRIPT_STATE } from "../../../src/tui-v2/state/transcript-types.js";
-import { renderTranscriptPlainText } from "../../../src/tui-v2/rendering/transcript-export.js";
+import { applyAppEvent } from "../../../src/ui-core/state/transcript-reducer.js";
+import { EMPTY_TRANSCRIPT_STATE } from "../../../src/ui-core/state/transcript-types.js";
+import { renderTranscriptPlainText } from "../../../src/ui-core/rendering/transcript-export.js";
 
 function buildState() {
   const seq = new EventSequencer(asSessionId("s1"));

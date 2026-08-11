@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentPort } from "../src/app/ports/agent-port.js";
 import { createTurnOutcome } from "../src/agent/turn-outcome.js";
-import { detectCapabilities } from "../src/tui-v2/bootstrap/capabilities.js";
+import { detectCapabilities } from "../src/ui-core/bootstrap/capabilities.js";
 import {
   RendererLifecycle,
   type ProcessLike,
   type RendererHandle,
-} from "../src/tui-v2/bootstrap/lifecycle.js";
-import { serializeTranscriptForCompaction } from "../src/tui-v2/state/transcript-compaction.js";
+} from "../src/ui-core/bootstrap/lifecycle.js";
+import { serializeTranscriptForCompaction } from "../src/ui-core/state/transcript-compaction.js";
 
 const completeWithProvider = vi.hoisted(() => vi.fn());
 const streamWithProvider = vi.hoisted(() => vi.fn());
@@ -114,7 +114,7 @@ const capabilities = () =>
 describe("terminal compaction survives quit (regression)", () => {
   it("persists the compacted card + compacted context when /compact is the last action before a racing Ctrl+C quit", async () => {
     const { createCompositionRoot } = await import(
-      "../src/tui-v2/bootstrap/composition-root.js"
+      "../src/ui-core/bootstrap/composition-root.js"
     );
     const { getSession } = await import("../src/store/history.js");
 

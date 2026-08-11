@@ -11,10 +11,10 @@
 import { useMemo, type ReactNode } from "react";
 import { useTerminalDimensions } from "@opentui/react";
 import { homedir } from "node:os";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { ansiToStyledText } from "../../rendering/ansi-to-styled.js";
-import { renderIntroHeaderLines } from "../../../ui/intro-header.js";
+import { renderIntroHeaderLines } from "../../../ui-core/rendering/intro-header.js";
 import { getCurrentVersion } from "../../../commands/update.js";
 import { getConfig } from "../../../store/config.js";
 import { safeCwd } from "../../../os/cwd.js";

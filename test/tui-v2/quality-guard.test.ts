@@ -35,12 +35,13 @@ describe("V2-090 quality guardrails", () => {
     const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
       dependencies: Record<string, string>;
     };
-    const keys = ["@opentui/core", "@opentui/react", "@opentui/keymap"] as const;
+    const keys = ["@opentui/core", "@opentui/react"] as const;
     const versions = keys.map((k) => pkg.dependencies[k]);
     for (const v of versions) {
       expect(v, "OpenTUI deps must be exact pins").toMatch(/^\d+\.\d+\.\d+$/);
     }
     expect(new Set(versions).size).toBe(1);
+    expect(pkg.dependencies["@opentui/keymap"]).toBeUndefined();
   });
 
   it("does not depend on @opentui/solid (ADR-006)", () => {

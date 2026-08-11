@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import chalk from "chalk";
 import { ansiToStyledText } from "../../../src/tui-v2/rendering/ansi-to-styled.js";
-import { renderIntroHeaderLines } from "../../../src/ui/intro-header.js";
+import { renderIntroHeaderLines } from "../../../src/ui-core/rendering/intro-header.js";
 
 describe("ansiToStyledText", () => {
   it("preserves plain text", () => {

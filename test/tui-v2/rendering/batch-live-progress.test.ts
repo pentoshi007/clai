@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildBatchCardsFromSpool,
   parseBatchLiveProgress,
-} from "../../../src/tui-v2/rendering/batch-sections.js";
+} from "../../../src/ui-core/rendering/batch-sections.js";
 
 describe("buildBatchCardsFromSpool (live nested cards)", () => {
   it("shows running placeholders as soon as children start", () => {

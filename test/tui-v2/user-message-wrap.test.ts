@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   USER_MESSAGE_CHROME_COLS,
   wrapUserPrompt,
-} from "../../src/tui-v2/rendering/user-message-wrap.js";
+} from "../../src/ui-core/rendering/user-message-wrap.js";
 
 describe("wrapUserPrompt", () => {
   it("never drops characters when the chat column is narrow (tasks pane open)", () => {

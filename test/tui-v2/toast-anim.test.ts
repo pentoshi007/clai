@@ -3,15 +3,14 @@ import {
   TOAST_BOX_HEIGHT,
   TOAST_HIDDEN_TOP,
   TOAST_REST_TOP,
-  easeInCubic,
-  easeOutCubic,
   toastAnimAt,
 } from "../../src/tui-v2/components/toast/toast-anim.js";
+import { easeInCubic, easeOutCubic } from "../../src/ui-core/motion/ease.js";
 import {
   TOAST_ENTER_MS,
   TOAST_EXIT_MS,
   toastTotalLifetimeMs,
-} from "../../src/tui-v2/controllers/toast-controller.js";
+} from "../../src/ui-core/controllers/toast-controller.js";
 
 describe("toast animation", () => {
   it("starts fully above the viewport and settles at rest top", () => {

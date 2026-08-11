@@ -4,7 +4,7 @@ import stringWidth from "string-width";
 import type { KeyEvent, MouseEvent, TextareaRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { ComposerInputBox } from "../../src/tui-v2/components/composer/composer-input-box.js";
-import { themeFor } from "../../src/tui-v2/rendering/theme.js";
+import { themeFor } from "../../src/ui-core/rendering/theme.js";
 
 const width = 72;
 const theme = themeFor("dark");

@@ -36,7 +36,7 @@ vi.mock("../../src/agent/confirm-port.js", async () => {
   };
   return {
     ...actual,
-    inquirerConfirmPort: auto,
+    stdioConfirmPort: auto,
   };
 });
 

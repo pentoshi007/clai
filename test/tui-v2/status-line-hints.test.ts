@@ -3,13 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   armedCancelHint,
   busyCancelHint,
-  contextChipForDensity,
   cwdViewportWidth,
   idleHintIds,
-  parseContextLimitInput,
   statusDensityForWidth,
+} from "../../src/ui-core/rendering/status-segments.js";
+import {
+  contextChipForDensity,
+  parseContextLimitInput,
   type StatusDensity,
-} from "../../src/tui-v2/components/status/status-line.js";
+} from "../../src/ui-core/rendering/context-limit.js";
 
 const DENSITIES: StatusDensity[] = ["xs", "sm", "md", "lg"];
 const STATUS_LINE = "src/tui-v2/components/status/status-line.tsx";

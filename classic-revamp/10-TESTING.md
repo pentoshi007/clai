@@ -1,6 +1,6 @@
 # Testing
 
-Runner: `vitest` 4.1.9, already configured. Property tests: `fast-check` 4.8.0, already a
+Runner: `vitest` 4.1.10, already configured. Property tests: `fast-check` 4.9.0, already a
 dev dependency. Frame capture: `ink-testing-library` 4.0.0, added in W00.
 
 ## Principles
@@ -33,7 +33,7 @@ test/
     session.test.ts               persistence, no-history, privacy, resume
     cross-renderer-history.test.ts
     commands.test.ts              every catalogue command → service state
-    performance.test.ts           write count + CPU budget
+    performance.test.ts           coalescing, feed bounds, semantic budget
     input/
       raw-decoder.test.ts
       raw-decoder.fuzz.test.ts
@@ -121,9 +121,10 @@ automatically extends the coverage.
 
 | Target | Property |
 |---|---|
-| `allocateChrome` | `total <= rows - 1` for rows 1–200 × every demand combination; `liveTail` is monotonic in `rows` |
+| `allocateChrome` | `total <= rows` for rows 1–200 × every demand combination; `liveTail` is monotonic in `rows` |
+| shared shell geometry | `horizontalPadding()` is symmetric; bounded rows stay within `innerShellWidth(columns)` and never write beyond either shell boundary |
 | `raw-decoder` | never throws; never emits a `KeyEvent` whose `text` contains `\x1b`; consumes every accepted byte; chunk-split input equals whole input |
-| `wrap` | every produced line's `stringWidth` is `<= width`; joining lines reproduces the input's visible text |
+| `wrap` | every produced line's `stringWidth` is `<= width`; joining lines reproduces the input's visible text; prose, transcript, composer, and pager content reflows instead of truncating at the boundary |
 | `commit-ledger` | `committedCount` never decreases across a random event sequence; no block appears in both `committed` and `live` |
 | `sanitizeDisplayText` | output contains no C0 control except `\n` and `\t`, and no CSI introducer |
 | `editor-model` | cursor stays within bounds under any operation sequence; grapheme count is preserved by move operations |
@@ -146,77 +147,114 @@ shared fixture set:
 
 ## PTY tests
 
-`scripts/pty-smoke.py` already exists. Extend it with a classic scenario and keep it callable
-from CI:
+The automated smoke is intentionally provider-independent. It does not submit a model prompt,
+assert a tool card, or imply provider-backed abort coverage; doing so would require credentials
+and network/host-specific behavior that this checkout cannot guarantee.
 
-1. Spawn `clai --classic` in a PTY at 100×30.
-2. Wait for the composer frame.
-3. Send a prompt, wait for a tool card.
-4. Send Esc Esc, assert the abort notice.
-5. Resize to 60×20, assert no row exceeds 60 and no stale row remains.
-6. Send Ctrl+C Ctrl+C, assert exit within 3 seconds.
-7. Assert the captured byte stream after exit contains the cursor-show and
-   bracketed-paste-off sequences and no alternate-screen sequence at all.
-8. Assert the terminal's final state has echo enabled.
+`scripts/pty-smoke.py` launches `node bin/clai.mjs --classic --no-history` in a POSIX PTY with
+isolated config/data/history directories and offline/update checks disabled. It:
 
-Run the same script for `clai --mode agent "echo hi"` to cover the non-interactive path, and
-on Windows with `winpty`/ConPTY in the W17 CI job.
+1. waits for the exact `Ask anything` readiness marker;
+2. opens `/help` (including the two-Enter slash-completion path), closes the pager, and types a
+   draft without submitting it;
+3. resizes the PTY from 100×30 to 60×20;
+4. sends Ctrl+C twice; and
+5. asserts exit code 0, startup alternate-screen-on plus clear-screen/home, teardown
+   cursor-show, bracketed-paste-off, and alternate-screen-off, restored `ECHO` and `ICANON`,
+   and a modeled post-resize row width no greater than 60.
+
+Run it with:
+
+```sh
+npm run test:classic:pty
+```
+
+The local macOS result is recorded after the current full-height alternate-screen smoke is
+run. A Windows ConPTY job is deliberately not claimed: no Windows host, `winpty`/ConPTY
+implementation, or Windows CI-green result was available for this work package. Provider-backed
+turn/turn-abort coverage, Windows Terminal/PowerShell/cmd.exe/VS Code walkthroughs, Linux
+local-host evidence, and manual OpenTUI walkthrough evidence remain separate open gates.
 
 ## Performance test
 
-`test/classic/performance.test.ts`, fake clock plus a counting writable stream:
+`test/classic/performance.test.ts` covers only deterministic Node-side guarantees available
+without a live terminal:
 
-- 8,000 `assistant-delta` events, 200 `tool-output` lines, 12 structural events over a
-  simulated 60 seconds.
-- Assert frame writes < 400.
-- Assert no single frame exceeds `rows * columns * 4` bytes.
-- Assert `buildFeedBlocks` is called fewer than 120 times (once per coalesced notification,
-  not per delta).
-- Separately, hydrate 10,000 transcript items and assert one frame renders in under 50 ms.
+- 8,000 `assistant-delta` events through `TranscriptStore` produce one coalesced subscriber
+  notification after the 16 ms batching window;
+- 200 tool-output lines stay bounded in a classic feed block;
+- pathological feed blocks stay within `MAX_BLOCK_ROWS`; and
+- a 10,000-item semantic transcript is folded within a generous 2,000 ms budget.
 
-CPU percentage is measured manually during the W17 PTY run and recorded, since it is not
-reliably assertable in CI.
+This suite does **not** claim a live frame-write count, CPU percentage, or native terminal
+frame timing. Those measurements require a provider-backed/live terminal run and remain
+unavailable here.
 
 ## CI
 
-`.github/workflows/ci.yml` gains a `windows-latest` job. Final matrix:
+`.github/workflows/ci.yml` contains a genuine `classic-posix` matrix job:
 
 | Job | OS | Runs |
 |---|---|---|
 | gate | ubuntu | `npm run typecheck`, `npx vitest run`, `npm run embed-prompts:check` |
-| audit | ubuntu | `npm audit`, `npm audit --omit=dev` — both must report zero advisories |
+| audit | ubuntu | `npm audit`, `npm audit --omit=dev` |
 | bun | ubuntu | `npm run test:bun` |
-| classic-posix | ubuntu, macos | `npx vitest run test/classic test/ui-core test/noninteractive`, PTY smoke |
-| classic-windows | windows | the same vitest selection, PTY smoke via ConPTY |
+| classic-posix | ubuntu, macos | `npx vitest run test/classic test/ui-core test/noninteractive`, `npm run test:classic:pty` |
 | build | ubuntu | `npm run build`, `npm run compile`, `npm run release:verify` per artifact |
 
-`node-version` moves from `20` to `[22, 24]`, matching the raised `engines.node` floor.
-Node 20 is EOL and must not be in the matrix — see
-[13-DEPENDENCIES.md](13-DEPENDENCIES.md) §2.
+There is no `classic-windows` job in this record. Adding a Windows ConPTY job without a
+verified implementation and meaningful assertions would create a false release signal.
+The CI Node matrix is `[22, 24]`, matching the `>=22` engine floor.
 
 ## Release gates
 
-Every one, with recorded output, before the work is declared done:
+Only a gate with evidence available in this checkout is marked `[x]`. A green local test does
+not close a gate that also requires a target host, manual walkthrough, provider, live terminal
+measurement, or a size reduction. The complete narrative and measurements are in
+[W18-RELEASE.md](W18-RELEASE.md).
 
-1. `npm run typecheck` clean on Node 22 and Node 24.
-2. `npx vitest run` fully green, no skips added by this migration.
-3. `test/app` and `test/tui-v2` green and unmodified in content.
-4. All architecture guards green, including the 400-line file-size guard.
-4a. `npm audit` and `npm audit --omit=dev` report zero advisories.
-4b. Deprecation sweep clean: no deprecated direct dependency, no Node runtime deprecation
-    under `--throw-deprecation`, no Ink mount warning
-    ([13-DEPENDENCIES.md](13-DEPENDENCIES.md) §7).
-5. Golden fixture matrix green; every fixture diff reviewed.
-6. Property and fuzz suites green.
-7. Cross-renderer contract tests green.
-8. PTY smoke green on Windows, macOS, and Linux.
-9. Performance test green; measured CPU recorded.
-10. `npm run build` and `npm run compile` succeed for all five targets.
-11. `npm run release:verify` passes per artifact.
-12. Windows binary probe from [07-PLATFORM-PACKAGING.md](07-PLATFORM-PACKAGING.md) §5 passed.
-13. Manual Windows walkthrough in Windows Terminal, PowerShell, and cmd.exe: start, prompt,
-    tool call, confirm, diff, pager, picker, plan panel, jobs panel, abort, exit.
-14. Manual OpenTUI walkthrough on macOS proving no regression.
-15. Size measurements recorded, npm package and POSIX binaries smaller than baseline.
-16. [09-PARITY.md](09-PARITY.md) fully checked, deviations limited to the approved table.
-17. [12-TASKS.md](12-TASKS.md) fully checked.
+1. [ ] **Node 22 and Node 24 typecheck.** `npm run typecheck` passed on the local Node
+   v26.4.0 host; Node 22/24 local runs and CI results are not available here.
+2. [x] **Full Vitest suite.** `npx vitest run` passed: 403 files, 3,769 tests, 10 skipped.
+   The skips are the intentionally unrecorded Windows fixture cases; no new skip was added
+   for this migration.
+3. [ ] **`test/app` and `test/tui-v2` green and unchanged in content.** The suites are green
+   as part of the full run, but the migration includes import/path updates in those trees, so
+   the stronger unchanged-content condition is not claimed.
+4. [x] **Architecture guards.** Full-suite architecture tests passed, including the classic
+   `src/classic` 400-line file-size guard.
+4a. [x] **Dependency audits.** Both `npm audit` and `npm audit --omit=dev` returned
+   `found 0 vulnerabilities`.
+4b. [x] **Deprecation sweep.** The W00 records remain clean for direct dependency
+   deprecations, Node runtime deprecations under `--throw-deprecation`, and Ink mount
+   warnings; no contrary warning appeared in the final commands.
+5. [ ] **Golden fixture matrix.** Automated classic fixture and invariant tests passed in the
+   full suite, but a complete visual diff review across the specified matrix is not recorded.
+6. [x] **Property and fuzz suites.** The full suite passed the raw-input fuzz/property and
+   layout/feed property coverage.
+7. [x] **Cross-renderer contract tests.** `test/classic/cross-renderer-history.test.ts`
+   passed in the full suite in both directions.
+8. [ ] **PTY smoke on Windows, macOS, and Linux.** The provider-independent smoke passed
+   locally on macOS with the exact output `PTY smoke passed: exit=0, bytes=25842,
+   max_visible_row=59, echo=on, initial_echo=on`; Windows and Linux-host results are not
+   available. The CI matrix configuration is not a hosted result.
+9. [ ] **Performance with measured CPU.** Deterministic coalescing, feed bounds, row caps,
+   and semantic-transcript budget tests passed; CPU percentage and live frame-write counts
+   require unavailable provider-backed/live-terminal evidence.
+10. [x] **Build and five-target compile.** `npm run build` passed after cleaning `dist`, and
+    `npm run compile` produced all five configured targets: Darwin arm64/x64, Linux
+    arm64/x64, and Windows x64.
+11. [x] **Release verification.** `npm run release:verify` passed with
+    `Release inputs verified for 3.17.0: exact dependencies and synchronized lockfile`.
+12. [ ] **Windows binary runtime probe.** Cross-compilation passed, but no Windows host or
+    Process Monitor/runtime probe was available.
+13. [ ] **Manual Windows walkthrough.** Windows Terminal, PowerShell, cmd.exe/conhost, and
+    VS Code terminal evidence is unavailable.
+14. [ ] **Manual OpenTUI walkthrough on macOS.** No manual walkthrough evidence is recorded.
+15. [ ] **Size requirement.** Final measurements are recorded, but package, dist, and all
+    POSIX binaries are larger than the W00 baseline; the "smaller than baseline" condition
+    is not met.
+16. [ ] **Full parity checklist.** Automated parity-related tests passed, but the target-host,
+    provider-backed, and manual rows in [09-PARITY.md](09-PARITY.md) remain open.
+17. [ ] **Task tracker fully checked.** [12-TASKS.md](12-TASKS.md) intentionally retains
+    unavailable W17/W18 gates as unchecked.

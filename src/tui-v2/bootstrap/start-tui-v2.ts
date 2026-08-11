@@ -12,18 +12,18 @@ import { createRoot } from "@opentui/react";
 import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import type { Mode, ProviderId } from "../../types.js";
 import { App } from "../app/App.js";
-import { ServicesProvider } from "../app/providers.js";
-import { attachCommandHandlers } from "../app/command-handlers.js";
-import { readCapabilitiesFromProcess } from "./capabilities.js";
-import { createCompositionRoot } from "./composition-root.js";
-import { RendererLifecycle, type RendererHandle } from "./lifecycle.js";
-import { installConsoleGuard } from "./console-guard.js";
+import { ServicesProvider } from "../../ui-core/react/providers.js";
+import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
+import { readCapabilitiesFromProcess } from "../../ui-core/bootstrap/capabilities.js";
+import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
+import { RendererLifecycle, type RendererHandle } from "../../ui-core/bootstrap/lifecycle.js";
+import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { getLogsDirRoot } from "../../store/paths.js";
-import { createOsc52ClipboardPort } from "./osc52-clipboard.js";
+import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { createPagerExportPort } from "./pager-export.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
-import { isSuppressedConsoleMessage } from "./console-suppress.js";
+import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;

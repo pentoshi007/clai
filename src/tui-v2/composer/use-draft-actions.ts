@@ -5,9 +5,9 @@
 
 import { useEffect, type RefObject } from "react";
 import type { TextareaRenderable } from "@opentui/core";
-import type { AppServices } from "../bootstrap/composition-root.js";
-import { composerActionPort } from "./composer-action-port.js";
-import { cutDraft, cutDraftMessage, primeCommandMenu } from "./draft-actions.js";
+import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
+import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
+import { cutDraft, cutDraftMessage, primeCommandMenu } from "../../ui-core/composer/draft-actions.js";
 
 export interface DraftActionsInput {
   readonly editorRef: RefObject<TextareaRenderable | null>;

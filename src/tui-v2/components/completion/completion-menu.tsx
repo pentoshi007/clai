@@ -5,8 +5,8 @@
  */
 
 import type { ReactNode } from "react";
-import type { Theme } from "../../rendering/theme.js";
-import type { CompletionMenu } from "../../composer/completion.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import type { CompletionMenu } from "../../../ui-core/composer/completion.js";
 import type { CommandDefinition } from "../../../app/commands/command.js";
 import type { FileSuggestion } from "../../../ui/mentions.js";
 

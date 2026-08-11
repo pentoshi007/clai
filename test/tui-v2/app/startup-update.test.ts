@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateConfig } from "../../../src/store/config.js";
-import { createCompositionRoot, type AppServices } from "../../../src/tui-v2/bootstrap/composition-root.js";
-import { detectCapabilities } from "../../../src/tui-v2/bootstrap/capabilities.js";
-import { maybeShowUpdateToast } from "../../../src/tui-v2/app/startup-update.js";
+import { createCompositionRoot, type AppServices } from "../../../src/ui-core/bootstrap/composition-root.js";
+import { detectCapabilities } from "../../../src/ui-core/bootstrap/capabilities.js";
+import { maybeShowUpdateToast } from "../../../src/ui-core/commands/startup-update.js";
 import type { PersistencePort } from "../../../src/app/ports/persistence-port.js";
 import type { UpdatesPort, UpdateStatus } from "../../../src/app/ports/updates-port.js";
 

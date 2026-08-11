@@ -11,7 +11,7 @@ import {
   activeTaskId,
   taskOwnerChip,
   taskRowColor,
-} from "../src/tui-v2/rendering/plan-view.js";
+} from "../src/ui-core/rendering/plan-view.js";
 
 function planWithChild() {
   const plan = createPlan({

@@ -12,30 +12,32 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import type { ArtifactPage, ArtifactPagerSource } from "../../rendering/artifact-pager-source.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import type { ArtifactPage, ArtifactPagerSource } from "../../../ui-core/rendering/artifact-pager-source.js";
 import {
   findPagerMatches,
   nextPagerMatch,
   prevPagerMatch,
   type PagerMatch,
-} from "../../state/pager-search.js";
+} from "../../../ui-core/state/pager-search.js";
 import {
   fitOneLine,
   padChromeRow,
   wrapPagerLine,
-} from "../../rendering/pager-chrome.js";
+} from "../../../ui-core/rendering/pager-chrome.js";
 import {
   emptyCarry,
-} from "../../rendering/syntax-highlight.js";
+} from "../../../ui-core/rendering/syntax-highlight.js";
 import {
-  extractFsReadFileBody,
   preparePagerDisplay,
-  stripPagerLineGutters,
   type PagerMarkdownMode,
 } from "../../rendering/pager-markdown.js";
+import {
+  extractFsReadFileBody,
+  stripPagerLineGutters,
+} from "../../../ui-core/rendering/pager-source.js";
 import {
   PagerLine,
   bodyOnlyForCopy,

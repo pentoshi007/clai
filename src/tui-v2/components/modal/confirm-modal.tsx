@@ -9,10 +9,10 @@
 import type { ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
-import type { ConfirmRequest } from "../../controllers/overlay-controller.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import type { ConfirmRequest } from "../../../ui-core/controllers/overlay-controller.js";
 
 export interface ConfirmModalProps {
   readonly services: AppServices;

@@ -9,15 +9,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { chordFromKeyEvent } from "../../actions/chord-from-key.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import {
   activeIndex,
   filterPickerOptions,
   type PickerOption,
-} from "../../rendering/picker-filter.js";
-import type { PickerRequest } from "../../controllers/overlay-controller.js";
+} from "../../../ui-core/rendering/picker-filter.js";
+import type { PickerRequest } from "../../../ui-core/controllers/overlay-controller.js";
 
 export interface PickerProps {
   readonly services: AppServices;

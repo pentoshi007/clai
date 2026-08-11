@@ -11,17 +11,17 @@ import {
 } from "../../src/app/events/app-event.js";
 import type { ClipboardPort } from "../../src/app/ports/clipboard-port.js";
 import { EventSequencer } from "../../src/app/events/sequencer.js";
-import { SecretBuffer } from "../../src/tui-v2/composer/secret-buffer.js";
-import { SelectionController } from "../../src/tui-v2/controllers/selection-controller.js";
-import { detectLinks } from "../../src/tui-v2/rendering/link-detector.js";
-import { sanitizeDisplayText } from "../../src/tui-v2/rendering/sanitize-display.js";
-import { presentOutput } from "../../src/tui-v2/rendering/tool-presenter.js";
-import { renderTranscriptPlainText } from "../../src/tui-v2/rendering/transcript-export.js";
-import { applyAppEvent } from "../../src/tui-v2/state/transcript-reducer.js";
-import { EMPTY_TRANSCRIPT_STATE } from "../../src/tui-v2/state/transcript-types.js";
+import { SecretBuffer } from "../../src/ui-core/composer/secret-buffer.js";
+import { SelectionController } from "../../src/ui-core/controllers/selection-controller.js";
+import { detectLinks } from "../../src/ui-core/rendering/link-detector.js";
+import { sanitizeDisplayText } from "../../src/ui-core/rendering/sanitize-display.js";
+import { presentOutput } from "../../src/ui-core/rendering/tool-presenter.js";
+import { renderTranscriptPlainText } from "../../src/ui-core/rendering/transcript-export.js";
+import { applyAppEvent } from "../../src/ui-core/state/transcript-reducer.js";
+import { EMPTY_TRANSCRIPT_STATE } from "../../src/ui-core/state/transcript-types.js";
 import {
   normalizeSemanticDocument,
-} from "../../src/tui-v2/state/semantic-document.js";
+} from "../../src/ui-core/state/semantic-document.js";
 
 const root = join(fileURLToPath(new URL("../..", import.meta.url)));
 

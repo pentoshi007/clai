@@ -14,7 +14,7 @@ import {
   formatModalPlainText,
   presentFileChangePreview,
   wrapCodeLine,
-} from "../src/tui-v2/rendering/file-diff-view.js";
+} from "../src/ui-core/rendering/file-diff-view.js";
 import { formatToolArgs } from "../src/agent/tool-call-parser.js";
 
 describe("splitLines", () => {

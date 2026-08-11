@@ -7,17 +7,17 @@
 import { Fragment, useMemo, useRef, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import type { CompactedItem } from "../../state/transcript-types.js";
-import { compactionTokenLabel } from "../../state/transcript-types.js";
-import type { Theme } from "../../rendering/theme.js";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import { displayCompactSummary } from "../../state/transcript-hydrate.js";
+import type { CompactedItem } from "../../../ui-core/state/transcript-types.js";
+import { compactionTokenLabel } from "../../../ui-core/state/transcript-types.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import { displayCompactSummary } from "../../../ui-core/state/transcript-hydrate.js";
 import {
   EMPTY_MARKDOWN_STREAM_CACHE,
-  renderStreamingMarkdown,
   type MarkdownStreamCache,
-} from "../../rendering/streaming-markdown.js";
-import { liveCompactionHeadTail } from "../../rendering/thinking-tail.js";
+} from "../../../ui-core/rendering/streaming-markdown.js";
+import { renderStyledStreamingMarkdown } from "../../rendering/styled-markdown.js";
+import { liveCompactionHeadTail } from "../../../ui-core/rendering/thinking-tail.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 
 const PREVIEW_LINES = 4;
@@ -48,7 +48,7 @@ export function CompactedRow(props: {
     : fullSummary;
   const cacheRef = useRef<MarkdownStreamCache>(EMPTY_MARKDOWN_STREAM_CACHE);
   const allLines = useMemo(() => {
-    const rendered = renderStreamingMarkdown({
+    const rendered = renderStyledStreamingMarkdown({
       text: visibleSummary,
       streaming: item.streaming === true,
       options: {

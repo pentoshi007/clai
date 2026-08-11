@@ -6,10 +6,9 @@
 import {
   TOAST_ENTER_MS,
   TOAST_EXIT_MS,
-} from "../../controllers/toast-controller.js";
-import { easeInCubic, easeOutCubic } from "../../motion/ease.js";
+} from "../../../ui-core/controllers/toast-controller.js";
+import { easeInCubic, easeOutCubic } from "../../../ui-core/motion/ease.js";
 
-export { easeInCubic, easeOutCubic } from "../../motion/ease.js";
 
 /**
  * Minimum toast chip height (pad + one body line + pad).

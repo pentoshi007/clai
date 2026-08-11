@@ -1,0 +1,151 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`status rows > width=40 · armed-cancel fits and matches its golden 1`] = `
+[
+  "  AGENT                           24.1k ",
+]
+`;
+
+exports[`status rows > width=40 · compacting fits and matches its golden 1`] = `
+[
+  "  AGENT                           24.1k ",
+]
+`;
+
+exports[`status rows > width=40 · idle fits and matches its golden 1`] = `
+[
+  "  AGENT                           24.1k ",
+]
+`;
+
+exports[`status rows > width=40 · queued fits and matches its golden 1`] = `
+[
+  "  AGENT                           24.1k ",
+]
+`;
+
+exports[`status rows > width=40 · running fits and matches its golden 1`] = `
+[
+  "  AGENT                           24.1k ",
+]
+`;
+
+exports[`status rows > width=48 · armed-cancel fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ generating                   24.1k ",
+]
+`;
+
+exports[`status rows > width=48 · compacting fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ compacting · esc: cancel     24.1k ",
+]
+`;
+
+exports[`status rows > width=48 · idle fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⇧⇥ mode                        24.1k ",
+]
+`;
+
+exports[`status rows > width=48 · queued fits and matches its golden 1`] = `
+[
+  "  AGENT  · ^X cut · ⇧⇥ mode · 2q          24.1k ",
+]
+`;
+
+exports[`status rows > width=48 · running fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ shell.exec · esc: cancel     24.1k ",
+]
+`;
+
+exports[`status rows > width=68 · armed-cancel fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ generating · esc again to cancel        ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=68 · compacting fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ compacting · esc: cancel · 3s           ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=68 · idle fits and matches its golden 1`] = `
+[
+  "  AGENT  · / commands · ^T thinking · ^O output      ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=68 · queued fits and matches its golden 1`] = `
+[
+  "  AGENT  · / commands · ^X cut · ^T thinking         ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=68 · running fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ shell.exec · esc: cancel · 12s          ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=96 · armed-cancel fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ generating response · esc again to cancel · 1m15s                   ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=96 · compacting fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ compacting · esc: cancel · 3s                                       ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=96 · idle fits and matches its golden 1`] = `
+[
+  "  AGENT  · / commands · ^T thinking · ^O output · /shortcuts · ⇧⇥ mode · ^L ctx  ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=96 · queued fits and matches its golden 1`] = `
+[
+  "  AGENT  · / commands · ^X cut · ^T thinking · ^O output · /shortcuts · ⇧⇥ mode  ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=96 · running fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ shell.exec npm test · esc: cancel · 12s                             ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=120 · armed-cancel fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ generating response · esc again to cancel · 1m15s                                           ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=120 · compacting fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ compacting · esc: cancel · 3s                                                               ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=120 · idle fits and matches its golden 1`] = `
+[
+  "  AGENT  · / commands · ^T thinking · ^O output · /shortcuts · ⇧⇥ mode · ^L ctx                          ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=120 · queued fits and matches its golden 1`] = `
+[
+  "  AGENT  · / commands · ^X cut · ^T thinking · ^O output · /shortcuts · ⇧⇥ mode · ^L ctx · 2 queued      ctx 24.1k/128k ",
+]
+`;
+
+exports[`status rows > width=120 · running fits and matches its golden 1`] = `
+[
+  "  AGENT  · ⠋ shell.exec npm test · esc: cancel · 12s                                                     ctx 24.1k/128k ",
+]
+`;

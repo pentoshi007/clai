@@ -20,25 +20,18 @@ const tuiV2Root = join(here, "..", "..", "src", "tui-v2");
  */
 const RENDERER_ALLOWED = new Set<string>([
   join(tuiV2Root, "app", "App.tsx"),
-  join(tuiV2Root, "app", "providers.tsx"),
   join(tuiV2Root, "bootstrap", "start-tui-v2.ts"),
-  join(tuiV2Root, "bootstrap", "disable-native-selection.ts"),
   join(tuiV2Root, "bootstrap", "pager-export.ts"),
   join(tuiV2Root, "bootstrap", "patch-opentui-text.ts"),
   join(tuiV2Root, "components", "transcript", "use-native-selection-copy.ts"),
   join(tuiV2Root, "components", "transcript", "use-click-without-drag.ts"),
   join(tuiV2Root, "components", "toast", "toast-host.tsx"),
-  join(tuiV2Root, "state", "use-toast.ts"),
   join(tuiV2Root, "composer", "composer-editor.tsx"),
   join(tuiV2Root, "composer", "use-draft-actions.ts"),
   join(tuiV2Root, "components", "composer", "paste-chip.tsx"),
   join(tuiV2Root, "components", "composer", "composer-input-box.tsx"),
   join(tuiV2Root, "rendering", "ansi-to-styled.ts"),
-  join(tuiV2Root, "state", "use-transcript-store.ts"),
-  join(tuiV2Root, "state", "use-plan.ts"),
-  join(tuiV2Root, "state", "use-overlay.ts"),
-  join(tuiV2Root, "state", "use-session-state.ts"),
-  join(tuiV2Root, "state", "use-has-draft.ts"),
+  join(tuiV2Root, "rendering", "styled-markdown.ts"),
   join(tuiV2Root, "components", "transcript", "user-message.tsx"),
   join(tuiV2Root, "components", "transcript", "assistant-message.tsx"),
   join(tuiV2Root, "components", "transcript", "thinking-block.tsx"),
@@ -98,6 +91,13 @@ describe("src/tui-v2 architecture boundary", () => {
         offenders.push(file);
       }
     }
+    expect(offenders).toEqual([]);
+  });
+
+  it("never imports the classic or noninteractive frontends", () => {
+    const offenders = files.filter((file) =>
+      /from\s+["'][^"']*\/(?:classic|noninteractive)\//.test(readFileSync(file, "utf8")),
+    );
     expect(offenders).toEqual([]);
   });
 

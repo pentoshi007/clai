@@ -5,7 +5,7 @@ import {
   renderMarkdown,
   createMarkdownStreamWriter,
   wrapAnsiLine,
-} from "../src/ui/markdown.js";
+} from "../src/ui-core/rendering/markdown.js";
 
 function strip(text: string): string {
   // biome-ignore lint: ANSI escape sequences are intentional.

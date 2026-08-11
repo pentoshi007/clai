@@ -28,7 +28,7 @@ import {
   runSessionCompaction,
 } from "./session-compact-helper.js";
 import { settlePersistedResponderResults } from "./responder-settlement.js";
-import type { TranscriptItem as ClassicTranscriptItem } from "../../tui/state.js";
+import type { TranscriptItem as ClassicTranscriptItem } from "../ports/transcript-item.js";
 import { asSessionId, type AnyAppEvent, type SessionId, type TurnId } from "../events/app-event.js";
 import { EventSequencer, type Clock, type IdFactory } from "../events/sequencer.js";
 import { OutputSpool } from "../events/event-buffer.js";

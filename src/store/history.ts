@@ -26,7 +26,7 @@ import {
   type ImageBudget,
 } from "../attachments/image-content.js";
 import { prepareImageForModel } from "../attachments/image-prepare.js";
-import type { TranscriptItem } from "../tui/state.js";
+import type { TranscriptItem } from "../app/ports/transcript-item.js";
 import type { PreviousTurnSignal } from "../agent/continue-orient.js";
 import { redactSecrets } from "../llm/provider.js";
 import { redactSecretsCached } from "./redaction-cache.js";

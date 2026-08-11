@@ -41,7 +41,8 @@ function versionOf(name) {
   return (
     pkg.optionalDependencies?.[name] ??
     pkg.dependencies?.[name] ??
-    pkg.devDependencies?.[name]
+    pkg.devDependencies?.[name] ??
+    pkg.dependencies?.["@opentui/core"]
   );
 }
 

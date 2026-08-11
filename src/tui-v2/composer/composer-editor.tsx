@@ -12,45 +12,45 @@ import {
   type TextareaRenderable,
 } from "@opentui/core";
 import { useKeyboard, usePaste } from "@opentui/react";
-import { shouldStoreInPromptHistory } from "../../tui/input-history.js";
+import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import { formatAttachmentReference } from "../../ui/mentions.js";
 import { getConfig } from "../../store/config.js";
-import type { AppServices } from "../bootstrap/composition-root.js";
-import type { Theme } from "../rendering/theme.js";
-import { chordFromKeyEvent } from "../actions/chord-from-key.js";
-import { PromptHistory } from "./prompt-history.js";
+import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../ui-core/rendering/theme.js";
+import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
+import { PromptHistory } from "../../ui-core/composer/prompt-history.js";
 import {
   ARROW_BURST_WINDOW_MS,
   resolveArrowIntent,
-} from "./arrow-intent.js";
+} from "../../ui-core/composer/arrow-intent.js";
 import {
   isLargePaste,
   PasteRegistry,
   samePastePlaceholderEntries,
   type PastePlaceholderEntry,
-} from "./paste-placeholder.js";
+} from "../../ui-core/composer/paste-placeholder.js";
 import {
   resolveCompletionMenu,
   sameCompletionMenu,
   type CompletionMenu,
-} from "./completion.js";
+} from "../../ui-core/composer/completion.js";
 import { buildComposerTextareaOverrides } from "./textarea-keybindings.js";
-import { composerActionPort } from "./composer-action-port.js";
+import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { useDraftActions } from "./use-draft-actions.js";
 import { createComposerImagePaste } from "./composer-image-paste.js";
-import { notify } from "../notify.js";
+import { notify } from "../../ui-core/notify.js";
 import { CompletionMenuView } from "../components/completion/completion-menu.js";
 import { ComposerInputBox } from "../components/composer/composer-input-box.js";
 import { PasteChipRow } from "../components/composer/paste-chip.js";
-import { useOverlayState } from "../state/use-overlay.js";
-import { useSessionState } from "../state/use-session-state.js";
-import { clipComposerMeta, formatComposerMeta } from "./composer-meta.js";
+import { useOverlayState } from "../../ui-core/react/use-overlay.js";
+import { useSessionState } from "../../ui-core/react/use-session-state.js";
+import { clipComposerMeta, formatComposerMeta } from "../../ui-core/composer/composer-meta.js";
 import { transcriptScrollPort } from "../components/transcript/transcript-scroll-port.js";
-import { consumePlanSuggestionInput } from "../app/plan-lifecycle.js";
+import { consumePlanSuggestionInput } from "../../ui-core/plan/plan-lifecycle.js";
 import {
   countComposerVisualLines,
   resolveComposerTextRows,
-} from "./composer-height.js";
+} from "../../ui-core/composer/composer-height.js";
 import {
   composerDraftOverflows,
   composerOwnsWheel,
@@ -615,16 +615,10 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       // Non-empty: let OpenTUI handle line kill (do not preventDefault).
       return;
     }
-    // Shift first: ctrl+shift+x must not fall through to the plain clear.
-    if (chord === "ctrl+shift+x") {
+    // Both chords cut: legacy terminals cannot tell ctrl+x from ctrl+shift+x.
+    if (chord === "ctrl+shift+x" || chord === "ctrl+x") {
       key.preventDefault();
       void draftActions.cut();
-      return;
-    }
-    if (chord === "ctrl+x") {
-      key.preventDefault();
-      clearDraftState(editor);
-      notify(services, "Draft cleared · ^X", { key: "draft", durationMs: 1400 });
       return;
     }
     // Page keys always scroll the chat (classic parity) — never history.

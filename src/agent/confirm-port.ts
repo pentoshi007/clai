@@ -1,10 +1,14 @@
-import { confirm, password } from "@inquirer/prompts";
-import chalk from "chalk";
 import { getConfig } from "../store/config.js";
 import { isPentestToolCall } from "../safety/classifier.js";
+import {
+  createStdioConfirmPort,
+  createStdioSecretPort,
+} from "../noninteractive/stdio-confirm-port.js";
+import { restoreInteractiveStdin } from "../noninteractive/readline-prompts.js";
 import type { ToolCall } from "../types.js";
 import type { SessionPolicy } from "./session-policy.js";
-import { formatToolArgs } from "./tool-call-parser.js";
+
+export { restoreInteractiveStdin };
 
 export interface ConfirmPort {
   confirmTool(call: ToolCall): Promise<boolean>;
@@ -25,78 +29,16 @@ export interface ConfirmPort {
   }): Promise<boolean>;
 }
 
-/**
- * Re-assert raw mode AND resume stdin after an inquirer prompt
- * (confirm/password). inquirer's readline interface pauses stdin and
- * switches it to cooked mode when it closes; if we only flip raw mode back
- * on but leave stdin paused, no `keypress`/`data` events flow to the REPL's
- * ESC/Ctrl+C abort handler — so a long-running tool launched right after a
- * confirmation can no longer be aborted (the user had to kill the terminal).
- * Calling resume() restores the event flow.
- */
-export function restoreInteractiveStdin(): void {
-  if (!process.stdin.isTTY) return;
-  try {
-    if (!(process.stdin as NodeJS.ReadStream & { isRaw?: boolean }).isRaw) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.resume();
-  } catch {
-    /* ignore */
-  }
-}
+/** Default port: readline prompts on the process stdio (06-ONESHOT.md §4). */
+export const stdioConfirmPort: ConfirmPort = createStdioConfirmPort();
 
-export const inquirerConfirmPort: ConfirmPort = {
-  async confirmTool(call: ToolCall): Promise<boolean> {
-    return confirm({
-      message: chalk.yellow(`  run ${call.name}: ${formatToolArgs(call)}?`),
-      default: true,
-    });
-  },
-  async confirmPentest(): Promise<boolean> {
-    return confirm({
-      message: chalk.red(
-        "clai only assists with security testing on systems you own or have written permission to test. Confirm for this session?",
-      ),
-      default: false,
-    });
-  },
-  async confirmContinue(steps: number, reason?: string): Promise<boolean> {
-    const why = reason?.trim() ? ` (${reason.trim()})` : "";
-    try {
-      return await confirm({
-        message: chalk.yellow(
-          `  pause after ${steps} step${steps === 1 ? "" : "s"}${why} — continue or stop?`,
-        ),
-        default: true,
-      });
-    } finally {
-      restoreInteractiveStdin();
-    }
-  },
-  async confirmAgentSwitch(info: {
-    reason: string;
-    tools: string[];
-  }): Promise<boolean> {
-    const tools = info.tools.length > 0 ? ` (${info.tools.join(", ")})` : "";
-    return confirm({
-      message: chalk.yellow(
-        `  this needs agent mode${tools} — switch and run it?`,
-      ),
-      default: true,
-    });
-  },
-};
+const requestStdioSecret = createStdioSecretPort();
 
-export async function inquirerSecretRequester(request: {
+export async function stdioSecretRequester(request: {
   title: string;
   prompt: string;
 }): Promise<string | undefined> {
-  try {
-    return await password({ message: request.prompt || request.title });
-  } finally {
-    restoreInteractiveStdin();
-  }
+  return requestStdioSecret(request);
 }
 
 export async function ensurePentestAuthorization(

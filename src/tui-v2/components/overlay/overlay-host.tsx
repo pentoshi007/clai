@@ -11,9 +11,9 @@
  */
 
 import type { ReactNode } from "react";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { useOverlayState } from "../../state/use-overlay.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { useOverlayState } from "../../../ui-core/react/use-overlay.js";
 import { Picker } from "../picker/picker.js";
 import { ConfirmModal } from "../modal/confirm-modal.js";
 import { PromptActionsModal } from "../modal/prompt-actions-modal.js";

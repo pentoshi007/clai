@@ -1,9 +1,9 @@
 # Classic Frontend Revamp — React + Ink
 
-This directory is the implementation contract for replacing clai's classic line REPL
-(`src/repl.ts`) with a modern React + Ink terminal UI that is the default frontend on
-Windows, the fallback frontend everywhere, and visually/behaviourally on par with the
-OpenTUI frontend (`src/tui-v2`).
+This directory is the implementation contract for replacing clai's former classic line REPL
+(`src/repl.ts`) with a modern React + Ink terminal UI. The line REPL has now been removed;
+the classic Ink UI is selected on Windows, on smaller POSIX terminals, or explicitly, while
+OpenTUI remains the default for sufficiently large interactive POSIX terminals.
 
 Branch: `fix/classic-revamp`. Worktree: `/Users/aniketpandey/Desktop/clai-classic-revamp`.
 All work happens here. Nothing is merged into `main` without the owner asking.
@@ -15,7 +15,7 @@ One backend, one application state, three presentation surfaces:
 | Surface | Renderer | Where it runs |
 |---|---|---|
 | `tui` | OpenTUI (`@opentui/*` + Bun FFI) | macOS/Linux TTY, unchanged |
-| `classic` | React + Ink + Yoga | Windows always; macOS/Linux on request or fallback |
+| `classic` | React + Ink + Yoga | Windows by platform default; macOS/Linux on request, when smaller, or as fallback |
 | `noninteractive` | plain stream writer | one-shot prompts, pipes, CI |
 
 The classic surface must feel like Claude Code / Codex CLI: a scrollback-native feed of
@@ -62,12 +62,10 @@ not.
 
 ## Security posture
 
-`npm audit` on the current tree reports four high-severity advisories. One of them ships:
-`cheerio` pulls `undici`, and no version in cheerio's declared range is patched. clai only
-ever calls `cheerio.load()`, so the fix is to import `cheerio/slim` and drop the dependency
-edge entirely. That happens in **W00**, before any UI work.
-[13-DEPENDENCIES.md](13-DEPENDENCIES.md) §4 has the full table and the deprecation sweep that
-gates it.
+The W00 audit record reports zero advisories for the current dependency tree. The
+`cheerio/slim` import keeps the runtime path free of the unused HTML-parser dependency edge;
+see [13-DEPENDENCIES.md](13-DEPENDENCIES.md) §4 for the recorded audit and deprecation
+findings.
 
 ## Non-negotiable outcomes
 
@@ -77,17 +75,21 @@ gates it.
 2. OpenTUI does not regress. Every existing `test/tui-v2` and `test/app` test passes
    unchanged at every work-package boundary. A red OpenTUI test is a blocker, never a
    "fix later".
-3. The Ink frontend becomes `classic` and the automatic Windows frontend.
+3. The Ink frontend is `classic`: the platform selector chooses it by default on Windows
+   and uses it for explicit, small-terminal, and OpenTUI-fallback paths. A Windows runtime
+   probe is still required before claiming release support on specific terminal hosts.
 4. `src/repl.ts`, `src/repl/prompt-line.ts`, and `src/agent/classic-renderer.ts` are
    deleted from the runtime, not left dormant.
 5. The `writesDirectly` branch inside `src/agent/runner.ts` is deleted. One-shot output
    is produced by a dedicated renderer consuming the same `AppEvent` stream.
 6. The Windows compiled binary must not load, initialize, or bundle OpenTUI native
-   modules, and must never exit silently.
+   modules, and must never exit silently; these claims require the Windows binary and
+   Process Monitor probes listed in W15/W17 before release.
 7. No file becomes a monolith. Components stay presentational; behaviour lives in small
    pure modules or shared controllers. Target ceiling ~350 lines per file; a file over
    400 lines needs a written justification in the completion report.
-8. Binary and install size go **down**, not up. See [11-CLEANUP.md](11-CLEANUP.md).
+8. Binary and install size are measured and reported against the baseline; no decrease is
+   assumed before the final measurements.
 9. Source carries no explanatory comments. See [00-AI-EXECUTION.md](00-AI-EXECUTION.md).
 
 ## Frontend selection matrix (final state)
@@ -129,13 +131,20 @@ instruction: **do not read that branch's source.**
 
 ## Definition of done
 
-- Every box in [12-TASKS.md](12-TASKS.md) is checked, and each was checked only after the
-  named validation command was actually run.
-- `npm run typecheck`, `npm test`, `npm run build`, `npm run compile`, and
-  `npm run test:bun` all pass.
-- [09-PARITY.md](09-PARITY.md) has no unapproved gap.
-- PTY smoke passes on Windows, macOS, and Linux.
+A release is complete only when every box in [12-TASKS.md](12-TASKS.md) has recorded evidence,
+including the target-host gates. W18 documentation may be authored before that point, but it
+must leave Windows, unavailable Linux/manual walkthroughs, native probes, and any unmeasured
+size/performance claims unchecked. The final release record in `W18-RELEASE.md` is the source
+for what this checkout actually proved.
+
+The automated baseline remains:
+
+- `npm run typecheck`, `npm test`, `npm run build`, `npm run compile`, and `npm run test:bun`
+  must pass for a release.
+- [09-PARITY.md](09-PARITY.md) may contain only approved deviations.
+- POSIX PTY smoke and the target-host Windows/manual gates must be recorded separately; a
+  macOS run or cross-compile does not substitute for Windows or Linux evidence.
 - `src/repl.ts`, `src/repl/prompt-line.ts`, `src/agent/classic-renderer.ts`, and the
-  runner's `writesDirectly` branch no longer exist.
-- Installed package size and each compiled binary are measured before and after, and the
-  after value is lower. Numbers recorded in the final report.
+  runner's `writesDirectly` branch remain deleted.
+- Installed package size and each compiled binary are measured before and after, with any
+  increase explained rather than silently presented as a reduction.

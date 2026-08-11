@@ -12,9 +12,9 @@
  */
 
 import type { ReactNode } from "react";
-import type { AppServices } from "../../bootstrap/composition-root.js";
-import type { Theme } from "../../rendering/theme.js";
-import { useSessionState } from "../../state/use-session-state.js";
+import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
+import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 
 export interface QueuePanelProps {
   readonly services: AppServices;

@@ -7,19 +7,42 @@ workflow, state transition, command, shortcut, safety decision, and persisted re
 equivalent. A renderer limitation is acceptable only with a keyboard-accessible alternative
 and an entry in §"Approved deviations". Anything else is a gap and blocks release.
 
-Check a box only after running the test or the manual step that proves it.
+Check a box only after running the test or the manual step that proves it. W18 records only
+automated evidence available on this macOS checkout and the POSIX smoke result; Windows,
+Linux-local, provider-backed, and manual walkthrough rows remain unchecked unless separately
+proven.
 
-## Approved deviations
+## Current classic shell contract
 
-These are consequences of the scrollback-feed model
-([03-RENDER-MODEL.md](03-RENDER-MODEL.md) §1) and are accepted deliberately.
+Classic now starts in a fresh alternate-screen buffer. `TerminalSession` solely owns
+`?1049h`/`?1049l`, clear/home, cursor visibility, bracketed paste, optional mouse, raw
+input, and teardown; Ink is configured with `alternateScreen: false`. The shared root
+computes `horizontalPadding()` and `innerShellWidth()` once and passes the resulting shell
+width to every feed/chrome/panel surface. At 56 columns and above the shell has two columns
+of padding on each side; at 28–55 it has one, and narrower terminals degrade to no margin.
+`allocateChrome` uses the full terminal row budget, so `ChromeLayout.total <= rows` and the
+lower chrome is anchored at the bottom. Content-producing surfaces wrap within the shared
+width; ellipses are limited to intentional previews and fixed-chrome affordances.
+
+The inline context-limit editor is part of the same shell contract: `Ctrl+L` opens it,
+Enter saves, Escape cancels, and an empty value resets the limit. The status chip displays
+formatted token counts such as `ctx 253k/1m`, not a percentage fallback. Pager defaults
+are shared with the renderer-neutral policy: help/system/compaction and clear markdown
+reads open formatted, file mutations and side-effect tool output open raw, and `f`/`r`
+remain explicit overrides. Formatted pager input removes fs.read or diff gutters, searches
+ANSI-stripped text, and wraps body lines to the panel width rather than clipping the final
+body.
+
+These are consequences of the current full-height alternate-screen shell and the bounded
+content-column model ([03-RENDER-MODEL.md](03-RENDER-MODEL.md) §1), and are accepted
+deliberately.
 
 | ID | OpenTUI behaviour | Classic behaviour | Alternative | Rationale |
 |---|---|---|---|---|
-| D-01 | Transcript scrolls inside an owned viewport with a custom scrollbar | The terminal's own scrollback scrolls; no scrollbar is drawn | native wheel and scrollbar; `Ctrl+R` search; `/output` picker | Ink has no scroll container; owning the screen costs native scrollback, native selection, and repaint cost |
-| D-02 | `Ctrl+T` / `Ctrl+O` / `Enter` re-render any transcript row in place | Toggles apply to live rows and to all future rows; committed rows keep what was printed | `Ctrl+O` with nothing live opens the `/output` picker; `Ctrl+T` opens the last thinking block in the pager; `Enter` on a committed row opens it in the pager | `<Static>` output cannot be taken back |
-| D-03 | Mouse drag selects transcript text; wheel scrolls; rows are clickable | Mouse reporting off by default; `CLAI_CLASSIC_MOUSE=1` enables wheel and row clicks only | native terminal selection and copy; `Ctrl+A` + `Ctrl+Shift+C` for programmatic copy; every click affordance has a key | Enabling mouse reporting removes native selection, which is how copying works in a feed |
-| D-04 | `transcript.top` / `page-up` / `page-down` move an owned viewport | They move the live tail when it is clipped, otherwise show a one-shot hint | terminal scrollback; `Ctrl+R`; `/history` | nothing can scroll the host terminal's scrollback programmatically and reliably |
+| D-01 | Transcript scrolls inside an owned viewport with a custom scrollbar | Classic owns a fresh alternate-screen viewport; committed blocks append within it and only the allocated live tail is repositioned or clipped by classic actions | `Ctrl+R` transcript search, pager/detail views, and the live-tail scroll actions | Ink still does not provide a full semantic scroll container; the alternate screen is required for the fresh-space startup contract |
+| D-02 | `Ctrl+T` / `Ctrl+O` / `Enter` re-render any transcript row in place | Classic applies toggles to live blocks and all future blocks; already committed feed rows retain the bytes that were printed | `Ctrl+O` with nothing live opens the `/output` picker; `Ctrl+T` opens the last thinking block in the pager; `Enter` on a committed row opens it in the pager | The append-only feed cannot repaint committed output |
+| D-03 | Mouse drag selects transcript text; wheel scrolls; rows are clickable | Mouse reporting is off by default; `CLAI_CLASSIC_MOUSE=1` enables wheel and row clicks inside the alternate screen only | native terminal selection and copy; `Ctrl+A` + `Ctrl+Shift+C` for programmatic copy; every click affordance has a key | Leaving mouse reporting off preserves native selection, which is how copying works in a feed |
+| D-04 | `transcript.top` / `page-up` / `page-down` move an owned viewport | They move the allocated live tail within the alternate-screen shell when it is clipped; otherwise classic shows a one-shot hint | `Ctrl+R`; `/history`; native terminal selection and scrollback after leaving the session | The host terminal's scrollback is not a reliable programmable viewport for the classic renderer |
 | D-05 | Plan renders as a side-by-side split pane on terminals ≥ 120 columns | Plan renders as a bounded full-width panel above the composer | `Ctrl+H` panel; `Ctrl+P` full detail in the pager | a split pane requires owning the screen, which D-01 gives up |
 | D-06 | Toasts slide in from the top with easing, up to 3 visible | Up to 2 rows above the composer, no animation, `(+1)` marker when one is hidden | same content, same lifetimes, same replace-by-key | animation in a feed would repaint committed rows |
 | D-07 | Overlays render full-bleed over the whole screen | Overlays are bounded panels sized by the row allocator | identical content and keys | guarantees no overflow at any terminal size |
@@ -36,16 +59,19 @@ rationale and an alternative, and flag it in the completion report.
 - [ ] Windows with no flag starts classic without probing Bun and without importing
       `@opentui/*`.
 - [ ] One-shot with a prompt never loads Ink, React, or Yoga.
-- [ ] Non-TTY stdin or stdout runs the non-interactive surface, never Ink.
-- [ ] Every exit path restores cursor visibility, raw mode, bracketed paste, and mouse mode
-      exactly once.
-- [ ] No exit path leaves the terminal echo-less or colour-corrupted.
+- [x] Non-TTY stdin or stdout runs the non-interactive surface, never Ink. Evidence:
+      `test/noninteractive/nontty.test.ts` and `test/ui-core/ui-selection.test.ts`.
+- [x] Every exit path restores cursor visibility, raw mode, bracketed paste, and mouse mode
+      exactly once. Evidence: `test/classic/terminal-session.test.ts` and `test/classic/lifecycle.test.ts`.
+- [x] No exit path leaves the terminal echo-less or colour-corrupted. Evidence: local macOS
+      `npm run test:classic:pty` plus terminal-session teardown tests.
 - [ ] First Ctrl+C aborts a running turn or arms exit; second within 1500 ms exits.
 - [ ] First Esc dismisses or arms; second within 1500 ms cancels turn, compaction, queue,
       and session responder jobs.
 - [ ] One physical Esc reaching two handlers counts once.
 - [ ] SIGTERM → 143, SIGHUP → 129, second SIGINT → 130, uncaught error → 1.
-- [ ] Session persistence completes before process exit on every path.
+- [x] Session persistence completes before process exit on every path. Evidence:
+      `test/classic/session.test.ts` and `test/classic/lifecycle.test.ts`.
 - [ ] Interactive sessions close; no orphaned child process tree.
 - [ ] `CLAI_CLASSIC_UI=plain` starts the stream renderer.
 - [ ] OpenTUI startup and behaviour unchanged on macOS and Linux.
@@ -205,13 +231,17 @@ outcome asserted, not merely name resolution:
 
 - [ ] `clai "prompt"` and `clai --mode agent "prompt"` render assistant text, tool cards,
       diffs, and the final answer.
-- [ ] The answer appears only on stdout; all progress only on stderr.
-- [ ] `--show-thinking`, `--verbose`, `--quiet` behave as documented.
-- [ ] Non-TTY output contains no ANSI and no `\r`.
-- [ ] The spinner clears before any stdout write and never appears on a non-TTY stderr.
+- [x] The answer appears only on stdout; all progress only on stderr. Evidence:
+      `test/noninteractive/stream-split.test.ts`.
+- [x] `--show-thinking`, `--verbose`, `--quiet` behave as documented. Evidence: current
+      CLI option wiring in `src/index.ts`, stream-block fixtures, and the noninteractive suite.
+- [x] Non-TTY output contains no ANSI and no `\r`. Evidence: `test/noninteractive/nontty.test.ts`.
+- [x] The spinner clears before any stdout write and never appears on a non-TTY stderr.
+      Evidence: `test/noninteractive/spinner.test.ts`.
 - [ ] Confirmations work on a TTY and fail fast, rather than hanging, on a non-TTY without
       `-y`.
-- [ ] Exit codes 0 / 130 / 1 per [06-ONESHOT.md](06-ONESHOT.md) §5.
+- [x] Exit codes 0 / 130 / 1 per [06-ONESHOT.md](06-ONESHOT.md) §5. Evidence:
+      `test/noninteractive/exit-codes.test.ts`.
 
 ## Performance
 
@@ -226,8 +256,12 @@ outcome asserted, not merely name resolution:
 
 ## Cleanup
 
-- [ ] `src/repl.ts`, `src/repl/`, and `src/agent/classic-renderer.ts` no longer exist.
-- [ ] `writesDirectly` no longer appears in `src/agent/runner.ts`.
-- [ ] `@inquirer/prompts` is absent from `package.json` and the lockfile.
-- [ ] Every file in [11-CLEANUP.md](11-CLEANUP.md) is deleted or justified.
+- [x] `src/repl.ts`, `src/repl/`, and `src/agent/classic-renderer.ts` no longer exist. Evidence:
+      W16 cleanup record and the repository architecture guard.
+- [x] `writesDirectly` no longer appears in `src/agent/runner.ts`. Evidence: W14/W16 records and
+      `test/agent/runner-no-direct-writes.test.ts`.
+- [x] `@inquirer/prompts` is absent from `package.json` and the lockfile. Evidence: W14 cleanup
+      record and dependency tests.
+- [x] Every file in [11-CLEANUP.md](11-CLEANUP.md) is deleted or justified. Evidence: W16
+      deleted-file proof and current architecture guards.
 - [ ] npm package size and POSIX binary sizes decreased; numbers recorded.

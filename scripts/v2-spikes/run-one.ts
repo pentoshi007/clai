@@ -19,7 +19,7 @@ async function main(): Promise<SpikeResult> {
   }
   if (kind === "shell" || kind === "shell-render" || kind === "v2-032") {
     // .tsx spike — Bun resolves the extension.
-    const { runShellRenderSpike } = await import("./shell-render.spike.tsx");
+    const { runShellRenderSpike } = await import("./shell-render.spike.js");
     return runShellRenderSpike();
   }
   throw new Error(

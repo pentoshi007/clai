@@ -31,7 +31,7 @@ import {
   createPlan,
   savePlan,
 } from "../src/store/plan.js";
-import { sanitizeAssistantText } from "../src/ui/ansi-box.js";
+import { sanitizeDisplayText as sanitizeAssistantText } from "../src/ui-core/rendering/sanitize-display.js";
 
 describe("X1 sanitize tool names", () => {
   it("strips channel/commentary pollution", () => {

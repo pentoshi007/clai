@@ -2,12 +2,13 @@
 /**
  * Postinstall script for @pentoshi/clai.
  * Automatically checks for Bun (required by OpenTUI) and installs it into
- * ~/.clai/bin/bun across Linux, macOS, and Windows if missing.
+ * ~/.clai/bin/bun across Linux and macOS if missing.
  */
 import { spawnSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { shouldSkipBunInstall } from "./postinstall-policy.mjs";
 
 function findBun() {
   const binName = process.platform === "win32" ? "bun.exe" : "bun";
@@ -40,7 +41,9 @@ function findBun() {
   return undefined;
 }
 
-if (!findBun() && process.env.CLAI_NO_BUN_AUTO_INSTALL !== "1") {
+const skipBunInstall = shouldSkipBunInstall();
+
+if (!skipBunInstall && !findBun() && process.env.CLAI_NO_BUN_AUTO_INSTALL !== "1") {
   const targetDir = join(homedir(), ".clai");
   const binName = process.platform === "win32" ? "bun.exe" : "bun";
   const targetBin = join(targetDir, "bin", binName);
@@ -106,7 +109,7 @@ if (!findBun() && process.env.CLAI_NO_BUN_AUTO_INSTALL !== "1") {
   }
 }
 
-if (!findBun()) {
+if (!skipBunInstall && !findBun()) {
   console.log(`
   Note: Bun was not installed during postinstall.
   clai will automatically install Bun on first launch.

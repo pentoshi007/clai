@@ -5,7 +5,7 @@
  * Close: slide out (~100ms ease-in), then unmount
  */
 
-import { easeInCubic, easeOutCubic, clamp01 } from "../../motion/ease.js";
+import { easeInCubic, easeOutCubic, clamp01 } from "../../../ui-core/motion/ease.js";
 
 /** Slide-in duration — a bit snappier than toast (200ms). */
 export const PLAN_PANE_ENTER_MS = 120;

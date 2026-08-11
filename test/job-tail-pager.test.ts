@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createArtifactPagerSource } from "../src/tui-v2/rendering/artifact-pager-source.js";
+import { createArtifactPagerSource } from "../src/ui-core/rendering/artifact-pager-source.js";
 import {
   createJobTailPagerSource,
   isLiveJobStatus,
   jobTailTitle,
-} from "../src/tui-v2/rendering/job-tail-source.js";
-import { defaultKeymap, validateKeymap } from "../src/tui-v2/actions/keymap.js";
+} from "../src/ui-core/rendering/job-tail-source.js";
+import { defaultKeymap, validateKeymap } from "../src/ui-core/actions/keymap.js";
 import type { BackgroundJob, JobsPort } from "../src/app/ports/jobs-port.js";
 
 const dirs: string[] = [];

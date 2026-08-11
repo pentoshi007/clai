@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { padChromeRow } from "../src/tui-v2/rendering/pager-chrome.js";
+import { padChromeRow } from "../src/ui-core/rendering/pager-chrome.js";
 
 describe("padChromeRow", () => {
   it("returns exactly width columns", () => {

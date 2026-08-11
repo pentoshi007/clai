@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wrapPlainString } from "../src/tui/text-format.js";
+import { wrapPlainString } from "../src/ui-core/rendering/text-format.js";
 
 // Shift+Enter inserts a literal "\n" into the composer input. These tests
 // pin the behaviour the composer relies on to render that multi-line input:

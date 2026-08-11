@@ -28,7 +28,7 @@ import {
   markTextOnlyModel,
   fromWireName,
 } from "../llm/tool-protocol.js";
-import { sanitizeAssistantText } from "../ui/ansi-box.js";
+import { sanitizeDisplayText as sanitizeAssistantText } from "../ui-core/rendering/sanitize-display.js";
 import { createHash, randomUUID } from "node:crypto";
 import {
   jobManager,
@@ -110,7 +110,6 @@ import {
   fillMissingToolResults,
   repairToolProtocol,
 } from "./tool-history.js";
-import { formatViewportHint, registerViewport } from "../ui/output-pane.js";
 import {
   compactMessagesWithSummary,
   estimateTokens,
@@ -141,17 +140,13 @@ import { ensureProviderConfigured } from "../commands/providers.js";
 import {
   createThinkingStreamParser,
   rememberThinkingFromText,
-  renderThinkingSummary,
   stripThinking,
 } from "../ui/thinking.js";
 import {
   hasReasoningMarker,
   REASONING_CLOSE,
   REASONING_OPEN,
-  stripReasoningMarkers,
 } from "../llm/reasoning-marker.js";
-import { renderMarkdown, indentAndWrapText } from "../ui/markdown.js";
-import { startThinkingSpinner, type ThinkingSpinner } from "../ui/spinner.js";
 import { safeCwd } from "../os/cwd.js";
 import {
   analyzeTask,
@@ -254,7 +249,6 @@ import {
 } from "./session-policy.js";
 import {
   saveToolOutput,
-  summarizeOutput,
   formatToolContext,
 } from "./tool-output-formatting.js";
 import {
@@ -263,7 +257,6 @@ import {
   progressPauseMode,
 } from "./progress-pause-policy.js";
 import {
-  renderPlanForTerminal,
   planContextMessage,
   upsertPlanContextMessage,
   handlePlanTool,
@@ -365,8 +358,8 @@ import {
   resolveScaffoldTargetPath,
 } from "./workspace-orient.js";
 import {
-  inquirerConfirmPort,
-  inquirerSecretRequester,
+  stdioConfirmPort,
+  stdioSecretRequester,
   restoreInteractiveStdin,
   ensurePentestAuthorization,
   confirmToolExecution,
@@ -564,7 +557,6 @@ export async function runAgentTurn(
       ? options.mode
       : "agent";
   const isPlanMode = agentMode === "plan";
-  const writesDirectly = !options.onEvent;
   const emit = (event: AgentEvent): void => options.onEvent?.(event);
   // Whether the CURRENT model iteration has already committed its visible
   // prose to the transcript with an `assistant-message` event. The recovery
@@ -611,14 +603,8 @@ export async function runAgentTurn(
     }
     return matched >= minLength ? current.slice(matched) : current;
   };
-  const noopSpinner: ThinkingSpinner = {
-    setLabel: () => { },
-    bumpReasoning: () => { },
-    pushPreview: () => { },
-    stop: () => { },
-  };
-  const writeStatus = (text: string, rendered = chalk.dim(text)): void => {
-    // Footer activity is single-line; strip classic stdout newlines/indents.
+  const writeStatus = (text: string): void => {
+    // Footer activity is single-line; collapse newlines and indents.
     // Never surface /output path hints as activity (garbles the status bar).
     let cleaned = text.replace(/\s+/g, " ").trim();
     if (
@@ -639,37 +625,24 @@ export async function runAgentTurn(
       }
     }
     emit({ type: "status", text: cleaned || "working" });
-    if (writesDirectly) process.stdout.write(rendered);
   };
-  const writeNotice = (
-    level: "info" | "warn",
-    text: string,
-    rendered: string,
-  ): void => {
+  const writeNotice = (level: "info" | "warn", text: string): void => {
     emit({ type: "notice", level, text });
-    if (writesDirectly) process.stdout.write(rendered);
   };
   const writeAssistantMessage = (text: string): void => {
-    // Never surface an empty message: the reducer drops it and a direct
-    // stdout writer would print a stray blank line.
+    // Never surface an empty message: the reducer drops it and a consumer
+    // would paint a stray blank row.
     const clean = sanitizeAssistantText(text);
     if (!clean.trim()) return;
     visibleCommitted = true;
     emit({ type: "assistant-message", text: clean });
-    const rendered = renderMarkdown(clean);
-    if (writesDirectly) {
-      process.stdout.write(clean.endsWith("\n") ? rendered : `${rendered}\n`);
-    }
   };
   const writeThinkingBlock = (content: string): void => {
     emit({ type: "thinking-block", content });
-    if (writesDirectly)
-      process.stdout.write(`${renderThinkingSummary(content)}\n`);
   };
   const writeToolOutput = (
     id: string,
     chunk: string,
-    rendered: string,
     options?: { replace?: boolean },
   ): void => {
     emit({
@@ -678,37 +651,23 @@ export async function runAgentTurn(
       chunk,
       ...(options?.replace ? { replace: true } : {}),
     });
-    if (writesDirectly && rendered) process.stdout.write(rendered);
   };
-  const writeToolCall = (
-    id: string,
-    call: ToolCall,
-    rendered: string,
-  ): void => {
+  const writeToolCall = (id: string, call: ToolCall): void => {
     emit({
       type: "tool-call",
       id,
       name: call.name,
       argsDisplay: formatToolArgs(call),
     });
-    if (writesDirectly) process.stdout.write(rendered);
   };
-  const writePlanUpdate = (plan: SessionPlan, rendered: string): void => {
+  const writePlanUpdate = (plan: SessionPlan): void => {
     emit({ type: "plan-update", plan });
-    if (writesDirectly) process.stdout.write(rendered);
   };
-  const writeToolBlocked = (
-    id: string,
-    name: string,
-    reason: string,
-    rendered: string,
-  ): void => {
+  const writeToolBlocked = (id: string, name: string, reason: string): void => {
     emit({ type: "tool-blocked", id, name, reason });
-    if (writesDirectly) process.stdout.write(rendered);
   };
   const writeAbort = (): void => {
     emit({ type: "turn-aborted" });
-    if (writesDirectly) process.stdout.write(chalk.yellow("  ⏹ Aborted.\n"));
   };
   const emitToolResult = (
     id: string,
@@ -741,9 +700,6 @@ export async function runAgentTurn(
     beforeTokens: number,
   ): void => {
     emit({ type: "compaction-start", id, beforeTokens });
-    if (writesDirectly) {
-      process.stdout.write(chalk.dim("  ✦ Compacted Context · streaming Markdown\n\n"));
-    }
   };
   const writeCompactionDelta = (
     id: string,
@@ -757,10 +713,6 @@ export async function runAgentTurn(
       text,
       ...(replace ? { replace: true } : {}),
     });
-    if (writesDirectly) {
-      if (replace) process.stdout.write(chalk.dim("\n  ↻ rewriting compacted context\n\n"));
-      if (text) process.stdout.write(text);
-    }
   };
   const writeCompactionCompleted = (
     id: string,
@@ -775,12 +727,6 @@ export async function runAgentTurn(
       beforeTokens,
       afterTokens,
     });
-    if (writesDirectly) {
-      const footer = chalk.dim(
-        `\n  ~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens`,
-      );
-      process.stdout.write(`${footer}\n`);
-    }
   };
   const writeCompactionFailed = (
     id: string,
@@ -788,13 +734,6 @@ export async function runAgentTurn(
     retainedTokens: number,
   ): void => {
     emit({ type: "compaction-failed", id, message, retainedTokens });
-    if (writesDirectly) {
-      process.stdout.write(
-        chalk.yellow(
-          `\n  Compaction failed: ${message} (~${retainedTokens.toLocaleString()} tokens retained)\n`,
-        ),
-      );
-    }
   };
   // Points at the live message array so finishTurn can hand the full
   // conversation back to the caller. Assigned once `messages` is built below;
@@ -852,7 +791,7 @@ export async function runAgentTurn(
         : renderTurnOutcome({ ...outcome, answer: displayAnswer }, renderOptions);
     if (displayRendered.trim()) {
       writeAssistantMessage(displayRendered);
-    } else if (!writesDirectly) {
+    } else {
       emit({ type: "assistant-message", text: "" });
     }
     if (options.onMessages) {
@@ -877,7 +816,7 @@ export async function runAgentTurn(
     });
     const config = getConfig();
     const maxSteps = options.maxSteps ?? 70;
-    const confirmPort = options.confirm ?? inquirerConfirmPort;
+    const confirmPort = options.confirm ?? stdioConfirmPort;
     const projectContext = await loadProjectContext();
     const hasAttachedImages = Boolean(options.images?.length);
     const imageOcrEnabled = shouldEnableImageOcr(
@@ -1870,21 +1809,14 @@ export async function runAgentTurn(
         summary: string,
       ): void => {
         if (!alreadyPrintedIds.has(toolEventId)) {
-          const toolCallLine =
-            chalk.cyan(`  ▶ ${call.name}`) +
-            chalk.gray(` ${formatToolArgs(call)}`);
-          writeToolCall(
-            toolEventId,
-            call,
-            styleToolChatter(call, toolCallLine) + "\n",
-          );
+          writeToolCall(toolEventId, call);
           alreadyPrintedIds.add(toolEventId);
         }
         emit({ type: "tool-start", id: toolEventId });
         const output = result.output.endsWith("\n")
           ? result.output
           : `${result.output}\n`;
-        writeToolOutput(toolEventId, output, chalk.dim(`  ${output}`));
+        writeToolOutput(toolEventId, output);
         emitToolResult(toolEventId, result, summary);
       };
 
@@ -1917,9 +1849,6 @@ export async function runAgentTurn(
         writeNotice(
           "info",
           "skipped OCR because the original image is attached to the vision model",
-          chalk.dim(
-            "  ℹ skipped OCR — inspecting the attached image directly\n",
-          ),
         );
         const recoveryText =
           "The original image is attached to this message and you can inspect it directly. " +
@@ -1961,19 +1890,12 @@ export async function runAgentTurn(
       // no execution, until the model re-issues the identical batch to confirm.
       if (call.name === "task.update" && batchRemindCalls.has(rawCall)) {
         if (!alreadyPrintedIds.has(toolEventId)) {
-          const toolCallLine =
-            chalk.cyan(`  ▶ ${call.name}`) +
-            chalk.gray(` ${formatToolArgs(call)}`);
-          writeToolCall(
-            toolEventId,
-            call,
-            styleToolChatter(call, toolCallLine) + "\n",
-          );
+          writeToolCall(toolEventId, call);
           alreadyPrintedIds.add(toolEventId);
         }
         const result = { ok: false, output: batchReminderNote, exitCode: 1 };
         emitToolResult(toolEventId, result, batchReminderNote);
-        writeToolOutput(toolEventId, "held\n", chalk.yellow("  ⚠") + "\n");
+        writeToolOutput(toolEventId, "held\n");
         return { ok: false, call, result, contextOutput: batchReminderNote };
       }
 
@@ -2014,7 +1936,7 @@ export async function runAgentTurn(
             suppressedRepeat: true,
           };
         }
-        writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+        writeNotice("warn", reason);
         const result = { ok: false, output: reason, exitCode: 1 };
         emitToolResult(toolEventId, result, reason);
         return {
@@ -2108,14 +2030,7 @@ export async function runAgentTurn(
             unreadResponderNotificationIds.delete(responderWakeNotificationId);
           }
           if (!alreadyPrintedIds.has(toolEventId)) {
-            const toolCallLine =
-              chalk.cyan(`  ▶ ${call.name}`) +
-              chalk.gray(` ${formatToolArgs(call)}`);
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(call, toolCallLine) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
           const result = {
@@ -2125,11 +2040,7 @@ export async function runAgentTurn(
           };
           loopGuard.recordAttempt(step, call.name, call.args, marked, 0);
           emitToolResult(toolEventId, result, output);
-          writeToolOutput(
-            toolEventId,
-            marked ? "read\n" : "failed\n",
-            marked ? chalk.green("  ✓\n") : chalk.red("  ✗\n"),
-          );
+          writeToolOutput(toolEventId, marked ? "read\n" : "failed\n");
           return {
             ok: marked,
             call,
@@ -2185,20 +2096,9 @@ export async function runAgentTurn(
                     reason: `Task ${resolved} must be in_progress before it can be marked done. Start or retry the task, perform fresh work, then complete it.`,
                   };
             if (!gate.ok) {
-              writeNotice(
-                "warn",
-                gate.reason,
-                chalk.yellow(`  ⚠ ${gate.reason}\n`),
-              );
+              writeNotice("warn", gate.reason);
               if (!alreadyPrintedIds.has(toolEventId)) {
-                const toolCallLine =
-                  chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`);
-                writeToolCall(
-                  toolEventId,
-                  call,
-                  styleToolChatter(call, toolCallLine) + "\n",
-                );
+                writeToolCall(toolEventId, call);
                 alreadyPrintedIds.add(toolEventId);
               }
               const result = {
@@ -2207,11 +2107,7 @@ export async function runAgentTurn(
                 exitCode: 1,
               };
               emitToolResult(toolEventId, result, gate.reason);
-              writeToolOutput(
-                toolEventId,
-                "failed\n",
-                chalk.red("  ✗") + "\n",
-              );
+              writeToolOutput(toolEventId, "failed\n");
               return {
                 ok: false,
                 call,
@@ -2295,26 +2191,16 @@ export async function runAgentTurn(
           }
 
           if (!alreadyPrintedIds.has(toolEventId)) {
-            const toolCallLine =
-              chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(call, toolCallLine) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
 
           if (planResult.reminder && planResult.toast) {
-            writeNotice(
-              "warn",
-              planResult.toast,
-              chalk.yellow(`  ⚠ ${planResult.toast}\n`),
-            );
+            writeNotice("warn", planResult.toast);
           }
 
           if (planResult.plan) {
-            writePlanUpdate(planResult.plan, planResult.display);
+            writePlanUpdate(planResult.plan);
             // Refresh sticky root only if path already exists (not bare Desktop).
             const root = extractProjectRootFromPlan(planResult.plan);
             if (root) setActiveProjectRootIfValid(root);
@@ -2322,12 +2208,7 @@ export async function runAgentTurn(
 
           const result = { ok: planResult.ok, output: planResult.modelNote };
           emitToolResult(toolEventId, result, planResult.modelNote);
-          const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
-          writeToolOutput(
-            toolEventId,
-            result.ok ? "ok\n" : "failed\n",
-            statusIcon + "\n",
-          );
+          writeToolOutput(toolEventId, result.ok ? "ok\n" : "failed\n");
 
           return {
             ok: planResult.ok,
@@ -2378,25 +2259,14 @@ export async function runAgentTurn(
             `Use any recon/enum/scan/research tool; do not write project files or run active exploits. ` +
             `Put exploit/implement steps in plan.create tasks for after accept. ` +
             `Accept the plan (y/i or /implement) to switch to agent and execute.`;
-          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+          writeNotice("warn", reason);
           if (!alreadyPrintedIds.has(toolEventId)) {
-            const toolCallLine =
-              chalk.cyan(`  ▶ ${call.name}`) +
-              chalk.gray(` ${formatToolArgs(call)}`);
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(call, toolCallLine) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
           const result = { ok: false, output: reason, exitCode: 1 };
           emitToolResult(toolEventId, result, reason);
-          writeToolOutput(
-            toolEventId,
-            "failed\n",
-            chalk.red("  ✗") + "\n",
-          );
+          writeToolOutput(toolEventId, "failed\n");
           return {
             ok: false,
             call,
@@ -2417,7 +2287,7 @@ export async function runAgentTurn(
           (await loadPlan(session.sessionId).catch(() => undefined));
         if (planNow && !session.planApproved.value) {
           const reason = `plan awaiting approval — ${call.name} is blocked until the plan is accepted (/implement or Accept)`;
-          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+          writeNotice("warn", reason);
           const result = { ok: false, output: reason, exitCode: 1 };
           return {
             ok: false,
@@ -2494,16 +2364,10 @@ export async function runAgentTurn(
                     nextPending.evidence,
                   );
                 }
-                writePlanUpdate(
-                  livePlanForGate,
-                  renderPlanForTerminal(livePlanForGate) + "\n",
-                );
+                writePlanUpdate(livePlanForGate);
                 writeNotice(
                   "info",
                   `auto-started [${nextPending.id}] so work can continue`,
-                  chalk.dim(
-                    `  ℹ no task was in_progress — auto-started [${nextPending.id}] "${nextPending.title}" before ${call.name}\n`,
-                  ),
                 );
               }
             }
@@ -2539,29 +2403,14 @@ export async function runAgentTurn(
           const message = materialized
             ? `Scaffold skipped: the target already contains a usable project${target ? ` at ${target}` : ""}. Continue that project directly; do not re-run the scaffolder.`
             : `Scaffold was not run: the existing target${target ? ` at ${target}` : ""} is incomplete. Inspect and repair it before completing the scaffold task; do not retry the scaffolder into this non-empty directory.`;
-          writeNotice(
-            "info",
-            message,
-            chalk.dim(`  ℹ ${message}\n`),
-          );
+          writeNotice("info", message);
           if (!alreadyPrintedIds.has(toolEventId)) {
-            const toolCallLine =
-              chalk.cyan(`  ▶ ${call.name}`) +
-              chalk.gray(` ${formatToolArgs(call)}`);
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(call, toolCallLine) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
           const result = { ok: true, output: message, exitCode: 0 };
           emitToolResult(toolEventId, result, message);
-          writeToolOutput(
-            toolEventId,
-            "ok\n",
-            chalk.green("  ✓") + "\n",
-          );
+          writeToolOutput(toolEventId, "ok\n");
           return {
             ok: true,
             call,
@@ -2572,13 +2421,7 @@ export async function runAgentTurn(
       }
 
       if (!alreadyPrintedIds.has(toolEventId)) {
-        const toolCallLine =
-          chalk.cyan(`  ▶ ${call.name}`) + chalk.gray(` ${formatToolArgs(call)}`);
-        writeToolCall(
-          toolEventId,
-          call,
-          styleToolChatter(call, toolCallLine) + "\n",
-        );
+        writeToolCall(toolEventId, call);
         alreadyPrintedIds.add(toolEventId);
       }
 
@@ -2631,12 +2474,7 @@ export async function runAgentTurn(
             reason: decisionForAction.reason,
             allowed: scope?.authorizedTargets,
           });
-          writeToolBlocked(
-            toolEventId,
-            call.name,
-            reason,
-            chalk.red(`  ✗ ${reason}\n`),
-          );
+          writeToolBlocked(toolEventId, call.name, reason);
           const result = { ok: false, output: reason, exitCode: 1 };
           emitToolResult(toolEventId, result, reason);
           return { ok: false, call, result, contextOutput: reason };
@@ -2644,12 +2482,7 @@ export async function runAgentTurn(
       }
 
       if (decision.level === "block") {
-        writeToolBlocked(
-          toolEventId,
-          call.name,
-          decision.reason,
-          chalk.red(`  ✗ blocked: ${decision.reason}`) + "\n",
-        );
+        writeToolBlocked(toolEventId, call.name, decision.reason);
         const message = `Blocked: ${call.name} — ${decision.reason}`;
         const result = { ok: false, output: message, exitCode: 1 };
 
@@ -2680,12 +2513,7 @@ export async function runAgentTurn(
         restoreInteractiveStdin();
         if (!authorized) {
           const lastAnswer = "Pentest authorization not confirmed.";
-          writeToolBlocked(
-            toolEventId,
-            call.name,
-            lastAnswer,
-            chalk.red(`  ✗ ${lastAnswer}`) + "\n",
-          );
+          writeToolBlocked(toolEventId, call.name, lastAnswer);
           const result = { ok: false, output: lastAnswer, exitCode: 1 };
           return {
             ok: false,
@@ -2751,12 +2579,7 @@ export async function runAgentTurn(
           restoreInteractiveStdin();
           if (!ok) {
             const lastAnswer = "Cancelled.";
-            writeToolBlocked(
-              toolEventId,
-              call.name,
-              lastAnswer,
-              chalk.red(`  ✗ cancelled`) + "\n",
-            );
+            writeToolBlocked(toolEventId, call.name, lastAnswer);
             const result = { ok: false, output: lastAnswer, exitCode: 1 };
             return {
               ok: false,
@@ -2831,13 +2654,10 @@ export async function runAgentTurn(
           writeNotice(
             "warn",
             "Responder delegation record could not be persisted — the job will be linked after launch",
-            chalk.yellow(
-              "  ⚠ responder delegation record not persisted; linking after launch\n",
-            ),
           );
         } else if (created.plan) {
           pendingSessionStatePlan = created.plan;
-          writePlanUpdate(created.plan, renderPlanForTerminal(created.plan) + "\n");
+          writePlanUpdate(created.plan);
         }
       }
       if (
@@ -2872,7 +2692,7 @@ export async function runAgentTurn(
       options.onToolStart?.(call);
       // Card was "queued" since writeToolCall; flip to running only when work starts.
       emit({ type: "tool-start", id: toolEventId });
-      writeStatus(call.name, chalk.dim(`  → ${call.name}\n`));
+      writeStatus(call.name);
 
       // Elevation uses the secure secret modal (TUI) or is refused — never
       // a raw TTY "Password:" that freezes the UI. No misleading notice.
@@ -2896,7 +2716,7 @@ export async function runAgentTurn(
         liveBytes += chunk.length;
         const indented = chunk.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
         const body = indented.startsWith("\n") ? indented : `  ${indented}`;
-        writeToolOutput(toolEventId, chunk, chalk.dim(body));
+        writeToolOutput(toolEventId, chunk);
       };
 
       const jobId = randomUUID().slice(0, 8);
@@ -2945,9 +2765,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               `${call.name} has been running for >${stallSecs}s without output — cancelling stalled tool`,
-              chalk.yellow(
-                `  ⏳ ${call.name} stalled for >${stallSecs}s without output — cancelling\n`,
-              ),
             );
             toolAc.abort();
           }
@@ -2965,7 +2782,7 @@ export async function runAgentTurn(
       const runToolWithForcedSettle = (): Promise<ToolResult> => {
         const work = runToolCall(call, {
           signal: toolAc.signal,
-          requestSecret: options.requestSecret ?? inquirerSecretRequester,
+          requestSecret: options.requestSecret ?? stdioSecretRequester,
           onOutput: (chunk) => {
             if (toolAc.signal.aborted) return;
             resetStallTimer();
@@ -3058,9 +2875,6 @@ export async function runAgentTurn(
               writeNotice(
                 "warn",
                 `${call.name} did not stop after cancel — force-settling`,
-                chalk.yellow(
-                  `  ⏳ ${call.name} ignore cancel — force-settling hung tool\n`,
-                ),
               );
               finishOk(forceCancelResult());
             }, TOOL_ABORT_GRACE_MS);
@@ -3076,9 +2890,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               `${call.name} exceeded ${hardSecs}s hard budget — cancelling`,
-              chalk.yellow(
-                `  ⏳ ${call.name} hard-timeout (${hardSecs}s) — cancelling\n`,
-              ),
             );
             if (!toolAc.signal.aborted) toolAc.abort();
             armGraceForceSettle();
@@ -3113,7 +2924,7 @@ export async function runAgentTurn(
           };
         }
         if (liveBytes > 0) {
-          writeToolOutput(toolEventId, "\n", "\n");
+          writeToolOutput(toolEventId, "\n");
         }
         jobManager.updateJobStatus(
           jobId,
@@ -3165,7 +2976,7 @@ export async function runAgentTurn(
         const output = result.output.endsWith("\n")
           ? result.output
           : `${result.output}\n`;
-        writeToolOutput(toolEventId, output, "", { replace: true });
+        writeToolOutput(toolEventId, output, { replace: true });
         emitToolResult(toolEventId, result, contextOutput);
         options.onToolResult?.(call, result);
         // Record it as an observation-free success so the per-call guard can
@@ -3246,9 +3057,6 @@ export async function runAgentTurn(
           writeNotice(
             "info",
             `project root → ${fromScaffold} (existing materialized scaffold — continue)`,
-            chalk.dim(
-              `  ℹ existing scaffold at ${fromScaffold} — continue, do not re-create\n`,
-            ),
           );
         } else if (result.ok && cancelled && !materialized) {
           result = {
@@ -3284,17 +3092,12 @@ export async function runAgentTurn(
             writeNotice(
               "info",
               `project root → ${fromScaffold} (scaffold output claimed success — continue)`,
-              chalk.dim(`  ℹ project root set to ${fromScaffold}\n`),
             );
           }
         } else if (result.ok && fromScaffold && materialized) {
           setActiveProjectRootIfValid(fromScaffold, { force: true });
           await persistProjectRootOnPlan(fromScaffold);
-          writeNotice(
-            "info",
-            `project root → ${fromScaffold}`,
-            chalk.dim(`  ℹ project root set to ${fromScaffold}\n`),
-          );
+          writeNotice("info", `project root → ${fromScaffold}`);
         }
       }
 
@@ -3316,10 +3119,7 @@ export async function runAgentTurn(
         }).catch(() => undefined);
         if (settlement?.ok && settlement.plan) {
           pendingSessionStatePlan = settlement.plan;
-          writePlanUpdate(
-            settlement.plan,
-            renderPlanForTerminal(settlement.plan) + "\n",
-          );
+          writePlanUpdate(settlement.plan);
         }
         delegation = undefined;
       }
@@ -3412,9 +3212,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               `Responder job ${durableJob.id} started, but its plan subtask could not be persisted`,
-              chalk.yellow(
-                `  ⚠ job ${durableJob.id} is running, but task linkage persistence failed\n`,
-              ),
             );
           } else {
             linkedTaskId = responderChildId;
@@ -3422,7 +3219,7 @@ export async function runAgentTurn(
             responderTaskId = responderChildId;
             pendingSessionStatePlan = upsert.plan ?? livePlan;
             const rendered = upsert.plan ?? livePlan;
-            writePlanUpdate(rendered, renderPlanForTerminal(rendered) + "\n");
+            writePlanUpdate(rendered);
           }
         }
         if (durableJob) {
@@ -3443,9 +3240,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               `Responder job ${durableJob.id} started, but durable task linkage will be retried on completion`,
-              chalk.yellow(
-                `  ⚠ job ${durableJob.id} is running, but durable task linkage needs recovery\n`,
-              ),
             );
           } else if (responderTaskId) {
             result = {
@@ -3748,57 +3542,15 @@ export async function runAgentTurn(
           writeNotice(
             "warn",
             `${failCount} consecutive failures — model evaluating approach`,
-            chalk.yellow(
-              `  ⚠ ${failCount} consecutive failures — evaluating approach\n`,
-            ),
           );
         }
       }
 
-      const statusIcon = result.ok ? chalk.green("  ✓") : chalk.red("  ✗");
-      // Classic stdout gets a short status glyph; the event stream / spool
-      // must NOT be polluted with "ok"/"failed" (the card already shows status).
-      if (writesDirectly) {
-        process.stdout.write(statusIcon + "\n");
-      }
       if (output) {
         // Authoritative FULL body — replace any live stream so the pager
         // never shows a truncated mid-run preview. Never cap for the UI.
         const fullChunk = output.endsWith("\n") ? output : `${output}\n`;
-        if (!writesDirectly) {
-          writeToolOutput(toolEventId, fullChunk, "", { replace: true });
-        } else {
-          // Classic stdout: short preview only; full text is on disk.
-          const displayMax = 6_000;
-          const displaySummary = summarizeOutput(output, displayMax);
-          const displayText = displaySummary.truncated
-            ? `${displaySummary.text}${savedOutputPath ? chalk.dim(`\n  ... full output saved to ${savedOutputPath}`) : ""}`
-            : displaySummary.text;
-          const renderedOutput = indentAndWrapText(displayText);
-          process.stdout.write(styleToolChatter(call, renderedOutput) + "\n");
-          if (savedOutputPath && displaySummary.truncated) {
-            process.stdout.write(
-              chalk.dim(`  full output saved to ${savedOutputPath}\n`),
-            );
-          }
-        }
-      }
-
-      if (output) {
-        const viewport = registerViewport({
-          toolName: call.name,
-          argsDisplay: formatToolArgs(call),
-          artifactPath: savedOutputPath,
-          summary: contextOutput,
-        });
-
-        if (writesDirectly && savedOutputPath) {
-          const short = chalk.dim(`  saved ${savedOutputPath}\n`);
-          process.stdout.write(short);
-        } else if (writesDirectly) {
-          const viewportHint = `${formatViewportHint(viewport)}\n`;
-          process.stdout.write(viewportHint);
-        }
+        writeToolOutput(toolEventId, fullChunk, { replace: true });
       }
 
       return { ok: result.ok, call, result, contextOutput };
@@ -4118,9 +3870,6 @@ export async function runAgentTurn(
           writeNotice(
             "warn",
             `context is still ~${candidateTokens.toLocaleString()} tokens after compaction (limit ~${compactTrigger.toLocaleString()}) — largest block: ${dominant}`,
-            chalk.yellow(
-              `  ⚠ context still ~${candidateTokens.toLocaleString()} tokens after compaction; largest block: ${dominant}\n`,
-            ),
           );
           writeCompactionFailed(
             compactionId,
@@ -4177,9 +3926,6 @@ export async function runAgentTurn(
         writeNotice(
           "info",
           `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)`,
-          chalk.dim(
-            `  ℹ context auto-compacted (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)\n`,
-          ),
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -4232,13 +3978,7 @@ export async function runAgentTurn(
             }
           }
           if (keepGoing) {
-            writeNotice(
-              "info",
-              "continuing after progress pause",
-              chalk.dim(
-                `  ℹ continuing after pause (${governorPauseReason}) — change approach if stuck\n`,
-              ),
-            );
+            writeNotice("info", "continuing after progress pause");
             deferredPostToolMessages.push({
               role: "system",
               content:
@@ -4292,7 +4032,7 @@ export async function runAgentTurn(
         call = pendingCalls.shift()!;
         assistantText = { visible: "", thinkContent: "", hasThinking: false };
         const batchStatus = `  ↳ continuing batch (${pendingCalls.length} more queued)\n`;
-        writeStatus(batchStatus, chalk.dim(batchStatus));
+        writeStatus(batchStatus);
       } else {
 
         await maybeAutoCompact("auto-token-budget");
@@ -4304,12 +4044,7 @@ export async function runAgentTurn(
 
         const streamLabel =
           step === 0 ? "waiting for model" : `step ${step + 1}`;
-        let spinner = writesDirectly
-          ? startThinkingSpinner(streamLabel, options.signal)
-          : noopSpinner;
-        if (!writesDirectly) {
-          emit({ type: "status", text: streamLabel });
-        }
+        emit({ type: "status", text: streamLabel });
         let sawReasoning = false;
         let inThinking = false;
         let emittedThinkingStatus = false;
@@ -4328,31 +4063,26 @@ export async function runAgentTurn(
           return "waiting for model";
         };
         const heartbeat = setInterval(() => {
-          const text = streamPhase();
-          if (writesDirectly) spinner.setLabel(text);
-          else emit({ type: "status", text });
+          emit({ type: "status", text: streamPhase() });
         }, 10_000);
         (heartbeat as unknown as { unref?: () => void }).unref?.();
 
         const deferredToolCalls: {
           eventId: string;
           call: ToolCall;
-          rendered: string;
           shown: boolean;
         }[] = [];
         const streamedNativeCallNames = new Map<number, string>();
-        const deltaParser = writesDirectly
-          ? undefined
-          : createThinkingStreamParser(
-            (text) => emit({ type: "assistant-delta", text }),
-            (text) => {
-              if (!emittedThinkingStatus) {
-                emittedThinkingStatus = true;
-                emit({ type: "status", text: "thinking" });
-              }
-              emit({ type: "thinking-delta", text });
-            },
-          );
+        const deltaParser = createThinkingStreamParser(
+          (text) => emit({ type: "assistant-delta", text }),
+          (text) => {
+            if (!emittedThinkingStatus) {
+              emittedThinkingStatus = true;
+              emit({ type: "status", text: "thinking" });
+            }
+            emit({ type: "thinking-delta", text });
+          },
+        );
         let completion;
         let toolsAttached = false;
         try {
@@ -4396,7 +4126,7 @@ export async function runAgentTurn(
               if (notice.includes("Large context")) {
                 freeTierLargeContextWarned = true;
               }
-              writeNotice("info", notice, chalk.dim(`  ℹ ${notice}\n`));
+              writeNotice("info", notice);
             }
           }
           const contextLimitTokens = currentContextLimitTokens();
@@ -4477,27 +4207,19 @@ export async function runAgentTurn(
                     if (!delta.name) return;
                     const name = fromWireName(delta.name) ?? delta.name;
                     streamedNativeCallNames.set(delta.index, name);
-                    if (!writesDirectly) {
-                      emit({
-                        type: "status",
-                        text:
-                          delta.argumentsBytes && delta.argumentsBytes >= 4096
-                            ? `${name} (${Math.round(delta.argumentsBytes / 1024)}KB args)`
-                            : name,
-                      });
-                    } else {
-                      spinner.stop();
-                      spinner = startThinkingSpinner(
-                        `tool ${name}…`,
-                        options.signal,
-                      );
-                    }
+                    emit({
+                      type: "status",
+                      text:
+                        delta.argumentsBytes && delta.argumentsBytes >= 4096
+                          ? `${name} (${Math.round(delta.argumentsBytes / 1024)}KB args)`
+                          : name,
+                    });
                   },
                 }
                 : {}),
             },
             (token) => {
-              deltaParser?.push(token);
+              deltaParser.push(token);
               generatedTokens += 1;
               accumulatedText += token;
 
@@ -4506,9 +4228,6 @@ export async function runAgentTurn(
               if (!toolsAttached) {
                 const parsedCalls = parseAllToolCalls(accumulatedText);
                 if (parsedCalls.length > streamedCallsCount) {
-                  if (writesDirectly) {
-                    spinner.stop();
-                  }
                   while (streamedCallsCount < parsedCalls.length) {
                     const call = normalizeToolCall(
                       parsedCalls[streamedCallsCount]!,
@@ -4516,29 +4235,10 @@ export async function runAgentTurn(
                     const eventId = `tool-${++nextToolEventId}`;
                     callIds[streamedCallsCount] = eventId;
                     alreadyPrintedIds.add(eventId);
-
-                    const toolCallLine =
-                      chalk.cyan(`  ▶ ${call.name}`) +
-                      chalk.gray(` ${formatToolArgs(call)}`);
-                    const entry = {
-                      eventId,
-                      call,
-                      rendered: styleToolChatter(call, toolCallLine) + "\n",
-                      shown: false,
-                    };
-                    deferredToolCalls.push(entry);
-                    if (!writesDirectly) {
-                      writeToolCall(eventId, call, entry.rendered);
-                      entry.shown = true;
-                      emit({ type: "status", text: call.name });
-                    }
+                    deferredToolCalls.push({ eventId, call, shown: true });
+                    writeToolCall(eventId, call);
+                    emit({ type: "status", text: call.name });
                     streamedCallsCount += 1;
-                  }
-                  if (writesDirectly) {
-                    spinner = startThinkingSpinner(
-                      `generating response (${generatedTokens} tokens)`,
-                      options.signal,
-                    );
                   }
                 }
               }
@@ -4550,45 +4250,22 @@ export async function runAgentTurn(
               ) {
                 sawReasoning = true;
                 inThinking = true;
-                spinner.setLabel("thinking");
-                if (!writesDirectly) emit({ type: "status", text: "thinking" });
+                emit({ type: "status", text: "thinking" });
               }
               if (
                 token.includes(REASONING_CLOSE) ||
                 (inThinking && /<\/think(?:ing)?>/i.test(token))
               ) {
                 inThinking = false;
-                spinner.setLabel("generating response (0 tokens)");
                 generatedTokens = 0;
-              }
-
-              if (inThinking) {
-                const cleaned = stripReasoningMarkers(token).replace(
-                  /<\/?think(?:ing)?[^>]*>/gi,
-                  "",
-                );
-                if (cleaned) {
-                  spinner.pushPreview(cleaned);
-                  const approx = cleaned.split(/\s+/).filter(Boolean).length;
-                  if (approx > 0) spinner.bumpReasoning(approx);
-                }
-              } else {
-                if (generatedTokens % 10 === 0) {
-                  spinner.setLabel(`generating response (${generatedTokens} tokens)`);
-                }
               }
             },
             (status) => {
-              spinner.stop();
-              writeStatus(status, chalk.dim(status));
+              writeStatus(status);
               // Toast only on key *switch* after a failure — never on sticky
               // "using" or retry countdown ticks (those stay in composer status).
               if (/^switching /i.test(status.trim())) {
-                writeNotice(
-                  "warn",
-                  status.trim(),
-                  chalk.yellow(`  ${status.trim()}\n`),
-                );
+                writeNotice("warn", status.trim());
               }
             },
           );
@@ -4613,7 +4290,7 @@ export async function runAgentTurn(
                 consecutiveFailures: freeTierConsecutiveFailures,
               })) {
                 if (notice.includes("Large context")) continue; // already shown above
-                writeNotice("warn", notice, chalk.yellow(`  ⚠ ${notice}\n`));
+                writeNotice("warn", notice);
                 freeTierAdvisoryShown = true;
               }
             }
@@ -4662,8 +4339,7 @@ export async function runAgentTurn(
 
             let continuationNudge = "";
             if (partialStream) {
-              spinner.stop();
-              deltaParser?.finish();
+              deltaParser.finish();
               const hasShownToolCall = deferredToolCalls.some(
                 (entry) => entry.shown,
               );
@@ -4682,7 +4358,7 @@ export async function runAgentTurn(
                   content: sanitizeAssistantText(partialVisible),
                 });
                 interruptedVisible += normalizedPartialVisible;
-              } else if (terminalFailure && !writesDirectly) {
+              } else if (terminalFailure) {
                 emit({ type: "assistant-message", text: "" });
               }
               if (partial.hasThinking && !hasShownToolCall) {
@@ -4700,7 +4376,6 @@ export async function runAgentTurn(
                   deferred.eventId,
                   deferred.call.name,
                   "Incomplete tool call discarded after the provider stream was interrupted.",
-                  chalk.yellow("  ⚠ incomplete tool call discarded after stream interruption\n"),
                 );
               }
               continuationNudge = [
@@ -4716,11 +4391,7 @@ export async function runAgentTurn(
                 : lowYieldResumptions > 1
                   ? `route is dropping after almost no output (${lowYieldResumptions} in a row) — switching model`
                   : "partial response preserved — resuming from the interruption";
-              writeNotice(
-                "warn",
-                restartNotice,
-                chalk.yellow(`  ⚠ ${restartNotice}\n`),
-              );
+              writeNotice("warn", restartNotice);
             }
 
             if (terminalFailure) {
@@ -4733,11 +4404,7 @@ export async function runAgentTurn(
             }
 
             if (plan.notice) {
-              writeNotice(
-                "warn",
-                plan.notice,
-                chalk.yellow(`  ⚠ ${plan.notice}\n`),
-              );
+              writeNotice("warn", plan.notice);
             }
             if (plan.disableThinking) retryWithoutThinking = true;
             if (plan.allowModelFallback) allowModelFallback = true;
@@ -4761,9 +4428,7 @@ export async function runAgentTurn(
             continue;
           }
         } finally {
-          // Always clear the spinner — abort, network error, or success.
           clearInterval(heartbeat);
-          spinner.stop();
         }
         if (responderDelivery) {
           // The result text is now part of this turn, so consumption is durable.
@@ -4802,7 +4467,7 @@ export async function runAgentTurn(
             });
           }
         }
-        deltaParser?.finish();
+        deltaParser.finish();
         // Sticky text-only may have flipped dialect during stream retry.
         ({ dialect: toolDialect, native: nativeToolsActive } =
           resolveNativeTools(provider, model));
@@ -4829,10 +4494,10 @@ export async function runAgentTurn(
             ).trim();
             if (displayText) {
               writeAssistantMessage(displayText);
-            } else if (deltaParser) {
+            } else {
               emit({ type: "assistant-message", text: "" });
             }
-            if (assistantText.hasThinking && deltaParser) {
+            if (assistantText.hasThinking) {
               emit({
                 type: "thinking-block",
                 content: assistantText.thinkContent,
@@ -4845,19 +4510,6 @@ export async function runAgentTurn(
           lowYieldResumptions = 0;
         };
 
-
-        // Only emit a thinking-block event when the classic renderer is
-        // active (writesDirectly / no deltaParser).  In TUI v2 the
-        // deltaParser already streamed thinking-delta events that created
-        // the thinking item in the correct transcript position; emitting
-        // a redundant thinking-block after tool-call events have cleared
-        // pendingThinkingId causes the reducer to append a *duplicate*
-        // thinking item at the end of the transcript — the root cause of
-        // the "ghost thinking blocks below the response" bug seen with
-        // models that use reasoning_content (e.g. Kimi K2-thinking).
-        if (assistantText.hasThinking && !deltaParser) {
-          writeThinkingBlock(assistantText.thinkContent);
-        }
 
         // Native-first: prefer structured toolCalls from the provider.
         let nativeToolCalls: NativeToolCall[] = completion.toolCalls ?? [];
@@ -4874,13 +4526,9 @@ export async function runAgentTurn(
               const eventId = `tool-${++nextToolEventId}`;
               callIds[i] = eventId;
               alreadyPrintedIds.add(eventId);
-              const toolCallLine =
-                chalk.cyan(`  ▶ ${normalized.name}`) +
-                chalk.gray(` ${formatToolArgs(normalized)}`);
               deferredToolCalls.push({
                 eventId,
                 call: normalized,
-                rendered: styleToolChatter(normalized, toolCallLine) + "\n",
                 shown: false,
               });
             }
@@ -4895,23 +4543,14 @@ export async function runAgentTurn(
               if (existing && existing.call.name !== "…") {
                 callIds[i] = existing.eventId;
                 existing.call = normalized;
-                const toolCallLine =
-                  chalk.cyan(`  ▶ ${normalized.name}`) +
-                  chalk.gray(` ${formatToolArgs(normalized)}`);
-                existing.rendered =
-                  styleToolChatter(normalized, toolCallLine) + "\n";
               } else if (!existing || existing.call.name === "…") {
                 const eventId =
                   existing?.eventId ?? `tool-${++nextToolEventId}`;
                 callIds[i] = eventId;
                 alreadyPrintedIds.add(eventId);
-                const toolCallLine =
-                  chalk.cyan(`  ▶ ${normalized.name}`) +
-                  chalk.gray(` ${formatToolArgs(normalized)}`);
                 const entry = {
                   eventId,
                   call: normalized,
-                  rendered: styleToolChatter(normalized, toolCallLine) + "\n",
                   shown: existing?.shown ?? false,
                 };
                 if (existing) deferredToolCalls[i] = entry;
@@ -4942,11 +4581,7 @@ export async function runAgentTurn(
               strict: getConfig().parserStrict,
             });
             if (call) {
-              writeNotice(
-                "info",
-                "recovered tool call from thinking content",
-                chalk.dim("  ℹ recovered tool call from thinking content\n"),
-              );
+              writeNotice("info", "recovered tool call from thinking content");
             }
           }
         }
@@ -4957,7 +4592,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               "suppressed tool call from apparent prompt leak",
-              chalk.yellow("  ⚠ suppressed tool call — model appears to be repeating its system prompt\n"),
             );
           }
           call = undefined;
@@ -4996,9 +4630,6 @@ export async function runAgentTurn(
                     writeNotice(
                       "info",
                       `native tool call was truncated — salvaged ${lineCount} lines and wrote to ${salvaged.path}`,
-                      chalk.cyan(
-                        `  ℹ native tool call was truncated — salvaged ${lineCount} lines to ${salvaged.path}\n`,
-                      ),
                     );
                     // Pair assistant tool_calls with synthetic results so the
                     // next turn is not orphaned, then nudge for append.
@@ -5079,18 +4710,12 @@ export async function runAgentTurn(
                   entry.eventId,
                   entry.call.name,
                   "Native tool arguments were unusable again; nothing ran. Reissue as a fenced tool block.",
-                  chalk.yellow(
-                    "  ⚠ native tool arguments were unusable again — nothing ran\n",
-                  ),
                 );
               }
               markTextOnlyModel(provider, model);
               writeNotice(
                 "warn",
                 "native tool arguments keep arriving unusable — switching this model to the text tool protocol",
-                chalk.yellow(
-                  "  ⚠ native tool arguments keep arriving unusable — switching this model to the text tool protocol\n",
-                ),
               );
               commitAssistantRetry(assistantText.visible);
               messages.push(
@@ -5121,9 +4746,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               "response hit the output token limit — continuing from where it stopped",
-              chalk.yellow(
-                "  ⚠ response hit the output token limit — continuing from where it stopped\n",
-              ),
             );
             messages.push({
               role: "assistant",
@@ -5146,20 +4768,12 @@ export async function runAgentTurn(
               "The provider began this native tool call but never completed it. Nothing ran; reissue a complete call.";
             for (const deferred of deferredToolCalls) {
               if (!deferred.shown || deferred.call.name === "…") continue;
-              writeToolBlocked(
-                deferred.eventId,
-                deferred.call.name,
-                reason,
-                chalk.yellow(`  ⚠ ${reason}\n`),
-              );
+              writeToolBlocked(deferred.eventId, deferred.call.name, reason);
             }
             markTextOnlyModel(provider, model);
             writeNotice(
               "warn",
               "provider abandoned a native tool call — switching this model to the text tool protocol",
-              chalk.yellow(
-                "  ⚠ provider abandoned a native tool call — switching this model to the text tool protocol\n",
-              ),
             );
           }
           emptyVisibleRetries += 1;
@@ -5168,17 +4782,11 @@ export async function runAgentTurn(
               writeNotice(
                 "warn",
                 "model produced only thinking — nudging it to take action",
-                chalk.yellow(
-                  "  ⚠ model produced only thinking — nudging it to take action\n",
-                ),
               );
             } else {
               writeNotice(
                 "warn",
                 "model returned an empty response — nudging it to answer",
-                chalk.yellow(
-                  "  ⚠ model returned an empty response — nudging it to answer\n",
-                ),
               );
             }
             if (assistantText.hasThinking) retryWithoutThinking = true;
@@ -5203,9 +4811,6 @@ export async function runAgentTurn(
           writeNotice(
             "warn",
             "model returned an empty response after retries — no answer produced",
-            chalk.yellow(
-              "  ⚠ model returned an empty response after retries — no answer produced\n",
-            ),
           );
           return finishTurn("Model returned an empty response after retries.", step + 1);
         } else {
@@ -5226,7 +4831,6 @@ export async function runAgentTurn(
             writeNotice(
               "info",
               "recovered an unfenced tool call from bare JSON",
-              chalk.dim("  ℹ recovered an unfenced tool call from bare JSON\n"),
             );
           } else if (bare?.argsOnly) {
             bareArgsOnly = true;
@@ -5241,9 +4845,6 @@ export async function runAgentTurn(
             writeNotice(
               "info",
               "recovered an unfenced tool call from thinking content",
-              chalk.dim(
-                "  ℹ recovered an unfenced tool call from thinking content\n",
-              ),
             );
           } else if (bareThink?.argsOnly) {
             bareArgsOnly = true;
@@ -5259,11 +4860,6 @@ export async function runAgentTurn(
                 toolsAttached
                   ? "tool call missing its name — asking the model to call a tool properly"
                   : "tool call missing its name/fence — asking the model to re-emit a proper ```tool block",
-                chalk.yellow(
-                  toolsAttached
-                    ? "  ⚠ tool call missing its name — asking the model to call a tool properly\n"
-                    : "  ⚠ tool call missing its name/fence — asking the model to re-emit a proper ```tool block\n",
-                ),
               );
               commitAssistantRetry(assistantText.visible);
               messages.push(
@@ -5299,9 +4895,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               "tool call was malformed or cut off — asking the model to retry in JSON form",
-              chalk.yellow(
-                "  ⚠ tool call was malformed or cut off — asking the model to retry in JSON form\n",
-              ),
             );
             commitAssistantRetry(assistantText.visible);
             messages.push(
@@ -5335,9 +4928,6 @@ export async function runAgentTurn(
                   writeNotice(
                     "info",
                     `tool call was truncated — salvaged ${lineCount} lines and wrote to ${salvaged.path}`,
-                    chalk.cyan(
-                      `  ℹ tool call was truncated — salvaged ${lineCount} lines to ${salvaged.path}\n`,
-                    ),
                   );
                   commitAssistantRetry(
                     stripThinking(assistantText.visible).visible,
@@ -5373,9 +4963,6 @@ export async function runAgentTurn(
               writeNotice(
                 "warn",
                 "tool call was cut off (output too long) — asking the model to retry safely",
-                chalk.yellow(
-                  "  ⚠ tool call was cut off (output too long) — asking the model to retry safely\n",
-                ),
               );
               commitAssistantRetry(
                 stripThinking(assistantText.visible).visible,
@@ -5418,9 +5005,6 @@ export async function runAgentTurn(
                   writeNotice(
                     "info",
                     `malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}`,
-                    chalk.cyan(
-                      `  ℹ malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}\n`,
-                    ),
                   );
                   commitAssistantRetry(
                     stripThinking(assistantText.visible).visible,
@@ -5445,9 +5029,6 @@ export async function runAgentTurn(
               writeNotice(
                 "warn",
                 "tool block present but its JSON didn't parse — asking the model to re-emit valid JSON",
-                chalk.yellow(
-                  "  ⚠ tool block present but its JSON didn't parse — asking the model to re-emit valid JSON\n",
-                ),
               );
               commitAssistantRetry(
                 stripThinking(assistantText.visible).visible,
@@ -5516,9 +5097,6 @@ export async function runAgentTurn(
             writeNotice(
               "warn",
               "model repeatedly returned prose instead of a native tool call — switching this model to the text tool protocol",
-              chalk.yellow(
-                "  ⚠ switching this model to the text tool protocol after repeated non-actionable responses\n",
-              ),
             );
             messages.push(
               recoveryUserMessage(
@@ -5716,7 +5294,7 @@ export async function runAgentTurn(
             : textBeforeToolCall(assistantText.visible);
         if (beforeTool) {
           writeAssistantMessage(beforeTool);
-        } else if (deltaParser) {
+        } else {
           emit({ type: "assistant-message", text: "" });
         }
         interruptedVisible = "";
@@ -5779,9 +5357,6 @@ export async function runAgentTurn(
           writeNotice(
             "info",
             "deferring plan.create until reconnaissance results are available",
-            chalk.dim(
-              `  ℹ running ${toRun.length} gathering call(s); ${deferredCount} plan/follow-on call(s) deferred for evidence-based planning\n`,
-            ),
           );
           messages.push({
             role: "system",
@@ -5799,9 +5374,6 @@ export async function runAgentTurn(
           writeNotice(
             "info",
             "creating the plan now; deferring follow-on calls until it is approved",
-            chalk.dim(
-              `  ℹ running plan.create from prior reconnaissance; ${deferredCount} follow-on call(s) deferred until after approval\n`,
-            ),
           );
           messages.push({
             role: "system",
@@ -5861,7 +5433,7 @@ export async function runAgentTurn(
             : sequenceDecision.oscillation
               ? "This exact action sequence already completed earlier this turn (the agent is oscillating back to finished work). No commands were run again; every one of these results is already in context — synthesize them and either advance to a genuinely new action or finish."
               : "The same action sequence already ran in the previous model round. No commands were run again; reuse the existing results and choose a materially different next action or finish.";
-          writeNotice("warn", reason, chalk.yellow(`  ⚠ ${reason}\n`));
+          writeNotice("warn", reason);
           const suppressedResults = bound.map((b) => {
             const duplicate = runIds.has(b.id);
             const priorObservation = duplicate
@@ -5887,20 +5459,13 @@ export async function runAgentTurn(
           for (const { b, resultReason, result } of suppressedResults) {
             const queued = deferredToolCalls[b.index];
             const eventId = queued?.eventId ?? `tool-${++nextToolEventId}`;
-            const toolCallLine =
-              chalk.cyan(`  ▶ ${b.call.name}`) +
-              chalk.gray(` ${formatToolArgs(b.call)}`);
-            writeToolCall(
-              eventId,
-              b.call,
-              styleToolChatter(b.call, toolCallLine) + "\n",
-            );
+            writeToolCall(eventId, b.call);
             alreadyPrintedIds.add(eventId);
             emit({ type: "tool-start", id: eventId });
             const output = resultReason.endsWith("\n")
               ? resultReason
               : `${resultReason}\n`;
-            writeToolOutput(eventId, output, chalk.dim(`  ${output}`));
+            writeToolOutput(eventId, output);
             emitToolResult(eventId, result, resultReason);
           }
           const suppressedCallList = suppressedResults
@@ -5961,7 +5526,7 @@ export async function runAgentTurn(
         }
 
         if (sequenceDecision.warn && sequenceDecision.warnMessage) {
-          writeNotice("warn", sequenceDecision.warnMessage, chalk.yellow(`  ⚠ ${sequenceDecision.warnMessage}\n`));
+          writeNotice("warn", sequenceDecision.warnMessage);
           messages.push(
             recoveryUserMessage(sequenceDecision.warnMessage),
           );
@@ -5973,9 +5538,6 @@ export async function runAgentTurn(
           writeNotice(
             "info",
             `${allCalls.length} tool calls in this message — read-only in parallel, writes in order (failures do not cancel siblings)`,
-            chalk.dim(
-              `  ℹ ${allCalls.length} tool calls — parallel reads, ordered writes; failures continue\n`,
-            ),
           );
         }
 
@@ -5983,7 +5545,7 @@ export async function runAgentTurn(
         for (const deferred of activeDeferredToolCalls.slice(0, allCalls.length)) {
           if (!deferred.call.name || deferred.call.name === "…") continue;
           if (!deferred.shown) {
-            writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
+            writeToolCall(deferred.eventId, deferred.call);
             deferred.shown = true;
           }
         }
@@ -6127,11 +5689,7 @@ export async function runAgentTurn(
           if (reminded.reminded) {
             planRemindedAt.add(productiveSteps);
             // Chrome only — model already has the note on this tool result.
-            writeNotice(
-              "info",
-              PLAN_REMINDER_TOAST,
-              chalk.dim(`  ℹ ${PLAN_REMINDER_TOAST}\n`),
-            );
+            writeNotice("info", PLAN_REMINDER_TOAST);
           }
           if (historyNativeCalls.length) {
             appendToolResult(
@@ -6354,20 +5912,12 @@ export async function runAgentTurn(
             for (const intent of intents) {
               if (intent.state === "in_progress") batchRemindCalls.add(intent.call);
             }
-            writeNotice(
-              "warn",
-              multiOpenToast(openIds.length),
-              chalk.yellow(`  ⚠ ${multiOpenToast(openIds.length)}\n`),
-            );
+            writeNotice("warn", multiOpenToast(openIds.length));
           } else if (isSimultaneousTaskAdvance(intents)) {
             const signature = batchUpdateSignature(intents);
             if (session.pendingTaskBatch.value === signature) {
               session.pendingTaskBatch.value = undefined;
-              writeNotice(
-                "info",
-                "confirmed batch task update — applying",
-                chalk.dim("  ℹ confirmed batch task update — applying\n"),
-              );
+              writeNotice("info", "confirmed batch task update — applying");
             } else {
               session.pendingTaskBatch.value = signature;
               const descriptors: BatchTaskDescriptor[] = intents.map((intent) => ({
@@ -6380,11 +5930,7 @@ export async function runAgentTurn(
               batchReminderNote = buildMultiUpdateReminder(descriptors);
               for (const intent of intents) batchRemindCalls.add(intent.call);
               const advancing = distinctAdvancingTaskIds(intents).length;
-              writeNotice(
-                "warn",
-                multiUpdateToast(advancing),
-                chalk.yellow(`  ⚠ ${multiUpdateToast(advancing)}\n`),
-              );
+              writeNotice("warn", multiUpdateToast(advancing));
             }
           } else {
             session.pendingTaskBatch.value = undefined;

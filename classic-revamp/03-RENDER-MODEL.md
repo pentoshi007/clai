@@ -4,74 +4,84 @@ This document defines how Ink puts pixels on screen. It is the load-bearing desi
 decision of the migration. [04-UI-SPEC.md](04-UI-SPEC.md) describes *what* each element
 looks like; this file describes *where frames come from* and *why nothing ever misplaces*.
 
-## 1. The two candidate models, and the choice
+## 1. Candidate models and the current choice
 
-**Model A — fixed full-screen.** Enter the alternate screen, render one frame that is
-exactly `rows` tall, implement our own scrolling, our own scrollbar, our own selection
-hit-testing. This is what OpenTUI does.
+**Model A — owned full-screen shell.** Enter the alternate screen, render a frame that is
+exactly the terminal height, and keep terminal ownership and cleanup in one lifecycle
+object. This is the OpenTUI-style startup contract.
 
-**Model B — scrollback feed.** Never leave the normal screen. Completed output is
-*committed* into the terminal's own scrollback and never rewritten. A small live *chrome
-block* at the bottom is the only thing Ink repaints. This is what Claude Code and Codex CLI
-do.
+**Model B — scrollback feed.** Stay on the normal screen and let completed output become
+terminal-owned scrollback while Ink repaints only a small chrome block at the bottom. This
+was the original W00 proposal, not the current classic startup contract.
 
-**Decision: Model B.**
+**Decision: use Model A's terminal ownership with the classic feed/block renderer.**
+`TerminalSession` owns alternate-screen entry/exit, clear/home, cursor, paste, optional
+mouse, raw input, and teardown. Ink is mounted with `alternateScreen: false`, so Ink and
+the session cannot emit competing alternate-screen sequences. The allocator may consume all
+usable rows; there is no phantom bottom row.
 
 Reasons, in order of weight:
 
-1. **Ink cannot do Model A well.** Ink has no scroll container. Ink's writer erases the
-   previous frame and writes the new one; a 50-row frame means a 50-row erase-and-repaint
-   on every state change. Over SSH that is visibly slow and prone to tearing. OpenTUI
-   avoids this with cell diffing; Ink has no equivalent.
-2. **Windows.** Alternate-screen plus raw mode plus mouse tracking is exactly the
-   combination that misbehaves on legacy conhost and in some VS Code terminal
-   configurations. Model B emits almost no control sequences, so there is far less to get
-   wrong and far less to restore on exit.
-3. **Selection and copy come free.** Ink has no text selection. Under Model A we would have
-   to enable mouse reporting and re-implement hit-testing to feed `SelectionController`,
-   which simultaneously *destroys* the terminal's native selection. Under Model B mouse
-   reporting stays off and the user selects and copies with their terminal, as they already
-   do in Claude Code.
-4. **Scrollback comes free.** The user's scrollback, search, and mouse wheel already work.
-5. **Streaming is cheap.** Only the small live region repaints per delta. The 3-frames-per
-   -10,000-deltas throughput measured in the prior spike is a property of this model.
+1. **Startup must be a fresh space.** Entering `?1049h`, clearing, and homing the cursor
+   prevents the classic UI from appearing inside the user's existing scrollback.
+2. **The shell has one measurable boundary.** `horizontalPadding()` and
+   `innerShellWidth()` define the left/right margins once. Feed, chrome, composer, panels,
+   status, and directory/branch rows all receive that bounded width.
+3. **The feed renderer remains deterministic.** `FeedStatic` and the commit ledger still
+   append complete blocks in order, while the live tail and chrome are re-rendered inside
+   the owned screen. Committed blocks are not silently reflowed by individual components.
+4. **Terminal lifecycle is explicit.** Suspend/resume, export, resize, and every exit path
+   pass through `TerminalSession`, which makes cleanup testable and idempotent.
+5. **The implementation stays renderer-neutral.** Markdown, pager policy, wrapping, and
+   semantic state remain in `ui-core`; only terminal ownership and Ink composition are
+   classic concerns.
 
 Costs, all accepted and recorded in [09-PARITY.md](09-PARITY.md):
 
-- No side-by-side plan split. The plan is a bounded panel plus the Ctrl+P pager.
-- No in-place expand of *committed* blocks. Expansion works on live blocks; committed
-  content is reachable through `/output`, `Ctrl+R` search, and the pager.
-- No custom scrollbar. The terminal's own is authoritative.
+- The classic screen owns the viewport while it is running; native normal-screen
+  scrollback is not the primary transcript viewport.
+- There is no custom full-transcript scrollbar or mouse selection model. The live tail can
+  be moved when internally clipped, and older/complete content is reachable through the
+  pager and transcript search.
+- Committed blocks are append-only for the feed ledger. Changes that require reflow or
+  full detail open the pager instead of truncating content in place.
 
 ## 2. Screen ownership
 
-The classic renderer does **not** use the alternate screen buffer.
+The classic renderer owns a fresh alternate-screen buffer. `TerminalSession` is the only
+code allowed to emit terminal lifecycle sequences; Ink is configured with
+`alternateScreen: false`.
 
 `classic/bootstrap/terminal-session.ts` emits, on `enter()`:
 
 | Sequence | Purpose |
 |---|---|
+| `\x1b[?1049h` | enter the alternate screen |
+| `\x1b[2J` | clear the fresh buffer |
+| `\x1b[H` | home the cursor before the first frame |
 | `\x1b[?2004h` | bracketed paste on |
-| `\x1b[?25l` | hide cursor (Ink draws its own caret block) |
-| `\x1b[?1000h\x1b[?1002h\x1b[?1006h` | **only** when `CLAI_CLASSIC_MOUSE=1` |
+| `\x1b[?25l` | hide the terminal cursor; Ink draws the input caret |
+| `\x1b[?1000h\x1b[?1002h\x1b[?1006h` | only when `CLAI_CLASSIC_MOUSE=1` |
 
-On `leave()`, in reverse, each wrapped so one failure does not skip the rest:
-mouse off, `\x1b[?25h`, `\x1b[?2004l`. Both methods are idempotent via an `owned` flag.
-No `\x1b[?1049h`, no `\x1b[2J`, no full-screen clear at any point in a session.
+On `leave()`, the session detaches raw input, disables optional mouse reporting, shows the
+cursor, disables bracketed paste, and emits `\x1b[?1049l`. Each step is guarded so one
+failure cannot skip the rest, and enter/leave are idempotent. `clearScreen()` remains an
+explicit `/clear`, `/new`, or `/clean` operation rather than a render-side write.
 
 Raw mode is set in `attachInput()`, separate from `enter()`, so the byte decoder and raw
-mode arrive together and detach together.
+mode arrive together and detach together. Suspend/resume uses the same owner, leaving and
+re-entering the alternate screen around child processes such as `$EDITOR`.
 
 ## 3. Frame anatomy
 
 ```
- ── terminal scrollback ─────────────────────────────────────────
- │ intro card                                     │
+ ┌─ owned alternate-screen frame ────────────────────────────────
+ │ committed feed blocks (append-only `<Static>` history)          │
  │ ▌ YOU  first prompt                            │  committed blocks
  │ ◆ assistant reply                              │  written once by <Static>
  │ ● shell.exec(…)  ✓                             │  never rewritten
  │ …                                              │
- ── Ink dynamic frame (repainted) ───────────────────────────────
+ ├─ re-rendered shell sections ──────────────────────────────────
  │ live tail        (open / recent blocks)        │  flex, shrinks first
  │ plan panel       (Ctrl+H)                     │
  │ overlay panel    (picker | pager | jobs | …)   │
@@ -80,21 +90,22 @@ mode arrive together and detach together.
  │ toast rows       (0–2)                        │
  │ composer box     (≥3 rows)                    │
  │ status rows      (1–3)                        │
- ────────────────────────────────────────────────────────────────
+ └─────────────────────────────────────────────────────────────────
 ```
 
 React tree:
 
 ```tsx
-<Box flexDirection="column">
+<Box width={terminalColumns} paddingLeft={horizontalPadding} paddingRight={horizontalPadding}>
   <Static items={committed}>{(block) => <CommittedBlock key={block.key} block={block} />}</Static>
   <Chrome />
 </Box>
 ```
 
-`<Static>` is the only mechanism allowed to produce scrollback. Nothing else writes above
-the dynamic frame. `<Chrome>` renders exactly the row count the allocator gave it — never
-more, never fewer.
+`<Static>` is the only mechanism allowed to append committed feed blocks. They remain
+append-only within the alternate-screen frame; normal-screen scrollback is not the active
+viewport. `<Chrome>` renders exactly the row count the allocator gives it — never more,
+never fewer — and every child wraps to the shared inner shell width.
 
 ## 4. Blocks
 
@@ -141,8 +152,8 @@ Invariants, each with a test:
 
 ## 5. The commit ledger
 
-`classic/feed/commit-ledger.ts` decides which blocks are committed to scrollback and which
-stay live and re-renderable.
+`classic/feed/commit-ledger.ts` decides which blocks are committed to the owned frame and
+which stay live and re-renderable.
 
 ```ts
 interface CommitDecision {
@@ -177,8 +188,8 @@ Rules — all four are tested individually:
 
 `/clear`, `/new`, and `/clean` reset the ledger: `committedCount = 0`, `<Static>` receives
 a fresh `items` array with a new generation prefix in every key, and the renderer emits one
-`\x1b[2J\x1b[H` from `terminal-session.ts` — the only full clear in the product, and only
-on explicit user command.
+explicit `\x1b[2J\x1b[H` from `terminal-session.ts`. Entering the alternate screen also
+clears and homes it, but ordinary state changes do not issue a full-screen clear.
 
 ## 6. Live tail policy
 
@@ -245,7 +256,7 @@ interface ChromeDemand {
 }
 
 interface ChromeLayout {
-  readonly composer: number;   // includes 2 border rows
+  readonly composer: number;   // includes directory row and 2 border rows
   readonly status: number;
   readonly toast: number;
   readonly queue: number;
@@ -253,7 +264,7 @@ interface ChromeLayout {
   readonly plan: number;
   readonly overlay: number;
   readonly liveTail: number;
-  readonly total: number;      // === rows - 1 or less
+  readonly total: number;      // === rows or less
   readonly degraded: boolean;
 }
 
@@ -263,10 +274,10 @@ allocateChrome(demand: ChromeDemand): ChromeLayout
 Algorithm — strict priority order, each step takes only what remains:
 
 ```
-budget = max(rows - 1, 0)                 // keep one row free; never write the last cell
+budget = max(rows, 0)                   // the alternate-screen shell owns every row
 
-1. composer = 2 + clamp(composerTextRows, 1, min(COMPOSER_MAX_TEXT_ROWS, floor(rows*0.4)))
-   if composer > budget: composer = min(3, budget)      // border+1 line, or less
+1. composer = 1 + 2 + clamp(composerTextRows, 1, min(COMPOSER_MAX_TEXT_ROWS, floor(rows*0.4)))
+   if composer > budget: composer = min(4, budget)      // directory + border + one line, or less
    budget -= composer
 2. status = min(1, budget); budget -= status            // one row is mandatory chrome
 3. overlay = overlay ? clamp(rowsWanted, OVERLAY_MIN_ROWS, floor(rows*0.6), budget) : 0
@@ -294,13 +305,13 @@ it is the only purely informational surface.
 
 Required tests in `test/classic/chrome/row-budget.test.ts`:
 
-- `total <= rows - 1` for every `rows` in 1…200 crossed with every demand combination
-  (property test with `fast-check`, already a dev dependency).
+- `total <= rows` for every `rows` in 1…200 crossed with every demand combination
+  (property test with `fast-check`, because the alternate screen intentionally uses the
+  full terminal height).
 - Monotonicity: increasing `rows` never decreases `liveTail`.
 - `rows = 1` → composer 1, everything else 0, `degraded === true`.
-- `rows = 3` → composer 3, status 0? No: composer clamps to `min(3, budget=2)` = 2, then
-  status 0. Assert the exact table for `rows` 1–10 as a golden snapshot so the degradation
-  path can never drift silently.
+- Assert the exact full-height table for `rows` 1–10 as a golden snapshot so the
+  degradation path cannot drift silently.
 - An open overlay at `rows = 12` still leaves `composer >= 3` and `status >= 1`.
 
 ## 9. Repaint discipline
@@ -310,7 +321,7 @@ Required tests in `test/classic/chrome/row-budget.test.ts`:
 | Frame rate | Ink writes only when the rendered string changed. Keep the store's 16 ms coalescing. Cap chrome-driven repaints at 20 fps with a trailing-edge scheduler in `classic/app/app-wiring.ts`. |
 | Spinner | 80 ms braille cycle, and it must touch only one row's content. Never re-derive feed blocks on a spinner tick. |
 | Elapsed timers | one 1 Hz tick drives every "· 12s" label. Never one timer per card. |
-| Resize | `process.stdout.on("resize")` debounced 80 ms. Recompute `columns`, rebuild live blocks, reallocate rows. **Committed blocks are never reflowed** — they were printed at the old width and stay as printed, exactly like Claude Code. |
+| Resize | `process.stdout.on("resize")` debounced 80 ms. Recompute terminal columns, derive `innerShellWidth()`, rebuild live blocks, and reallocate the full-height shell. Every surface receives the new bounded width. |
 | Streaming | derive live blocks from the coalesced store notification, not per delta. |
 | Memory | committed `FeedBlock` objects drop their `lines` array after `<Static>` has rendered them once; keep only `{ key }` for reconciliation. The store's 2000-item bound stays authoritative for content. |
 | Writes | never call `process.stdout.write` from a component. |
@@ -326,7 +337,7 @@ Semantic actions still resolve; their effect is re-mapped. All of this is
 
 | Action | Feed behaviour |
 |---|---|
-| `transcript.scroll-up` / `-down` | scroll the live tail when it is internally clipped; otherwise a one-shot toast: `use your terminal's scrollback · ^R to search` |
+| `transcript.scroll-up` / `-down` | scroll the live tail when it is internally clipped; otherwise a one-shot toast: `use the pager or Ctrl+R to search older content` |
 | `transcript.page-up` / `-down` | same |
 | `transcript.top` | toast pointing at `^R` / `/history` |
 | `transcript.bottom` | no-op; the feed is already at the bottom by construction |
@@ -354,12 +365,14 @@ second open — the single-overlay invariant is unchanged.
 
 Enforced mechanically, not by review:
 
-1. `allocateChrome` totals `<= rows - 1` for every size — property test.
+1. `allocateChrome` totals `<= rows` for every size — the alternate-screen shell intentionally
+   uses the full terminal height, and the property test is the correctness gate.
 2. Every `FeedBlock.lines.length` equals the block's rendered row count — golden fixtures
    at widths 40, 48, 68, 80, 96, 120, 200.
-3. Every rendered row's display width is `<= columns` — `string-width` assertion over all
-   golden fixtures, including CJK, emoji, combining marks, and ANSI-bearing tool output.
+3. Every rendered row's display width is `<= innerShellWidth(terminalColumns)` — assertions
+   cover the shared left/right shell padding plus CJK, emoji, combining marks, and ANSI
+   tool output.
 4. No frame contains a bare `\x1b` fragment or an unterminated SGR — regex assertion.
 5. Ink's rendered frame height equals `ChromeLayout.total` — asserted from captured frames.
 6. Resize from every width to every other width in the golden set leaves no row wider than
-   the new `columns`.
+   the new bounded shell width.

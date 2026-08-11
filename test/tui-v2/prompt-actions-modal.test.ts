@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { preparePromptPreview } from "../../src/tui-v2/rendering/prompt-preview.js";
+import { preparePromptPreview } from "../../src/ui-core/rendering/prompt-preview.js";
 
 describe("preparePromptPreview", () => {
   it("soft-wraps long lines to the column budget", () => {

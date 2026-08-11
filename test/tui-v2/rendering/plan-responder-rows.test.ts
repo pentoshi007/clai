@@ -5,7 +5,7 @@ import {
   taskOwnerChip,
   taskRowColor,
   TASK_GLYPH,
-} from "../../../src/tui-v2/rendering/plan-view.js";
+} from "../../../src/ui-core/rendering/plan-view.js";
 import type { PlanTask, SessionPlan, TaskState } from "../../../src/store/plan.js";
 
 function task(partial: Partial<PlanTask> & { id: string }): PlanTask {
