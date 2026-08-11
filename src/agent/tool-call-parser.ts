@@ -2033,7 +2033,7 @@ export function looksLikePlanNarration(text: string): boolean {
   const t = text.trim();
   if (t.length < 40) return false;
   const approval =
-    /\b(?:approve|approval|once approved|request changes|await(?:ing)?\s+(?:your\s+)?approval)\b/i.test(
+    /(?:please\s+approve|approve\s+(?:the|this|my)\s+(?:plan|approach|proposal)|await(?:ing)?\s+(?:your\s+)?approval|your\s+approval|once\s+(?:you\s+)?approv(?:e|ed)|approval\s+to\s+(?:proceed|begin|start)|request\s+changes)/i.test(
       t,
     );
   const goal = /\bgoal\b/i.test(t);

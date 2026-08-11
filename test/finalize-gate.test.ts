@@ -194,9 +194,19 @@ describe("finalize gate — narration family", () => {
 
     expect(
       chooseFinalizeRecovery(
-        narrating({ buildLikeTurn: true, productiveSteps: 2, narratedAction: true }),
+        narrating({
+          buildLikeTurn: true,
+          cleaned:
+            "Goal: build the dashboard. Tasks: 1. scaffold 2. implement 3. verify. Please approve the plan.",
+        }),
       ),
     ).toEqual(recoveryForNarration(true, "build_plan_prose"));
+
+    expect(
+      chooseFinalizeRecovery(
+        narrating({ buildLikeTurn: true, productiveSteps: 2, narratedAction: true }),
+      ),
+    ).toEqual(recoveryForNarration(true, "build"));
 
     expect(chooseFinalizeRecovery(narrating({ buildLikeTurn: true }))).toEqual(
       recoveryForNarration(true, "build"),
@@ -205,6 +215,38 @@ describe("finalize gate — narration family", () => {
     expect(chooseFinalizeRecovery(narrating())).toEqual(
       recoveryForNarration(true, "generic"),
     );
+  });
+
+  it("never forces plan.create on a completed-work summary with approve-flag names", () => {
+    const summary =
+      "Sync complete — page now matches cli 3.18.0. Evidence: build passed, pushed main. " +
+      "terminal.tsx: free · free-1/deepseek-v4-flash-free · always-approve. " +
+      "Goal met; all tasks verified.";
+    expect(
+      chooseFinalizeRecovery(
+        baseInput({
+          cleaned: summary,
+          wantsAction: true,
+          buildLikeTurn: true,
+          buildLike: true,
+          productiveSteps: 12,
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("never forces plan.create on a prose plan written after real work", () => {
+    expect(
+      chooseFinalizeRecovery(
+        baseInput({
+          cleaned:
+            "Goal: build the dashboard. Tasks: 1. scaffold 2. implement. Please approve the plan.",
+          wantsAction: true,
+          buildLikeTurn: true,
+          productiveSteps: 4,
+        }),
+      ),
+    ).toBeUndefined();
   });
 
   it("skips the whole family when the turn does not want action", () => {

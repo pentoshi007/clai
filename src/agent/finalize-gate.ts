@@ -81,6 +81,7 @@ export function chooseFinalizeRecovery(
   const planNarrated =
     (input.buildLikeTurn || input.pentestLikeTurn) &&
     !input.activePlanExists &&
+    productiveSteps === 0 &&
     looksLikePlanNarration(cleaned);
   const errorFixNarration =
     !input.sawSuccessfulMutation &&
@@ -123,7 +124,7 @@ export function chooseFinalizeRecovery(
     } else if (
       budgetRemaining(recovery, "actionIntent") &&
       input.buildLikeTurn &&
-      (planNarrated || productiveSteps > 0)
+      planNarrated
     ) {
       action = recoveryForNarration(toolsAttached, "build_plan_prose");
     } else if (
