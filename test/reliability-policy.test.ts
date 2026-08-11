@@ -169,6 +169,19 @@ describe("reliability policy (E1–E6)", () => {
     expect(second.hash).toBe(hashToolResultContent(body));
   });
 
+  it("E5: serves full content again when an already-collapsed body repeats", () => {
+    const body = "z".repeat(600) + "\nrecoverable-tail";
+    const seen = new Map<string, { toolName: string; count: number }>();
+    const first = dedupeToolContextOutput({ content: body, toolName: "fs.read", seenHashes: seen });
+    const second = dedupeToolContextOutput({ content: body, toolName: "fs.read", seenHashes: seen });
+    const third = dedupeToolContextOutput({ content: body, toolName: "fs.read", seenHashes: seen });
+    expect(first.deduped).toBe(false);
+    expect(second.deduped).toBe(true);
+    expect(third.deduped).toBe(false);
+    expect(third.content).toBe(body);
+    expect(third.content).toContain("recoverable-tail");
+  });
+
   it("E5: does not pointer-collapse tiny results", () => {
     const seen = new Map<string, { toolName: string; count: number }>();
     const tiny = "ok";

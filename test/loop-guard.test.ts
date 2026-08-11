@@ -322,6 +322,41 @@ describe("LoopGuard", () => {
     expect(guard.observeActionSequence(seq).suppress).toBe(false);
   });
 
+  it("warns then suppresses an identical consecutive sequence even when outcomes keep changing", () => {
+    const guard = new LoopGuard();
+    const seq = [
+      { name: "fs.search", args: { pattern: "continueQueue", path: "/src" } },
+      { name: "fs.list", args: { path: "/src/components" } },
+    ];
+
+    guard.observeActionSequence(seq);
+    guard.completeActionSequence(seq, true, "outcome-a");
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: false });
+    guard.completeActionSequence(seq, true, "outcome-b");
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: false });
+    guard.completeActionSequence(seq, true, "outcome-c");
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: true });
+    guard.completeActionSequence(seq, true, "outcome-d");
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: true, terminal: false });
+    guard.completeActionSequence(seq, true, "outcome-e");
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: true, terminal: true });
+  });
+
+  it("does not count duplicate calls emitted within a single response as a loop", () => {
+    const guard = new LoopGuard();
+    const seq = [
+      { name: "fs.read", args: { path: "/tmp/a.txt" } },
+      { name: "fs.read", args: { path: "/tmp/a.txt" } },
+    ];
+
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: false });
+    guard.completeActionSequence(seq, true, "body");
+    guard.observeActionSequence([
+      { name: "fs.list", args: { path: "/tmp" } },
+    ]);
+    expect(guard.observeActionSequence(seq)).toMatchObject({ suppress: false, warn: false });
+  });
+
   it("still suppresses an immediately repeated side effect", () => {
     const guard = new LoopGuard();
     const seq = [{ name: "fs.append", args: { path: "events.log", content: "x\n" } }];

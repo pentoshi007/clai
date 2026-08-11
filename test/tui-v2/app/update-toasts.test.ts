@@ -129,7 +129,7 @@ describe("/update toasts", () => {
 
     await services.commands.dispatch({ name: "update", args: "" });
 
-    expect(seen.some((m) => m.includes("new version found · v3.16.0"))).toBe(
+    expect(seen.some((m) => m.includes("new version available · v3.16.0"))).toBe(
       true,
     );
     expect(

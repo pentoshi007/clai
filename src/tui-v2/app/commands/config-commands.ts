@@ -271,9 +271,18 @@ export async function handleUpdate(services: AppServices): Promise<void> {
     services.toast[level](message, { key: UPDATE_TOAST_KEY, durationMs: 6000 });
   };
 
+  if (services.interruptible.hasWork()) {
+    settle("warn", "an update is already in progress");
+    return;
+  }
+  const controller = services.interruptible.begin();
   sticky("checking for updates…");
   try {
     const status = await services.ports.updates.check();
+    if (controller.signal.aborted) {
+      settle("warn", "update cancelled");
+      return;
+    }
     if (status.state !== "update-available" || !status.latestVersion) {
       if (status.state === "current") {
         settle("success", `up to date · v${status.currentVersion}`);
@@ -288,13 +297,13 @@ export async function handleUpdate(services: AppServices): Promise<void> {
 
     const target = status.latestVersion;
     const route = `v${status.currentVersion} → v${target}`;
-    services.toast.success(`new version found · v${target}`, {
+    services.toast.success(`new version available · v${target}`, {
       key: "update-found",
-      durationMs: 4000,
     });
     sticky(`${route} · downloading…`);
 
     let lastPaint = 0;
+    let downloadAnnounced = false;
     const result = await installUpdate(
       target,
       (line) => {
@@ -312,7 +321,7 @@ export async function handleUpdate(services: AppServices): Promise<void> {
           return;
         }
         if (progress.phase === "installing") {
-          sticky(`${route} · installing…`);
+          sticky(`${route} · installing v${target}…`);
           return;
         }
         const now = Date.now();
@@ -331,7 +340,15 @@ export async function handleUpdate(services: AppServices): Promise<void> {
         sticky(
           `${route} · downloading ${progressBar(fraction)} ${Math.round(fraction * 100)}% · ${formatBytes(progress.receivedBytes)}/${formatBytes(progress.totalBytes)}`,
         );
+        if (complete && !downloadAnnounced) {
+          downloadAnnounced = true;
+          services.toast.success(
+            `downloaded v${target} · ${formatBytes(progress.receivedBytes)}`,
+            { key: "update-downloaded" },
+          );
+        }
       },
+      controller.signal,
     );
 
     if (!result.ok) {
@@ -343,10 +360,16 @@ export async function handleUpdate(services: AppServices): Promise<void> {
     // Let the success toast paint before the renderer tears down.
     setTimeout(() => services.requestExit(), 1200);
   } catch (error) {
+    if (controller.signal.aborted) {
+      settle("warn", "update cancelled");
+      return;
+    }
     settle(
       "error",
       `update failed · ${error instanceof Error ? error.message : String(error)}`,
     );
+  } finally {
+    services.interruptible.end(controller);
   }
 }
 

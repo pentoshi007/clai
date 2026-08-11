@@ -108,6 +108,17 @@ export class SessionPromptQueue {
     void this.submit(text).then(() => this.continue());
   }
 
+  enqueuePriority(prompt: string, displayPrompt?: string | undefined): void {
+    const text = prompt.trim();
+    if (!text) return;
+    this.priorityPrompt = text;
+    if (displayPrompt !== undefined) {
+      this.nextDisplayPrompt = displayPrompt;
+      this.nextDisplayArmed = true;
+    }
+    this.deps.notifyState();
+  }
+
   async continue(): Promise<void> {
     if (this.continuing || this.deps.isRunning()) return;
     this.continuing = true;
@@ -159,6 +170,20 @@ export class SessionPromptQueue {
 
   async drain(): Promise<TurnResult[]> {
     const results: TurnResult[] = [];
+    if (this.priorityPrompt !== undefined && !this.deps.isRunning()) {
+      const priority = this.priorityPrompt;
+      this.priorityPrompt = undefined;
+      const priorityResult = await this.deps.runTurn(
+        priority,
+        this.consumeDisplay(),
+      );
+      results.push(priorityResult);
+      const decision = queueContinuationDecision(priorityResult);
+      if (!decision.proceed) {
+        if (this.items.length > 0) this.deps.notice(pausedQueueNotice(decision));
+        return results;
+      }
+    }
     while (this.items.length > 0 && !this.deps.isRunning()) {
       const next = this.items.shift();
       if (next === undefined) break;

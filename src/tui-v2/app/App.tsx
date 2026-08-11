@@ -103,15 +103,21 @@ export function App(): ReactNode {
   }, [services]);
 
   useEffect(() => {
-    return services.ports.jobs.subscribe(() => {
+    const disarmWhenIdle = (): void => {
       if (!escapeCancelArmedRef.current) return;
       const state = services.session.getState();
       const hasForegroundWork = state.running || state.compacting || state.queued.length > 0;
       const hasResponderWork =
         services.ports.jobs.running(services.session.sessionId).length > 0 ||
         services.ports.jobs.pendingNotifications(services.session.sessionId).length > 0;
-      if (!hasForegroundWork && !hasResponderWork) clearEscapeCancellation();
-    });
+      if (!hasForegroundWork && !hasResponderWork && !services.interruptible.hasWork()) clearEscapeCancellation();
+    };
+    const unsubJobs = services.ports.jobs.subscribe(disarmWhenIdle);
+    const unsubInterruptible = services.interruptible.subscribe(disarmWhenIdle);
+    return () => {
+      unsubJobs();
+      unsubInterruptible();
+    };
   }, [services]);
 
   useEffect(() => {
@@ -210,6 +216,7 @@ export function App(): ReactNode {
             lastCtrlC.current > 0 &&
             now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
           if (services.session.getState().running) {
+            services.interruptible.cancelAll();
             services.session.abort();
           }
           if (doublePress) {
@@ -279,6 +286,7 @@ export function App(): ReactNode {
           lastCtrlC.current > 0 &&
           now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
         if (services.session.getState().running) {
+          services.interruptible.cancelAll();
           services.session.abort();
           if (doublePress) {
             services.requestExit();
@@ -286,6 +294,19 @@ export function App(): ReactNode {
           }
           lastCtrlC.current = now;
           notifyWarn(services, "Turn aborted · Ctrl+C again to exit", {
+            key: "interrupt",
+            durationMs: 2200,
+          });
+          break;
+        }
+        if (services.interruptible.hasWork()) {
+          services.interruptible.cancelAll();
+          if (doublePress) {
+            services.requestExit();
+            break;
+          }
+          lastCtrlC.current = now;
+          notifyWarn(services, "Operation cancelled · Ctrl+C again to exit", {
             key: "interrupt",
             durationMs: 2200,
           });
@@ -484,11 +505,13 @@ export function App(): ReactNode {
       sessionState.running ||
       sessionState.compacting ||
       sessionState.queued.length > 0 ||
-      hasResponderWork;
+      hasResponderWork ||
+      services.interruptible.hasWork();
 
     if (doublePress && hasCancelableWork) {
       clearEscapeCancellation();
       services.overlay.cancelBlockingPrompt();
+      services.interruptible.cancelAll();
       void services.session.cancelAll().then((result) => {
         clearEscapeCancellation();
         const text = result.ok

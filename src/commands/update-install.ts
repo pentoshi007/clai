@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -136,18 +136,37 @@ export function detectInstallMethod(env: DetectEnv): InstallMethod {
   };
 }
 
-function run(cmd: string, args: readonly string[]): string | undefined {
-  try {
-    const r = spawnSync(cmd, [...args], {
-      encoding: "utf8",
-      timeout: 20000,
-      windowsHide: true,
+function run(cmd: string, args: readonly string[]): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(cmd, [...args], { windowsHide: true });
+    } catch {
+      resolve(undefined);
+      return;
+    }
+    let out = "";
+    let settled = false;
+    const finish = (value: string | undefined): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {}
+      finish(undefined);
+    }, 20000);
+    child.stdout?.on("data", (d) => {
+      out += String(d);
     });
-    if (r.status === 0 && r.stdout) return r.stdout.trim();
-  } catch {
-    // command unavailable
-  }
-  return undefined;
+    child.on("error", () => finish(undefined));
+    child.on("close", (code) => {
+      finish(code === 0 && out.trim() ? out.trim() : undefined);
+    });
+  });
 }
 
 function resolveBunGlobalRoot(): string | undefined {
@@ -161,7 +180,7 @@ function resolveBunGlobalRoot(): string | undefined {
   return undefined;
 }
 
-export function resolveInstallEnv(): DetectEnv {
+export async function resolveInstallEnv(): Promise<DetectEnv> {
   const env: DetectEnv = {
     argv1: process.argv[1] ?? "",
     execPath: process.execPath,
@@ -169,11 +188,14 @@ export function resolveInstallEnv(): DetectEnv {
     home: homedir(),
   };
   const nodeCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  if (process.platform === "darwin") {
-    const prefix = run("brew", ["--prefix", "clai"]);
-    if (prefix && existsSync(join(prefix, "bin", "clai"))) {
-      env.brewPrefix = prefix;
-    }
+  const [brewPrefix, npmRoot] = await Promise.all([
+    process.platform === "darwin"
+      ? run("brew", ["--prefix", "clai"])
+      : Promise.resolve(undefined),
+    run(nodeCmd, ["root", "-g"]),
+  ]);
+  if (brewPrefix && existsSync(join(brewPrefix, "bin", "clai"))) {
+    env.brewPrefix = brewPrefix;
   }
   if (process.platform === "win32") {
     const scoop =
@@ -182,7 +204,6 @@ export function resolveInstallEnv(): DetectEnv {
         : join(homedir(), "scoop");
     env.scoopShimsDir = join(scoop, "shims");
   }
-  const npmRoot = run(nodeCmd, ["root", "-g"]);
   if (npmRoot) env.npmRoot = npmRoot;
   const bunRoot = resolveBunGlobalRoot();
   if (bunRoot) env.bunRoot = bunRoot;
@@ -198,9 +219,13 @@ export async function downloadBinary(
   url: string,
   timeoutMs = 120_000,
   onProgress?: (progress: DownloadProgress) => void,
+  signal?: AbortSignal,
 ): Promise<Buffer> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = (): void => controller.abort(signal?.reason);
+  if (signal?.aborted) controller.abort(signal.reason);
+  else signal?.addEventListener("abort", onExternalAbort, { once: true });
   try {
     const res = await fetch(url, {
       redirect: "follow",
@@ -231,6 +256,7 @@ export async function downloadBinary(
     return Buffer.concat(chunks);
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", onExternalAbort);
   }
 }
 
@@ -256,6 +282,8 @@ export interface PerformUpdateOptions {
   /** inherit: let the child write to the terminal (CLI). pipe: capture + log (TUI). */
   readonly stdio?: "inherit" | "pipe";
   readonly onProgress?: ((progress: UpdateProgress) => void) | undefined;
+  /** Abort an in-flight download/install (TUI Esc / Ctrl+C). */
+  readonly signal?: AbortSignal | undefined;
 }
 
 export type UpdateProgress =
@@ -271,11 +299,11 @@ function logOf(log: ((line: string) => void) | undefined): (line: string) => voi
   return log ?? ((line) => console.log(line));
 }
 
-function replaceExecutable(
+async function replaceExecutable(
   tmp: string,
   execPath: string,
   platform: NodeJS.Platform,
-): void {
+): Promise<void> {
   if (platform !== "win32") {
     try {
       renameSync(tmp, execPath);
@@ -284,13 +312,42 @@ function replaceExecutable(
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "EACCES" && code !== "EPERM") throw error;
       // Binary lives in a root-owned dir (e.g. /usr/local/bin): escalate.
-      const r = spawnSync("sudo", ["mv", tmp, execPath], {
-        stdio: "inherit",
-        timeout: 120_000,
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn("sudo", ["mv", tmp, execPath], {
+          stdio: "inherit",
+        });
+        let settled = false;
+        const finish = (fn: () => void): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          fn();
+        };
+        const timer = setTimeout(() => {
+          try {
+            child.kill("SIGKILL");
+          } catch {}
+          finish(() =>
+            reject(new Error(`could not write ${execPath} (sudo timed out)`)),
+          );
+        }, 120_000);
+        child.on("error", () =>
+          finish(() =>
+            reject(
+              new Error(`could not write ${execPath} (permission denied)`),
+            ),
+          ),
+        );
+        child.on("close", (status) =>
+          finish(() => {
+            if (status === 0) resolve();
+            else
+              reject(
+                new Error(`could not write ${execPath} (permission denied)`),
+              );
+          }),
+        );
       });
-      if (r.status !== 0) {
-        throw new Error(`could not write ${execPath} (permission denied)`);
-      }
       return;
     }
   }
@@ -328,12 +385,15 @@ export async function installDirectBinary(
   const sumUrl = `${base}/${target.file}.sha256`;
 
   log(chalk.dim(`  ⬇ Downloading ${target.file} (v${options.version})…`));
-  const bin = await downloadBinary(url, 120_000, (progress) =>
-    options.onProgress?.({ phase: "downloading", ...progress }),
+  const bin = await downloadBinary(
+    url,
+    120_000,
+    (progress) => options.onProgress?.({ phase: "downloading", ...progress }),
+    options.signal,
   );
   log(chalk.dim(`  🔐 Verifying sha256…`));
   options.onProgress?.({ phase: "verifying" });
-  const expected = (await downloadBinary(sumUrl)).toString("utf8").trim().split(/\s+/)[0] ?? "";
+  const expected = (await downloadBinary(sumUrl, 120_000, undefined, options.signal)).toString("utf8").trim().split(/\s+/)[0] ?? "";
   const actual = sha256(bin);
   if (!expected || expected !== actual) {
     throw new Error(`checksum mismatch for ${target.file} (expected ${expected}, got ${actual})`);
@@ -352,7 +412,7 @@ export async function installDirectBinary(
         // ignore
       }
     }
-    replaceExecutable(tmp, execPath, process.platform);
+    await replaceExecutable(tmp, execPath, process.platform);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -398,23 +458,83 @@ export async function installViaPackageManager(
   log(chalk.dim(`  ⬆ Running: ${cmd} ${args.join(" ")}`));
   options.onProgress?.({ phase: "installing", detail: `${cmd} ${args[0] ?? ""}`.trim() });
   const stdio = options.stdio ?? "inherit";
-  const r =
-    stdio === "inherit"
-      ? spawnSync(cmd, args, { stdio: "inherit", timeout: 600_000, windowsHide: true })
-      : spawnSync(cmd, args, {
-          encoding: "utf8",
-          timeout: 600_000,
-          windowsHide: true,
-          maxBuffer: 10 * 1024 * 1024,
-        });
-  if (stdio === "pipe") {
-    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
-    for (const line of out.split(/\r?\n/)) {
-      if (line.trim()) log(line.replace(/\s+$/, ""));
+  const r = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(cmd, args, {
+        stdio: stdio === "inherit" ? "inherit" : ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(error);
+      return;
     }
-  }
+    let stdout = "";
+    let stderr = "";
+    let outTail = "";
+    let errTail = "";
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {}
+      finish(() =>
+        reject(new Error(`${cmd} ${args.join(" ")} timed out after 600s`)),
+      );
+    }, 600_000);
+    const onAbort = (): void => {
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+      setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+      }, 2000).unref?.();
+      finish(() => reject(new Error("update cancelled")));
+    };
+    if (options.signal?.aborted) {
+      finish(() => reject(new Error("update cancelled")));
+      return;
+    }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    const feed = (data: unknown, isErr: boolean): void => {
+      const s = String(data);
+      if (isErr) stderr += s;
+      else stdout += s;
+      if (stdio !== "pipe") return;
+      const combined = (isErr ? errTail : outTail) + s;
+      const lines = combined.split(/\r?\n/);
+      const tail = lines.pop() ?? "";
+      if (isErr) errTail = tail;
+      else outTail = tail;
+      for (const line of lines) {
+        if (line.trim()) log(line.replace(/\s+$/, ""));
+      }
+    };
+    child.stdout?.on("data", (d) => feed(d, false));
+    child.stderr?.on("data", (d) => feed(d, true));
+    child.on("error", (error) => finish(() => reject(error)));
+    child.on("close", (code) =>
+      finish(() => {
+        if (stdio === "pipe") {
+          for (const tail of [outTail, errTail]) {
+            if (tail.trim()) log(tail.replace(/\s+$/, ""));
+          }
+        }
+        resolve({ status: code, stdout, stderr });
+      }),
+    );
+  });
   if (r.status !== 0) {
-    const detail = stdio === "pipe" ? `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() : "";
+    const detail = stdio === "pipe" ? `${r.stdout}${r.stderr}`.trim() : "";
     throw new Error(
       `${cmd} ${args.join(" ")} exited with status ${r.status ?? "error"}${detail ? ` — ${detail.split("\n").slice(-6).join(" ")}` : ""}`,
     );

@@ -83,6 +83,10 @@ function toResponsesInput(messages: import("../types.js").ChatMessage[], support
       continue;
     }
     if (m.role === "assistant") {
+      const replayItems = m.reasoningBlock?.items;
+      if (Array.isArray(replayItems) && replayItems.length > 0) {
+        for (const item of replayItems) input.push(item);
+      }
       const hasTools = m.toolCalls && m.toolCalls.length > 0;
       if (hasTools) {
         if (m.content && m.content.trim()) {
@@ -224,11 +228,12 @@ function parseResponsesOutput(data: {
   output?: unknown;
   usage?: unknown;
   id?: string;
-}): { text: string; toolCalls: NativeToolCall[]; usage?: TokenUsage | undefined; reasoningSummary: string } {
+}): { text: string; toolCalls: NativeToolCall[]; usage?: TokenUsage | undefined; reasoningSummary: string; reasoningItems: Array<Record<string, unknown>> } {
   const output = Array.isArray(data.output) ? data.output : [];
   let text = "";
   let reasoningSummary = "";
   const toolCalls: NativeToolCall[] = [];
+  const reasoningItems: Array<Record<string, unknown>> = [];
   for (const item of output) {
     if (!item || typeof item !== "object") continue;
     const obj = item as Record<string, unknown>;
@@ -244,6 +249,14 @@ function parseResponsesOutput(data: {
     } else if (obj.type === "reasoning") {
       const s = extractReasoningSummary(obj);
       if (s) reasoningSummary += s;
+      if (typeof obj.encrypted_content === "string" && obj.encrypted_content) {
+        reasoningItems.push({
+          type: "reasoning",
+          ...(typeof obj.id === "string" ? { id: obj.id } : {}),
+          summary: Array.isArray(obj.summary) ? obj.summary : [],
+          encrypted_content: obj.encrypted_content,
+        });
+      }
     } else if (obj.type === "function_call") {
       const callId = typeof obj.call_id === "string" ? obj.call_id : typeof obj.id === "string" ? obj.id : `call_${toolCalls.length}`;
       const nameWire = typeof obj.name === "string" ? obj.name : "";
@@ -261,7 +274,7 @@ function parseResponsesOutput(data: {
     }
   }
   const usage = parseMetaUsage(data.usage);
-  return { text, toolCalls, usage, reasoningSummary };
+  return { text, toolCalls, usage, reasoningSummary, reasoningItems };
 }
 
 function foldResponsesReasoning(text: string, reasoningSummary: string, usage?: TokenUsage | undefined, effort?: string | undefined): string {
@@ -401,6 +414,9 @@ export const metaProvider: LlmProvider = {
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(parsed.toolCalls.length ? { finishReason: "tool_calls" } : { finishReason: "stop" }),
       ...(usage ? { usage } : {}),
+      ...(parsed.reasoningItems.length
+        ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
+        : {}),
     };
   },
   async stream(request: CompletionRequest, auth: ProviderAuth, onToken: (token: string) => void): Promise<CompletionResult> {
@@ -532,6 +548,9 @@ export const metaProvider: LlmProvider = {
           ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
           ...(parsed.toolCalls.length ? { finishReason: "tool_calls" } : { finishReason: "stop" }),
           ...(usageTmp ? { usage: usageTmp } : {}),
+          ...(parsed.reasoningItems.length
+            ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
+            : {}),
         };
       }
       throw new ProviderError(`Meta Model API returned JSON instead of an SSE stream, but no completion text was present.`, response.status, JSON.stringify(data).slice(0, 1_000));
@@ -549,6 +568,24 @@ export const metaProvider: LlmProvider = {
     const toolCallState = new Map<string, { id?: string; name?: string; arguments: string; callId?: string }>();
     const outputIndexToItemId = new Map<number, string>();
     let responseId: string | undefined;
+    const reasoningItems: Array<Record<string, unknown>> = [];
+    const reasoningItemKeys = new Set<string>();
+    const noteReasoningItem = (item: Record<string, unknown>): void => {
+      const encrypted = typeof item.encrypted_content === "string" ? item.encrypted_content : "";
+      if (!encrypted) return;
+      const id = typeof item.id === "string" ? item.id : undefined;
+      const key = id ?? encrypted.slice(0, 64);
+      if (reasoningItemKeys.has(key)) return;
+      reasoningItemKeys.add(key);
+      reasoningItems.push({
+        type: "reasoning",
+        ...(id ? { id } : {}),
+        summary: Array.isArray(item.summary) ? item.summary : [],
+        encrypted_content: encrypted,
+      });
+    };
+    const reasoningReplay = (): { reasoningBlock: { text: string; items: Array<Record<string, unknown>> } } | Record<string, never> =>
+      reasoningItems.length ? { reasoningBlock: { text: reasoningSeen, items: reasoningItems } } : {};
 
     const enterReasoning = (): void => {
       if (inReasoning) return;
@@ -630,7 +667,7 @@ export const metaProvider: LlmProvider = {
             }
             if (!visible.trim() && toolCalls.length === 0) {
               if (reasoningSeen.trim()) {
-                return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...(streamUsage ? { usage: streamUsage } : {}) };
+                return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...(streamUsage ? { usage: streamUsage } : {}), ...reasoningReplay() };
               }
               throw new ProviderError(`Meta Model API completed without a visible answer.`);
             }
@@ -641,6 +678,7 @@ export const metaProvider: LlmProvider = {
               ...(toolCalls.length ? { toolCalls } : {}),
               ...(finishReason ? { finishReason } : toolCalls.length ? { finishReason: "tool_calls" } : {}),
               ...(streamUsage ? { usage: streamUsage } : {}),
+              ...reasoningReplay(),
             };
           }
           let parsed: Record<string, unknown>;
@@ -692,6 +730,7 @@ export const metaProvider: LlmProvider = {
           }
           if (type === "response.output_item.done") {
             const item = parsed.item as Record<string, unknown> | undefined;
+            if (item?.type === "reasoning") noteReasoningItem(item);
             if (item?.type === "function_call") {
               const id = typeof item.id === "string" ? item.id : typeof (parsed as Record<string, unknown>).item_id === "string" ? (parsed as Record<string, unknown>).item_id as string : undefined;
               if (id && toolCallState.has(id)) {
@@ -787,6 +826,7 @@ export const metaProvider: LlmProvider = {
             if (typeof resp.status === "string") finishReason = resp.status as string;
             if (Array.isArray(resp.output)) {
               const out = parseResponsesOutput(resp as { output?: unknown; usage?: unknown });
+              for (const item of out.reasoningItems) noteReasoningItem(item);
               if (out.reasoningSummary && !reasoningSeen.trim()) {
                 emitReasoningDelta(out.reasoningSummary);
                 exitReasoning();
@@ -863,7 +903,7 @@ export const metaProvider: LlmProvider = {
       }
       if (!visible.trim() && toolCalls.length === 0) {
         if (reasoningSeen.trim()) {
-          return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...(streamUsage ? { usage: streamUsage } : {}) };
+          return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...(streamUsage ? { usage: streamUsage } : {}), ...reasoningReplay() };
         }
         throw new ProviderError(`Meta Model API completed without a visible answer.`);
       }
@@ -874,6 +914,7 @@ export const metaProvider: LlmProvider = {
         ...(toolCalls.length ? { toolCalls } : {}),
         ...(finishReason ? { finishReason } : toolCalls.length ? { finishReason: "tool_calls" } : {}),
         ...(streamUsage ? { usage: streamUsage } : {}),
+        ...reasoningReplay(),
       };
     } catch (error) {
       if (idleFired) {

@@ -402,6 +402,7 @@ import {
   createTurnOutcome,
   normalizeTurnOutcomeInput,
   renderTurnOutcome,
+  type LoopGuardStopInfo,
   type TurnOutcomeStatus,
 } from "./turn-outcome.js";
 import {
@@ -832,6 +833,7 @@ export async function runAgentTurn(
     remainingCriteria: readonly string[] = [],
     reason?: string,
     displayAnswer?: string,
+    loopGuardStop?: LoopGuardStopInfo,
   ): import("./turn-outcome.js").TurnOutcome => {
     releaseUnreadResponderClaims();
     const outcome = createTurnOutcome(
@@ -841,6 +843,7 @@ export async function runAgentTurn(
         steps,
         remainingCriteria,
         reason,
+        ...(loopGuardStop ? { loopGuardStop } : {}),
       }),
     );
     const renderOptions = {
@@ -5944,12 +5947,23 @@ export async function runAgentTurn(
             outcomeState.outcome.status = "partial";
             await saveOutcomeState(outcomeState);
             moveTurn("partial", "repeated identical action sequence");
+            const recoveryObservation = bound
+              .map((entry) => loopGuard.getPriorObservation(entry.call.name, entry.call.args))
+              .find((text) => typeof text === "string" && text.trim().length > 0);
             return finishTurn(
               `Stopped an identical action cycle before it could execute again. Blocked this turn: ${suppressedCallList}. Their earlier results are in context — continue from those, do not re-issue the same calls.`,
               productiveSteps,
               "partial",
               remainingCriteria,
               "The model repeated an identical action sequence without a new premise or state change.",
+              undefined,
+              {
+                calls: suppressedCallList,
+                ...(recoveryObservation?.trim()
+                  ? { observation: recoveryObservation.trim().slice(0, 4000) }
+                  : {}),
+                signature: loopGuard.currentActionSequenceSignature() ?? suppressedCallList,
+              },
             );
           }
           upsertActionCycleRecovery(
@@ -6555,12 +6569,23 @@ export async function runAgentTurn(
           outcomeState.outcome.status = "partial";
           await saveOutcomeState(outcomeState);
           moveTurn("partial", "repeated identical action cycle");
+          const recoveryObservation = bound
+            .map((entry) => loopGuard.getPriorObservation(entry.call.name, entry.call.args))
+            .find((text) => typeof text === "string" && text.trim().length > 0);
           return finishTurn(
             `Stopped an identical action cycle: consecutive rounds re-issued calls whose results are already in context (${repeatedList}). Continue from those results or take a materially different action.`,
             productiveSteps,
             "partial",
             ["Continue with a materially different action that can produce new evidence."],
             "Every call in consecutive rounds repeated already-answered work.",
+            undefined,
+            {
+              calls: repeatedList,
+              ...(recoveryObservation?.trim()
+                ? { observation: recoveryObservation.trim().slice(0, 4000) }
+                : {}),
+              signature: loopGuard.currentActionSequenceSignature() ?? repeatedList,
+            },
           );
         }
 

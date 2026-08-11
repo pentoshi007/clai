@@ -148,9 +148,9 @@ export function checkForUpdateSilent(): void {
 }
 
 /** Resolve how this installation was put on the machine (npm/bun/brew/…). */
-export function detectInstallMethodOrDev(): InstallMethod {
+export async function detectInstallMethodOrDev(): Promise<InstallMethod> {
   try {
-    return detectInstallMethod(resolveInstallEnv());
+    return detectInstallMethod(await resolveInstallEnv());
   } catch {
     return { type: "unknown", detail: "detection failed" };
   }
@@ -162,14 +162,16 @@ export async function installUpdate(
   log?: (line: string) => void,
   stdio: "inherit" | "pipe" = "inherit",
   onProgress?: (progress: UpdateProgress) => void,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; message: string; method: string; needsRestart: boolean }> {
-  const method = detectInstallMethodOrDev();
+  const method = await detectInstallMethodOrDev();
   const result = await performUpdate({
     version,
     method,
     stdio,
     ...(log ? { log } : {}),
     ...(onProgress ? { onProgress } : {}),
+    ...(signal ? { signal } : {}),
   });
   return {
     ok: result.ok,
