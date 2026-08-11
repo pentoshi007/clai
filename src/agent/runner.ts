@@ -559,6 +559,7 @@ export async function runAgentTurn(
       ? options.mode
       : "agent";
   const isPlanMode = agentMode === "plan";
+  const writesDirectly = !options.onEvent;
   const emit = (event: AgentEvent): void => options.onEvent?.(event);
   // Whether the CURRENT model iteration has already committed its visible
   // prose to the transcript with an `assistant-message` event. The recovery
@@ -654,13 +655,18 @@ export async function runAgentTurn(
       ...(options?.replace ? { replace: true } : {}),
     });
   };
-  const writeToolCall = (id: string, call: ToolCall): void => {
+  const writeToolCall = (
+    id: string,
+    call: ToolCall,
+    rendered: string,
+  ): void => {
     emit({
       type: "tool-call",
       id,
       name: call.name,
       argsDisplay: formatToolArgs(call),
     });
+    if (writesDirectly) process.stdout.write(rendered);
   };
   const writePlanUpdate = (plan: SessionPlan): void => {
     emit({ type: "plan-update", plan });
@@ -1816,7 +1822,15 @@ export async function runAgentTurn(
         summary: string,
       ): void => {
         if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(toolEventId, call);
+          writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
           alreadyPrintedIds.add(toolEventId);
         }
         emit({ type: "tool-start", id: toolEventId });
@@ -1897,7 +1911,15 @@ export async function runAgentTurn(
       // no execution, until the model re-issues the identical batch to confirm.
       if (call.name === "task.update" && batchRemindCalls.has(rawCall)) {
         if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(toolEventId, call);
+          writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
           alreadyPrintedIds.add(toolEventId);
         }
         const result = { ok: false, output: batchReminderNote, exitCode: 1 };
@@ -2030,7 +2052,15 @@ export async function runAgentTurn(
             unreadResponderNotificationIds.delete(responderWakeNotificationId);
           }
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
+            writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
             alreadyPrintedIds.add(toolEventId);
           }
           const result = {
@@ -2098,7 +2128,15 @@ export async function runAgentTurn(
             if (!gate.ok) {
               writeNotice("warn", gate.reason);
               if (!alreadyPrintedIds.has(toolEventId)) {
-                writeToolCall(toolEventId, call);
+                writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
                 alreadyPrintedIds.add(toolEventId);
               }
               const result = {
@@ -2191,7 +2229,15 @@ export async function runAgentTurn(
           }
 
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
+            writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
             alreadyPrintedIds.add(toolEventId);
           }
 
@@ -2268,7 +2314,15 @@ export async function runAgentTurn(
             `Accept the plan (y/i or /implement) to switch to agent and execute.`;
           writeNotice("warn", reason);
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
+            writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
             alreadyPrintedIds.add(toolEventId);
           }
           const result = { ok: false, output: reason, exitCode: 1 };
@@ -2412,7 +2466,15 @@ export async function runAgentTurn(
             : `Scaffold was not run: the existing target${target ? ` at ${target}` : ""} is incomplete. Inspect and repair it before completing the scaffold task; do not retry the scaffolder into this non-empty directory.`;
           writeNotice("info", message);
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
+            writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
             alreadyPrintedIds.add(toolEventId);
           }
           const result = { ok: true, output: message, exitCode: 0 };
@@ -2428,7 +2490,15 @@ export async function runAgentTurn(
       }
 
       if (!alreadyPrintedIds.has(toolEventId)) {
-        writeToolCall(toolEventId, call);
+        writeToolCall(
+              toolEventId,
+              call,
+              styleToolChatter(
+                call,
+                chalk.cyan(`  ▶ ${call.name}`) +
+                  chalk.gray(` ${formatToolArgs(call)}`),
+              ) + "\n",
+            );
         alreadyPrintedIds.add(toolEventId);
       }
 
@@ -4077,6 +4147,7 @@ export async function runAgentTurn(
         const deferredToolCalls: {
           eventId: string;
           call: ToolCall;
+          rendered: string;
           shown: boolean;
         }[] = [];
         const streamedNativeCallNames = new Map<number, string>();
@@ -4242,8 +4313,21 @@ export async function runAgentTurn(
                     const eventId = `tool-${++nextToolEventId}`;
                     callIds[streamedCallsCount] = eventId;
                     alreadyPrintedIds.add(eventId);
-                    deferredToolCalls.push({ eventId, call, shown: true });
-                    writeToolCall(eventId, call);
+                    deferredToolCalls.push({
+                      eventId,
+                      call,
+                      rendered: "",
+                      shown: true,
+                    });
+                    writeToolCall(
+                      eventId,
+                      call,
+                      styleToolChatter(
+                        call,
+                        chalk.cyan(`  ▶ ${call.name}`) +
+                          chalk.gray(` ${formatToolArgs(call)}`),
+                      ) + "\n",
+                    );
                     emit({ type: "status", text: call.name });
                     streamedCallsCount += 1;
                   }
@@ -4536,6 +4620,7 @@ export async function runAgentTurn(
               deferredToolCalls.push({
                 eventId,
                 call: normalized,
+                rendered: "",
                 shown: false,
               });
             }
@@ -4558,6 +4643,7 @@ export async function runAgentTurn(
                 const entry = {
                   eventId,
                   call: normalized,
+                  rendered: "",
                   shown: existing?.shown ?? false,
                 };
                 if (existing) deferredToolCalls[i] = entry;
@@ -5464,7 +5550,15 @@ export async function runAgentTurn(
           for (const { b, resultReason, result } of suppressedResults) {
             const queued = deferredToolCalls[b.index];
             const eventId = queued?.eventId ?? `tool-${++nextToolEventId}`;
-            writeToolCall(eventId, b.call);
+            writeToolCall(
+              eventId,
+              b.call,
+              styleToolChatter(
+                b.call,
+                chalk.cyan(`  ▶ ${b.call.name}`) +
+                  chalk.gray(` ${formatToolArgs(b.call)}`),
+              ) + "\n",
+            );
             alreadyPrintedIds.add(eventId);
             emit({ type: "tool-start", id: eventId });
             const output = resultReason.endsWith("\n")
@@ -5582,7 +5676,7 @@ export async function runAgentTurn(
               styleToolChatter(finalCall!, refreshedLine) + "\n";
           }
           if (!deferred.shown) {
-            writeToolCall(deferred.eventId, deferred.call);
+            writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
             deferred.shown = true;
           } else if (stale) {
             writeToolCall(deferred.eventId, deferred.call, "");

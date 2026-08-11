@@ -5,6 +5,7 @@ export interface KeyEventLike {
   readonly meta?: boolean;
   readonly option?: boolean;
   readonly super?: boolean;
+  readonly sequence?: string | undefined;
 }
 
 const MODIFIER_ORDER = ["ctrl", "alt", "shift", "meta"] as const;
