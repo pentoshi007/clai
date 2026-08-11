@@ -220,7 +220,7 @@ describe("finalize gate — narration family", () => {
   it("never forces plan.create on a completed-work summary with approve-flag names", () => {
     const summary =
       "Sync complete — page now matches cli 3.18.0. Evidence: build passed, pushed main. " +
-      "terminal.tsx: free · free-1/deepseek-v4-flash-free · always-approve. " +
+      "terminal.tsx: free · free-1/deepseek-v4-flash-free · auto-allow. " +
       "Goal met; all tasks verified.";
     expect(
       chooseFinalizeRecovery(

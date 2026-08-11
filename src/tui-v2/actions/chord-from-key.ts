@@ -1,21 +1,3 @@
-/**
- * Bridges a terminal key event into our normalized chord vocabulary (V2-040).
- *
- * Renderer-independent by design: it takes a plain object shaped like
- * OpenTUI's `KeyEvent` rather than importing `@opentui/core`, so the mapping
- * is unit-testable and the renderer adapter (`composer-editor.tsx`) supplies
- * the real event. Two decisions are protocol-specific and documented here
- * rather than left implicit:
- *
- *  - OpenTUI reports Option/Alt as `option` and/or `meta` depending on the
- *    terminal; both map to our "alt" modifier. `super` (Cmd/Win) maps to our
- *    "meta" modifier, since nothing in the default keymap uses it otherwise.
- *  - Ctrl+J commonly arrives as a bare linefeed byte (`name: "linefeed"`,
- *    no modifier flags) rather than `{name: "j", ctrl: true}`. It is
- *    normalized to the "ctrl+j" chord so the global jobs binding matches
- *    regardless of which form the terminal sends.
- */
-
 import { normalizeChord } from "./keymap.js";
 
 export interface KeyEventLike {
@@ -25,6 +7,7 @@ export interface KeyEventLike {
   readonly meta?: boolean;
   readonly option?: boolean;
   readonly super?: boolean;
+  readonly sequence?: string | undefined;
 }
 
 const ENTER_NAMES = new Set(["return", "kpenter"]);
@@ -41,7 +24,12 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   const ctrl = key.ctrl || isLinefeed;
   const alt = Boolean(key.option || key.meta);
   const isUpper = key.name.length === 1 && key.name >= "A" && key.name <= "Z";
-  const shift = Boolean(key.shift) || isBacktab || isUpper;
+  const hasShiftSequence =
+    typeof key.sequence === "string" &&
+    key.sequence.length === 1 &&
+    key.sequence >= "A" &&
+    key.sequence <= "Z";
+  const shift = Boolean(key.shift) || isBacktab || isUpper || hasShiftSequence;
   const meta = Boolean(key.super);
 
   const parts: string[] = [];
@@ -49,7 +37,7 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   if (alt) parts.push("alt");
   if (shift) parts.push("shift");
   if (meta) parts.push("meta");
-  parts.push(isBacktab ? "tab" : baseKeyName(key.name));
+  parts.push(isBacktab ? "tab" : baseKeyName(key.name).toLowerCase());
 
   return normalizeChord(parts.join("+"));
 }

@@ -126,6 +126,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     session.provider ?? cfg.defaultProvider,
     session.model ?? cfg.defaultModel,
     cfg.permissions ?? "default",
+    cfg.thinking.enabled ? cfg.thinking.effort : undefined,
   );
 
   const shouldOwnKeyboard =
@@ -615,8 +616,12 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       // Non-empty: let OpenTUI handle line kill (do not preventDefault).
       return;
     }
-    // Shift first: ctrl+shift+x must not fall through to the plain clear.
-    if (chord === "ctrl+shift+x") {
+    const isCutChord =
+      chord === "ctrl+shift+x" ||
+      (chord === "ctrl+x" &&
+        (key.name === "X" ||
+          (typeof key.sequence === "string" && key.sequence === "X")));
+    if (isCutChord) {
       key.preventDefault();
       void draftActions.cut();
       return;

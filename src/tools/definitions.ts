@@ -50,7 +50,7 @@ function def(
               minimum: 1_000,
               maximum: 1_800_000,
               description:
-                "Wall-clock timeout in milliseconds (default 40000). Choose a larger value when the operation is expected to take longer.",
+                "Wall-clock timeout in milliseconds (default 40000). You can decide how much time is enough for this task and set timeoutMs accordingly — choose a larger value when the operation is expected to take longer.",
               ...((parameters.properties?.timeoutMs as
                 | Record<string, unknown>
                 | undefined) ?? {}),
