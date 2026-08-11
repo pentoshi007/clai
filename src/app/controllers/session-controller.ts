@@ -669,6 +669,7 @@ export class SessionController implements Disposable {
 
   async submit(prompt: string, opts?: TurnDisplayOptions): Promise<TurnResult> {
     this.responder?.activate();
+    this.loopRecoveryAttempts.clear();
     return this.prompts.submit(prompt, opts);
   }
 
@@ -735,6 +736,7 @@ export class SessionController implements Disposable {
     if (sameGeneration) {
       this.lastTurnResult = result;
       this.restoredPreviousTurn = undefined;
+      this.maybeScheduleLoopGuardRecovery(result);
     }
     try {
       if (
@@ -753,6 +755,48 @@ export class SessionController implements Disposable {
     } finally {
       this.responder?.scheduleWake();
     }
+  }
+
+  private readonly loopRecoveryAttempts = new Map<string, number>();
+
+  private maybeScheduleLoopGuardRecovery(result: TurnResult): void {
+    if (result.status !== "completed") return;
+    const stop = result.outcome.loopGuardStop;
+    if (!stop) {
+      if (result.outcome.status === "succeeded") this.loopRecoveryAttempts.clear();
+      return;
+    }
+    const signature = stop.signature || stop.calls;
+    const attempts = this.loopRecoveryAttempts.get(signature) ?? 0;
+    if (attempts >= 1) {
+      this.notice(
+        "warn",
+        "Loop guard stopped the agent again after automatic recovery — leaving the turn stopped. Continue manually with a different approach.",
+      );
+      return;
+    }
+    this.loopRecoveryAttempts.set(signature, attempts + 1);
+    const observation = stop.observation?.trim()
+      ? stop.observation.trim()
+      : "(no captured output — the repeated calls were blocked before running again)";
+    const prompt = [
+      `[LOOP GUARD RECOVERY] Your previous turn was stopped automatically because you repeated the exact same action sequence (same tools, same arguments) across consecutive responses: ${stop.calls}.`,
+      "",
+      "Those calls already ran and their results are available — re-issuing them is a loop.",
+      "",
+      "Earlier output of the repeated calls:",
+      observation,
+      "",
+      "Continue efficiently from these results. Do NOT re-issue the same calls with the same arguments; use the output above or take a materially different action to finish the remaining work.",
+    ].join("\n");
+    this.notice(
+      "warn",
+      "Loop guard stopped a repeated action cycle — auto-recovering with the captured results.",
+    );
+    this.prompts.enqueuePriority(
+      prompt,
+      "↻ auto-recovery: loop guard stopped a repeated action cycle",
+    );
   }
 
   /**
@@ -779,6 +823,7 @@ export class SessionController implements Disposable {
     this.lifecycleGeneration += 1;
     this.lastTurnResult = undefined;
     this.restoredPreviousTurn = undefined;
+    this.loopRecoveryAttempts.clear();
     if (this.turn.running) this.turn.abort();
     this.compactAbort?.abort();
     this.compactAbort = undefined;

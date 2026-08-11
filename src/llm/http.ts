@@ -1820,7 +1820,10 @@ export async function openAiCompatibleStream(options: {
                 index?: number;
                 id?: string;
                 type?: string;
-                function?: { name?: string; arguments?: string };
+                function?: {
+                  name?: string;
+                  arguments?: string | Record<string, unknown>;
+                };
               }>;
             };
           }>;

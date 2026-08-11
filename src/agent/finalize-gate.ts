@@ -11,7 +11,6 @@ import {
   recoveryForMissingFeature,
   recoveryForMissingPlan,
   recoveryForNarration,
-  recoveryForPrematureComplete,
   recoveryForRuntimeVerify,
   recoveryForShallowPentest,
   type RecoveryAction,
@@ -82,6 +81,7 @@ export function chooseFinalizeRecovery(
   const planNarrated =
     (input.buildLikeTurn || input.pentestLikeTurn) &&
     !input.activePlanExists &&
+    productiveSteps === 0 &&
     looksLikePlanNarration(cleaned);
   const errorFixNarration =
     !input.sawSuccessfulMutation &&
@@ -124,7 +124,7 @@ export function chooseFinalizeRecovery(
     } else if (
       budgetRemaining(recovery, "actionIntent") &&
       input.buildLikeTurn &&
-      (planNarrated || productiveSteps > 0)
+      planNarrated
     ) {
       action = recoveryForNarration(toolsAttached, "build_plan_prose");
     } else if (
@@ -222,28 +222,6 @@ export function chooseFinalizeRecovery(
     })
   ) {
     return recoveryForShallowPentest();
-  }
-
-  if (input.planApproved && budgetRemaining(recovery, "prematureComplete")) {
-    const unfinished = plan?.tasks.filter(
-      (task) =>
-        !task.responderOwned &&
-        (task.state === "pending" || task.state === "in_progress"),
-    );
-    if (
-      plan &&
-      unfinished &&
-      unfinished.length > 0 &&
-      !input.deferResponderReport
-    ) {
-      const next = unfinished[0]!;
-      return recoveryForPrematureComplete({
-        unfinished,
-        next,
-        pentest: plan.kind === "pentest" || input.pentestSession,
-        errorFix: errorFixNarration,
-      });
-    }
   }
 
   return undefined;

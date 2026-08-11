@@ -326,4 +326,27 @@ describe("destructive history clear", () => {
       expect(readFileSync(file, "utf8")).not.toContain("remove-me");
     }
   });
+
+  it("removes a session whose record spans many read chunks without corrupting neighboring records", async () => {
+    // A single JSONL line this large forces the chunked line reader in
+    // history.ts / history-index.ts to carry an unterminated fragment across
+    // many 64KB reads before it sees the record's newline.
+    const { deleteSession, getJsonlHistoryPath, getSession, listSessions } =
+      await import("../src/store/history.js");
+    const huge = sample("huge-record", "2026-08-08T00:02:00.000Z");
+    (huge as unknown as { padding: string }).padding = "x".repeat(600 * 1024);
+    const before = sample("before-huge", "2026-08-08T00:00:00.000Z");
+    const after = sample("after-huge", "2026-08-08T00:01:00.000Z");
+    writeFileSync(
+      getJsonlHistoryPath(),
+      `${JSON.stringify(before)}\n${JSON.stringify(huge)}\n${JSON.stringify(after)}\n`,
+    );
+
+    expect(await deleteSession("huge-record")).toMatchObject({ deleted: true });
+    expect(await getSession("huge-record")).toBeUndefined();
+    expect(await getSession("before-huge")).toBeDefined();
+    expect(await getSession("after-huge")).toBeDefined();
+    const ids = (await listSessions(10)).map((record) => record.id).sort();
+    expect(ids).toEqual(["after-huge", "before-huge"]);
+  });
 });

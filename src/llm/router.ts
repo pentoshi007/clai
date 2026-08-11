@@ -427,6 +427,16 @@ function allFallbackIds(): ProviderId[] {
   return [...fallbackOrder, ...custom];
 }
 
+async function requestedRealKeyCount(provider: ProviderId): Promise<number> {
+  // Ollama's "key" is a local host URL, and `free` has no credential at all —
+  // both are keyless/local slots, not a single real API key. Counting them
+  // here would disable fallback for the two providers that most need it when
+  // the local server or free tier is unavailable.
+  if (provider === "ollama" || provider === "free") return 0;
+  const multi = await getProviderKeys(provider);
+  return multi.keys.filter((key) => key.value).length;
+}
+
 export function buildFallbackChain(
   requested: ProviderId,
   freeOnly: boolean,
@@ -995,7 +1005,8 @@ export async function completeWithProvider(
   const providerImpl = getProvider(requested);
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
-    config.providerFallback ? (isDefaultModel || request.allowModelFallback === true) : request.allowModelFallback === true;
+    (await requestedRealKeyCount(requested)) !== 1 &&
+    (config.providerFallback ? (isDefaultModel || request.allowModelFallback === true) : request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
@@ -1069,7 +1080,8 @@ export async function streamWithProvider(
   const providerImpl = getProvider(requested);
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
-    config.providerFallback ? (isDefaultModel || request.allowModelFallback === true) : request.allowModelFallback === true;
+    (await requestedRealKeyCount(requested)) !== 1 &&
+    (config.providerFallback ? (isDefaultModel || request.allowModelFallback === true) : request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,

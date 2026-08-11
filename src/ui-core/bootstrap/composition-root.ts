@@ -34,6 +34,7 @@ import { ActionRouter } from "../actions/action-router.js";
 import { FocusController } from "../controllers/focus-controller.js";
 import { SelectionController } from "../controllers/selection-controller.js";
 import { ToastController, DEFAULT_TOAST_DURATION_MS } from "../controllers/toast-controller.js";
+import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
 import { TranscriptStore } from "../state/transcript-store.js";
 import { serializeForHistory } from "../state/transcript-hydrate.js";
@@ -105,6 +106,8 @@ export interface AppServices {
   readonly plan: PlanController;
   /** Single owner for the one blocking overlay (picker/confirm/secret/pager/jobs). */
   readonly overlay: OverlayController;
+  /** Cancellable non-session operations (e.g. /update download + install). */
+  readonly interruptible: InterruptibleController;
   readonly pagerExport: PagerExportPort;
   readonly requestExit: () => void;
   readonly capabilities: TerminalCapabilityReport;
@@ -130,6 +133,7 @@ export function createCompositionRoot(
   const focus = new FocusController();
   const overlay = new OverlayController(focus);
   const toast = new ToastController();
+  const interruptible = new InterruptibleController();
 
   const emit = (event: AnyAppEvent): void => {
     transcript.dispatch(event);
@@ -250,6 +254,7 @@ export function createCompositionRoot(
     transcript,
     plan,
     overlay,
+    interruptible,
     pagerExport,
     requestExit: options.requestExit ?? (() => {}),
     capabilities,
@@ -258,6 +263,7 @@ export function createCompositionRoot(
       if (disposed) return;
       disposed = true;
       unsubscribePlanJobs();
+      interruptible.cancelAll();
       overlay.dispose();
       selection.dispose();
       toast.dispose();

@@ -71,6 +71,11 @@ export interface ReasoningBlock {
   text: string;
   /** Anthropic signature; without it a thinking block cannot be replayed. */
   signature?: string | undefined;
+  /**
+   * Provider-specific items replayed verbatim into the next request
+   * (Meta Responses API encrypted reasoning items).
+   */
+  items?: Array<Record<string, unknown>> | undefined;
 }
 
 export interface ChatMessage {

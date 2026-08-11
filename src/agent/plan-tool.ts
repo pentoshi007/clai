@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import {
   createPlan,
+  deletePlan,
   loadPlan,
   savePlan,
   mutatePlan,
@@ -414,6 +415,7 @@ export interface PlanToolResult {
   handled: boolean;
   ok: boolean;
   plan?: SessionPlan | undefined;
+  cleared?: boolean | undefined;
   /** What to print to the user's terminal. */
   display: string;
   /** What to feed back to the model as the tool result. */
@@ -449,6 +451,21 @@ export function upsertPlanContextMessage(
     }
   }
   messages.push({ role: "system", content });
+}
+
+export function removePlanContextMessage(
+  messages: Array<{ role: string; content: string }>,
+): void {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (
+      message.role === "system" &&
+      typeof message.content === "string" &&
+      message.content.startsWith(PLAN_CONTEXT_PREFIX)
+    ) {
+      messages.splice(index, 1);
+    }
+  }
 }
 
 export function planContextMessage(plan: SessionPlan, approved: boolean): string {
@@ -533,7 +550,9 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
         "Let the task states drive your next action and next reads: open the in_progress or failed task, read only its " +
           "own artifacts plus the specific earlier-task outputs you need to confirm what is already done, then continue " +
           "strictly task-by-task from there. Do NOT re-scan the whole project or read unrelated files to rediscover " +
-          "status, and do NOT write a final or completion summary while any task is still pending or in_progress.",
+          "status. You are advised to work through every task, but you may stop without finishing all of them when " +
+          "genuinely blocked or when the situation requires it — report the remaining tasks honestly instead of " +
+          "forcing completion.",
       );
     }
     lines.push(
@@ -1044,6 +1063,56 @@ export async function handlePlanTool(
     };
   }
 
+  if (call.name === "plan.clear") {
+    const plan = await loadPlan(session.sessionId).catch(() => undefined);
+    if (!plan) {
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.red("  ✗ plan.clear: no active plan to clear\n"),
+        modelNote: "plan.clear failed: there is no active plan.",
+      };
+    }
+    const activeResponder = plan.tasks.find(
+      (task) =>
+        task.responderOwned &&
+        (task.state === "pending" || task.state === "in_progress"),
+    );
+    if (activeResponder) {
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.yellow(
+          `  ⚠ plan.clear: [${activeResponder.id}] is still owned by an active Responder job\n`,
+        ),
+        modelNote:
+          `plan.clear held: [${activeResponder.id}] "${activeResponder.title}" is still responder-owned and active. ` +
+          "Wait for it to settle before clearing the plan so its result is not orphaned.",
+      };
+    }
+    try {
+      await deletePlan(session.sessionId);
+    } catch {
+      return {
+        handled: true,
+        ok: false,
+        display: chalk.red("  ✗ plan.clear: could not remove the active plan\n"),
+        modelNote:
+          "plan.clear failed: the plan could not be durably removed. The active plan remains unchanged.",
+      };
+    }
+    session.planApproved.value = false;
+    return {
+      handled: true,
+      ok: true,
+      cleared: true,
+      display: chalk.dim("  ✦ plan cleared — no active plan\n"),
+      modelNote:
+        "Plan cleared. No active plan exists for this session; the task checklist and approval state were discarded. " +
+        "Continue without a plan, or call plan.create only if a fresh durable plan is genuinely needed.",
+    };
+  }
+
   // task.add / task.update
   const plan = await loadPlan(session.sessionId).catch(() => undefined);
   if (!plan) {
@@ -1348,7 +1417,7 @@ export async function handlePlanTool(
           ),
           modelNote:
             `task.update failed: [${otherActive.id}] "${otherActive.title}" is still in_progress. ` +
-            `Close it first with task.update {taskId:"${otherActive.id}", state:"done"} (or "failed"/"skipped" with a reason), then open [${taskId}]. ` +
+            `Defer it first with task.update {taskId:"${otherActive.id}", state:"pending"} (or finish it with "done"; use "failed"/"skipped" with a reason), then open [${taskId}]. ` +
             `Exactly one foreground task may be active at a time; Responder-owned subtasks are exempt.`,
         };
       }
@@ -1548,6 +1617,10 @@ export async function handlePlanTool(
       `Task [${taskId}] is now in_progress. Do ONLY this task's work, wait for tool results, ` +
       `and mark done only when you are satisfied the results prove success. ` +
       `Then task.update {taskId:"${taskId}", state:"done"}. Do not open or work on later tasks yet.`;
+  } else if (stateRaw === "pending") {
+    modelNote =
+      `Task [${taskId}] is pending. If you deferred it to switch priorities, ` +
+      `explicitly open the intended task with task.update {taskId:"...", state:"in_progress"} before doing work.`;
   } else {
     modelNote = "Task updated. Continue with the next pending task.";
   }

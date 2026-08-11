@@ -233,6 +233,9 @@ export function dedupeToolContextOutput(input: {
     return { content: input.content, deduped: false, hash };
   }
   prior.count += 1;
+  if (prior.count > 2) {
+    return { content: input.content, deduped: false, hash };
+  }
   const artifact = input.artifactPath
     ? ` Full output: ${input.artifactPath}`
     : "";

@@ -174,6 +174,11 @@ export class AgentEventAdapter {
           plan: event.plan,
         });
         return;
+      case "plan-cleared":
+        this.push("plan-cleared", {
+          planId: asPlanId(event.sessionId),
+        });
+        return;
       case "confirm-request":
         this.push("confirm-requested", {
           requestId: event.id,

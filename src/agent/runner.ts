@@ -258,6 +258,7 @@ import {
 } from "./progress-pause-policy.js";
 import {
   planContextMessage,
+  removePlanContextMessage,
   upsertPlanContextMessage,
   handlePlanTool,
   resolvePlanTaskId,
@@ -394,6 +395,7 @@ import {
   createTurnOutcome,
   normalizeTurnOutcomeInput,
   renderTurnOutcome,
+  type LoopGuardStopInfo,
   type TurnOutcomeStatus,
 } from "./turn-outcome.js";
 import {
@@ -770,6 +772,7 @@ export async function runAgentTurn(
     remainingCriteria: readonly string[] = [],
     reason?: string,
     displayAnswer?: string,
+    loopGuardStop?: LoopGuardStopInfo,
   ): import("./turn-outcome.js").TurnOutcome => {
     releaseUnreadResponderClaims();
     const outcome = createTurnOutcome(
@@ -779,6 +782,7 @@ export async function runAgentTurn(
         steps,
         remainingCriteria,
         reason,
+        ...(loopGuardStop ? { loopGuardStop } : {}),
       }),
     );
     const renderOptions = {
@@ -1559,13 +1563,14 @@ export async function runAgentTurn(
     refreshSessionState = (plan?: SessionPlan | null | undefined): void => {
       if (idleOrSocialPrompt || informationalQuery) return;
       const runningJobs = jobManager.getRunningJobs(session.sessionId);
-      const p = plan ?? activePlan;
+      const p = plan === null ? undefined : plan ?? activePlan;
       if (
         !buildLikeTurn &&
         !pentestLikeTurn &&
         !p &&
         runningJobs.length === 0
       ) {
+        if (plan === null) removePlanContextMessage(messages);
         return;
       }
       const root = getActiveProjectRoot() ?? p?.meta?.projectRoot;
@@ -1617,6 +1622,8 @@ export async function runAgentTurn(
           messages,
           planContextMessage(p, session.planApproved.value),
         );
+      } else {
+        removePlanContextMessage(messages);
       }
       upsertSessionStateMessage(messages, buildSessionStateBlock(snap));
     };
@@ -1956,14 +1963,7 @@ export async function runAgentTurn(
         return { ok: true, call, result, contextOutput: output };
       }
 
-      if (
-        call.name === "plan.create" ||
-        call.name === "task.add" ||
-        call.name === "task.move" ||
-        call.name === "job.read" ||
-        call.name === "task.read" ||
-        call.name === "task.update"
-      ) {
+      if (RUNNER_META_TOOL_NAMES.has(call.name)) {
         if (call.name === "job.read" || call.name === "task.read") {
           const requestedNotificationId =
             typeof call.args.notificationId === "string"
@@ -2204,6 +2204,13 @@ export async function runAgentTurn(
             // Refresh sticky root only if path already exists (not bare Desktop).
             const root = extractProjectRootFromPlan(planResult.plan);
             if (root) setActiveProjectRootIfValid(root);
+          }
+
+          if (planResult.ok && planResult.cleared) {
+            pendingSessionStatePlan = null;
+            removePlanContextMessage(messages);
+            emit({ type: "plan-cleared", sessionId: session.sessionId });
+            if (writesDirectly) process.stdout.write(planResult.display);
           }
 
           const result = { ok: planResult.ok, output: planResult.modelNote };
@@ -5150,16 +5157,14 @@ export async function runAgentTurn(
             );
             continue;
           }
-          const deferResponderReport =
-            session.planApproved.value &&
-            budgetRemaining(recovery, "prematureComplete")
-              ? shouldYieldForDeclaredResponderDependency(
-                  livePlanAtCompletion,
-                  jobManager.getRunningJobs(session.sessionId),
-                  jobManager.getPendingNotifications(session.sessionId),
-                  responderWakeNotificationId,
-                )
-              : false;
+          const deferResponderReport = session.planApproved.value
+            ? shouldYieldForDeclaredResponderDependency(
+                livePlanAtCompletion,
+                jobManager.getRunningJobs(session.sessionId),
+                jobManager.getPendingNotifications(session.sessionId),
+                responderWakeNotificationId,
+              )
+            : false;
           const finalizeRecovery = chooseFinalizeRecovery({
             cleaned,
             recovery,
@@ -5507,12 +5512,23 @@ export async function runAgentTurn(
             outcomeState.outcome.status = "partial";
             await saveOutcomeState(outcomeState);
             moveTurn("partial", "repeated identical action sequence");
+            const recoveryObservation = bound
+              .map((entry) => loopGuard.getPriorObservation(entry.call.name, entry.call.args))
+              .find((text) => typeof text === "string" && text.trim().length > 0);
             return finishTurn(
               `Stopped an identical action cycle before it could execute again. Blocked this turn: ${suppressedCallList}. Their earlier results are in context — continue from those, do not re-issue the same calls.`,
               productiveSteps,
               "partial",
               remainingCriteria,
               "The model repeated an identical action sequence without a new premise or state change.",
+              undefined,
+              {
+                calls: suppressedCallList,
+                ...(recoveryObservation?.trim()
+                  ? { observation: recoveryObservation.trim().slice(0, 4000) }
+                  : {}),
+                signature: loopGuard.currentActionSequenceSignature() ?? suppressedCallList,
+              },
             );
           }
           upsertActionCycleRecovery(
@@ -5542,11 +5558,34 @@ export async function runAgentTurn(
         }
 
 
-        for (const deferred of activeDeferredToolCalls.slice(0, allCalls.length)) {
+        // Cards streamed from partial text can predate their arguments. The
+        // executed call is authoritative, so refresh a stale card in place
+        // (same event id → the reducer updates the queued row, no new card).
+        const flushableDeferred = activeDeferredToolCalls.slice(
+          0,
+          allCalls.length,
+        );
+        for (let i = 0; i < flushableDeferred.length; i += 1) {
+          const deferred = flushableDeferred[i]!;
           if (!deferred.call.name || deferred.call.name === "…") continue;
+          const finalCall = allCalls[i];
+          const stale =
+            finalCall !== undefined &&
+            (finalCall.name !== deferred.call.name ||
+              formatToolArgs(finalCall) !== formatToolArgs(deferred.call));
+          if (stale) {
+            deferred.call = finalCall!;
+            const refreshedLine =
+              chalk.cyan(`  ▶ ${finalCall!.name}`) +
+              chalk.gray(` ${formatToolArgs(finalCall!)}`);
+            deferred.rendered =
+              styleToolChatter(finalCall!, refreshedLine) + "\n";
+          }
           if (!deferred.shown) {
             writeToolCall(deferred.eventId, deferred.call);
             deferred.shown = true;
+          } else if (stale) {
+            writeToolCall(deferred.eventId, deferred.call, "");
           }
         }
 
@@ -5751,7 +5790,6 @@ export async function runAgentTurn(
             sawSuccessfulMutation = false;
           }
           if (res.ok && isEvidenceWorkTool(res.call.name)) {
-            recovery.prematureComplete = 0;
             recovery.actionIntent = 0;
             recovery.errorFix = 0;
           }
@@ -6077,12 +6115,23 @@ export async function runAgentTurn(
           outcomeState.outcome.status = "partial";
           await saveOutcomeState(outcomeState);
           moveTurn("partial", "repeated identical action cycle");
+          const recoveryObservation = bound
+            .map((entry) => loopGuard.getPriorObservation(entry.call.name, entry.call.args))
+            .find((text) => typeof text === "string" && text.trim().length > 0);
           return finishTurn(
             `Stopped an identical action cycle: consecutive rounds re-issued calls whose results are already in context (${repeatedList}). Continue from those results or take a materially different action.`,
             productiveSteps,
             "partial",
             ["Continue with a materially different action that can produce new evidence."],
             "Every call in consecutive rounds repeated already-answered work.",
+            undefined,
+            {
+              calls: repeatedList,
+              ...(recoveryObservation?.trim()
+                ? { observation: recoveryObservation.trim().slice(0, 4000) }
+                : {}),
+              signature: loopGuard.currentActionSequenceSignature() ?? repeatedList,
+            },
           );
         }
 

@@ -24,6 +24,18 @@ export class PlanController implements Disposable {
   }
 
   observe(event: AnyAppEvent): void {
+    if (event.type === "plan-cleared") {
+      if (
+        this.activeSessionId &&
+        event.payload.planId !== this.activeSessionId
+      ) {
+        return;
+      }
+      this.loadGeneration += 1;
+      this.plan = undefined;
+      this.notify();
+      return;
+    }
     if (event.type === "plan-updated") {
       const eventSessionId = event.payload.plan.sessionId;
       if (this.activeSessionId && eventSessionId !== this.activeSessionId) {

@@ -575,6 +575,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       );
 
     case "plan-updated":
+    case "plan-cleared":
     case "confirm-requested":
     case "token-usage":
     case "context-estimate":

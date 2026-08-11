@@ -66,6 +66,31 @@ describe("agent tool-call parser", () => {
     expect(textBeforeToolCall(text)).toBe("I'll search now.");
   });
 
+  it("does not parse a still-streaming id-tagged block with no closing tag as a zero-arg call", () => {
+    // Kimi/GLM-style wire: the block only closes with </tool_call:id>. Before
+    // that arrives, the name or JSON may still be mid-stream; treating it as
+    // a real empty-args call ran mutating tools with the wrong meaning and
+    // froze live tool cards with a blank input.
+    const stillOpen = `<tool_calls:9f1><tool_call:9f1>fs.read\n`;
+    expect(parseToolCall(stillOpen)).toBeUndefined();
+  });
+
+  it("flags a still-open id-tagged block as truncated so the runner retries", async () => {
+    const { looksLikeTruncatedToolCall } = await import(
+      "../src/agent/tool-call-parser.js"
+    );
+    const stillOpen = `<tool_calls:9f1><tool_call:9f1>fs.read\n{"path":"/tmp/a.ts"`;
+    expect(looksLikeTruncatedToolCall(stillOpen)).toBe(true);
+  });
+
+  it("parses a zero-argument id-tagged call once its block actually closes", () => {
+    const closed = `<tool_calls:9f1><tool_call:9f1>job.read</tool_call:9f1></tool_calls:9f1>`;
+    const call = parseToolCall(closed);
+    expect(call).toBeDefined();
+    expect(call!.name).toBe("job.read");
+    expect(call!.args).toEqual({});
+  });
+
   it("repairs and parses JSON with mixed single and double quotes (common in Kimi)", () => {
     const text1 =
       '```tool\n{"name": "shell.exec", "args": {"command": \'echo "hello"\'}}\n```';

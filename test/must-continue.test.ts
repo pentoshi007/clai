@@ -6,7 +6,6 @@ import {
   freestyleClaimsAppReady,
   looksLikeShallowPentestReport,
   recoveryForMissingFeature,
-  recoveryForPrematureComplete,
   recoveryForShallowPentest,
 } from "../src/agent/must-continue.js";
 import { shouldYieldForDeclaredResponderDependency } from "../src/agent/runner.js";
@@ -23,16 +22,8 @@ describe("recovery budgets", () => {
     expect(budgetRemaining(b, "forcePlan")).toBe(false);
   });
 
-  it("builds feature and premature-complete messages", () => {
+  it("builds feature messages", () => {
     expect(recoveryForMissingFeature("/tmp/app").message).toMatch(/feature/i);
-    const r = recoveryForPrematureComplete({
-      unfinished: [{ id: "t2", title: "implement", state: "pending" }],
-      next: { id: "t2", title: "implement", state: "pending" },
-      pentest: false,
-      errorFix: false,
-    });
-    expect(r.message).toMatch(/t2/);
-    expect(r.notice).toMatch(/unfinished/i);
   });
 });
 

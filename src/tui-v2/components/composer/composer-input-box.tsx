@@ -68,7 +68,6 @@ export function ComposerInputBox(props: {
         paddingRight: 1,
         flexDirection: "row",
         minWidth: 0,
-        overflow: "hidden",
       }}
       onMouseDown={onMouseDown}
       onMouseScroll={onMouseScroll}

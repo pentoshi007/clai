@@ -107,8 +107,11 @@ export async function resolveModelsForProvider(
     source = "known";
   }
 
-  if (currentModel && !models.includes(currentModel)) {
-    models = [currentModel, ...models];
+  if (currentModel && !models.includes(currentModel) && currentModel === getProviderModel(provider)) {
+    const isFreeModel = currentModel.startsWith("free-1/") || currentModel.startsWith("free-2/");
+    if (!(isFreeModel && provider !== "free")) {
+      models = [currentModel, ...models];
+    }
   }
   return error ? { models, source, error } : { models, source };
 }
@@ -125,11 +128,12 @@ export async function handleModel(
     return;
   }
 
+  const currentModel = getProviderModel(provider);
   const fetchingToastId = services.toast.info(`fetching ${provider} models…`, {
     key: "model-fetch",
     sticky: true,
   });
-  const { models, source, error } = await resolveModelsForProvider(provider, state.model);
+  const { models, source, error } = await resolveModelsForProvider(provider, currentModel);
   services.toast.dismiss(fetchingToastId);
   if (error) {
     services.session.notice(
@@ -159,7 +163,7 @@ export async function handleModel(
       options: models.map((value) => ({
         value,
         label: value,
-        active: value === state.model,
+        active: value === currentModel,
       })),
     },
     (value) => {
@@ -463,12 +467,57 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
       await setProviderSecret(next, value);
     }
   }
-  const model = getProviderModel(next);
+  let model = getProviderModel(next);
+  const isFreeModel = model.startsWith("free-1/") || model.startsWith("free-2/");
+  if (isFreeModel && next !== "free") {
+    model = defaultModels[next];
+    setProviderModel(next, model);
+  }
   setDefaultProvider(next);
   services.session.setProvider(next);
   services.session.setModel(model);
   services.overlay.close();
   services.session.notice("info", `provider → ${next} · model → ${model}`);
+  const fetchingToastId = services.toast.info(`fetching ${next} models…`, {
+    key: "model-fetch",
+    sticky: true,
+  });
+  const { models, source, error } = await resolveModelsForProvider(next, model);
+  services.toast.dismiss(fetchingToastId);
+  if (error) {
+    services.session.notice(
+      "warn",
+      `could not refresh ${next} models: ${error} · showing known models`,
+    );
+  } else if (source === "known" && getProvider(next).listModels) {
+    services.session.notice(
+      "warn",
+      `${next} model list empty from API · showing known models`,
+    );
+  } else if (source === "live") {
+    services.session.notice("info", `${next} · ${models.length} models (live)`);
+  }
+  if (models.length === 0) {
+    services.session.notice(
+      "info",
+      `no models for ${next} — type /model <name> to set one manually`,
+    );
+    return;
+  }
+  services.overlay.openPicker(
+    {
+      title: `Models · ${next}${source === "live" ? " · live" : ""}`,
+      options: models.map((value) => ({
+        value,
+        label: value,
+        active: value === model,
+      })),
+    },
+    (value) => {
+      applyModel(services, next, value, models);
+      services.overlay.close();
+    },
+  );
 }
 
 /**

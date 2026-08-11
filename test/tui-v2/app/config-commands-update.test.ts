@@ -98,6 +98,7 @@ describe("/update in the running TUI", () => {
       expect.any(Function),
       "pipe",
       expect.any(Function),
+      expect.any(AbortSignal),
     );
     expect(requestExit).not.toHaveBeenCalled();
     vi.runAllTimers();

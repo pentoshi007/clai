@@ -228,66 +228,87 @@ export async function readIndexedHistoryRecord<T>(
   }
 }
 
+export interface HistoryIndexScanResult {
+  malformed: boolean;
+}
+
+export interface HistoryIndexRebuildResult {
+  entries: HistoryIndexEntry[];
+  malformed: boolean;
+}
+
 export async function scanHistoryJsonl<T extends HistoryRecordShape>(
   jsonlPath: string,
   visit: (record: T, offset: number, length: number) => void,
-): Promise<void> {
+): Promise<HistoryIndexScanResult> {
   const handle = await open(jsonlPath, "r").catch(() => undefined);
-  if (!handle) return;
+  if (!handle) return { malformed: false };
   const chunk = Buffer.allocUnsafe(64 * 1024);
-  let carry = Buffer.alloc(0);
+  // See the matching reader in history.ts: accumulate un-terminated
+  // fragments as a buffer list and only concatenate once a line's newline is
+  // found, instead of re-concatenating the growing carry on every chunk read.
+  // That kept a single oversized record's line-assembly cost quadratic in the
+  // record's length rather than linear in total bytes scanned.
+  let carryChunks: Buffer[] = [];
+  let carryLen = 0;
   let fileOffset = 0;
+  let malformed = false;
+  const visitLine = (line: Buffer, offset: number, length: number): void => {
+    if (line.length === 0) return;
+    try {
+      visit(JSON.parse(line.toString("utf8")) as T, offset, length);
+    } catch {
+      malformed = true;
+    }
+  };
   try {
     while (true) {
       const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
       if (bytesRead === 0) break;
-      const data = carry.length
-        ? Buffer.concat([carry, chunk.subarray(0, bytesRead)])
-        : Buffer.from(chunk.subarray(0, bytesRead));
       let start = 0;
       while (true) {
-        const newline = data.indexOf(0x0a, start);
-        if (newline < 0) break;
-        const line = data.subarray(start, newline);
-        const length = newline - start + 1;
-        if (line.length > 0) {
-          try {
-            visit(
-              JSON.parse(line.toString("utf8")) as T,
-              fileOffset + start - carry.length,
-              length,
-            );
-          } catch {
-            // Malformed lines are skipped; callers can rebuild from valid rows.
-          }
+        const newline = chunk.indexOf(0x0a, start);
+        if (newline < 0 || newline >= bytesRead) break;
+        const segmentStart = fileOffset + start;
+        if (carryLen > 0) {
+          const segment = chunk.subarray(start, newline);
+          const line =
+            segment.length > 0
+              ? Buffer.concat([...carryChunks, segment], carryLen + segment.length)
+              : Buffer.concat(carryChunks, carryLen);
+          const lineOffset = segmentStart - carryLen;
+          visitLine(line, lineOffset, newline - start + 1 + carryLen);
+          carryChunks = [];
+          carryLen = 0;
+        } else {
+          visitLine(chunk.subarray(start, newline), segmentStart, newline - start + 1);
         }
         start = newline + 1;
       }
-      fileOffset += bytesRead;
-      carry = Buffer.from(data.subarray(start));
-    }
-    if (carry.length > 0) {
-      try {
-        visit(
-          JSON.parse(carry.toString("utf8")) as T,
-          fileOffset - carry.length,
-          carry.length,
-        );
-      } catch {
-        // Ignore a truncated final line.
+      if (start < bytesRead) {
+        carryChunks.push(Buffer.from(chunk.subarray(start, bytesRead)));
+        carryLen += bytesRead - start;
       }
+      fileOffset += bytesRead;
+    }
+    if (carryLen > 0) {
+      const carry = Buffer.concat(carryChunks, carryLen);
+      visitLine(carry, fileOffset - carryLen, carryLen);
     }
   } finally {
     await handle.close();
   }
+  return { malformed };
 }
 
-export async function rebuildHistoryIndex<T extends HistoryRecordShape>(
+export async function rebuildHistoryIndexWithStatus<
+  T extends HistoryRecordShape,
+>(
   jsonlPath: string,
   indexPath: string,
-): Promise<HistoryIndexEntry[]> {
+): Promise<HistoryIndexRebuildResult> {
   const byId = new Map<string, HistoryIndexEntry>();
-  await scanHistoryJsonl<T>(jsonlPath, (record, offset, length) => {
+  const scan = await scanHistoryJsonl<T>(jsonlPath, (record, offset, length) => {
     if (!record?.id) return;
     byId.set(record.id, {
       id: record.id,
@@ -300,9 +321,15 @@ export async function rebuildHistoryIndex<T extends HistoryRecordShape>(
   try {
     await writeHistoryIndexFile(jsonlPath, indexPath, entries);
   } catch {
-    // Listing remains usable from the in-memory streaming result.
   }
-  return entries;
+  return { entries, malformed: scan.malformed };
+}
+
+export async function rebuildHistoryIndex<T extends HistoryRecordShape>(
+  jsonlPath: string,
+  indexPath: string,
+): Promise<HistoryIndexEntry[]> {
+  return (await rebuildHistoryIndexWithStatus<T>(jsonlPath, indexPath)).entries;
 }
 
 export async function findHistoryRecordStreaming<T extends HistoryRecordShape>(

@@ -6,6 +6,12 @@ export type TurnOutcomeStatus =
   | "aborted"
   | "paused_budget";
 
+export interface LoopGuardStopInfo {
+  readonly calls: string;
+  readonly observation?: string | undefined;
+  readonly signature: string;
+}
+
 export interface TurnOutcome {
   readonly schemaVersion: 1;
   readonly status: TurnOutcomeStatus;
@@ -13,6 +19,7 @@ export interface TurnOutcome {
   readonly steps: number;
   readonly remainingCriteria: readonly string[];
   readonly reason?: string | undefined;
+  readonly loopGuardStop?: LoopGuardStopInfo | undefined;
 }
 
 export function normalizeTurnOutcomeInput(

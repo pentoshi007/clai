@@ -143,7 +143,9 @@ export function appendAssistantWithTools(
     ...(toolCalls.length
       ? { toolCalls: slimNativeToolCallsForHistory(toolCalls) }
       : {}),
-    ...(reasoningBlock?.text ? { reasoningBlock } : {}),
+    ...(reasoningBlock?.text || reasoningBlock?.items?.length
+      ? { reasoningBlock }
+      : {}),
   });
 }
 

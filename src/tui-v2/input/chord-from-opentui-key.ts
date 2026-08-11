@@ -34,7 +34,12 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   const ctrl = key.ctrl || isLinefeed;
   const alt = Boolean(key.option || key.meta);
   const isUpper = key.name.length === 1 && key.name >= "A" && key.name <= "Z";
-  const shift = Boolean(key.shift) || isBacktab || isUpper;
+  const hasShiftSequence =
+    typeof key.sequence === "string" &&
+    key.sequence.length === 1 &&
+    key.sequence >= "A" &&
+    key.sequence <= "Z";
+  const shift = Boolean(key.shift) || isBacktab || isUpper || hasShiftSequence;
   const meta = Boolean(key.super);
 
   const parts: string[] = [];
@@ -42,7 +47,7 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   if (alt) parts.push("alt");
   if (shift) parts.push("shift");
   if (meta) parts.push("meta");
-  parts.push(isBacktab ? "tab" : baseKeyName(key.name));
+  parts.push(isBacktab ? "tab" : baseKeyName(key.name).toLowerCase());
 
   return normalizeChord(parts.join("+"));
 }

@@ -42,8 +42,8 @@ export function scrollbarSegments(
   return { above, thumb, below };
 }
 
-const TRACK_GLYPH = "│";
-const THUMB_GLYPH = "┃";
+const TRACK_GLYPH = "▓";
+const THUMB_GLYPH = "█";
 
 function glyphRows(glyph: string, rows: number): string {
   return Array<string>(Math.max(0, rows)).fill(glyph).join("\n");
@@ -59,13 +59,26 @@ export function TranscriptScrollbar(props: {
     readMetrics(scrollRef.current),
   );
   const [active, setActive] = useState<"idle" | "hover" | "drag">("idle");
+  const [isScrolling, setIsScrolling] = useState(false);
   const draggingRef = useRef(false);
   const dragOffset = useRef<number | undefined>(undefined);
   const lastDragUpdate = useRef(0);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const prevScrollTopRef = useRef<number>(0);
+
+  const triggerVisible = useCallback((): void => {
+    setIsScrolling(true);
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = setTimeout(() => setIsScrolling(false), 1000);
+  }, []);
 
   const refresh = useCallback((): void => {
-    setMetrics(readMetrics(scrollRef.current));
-  }, [scrollRef]);
+    const next = readMetrics(scrollRef.current);
+    setMetrics((prev) => {
+      if (prev.scrollTop !== next.scrollTop) triggerVisible();
+      return next;
+    });
+  }, [scrollRef, triggerVisible]);
 
   useLayoutEffect(() => {
     refresh();
@@ -75,6 +88,19 @@ export function TranscriptScrollbar(props: {
     const id = setInterval(refresh, 100);
     return () => clearInterval(id);
   }, [refresh, followKey]);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (metrics.scrollTop !== prevScrollTopRef.current) {
+      prevScrollTopRef.current = metrics.scrollTop;
+      triggerVisible();
+    }
+  }, [metrics.scrollTop, triggerVisible]);
 
   const applyScroll = useCallback(
     (relativeY: number): void => {
@@ -95,6 +121,7 @@ export function TranscriptScrollbar(props: {
       if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
+      triggerVisible();
       const sb = scrollRef.current;
       if (!sb) return;
       const relativeY = event.y - sb.y;
@@ -113,7 +140,7 @@ export function TranscriptScrollbar(props: {
       setActive("drag");
       applyScroll(relativeY);
     },
-    [scrollRef, applyScroll],
+    [scrollRef, applyScroll, triggerVisible],
   );
 
   const onMouseDrag = useCallback(
@@ -121,6 +148,7 @@ export function TranscriptScrollbar(props: {
       if (!draggingRef.current) return;
       event.preventDefault();
       event.stopPropagation();
+      triggerVisible();
       const sb = scrollRef.current;
       if (!sb) return;
       const relativeY = event.y - sb.y;
@@ -143,7 +171,7 @@ export function TranscriptScrollbar(props: {
         setMetrics(readMetrics(sb));
       }
     },
-    [scrollRef, applyScroll],
+    [scrollRef, applyScroll, triggerVisible],
   );
 
   const endDrag = useCallback(
@@ -163,6 +191,7 @@ export function TranscriptScrollbar(props: {
       if (!event.scroll) return;
       event.preventDefault();
       event.stopPropagation();
+      triggerVisible();
       const sb = scrollRef.current;
       if (!sb) return;
       const { direction, delta } = event.scroll;
@@ -173,12 +202,13 @@ export function TranscriptScrollbar(props: {
       sb.scrollTo(Math.max(0, Math.min(max, sb.scrollTop + dy)));
       setMetrics(readMetrics(sb));
     },
-    [scrollRef],
+    [scrollRef, triggerVisible],
   );
 
   const range = thumbRange(metrics);
   const trackHeight = metrics.viewportHeight;
-  const visible = range !== null && trackHeight > 0;
+  const shouldShow = isScrolling || active !== "idle";
+  const visible = range !== null && trackHeight > 0 && shouldShow;
   if (!visible) return null;
 
   const segments = scrollbarSegments(range, trackHeight);
@@ -200,7 +230,10 @@ export function TranscriptScrollbar(props: {
       onMouseDrag={onMouseDrag}
       onMouseUp={endDrag}
       onMouseDragEnd={endDrag}
-      onMouseOver={() => setActive((current) => (draggingRef.current ? current : "hover"))}
+      onMouseOver={() => {
+        triggerVisible();
+        setActive((current) => (draggingRef.current ? current : "hover"));
+      }}
       onMouseOut={() => setActive((current) => (draggingRef.current ? current : "idle"))}
       onMouseScroll={onWheel}
     >

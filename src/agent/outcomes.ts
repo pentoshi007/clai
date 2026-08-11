@@ -474,6 +474,10 @@ export function completedOperationSignature(
 
 function stableOperationOutput(tool: string, output: string): string {
   let stable = redactSecrets(output).replace(/\r\n/g, "\n").trim();
+  stable = stable
+    .replace(/^Full output saved to:.*$/gim, "")
+    .replace(/Full artifact: \S+/g, "Full artifact: <artifact>")
+    .replace(/\b(?:\/var\/folders|\/tmp|\/var\/tmp|%TEMP%)[\w/.-]*\/clai\/[\w/.-]+/g, "<artifact>");
   if (tool === "shell.jobs") {
     stable = stable.replace(/\b(elapsed|age)=?\s*<?\d+(?:\.\d+)?(?:ms|s|m|h)\b/gi, "$1=<elapsed>");
   }

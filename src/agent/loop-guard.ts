@@ -60,6 +60,8 @@ export interface LoopDecision {
 
 const SEQUENCE_WARN_THRESHOLD = 2;
 const SEQUENCE_BLOCK_THRESHOLD = 2;
+const SEQUENCE_REPEAT_WARN_THRESHOLD = 3;
+const SEQUENCE_REPEAT_HARD_CAP = 4;
 
 const IMMEDIATE_SEQUENCE_SUPPRESSION_TOOLS = new Set([
   "fs.write",
@@ -113,6 +115,7 @@ export class LoopGuard {
   private actionSequenceRepetitions = 0;
   private lastActionSequenceOutcome: string | undefined;
   private unchangedActionSequenceRuns = 0;
+  private consecutiveSequenceRepeats = 0;
   private totalSequenceSuppressions = 0;
   private sequenceRunCounts = new Map<string, number>();
   private emptySuccessfulCalls = new Map<
@@ -269,6 +272,7 @@ export class LoopGuard {
       this.actionSequenceRepetitions = 0;
       this.lastActionSequenceOutcome = undefined;
       this.unchangedActionSequenceRuns = 0;
+      this.consecutiveSequenceRepeats = 0;
       return none;
     }
     const signature = this.sequenceSignature(calls);
@@ -280,6 +284,7 @@ export class LoopGuard {
       this.actionSequenceRepetitions = 0;
       this.lastActionSequenceOutcome = undefined;
       this.unchangedActionSequenceRuns = 0;
+      this.consecutiveSequenceRepeats = 0;
       return none;
     }
 
@@ -287,11 +292,28 @@ export class LoopGuard {
       return none;
     }
 
+    this.consecutiveSequenceRepeats += 1;
+
     if (this.sequenceNeedsOutcomeComparison(calls)) {
       if (this.unchangedActionSequenceRuns < 2) {
-        return none;
-      }
-      if (this.unchangedActionSequenceRuns === 2) {
+        if (this.consecutiveSequenceRepeats < SEQUENCE_REPEAT_WARN_THRESHOLD) {
+          return none;
+        }
+        if (this.consecutiveSequenceRepeats < SEQUENCE_REPEAT_HARD_CAP) {
+          return {
+            suppress: false,
+            terminal: false,
+            repetitions: this.consecutiveSequenceRepeats,
+            totalSuppressions: this.totalSequenceSuppressions,
+            oscillation: false,
+            warn: true,
+            warnMessage:
+              `You have emitted this exact action sequence (same tools, same arguments) ${this.consecutiveSequenceRepeats + 1} times in consecutive responses. ` +
+              "If you are genuinely iterating (e.g. re-running a test after edits), call loop.reset before repeating it again; otherwise use the existing results or take a materially different action. " +
+              "Further identical repetitions will be blocked.",
+          };
+        }
+      } else if (this.unchangedActionSequenceRuns === 2) {
         return {
           suppress: false,
           terminal: false,
@@ -388,12 +410,14 @@ export class LoopGuard {
     if (!this.sequenceRunCounts.has(signature)) return false;
     this.sequenceRunCounts.delete(signature);
     this.actionSequenceRepetitions = 0;
+    this.consecutiveSequenceRepeats = 0;
     return true;
   }
 
   resetAllSequenceCounts(): void {
     this.sequenceRunCounts.clear();
     this.actionSequenceRepetitions = 0;
+    this.consecutiveSequenceRepeats = 0;
     this.lastActionSequenceOutcome = undefined;
     this.unchangedActionSequenceRuns = 0;
     this.totalSequenceSuppressions = 0;
@@ -416,6 +440,10 @@ export class LoopGuard {
   ): number {
     if (calls.length === 0) return 0;
     return this.sequenceRunCounts.get(this.sequenceSignature(calls)) ?? 0;
+  }
+
+  currentActionSequenceSignature(): string | undefined {
+    return this.lastActionSequence;
   }
 
   recordAttempt(

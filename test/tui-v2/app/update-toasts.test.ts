@@ -129,9 +129,12 @@ describe("/update toasts", () => {
 
     await services.commands.dispatch({ name: "update", args: "" });
 
-    expect(seen.some((m) => m.includes("update available · v3.15.0 → v3.16.0"))).toBe(
+    expect(seen.some((m) => m.includes("new version available · v3.16.0"))).toBe(
       true,
     );
+    expect(
+      seen.some((m) => m.includes("v3.15.0 → v3.16.0 · downloading")),
+    ).toBe(true);
     expect(seen.some((m) => /downloading .*100% · 1000 B\/1000 B/.test(m))).toBe(
       true,
     );

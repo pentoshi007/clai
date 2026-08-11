@@ -517,13 +517,18 @@ const ID_BLOCK_BOUNDARY_RES: RegExp[] = [
   /<\|tool_calls_section_end\|>/i,
 ];
 
-function boundIdTaggedBlock(after: string): string {
-  let end = after.length;
+function boundIdTaggedBlock(after: string): {
+  body: string;
+  terminated: boolean;
+} {
+  let end = -1;
   for (const re of ID_BLOCK_BOUNDARY_RES) {
     const match = re.exec(after);
-    if (match && match.index < end) end = match.index;
+    if (match && (end < 0 || match.index < end)) end = match.index;
   }
-  return after.slice(0, end);
+  return end < 0
+    ? { body: after, terminated: false }
+    : { body: after.slice(0, end), terminated: true };
 }
 
 function parseIdTaggedToolCall(text: string): ToolCall | undefined {
@@ -533,7 +538,7 @@ function parseIdTaggedToolCall(text: string): ToolCall | undefined {
   const block = boundIdTaggedBlock(
     text.slice(match.index + match[0].length),
   );
-  const json = extractBalancedJson(block);
+  const json = extractBalancedJson(block.body);
   if (json) {
     const parsed = tryJson(json);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -550,7 +555,12 @@ function parseIdTaggedToolCall(text: string): ToolCall | undefined {
   // An unbalanced/undecodable `{` inside this block means the arguments are
   // truncated. Never fall through to an empty-args call — that would run a
   // mutating tool with a different meaning than the model intended.
-  if (block.includes("{")) return undefined;
+  if (block.body.includes("{")) return undefined;
+  // Still-open block: the argument JSON (or the rest of the tool name) has not
+  // streamed in yet. Reporting an empty-args call here is what froze live tool
+  // cards with a blank input, and a half-arrived name would be assembled into
+  // a shell command. Only a closed block is a real zero-argument call.
+  if (!block.terminated) return undefined;
   return { name, args: {} };
 }
 
@@ -1159,6 +1169,16 @@ export function looksLikeTruncatedToolCall(text: string): boolean {
       }
     }
     if (!balanced) return true;
+  }
+  // An id-tagged block (GLM / Kimi-style wire) left open. Its arguments are
+  // only trusted once the block closes, so a cut stream must retry rather than
+  // leak the opener as prose. Later openers win: earlier blocks that closed
+  // were already parsed and returned by parseAllToolCalls.
+  const idOpeners = [...text.matchAll(/<tool_call:[A-Za-z0-9_-]+>/gi)];
+  const lastOpener = idOpeners[idOpeners.length - 1];
+  if (lastOpener?.index !== undefined) {
+    const after = text.slice(lastOpener.index + lastOpener[0].length);
+    if (!/<\/tool_call\b/i.test(after)) return true;
   }
   return false;
 }
@@ -2013,7 +2033,7 @@ export function looksLikePlanNarration(text: string): boolean {
   const t = text.trim();
   if (t.length < 40) return false;
   const approval =
-    /\b(?:approve|approval|once approved|request changes|await(?:ing)?\s+(?:your\s+)?approval)\b/i.test(
+    /(?:please\s+approve|approve\s+(?:the|this|my)\s+(?:plan|approach|proposal)|await(?:ing)?\s+(?:your\s+)?approval|your\s+approval|once\s+(?:you\s+)?approv(?:e|ed)|approval\s+to\s+(?:proceed|begin|start)|request\s+changes)/i.test(
       t,
     );
   const goal = /\bgoal\b/i.test(t);

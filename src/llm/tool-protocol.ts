@@ -376,7 +376,7 @@ export function accumulateOpenAiToolCallDelta(
     index?: number;
     id?: string;
     type?: string;
-    function?: { name?: string; arguments?: string };
+    function?: { name?: string; arguments?: string | Record<string, unknown> };
   },
 ): AccumulateToolCallDeltaResult {
   const index = entry.index ?? 0;
@@ -417,6 +417,17 @@ export function accumulateOpenAiToolCallDelta(
         `Tool call arguments exceeded ${MAX_TOOL_ARG_BYTES} bytes — split the file or reduce content size.`,
       );
     }
+  } else if (
+    entry.function?.arguments &&
+    typeof entry.function.arguments === "object"
+  ) {
+    const serializedArguments = JSON.stringify(entry.function.arguments) ?? "";
+    if (serializedArguments.length > MAX_TOOL_ARG_BYTES) {
+      throw new Error(
+        `Tool call arguments exceeded ${MAX_TOOL_ARG_BYTES} bytes — split the file or reduce content size.`,
+      );
+    }
+    acc.arguments = serializedArguments;
   }
   return {
     index,

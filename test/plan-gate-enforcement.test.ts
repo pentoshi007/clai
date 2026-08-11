@@ -266,3 +266,49 @@ describe("agent plan gate enforcement", () => {
     expect(answer).not.toMatch(/already been called|results you already have/i);
   });
 });
+
+
+describe("plan.clear runner dispatch", () => {
+  beforeEach(async () => {
+    stream.mockReset();
+    runTool.mockReset();
+    await deletePlan("plan-clear-runner").catch(() => undefined);
+  });
+
+  afterEach(async () => {
+    await deletePlan("plan-clear-runner").catch(() => undefined);
+    clearActiveProjectRoot();
+    vi.restoreAllMocks();
+  });
+
+  it("routes plan.clear through the runner-owned plan handler", async () => {
+    const { createPlan, loadPlan, savePlan } = await import("../src/store/plan.js");
+    const plan = createPlan({
+      sessionId: "plan-clear-runner",
+      goal: "temporary plan",
+      detail: "d",
+      kind: "coding",
+      taskTitles: ["First"],
+    });
+    plan.status = "in_progress";
+    await savePlan(plan);
+    const activeSession = session("plan-clear-runner");
+    activeSession.planApproved.value = true;
+    stream
+      .mockImplementationOnce(
+        streamReply('```tool\n{"name":"plan.clear","args":{}}\n```'),
+      )
+      .mockImplementationOnce(streamReply("Plan cleared."));
+
+    await runAgent("discard the active plan", {
+      session: activeSession,
+      maxSteps: 2,
+      autoConfirm: true,
+      mode: "agent",
+    });
+
+    expect(await loadPlan("plan-clear-runner")).toBeUndefined();
+    expect(activeSession.planApproved.value).toBe(false);
+    expect(runTool).not.toHaveBeenCalled();
+  });
+});

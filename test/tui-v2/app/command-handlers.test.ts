@@ -267,7 +267,10 @@ describe("command handlers (V2-072..075)", () => {
     const services = buildServices();
     await services.commands.dispatch({ name: "provider", args: "ollama" });
     expect(services.session.getState().provider).toBe("ollama");
-    expect(services.overlay.getState().kind).toBe("none");
+    await waitUntil(() => services.overlay.getState().kind === "picker");
+    const state = services.overlay.getState();
+    expect(state.kind).toBe("picker");
+    if (state.kind === "picker") expect(state.request.title).toMatch(/Models.*ollama/i);
   });
 
   it("prompts for a secret when a provider has no key, and applies it once entered", async () => {
@@ -285,7 +288,10 @@ describe("command handlers (V2-072..075)", () => {
       await dispatched;
       await waitUntil(() => services.session.getState().provider === "bynara");
       expect(setSecret).toHaveBeenCalledWith("bynara", "test-key-12345678");
-      expect(services.overlay.getState().kind).toBe("none");
+      await waitUntil(() => services.overlay.getState().kind === "picker");
+      const pickerState = services.overlay.getState();
+      expect(pickerState.kind).toBe("picker");
+      if (pickerState.kind === "picker") expect(pickerState.request.title).toMatch(/Models.*bynara/i);
     } finally {
       getSecret.mockRestore();
       setSecret.mockRestore();

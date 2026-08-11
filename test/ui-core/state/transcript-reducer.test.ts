@@ -617,6 +617,31 @@ describe("transcript reducer (V2-050)", () => {
     expect(() => normalizeSemanticDocument(extractTranscriptSemanticDocument(state))).not.toThrow();
   });
 
+  it("refreshes a queued tool card in place when the runner learns the real args", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("tool-call", { toolCallId: asToolCallId("tool-1"), name: "fs.read", argsDisplay: "" }, turnId),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build("tool-call", { toolCallId: asToolCallId("tool-1"), name: "fs.read", argsDisplay: "src/a.ts  lines 1–40" }, turnId),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build("tool-started", { toolCallId: asToolCallId("tool-1") }, turnId),
+    );
+
+    const tools = transcriptItems(state).filter(
+      (item): item is ToolItem => item.kind === "tool",
+    );
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.argsDisplay).toBe("src/a.ts  lines 1–40");
+    expect(tools[0]!.status).toBe("running");
+  });
+
   it("ignores chrome notices but appends compacted items", () => {
     const seq = buildSequencer();
     let state = EMPTY_TRANSCRIPT_STATE;
