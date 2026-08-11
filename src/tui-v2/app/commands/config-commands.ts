@@ -288,7 +288,11 @@ export async function handleUpdate(services: AppServices): Promise<void> {
 
     const target = status.latestVersion;
     const route = `v${status.currentVersion} → v${target}`;
-    sticky(`update available · ${route} · starting download…`);
+    services.toast.success(`new version found · v${target}`, {
+      key: "update-found",
+      durationMs: 4000,
+    });
+    sticky(`${route} · downloading…`);
 
     let lastPaint = 0;
     const result = await installUpdate(

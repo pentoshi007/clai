@@ -76,6 +76,7 @@ const emptyObject = {
 
 /** Plan tools dispatched specially in the runner (not in toolRegistry). */
 export const PLAN_TOOL_NAMES = new Set([
+  "plan.clear",
   "plan.create",
   "task.add",
   "task.move",
@@ -1057,6 +1058,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     { readOnly: true, askMode: true },
   ),
   def(
+    "plan.clear",
+    "Discard the active plan and all its tasks. Use when the plan should no longer be executed, needs full replacement instead of revision, or the work it tracked is being undone. After clearing, no plan exists until the next plan.create.",
+    emptyObject,
+    { mutates: true },
+  ),
+  def(
     "plan.create",
     "Create the initial durable plan or revise a draft awaiting approval. If a plan is already approved/in progress, use task.add; runtime preserves it and treats proposed new tasks as append-only.",
     {
@@ -1183,7 +1190,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ),
   def(
     "task.update",
-    "Update a plan task state. taskId MUST be t1, t2, … from the ACTIVE PLAN context (not a free-form title slug).",
+    "Update a plan task state. taskId MUST be t1, t2, … from the ACTIVE PLAN context (not a free-form title slug). Use state:\"pending\" to defer an in-progress foreground task before opening a different one.",
     {
       type: "object",
       properties: {

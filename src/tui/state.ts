@@ -478,6 +478,15 @@ function applyEvent(state: TuiState, event: AgentEvent): TuiState {
         ],
       };
     }
+    case "plan-cleared": {
+      const idx = state.items.findIndex(
+        (item) => item.kind === "plan" && !item.done,
+      );
+      if (idx < 0) return state;
+      const items = [...state.items];
+      items[idx] = { ...(items[idx] as PlanItem), done: true };
+      return { ...state, items };
+    }
     case "confirm-request":
       return {
         ...state,

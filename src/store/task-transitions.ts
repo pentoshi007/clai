@@ -27,7 +27,7 @@ export type TaskTransitionResult = { readonly allowed: true } | TaskTransitionDe
 
 const ALLOWED: Readonly<Record<TaskState, readonly TaskState[]>> = {
   pending: ["in_progress", "done", "failed", "skipped"],
-  in_progress: ["done", "failed", "skipped"],
+  in_progress: ["pending", "done", "failed", "skipped"],
   failed: ["in_progress", "skipped"],
   done: [],
   skipped: [],

@@ -62,7 +62,10 @@ vi.mock("../../src/store/config.js", async (importOriginal) => {
 vi.mock("../../src/store/keys.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/store/keys.js")>();
   const multiFor = (provider: string): ProviderKeysResult => ({
-    keys: [{ id: "k1", value: `sk-${provider}-testkey`, createdAt: 0 }],
+    keys: [
+      { id: "k1", value: `sk-${provider}-testkey`, createdAt: 0 },
+      { id: "k2", value: `sk-${provider}-testkey-2`, createdAt: 0 },
+    ],
     activeIndex: 0,
     source: "fallback",
   });

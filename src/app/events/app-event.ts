@@ -81,6 +81,7 @@ export interface AppEventPayloads {
     readonly reason: string;
   };
   "plan-updated": { readonly planId: PlanId; readonly plan: SessionPlan };
+  "plan-cleared": { readonly planId: PlanId };
   "confirm-requested": {
     readonly requestId: string;
     readonly kind:

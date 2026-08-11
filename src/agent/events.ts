@@ -32,6 +32,7 @@ export type AgentEvent =
     }
   | { type: "tool-blocked"; id: string; name: string; reason: string }
   | { type: "plan-update"; plan: SessionPlan }
+  | { type: "plan-cleared"; sessionId: string }
   | {
       type: "confirm-request";
       id: string;

@@ -428,7 +428,7 @@ describe("finalize gate — failed probe", () => {
     expect(chooseFinalizeRecovery(probeInput({ cleaned: "  " }))).toBeUndefined();
   });
 
-  it("yields to premature complete once its budget is spent", () => {
+  it("lets the turn finalize once its budget is spent", () => {
     const unfinished = {
       planApproved: true,
       plan: planWith(
@@ -445,8 +445,8 @@ describe("finalize gate — failed probe", () => {
     expect(
       chooseFinalizeRecovery(
         probeInput({ ...unfinished, recovery: drained("failedProbe", 3) }),
-      )?.kind,
-    ).toBe("premature_complete");
+      ),
+    ).toBeUndefined();
   });
 });
 
@@ -469,7 +469,7 @@ describe("finalize gate — shallow pentest", () => {
     ).toBeUndefined();
   });
 
-  it("yields to premature complete once its budget is spent", () => {
+  it("lets the turn finalize once its budget is spent", () => {
     const unfinished = {
       planApproved: true,
       plan: planWith(
@@ -483,121 +483,42 @@ describe("finalize gate — shallow pentest", () => {
     expect(chooseFinalizeRecovery(pentestInput(unfinished))?.kind).toBe(
       "shallow_pentest",
     );
-    const action = chooseFinalizeRecovery(
-      pentestInput({ ...unfinished, recovery: drained("shallowPentest", 2) }),
-    );
-    expect(action?.kind).toBe("premature_complete");
-    expect(action?.message).toContain("t2");
+    expect(
+      chooseFinalizeRecovery(
+        pentestInput({ ...unfinished, recovery: drained("shallowPentest", 2) }),
+      ),
+    ).toBeUndefined();
   });
 });
 
-describe("finalize gate — premature complete", () => {
+describe("finalize gate — unfinished approved plan", () => {
   const unfinishedPlan = planWith([
     { id: "t1", title: "scaffold", state: "done" },
     { id: "t2", title: "implement", state: "pending" },
   ]);
-  const prematureInput = (overrides: Partial<FinalizeGateInput> = {}) =>
-    baseInput({ planApproved: true, plan: unfinishedPlan, ...overrides });
 
-  it("fires when an approved plan still has unfinished tasks", () => {
-    const action = chooseFinalizeRecovery(prematureInput());
-    expect(action?.kind).toBe("premature_complete");
-    expect(action?.notice).toBe("1 plan task(s) still unfinished");
-    expect(action?.message).toContain("[t2] implement");
-  });
-
-  it("asks the model to mark a finished in-progress task instead of settling it", () => {
-    const action = chooseFinalizeRecovery(
-      prematureInput({
-        plan: planWith([
-          { id: "t1", title: "scaffold", state: "done" },
-          { id: "t2", title: "add architecture guard", state: "in_progress" },
-        ]),
-        sawFeatureImplWrite: true,
-        sawSuccessfulMutation: true,
-        productiveSteps: 3,
-      }),
-    );
-    expect(action?.kind).toBe("premature_complete");
-    expect(action?.message).toContain("[t2] add architecture guard");
-    expect(action?.message).toMatch(/mark done/);
-  });
-
-  it("does not fire when the plan is not approved", () => {
+  it("lets the agent stop with unfinished tasks instead of forcing continuation", () => {
     expect(
-      chooseFinalizeRecovery(prematureInput({ planApproved: false })),
+      chooseFinalizeRecovery(
+        baseInput({ planApproved: true, plan: unfinishedPlan }),
+      ),
     ).toBeUndefined();
   });
 
-  it("does not fire when every task is settled", () => {
+  it("lets an in-progress task stay open when the agent stops", () => {
     expect(
       chooseFinalizeRecovery(
-        prematureInput({
+        baseInput({
+          planApproved: true,
           plan: planWith([
             { id: "t1", title: "scaffold", state: "done" },
-            { id: "t2", title: "implement", state: "skipped" },
+            { id: "t2", title: "add architecture guard", state: "in_progress" },
           ]),
+          sawFeatureImplWrite: true,
+          sawSuccessfulMutation: true,
+          productiveSteps: 3,
         }),
       ),
     ).toBeUndefined();
-  });
-
-  it("does not fire when there is no live plan", () => {
-    expect(chooseFinalizeRecovery(prematureInput({ plan: undefined }))).toBeUndefined();
-  });
-
-  it("ignores responder-owned tasks", () => {
-    expect(
-      chooseFinalizeRecovery(
-        prematureInput({
-          plan: planWith([
-            { id: "t1", title: "scaffold", state: "done" },
-            {
-              id: "t2",
-              title: "responder child",
-              state: "in_progress",
-              responderOwned: true,
-            },
-          ]),
-        }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it("does not fire while a declared responder dependency is live", () => {
-    expect(
-      chooseFinalizeRecovery(prematureInput({ deferResponderReport: true })),
-    ).toBeUndefined();
-  });
-
-  it("does not fire once its budget is spent", () => {
-    expect(
-      chooseFinalizeRecovery(
-        prematureInput({ recovery: drained("prematureComplete", 6) }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it("marks the nudge as pentest work from the plan kind or the session", () => {
-    const fromKind = chooseFinalizeRecovery(
-      prematureInput({ plan: planWith(unfinishedPlan.tasks, { kind: "pentest" }) }),
-    );
-    expect(fromKind?.message).toContain("net.scan");
-    const fromSession = chooseFinalizeRecovery(
-      prematureInput({ pentestSession: true }),
-    );
-    expect(fromSession?.message).toContain("net.scan");
-  });
-
-  it("prefixes a fix instruction when a diagnosis was left unapplied", () => {
-    const action = chooseFinalizeRecovery(
-      prematureInput({
-        cleaned: ERROR_FIX_TEXT,
-        recovery: drained("errorFix", 3),
-        wantsAction: false,
-      }),
-    );
-    expect(action?.kind).toBe("premature_complete");
-    expect(action?.message).toContain("Fix the failure with a tool first");
   });
 });

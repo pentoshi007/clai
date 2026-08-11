@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   providerCategory,
   updateConfig,
@@ -11,6 +11,30 @@ import {
 } from "../src/llm/router.js";
 import { ProviderError } from "../src/llm/http.js";
 import type { LlmProvider } from "../src/llm/provider.js";
+
+let groqMultiKey = false;
+
+vi.mock("../src/store/keys.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/store/keys.js")>();
+  return {
+    ...actual,
+    getProviderKeys: async (
+      provider: Parameters<typeof actual.getProviderKeys>[0],
+    ) => {
+      const real = await actual.getProviderKeys(provider);
+      if (provider === "groq" && groqMultiKey && real.keys.length === 1) {
+        return {
+          ...real,
+          keys: [
+            ...real.keys,
+            { id: "env-second", value: "gsk_test_second", createdAt: 0 },
+          ],
+        };
+      }
+      return real;
+    },
+  };
+});
 
 describe("phase 7 — free-only provider categories", () => {
   const before = getConfig().freeOnly;
@@ -87,6 +111,7 @@ describe("provider fallback rate limits", () => {
 
   beforeEach(() => {
     updateConfig({ providerFallback: false });
+    groqMultiKey = false;
   });
 
   afterEach(() => {
@@ -193,6 +218,7 @@ describe("provider fallback rate limits", () => {
     updateConfig({ providerFallback: true });
     process.env.GROQ_API_KEY = "gsk_test";
     process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
+    groqMultiKey = true;
     let nvidiaCalled = false;
     providers.groq = {
       ...originalGroq,

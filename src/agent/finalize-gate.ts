@@ -11,7 +11,6 @@ import {
   recoveryForMissingFeature,
   recoveryForMissingPlan,
   recoveryForNarration,
-  recoveryForPrematureComplete,
   recoveryForRuntimeVerify,
   recoveryForShallowPentest,
   type RecoveryAction,
@@ -222,28 +221,6 @@ export function chooseFinalizeRecovery(
     })
   ) {
     return recoveryForShallowPentest();
-  }
-
-  if (input.planApproved && budgetRemaining(recovery, "prematureComplete")) {
-    const unfinished = plan?.tasks.filter(
-      (task) =>
-        !task.responderOwned &&
-        (task.state === "pending" || task.state === "in_progress"),
-    );
-    if (
-      plan &&
-      unfinished &&
-      unfinished.length > 0 &&
-      !input.deferResponderReport
-    ) {
-      const next = unfinished[0]!;
-      return recoveryForPrematureComplete({
-        unfinished,
-        next,
-        pentest: plan.kind === "pentest" || input.pentestSession,
-        errorFix: errorFixNarration,
-      });
-    }
   }
 
   return undefined;

@@ -133,6 +133,10 @@ export function attachClassicRenderer(
           write(renderPlanChecklist(event.plan) + "\n");
         }
         return;
+      case "plan-cleared":
+        stopSpinner();
+        write(chalk.dim("  ✦ plan cleared — no active plan\n"));
+        return;
       case "turn-end":
         stopSpinner();
         return;

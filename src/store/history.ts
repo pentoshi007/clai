@@ -12,6 +12,7 @@ import {
   utimes,
   writeFile,
   chown,
+  type FileHandle,
 } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -46,6 +47,7 @@ import {
   readIndexedHistoryRecord,
   readValidatedHistoryIndex,
   rebuildHistoryIndex,
+  rebuildHistoryIndexWithStatus,
   writeIndexedJsonl,
   type HistoryIndexEntry,
   type HistorySummary,
@@ -715,6 +717,26 @@ export async function recoverOrphanedHistory(): Promise<{
   try {
     const activePath = jsonlFilePath();
     const activeExists = await safeExists(activePath);
+    const tempNames = await readdir(historyDirPath())
+      .then((names) =>
+        names.filter(
+          (name) =>
+            name.startsWith("history.jsonl.") && name.endsWith(".tmp"),
+        ),
+      )
+      .catch(() => [] as string[]);
+    if (activeExists && tempNames.length === 0) {
+      const indexed = await readValidatedHistoryIndex(
+        activePath,
+        jsonlIndexFilePath(),
+      );
+      if (indexed) return { recovered: 0, sources };
+      const rebuilt = await rebuildHistoryIndexWithStatus<HistoryRecord>(
+        activePath,
+        jsonlIndexFilePath(),
+      );
+      if (!rebuilt.malformed) return { recovered: 0, sources };
+    }
     let activeCorrupt = false;
     let active: HistoryRecord[] = [];
     if (activeExists) {
@@ -1539,44 +1561,191 @@ export async function clearAllHistory(): Promise<{
   return { cleared: true, detail: details.join("; ") };
 }
 
-async function removeSessionFromHistoryFile(
+const HISTORY_FILTER_CHUNK_BYTES = 64 * 1024;
+
+async function* readHistoryJsonlLines(
+  path: string,
+): AsyncGenerator<Buffer, void, void> {
+  const handle = await open(path, "r");
+  const chunk = Buffer.allocUnsafe(HISTORY_FILTER_CHUNK_BYTES);
+  // Accumulate un-terminated fragments as a list of buffers rather than
+  // repeatedly concatenating into a growing `carry`. A single JSONL record
+  // (a large transcript/messages blob) can span many chunks; concatenating
+  // on every chunk read copied the whole accumulated line again each time,
+  // making the reader O(line length squared) for one oversized record. Only
+  // materializing the line once — when its terminating newline is finally
+  // seen — keeps this linear in total bytes read.
+  let carryChunks: Buffer[] = [];
+  let carryLen = 0;
+  try {
+    while (true) {
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+      let start = 0;
+      while (true) {
+        const newline = chunk.indexOf(0x0a, start);
+        if (newline < 0 || newline >= bytesRead) break;
+        const segment = chunk.subarray(start, newline + 1);
+        if (carryLen > 0) {
+          yield Buffer.concat([...carryChunks, segment], carryLen + segment.length);
+          carryChunks = [];
+          carryLen = 0;
+        } else {
+          yield Buffer.from(segment);
+        }
+        start = newline + 1;
+      }
+      if (start < bytesRead) {
+        carryChunks.push(Buffer.from(chunk.subarray(start, bytesRead)));
+        carryLen += bytesRead - start;
+      }
+    }
+    if (carryLen > 0) yield Buffer.concat(carryChunks, carryLen);
+  } finally {
+    await handle.close();
+  }
+}
+
+function parseHistoryJsonlLine(line: Buffer): {
+  valid: boolean;
+  id?: string | undefined;
+} {
+  try {
+    const value = JSON.parse(line.toString("utf8")) as unknown;
+    if (value === null) return { valid: false };
+    return {
+      valid: true,
+      ...(value && typeof value === "object" && !Array.isArray(value)
+        ? {
+            id:
+              typeof (value as { id?: unknown }).id === "string"
+                ? (value as { id: string }).id
+                : undefined,
+          }
+        : {}),
+    };
+  } catch {
+    return { valid: false };
+  }
+}
+
+async function historyFileContainsSession(
   path: string,
   sessionId: string,
 ): Promise<boolean> {
-  const records = await readJsonlRecordsFrom(path);
-  const retained = records.filter((record) => record.id !== sessionId);
-  if (retained.length === records.length) return false;
-  if (retained.length === 0) {
-    await rm(path, { force: true });
-    return true;
+  if (!(await safeExists(path))) return false;
+  for await (const line of readHistoryJsonlLines(path)) {
+    if (parseHistoryJsonlLine(line).id === sessionId) return true;
+  }
+  return false;
+}
+
+async function writeAllHistoryBytes(
+  handle: FileHandle,
+  bytes: Buffer,
+  position: number,
+): Promise<number> {
+  let written = 0;
+  while (written < bytes.length) {
+    const result = await handle.write(
+      bytes,
+      written,
+      bytes.length - written,
+      position + written,
+    );
+    if (result.bytesWritten <= 0) {
+      throw new Error("failed to write history data");
+    }
+    written += result.bytesWritten;
+  }
+  return position + written;
+}
+
+async function removeSessionFromHistoryFile(
+  path: string,
+  sessionId: string,
+  options: { knownToExist?: boolean } = {},
+): Promise<boolean> {
+  if (
+    !options.knownToExist &&
+    !(await historyFileContainsSession(path, sessionId))
+  ) {
+    return false;
   }
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(
-    temporary,
-    `${retained.map((record) => JSON.stringify(record)).join("\n")}\n`,
-    { mode: 0o600 },
-  );
-  await rename(temporary, path);
-  await fixOwner(path);
+  let output: FileHandle | undefined;
+  let committed = false;
+  let retained = false;
+  try {
+    output = await open(temporary, "wx", 0o600);
+    let outputPosition = 0;
+    for await (const line of readHistoryJsonlLines(path)) {
+      const parsed = parseHistoryJsonlLine(line);
+      if (!parsed.valid || parsed.id === sessionId) continue;
+      outputPosition = await writeAllHistoryBytes(
+        output,
+        line,
+        outputPosition,
+      );
+      retained = true;
+    }
+    await output.close();
+    output = undefined;
+    if (!retained) {
+      await rm(temporary, { force: true });
+      await rm(path, { force: true });
+      committed = true;
+      return true;
+    }
+    await rename(temporary, path);
+    committed = true;
+    await fixOwner(path);
+    return true;
+  } finally {
+    await output?.close().catch(() => undefined);
+    if (!committed) await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+async function removeSessionFromActiveHistory(
+  sessionId: string,
+): Promise<boolean> {
+  const path = jsonlFilePath();
+  let entries = await readValidatedHistoryIndex(path, jsonlIndexFilePath());
+  if (!entries) {
+    entries = await rebuildHistoryIndex<HistoryRecord>(
+      path,
+      jsonlIndexFilePath(),
+    );
+  }
+  if (!entries.some((entry) => entry.id === sessionId)) return false;
+  // The index already proved the id is present, so skip the redundant
+  // whole-file existence pre-scan and go straight to the rewrite pass.
+  const removed = await removeSessionFromHistoryFile(path, sessionId, {
+    knownToExist: true,
+  });
+  if (!removed) return false;
+  if (!(await safeExists(path))) {
+    await writeFile(path, "", { mode: 0o600 });
+  }
+  await rebuildHistoryIndex<HistoryRecord>(path, jsonlIndexFilePath());
+  await Promise.all([
+    fixOwner(path),
+    fixOwner(jsonlIndexFilePath()),
+  ]);
   return true;
 }
 
 export async function deleteSession(sessionId: string): Promise<{ deleted: boolean; detail: string }> {
   const id = sessionId.trim();
   if (!id) return { deleted: false, detail: "missing session id" };
-  await ensureHistoryRecovered();
   let deletedFromJsonl = false;
   let deletedFromArchive = false;
   let deletedFromBackup = false;
   let deletedFromSqlite = false;
   let historyWriteFailed = false;
   await queueJsonlWrite(async () => {
-    const current = await readJsonlRecordsFrom(jsonlFilePath());
-    const filtered = current.filter((r) => r.id !== id);
-    deletedFromJsonl = filtered.length !== current.length;
-    if (deletedFromJsonl) {
-      await writeJsonlAtomic(filtered, current.length);
-    }
+    deletedFromJsonl = await removeSessionFromActiveHistory(id);
     deletedFromArchive = await removeSessionFromHistoryFile(archiveFilePath(), id);
     const backupNames = (await readdir(backupDirPath()).catch(() => [] as string[]))
       .filter((name) => name.startsWith("history-") && name.endsWith(".jsonl"));

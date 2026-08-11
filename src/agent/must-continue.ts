@@ -10,7 +10,6 @@ export interface RecoveryBudgets {
   featureImpl: number;
   runtimeVerify: number;
   failedProbe: number;
-  prematureComplete: number;
   shallowPentest: number;
 }
 
@@ -22,7 +21,6 @@ export function createRecoveryBudgets(): RecoveryBudgets {
     featureImpl: 0,
     runtimeVerify: 0,
     failedProbe: 0,
-    prematureComplete: 0,
     shallowPentest: 0,
   };
 }
@@ -34,7 +32,6 @@ export type RecoveryKind =
   | "feature_impl"
   | "runtime_verify"
   | "failed_probe"
-  | "premature_complete"
   | "shallow_pentest";
 
 export interface RecoveryAction {
@@ -53,7 +50,6 @@ const LIMITS: Record<keyof RecoveryBudgets, number> = {
   featureImpl: 2,
   runtimeVerify: 2,
   failedProbe: 3,
-  prematureComplete: 6,
   shallowPentest: 2,
 };
 
@@ -200,41 +196,6 @@ export function recoveryForFailedProbe(): RecoveryAction {
       "The local HTTP probe failed (4xx/5xx or connection refused). Do not stop. " +
       "Diagnose from the error, apply a real fix with fs.edit/fs.write, re-probe, and only then mark verify done. " +
       "Identifying the error without a tool call is incomplete.",
-  };
-}
-
-export function recoveryForPrematureComplete(input: {
-  unfinished: Array<{ id: string; title: string; state: string }>;
-  next: { id: string; title: string; state: string };
-  pentest: boolean;
-  errorFix: boolean;
-}): RecoveryAction {
-  const list = input.unfinished
-    .map((t) => `[${t.id}] ${t.title}`)
-    .join("; ");
-  let instruction = `Resume task ${input.next.id} ("${input.next.title}"): `;
-  if (input.errorFix) {
-    instruction =
-      `Fix the failure with a tool first (fs.edit/fs.write), then continue task ${input.next.id} ("${input.next.title}"): `;
-  }
-  if (input.pentest) {
-    instruction +=
-      `task.update in_progress, then recon/test with real tools (dns/http/net.scan — not a local dev server), verify, mark done. `;
-  } else if (input.next.state === "pending") {
-    instruction +=
-      `task.update in_progress, do the work, verify, mark done. `;
-  } else {
-    instruction += `finish the work, verify, mark done. `;
-  }
-  instruction += "Continue until every task is finished.";
-
-  return {
-    kind: "premature_complete",
-    budgetKey: "prematureComplete",
-    notice: `${input.unfinished.length} plan task(s) still unfinished`,
-    message:
-      `You have not finished the approved plan: ${input.unfinished.length} task(s) remain (${list}). ` +
-      `Do not claim completion without tool evidence. ${instruction}`,
   };
 }
 

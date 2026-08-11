@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   accumulateOpenAiToolCallDelta,
   finalizeOpenAiToolCalls,
+  MAX_TOOL_ARG_BYTES,
   parseToolArguments,
   repairConcatenatedToolArguments,
 } from "../src/llm/tool-protocol.js";
@@ -47,6 +48,32 @@ describe("duplicated full-snapshot tool arguments", () => {
 
     const [call] = finalizeOpenAiToolCalls(state);
     expect(call!.args).toEqual({ path: "/tmp/a.ts" });
+  });
+
+  it("accepts arguments emitted as a JSON object instead of a string", () => {
+    const state = new Map();
+    accumulateOpenAiToolCallDelta(state, {
+      index: 0,
+      id: "call-3",
+      function: { name: "fs_read", arguments: { path: "/tmp/kimi.ts" } },
+    });
+
+    const [call] = finalizeOpenAiToolCalls(state);
+    expect(call!.name).toBe("fs.read");
+    expect(call!.args).toEqual({ path: "/tmp/kimi.ts" });
+    expect(call!.args._parseError).toBeUndefined();
+  });
+
+  it("rejects an object-form argument payload over the shared size limit", () => {
+    const state = new Map();
+    expect(() =>
+      accumulateOpenAiToolCallDelta(state, {
+        index: 0,
+        function: {
+          arguments: { content: "x".repeat(MAX_TOOL_ARG_BYTES) },
+        },
+      }),
+    ).toThrow(`Tool call arguments exceeded ${MAX_TOOL_ARG_BYTES} bytes`);
   });
 
   it("repairs already-concatenated argument objects", () => {
