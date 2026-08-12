@@ -8,7 +8,10 @@ import {
   createStdioSecretPort,
 } from "./stdio-confirm-port.js";
 import { StreamRenderer } from "./stream-renderer.js";
-import type { PromptStream } from "./readline-prompts.js";
+import {
+  releaseInteractiveStdin,
+  type PromptStream,
+} from "./readline-prompts.js";
 
 export interface NoninteractiveOptions {
   readonly prompt: string;
@@ -121,6 +124,7 @@ export async function startNoninteractive(
     };
   } finally {
     options.signal?.removeEventListener("abort", forwardAbort);
+    releaseInteractiveStdin({ input });
     process.off("SIGINT", abortFromProcess);
     process.off("SIGTERM", abortFromProcess);
     const cleanup = await interactiveSessionManager

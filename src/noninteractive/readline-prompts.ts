@@ -53,6 +53,17 @@ export function restoreInteractiveStdin(io?: PromptIO): void {
   }
 }
 
+export function releaseInteractiveStdin(io?: PromptIO): void {
+  const input = resolveInput(io);
+  if (!input.isTTY) return;
+  try {
+    if (input.isRaw && typeof input.setRawMode === "function") {
+      input.setRawMode(false);
+    }
+    input.pause();
+  } catch {}
+}
+
 /** Reads one line, or `undefined` once the stream ends (EOF / closed pipe). */
 type Ask = (text: string) => Promise<string | undefined>;
 

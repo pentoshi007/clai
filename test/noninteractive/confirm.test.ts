@@ -9,6 +9,7 @@ import {
   askSecret,
   askYesNo,
   parseYesNo,
+  releaseInteractiveStdin,
 } from "../../src/noninteractive/readline-prompts.js";
 import {
   createStdioConfirmPort,
@@ -33,6 +34,38 @@ function makeIO(options?: { tty?: boolean }): FakeIO {
 function answer(io: FakeIO, line: string): void {
   setImmediate(() => io.input.write(`${line}\n`));
 }
+
+describe("releaseInteractiveStdin", () => {
+  it("returns a resumed raw TTY to cooked paused state", () => {
+    const input = new PassThrough() as PassThrough & {
+      isTTY: boolean;
+      isRaw: boolean;
+      setRawMode(mode: boolean): void;
+    };
+    input.isTTY = true;
+    input.isRaw = true;
+    input.setRawMode = (mode) => {
+      input.isRaw = mode;
+    };
+    input.resume();
+
+    releaseInteractiveStdin({ input });
+
+    expect(input.isRaw).toBe(false);
+    expect(input.isPaused()).toBe(true);
+  });
+
+  it("leaves non-TTY input ownership unchanged", () => {
+    const input = new PassThrough() as PassThrough & { isTTY: boolean };
+    input.isTTY = false;
+    input.resume();
+
+    releaseInteractiveStdin({ input });
+
+    expect(input.isPaused()).toBe(false);
+    input.pause();
+  });
+});
 
 describe("readline y/n parsing", () => {
   it("maps the accepted spellings", () => {
