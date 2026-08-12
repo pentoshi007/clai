@@ -134,8 +134,15 @@ describe("classic command parity (W12)", () => {
   spec(["provider", "use"], "/provider <id> and its /use alias switch provider", async () => {
     const { services } = open();
     expect(services.commands.resolve("use")).toBe("provider");
-    await run(services, "use", "groq");
-    await vi.waitFor(() => expect(services.session.getState().provider).toBe("groq"));
+    const savedGroqKey = process.env.GROQ_API_KEY;
+    process.env.GROQ_API_KEY = "gsk_classic_commands_test";
+    try {
+      await run(services, "use", "groq");
+      await vi.waitFor(() => expect(services.session.getState().provider).toBe("groq"));
+    } finally {
+      if (savedGroqKey === undefined) delete process.env.GROQ_API_KEY;
+      else process.env.GROQ_API_KEY = savedGroqKey;
+    }
   });
 
   spec(["set"], "/set with no arguments opens the credential picker", async () => {

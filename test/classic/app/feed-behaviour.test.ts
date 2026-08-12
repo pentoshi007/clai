@@ -224,6 +224,7 @@ describe("feed world remapping (03-RENDER-MODEL §10)", () => {
       expect(harness!.wiring.getSnapshot().liveOffset).toBe(5),
     );
     harness.wiring.observeFeed(fakeFeed("a", { totalRows: 46, viewportRows: 10 }));
+    harness.wiring.schedulePaint();
     await vi.waitFor(() =>
       expect(harness!.wiring.getSnapshot().liveOffset).toBe(11),
     );
