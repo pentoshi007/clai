@@ -25,6 +25,8 @@ improvements/
 audit/
 semantic-review/
 prompt.txt
-meta-api/*.bun-build
+meta-api/
+classic-revamp/
+typescript
 
 *.bun-build
