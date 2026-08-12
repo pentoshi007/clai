@@ -142,4 +142,4 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx vitest run test/classic test/ui-core test/noninteractive --reporter=dot
-      - run: npm run test:classic:pty
+      - run: npm run test:classic:pty -- --timeout 20
