@@ -270,18 +270,20 @@ def run(timeout: float) -> int:
         config_dir = Path(sandbox) / "config"
         data_dir.mkdir()
         config_dir.mkdir()
-        env = {
-            **os.environ,
-            "TERM": "xterm-256color",
-            "COLORTERM": "truecolor",
-            "CLAI_CONFIG_DIR": str(config_dir),
-            "CLAI_DATA_DIR": str(data_dir),
-            "CLAI_HISTORY_DIR": str(data_dir / "history"),
-            "CLAI_DISABLE_KEYCHAIN": "1",
-            "CLAI_NO_UPDATE_CHECK": "1",
-            "CLAI_OFFLINE": "1",
-            "CLAI_CLASSIC_MOUSE": "0",
-        }
+        env = {k: v for k, v in os.environ.items() if k not in ("CI", "GITHUB_ACTIONS")}
+        env.update(
+            {
+                "TERM": "xterm-256color",
+                "COLORTERM": "truecolor",
+                "CLAI_CONFIG_DIR": str(config_dir),
+                "CLAI_DATA_DIR": str(data_dir),
+                "CLAI_HISTORY_DIR": str(data_dir / "history"),
+                "CLAI_DISABLE_KEYCHAIN": "1",
+                "CLAI_NO_UPDATE_CHECK": "1",
+                "CLAI_OFFLINE": "1",
+                "CLAI_CLASSIC_MOUSE": "0",
+            }
+        )
 
         def preexec() -> None:
             os.setsid()
