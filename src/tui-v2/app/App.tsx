@@ -790,9 +790,9 @@ export function App(): ReactNode {
           onJumpTop={jumpChatTop}
           onJumpBottom={jumpChatBottom}
           onCutDraft={composerActionPort.cut}
+          onClearDraft={composerActionPort.clear}
           onOpenCommands={composerActionPort.openCommands}
           hasDraft={hasDraft}
-          onOpenShortcuts={openShortcutsPager}
           onCycleMode={cycleMode}
           cancelArmed={escapeCancelArmed}
           onRequestCancel={() => handleEscapeCancellation(false)}

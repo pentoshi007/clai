@@ -424,8 +424,8 @@ export const metaProvider: LlmProvider = {
     const model = request.model ?? defaultModels.meta;
     const supportsVision = modelAcceptsImages("meta", model);
     const reasoningOn = Boolean(request.thinking?.enabled);
-    const idleTimeoutMs = reasoningOn ? THINKING_STREAM_IDLE_TIMEOUT_MS : DEFAULT_STREAM_IDLE_TIMEOUT_MS;
-    const initialIdleTimeoutMs = reasoningOn ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS : idleTimeoutMs;
+    const idleTimeoutMs = THINKING_STREAM_IDLE_TIMEOUT_MS;
+    const initialIdleTimeoutMs = THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS;
     const outputIdleTimeoutMs = Math.round(Math.max(idleTimeoutMs, initialIdleTimeoutMs) * 1.5);
     const idleController = new AbortController();
     let transportTimer: NodeJS.Timeout | undefined;
@@ -479,26 +479,51 @@ export const metaProvider: LlmProvider = {
       parallelToolCalls: request.parallelToolCalls,
     });
 
-    let response: Response;
-    try {
-      response = await fetch(`${baseUrl}/responses`, {
-        method: "POST",
-        signal: idleController.signal,
-        headers: {
-          "content-type": "application/json",
-          accept: "text/event-stream",
-          authorization: `Bearer ${auth.apiKey}`,
-        },
-        body,
-        verbose: process.env.CLAI_VERBOSE === "true",
-      } as unknown as RequestInit);
-    } catch (error) {
+    let response: Response | undefined;
+    let lastFetchError: unknown;
+    for (let fetchAttempt = 0; fetchAttempt < 2; fetchAttempt++) {
+      if (fetchAttempt > 0) {
+        await new Promise((r) => setTimeout(r, 1000));
+        if (request.signal?.aborted) throw request.signal.reason;
+        if (idleFired) break;
+        armTransportTimer(initialIdleTimeoutMs);
+        if (outputTimer) {
+          clearTimeout(outputTimer);
+          outputTimer = setTimeout(() => fireStall("output", outputIdleTimeoutMs), outputIdleTimeoutMs);
+        }
+      }
+      try {
+        response = await fetch(`${baseUrl}/responses`, {
+          method: "POST",
+          signal: idleController.signal,
+          headers: {
+            "content-type": "application/json",
+            accept: "text/event-stream",
+            authorization: `Bearer ${auth.apiKey}`,
+          },
+          body,
+          verbose: process.env.CLAI_VERBOSE === "true",
+        } as unknown as RequestInit);
+        lastFetchError = undefined;
+        break;
+      } catch (error) {
+        lastFetchError = error;
+        if (idleFired) {
+          clearIdleTimers();
+          request.signal?.removeEventListener("abort", onCallerAbort);
+          throw new ProviderError(`Meta Model API request timed out before any response (${Math.round(firedBudgetMs / 1000)}s) — no data arrived on the connection.`);
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        const transient = /fetch failed|network error|etimedout|enotfound|econnreset|premature close|socket.*closed|aborted without reason/i.test(msg);
+        if (!transient || sawStreamProgress) throw error;
+        continue;
+      }
+    }
+    if (!response) {
       clearIdleTimers();
       request.signal?.removeEventListener("abort", onCallerAbort);
-      if (idleFired) {
-        throw new ProviderError(`Meta Model API request timed out before any response (${Math.round(firedBudgetMs / 1000)}s)`);
-      }
-      throw error;
+      if (lastFetchError) throw lastFetchError;
+      throw new ProviderError(`Meta Model API request failed before a response was received.`);
     }
     if (!response.ok) {
       clearIdleTimers();
@@ -688,11 +713,12 @@ export const metaProvider: LlmProvider = {
             continue;
           }
           if (parsed.error) {
-            const detail =
+            const rawDetail =
               typeof parsed.error === "string"
                 ? parsed.error
                 : ((parsed.error as Record<string, unknown>).message as string | undefined) ?? ((parsed.error as Record<string, unknown>).type as string | undefined) ?? "unknown error";
-            throw new ProviderError(`Meta Model API stream error: ${detail}`, undefined, payload.slice(0, 500));
+            const detail = rawDetail.trim().length <= 2 ? `${rawDetail} — ${payload.slice(0, 300)}` : rawDetail;
+            throw new ProviderError(`Meta Model API stream error: ${detail}`, undefined, payload.slice(0, 1000));
           }
           const type = parsed.type as string | undefined;
           if (type === "response.created" || type === "response.in_progress") {
@@ -847,8 +873,10 @@ export const metaProvider: LlmProvider = {
           if (type === "response.failed" || type === "response.incomplete") {
             const resp = (parsed.response ?? parsed) as Record<string, unknown>;
             const err = resp.error as Record<string, unknown> | undefined;
-            const detail = err?.message ?? err?.code ?? type;
-            throw new ProviderError(`Meta Model API stream error: ${String(detail)}`, undefined, payload.slice(0, 500));
+            const rawDetail = err?.message ?? err?.code ?? type;
+            const rawStr = String(rawDetail);
+            const detail = rawStr.trim().length <= 2 ? `${rawStr} — ${payload.slice(0, 300)}` : rawStr;
+            throw new ProviderError(`Meta Model API stream error: ${detail}`, undefined, payload.slice(0, 1000));
           }
           const usageField = parsed.usage;
           if (usageField) {

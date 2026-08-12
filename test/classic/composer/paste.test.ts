@@ -114,7 +114,7 @@ describe("large paste", () => {
     composer.paste(BIG);
     composer.handleAction("editor.cut-draft");
     await vi.waitFor(() =>
-      expect(onToast).toHaveBeenCalledWith("Draft cut to clipboard · ⇧^X"),
+      expect(onToast).toHaveBeenCalledWith("Draft cut to clipboard · ^X"),
     );
     expect(board.written).toEqual([BIG]);
     expect(composer.text).toBe("");
@@ -146,7 +146,7 @@ describe("large paste", () => {
     composer.insertText("abc");
     expect(composer.handleAction("editor.clear")).toBe(true);
     expect(composer.text).toBe("");
-    expect(onToast).toHaveBeenCalledWith("Draft cleared · ^X");
+    expect(onToast).toHaveBeenCalledWith("Draft cleared · ^Q");
   });
 });
 

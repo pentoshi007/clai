@@ -121,16 +121,36 @@ export class ComposerController {
 
   handleAction(action: ActionId): boolean {
     switch (action) {
-      case "editor.submit":
+      case "editor.submit": {
+        // Classic cross-OS fallback: trailing "\" + Enter means newline, not submit.
+        // Works everywhere (backslash is just a character) and mirrors shell continuation.
+        // Check " \" first so "foo \" removes the space+backslash pair, not just "\"
+        const { text, cursor } = this.snapshot.state;
+        const atEnd = cursor === text.length;
+        if (atEnd && text.endsWith(" \\") && text.trim().length > 0) {
+          const without = text.slice(0, -2);
+          this.commit(insert({ text: without, cursor: without.length }, "\n"), {
+            resetHistory: true,
+          });
+          return true;
+        }
+        if (atEnd && text.endsWith("\\") && text.trim().length > 1) {
+          const without = text.slice(0, -1);
+          this.commit(insert({ text: without, cursor: without.length }, "\n"), {
+            resetHistory: true,
+          });
+          return true;
+        }
         this.submit();
         return true;
+      }
       case "editor.newline":
         this.commit(insert(this.snapshot.state, "\n"), { resetHistory: true });
         return true;
       case "editor.clear":
         if (this.snapshot.state.text.length === 0) return false;
         this.clear();
-        this.deps.onToast("Draft cleared · ^X");
+        this.deps.onToast("Draft cleared · ^Q");
         return true;
       case "editor.cut-draft":
         if (this.snapshot.state.text.trim().length === 0) {
@@ -150,12 +170,21 @@ export class ComposerController {
 
   handleChord(chord: string): boolean {
     if (this.menuOpen() && this.handleMenuChord(chord)) return true;
-
-    if (chord === "ctrl+u" && this.snapshot.state.text.length === 0) {
+    if (
+      chord === "shift+enter" ||
+      chord === "alt+enter" ||
+      chord === "ctrl+enter" ||
+      chord === "meta+enter" ||
+      chord === "super+enter" ||
+      chord === "ctrl+n"
+    ) {
+      this.commit(insert(this.snapshot.state, "\n"), { resetHistory: true });
+      return true;
+    }
+    if ((chord === "ctrl+u" || chord === "super+backspace" || chord === "meta+u") && this.snapshot.state.text.length === 0) {
       this.deps.onJumpTop();
       return true;
     }
-
     const edit = editorEditFor(chord);
     if (!edit) return false;
     const next = edit(this.snapshot.state, this.textWidth);

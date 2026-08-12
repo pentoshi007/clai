@@ -344,6 +344,7 @@ export interface ProviderKeySlot {
   readonly id: string;
   readonly value: string;
   readonly createdAt: number;
+  readonly disabled?: boolean | undefined;
 }
 
 /** Resolved multi-key view for a provider (storage or env). */
@@ -357,7 +358,7 @@ export interface ProviderKeysResult {
 /** On-disk multi-key payload stored as JSON under `llm:<provider>`. */
 interface ProviderKeysEnvelopeV1 {
   v: 1;
-  keys: Array<{ id: string; value: string; createdAt: number }>;
+  keys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }>;
   activeIndex: number;
 }
 
@@ -410,6 +411,7 @@ export function parseProviderKeysPayload(
             id: k.id || newKeyId(),
             value: k.value,
             createdAt: k.createdAt || Date.now(),
+            ...(k.disabled === true ? { disabled: true } : {}),
           }))
           .filter((k) => k.value.trim().length > 0)
           .slice(0, MAX_PROVIDER_KEYS);
@@ -437,6 +439,7 @@ export function serializeProviderKeysPayload(
       id: k.id || newKeyId(),
       value: k.value.trim(),
       createdAt: k.createdAt || Date.now(),
+      ...(k.disabled === true ? { disabled: true } : {}),
     }))
     .filter((k) => k.value.length > 0)
     .slice(0, MAX_PROVIDER_KEYS);
@@ -537,8 +540,12 @@ export async function getProviderSecret(provider: ProviderId): Promise<{ value?:
   if (multi.keys.length === 0) {
     return { source: 'missing' };
   }
-  const idx = clampActiveIndex(multi.activeIndex, multi.keys.length);
-  return { value: multi.keys[idx]!.value, source: multi.source };
+  const start = clampActiveIndex(multi.activeIndex, multi.keys.length);
+  for (let offset = 0; offset < multi.keys.length; offset += 1) {
+    const slot = multi.keys[(start + offset) % multi.keys.length]!;
+    if (!slot.disabled) return { value: slot.value, source: multi.source };
+  }
+  return { source: multi.source };
 }
 
 /**
@@ -549,6 +556,7 @@ export async function setProviderKeys(
   provider: ProviderId,
   values: readonly string[],
   activeIndex = 0,
+  disabledValues?: readonly string[],
 ): Promise<'keychain' | 'fallback'> {
   if (provider === 'ollama') {
     return 'fallback';
@@ -567,11 +575,22 @@ export async function setProviderKeys(
     await unsetSecret('llm', provider);
     return 'fallback';
   }
+  let carried = disabledValues;
+  if (carried === undefined) {
+    const stored = await getSecret('llm', provider);
+    carried = stored.value
+      ? parseProviderKeysPayload(stored.value)
+          .keys.filter((k) => k.disabled)
+          .map((k) => k.value)
+      : [];
+  }
+  const disabledSet = new Set(carried);
   const now = Date.now();
   const slots: ProviderKeySlot[] = unique.map((value) => ({
     id: newKeyId(),
     value,
     createdAt: now,
+    ...(disabledSet.has(value) ? { disabled: true } : {}),
   }));
   const payload = serializeProviderKeysPayload(slots, activeIndex);
   return setSecret('llm', provider, payload);
@@ -649,6 +668,26 @@ export async function markProviderKeySuccess(
   await setSecret('llm', provider, payload);
 }
 
+export async function setProviderKeyDisabled(
+  provider: ProviderId,
+  value: string,
+  disabled: boolean,
+): Promise<boolean> {
+  const stored = await getSecret('llm', provider);
+  if (!stored.value) return false;
+  const parsed = parseProviderKeysPayload(stored.value);
+  const target = value.trim();
+  const index = parsed.keys.findIndex((k) => k.value === target);
+  if (index < 0) return false;
+  const keys = parsed.keys.map((k, i) => {
+    if (i !== index) return k;
+    const { disabled: _ignored, ...rest } = k;
+    return disabled ? { ...rest, disabled: true } : rest;
+  });
+  await setSecret('llm', provider, serializeProviderKeysPayload(keys, parsed.activeIndex));
+  return true;
+}
+
 export { MAX_PROVIDER_KEYS };
 
 /**
@@ -706,6 +745,7 @@ export async function setSearchProviderKeys(
   id: SearchProviderId,
   values: readonly string[],
   activeIndex = 0,
+  disabledValues?: readonly string[],
 ): Promise<'keychain' | 'fallback'> {
   if (id === 'duckduckgo') return 'fallback';
   const cleaned = values.map((value) => value.trim()).filter(Boolean);
@@ -721,11 +761,22 @@ export async function setSearchProviderKeys(
     await unsetSecret('search', id);
     return 'fallback';
   }
+  let carried = disabledValues;
+  if (carried === undefined) {
+    const stored = await getSecret('search', id);
+    carried = stored.value
+      ? parseProviderKeysPayload(stored.value)
+          .keys.filter((k) => k.disabled)
+          .map((k) => k.value)
+      : [];
+  }
+  const disabledSet = new Set(carried);
   const now = Date.now();
   const slots: ProviderKeySlot[] = unique.map((value) => ({
     id: newKeyId(),
     value,
     createdAt: now,
+    ...(disabledSet.has(value) ? { disabled: true } : {}),
   }));
   return setSecret('search', id, serializeProviderKeysPayload(slots, activeIndex));
 }
@@ -763,6 +814,27 @@ export async function appendSearchProviderKey(
 
 export async function unsetSearchProviderSecret(id: SearchProviderId): Promise<void> {
   if (id !== 'duckduckgo') await unsetSecret('search', id);
+}
+
+export async function setSearchProviderKeyDisabled(
+  id: SearchProviderId,
+  value: string,
+  disabled: boolean,
+): Promise<boolean> {
+  if (id === 'duckduckgo') return false;
+  const stored = await getSecret('search', id);
+  if (!stored.value) return false;
+  const parsed = parseProviderKeysPayload(stored.value);
+  const target = value.trim();
+  const index = parsed.keys.findIndex((k) => k.value === target);
+  if (index < 0) return false;
+  const keys = parsed.keys.map((k, i) => {
+    if (i !== index) return k;
+    const { disabled: _ignored, ...rest } = k;
+    return disabled ? { ...rest, disabled: true } : rest;
+  });
+  await setSecret('search', id, serializeProviderKeysPayload(keys, parsed.activeIndex));
+  return true;
 }
 
 /** Persist the key that last completed a search successfully as the sticky key. */
@@ -809,7 +881,7 @@ export async function probeKeychain(): Promise<KeychainStatus> {
  * falls back to its shared gateway.
  */
 function endpointNote(provider: ProviderId): string | undefined {
-  const { urls, activeIndex } = getProviderEndpoints(provider);
+  const { urls, activeIndex, disabledUrls } = getProviderEndpoints(provider);
   const active = getActiveProviderEndpoint(provider);
   if (urls.length === 0) {
     if (active) return `${active} (env)`;
@@ -817,10 +889,21 @@ function endpointNote(provider: ProviderId): string | undefined {
       ? 'no endpoint URL — clai set modal --url <endpoint>'
       : 'default gateway';
   }
-  const suffix = active && active !== urls[activeIndex] ? ` · env override ${active}` : '';
-  return urls.length === 1
-    ? `${urls[0]}${suffix}`
-    : `${urls.length} endpoints · active #${activeIndex + 1} ${urls[activeIndex]}${suffix}`;
+  const disabledCount = (disabledUrls ?? []).length;
+  const disabledTag = disabledCount > 0 ? ` · ${disabledCount} disabled` : '';
+  if (!active) {
+    return `${urls.length} endpoint${urls.length === 1 ? '' : 's'} · all disabled`;
+  }
+  const activePos = urls.indexOf(active);
+  const suffix =
+    activePos < 0
+      ? ` · env override ${active}`
+      : activePos !== activeIndex
+        ? ` · using ${active}`
+        : '';
+  if (urls.length === 1) return `${urls[0]}${suffix}${disabledTag}`;
+  const shown = activePos >= 0 ? activePos : activeIndex;
+  return `${urls.length} endpoints · active #${shown + 1} ${urls[shown]}${suffix}${disabledTag}`;
 }
 
 export async function listProviderStatuses(activeProvider: ProviderId): Promise<ProviderStatus[]> {
@@ -840,6 +923,9 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
       !keyless && multi.keys.length > 0
         ? multi.keys.map((k) => maskSecret(k.value))
         : undefined;
+    const endpointInfo = providerUsesEndpoints(provider)
+      ? getProviderEndpoints(provider)
+      : undefined;
     statuses.push({
       provider,
       label: provider,
@@ -854,6 +940,10 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
         activeValue && !keyless && multi.keys.length > 1
           ? maskSecret(activeValue)
           : undefined,
+      keyDisabled:
+        !keyless && multi.keys.length > 0
+          ? multi.keys.map((k) => k.disabled === true)
+          : undefined,
       model: getDefaultModel(provider),
       note:
         provider === 'ollama'
@@ -863,12 +953,12 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
             : providerUsesEndpoints(provider)
               ? endpointNote(provider)
               : undefined,
-      endpoints: providerUsesEndpoints(provider)
-        ? getProviderEndpoints(provider).urls
-        : undefined,
-      activeEndpointIndex: providerUsesEndpoints(provider)
-        ? getProviderEndpoints(provider).activeIndex
-        : undefined,
+      endpoints: endpointInfo?.urls,
+      activeEndpointIndex: endpointInfo?.activeIndex,
+      disabledEndpoints:
+        endpointInfo?.disabledUrls && endpointInfo.disabledUrls.length > 0
+          ? endpointInfo.disabledUrls
+          : undefined,
     });
   }
   return statuses;

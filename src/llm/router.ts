@@ -12,6 +12,7 @@ import {
   providerCategory,
   providerUsesEndpoints,
   resolveProviderCategory,
+  setActiveProviderEndpoint,
 } from "../store/config.js";
 import {
   getProviderKeys,
@@ -133,19 +134,12 @@ function isTransientNetworkError(error: unknown): boolean {
 }
 
 function isRetriableError(error: unknown): boolean {
-  // Never retry transparently once bytes reached the caller — the
-  // second attempt would append to the same assistant message.
   if (streamAlreadyEmitted(error)) return false;
   const message = error instanceof Error ? error.message : String(error);
-  // A stall on a *live* connection means the model already did the work and the
-  // runtime was buffering it. A transparent same-route retry just replays the
-  // whole generation and stalls again, so leave it to the agent's recovery
-  // layer, which retries with a nudge to emit smaller tool calls.
-  if (new RegExp(STREAM_STALL_MARKER, "i").test(message)) return false;
-  // Mid-stream stalls used to be non-retriable (to avoid infinite hangs).
-  // One quick retry on the same provider recovers flaky thinking pauses
-  // without waiting forever — MAX_RETRIES still bounds the loop.
-  if (/stream stalled|request timed out before any response/i.test(message)) {
+  if (new RegExp(STREAM_STALL_MARKER, "i").test(message)) {
+    if (/for \d+s after it had already started/i.test(message)) return false;
+  }
+  if (/stream stalled|request timed out before any response|stream transport timeout/i.test(message)) {
     return true;
   }
   if (isRateLimited(error)) return true;
@@ -434,7 +428,7 @@ async function requestedRealKeyCount(provider: ProviderId): Promise<number> {
   // the local server or free tier is unavailable.
   if (provider === "ollama" || provider === "free") return 0;
   const multi = await getProviderKeys(provider);
-  return multi.keys.filter((key) => key.value).length;
+  return multi.keys.filter((key) => key.value && !key.disabled).length;
 }
 
 export function buildFallbackChain(
@@ -825,22 +819,35 @@ async function runWithKeyRotation<T>(opts: {
     throw new Error("no API key configured");
   }
 
-  const plan = buildKeyAttemptPlan(slots.length, multi.activeIndex);
-  const multiKey = slots.length > 1;
+  const plan = buildKeyAttemptPlan(slots.length, multi.activeIndex).filter(
+    (index) => !slots[index]!.disabled,
+  );
+  if (plan.length === 0) {
+    throw new Error(
+      `all ${slots.length} API key${slots.length === 1 ? "" : "s"} for ${providerId} are disabled — re-enable one to use this provider`,
+    );
+  }
+  const enabledCount = plan.length;
+  const multiKey = enabledCount > 1;
   // Single key: time-increasing retries (MAX_RETRIES+1 attempts).
   // Multi key: 2 attempts per key (initial + one retry), then next key.
-  const maxPerKey = attemptsPerKey(slots.length, (opts.maxRetries ?? MAX_RETRIES) + 1);
+  const maxPerKey = attemptsPerKey(enabledCount, (opts.maxRetries ?? MAX_RETRIES) + 1);
   let lastError: unknown;
 
   // Endpoint failover: a provider can carry several base URLs (e.g. Modal
   // workspaces). On an auth/quota error the active endpoint may simply be the
   // wrong workspace for the key, so rotate the endpoint too before giving up.
-  const endpointUrls = providerUsesEndpoints(providerId)
-    ? getProviderEndpoints(providerId).urls
-    : [];
-  const endpointStart = providerUsesEndpoints(providerId)
-    ? getProviderEndpoints(providerId).activeIndex
-    : 0;
+  const storedEndpoints = providerUsesEndpoints(providerId)
+    ? getProviderEndpoints(providerId)
+    : undefined;
+  const endpointUrls = (storedEndpoints?.urls ?? []).filter(
+    (url) => !(storedEndpoints?.disabledUrls ?? []).includes(url),
+  );
+  const activeEndpointUrl = storedEndpoints?.urls[storedEndpoints.activeIndex];
+  const activeEndpointPos = activeEndpointUrl
+    ? endpointUrls.indexOf(activeEndpointUrl)
+    : -1;
+  const endpointStart = activeEndpointPos >= 0 ? activeEndpointPos : 0;
   let endpointOffset = 0;
   const endpointCount = endpointUrls.length;
   const authForAttempt = (value: string | undefined): ProviderAuth => {
@@ -888,6 +895,21 @@ async function runWithKeyRotation<T>(opts: {
         // Sticky success only for stored multi-key (not env-only synthetic).
         if (multi.source !== "env" && multi.source !== "local") {
           void markProviderKeySuccess(providerId, keyIndex).catch(() => {});
+        }
+        if (storedEndpoints && endpointCount > 0) {
+          const winningUrl =
+            endpointUrls[(endpointStart + endpointOffset) % endpointCount]!;
+          const storedIndex = storedEndpoints.urls.indexOf(winningUrl);
+          const authoritative = getActiveProviderEndpoint(providerId);
+          if (
+            storedIndex >= 0 &&
+            storedIndex !== storedEndpoints.activeIndex &&
+            (authoritative === "" || storedEndpoints.urls.includes(authoritative))
+          ) {
+            try {
+              setActiveProviderEndpoint(providerId, storedIndex);
+            } catch {}
+          }
         }
         return result as T;
       } catch (error) {

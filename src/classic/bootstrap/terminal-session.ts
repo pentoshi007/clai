@@ -42,7 +42,9 @@ interface TerminalSessionMode {
 function mouseRequested(options: TerminalSessionOptions): boolean {
   if (options.mouse !== undefined) return options.mouse;
   const env = options.env ?? process.env;
-  return env.CLAI_CLASSIC_MOUSE === "1";
+  if (env.CLAI_CLASSIC_MOUSE !== undefined) return env.CLAI_CLASSIC_MOUSE !== "0";
+  const stdin = options.stdin ?? process.stdin;
+  return stdin.isTTY === true && env.TERM !== "dumb";
 }
 
 export class TerminalSession {

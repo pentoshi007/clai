@@ -4,7 +4,7 @@ import {
   type ToolStatus,
 } from "../../ui-core/state/transcript-types.js";
 import { presentOutput, presentTool } from "../../ui-core/rendering/tool-presenter.js";
-import { alignEnds, trimTrailingSpaces } from "../render/ansi-text.js";
+import { alignEnds, clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
 import { backdropRow } from "../render/backdrop.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
@@ -59,7 +59,7 @@ export function toolElapsed(ctx: BlockContext, item: ToolItem): string | undefin
 }
 
 /**
- * Right-aligned status suffix; dropped entirely below 68 columns.
+ * Right-aligned status suffix; dropped only on very narrow screens (<44 cols).
  * `statusLabel` already carries the non-zero exit code, so nothing is appended.
  */
 export function toolSuffix(
@@ -78,26 +78,31 @@ export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
   const name = ctx.ink.style(presented.name, { fg: "cyan", bold: true });
   const head = `${glyph} ${name}`;
   const suffix = toolSuffix(ctx, item, presented.statusLabel);
-  const argsLines = (presented.argsDisplay ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  // Always keep args on the next line — never inline as shell.exec(input) — so
+  // head + suffix stay on one line and (input) is indented below.
+  if (suffix.length === 0) {
+    const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    if (argsLines.length === 0) return [clipToWidth(head, ctx.width, ctx.glyphs.ellipsis)];
+    const budget = Math.max(8, ctx.width - 2);
+    const rows = argsLines.flatMap((l) => wrapAnsiLine(ctx.ink.fg("muted", `(${l})`), budget));
+    return [clipToWidth(head, ctx.width, ctx.glyphs.ellipsis), ...rows.map((r) => trimTrailingSpaces(`  ${r}`))];
+  }
+  const suffixWidth = layoutWidth(suffix);
+  // Suffix (done/running + timing) should sit just after head on the same line,
+  // more left / closer to tool name, not flush-right at the far edge.
+  const gap = "  ";
+  const headBudget = Math.max(8, ctx.width - suffixWidth - layoutWidth(gap) - 1);
+  const clippedHead = layoutWidth(head) > headBudget ? clipToWidth(head, headBudget, ctx.glyphs.ellipsis) : head;
+  const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
   if (argsLines.length === 0) {
-    return [alignEnds(head, suffix, ctx.width, ctx.glyphs.ellipsis)];
+    const first = `${clippedHead}${gap}${suffix}`;
+    return [layoutWidth(first) > ctx.width ? clipToWidth(first, ctx.width, ctx.glyphs.ellipsis) : first];
   }
-
   const argsBudget = Math.max(8, ctx.width - 2);
-  const argRows = argsLines.flatMap((line) =>
-    wrapAnsiLine(ctx.ink.fg("muted", `(${line})`), argsBudget),
-  );
-  const inline = `${head}${argRows[0] ?? ""}`;
-  if (argRows.length === 1 && layoutWidth(inline) + layoutWidth(suffix) + 1 <= ctx.width) {
-    return [alignEnds(inline, suffix, ctx.width, ctx.glyphs.ellipsis)];
-  }
-  return [
-    alignEnds(head, suffix, ctx.width, ctx.glyphs.ellipsis),
-    ...argRows.map((row) => trimTrailingSpaces(`  ${row}`)),
-  ];
+  const argRows = argsLines.flatMap((l) => wrapAnsiLine(ctx.ink.fg("muted", `(${l})`), argsBudget));
+  const first = `${clippedHead}${gap}${suffix}`;
+  const clippedFirst = layoutWidth(first) > ctx.width ? clipToWidth(first, ctx.width, ctx.glyphs.ellipsis) : first;
+  return [clippedFirst, ...argRows.map((r) => trimTrailingSpaces(`  ${r}`))];
 }
 
 export interface ToolBodyOptions {
@@ -163,7 +168,12 @@ export function buildToolBodyLines(
  * run/output group reads as one plate.
  */
 export function paintToolRows(ctx: BlockContext, lines: readonly string[]): string[] {
-  return lines.map((line) => backdropRow(ctx.ink, "toolBg", line, ctx.width));
+  return lines.map((line) => {
+    const budget = Math.max(1, ctx.width - 2);
+    const needsClip = layoutWidth(line) > budget;
+    const inner = needsClip ? ` ${clipToWidth(line, budget, ctx.glyphs.ellipsis)} ` : line.length === 0 ? " " : ` ${line} `;
+    return backdropRow(ctx.ink, "toolBg", inner, ctx.width);
+  });
 }
 
 export function buildToolLines(

@@ -45,14 +45,16 @@ describe("toast rows", () => {
     expect(rows([toast("only")]).map((row) => row.trim())).toEqual(["·  only"]);
   });
 
-  it("caps the pill at 85% of the columns and clips with an ellipsis", () => {
+  it("caps the pill at 85% of the columns and wraps big messages instead of single-line truncation", () => {
     const long = "x".repeat(200);
     const rendered = toastRows({ ink, columns: 40, allocatedRows: 2, toasts: [toast(long)] });
-    const row = plainText(rendered[0]!);
-    expect(displayWidth(row)).toBe(40);
-    const text = row.trim();
-    expect(text.endsWith("…")).toBe(true);
-    expect(displayWidth(text)).toBe(30);
+    // Big toast now wraps to 2 rows (instead of 1 truncated row) to avoid losing content
+    expect(rendered.length).toBe(2);
+    for (const r of rendered) expect(displayWidth(plainText(r))).toBe(40);
+    const second = plainText(rendered[1]!).trim();
+    // At least the overflow line is marked with ellipsis; total content not lost to single-line clip
+    expect(second.endsWith("…")).toBe(true);
+    expect(rendered.map((r) => plainText(r).trim()).join(" ").length).toBeGreaterThan(30);
   });
 
   it("centers the pill horizontally", () => {

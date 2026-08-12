@@ -17,6 +17,7 @@ import { responderVisible } from "../chrome/responder-row.js";
 import { allocateChrome, type ChromeDemand } from "../chrome/row-budget.js";
 import { statusRowsWanted } from "../chrome/status-rows.js";
 import { gutterShellWidth, horizontalPadding, SCROLLBAR_GUTTER_COLS } from "../render/shell-width.js";
+import { alignEnds } from "../render/ansi-text.js";
 import { LiveTail } from "../feed/LiveTail.js";
 import { ScrollbarGutter } from "../feed/ScrollbarGutter.js";
 import { CompletionPanel } from "../panels/CompletionPanel.js";
@@ -76,7 +77,10 @@ export function ClassicApp(
     overlay,
   };
   const layout = allocateChrome(demand);
-  const intro = useMemo(() => introInputFor(services), [services, snapshot.feedGeneration]);
+  const intro = useMemo(
+    () => introInputFor(services),
+    [services, snapshot.feedGeneration, session.mode, session.provider, session.model],
+  );
   const feed = useFeed({
     services,
     columns: shellWidth,
@@ -119,10 +123,24 @@ export function ClassicApp(
       toast: <ToastRow ink={feed.ink} columns={shellWidth} allocatedRows={layout.toast} toasts={snapshot.toasts} />,
       composer: <Box flexDirection="column" flexShrink={0} width={shellWidth}>
         {frame.showDirectory ? <Text wrap="truncate"> </Text> : null}
-        {frame.showDirectory ? <Text wrap="truncate">{directoryRow({ ink: feed.ink, columns: shellWidth, cwd: snapshot.cwd, branch: snapshot.branch })}</Text> : null}
+        {frame.showDirectory ? (
+          <Text wrap="truncate">
+            {(() => {
+              const dir = directoryRow({ ink: feed.ink, columns: shellWidth, cwd: snapshot.cwd, branch: snapshot.branch });
+              const hasActivePlan = plan !== undefined;
+              const isExpanded = snapshot.planVisible;
+              if (!hasActivePlan || isExpanded) return dir;
+              const hint = feed.ink.fg("inputBorder", "plan active · ^H to expand");
+              // dir already is " <muted>path</muted>  <branch> " with inset; strip outer spaces for align
+              const width = Math.max(1, shellWidth - 2);
+              // Use plain width check: if hint would push dir off, just show hint truncated by alignEnds
+              return ` ${alignEnds(dir.trim(), hint, width, feed.ink.glyphs.ellipsis)} `;
+            })()}
+          </Text>
+        ) : null}
         <Composer ink={feed.ink} frame={frame} state={composer.state} />
       </Box>,
-      status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} elapsedSeconds={elapsedSeconds} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} />,
+      status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} elapsedSeconds={elapsedSeconds} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} thinkingExpanded={snapshot.transcript.expandThinkingGlobal} outputExpanded={snapshot.transcript.expandOutputGlobal} />,
     }} />
     </Box>
     <ScrollbarGutter ink={feed.ink} window={feed.window} rows={layout.liveTail} offsetTop={(standaloneLabel === undefined ? 0 : 1) + layout.toast} />

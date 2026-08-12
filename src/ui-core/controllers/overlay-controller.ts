@@ -66,6 +66,7 @@ export interface ScopeEditorRequest {
 export interface KeysEditorSlotView {
   readonly id: string;
   readonly masked: string;
+  readonly disabled?: boolean | undefined;
 }
 
 /** Multi-row API key editor for a single LLM provider. */
@@ -88,7 +89,7 @@ export interface KeysEditorRequest {
  * is a new/replacement plaintext key. Reset clears all keys for the provider.
  */
 export type KeysEditorAnswer =
-  | { readonly action: "save"; readonly rows: readonly { slotId?: string; value: string }[]; readonly activeIndex?: number | undefined }
+  | { readonly action: "save"; readonly rows: readonly { slotId?: string; value: string; disabled?: boolean }[]; readonly activeIndex?: number | undefined }
   | { readonly action: "reset" };
 
 export interface PromptActionsRequest {

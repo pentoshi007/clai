@@ -8,7 +8,7 @@ export interface KeyEventLike {
   readonly sequence?: string | undefined;
 }
 
-const MODIFIER_ORDER = ["ctrl", "alt", "shift", "meta"] as const;
+const MODIFIER_ORDER = ["ctrl", "alt", "shift", "meta", "super"] as const;
 
 export type Modifier = (typeof MODIFIER_ORDER)[number];
 
@@ -25,16 +25,18 @@ export function normalizeChord(chord: string): string {
 }
 
 export function chordFrom(modifiers: {
-  readonly ctrl?: boolean;
-  readonly alt?: boolean;
-  readonly shift?: boolean;
-  readonly meta?: boolean;
+  readonly ctrl?: boolean | undefined;
+  readonly alt?: boolean | undefined;
+  readonly shift?: boolean | undefined;
+  readonly meta?: boolean | undefined;
+  readonly super?: boolean | undefined;
 }, key: string): string {
   const parts: string[] = [];
   if (modifiers.ctrl) parts.push("ctrl");
   if (modifiers.alt) parts.push("alt");
   if (modifiers.shift) parts.push("shift");
   if (modifiers.meta) parts.push("meta");
+  if (modifiers.super) parts.push("super");
   parts.push(key);
   return normalizeChord(parts.join("+"));
 }

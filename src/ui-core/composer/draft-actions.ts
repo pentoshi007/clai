@@ -24,7 +24,7 @@ export interface CutDraftInput {
 export type CutDraftOutcome = "empty" | "cut" | "cleared-copy-failed";
 
 /**
- * Ctrl+Shift+X. The draft is cleared whether or not the copy succeeded, so the
+ * Ctrl+X. The draft is cleared whether or not the copy succeeded, so the
  * key never silently does nothing; the caller reports which happened.
  */
 export async function cutDraft(input: CutDraftInput): Promise<CutDraftOutcome> {
@@ -46,7 +46,7 @@ export function cutDraftMessage(outcome: CutDraftOutcome): string {
     case "empty":
       return "Nothing to cut · draft is empty";
     case "cut":
-      return "Draft cut to clipboard · ⇧^X";
+      return "Draft cut to clipboard · ^X";
     default:
       return "Draft cleared — clipboard unavailable";
   }

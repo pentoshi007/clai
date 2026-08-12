@@ -90,12 +90,18 @@ describe("terminal session", () => {
     ]);
   });
 
-  it("reads mouse opt-in from the environment", () => {
+  it("enables mouse reporting by default and honours the environment", () => {
     const f = fakes();
+    const def = createTerminalSession({ ...f, env: {} });
     const on = createTerminalSession({ ...f, env: { CLAI_CLASSIC_MOUSE: "1" } });
-    const off = createTerminalSession({ ...f, env: {} });
+    const off = createTerminalSession({ ...f, env: { CLAI_CLASSIC_MOUSE: "0" } });
+    const dumb = createTerminalSession({ ...f, env: { TERM: "dumb" } });
+    const notty = createTerminalSession({ ...fakes({ isTTY: false }), env: {} });
+    expect(def.mouseEnabled).toBe(true);
     expect(on.mouseEnabled).toBe(true);
     expect(off.mouseEnabled).toBe(false);
+    expect(dumb.mouseEnabled).toBe(false);
+    expect(notty.mouseEnabled).toBe(false);
   });
 
   it("leaves in reverse order", () => {

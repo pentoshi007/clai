@@ -218,7 +218,7 @@ export function formatShortcutsReference(
     "",
     "Chords are **terminal-dependent**. On macOS, **Cmd+Backspace** often arrives as **Ctrl+U** (line delete in the composer — not chat scroll while typing).",
     "",
-    "Status chips under the input are clickable: `^T` · `^O` · `^U` · `^D` · `^X` · `/shortcuts`.",
+    "Status chips under the input are clickable: `^T` · `^O` · `^U` · `^D` · `^X` · `^Q`.",
     "",
   ];
 

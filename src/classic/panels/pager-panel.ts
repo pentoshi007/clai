@@ -81,25 +81,13 @@ export function pagerLines(
   format: PagerFormat = "formatted",
 ): readonly string[] {
   const width = panelBodyWidth(columns);
-  const bodyHeight = Math.max(1, panelBodyHeight(rows));
-  let gutter = 0;
-  let lines: string[] = [];
-
-  for (let iteration = 0; iteration < 32; iteration += 1) {
-    const textWidth = Math.max(1, width - gutter - 2);
-    lines = logicalPagerLines(body, textWidth, format).flatMap((line) =>
-      format === "formatted"
-        ? wrapAnsiLine(line, textWidth)
-        : wrapPagerLine(line, textWidth),
-    );
-    if (lines.length === 0) lines = [" "];
-    const numbered = lines.length > bodyHeight;
-    const nextGutter = numbered ? String(lines.length).length + 1 : 0;
-    if (nextGutter === gutter) return lines;
-    gutter = nextGutter;
-  }
-
-  return lines;
+  const textWidth = Math.max(1, width - 2);
+  const lines = logicalPagerLines(body, textWidth, format).flatMap((line) =>
+    format === "formatted"
+      ? wrapAnsiLine(line, textWidth)
+      : wrapPagerLine(line, textWidth),
+  );
+  return lines.length === 0 ? [" "] : lines;
 }
 
 function pagerSearchLines(lines: readonly string[]): readonly string[] {
@@ -273,12 +261,9 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
   const { ink, state } = input;
   const height = panelBodyHeight(input.rows);
   const count = input.lines.length;
-  const numbered = count > height;
-  const gutter = numbered ? String(count).length + 1 : 0;
   const searchLines = input.searchLines ?? pagerSearchLines(input.lines);
   const matches = state.query === "" ? [] : findPagerMatches(searchLines, state.query);
   const top = clampTop(state.caret, state.top, Math.max(1, height), count);
-
   const body: string[] = [];
   for (let offset = 0; offset < height; offset += 1) {
     const index = top + offset;
@@ -289,12 +274,8 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
       state.query === ""
         ? sealStyle(raw)
         : paintSegments(ink, plain, index, matches, state.matchIndex);
-    const caret =
-      index === state.caret ? ink.fg("inputBorder", ink.glyphs.caret) : " ";
-    const number = numbered
-      ? ink.fg("muted", padStartToWidth(String(index + 1), gutter))
-      : "";
-    body.push(sealStyle(`${number}${caret} ${painted}`));
+    const caret = index === state.caret ? ink.fg("inputBorder", ink.glyphs.caret) : " ";
+    body.push(sealStyle(`${caret} ${painted}`));
   }
 
   const tags: string[] = [state.format === "raw" ? "raw" : "md"];

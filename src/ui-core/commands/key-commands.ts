@@ -61,6 +61,7 @@ async function getSearchKeyStatuses(): Promise<SearchKeyStatus[]> {
         maskedKeys: count > 0 ? multi.keys.map((key) => maskSecret(key.value)) : undefined,
         activeMaskedKey:
           count > 1 && activeValue ? maskSecret(activeValue) : undefined,
+        keyDisabled: count > 0 ? multi.keys.map((key) => key.disabled === true) : undefined,
       };
     }),
   );
@@ -283,13 +284,17 @@ async function openEndpointsEditor(
   services: AppServices,
   id: ProviderId,
 ): Promise<void> {
-  const { urls, activeIndex } = getProviderEndpoints(id);
+  const { urls, activeIndex, disabledUrls } = getProviderEndpoints(id);
   const answer = await services.overlay.openKeysEditor({
     provider: id,
     heading: "ENDPOINTS",
     itemLabel: "endpoint URL",
     // URLs are not secrets: show them in full so a typo is visible.
-    initialKeys: urls.map((url, index) => ({ id: String(index), masked: url })),
+    initialKeys: urls.map((url, index) => ({
+      id: String(index),
+      masked: url,
+      disabled: (disabledUrls ?? []).includes(url),
+    })),
     activeIndex,
   });
   if (!answer) {
@@ -303,7 +308,11 @@ async function openEndpointsEditor(
   }
 
   const byId = new Map(urls.map((url, index) => [String(index), url]));
-  const resolved = resolveEditorRows(answer.rows, byId).map(normalizeEndpointUrl);
+  const detailed = resolveEditorRowsDetailed(answer.rows, byId).map((row) => ({
+    value: normalizeEndpointUrl(row.value),
+    disabled: row.disabled,
+  }));
+  const resolved = detailed.map((row) => row.value);
   if (resolved.length === 0) {
     setProviderEndpoints(id, []);
     notice(services, "info", `unset all endpoint URLs for ${id}`);
@@ -321,7 +330,12 @@ async function openEndpointsEditor(
     const found = previous ? resolved.indexOf(previous) : -1;
     if (found >= 0) nextActive = found;
   }
-  const saved = setProviderEndpoints(id, resolved, nextActive);
+  const saved = setProviderEndpoints(
+    id,
+    resolved,
+    nextActive,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
   notice(
     services,
     "info",
@@ -360,11 +374,16 @@ async function openLlmKeysEditor(
   const stored =
     multi.source === "env"
       ? []
-      : multi.keys.map((key) => ({ id: key.id, masked: maskSecret(key.value), value: key.value }));
+      : multi.keys.map((key) => ({
+          id: key.id,
+          masked: maskSecret(key.value),
+          value: key.value,
+          disabled: key.disabled === true,
+        }));
 
   const answer = await services.overlay.openKeysEditor({
     provider: id,
-    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked })),
+    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked, disabled: key.disabled })),
     activeIndex: multi.source !== "env" ? multi.activeIndex : undefined,
   });
   if (!answer) {
@@ -378,7 +397,8 @@ async function openLlmKeysEditor(
   }
 
   const byId = new Map(stored.map((key) => [key.id, key.value]));
-  const resolved = resolveEditorRows(answer.rows, byId);
+  const detailed = resolveEditorRowsDetailed(answer.rows, byId);
+  const resolved = detailed.map((row) => row.value);
   if (resolved.length === 0) {
     await unsetProviderSecret(id);
     notice(services, "info", `unset all keys for ${id}`);
@@ -406,7 +426,12 @@ async function openLlmKeysEditor(
     }
   }
 
-  await setProviderKeys(id, resolved, activeIndex);
+  await setProviderKeys(
+    id,
+    resolved,
+    activeIndex,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
   const label = resolved.length === 1
     ? maskSecret(resolved[0]!)
     : `${resolved.length} keys · active: #${activeIndex + 1}`;
@@ -426,10 +451,15 @@ async function openSearchKeysEditor(
   const stored =
     multi.source === "env"
       ? []
-      : multi.keys.map((key) => ({ id: key.id, masked: maskSecret(key.value), value: key.value }));
+      : multi.keys.map((key) => ({
+          id: key.id,
+          masked: maskSecret(key.value),
+          value: key.value,
+          disabled: key.disabled === true,
+        }));
   const answer = await services.overlay.openKeysEditor({
     provider: id,
-    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked })),
+    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked, disabled: key.disabled })),
     activeIndex: multi.source !== "env" ? multi.activeIndex : undefined,
   });
   if (!answer) {
@@ -442,7 +472,11 @@ async function openSearchKeysEditor(
     return;
   }
 
-  const resolved = resolveEditorRows(answer.rows, new Map(stored.map((key) => [key.id, key.value])));
+  const detailed = resolveEditorRowsDetailed(
+    answer.rows,
+    new Map(stored.map((key) => [key.id, key.value])),
+  );
+  const resolved = detailed.map((row) => row.value);
   if (resolved.length === 0) {
     await unsetSearchProviderSecret(id);
     notice(services, "info", `unset all keys for ${id}`);
@@ -462,7 +496,12 @@ async function openSearchKeysEditor(
     }
   }
 
-  await setSearchProviderKeys(id, resolved, activeIndex);
+  await setSearchProviderKeys(
+    id,
+    resolved,
+    activeIndex,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
   const label = resolved.length === 1
     ? maskSecret(resolved[0]!)
     : `${resolved.length} keys · active: #${activeIndex + 1}`;
@@ -481,6 +520,23 @@ function resolveEditorRows(
       if (keep) resolved.push(keep);
     } else if (row.value.trim()) {
       resolved.push(row.value.trim());
+    }
+  }
+  return resolved;
+}
+
+function resolveEditorRowsDetailed(
+  rows: readonly { slotId?: string; value: string; disabled?: boolean }[],
+  byId: ReadonlyMap<string, string>,
+): { value: string; disabled: boolean }[] {
+  const resolved: { value: string; disabled: boolean }[] = [];
+  for (const row of rows) {
+    if (row.slotId) {
+      const value = row.value.trim();
+      const keep = value || byId.get(row.slotId);
+      if (keep) resolved.push({ value: keep, disabled: row.disabled === true });
+    } else if (row.value.trim()) {
+      resolved.push({ value: row.value.trim(), disabled: row.disabled === true });
     }
   }
   return resolved;

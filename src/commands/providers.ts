@@ -300,7 +300,10 @@ export async function printProviderKeys(): Promise<void> {
     if (s.endpoints && s.endpoints.length > 1) {
       s.endpoints.forEach((url, i) => {
         const star = i === (s.activeEndpointIndex ?? 0) ? chalk.cyan(" ★ active") : "";
-        console.log(chalk.dim(`      (${i + 1}) ${url}`) + star);
+        const disabled = s.disabledEndpoints?.includes(url)
+          ? chalk.yellow(" (disabled)")
+          : "";
+        console.log(chalk.dim(`      (${i + 1}) ${url}`) + star + disabled);
       });
     }
     if (s.maskedKeys && s.maskedKeys.length > 1) {
@@ -311,7 +314,8 @@ export async function printProviderKeys(): Promise<void> {
       }
       s.maskedKeys.forEach((masked, i) => {
         const star = i === activeIdx ? chalk.cyan(" ★ active") : "";
-        console.log(`      [${i + 1}] ${masked}${star}`);
+        const disabled = s.keyDisabled?.[i] === true ? chalk.yellow(" (disabled)") : "";
+        console.log(`      [${i + 1}] ${masked}${star}${disabled}`);
       });
     }
   }

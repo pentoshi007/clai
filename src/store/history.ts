@@ -378,6 +378,9 @@ function scrubTranscriptItem(item: TranscriptItem): TranscriptItem {
         summary: item.summary ? redactSecretsCached(item.summary) : item.summary,
         status: item.status === "running" ? "ok" : item.status,
         done: true,
+        ...(item.timestamp !== undefined ? { timestamp: item.timestamp } : {}),
+        ...(item.endedAt !== undefined ? { endedAt: item.endedAt } : {}),
+        ...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {}),
       };
     case "plan":
       return { ...item, done: true };

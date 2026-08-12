@@ -25,9 +25,9 @@ import type { StatusRowsWanted } from "./row-budget.js";
 const HINT_LABELS: Readonly<Record<IdleHintId, string>> = {
   commands: "/ commands",
   "cut-draft": "^X cut",
+  "clear-draft": "^Q clear",
   thinking: "^T thinking",
   output: "^O output",
-  shortcuts: "/shortcuts",
 };
 
 const CONTEXT_TOKEN: Readonly<Record<"normal" | "warn" | "critical", ThemeToken>> = {
@@ -57,6 +57,8 @@ export interface StatusViewInput {
   readonly queued: number;
   readonly planVisible: boolean;
   readonly hasActivePlan: boolean;
+  readonly thinkingExpanded?: boolean | undefined;
+  readonly outputExpanded?: boolean | undefined;
 }
 
 export function formatElapsed(seconds: number): string {
@@ -129,32 +131,59 @@ export function fitSegments(
 
 function idleSegments(input: StatusViewInput, density: StatusDensity): string[] {
   const { ink } = input;
-  const hints = idleHintIds(density, input.hasDraft).map((id) => HINT_LABELS[id]);
-  if (input.hasActivePlan || input.planVisible) {
-    hints.push(`^H ${tasksToggleLabel(input.planVisible, density).toLowerCase()}`);
+  const baseHints = idleHintIds(density, input.hasDraft).map((id) => HINT_LABELS[id]);
+  const hints: Array<{ label: string; token: ThemeToken }> = baseHints.map((label) => {
+    let token: ThemeToken = "muted";
+    if (label === HINT_LABELS.thinking && input.thinkingExpanded) token = "inputBorder";
+    else if (label === HINT_LABELS.output && input.outputExpanded) token = "inputBorder";
+    return { label, token };
+  });
+  // Classic-only: ^N newline (Ctrl+N) works on all OS, shown in the existing status row only.
+  if (density !== "xs") {
+    const thinkingIdx = hints.findIndex((h) => h.label === HINT_LABELS.thinking);
+    const entry = { label: "^N newline", token: "muted" as ThemeToken };
+    if (thinkingIdx >= 0) hints.splice(thinkingIdx, 0, entry);
+    else hints.push(entry);
   }
-  hints.push(`${ink.unicode ? "⇧⇥" : "S-tab"} mode`);
+  if (input.hasActivePlan || input.planVisible) {
+    const hLabel = `^H ${tasksToggleLabel(input.planVisible, density).toLowerCase()}`;
+    const token: ThemeToken = input.planVisible ? "inputBorder" : "muted";
+    hints.push({ label: hLabel, token });
+  }
+  hints.push({ label: `${ink.unicode ? "⇧⇥" : "S-tab"} mode`, token: "muted" });
   if (input.contextUsage !== undefined && density !== "xs" && density !== "sm") {
-    hints.push("^L ctx");
+    hints.push({ label: "^L ctx", token: "muted" });
   }
   const queued =
     input.queued > 0 ? (density === "sm" ? `${input.queued}q` : `${input.queued} queued`) : "";
-  return [...hints.map((hint) => ink.fg("muted", hint)), ink.fg("mode", queued)];
+  const queuedSeg = ink.fg("mode", queued);
+  return [...hints.map((h) => ink.fg(h.token, h.label)), queuedSeg];
 }
 
 function busySegments(input: StatusViewInput, density: StatusDensity, leftBudget: number): string[] {
   const { ink } = input;
-  const budget =
-    density === "sm" ? Math.max(8, leftBudget - 34) : Math.max(12, leftBudget - 46);
+  // classic: reserve less for chrome so "continue"/"done" + timings survive at 48–68 cols.
+  // prev 34/46 clipped activity to 8 chars at 48 cols and dropped the timing segment.
+  const reserve = density === "sm" ? 22 : density === "xs" ? 18 : 30;
+  const budget = Math.max(10, leftBudget - reserve);
   const label = input.compacting ? "compacting" : formatActivity(input.activity, budget);
   const cancel = input.cancelArmed ? armedCancelHint() : busyCancelHint(density).short;
+  const elapsed = ink.style(formatElapsed(input.elapsedSeconds), { fg: "accent", bold: true });
 
+  // Order so elapsed survives even when the row is tight: label → elapsed → cancel → queued.
+  // At 40–48 cols the cancel hint is the first to drop, not the timing.
+  if (density === "xs") {
+    return [
+      `${ink.fg("spinner", spinnerFrame(input.tick, ink.unicode))} ${ink.fg("activity", label)}`,
+      elapsed,
+      ink.fg(input.cancelArmed ? "activity" : "muted", cancel),
+      input.queued > 0 ? ink.fg("mode", `${input.queued}q`) : "",
+    ];
+  }
   return [
     `${ink.fg("spinner", spinnerFrame(input.tick, ink.unicode))} ${ink.fg("activity", label)}`,
+    elapsed,
     ink.fg(input.cancelArmed ? "activity" : "muted", cancel),
-    density === "xs"
-      ? ""
-      : ink.style(formatElapsed(input.elapsedSeconds), { fg: "accent", bold: true }),
     input.queued > 0 ? ink.fg("mode", `${input.queued}q`) : "",
   ];
 }

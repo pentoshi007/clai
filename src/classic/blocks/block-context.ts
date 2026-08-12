@@ -32,8 +32,8 @@ export interface BlockContext {
   readonly markdownCache: MarkdownStreamCache | undefined;
 }
 
-/** Suffix threshold from 04-UI-SPEC §3.5 — right-aligned detail is dropped below it. */
-export const SUFFIX_MIN_COLUMNS = 68;
+/** Suffix threshold — keep timings visible; below this the label is clipped not dropped. Classic shows timings even at 40 cols. */
+export const SUFFIX_MIN_COLUMNS = 44;
 
 export function separator(ctx: BlockContext): string {
   return ` ${ctx.glyphs.separator} `;

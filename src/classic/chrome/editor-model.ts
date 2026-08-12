@@ -161,6 +161,16 @@ export function deleteToLineEnd(state: EditorState): EditorState {
   return { text: `${state.text.slice(0, at)}${state.text.slice(to)}`, cursor: at };
 }
 
+export function deleteLine(state: EditorState): EditorState {
+  const at = clampToBoundary(state.text, state.cursor);
+  const from = lineStart(state.text, at);
+  const to = lineEnd(state.text, at);
+  if (from === 0 && to === state.text.length) return { text: "", cursor: 0 };
+  if (to === state.text.length) return { text: state.text.slice(0, from === 0 ? 0 : from - 1), cursor: from === 0 ? 0 : from - 1 };
+  const after = state.text[to] === "\n" ? to + 1 : to;
+  return { text: `${state.text.slice(0, from)}${state.text.slice(after)}`, cursor: from };
+}
+
 export function setText(state: EditorState, text: string): EditorState {
   return normalize({ text, cursor: Math.min(state.cursor, text.length) });
 }

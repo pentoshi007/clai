@@ -36,8 +36,8 @@ function press(state: PagerPanelState, chord: string, text?: string, rows = 8) {
 }
 
 describe("pager rows", () => {
-  it("numbers lines only when the body overflows the body height", () => {
-    expect(render(PAGER_INITIAL_STATE).rows[1]).toMatch(/^│\s+1▎ line 1/);
+  it("renders lines without number gutter", () => {
+    expect(render(PAGER_INITIAL_STATE).rows[1]).toMatch(/^│ ▎ line 1/);
     const short = pagerView({
       ink,
       columns: 80,
@@ -114,12 +114,11 @@ describe("pager source normalization and width", () => {
     expect(rawDiff).toContain("│ # Notes");
   });
 
-  it("accounts for the final number-gutter width after wrapping", () => {
+  it("accounts for width after wrapping", () => {
     const columns = 32;
     const rows = 4;
     const lines = pagerLines("word ".repeat(200), columns, rows, "raw");
-    const gutter = lines.length > panelBodyHeight(rows) ? String(lines.length).length + 1 : 0;
-    const textWidth = panelBodyWidth(columns) - gutter - 2;
+    const textWidth = panelBodyWidth(columns) - 2;
     expect(lines.length).toBeGreaterThan(panelBodyHeight(rows));
     for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(textWidth);
 

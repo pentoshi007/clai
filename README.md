@@ -2,7 +2,7 @@
 
 > A fast, terminal-native AI agent that runs real tools — built to run on **free API tiers**, stay alive across rate limits with **multi-key + multi-provider switching**, and do serious work: **building, debugging, and scope-based pentesting / bug bounty**.
 
-`clai` is an agentic CLI. It doesn't just describe what to do — it edits files, runs shell commands, scans hosts, fetches HTTP evidence, keeps a durable task plan, and verifies its own work before claiming success. It runs in your terminal with an OpenTUI full-screen console, a classic Ink UI fallback, or a noninteractive stream surface for prompts and pipes.
+`clai` is an agentic CLI. It doesn't just describe what to do — it edits files, runs shell commands, scans hosts, fetches HTTP evidence, keeps a durable task plan, and verifies its own work before claiming success. It runs in your terminal with three full surfaces — an OpenTUI full-screen console (default on macOS/Linux), a classic Ink UI (default on Windows), and a noninteractive stream renderer for prompts and pipes. The original line-by-line REPL is gone: every interactive surface is a full-screen app sharing the same features, commands, and session state.
 
 Two things make it practical for everyday use:
 
@@ -14,7 +14,7 @@ Two things make it practical for everyday use:
 ## Highlights
 
 - **Free-tier first.** 17 providers wired in, 7 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
-- **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Optional cross-provider fallback and a free-only filter.
+- **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Disable any key or endpoint row to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
 - **Bring your own endpoint.** Deploy Kimi K3 (or Qwen / DeepSeek / GLM / GPT-OSS / your own fine-tune) to a [Modal](#modal--run-kimi-k3-on-your-own-endpoint-on-30month-of-free-credit) endpoint and drive it from clai on **$30/month of free compute credit**. Modal, Lightning AI and TokenRouter each keep a list of up to 10 base URLs with a sticky active one, so several deployments live side by side and you switch with one command — same editor, same ★ active row as keys.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
 - **Real building & debugging.** Scaffolds apps, edits code surgically, installs packages, runs builds/tests, starts dev servers as background jobs, and probes them before reporting success.
@@ -198,7 +198,7 @@ clai unset modal --url                 # clear the URLs, keep the token pairs
 clai keys                              # every URL listed, ★ marks the active one
 ```
 
-Token pairs rotate on failure like any other provider's keys (the pair is stored as one `id:secret` string). Endpoints do **not** auto-rotate: a different Modal endpoint serves a different model, so switching is always an explicit choice. `MODAL_BASE_URL` overrides the stored list entirely.
+Token pairs rotate on failure like any other provider's keys (the pair is stored as one `id:secret` string). Endpoints fail over alongside them: on a rate limit, workspace/auth mismatch, quota error, or 5xx, clai tries the next stored endpoint with the next key, and the ★ active endpoint sticks to the one that worked, so the next run starts on the healthy URL. `MODAL_BASE_URL` overrides the stored list entirely.
 
 From inside the console, `/provider modal` walks the same setup in two prompts — endpoint URL first (shown in full, since it isn't a secret), then the token pair — and leaves the active provider untouched if you cancel.
 
@@ -251,11 +251,12 @@ clai provider                          # interactive provider/model picker
 clai unset groq                        # remove ALL keys for a provider
 ```
 
-In the console, **`/set`** opens a multi-row editor: add rows with `+`, remove rows, star a row to make it the active one, **Save**, or **Reset all**. Providers with their own base URL (Modal, Lightning AI, TokenRouter) get a second **endpoints** row in the `/set` picker that edits their URL list the same way — URLs are shown in full rather than masked, since they aren't secrets. `/set <provider> https://…` adds and activates one URL directly. **`/keys`** lists keys masked plus the active endpoint; **`/unset`** clears a provider.
+In the console, **`/set`** opens a multi-row editor: add rows with `+`, remove rows, star a row to make it the active one, or disable a row to skip it in rotation without deleting it (`d` in the classic UI, `Ctrl+D` or the ○ marker in OpenTUI) — then **Save**, or **Reset all**. Providers with their own base URL (Modal, Lightning AI, TokenRouter) get a second **endpoints** row in the `/set` picker that edits their URL list the same way — URLs are shown in full rather than masked, since they aren't secrets. `/set <provider> https://…` adds and activates one URL directly. **`/keys`** lists keys masked plus the active endpoint, marking disabled rows `(disabled)`; **`/unset`** clears a provider. Disabled entries are never tried until re-enabled, and disabling every key for a provider fails fast with a clear error instead of burning requests.
 
 ### Smart switching (how it stays up)
 
-- **Multi-key rotation** — up to **10 keys per provider**. The last key that worked is *sticky*; on failure clai rotates circularly to the next key.
+- **Multi-key rotation** — up to **10 keys per provider**. The last key that worked is *sticky*; on failure clai rotates circularly to the next key. Endpoint providers (Modal, Lightning AI, TokenRouter) fail over their stored endpoints alongside the keys, and the ★ active endpoint follows the one that worked.
+- **Disable without deleting** — toggle any key or endpoint row disabled in the `/set` editor and rotation skips it until you re-enable it.
 - **What triggers a switch** — HTTP 429 (rate limit), 401/403 (auth), 402 / quota / billing text, transient network errors, 500–504, and empty completions. Auth and quota errors switch **immediately** (no backoff wait); rate limits back off briefly first.
 - **Cross-provider fallback** *(opt-in)* — `/fallback on` lets clai try other configured providers after the active one is exhausted (only when running a provider's default model).
 - **Free-only mode** *(opt-in)* — `/freeonly on` excludes paid-cloud providers from the fallback chain, so you never accidentally spend.
@@ -351,7 +352,7 @@ You own authorization; clai still gates risk on every action:
 
 ## Terminal UI
 
-An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts.
+The old line REPL has been removed — there are only full surfaces now. An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. In the classic UI, mouse reporting is on by default so wheel swipes scroll the live tail and panels instead of being misread as prompt-history keys; native text selection stays one modifier away (Shift/Option/Fn), and `CLAI_CLASSIC_MOUSE=0` turns mouse reporting off. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts.
 
 | Action | Key |
 |--------|-----|

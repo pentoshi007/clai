@@ -50,6 +50,7 @@ describe("keys rows", () => {
     expect(frame.hints).toEqual([
       "⏎ edit",
       "space set active",
+      "d disable",
       "^D remove",
       "^S save",
       "^R reset",
@@ -76,6 +77,7 @@ describe("keys rows", () => {
         slotId: `k${index}`,
         masked: "••••",
         value: "",
+        disabled: false,
       })),
     };
     expect(keysRowCount(full)).toBe(MAX_PROVIDER_KEYS);
@@ -98,6 +100,16 @@ describe("keys keys", () => {
     expect(press(state, "space").state.activeIndex).toBe(0);
   });
 
+  it("toggles a row disabled with d", () => {
+    let state = keysInitialState(REQUEST);
+    state = press(state, "d").state;
+    expect(state.rows[0]!.disabled).toBe(true);
+    expect(render(state).rows[1]).toContain("· disabled");
+    state = press(state, "d").state;
+    expect(state.rows[0]!.disabled).toBe(false);
+    expect(render(state).rows[1]).not.toContain("· disabled");
+  });
+
   it("removes a row and keeps the active index in range", () => {
     let state: KeysPanelState = { ...keysInitialState(REQUEST), cursor: 1, activeIndex: 1 };
     state = press(state, "ctrl+d").state;
@@ -116,9 +128,9 @@ describe("keys keys", () => {
     await expect(answer).resolves.toEqual({
       action: "save",
       rows: [
-        { slotId: "k1", value: "" },
-        { slotId: "k2", value: "" },
-        { value: "gsk_new" },
+        { slotId: "k1", value: "", disabled: false },
+        { slotId: "k2", value: "", disabled: false },
+        { value: "gsk_new", disabled: false },
       ],
       activeIndex: 0,
     });

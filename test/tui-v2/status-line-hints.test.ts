@@ -32,12 +32,11 @@ describe("status line hints and Esc semantics", () => {
     expect(idleHintIds("xs")).toEqual([]);
     expect(idleHintIds("sm")).toEqual([]);
     expect(idleHintIds("md")).toEqual(["commands", "thinking", "output"]);
-    expect(idleHintIds("lg")).toEqual([
-      "commands",
-      "thinking",
-      "output",
-      "shortcuts",
-    ]);
+    expect(idleHintIds("lg")).toEqual(["commands", "thinking", "output"]);
+    expect(idleHintIds("xs", true)).toEqual([]);
+    expect(idleHintIds("sm", true)).toEqual(["cut-draft", "clear-draft"]);
+    expect(idleHintIds("md", true)).toEqual(["commands", "cut-draft", "clear-draft", "thinking", "output"]);
+    expect(idleHintIds("lg", true)).toEqual(["commands", "cut-draft", "clear-draft", "thinking", "output"]);
   });
 
   it("maps widths to the densities the hint rows are built for", () => {

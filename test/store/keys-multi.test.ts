@@ -37,6 +37,19 @@ describe("parseProviderKeysPayload", () => {
     expect(parseProviderKeysPayload(raw).activeIndex).toBe(0);
   });
 
+  it("round-trips the disabled flag", () => {
+    const raw = serializeProviderKeysPayload(
+      [
+        { id: "a", value: "key-aaaa-1111", createdAt: 1, disabled: true },
+        { id: "b", value: "key-bbbb-2222", createdAt: 2 },
+      ],
+      1,
+    );
+    const p = parseProviderKeysPayload(raw);
+    expect(p.keys[0]!.disabled).toBe(true);
+    expect(p.keys[1]!.disabled).toBeUndefined();
+  });
+
   it("dedupes empty values on serialize", () => {
     const raw = serializeProviderKeysPayload(
       [

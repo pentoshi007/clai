@@ -166,7 +166,6 @@ export function onTranscriptChange(host: WiringHost): void {
 
 export function onPlanChange(host: WiringHost): void {
   const plan = host.services.plan.current();
-  if (plan && !host.planKnown) host.planVisibleValue = true;
   if (!plan) host.planVisibleValue = false;
   host.planKnown = plan !== undefined;
   host.schedulePaint();

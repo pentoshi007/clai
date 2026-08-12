@@ -232,6 +232,8 @@ export interface ProviderStatus {
   endpoints?: string[] | undefined;
   /** Index of the sticky active endpoint within `endpoints`. */
   activeEndpointIndex?: number | undefined;
+  keyDisabled?: boolean[] | undefined;
+  disabledEndpoints?: string[] | undefined;
 }
 
 export interface ToolCall {

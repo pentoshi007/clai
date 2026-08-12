@@ -127,7 +127,7 @@ const DARK_THEME: Theme = {
   rowA: "#1E293B",
   rowB: "#0F172A",
   chip: "#334155",
-  toolBg: "#525252",
+  toolBg: "#181c24",
   mode: "#B45309",
   // Readable on #0b0e14 / statusBackground — was #166534 (too dark / washed).
   success: "#4ADE80",
@@ -185,7 +185,7 @@ const LIGHT_THEME: Theme = {
   rowA: "#eef2f7",
   rowB: "#f8fafc",
   chip: "#e2e8f0",
-  toolBg: "#e5e5e5",
+  toolBg: "#f2f4f7",
   mode: "#B45309",
   success: "#16A34A",
   // Darker plate for "done" chips on light terminals.

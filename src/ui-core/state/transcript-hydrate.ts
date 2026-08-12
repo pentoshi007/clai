@@ -106,8 +106,17 @@ export function hydrateFromClassicTranscript(
         const output = typeof raw.output === "string" ? raw.output : "";
         if (output) toolOutputs.set(toolCallId, output);
         const rawChanges = (raw as { fileChanges?: unknown }).fileChanges;
+        const rawStamp = (raw as { timestamp?: unknown }).timestamp;
+        const rawEnded = (raw as { endedAt?: unknown }).endedAt;
+        const rawDur = (raw as { durationMs?: unknown }).durationMs;
+        const restoredTimestamp =
+          typeof rawStamp === "number" && Number.isFinite(rawStamp) ? rawStamp : base.timestamp;
+        let restoredEndedAt: number | undefined;
+        if (typeof rawEnded === "number" && Number.isFinite(rawEnded)) restoredEndedAt = rawEnded;
+        else if (typeof rawDur === "number" && Number.isFinite(rawDur)) restoredEndedAt = restoredTimestamp + Math.max(0, rawDur);
         const item: ToolItem = {
           ...base,
+          timestamp: restoredTimestamp,
           kind: "tool",
           toolCallId,
           name,
@@ -121,6 +130,7 @@ export function hydrateFromClassicTranscript(
           fileChanges: Array.isArray(rawChanges)
             ? (rawChanges as ToolItem["fileChanges"])
             : undefined,
+          ...(restoredEndedAt !== undefined ? { endedAt: restoredEndedAt } : {}),
         };
         byId.set(id, item);
         order.push(id);
@@ -674,6 +684,10 @@ export function serializeForHistory(
         break;
       case "tool": {
         const output = toolOutput(item.toolCallId);
+        const durationMs =
+          item.endedAt !== undefined && item.timestamp !== undefined
+            ? Math.max(0, item.endedAt - item.timestamp)
+            : undefined;
         out.push({
           kind: "tool",
           id: item.id,
@@ -690,6 +704,9 @@ export function serializeForHistory(
           summary: item.summary,
           artifactPath: item.artifactPath,
           ...(item.fileChanges ? { fileChanges: item.fileChanges } : {}),
+          timestamp: item.timestamp,
+          endedAt: item.endedAt,
+          ...(durationMs !== undefined ? { durationMs } : {}),
           done: true,
         });
         break;

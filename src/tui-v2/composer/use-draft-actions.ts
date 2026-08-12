@@ -29,7 +29,7 @@ export interface DraftActionsInput {
 export interface DraftActions {
   /** Wipe the draft and everything derived from it. */
   readonly clear: (editor: TextareaRenderable) => void;
-  /** Ctrl+Shift+X — copy the draft to the clipboard, then clear it. */
+  /** Ctrl+X — copy the draft to the clipboard, then clear it. */
   readonly cut: () => Promise<void>;
   /** Show every slash command, as typing "/" in the composer does. */
   readonly showCommands: () => void;

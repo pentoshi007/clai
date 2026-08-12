@@ -23,18 +23,18 @@ export type IdleHintId =
   | "commands"
   | "thinking"
   | "output"
-  | "shortcuts"
-  | "cut-draft";
+  | "cut-draft"
+  | "clear-draft";
 
 export function idleHintIds(
   density: StatusDensity,
   hasDraft = false,
 ): readonly IdleHintId[] {
-  const draft: IdleHintId[] = hasDraft ? ["cut-draft"] : [];
+  const draft: IdleHintId[] = hasDraft ? ["cut-draft", "clear-draft"] : [];
   if (density === "xs") return [];
   if (density === "sm") return draft;
   if (density === "md") return ["commands", ...draft, "thinking", "output"];
-  return ["commands", ...draft, "thinking", "output", "shortcuts"];
+  return ["commands", ...draft, "thinking", "output"];
 }
 
 export function statusDensityForWidth(width: number): StatusDensity {

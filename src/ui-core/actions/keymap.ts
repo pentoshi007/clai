@@ -68,12 +68,12 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("enter", "editor.submit", "composer"),
   binding("shift+enter", "editor.newline", "composer"),
   binding("alt+enter", "editor.newline", "composer"),
+  binding("ctrl+enter", "editor.newline", "composer"),
+  binding("ctrl+n", "editor.newline", "composer"),
   binding("up", "editor.history-prev", "composer"),
   binding("down", "editor.history-next", "composer"),
-  // Cut: copy the draft to the clipboard, then clear it. Both chords map to
-  // cut — legacy terminals cannot tell ctrl+x from ctrl+shift+x apart.
   binding("ctrl+x", "editor.cut-draft", "composer"),
-  binding("ctrl+shift+x", "editor.cut-draft", "composer"),
+  binding("ctrl+q", "editor.clear", "composer"),
 
   // transcript
   binding("up", "transcript.scroll-up", "transcript"),

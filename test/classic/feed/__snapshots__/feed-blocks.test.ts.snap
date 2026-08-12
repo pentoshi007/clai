@@ -36,17 +36,19 @@ exports[`golden fixtures > renders the scripted turn at 40c none ascii 1`] = `
   1. src/db/users.ts — add limit and
      offset
 ── tool closed
-v shell.exec(npm test -- --run)         
-  \\ PASS src/routes/users.test.ts       
-    PASS src/db/users.test.ts           
-    Tests: 42 passed, 42 total          
+ v shell.exec                           
+   (npm test -- --run)                  
+   \\ PASS src/routes/users.test.ts      
+     PASS src/db/users.test.ts          
+     Tests: 42 passed, 42 total         
 ── tool closed
-x shell.exec(npm run build)             
-  \\ sh: tsc: command not found          
+ x shell.exec                           
+   (npm run build)                      
+   \\ sh: tsc: command not found         
 ── tool closed
-# Delete failed · hosts                 
-  \\ path outside the authorized         
-    workspace                           
+ # Delete failed · hosts                
+   \\ path outside the authorized        
+     workspace                          
 ── diff closed
 v Edited users.ts
   +3 -2
@@ -63,11 +65,12 @@ v Edited users.ts
          });
    5    }
 ── batch open
-* tool.batch(3 tools)                   
-  v fs.read                             
-  * shell.exec                          
-  v fs.read                             
-  2 done · 1 running · 3 total          
+ * tool.batch                           
+   (3 tools)                            
+   v fs.read                            
+   * shell.exec                         
+   v fs.read                            
+   2 done · 1 running · 3 total         
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100
   tokens
@@ -112,17 +115,19 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
   1. src/db/users.ts — add limit and
      offset
 ── tool closed
-✓ shell.exec(npm test -- --run)         
-  └ PASS src/routes/users.test.ts       
-    PASS src/db/users.test.ts           
-    Tests: 42 passed, 42 total          
+ ✓ shell.exec                           
+   (npm test -- --run)                  
+   └ PASS src/routes/users.test.ts      
+     PASS src/db/users.test.ts          
+     Tests: 42 passed, 42 total         
 ── tool closed
-✗ shell.exec(npm run build)             
-  └ sh: tsc: command not found          
+ ✗ shell.exec                           
+   (npm run build)                      
+   └ sh: tsc: command not found         
 ── tool closed
-⊘ Delete failed · hosts                 
-  └ path outside the authorized         
-    workspace                           
+ ⊘ Delete failed · hosts                
+   └ path outside the authorized        
+     workspace                          
 ── diff closed
 ✓ Edited users.ts
   +3 −2
@@ -139,11 +144,12 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
          });
    5    }
 ── batch open
-● tool.batch(3 tools)                   
-  ✓ fs.read                             
-  ● shell.exec                          
-  ✓ fs.read                             
-  2 done · 1 running · 3 total          
+ ● tool.batch                           
+   (3 tools)                            
+   ✓ fs.read                            
+   ● shell.exec                         
+   ✓ fs.read                            
+   2 done · 1 running · 3 total         
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100
   tokens
@@ -188,17 +194,19 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and
   [38;2;74;222;128m   offset[39m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m         [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m           [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m          [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m                           [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m          [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m             [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m          [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m                           [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                      [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                 [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized[39m[0m[48;2;82;82;82m         [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mworkspace[39m[0m[48;2;82;82;82m                           [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m                [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized[39m[0m[48;2;24;28;36m        [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mworkspace[39m[0m[48;2;24;28;36m                          [49m[0m
 ── diff closed
 [38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m
   [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
@@ -215,11 +223,12 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
 [38;2;100;116;139m    [39m[0m [48;2;18;38;26m[38;2;74;222;128m [39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m });                            [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                   [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                             [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                          [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                             [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m          [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m                           [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                            [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                            [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                         [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m         [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100[39m[0m
   [38;2;103;232;249mtokens[39m[0m
@@ -264,17 +273,19 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and
   [38;2;74;222;128m   offset[39m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m         [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m           [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m          [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m                           [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m          [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m             [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m          [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m                           [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                      [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                 [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized[39m[0m[48;2;82;82;82m         [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mworkspace[39m[0m[48;2;82;82;82m                           [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m                [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized[39m[0m[48;2;24;28;36m        [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mworkspace[39m[0m[48;2;24;28;36m                          [49m[0m
 ── diff closed
 [38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m
   [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
@@ -291,11 +302,12 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
 [38;2;100;116;139m    [39m[0m [48;2;18;38;26m[38;2;74;222;128m [39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m });                            [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                   [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                             [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                          [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                             [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m          [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m                           [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                            [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                            [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                         [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m         [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100[39m[0m
   [38;2;103;232;249mtokens[39m[0m
@@ -338,19 +350,20 @@ exports[`golden fixtures > renders the scripted turn at 48c none ascii 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-v shell.exec(npm test -- --run)                 
-  \\ PASS src/routes/users.test.ts               
-    PASS src/db/users.test.ts                   
-    Tests: 42 passed, 42 total                  
+ v shell.exec  done - 1.2s                      
+   (npm test -- --run)                          
+   \\ PASS src/routes/users.test.ts              
+     PASS src/db/users.test.ts                  
+     Tests: 42 passed, 42 total                 
 ── tool closed
-x shell.exec(npm run build)                     
-  \\ sh: tsc: command not found                  
+ x shell.exec  failed · 127 · not found - 0.8s  
+   (npm run build)                              
+   \\ sh: tsc: command not found                 
 ── tool closed
-# Delete failed · hosts                         
-  \\ path outside the authorized workspace       
+ # Delete failed · hosts  blocked               
+   \\ path outside the authorized workspace      
 ── diff closed
-v Edited users.ts
-  +3 -2
+v Edited users.ts                          +3 -2
    1    export async function listUsers(req, res
         ) {
    2 -    const rows = await db.users.findMany()
@@ -363,11 +376,12 @@ v Edited users.ts
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-* tool.batch(3 tools)                           
-  v fs.read                                     
-  * shell.exec                                  
-  v fs.read                                     
-  2 done · 1 running · 3 total                  
+ * tool.batch  running - 53s                    
+   (3 tools)                                    
+   v fs.read                                    
+   * shell.exec                           ru... 
+   v fs.read                                    
+   2 done · 1 running · 3 total                 
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched:
@@ -409,19 +423,20 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-✓ shell.exec(npm test -- --run)                 
-  └ PASS src/routes/users.test.ts               
-    PASS src/db/users.test.ts                   
-    Tests: 42 passed, 42 total                  
+ ✓ shell.exec  done · 1.2s                      
+   (npm test -- --run)                          
+   └ PASS src/routes/users.test.ts              
+     PASS src/db/users.test.ts                  
+     Tests: 42 passed, 42 total                 
 ── tool closed
-✗ shell.exec(npm run build)                     
-  └ sh: tsc: command not found                  
+ ✗ shell.exec  failed · 127 · not found · 0.8s  
+   (npm run build)                              
+   └ sh: tsc: command not found                 
 ── tool closed
-⊘ Delete failed · hosts                         
-  └ path outside the authorized workspace       
+ ⊘ Delete failed · hosts  blocked               
+   └ path outside the authorized workspace      
 ── diff closed
-✓ Edited users.ts
-  +3 −2
+✓ Edited users.ts                          +3 −2
    1    export async function listUsers(req, res
         ) {
    2 −    const rows = await db.users.findMany()
@@ -434,11 +449,12 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-● tool.batch(3 tools)                           
-  ✓ fs.read                                     
-  ● shell.exec                                  
-  ✓ fs.read                                     
-  2 done · 1 running · 3 total                  
+ ● tool.batch  running · 53s                    
+   (3 tools)                                    
+   ✓ fs.read                                    
+   ● shell.exec                           runn… 
+   ✓ fs.read                                    
+   2 done · 1 running · 3 total                 
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched:
@@ -480,19 +496,20 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                 [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m               [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                  [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;24;28;36m                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                          [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m              [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                     [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                  [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;24;28;36m  [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                         [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m       [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m               [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m      [49m[0m
 ── diff closed
-[38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m
-  [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
+[38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                          [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m
 [38;2;100;116;139m    [39m[0m    [38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
 [38;2;100;116;139m   2[39m[0m [48;2;42;20;20m[38;2;248;113;113m-[39m[49m[0m  [48;2;42;20;20m[38;2;248;113;113m  const rows = await db.users.findMany()[39m[49m[0m
@@ -505,11 +522,12 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });    [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                           [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                     [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                  [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                     [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                  [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;24;28;36m                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                    [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                    [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                           [38;2;250;204;21mru[0m[48;2;24;28;36m... [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                 [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched:[39m[0m
@@ -551,19 +569,20 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                 [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m               [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                  [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;24;28;36m                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                          [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m              [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                     [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                  [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;24;28;36m  [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                         [49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m       [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m               [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m      [49m[0m
 ── diff closed
-[38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m
-  [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
+[38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                          [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m
 [38;2;100;116;139m    [39m[0m    [38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
 [38;2;100;116;139m   2[39m[0m [48;2;42;20;20m[38;2;248;113;113m−[39m[49m[0m  [48;2;42;20;20m[38;2;248;113;113m  const rows = await db.users.findMany()[39m[49m[0m
@@ -576,11 +595,12 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });    [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                           [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                     [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                  [49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                     [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                  [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;24;28;36m                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                    [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                    [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                           [38;2;250;204;21mrunn[0m[48;2;24;28;36m… [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                 [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched:[39m[0m
@@ -618,16 +638,18 @@ exports[`golden fixtures > renders the scripted turn at 68c none ascii 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-v shell.exec(npm test -- --run)                          done - 1.2s
-  \\ PASS src/routes/users.test.ts                                   
-    PASS src/db/users.test.ts                                       
-    Tests: 42 passed, 42 total                                      
+ v shell.exec  done - 1.2s                                          
+   (npm test -- --run)                                              
+   \\ PASS src/routes/users.test.ts                                  
+     PASS src/db/users.test.ts                                      
+     Tests: 42 passed, 42 total                                     
 ── tool closed
-x shell.exec(npm run build)          failed · 127 · not found - 0.8s
-  \\ sh: tsc: command not found                                      
+ x shell.exec  failed · 127 · not found - 0.8s                      
+   (npm run build)                                                  
+   \\ sh: tsc: command not found                                     
 ── tool closed
-# Delete failed · hosts                                      blocked
-  \\ path outside the authorized workspace                           
+ # Delete failed · hosts  blocked                                   
+   \\ path outside the authorized workspace                          
 ── diff closed
 v Edited users.ts                                              +3 -2
    1    export async function listUsers(req, res) {
@@ -638,11 +660,12 @@ v Edited users.ts                                              +3 -2
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-* tool.batch(3 tools)                                  running - 53s
-  v fs.read                                                         
-  * shell.exec                                               running
-  v fs.read                                                         
-  2 done · 1 running · 3 total                                      
+ * tool.batch  running - 53s                                        
+   (3 tools)                                                        
+   v fs.read                                                        
+   * shell.exec                                               ru... 
+   v fs.read                                                        
+   2 done · 1 running · 3 total                                     
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -679,16 +702,18 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-✓ shell.exec(npm test -- --run)                          done · 1.2s
-  └ PASS src/routes/users.test.ts                                   
-    PASS src/db/users.test.ts                                       
-    Tests: 42 passed, 42 total                                      
+ ✓ shell.exec  done · 1.2s                                          
+   (npm test -- --run)                                              
+   └ PASS src/routes/users.test.ts                                  
+     PASS src/db/users.test.ts                                      
+     Tests: 42 passed, 42 total                                     
 ── tool closed
-✗ shell.exec(npm run build)          failed · 127 · not found · 0.8s
-  └ sh: tsc: command not found                                      
+ ✗ shell.exec  failed · 127 · not found · 0.8s                      
+   (npm run build)                                                  
+   └ sh: tsc: command not found                                     
 ── tool closed
-⊘ Delete failed · hosts                                      blocked
-  └ path outside the authorized workspace                           
+ ⊘ Delete failed · hosts  blocked                                   
+   └ path outside the authorized workspace                          
 ── diff closed
 ✓ Edited users.ts                                              +3 −2
    1    export async function listUsers(req, res) {
@@ -699,11 +724,12 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-● tool.batch(3 tools)                                  running · 53s
-  ✓ fs.read                                                         
-  ● shell.exec                                               running
-  ✓ fs.read                                                         
-  2 done · 1 running · 3 total                                      
+ ● tool.batch  running · 53s                                        
+   (3 tools)                                                        
+   ✓ fs.read                                                        
+   ● shell.exec                                               runn… 
+   ✓ fs.read                                                        
+   2 done · 1 running · 3 total                                     
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -740,16 +766,18 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                          [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                      [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;24;28;36m                                          [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                     [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m          [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                      [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;24;28;36m                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                     [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                      [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                           [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                   [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                          [49m[0m
 ── diff closed
 [38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                              [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -760,11 +788,12 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                        [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                         [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                               [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                         [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                      [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;24;28;36m                                        [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                        [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                        [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                               [38;2;250;204;21mru[0m[48;2;24;28;36m... [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                        [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                     [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
@@ -801,16 +830,18 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                          [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                      [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;24;28;36m                                          [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                     [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m          [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                      [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;24;28;36m                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                     [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                      [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                           [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                   [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                          [49m[0m
 ── diff closed
 [38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                              [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -821,11 +852,12 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                        [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                         [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                               [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                         [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                      [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;24;28;36m                                        [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                        [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                        [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                               [38;2;250;204;21mrunn[0m[48;2;24;28;36m… [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                        [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                     [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
@@ -862,16 +894,18 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-v shell.exec(npm test -- --run)                                      done - 1.2s
-  \\ PASS src/routes/users.test.ts                                               
-    PASS src/db/users.test.ts                                                   
-    Tests: 42 passed, 42 total                                                  
+ v shell.exec  done - 1.2s                                                      
+   (npm test -- --run)                                                          
+   \\ PASS src/routes/users.test.ts                                              
+     PASS src/db/users.test.ts                                                  
+     Tests: 42 passed, 42 total                                                 
 ── tool closed
-x shell.exec(npm run build)                      failed · 127 · not found - 0.8s
-  \\ sh: tsc: command not found                                                  
+ x shell.exec  failed · 127 · not found - 0.8s                                  
+   (npm run build)                                                              
+   \\ sh: tsc: command not found                                                 
 ── tool closed
-# Delete failed · hosts                                                  blocked
-  \\ path outside the authorized workspace                                       
+ # Delete failed · hosts  blocked                                               
+   \\ path outside the authorized workspace                                      
 ── diff closed
 v Edited users.ts                                                          +3 -2
    1    export async function listUsers(req, res) {
@@ -882,11 +916,12 @@ v Edited users.ts                                                          +3 -2
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-* tool.batch(3 tools)                                              running - 53s
-  v fs.read                                                                     
-  * shell.exec                                                           running
-  v fs.read                                                                     
-  2 done · 1 running · 3 total                                                  
+ * tool.batch  running - 53s                                                    
+   (3 tools)                                                                    
+   v fs.read                                                                    
+   * shell.exec                                                           ru... 
+   v fs.read                                                                    
+   2 done · 1 running · 3 total                                                 
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -923,16 +958,18 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-✓ shell.exec(npm test -- --run)                                      done · 1.2s
-  └ PASS src/routes/users.test.ts                                               
-    PASS src/db/users.test.ts                                                   
-    Tests: 42 passed, 42 total                                                  
+ ✓ shell.exec  done · 1.2s                                                      
+   (npm test -- --run)                                                          
+   └ PASS src/routes/users.test.ts                                              
+     PASS src/db/users.test.ts                                                  
+     Tests: 42 passed, 42 total                                                 
 ── tool closed
-✗ shell.exec(npm run build)                      failed · 127 · not found · 0.8s
-  └ sh: tsc: command not found                                                  
+ ✗ shell.exec  failed · 127 · not found · 0.8s                                  
+   (npm run build)                                                              
+   └ sh: tsc: command not found                                                 
 ── tool closed
-⊘ Delete failed · hosts                                                  blocked
-  └ path outside the authorized workspace                                       
+ ⊘ Delete failed · hosts  blocked                                               
+   └ path outside the authorized workspace                                      
 ── diff closed
 ✓ Edited users.ts                                                          +3 −2
    1    export async function listUsers(req, res) {
@@ -943,11 +980,12 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-● tool.batch(3 tools)                                              running · 53s
-  ✓ fs.read                                                                     
-  ● shell.exec                                                           running
-  ✓ fs.read                                                                     
-  2 done · 1 running · 3 total                                                  
+ ● tool.batch  running · 53s                                                    
+   (3 tools)                                                                    
+   ✓ fs.read                                                                    
+   ● shell.exec                                                           runn… 
+   ✓ fs.read                                                                    
+   2 done · 1 running · 3 total                                                 
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts,
@@ -984,16 +1022,18 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor ascii 1`] 
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                      [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                               [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                  [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;24;28;36m                                                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                          [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                              [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                      [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                  [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;24;28;36m                                  [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                  [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                       [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                               [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                      [49m[0m
 ── diff closed
 [38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                          [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1004,11 +1044,12 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor ascii 1`] 
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                    [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                              [38;2;250;204;21mrunning - 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                           [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                  [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;24;28;36m                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                           [38;2;250;204;21mru[0m[48;2;24;28;36m... [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                 [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
@@ -1045,16 +1086,18 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor unicode 1`
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                      [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                               [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                  [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;24;28;36m                                                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                          [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                              [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                      [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                  [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;24;28;36m                                  [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                  [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                       [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                               [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                      [49m[0m
 ── diff closed
 [38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                          [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1065,11 +1108,12 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor unicode 1`
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                    [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                              [38;2;250;204;21mrunning · 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                           [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                  [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;24;28;36m                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                           [38;2;250;204;21mrunn[0m[48;2;24;28;36m… [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                 [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
@@ -1105,16 +1149,18 @@ exports[`golden fixtures > renders the scripted turn at 96c none ascii 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-v shell.exec(npm test -- --run)                                                      done - 1.2s
-  \\ PASS src/routes/users.test.ts                                                               
-    PASS src/db/users.test.ts                                                                   
-    Tests: 42 passed, 42 total                                                                  
+ v shell.exec  done - 1.2s                                                                      
+   (npm test -- --run)                                                                          
+   \\ PASS src/routes/users.test.ts                                                              
+     PASS src/db/users.test.ts                                                                  
+     Tests: 42 passed, 42 total                                                                 
 ── tool closed
-x shell.exec(npm run build)                                      failed · 127 · not found - 0.8s
-  \\ sh: tsc: command not found                                                                  
+ x shell.exec  failed · 127 · not found - 0.8s                                                  
+   (npm run build)                                                                              
+   \\ sh: tsc: command not found                                                                 
 ── tool closed
-# Delete failed · hosts                                                                  blocked
-  \\ path outside the authorized workspace                                                       
+ # Delete failed · hosts  blocked                                                               
+   \\ path outside the authorized workspace                                                      
 ── diff closed
 v Edited users.ts                                                                          +3 -2
    1    export async function listUsers(req, res) {
@@ -1125,11 +1171,12 @@ v Edited users.ts                                                               
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-* tool.batch(3 tools)                                                              running - 53s
-  v fs.read                                                                                     
-  * shell.exec                                                                           running
-  v fs.read                                                                                     
-  2 done · 1 running · 3 total                                                                  
+ * tool.batch  running - 53s                                                                    
+   (3 tools)                                                                                    
+   v fs.read                                                                                    
+   * shell.exec                                                                           ru... 
+   v fs.read                                                                                    
+   2 done · 1 running · 3 total                                                                 
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests
@@ -1165,16 +1212,18 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-✓ shell.exec(npm test -- --run)                                                      done · 1.2s
-  └ PASS src/routes/users.test.ts                                                               
-    PASS src/db/users.test.ts                                                                   
-    Tests: 42 passed, 42 total                                                                  
+ ✓ shell.exec  done · 1.2s                                                                      
+   (npm test -- --run)                                                                          
+   └ PASS src/routes/users.test.ts                                                              
+     PASS src/db/users.test.ts                                                                  
+     Tests: 42 passed, 42 total                                                                 
 ── tool closed
-✗ shell.exec(npm run build)                                      failed · 127 · not found · 0.8s
-  └ sh: tsc: command not found                                                                  
+ ✗ shell.exec  failed · 127 · not found · 0.8s                                                  
+   (npm run build)                                                                              
+   └ sh: tsc: command not found                                                                 
 ── tool closed
-⊘ Delete failed · hosts                                                                  blocked
-  └ path outside the authorized workspace                                                       
+ ⊘ Delete failed · hosts  blocked                                                               
+   └ path outside the authorized workspace                                                      
 ── diff closed
 ✓ Edited users.ts                                                                          +3 −2
    1    export async function listUsers(req, res) {
@@ -1185,11 +1234,12 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-● tool.batch(3 tools)                                                              running · 53s
-  ✓ fs.read                                                                                     
-  ● shell.exec                                                                           running
-  ✓ fs.read                                                                                     
-  2 done · 1 running · 3 total                                                                  
+ ● tool.batch  running · 53s                                                                    
+   (3 tools)                                                                                    
+   ✓ fs.read                                                                                    
+   ● shell.exec                                                                           runn… 
+   ✓ fs.read                                                                                    
+   2 done · 1 running · 3 total                                                                 
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests
@@ -1225,16 +1275,18 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                                      [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                                               [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                                  [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;24;28;36m                                                                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                                          [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                                              [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                                      [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                                  [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;24;28;36m                                                  [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                                  [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                                       [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                                               [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                                      [49m[0m
 ── diff closed
 [38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                                          [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1245,11 +1297,12 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                                    [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                                              [38;2;250;204;21mrunning - 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                                           [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                                  [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                                           [38;2;250;204;21mru[0m[48;2;24;28;36m... [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                                 [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests[39m[0m
@@ -1285,16 +1338,18 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                                      [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                                               [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                                   [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                                  [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;24;28;36m                                                                      [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                                          [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                                              [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                                  [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                                      [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                                  [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;24;28;36m                                                  [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                                              [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                                 [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                                  [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                                       [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                                               [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                                      [49m[0m
 ── diff closed
 [38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                                          [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1305,11 +1360,12 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                                    [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                                              [38;2;250;204;21mrunning · 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                                           [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                     [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                                  [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;24;28;36m                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                                           [38;2;250;204;21mrunn[0m[48;2;24;28;36m… [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                    [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                                 [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests[39m[0m
@@ -1345,16 +1401,18 @@ exports[`golden fixtures > renders the scripted turn at 120c none ascii 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-v shell.exec(npm test -- --run)                                                                              done - 1.2s
-  \\ PASS src/routes/users.test.ts                                                                                       
-    PASS src/db/users.test.ts                                                                                           
-    Tests: 42 passed, 42 total                                                                                          
+ v shell.exec  done - 1.2s                                                                                              
+   (npm test -- --run)                                                                                                  
+   \\ PASS src/routes/users.test.ts                                                                                      
+     PASS src/db/users.test.ts                                                                                          
+     Tests: 42 passed, 42 total                                                                                         
 ── tool closed
-x shell.exec(npm run build)                                                              failed · 127 · not found - 0.8s
-  \\ sh: tsc: command not found                                                                                          
+ x shell.exec  failed · 127 · not found - 0.8s                                                                          
+   (npm run build)                                                                                                      
+   \\ sh: tsc: command not found                                                                                         
 ── tool closed
-# Delete failed · hosts                                                                                          blocked
-  \\ path outside the authorized workspace                                                                               
+ # Delete failed · hosts  blocked                                                                                       
+   \\ path outside the authorized workspace                                                                              
 ── diff closed
 v Edited users.ts                                                                                                  +3 -2
    1    export async function listUsers(req, res) {
@@ -1365,11 +1423,12 @@ v Edited users.ts                                                               
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-* tool.batch(3 tools)                                                                                      running - 53s
-  v fs.read                                                                                                             
-  * shell.exec                                                                                                   running
-  v fs.read                                                                                                             
-  2 done · 1 running · 3 total                                                                                          
+ * tool.batch  running - 53s                                                                                            
+   (3 tools)                                                                                                            
+   v fs.read                                                                                                            
+   * shell.exec                                                                                                   ru... 
+   v fs.read                                                                                                            
+   2 done · 1 running · 3 total                                                                                         
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass."
@@ -1404,16 +1463,18 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-✓ shell.exec(npm test -- --run)                                                                              done · 1.2s
-  └ PASS src/routes/users.test.ts                                                                                       
-    PASS src/db/users.test.ts                                                                                           
-    Tests: 42 passed, 42 total                                                                                          
+ ✓ shell.exec  done · 1.2s                                                                                              
+   (npm test -- --run)                                                                                                  
+   └ PASS src/routes/users.test.ts                                                                                      
+     PASS src/db/users.test.ts                                                                                          
+     Tests: 42 passed, 42 total                                                                                         
 ── tool closed
-✗ shell.exec(npm run build)                                                              failed · 127 · not found · 0.8s
-  └ sh: tsc: command not found                                                                                          
+ ✗ shell.exec  failed · 127 · not found · 0.8s                                                                          
+   (npm run build)                                                                                                      
+   └ sh: tsc: command not found                                                                                         
 ── tool closed
-⊘ Delete failed · hosts                                                                                          blocked
-  └ path outside the authorized workspace                                                                               
+ ⊘ Delete failed · hosts  blocked                                                                                       
+   └ path outside the authorized workspace                                                                              
 ── diff closed
 ✓ Edited users.ts                                                                                                  +3 −2
    1    export async function listUsers(req, res) {
@@ -1424,11 +1485,12 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-● tool.batch(3 tools)                                                                                      running · 53s
-  ✓ fs.read                                                                                                             
-  ● shell.exec                                                                                                   running
-  ✓ fs.read                                                                                                             
-  2 done · 1 running · 3 total                                                                                          
+ ● tool.batch  running · 53s                                                                                            
+   (3 tools)                                                                                                            
+   ✓ fs.read                                                                                                            
+   ● shell.exec                                                                                                   runn… 
+   ✓ fs.read                                                                                                            
+   2 done · 1 running · 3 total                                                                                         
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass."
@@ -1463,16 +1525,18 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                                                              [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                                                                       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                                                           [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;24;28;36m                                                                                              [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                                                                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                                                                      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                                                          [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                                                              [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;24;28;36m                                                                          [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                                                                      [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                                                          [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                                                               [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                                                                       [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                                                              [49m[0m
 ── diff closed
 [38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                                                                  [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1483,11 +1547,12 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                                                            [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                                                                      [38;2;250;204;21mrunning - 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                                                                   [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;24;28;36m                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                                                                   [38;2;250;204;21mru[0m[48;2;24;28;36m... [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                                                         [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m"
@@ -1522,16 +1587,18 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                                                              [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                                                                       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                                                           [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;24;28;36m                                                                                              [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                                                                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                                                                      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                                                          [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                                                              [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;24;28;36m                                                                          [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                                                                      [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                                                          [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                                                               [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                                                                       [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                                                              [49m[0m
 ── diff closed
 [38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                                                                  [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1542,11 +1609,12 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                                                            [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                                                                      [38;2;250;204;21mrunning · 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                                                                   [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;24;28;36m                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                                                                   [38;2;250;204;21mrunn[0m[48;2;24;28;36m… [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                                                         [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m"
@@ -1581,16 +1649,18 @@ exports[`golden fixtures > renders the scripted turn at 200c none ascii 1`] = `
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-v shell.exec(npm test -- --run)                                                                                                                                                              done - 1.2s
-  \\ PASS src/routes/users.test.ts                                                                                                                                                                       
-    PASS src/db/users.test.ts                                                                                                                                                                           
-    Tests: 42 passed, 42 total                                                                                                                                                                          
+ v shell.exec  done - 1.2s                                                                                                                                                                              
+   (npm test -- --run)                                                                                                                                                                                  
+   \\ PASS src/routes/users.test.ts                                                                                                                                                                      
+     PASS src/db/users.test.ts                                                                                                                                                                          
+     Tests: 42 passed, 42 total                                                                                                                                                                         
 ── tool closed
-x shell.exec(npm run build)                                                                                                                                              failed · 127 · not found - 0.8s
-  \\ sh: tsc: command not found                                                                                                                                                                          
+ x shell.exec  failed · 127 · not found - 0.8s                                                                                                                                                          
+   (npm run build)                                                                                                                                                                                      
+   \\ sh: tsc: command not found                                                                                                                                                                         
 ── tool closed
-# Delete failed · hosts                                                                                                                                                                          blocked
-  \\ path outside the authorized workspace                                                                                                                                                               
+ # Delete failed · hosts  blocked                                                                                                                                                                       
+   \\ path outside the authorized workspace                                                                                                                                                              
 ── diff closed
 v Edited users.ts                                                                                                                                                                                  +3 -2
    1    export async function listUsers(req, res) {
@@ -1601,11 +1671,12 @@ v Edited users.ts                                                               
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-* tool.batch(3 tools)                                                                                                                                                                      running - 53s
-  v fs.read                                                                                                                                                                                             
-  * shell.exec                                                                                                                                                                                   running
-  v fs.read                                                                                                                                                                                             
-  2 done · 1 running · 3 total                                                                                                                                                                          
+ * tool.batch  running - 53s                                                                                                                                                                            
+   (3 tools)                                                                                                                                                                                            
+   v fs.read                                                                                                                                                                                            
+   * shell.exec                                                                                                                                                                                   ru... 
+   v fs.read                                                                                                                                                                                            
+   2 done · 1 running · 3 total                                                                                                                                                                         
 ── compacted closed
 * Compacted context - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass."
@@ -1640,16 +1711,18 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
 
   1. src/db/users.ts — add limit and offset
 ── tool closed
-✓ shell.exec(npm test -- --run)                                                                                                                                                              done · 1.2s
-  └ PASS src/routes/users.test.ts                                                                                                                                                                       
-    PASS src/db/users.test.ts                                                                                                                                                                           
-    Tests: 42 passed, 42 total                                                                                                                                                                          
+ ✓ shell.exec  done · 1.2s                                                                                                                                                                              
+   (npm test -- --run)                                                                                                                                                                                  
+   └ PASS src/routes/users.test.ts                                                                                                                                                                      
+     PASS src/db/users.test.ts                                                                                                                                                                          
+     Tests: 42 passed, 42 total                                                                                                                                                                         
 ── tool closed
-✗ shell.exec(npm run build)                                                                                                                                              failed · 127 · not found · 0.8s
-  └ sh: tsc: command not found                                                                                                                                                                          
+ ✗ shell.exec  failed · 127 · not found · 0.8s                                                                                                                                                          
+   (npm run build)                                                                                                                                                                                      
+   └ sh: tsc: command not found                                                                                                                                                                         
 ── tool closed
-⊘ Delete failed · hosts                                                                                                                                                                          blocked
-  └ path outside the authorized workspace                                                                                                                                                               
+ ⊘ Delete failed · hosts  blocked                                                                                                                                                                       
+   └ path outside the authorized workspace                                                                                                                                                              
 ── diff closed
 ✓ Edited users.ts                                                                                                                                                                                  +3 −2
    1    export async function listUsers(req, res) {
@@ -1660,11 +1733,12 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
    4 +    res.json({ rows, limit, offset });
    5    }
 ── batch open
-● tool.batch(3 tools)                                                                                                                                                                      running · 53s
-  ✓ fs.read                                                                                                                                                                                             
-  ● shell.exec                                                                                                                                                                                   running
-  ✓ fs.read                                                                                                                                                                                             
-  2 done · 1 running · 3 total                                                                                                                                                                          
+ ● tool.batch  running · 53s                                                                                                                                                                            
+   (3 tools)                                                                                                                                                                                            
+   ✓ fs.read                                                                                                                                                                                            
+   ● shell.exec                                                                                                                                                                                   runn… 
+   ✓ fs.read                                                                                                                                                                                            
+   2 done · 1 running · 3 total                                                                                                                                                                         
 ── compacted closed
 ✦ Compacted context · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass."
@@ -1699,16 +1773,18 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                                                                                                                                              [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                                                                                                                                                       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                                                                                                                                           [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone - 1.2s[39m[0m[48;2;24;28;36m                                                                                                                                                                              [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                                                                                                                                                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                                                                                                                                                      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                                                                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113mx[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                                                                                                                                              [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;248;113;113mx[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found - 0.8s[39m[0m[48;2;24;28;36m                                                                                                                                                          [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                                                                                                                                                      [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                                                                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m#[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                                                                                                                                          [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  \\ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                                                                                                                                               [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m#[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                                                                                                                                                       [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  \\ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                                                                                                                                              [49m[0m
 ── diff closed
 [38;2;74;222;128mv[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                                                                                                                                                  [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m-2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1719,11 +1795,12 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                                                                                                                                            [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                                                                                                                                                      [38;2;250;204;21mrunning - 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m*[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                                                                                                                                                   [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128mv[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning - 53s[39m[0m[48;2;24;28;36m                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m*[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                                                                                                                                                   [38;2;250;204;21mru[0m[48;2;24;28;36m... [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128mv[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                                                                                                                                         [49m[0m
 ── compacted closed
 [38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m"
@@ -1758,16 +1835,18 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
 
   [36m1.[39m [36msrc/db/users.ts[39m — add limit and offset
 ── tool closed
-[48;2;82;82;82m[38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;82;82;82m                                                                                                                                                              [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;82;82;82m                                                                                                                                                                       [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;82;82;82m                                                                                                                                                                           [49m[0m
-[48;2;82;82;82m    [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;82;82;82m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;74;222;128mdone · 1.2s[39m[0m[48;2;24;28;36m                                                                                                                                                                              [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm test -- --run)[39m[0m[48;2;24;28;36m                                                                                                                                                                                  [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mPASS src/routes/users.test.ts[39m[0m[48;2;24;28;36m                                                                                                                                                                      [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mPASS src/db/users.test.ts[39m[0m[48;2;24;28;36m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m     [38;2;125;211;252mTests: 42 passed, 42 total[39m[0m[48;2;24;28;36m                                                                                                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;248;113;113m✗[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(npm run build)[39m[0m[48;2;82;82;82m                                                                                                                                              [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;82;82;82m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;248;113;113m✗[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mshell.exec[22m[39m[0m[48;2;24;28;36m  [38;2;248;113;113mfailed · 127 · not found · 0.8s[39m[0m[48;2;24;28;36m                                                                                                                                                          [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(npm run build)[39m[0m[48;2;24;28;36m                                                                                                                                                                                      [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252msh: tsc: command not found[39m[0m[48;2;24;28;36m                                                                                                                                                                         [49m[0m
 ── tool closed
-[48;2;82;82;82m[38;2;250;204;21m⊘[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;82;82;82m                                                                                                                                                                          [38;2;250;204;21mblocked[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m[38;2;148;163;184m  └ [39m[0m[48;2;82;82;82m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;82;82;82m                                                                                                                                                               [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m⊘[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mDelete failed · hosts[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mblocked[39m[0m[48;2;24;28;36m                                                                                                                                                                       [49m[0m
+[48;2;24;28;36m [38;2;148;163;184m  └ [39m[0m[48;2;24;28;36m[38;2;125;211;252mpath outside the authorized workspace[39m[0m[48;2;24;28;36m                                                                                                                                                              [49m[0m
 ── diff closed
 [38;2;74;222;128m✓[39m[0m [38;2;103;232;249m[1mEdited users.ts[22m[39m[0m                                                                                                                                                                                  [38;2;74;222;128m+3[39m[0m [38;2;248;113;113m−2[39m[0m
 [38;2;100;116;139m   1[39m[0m    [38;2;86;156;214mexport[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214masync[39m[0m[38;2;248;250;252m [39m[0m[38;2;86;156;214mfunction[39m[0m[38;2;248;250;252m [39m[0m[38;2;220;220;170mlistUsers[39m[0m[38;2;148;163;184m([39m[0m[38;2;248;250;252mreq[39m[0m[38;2;148;163;184m,[39m[0m[38;2;248;250;252m res[39m[0m[38;2;148;163;184m)[39m[0m[38;2;248;250;252m [39m[0m[38;2;148;163;184m{[39m[0m
@@ -1778,11 +1857,12 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
 [38;2;100;116;139m   4[39m[0m [48;2;18;38;26m[38;2;74;222;128m+[39m[49m[0m  [48;2;18;38;26m[38;2;74;222;128m  res.json({ rows, limit, offset });                                                                                                                                                            [39m[49m[0m
 [38;2;100;116;139m   5[39m[0m    [38;2;148;163;184m}[39m[0m
 ── batch open
-[48;2;82;82;82m[38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;82;82;82m[38;2;148;163;184m(3 tools)[39m[0m[48;2;82;82;82m                                                                                                                                                                      [38;2;250;204;21mrunning · 53s[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;250;204;21m●[39m[0m[48;2;82;82;82m [38;2;103;232;249mshell.exec[39m[0m[48;2;82;82;82m                                                                                                                                                                                   [38;2;250;204;21mrunning[39m[0m[48;2;82;82;82m[49m[0m
-[48;2;82;82;82m  [38;2;74;222;128m✓[39m[0m[48;2;82;82;82m [38;2;103;232;249mfs.read[39m[0m[48;2;82;82;82m                                                                                                                                                                                             [49m[0m
-[48;2;82;82;82m  [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;82;82;82m                                                                                                                                                                          [49m[0m
+[48;2;24;28;36m [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249m[1mtool.batch[22m[39m[0m[48;2;24;28;36m  [38;2;250;204;21mrunning · 53s[39m[0m[48;2;24;28;36m                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m(3 tools)[39m[0m[48;2;24;28;36m                                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;250;204;21m●[39m[0m[48;2;24;28;36m [38;2;103;232;249mshell.exec[39m[0m[48;2;24;28;36m                                                                                                                                                                                   [38;2;250;204;21mrunn[0m[48;2;24;28;36m… [49m[0m
+[48;2;24;28;36m   [38;2;74;222;128m✓[39m[0m[48;2;24;28;36m [38;2;103;232;249mfs.read[39m[0m[48;2;24;28;36m                                                                                                                                                                                            [49m[0m
+[48;2;24;28;36m   [38;2;148;163;184m2 done · 1 running · 3 total[39m[0m[48;2;24;28;36m                                                                                                                                                                         [49m[0m
 ── compacted closed
 [38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m"

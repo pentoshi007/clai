@@ -37,6 +37,9 @@ export interface ToolItem {
   artifactPath?: string | undefined;
   fileChanges?: readonly FileChange[] | undefined;
   done: boolean;
+  timestamp?: number | undefined;
+  endedAt?: number | undefined;
+  durationMs?: number | undefined;
 }
 
 export interface NoticeItem {

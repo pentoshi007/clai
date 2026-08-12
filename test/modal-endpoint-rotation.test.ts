@@ -38,9 +38,12 @@ vi.mock("../src/llm/groq.js", () => ({
   },
 }));
 
-let modalKeys: Array<{ id: string; value: string; createdAt: number }> = [];
-let groqKeys: Array<{ id: string; value: string; createdAt: number }> = [];
+let modalKeys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }> = [];
+let groqKeys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }> = [];
 let endpointUrls: string[] = [EP1, EP2];
+let disabledEndpoints: string[] = [];
+let persistedEndpointIndex: number | undefined;
+let activeEndpointOverride: string | undefined;
 
 vi.mock("../src/store/keys.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/store/keys.js")>();
@@ -74,9 +77,13 @@ vi.mock("../src/store/config.js", async (importOriginal) => {
     providerUsesEndpoints: (provider: string) => provider === "modal",
     getProviderEndpoints: (provider: string) =>
       provider === "modal"
-        ? { urls: endpointUrls, activeIndex: 0 }
+        ? { urls: endpointUrls, activeIndex: 0, disabledUrls: disabledEndpoints }
         : { urls: [], activeIndex: 0 },
-    getActiveProviderEndpoint: () => endpointUrls[0] ?? "",
+    getActiveProviderEndpoint: () => activeEndpointOverride ?? endpointUrls[0] ?? "",
+    setActiveProviderEndpoint: (_provider: string, index: number) => {
+      persistedEndpointIndex = index;
+      return { urls: endpointUrls, activeIndex: index, disabledUrls: disabledEndpoints };
+    },
   };
 });
 
@@ -119,6 +126,9 @@ describe("modal endpoint + key rotation", () => {
     modalComplete.mockReset();
     groqComplete.mockReset();
     endpointUrls = [EP1, EP2];
+    disabledEndpoints = [];
+    persistedEndpointIndex = undefined;
+    activeEndpointOverride = undefined;
     modalKeys = [
       { id: "k1", value: KEY1, createdAt: 0 },
       { id: "k2", value: KEY2, createdAt: 0 },
@@ -197,6 +207,85 @@ describe("modal endpoint + key rotation", () => {
       apiKey: KEY1,
       baseUrl: EP1,
     });
+  });
+
+  it("skips disabled keys in the rotation plan", async () => {
+    modalKeys = [
+      { id: "k1", value: KEY1, createdAt: 0, disabled: true },
+      { id: "k2", value: KEY2, createdAt: 0 },
+    ];
+    modalComplete.mockResolvedValueOnce(ok());
+
+    const { completeWithProvider } = await import("../src/llm/router.js");
+    const result = await completeWithProvider(request(), { maxRetries: 0 });
+
+    expect(result.text).toBe("ok");
+    expect(modalComplete).toHaveBeenCalledTimes(1);
+    expect(modalComplete.mock.calls[0]![1]).toMatchObject({ apiKey: KEY2 });
+  });
+
+  it("throws when every key is disabled", async () => {
+    modalKeys = [
+      { id: "k1", value: KEY1, createdAt: 0, disabled: true },
+      { id: "k2", value: KEY2, createdAt: 0, disabled: true },
+    ];
+
+    const { completeWithProvider } = await import("../src/llm/router.js");
+    await expect(
+      completeWithProvider(request(), { maxRetries: 0 }),
+    ).rejects.toThrow(/disabled/);
+    expect(modalComplete).not.toHaveBeenCalled();
+  });
+
+  it("skips disabled endpoints during failover", async () => {
+    disabledEndpoints = [EP1];
+    modalComplete.mockResolvedValueOnce(ok());
+
+    const { completeWithProvider } = await import("../src/llm/router.js");
+    const result = await completeWithProvider(request(), { maxRetries: 0 });
+
+    expect(result.text).toBe("ok");
+    expect(modalComplete).toHaveBeenCalledTimes(1);
+    expect(modalComplete.mock.calls[0]![1]).toMatchObject({ baseUrl: EP2 });
+  });
+
+  it("persists the winning endpoint as active after failover", async () => {
+    modalComplete
+      .mockRejectedValueOnce(new ProviderError("wrong workspace", 401))
+      .mockRejectedValueOnce(new ProviderError("wrong workspace", 401))
+      .mockResolvedValueOnce(ok());
+
+    const { completeWithProvider } = await import("../src/llm/router.js");
+    const result = await completeWithProvider(request(), { maxRetries: 0 });
+
+    expect(result.text).toBe("ok");
+    expect(modalComplete.mock.calls[2]![1]).toMatchObject({ baseUrl: EP2 });
+    expect(persistedEndpointIndex).toBe(1);
+  });
+
+  it("leaves the active endpoint untouched when the sticky endpoint wins", async () => {
+    modalComplete.mockResolvedValueOnce(ok());
+
+    const { completeWithProvider } = await import("../src/llm/router.js");
+    const result = await completeWithProvider(request(), { maxRetries: 0 });
+
+    expect(result.text).toBe("ok");
+    expect(persistedEndpointIndex).toBeUndefined();
+  });
+
+  it("does not move the stored active endpoint while an env override is authoritative", async () => {
+    activeEndpointOverride = "https://env-override.example.com/v1";
+    modalComplete
+      .mockRejectedValueOnce(new ProviderError("wrong workspace", 401))
+      .mockRejectedValueOnce(new ProviderError("wrong workspace", 401))
+      .mockResolvedValueOnce(ok());
+
+    const { completeWithProvider } = await import("../src/llm/router.js");
+    const result = await completeWithProvider(request(), { maxRetries: 0 });
+
+    expect(result.text).toBe("ok");
+    expect(modalComplete.mock.calls[2]![1]).toMatchObject({ baseUrl: EP2 });
+    expect(persistedEndpointIndex).toBeUndefined();
   });
 
   describe("single endpoint", () => {

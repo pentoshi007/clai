@@ -107,6 +107,7 @@ export function modifiersFromCsi(value: number | undefined): {
   alt: boolean;
   shift: boolean;
   meta: boolean;
+  super: boolean | undefined;
 } {
   const mask = value === undefined || value < 1 ? 0 : value - 1;
   return {
@@ -114,6 +115,7 @@ export function modifiersFromCsi(value: number | undefined): {
     alt: (mask & MOD_ALT) !== 0,
     ctrl: (mask & MOD_CTRL) !== 0,
     meta: (mask & MOD_META) !== 0,
+    super: (mask & MOD_META) !== 0 ? true : undefined,
   };
 }
 

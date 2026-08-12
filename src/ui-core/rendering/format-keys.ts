@@ -9,6 +9,7 @@ export interface SearchKeyStatus {
   keyCount?: number | undefined;
   maskedKeys?: readonly string[] | undefined;
   activeMaskedKey?: string | undefined;
+  keyDisabled?: readonly boolean[] | undefined;
 }
 
 /** Render credential metadata without ever including an unmasked secret. */
@@ -46,7 +47,7 @@ export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]
     if (s.endpoints && s.endpoints.length > 1) {
       s.endpoints.forEach((url, i) => {
         llmRows.push(
-          `      (${i + 1}) ${url}${i === (s.activeEndpointIndex ?? 0) ? " ★ active" : ""}`,
+          `      (${i + 1}) ${url}${i === (s.activeEndpointIndex ?? 0) ? " ★ active" : ""}${s.disabledEndpoints?.includes(url) ? " (disabled)" : ""}`,
         );
       });
     }
@@ -58,7 +59,7 @@ export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]
       }
       s.maskedKeys.forEach((masked, i) => {
         llmRows.push(
-          `      [${i + 1}] ${masked}${i === activeIdx ? " ★ active" : ""}`,
+          `      [${i + 1}] ${masked}${i === activeIdx ? " ★ active" : ""}${s.keyDisabled?.[i] === true ? " (disabled)" : ""}`,
         );
       });
     }
@@ -82,7 +83,7 @@ export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]
       }
       s.maskedKeys.forEach((masked, index) => {
         searchRows.push(
-          `      [${index + 1}] ${masked}${index === activeIdx ? " ★ active" : ""}`,
+          `      [${index + 1}] ${masked}${index === activeIdx ? " ★ active" : ""}${s.keyDisabled?.[index] === true ? " (disabled)" : ""}`,
         );
       });
     }

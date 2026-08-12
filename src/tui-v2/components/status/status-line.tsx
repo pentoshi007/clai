@@ -66,13 +66,14 @@ export interface StatusLineProps {
   readonly onTogglePlan?: (() => void) | undefined;
   readonly onJumpTop?: (() => void) | undefined;
   readonly onJumpBottom?: (() => void) | undefined;
-  /** Copy the draft to the clipboard, then clear it (Ctrl+Shift+X). */
+  /** Copy the draft to the clipboard, then clear it (Ctrl+X). */
   readonly onCutDraft?: (() => void) | undefined;
+  /** Clear the draft without copying (Ctrl+Q). */
+  readonly onClearDraft?: (() => void) | undefined;
   /** Open the slash-command list (same source as typing "/" in the composer). */
   readonly onOpenCommands?: (() => void) | undefined;
-  /** Draft is non-empty — gates the ^X / ⇧^X hints. */
+  /** Draft is non-empty — gates the ^X / ^Q hints. */
   readonly hasDraft?: boolean | undefined;
-  readonly onOpenShortcuts?: (() => void) | undefined;
   readonly onCycleMode?: (() => void) | undefined;
   /** Whether the first Esc has armed cancellation for 1.5 seconds. */
   readonly cancelArmed?: boolean | undefined;
@@ -283,9 +284,9 @@ export function StatusLine(props: StatusLineProps): ReactNode {
     onJumpTop,
     onJumpBottom,
     onCutDraft,
+    onClearDraft,
     onOpenCommands,
     hasDraft = false,
-    onOpenShortcuts,
     onCycleMode,
     cancelArmed = false,
     onRequestCancel,
@@ -557,12 +558,9 @@ export function StatusLine(props: StatusLineProps): ReactNode {
           </>
         ) : null}
 
-        {/* Thin idle row — full binding list lives behind /shortcuts. */}
         {idleHints.includes("commands") ? (
           <>
             {sep(theme)}
-            {/* Just "/" at rest; hover names it and a click opens the same
-                command list that typing "/" in the composer shows. */}
             <ClickableHint
               short="/"
               expand="/ commands"
@@ -581,6 +579,18 @@ export function StatusLine(props: StatusLineProps): ReactNode {
               active={false}
               theme={theme}
               onClick={onCutDraft}
+            />
+          </>
+        ) : null}
+        {idleHints.includes("clear-draft") ? (
+          <>
+            {sep(theme)}
+            <ClickableHint
+              short="^Q"
+              expand="clear draft"
+              active={false}
+              theme={theme}
+              onClick={onClearDraft}
             />
           </>
         ) : null}
@@ -605,18 +615,6 @@ export function StatusLine(props: StatusLineProps): ReactNode {
               active={outputExpanded}
               theme={theme}
               onClick={onToggleOutput}
-            />
-          </>
-        ) : null}
-        {idleHints.includes("shortcuts") ? (
-          <>
-            {sep(theme)}
-            <ClickableHint
-              short="/shortcuts"
-              expand="keyboard shortcuts"
-              active={false}
-              theme={theme}
-              onClick={onOpenShortcuts}
             />
           </>
         ) : null}

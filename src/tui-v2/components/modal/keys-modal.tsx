@@ -38,6 +38,7 @@ interface KeyRow {
   readonly placeholder: string;
   /** Live typed text (replacement or new). */
   readonly text: string;
+  readonly disabled: boolean;
 }
 
 let nextRowId = 1;
@@ -50,7 +51,7 @@ function itemLabelOf(request: KeysEditorRequest): string {
 function rowsFromRequest(request: KeysEditorRequest): KeyRow[] {
   const label = itemLabelOf(request);
   if (request.initialKeys.length === 0) {
-    return [{ id: nextRowId++, placeholder: `paste ${label}`, text: "" }];
+    return [{ id: nextRowId++, placeholder: `paste ${label}`, text: "", disabled: false }];
   }
   return [
     ...request.initialKeys.map((k) => ({
@@ -58,8 +59,9 @@ function rowsFromRequest(request: KeysEditorRequest): KeyRow[] {
       slotId: k.id,
       placeholder: k.masked,
       text: "",
+      disabled: k.disabled === true,
     })),
-    { id: nextRowId++, placeholder: `paste another ${label}`, text: "" },
+    { id: nextRowId++, placeholder: `paste another ${label}`, text: "", disabled: false },
   ];
 }
 
@@ -141,7 +143,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     }
     const next = [
       ...synced,
-      { id: nextRowId++, placeholder: `paste another ${itemLabel}`, text: "" },
+      { id: nextRowId++, placeholder: `paste another ${itemLabel}`, text: "", disabled: false },
     ];
     setRows(next);
     setFocusIdx(next.length - 1);
@@ -154,6 +156,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
         id: nextRowId++,
         placeholder: `paste ${itemLabel}`,
         text: "",
+        disabled: false,
       };
       setRows([only]);
       setFocusIdx(0);
@@ -177,16 +180,22 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     queueMicrotask(() => applyTextToInputs(next));
   }
 
+  function toggleDisabled(index: number): void {
+    setRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, disabled: !row.disabled } : row)),
+    );
+  }
+
   function submit(): void {
     const synced = syncFromInputs();
-    const out: { slotId?: string; value: string }[] = [];
+    const out: { slotId?: string; value: string; disabled?: boolean }[] = [];
     for (const row of synced) {
       const value = row.text.trim();
       if (row.slotId) {
         // Existing: empty value keeps stored secret; typed value replaces.
-        out.push({ slotId: row.slotId, value });
+        out.push({ slotId: row.slotId, value, disabled: row.disabled });
       } else if (value) {
-        out.push({ value });
+        out.push({ value, disabled: row.disabled });
       }
     }
     services.overlay.answerKeys({ action: "save", rows: out, activeIndex: activeKeyIdx });
@@ -207,6 +216,11 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     if (chord === "ctrl+a") {
       key.preventDefault();
       addRow();
+      return;
+    }
+    if (chord === "ctrl+d") {
+      key.preventDefault();
+      toggleDisabled(focusIdx);
       return;
     }
     // Single-letter 'r' only when not typing in an input with content — use
@@ -277,6 +291,16 @@ export function KeysModal(props: KeysModalProps): ReactNode {
               content={`${index + 1}. `}
               style={{ fg: theme.muted, width: 4, flexShrink: 0 }}
             />
+            <text
+              content={row.disabled ? " ⊘ " : " ○ "}
+              style={{
+                fg: row.disabled ? theme.white : theme.muted,
+                ...(row.disabled ? { bg: theme.failedBg } : {}),
+                attributes: row.disabled ? TextAttributes.BOLD : TextAttributes.DIM,
+                flexShrink: 0,
+              }}
+              onMouseDown={() => toggleDisabled(index)}
+            />
             {showActiveToggle ? (
               <text
                 content={isExisting ? (isActive ? " ★ " : " ☆ ") : "   "}
@@ -302,9 +326,9 @@ export function KeysModal(props: KeysModalProps): ReactNode {
                 setFocusIdx(index);
               }}
               backgroundColor={theme.background}
-              textColor={theme.foreground}
+              textColor={row.disabled ? theme.muted : theme.foreground}
               focusedBackgroundColor={theme.background}
-              focusedTextColor={theme.foreground}
+              focusedTextColor={row.disabled ? theme.muted : theme.foreground}
               cursorColor={ACCENT}
               style={{ flexGrow: 1, minWidth: 20 }}
             />
@@ -362,7 +386,7 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       </box>
 
       <text
-        content={`enter:save  ·  ^a / +:add  ·  ✕:remove${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
+        content={`enter:save  ·  ^a / +:add  ·  ✕:remove${showActiveToggle ? "  ·  ★:set active" : ""}  ·  ^d / ○:disable  ·  ^r:reset all  ·  esc:cancel${typedCount ? `  ·  ${typedCount} new/edited` : ""}`}
         style={{ fg: theme.muted, attributes: TextAttributes.DIM }}
       />
     </box>

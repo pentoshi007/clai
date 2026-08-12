@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { render } from "ink-testing-library";
 
@@ -67,6 +67,36 @@ describe("ClassicApp shell", () => {
     expect(frame).toContain("classic");
     expect(frame).toContain("Ctrl+C twice to exit");
     expect(frame).toContain(services.session.getState().mode);
+    unmount();
+    cleanup();
+    services.dispose();
+  });
+
+  it("updates the agent card mode when Shift+Tab cycles the mode", async () => {
+    const services = makeServices();
+    const { lastFrame, unmount, cleanup } = render(
+      createElement(ServicesProvider, {
+        services,
+        children: createElement(ClassicApp),
+      }),
+    );
+    const initial = lastFrame() ?? "";
+    expect(initial).toContain("AGENT MODE");
+
+    services.session.setMode("plan");
+    await vi.waitFor(() => {
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("PLAN MODE");
+      expect(frame).not.toContain("AGENT MODE");
+    });
+
+    services.session.setMode("ask");
+    await vi.waitFor(() => {
+      const frame = lastFrame() ?? "";
+      expect(frame).toContain("ASK MODE");
+      expect(frame).not.toContain("PLAN MODE");
+    });
+
     unmount();
     cleanup();
     services.dispose();

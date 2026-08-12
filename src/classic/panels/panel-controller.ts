@@ -83,7 +83,7 @@ export class PanelController {
     const snapshot = this.snapshot;
     const columns = this.deps.columns();
     const terminalRows = this.deps.rows();
-    const generous = Math.max(OVERLAY_MIN_ROWS, Math.floor(terminalRows * 0.6));
+    const generous = Math.max(OVERLAY_MIN_ROWS, Math.floor(terminalRows * 0.92));
     switch (snapshot.overlay.kind) {
       case "none":
         return snapshot.search === undefined ? 0 : generous;

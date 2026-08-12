@@ -13,6 +13,7 @@ export interface KeysPanelRow {
   readonly slotId: string | undefined;
   readonly masked: string | undefined;
   readonly value: string;
+  readonly disabled: boolean;
 }
 
 export interface KeysPanelState {
@@ -30,6 +31,7 @@ export function keysInitialState(request: KeysEditorRequest): KeysPanelState {
       slotId: slot.id,
       masked: slot.masked,
       value: "",
+      disabled: slot.disabled === true,
     })),
     cursor: 0,
     activeIndex: Math.max(0, request.activeIndex ?? 0),
@@ -76,7 +78,7 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
       const value = state.draft.trim();
       if (value === "") return handled({ ...state, editing: false, draft: "" });
       const rows = isAddRow
-        ? [...state.rows, { slotId: undefined, masked: undefined, value }]
+        ? [...state.rows, { slotId: undefined, masked: undefined, value, disabled: false }]
         : state.rows.map((row, index) =>
             index === state.cursor ? { ...row, value } : row,
           );
@@ -103,6 +105,13 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
     if (isAddRow) return handled(state);
     return handled({ ...state, activeIndex: state.cursor });
   }
+  if (chord === "d") {
+    if (isAddRow) return handled(state);
+    const rows = state.rows.map((row, index) =>
+      index === state.cursor ? { ...row, disabled: !row.disabled } : row,
+    );
+    return handled({ ...state, rows });
+  }
   if (chord === "ctrl+d") {
     if (isAddRow || state.rows.length === 0) return handled(state);
     const rows = state.rows.filter((_, index) => index !== state.cursor);
@@ -122,7 +131,9 @@ export function keysKey(input: KeysKeyInput): PanelKeyResult<KeysPanelState> {
       answer: {
         action: "save",
         rows: state.rows.map((row) =>
-          row.slotId === undefined ? { value: row.value } : { slotId: row.slotId, value: row.value },
+          row.slotId === undefined
+            ? { value: row.value, disabled: row.disabled }
+            : { slotId: row.slotId, value: row.value, disabled: row.disabled },
         ),
         activeIndex: state.activeIndex,
       },
@@ -184,12 +195,13 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
     const row = state.rows[index]!;
     const sticky =
       index === state.activeIndex ? ink.fg("activity", ink.glyphs.sticky) : ink.fg("muted", ink.glyphs.stickyOff);
+    const disabledTag = row.disabled ? `  ${ink.fg("muted", "· disabled")}` : "";
     body.push(
       listRow({
         ink,
         width,
         columns: input.columns,
-        label: `${sticky} ${index + 1}  ${rowValue(row, reveal, editing, state.draft)}`,
+        label: `${sticky} ${index + 1}  ${rowValue(row, reveal, editing, state.draft)}${disabledTag}`,
         active,
         trailing: ink.fg("muted", ink.glyphs.remove),
       }),
@@ -205,6 +217,7 @@ export function keysView(input: KeysViewInput): PanelFrameInput {
     hints: [
       `${ink.glyphs.enter} edit`,
       "space set active",
+      "d disable",
       "^D remove",
       "^S save",
       "^R reset",

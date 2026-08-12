@@ -117,9 +117,31 @@ export class InputRouter {
       this.deps.onPanelKey(key, chord, context);
       return;
     }
-
-    // When focus is on composer, page keys should scroll the transcript
-    // instead of being swallowed by the composer history handler.
+    if (context === "composer") {
+      const composerChords = new Set([
+        "alt+backspace",
+        "meta+backspace",
+        "ctrl+backspace",
+        "super+backspace",
+        "alt+delete",
+        "meta+delete",
+        "ctrl+delete",
+        "super+delete",
+        "ctrl+u",
+        "meta+u",
+        "ctrl+k",
+        "ctrl+d",
+        "alt+enter",
+        "ctrl+enter",
+        "meta+enter",
+        "super+enter",
+        "ctrl+n",
+      ]);
+      if (composerChords.has(chord) || chord.endsWith("+backspace") || chord.endsWith("+delete")) {
+        this.deps.onPanelKey(key, chord, context);
+        return;
+      }
+    }
     if (
       context === "composer" &&
       (chord === "pageup" || chord === "pagedown" || chord === "ctrl+u" || chord === "ctrl+d")

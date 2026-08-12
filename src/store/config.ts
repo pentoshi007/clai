@@ -15,6 +15,7 @@ export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
 export interface ProviderEndpoints {
   urls: string[];
   activeIndex: number;
+  disabledUrls?: string[] | undefined;
 }
 
 /** Same ceiling as API keys, so both editors behave identically. */
@@ -464,7 +465,14 @@ export function getProviderEndpoints(provider: ProviderId): ProviderEndpoints {
     urls.length > 0
       ? Math.min(Math.max(stored?.activeIndex ?? 0, 0), urls.length - 1)
       : 0;
-  return { urls, activeIndex };
+  const disabledUrls = (stored?.disabledUrls ?? []).filter((url) =>
+    urls.includes(url),
+  );
+  return {
+    urls,
+    activeIndex,
+    ...(disabledUrls.length > 0 ? { disabledUrls } : {}),
+  };
 }
 
 /** Replace the whole list (endpoint editor Save). Empty list clears it. */
@@ -472,6 +480,7 @@ export function setProviderEndpoints(
   provider: ProviderId,
   urls: readonly string[],
   activeIndex = 0,
+  disabledUrls?: readonly string[],
 ): ProviderEndpoints {
   const seen = new Set<string>();
   const unique: string[] = [];
@@ -482,10 +491,15 @@ export function setProviderEndpoints(
     unique.push(url);
     if (unique.length >= MAX_PROVIDER_ENDPOINTS) break;
   }
+  const previousDisabled = getConfig().providerEndpoints?.[provider]?.disabledUrls ?? [];
+  const nextDisabled = (disabledUrls ?? previousDisabled).filter((url) =>
+    unique.includes(url),
+  );
   const next: ProviderEndpoints = {
     urls: unique,
     activeIndex:
       unique.length > 0 ? Math.min(Math.max(activeIndex, 0), unique.length - 1) : 0,
+    ...(nextDisabled.length > 0 ? { disabledUrls: nextDisabled } : {}),
   };
   const providerEndpoints = { ...getConfig().providerEndpoints, [provider]: next };
   const patch: Partial<ClaiConfig> = { providerEndpoints };
@@ -533,6 +547,27 @@ export function setActiveProviderEndpoint(
   return setProviderEndpoints(provider, current.urls, index);
 }
 
+export function setProviderEndpointDisabled(
+  provider: ProviderId,
+  url: string,
+  disabled: boolean,
+): ProviderEndpoints {
+  const current = getProviderEndpoints(provider);
+  const trimmed = url.trim();
+  const disabledUrls = new Set(current.disabledUrls ?? []);
+  if (disabled) {
+    if (current.urls.includes(trimmed)) disabledUrls.add(trimmed);
+  } else {
+    disabledUrls.delete(trimmed);
+  }
+  return setProviderEndpoints(
+    provider,
+    current.urls,
+    current.activeIndex,
+    [...disabledUrls],
+  );
+}
+
 /**
  * The base URL a request should use. The provider's env override wins so a
  * shell can retarget clai without rewriting config; otherwise the sticky active
@@ -543,8 +578,14 @@ export function getActiveProviderEndpoint(provider: ProviderId): string {
   const envVar = providerEndpointEnvVar(provider);
   const fromEnv = envVar ? process.env[envVar]?.trim() : undefined;
   if (fromEnv) return fromEnv;
-  const { urls, activeIndex } = getProviderEndpoints(provider);
-  return urls[activeIndex] ?? "";
+  const { urls, activeIndex, disabledUrls } = getProviderEndpoints(provider);
+  if (urls.length === 0) return "";
+  const disabled = new Set(disabledUrls ?? []);
+  for (let offset = 0; offset < urls.length; offset += 1) {
+    const candidate = urls[(activeIndex + offset) % urls.length]!;
+    if (!disabled.has(candidate)) return candidate;
+  }
+  return "";
 }
 
 export function getProviderModel(provider: ProviderId): string {

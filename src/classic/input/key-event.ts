@@ -4,6 +4,7 @@ export interface KeyEvent {
   readonly alt: boolean;
   readonly shift: boolean;
   readonly meta: boolean;
+  readonly super?: boolean | undefined;
   readonly text: string;
 }
 
@@ -31,6 +32,7 @@ export interface KeyModifiers {
   readonly alt?: boolean | undefined;
   readonly shift?: boolean | undefined;
   readonly meta?: boolean | undefined;
+  readonly super?: boolean | undefined;
 }
 
 export function keyEvent(
@@ -44,6 +46,7 @@ export function keyEvent(
     alt: modifiers.alt === true,
     shift: modifiers.shift === true,
     meta: modifiers.meta === true,
+    super: modifiers.super === true ? true : undefined,
     text,
   };
 }

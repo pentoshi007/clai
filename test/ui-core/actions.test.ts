@@ -98,7 +98,8 @@ describe("ActionRouter", () => {
     expect(router.resolve("ctrl+u", "transcript")).toBe("transcript.top");
     expect(router.resolve("ctrl+d", "transcript")).toBe("transcript.bottom");
     expect(router.resolve("ctrl+x", "composer")).toBe("editor.cut-draft");
-    expect(router.resolve("ctrl+shift+x", "composer")).toBe("editor.cut-draft");
+    expect(router.resolve("ctrl+q", "composer")).toBe("editor.clear");
+    expect(router.resolve("ctrl+shift+x", "composer")).toBeUndefined();
     // No bare g/G bindings.
     expect(router.resolve("g", "transcript")).toBeUndefined();
     expect(router.resolve("shift+g", "transcript")).toBeUndefined();

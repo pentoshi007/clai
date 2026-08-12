@@ -66,6 +66,75 @@ describe("openai tools adapter", () => {
     });
   });
 
+  it("replays unsigned reasoning as reasoning_content on tool-call turns", () => {
+    const wire = toOpenAiToolMessages(
+      [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: "",
+          reasoningBlock: { text: "let me think" },
+          toolCalls: [{ id: "call_1", name: "fs.read", args: { path: "a.ts" } }],
+        },
+        { role: "tool", toolCallId: "call_1", name: "fs.read", content: "x" },
+      ],
+      (m) => m.content,
+    );
+    expect(wire[1]).toMatchObject({
+      role: "assistant",
+      reasoning_content: "let me think",
+    });
+  });
+
+  it("withholds signed reasoning from reasoning_content", () => {
+    const wire = toOpenAiToolMessages(
+      [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: "",
+          reasoningBlock: { text: "secret", signature: "sig" },
+          toolCalls: [{ id: "call_1", name: "fs.read", args: { path: "a.ts" } }],
+        },
+      ],
+      (m) => m.content,
+    );
+    expect(wire[1]).not.toHaveProperty("reasoning_content");
+  });
+
+  it("replays unsigned reasoning on plain assistant turns", () => {
+    const wire = toOpenAiToolMessages(
+      [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: "done",
+          reasoningBlock: { text: "reasoning" },
+        },
+      ],
+      (m) => m.content,
+    );
+    expect(wire[1]).toMatchObject({
+      role: "assistant",
+      reasoning_content: "reasoning",
+    });
+  });
+
+  it("omits reasoning_content when the turn carried no reasoning", () => {
+    const wire = toOpenAiToolMessages(
+      [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_1", name: "fs.read", args: { path: "a.ts" } }],
+        },
+      ],
+      (m) => m.content,
+    );
+    expect(wire[1]).not.toHaveProperty("reasoning_content");
+  });
+
   it("toOpenAiMessages no longer rewrites tool → user", () => {
     const msgs = toOpenAiMessages([
       {

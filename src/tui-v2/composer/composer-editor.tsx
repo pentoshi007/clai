@@ -605,7 +605,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       services.overlay.openJobs();
       return;
     }
-    // Clear draft: ^X. Ctrl+U deletes the line in the textarea (Cmd+Backspace
+    // Clear draft: ^Q. Ctrl+U deletes the line in the textarea (Cmd+Backspace
     // often arrives as Ctrl+U). Empty draft → jump chat to top.
     if (chord === "ctrl+u") {
       if (editor.plainText.length === 0) {
@@ -616,14 +616,17 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       // Non-empty: let OpenTUI handle line kill (do not preventDefault).
       return;
     }
-    const isCutChord =
-      chord === "ctrl+shift+x" ||
-      (chord === "ctrl+x" &&
-        (key.name === "X" ||
-          (typeof key.sequence === "string" && key.sequence === "X")));
-    if (isCutChord) {
+    if (chord === "ctrl+x") {
       key.preventDefault();
       void draftActions.cut();
+      return;
+    }
+    if (chord === "ctrl+q") {
+      key.preventDefault();
+      if (editor.plainText.length > 0) {
+        draftActions.clear(editor);
+        notify(services, "Draft cleared · ^Q", { key: "draft", durationMs: 1400 });
+      }
       return;
     }
     // Page keys always scroll the chat (classic parity) — never history.

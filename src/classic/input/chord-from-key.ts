@@ -7,13 +7,16 @@ export function chordFromKey(key: KeyEvent): string {
   const isLinefeed = key.name === "linefeed";
   const isBacktab = key.name === "backtab";
   const isUpper = key.name.length === 1 && key.name >= "A" && key.name <= "Z";
+  const raw = key.name.toLowerCase();
   const name = isLinefeed
     ? "j"
     : isBacktab
       ? "tab"
-      : ENTER_NAMES.has(key.name)
-        ? "enter"
-        : key.name.toLowerCase();
+      : raw === " "
+        ? "space"
+        : ENTER_NAMES.has(key.name)
+          ? "enter"
+          : raw;
 
   return chordFrom(
     {
@@ -21,6 +24,7 @@ export function chordFromKey(key: KeyEvent): string {
       alt: key.alt,
       shift: key.shift || isBacktab || isUpper,
       meta: key.meta,
+      super: key.super,
     },
     name,
   );
