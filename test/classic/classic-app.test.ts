@@ -1,7 +1,36 @@
 import { homedir } from "node:os";
 import { createElement } from "react";
 import { render } from "ink-testing-library";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The wiring's async branch refresh shells out to `git rev-parse --abbrev-ref
+// HEAD` and overwrites `branchValue` shortly after mount. In release CI the
+// checkout is a detached tag (git reports "HEAD"), which would clobber the
+// value these tests set and make the directory-row assertions depend on the
+// ambient git state. Pin git to "main" so they stay deterministic everywhere.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  type ExecCallback = (
+    error: Error | null,
+    result?: { stdout: string; stderr: string },
+  ) => void;
+  function execFile(
+    file: string,
+    args: readonly string[],
+    options: unknown,
+    callback?: ExecCallback,
+  ): unknown {
+    const cb = typeof options === "function" ? (options as ExecCallback) : callback;
+    if (file === "git" && cb) {
+      queueMicrotask(() => cb(null, { stdout: "main\n", stderr: "" }));
+      return undefined;
+    }
+    return (actual.execFile as unknown as (...a: never[]) => unknown)(
+      ...([file, args, options, callback] as never[]),
+    );
+  }
+  return { ...actual, execFile };
+});
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { ClassicApp, statusRowText } from "../../src/classic/app/ClassicApp.js";
 import {
