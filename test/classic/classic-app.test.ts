@@ -187,13 +187,6 @@ describe("ClassicApp", () => {
       expect(row).toBeDefined();
       const plain = row?.replace(/\x1b\[[0-9;]*m/g, "") ?? "";
       const cwd = relativizeHome(wiring.getSnapshot().cwd, homedir());
-      // Debug: log the actual rendered row to understand CI failures
-      if (plain.indexOf("main") === -1) {
-        console.log("DEBUG: plain row:", JSON.stringify(plain));
-        console.log("DEBUG: wiring.branchValue:", wiring.branchValue);
-        console.log("DEBUG: snapshot.branch:", wiring.getSnapshot().branch);
-        console.log("DEBUG: cwd:", cwd);
-      }
       expect(plain.indexOf(cwd)).toBeLessThan(plain.indexOf("main"));
       expect(plain.indexOf("main")).toBeLessThan(
         plain.indexOf("Tasks active . cntrl+H to expand"),
