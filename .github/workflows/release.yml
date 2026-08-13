@@ -65,6 +65,7 @@ jobs:
           - bun-darwin-x64
           - bun-darwin-arm64
           - bun-windows-x64
+          - bun-windows-arm64
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2

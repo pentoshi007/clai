@@ -491,5 +491,10 @@ export function needsCadence(host: WiringHost): boolean {
 
 export function needsAnimation(host: WiringHost): boolean {
   const state = host.services.session.getState();
-  return state.running || state.compacting || host.services.toast.getToasts().length > 0;
+  return (
+    state.running ||
+    state.compacting ||
+    host.services.toast.getToasts().length > 0 ||
+    host.services.focus.activeContext() === "composer"
+  );
 }

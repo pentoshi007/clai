@@ -245,7 +245,7 @@ describe("queue panel", () => {
 
   it("falls back to ascii hints without unicode", () => {
     const rows = queueRows({ ink: ascii, columns: 100, allocatedRows: 3, queued, selected: 0 });
-    expect(plainText(rows[0]!)).toContain("c-a-enter send");
+    expect(plainText(rows[0]!)).toContain("ctrl+s send");
   });
 
   it("stays inside the width at every column count", () => {

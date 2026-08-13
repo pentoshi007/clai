@@ -16,6 +16,7 @@ export interface CapabilityEnv {
   readonly stdinIsTTY: boolean;
   readonly columns: number | undefined;
   readonly rows: number | undefined;
+  readonly platform?: string | undefined;
 }
 
 export interface TerminalCapabilityReport {
@@ -49,10 +50,16 @@ function truthy(value: string | undefined): boolean {
 function detectColorMode(
   env: CapabilityEnv["env"],
   isTTY: boolean,
+  platform?: string,
 ): { colorMode: ColorMode; noColor: boolean } {
-  // NO_COLOR is a hard opt-out regardless of terminal support.
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") {
     return { colorMode: "none", noColor: true };
+  }
+  if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== "" && env.FORCE_COLOR !== "0") {
+    const level = env.FORCE_COLOR;
+    if (level === "3" || level === "truecolor") return { colorMode: "truecolor", noColor: false };
+    if (level === "2") return { colorMode: "256", noColor: false };
+    return { colorMode: "16", noColor: false };
   }
   if (!isTTY) return { colorMode: "none", noColor: false };
 
@@ -67,7 +74,15 @@ function detectColorMode(
     return { colorMode: "truecolor", noColor: false };
   }
   if (term.includes("256")) return { colorMode: "256", noColor: false };
-  if (term === "" || term === "dumb") return { colorMode: "none", noColor: false };
+  if (term === "" || term === "dumb") {
+    if (platform === "win32") {
+      if (env.WT_SESSION || env.ConEmuANSI === "ON" || env.TERMINAL_EMULATOR === "JetBrains-JediTerm") {
+        return { colorMode: "truecolor", noColor: false };
+      }
+      return { colorMode: "16", noColor: false };
+    }
+    return { colorMode: "none", noColor: false };
+  }
   return { colorMode: "16", noColor: false };
 }
 
@@ -106,7 +121,7 @@ export function detectCapabilities(
 ): TerminalCapabilityReport {
   const { env } = input;
   const isTTY = input.stdoutIsTTY && input.stdinIsTTY;
-  const { colorMode, noColor } = detectColorMode(env, isTTY);
+  const { colorMode, noColor } = detectColorMode(env, isTTY, input.platform);
   const kittyKeyboard = isTTY && detectKittyKeyboard(env);
 
   return {
@@ -132,5 +147,6 @@ export function readCapabilitiesFromProcess(): TerminalCapabilityReport {
     stdinIsTTY: Boolean(process.stdin.isTTY),
     columns: process.stdout.columns,
     rows: process.stdout.rows,
+    platform: process.platform,
   });
 }

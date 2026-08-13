@@ -56,13 +56,11 @@ export const defaultKeymap: readonly KeyBinding[] = [
   // No bare g/G — those conflict with typing.
   binding("ctrl+d", "transcript.bottom", "global"),
   binding("tab", "focus.next-region", "global"),
-  // Queued follow-ups (04-UI-SPEC §4.4). Ctrl+Alt keeps them clear of both
-  // composer editing and the transcript scroll chords.
-  binding("ctrl+alt+up", "queue.select-prev", "global"),
-  binding("ctrl+alt+down", "queue.select-next", "global"),
-  binding("ctrl+alt+enter", "queue.send-now", "global"),
-  binding("ctrl+alt+e", "queue.edit", "global"),
-  binding("ctrl+alt+backspace", "queue.remove", "global"),
+  binding("ctrl+y", "queue.select-prev", "global"),
+  binding("ctrl+v", "queue.select-next", "global"),
+  binding("ctrl+s", "queue.send-now", "global"),
+  binding("ctrl+]", "queue.edit", "global"),
+  binding("ctrl+_", "queue.remove", "global"),
 
   // composer
   binding("enter", "editor.submit", "composer"),

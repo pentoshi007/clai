@@ -10,8 +10,8 @@ export interface QueueViewInput {
   readonly selected: number;
 }
 
-const HINTS = ["^⌥↑↓ select", "^⌥⏎ send now", "^⌥E edit", "^⌥⌫ drop"];
-const ASCII_HINTS = ["c-a-up/down select", "c-a-enter send", "c-a-e edit", "c-a-bs drop"];
+const HINTS = ["^Y/^V select", "^S send", "^] edit", "^_ drop"];
+const ASCII_HINTS = ["ctrl+y/v select", "ctrl+s send", "ctrl+] edit", "ctrl+_ drop"];
 
 export function queueRowsWanted(count: number): number {
   return count === 0 ? 0 : Math.min(count + 1, QUEUE_MAX_ROWS);

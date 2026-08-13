@@ -38,7 +38,7 @@ describe("ui-core stays renderer-neutral", () => {
   it("imports React only from src/ui-core/react", () => {
     const banned = /\bfrom\s+["']react["']/;
     const offenders = files.filter(
-      (f) => !f.includes(`src/ui-core/react/`) && banned.test(readFileSync(f, "utf8")),
+      (f) => !f.replace(/\\/g, "/").includes(`src/ui-core/react/`) && banned.test(readFileSync(f, "utf8")),
     );
     expect(offenders).toEqual([]);
   });

@@ -129,8 +129,17 @@ export function renderEditor(input: RenderEditorInput): RenderedEditor {
   const visible = layout.rows.slice(top, top + height);
 
   if (input.state.text.length === 0 && input.placeholder !== undefined) {
-    const hint = ink.fg("muted", input.placeholder);
-    const first = input.showCaret ? `${ink.inverse(" ")}${hint}` : hint;
+    const hint = input.placeholder;
+    let first: string;
+    if (input.showCaret) {
+      const bounds = boundaries(hint);
+      const to = bounds.length > 1 ? bounds[1]! : hint.length;
+      first = sealStyle(
+        `${ink.inverse(hint.slice(0, to))}${ink.fg("muted", hint.slice(to))}`,
+      );
+    } else {
+      first = ink.fg("muted", hint);
+    }
     return {
       rows: [first, ...Array.from({ length: height - 1 }, () => "")],
       clippedAbove: false,

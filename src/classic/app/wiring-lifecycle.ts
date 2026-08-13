@@ -4,6 +4,7 @@ import { safeCwd } from "../../os/cwd.js";
 import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js";
 import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-size.js";
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
+import { readBranchFromGitDir } from "./git-branch.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
 const PAINT_INTERVAL_MS = 50;
@@ -23,17 +24,18 @@ async function refreshBranch(host: WiringHost): Promise<void> {
     host.schedulePaint();
   }
 
-  let branch: string | undefined;
-  try {
-    const result = await execFile(
-      "git",
-      ["rev-parse", "--abbrev-ref", "HEAD"],
-      { cwd, timeout: 1500, encoding: "utf8" },
-    );
-    const stdout = result.stdout;
-    branch = stdout.trim() || undefined;
-  } catch {
-    branch = undefined;
+  let branch = await readBranchFromGitDir(cwd);
+  if (branch === undefined) {
+    try {
+      const result = await execFile(
+        "git",
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        { cwd, timeout: 1500, encoding: "utf8" },
+      );
+      branch = result.stdout.trim() || undefined;
+    } catch {
+      branch = undefined;
+    }
   }
 
   if (host.disposed || request !== host.branchRefreshRequest) return;

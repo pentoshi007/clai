@@ -15,7 +15,7 @@ if (-not $installDir -or [string]::IsNullOrWhiteSpace($installDir)) {
 }
 $skipChecksum = $env:CLAI_SKIP_CHECKSUM -eq "1"
 
-$arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x64" }
+$arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } elseif ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x64" }
 $name = "clai-bun-windows-${arch}.exe"
 $sumName = "${name}.sha256"
 
