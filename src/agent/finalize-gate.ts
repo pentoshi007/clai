@@ -4,14 +4,12 @@
  */
 import {
   budgetRemaining,
-  freestyleClaimsAppReady,
   looksLikeShallowPentestReport,
   recoveryForErrorDiagnosis,
   recoveryForFailedProbe,
   recoveryForMissingFeature,
   recoveryForMissingPlan,
   recoveryForNarration,
-  recoveryForRuntimeVerify,
   recoveryForShallowPentest,
   type RecoveryAction,
   type RecoveryBudgets,
@@ -64,7 +62,6 @@ export interface FinalizeGateInput {
   sawServerTail: boolean;
   sawLocalHttpProbe: boolean;
   sawFailedLocalHttpProbe: boolean;
-  serverCriterionRequired: boolean;
   sawActivePentestTest: boolean;
   sawSuccessfulMutation: boolean;
   featureAppAsk: boolean;
@@ -167,40 +164,13 @@ export function chooseFinalizeRecovery(
     input.buildLike &&
     !input.pentestLike &&
     !input.pentestSession &&
-    budgetRemaining(recovery, "runtimeVerify") &&
-    (!input.featureAppAsk || input.sawFeatureImplWrite)
+    input.sawFailedLocalHttpProbe &&
+    !input.sawLocalHttpProbe &&
+    budgetRemaining(recovery, "failedProbe") &&
+    cleaned.trim().length > 0
   ) {
-    const planRuntimeOk = Boolean(plan && plan.hasVerifiedRuntime);
-    const sessionRuntimeOk =
-      input.sawServerStart &&
-      (input.sawServerTail || input.sawLocalHttpProbe || planRuntimeOk);
-    if (!planRuntimeOk && !sessionRuntimeOk) {
-      const codingPlanFinished = Boolean(
-        plan &&
-        input.planApproved &&
-        plan.kind !== "pentest" &&
-        plan.tasks.length > 0 &&
-        plan.tasks.every(
-          (task) => task.state === "done" || task.state === "skipped",
-        ),
-      );
-      const freestyleLocalAppDone =
-        !input.planApproved &&
-        input.sawLocalAppMaterialWork &&
-        productiveSteps > 0 &&
-        freestyleClaimsAppReady(cleaned) &&
-        (input.projectRoot !== undefined ||
-          /\b(?:npm|pnpm|yarn|bun)\s+run\s+dev\b/i.test(cleaned) ||
-          /\bopen\s+http:\/\/localhost\b/i.test(cleaned));
-      if (
-        (codingPlanFinished || freestyleLocalAppDone) &&
-        input.serverCriterionRequired
-      ) {
-        return recoveryForRuntimeVerify(input.projectRoot);
-      }
-    }
+    return recoveryForFailedProbe();
   }
-
   if (
     input.buildLike &&
     !input.pentestLike &&

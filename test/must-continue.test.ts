@@ -3,7 +3,6 @@ import {
   budgetRemaining,
   consumeBudget,
   createRecoveryBudgets,
-  freestyleClaimsAppReady,
   looksLikeShallowPentestReport,
   recoveryForMissingFeature,
   recoveryForShallowPentest,
@@ -48,13 +47,6 @@ describe("shallow pentest report", () => {
       ),
     ).toBe(false);
     expect(recoveryForShallowPentest().message).toMatch(/threat model/i);
-  });
-});
-
-describe("freestyle ready claims", () => {
-  it("detects run-yourself style completion prose", () => {
-    expect(freestyleClaimsAppReady("Run npm run dev to start")).toBe(true);
-    expect(freestyleClaimsAppReady("Here is a random note")).toBe(false);
   });
 });
 

@@ -8,7 +8,6 @@ export interface RecoveryBudgets {
   errorFix: number;
   forcePlan: number;
   featureImpl: number;
-  runtimeVerify: number;
   failedProbe: number;
   shallowPentest: number;
 }
@@ -19,7 +18,6 @@ export function createRecoveryBudgets(): RecoveryBudgets {
     errorFix: 0,
     forcePlan: 0,
     featureImpl: 0,
-    runtimeVerify: 0,
     failedProbe: 0,
     shallowPentest: 0,
   };
@@ -30,7 +28,6 @@ export type RecoveryKind =
   | "narration"
   | "force_plan"
   | "feature_impl"
-  | "runtime_verify"
   | "failed_probe"
   | "shallow_pentest";
 
@@ -48,7 +45,6 @@ const LIMITS: Record<keyof RecoveryBudgets, number> = {
   errorFix: 3,
   forcePlan: 2,
   featureImpl: 2,
-  runtimeVerify: 2,
   failedProbe: 3,
   shallowPentest: 2,
 };
@@ -172,20 +168,6 @@ export function recoveryForMissingFeature(projectRoot?: string): RecoveryAction 
   };
 }
 
-export function recoveryForRuntimeVerify(projectRoot?: string): RecoveryAction {
-  const rootHint = projectRoot ? ` Use cwd "${projectRoot}".` : "";
-  return {
-    kind: "runtime_verify",
-    budgetKey: "runtimeVerify",
-    notice: "local app missing runtime proof",
-    message:
-      "This is a local app build: do not stop after writing files or only telling the user how to run it. " +
-      "Prove the app is running with ANY of: shell.start + shell.tail ready, port LISTEN (lsof/ss), " +
-      "or localhost GET (http.fetch or curl). If the server is already listening, do NOT restart it " +
-      "just to re-mint evidence — confirm once, leave it running, task.update done, report URL + port + job id." +
-      rootHint,
-  };
-}
 
 export function recoveryForFailedProbe(): RecoveryAction {
   return {
@@ -243,14 +225,3 @@ export function recoveryForShallowPentest(): RecoveryAction {
   };
 }
 
-export function freestyleClaimsAppReady(text: string): boolean {
-  return (
-    /\b(?:npm|pnpm|yarn|bun)\s+run\s+dev\b/i.test(text) ||
-    /\b(?:cargo\s+run|flask\s+run|uvicorn|rails\s+s|python\s+-m\s+http\.server)\b/i.test(
-      text,
-    ) ||
-    /\bopen\s+http:\/\/localhost\b/i.test(text) ||
-    /\bhow to run\b/i.test(text) ||
-    /\b(?:created|built|ready|complete)\b/i.test(text)
-  );
-}

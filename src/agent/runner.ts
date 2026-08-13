@@ -5193,10 +5193,6 @@ export async function runAgentTurn(
             sawServerTail,
             sawLocalHttpProbe,
             sawFailedLocalHttpProbe,
-            serverCriterionRequired: outcomeState.outcome.criteria.some(
-              (criterion) =>
-                criterion.domain === "server" && criterion.required,
-            ),
             sawActivePentestTest,
             sawSuccessfulMutation,
             featureAppAsk,

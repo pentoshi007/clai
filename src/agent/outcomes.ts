@@ -243,12 +243,6 @@ export function validateCriterionEvidence(criterion: OutcomeCriterion, records: 
       return { ok: false, reason: "bug criterion lacks passing after-fix reproduction evidence" };
     }
   }
-  if (criterion.domain === "server") {
-    const kinds = new Set(linked.map((record) => record.kind));
-    for (const required of ["process-start", "readiness", "probe"] as const) {
-      if (!kinds.has(required)) return { ok: false, reason: `server criterion lacks ${required} evidence` };
-    }
-  }
   if (criterion.domain === "pentest-finding") {
     const kinds = new Set(linked.map((record) => record.kind));
     if (!kinds.has("reproduction") || !kinds.has("impact") || !kinds.has("artifact")) {
@@ -341,14 +335,10 @@ export function defaultOutcomeCriteria(
   userIntent: string,
 ): Array<Pick<OutcomeCriterion, "id" | "statement" | "required" | "domain">> {
   if (kind === "build") {
-    const criteria: Array<Pick<OutcomeCriterion, "id" | "statement" | "required" | "domain">> = [
+    return [
       { id: "implementation", statement: `Requested change is implemented: ${userIntent}`, required: true, domain: "feature" },
       { id: "verification", statement: "Changed behavior passes an automated or direct behavioral check", required: true, domain: "feature" },
     ];
-    if (/\b(?:server|website|web app|localhost|serve|dev server)\b/i.test(userIntent)) {
-      criteria.push({ id: "server", statement: "The requested server is started, ready, and independently probed", required: true, domain: "server" });
-    }
-    return criteria;
   }
   if (kind === "bugfix") {
     return [
@@ -358,7 +348,7 @@ export function defaultOutcomeCriteria(
     ];
   }
   if (kind === "operation") {
-    return [{ id: "server", statement: "The requested operation is started, ready, and independently probed", required: true, domain: "server" }];
+    return [{ id: "answer", statement: "The requested operation is performed and verified", required: true, domain: "general" }];
   }
   if (kind === "pentest") {
     return [

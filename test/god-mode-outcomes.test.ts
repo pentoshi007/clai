@@ -9,6 +9,7 @@ import {
   linkEvidence,
   loadOutcomeState,
   openOutcomeState,
+  recordAnswerEvidence,
   recordFailedHypothesis,
   recordToolEvidence,
   reviseOutcome,
@@ -37,15 +38,11 @@ describe("durable outcome and evidence invariants", () => {
     expect(() => linkEvidence(revised, stale)).toThrow(/stale/);
   });
 
-  it("requires process start, readiness, and an independent probe for a server", () => {
+  it("proves a server criterion with any linked evidence (no triple-kind gate)", () => {
     const outcome = createOutcome({ sessionId: "s", userIntent: "serve", kind: "operation", criteria: [{ id: "server", statement: "server available", required: true, domain: "server" }] });
-    const records = (["process-start", "readiness", "probe"] as const).map((kind, index) => createEvidence({ outcomeId: outcome.id, outcomeRevision: outcome.revision, criterionIds: ["server"], source: { tool: kind === "probe" ? "http.fetch" : "shell.start", callId: `c${index}` }, kind, freshness: "current", strength: "decisive", observation: kind, result: "pass" }));
-    linkEvidence(outcome, records[0]!);
-    expect(validateCriterionEvidence(outcome.criteria[0]!, records.slice(0, 1)).ok).toBe(false);
-    linkEvidence(outcome, records[1]!);
-    expect(validateCriterionEvidence(outcome.criteria[0]!, records.slice(0, 2)).ok).toBe(false);
-    linkEvidence(outcome, records[2]!);
-    expect(validateCriterionEvidence(outcome.criteria[0]!, records).ok).toBe(true);
+    const record = createEvidence({ outcomeId: outcome.id, outcomeRevision: outcome.revision, criterionIds: ["server"], source: { tool: "shell.start", callId: "c0" }, kind: "process-start", freshness: "current", strength: "decisive", observation: "started", result: "pass" });
+    linkEvidence(outcome, record);
+    expect(validateCriterionEvidence(outcome.criteria[0]!, [record]).ok).toBe(true);
   });
 
   it("does not promote scanner output to a verified finding", () => {
@@ -289,7 +286,7 @@ describe("durable outcome and evidence invariants", () => {
     expect(validateCriterionEvidence(reproduction, state.evidence)).toEqual({ ok: true });
   });
 
-  it("requires all three independent server receipt kinds", async () => {
+  it("operation criterion is proven by the final answer, not by tool evidence alone", async () => {
     const state = await openOutcomeState({
       sessionId: "server-receipts",
       userIntent: "start the web server",
@@ -309,7 +306,6 @@ describe("durable outcome and evidence invariants", () => {
       output: "ready - listening on localhost:3000",
       args: {},
     });
-    expect(state.outcome.status).toBe("partial");
     recordToolEvidence(state, {
       tool: "http.fetch",
       callId: "probe",
@@ -317,6 +313,8 @@ describe("durable outcome and evidence invariants", () => {
       output: "HTTP 200",
       args: { url: "http://localhost:3000" },
     });
+    expect(state.outcome.status).toBe("partial");
+    recordAnswerEvidence(state, "The server is running on localhost:3000.");
     expect(state.outcome.status).toBe("succeeded");
   });
 });

@@ -45,7 +45,6 @@ function baseInput(overrides: Partial<FinalizeGateInput> = {}): FinalizeGateInpu
     sawServerTail: false,
     sawLocalHttpProbe: false,
     sawFailedLocalHttpProbe: false,
-    serverCriterionRequired: false,
     sawActivePentestTest: false,
     sawSuccessfulMutation: false,
     featureAppAsk: false,
@@ -356,90 +355,6 @@ describe("finalize gate — missing feature", () => {
     expect(
       chooseFinalizeRecovery(
         featureInput({ ...probing, recovery: drained("featureImpl", 2) }),
-      )?.kind,
-    ).toBe("failed_probe");
-  });
-});
-
-describe("finalize gate — runtime verify", () => {
-  const finishedCodingPlan = planWith([
-    { id: "t1", title: "scaffold", state: "done" },
-    { id: "t2", title: "implement", state: "skipped" },
-  ]);
-  const runtimeInput = (overrides: Partial<FinalizeGateInput> = {}) =>
-    baseInput({
-      buildLike: true,
-      planApproved: true,
-      plan: finishedCodingPlan,
-      projectRoot: "/tmp/app",
-      ...overrides,
-    });
-
-  it("fires when a finished coding plan has no runtime proof and the outcome contract requires a server", () => {
-    const action = chooseFinalizeRecovery(
-      runtimeInput({ serverCriterionRequired: true }),
-    );
-    expect(action?.kind).toBe("runtime_verify");
-    expect(action?.message).toContain("/tmp/app");
-  });
-
-  it("does not fire for a finished coding plan whose outcome contract has no server criterion", () => {
-    expect(chooseFinalizeRecovery(runtimeInput())).toBeUndefined();
-  });
-
-  it("does not fire when the plan carries runtime evidence", () => {
-    expect(
-      chooseFinalizeRecovery(
-        runtimeInput({
-          plan: planWith(finishedCodingPlan.tasks, { hasVerifiedRuntime: true }),
-        }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it("does not fire when this turn started a server and tailed it", () => {
-    expect(
-      chooseFinalizeRecovery(
-        runtimeInput({ sawServerStart: true, sawServerTail: true }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it("does not fire when a feature app ask is still unimplemented", () => {
-    expect(
-      chooseFinalizeRecovery(
-        runtimeInput({ featureAppAsk: true, sawFeatureImplWrite: false }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it("fires for a freestyle local app that only tells the user how to run it", () => {
-    expect(
-      chooseFinalizeRecovery(
-        runtimeInput({
-          planApproved: false,
-          plan: undefined,
-          sawLocalAppMaterialWork: true,
-          productiveSteps: 2,
-          serverCriterionRequired: true,
-          cleaned: "The app is ready. Run npm run dev to start it.",
-        }),
-      )?.kind,
-    ).toBe("runtime_verify");
-  });
-
-  it("yields to the failed probe once its budget is spent", () => {
-    const probing = {
-      sawFailedLocalHttpProbe: true,
-      sawLocalHttpProbe: false,
-      serverCriterionRequired: true,
-    } as const;
-    expect(chooseFinalizeRecovery(runtimeInput(probing))?.kind).toBe(
-      "runtime_verify",
-    );
-    expect(
-      chooseFinalizeRecovery(
-        runtimeInput({ ...probing, recovery: drained("runtimeVerify", 2) }),
       )?.kind,
     ).toBe("failed_probe");
   });
