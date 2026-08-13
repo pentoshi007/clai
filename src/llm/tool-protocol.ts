@@ -449,11 +449,14 @@ export function finalizeOpenAiToolCalls(
     const canonical = fromWireName(wire) ?? wire;
     const rawArguments = acc.arguments;
     const args = parseToolArguments(rawArguments);
+    const replayArguments = args._parseError
+      ? rawArguments
+      : JSON.stringify(args);
     out.push({
       id: acc.id ?? syntheticToolCallId(index),
       name: canonical,
       args,
-      ...(rawArguments ? { rawArguments } : {}),
+      ...(replayArguments ? { rawArguments: replayArguments } : {}),
     });
   }
   return out;
@@ -472,11 +475,15 @@ export function parseOpenAiMessageToolCalls(
   return toolCalls.map((tc, i) => {
     const wire = tc.function?.name ?? "";
     const rawArguments = tc.function?.arguments ?? "";
+    const args = parseToolArguments(rawArguments);
+    const replayArguments = args._parseError
+      ? rawArguments
+      : JSON.stringify(args);
     return {
       id: tc.id ?? syntheticToolCallId(i),
       name: fromWireName(wire) ?? wire,
-      args: parseToolArguments(rawArguments),
-      ...(rawArguments ? { rawArguments } : {}),
+      args,
+      ...(replayArguments ? { rawArguments: replayArguments } : {}),
     };
   });
 }

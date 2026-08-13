@@ -35,14 +35,6 @@ export function deletePromptText(
 export const PENTEST_PROMPT_TEXT =
   "This is a security/pentest action. Confirm you are authorized to run it against this target.";
 
-export function continuePromptText(steps: number, reason?: string): string {
-  const why = reason?.trim() ? `\nReason: ${reason.trim()}` : "";
-  return (
-    `Paused after ${steps} step${steps === 1 ? "" : "s"}.${why}\n\n` +
-    `Continue working, or stop here?`
-  );
-}
-
 export function agentSwitchPromptText(info: {
   reason: string;
   tools: string[];

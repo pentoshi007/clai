@@ -6,11 +6,15 @@ import {
   type PresentedDiffRow,
 } from "../../ui-core/rendering/file-diff-view.js";
 import { presentTool } from "../../ui-core/rendering/tool-presenter.js";
-import { isFileDiffExpanded, type ToolItem } from "../../ui-core/state/transcript-types.js";
+import {
+  isFileDiffExpanded,
+  isItemExpanded,
+  type ToolItem,
+} from "../../ui-core/state/transcript-types.js";
 import { alignEnds, padStartToWidth, padToWidth, sealStyle, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { TextStyle, ThemeToken } from "../render/ink-theme.js";
 import { clipRow, joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
-import { toolGlyph } from "./tool-lines.js";
+import { outputToggleLabel, toolGlyph } from "./tool-lines.js";
 
 /** Preview caps already defined by the OpenTUI diff card; reused verbatim. */
 export const SINGLE_FILE_PREVIEW_ROWS = 40;
@@ -84,7 +88,8 @@ function diffRowLine(ctx: BlockContext, row: PresentedDiffRow): string {
 export function buildDiffLines(ctx: BlockContext, item: ToolItem): string[] {
   const changes = item.fileChanges ?? [];
   const primary = changes[0];
-  const expanded = isFileDiffExpanded(ctx.state, item.id);
+  const diffExpanded = isFileDiffExpanded(ctx.state, item.id);
+  const outputExpanded = isItemExpanded(ctx.state, item);
 
   const lines = [diffTitleLine(ctx, item, primary)];
   if (primary) {
@@ -92,10 +97,11 @@ export function buildDiffLines(ctx: BlockContext, item: ToolItem): string[] {
     if (statsRow) lines.push(statsRow);
   }
 
-  if (!expanded) {
+  if (!diffExpanded) {
     if (primary) {
       lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", collapsedFileChangeLabel(primary))}`));
     }
+    lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", outputToggleLabel(outputExpanded))}`));
     return lines;
   }
 
@@ -119,12 +125,12 @@ export function buildDiffLines(ctx: BlockContext, item: ToolItem): string[] {
 
   const total = changes.reduce((sum, c) => sum + c.stats.added + c.stats.removed, 0);
   const hidden = Math.max(0, total - emitted);
-  if (hidden > 0) {
-    const body = joinMeta(ctx, [
-      `${ctx.glyphs.ellipsis} +${hidden} line${hidden === 1 ? "" : "s"}`,
-      "^O",
-    ]);
-    lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", body)}`));
-  }
+  const body = joinMeta(ctx, [
+    outputToggleLabel(outputExpanded),
+    hidden > 0
+      ? `${ctx.glyphs.ellipsis} +${hidden} line${hidden === 1 ? "" : "s"}`
+      : undefined,
+  ]);
+  lines.push(clipRow(ctx, `  ${ctx.ink.fg("muted", body)}`));
   return lines;
 }

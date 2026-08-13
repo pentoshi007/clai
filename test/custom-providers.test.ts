@@ -14,6 +14,7 @@ describe('custom providers', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     rmSync(configDir, { recursive: true, force: true });
   });
 
@@ -165,5 +166,51 @@ describe('custom providers', () => {
     // The fallback chain builder also must not crash on custom ids.
     const chain = router.buildFallbackChain('omniroute' as never, false, true);
     expect(chain[0]).toBe('omniroute');
+  });
+
+  it('retries a stream once without stream_options when a custom gateway rejects it', async () => {
+    const { config, router } = await loadModules();
+    const requests: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      if (requests.length === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: "Unsupported parameter: 'stream_options'" } }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    config.addCustomProvider({
+      id: 'strict-gateway',
+      displayName: 'Strict Gateway',
+      baseUrl: 'https://strict.example/v1',
+      defaultModel: 'strict-model',
+    });
+    const provider = router.getProvider('strict-gateway' as never);
+
+    const result = await provider.stream(
+      { messages: [{ role: 'user', content: 'hi' }] },
+      { apiKey: 'test-key' },
+      () => undefined,
+    );
+    const nextResult = await provider.stream(
+      { messages: [{ role: 'user', content: 'again' }] },
+      { apiKey: 'test-key' },
+      () => undefined,
+    );
+
+    expect(result.text).toBe('ok');
+    expect(nextResult.text).toBe('ok');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(requests[0]?.stream_options).toEqual({ include_usage: true });
+    expect(requests[1]?.stream_options).toBeUndefined();
+    expect(requests[2]?.stream_options).toBeUndefined();
+    expect(requests[1]).toMatchObject({ model: 'strict-model', stream: true });
+    expect(requests[2]).toMatchObject({ model: 'strict-model', stream: true });
   });
 });

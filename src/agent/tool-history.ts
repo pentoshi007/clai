@@ -119,10 +119,17 @@ function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
 export function slimNativeToolCallsForHistory(
   toolCalls: readonly NativeToolCall[],
 ): NativeToolCall[] {
-  return toolCalls.map((tc) => ({
-    ...tc,
-    args: slimToolArgs(tc.args ?? {}),
-  }));
+  return toolCalls.map((tc) => {
+    const args = slimToolArgs(tc.args ?? {});
+    const { rawArguments: _rawArguments, ...durable } = tc;
+    return {
+      ...durable,
+      args,
+      ...(args._parseError && tc.rawArguments
+        ? { rawArguments: tc.rawArguments }
+        : {}),
+    };
+  });
 }
 
 /** Append assistant turn that requested tools (must precede tool results). */

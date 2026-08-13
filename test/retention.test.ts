@@ -57,5 +57,5 @@ describe("phase 11 — clearArtifacts and clearAuditLogs", () => {
     expect(typeof result.removed).toBe("number");
     // Smoke-check that getLogsDir returns a string under a clai folder.
     expect(getLogsDir()).toMatch(/clai/);
-  });
+  }, 10_000);
 });

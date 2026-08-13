@@ -16,7 +16,6 @@ import type { OverlayController } from "../controllers/overlay-controller.js";
 import {
   PENTEST_PROMPT_TEXT,
   agentSwitchPromptText,
-  continuePromptText,
   deletePromptText,
   toolPromptText,
 } from "../../app/confirm-prompt-text.js";
@@ -97,12 +96,6 @@ export function createOverlayConfirmPort(overlay: OverlayController): Confirmati
       return overlay.openConfirm({
         kind: "pentest",
         prompt: PENTEST_PROMPT_TEXT,
-      });
-    },
-    async confirmContinue(steps: number, reason?: string): Promise<boolean> {
-      return overlay.openConfirm({
-        kind: "continue",
-        prompt: continuePromptText(steps, reason),
       });
     },
     async confirmAgentSwitch(info: { reason: string; tools: string[] }): Promise<boolean> {

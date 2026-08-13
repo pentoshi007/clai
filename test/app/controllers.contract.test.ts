@@ -9,7 +9,7 @@ import type {
 } from "../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
-import { asSessionId, asToolCallId } from "../../src/app/events/app-event.js";
+import { asSessionId, asToolCallId, asTurnId } from "../../src/app/events/app-event.js";
 import { OutputSpool } from "../../src/app/events/event-buffer.js";
 import {
   createCountingIdFactory,
@@ -178,6 +178,97 @@ describe("V2-025 controllers run a complete scripted turn (Phase 2 gate)", () =>
     const b = buildSession("run-");
     await b.session.submit("go");
     expect(JSON.stringify(b.events)).toBe(JSON.stringify(a.events));
+  });
+});
+
+describe("TurnController live tool output", () => {
+  it("collapses a synchronous output flood before reducing transcript events", async () => {
+    const chunks = 20_000;
+    const events: AnyAppEvent[] = [];
+    const spool = new OutputSpool();
+    const agent: AgentPort = {
+      async runTurn(_request, handlers) {
+        handlers.onEvent({ type: "tool-call", id: "flood", name: "shell.exec", argsDisplay: "yes" });
+        handlers.onEvent({ type: "tool-start", id: "flood" });
+        for (let index = 0; index < chunks; index += 1) {
+          handlers.onEvent({ type: "tool-output", id: "flood", chunk: "x" });
+        }
+        handlers.onEvent({ type: "tool-result", id: "flood", ok: true, summary: "done", exitCode: 0 });
+        return createTurnOutcome({
+          status: "succeeded",
+          answer: "done",
+          steps: 1,
+          remainingCriteria: [],
+        });
+      },
+    };
+    const controller = new TurnController({
+      agent,
+      sequencer: new EventSequencer(
+        asSessionId("tool-output-flood"),
+        createCountingIdFactory("flood-"),
+      ),
+      spool,
+      emit: (event) => events.push(event),
+      mintTurnId: () => asTurnId("flood-turn"),
+    });
+
+    const result = await controller.run({ prompt: "run", mode: "agent" });
+    const outputEvents = events.filter((event) => event.type === "tool-output");
+
+    expect(result.status).toBe("completed");
+    expect(outputEvents).toHaveLength(1);
+    expect(outputEvents[0]?.payload).toEqual({
+      ref: {
+        toolCallId: "flood-turn:flood",
+        chunkBytes: chunks,
+        totalBytes: chunks,
+      },
+    });
+    expect(spool.tail(asToolCallId("flood-turn:flood"))).toBe("x".repeat(chunks));
+    expect(events.map((event) => event.type)).toEqual([
+      "tool-call",
+      "tool-started",
+      "tool-output",
+      "tool-result",
+    ]);
+    controller.dispose();
+  });
+
+  it("keeps replacement output authoritative while batching later chunks", async () => {
+    const events: AnyAppEvent[] = [];
+    const spool = new OutputSpool();
+    const agent: AgentPort = {
+      async runTurn(_request, handlers) {
+        handlers.onEvent({ type: "tool-call", id: "replace", name: "shell.exec", argsDisplay: "printf" });
+        handlers.onEvent({ type: "tool-output", id: "replace", chunk: "stale" });
+        handlers.onEvent({ type: "tool-output", id: "replace", chunk: "final", replace: true });
+        handlers.onEvent({ type: "tool-output", id: "replace", chunk: " body" });
+        handlers.onEvent({ type: "tool-result", id: "replace", ok: true, summary: "done", exitCode: 0 });
+        return createTurnOutcome({
+          status: "succeeded",
+          answer: "done",
+          steps: 1,
+          remainingCriteria: [],
+        });
+      },
+    };
+    const controller = new TurnController({
+      agent,
+      sequencer: new EventSequencer(
+        asSessionId("tool-output-replace"),
+        createCountingIdFactory("replace-"),
+      ),
+      spool,
+      emit: (event) => events.push(event),
+      mintTurnId: () => asTurnId("replace-turn"),
+    });
+
+    await controller.run({ prompt: "run", mode: "agent" });
+
+    expect(events.filter((event) => event.type === "tool-output")).toHaveLength(1);
+    expect(spool.tail(asToolCallId("replace-turn:replace"))).toBe("final body");
+    controller.dispose();
   });
 });
 

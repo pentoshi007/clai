@@ -247,6 +247,8 @@ export function normalizeDroppedPath(token: string): string {
       normalized.length >= 2)
   ) {
     normalized = normalized.slice(1, -1);
+  } else if (normalized.endsWith("'") || normalized.endsWith('"')) {
+    normalized = normalized.slice(0, -1);
   }
   if (/^file:\/\//i.test(normalized)) {
     try {
@@ -547,14 +549,31 @@ export function extractExistingPathsFs(
 /** Non-path residual budget: a paste dominated by prose is not a file drop. */
 const MAX_DROP_RESIDUAL = 512;
 
-/**
- * Stabilize image paths inside just-dropped/pasted text. macOS screenshot
- * drags reference a transient TemporaryItems/NSIRD_screencaptureui file that
- * is deleted moments after the drag, so submit-time resolution fails ("can't
- * find the image"). Copying the image to the durable attachments dir at drop
- * time — while the source still exists — and rewriting the text to a stable
- * file:// reference fixes this. Non-image drops are left untouched.
- */
+export function stabilizeDroppedFilesInText(
+  text: string,
+  baseDir: string = safeCwd(),
+): { text: string; files: string[]; images: string[] } {
+  const matches = scanExistingPaths(text, baseDir);
+  if (matches.length === 0) return { text, files: [], images: [] };
+  const matchedChars = matches.reduce((sum, match) => sum + match.raw.length, 0);
+  if (text.trim().length - matchedChars > MAX_DROP_RESIDUAL) {
+    return { text, files: [], images: [] };
+  }
+  let rewritten = text;
+  const files: string[] = [];
+  const images: string[] = [];
+  for (const match of matches) {
+    const isImage = Boolean(imageMediaType(match.resolved));
+    const stable = isImage
+      ? stabilizeImagePaths([match.resolved], baseDir)[0] ?? match.resolved
+      : match.resolved;
+    rewritten = rewritten.replace(match.raw, formatAttachmentReference(stable, baseDir));
+    files.push(stable);
+    if (isImage) images.push(stable);
+  }
+  return { text: rewritten, files, images };
+}
+
 export function stabilizeDroppedImagesInText(
   text: string,
   baseDir: string = safeCwd(),

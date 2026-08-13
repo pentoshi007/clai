@@ -107,6 +107,20 @@ describe("message-slim", () => {
     expect(typeof stored).toBe("string");
     expect(String(stored)).not.toContain("z".repeat(100));
     expect(String(stored)).toMatch(/«20000 chars/);
+    expect(messages[0]!.toolCalls?.[0]?.rawArguments).toBeUndefined();
+  });
+
+  it("retains malformed raw arguments only for recovery", () => {
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      {
+        id: "w2",
+        name: "fs.write",
+        args: { _parseError: true, _raw: '{"path":"a"' },
+        rawArguments: '{"path":"a"',
+      },
+    ]);
+    expect(messages[0]!.toolCalls?.[0]?.rawArguments).toBe('{"path":"a"');
   });
 
   it("LoopGuard signatures stay small for large write args", () => {

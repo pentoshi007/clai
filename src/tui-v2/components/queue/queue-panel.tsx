@@ -67,8 +67,8 @@ export function QueuePanel(props: QueuePanelProps): ReactNode {
       <text
         content={pad(
           session.running
-            ? `  ${queued.length} waiting · send after current turn · click Send now to interrupt`
-            : `  ${queued.length} waiting · will send next`,
+            ? `  ${queued.length} waiting · sends after completion · click Send now to interrupt`
+            : `  ${queued.length} waiting · Send now or Edit`,
           contentWidth,
         )}
         style={{ fg: theme.muted, bg: theme.statusBackground }}

@@ -13,7 +13,6 @@ import type { SecretPort } from "../app/ports/secret-port.js";
 import {
   PENTEST_PROMPT_TEXT,
   agentSwitchPromptText,
-  continuePromptText,
   deletePromptText,
   toolPromptText,
 } from "../app/confirm-prompt-text.js";
@@ -57,9 +56,6 @@ export function createStdioConfirmPort(
     },
     async confirmPentest(): Promise<boolean> {
       return confirm(PENTEST_PROMPT_TEXT, false, io);
-    },
-    async confirmContinue(steps: number, reason?: string): Promise<boolean> {
-      return confirm(continuePromptText(steps, reason), true, io);
     },
     async confirmAgentSwitch(info: {
       reason: string;

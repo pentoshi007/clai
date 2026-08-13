@@ -16,6 +16,7 @@ import {
   toCompletionResult,
   readJson,
   ingestOpenAiModelCatalog,
+  isStreamOptionsUnsupportedError,
 } from "./http.js";
 
 /** Persisted shape of one user-defined provider (JSON-serialisable). */
@@ -34,6 +35,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
   const baseUrl = def.baseUrl;
   const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
   const CACHE_TTL_MS = 60 * 60 * 1000;
+  let includeStreamUsage = true;
 
   return {
     id: providerId,
@@ -79,15 +81,25 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       request: CompletionRequest, auth: ProviderAuth, onToken: (token: string) => void,
     ): Promise<CompletionResult> {
       if (!auth.apiKey) throw new Error(`${def.displayName} API key is required`);
+      const apiKey = auth.apiKey;
       const model = request.model ?? def.defaultModel;
-      const payload = await openAiCompatibleStream({
-        provider: def.displayName, providerId, baseUrl, apiKey: auth.apiKey, model,
+      const stream = (withUsage: boolean) => openAiCompatibleStream({
+        provider: def.displayName, providerId, baseUrl, apiKey, model,
         messages: request.messages, maxTokens: request.maxTokens,
         temperature: request.temperature, signal: request.signal, onToken,
         onToolCallDelta: request.onToolCallDelta, reasoning: request.thinking,
         reasoningStyle: "openai", tools: request.tools, toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
+        includeStreamUsage: withUsage,
       });
+      let payload;
+      try {
+        payload = await stream(includeStreamUsage);
+      } catch (error) {
+        if (!includeStreamUsage || !isStreamOptionsUnsupportedError(error)) throw error;
+        includeStreamUsage = false;
+        payload = await stream(false);
+      }
       return toCompletionResult(providerId, model, payload);
     },
   };

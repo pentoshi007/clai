@@ -121,10 +121,6 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
         >
           {` ${TITLES[request.kind]} `}
         </text>
-        <text content=" " />
-        <text style={{ fg: theme.muted, attributes: TextAttributes.DIM }}>
-          awaiting your decision
-        </text>
       </box>
       {promptLines.map((line, i) => (
         <text key={i} style={{ fg: theme.foreground }}>

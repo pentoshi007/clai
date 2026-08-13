@@ -11,6 +11,7 @@ import {
 import { extractTranscriptSemanticDocument } from "../../ui-core/rendering/transcript-semantic.js";
 import type { FeedSnapshot } from "./use-feed.js";
 import type { MouseEvent } from "../input/key-event.js";
+import { handleTranscriptMouse } from "./wiring-selection.js";
 import type { WiringHost } from "./wiring-types.js";
 
 export function observeFeed(host: WiringHost, feed: FeedSnapshot): void {
@@ -176,13 +177,7 @@ export function handlePanelKey(
 }
 
 export function handleMouse(host: WiringHost, event: MouseEvent): void {
-  if (event.scroll !== "up" && event.scroll !== "down") return;
-  if (host.panels.isOpen()) {
-    host.panels.handleWheel(event.scroll === "down" ? 1 : -1, WHEEL_SCROLL_ROWS);
-    host.schedulePaint();
-    return;
-  }
-  host.scrollFeed(event.scroll === "up" ? WHEEL_SCROLL_ROWS : -WHEEL_SCROLL_ROWS);
+  handleTranscriptMouse(host, event);
 }
 
 export function submit(host: WiringHost, prompt: string): void {
@@ -287,7 +282,7 @@ export function closePanel(host: WiringHost): boolean {
   return false;
 }
 
-const WHEEL_SCROLL_ROWS = 3;
+export const WHEEL_SCROLL_ROWS = 3;
 
 export function scrollFeed(host: WiringHost, delta: number): void {
   const next = Math.max(0, Math.min(host.maxLiveOffset, host.liveOffsetValue + delta));
@@ -419,13 +414,28 @@ export function updateTranscriptDocument(host: WiringHost): void {
 }
 
 export function selectAllTranscript(host: WiringHost): void {
+  host.updateTranscriptDocument();
   if (!host.services.selection.selectAll("transcript")) {
     notify(host.services, "Transcript is empty", { key: "selection" });
   }
 }
 
+async function copyActiveSelection(host: WiringHost): Promise<void> {
+  const result = await host.services.selection.copy();
+  if (result.status === "copied") {
+    notify(host.services, "Copied selection", { level: "success", key: "copy", durationMs: 1800 });
+  } else if (result.status === "empty") {
+    notify(host.services, "Nothing to copy", { key: "copy", durationMs: 1800 });
+  } else {
+    notify(host.services, "Copy failed", { level: "warn", key: "copy", durationMs: 1800 });
+  }
+}
+
 export async function copyTranscript(host: WiringHost): Promise<void> {
-  if (!host.services.selection.hasSelection()) host.services.selection.selectAll("transcript");
+  if (!host.services.selection.hasSelection()) {
+    host.updateTranscriptDocument();
+    host.services.selection.selectAll("transcript");
+  }
   const result = await host.services.selection.copy();
   if (result.status === "copied") {
     notify(host.services, "Copied transcript", { level: "success", key: "copy" });

@@ -142,7 +142,7 @@ describe("Esc ladder", () => {
     expect(h.calls).toEqual([
       "notify(info):esc again to cancel",
       "cancelAll",
-      "notify(info):Cancelled turn, queue, and Responder jobs",
+      "notify(info):Cancelled turn and Responder jobs",
     ]);
   });
 
@@ -178,10 +178,11 @@ describe("Esc ladder", () => {
     expect(h.calls).toEqual(["notify(info):esc again to cancel"]);
   });
 
-  it("arms on a queued prompt with no running turn", () => {
+  it("leaves queued prompts visible when no work is running", () => {
     const h = harness({ queued: ["next"] });
     h.ladder.escape(false);
-    expect(h.calls).toEqual(["notify(info):esc again to cancel"]);
+    expect(h.calls).toEqual([]);
+    expect(h.ladder.escapeArmed).toBe(false);
   });
 
   it("arms on responder work alone", () => {

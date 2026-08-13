@@ -9,6 +9,8 @@ import {
   isReasoningUnsupported,
   markReasoningUnsupported,
   modelSupportsThinking,
+  registerModelReasoningSupport,
+  resetReasoningKnowledge,
 } from "../src/llm/capabilities.js";
 import { providers, streamWithProvider } from "../src/llm/router.js";
 import { getConfig, updateConfig } from "../src/store/config.js";
@@ -17,7 +19,10 @@ import type { ChatMessage, CompletionRequest } from "../src/types.js";
 
 const userMessages: ChatMessage[] = [{ role: "user", content: "hi" }];
 
-afterEach(() => clearReasoningUnsupported());
+afterEach(() => {
+  clearReasoningUnsupported();
+  resetReasoningKnowledge();
+});
 
 describe("isReasoningUnsupportedError", () => {
   it("detects 4xx bodies that name a reasoning knob", () => {
@@ -237,5 +242,38 @@ describe("capability table and wire payload agree", () => {
       }),
     ) as Record<string, unknown>;
     expect(body.reasoning_effort).toBe("high");
+  });
+
+  it("sends reasoning effort for an unknown custom provider model", () => {
+    const body = JSON.parse(
+      buildChatBody({
+        model: "accounts/fireworks/models/deepseek-v4-flash",
+        providerId: "fireworks" as never,
+        messages: userMessages,
+        stream: false,
+        reasoning: { enabled: true, effort: "high" },
+        reasoningStyle: "openai",
+      }),
+    ) as Record<string, unknown>;
+    expect(body.reasoning_effort).toBe("high");
+  });
+
+  it("honors an explicit custom-provider catalog denial", () => {
+    registerModelReasoningSupport(
+      "fireworks" as never,
+      "accounts/fireworks/models/basic-chat",
+      false,
+    );
+    const body = JSON.parse(
+      buildChatBody({
+        model: "accounts/fireworks/models/basic-chat",
+        providerId: "fireworks" as never,
+        messages: userMessages,
+        stream: false,
+        reasoning: { enabled: true, effort: "high" },
+        reasoningStyle: "openai",
+      }),
+    ) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("reasoning_effort");
   });
 });

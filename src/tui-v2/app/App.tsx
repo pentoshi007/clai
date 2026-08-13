@@ -96,9 +96,6 @@ export function App(): ReactNode {
     return services.session.onTurnEnd((result) => {
       clearEscapeCancellation();
       if (result.status === "completed") void promptPlanApprovalIfNeeded(services);
-      // Drain "send now" priority + remaining queue after every settled turn
-      // (including abort). Without this, queued prompts never auto-ran in v2.
-      void services.session.continueQueue();
     });
   }, [services]);
 
@@ -106,7 +103,7 @@ export function App(): ReactNode {
     const disarmWhenIdle = (): void => {
       if (!escapeCancelArmedRef.current) return;
       const state = services.session.getState();
-      const hasForegroundWork = state.running || state.compacting || state.queued.length > 0;
+      const hasForegroundWork = state.running || state.compacting;
       const hasResponderWork =
         services.ports.jobs.running(services.session.sessionId).length > 0 ||
         services.ports.jobs.pendingNotifications(services.session.sessionId).length > 0;
@@ -504,7 +501,6 @@ export function App(): ReactNode {
     const hasCancelableWork =
       sessionState.running ||
       sessionState.compacting ||
-      sessionState.queued.length > 0 ||
       hasResponderWork ||
       services.interruptible.hasWork();
 
@@ -515,7 +511,7 @@ export function App(): ReactNode {
       void services.session.cancelAll().then((result) => {
         clearEscapeCancellation();
         const text = result.ok
-          ? "Cancelled turn, queue, and Responder jobs"
+          ? "Cancelled turn and Responder jobs"
           : "Cancellation completed with job stop failures — open Jobs for details";
         if (result.ok) {
           notify(services, text, {

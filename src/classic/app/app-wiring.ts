@@ -10,6 +10,13 @@ import { CancelLadder } from "../input/cancel-ladder.js";
 import { InputRouter } from "../input/input-router.js";
 import { RawDecoder } from "../input/raw-decoder.js";
 import type { KeyEvent } from "../input/key-event.js";
+import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
+import type { FeedBlock } from "../feed/feed-blocks.js";
+import {
+  anchorAtTranscriptPointer,
+  classicTranscriptDocument,
+  type TranscriptPointerGeometry,
+} from "../feed/transcript-selection.js";
 import { PanelController, type PanelSnapshot } from "../panels/panel-controller.js";
 import { ClassicActionHandlers, panelContextFor } from "./action-handlers.js";
 import * as interactions from "./wiring-interactions.js";
@@ -78,6 +85,16 @@ export class ClassicAppWiring implements WiringHost {
   tickTimer: ReturnType<typeof setInterval> | undefined;
   animationTimer: ReturnType<typeof setInterval> | undefined;
   searchFocusRelease: (() => void) | undefined;
+  selectionPointerAnchor: SemanticAnchor | undefined;
+  selectionPointerMoved = false;
+  selectionPointerX = 0;
+  selectionPointerY = 0;
+  selectionAutoScrollTimer: ReturnType<typeof setInterval> | undefined;
+  selectionGeometry: TranscriptPointerGeometry = { left: 0, top: 0 };
+  selectionWindow: FeedSnapshot["window"] | undefined;
+  selectionDocumentValue: SemanticDocument | undefined;
+  selectionControllerDocumentValue: SemanticDocument | undefined;
+  selectionDocumentBlocks: readonly FeedBlock[] | undefined;
   scrollToastShown = false;
   disposed = false;
 
@@ -182,12 +199,16 @@ export class ClassicAppWiring implements WiringHost {
         this.schedulePaint();
       },
       onPanelKey: (key, chord, context) => this.handlePanelKey(key.text, chord, context),
-      onText: (text) => this.composer.insertText(text),
+      onText: (text) => {
+        this.services.focus.focusRegion("composer");
+        this.composer.insertText(text);
+      },
       onPaste: (text) => {
         if (this.panels.isOpen()) {
           this.panels.handlePaste(text);
           return;
         }
+        this.services.focus.focusRegion("composer");
         this.composer.paste(text);
       },
       onMouse: (event) => this.handleMouse(event),
@@ -196,8 +217,14 @@ export class ClassicAppWiring implements WiringHost {
         this.closePanel();
       },
       dismissBlockingPrompt: () => this.services.overlay.cancelBlockingPrompt(),
-      acceptsPaste: () => this.panels.isOpen() || this.services.focus.activeContext() === "composer",
-      acceptsText: () => this.services.focus.activeContext() === "composer",
+      acceptsPaste: () =>
+        this.panels.isOpen() ||
+        this.services.focus.activeContext() === "composer" ||
+        this.services.focus.activeContext() === "transcript",
+      acceptsText: () => {
+        const context = this.services.focus.activeContext();
+        return context === "composer" || context === "transcript";
+      },
       hasSelection: () => this.services.selection.hasSelection(),
       contextLimitEditing: () => this.contextLimitEditingValue,
       onContextLimitStart: () => this.startContextLimitEditing(),
@@ -207,7 +234,6 @@ export class ClassicAppWiring implements WiringHost {
 
     this.snapshot = this.buildSnapshot();
     this.attach();
-    this.updateTranscriptDocument();
     void this.services.plan.load(this.services.session.sessionId).catch(() => undefined);
     void maybeShowUpdateToast(this.services, () => this.disposed).catch(() => undefined);
   }
@@ -225,8 +251,37 @@ export class ClassicAppWiring implements WiringHost {
     this.scheduleDecoderFlush();
   };
 
-  observeFeed(feed: FeedSnapshot): void {
+  observeFeed(feed: FeedSnapshot, selectionDocument?: SemanticDocument): void {
     interactions.observeFeed(this, feed);
+    this.selectionWindow = feed.window;
+    const document = selectionDocument ?? classicTranscriptDocument(feed.blocks);
+    if (this.selectionDocumentValue === document) {
+      if (!this.services.selection.getState().dragging && this.selectionControllerDocumentValue !== document) {
+        this.selectionControllerDocumentValue = document;
+        this.services.selection.setDocument("transcript", document);
+      }
+      return;
+    }
+    this.selectionDocumentValue = document;
+    this.selectionDocumentBlocks = feed.blocks;
+    if (!this.services.selection.getState().dragging && this.selectionControllerDocumentValue !== document) {
+      this.selectionControllerDocumentValue = document;
+      this.services.selection.setDocument("transcript", document);
+    }
+  }
+
+  transcriptSelectionDocument(blocks: readonly FeedBlock[]): SemanticDocument {
+    if (this.selectionDocumentBlocks === blocks && this.selectionDocumentValue) {
+      return this.selectionDocumentValue;
+    }
+    const document = classicTranscriptDocument(blocks);
+    this.selectionDocumentBlocks = blocks;
+    this.selectionDocumentValue = document;
+    return document;
+  }
+
+  setTranscriptSelectionGeometry(geometry: TranscriptPointerGeometry): void {
+    this.selectionGeometry = geometry;
   }
 
   setComposerTextWidth(width: number): void {
@@ -331,6 +386,7 @@ export class ClassicAppWiring implements WiringHost {
 
   updateTranscriptDocument(): void {
     interactions.updateTranscriptDocument(this);
+    this.selectionControllerDocumentValue = undefined;
   }
 
   selectAllTranscript(): void {

@@ -23,7 +23,7 @@ export function buildUserLines(ctx: BlockContext, item: UserItem): string[] {
   const shown = collapse ? body.slice(0, USER_KEPT_ROWS) : body;
 
   const lines = shown.map((line, index) =>
-    clipRow(ctx, `${index === 0 ? head : cont}${line}`),
+    clipRow(ctx, `${index === 0 ? head : cont}${ctx.ink.fg("white", line)}`),
   );
   if (collapse) {
     const hidden = body.length - USER_KEPT_ROWS;

@@ -23,7 +23,7 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
         joinMeta(ctx, [
           "thinking",
           `${thinkingTokenEstimate(content).toLocaleString()} tokens`,
-          expanded ? undefined : "^T",
+          expanded ? "Ctrl+T to hide" : "Ctrl+T to expand",
         ]),
         { fg: "thinking" },
       )}`,

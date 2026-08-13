@@ -597,9 +597,9 @@ export class SessionController implements Disposable {
 
   async cancelAll(): Promise<ToolResult> {
     this.responder?.invalidateWake();
+    this.prompts.preservePendingPriority();
     this.turn.abort();
     this.compactAbort?.abort();
-    this.prompts.clear(true);
     this.notifyState();
     const [jobs, interactive] = await Promise.all([
       this.deps.jobs?.cancelAll(this.sessionIdValue),
@@ -751,6 +751,7 @@ export class SessionController implements Disposable {
         void this.maybeRefreshTitle();
       }
       for (const listener of this.turnEndListeners) listener(result);
+      if (sameGeneration) this.prompts.settle(result);
       return result;
     } finally {
       this.responder?.scheduleWake();

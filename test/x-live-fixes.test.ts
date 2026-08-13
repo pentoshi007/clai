@@ -134,6 +134,42 @@ describe("X3 plan taskId aliases", () => {
     expect(upd.plan?.tasks[0]!.state).toBe("in_progress");
   });
 
+  it("starts a fresh checklist after a completed plan", async () => {
+    const session = createSessionPolicy("x3-terminal-replan");
+    session.planApproved.value = true;
+    const prior = createPlan({
+      sessionId: "x3-terminal-replan",
+      goal: "Finish previous project",
+      detail: "",
+      taskTitles: ["Complete old work", "Verify old work"],
+    });
+    prior.tasks.forEach((task) => {
+      task.state = "done";
+    });
+    prior.status = "completed";
+    await savePlan(prior);
+
+    const result = await handlePlanTool(
+      {
+        name: fromWireName("plan_create")!,
+        args: {
+          goal: "Apply UI fixes",
+          kind: "frontend",
+          tasks: ["Fix layout overflow", "Build and verify"],
+        },
+      },
+      session,
+      { loopGuard: new LoopGuard(), step: 1, autoApprove: true },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.plan?.tasks.map((task) => task.title)).toEqual([
+      "Fix layout overflow",
+      "Build and verify",
+    ]);
+    expect(result.plan?.tasks.map((task) => task.id)).toEqual(["t1", "t2"]);
+  });
+
   it("slugifyTaskId normalizes titles", () => {
     expect(slugifyTaskId("Scaffold the project!")).toBe("scaffold_the_project");
   });

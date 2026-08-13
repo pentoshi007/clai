@@ -14,11 +14,6 @@ export interface ConfirmPort {
   confirmTool(call: ToolCall): Promise<boolean>;
   confirmPentest(): Promise<boolean>;
   /**
-   * Ask whether to continue after a progress-governor pause (or similar).
-   * `reason` is shown when present so the user knows why work stalled.
-   */
-  confirmContinue?(steps: number, reason?: string): Promise<boolean>;
-  /**
    * Ask whether to leave ask mode and run an action task in agent mode.
    * Optional so existing ports keep working; ask-mode handoff falls back to a
    * default "no" when a port doesn't implement it.

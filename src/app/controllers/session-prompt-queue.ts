@@ -29,9 +29,10 @@ function pausedQueueNotice(decision: ContinuationDecision): string {
 export class SessionPromptQueue {
   private readonly items: string[] = [];
   private priorityPrompt: string | undefined;
+  private priorityQueueIndex: number | undefined;
   private nextDisplayPrompt: string | null | undefined;
   private nextDisplayArmed = false;
-  private continuing = false;
+  private activeDrain: Promise<TurnResult[]> | undefined;
 
   constructor(private readonly deps: SessionPromptQueueDeps) {}
 
@@ -46,6 +47,7 @@ export class SessionPromptQueue {
   clear(clearDisplay = false): void {
     this.items.length = 0;
     this.priorityPrompt = undefined;
+    this.priorityQueueIndex = undefined;
     if (clearDisplay) {
       this.nextDisplayPrompt = undefined;
       this.nextDisplayArmed = false;
@@ -102,16 +104,18 @@ export class SessionPromptQueue {
     if (text === undefined) return;
     if (this.deps.isRunning()) {
       this.priorityPrompt = text;
+      this.priorityQueueIndex = index;
       this.deps.abort("steer");
       return;
     }
-    void this.submit(text).then(() => this.continue());
+    void this.submit(text);
   }
 
   enqueuePriority(prompt: string, displayPrompt?: string | undefined): void {
     const text = prompt.trim();
     if (!text) return;
     this.priorityPrompt = text;
+    this.priorityQueueIndex = undefined;
     if (displayPrompt !== undefined) {
       this.nextDisplayPrompt = displayPrompt;
       this.nextDisplayArmed = true;
@@ -120,32 +124,28 @@ export class SessionPromptQueue {
   }
 
   async continue(): Promise<void> {
-    if (this.continuing || this.deps.isRunning()) return;
-    this.continuing = true;
-    try {
-      while (!this.deps.isRunning()) {
-        let next: string | undefined;
-        if (this.priorityPrompt !== undefined) {
-          // An explicit steer always runs, whatever the previous turn did.
-          next = this.priorityPrompt;
-          this.priorityPrompt = undefined;
-        } else if (this.items.length > 0) {
-          const gate = this.continuationGate();
-          if (!gate.proceed) {
-            this.deps.notice(pausedQueueNotice(gate));
-            break;
-          }
-          next = this.items.shift();
-          this.deps.notifyState();
-        } else {
-          break;
-        }
-        if (next === undefined || !next.trim()) continue;
-        await this.deps.runTurn(next, this.consumeDisplay());
-      }
-    } finally {
-      this.continuing = false;
+    await this.drain();
+  }
+
+  settle(result: TurnResult): void {
+    if (this.activeDrain || this.deps.isRunning()) return;
+    if (this.priorityPrompt !== undefined || queueContinuationDecision(result).proceed) {
+      void this.drain();
     }
+  }
+
+  preservePendingPriority(): void {
+    if (this.priorityPrompt === undefined) return;
+    if (this.priorityQueueIndex !== undefined) {
+      const index = Math.max(0, Math.min(this.priorityQueueIndex, this.items.length));
+      this.items.splice(index, 0, this.priorityPrompt);
+    } else {
+      this.nextDisplayPrompt = undefined;
+      this.nextDisplayArmed = false;
+    }
+    this.priorityPrompt = undefined;
+    this.priorityQueueIndex = undefined;
+    this.deps.notifyState();
   }
 
   private continuationGate(): ContinuationDecision {
@@ -169,10 +169,23 @@ export class SessionPromptQueue {
   }
 
   async drain(): Promise<TurnResult[]> {
+    if (this.activeDrain) return this.activeDrain;
+    if (this.deps.isRunning()) return [];
+    const drain = this.drainPending();
+    this.activeDrain = drain;
+    try {
+      return await drain;
+    } finally {
+      if (this.activeDrain === drain) this.activeDrain = undefined;
+    }
+  }
+
+  private async drainPending(): Promise<TurnResult[]> {
     const results: TurnResult[] = [];
     if (this.priorityPrompt !== undefined && !this.deps.isRunning()) {
       const priority = this.priorityPrompt;
       this.priorityPrompt = undefined;
+      this.priorityQueueIndex = undefined;
       const priorityResult = await this.deps.runTurn(
         priority,
         this.consumeDisplay(),
@@ -185,6 +198,11 @@ export class SessionPromptQueue {
       }
     }
     while (this.items.length > 0 && !this.deps.isRunning()) {
+      const gate = this.continuationGate();
+      if (!gate.proceed) {
+        this.deps.notice(pausedQueueNotice(gate));
+        break;
+      }
       const next = this.items.shift();
       if (next === undefined) break;
       this.deps.notifyState();

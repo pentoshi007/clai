@@ -8,6 +8,7 @@ import {
   REQUEST_CONTEXT_PREFIX,
   SYSTEM_TURN_MARKER,
   normalizeSystemMessages,
+  singleLeadingSystemMessages,
 } from "../src/llm/system-messages.js";
 import type { ChatMessage } from "../src/types.js";
 
@@ -68,6 +69,32 @@ describe("normalizeSystemMessages", () => {
       { role: "system", content: `${SYSTEM_TURN_MARKER}\nalready tagged` },
     ]);
     expect(rest[0]!.content).toBe(`${SYSTEM_TURN_MARKER}\nalready tagged`);
+  });
+
+  it("builds an immutable OpenAI-compatible list with one leading system", () => {
+    const messages: ChatMessage[] = [
+      { role: "system", content: "constitution" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call-1", name: "fs.read", args: { path: "a" } }],
+      },
+      { role: "tool", content: "data", toolCallId: "call-1", name: "fs.read" },
+      { role: "system", content: "request context" },
+      { role: "user", content: "continue" },
+    ];
+    const before = structuredClone(messages);
+    const normalized = singleLeadingSystemMessages(messages);
+
+    expect(normalized.filter((message) => message.role === "system")).toHaveLength(1);
+    expect(normalized[0]).toEqual({ role: "system", content: "constitution" });
+    expect(normalized[1]?.toolCalls?.[0]?.id).toBe("call-1");
+    expect(normalized[2]).toMatchObject({ role: "tool", toolCallId: "call-1" });
+    expect(normalized[3]).toEqual({
+      role: "user",
+      content: `${SYSTEM_TURN_MARKER}\nrequest context`,
+    });
+    expect(messages).toEqual(before);
   });
 });
 

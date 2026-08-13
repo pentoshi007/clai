@@ -72,6 +72,15 @@ export function normalizeSystemMessages(messages: ChatMessage[]): {
   return { systemPrompt, rest };
 }
 
+export function singleLeadingSystemMessages(
+  messages: readonly ChatMessage[],
+): ChatMessage[] {
+  const { systemPrompt, rest } = normalizeSystemMessages([...messages]);
+  return systemPrompt === undefined
+    ? rest
+    : [{ role: "system", content: systemPrompt }, ...rest];
+}
+
 export function markSystemTurn(content: string): string {
   return content.startsWith(SYSTEM_TURN_MARKER)
     ? content

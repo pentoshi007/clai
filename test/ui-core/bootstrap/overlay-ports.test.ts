@@ -19,7 +19,7 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     expect(await pending).toBe(true);
   });
 
-  it("confirmPentest, confirmContinue, and confirmAgentSwitch produce the expected prompts", async () => {
+  it("confirmPentest and confirmAgentSwitch produce the expected prompts", async () => {
     const overlay = new OverlayController(new FocusController());
     const port = createOverlayConfirmPort(overlay);
 
@@ -27,16 +27,6 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     expect(overlay.getState().kind).toBe("confirm");
     overlay.answerConfirm(false);
     expect(await pentest).toBe(false);
-
-    const cont = port.confirmContinue(70, "repetitive work produced no evidence");
-    const contState = overlay.getState();
-    if (contState.kind === "confirm") {
-      expect(contState.request.prompt).toMatch(/70 step/);
-      expect(contState.request.prompt).toMatch(/Continue working|stop/i);
-      expect(contState.request.prompt).toContain("repetitive work");
-    }
-    overlay.answerConfirm(true);
-    expect(await cont).toBe(true);
 
     const switchPromise = port.confirmAgentSwitch!({ reason: "needs a shell", tools: ["shell.exec"] });
     const switchState = overlay.getState();

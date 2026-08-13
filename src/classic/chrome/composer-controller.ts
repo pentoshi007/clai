@@ -1,5 +1,13 @@
 import type { CommandRegistry } from "../../app/commands/registry.js";
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
+import {
+  captureClipboardImage as captureSystemClipboardImage,
+  type ClipboardImageCapture,
+} from "../../attachments/clipboard-image.js";
+import {
+  formatAttachmentReference,
+  stabilizeDroppedFilesInText,
+} from "../../ui/mentions.js";
 import type { ActionId } from "../../ui-core/actions/action-id.js";
 import {
   ARROW_BURST_WINDOW_MS,
@@ -44,6 +52,7 @@ export interface ComposerControllerDeps {
   readonly onToast: (text: string) => void;
   readonly onScrollChat: (delta: number) => void;
   readonly onJumpTop: () => void;
+  readonly captureClipboardImage?: (() => ClipboardImageCapture) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -99,14 +108,54 @@ export class ComposerController {
   }
 
   paste(text: string): void {
-    if (text.length === 0) return;
-    const normalized = text.replace(/\r\n?/g, "\n");
-    if (!isLargePaste(normalized)) {
-      this.insertText(normalized);
+    if (text.length === 0) {
+      this.pasteClipboardImage();
       return;
     }
-    const entry = this.pastes.register(normalized);
+    const normalized = text.replace(/\r\n?/g, "\n");
+    const dropped = stabilizeDroppedFilesInText(
+      normalized,
+      this.deps.baseDir ?? process.cwd(),
+    );
+    const value = dropped.files.length > 0 ? dropped.text : normalized;
+    if (dropped.files.length > 0) {
+      this.insertAttachmentText(value);
+      this.deps.onToast(
+        dropped.files.length === 1
+          ? dropped.images.length === 1
+            ? "Image attached"
+            : "File attached"
+          : `${dropped.files.length} files attached`,
+      );
+      return;
+    }
+    if (!isLargePaste(value)) {
+      this.insertText(value);
+      return;
+    }
+    const entry = this.pastes.register(value);
     this.commit(insert(this.snapshot.state, entry.token), { resetHistory: true });
+  }
+
+  private insertAttachmentText(text: string): void {
+    const before = this.snapshot.state.text[this.snapshot.state.cursor - 1] ?? "";
+    const leadingSpace = before && !/\s/.test(before) ? " " : "";
+    this.insertText(`${leadingSpace}${text.trim()} `);
+  }
+
+  private pasteClipboardImage(): void {
+    const capture = this.deps.captureClipboardImage ?? captureSystemClipboardImage;
+    setImmediate(() => {
+      const result = capture();
+      if (!result.ok) {
+        this.deps.onToast(result.reason);
+        return;
+      }
+      this.insertAttachmentText(
+        formatAttachmentReference(result.path, this.deps.baseDir ?? process.cwd()),
+      );
+      this.deps.onToast("Image attached from clipboard");
+    });
   }
 
   setText(text: string): void {
@@ -170,6 +219,17 @@ export class ComposerController {
 
   handleChord(chord: string): boolean {
     if (this.menuOpen() && this.handleMenuChord(chord)) return true;
+    if (chord === "ctrl+v") {
+      const readText = this.deps.clipboard.readText;
+      if (!readText) {
+        this.paste("");
+        return true;
+      }
+      void readText.call(this.deps.clipboard)
+        .then((text) => this.paste(text ?? ""))
+        .catch(() => this.paste(""));
+      return true;
+    }
     if (
       chord === "shift+enter" ||
       chord === "alt+enter" ||

@@ -2,7 +2,6 @@ import type { ContextUsageSnapshot } from "../../llm/token-usage.js";
 import type { Mode } from "../../types.js";
 import {
   contextChipForDensity,
-  contextUsageSeverity,
   type StatusDensity,
 } from "../../ui-core/rendering/context-limit.js";
 import {
@@ -30,11 +29,6 @@ const HINT_LABELS: Readonly<Record<IdleHintId, string>> = {
   output: "^O output",
 };
 
-const CONTEXT_TOKEN: Readonly<Record<"normal" | "warn" | "critical", ThemeToken>> = {
-  normal: "muted",
-  warn: "activity",
-  critical: "diffDel",
-};
 
 export const STATUS_INSET_COLUMNS = 1;
 
@@ -83,12 +77,11 @@ function contextSegment(input: StatusViewInput, density: StatusDensity): string 
   }
   const baseChip = contextChipForDensity(input.contextUsage, density);
   if (baseChip === undefined) return undefined;
-  const token = CONTEXT_TOKEN[contextUsageSeverity(input.contextUsage)];
   const chip =
     density === "xs" || density === "sm"
       ? baseChip.replace(/^ctx\s*/, "").replace(/\/.*$/, "")
       : baseChip;
-  return input.ink.fg(token, chip);
+  return input.ink.fg("userBorder", chip);
 }
 
 /** Mode chip plate per mode — opentui ModeChip parity. */

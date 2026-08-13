@@ -7,7 +7,7 @@ import {
   renderAskSystemPrompt,
   renderRequestEnvironmentContext,
 } from "../prompts/index.js";
-import { getConfig } from "../store/config.js";
+import { getConfig, getProviderModel } from "../store/config.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { loadProjectContext } from "../store/project.js";
 import { parseAllToolCalls, formatToolArgs, looksLikePromptLeak } from "../agent/runner.js";
@@ -142,7 +142,7 @@ async function buildAskMessages(
   const config = getConfig();
   const provider = options.provider ?? config.defaultProvider;
   await ensureProviderConfigured(provider);
-  const model = options.model ?? config.defaultModel;
+  const model = options.model ?? getProviderModel(provider);
   const projectContext = await loadProjectContext();
   const native =
     resolveToolDialect(provider, model, config.toolCalling) !== "none";

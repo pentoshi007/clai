@@ -439,7 +439,10 @@ export function setProviderModel(
   const current = getConfig();
   const sanitized = sanitizeProviderModel(provider, model);
   const providerModels = { ...current.providerModels, [provider]: sanitized };
-  return updateConfig({ providerModels, defaultModel: sanitized });
+  return updateConfig({
+    providerModels,
+    ...(current.defaultProvider === provider ? { defaultModel: sanitized } : {}),
+  });
 }
 
 /**

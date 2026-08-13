@@ -5,6 +5,7 @@ import { getConfig } from "../../store/config.js";
 import { formatComposerMeta } from "../../ui-core/composer/composer-meta.js";
 import { useServices } from "../../ui-core/react/providers.js";
 import { clipSegment, modeIndicatorPresentation } from "../../ui-core/rendering/status-segments.js";
+import { layoutWidth } from "../render/measure.js";
 import { Chrome } from "../chrome/Chrome.js";
 import { Composer } from "../chrome/Composer.js";
 import { directoryRow } from "../chrome/directory-row.js";
@@ -17,7 +18,6 @@ import { responderVisible } from "../chrome/responder-row.js";
 import { allocateChrome, type ChromeDemand } from "../chrome/row-budget.js";
 import { statusRowsWanted } from "../chrome/status-rows.js";
 import { gutterShellWidth, horizontalPadding, SCROLLBAR_GUTTER_COLS } from "../render/shell-width.js";
-import { alignEnds } from "../render/ansi-text.js";
 import { LiveTail } from "../feed/LiveTail.js";
 import { ScrollbarGutter } from "../feed/ScrollbarGutter.js";
 import { CompletionPanel } from "../panels/CompletionPanel.js";
@@ -83,6 +83,7 @@ export function ClassicApp(
   );
   const feed = useFeed({
     services,
+    state: snapshot.transcript,
     columns: shellWidth,
     liveBudgetRows: layout.liveTail,
     now: snapshot.feedNow,
@@ -90,6 +91,12 @@ export function ClassicApp(
     liveOffset: snapshot.liveOffset,
     intro,
   });
+  const selectionDocument = useMemo(
+    () => wiring.transcriptSelectionDocument(feed.blocks),
+    [wiring, feed.blocks],
+  );
+  const selection = services.selection.getState();
+  const standaloneLabel = providedWiring === undefined ? "clai classic · Ctrl+C twice to exit" : undefined;
   const phase = wiring.contextLimitEditingValue ? "suspended" : session.running ? "running" : "idle";
   // Same meta the opentui composer shows on its border: provider · model ·
   // permission, preferring the live session selection over config defaults.
@@ -98,11 +105,19 @@ export function ClassicApp(
     session.provider ?? cfg.defaultProvider,
     session.model ?? cfg.defaultModel,
     cfg.permissions ?? "default",
+    cfg.thinking.enabled ? cfg.thinking.effort : undefined,
   );
   const frame = composerFrame({ columns: shellWidth, allocatedRows: layout.composer, text: composer.state.text, mode: session.mode, phase, unicode: feed.ink.unicode, metaLabel });
   const elapsedSeconds = snapshot.turnStartedAt === undefined ? 0 : (snapshot.now - snapshot.turnStartedAt) / 1000;
 
-  useEffect(() => wiring.observeFeed(feed), [wiring, feed]);
+  useEffect(() => wiring.observeFeed(feed, selectionDocument), [wiring, feed, selectionDocument]);
+  useEffect(
+    () => wiring.setTranscriptSelectionGeometry({
+      left: shellPadding,
+      top: (standaloneLabel === undefined ? 0 : 1) + layout.toast,
+    }),
+    [wiring, shellPadding, standaloneLabel, layout.toast],
+  );
   useEffect(() => wiring.setComposerTextWidth(frame.textWidth), [wiring, frame.textWidth]);
 
   const panelSlot = panelContext ? (
@@ -110,12 +125,11 @@ export function ClassicApp(
   ) : completionOpen ? (
     <CompletionPanel ink={feed.ink} menu={composer.menu} active={composer.active} columns={shellWidth} rows={layout.overlay} />
   ) : undefined;
-  const standaloneLabel = providedWiring === undefined ? "clai classic · Ctrl+C twice to exit" : undefined;
 
   return <Box flexDirection="row" width={columns}>
     <Box width={columns - SCROLLBAR_GUTTER_COLS} paddingLeft={shellPadding} paddingRight={Math.max(0, shellPadding - SCROLLBAR_GUTTER_COLS)} flexDirection="column">
       {standaloneLabel === undefined ? null : <Text wrap="truncate">{standaloneLabel}</Text>}
-      <Chrome layout={layout} columns={shellWidth} liveTail={<LiveTail window={feed.window} rows={layout.liveTail} />} slots={{
+      <Chrome layout={layout} columns={shellWidth} liveTail={<LiveTail window={feed.window} rows={layout.liveTail} document={selectionDocument} selection={selection} />} slots={{
       plan: plan && snapshot.planVisible ? <PlanPanel ink={feed.ink} columns={shellWidth} rows={layout.plan} plan={plan} state={panel.plan} focused={services.focus.activeContext() === "plan"} /> : undefined,
       overlay: panelSlot,
       queue: <QueuePanel ink={feed.ink} columns={shellWidth} allocatedRows={layout.queue} queued={session.queued} selected={snapshot.queueSelected} />,
@@ -130,11 +144,14 @@ export function ClassicApp(
               const hasActivePlan = plan !== undefined;
               const isExpanded = snapshot.planVisible;
               if (!hasActivePlan || isExpanded) return dir;
-              const hint = feed.ink.fg("inputBorder", "plan active · ^H to expand");
-              // dir already is " <muted>path</muted>  <branch> " with inset; strip outer spaces for align
+              const hint = feed.ink.fg("inputBorder", "Tasks active . cntrl+H to expand");
               const width = Math.max(1, shellWidth - 2);
-              // Use plain width check: if hint would push dir off, just show hint truncated by alignEnds
-              return ` ${alignEnds(dir.trim(), hint, width, feed.ink.glyphs.ellipsis)} `;
+              const left = dir.trim();
+              const gap = "   ";
+              if (layoutWidth(left) + layoutWidth(gap) + layoutWidth(hint) <= width) {
+                return ` ${left}${gap}${hint} `;
+              }
+              return ` ${clipSegment(hint, width)} `;
             })()}
           </Text>
         ) : null}

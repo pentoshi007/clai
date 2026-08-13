@@ -9,7 +9,10 @@ import { blockContextFor } from "../../../src/classic/feed/feed-blocks.js";
 import { buildUserLines } from "../../../src/classic/blocks/user-lines.js";
 import { buildThinkingLines } from "../../../src/classic/blocks/thinking-lines.js";
 import { buildNoticeLines } from "../../../src/classic/blocks/notice-lines.js";
-import { displayWidth } from "../../../src/classic/render/measure.js";
+import { buildToolLines } from "../../../src/classic/blocks/tool-lines.js";
+import { buildBatchLines } from "../../../src/classic/blocks/batch-lines.js";
+import { buildCompactedLines } from "../../../src/classic/blocks/compacted-lines.js";
+import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
 import type { ToolItem, UserItem } from "../../../src/ui-core/state/transcript-types.js";
 import { transcriptItems } from "../../../src/ui-core/state/transcript-types.js";
 import { feedView, GOLDEN_COLOR_MODES, GOLDEN_WIDTHS, scriptedTurn } from "./fixture.js";
@@ -57,6 +60,69 @@ describe("buildFeedBlocks", () => {
     expect(byName.get("shell.exec")).toBe("tool");
     expect(byName.get("fs.edit")).toBe("diff");
     expect(byName.get("tool.batch")).toBe("batch");
+  });
+
+  it("keeps diff hunks visible while tool output is minimized", () => {
+    const state = { ...turn.state, expandOutputGlobal: false, expandFileDiffsGlobal: true };
+    const diff = buildFeedBlocks(state, feedView(turn, { columns: 96 })).find(
+      (block) => block.kind === "diff",
+    );
+    expect(diff).toBeDefined();
+    const text = diff!.lines.map(stripAnsi).join("\n");
+    expect(text).toContain("Ctrl+O to expand");
+    expect(text).not.toContain("Ctrl+O to minimize");
+    expect(text).not.toContain("file  /repo/src/routes/users.ts");
+    expect(diff!.lines.length).toBeGreaterThan(4);
+  });
+
+  it("shows the Ctrl+O action for every output card state", () => {
+    const outputKinds: readonly BlockKind[] = ["tool", "batch", "diff", "compacted"];
+    for (const [expanded, label, otherLabel] of [
+      [false, "Ctrl+O to expand", "Ctrl+O to minimize"],
+      [true, "Ctrl+O to minimize", "Ctrl+O to expand"],
+    ] as const) {
+      const state = { ...turn.state, expandOutputGlobal: expanded };
+      const blocks = buildFeedBlocks(state, feedView(turn, { columns: 96 }));
+      for (const kind of outputKinds) {
+        const text = blocks
+          .filter((block) => block.kind === kind)
+          .flatMap((block) => block.lines)
+          .map(stripAnsi)
+          .join("\n");
+        expect(text, `${kind} ${expanded ? "expanded" : "collapsed"}`).toContain(label);
+        expect(text, `${kind} ${expanded ? "expanded" : "collapsed"}`).not.toContain(otherLabel);
+      }
+    }
+  });
+
+  it("shows the Ctrl+O action when output bodies are empty or failed", () => {
+    const tools = transcriptItems(turn.state).filter(
+      (item): item is ToolItem => item.kind === "tool",
+    );
+    const plain = tools.find((item) => item.name === "shell.exec" && item.status === "failed");
+    const batch = tools.find((item) => item.name === "tool.batch");
+    const compacted = transcriptItems(turn.state).find((item) => item.kind === "compacted");
+    expect(plain).toBeDefined();
+    expect(batch).toBeDefined();
+    expect(compacted).toBeDefined();
+
+    for (const [expanded, label] of [
+      [false, "Ctrl+O to expand"],
+      [true, "Ctrl+O to minimize"],
+    ] as const) {
+      const state = { ...turn.state, expandOutputGlobal: expanded };
+      const ctx = blockContextFor(state, feedView(turn, { columns: 40 }));
+      const variants = [
+        buildToolLines(ctx, { ...plain!, summary: undefined }),
+        buildBatchLines(ctx, { ...batch!, toolCallId: plain!.toolCallId }),
+        buildCompactedLines(ctx, { ...compacted!, summary: "" }),
+        buildCompactedLines(ctx, { ...compacted!, error: "provider rejected compaction" }),
+      ];
+      for (const lines of variants) {
+        expect(lines.map(stripAnsi).join("\n")).toContain(label);
+        for (const line of lines) expect(displayWidth(line)).toBeLessThanOrEqual(ctx.width);
+      }
+    }
   });
 
   it("keys blocks by generation so a reset cannot collide with prior keys", () => {
@@ -165,7 +231,7 @@ describe("block builders", () => {
     const lines = buildThinkingLines(ctx, item as never);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("thinking");
-    expect(lines[0]).toContain("^T");
+    expect(lines[0]).toContain("Ctrl+T to expand");
   });
 
   it("expands thinking when the global toggle is on", () => {
@@ -174,7 +240,7 @@ describe("block builders", () => {
     const item = transcriptItems(state).find((i) => i.kind === "thinking");
     const lines = buildThinkingLines(ctx, item as never);
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines[0]).not.toContain("^T");
+    expect(lines[0]).toContain("Ctrl+T to hide");
   });
 });
 

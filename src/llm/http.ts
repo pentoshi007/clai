@@ -1033,6 +1033,26 @@ export function isReasoningUnsupportedError(error: unknown): boolean {
   );
 }
 
+export function isStreamOptionsUnsupportedError(error: unknown): boolean {
+  const status =
+    error && typeof error === "object" && "status" in error
+      ? Number((error as { status?: number }).status)
+      : undefined;
+  if (status !== 400 && status !== 422) return false;
+  const body =
+    error && typeof error === "object" && "body" in error
+      ? String((error as { body?: string }).body ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error);
+  const hay = `${message}\n${body}`.toLowerCase();
+  return (
+    /stream_options|stream options/.test(hay) &&
+    /not support|unsupported|unknown|unrecognized|not a valid|not allowed|unexpected keyword|does not accept|extra fields not permitted|additional propert|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field)/.test(
+      hay,
+    )
+  );
+}
+
 export function isImageInputUnsupportedError(error: unknown): boolean {
   const status =
     error && typeof error === "object" && "status" in error
@@ -1105,6 +1125,8 @@ export function buildChatBody(options: {
   maxTokens?: number | undefined;
   temperature?: number | undefined;
   stream: boolean;
+  /** Set false only after a compatible endpoint rejects `stream_options`. */
+  includeStreamUsage?: boolean | undefined;
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
   supportsVision?: boolean | undefined;
@@ -1180,7 +1202,7 @@ export function buildChatBody(options: {
   }
   // OpenAI + many OpenAI-compatible gateways attach usage on the final SSE
   // chunk when this is set (non-stream responses always include usage).
-  if (options.stream) {
+  if (options.stream && options.includeStreamUsage !== false) {
     body.stream_options = { include_usage: true };
   }
   return JSON.stringify(body);
@@ -1368,6 +1390,8 @@ export async function openAiCompatibleStream(options: {
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
+  /** Omit usage stream options for strict OpenAI-compatible gateways. */
+  includeStreamUsage?: boolean | undefined;
   /** Early native tool-call name/args progress (P2-3). */
   onToolCallDelta?:
     | ((delta: {
@@ -1484,6 +1508,7 @@ export async function openAiCompatibleStream(options: {
     maxTokens: options.maxTokens,
     temperature: options.temperature,
     stream: true,
+    includeStreamUsage: options.includeStreamUsage,
     reasoning: options.reasoning,
     reasoningStyle: options.reasoningStyle,
     supportsVision,
@@ -1611,6 +1636,8 @@ export async function openAiCompatibleStream(options: {
   let full = "";
   let visible = "";
   let reasoningSeen = "";
+  let contentWireSeen = "";
+  let reasoningWireSeen = "";
   let inReasoning = false;
   let finishReason: string | undefined;
   let streamUsage: TokenUsage | undefined;
@@ -1618,6 +1645,16 @@ export async function openAiCompatibleStream(options: {
     number,
     { id?: string; name?: string; arguments: string }
   >();
+
+  const normalizeChannelDelta = (
+    token: string,
+    seen: string,
+  ): { delta: string; seen: string } => {
+    if (seen.length >= 64 && token.length >= seen.length && token.startsWith(seen)) {
+      return { delta: token.slice(seen.length), seen: token };
+    }
+    return { delta: token, seen: seen + token };
+  };
 
   const enterReasoning = (): void => {
     if (inReasoning) return;
@@ -1876,16 +1913,25 @@ export async function openAiCompatibleStream(options: {
           }
           if (choice?.finish_reason) finishReason = choice.finish_reason;
           if (reasoningToken) {
-            if (!reasoningSeen) {
-              learnModelEmitsReasoning(options.providerId, options.model);
+            const normalized = normalizeChannelDelta(
+              reasoningToken,
+              reasoningWireSeen,
+            );
+            reasoningWireSeen = normalized.seen;
+            if (normalized.delta) {
+              if (!reasoningSeen) {
+                learnModelEmitsReasoning(options.providerId, options.model);
+              }
+              enterReasoning();
+              reasoningSeen += normalized.delta;
+              full += normalized.delta;
+              options.onToken(normalized.delta);
             }
-            enterReasoning();
-            reasoningSeen += reasoningToken;
-            full += reasoningToken;
-            options.onToken(reasoningToken);
           }
           if (token) {
-            handleContentToken(token);
+            const normalized = normalizeChannelDelta(token, contentWireSeen);
+            contentWireSeen = normalized.seen;
+            if (normalized.delta) handleContentToken(normalized.delta);
           }
           if (delta?.tool_calls?.length) {
             for (const tc of delta.tool_calls) {

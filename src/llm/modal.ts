@@ -6,6 +6,7 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
+import { singleLeadingSystemMessages } from "./system-messages.js";
 import {
   ProviderError,
   openAiCompatibleComplete,
@@ -173,7 +174,7 @@ export const modalProvider: LlmProvider = {
       baseUrl,
       apiKey: UNUSED_BEARER,
       model,
-      messages: request.messages,
+      messages: singleLeadingSystemMessages(request.messages),
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       headers: modalHeaders(token),
@@ -200,7 +201,7 @@ export const modalProvider: LlmProvider = {
       baseUrl,
       apiKey: UNUSED_BEARER,
       model,
-      messages: request.messages,
+      messages: singleLeadingSystemMessages(request.messages),
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       headers: modalHeaders(token),

@@ -7,6 +7,7 @@ import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
 import type { ClassicAppSnapshot, WiringHost } from "./wiring-types.js";
 
 const PAINT_INTERVAL_MS = 50;
+const ANIMATION_INTERVAL_MS = 250;
 const TICK_INTERVAL_MS = 1000;
 const BRANCH_REFRESH_INTERVAL_MS = 5000;
 const execFile = promisify(execFileCallback);
@@ -52,6 +53,8 @@ export function disposeWiring(host: WiringHost): void {
   if (host.escapeTimer) clearTimeout(host.escapeTimer);
   if (host.tickTimer) clearInterval(host.tickTimer);
   if (host.animationTimer) clearInterval(host.animationTimer);
+  if (host.selectionAutoScrollTimer) clearInterval(host.selectionAutoScrollTimer);
+  host.selectionAutoScrollTimer = undefined;
   if (host.branchRefreshTimer) clearInterval(host.branchRefreshTimer);
   host.branchRefreshRequest += 1;
   host.searchFocusRelease?.();
@@ -86,7 +89,6 @@ export function attachWiring(host: WiringHost): void {
       host.schedulePaint();
       void refreshBranch(host);
       if (result.status === "completed") void promptPlanApprovalIfNeeded(host.services);
-      void host.services.session.continueQueue();
     }),
   );
 
@@ -117,7 +119,7 @@ export function attachWiring(host: WiringHost): void {
     if (!host.needsAnimation()) return;
     host.animationTickValue += 1;
     host.schedulePaint();
-  }, PAINT_INTERVAL_MS);
+  }, ANIMATION_INTERVAL_MS);
   host.animationTimer.unref?.();
 
   void refreshBranch(host);
@@ -143,24 +145,25 @@ export function onSessionChange(host: WiringHost): void {
 
 export function onTranscriptChange(host: WiringHost): void {
   const state = host.services.transcript.getState();
-  const prefixPreserved = host.previousOrder.every((id, index) => state.order[index] === id);
-  if (state.order.length < host.previousOrder.length || !prefixPreserved) host.bumpFeedGeneration();
-  host.previousOrder = state.order;
-  let latestTurnId: string | undefined;
-  for (const id of [...state.order].reverse()) {
-    const turnId = state.byId.get(id)?.turnId;
-    if (turnId !== undefined) {
-      latestTurnId = turnId;
-      break;
+  if (state.order !== host.previousOrder) {
+    const prefixPreserved = host.previousOrder.every((id, index) => state.order[index] === id);
+    if (state.order.length < host.previousOrder.length || !prefixPreserved) host.bumpFeedGeneration();
+    host.previousOrder = state.order;
+    let latestTurnId: string | undefined;
+    for (let index = state.order.length - 1; index >= 0; index -= 1) {
+      const turnId = state.byId.get(state.order[index]!)?.turnId;
+      if (turnId !== undefined) {
+        latestTurnId = turnId;
+        break;
+      }
+    }
+    if (latestTurnId && latestTurnId !== host.activeTurnId) {
+      host.activeTurnId = latestTurnId;
+      host.liveOffsetValue = 0;
+      host.turnStartedAtValue ??= host.now();
     }
   }
-  if (latestTurnId && latestTurnId !== host.activeTurnId) {
-    host.activeTurnId = latestTurnId;
-    host.liveOffsetValue = 0;
-    host.turnStartedAtValue ??= host.now();
-  }
   host.feedNowValue = host.now();
-  host.updateTranscriptDocument();
   host.schedulePaint();
 }
 

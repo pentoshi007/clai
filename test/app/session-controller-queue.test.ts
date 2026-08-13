@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentPort, RunTurnHandlers, RunTurnRequest } from "../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { SessionController } from "../../src/app/controllers/session-controller.js";
@@ -124,55 +124,118 @@ describe("SessionController queued-draft management (INPUT-007)", () => {
     expect(session.takeQueued(9)).toBeUndefined();
   });
 
-  it("sendQueuedNow while idle submits that prompt and leaves the rest queued", async () => {
+  it("sendQueuedNow while idle submits that prompt and drains the rest", async () => {
     const session = buildSession();
     session.enqueue("first");
     session.enqueue("second");
     session.sendQueuedNow(0);
-    // Idle path is async via submit().then(continueQueue).
-    await new Promise((r) => setTimeout(r, 20));
-    // first was taken; after submit completes continueQueue drains second.
-    expect(session.queued()).toEqual([]);
-    expect(session.getState().running).toBe(false);
+    await vi.waitFor(() => {
+      expect(session.queued()).toEqual([]);
+      expect(session.getState().running).toBe(false);
+    });
   });
 
-  it("sendQueuedNow while running aborts and prioritizes that prompt", async () => {
+  it("drains queued prompts after natural completion", async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const seen: string[] = [];
     const agent: AgentPort = {
-      async runTurn(req, handlers) {
-        seen.push(req.prompt);
-        if (req.prompt === "slow") await gate;
-        handlers.onMessages?.([]);
+      async runTurn(request) {
+        seen.push(request.prompt);
+        if (request.prompt === "active") await gate;
         return succeeded();
       },
     };
-    const session = new SessionController({
-      agent,
-      persistence: fakePersistence(),
-      sessionId: "sess-send-now",
-      emit: () => {},
-    });
-    const running = session.submit("slow");
-    // Let the turn mark itself running.
-    await new Promise((r) => setTimeout(r, 5));
+    const session = buildSession(agent);
+    const running = session.submit("active");
+    await vi.waitFor(() => expect(session.getState().running).toBe(true));
     session.enqueue("queued-a");
     session.enqueue("queued-b");
-    session.sendQueuedNow(1); // take queued-b as priority
-    expect(session.queued()).toEqual(["queued-a"]);
     release();
     await running;
-    // continueQueue is caller's job after onTurnEnd in the app; call it here.
-    await session.continueQueue();
-    expect(seen).toContain("slow");
-    expect(seen).toContain("queued-b");
-    // priority then remaining queue
-    const bIdx = seen.indexOf("queued-b");
-    const aIdx = seen.indexOf("queued-a");
-    expect(bIdx).toBeGreaterThan(seen.indexOf("slow"));
-    expect(aIdx).toBeGreaterThan(bIdx);
+    await vi.waitFor(() => {
+      expect(seen).toEqual(["active", "queued-a", "queued-b"]);
+      expect(session.queued()).toEqual([]);
+    });
+  });
+
+  it("keeps queued prompts after an ordinary abort", async () => {
+    const agent: AgentPort = {
+      async runTurn(_request, handlers) {
+        await new Promise<void>((_resolve, reject) => {
+          handlers.signal?.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+        return succeeded();
+      },
+    };
+    const session = buildSession(agent);
+    const running = session.submit("active");
+    await vi.waitFor(() => expect(session.getState().running).toBe(true));
+    session.enqueue("queued-a");
+    session.enqueue("queued-b");
+    session.abort();
+    expect((await running).status).toBe("aborted");
+    expect(session.queued()).toEqual(["queued-a", "queued-b"]);
+  });
+
+  it("sendQueuedNow while running aborts and prioritizes that prompt", async () => {
+    const seen: string[] = [];
+    const agent: AgentPort = {
+      async runTurn(request, handlers) {
+        seen.push(request.prompt);
+        if (request.prompt === "active") {
+          await new Promise<void>((_resolve, reject) => {
+            handlers.signal?.addEventListener("abort", () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            }, { once: true });
+          });
+        }
+        return succeeded();
+      },
+    };
+    const session = buildSession(agent);
+    const running = session.submit("active");
+    await vi.waitFor(() => expect(session.getState().running).toBe(true));
+    session.enqueue("queued-a");
+    session.enqueue("queued-b");
+    session.sendQueuedNow(1);
+    expect(session.queued()).toEqual(["queued-a"]);
+    expect((await running).status).toBe("aborted");
+    await vi.waitFor(() => {
+      expect(seen).toEqual(["active", "queued-b", "queued-a"]);
+      expect(session.queued()).toEqual([]);
+    });
+  });
+
+  it("restores a promoted prompt when cancelAll wins the send-now race", async () => {
+    const agent: AgentPort = {
+      async runTurn(_request, handlers) {
+        await new Promise<void>((_resolve, reject) => {
+          handlers.signal?.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          }, { once: true });
+        });
+        return succeeded();
+      },
+    };
+    const session = buildSession(agent);
+    const running = session.submit("active");
+    await vi.waitFor(() => expect(session.getState().running).toBe(true));
+    session.enqueue("queued-a");
+    session.enqueue("queued-b");
+    session.sendQueuedNow(1);
+    await session.cancelAll();
+    expect((await running).status).toBe("aborted");
+    expect(session.queued()).toEqual(["queued-a", "queued-b"]);
   });
 });

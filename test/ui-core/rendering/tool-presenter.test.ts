@@ -179,6 +179,15 @@ describe("cleanToolOutputLines", () => {
     ].join("\n");
     expect(cleanToolOutputLines(raw)).toEqual(["49.47.135.245"]);
   });
+
+  it("removes printable caret-encoded CSI from captured tool output", () => {
+    const raw = "passed^[[39m^[[22m^[[90m (104)^[[39m";
+    expect(cleanToolOutputLines(raw)).toEqual(["passed (104)"]);
+  });
+
+  it("preserves incomplete caret notation used as ordinary text", () => {
+    expect(cleanToolOutputLines("press ^[ then [39m")).toEqual(["press ^[ then [39m"]);
+  });
 });
 
 describe("presentOutput (CHAT-005, PERF-003)", () => {

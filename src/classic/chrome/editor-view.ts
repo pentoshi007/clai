@@ -140,9 +140,10 @@ export function renderEditor(input: RenderEditorInput): RenderedEditor {
 
   const rows = visible.map((row, index) => {
     const absolute = top + index;
-    return absolute === layout.caretRow
+    const text = absolute === layout.caretRow
       ? renderCaretRow(ink, row.text, layout.caretColumn, input.showCaret)
       : row.text;
+    return ink.fg("white", text);
   });
   while (rows.length < height) rows.push("");
 

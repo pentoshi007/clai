@@ -68,6 +68,23 @@ describe('config store', () => {
     expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
   });
 
+  it('keeps the active default model when configuring another provider', async () => {
+    const { getConfig, getProviderModel, setProviderModel } = await loadConfigStore();
+    const before = getConfig().defaultModel;
+
+    setProviderModel('modal', 'Qwen/Qwen3.8-2.4T-A95B');
+
+    expect(getProviderModel('modal')).toBe('Qwen/Qwen3.8-2.4T-A95B');
+    expect(getConfig().defaultModel).toBe(before);
+  });
+
+  it('updates the active default model with its provider model', async () => {
+    const { getConfig, setDefaultProvider, setProviderModel } = await loadConfigStore();
+    setDefaultProvider('modal');
+    setProviderModel('modal', 'moonshotai/Kimi-K3');
+    expect(getConfig().defaultModel).toBe('moonshotai/Kimi-K3');
+  });
+
   it('supports disableKeychain property', async () => {
     const { getConfig, updateConfig } = await loadConfigStore();
     expect(getConfig().disableKeychain).toBe(false);

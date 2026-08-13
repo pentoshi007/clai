@@ -32,6 +32,9 @@ describe("duplicated full-snapshot tool arguments", () => {
       path: "/Users/aniketpandey/Desktop/indian-metro",
     });
     expect(call!.args._parseError).toBeUndefined();
+    expect(call!.rawArguments).toBe(
+      '{"path":"/Users/aniketpandey/Desktop/indian-metro"}',
+    );
   });
 
   it("still accumulates genuine incremental fragments", () => {
@@ -48,6 +51,7 @@ describe("duplicated full-snapshot tool arguments", () => {
 
     const [call] = finalizeOpenAiToolCalls(state);
     expect(call!.args).toEqual({ path: "/tmp/a.ts" });
+    expect(call!.rawArguments).toBe('{"path":"/tmp/a.ts"}');
   });
 
   it("accepts arguments emitted as a JSON object instead of a string", () => {
@@ -88,8 +92,15 @@ describe("duplicated full-snapshot tool arguments", () => {
   });
 
   it("still flags genuinely truncated arguments so write salvage can run", () => {
-    const args = parseToolArguments('{"path":"/tmp/a.ts","content":"half');
+    const raw = '{"path":"/tmp/a.ts","content":"half';
+    const args = parseToolArguments(raw);
     expect(args._parseError).toBe(true);
+    const state = new Map();
+    accumulateOpenAiToolCallDelta(state, {
+      index: 0,
+      function: { name: "fs_write", arguments: raw },
+    });
+    expect(finalizeOpenAiToolCalls(state)[0]?.rawArguments).toBe(raw);
     expect(
       repairConcatenatedToolArguments('{"path":"/tmp/a.ts"} trailing'),
     ).toBeUndefined();

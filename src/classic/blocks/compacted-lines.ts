@@ -5,9 +5,10 @@ import {
   isItemExpanded,
   type CompactedItem,
 } from "../../ui-core/state/transcript-types.js";
+import { trimTrailingSpaces } from "../render/ansi-text.js";
 import { wrapWithPrefixes } from "../render/wrap.js";
 import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
-import { trimTrailingSpaces } from "../render/ansi-text.js";
+import { outputToggleLabel } from "./tool-lines.js";
 
 /** Summary rows shown in the collapsed card (OpenTUI parity). */
 export const COMPACTED_PREVIEW_ROWS = 4;
@@ -27,6 +28,7 @@ export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): str
       `${index === 0 ? `${glyph} ` : "  "}${ctx.ink.fg(item.error ? "activity" : "cyan", row)}`,
     ),
   );
+  const indent = " ".repeat(BODY_INDENT);
 
   if (item.error) {
     const branch = ctx.ink.fg("muted", `  ${ctx.glyphs.bodyBranch} `);
@@ -41,33 +43,33 @@ export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): str
         ),
       );
     }
+    lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`));
     return lines;
   }
 
   const summary = sanitizeDisplayText(
     item.streaming ? liveCompactionHeadTail(item.summary) : item.summary,
   ).trim();
-  if (summary === "") return lines;
+  if (summary === "") {
+    lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`));
+    return lines;
+  }
 
   const budget = Math.max(1, ctx.width - BODY_INDENT);
   const rows = wrapWithPrefixes(summary, { width: budget });
   const cap = expanded ? rows.length : COMPACTED_PREVIEW_ROWS;
   const shown = rows.slice(0, cap);
   const branch = ctx.ink.fg("muted", `  ${ctx.glyphs.bodyBranch} `);
-  const indent = " ".repeat(BODY_INDENT);
 
   for (const [index, row] of shown.entries()) {
     lines.push(
       trimTrailingSpaces(`${index === 0 ? branch : indent}${ctx.ink.fg("muted", row)}`),
     );
   }
-  if (rows.length > shown.length) {
-    lines.push(
-      clipRow(
-        ctx,
-        `${indent}${ctx.ink.fg("muted", joinMeta(ctx, [`${ctx.glyphs.ellipsis} full memory`, "^O"]))}`,
-      ),
-    );
-  }
+  const footer = joinMeta(ctx, [
+    outputToggleLabel(expanded),
+    rows.length > shown.length ? `${ctx.glyphs.ellipsis} full memory` : undefined,
+  ]);
+  lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", footer)}`));
   return lines;
 }

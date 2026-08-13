@@ -5,6 +5,7 @@ export interface TranscriptWindowRow {
   readonly key: string;
   readonly line: string;
   readonly block: FeedBlock;
+  readonly lineIndex: number | undefined;
 }
 
 export interface TranscriptWindow {
@@ -29,10 +30,10 @@ export function flattenBlocks(blocks: readonly FeedBlock[]): readonly Transcript
   const rows: TranscriptWindowRow[] = [];
   for (const [blockIndex, block] of blocks.entries()) {
     for (const [lineIndex, line] of block.lines.entries()) {
-      rows.push({ key: `${block.key}:${lineIndex}`, line, block });
+      rows.push({ key: `${block.key}:${lineIndex}`, line, block, lineIndex });
     }
     if (blockIndex < blocks.length - 1) {
-      rows.push({ key: `${block.key}:gap`, line: "", block });
+      rows.push({ key: `${block.key}:gap`, line: "", block, lineIndex: undefined });
     }
   }
   return rows;

@@ -118,6 +118,10 @@ export class LoopGuard {
   private consecutiveSequenceRepeats = 0;
   private totalSequenceSuppressions = 0;
   private sequenceRunCounts = new Map<string, number>();
+  private sequenceOutcomes = new Map<
+    string,
+    { fingerprint: string; unchangedRuns: number }
+  >();
   private emptySuccessfulCalls = new Map<
     string,
     { step: number; stateKey?: string | undefined; retryReason?: string | undefined }
@@ -285,6 +289,30 @@ export class LoopGuard {
       this.lastActionSequenceOutcome = undefined;
       this.unchangedActionSequenceRuns = 0;
       this.consecutiveSequenceRepeats = 0;
+      const prior = this.sequenceOutcomes.get(signature);
+      if (prior && prior.unchangedRuns >= 3) {
+        this.totalSequenceSuppressions += 1;
+        return {
+          suppress: true,
+          terminal: this.totalSequenceSuppressions >= 4,
+          repetitions: prior.unchangedRuns,
+          totalSuppressions: this.totalSequenceSuppressions,
+          oscillation: true,
+          warn: false,
+        };
+      }
+      if (prior && prior.unchangedRuns >= 2) {
+        return {
+          suppress: false,
+          terminal: false,
+          repetitions: prior.unchangedRuns,
+          totalSuppressions: this.totalSequenceSuppressions,
+          oscillation: true,
+          warn: true,
+          warnMessage:
+            "This action sequence has returned after intervening actions and produced the same observable result repeatedly. Use the existing result or take a materially different action; another unchanged cycle will be blocked.",
+        };
+      }
       return none;
     }
 
@@ -381,6 +409,7 @@ export class LoopGuard {
       this.actionSequenceRepetitions = 0;
       this.lastActionSequenceOutcome = undefined;
       this.unchangedActionSequenceRuns = 0;
+      this.sequenceOutcomes.delete(signature);
       return;
     }
     if (this.sequenceNeedsOutcomeComparison(calls)) {
@@ -390,6 +419,12 @@ export class LoopGuard {
         ? this.unchangedActionSequenceRuns + 1
         : 1;
       this.lastActionSequenceOutcome = comparableOutcome;
+      const prior = this.sequenceOutcomes.get(signature);
+      this.sequenceOutcomes.set(signature, {
+        fingerprint: comparableOutcome,
+        unchangedRuns:
+          prior?.fingerprint === comparableOutcome ? prior.unchangedRuns + 1 : 1,
+      });
     }
     this.sequenceRunCounts.set(signature, (this.sequenceRunCounts.get(signature) ?? 0) + 1);
   }
@@ -407,8 +442,12 @@ export class LoopGuard {
   }
 
   resetSequenceCountBySignature(signature: string): boolean {
-    if (!this.sequenceRunCounts.has(signature)) return false;
+    if (
+      !this.sequenceRunCounts.has(signature) &&
+      !this.sequenceOutcomes.has(signature)
+    ) return false;
     this.sequenceRunCounts.delete(signature);
+    this.sequenceOutcomes.delete(signature);
     this.actionSequenceRepetitions = 0;
     this.consecutiveSequenceRepeats = 0;
     return true;
@@ -416,6 +455,7 @@ export class LoopGuard {
 
   resetAllSequenceCounts(): void {
     this.sequenceRunCounts.clear();
+    this.sequenceOutcomes.clear();
     this.actionSequenceRepetitions = 0;
     this.consecutiveSequenceRepeats = 0;
     this.lastActionSequenceOutcome = undefined;

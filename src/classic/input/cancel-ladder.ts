@@ -109,7 +109,7 @@ export class CancelLadder {
         this.deps.notify({
           level: result.ok ? "info" : "warn",
           text: result.ok
-            ? "Cancelled turn, queue, and Responder jobs"
+            ? "Cancelled turn and Responder jobs"
             : "Cancellation completed with job stop failures — open Jobs for details",
           key: "escape-cancel-all",
           durationMs: result.ok ? 2400 : 3200,
@@ -146,7 +146,6 @@ export class CancelLadder {
     return (
       state.running ||
       state.compacting ||
-      state.queued.length > 0 ||
       this.deps.jobs.running(sessionId).length > 0 ||
       this.deps.jobs.pendingNotifications(sessionId).length > 0
     );

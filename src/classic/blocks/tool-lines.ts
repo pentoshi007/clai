@@ -5,7 +5,6 @@ import {
 } from "../../ui-core/state/transcript-types.js";
 import { presentOutput, presentTool } from "../../ui-core/rendering/tool-presenter.js";
 import { alignEnds, clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
-import { backdropRow } from "../render/backdrop.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
 import { wrapAnsiLine } from "../render/wrap.js";
@@ -110,6 +109,10 @@ export interface ToolBodyOptions {
   readonly maxRows?: number | undefined;
 }
 
+export function outputToggleLabel(expanded: boolean): string {
+  return expanded ? "Ctrl+O to minimize" : "Ctrl+O to expand";
+}
+
 export function buildToolBodyLines(
   ctx: BlockContext,
   item: ToolItem,
@@ -119,7 +122,10 @@ export function buildToolBodyLines(
   const tail = ctx.spool.tail(item.toolCallId);
   const detail = item.status === "blocked" ? item.reason : item.summary;
   const source = tail.trim().length > 0 ? tail : (detail ?? "");
-  if (source.trim().length === 0) return [];
+  const indent = " ".repeat(BODY_INDENT);
+  if (source.trim().length === 0) {
+    return [clipRow(ctx, `${indent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`)];
+  }
 
   const presented = presentOutput(
     source,
@@ -134,7 +140,6 @@ export function buildToolBodyLines(
   const hidden = presented.lines.length - kept.length + presented.hiddenAboveCount;
 
   const branch = ctx.ink.fg("muted", `  ${ctx.glyphs.bodyBranch} `);
-  const indent = " ".repeat(BODY_INDENT);
   const budget = Math.max(1, ctx.width - BODY_INDENT);
 
   const lines: string[] = [];
@@ -142,38 +147,25 @@ export function buildToolBodyLines(
     const text = adaptPresenterGlyphs(raw, ctx.ink.unicode);
     for (const [row, chunk] of wrapAnsiLine(text, budget).entries()) {
       const prefix = index === 0 && row === 0 ? branch : indent;
-      lines.push(trimTrailingSpaces(`${prefix}${ctx.ink.fg("toolOutput", chunk)}`));
+      lines.push(trimTrailingSpaces(`${prefix}${ctx.ink.fg("foreground", chunk)}`));
     }
   }
 
   const artifact = item.artifactPath ? "saved" : undefined;
-  if (hidden > 0) {
-    const body = joinMeta(ctx, [
-      `${ctx.glyphs.ellipsis} +${hidden} line${hidden === 1 ? "" : "s"}`,
-      "^O",
-      artifact,
-    ]);
-    lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", body)}`));
-  }
   if (presented.truncatedNotice) {
     lines.push(
       clipRow(ctx, `${indent}${ctx.ink.fg("muted", presented.truncatedNotice)}`),
     );
   }
+  const body = joinMeta(ctx, [
+    outputToggleLabel(expanded),
+    hidden > 0
+      ? `${ctx.glyphs.ellipsis} +${hidden} line${hidden === 1 ? "" : "s"}`
+      : undefined,
+    artifact,
+  ]);
+  lines.push(clipRow(ctx, `${indent}${ctx.ink.fg("muted", body)}`));
   return lines;
-}
-
-/**
- * Solid grey backdrop behind every row of a tool block, edge to edge, so a
- * run/output group reads as one plate.
- */
-export function paintToolRows(ctx: BlockContext, lines: readonly string[]): string[] {
-  return lines.map((line) => {
-    const budget = Math.max(1, ctx.width - 2);
-    const needsClip = layoutWidth(line) > budget;
-    const inner = needsClip ? ` ${clipToWidth(line, budget, ctx.glyphs.ellipsis)} ` : line.length === 0 ? " " : ` ${line} `;
-    return backdropRow(ctx.ink, "toolBg", inner, ctx.width);
-  });
 }
 
 export function buildToolLines(
@@ -181,8 +173,8 @@ export function buildToolLines(
   item: ToolItem,
   options: ToolBodyOptions = {},
 ): string[] {
-  return paintToolRows(ctx, [
+  return [
     ...toolHeaderLines(ctx, item),
     ...buildToolBodyLines(ctx, item, options),
-  ]);
+  ];
 }

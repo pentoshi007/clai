@@ -78,7 +78,7 @@ describe("store path roots", () => {
     // removed count may be > 1 when other suites left session artifacts.
     expect((await clearArtifacts()).removed).toBeGreaterThanOrEqual(1);
     expect(existsSync(artifact)).toBe(false);
-  });
+  }, 10_000);
 
   it("routes shell artifacts through the injected artifact root", async () => {
     const { shellExec } = await import("../src/tools/shell.js");

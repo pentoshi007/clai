@@ -50,7 +50,7 @@ import {
   scratchDirFor,
   toolNudge,
 } from "../prompts/index.js";
-import { getConfig } from "../store/config.js";
+import { getConfig, getProviderModel } from "../store/config.js";
 import {
   beginSessionWorkspace,
   getActiveSessionWorkspace,
@@ -254,7 +254,6 @@ import {
 import {
   codingSessionFromContext,
   isProtocolPlaceholderOutput,
-  progressPauseMode,
 } from "./progress-pause-policy.js";
 import {
   planContextMessage,
@@ -835,7 +834,7 @@ export async function runAgentTurn(
       options.visionProven !== false,
     );
     const initialProvider = options.provider ?? config.defaultProvider;
-    const initialModel = options.model ?? config.defaultModel;
+    const initialModel = options.model ?? getProviderModel(initialProvider);
     // image.view is different from optimistic user-attachment handling: once
     // the tool succeeds, the model must actually receive and inspect its bytes.
     // Offer it only with affirmative capability evidence for the active route.
@@ -1662,14 +1661,9 @@ export async function runAgentTurn(
     const hasHistory = (options.history?.length ?? 0) > 0;
     const buildLike = buildLikeTurn;
     const pentestLike = looksLikePentestTask(prompt, options.history);
-    /** Coding/build sessions never hard-pause mid-turn for the progress governor. */
     let codingSession = codingSessionFromContext({
       buildLike,
       planKind: activePlan?.kind,
-    });
-    let pauseMode = progressPauseMode({
-      codingSession,
-      autoConfirm: Boolean(options.autoConfirm),
     });
     const continueExistingOutcome =
       /^(?:continue|resume|proceed|keep\s+going|finish|next)\b/i.test(prompt.trim()) ||
@@ -1685,7 +1679,6 @@ export async function runAgentTurn(
     // Canonical mutation/artifact ledger feeding the durable compaction envelope.
     const workLedger = new WorkLedger();
     let governorState: GovernorState = createGovernorState();
-    let governorPauseReason: string | undefined;
     let turnState: TurnStateSnapshot = createTurnState();
     const moveTurn = (to: TurnState, reason?: string): void => {
       if (turnState.state === to) return;
@@ -3459,22 +3452,6 @@ export async function runAgentTurn(
                 ? " Keep working — coding builds do not stop for a continue prompt."
                 : ""),
           });
-        } else if (governed.recommendation === "paused_budget") {
-          if (pauseMode === "never") {
-            // Soft reset so we do not re-trip every subsequent tool.
-            governorState = {
-              ...governed.state,
-              consecutiveNoDelta: 0,
-            };
-            deferredPostToolMessages.push({
-              role: "system",
-              content:
-                `PROGRESS GOVERNOR (soft, coding build): ${governed.reason}. ` +
-                "Change approach if stuck, but keep implementing — do not stop for user confirmation.",
-            });
-          } else {
-            governorPauseReason = governed.reason;
-          }
         }
       }
       await saveOutcomeState(outcomeState);
@@ -4030,68 +4007,6 @@ export async function runAgentTurn(
       // `step` is the productive-step index (used for display + audit). It only
       // advances when the previous iteration actually executed a tool.
       step = productiveSteps;
-      if (governorPauseReason) {
-        // Non-coding: always ask continue/stop. Coding never sets this reason
-        // (pauseMode === "never"), but guard anyway.
-        if (pauseMode === "never") {
-          governorPauseReason = undefined;
-          governorState = {
-            ...governorState,
-            consecutiveNoDelta: 0,
-          };
-        } else {
-          const confirmPort = options.confirm;
-          let keepGoing = false;
-          if (confirmPort?.confirmContinue) {
-            try {
-              keepGoing = await confirmPort.confirmContinue(
-                productiveSteps,
-                governorPauseReason,
-              );
-            } catch {
-              keepGoing = false;
-            } finally {
-              restoreInteractiveStdin();
-            }
-          }
-          if (keepGoing) {
-            writeNotice("info", "continuing after progress pause");
-            deferredPostToolMessages.push({
-              role: "system",
-              content:
-                `User chose CONTINUE after progress pause (${governorPauseReason}). ` +
-                "Do not repeat the same failing step; change approach and produce new evidence.",
-            });
-            governorPauseReason = undefined;
-            governorState = {
-              ...governorState,
-              consecutiveNoDelta: 0,
-            };
-          } else {
-            const richSummary = await buildRichStopSummary(
-              messages,
-              session,
-              productiveSteps,
-            );
-            outcomeState.outcome.status = "paused_budget";
-            await saveOutcomeState(outcomeState);
-            moveTurn("paused_budget", governorPauseReason);
-            lastAnswer = richSummary;
-            return finishTurn(
-              lastAnswer,
-              productiveSteps,
-              "paused_budget",
-              outcomeState.outcome.criteria
-                .filter(
-                  (criterion) =>
-                    criterion.required && criterion.status !== "proven",
-                )
-                .map((criterion) => criterion.statement),
-              governorPauseReason,
-            );
-          }
-        }
-      }
       options.signal?.throwIfAborted();
 
 
@@ -5990,8 +5905,6 @@ export async function runAgentTurn(
             } else {
               session.planApproved.value = true;
             }
-            // Re-derive pause policy from the new plan kind (coding builds
-            // must not hard-pause even if the free-text prompt was generic).
             const kindArg =
               typeof res.call.args.kind === "string"
                 ? res.call.args.kind
@@ -5999,10 +5912,6 @@ export async function runAgentTurn(
             codingSession = codingSessionFromContext({
               buildLike,
               planKind: kindArg,
-            });
-            pauseMode = progressPauseMode({
-              codingSession,
-              autoConfirm: Boolean(options.autoConfirm),
             });
           }
           // User Esc/Ctrl+C only — never cancel siblings because a delete failed
@@ -6075,7 +5984,7 @@ export async function runAgentTurn(
           PARALLEL_LIMIT,
         );
         for (const group of groups) {
-          if (aborted || awaitingPlanApproval || governorPauseReason) break;
+          if (aborted || awaitingPlanApproval) break;
           if (group.length === 1) {
             const call = group[0]!;
             const bc = callToBound.get(call);
@@ -6131,9 +6040,7 @@ export async function runAgentTurn(
             ? "Cancelled — turn aborted before this call ran."
             : awaitingPlanApproval
               ? "Deferred — waiting for plan approval."
-              : governorPauseReason
-                ? `Deferred — progress governor paused execution: ${governorPauseReason}`
-                : "Cancelled — not executed.";
+              : "Cancelled — not executed.";
           const result: ToolResult = {
             ok: false,
             output: reason,
@@ -6193,8 +6100,7 @@ export async function runAgentTurn(
             toRun.length === bound.length &&
             actionSequenceExecuted === allCalls.length &&
             !aborted &&
-            !awaitingPlanApproval &&
-            !governorPauseReason,
+            !awaitingPlanApproval,
           actionSequenceOutcome,
         );
 

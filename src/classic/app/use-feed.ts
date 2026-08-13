@@ -4,7 +4,7 @@ import { getCurrentVersion } from "../../commands/update.js";
 import { safeCwd } from "../../os/cwd.js";
 import { getConfig } from "../../store/config.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
-import { useTranscriptState } from "../../ui-core/react/use-transcript-store.js";
+import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 import type { IntroBlockInput } from "../blocks/intro-lines.js";
 import type { BlockContext } from "../blocks/block-context.js";
 import { blockContextFor, buildFeedBlocks, type FeedBlock } from "../feed/feed-blocks.js";
@@ -60,6 +60,7 @@ export interface FeedLedgerState {
 
 export interface UseFeedInput {
   readonly services: AppServices;
+  readonly state: TranscriptState;
   readonly columns: number;
   readonly liveBudgetRows: number;
   readonly now: number;
@@ -75,7 +76,7 @@ export interface UseFeedInput {
  * anchored `liveOffset` rows above the bottom — the OpenTUI scrollbox model.
  */
 export function useFeed(input: UseFeedInput): FeedSnapshot {
-  const state = useTranscriptState(input.services.transcript);
+  const state = input.state;
   const ink = useInkTheme(input.services);
 
   const view = useMemo(

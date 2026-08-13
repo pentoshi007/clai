@@ -2,31 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   codingSessionFromContext,
   isProtocolPlaceholderOutput,
-  progressPauseMode,
 } from "../src/agent/progress-pause-policy.js";
 
-describe("progress pause policy", () => {
-  it("never hard-pauses coding/build sessions", () => {
-    expect(
-      progressPauseMode({ codingSession: true, autoConfirm: false }),
-    ).toBe("never");
-    expect(
-      progressPauseMode({ codingSession: true, autoConfirm: true }),
-    ).toBe("never");
-  });
-
-  it("confirms for pentest/general interactive sessions", () => {
-    expect(
-      progressPauseMode({ codingSession: false, autoConfirm: false }),
-    ).toBe("confirm");
-  });
-
-  it("never pauses under autoConfirm (-y)", () => {
-    expect(
-      progressPauseMode({ codingSession: false, autoConfirm: true }),
-    ).toBe("never");
-  });
-
+describe("progress policy helpers", () => {
   it("treats coding plan kind as a coding session", () => {
     expect(
       codingSessionFromContext({ buildLike: false, planKind: "coding" }),

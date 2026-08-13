@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { createElement } from "react";
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
@@ -14,6 +15,9 @@ import {
   type AppServices,
 } from "../../src/ui-core/bootstrap/composition-root.js";
 import { ServicesProvider } from "../../src/ui-core/react/providers.js";
+import { relativizeHome } from "../../src/classic/chrome/status-rows.js";
+import type { SessionPlan } from "../../src/store/plan.js";
+import { getConfig, updateConfig } from "../../src/store/config.js";
 
 function fakePersistence(): PersistencePort {
   return {
@@ -39,6 +43,19 @@ function buildServices(columns = 80): AppServices {
       rows: 24,
     }),
   });
+}
+
+function activePlan(sessionId: string): SessionPlan {
+  return {
+    sessionId,
+    goal: "Test active plan",
+    detail: "",
+    tasks: [{ id: "t1", title: "Run test", state: "in_progress" }],
+    status: "in_progress",
+    kind: "testing",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
 }
 
 function buildWiring(services: AppServices, columns = 100, rows = 24): ClassicAppWiring {
@@ -87,6 +104,28 @@ describe("statusRowText", () => {
 });
 
 describe("ClassicApp", () => {
+  it("shows the enabled model effort on the composer boundary", () => {
+    const previousThinking = getConfig().thinking;
+    updateConfig({ thinking: { enabled: true, effort: "high" } });
+    const services = buildServices();
+    const wiring = buildWiring(services);
+    const { lastFrame, unmount } = render(
+      createElement(ServicesProvider, {
+        services,
+        children: createElement(ClassicApp, { wiring }),
+      }),
+    );
+
+    try {
+      expect(lastFrame()).toContain("llama-3.3-70b(high)");
+    } finally {
+      unmount();
+      wiring.dispose();
+      services.dispose();
+      updateConfig({ thinking: previousThinking });
+    }
+  });
+
   it("renders the chrome at the allocated height with the status row last", () => {
     const services = buildServices();
     const wiring = buildWiring(services);
@@ -120,6 +159,51 @@ describe("ClassicApp", () => {
     unmount();
     wiring.dispose();
     services.dispose();
+  });
+
+  it("places the collapsed active-task hint directly after directory and branch", async () => {
+    const services = buildServices();
+    const wiring = buildWiring(services, 140);
+    wiring.branchValue = "main";
+    services.plan.observe({
+      type: "plan-updated",
+      payload: {
+        planId: services.session.sessionId,
+        plan: activePlan(services.session.sessionId),
+      },
+    } as never);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const { lastFrame, unmount } = render(
+      createElement(ServicesProvider, {
+        services,
+        children: createElement(ClassicApp, { wiring }),
+      }),
+    );
+
+    try {
+      const row = (lastFrame() ?? "")
+        .split("\n")
+        .find((line) => line.includes("Tasks active . cntrl+H to expand"));
+      expect(row).toBeDefined();
+      const plain = row?.replace(/\x1b\[[0-9;]*m/g, "") ?? "";
+      const cwd = relativizeHome(wiring.getSnapshot().cwd, homedir());
+      expect(plain.indexOf(cwd)).toBeLessThan(plain.indexOf("main"));
+      expect(plain.indexOf("main")).toBeLessThan(
+        plain.indexOf("Tasks active . cntrl+H to expand"),
+      );
+      expect(plain.slice(plain.indexOf("main") + 4)).toMatch(
+        /^   Tasks active \. cntrl\+H to expand/,
+      );
+      expect(plain).not.toContain("plan active");
+
+      wiring.setPlanVisible(true);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(lastFrame()).not.toContain("Tasks active . cntrl+H to expand");
+    } finally {
+      unmount();
+      wiring.dispose();
+      services.dispose();
+    }
   });
 
   it("keeps every rendered row inside the terminal width", () => {

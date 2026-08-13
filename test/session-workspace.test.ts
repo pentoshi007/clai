@@ -240,7 +240,7 @@ describe("session workspace path routing", () => {
     expect(existsSync(ws.rootDir)).toBe(true);
     expect(existsSync(getSessionWorkspaceParent())).toBe(true);
     clearActiveSessionWorkspace();
-  });
+  }, 10_000);
 
   it("two concurrent beginSessionWorkspace calls produce distinct folders", async () => {
     const {

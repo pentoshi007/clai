@@ -747,19 +747,26 @@ export async function handlePlanTool(
       };
     }
 
+    const revisablePlan =
+      existingPlan &&
+      (!isPlanTerminal(existingPlan) ||
+        titlesMatchForPlan(existingPlan.goal, goal))
+        ? existingPlan
+        : undefined;
+
     // Preserve authored task count/order. Build, install, and verification
     // evidence may span tasks; the runtime must not inject regex-derived
     // checkpoints that change IDs or make progress diverge from the plan.
-    const normalizedTitles = existingPlan
+    const normalizedTitles = revisablePlan
       ? taskTitles
       : normalizeCodingPlanTasks(kind, goal, detail, taskTitles);
 
     const root = getActiveProjectRoot();
     const pm = root ? detectPackageManager(root) : undefined;
     const meta =
-      root || existingPlan?.meta
+      root || revisablePlan?.meta
         ? {
-            ...(existingPlan?.meta ?? {}),
+            ...(revisablePlan?.meta ?? {}),
             ...(root ? { projectRoot: root } : {}),
             ...(pm ? { packageManager: pm } : {}),
           }
@@ -791,12 +798,12 @@ export async function handlePlanTool(
     }
 
     let additiveOnly = false;
-    if (existingPlan) {
-      plan.version = (existingPlan.version ?? 1) + 1;
+    if (revisablePlan) {
+      plan.version = (revisablePlan.version ?? 1) + 1;
       const usedOldIds = new Set<string>();
       const matchedIndices = new Set<number>();
       const mappedNewTasks = plan.tasks.map((task, index) => {
-        const match = existingPlan.tasks.find(
+        const match = revisablePlan.tasks.find(
           (t) =>
             !usedOldIds.has(t.id) && titlesMatchForPlan(t.title, task.title),
         );
@@ -838,14 +845,14 @@ export async function handlePlanTool(
       // Keeping unmatched old pending tasks made "suggest changes" leave
       // obsolete steps (e.g. Prisma/JWT) beside the revised frontend list.
       const isDraftRewrite =
-        existingPlan.status === "draft" && !session.planApproved.value;
+        revisablePlan.status === "draft" && !session.planApproved.value;
 
       if (isDraftRewrite) {
         plan.tasks = mappedNewTasks.filter((t) => !isBareTaskIdTitle(t.title));
       } else {
         // Post-approval / mid-execution: preserve finished work not re-listed;
         // drop unmatched pending; soft-skip unmatched in_progress.
-        const oldTasksToKeep = existingPlan.tasks
+        const oldTasksToKeep = revisablePlan.tasks
           .filter(
             (oldTask) =>
               !isBareTaskIdTitle(oldTask.title) &&
@@ -920,7 +927,7 @@ export async function handlePlanTool(
       }
 
       // X7: keep approval when only additive pending work remains.
-      const priorFinished = existingPlan.tasks.filter(
+      const priorFinished = revisablePlan.tasks.filter(
         (t) =>
           t.state === "done" || t.state === "skipped" || t.state === "failed",
       );
@@ -937,7 +944,7 @@ export async function handlePlanTool(
         );
       const hasNewPending = plan.tasks.some((t) => t.state === "pending");
       const noDoneReopened = !plan.tasks.some((n) => {
-        const old = existingPlan.tasks.find((t) =>
+        const old = revisablePlan.tasks.find((t) =>
           titlesMatchForPlan(t.title, n.title),
         );
         return (
@@ -951,13 +958,13 @@ export async function handlePlanTool(
         hasNewPending &&
         noDoneReopened &&
         (session.planApproved.value ||
-          existingPlan.status === "approved" ||
-          existingPlan.status === "in_progress" ||
-          existingPlan.status === "completed");
+          revisablePlan.status === "approved" ||
+          revisablePlan.status === "in_progress" ||
+          revisablePlan.status === "completed");
 
       if (additiveOnly) {
         plan.status = "in_progress";
-        plan.createdAt = existingPlan.createdAt;
+        plan.createdAt = revisablePlan.createdAt;
       }
     }
 

@@ -46,14 +46,60 @@ export interface TurnControllerDeps {
  * the request had finished.
  */
 class DeltaCoalescer {
-  constructor(private readonly sink: (event: AgentEvent) => void) {}
+  private pendingToolOutput:
+    | {
+        id: string;
+        chunks: string[];
+        replace: boolean;
+      }
+    | undefined;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(
+    private readonly sink: (event: AgentEvent) => void,
+    private readonly intervalMs = 16,
+  ) {}
 
   push(event: AgentEvent): void {
-    this.sink(event);
+    if (event.type !== "tool-output") {
+      this.flush();
+      this.sink(event);
+      return;
+    }
+
+    const pending = this.pendingToolOutput;
+    if (pending && pending.id !== event.id) this.flush();
+
+    if (!this.pendingToolOutput || event.replace) {
+      this.pendingToolOutput = {
+        id: event.id,
+        chunks: [event.chunk],
+        replace: event.replace === true,
+      };
+    } else {
+      this.pendingToolOutput.chunks.push(event.chunk);
+    }
+
+    if (!this.timer) {
+      this.timer = setTimeout(() => this.flush(), this.intervalMs);
+      this.timer.unref?.();
+    }
   }
 
   flush(): void {
-    // Kept as the turn boundary API; all events are dispatched eagerly.
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    const pending = this.pendingToolOutput;
+    if (!pending) return;
+    this.pendingToolOutput = undefined;
+    this.sink({
+      type: "tool-output",
+      id: pending.id,
+      chunk: pending.chunks.join(""),
+      ...(pending.replace ? { replace: true } : {}),
+    });
   }
 }
 

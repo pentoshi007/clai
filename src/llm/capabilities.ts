@@ -163,7 +163,8 @@ export function modelSupportsThinking(
   if (observedReasoningModels.has(key)) return true;
   const declared = catalogReasoningSupport.get(key);
   if (declared !== undefined) return declared;
-  const patterns = reasoningPatterns[provider] ?? [];
+  const patterns = reasoningPatterns[provider];
+  if (patterns === undefined) return true;
   return patterns.some((pattern) => pattern.test(model));
 }
 
@@ -448,7 +449,10 @@ const warnedUnknownProviders = new Set<string>();
  * Fail loudly in dev/test and warn once per bad key in production.
  */
 export function warnOnUnknownProviderId(site: string, provider: string): void {
-  if (knownProviderIds.has(provider)) return;
+  const configuredCustomProvider = (getConfig().customProviders ?? []).some(
+    (definition) => definition.id === provider,
+  );
+  if (knownProviderIds.has(provider) || configuredCustomProvider) return;
   const message = `${site}: "${provider}" is not a canonical ProviderId — capability lookups will report no support. Pass the provider id, not the display label.`;
   if (process.env.NODE_ENV === "test" || process.env.VITEST) {
     throw new Error(message);

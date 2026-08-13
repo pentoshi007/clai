@@ -140,10 +140,22 @@ describe("token-usage format + context window", () => {
 
   it("resolves known model context windows", () => {
     expect(modelContextWindow("claude-sonnet-4-20250514")).toBe(200_000);
+    expect(modelContextWindow("claude-sonnet-4.6")).toBe(1_000_000);
+    expect(modelContextWindow("claude-fable-5")).toBe(1_000_000);
     expect(modelContextWindow("gpt-4o")).toBe(128_000);
+    expect(modelContextWindow("gpt-5.5-pro")).toBe(1_050_000);
+    expect(modelContextWindow("gpt-5.6-luna")).toBe(1_050_000);
     expect(modelContextWindow("gemini-2.0-flash")).toBe(1_048_576);
+    expect(modelContextWindow("deepseek-v4-flash")).toBe(1_000_000);
+    expect(modelContextWindow("glm-5.2")).toBe(1_000_000);
+    expect(modelContextWindow("minimax-m3")).toBe(1_000_000);
     expect(modelContextWindow("moonshotai/Kimi-K3")).toBe(1_000_000);
-    expect(modelContextWindow("unknown-model-xyz")).toBe(128_000);
+    expect(modelContextWindow("Qwen/Qwen3.8-2.4T-A95B", "modal")).toBe(
+      262_144,
+    );
+    expect(modelContextWindow("qwen3.7-plus")).toBe(1_000_000);
+    expect(modelContextWindow("qwen/qwen3-32b", "groq")).toBe(5_500);
+    expect(modelContextWindow("unknown-model-xyz")).toBe(250_000);
   });
 
   it("accumulates session totals and latest context fill", () => {
@@ -215,7 +227,7 @@ describe("modelContextWindow sizing", () => {
   it("sizes current defaults correctly", () => {
     expect(modelContextWindow("gemini-3.5-flash")).toBe(1_048_576);
     expect(modelContextWindow("kimi-k2.6")).toBe(256_000);
-    expect(modelContextWindow("z-ai/glm-5.2")).toBe(200_000);
+    expect(modelContextWindow("z-ai/glm-5.2")).toBe(1_000_000);
     expect(modelContextWindow("gpt-4")).toBe(8_192);
     expect(modelContextWindow("gpt-4-32k")).toBe(32_768);
     expect(modelContextWindow("gpt-4o")).toBe(128_000);

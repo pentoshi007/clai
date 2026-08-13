@@ -23,8 +23,6 @@ export interface Theme {
   readonly rowB: string;
   /** Chip / badge slate (legacy #334155). */
   readonly chip: string;
-  /** Tool run/output block backdrop — neutral light grey, no blue cast. */
-  readonly toolBg: string;
   /** Mode badge amber / RUNNING (legacy #B45309). */
   readonly mode: string;
   /**
@@ -127,7 +125,6 @@ const DARK_THEME: Theme = {
   rowA: "#1E293B",
   rowB: "#0F172A",
   chip: "#334155",
-  toolBg: "#181c24",
   mode: "#B45309",
   // Readable on #0b0e14 / statusBackground — was #166534 (too dark / washed).
   success: "#4ADE80",
@@ -185,7 +182,6 @@ const LIGHT_THEME: Theme = {
   rowA: "#eef2f7",
   rowB: "#f8fafc",
   chip: "#e2e8f0",
-  toolBg: "#f2f4f7",
   mode: "#B45309",
   success: "#16A34A",
   // Darker plate for "done" chips on light terminals.

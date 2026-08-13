@@ -130,7 +130,6 @@ export class InputRouter {
         "ctrl+u",
         "meta+u",
         "ctrl+k",
-        "ctrl+d",
         "alt+enter",
         "ctrl+enter",
         "meta+enter",

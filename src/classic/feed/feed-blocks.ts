@@ -6,7 +6,7 @@ import type {
   TranscriptItem,
   TranscriptState,
 } from "../../ui-core/state/transcript-types.js";
-import { transcriptItems } from "../../ui-core/state/transcript-types.js";
+import { isItemExpanded, transcriptItems } from "../../ui-core/state/transcript-types.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { contentWidth } from "../render/measure.js";
 import { EMPTY_SPOOL, type BlockContext, type SpoolReader } from "../blocks/block-context.js";
@@ -17,7 +17,7 @@ import { buildDiffLines } from "../blocks/diff-lines.js";
 import { buildIntroLines, type IntroBlockInput } from "../blocks/intro-lines.js";
 import { buildNoticeLines } from "../blocks/notice-lines.js";
 import { buildThinkingLines } from "../blocks/thinking-lines.js";
-import { buildToolLines } from "../blocks/tool-lines.js";
+import { buildToolLines, outputToggleLabel } from "../blocks/tool-lines.js";
 import { buildUserLines } from "../blocks/user-lines.js";
 import { clipRow, joinMeta } from "../blocks/block-context.js";
 import { reflowRows } from "../render/wrap.js";
@@ -91,13 +91,18 @@ function isOpen(item: TranscriptItem): boolean {
   }
 }
 
-function bound(ctx: BlockContext, lines: readonly string[]): readonly string[] {
+function bound(
+  ctx: BlockContext,
+  item: TranscriptItem,
+  lines: readonly string[],
+): readonly string[] {
   if (lines.length <= MAX_BLOCK_ROWS) return lines;
   const kept = lines.slice(0, MAX_BLOCK_ROWS - 1);
   const hidden = lines.length - kept.length;
+  const expandable = item.kind === "tool" || item.kind === "compacted";
   const footer = joinMeta(ctx, [
+    expandable ? outputToggleLabel(isItemExpanded(ctx.state, item)) : undefined,
     `${ctx.glyphs.ellipsis} +${hidden} rows`,
-    "full output ^O",
   ]);
   return [...kept, clipRow(ctx, ctx.ink.fg("muted", footer))];
 }
@@ -163,7 +168,7 @@ export function buildFeedBlocks(
       continue;
     }
     const kind: BlockKind = item.kind === "tool" ? toolBlockKind(item) : item.kind;
-    const lines = bound(ctx, reflowRows(linesFor(ctx, item, kind, view), ctx.width));
+    const lines = bound(ctx, item, reflowRows(linesFor(ctx, item, kind, view), ctx.width));
     if (lines.length === 0) continue;
     blocks.push({
       key: `${view.generation}:${item.id}`,

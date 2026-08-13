@@ -449,7 +449,7 @@ describe("LoopGuard", () => {
     expect(guard.shouldBlock("fs.list", args).block).toBe(false);
   });
 
-  it("never suppresses a sequence separated by another action", () => {
+  it("allows a sequence separated by progress-changing actions", () => {
     const guard = new LoopGuard();
     const seqA = [{ name: "shell.exec", args: { command: "node test.js" } }];
     const seqB = [{ name: "fs.edit", args: { path: "test.js", oldText: "a", newText: "b" } }];
@@ -459,18 +459,64 @@ describe("LoopGuard", () => {
         suppress: false,
         oscillation: false,
       });
-      guard.completeActionSequence(seqA, true);
+      guard.completeActionSequence(seqA, true, `test-${i}`);
       expect(guard.observeActionSequence(seqB)).toMatchObject({
         suppress: false,
         oscillation: false,
       });
-      guard.completeActionSequence(seqB, true);
+      guard.completeActionSequence(seqB, true, `edit-${i}`);
     }
 
     expect(guard.observeActionSequence(seqA)).toMatchObject({
       suppress: false,
       oscillation: false,
       warn: false,
+    });
+  });
+
+  it("warns then suppresses an unchanged period-two cycle", () => {
+    const guard = new LoopGuard();
+    const seqA = [{ name: "shell.exec", args: { command: "node test.js" } }];
+    const seqB = [{ name: "fs.read", args: { path: "test.js" } }];
+
+    for (let i = 0; i < 2; i++) {
+      guard.observeActionSequence(seqA);
+      guard.completeActionSequence(seqA, true, "same-a");
+      guard.observeActionSequence(seqB);
+      guard.completeActionSequence(seqB, true, "same-b");
+    }
+
+    expect(guard.observeActionSequence(seqA)).toMatchObject({
+      suppress: false,
+      oscillation: true,
+      warn: true,
+    });
+    guard.completeActionSequence(seqA, true, "same-a");
+    guard.observeActionSequence(seqB);
+    guard.completeActionSequence(seqB, true, "same-b");
+    expect(guard.observeActionSequence(seqA)).toMatchObject({
+      suppress: true,
+      oscillation: true,
+    });
+  });
+
+  it("detects an unchanged period-three cycle", () => {
+    const guard = new LoopGuard();
+    const sequences = ["a", "b", "c"].map((path) => [
+      { name: "fs.read", args: { path } },
+    ]);
+
+    for (let cycle = 0; cycle < 2; cycle++) {
+      for (const sequence of sequences) {
+        guard.observeActionSequence(sequence);
+        guard.completeActionSequence(sequence, true, "same");
+      }
+    }
+
+    expect(guard.observeActionSequence(sequences[0]!)).toMatchObject({
+      oscillation: true,
+      warn: true,
+      suppress: false,
     });
   });
 

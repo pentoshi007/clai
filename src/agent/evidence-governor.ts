@@ -1,5 +1,5 @@
 export type ProgressSignal = "none" | "activity" | "evidence" | "completion";
-export type GovernorRecommendation = "continue" | "reflect" | "paused_budget" | "succeeded";
+export type GovernorRecommendation = "continue" | "reflect" | "succeeded";
 
 export interface GovernorState {
   readonly schemaVersion: 2;
@@ -90,7 +90,7 @@ export function governProgress(
   };
 
   if (next.resourcesUsed >= policy.emergencyCeiling) {
-    return { state: next, shouldContinue: false, requireEvidence: true, recommendation: "paused_budget", reason: "emergency resource ceiling reached" };
+    return { state: next, shouldContinue: true, requireEvidence: true, recommendation: "reflect", reason: "resource ceiling reached; reassess before continuing" };
   }
   if (signal === "completion" && evidenceDelta > 0) {
     return { state: next, shouldContinue: false, requireEvidence: false, recommendation: "succeeded", reason: "completion supported by new evidence" };
@@ -99,7 +99,7 @@ export function governProgress(
     return { state: next, shouldContinue: true, requireEvidence: true, recommendation: "reflect", reason: "completion requires new evidence" };
   }
   if (repetitiveNoDelta && next.consecutiveNoDelta >= policy.pauseAfterNoDelta) {
-    return { state: next, shouldContinue: false, requireEvidence: true, recommendation: "paused_budget", reason: "repetitive work produced no evidence or hypothesis progress" };
+    return { state: next, shouldContinue: true, requireEvidence: true, recommendation: "reflect", reason: "repetitive work produced no evidence or hypothesis progress; change approach" };
   }
   if (repetitiveNoDelta && next.consecutiveNoDelta >= policy.reflectionAfterNoDelta) {
     return { state: next, shouldContinue: true, requireEvidence: true, recommendation: "reflect", reason: "repetitive work requires reflection" };

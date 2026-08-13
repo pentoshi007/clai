@@ -14,6 +14,9 @@ import type { RawDecoder } from "../input/raw-decoder.js";
 import type { KeyEvent } from "../input/key-event.js";
 import type { PanelController, PanelSnapshot } from "../panels/panel-controller.js";
 import type { FeedSnapshot } from "./use-feed.js";
+import type { FeedBlock } from "../feed/feed-blocks.js";
+import type { SemanticAnchor, SemanticDocument } from "../../ui-core/state/semantic-document.js";
+import type { TranscriptPointerGeometry } from "../feed/transcript-selection.js";
 
 export interface ResizeSource {
   readonly columns?: number | undefined;
@@ -102,6 +105,16 @@ export interface WiringHost {
   tickTimer: ReturnType<typeof setInterval> | undefined;
   animationTimer: ReturnType<typeof setInterval> | undefined;
   searchFocusRelease: (() => void) | undefined;
+  selectionPointerAnchor: SemanticAnchor | undefined;
+  selectionPointerMoved: boolean;
+  selectionPointerX: number;
+  selectionPointerY: number;
+  selectionAutoScrollTimer: ReturnType<typeof setInterval> | undefined;
+  selectionGeometry: TranscriptPointerGeometry;
+  selectionWindow: FeedSnapshot["window"] | undefined;
+  selectionDocumentValue: SemanticDocument | undefined;
+  selectionControllerDocumentValue: SemanticDocument | undefined;
+  selectionDocumentBlocks: readonly FeedBlock[] | undefined;
   scrollToastShown: boolean;
   disposed: boolean;
   schedulePaint(): void;
@@ -117,6 +130,8 @@ export interface WiringHost {
   toggleOutput(): Promise<void>;
   showTranscriptTopHint(): void;
   scrollFeed(delta: number): void;
+  transcriptSelectionDocument(blocks: readonly FeedBlock[]): SemanticDocument;
+  setTranscriptSelectionGeometry(geometry: TranscriptPointerGeometry): void;
   updateTranscriptDocument(): void;
   selectAllTranscript(): void;
   copyTranscript(): Promise<void>;

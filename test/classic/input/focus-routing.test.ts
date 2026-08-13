@@ -150,6 +150,14 @@ describe("base regions", () => {
     expect(calls).toEqual(["text:h"]);
   });
 
+  it("routes printable text from transcript focus back to the composer", () => {
+    const { calls, focus, router } = build();
+    focus.focusRegion("transcript");
+    feed(router, "remaining");
+    expect(calls).toEqual("remaining".split("").map((char) => `text:${char}`));
+    expect(focus.activeContext()).toBe("transcript");
+  });
+
   it("gives tab to the completion menu instead of focus.next-region", () => {
     const { calls, router } = build();
     feed(router, "\t");
@@ -166,6 +174,16 @@ describe("base regions", () => {
     const { calls, router } = build();
     feed(router, "\n");
     expect(calls).toEqual(["action:app.jobs"]);
+  });
+
+  it.each([
+    ["macOS", "\x04"],
+    ["Linux", "\x04"],
+    ["Windows Terminal", "\x1b[100;5u"],
+  ])("routes Ctrl+D from the composer to transcript bottom on %s", (_platform, bytes) => {
+    const { calls, router } = build();
+    feed(router, bytes);
+    expect(calls).toEqual(["action:transcript.bottom"]);
   });
 
   it("escalates escape from the transcript when nothing is selected", () => {

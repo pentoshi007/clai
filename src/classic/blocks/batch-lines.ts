@@ -11,7 +11,7 @@ import type { ThemeToken } from "../render/ink-theme.js";
 import { alignEnds, trimTrailingSpaces } from "../render/ansi-text.js";
 import { wrapAnsiLine } from "../render/wrap.js";
 import { clipRow, joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
-import { paintToolRows, toolHeaderLines } from "./tool-lines.js";
+import { outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
 
 /** Sub-rows kept when the batch card is collapsed. */
 export const BATCH_COLLAPSED_ROWS = 8;
@@ -44,10 +44,13 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   const expanded = isItemExpanded(ctx.state, item);
   const sections = batchSectionsFor(ctx, item);
   const lines = toolHeaderLines(ctx, item);
-  if (sections.length === 0) return paintToolRows(ctx, lines);
+  const subIndent = " ".repeat(SUB_INDENT);
+  if (sections.length === 0) {
+    lines.push(clipRow(ctx, `${subIndent}${ctx.ink.fg("muted", outputToggleLabel(expanded))}`));
+    return lines;
+  }
 
   const shown = expanded ? sections : sections.slice(0, BATCH_COLLAPSED_ROWS);
-  const subIndent = " ".repeat(SUB_INDENT);
   const bodyIndent = " ".repeat(SUB_BODY_INDENT);
 
   for (const section of shown) {
@@ -70,7 +73,7 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
     const text = adaptPresenterGlyphs(summaryRow, ctx.ink.unicode);
     for (const chunk of wrapAnsiLine(text, budget)) {
       lines.push(
-        trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("toolOutput", chunk)}`),
+        trimTrailingSpaces(`${bodyIndent}${ctx.ink.fg("foreground", chunk)}`),
       );
     }
   }
@@ -78,12 +81,12 @@ export function buildBatchLines(ctx: BlockContext, item: ToolItem): string[] {
   const hidden = sections.length - shown.length;
   const summary = batchSummaryLine(sections);
   const footer = joinMeta(ctx, [
+    outputToggleLabel(expanded),
     summary === "" ? undefined : summary,
     hidden > 0 ? `${ctx.glyphs.ellipsis} +${hidden} more` : undefined,
-    hidden > 0 ? "^O" : undefined,
   ]);
   if (footer !== "") {
     lines.push(clipRow(ctx, `${subIndent}${ctx.ink.fg("muted", footer)}`));
   }
-  return paintToolRows(ctx, lines);
+  return lines;
 }

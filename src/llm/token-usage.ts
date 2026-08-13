@@ -214,12 +214,16 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   tokens: number;
 }> = [
   // Anthropic
+  { pattern: /claude-(?:fable|mythos)-5/i, tokens: 1_000_000 },
+  { pattern: /claude-(?:opus|sonnet)-5/i, tokens: 1_000_000 },
+  { pattern: /claude-(?:opus|sonnet)-4\.[678]/i, tokens: 1_000_000 },
   { pattern: /claude-(?:opus|sonnet)-4/i, tokens: 200_000 },
   { pattern: /claude-haiku-4/i, tokens: 200_000 },
   { pattern: /claude-3-7/i, tokens: 200_000 },
   { pattern: /claude-3-5/i, tokens: 200_000 },
   { pattern: /claude-3/i, tokens: 200_000 },
   // OpenAI
+  { pattern: /gpt-5\.[456](?:[-.]|$)/i, tokens: 1_050_000 },
   { pattern: /gpt-5/i, tokens: 400_000 },
   { pattern: /gpt-4\.1/i, tokens: 1_047_576 },
   { pattern: /gpt-4o/i, tokens: 128_000 },
@@ -245,7 +249,10 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /llama-3\.1/i, tokens: 128_000 },
   { pattern: /llama-3/i, tokens: 128_000 },
   // DeepSeek / Qwen / Kimi / GLM / etc.
+  { pattern: /deepseek-v4/i, tokens: 1_000_000 },
   { pattern: /deepseek/i, tokens: 128_000 },
+  { pattern: /qwen3\.7/i, tokens: 1_000_000 },
+  { pattern: /qwen3\.(?:8|6|5)/i, tokens: 262_144 },
   { pattern: /qwen3/i, tokens: 128_000 },
   { pattern: /qwen2\.5/i, tokens: 128_000 },
   { pattern: /qwen/i, tokens: 128_000 },
@@ -255,9 +262,12 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /kimi-k3/i, tokens: 1_000_000 },
   { pattern: /kimi-k2/i, tokens: 256_000 },
   { pattern: /kimi/i, tokens: 128_000 },
+  { pattern: /glm-?5\.2/i, tokens: 1_000_000 },
   { pattern: /glm-?5/i, tokens: 200_000 },
   { pattern: /glm-?4\.[56]/i, tokens: 200_000 },
   { pattern: /glm-?4/i, tokens: 128_000 },
+  { pattern: /minimax-m3/i, tokens: 1_000_000 },
+  { pattern: /minimax-m2\.7/i, tokens: 204_800 },
   { pattern: /minimax/i, tokens: 128_000 },
   { pattern: /mimo/i, tokens: 128_000 },
   { pattern: /gpt-oss/i, tokens: 128_000 },
@@ -265,7 +275,7 @@ const CONTEXT_WINDOW_RULES: ReadonlyArray<{
   { pattern: /muse-spark/i, tokens: 1_048_576 },
 ];
 
-const DEFAULT_CONTEXT_WINDOW = 128_000;
+const DEFAULT_CONTEXT_WINDOW = 250_000;
 
 /**
  * Provider-specific served windows that are smaller than the model's nominal

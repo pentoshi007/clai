@@ -82,6 +82,44 @@ describe("openAiCompatibleStream error frames", () => {
   });
 });
 
+describe("cumulative stream snapshots", () => {
+  it("normalizes long content snapshots without touching short repeated tokens", async () => {
+    const first = "a".repeat(64);
+    stubFetch(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: first } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: `${first}tail` } }] })}\n\n`,
+        'data: {"choices":[{"delta":{"content":"!"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"!"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const result = await openAiCompatibleStream({
+      ...baseOptions,
+      onToken: () => {},
+    });
+    expect(result.text).toBe(`${first}tail!!`);
+  });
+
+  it("normalizes reasoning snapshots independently from visible content", async () => {
+    const reasoning = "r".repeat(64);
+    stubFetch(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: reasoning } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: `${reasoning}end` } }] })}\n\n`,
+        'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const result = await openAiCompatibleStream({
+      ...baseOptions,
+      onToken: () => {},
+    });
+    expect(result.text.split(`${reasoning}end`)).toHaveLength(2);
+    expect(result.text.endsWith("answer")).toBe(true);
+  });
+});
+
 describe("readStreamLines caller abort", () => {
   it("throws instead of ending cleanly when the caller aborts", async () => {
     const controller = new AbortController();

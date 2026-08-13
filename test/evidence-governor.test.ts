@@ -11,19 +11,19 @@ describe("evidence progress governor", () => {
     expect(hypothesis).toMatchObject({ recommendation: "continue", state: { hypothesisTotal: 2, consecutiveNoDelta: 0 } });
   });
 
-  it("recommends reflection then a resumable budget pause for repetitive no-delta work", () => {
+  it("keeps repetitive no-delta work in reflection without pausing", () => {
     let state = governProgress(createGovernorState(), "activity", { repetitionScore: 1, policy }).state;
     const reflection = governProgress(state, "activity", { repetitionScore: 1, policy });
     expect(reflection).toMatchObject({ recommendation: "reflect", shouldContinue: true, requireEvidence: true });
     state = reflection.state;
-    expect(governProgress(state, "activity", { repetitionScore: 1, policy })).toMatchObject({ recommendation: "paused_budget", shouldContinue: false });
+    expect(governProgress(state, "activity", { repetitionScore: 1, policy })).toMatchObject({ recommendation: "reflect", shouldContinue: true, requireEvidence: true });
   });
 
-  it("treats the resource envelope as reflection and the emergency ceiling as pause, never success", () => {
+  it("treats both resource thresholds as reflection, never success or pause", () => {
     const envelope = governProgress(createGovernorState(), "activity", { resourceCost: 3, policy });
     expect(envelope).toMatchObject({ recommendation: "reflect", shouldContinue: true });
     const emergency = governProgress(envelope.state, "activity", { evidenceDelta: 4, resourceCost: 3, policy });
-    expect(emergency).toMatchObject({ recommendation: "paused_budget", shouldContinue: false });
+    expect(emergency).toMatchObject({ recommendation: "reflect", shouldContinue: true, requireEvidence: true });
     expect(emergency.recommendation).not.toBe("succeeded");
   });
 

@@ -239,13 +239,22 @@ function roughLineCount(raw: string): number {
   return n;
 }
 
+// Some POSIX tools print ESC as the caret notation `^[`, which can arrive as
+// literal `^[[39m` text after output is captured. Remove only complete CSI
+// forms so ordinary prose such as `^[` remains untouched.
+const PRINTABLE_CARET_CSI = /\^\[\[[0-9;?]*[ -/]*[@-~]/g;
+
+function stripPrintableCaretCsi(text: string): string {
+  return text.replace(PRINTABLE_CARET_CSI, "");
+}
+
 /**
  * Clean raw spool body for card rendering. Lines keep their full text —
  * every caller soft-wraps to its own visible width instead of relying on a
  * fixed character cap here.
  */
 export function cleanToolOutputLines(raw: string): string[] {
-  const safe = sanitizeDisplayText(raw);
+  const safe = stripPrintableCaretCsi(sanitizeDisplayText(raw));
   if (safe.length === 0) return [];
   const out: string[] = [];
   let lastKept: string | undefined;
