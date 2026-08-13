@@ -31,6 +31,15 @@ vi.mock("node:child_process", async (importOriginal) => {
   }
   return { ...actual, execFile };
 });
+
+// readBranchFromGitDir reads .git/HEAD directly from the filesystem, bypassing
+// the execFile mock above. In release CI (detached tag checkout) .git/HEAD
+// contains a SHA, so it returns "HEAD" — clobbering the "main" value the test
+// sets. Mock it to return undefined so the execFile fallback (mocked to "main")
+// is used instead.
+vi.mock("../../src/classic/app/git-branch.js", () => ({
+  readBranchFromGitDir: () => Promise.resolve(undefined),
+}));
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { ClassicApp, statusRowText } from "../../src/classic/app/ClassicApp.js";
 import {
