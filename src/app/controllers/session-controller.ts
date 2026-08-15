@@ -274,9 +274,11 @@ export class SessionController implements Disposable {
     return resolveContextUsageSnapshot(this.usageTarget, this.history, this.contextUsage);
   }
 
-  recordTokenUsage(usage: TokenUsage, model?: string): void {
-    this.contextUsage = recordUsageSnapshot({ provider: this.provider, model: model ?? this.model }, this.contextUsage, usage);
-    if (model) this.model = model; this.notifyState();
+  recordTokenUsage(usage: TokenUsage, model?: string, provider?: ProviderId): void {
+    if (provider !== undefined) this.provider = provider;
+    if (model !== undefined) this.model = model;
+    this.contextUsage = recordUsageSnapshot({ provider: provider ?? this.provider, model: model ?? this.model }, this.contextUsage, usage);
+    this.notifyState();
   }
 
   noteContextCompacted(afterTokens?: number): void {

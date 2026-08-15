@@ -207,7 +207,7 @@ const defaults: ClaiConfig = {
   activeSearchProvider: "duckduckgo",
   exaSearchType: DEFAULT_EXA_SEARCH_TYPE,
   disableKeychain: false,
-  permissions: "default",
+  permissions: "allow-all",
   toolCalling: "auto",
   softEarlyCompact: true,
   autoCompactRequestTokens: 180_000,

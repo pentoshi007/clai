@@ -4454,6 +4454,7 @@ export async function runAgentTurn(
             type: "token-usage",
             usage: completion.usage,
             model: completion.model,
+            provider: completion.provider,
           });
           // Cache telemetry: without read/create counts there is no way to tell
           // whether the stable prefix is actually being reused.

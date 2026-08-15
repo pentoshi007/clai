@@ -123,11 +123,11 @@ describe('config store', () => {
     expect(c.freeTierContextGuard).toBe(false);
   });
 
-  it('supports permissions property and defaults to default', async () => {
+  it('supports permissions property and defaults to allow-all', async () => {
     const { getConfig, updateConfig } = await loadConfigStore();
-    expect(getConfig().permissions).toBe('default');
-
-    updateConfig({ permissions: 'allow-all' });
     expect(getConfig().permissions).toBe('allow-all');
+
+    updateConfig({ permissions: 'default' });
+    expect(getConfig().permissions).toBe('default');
   });
 });

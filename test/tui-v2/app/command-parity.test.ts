@@ -221,6 +221,19 @@ describe("command parity (V2-080)", () => {
     expect(notices(services).some((t) => t.includes("freeOnly=true"))).toBe(true);
   });
 
+  it("/fallback with no args opens the on/off picker", async () => {
+    const services = buildServices();
+    await services.commands.dispatch({ name: "fallback", args: "" });
+    const overlay = services.overlay.getState();
+    expect(overlay.kind).toBe("picker");
+    if (overlay.kind !== "picker") return;
+    const options = overlay.request.options;
+    expect(options.map((o) => o.value)).toEqual(["on", "off"]);
+    expect(options.find((o) => o.value === "off")?.active).toBe(true);
+    overlay.onSelect("on");
+    expect(getConfig().providerFallback).toBe(true);
+  });
+
   it("/privacy on|off|status updates private mode", async () => {
     const services = buildServices();
     await services.commands.dispatch({ name: "privacy", args: "on" });

@@ -3,9 +3,10 @@ import type { CompletionRequest, CompletionResult } from "../../src/types.js";
 import type { ProviderAuth } from "../../src/llm/provider.js";
 import type { ProviderKeysResult } from "../../src/store/keys.js";
 
-const { openaiComplete, nvidiaComplete } = vi.hoisted(() => ({
+const { openaiComplete, nvidiaComplete, fallbackConfig } = vi.hoisted(() => ({
   openaiComplete: vi.fn(),
   nvidiaComplete: vi.fn(),
+  fallbackConfig: { providerFallback: false },
 }));
 
 vi.mock("../../src/llm/openai.js", () => ({
@@ -52,7 +53,7 @@ vi.mock("../../src/store/config.js", async (importOriginal) => {
     getConfig: () => ({
       ...actual.getConfig(),
       defaultProvider: "openai",
-      providerFallback: false,
+      providerFallback: fallbackConfig.providerFallback,
       freeOnly: false,
     }),
     getCustomProviders: () => [],
@@ -101,6 +102,7 @@ describe("compaction provider fallback", () => {
   beforeEach(() => {
     openaiComplete.mockReset();
     nvidiaComplete.mockReset();
+    fallbackConfig.providerFallback = false;
     nvidiaComplete.mockResolvedValue({
       text: "nvidia-ok",
       provider: "nvidia",
@@ -109,7 +111,8 @@ describe("compaction provider fallback", () => {
     } satisfies CompletionResult);
   });
 
-  it("falls back to another provider's model on 503 when allowModelFallback is set, with a single attempt", async () => {
+  it("falls back to another provider's model on 503 only when provider fallback is enabled, with a single attempt", async () => {
+    fallbackConfig.providerFallback = true;
     openaiComplete.mockRejectedValue(
       new Error("provider returned HTTP 503: service unavailable"),
     );
@@ -133,6 +136,18 @@ describe("compaction provider fallback", () => {
     const { completeWithProvider } = await import("../../src/llm/router.js");
     await expect(
       completeWithProvider(compactionRequest(), { maxRetries: 0 }),
+    ).rejects.toThrow(/503|No provider could complete/i);
+    expect(nvidiaComplete).not.toHaveBeenCalled();
+  });
+
+  it("never switches providers on failure when providerFallback is off, even with allowModelFallback", async () => {
+    openaiComplete.mockRejectedValue(
+      new Error("provider returned HTTP 503: service unavailable"),
+    );
+
+    const { completeWithProvider } = await import("../../src/llm/router.js");
+    await expect(
+      completeWithProvider(compactionRequest(true), { maxRetries: 0 }),
     ).rejects.toThrow(/503|No provider could complete/i);
     expect(nvidiaComplete).not.toHaveBeenCalled();
   });

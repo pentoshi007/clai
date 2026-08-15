@@ -17,6 +17,7 @@ import { formatShortcutsReference } from "../actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../rendering/format-help.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
+import type { PickerOption } from "../rendering/picker-filter.js";
 
 function notice(services: AppServices, level: "info" | "warn", text: string): void {
   services.session.notice(level, text);
@@ -42,12 +43,35 @@ export function handleFreeOnly(services: AppServices, invocation: CommandInvocat
 export function handleFallback(services: AppServices, invocation: CommandInvocation): void {
   const arg = invocation.args.trim();
   const flag = parseOnOff(arg);
-  if (flag === undefined) {
-    notice(services, "info", `providerFallback=${getConfig().providerFallback}`);
+  if (flag !== undefined) {
+    updateConfig({ providerFallback: flag });
+    notice(services, "info", `providerFallback=${flag}`);
     return;
   }
-  updateConfig({ providerFallback: flag });
-  notice(services, "info", `providerFallback=${flag}`);
+  if (arg) {
+    notice(services, "warn", "usage: /fallback [on|off]");
+    return;
+  }
+  const current = getConfig().providerFallback;
+  const options: PickerOption[] = [
+    {
+      value: "on",
+      label: "on",
+      description: "switch the whole provider when the active one fails",
+      active: current,
+    },
+    {
+      value: "off",
+      label: "off",
+      description: "retry the same provider, then show the error — never auto-switch",
+      active: !current,
+    },
+  ];
+  services.overlay.openPicker({ title: "Provider fallback", options }, (value) => {
+    updateConfig({ providerFallback: value === "on" });
+    notice(services, "info", `providerFallback=${value === "on"}`);
+    services.overlay.close();
+  });
 }
 
 export async function handleScope(

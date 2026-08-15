@@ -1,4 +1,5 @@
 import type { SessionPlan } from "../../store/plan.js";
+import type { ProviderId } from "../../types.js";
 
 
 export type Brand<T, B extends string> = T & { readonly __brand: B };
@@ -126,6 +127,7 @@ export interface AppEventPayloads {
     readonly totalTokens: number;
     readonly exact: boolean;
     readonly model?: string | undefined;
+    readonly provider?: ProviderId | undefined;
   };
   "context-estimate": {
     readonly estimatedTokens: number;

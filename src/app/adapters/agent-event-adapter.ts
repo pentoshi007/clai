@@ -61,6 +61,7 @@ export class AgentEventAdapter {
           totalTokens: event.usage.totalTokens,
           exact: event.usage.exact,
           ...(event.model !== undefined ? { model: event.model } : {}),
+          ...(event.provider !== undefined ? { provider: event.provider } : {}),
         });
         return;
       case "context-estimate":

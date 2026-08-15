@@ -13,6 +13,8 @@ import {
   providerUsesEndpoints,
   resolveProviderCategory,
   setActiveProviderEndpoint,
+  setDefaultProvider,
+  setProviderModel,
 } from "../store/config.js";
 import {
   getProviderKeys,
@@ -1027,8 +1029,9 @@ export async function completeWithProvider(
   const providerImpl = getProvider(requested);
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
+    config.providerFallback &&
     (await requestedRealKeyCount(requested)) !== 1 &&
-    (config.providerFallback ? (isDefaultModel || request.allowModelFallback === true) : request.allowModelFallback === true);
+    (isDefaultModel || request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
@@ -1055,7 +1058,7 @@ export async function completeWithProvider(
     const routeRequest = requestForRoute(request, providerId, model);
 
     try {
-      return await runWithKeyRotation<CompletionResult>({
+      const result = await runWithKeyRotation<CompletionResult>({
         providerId,
         provider,
         request: routeRequest,
@@ -1065,6 +1068,14 @@ export async function completeWithProvider(
         ...(options?.onStatus ? { onStatus: options.onStatus } : {}),
         ...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
       });
+      if (providerId !== requested) {
+        setDefaultProvider(providerId);
+        setProviderModel(providerId, result.model || model);
+        options?.onStatus?.(
+          `switching to ${providerId}/${result.model || model} after ${requested} failed`,
+        );
+      }
+      return result;
     } catch (error) {
       failures.push({
         provider: providerId,
@@ -1102,8 +1113,9 @@ export async function streamWithProvider(
   const providerImpl = getProvider(requested);
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
+    config.providerFallback &&
     (await requestedRealKeyCount(requested)) !== 1 &&
-    (config.providerFallback ? (isDefaultModel || request.allowModelFallback === true) : request.allowModelFallback === true);
+    (isDefaultModel || request.allowModelFallback === true);
   const order = buildFallbackChain(
     requested,
     config.freeOnly,
@@ -1130,7 +1142,7 @@ export async function streamWithProvider(
     const routeRequest = requestForRoute(request, providerId, model);
 
     try {
-      return await runWithKeyRotation<CompletionResult>({
+      const result = await runWithKeyRotation<CompletionResult>({
         providerId,
         provider,
         request: routeRequest,
@@ -1141,6 +1153,14 @@ export async function streamWithProvider(
         onStatus: emitStatus,
         ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
       });
+      if (providerId !== requested) {
+        setDefaultProvider(providerId);
+        setProviderModel(providerId, result.model || model);
+        options.onStatus?.(
+          `switching to ${providerId}/${result.model || model} after ${requested} failed`,
+        );
+      }
+      return result;
     } catch (error) {
       failures.push({
         provider: providerId,

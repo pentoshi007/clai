@@ -306,6 +306,19 @@ describe("classic command parity (W12)", () => {
     expect(noticed(services, "freeOnly=true")).toBe(true);
   });
 
+  spec(["fallback"], "/fallback with no args opens the on/off picker", async () => {
+    const { services } = open();
+    await run(services, "fallback");
+    const overlay = services.overlay.getState();
+    expect(overlay.kind).toBe("picker");
+    if (overlay.kind !== "picker") return;
+    const options = overlay.request.options;
+    expect(options.map((o) => o.value)).toEqual(["on", "off"]);
+    expect(options.find((o) => o.value === "off")?.active).toBe(true);
+    overlay.onSelect("on");
+    expect(getConfig().providerFallback).toBe(true);
+  });
+
   spec(["compact"], "/compact reports when there is nothing to compact", async () => {
     const { services } = open();
     await run(services, "compact");

@@ -147,6 +147,7 @@ export function createCompositionRoot(
           exact: event.payload.exact,
         },
         event.payload.model,
+        event.payload.provider,
       );
     }
     // Auto-compaction mutates history through onMessages. Its provider usage is
