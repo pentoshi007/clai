@@ -44,7 +44,6 @@ export interface StatusViewInput {
   readonly running: boolean;
   readonly compacting: boolean;
   readonly activity: string | undefined;
-  readonly elapsedSeconds: number;
   readonly cancelArmed: boolean;
   readonly tick: number;
   readonly hasDraft: boolean;
@@ -161,21 +160,8 @@ function busySegments(input: StatusViewInput, density: StatusDensity, leftBudget
   const budget = Math.max(10, leftBudget - reserve);
   const label = input.compacting ? "compacting" : formatActivity(input.activity, budget);
   const cancel = input.cancelArmed ? armedCancelHint() : busyCancelHint(density).short;
-  const elapsed = ink.style(formatElapsed(input.elapsedSeconds), { fg: "accent", bold: true });
-
-  // Order so elapsed survives even when the row is tight: label → elapsed → cancel → queued.
-  // At 40–48 cols the cancel hint is the first to drop, not the timing.
-  if (density === "xs") {
-    return [
-      `${ink.fg("spinner", spinnerFrame(input.tick, ink.unicode))} ${ink.fg("activity", label)}`,
-      elapsed,
-      ink.fg(input.cancelArmed ? "activity" : "muted", cancel),
-      input.queued > 0 ? ink.fg("mode", `${input.queued}q`) : "",
-    ];
-  }
   return [
     `${ink.fg("spinner", spinnerFrame(input.tick, ink.unicode))} ${ink.fg("activity", label)}`,
-    elapsed,
     ink.fg(input.cancelArmed ? "activity" : "muted", cancel),
     input.queued > 0 ? ink.fg("mode", `${input.queued}q`) : "",
   ];

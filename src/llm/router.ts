@@ -26,9 +26,12 @@ import { geminiProvider } from "./gemini.js";
 import { groqProvider } from "./groq.js";
 import {
   ProviderError,
+  bodyAddsInformation,
+  collapseWhitespace,
   isImageInputUnsupportedError,
   isReasoningUnsupportedError,
   stripImagesFromMessages,
+  MAX_ERROR_BODY_IN_MESSAGE_CHARS,
   STREAM_STALL_MARKER,
 } from "./http.js";
 import {
@@ -69,6 +72,8 @@ import { modalProvider } from "./modal.js";
 import { lightningProvider } from "./lightning.js";
 import { tokenrouterProvider } from "./tokenrouter.js";
 import { metaProvider } from "./meta.js";
+import { fireworksProvider } from "./fireworks.js";
+import { hetznerProvider } from "./hetzner.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 import { maskSecretTail } from "./provider.js";
 import { getCustomProviderSync } from "./custom-providers.js";
@@ -183,6 +188,24 @@ function failureReason(error: unknown): string {
 }
 
 /**
+ * Append the raw response body a provider returned when it is not already part
+ * of `text`. Several paths (SSE error frames, non-OpenAI providers) keep the
+ * body on the error without embedding it in the message, and users need the
+ * full error received from the request to diagnose failures.
+ */
+function appendFullProviderBody(text: string, error: unknown): string {
+  if (!(error instanceof ProviderError)) return text;
+  const body = (error.body ?? "").trim();
+  if (!body || !bodyAddsInformation(body, text)) return text;
+  const shown = collapseWhitespace(body);
+  const capped =
+    shown.length > MAX_ERROR_BODY_IN_MESSAGE_CHARS
+      ? `${shown.slice(0, MAX_ERROR_BODY_IN_MESSAGE_CHARS)}…`
+      : shown;
+  return `${text}\nFull response from provider: ${capped}`;
+}
+
+/**
  * User-facing classification of provider failures (auth, capacity, disconnect,
  * empty admission, context limit). Used by the fallback table and tests.
  */
@@ -194,74 +217,81 @@ export function formatProviderFailureForUser(error: unknown): string {
     const exactError = error.message.replace(/\s+/g, " ").trim();
     const withExactError = (guidance: string): string =>
       exactError ? `${guidance}\nExact provider error: ${exactError}` : guidance;
+    const withFullBody = (text: string): string =>
+      appendFullProviderBody(text, error);
     const status = error.status ?? 0;
     if (status === 429) {
-      return withExactError(
+      return withFullBody(withExactError(
         "Model is rate limited (429). Try another provider/model or switch to a paid plan.",
-      );
+      ));
     }
     if (status === 401 || status === 403) {
-      return withExactError(
+      return withFullBody(withExactError(
         `Authentication/authorization failed (${status}). Check the API key with \`clai providers\` or set the provider env var.`,
-      );
+      ));
     }
     if (status === 402) {
-      return withExactError(
+      return withFullBody(withExactError(
         "Insufficient credits / payment required (402). Try another API key for this provider, top up the account, or switch provider.",
-      );
+      ));
     }
     if (status === 404) {
-      return withExactError(
+      return withFullBody(withExactError(
         "Model or endpoint not found (404). Run `/model list` or pick another model.",
-      );
+      ));
     }
     if (status === 413) {
-      return withExactError(
+      return withFullBody(withExactError(
         "Request exceeded the provider input limit (413). Wait for auto-compact, run `/compact`, or continue with a smaller turn.",
-      );
+      ));
     }
     if (status === 422) {
-      return withExactError(
+      return withFullBody(withExactError(
         "Provider rejected the request body (422). Model name or parameters may be incompatible — try another model.",
-      );
+      ));
     }
     if (status === 503 || status === 502 || status === 504) {
-      return withExactError(
+      return withFullBody(withExactError(
         `Upstream provider unavailable (${status}). Retry shortly or switch provider/model; free-tier models are often capacity-constrained.`,
-      );
+      ));
     }
     if (status >= 500 && status < 600) {
-      return withExactError(
+      return withFullBody(withExactError(
         `Upstream provider error (${status}). Retry or switch with \`/provider\` / \`/model\`.`,
-      );
+      ));
     }
   }
   const message = (error instanceof Error ? error.message : String(error))
     .replace(/\s+/g, " ")
     .trim();
-  if (!message) {
-    return "Provider returned an empty failure (no tokens billed). Model may be unavailable, overloaded, or rejected before admission — try another model.";
-  }
-  if (
-    /socket connection was closed|econnreset|premature close|unexpected end of file/i.test(
-      message,
-    )
-  ) {
-    return `${message} — connection dropped mid-request (common on free/unstable routes). Retry or switch model; long contexts increase disconnect risk.`;
-  }
-  if (new RegExp(STREAM_STALL_MARKER, "i").test(message)) {
-    return `${message}`;
-  }
-  if (/stream stalled|request timed out before any response/i.test(message)) {
-    return `${message} — no tokens arrived in time. Free models and large contexts fail more often; retry or use a more reliable model.`;
-  }
-  if (/no completion text|response was empty|empty response|returned no text/i.test(message)) {
-    return `${message} — provider accepted the request but returned no content. Retry once; if it persists, switch model.`;
-  }
-  if (/fetch failed|network error|etimedout|enotfound|econnrefused/i.test(message)) {
-    return `${message} — network/DNS failure reaching the provider. Check connectivity and provider base URL.`;
-  }
-  return message;
+  const generic = ((): string => {
+    if (!message) {
+      return "Provider returned an empty failure (no tokens billed). Model may be unavailable, overloaded, or rejected before admission — try another model.";
+    }
+    if (
+      /socket connection was closed|econnreset|premature close|unexpected end of file/i.test(
+        message,
+      )
+    ) {
+      return `${message} — connection dropped mid-request (common on free/unstable routes). Retry or switch model; long contexts increase disconnect risk.`;
+    }
+    if (new RegExp(STREAM_STALL_MARKER, "i").test(message)) {
+      return `${message}`;
+    }
+    if (/stream stalled|request timed out before any response/i.test(message)) {
+      return `${message} — no tokens arrived in time. Free models and large contexts fail more often; retry or use a more reliable model.`;
+    }
+    if (/no completion text|response was empty|empty response|returned no text/i.test(message)) {
+      return `${message} — provider accepted the request but returned no content. Retry once; if it persists, switch model.`;
+    }
+    if (/fetch failed|network error|etimedout|enotfound|econnrefused/i.test(message)) {
+      return `${message} — network/DNS failure reaching the provider. Check connectivity and provider base URL.`;
+    }
+    return message;
+  })();
+  // Statuses without a dedicated branch above (e.g. 400, or stream errors
+  // with no HTTP status) still deserve the full response body.
+  return appendFullProviderBody(generic, error);
 }
 
 function summarizeProviderError(error: unknown): string {
@@ -390,6 +420,8 @@ export const providers: Record<ProviderId, LlmProvider> = {
   lightning: lightningProvider,
   tokenrouter: tokenrouterProvider,
   meta: metaProvider,
+  fireworks: fireworksProvider,
+  hetzner: hetznerProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -410,6 +442,8 @@ const fallbackOrder: ProviderId[] = [
   "lightning",
   "tokenrouter",
   "meta",
+  "fireworks",
+  "hetzner",
 ];
 
 

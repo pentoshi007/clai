@@ -91,6 +91,8 @@ function semanticTextForItem(
       return "";
     case "compacted":
       return `[compacted context: ~${item.beforeTokens} -> ~${item.afterTokens} tokens]\n${item.summary}`;
+    case "turn-summary":
+      return "";
     default: {
       const unreachable: never = item;
       throw new Error(`unhandled transcript item: ${JSON.stringify(unreachable)}`);

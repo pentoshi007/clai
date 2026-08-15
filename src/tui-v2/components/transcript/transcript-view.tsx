@@ -24,7 +24,6 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import { useTranscriptState } from "../../../ui-core/react/use-transcript-store.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
-import { getConfig } from "../../../store/config.js";
 import {
   isFileDiffExpanded,
   isItemExpanded,
@@ -131,7 +130,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const state = useTranscriptState(services.transcript);
   const session = useSessionState(services.session);
   const items = useMemo(() => transcriptItems(state), [state]);
-  const liveThinking = useMemo(() => getConfig().thinking.enabled, [session.running]);
   const { width: termWidth } = useTerminalDimensions();
   const paneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const introWidth = Math.max(40, paneWidth);
@@ -771,7 +769,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
               item.kind === "tool" ? isFileDiffExpanded(state, item.id) : false
             }
             expandThinkingGlobal={state.expandThinkingGlobal}
-            liveThinking={liveThinking}
             expandOutputGlobal={state.expandOutputGlobal}
             expandFileDiffsGlobal={state.expandFileDiffsGlobal}
             theme={theme}

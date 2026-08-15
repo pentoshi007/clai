@@ -515,6 +515,100 @@ describe("serializeForHistory", () => {
     expect(classic.map((c) => c.kind)).toEqual(["user", "assistant"]);
     expect(classic.every((c) => c.kind !== "notice")).toBe(true);
   });
+
+  it("persists turn-summary rows and restores them on resume", () => {
+    const state: TranscriptState = {
+      order: ["u1", "a1", "ts1"],
+      byId: new Map([
+        [
+          "u1",
+          {
+            id: "u1",
+            sequence: 1,
+            turnId: undefined,
+            timestamp: 1,
+            kind: "user",
+            text: "hi",
+          },
+        ],
+        [
+          "a1",
+          {
+            id: "a1",
+            sequence: 2,
+            turnId: undefined,
+            timestamp: 2,
+            kind: "assistant",
+            text: "yo",
+            streaming: false,
+          },
+        ],
+        [
+          "ts1",
+          {
+            id: "ts1",
+            sequence: 3,
+            turnId: undefined,
+            timestamp: 1_755_250_000_000,
+            kind: "turn-summary",
+            durationMs: 76_000,
+            status: "completed",
+          },
+        ],
+      ]),
+      pendingAssistantId: undefined,
+      pendingThinkingId: undefined,
+      lastSequence: 3,
+      runningStatus: undefined,
+      expandThinkingGlobal: false,
+      expandOutputGlobal: false,
+      itemOverrides: new Map(),
+    };
+    const classic = serializeForHistory(state, () => "");
+    expect(classic.map((c) => c.kind)).toEqual(["user", "assistant", "turn-summary"]);
+    expect(classic[2]).toMatchObject({
+      kind: "turn-summary",
+      durationMs: 76_000,
+      status: "completed",
+      timestamp: 1_755_250_000_000,
+    });
+
+    const again = hydrateFromClassicTranscript(classic);
+    expect(again.state.order).toHaveLength(3);
+    const restored = again.state.byId.get("ts1");
+    expect(restored).toMatchObject({
+      kind: "turn-summary",
+      durationMs: 76_000,
+      status: "completed",
+      timestamp: 1_755_250_000_000,
+    });
+
+    const savedAgain = serializeForHistory(again.state, () => "");
+    expect(savedAgain.map((c) => c.kind)).toEqual([
+      "user",
+      "assistant",
+      "turn-summary",
+    ]);
+  });
+
+  it("restores aborted turn-summary status from history", () => {
+    const classic: ClassicItem[] = [
+      { kind: "user", id: "u1", text: "hi", done: true },
+      {
+        kind: "turn-summary",
+        id: "ts2",
+        durationMs: 4_200,
+        status: "aborted",
+        done: true,
+      },
+    ];
+    const { state } = hydrateFromClassicTranscript(classic);
+    expect(state.byId.get("ts2")).toMatchObject({
+      kind: "turn-summary",
+      durationMs: 4_200,
+      status: "aborted",
+    });
+  });
 });
 
 describe("hydrateFromClassicTranscript notices", () => {

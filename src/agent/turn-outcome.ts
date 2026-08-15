@@ -51,19 +51,7 @@ export function createTurnOutcome(input: Omit<TurnOutcome, "schemaVersion">): Tu
 
 export function renderTurnOutcome(
   outcome: TurnOutcome,
-  options: { diagnostics?: boolean } = {},
+  _options: { diagnostics?: boolean } = {},
 ): string {
-  if (
-    outcome.status === "succeeded" ||
-    outcome.status === "aborted" ||
-    options.diagnostics === false
-  ) {
-    return outcome.answer;
-  }
-  const status = outcome.status === "paused_budget" ? "paused" : outcome.status;
-  const remaining = outcome.remainingCriteria.length
-    ? `\n\nRemaining:\n${outcome.remainingCriteria.map((item) => `- ${item}`).join("\n")}`
-    : "";
-  const reason = outcome.reason ? `\n\nReason: ${outcome.reason}` : "";
-  return `${outcome.answer}${outcome.answer ? "\n\n" : ""}Status: ${status}${reason}${remaining}`;
+  return outcome.answer;
 }

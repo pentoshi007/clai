@@ -84,6 +84,8 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
     /minimax/i,
   ],
   meta: [/muse-spark/i],
+  fireworks: [/kimi/i, /deepseek/i, /qwen3/i, /glm-?5/i, /gpt-oss/i, /nemotron/i, /minimax/i, /mimo/i],
+  hetzner: [/qwen3/i, /qwen/i],
 };
 
 // Session-sticky set of provider/model routes that rejected our
@@ -312,6 +314,8 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /gemma-4/i,
   ],
   meta: [/muse-spark/i],
+  fireworks: [/kimi-k2/i, /qwen3.*vl/i, /qwen.*vl/i, /vision/i, /vl$/i, /llama-4/i, /pixtral/i, /glm-4.*v/i],
+  hetzner: [/qwen/i, /vision/i, /vl/i],
 };
 
 const visionCapabilityCache = new Map<
@@ -657,8 +661,10 @@ const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   bynara: "mimo-v2.5-free",
   "qwen-cloud": "qwen3.7-plus",
   lightning: "google/gemini-3.5-flash",
-  tokenrouter: "kimi-k2p6",
+  tokenrouter: "moonshotai/kimi-k2.7-code",
   meta: "muse-spark-1.2",
+  fireworks: "accounts/fireworks/models/kimi-k2p6",
+  hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
 };
 
 
@@ -701,6 +707,8 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   lightning: "openai",
   tokenrouter: "openai",
   meta: "openai",
+  fireworks: "openai",
+  hetzner: "openai",
   anthropic: "anthropic",
   "aws-mantle": "openai", // refined by model below
   gemini: "gemini",

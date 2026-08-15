@@ -2598,8 +2598,8 @@ export async function runAgentTurn(
           pentestJustConfirmed = true;
         }
 
-        // Always confirm destructive deletes and any write outside cwd —
-        // even when permissions=allow-all or -y (user requirement).
+        // fs.delete always confirms (every permission level). Out-of-cwd
+        // writes confirm under default permissions; allow-all auto-approves.
         let forceConfirm = call.name === "fs.delete";
         if (
           call.name === "fs.write" ||
@@ -4049,7 +4049,7 @@ export async function runAgentTurn(
         // phase on a timer rather than only on token arrival.
         const streamPhase = (): string => {
           if (generatedTokens > 0 && !inThinking) {
-            return "generating response";
+            return "responding";
           }
           if (sawReasoning) return "thinking";
           return "waiting for model";

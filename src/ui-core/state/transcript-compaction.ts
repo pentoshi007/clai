@@ -74,6 +74,8 @@ function serializeItem(
       return undefined;
     case "compacted":
       return `COMPACTED CONTEXT:\n${compactField(item.summary)}`;
+    case "turn-summary":
+      return undefined;
     default: {
       const unreachable: never = item;
       throw new Error(`unhandled transcript item: ${JSON.stringify(unreachable)}`);

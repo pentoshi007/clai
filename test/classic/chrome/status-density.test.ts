@@ -42,7 +42,6 @@ function base(columns: number, overrides: Partial<StatusViewInput> = {}): Status
     running: false,
     compacting: false,
     activity: undefined,
-    elapsedSeconds: 0,
     cancelArmed: false,
     tick: 0,
     hasDraft: false,
@@ -60,14 +59,14 @@ const STATES: readonly {
   { name: "idle", overrides: {} },
   {
     name: "running",
-    overrides: { running: true, activity: "shell.exec npm test", elapsedSeconds: 12 },
+    overrides: { running: true, activity: "shell.exec npm test" },
   },
   {
     name: "armed-cancel",
-    overrides: { running: true, activity: "generating response", elapsedSeconds: 75, cancelArmed: true },
+    overrides: { running: true, activity: "responding", cancelArmed: true },
   },
   { name: "queued", overrides: { queued: 2, hasDraft: true } },
-  { name: "compacting", overrides: { compacting: true, elapsedSeconds: 3 } },
+  { name: "compacting", overrides: { compacting: true } },
 ];
 
 describe("status rows", () => {
@@ -125,10 +124,9 @@ describe("status rows", () => {
 
   it("replaces the hints with the activity while busy", () => {
     const idle = plainText(statusRows(base(120))[0]!);
-    const busy = plainText(statusRows(base(120, { running: true, activity: "thinking", elapsedSeconds: 5 }))[0]!);
+    const busy = plainText(statusRows(base(120, { running: true, activity: "thinking" }))[0]!);
     expect(idle).toContain("thinking");
     expect(idle).toContain("/ commands");
-    expect(busy).toContain("5s");
     expect(busy).toContain("esc: cancel");
     expect(busy).not.toContain("/ commands");
   });

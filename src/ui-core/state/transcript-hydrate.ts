@@ -26,6 +26,7 @@ import {
   type ToolStatus,
   type TranscriptItem,
   type TranscriptState,
+  type TurnSummaryItem,
   type UserItem,
 } from "./transcript-types.js";
 
@@ -148,6 +149,26 @@ export function hydrateFromClassicTranscript(
           beforeTokens: raw.beforeTokens ?? 0,
           afterTokens: raw.afterTokens ?? raw.beforeTokens ?? 0,
           ...(raw.error ? { error: raw.error } : {}),
+        };
+        byId.set(id, item);
+        order.push(id);
+        break;
+      }
+      case "turn-summary": {
+        const rawStamp = raw.timestamp;
+        const rawDur = raw.durationMs;
+        const item: TurnSummaryItem = {
+          ...base,
+          ...(typeof rawStamp === "number" && Number.isFinite(rawStamp)
+            ? { timestamp: rawStamp }
+            : {}),
+          kind: "turn-summary",
+          durationMs:
+            typeof rawDur === "number" && Number.isFinite(rawDur) ? rawDur : 0,
+          status:
+            raw.status === "aborted" || raw.status === "error"
+              ? raw.status
+              : "completed",
         };
         byId.set(id, item);
         order.push(id);
@@ -591,7 +612,9 @@ export function boundSessionVisualInput(
               ? item.summary.length
               : item.kind === "plan"
                 ? 4_000
-                : item.text.length;
+                : item.kind === "turn-summary"
+                  ? 0
+                  : item.text.length;
       if (
         boundedTranscript.length > 0 &&
         transcriptChars + size > VISUAL_TOTAL_CHARS
@@ -715,6 +738,16 @@ export function serializeForHistory(
         // Do not persist INFO/WARN banners to history.db — they are not
         // conversation, must not enter model context, and must not count
         // toward "N items" on resume.
+        break;
+      case "turn-summary":
+        out.push({
+          kind: "turn-summary",
+          id: item.id,
+          durationMs: item.durationMs,
+          status: item.status,
+          timestamp: item.timestamp,
+          done: true,
+        });
         break;
       case "compacted":
         out.push({

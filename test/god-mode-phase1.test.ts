@@ -47,7 +47,7 @@ describe("God Mode Phase 1 contracts", () => {
     expect(isPlanSuccessful(plan)).toBe(false);
   });
 
-  it("renders failed/partial state into the authoritative returned answer", () => {
+  it("returns the answer without a diagnostics footer for failed turns", () => {
     const outcome = createTurnOutcome({
       status: "failed",
       answer: "Implementation stopped.",
@@ -55,8 +55,9 @@ describe("God Mode Phase 1 contracts", () => {
       remainingCriteria: ["verify behavior"],
       reason: "required task failed",
     });
-    expect(renderTurnOutcome(outcome)).toContain("Status: failed");
-    expect(renderTurnOutcome(outcome)).toContain("verify behavior");
+    expect(renderTurnOutcome(outcome)).toBe("Implementation stopped.");
+    expect(renderTurnOutcome(outcome)).not.toContain("Status:");
+    expect(renderTurnOutcome(outcome)).not.toContain("Remaining:");
   });
 
   it("normalizes a success signal with unfinished criteria before enforcing the invariant", () => {
@@ -83,7 +84,10 @@ describe("God Mode Phase 1 contracts", () => {
     expect(renderTurnOutcome(outcome, { diagnostics: false })).toBe(
       "Yes — I can help with an authorized assessment.",
     );
-    expect(renderTurnOutcome(outcome)).toContain("Status: partial");
+    expect(renderTurnOutcome(outcome)).toBe(
+      "Yes — I can help with an authorized assessment.",
+    );
+    expect(renderTurnOutcome(outcome)).not.toContain("Status:");
   });
 
   it("keeps native assistant/tool-result groups atomic during semantic compaction", async () => {

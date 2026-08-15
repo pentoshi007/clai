@@ -6,14 +6,14 @@
 
 Two things make it practical for everyday use:
 
-- **It's cheap-to-free to run.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key. Point it at Groq, Google Gemini, NVIDIA NIM, OpenRouter, Bynara, Kimchi, or a local Ollama — all have free access — and clai stacks them. Add several keys per provider; when one hits a rate limit, it rotates to the next automatically. Want frontier models instead? Serve **Kimi K3 on your own Modal endpoint** on Modal's **$30/month of free credit**, or start on **Lightning AI's 40M free tokens**.
+- **It's cheap-to-free to run.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key. Point it at Groq, Google Gemini, NVIDIA NIM, OpenRouter, Bynara, Kimchi, Hetzner, or a local Ollama — all have free access — and clai stacks them. Add several keys per provider; when one hits a rate limit, it rotates to the next automatically. Want frontier models instead? Serve **Kimi K3 on your own Modal endpoint** on Modal's **$30/month of free credit**, or start on **Lightning AI's 40M free tokens**.
 - **It's honest.** Findings need real tool output. Builds get typechecked/run before "done." Compaction and history keep long sessions coherent instead of hallucinating progress.
 
 ---
 
 ## Highlights
 
-- **Free-tier first.** 17 providers wired in, 7 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
+- **Free-tier first.** 19 providers wired in, 8 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Disable any key or endpoint row to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
 - **Bring your own endpoint.** Deploy Kimi K3 (or Qwen / DeepSeek / GLM / GPT-OSS / your own fine-tune) to a [Modal](#modal--run-kimi-k3-on-your-own-endpoint-on-30month-of-free-credit) endpoint and drive it from clai on **$30/month of free compute credit**. Modal, Lightning AI and TokenRouter each keep a list of up to 10 base URLs with a sticky active one, so several deployments live side by side and you switch with one command — same editor, same ★ active row as keys.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -105,7 +105,7 @@ clai          # launch the full-screen agent console (already on the free provid
 Prefer a different provider? Get a free key, add it, and go:
 
 ```sh
-# Add a free key (Groq shown; NVIDIA/Gemini/OpenRouter/Bynara/Kimchi work the same)
+# Add a free key (Groq shown; NVIDIA/Gemini/OpenRouter/Bynara/Kimchi/Hetzner work the same)
 clai set groq gsk_your_key_here
 clai use groq
 
@@ -151,8 +151,10 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 | Qwen Cloud | `qwen3.7-plus` | Paid (DashScope) | `DASHSCOPE_API_KEY` |
 | Modal | `moonshotai/Kimi-K3` | Usage-based ($30/mo credit) | `MODAL_PROXY_TOKEN_ID` + `MODAL_PROXY_TOKEN_SECRET` |
 | Lightning AI | `openai/gpt-5` | Per token (40M free to start) | `LIGHTNING_API_KEY` |
-| TokenRouter | `kimi-k2p6` | Per token (prepaid) | `TOKENROUTER_API_KEY` |
+| TokenRouter | `moonshotai/kimi-k3` | Per token (prepaid) | `TOKENROUTER_API_KEY` |
 | Meta (Muse Spark) | `muse-spark-1.2` | Paid (per token) | `MODEL_API_KEY` |
+| Fireworks | `accounts/fireworks/models/kimi-k2p6` | Paid (per token) | `FIREWORKS_API_KEY` |
+| Hetzner | `Qwen/Qwen3.6-35B-A3B-FP8` | Free (experiment — no billing yet) | `HETZNER_API_KEY` |
 
 Several "paid" providers also expose limited free allowances — the tier label reflects what the default keys usually buy you. Flip `freeOnly` off to include paid providers in fallback.
 
@@ -225,11 +227,29 @@ clai use lightning
 
 ```sh
 clai set tokenrouter sk-your-key        # key: your account → API Keys
-clai use tokenrouter                    # model defaults to kimi-k2p6
-/model deepseek-v4-pro                  # 1M context · or kimi-k2p7-code, glm-5p1, minimax-m3
+clai use tokenrouter                    # model defaults to moonshotai/kimi-k3
+/model deepseek/deepseek-v4-pro         # 1M context · or moonshotai/kimi-k2.7-code, z-ai/glm-5.1, MiniMax-M3
 ```
 
-Model ids are short and case-sensitive (`kimi-k2p6`, not `Kimi K2.6`), and `/model` reads the live `/models` list, which is filtered to the channels your key can reach. clai carries the real per-model context windows — 1M for DeepSeek V4, 512K for MiniMax M3, 256K for Kimi/Qwen, 200K for GLM — so the context meter and auto-compaction are accurate instead of guessing 128K. Reasoning arrives as `reasoning_content` and is folded into the normal thinking block, so `/think` and `/effort` work. Base URL defaults to `https://api.tokenrouter.com/v1` and is overridable with `clai set tokenrouter --url <url>` or `TOKENROUTER_BASE_URL` if your account uses a different host.
+Model ids are vendor-namespaced (`moonshotai/kimi-k2.6`, `deepseek/deepseek-v4-pro`, `qwen/qwen3.7-plus`); the old short ids (`kimi-k2p6`, `glm-5p1`, …) are still accepted and silently redirected to the current namespaced id. `/model` reads the live `/models` list, which is filtered to the channels your key can reach. clai carries the real per-model context windows — 1M for DeepSeek V4, 512K for MiniMax M3, 256K for Kimi/Qwen, 200K for GLM — so the context meter and auto-compaction are accurate instead of guessing 128K. Reasoning arrives as `reasoning_content` and is folded into the normal thinking block, so `/think` and `/effort` work. Base URL defaults to `https://api.tokenrouter.com/v1` and is overridable with `clai set tokenrouter --url <url>` or `TOKENROUTER_BASE_URL` if your account uses a different host.
+
+#### Fireworks and Hetzner (open-model inference)
+
+[Fireworks](https://fireworks.ai) is a per-token inference gateway for open models — Kimi, DeepSeek, GLM, Qwen, GPT-OSS, Llama — with SSE streaming and native tool calling.
+
+```sh
+clai set fireworks fw_your_key          # key: fireworks.ai → API keys
+clai use fireworks                      # model defaults to accounts/fireworks/models/kimi-k2p6
+```
+
+[Hetzner Inference](https://docs.hetzner.com/general/company-and-policy/experiments/inference/) is Hetzner's OpenAI-compatible experiment API serving open-weight models (Qwen3.6-35B with vision, 262K context) from EU servers. It is free while experimental — there is no billing yet — with fair-use per-key rate limits and no SLA or production guarantee.
+
+```sh
+clai set hetzner your-token             # token: experiments.hetzner.com → Create API Token
+clai use hetzner                        # model defaults to Qwen/Qwen3.6-35B-A3B-FP8
+```
+
+Both fetch the live model catalog for `/model` (cached 1h) and rotate keys like every other provider.
 
 ### Manage keys
 
@@ -243,6 +263,8 @@ clai set modal --url https://ws--ep-kimi-k3-server.us-west.modal.direct   # endp
 clai set modal wk-tokenId:ws-tokenSecret   # …then the proxy token pair
 clai set lightning <key>               # Lightning AI Model APIs
 clai set tokenrouter sk-your-key       # TokenRouter
+clai set fireworks fw_your_key         # Fireworks
+clai set hetzner your-token            # Hetzner Inference (experiments.hetzner.com)
 clai set free <key>                    # optional: unlock premium models (free is keyless by default)
 clai unset modal --url                 # drop stored endpoint URLs, keep the keys
 clai keys                              # providers + masked keys (★ active) + endpoint URLs
@@ -368,7 +390,7 @@ The old line REPL has been removed — there are only full surfaces now. An Open
 | Commands / file mentions | `/` · `@` |
 | Help / shortcuts | `Ctrl+G` |
 
-Tool cards show the command/input clearly and keep long scan tails in an expandable OUTPUT pager (search, copy, export). File writes show a diff preview. Compaction cards preserve session memory without dropping the plan, and `/history` restores full sessions — prompts, tool results, and the matching plan — even after an abort or autosave.
+Tool cards show the command/input clearly, with a live elapsed timer next to the command name while they run (the final duration stays visible afterwards), and keep long scan tails in an expandable OUTPUT pager (search, copy, export). File writes show a diff preview. When the agent finishes each prompt — naturally or aborted — a `✻ Worked for 1m16s` row is appended under the response, and it is restored when the session is resumed from `/history`. The status line names what the agent is actually doing right now — `responding` while streaming, `compacting` during auto or manual context compaction — instead of holding the last tool name. Prompts typed while the agent is busy are queued and run automatically in order once the turn settles; the queue pauses only when the previous turn was cancelled, errored, or stopped by the loop guard. Compaction cards preserve session memory without dropping the plan, and `/history` restores full sessions — prompts, tool results, and the matching plan — even after an abort or autosave.
 
 ---
 
@@ -560,7 +582,7 @@ clai/
 ├─ src/
 │  ├─ index.ts          # CLI entry + subcommands
 │  ├─ agent/            # loop, plans, compaction, resume orientation, tool parsing
-│  ├─ llm/              # 17 providers, streaming, native tools, key rotation + fallback
+│  ├─ llm/              # 19 providers, streaming, native tools, key rotation + fallback
 │  ├─ tools/            # fs, shell, net, http, web, pentest, batch, plan
 │  ├─ safety/           # risk classifier + engagement (scope) policy
 │  ├─ store/            # config, history, keys, plans, scope

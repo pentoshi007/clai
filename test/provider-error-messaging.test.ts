@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProviderError } from "../src/llm/http.js";
+import { ProviderError, readJson } from "../src/llm/http.js";
 
 // summarizeProviderError is not exported; exercise via thrown stream/complete
 // paths would need network. Mirror the classification rules here by importing
@@ -76,5 +76,77 @@ describe("isEmptyCompletionError", () => {
     expect(isEmptyCompletionError(new ProviderError("unauthorized", 401))).toBe(false);
     expect(isEmptyCompletionError(new ProviderError("too large", 413))).toBe(false);
     expect(isEmptyCompletionError(new Error("socket connection was closed"))).toBe(false);
+  });
+});
+
+describe("full provider error visibility (regression: truncated provider errors)", () => {
+  it("readJson surfaces the complete JSON error body when it adds information", async () => {
+    const body = JSON.stringify({
+      error: {
+        message: "upstream provider failed",
+        code: "channel_exhausted",
+        details: { upstream: "qwen", hint: "retry with a smaller prompt" },
+      },
+    });
+    const error = await readJson(
+      new Response(body, { status: 400 }),
+    ).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    const message = (error as ProviderError).message;
+    expect(message).toContain("Provider request failed with HTTP 400");
+    expect(message).toContain("upstream provider failed");
+    // The fields beyond error.message must be visible to the user.
+    expect(message).toContain("full response:");
+    expect(message).toContain("channel_exhausted");
+    expect(message).toContain("retry with a smaller prompt");
+    // The retained body is no longer clipped to 1KB.
+    expect((error as ProviderError).body).toBe(body);
+  });
+
+  it("readJson keeps a bare error envelope compact (no redundant dump)", async () => {
+    const error = await readJson(
+      new Response(JSON.stringify({ error: { message: "invalid api key" } }), {
+        status: 401,
+      }),
+    ).catch((e: unknown) => e);
+    const message = (error as ProviderError).message;
+    expect(message).toContain("invalid api key");
+    expect(message).not.toContain("full response:");
+  });
+
+  it("readJson shows a non-JSON error body in full (was capped at 200 chars)", async () => {
+    const html = `<html><body><h1>502 Bad Gateway</h1><p>${"x".repeat(400)}</p></body></html>`;
+    const error = await readJson(
+      new Response(html, { status: 502 }),
+    ).catch((e: unknown) => e);
+    const message = (error as ProviderError).message;
+    expect(message).toContain("full response:");
+    expect(message).toContain("502 Bad Gateway");
+    // The whole body survived — not just the legacy 200-char prefix.
+    expect(message).toContain("x".repeat(400));
+  });
+
+  it("formatProviderFailureForUser appends a body that the message omits", () => {
+    const msg = formatProviderFailureForUser(
+      new ProviderError(
+        "TokenRouter stream error: unknown error",
+        undefined,
+        '{"error":{"message":"unknown error","upstream":"qwen gateway overloaded"}}',
+      ),
+    );
+    expect(msg).toContain("Full response from provider:");
+    expect(msg).toContain("qwen gateway overloaded");
+  });
+
+  it("formatProviderFailureForUser does not duplicate a body already in the message", () => {
+    const body = '{"error":{"message":"Provider request failed with HTTP 429"}}';
+    const msg = formatProviderFailureForUser(
+      new ProviderError(
+        `Provider request failed with HTTP 429 — full response: ${body}`,
+        429,
+        body,
+      ),
+    );
+    expect(msg).not.toContain("Full response from provider:");
   });
 });

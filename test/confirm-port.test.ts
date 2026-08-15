@@ -70,4 +70,88 @@ describe("confirm-port", () => {
     expect(ok).toBe(true);
     expect(mockConfirmPortDisabled.confirmTool).not.toHaveBeenCalled();
   });
+
+  it("always prompts for fs.delete, even under allow-all", async () => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions: "allow-all" });
+
+    const { confirmToolExecution } = await loadConfirmPort();
+    const { createSessionPolicy } = await loadSessionPolicy();
+
+    const session = createSessionPolicy();
+    const call: ToolCall = { name: "fs.delete", args: { path: "/tmp/x.txt" } };
+
+    const mockConfirmPort: ConfirmPort = {
+      confirmTool: vi.fn().mockResolvedValue(true),
+      confirmPentest: vi.fn().mockResolvedValue(true),
+    };
+
+    const ok = await confirmToolExecution(call, true, session, mockConfirmPort);
+    expect(ok).toBe(true);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+  });
+
+  it("prompts for fs.delete under default permissions", async () => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions: "default" });
+
+    const { confirmToolExecution } = await loadConfirmPort();
+    const { createSessionPolicy } = await loadSessionPolicy();
+
+    const session = createSessionPolicy();
+    const call: ToolCall = { name: "fs.delete", args: { path: "/tmp/x.txt" } };
+
+    const mockConfirmPort: ConfirmPort = {
+      confirmTool: vi.fn().mockResolvedValue(false),
+      confirmPentest: vi.fn().mockResolvedValue(true),
+    };
+
+    const ok = await confirmToolExecution(call, false, session, mockConfirmPort);
+    expect(ok).toBe(false);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+  });
+
+  it("prompts for forced-confirm out-of-cwd writes under default permissions", async () => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions: "default" });
+
+    const { confirmToolExecution } = await loadConfirmPort();
+    const { createSessionPolicy } = await loadSessionPolicy();
+
+    const session = createSessionPolicy();
+    const call: ToolCall = { name: "fs.write", args: { path: "/etc/hosts", content: "x" } };
+
+    const mockConfirmPort: ConfirmPort = {
+      confirmTool: vi.fn().mockResolvedValue(true),
+      confirmPentest: vi.fn().mockResolvedValue(true),
+    };
+
+    const ok = await confirmToolExecution(call, true, session, mockConfirmPort, {
+      forceConfirm: true,
+    });
+    expect(ok).toBe(true);
+    expect(mockConfirmPort.confirmTool).toHaveBeenCalledWith(call);
+  });
+
+  it("auto-approves forced-confirm out-of-cwd writes under allow-all", async () => {
+    const { updateConfig } = await loadConfigStore();
+    updateConfig({ permissions: "allow-all" });
+
+    const { confirmToolExecution } = await loadConfirmPort();
+    const { createSessionPolicy } = await loadSessionPolicy();
+
+    const session = createSessionPolicy();
+    const call: ToolCall = { name: "fs.write", args: { path: "/etc/hosts", content: "x" } };
+
+    const mockConfirmPort: ConfirmPort = {
+      confirmTool: vi.fn(),
+      confirmPentest: vi.fn(),
+    };
+
+    const ok = await confirmToolExecution(call, false, session, mockConfirmPort, {
+      forceConfirm: true,
+    });
+    expect(ok).toBe(true);
+    expect(mockConfirmPort.confirmTool).not.toHaveBeenCalled();
+  });
 });

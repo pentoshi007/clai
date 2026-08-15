@@ -18,6 +18,7 @@ import { buildIntroLines, type IntroBlockInput } from "../blocks/intro-lines.js"
 import { buildNoticeLines } from "../blocks/notice-lines.js";
 import { buildThinkingLines } from "../blocks/thinking-lines.js";
 import { buildToolLines, outputToggleLabel } from "../blocks/tool-lines.js";
+import { buildTurnSummaryLines } from "../blocks/turn-summary-lines.js";
 import { buildUserLines } from "../blocks/user-lines.js";
 import { clipRow, joinMeta } from "../blocks/block-context.js";
 import { reflowRows } from "../render/wrap.js";
@@ -31,7 +32,8 @@ export type BlockKind =
   | "batch"
   | "diff"
   | "compacted"
-  | "notice";
+  | "notice"
+  | "turn-summary";
 
 export interface FeedBlock {
   readonly key: string;
@@ -131,6 +133,8 @@ function linesFor(
       return buildDiffLines(ctx, item as Extract<TranscriptItem, { kind: "tool" }>);
     case "compacted":
       return buildCompactedLines(ctx, item as Extract<TranscriptItem, { kind: "compacted" }>);
+    case "turn-summary":
+      return buildTurnSummaryLines(ctx, item as Extract<TranscriptItem, { kind: "turn-summary" }>);
     default:
       return buildNoticeLines(ctx, item as Extract<TranscriptItem, { kind: "notice" }>);
   }

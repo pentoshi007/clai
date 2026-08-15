@@ -90,13 +90,20 @@ export function compactionTokenLabel(
     : "";
 }
 
+export interface TurnSummaryItem extends ItemBase {
+  readonly kind: "turn-summary";
+  readonly durationMs: number;
+  readonly status: "completed" | "aborted" | "error";
+}
+
 export type TranscriptItem =
   | UserItem
   | AssistantItem
   | ThinkingItem
   | ToolItem
   | NoticeItem
-  | CompactedItem;
+  | CompactedItem
+  | TurnSummaryItem;
 
 export interface TranscriptState {
   readonly order: readonly string[];
@@ -107,6 +114,7 @@ export interface TranscriptState {
   readonly lastSequence: number;
   /** "step N" text from the most recent `status` event while a turn runs. */
   readonly runningStatus: string | undefined;
+  readonly activeTurnStartedAt?: number | undefined;
   readonly expandThinkingGlobal: boolean;
   readonly expandOutputGlobal: boolean;
   /**
@@ -170,7 +178,7 @@ export function transcriptItems(state: TranscriptState): TranscriptItem[] {
  * Never model context, never history persistence, never conversation item counts.
  */
 export function isUiOnlyTranscriptItem(item: TranscriptItem): boolean {
-  return item.kind === "notice";
+  return item.kind === "notice" || item.kind === "turn-summary";
 }
 
 /** Count conversation rows excluding ephemeral UI notices. */
@@ -198,6 +206,8 @@ export function itemSearchText(item: TranscriptItem): string {
         .join("\n");
     case "notice":
       return item.text;
+    case "turn-summary":
+      return "";
     case "compacted":
       return item.summary;
     default: {

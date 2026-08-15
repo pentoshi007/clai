@@ -69,6 +69,15 @@ export interface CompactedItem {
   afterTokens?: number | undefined;
 }
 
+export interface TurnSummaryItem {
+  kind: "turn-summary";
+  id: string;
+  durationMs: number;
+  status: "completed" | "aborted" | "error";
+  timestamp?: number | undefined;
+  done: boolean;
+}
+
 export type TranscriptItem =
   | UserItem
   | AssistantItem
@@ -76,4 +85,5 @@ export type TranscriptItem =
   | ToolItem
   | NoticeItem
   | PlanItem
-  | CompactedItem;
+  | CompactedItem
+  | TurnSummaryItem;

@@ -170,6 +170,8 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   // Prepaid balance, billed per token.
   tokenrouter: "paid-cloud",
   meta: "paid-cloud",
+  fireworks: "paid-cloud",
+  hetzner: "free-cloud",
 };
 
 /**

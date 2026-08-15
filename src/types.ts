@@ -16,6 +16,8 @@ export const providerIds = [
   "lightning",
   "tokenrouter",
   "meta",
+  "fireworks",
+  "hetzner",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

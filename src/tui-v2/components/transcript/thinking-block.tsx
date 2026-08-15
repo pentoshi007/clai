@@ -29,29 +29,20 @@ export function ThinkingBlock(props: {
   item: ThinkingItem;
   theme: Theme;
   expanded: boolean;
-  /**
-   * Show reasoning as it streams. False when the user turned thinking off, so
-   * an always-reasoning model does not paint its chain of thought anyway.
-   */
-  liveBody?: boolean | undefined;
   /** Chat-pane columns (plan split/overlay already subtracted). */
   contentWidth?: number | undefined;
   onToggle: () => void;
 }): ReactNode {
-  const { item, theme, expanded, liveBody = true, contentWidth, onToggle } = props;
+  const { item, theme, expanded, contentWidth, onToggle } = props;
   const { width: termWidth } = useTerminalDimensions();
-  const showBody = expanded || (item.streaming && liveBody);
+  const showBody = expanded || item.streaming;
   const onMouseUp = (event: MouseEvent): void => {
     event.preventDefault();
-    // Only allow collapse/expand once the block is complete.
-    if (item.streaming) return;
     onToggle();
   };
 
   const header = item.streaming
-    ? showBody
-      ? "✦ thinking…"
-      : "✦ thinking… · ctrl+t to view"
+    ? "✦ thinking…"
     : showBody
       ? "▾ thinking"
       : "▸ thinking · ctrl+t or click to view";

@@ -19,6 +19,7 @@ import {
 } from "../../../src/ui-core/state/transcript-types.js";
 import { normalizeSemanticDocument } from "../../../src/ui-core/state/semantic-document.js";
 import { extractTranscriptSemanticDocument } from "../../../src/ui-core/rendering/transcript-semantic.js";
+import { turnSummaryLabel } from "../../../src/ui-core/rendering/duration.js";
 
 function fold(events: readonly AnyAppEvent[]): TranscriptState {
   return events.reduce(applyAppEvent, EMPTY_TRANSCRIPT_STATE);
@@ -892,5 +893,64 @@ describe("transcript reducer (V2-050)", () => {
     const b = build("r-");
     expect(JSON.stringify([...a.byId.entries()])).toBe(JSON.stringify([...b.byId.entries()]));
     expect(a.order).toEqual(b.order);
+  });
+});
+
+describe("turn summary rows", () => {
+  function timedSequencer(start: number) {
+    let now = start;
+    const seq = new EventSequencer(
+      asSessionId("sess-1"),
+      createCountingIdFactory(),
+      { now: () => now },
+    );
+    return { seq, advance: (ms: number) => { now += ms; } };
+  }
+
+  it("appends a worked-for row with the per-turn duration on turn-ended", () => {
+    const { seq, advance } = timedSequencer(1_700_000_000_000);
+    const turnId = asTurnId("turn-1");
+    const started = seq.build("turn-started", { prompt: "hello" }, turnId);
+    advance(76_000);
+    const ended = seq.build("turn-ended", { finalAnswer: "done", steps: 1 }, turnId);
+    const state = fold([started, ended]);
+    const summary = transcriptItems(state).find((item) => item.kind === "turn-summary");
+    expect(summary).toMatchObject({ kind: "turn-summary", durationMs: 76_000, status: "completed" });
+    expect(state.activeTurnStartedAt).toBeUndefined();
+  });
+
+  it("marks aborted turns and keeps the abort notice", () => {
+    const { seq, advance } = timedSequencer(1_700_000_000_000);
+    const turnId = asTurnId("turn-1");
+    const started = seq.build("turn-started", { prompt: "hello" }, turnId);
+    advance(5_000);
+    const aborted = seq.build("turn-aborted", {}, turnId);
+    const state = fold([started, aborted]);
+    const items = transcriptItems(state);
+    expect(items.find((item) => item.kind === "turn-summary")).toMatchObject({ durationMs: 5_000, status: "aborted" });
+    expect(items.some((item) => item.kind === "notice" && item.text === "Turn aborted.")).toBe(true);
+  });
+
+  it("marks errored turns", () => {
+    const { seq, advance } = timedSequencer(1_700_000_000_000);
+    const turnId = asTurnId("turn-1");
+    const started = seq.build("turn-started", { prompt: "hello" }, turnId);
+    advance(2_500);
+    const errored = seq.build("turn-error", { message: "boom" }, turnId);
+    const state = fold([started, errored]);
+    expect(transcriptItems(state).find((item) => item.kind === "turn-summary")).toMatchObject({ durationMs: 2_500, status: "error" });
+  });
+
+  it("skips the row when no turn start was tracked (hydrated states)", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    const state = fold([seq.build("turn-ended", { finalAnswer: "done", steps: 1 }, turnId)]);
+    expect(transcriptItems(state).some((item) => item.kind === "turn-summary")).toBe(false);
+  });
+
+  it("formats the label like claude code", () => {
+    expect(turnSummaryLabel(76_000, "completed")).toBe("Worked for 1m16s");
+    expect(turnSummaryLabel(5_000, "aborted")).toBe("Worked for 5.0s · aborted");
+    expect(turnSummaryLabel(2_500, "error")).toBe("Worked for 2.5s · error");
   });
 });

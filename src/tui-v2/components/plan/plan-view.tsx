@@ -394,6 +394,10 @@ function TaskRow(props: {
     : [];
 
   const firstTitle = titleLines[0] ?? "";
+  const titleAttributes =
+    state === "in_progress" || active
+      ? TextAttributes.BOLD
+      : TextAttributes.NONE;
 
   return (
     <box
@@ -444,10 +448,7 @@ function TaskRow(props: {
               fg: titleColor,
               bg,
               height: 1,
-              attributes:
-                state === "in_progress" || active
-                  ? TextAttributes.BOLD
-                  : TextAttributes.NONE,
+              attributes: titleAttributes,
             }}
           />
           {titleLines.slice(1).map((line, i) => (
@@ -458,6 +459,7 @@ function TaskRow(props: {
                 fg: titleColor,
                 bg,
                 height: 1,
+                attributes: titleAttributes,
               }}
             />
           ))}

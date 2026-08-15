@@ -6,11 +6,18 @@
  * own column so multi-line errors never paint over the badge.
  */
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/react";
 import type { NoticeItem, NoticeLevel } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
+import { wrapAnsiLine } from "../../../ui-core/rendering/markdown.js";
 import { LinkableText } from "./linkable-text.js";
+
+/** Fixed-width badge label (see `badge()` below). */
+const BADGE_WIDTH = 6;
+/** Body box `paddingLeft` under the badge. */
+const BODY_PADDING = 1;
 
 function badge(level: NoticeLevel): { label: string; fg: string; bg: string } {
   // Fixed-width labels so wrap indent stays consistent across levels.
@@ -27,9 +34,33 @@ function bodyColor(level: NoticeLevel, theme: Theme): string {
   return theme.cyan;
 }
 
-export function NoticeRow(props: { item: NoticeItem; theme: Theme }): ReactNode {
-  const { item, theme } = props;
+export function NoticeRow(props: {
+  item: NoticeItem;
+  theme: Theme;
+  /** Chat-pane columns (plan split/overlay already subtracted). */
+  contentWidth?: number | undefined;
+}): ReactNode {
+  const { item, theme, contentWidth } = props;
+  const { width: termWidth } = useTerminalDimensions();
   const b = badge(item.level);
+  const fg = bodyColor(item.level, theme);
+
+  // OpenTUI's native wrap never engages for flex-sized text (the wrap width is
+  // only set at construction, when flex width is still 0), so long notices get
+  // clipped at the terminal edge. Pre-wrap in JS like assistant messages do,
+  // then render each line with wrapMode="none". Budget = chat-pane width minus
+  // the badge column and the body's left padding.
+  const wrapWidth = Math.max(
+    20,
+    (contentWidth != null ? contentWidth : Math.max(40, termWidth - 8)) -
+      BADGE_WIDTH -
+      BODY_PADDING,
+  );
+  const lines = useMemo(
+    () => wrapAnsiLine(item.text, wrapWidth),
+    [item.text, wrapWidth],
+  );
+
   return (
     <box
       id={item.id}
@@ -56,11 +87,20 @@ export function NoticeRow(props: { item: NoticeItem; theme: Theme }): ReactNode 
           flexGrow: 1,
           flexShrink: 1,
           flexDirection: "column",
-          paddingLeft: 1,
+          paddingLeft: BODY_PADDING,
           minWidth: 0,
         }}
       >
-        <LinkableText text={item.text} theme={theme} fg={bodyColor(item.level, theme)} selectable />
+        {lines.map((content, i) => (
+          <LinkableText
+            key={i}
+            text={content}
+            theme={theme}
+            fg={fg}
+            selectable
+            wrapMode="none"
+          />
+        ))}
       </box>
     </box>
   );

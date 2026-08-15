@@ -92,8 +92,9 @@ describe("StreamRenderer", () => {
     renderer.finish(outcome);
     renderer.finish(outcome);
     expect(out.chunks).toHaveLength(1);
-    expect(out.text()).toContain("Status: failed");
-    expect(out.text()).toContain("Remaining:");
+    expect(out.text()).toContain("partial work");
+    expect(out.text()).not.toContain("Status:");
+    expect(out.text()).not.toContain("Remaining:");
   });
 
   it("omits thinking rows unless showThinking is set", () => {

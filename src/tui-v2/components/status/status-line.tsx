@@ -295,8 +295,6 @@ export function StatusLine(props: StatusLineProps): ReactNode {
   } = props;
   const state = useSessionState(session);
   const [frame, setFrame] = useState(0);
-  const [sessionElapsed, setSessionElapsed] = useState(0);
-  const [sessionStartedAt, setSessionStartedAt] = useState<number | undefined>(undefined);
 
   const [cwdDisplay, setCwdDisplay] = useState(() => {
     const cwd = safeCwd();
@@ -349,7 +347,6 @@ export function StatusLine(props: StatusLineProps): ReactNode {
       setFrame(0);
       return;
     }
-    setSessionStartedAt((prev) => prev ?? Date.now());
     const spinner = setInterval(
       () => setFrame((current) => (current + 1) % SPINNER_FRAMES.length),
       100,
@@ -358,14 +355,6 @@ export function StatusLine(props: StatusLineProps): ReactNode {
       clearInterval(spinner);
     };
   }, [busy]);
-
-  useEffect(() => {
-    if (sessionStartedAt === undefined) return;
-    const clock = setInterval(() => {
-      setSessionElapsed(Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 1000)));
-    }, 1000);
-    return () => clearInterval(clock);
-  }, [sessionStartedAt]);
 
   const ctxChip = contextChipForDensity(state.contextUsage, density);
   const idleHints = idleHintIds(density, hasDraft);
@@ -419,18 +408,6 @@ export function StatusLine(props: StatusLineProps): ReactNode {
               content={clip(activityText, activityMax)}
               style={{ fg: theme.activity, flexShrink: 1 }}
             />
-          ) : null}
-          {density !== "xs" ? (
-            <>
-              {sep(theme)}
-              <text
-                selectable={false}
-                content={sessionElapsed < 60
-                  ? `${sessionElapsed}s`
-                  : `${Math.floor(sessionElapsed / 60)}m${String(sessionElapsed % 60).padStart(2, "0")}s`}
-                style={{ fg: theme.cyan, flexShrink: 0, attributes: TextAttributes.BOLD }}
-              />
-            </>
           ) : null}
           {cancelArmed || (density !== "xs" && !state.compacting) ? (
             <>

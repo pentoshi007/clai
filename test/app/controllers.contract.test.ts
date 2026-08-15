@@ -450,3 +450,93 @@ describe("TurnController acceptance boundary", () => {
     controller.dispose();
   });
 });
+
+describe("SessionController compaction status", () => {
+  it("reports compacting while in-turn compaction events are in flight", async () => {
+    const persistence = fakePersistence();
+    let midTurnCompacting: boolean | undefined;
+    const session = new SessionController({
+      agent: {
+        async runTurn(_request, handlers) {
+          handlers.onEvent({ type: "turn-start", prompt: "go" });
+          handlers.onEvent({
+            type: "compaction-start",
+            id: "ac1",
+            beforeTokens: 100,
+          });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          midTurnCompacting = session.getState().compacting;
+          handlers.onEvent({
+            type: "compaction-completed",
+            id: "ac1",
+            summary: "condensed",
+            beforeTokens: 100,
+            afterTokens: 40,
+          });
+          handlers.onEvent({ type: "assistant-message", text: "Done" });
+          handlers.onEvent({
+            type: "turn-end",
+            outcome: createTurnOutcome({
+              status: "succeeded",
+              answer: "Done",
+              steps: 1,
+              remainingCriteria: [],
+            }),
+            finalAnswer: "Done",
+            steps: 1,
+          });
+          return createTurnOutcome({
+            status: "succeeded",
+            answer: "Done",
+            steps: 1,
+            remainingCriteria: [],
+          });
+        },
+      },
+      persistence,
+      sessionId: "sess-compact-status",
+      emit: () => undefined,
+      idFactory: createCountingIdFactory("cs-"),
+      clock: { now: () => 1_700_000_000_000 },
+    });
+
+    const result = await session.submit("go");
+    expect(result.status).toBe("completed");
+    expect(midTurnCompacting).toBe(true);
+    expect(session.getState().compacting).toBe(false);
+  });
+
+  it("clears in-flight compaction status when the turn aborts", async () => {
+    const persistence = fakePersistence();
+    let release: (() => void) | undefined;
+    const session = new SessionController({
+      agent: {
+        async runTurn(_request, handlers) {
+          handlers.onEvent({ type: "turn-start", prompt: "go" });
+          handlers.onEvent({
+            type: "compaction-start",
+            id: "ac2",
+            beforeTokens: 100,
+          });
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          throw Object.assign(new Error("aborted"), { name: "AbortError" });
+        },
+      },
+      persistence,
+      sessionId: "sess-compact-abort",
+      emit: () => undefined,
+      idFactory: createCountingIdFactory("ca-"),
+      clock: { now: () => 1_700_000_000_000 },
+    });
+
+    const pending = session.submit("go");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(session.getState().compacting).toBe(true);
+    release?.();
+    await pending.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(session.getState().compacting).toBe(false);
+  });
+});

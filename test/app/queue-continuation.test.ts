@@ -29,31 +29,22 @@ const outcome = (
   });
 
 describe("queue continuation predicate (LIFE-006)", () => {
-  it("continues only for a genuinely successful turn", () => {
+  it("continues after any completed turn; pauses only for cancel, error, or loop-guard stop", () => {
     const turnId = asTurnId("turn-1");
-    expect(
-      queueContinuationDecision({
-        status: "completed",
-        turnId,
-        outcome: outcome("succeeded"),
-        finalAnswer: "answer",
-      }).proceed,
-    ).toBe(true);
     for (const status of [
+      "succeeded",
       "partial",
       "blocked",
       "failed",
-      "aborted",
       "paused_budget",
     ] as const) {
       const decision = queueContinuationDecision({
         status: "completed",
         turnId,
-        outcome: outcome(status, ["verify the fix"]),
+        outcome: outcome(status, status === "succeeded" ? [] : ["verify the fix"]),
         finalAnswer: "answer",
       });
-      expect(decision.proceed).toBe(false);
-      expect(decision.reason).toBeTruthy();
+      expect(decision.proceed).toBe(true);
     }
     expect(queueContinuationDecision({ status: "aborted", turnId }).proceed).toBe(
       false,
@@ -65,42 +56,49 @@ describe("queue continuation predicate (LIFE-006)", () => {
         error: new Error("boom"),
       }).proceed,
     ).toBe(false);
+    const loopStop = queueContinuationDecision({
+      status: "completed",
+      turnId,
+      outcome: createTurnOutcome({
+        status: "partial",
+        answer: "stopped",
+        steps: 1,
+        remainingCriteria: [],
+        loopGuardStop: { calls: "fs.read", observation: "x", signature: "sig" },
+      }),
+      finalAnswer: "stopped",
+    });
+    expect(loopStop.proceed).toBe(false);
+    expect(loopStop.reason).toBeTruthy();
   });
 
-  it("keeps queued prompts and notifies when a turn is blocked", async () => {
+  it("auto-sends queued prompts after a turn that self-reports partial", async () => {
     const seen: string[] = [];
     const agent: AgentPort = {
       async runTurn(request) {
         seen.push(request.prompt);
         return createTurnOutcome({
-          status: "blocked",
-          answer: "needs credentials",
+          status: seen.length === 1 ? "partial" : "succeeded",
+          answer: "answer",
           steps: 1,
-          remainingCriteria: ["obtain credentials"],
-          reason: "missing credentials",
+          remainingCriteria: seen.length === 1 ? ["finish later"] : [],
         });
       },
     };
-    const notices: string[] = [];
     const session = new SessionController({
       agent,
       persistence: fakePersistence(),
       sessionId: "sess-continuation",
-      emit: (event) => {
-        if (event.type === "notice") notices.push(String(event.payload.text));
-      },
+      emit: () => {},
     });
 
-    await session.submit("first step");
+    const first = session.submit("first step");
     session.enqueue("second step");
+    await first;
     await session.continueQueue();
 
-    expect(seen).toEqual(["first step"]);
-    // The draft is kept for the user instead of running on a false prerequisite.
-    expect(session.queued()).toEqual(["second step"]);
-    await session.continueQueue();
-    expect(seen).toEqual(["first step"]);
-    expect(notices.join(" ")).toMatch(/paused/i);
+    expect(seen).toEqual(["first step", "second step"]);
+    expect(session.queued()).toEqual([]);
   });
 });
 

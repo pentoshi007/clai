@@ -331,23 +331,6 @@ export const knownModels: Record<string, string[]> = {
     "lightning-ai/nemotron-3-ultra-550b-a55b",
     "lightning-ai/nemotron-3-nano-omni-30b-a3b-reasoning",
   ],
-  // TokenRouter ids are short and case-sensitive; /model reads the live list
-  // (which is filtered to the channels your key can reach).
-  tokenrouter: [
-    "kimi-k2p7-code",
-    "kimi-k2p7-code-fast",
-    "kimi-k2p6",
-    "kimi-k2p5",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
-    "qwen3p7-plus",
-    "qwen3p6-plus",
-    "glm-5p1",
-    "glm-5p1-fast",
-    "gpt-oss-120b",
-    "minimax-m3",
-    "minimax-m2p7",
-  ],
 };
 
 export function getKnownModels(provider: string): string[] {

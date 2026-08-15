@@ -198,9 +198,11 @@ function canonicalizeForContainment(path: string): string | undefined {
 }
 
 /**
- * True when a write should require an explicit confirm even under allow-all:
- * outside the working directory and active project root, but not system temp /
- * scratch (agent scratch lives under tmpdir and must not spam confirmations).
+ * True when a write sits outside the working directory and active project
+ * root, but not system temp / scratch (agent scratch lives under tmpdir and
+ * must not spam confirmations). Default permissions confirm such writes;
+ * allow-all auto-approves them. Deletes are handled separately and always
+ * confirm.
  */
 export function isOutsideWorkingDirectory(resolvedPath: string): boolean {
   const target = canonicalizeForContainment(resolvedPath);
@@ -246,8 +248,9 @@ function ensureReadAllowed(
 
 /**
  * Resolve path for writes. Outside-cwd is not hard-blocked — the runner
- * always asks for confirmation (even under allow-all). No secret-path gate
- * (pentest must be free to touch .ssh/.env-like paths on targets).
+ * confirms such writes under default permissions and honors allow-all. No
+ * secret-path gate (pentest must be free to touch .ssh/.env-like paths on
+ * targets).
  */
 function ensureWriteAllowed(path: string, confirmed?: boolean): string {
   const resolved = resolvePath(path);

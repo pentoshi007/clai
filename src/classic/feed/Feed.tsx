@@ -8,6 +8,7 @@ import { IntroBlock } from "../blocks/IntroBlock.js";
 import { NoticeBlock } from "../blocks/NoticeBlock.js";
 import { ThinkingBlock } from "../blocks/ThinkingBlock.js";
 import { ToolBlock } from "../blocks/ToolBlock.js";
+import { TurnSummaryBlock } from "../blocks/TurnSummaryBlock.js";
 import { UserBlock } from "../blocks/UserBlock.js";
 import type { BlockKind, FeedBlock } from "./feed-blocks.js";
 
@@ -46,6 +47,7 @@ const BLOCK_COMPONENTS: Record<BlockKind, (props: BlockViewProps) => ReactNode> 
   diff: DiffBlock,
   compacted: CompactedBlock,
   notice: NoticeBlock,
+  "turn-summary": TurnSummaryBlock,
 };
 
 export function blockComponentFor(kind: BlockKind): (props: BlockViewProps) => ReactNode {

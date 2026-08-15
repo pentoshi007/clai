@@ -156,6 +156,6 @@ describe("src/classic render discipline", () => {
     const components = files
       .map(named)
       .filter((name) => /^blocks[/\\][A-Z].*Block\.tsx$/.test(name));
-    expect(components).toHaveLength(9);
+    expect(components).toHaveLength(10);
   });
 });

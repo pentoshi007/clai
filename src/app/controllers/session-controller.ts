@@ -142,6 +142,7 @@ export class SessionController implements Disposable {
   private model: string | undefined;
   private mode: Mode;
   private compactingFlag = false;
+  private readonly activeCompactions = new Set<string>();
   private compactAbort: AbortController | undefined; // cancels in-flight /compact
   /** Display name written into history.db (AI title or explicit /save name). */
   private sessionTitle: string | undefined;
@@ -186,7 +187,7 @@ export class SessionController implements Disposable {
         agent: deps.agent,
         sequencer: this.sequencer,
         spool: this.spool,
-        emit: deps.emit,
+        emit: (event) => this.observeEmit(event),
         mintTurnId: deps.mintTurnId,
       }),
     );
@@ -243,7 +244,9 @@ export class SessionController implements Disposable {
       provider: this.provider,
       model: this.model,
       running: this.turn.running,
-      compacting: this.compactingFlag,
+      compacting:
+        this.compactingFlag ||
+        (this.turn.running && this.activeCompactions.size > 0),
       historyLength: this.history.length,
       queued: this.prompts.snapshot(),
       responder: this.responder?.getState() ?? IDLE_RESPONDER_STATE,
@@ -831,6 +834,7 @@ export class SessionController implements Disposable {
     this.compactAbort?.abort();
     this.compactAbort = undefined;
     this.compactingFlag = false;
+    this.activeCompactions.clear();
     this.titleInFlight = false;
     this.responder?.invalidateWake();
   }
@@ -845,5 +849,29 @@ export class SessionController implements Disposable {
 
   private notifyState(): void {
     for (const listener of this.stateListeners) listener();
+  }
+
+  private observeEmit(event: AnyAppEvent): void {
+    if (event.type === "compaction-started") {
+      this.activeCompactions.add(event.payload.compactionId);
+      this.notifyState();
+    } else if (
+      event.type === "compaction-completed" ||
+      event.type === "compaction-failed"
+    ) {
+      if (this.activeCompactions.delete(event.payload.compactionId)) {
+        this.notifyState();
+      }
+    } else if (
+      event.type === "turn-ended" ||
+      event.type === "turn-aborted" ||
+      event.type === "turn-error"
+    ) {
+      if (this.activeCompactions.size > 0) {
+        this.activeCompactions.clear();
+        this.notifyState();
+      }
+    }
+    this.deps.emit(event);
   }
 }

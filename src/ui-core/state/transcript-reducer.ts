@@ -15,6 +15,7 @@ import type {
   ToolItem,
   TranscriptItem,
   TranscriptState,
+  TurnSummaryItem,
 } from "./transcript-types.js";
 import {
   isToolFenceOnlyText,
@@ -224,6 +225,25 @@ function pushNotice(
   });
 }
 
+function appendTurnSummary(
+  state: TranscriptState,
+  event: AnyAppEvent,
+  status: TurnSummaryItem["status"],
+): TranscriptState {
+  const startedAt = state.activeTurnStartedAt;
+  const cleared: TranscriptState = { ...state, activeTurnStartedAt: undefined };
+  if (startedAt === undefined) return cleared;
+  return appendItem(cleared, {
+    id: `turn-summary-${event.id}`,
+    sequence: event.sequence,
+    turnId: event.turnId,
+    timestamp: event.timestamp,
+    kind: "turn-summary",
+    durationMs: Math.max(0, event.timestamp - startedAt),
+    status,
+  });
+}
+
 function closePending(state: TranscriptState): TranscriptState {
   let next = state;
   if (next.pendingAssistantId) {
@@ -296,9 +316,9 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
           ? event.payload.displayPrompt
           : event.payload.prompt;
       if (display === null || display === "") {
-        return withSeq;
+        return { ...withSeq, activeTurnStartedAt: event.timestamp };
       }
-      return appendItem(withSeq, {
+      return appendItem({ ...withSeq, activeTurnStartedAt: event.timestamp }, {
         id: `user-${event.id}`,
         sequence: event.sequence,
         turnId: event.turnId,
@@ -554,24 +574,36 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       });
 
     case "turn-ended":
-      return { ...closePending(withSeq), runningStatus: undefined };
+      return appendTurnSummary(
+        { ...closePending(withSeq), runningStatus: undefined },
+        event,
+        "completed",
+      );
 
     case "turn-aborted": {
       const steered = event.payload.reason === "steer";
-      return pushNotice(
-        { ...closePending(withSeq), runningStatus: undefined },
+      return appendTurnSummary(
+        pushNotice(
+          { ...closePending(withSeq), runningStatus: undefined },
+          event,
+          steered ? "info" : "warn",
+          steered ? "Prompt steered." : "Turn aborted.",
+        ),
         event,
-        steered ? "info" : "warn",
-        steered ? "Prompt steered." : "Turn aborted.",
+        "aborted",
       );
     }
 
     case "turn-error":
-      return pushNotice(
-        { ...closePending(withSeq), runningStatus: undefined },
+      return appendTurnSummary(
+        pushNotice(
+          { ...closePending(withSeq), runningStatus: undefined },
+          event,
+          "error",
+          event.payload.message,
+        ),
         event,
         "error",
-        event.payload.message,
       );
 
     case "plan-updated":

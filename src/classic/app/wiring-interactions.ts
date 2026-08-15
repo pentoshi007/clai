@@ -397,8 +397,8 @@ export function itemTitle(item: TranscriptItem): string {
       return `${item.name} · output`;
     case "compacted":
       return "Compacted context";
-    case "notice":
-      return "Notice";
+    case "notice": return "Notice";
+    case "turn-summary": return "Turn summary";
   }
 }
 

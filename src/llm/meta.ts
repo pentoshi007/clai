@@ -224,6 +224,31 @@ function buildResponsesBody(options: {
   return JSON.stringify(body);
 }
 
+const META_MAX_OUTPUT_TOKENS_CAP = 65536;
+const MAX_INCOMPLETE_BUDGET_RETRIES = 2;
+const incompleteBudgetRetries = new WeakMap<CompletionRequest, number>();
+
+function incompleteBudgetRetry(request: CompletionRequest, reasoningOn: boolean): CompletionRequest | undefined {
+  const used = incompleteBudgetRetries.get(request) ?? 0;
+  const currentBudget = Math.max(16, request.maxTokens ?? (reasoningOn ? 8192 : 4096));
+  const nextBudget = Math.min(currentBudget * 2, META_MAX_OUTPUT_TOKENS_CAP);
+  if (used >= MAX_INCOMPLETE_BUDGET_RETRIES || nextBudget <= currentBudget) return undefined;
+  const retryRequest: CompletionRequest = { ...request, maxTokens: nextBudget };
+  incompleteBudgetRetries.set(retryRequest, used + 1);
+  return retryRequest;
+}
+
+function budgetExhaustedError(request: CompletionRequest, reasoningOn: boolean, payload: string): ProviderError {
+  const currentBudget = Math.max(16, request.maxTokens ?? (reasoningOn ? 8192 : 4096));
+  const effort = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
+  const retried = (incompleteBudgetRetries.get(request) ?? 0) > 0;
+  return new ProviderError(
+    `Meta Model API spent the entire output budget (${currentBudget} tokens${effort ? `, mostly on reasoning at ${effort} effort` : ""}) without producing an answer${retried ? ", even after raising max_output_tokens" : ""}. Lower the effort with /effort high or raise max_tokens.`,
+    undefined,
+    payload.slice(0, 1000),
+  );
+}
+
 function parseResponsesOutput(data: {
   output?: unknown;
   usage?: unknown;
@@ -404,6 +429,15 @@ export const metaProvider: LlmProvider = {
     const usage = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
     const effort = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
     const full = foldResponsesReasoning(parsed.text, parsed.reasoningSummary, usage, effort);
+    if (!parsed.text.trim() && parsed.toolCalls.length === 0) {
+      const respStatus = (data as Record<string, unknown>).status;
+      const details = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
+      if (respStatus === "incomplete" && details?.reason === "max_output_tokens") {
+        const retryRequest = incompleteBudgetRetry(request, Boolean(request.thinking?.enabled));
+        if (retryRequest) return metaProvider.complete(retryRequest, auth);
+        throw budgetExhaustedError(request, Boolean(request.thinking?.enabled), JSON.stringify(data));
+      }
+    }
     if (!full.trim() && parsed.toolCalls.length === 0) {
       throw new ProviderError(`Meta Model API returned no completion text (model=${model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`);
     }
@@ -564,6 +598,14 @@ export const metaProvider: LlmProvider = {
       const usageTmp = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
       const effortTmp = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
       const full = foldResponsesReasoning(parsed.text, parsed.reasoningSummary, usageTmp, effortTmp);
+      const jsonStatus = (data as Record<string, unknown>).status;
+      const jsonDetails = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
+      if (!parsed.text.trim() && parsed.toolCalls.length === 0 && jsonStatus === "incomplete" && jsonDetails?.reason === "max_output_tokens") {
+        const retryRequest = incompleteBudgetRetry(request, reasoningOn);
+        const streamMethod = metaProvider.stream;
+        if (retryRequest && streamMethod) return streamMethod(retryRequest, auth, onToken);
+        throw budgetExhaustedError(request, reasoningOn, JSON.stringify(data));
+      }
       if (full.trim() || parsed.toolCalls.length > 0) {
         if (full.trim()) onToken(full);
         return {
@@ -872,6 +914,26 @@ export const metaProvider: LlmProvider = {
           }
           if (type === "response.failed" || type === "response.incomplete") {
             const resp = (parsed.response ?? parsed) as Record<string, unknown>;
+            if (type === "response.incomplete") {
+              const details = resp.incomplete_details as Record<string, unknown> | undefined;
+              const reason = typeof details?.reason === "string" ? details.reason : "";
+              if (resp.usage) {
+                const u = parseMetaUsage(resp.usage);
+                if (u) streamUsage = u;
+              }
+              if (reason === "max_output_tokens" && !visible.trim() && toolCallState.size === 0) {
+                const retryRequest = incompleteBudgetRetry(request, reasoningOn);
+                const streamMethod = metaProvider.stream;
+                if (retryRequest && streamMethod && !request.signal?.aborted) {
+                  exitReasoning();
+                  cleanup();
+                  return streamMethod(retryRequest, auth, onToken);
+                }
+                throw budgetExhaustedError(request, reasoningOn, payload);
+              }
+              finishReason = "incomplete";
+              continue;
+            }
             const err = resp.error as Record<string, unknown> | undefined;
             const rawDetail = err?.message ?? err?.code ?? type;
             const rawStr = String(rawDetail);

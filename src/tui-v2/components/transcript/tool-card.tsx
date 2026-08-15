@@ -17,7 +17,7 @@
  * title (verb + relative path). Collapse-all applies to every file-diff card.
  */
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
@@ -33,6 +33,7 @@ import {
   type BatchSection,
 } from "../../../ui-core/rendering/batch-sections.js";
 import { presentOutput, presentTool } from "../../../ui-core/rendering/tool-presenter.js";
+import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
 import {
   openToolOutputPager,
   pathFromArgsDisplay,
@@ -233,6 +234,13 @@ export function ToolCard(props: {
   } = props;
   const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
     presentTool(item);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (item.status !== "running" && item.status !== "queued") return;
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(clock);
+  }, [item.status]);
+  const elapsedLabel = toolElapsedLabel(item, now);
   const tail = spool.tail(item.toolCallId);
   const spoolState = spool.state(item.toolCallId);
   const fileChanges = item.fileChanges;
@@ -455,6 +463,13 @@ export function ToolCard(props: {
               flexShrink: 1,
             }}
           />
+          {elapsedLabel ? (
+            <text
+              selectable={false}
+              content={` · ${elapsedLabel}`}
+              style={{ fg: theme.muted, flexShrink: 0 }}
+            />
+          ) : null}
         </box>
         {isFileDiff && fileChangeStats ? (
           <box

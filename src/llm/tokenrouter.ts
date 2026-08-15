@@ -5,6 +5,7 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
+import { singleLeadingSystemMessages } from "./system-messages.js";
 import {
   openAiCompatibleComplete,
   openAiCompatiblePing,
@@ -59,11 +60,11 @@ export const tokenrouterProvider: LlmProvider = {
       const models = ingestOpenAiModelCatalog("tokenrouter", data);
       if (models.length > 0) {
         modelCache.set(cacheKey, { models, fetchedAt: now });
+        return models;
       }
-      return models;
+      return cached?.models ?? models;
     } catch {
-      // Falls back to the static catalog in the pickers.
-      return [];
+      return cached?.models ?? [];
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {
@@ -82,7 +83,7 @@ export const tokenrouterProvider: LlmProvider = {
       baseUrl: resolveBaseUrl(auth),
       apiKey: auth.apiKey,
       model,
-      messages: request.messages,
+      messages: singleLeadingSystemMessages(request.messages),
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       signal: request.signal,
@@ -107,7 +108,7 @@ export const tokenrouterProvider: LlmProvider = {
       baseUrl: resolveBaseUrl(auth),
       apiKey: auth.apiKey,
       model,
-      messages: request.messages,
+      messages: singleLeadingSystemMessages(request.messages),
       maxTokens: request.maxTokens,
       temperature: request.temperature,
       signal: request.signal,

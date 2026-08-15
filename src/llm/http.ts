@@ -250,8 +250,9 @@ export function ingestOpenAiModelCatalog(
 export async function readJson<T>(response: Response): Promise<T> {
   const text = await readBodyCapped(response, MAX_JSON_RESPONSE_BYTES);
   if (!response.ok) {
-   
+    
     let detail = "";
+    let extractedMessage = "";
     try {
       const body = JSON.parse(text) as Record<string, unknown>;
       const error = (body as { error?: unknown }).error;
@@ -283,8 +284,23 @@ export async function readJson<T>(response: Response): Promise<T> {
           detail = ` — ${msg}`;
         }
       }
+      extractedMessage = msg;
     } catch {
-      if (text.length > 0) detail = ` — ${text.slice(0, 200)}`;
+      // Non-JSON body — the raw text is surfaced via the full-response rule
+      // below, so nothing is lost here.
+    }
+    // Show the full error received from the request: the extracted
+    // `error.message` alone routinely hides the actionable part of a gateway
+    // error (upstream detail, codes, validation fields). Append the complete
+    // body whenever it carries anything beyond that extracted message.
+    const bodyText = text.slice(0, MAX_ERROR_BODY_CHARS);
+    if (bodyAddsInformation(bodyText, extractedMessage)) {
+      const shown = collapseWhitespace(bodyText);
+      const capped =
+        shown.length > MAX_ERROR_BODY_IN_MESSAGE_CHARS
+          ? `${shown.slice(0, MAX_ERROR_BODY_IN_MESSAGE_CHARS)}…`
+          : shown;
+      detail = `${detail} — full response: ${capped}`;
     }
     const retryAfterSeconds =
       parseRetryAfterHeader(response.headers.get("retry-after")) ??
@@ -297,7 +313,7 @@ export async function readJson<T>(response: Response): Promise<T> {
     throw new ProviderError(
       `Provider request failed with HTTP ${response.status}${retryHint}${detail}${codeHint}`,
       response.status,
-      text.slice(0, 1_000),
+      bodyText,
       retryAfterSeconds,
     );
   }
@@ -306,6 +322,36 @@ export async function readJson<T>(response: Response): Promise<T> {
 
 /** Hard cap on a JSON response body so a misbehaving provider can't OOM us. */
 const MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+/** How much of a provider error body we retain on the ProviderError. */
+export const MAX_ERROR_BODY_CHARS = 8_000;
+/** How much of that body is embedded in the user-visible error message. */
+export const MAX_ERROR_BODY_IN_MESSAGE_CHARS = 2_000;
+
+export function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * True when the raw response body carries information beyond the message we
+ * already extracted from it (extra JSON fields, non-JSON payloads, …). Pure
+ * `{"error":{"message": …}}` envelopes are redundant and stay compact.
+ */
+export function bodyAddsInformation(bodyText: string, extracted: string): boolean {
+  const collapsed = collapseWhitespace(bodyText);
+  if (!collapsed) return false;
+  if (!extracted) return true;
+  const normalizedExtracted = collapseWhitespace(extracted);
+  // The user-facing text already carries the entire body verbatim.
+  if (normalizedExtracted.includes(collapsed)) return false;
+  if (!collapsed.includes(normalizedExtracted)) return true;
+  const rest = collapsed
+    .replace(normalizedExtracted, " ")
+    .replace(/\b(errors?|message|msg|detail|details|type|code|status)\b/gi, " ")
+    .replace(/[{}\[\]":,]/g, " ")
+    .trim();
+  return rest.length > 0;
+}
 
 async function readBodyCapped(
   response: Response,

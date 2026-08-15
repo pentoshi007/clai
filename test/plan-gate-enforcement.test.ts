@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { runAgent } from "../src/modes/agent.js";
 import { deletePlan } from "../src/store/plan.js";
+import { updateConfig } from "../src/store/config.js";
 import {
   clearActiveProjectRoot,
   setActiveProjectRoot,
@@ -58,6 +59,7 @@ describe("agent plan gate enforcement", () => {
 
   afterEach(() => {
     clearActiveProjectRoot();
+    updateConfig({ permissions: "allow-all" });
     vi.restoreAllMocks();
   });
 
@@ -192,7 +194,7 @@ describe("agent plan gate enforcement", () => {
     expect(runTool).toHaveBeenCalledTimes(1);
   });
 
-  it("still prompts for an allow-all write outside the pinned project root", async () => {
+  it("auto-approves an allow-all write outside the pinned project root", async () => {
     const project = join(homedir(), "Desktop", "bloging-app");
     setActiveProjectRoot(project);
     const confirmTool = vi.fn(async () => true);
@@ -208,6 +210,32 @@ describe("agent plan gate enforcement", () => {
 
     await runAgent("perform the requested operation", {
       session: session("confirm-sibling"),
+      autoConfirm: true,
+      maxSteps: 3,
+      confirm: { confirmTool, confirmPentest: async () => true },
+    });
+
+    expect(confirmTool).not.toHaveBeenCalled();
+    expect(runTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("still prompts for an out-of-cwd write under default permissions", async () => {
+    updateConfig({ permissions: "default" });
+    const project = join(homedir(), "Desktop", "bloging-app");
+    setActiveProjectRoot(project);
+    const confirmTool = vi.fn(async () => true);
+    const sibling = join(homedir(), "Desktop", "unrelated-app", "App.tsx");
+    stream
+      .mockImplementationOnce(
+        streamReply(
+          `\`\`\`tool\n{"name":"fs.write","args":{"path":"${sibling}","content":"ok"}}\n\`\`\``,
+        ),
+      )
+      .mockImplementationOnce(streamReply("Done."));
+    runTool.mockResolvedValue({ ok: true, output: "written" });
+
+    await runAgent("perform the requested operation", {
+      session: session("confirm-sibling-default"),
       autoConfirm: true,
       maxSteps: 3,
       confirm: { confirmTool, confirmPentest: async () => true },

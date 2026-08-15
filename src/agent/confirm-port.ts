@@ -70,13 +70,15 @@ export async function confirmToolExecution(
   confirmPort: ConfirmPort,
   options?: { forceConfirm?: boolean | undefined },
 ): Promise<boolean> {
-  // fs.delete + outside-cwd mutates always prompt — even under allow-all / -y.
-  // Deletion is irreversible; never auto-approve.
-  if (options?.forceConfirm || call.name === "fs.delete") {
+  // fs.delete always prompts — at every permission level, even allow-all / -y.
+  // Deletion is irreversible; never auto-approve. Everything else (including
+  // out-of-cwd writes) honors allow-all.
+  if (call.name === "fs.delete") {
     return confirmPort.confirmTool(call);
   }
   const config = getConfig();
   if (config.permissions === "allow-all") return true;
+  if (options?.forceConfirm) return confirmPort.confirmTool(call);
   if (autoConfirm) return true;
   if (session.allow.has(call.name)) return true;
   // Persistent allowlist kept for backwards compat with users who set it

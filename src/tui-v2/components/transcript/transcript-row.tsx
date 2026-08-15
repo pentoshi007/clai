@@ -20,6 +20,7 @@ import { ThinkingBlock } from "./thinking-block.js";
 import { ToolCard } from "./tool-card.js";
 import { NoticeRow } from "./notice-row.js";
 import { CompactedRow } from "./compacted-row.js";
+import { turnSummaryLabel } from "../../../ui-core/rendering/duration.js";
 
 export function TranscriptRowImpl(props: {
   item: TranscriptItem;
@@ -36,8 +37,6 @@ export function TranscriptRowImpl(props: {
   expandThinkingGlobal: boolean;
   expandOutputGlobal: boolean;
   expandFileDiffsGlobal: boolean;
-  /** Paint reasoning while it streams (only when thinking is on). */
-  liveThinking?: boolean | undefined;
   /** Chat-pane columns so markdown tables reflow beside the plan pane. */
   contentWidth?: number | undefined;
   /** This item contains at least one match for the current ^R query. */
@@ -57,7 +56,6 @@ export function TranscriptRowImpl(props: {
     expandThinkingGlobal,
     expandOutputGlobal,
     expandFileDiffsGlobal,
-    liveThinking,
     contentWidth,
     searchMatched,
     searchActiveMatch,
@@ -90,7 +88,6 @@ export function TranscriptRowImpl(props: {
           item={item}
           theme={theme}
           expanded={expanded}
-          liveBody={liveThinking}
           contentWidth={contentWidth}
           onToggle={() => store.toggleItemOverride(item.id, expandThinkingGlobal)}
         />
@@ -123,7 +120,14 @@ export function TranscriptRowImpl(props: {
       break;
     }
     case "notice":
-      body = <NoticeRow item={item} theme={theme} />;
+      body = <NoticeRow item={item} theme={theme} contentWidth={contentWidth} />;
+      break;
+    case "turn-summary":
+      body = (
+        <text selectable style={{ fg: theme.muted }}>
+          {`✻ ${turnSummaryLabel(item.durationMs, item.status)}`}
+        </text>
+      );
       break;
     case "compacted":
       body = (

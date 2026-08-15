@@ -110,7 +110,6 @@ export function ClassicApp(
   const frame = composerFrame({ columns: shellWidth, allocatedRows: layout.composer, text: composer.state.text, mode: session.mode, phase, unicode: feed.ink.unicode, metaLabel });
   const blinkOn = Math.floor(snapshot.animationTick / 2) % 2 === 0;
   const frameWithBlink = { ...frame, showCaret: frame.showCaret && blinkOn };
-  const elapsedSeconds = snapshot.turnStartedAt === undefined ? 0 : (snapshot.now - snapshot.turnStartedAt) / 1000;
 
   useEffect(() => wiring.observeFeed(feed, selectionDocument), [wiring, feed, selectionDocument]);
   useEffect(
@@ -159,7 +158,7 @@ export function ClassicApp(
         ) : null}
         <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} />
       </Box>,
-      status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} elapsedSeconds={elapsedSeconds} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} thinkingExpanded={snapshot.transcript.expandThinkingGlobal} outputExpanded={snapshot.transcript.expandOutputGlobal} />,
+      status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} thinkingExpanded={snapshot.transcript.expandThinkingGlobal} outputExpanded={snapshot.transcript.expandOutputGlobal} />,
     }} />
     </Box>
     <ScrollbarGutter ink={feed.ink} window={feed.window} rows={layout.liveTail} offsetTop={(standaloneLabel === undefined ? 0 : 1) + layout.toast} />

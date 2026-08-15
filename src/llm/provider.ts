@@ -78,6 +78,11 @@ export const providerAliases: Record<string, ProviderId> = {
   metamodelapi: "meta",
   metamodel: "meta",
   muse: "meta",
+  fireworks: "fireworks",
+  fw: "fireworks",
+  hetzner: "hetzner",
+  "hetzner-inference": "hetzner",
+  "hetzner-experiments": "hetzner",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -98,9 +103,11 @@ export const defaultModels: Record<ProviderId, string> = {
   modal: "moonshotai/Kimi-K3",
   // Lightning AI namespaces model ids by vendor.
   lightning: "openai/gpt-5",
-  // TokenRouter ids are short and case-sensitive (kimi-k2p6, not Kimi K2.6).
-  tokenrouter: "kimi-k2p6",
+  // TokenRouter namespaces model ids by vendor (moonshotai/kimi-k3).
+  tokenrouter: "moonshotai/kimi-k3",
   meta: "muse-spark-1.2",
+  fireworks: "accounts/fireworks/models/kimi-k2p6",
+  hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
 };
 
 const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
@@ -127,6 +134,22 @@ const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string
     "gpt-4o-mini": "gpt-5.4-mini",
     "gpt-4o": "gpt-5.4",
   },
+  tokenrouter: {
+    // The gateway retired short ids; models are now namespaced by vendor.
+    "kimi-k2p6": "moonshotai/kimi-k2.6",
+    "kimi-k2p5": "moonshotai/kimi-k2.5",
+    "kimi-k2p7-code": "moonshotai/kimi-k2.7-code",
+    "kimi-k2p7-fast": "moonshotai/kimi-k2.7-code",
+    "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
+    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+    "qwen3p7-plus": "qwen/qwen3.7-plus",
+    "qwen3p6-plus": "qwen/qwen3.6-plus",
+    "glm-5p1": "z-ai/glm-5.1",
+    "glm-5p1-fast": "z-ai/glm-5.1",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "minimax-m3": "MiniMax-M3",
+    "minimax-m2p7": "minimax/minimax-m2.7",
+  },
 };
 
 export const envVars: Record<ProviderId, string | undefined> = {
@@ -150,6 +173,8 @@ export const envVars: Record<ProviderId, string | undefined> = {
   lightning: "LIGHTNING_API_KEY",
   tokenrouter: "TOKENROUTER_API_KEY",
   meta: "MODEL_API_KEY",
+  fireworks: "FIREWORKS_API_KEY",
+  hetzner: "HETZNER_API_KEY",
 };
 
 /** Resolve the env var for any provider, including user-defined custom ones. */
@@ -327,34 +352,22 @@ WHAT IT IS
   Auth       Authorization: Bearer <key>
   Endpoints  /models · /chat/completions
 
-MODELS (ids are exact and case-sensitive — kimi-k2p6, not "Kimi K2.6")
-  kimi-k2p7-code / -fast   256K ctx   agentic coding, tools + vision
-  kimi-k2p6                256K ctx   long-horizon agent work (clai default)
-  kimi-k2p5                256K ctx   faster, cheaper coding
-  deepseek-v4-pro          1M ctx     deep reasoning over huge codebases
-  deepseek-v4-flash        1M ctx     cheapest long context
-  qwen3p7-plus             256K ctx   multilingual general purpose
-  qwen3p6-plus             256K ctx   multilingual general purpose
-  glm-5p1 / glm-5p1-fast   200K ctx   agentic engineering
-  gpt-oss-120b             128K ctx   open-source OpenAI model
-  minimax-m3               512K ctx   very long context, agent harnesses
-  minimax-m2p7            196K ctx    budget agent tasks
-
-  /model reads the live list from /models, which is filtered to the channels
-  your key can actually reach — trust that over this table.
+MODELS
+  Ids are namespaced by vendor and case-sensitive (moonshotai/kimi-k3, not
+  "Kimi K3"). /model reads the live list from /models, filtered to the
+  channels your key can actually reach.
 
 COST
   Prepaid balance billed per token; the dashboard header shows what is left.
   There is no published free tier, so treat it as paid: clai classes it
   paid-cloud and /freeonly on keeps it out of the fallback chain. Prices vary
-  a lot between the flash/fast variants and the pro ones — deepseek-v4-flash
-  is the cheap long-context option, kimi-k2p7-code the premium coding one.
+  a lot between the flash/fast variants and the pro ones.
 
 SETUP
   1. Create an API key in your TokenRouter account under API Keys.
   2. clai set tokenrouter sk-yourKey
   3. clai use tokenrouter
-  4. /model kimi-k2p6      (or any id from /model)
+  4. /model moonshotai/kimi-k3      (or any id from /model)
 
 MANAGING KEYS AND ENDPOINTS IN CLAI
   clai set tokenrouter <key>            add a key (up to 10, rotated on failure)
@@ -375,7 +388,7 @@ GOOD TO KNOW
   - max_tokens above a model's ceiling is clamped by the gateway rather than
     rejected, but prompt + max_tokens must still fit the context window.
   - The model field in responses may echo a fully-qualified upstream path
-    instead of the short id you sent. That is expected.
+    instead of the id you sent. That is expected.
   - Env var: TOKENROUTER_API_KEY (used when nothing is stored).
 
 Docs: https://docs.tokenrouter.me`,
@@ -643,6 +656,103 @@ GOOD TO KNOW
   - Env var: MODEL_API_KEY (used when nothing is stored).
 
 Docs: https://dev.meta.ai/docs`,
+  fireworks: `Fireworks AI — OpenAI-compatible inference for open models
+
+WHAT IT IS
+  Fireworks serves open models behind an OpenAI-compatible API at
+  https://api.fireworks.ai/inference/v1. One key, many models, billed per
+  token. Chat Completions with SSE streaming, native tool calling, vision
+  via image_url, structured outputs and reasoning all work.
+
+  Base URL   https://api.fireworks.ai/inference/v1
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions
+
+MODELS (ids are fully-qualified — accounts/fireworks/models/<name>)
+  accounts/fireworks/models/kimi-k2p6              (clai default) 256K ctx
+  accounts/fireworks/models/kimi-k2-instruct-0905  256K ctx
+  accounts/fireworks/models/deepseek-v3p1          128K ctx
+  accounts/fireworks/models/glm-5p2                200K ctx
+  accounts/fireworks/models/qwen3-235b-a22b        128K ctx
+  accounts/fireworks/models/gpt-oss-120b           128K ctx
+  /model reads the live list from /models (cached 1h).
+
+COST
+  Pay-as-you-go per token. No free tier — clai classes it paid-cloud so
+  /freeonly on keeps it out of the fallback chain.
+
+SETUP
+  1. Create an API key at https://app.fireworks.ai/settings/users/api-keys
+  2. clai set fireworks <your-key>
+  3. clai use fireworks
+  4. /model accounts/fireworks/models/kimi-k2p6
+
+MANAGING KEYS IN CLAI
+  clai set fireworks <key>           add a key (up to 10, rotated on failure)
+  clai set fireworks <key2>          add another; last success is sticky
+  clai keys                          masked keys
+  clai unset fireworks               remove every stored key
+  /set fireworks                     TUI: multi-key editor
+  /info fireworks                    this page
+
+GOOD TO KNOW
+  - Reasoning models return thinking in reasoning_content; clai folds it
+    into the usual thinking block so /think and /effort work.
+  - Vision models accept image_url; clai sends images as OpenAI image_url
+    blocks when the model supports vision.
+  - Env var: FIREWORKS_API_KEY (used when nothing is stored).
+
+Docs: https://docs.fireworks.ai
+API:  https://docs.fireworks.ai/api-reference/introduction`,
+  hetzner: `Hetzner Inference — OpenAI-compatible inference on EU infrastructure
+
+WHAT IT IS
+  Hetzner's experimental inference API at https://inference.hetzner.com/api/v1.
+  OpenAI-compatible Chat Completions with SSE streaming, native tool calling
+  and vision via image_url. Servers in Germany and Finland, outside the US
+  CLOUD Act. Currently experimental — free during test phase, no SLA/DPA yet.
+
+  Base URL   https://inference.hetzner.com/api/v1
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions
+
+MODELS
+  Qwen/Qwen3.6-35B-A3B-FP8             current model (clai default) 262K ctx
+  Qwen/Qwen3.6-35B-A3B                 alias without FP8 suffix
+  /model reads the live list from /models (cached 1h). Additional models
+  will be added based on demand.
+
+COST
+  Free during experimental phase — no billing yet. clai classes it free-cloud
+  so /freeonly on keeps it in the fallback chain. Expect Hetzner pricing
+  well below US hyperscalers once billing arrives.
+
+SETUP
+  1. Create an API token at https://experiments.hetzner.com/
+  2. clai set hetzner <your-token>
+  3. clai use hetzner
+  4. /model Qwen/Qwen3.6-35B-A3B-FP8
+
+MANAGING KEYS IN CLAI
+  clai set hetzner <key>               add a key (up to 10, rotated on failure)
+  clai set hetzner <key2>              add another; last success is sticky
+  clai keys                            masked keys
+  clai unset hetzner                   remove every stored key
+  /set hetzner                         TUI: multi-key editor
+  /info hetzner                        this page
+
+GOOD TO KNOW
+  - Qwen3 is a reasoning model: it thinks before answering. /effort on|off
+    maps to chat_template_kwargs.enable_thinking so thinking can be disabled
+    and the completion budget is not spent on hidden reasoning.
+  - Vision: Qwen3.6 accepts images; clai sends them as OpenAI image_url blocks
+    when the model supports vision.
+  - Tool calling works via OpenAI tools; streaming and prompt caching work.
+  - Env var: HETZNER_API_KEY (also HETZNER_INFERENCE_API_KEY, used when
+    nothing is stored).
+
+Docs: https://experiments.hetzner.com/docs/inference
+API:  https://inference.hetzner.com/api/v1`,
 };
 
 export function getProviderInfoText(provider: string): string {
