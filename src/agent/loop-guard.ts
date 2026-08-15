@@ -35,6 +35,15 @@ const READ_ONLY_TOOLS = new Set([
   "pdf.read",
 ]);
 
+const STATE_POLLING_TOOLS = new Set([
+  "shell.tail",
+  "shell.jobs",
+  "terminal.read",
+  "terminal.status",
+  "terminal.list",
+  "pentest.scanStatus",
+]);
+
 export interface LoopGuardOptions {
   /** @deprecated Retry authorization belongs in RetryContext passed to shouldBlock. */
   allowUnlimitedFailedRetries?: boolean;
@@ -155,6 +164,7 @@ export class LoopGuard {
 
   restoreCompletedOperations(operations: readonly CompletedOperation[]): void {
     for (const operation of operations) {
+      if (STATE_POLLING_TOOLS.has(operation.tool)) continue;
       if (operation.ok === false) {
         this.failedProbes.set(operation.signature, {
           ...(operation.observationDigest
@@ -255,6 +265,38 @@ export class LoopGuard {
     });
   }
 
+  private callIsStatePolling(call: {
+    name: string;
+    args?: Record<string, unknown>;
+  }): boolean {
+    if (STATE_POLLING_TOOLS.has(call.name)) return true;
+    if (call.name !== "tool.batch") return false;
+    const children = call.args?.calls;
+    if (!Array.isArray(children) || children.length === 0) return false;
+    return children.every((child) => {
+      if (!child || typeof child !== "object") return false;
+      const record = child as Record<string, unknown>;
+      return (
+        typeof record.name === "string" &&
+        this.callIsStatePolling({
+          name: record.name,
+          args:
+            record.args && typeof record.args === "object"
+              ? (record.args as Record<string, unknown>)
+              : {},
+        })
+      );
+    });
+  }
+
+  private sequenceIsStatePolling(
+    calls: readonly { name: string; args?: Record<string, unknown> }[],
+  ): boolean {
+    return (
+      calls.length > 0 && calls.every((call) => this.callIsStatePolling(call))
+    );
+  }
+
   observeActionSequence(
     calls: readonly {
       name: string;
@@ -289,6 +331,7 @@ export class LoopGuard {
       this.lastActionSequenceOutcome = undefined;
       this.unchangedActionSequenceRuns = 0;
       this.consecutiveSequenceRepeats = 0;
+      if (this.sequenceIsStatePolling(calls)) return none;
       const prior = this.sequenceOutcomes.get(signature);
       if (prior && prior.unchangedRuns >= 3) {
         this.totalSequenceSuppressions += 1;
@@ -317,6 +360,10 @@ export class LoopGuard {
     }
 
     if (!this.lastActionSequenceEligible) {
+      return none;
+    }
+
+    if (this.sequenceIsStatePolling(calls)) {
       return none;
     }
 
@@ -412,7 +459,10 @@ export class LoopGuard {
       this.sequenceOutcomes.delete(signature);
       return;
     }
-    if (this.sequenceNeedsOutcomeComparison(calls)) {
+    if (
+      this.sequenceNeedsOutcomeComparison(calls) &&
+      !this.sequenceIsStatePolling(calls)
+    ) {
       const comparableOutcome = outcomeFingerprint ?? "__no-outcome__";
       const unchanged = comparableOutcome === this.lastActionSequenceOutcome;
       this.unchangedActionSequenceRuns = unchanged
@@ -527,7 +577,11 @@ export class LoopGuard {
       }
       if (output === undefined || output.trim()) {
         this.emptySuccessfulCalls.delete(sig);
-      } else if (name !== "task.update" && name !== "plan.create") {
+      } else if (
+        name !== "task.update" &&
+        name !== "plan.create" &&
+        !STATE_POLLING_TOOLS.has(name)
+      ) {
         this.emptySuccessfulCalls.set(sig, {
           step,
           ...(context?.stateKey ? { stateKey: context.stateKey } : {}),
@@ -538,7 +592,12 @@ export class LoopGuard {
     }
 
     const probeSignature = completedOperationSignature(name, args);
-    if (ok && output !== undefined && probeSignature) {
+    if (
+      ok &&
+      output !== undefined &&
+      probeSignature &&
+      !STATE_POLLING_TOOLS.has(name)
+    ) {
       const digest = completedOperationObservationDigest(name, output);
       const prior = this.successfulProbes.get(probeSignature);
       const unchanged =

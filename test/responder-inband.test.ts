@@ -414,7 +414,7 @@ describe("ordinary-turn responder delivery", () => {
     expect(results.every((event) => event.ok)).toBe(true);
   });
 
-  it("keeps a whole-sequence suppressed job probe visible", async () => {
+  it("executes repeated shell.jobs polling without sequence suppression", async () => {
     jobsHarness.startNormal();
     const events: AgentEvent[] = [];
     let requestCount = 0;
@@ -461,19 +461,20 @@ describe("ordinary-turn responder delivery", () => {
       onEvent: (event) => events.push(event),
     });
 
-    expect(jobsHarness.manager.listJobs).toHaveBeenCalledTimes(3);
+    expect(jobsHarness.manager.listJobs).toHaveBeenCalledTimes(4);
     const calls = events.filter(
       (event): event is Extract<AgentEvent, { type: "tool-call" }> =>
         event.type === "tool-call" && event.name === "shell.jobs",
     );
     expect(calls).toHaveLength(4);
-    const secondOutput = events.find(
-      (event): event is Extract<AgentEvent, { type: "tool-output" }> =>
-        event.type === "tool-output" && event.id === calls[3]!.id,
-    );
-    expect(secondOutput?.chunk).toContain("same action sequence already ran");
-    expect(secondOutput?.chunk).toContain("Prior successful result for shell.jobs");
-    expect(secondOutput?.chunk).toContain("normal-server-job");
+    for (const call of calls) {
+      const output = events.find(
+        (event): event is Extract<AgentEvent, { type: "tool-output" }> =>
+          event.type === "tool-output" && event.id === call.id,
+      );
+      expect(output?.chunk).toContain("normal-server-job");
+      expect(output?.chunk).not.toContain("same action sequence already ran");
+    }
   });
 
   it("keeps a state-identical normal-job suppression visible after a failed sibling", async () => {

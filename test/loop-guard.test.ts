@@ -566,4 +566,153 @@ describe("LoopGuard", () => {
     expect(after.warn).toBe(false);
     expect(after.suppress).toBe(false);
   });
+
+  it("never suppresses repeated shell.tail polling with unchanged output", () => {
+    const guard = new LoopGuard();
+    const seq = [{ name: "shell.tail", args: { id: "job-1" } }];
+
+    for (let i = 0; i < 8; i++) {
+      const decision = guard.observeActionSequence(seq);
+      expect(decision.suppress).toBe(false);
+      expect(decision.warn).toBe(false);
+      expect(decision.oscillation).toBe(false);
+      guard.completeActionSequence(seq, true, "no-new-output");
+    }
+  });
+
+  it("never suppresses state-polling sequences that return after intervening work", () => {
+    const guard = new LoopGuard();
+    const poll = [{ name: "shell.tail", args: { id: "job-1" } }];
+    const other = [{ name: "fs.read", args: { path: "src/index.ts" } }];
+
+    for (let i = 0; i < 5; i++) {
+      guard.observeActionSequence(poll);
+      guard.completeActionSequence(poll, true, "same");
+      guard.observeActionSequence(other);
+      guard.completeActionSequence(other, true, `body-${i}`);
+    }
+    const decision = guard.observeActionSequence(poll);
+    expect(decision.suppress).toBe(false);
+    expect(decision.oscillation).toBe(false);
+    expect(decision.warn).toBe(false);
+  });
+
+  it("never warns on consecutive terminal.read polling even with changing output", () => {
+    const guard = new LoopGuard();
+    const seq = [{ name: "terminal.read", args: { id: "s-1", cursor: 0 } }];
+
+    for (let i = 0; i < 8; i++) {
+      const decision = guard.observeActionSequence(seq);
+      expect(decision.suppress).toBe(false);
+      expect(decision.warn).toBe(false);
+      guard.completeActionSequence(seq, true, `cursor-${i}`);
+    }
+  });
+
+  it("exempts a tool.batch made only of state-polling calls", () => {
+    const guard = new LoopGuard();
+    const seq = [
+      {
+        name: "tool.batch",
+        args: {
+          calls: [
+            { name: "shell.tail", args: { id: "job-1" } },
+            { name: "shell.jobs", args: {} },
+          ],
+        },
+      },
+    ];
+
+    for (let i = 0; i < 6; i++) {
+      expect(guard.observeActionSequence(seq).suppress).toBe(false);
+      guard.completeActionSequence(seq, true, "same");
+    }
+  });
+
+  it("still suppresses a tool.batch mixing polling with ordinary reads", () => {
+    const guard = new LoopGuard();
+    const seq = [
+      {
+        name: "tool.batch",
+        args: {
+          calls: [
+            { name: "shell.tail", args: { id: "job-1" } },
+            { name: "fs.read", args: { path: "notes.md" } },
+          ],
+        },
+      },
+    ];
+
+    guard.observeActionSequence(seq);
+    guard.completeActionSequence(seq, true, "same");
+    expect(guard.observeActionSequence(seq).suppress).toBe(false);
+    guard.completeActionSequence(seq, true, "same");
+    expect(guard.observeActionSequence(seq)).toMatchObject({
+      suppress: false,
+      warn: true,
+    });
+    guard.completeActionSequence(seq, true, "same");
+    expect(guard.observeActionSequence(seq).suppress).toBe(true);
+  });
+
+  it("never blocks unchanged successful polling retries via shouldBlock", () => {
+    const guard = new LoopGuard();
+    const args = { id: "job-1" };
+    const output = "[job-1] running exit=? total=119";
+
+    for (let step = 0; step < 6; step++) {
+      expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
+      guard.recordAttempt(step, "shell.tail", args, true, 0, output);
+    }
+    expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
+  });
+
+  it("never blocks empty-output polling successes", () => {
+    const guard = new LoopGuard();
+    const args = { id: "job-2", offset: 119 };
+
+    for (let step = 0; step < 5; step++) {
+      guard.recordAttempt(step, "shell.tail", args, true, 0, "");
+      expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
+    }
+  });
+
+  it("does not restore blocking state for polling tools from completed operations", () => {
+    const guard = new LoopGuard();
+    guard.restoreCompletedOperations([
+      {
+        signature: "poll-sig",
+        tool: "shell.tail",
+        summary: "shell.tail job-1",
+        observation: "running",
+        ok: true,
+        observationDigest: "abc123",
+        unchangedRepeats: 6,
+        observedAt: new Date().toISOString(),
+      },
+      {
+        signature: "poll-sig-fail",
+        tool: "terminal.read",
+        summary: "terminal.read s-1",
+        observation: "timeout",
+        ok: false,
+        observationDigest: "def456",
+        unchangedRepeats: 4,
+        observedAt: new Date().toISOString(),
+      },
+    ]);
+
+    expect(guard.shouldBlock("shell.tail", { id: "job-1" }).block).toBe(false);
+    expect(guard.shouldBlock("terminal.read", { id: "s-1" }).block).toBe(false);
+  });
+
+  it("still blocks unchanged failed polling retries like other tools", () => {
+    const guard = new LoopGuard();
+    const args = { id: "missing-job" };
+
+    guard.recordAttempt(0, "shell.tail", args, false, 1, "no such job");
+    expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
+    guard.recordAttempt(1, "shell.tail", args, false, 1, "no such job");
+    expect(guard.shouldBlock("shell.tail", args).block).toBe(true);
+  });
 });
