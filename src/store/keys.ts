@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile, rm, writeFile, chown } from 'node:fs/promises';
 import { fixOwner, handlePermissionError, safeExists } from '../os/permissions.js';
 
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { ProviderId, ProviderStatus } from '../types.js';
 import { providerIds } from '../types.js';
@@ -94,11 +94,20 @@ function noteKeychainRuntimeFailure(error: unknown): void {
   }
 }
 
+function isCompiledLinuxBinary(): boolean {
+  if (process.platform !== 'linux') return false;
+  if (typeof process.versions.bun !== 'string') return false;
+  return basename(process.execPath).toLowerCase() !== 'bun';
+}
+
 async function withKeytar<T>(
   fn: (keytar: KeytarLike) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false }> {
   if (keychainRuntimeUnavailable) return { ok: false };
   if (process.env.CLAI_DISABLE_KEYCHAIN === "1" || getConfig().disableKeychain) {
+    return { ok: false };
+  }
+  if (isCompiledLinuxBinary() && process.env.CLAI_ENABLE_KEYCHAIN !== "1") {
     return { ok: false };
   }
   const keytar = await loadKeytar();
