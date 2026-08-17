@@ -1,4 +1,16 @@
-import type { ChatMessage, NativeToolCall, ToolDefinition } from "../../types.js";
+import type {
+  ChatMessage,
+  NativeToolCall,
+  ReasoningArtifactReplayObserver,
+  ReasoningArtifactReplayTarget,
+  ToolDefinition,
+} from "../../types.js";
+import {
+  reasoningArtifactSignature,
+  reasoningArtifactText,
+  reasoningArtifactsForMessage,
+  selectReasoningArtifactsForReplay,
+} from "../reasoning-artifacts.js";
 import {
   mapToolChoiceToOpenAi,
   toWireName,
@@ -30,6 +42,8 @@ export type OpenAiWireMessage =
       role: "system" | "user" | "assistant";
       content: string | unknown[] | null;
       reasoning_content?: string;
+      reasoning_details?: unknown;
+      extra_content?: { google?: { thought_signature: string } };
       tool_calls?: Array<{
         id: string;
         type: "function";
@@ -43,6 +57,48 @@ export type OpenAiWireMessage =
       name?: string;
     };
 
+interface CompatibleReasoningReplayOptions {
+  readonly target: ReasoningArtifactReplayTarget;
+  readonly observe?: ReasoningArtifactReplayObserver | undefined;
+}
+
+function compatibleReasoningFields(
+  message: ChatMessage,
+  replay?: CompatibleReasoningReplayOptions,
+): {
+  reasoningContent?: string | undefined;
+  reasoningDetails?: unknown;
+  thoughtSignature?: string | undefined;
+} {
+  if (!replay) return {};
+  const artifacts = [
+    ...selectReasoningArtifactsForReplay({
+      artifacts: reasoningArtifactsForMessage(message),
+      target: replay.target,
+      context: { hasToolCalls: Boolean(message.toolCalls?.length) },
+      observe: replay.observe,
+    }),
+  ].sort((left, right) => left.position.sequence - right.position.sequence);
+  const plaintext = artifacts.find((artifact) => artifact.kind === "plaintext");
+  const details = artifacts.find(
+    (artifact) => artifact.kind === "structured-details",
+  );
+  const signature = artifacts.find(
+    (artifact) => artifact.kind === "thought-signature",
+  );
+  const reasoningContent = plaintext
+    ? reasoningArtifactText(plaintext)
+    : undefined;
+  const thoughtSignature = signature
+    ? reasoningArtifactSignature(signature)
+    : undefined;
+  return {
+    ...(reasoningContent ? { reasoningContent } : {}),
+    ...(details ? { reasoningDetails: details.raw } : {}),
+    ...(thoughtSignature ? { thoughtSignature } : {}),
+  };
+}
+
 /**
  * Map dialect-neutral ChatMessage[] to OpenAI Chat Completions wire format,
  * preserving tool roles and assistant tool_calls.
@@ -50,6 +106,7 @@ export type OpenAiWireMessage =
 export function toOpenAiToolMessages(
   messages: ChatMessage[],
   mapUserContent: (message: ChatMessage) => string | unknown[],
+  replay?: CompatibleReasoningReplayOptions,
 ): OpenAiWireMessage[] {
   const out: OpenAiWireMessage[] = [];
   for (const message of messages) {
@@ -63,14 +120,23 @@ export function toOpenAiToolMessages(
       continue;
     }
     if (message.role === "assistant" && message.toolCalls?.length) {
-      const unsignedReasoning =
-        message.reasoningBlock?.text && !message.reasoningBlock.signature
-          ? message.reasoningBlock.text
-          : undefined;
+      const reasoning = compatibleReasoningFields(message, replay);
       out.push({
         role: "assistant",
         content: message.content || null,
-        ...(unsignedReasoning ? { reasoning_content: unsignedReasoning } : {}),
+        ...(reasoning.reasoningContent
+          ? { reasoning_content: reasoning.reasoningContent }
+          : {}),
+        ...(reasoning.reasoningDetails !== undefined
+          ? { reasoning_details: reasoning.reasoningDetails }
+          : {}),
+        ...(reasoning.thoughtSignature
+          ? {
+              extra_content: {
+                google: { thought_signature: reasoning.thoughtSignature },
+              },
+            }
+          : {}),
         tool_calls: message.toolCalls.map((tc) => ({
           id: tc.id,
           type: "function" as const,
@@ -89,16 +155,26 @@ export function toOpenAiToolMessages(
       });
       continue;
     }
-    const plainReasoning =
-      message.role === "assistant" &&
-      message.reasoningBlock?.text &&
-      !message.reasoningBlock.signature
-        ? message.reasoningBlock.text
-        : undefined;
+    const reasoning =
+      message.role === "assistant"
+        ? compatibleReasoningFields(message, replay)
+        : {};
     out.push({
       role: message.role as "system" | "assistant",
       content: message.content,
-      ...(plainReasoning ? { reasoning_content: plainReasoning } : {}),
+      ...(reasoning.reasoningContent
+        ? { reasoning_content: reasoning.reasoningContent }
+        : {}),
+      ...(reasoning.reasoningDetails !== undefined
+        ? { reasoning_details: reasoning.reasoningDetails }
+        : {}),
+      ...(reasoning.thoughtSignature
+        ? {
+            extra_content: {
+              google: { thought_signature: reasoning.thoughtSignature },
+            },
+          }
+        : {}),
     });
   }
   return out;

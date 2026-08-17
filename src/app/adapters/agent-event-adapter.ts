@@ -60,8 +60,26 @@ export class AgentEventAdapter {
           completionTokens: event.usage.completionTokens,
           totalTokens: event.usage.totalTokens,
           exact: event.usage.exact,
+          ...(event.usage.promptTokensKnown === false
+            ? { promptTokensKnown: false }
+            : {}),
+          ...(event.usage.cachedPromptTokens !== undefined
+            ? { cachedPromptTokens: event.usage.cachedPromptTokens }
+            : {}),
+          ...(event.usage.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: event.usage.cacheCreationTokens }
+            : {}),
+          ...(event.usage.uncachedPromptTokens !== undefined
+            ? { uncachedPromptTokens: event.usage.uncachedPromptTokens }
+            : {}),
+          ...(event.usage.reasoningTokens !== undefined
+            ? { reasoningTokens: event.usage.reasoningTokens }
+            : {}),
           ...(event.model !== undefined ? { model: event.model } : {}),
           ...(event.provider !== undefined ? { provider: event.provider } : {}),
+          ...(event.attempt?.kind === "generation"
+            ? { attempt: event.attempt }
+            : {}),
         });
         return;
       case "context-estimate":
@@ -206,6 +224,7 @@ export class AgentEventAdapter {
           summary: event.summary,
           beforeTokens: event.beforeTokens,
           afterTokens: event.afterTokens,
+          contextScope: event.contextScope,
         });
         return;
       case "compaction-failed":

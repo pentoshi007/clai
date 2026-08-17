@@ -472,6 +472,7 @@ describe("SessionController compaction status", () => {
             summary: "condensed",
             beforeTokens: 100,
             afterTokens: 40,
+            contextScope: "assembled-request",
           });
           handlers.onEvent({ type: "assistant-message", text: "Done" });
           handlers.onEvent({

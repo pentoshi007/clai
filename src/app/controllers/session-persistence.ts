@@ -1,6 +1,9 @@
 import type { ChatMessage } from "../../types.js";
 import type { PersistedContextUsage } from "../../store/history.js";
-import type { ContextUsageSnapshot } from "../../llm/token-usage.js";
+import {
+  toLegacyContextUsage,
+  type ContextSnapshotV1,
+} from "../../llm/context-snapshot.js";
 import type {
   PersistencePort,
   SaveSessionOptions,
@@ -57,15 +60,11 @@ export class SessionPersistenceQueue {
 }
 
 export function persistedContextUsage(
-  snapshot: ContextUsageSnapshot | undefined,
+  snapshot: ContextSnapshotV1 | undefined,
 ): PersistedContextUsage | undefined {
   if (!snapshot || snapshot.contextTokens <= 0) return undefined;
   return {
-    contextTokens: snapshot.contextTokens,
-    contextLimit: snapshot.contextLimit,
-    lastCompletionTokens: snapshot.lastCompletionTokens,
-    sessionPromptTokens: snapshot.sessionPromptTokens,
-    sessionCompletionTokens: snapshot.sessionCompletionTokens,
-    exact: snapshot.exact,
+    ...toLegacyContextUsage(snapshot),
+    contextSnapshot: snapshot,
   };
 }

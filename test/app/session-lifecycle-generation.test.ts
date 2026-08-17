@@ -7,9 +7,26 @@ import type {
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { SessionController } from "../../src/app/controllers/session-controller.js";
 import { createTurnOutcome, type TurnOutcome } from "../../src/agent/turn-outcome.js";
+import type { SuccessfulRequestSnapshot } from "../../src/types.js";
 
 const succeeded = (): TurnOutcome =>
   createTurnOutcome({ status: "succeeded", answer: "", steps: 1, remainingCriteria: [] });
+
+function primeCompactionSnapshot(session: SessionController): void {
+  const snapshot: SuccessfulRequestSnapshot = {
+    provider: "groq",
+    model: "test-model",
+    messages: [
+      { role: "system", content: "main system prompt" },
+      ...session.messages.slice(0, -1).map((message) => structuredClone(message)),
+    ],
+  };
+  (
+    session as unknown as {
+      lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
+    }
+  ).lastMainRequestSnapshot = snapshot;
+}
 
 function fakePersistence(saved: string[][]): PersistencePort {
   return {
@@ -29,11 +46,17 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
     let emitLate: (() => void) | undefined;
     const agent: AgentPort = {
       async runTurn(_request: RunTurnRequest, handlers: RunTurnHandlers) {
-        emitLate = () =>
+        emitLate = () => {
+          handlers.onSuccessfulRequest?.({
+            provider: "groq",
+            model: "test-model",
+            messages: [{ role: "user", content: "old prompt" }],
+          });
           handlers.onMessages?.([
             { role: "user", content: "old prompt" },
             { role: "assistant", content: "old answer" },
           ]);
+        };
         return succeeded();
       },
     };
@@ -53,6 +76,7 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
 
     expect(session.messages).toHaveLength(0);
     expect(saved.flat()).not.toContain("old answer");
+    await expect(session.compact()).rejects.toThrow(/no successful live model request/i);
   });
 
   it("does not commit a compaction that finishes after a history load", async () => {
@@ -76,6 +100,7 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
       { role: "assistant", content: "session A second answer" },
     ]);
 
+    primeCompactionSnapshot(session);
     const compacting = session.compact(undefined, 1);
     await new Promise((resolve) => setTimeout(resolve, 1));
     session.loadHistory([{ role: "user", content: "session B question" }], {
@@ -108,6 +133,7 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
       { role: "assistant", content: "d" },
     ]);
 
+    primeCompactionSnapshot(session);
     const compacting = session.compact(undefined, 1);
     session.dispose();
     await compacting.catch(() => undefined);

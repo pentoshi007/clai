@@ -1,7 +1,9 @@
 import type {
   CompletionRequest,
   CompletionResult,
+  GenerationAttemptReason,
   ProviderId,
+  SuccessfulRequestSnapshot,
   ToolCallStreamDelta,
 } from "../types.js";
 import {
@@ -27,14 +29,17 @@ import { groqProvider } from "./groq.js";
 import {
   ProviderError,
   bodyAddsInformation,
+  buildReasoningPayload,
   collapseWhitespace,
   isImageInputUnsupportedError,
   isReasoningUnsupportedError,
   stripImagesFromMessages,
   MAX_ERROR_BODY_IN_MESSAGE_CHARS,
   STREAM_STALL_MARKER,
+  type ReasoningStyle,
 } from "./http.js";
 import {
+  isReasoningUnsupported,
   learnModelVisionCapability,
   markModelUnavailable,
   markReasoningUnsupported,
@@ -43,11 +48,18 @@ import {
   visionSubstitutionOrigin,
 } from "./capabilities.js";
 import { applyImageViewAvailability } from "../prompts/index.js";
+import { fallbackEffortsFor } from "./effort-fallback.js";
 import {
   markStreamEmittedBytes,
   streamAlreadyEmitted,
   streamEmittedBytes,
 } from "./stream-progress.js";
+import {
+  createStreamEventGuard,
+  isSemanticStreamOutputEvent,
+  type ProviderStreamEvent,
+  type ProviderStreamEventSink,
+} from "./stream-events.js";
 import {
   attemptsPerKey,
   buildKeyAttemptPlan,
@@ -74,7 +86,19 @@ import { tokenrouterProvider } from "./tokenrouter.js";
 import { metaProvider } from "./meta.js";
 import { fireworksProvider } from "./fireworks.js";
 import { hetznerProvider } from "./hetzner.js";
+import { orcarouterProvider } from "./orcarouter.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
+import {
+  OperationUsageRecorder,
+  runGenerationAttempt,
+  type OperationUsageSnapshot,
+} from "./operation-usage.js";
+import {
+  isOperationPolicyError,
+  OperationLedger,
+  operationTerminalOutcome,
+  turnOperationPolicy,
+} from "./operation-ledger.js";
 import { maskSecretTail } from "./provider.js";
 import { getCustomProviderSync } from "./custom-providers.js";
 import {
@@ -94,8 +118,64 @@ export type ProviderKeyEventHandler = (event: ProviderKeyEvent) => void;
 export interface StreamWithProviderOptions {
   readonly onStatus?: ((message: string) => void) | undefined;
   readonly onKeyEvent?: ProviderKeyEventHandler | undefined;
+  readonly onStreamEvent?: ProviderStreamEventSink | undefined;
+  /** Additive per-admission accounting for this logical operation. */
+  readonly attemptUsage?: OperationUsageRecorder | undefined;
+  readonly operation?: OperationLedger | undefined;
+  readonly adoptFallback?: boolean | undefined;
+  /** Receives the immutable terminal snapshot on success or failure. */
+  readonly onOperationUsage?: ((snapshot: OperationUsageSnapshot) => void) | undefined;
   /** Cap retries for this request (default MAX_RETRIES). Use 0-1 for compaction. */
   readonly maxRetries?: number | undefined;
+  /**
+   * Pin the route and emit exactly one physical generation request: no provider
+   * fallback, no key or endpoint rotation, no capability-adaptation retry. Used
+   * by operations whose prompt is too expensive to send twice (compaction) and
+   * by auxiliary requests that must not multiply.
+   */
+  readonly singleDispatch?: boolean | undefined;
+  readonly onSuccessfulRequest?:
+    | ((snapshot: SuccessfulRequestSnapshot) => void)
+    | undefined;
+}
+
+/**
+ * A budget/policy error raised while recovering from a real failure describes
+ * the guard, not the cause. Surface the failure the caller actually needs.
+ */
+function successfulRequestSnapshot(
+  provider: ProviderId,
+  model: string,
+  request: CompletionRequest,
+): SuccessfulRequestSnapshot {
+  return structuredClone({
+    provider,
+    model,
+    messages: request.messages,
+    ...(request.temperature !== undefined
+      ? { temperature: request.temperature }
+      : {}),
+    ...(request.thinking ? { thinking: request.thinking } : {}),
+    ...(request.tools ? { tools: request.tools } : {}),
+    ...(request.toolChoice !== undefined
+      ? { toolChoice: request.toolChoice }
+      : {}),
+    ...(request.parallelToolCalls !== undefined
+      ? { parallelToolCalls: request.parallelToolCalls }
+      : {}),
+  });
+}
+
+function preservedFailure(recoveryError: unknown, originalError: unknown): unknown {
+  return isOperationPolicyError(recoveryError) ? originalError : recoveryError;
+}
+
+function resolveOperationLedger(options: StreamWithProviderOptions): OperationLedger {
+  if (options.operation) return options.operation;
+  return new OperationLedger(
+    turnOperationPolicy(),
+    options.attemptUsage ?? new OperationUsageRecorder(),
+  );
 }
 
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -121,6 +201,60 @@ async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 function isRateLimited(error: unknown): boolean {
   return error instanceof ProviderError && error.status === 429;
+}
+
+function isServerUnavailable(error: unknown): boolean {
+  if (!(error instanceof ProviderError)) return false;
+  const status = error.status ?? 0;
+  return status === 502 || status === 503 || status === 504;
+}
+
+function isServerError(error: unknown): boolean {
+  if (!(error instanceof ProviderError)) return false;
+  const status = error.status ?? 0;
+  return status >= 500 && status <= 504;
+}
+
+function isReasoningRelatedServerError(
+  error: unknown,
+  providerId: ProviderId,
+): boolean {
+  if (!isServerError(error)) return false;
+  if (providerId === "tokenrouter") return true;
+  const message = error instanceof Error ? error.message : String(error);
+  const body = error instanceof ProviderError ? (error.body ?? "") : "";
+  return /reasoning|effort|thinking/i.test(`${message} ${body}`);
+}
+
+function shouldContinueEffortLadder(
+  error: unknown,
+  providerId: ProviderId,
+): boolean {
+  return (
+    isReasoningUnsupportedError(error) ||
+    isReasoningRelatedServerError(error, providerId)
+  );
+}
+
+function shouldEnterEffortLadder(
+  error: unknown,
+  thinking: CompletionRequest["thinking"],
+  providerId: ProviderId,
+  model: string,
+  singleDispatch: boolean,
+): boolean {
+  if (isReasoningUnsupportedError(error)) return true;
+  if (singleDispatch) return false;
+  if (!thinking?.enabled) return false;
+  if (isReasoningUnsupported(providerId, model)) return false;
+  return isReasoningRelatedServerError(error, providerId);
+}
+
+function isCacheOnlyColdError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const body =
+    error instanceof ProviderError ? (error.body ?? "") : "";
+  return /cache_only_cold|cache-only admission/i.test(`${message} ${body}`);
 }
 
 function isTransientNetworkError(error: unknown): boolean {
@@ -251,6 +385,11 @@ export function formatProviderFailureForUser(error: unknown): string {
       ));
     }
     if (status === 503 || status === 502 || status === 504) {
+      if (isCacheOnlyColdError(error)) {
+        return withFullBody(withExactError(
+          `Gateway cache admission rejected (${status}; cache_only_cold): the route is cold or overloaded and retried automatically with backoff. If it persists, retry shortly or switch provider/model.`,
+        ));
+      }
       return withFullBody(withExactError(
         `Upstream provider unavailable (${status}). Retry shortly or switch provider/model; free-tier models are often capacity-constrained.`,
       ));
@@ -422,6 +561,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   meta: metaProvider,
   fireworks: fireworksProvider,
   hetzner: hetznerProvider,
+  orcarouter: orcarouterProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -444,6 +584,7 @@ const fallbackOrder: ProviderId[] = [
   "meta",
   "fireworks",
   "hetzner",
+  "orcarouter",
 ];
 
 
@@ -540,6 +681,15 @@ function withoutReasoning(request: CompletionRequest): CompletionRequest {
   return { ...request, thinking: undefined };
 }
 
+function reasoningWireKey(
+  thinking: CompletionRequest["thinking"],
+  style: ReasoningStyle,
+  model: string,
+  providerId: ProviderId,
+): string {
+  return JSON.stringify(buildReasoningPayload(thinking, style, model, providerId));
+}
+
 function makeKeyEmitter(
   onStatus?: (message: string) => void,
   onKeyEvent?: ProviderKeyEventHandler,
@@ -556,44 +706,124 @@ function makeKeyEmitter(
   };
 }
 
+const SELF_RECORDED_PROVIDERS = new Set<ProviderId>([
+  "agentrouter",
+  "bynara",
+  "meta",
+]);
+
+async function runRecordedProviderAttempt(input: {
+  providerId: ProviderId;
+  model: string;
+  mode: "complete" | "stream";
+  reason: GenerationAttemptReason;
+  request: CompletionRequest;
+  run: () => Promise<CompletionResult>;
+}): Promise<CompletionResult> {
+  if (SELF_RECORDED_PROVIDERS.has(input.providerId)) return input.run();
+  return runGenerationAttempt(
+    input.request,
+    {
+      provider: input.providerId,
+      model: input.model,
+      mode: input.mode,
+      reason: input.reason,
+    },
+    input.run,
+  );
+}
+
 async function tryCompleteOnce(
   provider: LlmProvider,
   providerId: ProviderId,
   request: CompletionRequest,
   model: string,
   auth: ProviderAuth,
+  reason: GenerationAttemptReason,
+  onStatus: ((message: string) => void) | undefined,
+  singleDispatch = false,
 ): Promise<CompletionResult> {
   const activeRequest = { ...request, provider: providerId, model };
+  const runAttempt = (
+    candidate: CompletionRequest,
+    attemptReason: GenerationAttemptReason,
+  ): Promise<CompletionResult> => {
+    const attemptRequest = { ...candidate, attemptReason };
+    return runRecordedProviderAttempt({
+      providerId,
+      model: attemptRequest.model ?? model,
+      mode: "complete",
+      reason: attemptReason,
+      request: attemptRequest,
+      run: () => provider.complete(attemptRequest, auth),
+    });
+  };
   try {
-    const result = await provider.complete(activeRequest, auth);
+    const result = await runAttempt(activeRequest, reason);
     if (hasImageInput(activeRequest)) {
       learnModelVisionCapability(providerId, model, true);
     }
     return result;
   } catch (error) {
+    // A pinned single-dispatch operation records the capability verdict for the
+    // next operation but never spends a second physical request on it.
     if (activeRequest.tools?.length && isToolsUnsupportedError(error)) {
       markTextOnlyModel(providerId, model);
+      if (singleDispatch) throw error;
       const textRequest = {
         ...activeRequest,
         tools: undefined,
         toolChoice: undefined,
         parallelToolCalls: undefined,
       };
-      return await provider.complete(textRequest, auth);
+      return await runAttempt(textRequest, "adaptation");
     }
-    // Model rejected a reasoning/thinking knob — mark it and retry once
-    // without reasoning so an unsupported option never fails the request.
-    if (isReasoningUnsupportedError(error)) {
+    if (shouldEnterEffortLadder(error, activeRequest.thinking, providerId, model, singleDispatch)) {
+      if (singleDispatch) {
+        markReasoningUnsupported(providerId, model);
+        throw error;
+      }
+      const thinking = activeRequest.thinking;
+      if (thinking?.enabled) {
+        const style = provider.reasoningStyle ?? "none";
+        const seen = new Set<string>([
+          reasoningWireKey(thinking, style, model, providerId),
+        ]);
+        for (const effort of fallbackEffortsFor(thinking.effort)) {
+          const candidate = { ...thinking, effort };
+          const key = reasoningWireKey(candidate, style, model, providerId);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          onStatus?.(
+            `ℹ ${providerId}/${model} rejected reasoning effort — retrying with ${effort}`,
+          );
+          const retryRequest = {
+            ...activeRequest,
+            thinking: candidate,
+          };
+          try {
+            return await runAttempt(retryRequest, "adaptation");
+          } catch (retryError) {
+            if (!shouldContinueEffortLadder(retryError, providerId)) throw retryError;
+          }
+        }
+      }
       markReasoningUnsupported(providerId, model);
-      return await provider.complete(withoutReasoning(activeRequest), auth);
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
+      );
+      return await runAttempt(withoutReasoning(activeRequest), "adaptation");
     }
     if (hasImageInput(activeRequest) && isImageInputUnsupportedError(error)) {
       learnModelVisionCapability(providerId, model, false);
-      return await provider.complete(withoutImages(activeRequest), auth);
+      if (singleDispatch) throw error;
+      return await runAttempt(withoutImages(activeRequest), "adaptation");
     }
-    const restored = revertVisionSubstitution(providerId, model, activeRequest, error);
-    if (restored) {
-      return await provider.complete(restored.request, auth);
+    if (!singleDispatch) {
+      const restored = revertVisionSubstitution(providerId, model, activeRequest, error);
+      if (restored) {
+        return await runAttempt(restored.request, "adaptation");
+      }
     }
     throw error;
   }
@@ -690,16 +920,31 @@ async function tryStreamOnce(
   model: string,
   auth: ProviderAuth,
   onToken: (token: string) => void,
-  onStatus?: (message: string) => void,
+  onStatus: ((message: string) => void) | undefined,
+  reason: GenerationAttemptReason,
+  singleDispatch = false,
+  onSuccessfulRequest?:
+    | ((snapshot: SuccessfulRequestSnapshot) => void)
+    | undefined,
 ): Promise<CompletionResult> {
   let emittedBytes = 0;
   let emittedToolArgumentBytes = 0;
   const onToolCallDelta = request.onToolCallDelta;
+  const downstreamEvents = request.onStreamEvent;
+  let guard = createStreamEventGuard();
+  const startedToolCallIndexes = new Set<number>();
+  const emitEvent = (event: ProviderStreamEvent): void => {
+    guard.accept(event);
+    if (event.type === "reasoning_delta" || event.type === "commentary_delta") {
+      emittedBytes += event.text.length;
+    }
+    downstreamEvents?.(event);
+  };
   const activeRequest = {
     ...request,
     provider: providerId,
     model,
-    ...(onToolCallDelta
+    ...(onToolCallDelta || downstreamEvents
       ? {
           onToolCallDelta: (delta: ToolCallStreamDelta): void => {
             const argumentBytes = delta.argumentsBytes ?? 0;
@@ -712,13 +957,34 @@ async function tryStreamOnce(
               emittedToolArgumentBytes,
               argumentBytes,
             );
-            onToolCallDelta(delta);
+            if (
+              delta.name !== undefined &&
+              !startedToolCallIndexes.has(delta.index)
+            ) {
+              startedToolCallIndexes.add(delta.index);
+              emitEvent({
+                type: "tool_call_started",
+                index: delta.index,
+                ...(delta.id ? { id: delta.id } : {}),
+                name: delta.name,
+              });
+            }
+            emitEvent({
+              type: "tool_arguments_delta",
+              index: delta.index,
+              ...(delta.id ? { id: delta.id } : {}),
+              argumentsBytes: argumentBytes,
+            });
+            onToolCallDelta?.(delta);
           },
         }
       : {}),
+    ...(downstreamEvents ? { onStreamEvent: emitEvent } : {}),
   };
   const emit = (token: string): void => {
+    if (!token) return;
     emittedBytes += token.length;
+    emitEvent({ type: "answer_delta", text: token });
     onToken(token);
   };
   const learnVisionOnSuccess = (): void => {
@@ -726,14 +992,69 @@ async function tryStreamOnce(
       learnModelVisionCapability(providerId, model, true);
     }
   };
+  const runAttempt = async (
+    candidate: CompletionRequest,
+    attemptReason: GenerationAttemptReason,
+  ): Promise<CompletionResult> => {
+    guard = createStreamEventGuard();
+    startedToolCallIndexes.clear();
+    const attemptRequest = { ...candidate, attemptReason };
+    const result = await runRecordedProviderAttempt({
+      providerId,
+      model: attemptRequest.model ?? model,
+      mode: "stream",
+      reason: attemptReason,
+      request: attemptRequest,
+      run: async () => {
+        let result: CompletionResult;
+        if (provider.stream) {
+          result = await provider.stream(attemptRequest, auth, emit);
+        } else {
+          result = await provider.complete(attemptRequest, auth);
+          emit(result.text);
+        }
+        for (const [index, call] of (result.toolCalls ?? []).entries()) {
+          if (!startedToolCallIndexes.has(index)) {
+            startedToolCallIndexes.add(index);
+            emitEvent({
+              type: "tool_call_started",
+              index,
+              ...(call.id ? { id: call.id } : {}),
+              name: call.name,
+            });
+          }
+          emitEvent({
+            type: "tool_call_completed",
+            index,
+            ...(call.id ? { id: call.id } : {}),
+            name: call.name,
+          });
+        }
+        if (result.usage) {
+          emitEvent({ type: "usage_observed", usage: result.usage });
+        }
+        emitEvent({
+          type: "provider_terminal",
+          ...(result.finishReason
+            ? { finishReason: result.finishReason }
+            : {}),
+        });
+        return result;
+      },
+    });
+    try {
+      onSuccessfulRequest?.(
+        successfulRequestSnapshot(
+          result.provider || providerId,
+          result.model || attemptRequest.model || model,
+          attemptRequest,
+        ),
+      );
+    } catch {}
+    return result;
+  };
   try {
-    if (provider.stream) {
-      const streamed = await provider.stream(activeRequest, auth, emit);
-      learnVisionOnSuccess();
-      return streamed;
-    }
-    const result = await provider.complete(activeRequest, auth);
-    emit(result.text);
+    const result = await runAttempt(activeRequest, reason);
     learnVisionOnSuccess();
     return result;
   } catch (error) {
@@ -743,6 +1064,7 @@ async function tryStreamOnce(
       isToolsUnsupportedError(error)
     ) {
       markTextOnlyModel(providerId, model);
+      if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
       onStatus?.(
         `ℹ ${providerId}/${model} does not support native tools — falling back to text protocol`,
       );
@@ -753,35 +1075,67 @@ async function tryStreamOnce(
         parallelToolCalls: undefined,
       };
       try {
-        if (provider.stream) {
-          return await provider.stream(textRequest, auth, emit);
-        }
-        const result = await provider.complete(textRequest, auth);
-        emit(result.text);
-        return result;
+        return await runAttempt(textRequest, "adaptation");
       } catch (retryError) {
-        throw markStreamEmittedBytes(retryError, emittedBytes);
+        throw markStreamEmittedBytes(
+          preservedFailure(retryError, error),
+          emittedBytes,
+        );
       }
     }
     // Model rejected a reasoning/thinking knob (e.g. chat_template_kwargs on a
-    // NIM chat template that does not accept it). Mark it so buildChatBody stops
-    // sending reasoning, then retry once without it. A parameter rejection is a
-    // request-time 4xx, so no tokens have streamed yet — the retry is clean.
-    if (emittedBytes === 0 && isReasoningUnsupportedError(error)) {
+    // NIM chat template that does not accept it). A parameter rejection is a
+    // request-time 4xx, so no tokens have streamed yet — retries are clean.
+    // Walk down the effort ladder first (max → xhigh → high → medium → low) so
+    // a model that merely rejects the highest requested depth keeps reasoning;
+    // only strip reasoning entirely once every candidate has been rejected.
+    if (emittedBytes === 0 && shouldEnterEffortLadder(error, activeRequest.thinking, providerId, model, singleDispatch)) {
+      if (singleDispatch) {
+        markReasoningUnsupported(providerId, model);
+        throw markStreamEmittedBytes(error, emittedBytes);
+      }
+      const thinking = activeRequest.thinking;
+      if (thinking?.enabled) {
+        const style = provider.reasoningStyle ?? "none";
+        const seen = new Set<string>([
+          reasoningWireKey(thinking, style, model, providerId),
+        ]);
+        for (const effort of fallbackEffortsFor(thinking.effort)) {
+          const candidate = { ...thinking, effort };
+          const key = reasoningWireKey(candidate, style, model, providerId);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          onStatus?.(
+            `ℹ ${providerId}/${model} rejected reasoning effort — retrying with ${effort}`,
+          );
+          const retryRequest = {
+            ...activeRequest,
+            thinking: candidate,
+          };
+          try {
+            return await runAttempt(retryRequest, "adaptation");
+          } catch (retryError) {
+            if (!shouldContinueEffortLadder(retryError, providerId)) {
+              throw markStreamEmittedBytes(
+                preservedFailure(retryError, error),
+                emittedBytes,
+              );
+            }
+          }
+        }
+      }
       markReasoningUnsupported(providerId, model);
       onStatus?.(
         `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
       );
       const retryRequest = withoutReasoning(activeRequest);
       try {
-        if (provider.stream) {
-          return await provider.stream(retryRequest, auth, emit);
-        }
-        const result = await provider.complete(retryRequest, auth);
-        emit(result.text);
-        return result;
+        return await runAttempt(retryRequest, "adaptation");
       } catch (retryError) {
-        throw markStreamEmittedBytes(retryError, emittedBytes);
+        throw markStreamEmittedBytes(
+          preservedFailure(retryError, error),
+          emittedBytes,
+        );
       }
     }
     if (
@@ -790,22 +1144,21 @@ async function tryStreamOnce(
       isImageInputUnsupportedError(error)
     ) {
       learnModelVisionCapability(providerId, model, false);
+      if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
       onStatus?.(
         `ℹ ${providerId}/${model} rejected image input — retrying without the attached image(s)`,
       );
       const textOnlyRequest = withoutImages(activeRequest);
       try {
-        if (provider.stream) {
-          return await provider.stream(textOnlyRequest, auth, emit);
-        }
-        const result = await provider.complete(textOnlyRequest, auth);
-        emit(result.text);
-        return result;
+        return await runAttempt(textOnlyRequest, "adaptation");
       } catch (retryError) {
-        throw markStreamEmittedBytes(retryError, emittedBytes);
+        throw markStreamEmittedBytes(
+          preservedFailure(retryError, error),
+          emittedBytes,
+        );
       }
     }
-    if (emittedBytes === 0) {
+    if (emittedBytes === 0 && !singleDispatch) {
       const restored = revertVisionSubstitution(
         providerId,
         model,
@@ -817,14 +1170,12 @@ async function tryStreamOnce(
           `ℹ ${providerId}/${model} is not available on this account — falling back to ${restored.original}`,
         );
         try {
-          if (provider.stream) {
-            return await provider.stream(restored.request, auth, emit);
-          }
-          const result = await provider.complete(restored.request, auth);
-          emit(result.text);
-          return result;
+          return await runAttempt(restored.request, "adaptation");
         } catch (retryError) {
-          throw markStreamEmittedBytes(retryError, emittedBytes);
+          throw markStreamEmittedBytes(
+            preservedFailure(retryError, error),
+            emittedBytes,
+          );
         }
       }
     }
@@ -844,20 +1195,29 @@ async function runWithKeyRotation<T>(opts: {
   model: string;
   emitKey: EmitKey;
   mode: "complete" | "stream";
+  initialAttemptReason: "initial" | "fallback";
   onToken?: ((token: string) => void) | undefined;
   onStatus?: ((message: string) => void) | undefined;
   maxRetries?: number | undefined;
+  singleDispatch?: boolean | undefined;
+  onSuccessfulRequest?:
+    | ((snapshot: SuccessfulRequestSnapshot) => void)
+    | undefined;
 }): Promise<T> {
   const { providerId, provider, request, model, emitKey } = opts;
+  const singleDispatch = opts.singleDispatch === true;
   const multi = await getProviderKeys(providerId);
   const slots = multi.keys;
   if (slots.length === 0) {
     throw new Error("no API key configured");
   }
 
-  const plan = buildKeyAttemptPlan(slots.length, multi.activeIndex).filter(
+  const fullPlan = buildKeyAttemptPlan(slots.length, multi.activeIndex).filter(
     (index) => !slots[index]!.disabled,
   );
+  // A pinned operation uses the sticky key only: rotating would send the same
+  // large prompt again under a different credential.
+  const plan = singleDispatch ? fullPlan.slice(0, 1) : fullPlan;
   if (plan.length === 0) {
     throw new Error(
       `all ${slots.length} API key${slots.length === 1 ? "" : "s"} for ${providerId} are disabled — re-enable one to use this provider`,
@@ -867,15 +1227,18 @@ async function runWithKeyRotation<T>(opts: {
   const multiKey = enabledCount > 1;
   // Single key: time-increasing retries (MAX_RETRIES+1 attempts).
   // Multi key: 2 attempts per key (initial + one retry), then next key.
-  const maxPerKey = attemptsPerKey(enabledCount, (opts.maxRetries ?? MAX_RETRIES) + 1);
+  const maxPerKey = singleDispatch
+    ? 1
+    : attemptsPerKey(enabledCount, (opts.maxRetries ?? MAX_RETRIES) + 1);
   let lastError: unknown;
 
   // Endpoint failover: a provider can carry several base URLs (e.g. Modal
   // workspaces). On an auth/quota error the active endpoint may simply be the
   // wrong workspace for the key, so rotate the endpoint too before giving up.
-  const storedEndpoints = providerUsesEndpoints(providerId)
-    ? getProviderEndpoints(providerId)
-    : undefined;
+  const storedEndpoints =
+    providerUsesEndpoints(providerId) && !singleDispatch
+      ? getProviderEndpoints(providerId)
+      : undefined;
   const endpointUrls = (storedEndpoints?.urls ?? []).filter(
     (url) => !(storedEndpoints?.disabledUrls ?? []).includes(url),
   );
@@ -913,6 +1276,8 @@ async function runWithKeyRotation<T>(opts: {
 
     for (let attempt = 0; attempt < maxPerKey; attempt++) {
       request.signal?.throwIfAborted();
+      const attemptReason =
+        planIdx === 0 && attempt === 0 ? opts.initialAttemptReason : "retry";
       try {
         let result: CompletionResult;
         if (opts.mode === "stream") {
@@ -924,9 +1289,21 @@ async function runWithKeyRotation<T>(opts: {
             auth,
             opts.onToken ?? (() => {}),
             opts.onStatus,
+            attemptReason,
+            singleDispatch,
+            opts.onSuccessfulRequest,
           );
         } else {
-          result = await tryCompleteOnce(provider, providerId, request, model, auth);
+          result = await tryCompleteOnce(
+            provider,
+            providerId,
+            request,
+            model,
+            auth,
+            attemptReason,
+            opts.onStatus,
+            singleDispatch,
+          );
         }
         // Sticky success only for stored multi-key (not env-only synthetic).
         if (multi.source !== "env" && multi.source !== "local") {
@@ -949,7 +1326,14 @@ async function runWithKeyRotation<T>(opts: {
         }
         return result as T;
       } catch (error) {
+        const previousError = lastError;
         lastError = error;
+
+        // An admission guard that fires while recovering from a real failure
+        // hides that failure. Report the cause the user can act on.
+        if (isOperationPolicyError(error) && previousError !== undefined) {
+          throw previousError;
+        }
 
         // 404/422: other keys for the same model will not help.
         if (isKeyCircleStopError(error)) {
@@ -987,9 +1371,10 @@ async function runWithKeyRotation<T>(opts: {
 
         const canRetrySame = attempt + 1 < maxPerKey;
         if (canRetrySame) {
-          const wait = isRateLimited(error)
-            ? retryWaitMs(error, attempt)
-            : networkRetryWaitMs(attempt);
+          const wait =
+            isRateLimited(error) || isServerUnavailable(error)
+              ? retryWaitMs(error, attempt)
+              : networkRetryWaitMs(attempt);
           if (wait > MAX_RETRY_WAIT_MS) {
             // Don't burn the whole multi-key circle on one impossible wait —
             // move to the next key when multi; single-key still exhausts.
@@ -1054,24 +1439,29 @@ async function runWithKeyRotation<T>(opts: {
   throw err;
 }
 
-export async function completeWithProvider(
+async function completeWithProviderOperation(
   request: CompletionRequest,
-  options?: StreamWithProviderOptions,
+  options: StreamWithProviderOptions,
+  ledger: OperationLedger,
 ): Promise<CompletionResult> {
   const config = getConfig();
+  const singleDispatch = options.singleDispatch === true;
   const requested = request.provider ?? config.defaultProvider;
   const providerImpl = getProvider(requested);
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
+    !singleDispatch &&
     config.providerFallback &&
     (await requestedRealKeyCount(requested)) !== 1 &&
     (isDefaultModel || request.allowModelFallback === true);
-  const order = buildFallbackChain(
-    requested,
-    config.freeOnly,
-    fallbackEnabled,
-    request.preferModelFallback === true,
-  );
+  const order = singleDispatch
+    ? [requested]
+    : buildFallbackChain(
+        requested,
+        config.freeOnly,
+        fallbackEnabled,
+        request.preferModelFallback === true,
+      );
   const failures: ProviderFailure[] = [];
   const emitKey = makeKeyEmitter(options?.onStatus, options?.onKeyEvent);
 
@@ -1089,7 +1479,10 @@ export async function completeWithProvider(
       providerId === requested
         ? (request.model ?? provider.defaultModel)
         : provider.defaultModel;
-    const routeRequest = requestForRoute(request, providerId, model);
+    const routeRequest: CompletionRequest = {
+      ...requestForRoute(request, providerId, model),
+      attemptUsage: ledger,
+    };
 
     try {
       const result = await runWithKeyRotation<CompletionResult>({
@@ -1099,18 +1492,29 @@ export async function completeWithProvider(
         model,
         emitKey,
         mode: "complete",
+        initialAttemptReason: providerId === requested ? "initial" : "fallback",
         ...(options?.onStatus ? { onStatus: options.onStatus } : {}),
         ...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+        ...(singleDispatch ? { singleDispatch: true } : {}),
       });
       if (providerId !== requested) {
-        setDefaultProvider(providerId);
-        setProviderModel(providerId, result.model || model);
+        if (options?.adoptFallback === true) {
+          setDefaultProvider(providerId);
+          setProviderModel(providerId, result.model || model);
+        }
         options?.onStatus?.(
           `switching to ${providerId}/${result.model || model} after ${requested} failed`,
         );
       }
       return result;
     } catch (error) {
+      if (isOperationPolicyError(error)) {
+        if (failures.length === 0) throw error;
+        throw aggregateProviderError(
+          `No provider could complete the request.${formatFailures(failures)}`,
+          failures,
+        );
+      }
       failures.push({
         provider: providerId,
         message: failureMessageFor(providerId, error),
@@ -1132,30 +1536,87 @@ export async function completeWithProvider(
   );
 }
 
-export async function streamWithProvider(
+function attachOperationUsageToError(
+  error: unknown,
+  snapshot: OperationUsageSnapshot,
+): unknown {
+  if (error && typeof error === "object" && Object.isExtensible(error)) {
+    try {
+      Object.defineProperty(error, "operationUsage", {
+        configurable: true,
+        enumerable: false,
+        value: snapshot,
+      });
+      return error;
+    } catch {}
+  }
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string" && error.trim()
+        ? error
+        : "Provider operation failed";
+  const wrapped = new Error(message, { cause: error });
+  Object.defineProperty(wrapped, "operationUsage", {
+    configurable: true,
+    enumerable: false,
+    value: snapshot,
+  });
+  return wrapped;
+}
+
+export async function completeWithProvider(
+  request: CompletionRequest,
+  options: StreamWithProviderOptions = {},
+): Promise<CompletionResult> {
+  const ledger = resolveOperationLedger(options);
+  try {
+    const result = await completeWithProviderOperation(request, options, ledger);
+    ledger.settle("completed");
+    return { ...result, operationUsage: ledger.snapshot() };
+  } catch (error) {
+    ledger.settle(operationTerminalOutcome(error, request.signal));
+    throw attachOperationUsageToError(error, ledger.snapshot());
+  } finally {
+    options.onOperationUsage?.(ledger.snapshot());
+  }
+}
+
+async function streamWithProviderOperation(
   request: CompletionRequest,
   onToken: (token: string) => void,
   onStatusOrOptions?: ((message: string) => void) | StreamWithProviderOptions,
+  ledger?: OperationLedger,
 ): Promise<CompletionResult> {
   const options: StreamWithProviderOptions =
     typeof onStatusOrOptions === "function"
       ? { onStatus: onStatusOrOptions }
       : onStatusOrOptions ?? {};
+  const operation = ledger ?? resolveOperationLedger(options);
+  const relayToken = (token: string): void => {
+    operation.noteSemanticOutput();
+    onToken(token);
+  };
+  const downstreamToolDelta = request.onToolCallDelta;
 
   const config = getConfig();
+  const singleDispatch = options.singleDispatch === true;
   const requested = request.provider ?? config.defaultProvider;
   const providerImpl = getProvider(requested);
   const isDefaultModel = !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
+    !singleDispatch &&
     config.providerFallback &&
     (await requestedRealKeyCount(requested)) !== 1 &&
     (isDefaultModel || request.allowModelFallback === true);
-  const order = buildFallbackChain(
-    requested,
-    config.freeOnly,
-    fallbackEnabled,
-    request.preferModelFallback === true,
-  );
+  const order = singleDispatch
+    ? [requested]
+    : buildFallbackChain(
+        requested,
+        config.freeOnly,
+        fallbackEnabled,
+        request.preferModelFallback === true,
+      );
   const failures: ProviderFailure[] = [];
   const emitStatus = options.onStatus ?? ((message) => onToken(message));
   const emitKey = makeKeyEmitter(emitStatus, options.onKeyEvent);
@@ -1173,7 +1634,28 @@ export async function streamWithProvider(
       providerId === requested
         ? (request.model ?? provider.defaultModel)
         : provider.defaultModel;
-    const routeRequest = requestForRoute(request, providerId, model);
+    const routeRequest: CompletionRequest = {
+      ...requestForRoute(request, providerId, model),
+      attemptUsage: operation,
+      ...(downstreamToolDelta
+        ? {
+            onToolCallDelta: (delta: ToolCallStreamDelta): void => {
+              operation.noteSemanticOutput();
+              downstreamToolDelta(delta);
+            },
+          }
+        : {}),
+      ...(options.onStreamEvent
+        ? {
+            onStreamEvent: (event: ProviderStreamEvent): void => {
+              if (isSemanticStreamOutputEvent(event)) {
+                operation.noteSemanticOutput();
+              }
+              options.onStreamEvent!(event);
+            },
+          }
+        : {}),
+    };
 
     try {
       const result = await runWithKeyRotation<CompletionResult>({
@@ -1183,19 +1665,34 @@ export async function streamWithProvider(
         model,
         emitKey,
         mode: "stream",
-        onToken,
+        initialAttemptReason: providerId === requested ? "initial" : "fallback",
+        onToken: relayToken,
         onStatus: emitStatus,
         ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+        ...(singleDispatch ? { singleDispatch: true } : {}),
+        ...(options.onSuccessfulRequest
+          ? { onSuccessfulRequest: options.onSuccessfulRequest }
+          : {}),
       });
       if (providerId !== requested) {
-        setDefaultProvider(providerId);
-        setProviderModel(providerId, result.model || model);
+        if (options.adoptFallback === true) {
+          setDefaultProvider(providerId);
+          setProviderModel(providerId, result.model || model);
+        }
         options.onStatus?.(
           `switching to ${providerId}/${result.model || model} after ${requested} failed`,
         );
       }
       return result;
     } catch (error) {
+      if (isOperationPolicyError(error)) {
+        if (failures.length === 0) throw error;
+        throw aggregateProviderError(
+          `No provider could stream the request.${formatFailures(failures)}`,
+          failures,
+          streamEmittedBytes(error),
+        );
+      }
       failures.push({
         provider: providerId,
         message: failureMessageFor(providerId, error),
@@ -1222,6 +1719,33 @@ export async function streamWithProvider(
     `No provider could stream the request.${formatFailures(failures)}`,
     failures,
   );
+}
+
+export async function streamWithProvider(
+  request: CompletionRequest,
+  onToken: (token: string) => void,
+  onStatusOrOptions?: ((message: string) => void) | StreamWithProviderOptions,
+): Promise<CompletionResult> {
+  const options: StreamWithProviderOptions =
+    typeof onStatusOrOptions === "function"
+      ? { onStatus: onStatusOrOptions }
+      : onStatusOrOptions ?? {};
+  const ledger = resolveOperationLedger(options);
+  try {
+    const result = await streamWithProviderOperation(
+      request,
+      onToken,
+      options,
+      ledger,
+    );
+    ledger.settle("completed");
+    return { ...result, operationUsage: ledger.snapshot() };
+  } catch (error) {
+    ledger.settle(operationTerminalOutcome(error, request.signal));
+    throw attachOperationUsageToError(error, ledger.snapshot());
+  } finally {
+    options.onOperationUsage?.(ledger.snapshot());
+  }
 }
 
 export async function pingProvider(

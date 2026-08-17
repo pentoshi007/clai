@@ -1,6 +1,12 @@
 import { getConfig, hasExplicitConfigKey } from "../store/config.js";
 import { modelContextWindow } from "../llm/token-usage.js";
 import type { ProviderId } from "../types.js";
+import {
+  RESERVED_OUTPUT_TOKENS,
+  SAFETY_MARGIN_TOKENS,
+} from "./request-accounting.js";
+
+export { RESERVED_OUTPUT_TOKENS, SAFETY_MARGIN_TOKENS };
 
 // One authoritative auto-compaction policy, expressed in total estimated
 // request tokens (system blocks, history, tool protocol, schemas and media
@@ -13,12 +19,6 @@ export const CUSTOM_CONTEXT_COMPACTION_RATIO = 0.7;
 
 // Never trigger below this: compaction itself needs room to be useful.
 export const MIN_AUTO_COMPACT_REQUEST_TOKENS = 20_000;
-
-// Output allowance reserved inside the model window before the trigger.
-export const RESERVED_OUTPUT_TOKENS = 24_576;
-
-// Slack for wire overhead the estimator cannot see exactly.
-export const SAFETY_MARGIN_TOKENS = 2_048;
 
 export type RequestBudgetSource = "explicit" | "legacy" | "default" | "session";
 

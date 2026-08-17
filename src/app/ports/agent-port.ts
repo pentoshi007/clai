@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   Mode,
   ProviderId,
+  SuccessfulRequestSnapshot,
 } from "../../types.js";
 import type { Attachment } from "../../ui/mentions.js";
 import type { AgentEvent } from "../../agent/events.js";
@@ -33,6 +34,12 @@ export interface RunTurnRequest {
    * guessing from prompt wording when deciding to re-attach to open work.
    */
   readonly previousTurn?: PreviousTurnSignal | undefined;
+  /**
+   * The session's last successful main request. Lets a first-iteration
+   * auto-compaction replay the exact cached prefix (plus the new tail and
+   * the compaction instruction) instead of re-rendering the transcript.
+   */
+  readonly previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
   /** User-declared model window for this provider/model/session. */
   readonly contextLimitTokens?: number | undefined;
   readonly getContextLimitTokens?: (
@@ -46,6 +53,9 @@ export type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 export interface RunTurnHandlers {
   readonly onEvent: (event: AgentEvent) => void;
   readonly onMessages?: ((messages: ChatMessage[]) => void) | undefined;
+  readonly onSuccessfulRequest?:
+    | ((snapshot: SuccessfulRequestSnapshot) => void)
+    | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly confirm?: ConfirmationPort | undefined;
   readonly requestSecret?: SecretPort["request"] | undefined;

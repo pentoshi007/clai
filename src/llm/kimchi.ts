@@ -23,6 +23,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export const kimchiProvider: LlmProvider = {
   id: "kimchi",
+  reasoningStyle: "openai",
   displayName: "Kimchi",
   defaultModel: defaultModels.kimchi,
   envVar: "CASTAI_API_KEY",
@@ -76,6 +77,7 @@ export const kimchiProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("kimchi", model, payload);
   },
@@ -98,11 +100,13 @@ export const kimchiProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openai",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("kimchi", model, payload);
   },

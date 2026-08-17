@@ -156,8 +156,8 @@ export function ContextLimitChip(props: {
         selectable={false}
         content={label}
         style={{
-          fg: shown ? theme.white : exact ? theme.cyan : theme.muted,
-          attributes: shown || exact ? TextAttributes.BOLD : TextAttributes.DIM,
+          fg: shown ? theme.white : theme.aqua,
+          attributes: TextAttributes.BOLD,
         }}
       />
     </box>

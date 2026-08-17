@@ -11,17 +11,26 @@ export function formatDurationMs(ms: number): string {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 }
 
+export function shouldShowToolElapsed(toolName: string): boolean {
+  return !toolName.startsWith("fs.") || toolName === "fs.search";
+}
+
 export function toolElapsedLabel(
-  item: Pick<ToolItem, "status" | "timestamp" | "endedAt">,
+  item: Pick<ToolItem, "name" | "status" | "timestamp" | "startedAt" | "endedAt">,
   now: number,
 ): string | undefined {
-  if (item.status === "blocked") return undefined;
-  const open = item.status === "running" || item.status === "queued";
-  const span = open
-    ? now - item.timestamp
-    : item.endedAt === undefined
-      ? -1
-      : item.endedAt - item.timestamp;
+  if (!shouldShowToolElapsed(item.name)) return undefined;
+  // A queued command has not started running yet — no elapsed clock.
+  if (item.status === "blocked" || item.status === "queued") return undefined;
+  // Count from the real start wall-clock when known (live `tool-started`);
+  // hydrated history has no `startedAt`, so fall back to `timestamp`.
+  const start = item.startedAt ?? item.timestamp;
+  const span =
+    item.status === "running"
+      ? now - start
+      : item.endedAt === undefined
+        ? -1
+        : item.endedAt - start;
   const label = formatDurationMs(span);
   return label === "" ? undefined : label;
 }

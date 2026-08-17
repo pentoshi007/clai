@@ -155,6 +155,7 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 | Meta (Muse Spark) | `muse-spark-1.2` | Paid (per token) | `MODEL_API_KEY` |
 | Fireworks | `accounts/fireworks/models/kimi-k2p6` | Paid (per token) | `FIREWORKS_API_KEY` |
 | Hetzner | `Qwen/Qwen3.6-35B-A3B-FP8` | Free (experiment — no billing yet) | `HETZNER_API_KEY` |
+| OrcaRouter | `openai/gpt-4o-mini` | Paid (per token, zero markup) | `ORCAROUTER_API_KEY` |
 
 Several "paid" providers also expose limited free allowances — the tier label reflects what the default keys usually buy you. Flip `freeOnly` off to include paid providers in fallback.
 
@@ -251,6 +252,18 @@ clai use hetzner                        # model defaults to Qwen/Qwen3.6-35B-A3B
 
 Both fetch the live model catalog for `/model` (cached 1h) and rotate keys like every other provider.
 
+#### OrcaRouter (one key, eleven upstreams, zero markup)
+
+[OrcaRouter](https://docs.orcarouter.ai) is an OpenAI-compatible gateway that routes OpenAI, Anthropic, Google Gemini, DeepSeek, xAI Grok, Qwen, Kimi, MiniMax, Z.ai GLM and more behind one key — billed at each provider's published price with no token markup. Model ids are vendor-prefixed (`openai/gpt-4o-mini`, `anthropic/claude-sonnet-4.6`, `google/gemini-2.5-flash`, `deepseek/deepseek-reasoner`, …), and `orcarouter/auto` picks the cheapest model that fits the request.
+
+```sh
+clai set orcarouter sk-your-key        # key: orcarouter.ai/console (starts with sk-)
+clai use orcarouter                    # model defaults to openai/gpt-4o-mini
+/model anthropic/claude-sonnet-4.6     # or any id from the live /models catalog
+```
+
+Streaming, native tool calling, structured outputs (`response_format`), vision via `image_url` and prompt caching all work. Reasoning uses one unified `reasoning_effort` knob (low/medium/high, plus minimal/max on some models) that the gateway translates to each upstream's native shape — `/think` and `/effort` map onto it, and thinking arrives as `reasoning_content` in the usual thinking block. `/model` reads the live catalog (cached 1h), filtered to Chat-Completions-reachable models so image/video/tts ids stay out of the picker. Keys are multi-key with rotation like everywhere else; env var is `ORCAROUTER_API_KEY`.
+
 ### Manage keys
 
 ```sh
@@ -265,6 +278,7 @@ clai set lightning <key>               # Lightning AI Model APIs
 clai set tokenrouter sk-your-key       # TokenRouter
 clai set fireworks fw_your_key         # Fireworks
 clai set hetzner your-token            # Hetzner Inference (experiments.hetzner.com)
+clai set orcarouter sk-your-key        # OrcaRouter (orcarouter.ai/console)
 clai set free <key>                    # optional: unlock premium models (free is keyless by default)
 clai unset modal --url                 # drop stored endpoint URLs, keep the keys
 clai keys                              # providers + masked keys (★ active) + endpoint URLs

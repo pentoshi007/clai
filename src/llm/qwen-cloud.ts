@@ -23,6 +23,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const qwenCloudProvider: LlmProvider = {
   id: "qwen-cloud",
+  reasoningStyle: "openai",
   displayName: "Qwen Cloud",
   defaultModel: defaultModels["qwen-cloud"],
   envVar: "DASHSCOPE_API_KEY",
@@ -71,6 +72,7 @@ export const qwenCloudProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("qwen-cloud", model, payload);
   },
@@ -93,11 +95,13 @@ export const qwenCloudProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openai",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("qwen-cloud", model, payload);
   },

@@ -82,6 +82,7 @@ export function groqMaxTokens(
 
 export const groqProvider: LlmProvider = {
   id: "groq",
+  reasoningStyle: "groq",
   displayName: "Groq",
   defaultModel: defaultModels.groq,
   envVar: "GROQ_API_KEY",
@@ -143,6 +144,7 @@ export const groqProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("groq", model, payload);
   },
@@ -168,11 +170,13 @@ export const groqProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "groq",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("groq", model, payload);
   },

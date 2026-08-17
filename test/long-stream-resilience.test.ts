@@ -69,7 +69,7 @@ describe("long-running provider streams", () => {
     expect(thinking.idleTimeoutMs).toBe(THINKING_STREAM_IDLE_TIMEOUT_MS);
     expect(plain.idleTimeoutMs).toBe(DEFAULT_STREAM_IDLE_TIMEOUT_MS);
     expect(thinking.idleTimeoutMs).toBeGreaterThan(plain.idleTimeoutMs);
-    expect(thinking.idleTimeoutMs).toBeGreaterThan(7 * 60_000);
+    expect(thinking.idleTimeoutMs).toBeGreaterThanOrEqual(15 * 60_000);
     expect(thinking.outputIdleTimeoutMs).toBeGreaterThan(thinking.idleTimeoutMs);
   });
 

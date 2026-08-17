@@ -278,6 +278,10 @@ describe("command handlers (V2-072..075)", () => {
     delete process.env.BYNARA_API_KEY;
     const getSecret = vi.spyOn(keys, "getProviderSecret").mockResolvedValue({ source: "missing" });
     const setSecret = vi.spyOn(keys, "setProviderSecret").mockResolvedValue("fallback");
+    const { getProvider } = await import("../../../src/llm/router.js");
+    const listModels = vi
+      .spyOn(getProvider("bynara"), "listModels" as "listModels")
+      .mockResolvedValue([]);
     try {
       const services = buildServices();
       const dispatched = services.commands.dispatch({ name: "provider", args: "bynara" });
@@ -293,6 +297,7 @@ describe("command handlers (V2-072..075)", () => {
       expect(pickerState.kind).toBe("picker");
       if (pickerState.kind === "picker") expect(pickerState.request.title).toMatch(/Models.*bynara/i);
     } finally {
+      listModels.mockRestore();
       getSecret.mockRestore();
       setSecret.mockRestore();
       if (original === undefined) delete process.env.BYNARA_API_KEY;

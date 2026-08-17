@@ -3,6 +3,7 @@ import {
   appendFile,
   readFile,
   writeFile,
+  rename,
   rm,
   chown,
   stat,
@@ -648,18 +649,22 @@ function clonePlan(plan: SessionPlan): SessionPlan {
   };
 }
 
+async function writeJsonlAtomic(plans: readonly SessionPlan[]): Promise<void> {
+  await mkdir(planDir, { recursive: true });
+  await fixOwner(planDir);
+  const body = plans.map((p) => JSON.stringify(p)).join("\n");
+  const tmp = `${jsonlFile}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tmp, body ? `${body}\n` : "", { mode: 0o600 });
+  await rename(tmp, jsonlFile);
+  await fixOwner(jsonlFile);
+}
+
 async function appendJsonl(plan: SessionPlan): Promise<void> {
   try {
-    await mkdir(planDir, { recursive: true });
-    await fixOwner(planDir);
-    // JSONL fallback keeps the latest record per session; we compact on write
-    // so the file does not grow unbounded for a long-lived session.
     const existing = await readAllJsonl();
     const map = new Map(existing.map((p) => [p.sessionId, p]));
     map.set(plan.sessionId, plan);
-    const body = [...map.values()].map((p) => JSON.stringify(p)).join("\n");
-    await writeFile(jsonlFile, body ? `${body}\n` : "", { mode: 0o600 });
-    await fixOwner(jsonlFile);
+    await writeJsonlAtomic([...map.values()]);
   } catch (err: any) {
     handlePermissionError(err);
   }
@@ -672,7 +677,13 @@ async function readAllJsonl(): Promise<SessionPlan[]> {
     return raw
       .split("\n")
       .filter(Boolean)
-      .map((line) => JSON.parse(line) as SessionPlan);
+      .flatMap((line) => {
+        try {
+          return [JSON.parse(line) as SessionPlan];
+        } catch {
+          return [];
+        }
+      });
   } catch (err: any) {
     if (err && err.code === "EACCES") {
       handlePermissionError(err);
@@ -799,11 +810,7 @@ export async function deletePlan(sessionId: string): Promise<void> {
     const existing = await readAllJsonl();
     const remaining = existing.filter((p) => p.sessionId !== sessionId);
     if (remaining.length === existing.length) return;
-    await mkdir(planDir, { recursive: true });
-    await fixOwner(planDir);
-    const body = remaining.map((p) => JSON.stringify(p)).join("\n");
-    await writeFile(jsonlFile, body ? `${body}\n` : "", { mode: 0o600 });
-    await fixOwner(jsonlFile);
+    await withJsonlLock(() => writeJsonlAtomic(remaining));
   } catch (err: any) {
     handlePermissionError(err);
   }

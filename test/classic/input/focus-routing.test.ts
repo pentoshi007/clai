@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ActionContext, ActionId } from "../../../src/ui-core/actions/action-id.js";
 import { ActionRouter } from "../../../src/ui-core/actions/action-router.js";
 import { FocusController } from "../../../src/ui-core/controllers/focus-controller.js";
+import { CancelCoordinator } from "../../../src/app/controllers/cancel-coordinator.js";
 import { CancelLadder } from "../../../src/classic/input/cancel-ladder.js";
 import { InputRouter } from "../../../src/classic/input/input-router.js";
 import { keyEvent, type MouseEvent } from "../../../src/classic/input/key-event.js";
@@ -20,14 +21,18 @@ function build(options: { acceptsText?: boolean; hasSelection?: boolean } = {}) 
     },
   };
   const ladder = new CancelLadder({
-    session,
+    coordinator: new CancelCoordinator({
+      session,
+      sessionId: () => "s1",
+      jobs: { running: () => [], pendingNotifications: () => [] },
+      interruptible: { hasWork: () => false, cancelAll: () => 0 },
+    }),
     overlay: {
       cancelBlockingPrompt: () => {
         calls.push("overlay.cancelBlockingPrompt");
         return false;
       },
     },
-    jobs: { running: () => [], pendingNotifications: () => [] },
     notify: (notice) => calls.push(`notify:${notice.text}`),
     requestExit: () => calls.push("requestExit"),
   });

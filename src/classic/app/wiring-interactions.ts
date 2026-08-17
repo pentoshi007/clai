@@ -468,14 +468,9 @@ export function bumpFeedGeneration(host: WiringHost): void {
 }
 
 export function disarmEscapeIfIdle(host: WiringHost): void {
-  const state = host.services.session.getState();
-  const sessionId = state.sessionId;
   const busy =
-    state.running ||
-    state.compacting ||
-    state.queued.length > 0 ||
-    host.services.ports.jobs.running(sessionId).length > 0 ||
-    host.services.ports.jobs.pendingNotifications(sessionId).length > 0;
+    host.services.session.getState().queued.length > 0 ||
+    host.services.cancel.hasCancelableWork();
   if (!busy) host.ladder.disarmEscape();
 }
 

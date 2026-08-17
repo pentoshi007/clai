@@ -44,6 +44,21 @@ describe("provider failure messaging", () => {
     expect(msg).toMatch(/unavailable|capacity|free-tier/i);
   });
 
+  it("maps cache_only_cold 503 admissions to cache-admission guidance", () => {
+    const body =
+      '{"error":{"message":"cache-only admission rejected a cold or overloaded request","type":"ServiceUnavailable","param":"","code":"cache_only_cold"},"id":45648,"org_id":"","role":1}';
+    const msg = formatProviderFailureForUser(
+      new ProviderError(
+        "cache-only admission rejected a cold or overloaded request",
+        503,
+        body,
+      ),
+    );
+    expect(msg).toContain("cache admission rejected (503; cache_only_cold)");
+    expect(msg).toMatch(/backoff/i);
+    expect(msg).toContain("cache-only admission rejected a cold or overloaded request");
+  });
+
   it("preserves the exact provider error alongside rate-limit guidance", () => {
     const msg = formatProviderFailureForUser(
       new ProviderError("Gemini quota exceeded; retry in 31 seconds", 429),

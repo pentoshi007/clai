@@ -6,6 +6,14 @@ import {
 } from "../../../src/llm/adapters/gemini-tools.js";
 import { getToolDefinitions } from "../../../src/tools/definitions.js";
 
+const geminiReplay = {
+  target: {
+    provider: "gemini",
+    model: "test-gemini",
+    dialect: "gemini-generate-content",
+  },
+} as const;
+
 describe("gemini tools adapter", () => {
   it("builds functionDeclarations payload", () => {
     const body = geminiToolBodyFields({
@@ -92,20 +100,23 @@ describe("gemini tools adapter", () => {
   });
 
   it("echoes thoughtSignature back on the functionCall part in history", () => {
-    const contents = toGeminiToolContents([
-      {
-        role: "assistant",
-        content: "",
-        toolCalls: [
-          {
-            id: "1",
-            name: "fs.list",
-            args: {},
-            thoughtSignature: "sig-abc123",
-          },
-        ],
-      },
-    ]);
+    const contents = toGeminiToolContents(
+      [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "1",
+              name: "fs.list",
+              args: {},
+              thoughtSignature: "sig-abc123",
+            },
+          ],
+        },
+      ],
+      geminiReplay,
+    );
     const modelParts = contents[0]!.parts as Array<{
       functionCall?: unknown;
       thoughtSignature?: string;

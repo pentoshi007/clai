@@ -25,6 +25,7 @@ import {
   toAnthropicToolMessages,
 } from "./adapters/anthropic-tools.js";
 import { mergeAnthropicStreamUsage, parseAnthropicUsage } from "./token-usage.js";
+import { generationFetch } from "./operation-usage.js";
 import {
   firstSystemPrompt,
   requestContextSystemPrompts,
@@ -32,14 +33,36 @@ import {
 } from "./system-messages.js";
 import { resolveSampling } from "./sampling.js";
 import {
-  REASONING_CLOSE,
-  REASONING_OPEN,
-  wrapReasoning,
-} from "./reasoning-marker.js";
+  emitStreamReasoningArtifacts,
+  emitStreamReasoningDelta,
+} from "./stream-events.js";
+import { ANTHROPIC_STREAM_TERMINAL, requireTerminalProof } from "./stream-terminal.js";
 import type { TokenUsage } from "../types.js";
+import {
+  createReasoningArtifactProvenance,
+  createSignedThinkingArtifacts,
+} from "./reasoning-artifacts.js";
+import { compileRequestPlan } from "./request-plan.js";
+import type { AnthropicThinkingBlock } from "./adapters/anthropic-tools.js";
 
 const baseUrl = "https://api.anthropic.com/v1";
 const anthropicVersion = "2023-06-01";
+
+function anthropicReasoningArtifacts(
+  model: string,
+  blocks: readonly AnthropicThinkingBlock[],
+) {
+  const artifacts = createSignedThinkingArtifacts({
+    blocks,
+    provenance: createReasoningArtifactProvenance({
+      provider: "anthropic",
+      model,
+      dialect: "anthropic-messages",
+      endpoint: baseUrl,
+    }),
+  });
+  return artifacts.length ? artifacts : undefined;
+}
 
 function anthropicThinkingBudget(
   reasoning: ReasoningPreference | undefined,
@@ -128,24 +151,41 @@ export function anthropicSystemBlocks(
 
 export function buildAnthropicBody(request: CompletionRequest, stream: boolean): string {
   const model = request.model ?? defaultModels.anthropic;
+  const plan = compileRequestPlan({
+    provider: "anthropic",
+    model,
+    messages: request.messages,
+    stream,
+    endpoint: baseUrl,
+    reasoning: request.thinking,
+    tools: request.tools,
+    toolChoice: request.toolChoice,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens,
+  });
   const requestContexts = requestContextSystemPrompts(request.messages);
   const system = anthropicSystemBlocks(
     firstSystemPrompt(request.messages),
     requestContexts,
   );
+  const reasoningArtifactReplay = {
+    target: plan.replay.target,
+    observe: request.onReasoningArtifactReplayDecision,
+  };
   const messages = toAnthropicToolMessages(
     withoutRequestContextSystemMessages(
-      imageCapableMessages("anthropic", model, request.messages),
+      imageCapableMessages("anthropic", model, [...plan.timeline.messages]),
     ),
+    reasoningArtifactReplay,
   );
-  const thinking = anthropicThinkingField(request.thinking, model);
+  const thinking = anthropicThinkingField(plan.controls.reasoning, model);
   return JSON.stringify({
     model,
     system,
     messages,
     // A 1024 default sits below `anthropicThinkingBudget` (up to 8192), which
     // Anthropic rejects outright, and is far below every Claude output cap.
-    max_tokens: anthropicMaxTokens(request.maxTokens, thinking),
+    max_tokens: anthropicMaxTokens(plan.controls.requestedMaxTokens, thinking),
     // Anthropic requires temperature to stay at its default (1) whenever
     // thinking is enabled — sending our 0.2 default returns HTTP 400
     // ("temperature may only be set to 1 when thinking is enabled").
@@ -158,15 +198,17 @@ export function buildAnthropicBody(request: CompletionRequest, stream: boolean):
           temperature: resolveSampling({
             provider: "anthropic",
             model,
-            reasoningEnabled: Boolean(request.thinking?.enabled),
-            requestedTemperature: request.temperature,
+            reasoningEnabled: Boolean(plan.controls.reasoning?.enabled),
+            requestedTemperature: plan.controls.temperature,
           }).temperature,
         }),
     ...(stream ? { stream: true } : {}),
     ...(thinking ? { thinking } : {}),
     ...anthropicToolBodyFields({
-      tools: request.tools,
-      toolChoice: request.toolChoice,
+      tools: plan.tools.definitions.length
+        ? [...plan.tools.definitions]
+        : undefined,
+      toolChoice: plan.tools.choice,
     }),
   });
 }
@@ -193,7 +235,7 @@ export const anthropicProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
     const model = request.model ?? defaultModels.anthropic;
-    const response = await fetch(`${baseUrl}/messages`, {
+    const response = await generationFetch(`${baseUrl}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: {
@@ -223,16 +265,18 @@ export const anthropicProvider: LlmProvider = {
       parsed.thinkingSignature && parsed.thinkingText
         ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
         : undefined;
-    const final = parsed.thinkingText
-      ? `${wrapReasoning(parsed.thinkingText)}${parsed.text}`
-      : parsed.text;
+    const reasoningArtifacts = anthropicReasoningArtifacts(
+      model,
+      parsed.thinkingBlocks,
+    );
     const usage = parseAnthropicUsage(data.usage);
     return {
-      text: final,
+      text: parsed.text,
       provider: "anthropic",
       model,
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningBlock ? { reasoningBlock } : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(data.stop_reason
         ? {
             finishReason:
@@ -251,7 +295,7 @@ export const anthropicProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
     const model = request.model ?? defaultModels.anthropic;
-    const response = await fetch(`${baseUrl}/messages`, {
+    const response = await generationFetch(`${baseUrl}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: {
@@ -268,23 +312,10 @@ export const anthropicProvider: LlmProvider = {
       throw new Error("Anthropic returned no stream body");
     }
     let full = "";
-    let inThinking = false;
     const streamState = createAnthropicToolStreamState();
     let stopReason: string | undefined;
+    let sawMessageStop = false;
     let streamUsage: TokenUsage | undefined;
-
-    const enterThinking = (): void => {
-      if (inThinking) return;
-      inThinking = true;
-      full += REASONING_OPEN;
-      onToken(REASONING_OPEN);
-    };
-    const exitThinking = (): void => {
-      if (!inThinking) return;
-      inThinking = false;
-      full += REASONING_CLOSE;
-      onToken(REASONING_CLOSE);
-    };
 
     const sseFrames = createSseFrameAssembler();
     let outputProgress = 0;
@@ -310,11 +341,13 @@ export const anthropicProvider: LlmProvider = {
             name?: string;
             text?: string;
             thinking?: string;
+            signature?: string;
           };
           delta?: {
             type?: string;
             text?: string;
             thinking?: string;
+            signature?: string;
             partial_json?: string;
             stop_reason?: string;
           };
@@ -328,6 +361,7 @@ export const anthropicProvider: LlmProvider = {
             payload.slice(0, 500),
           );
         }
+        if (parsed.type === "message_stop") sawMessageStop = true;
         // message_start carries input tokens; message_delta carries output.
         if (parsed.type === "message_start" && parsed.message?.usage) {
           streamUsage = parseAnthropicUsage(parsed.message.usage) ?? streamUsage;
@@ -349,13 +383,10 @@ export const anthropicProvider: LlmProvider = {
         ) {
           const deltas = handleAnthropicStreamEvent(streamState, parsed);
           if (deltas.thinkingDelta) {
-            enterThinking();
-            full += deltas.thinkingDelta;
             outputProgress += deltas.thinkingDelta.length;
-            onToken(deltas.thinkingDelta);
+            emitStreamReasoningDelta(request.onStreamEvent, deltas.thinkingDelta);
           }
           if (deltas.textDelta) {
-            if (inThinking) exitThinking();
             full += deltas.textDelta;
             outputProgress += deltas.textDelta.length;
             onToken(deltas.textDelta);
@@ -387,9 +418,29 @@ export const anthropicProvider: LlmProvider = {
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }
-    exitThinking();
     const finalized = finalizeAnthropicToolStream(streamState);
-    if (!full.trim() && finalized.toolCalls.length === 0) {
+    let anthropicToolArgumentBytes = 0;
+    for (const value of toolArgumentBytes.values()) {
+      anthropicToolArgumentBytes += value;
+    }
+    requireTerminalProof({
+      provider: "Anthropic",
+      policy: ANTHROPIC_STREAM_TERMINAL,
+      signal: sawMessageStop ? "message-stop" : undefined,
+      answerBytes: full.length,
+      reasoningBytes: finalized.thinkingText.length,
+      toolArgumentBytes: anthropicToolArgumentBytes,
+    });
+    const reasoningArtifacts = anthropicReasoningArtifacts(
+      model,
+      finalized.thinkingBlocks,
+    );
+    emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
+    if (
+      !full.trim() &&
+      !finalized.thinkingText &&
+      finalized.toolCalls.length === 0
+    ) {
       throw new Error("Anthropic returned no completion text");
     }
     return {
@@ -407,6 +458,7 @@ export const anthropicProvider: LlmProvider = {
             },
           }
         : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(stopReason
         ? {
             finishReason:

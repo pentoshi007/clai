@@ -67,6 +67,7 @@ const NVIDIA_FIRST_BYTE_IDLE_TIMEOUT_MS = 120_000;
 
 export const nvidiaProvider: LlmProvider = {
   id: "nvidia",
+  reasoningStyle: "nvidia",
   displayName: "NVIDIA NIM",
   defaultModel: defaultModels.nvidia,
   envVar: "NVIDIA_API_KEY",
@@ -125,6 +126,7 @@ export const nvidiaProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("nvidia", model, payload);
   },
@@ -147,6 +149,7 @@ export const nvidiaProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "nvidia",
       initialIdleTimeoutMs: Math.max(
@@ -156,6 +159,7 @@ export const nvidiaProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("nvidia", model, payload);
   },

@@ -1,7 +1,12 @@
 import { platform } from "node:os";
 import { commandAvailable } from "../os/pkgmgr.js";
 import type { ToolResult } from "../types.js";
-import { formatSudoStdinPassword } from "./elevated-shell.js";
+import {
+  evictSudoSession,
+  formatSudoStdinPassword,
+  looksLikeSudoAuthError,
+  obtainSudoPassword,
+} from "./sudo-session.js";
 import {
   getAllowInteractiveStdinInherit,
   spawnArgv,
@@ -168,56 +173,40 @@ export async function runNmapScan(
           "stdout",
         );
         if (useSecret && options?.requestSecret) {
-          const password = await options.requestSecret({
+          // Shared sudo session: parallel scans coalesce onto one password
+          // prompt, and a validated password is reused for a few minutes so
+          // every scan in the batch (not just the first) runs privileged.
+          const auth = await obtainSudoPassword({
+            requestSecret: options.requestSecret,
             title: "Administrator access",
             prompt:
-              "Enter your password for sudo (nmap raw-socket scan). It is sent only to sudo and is never stored. Esc cancels.",
+              "Enter your password for sudo (nmap raw-socket scan). It is sent only to sudo, kept in memory for a few minutes so parallel privileged scans don't ask again, and never written to disk. Esc cancels.",
+            ...(options.signal ? { signal: options.signal } : {}),
+            ...(options.onOutput ? { onOutput: options.onOutput } : {}),
           });
-          if (password === undefined) {
+          if (auth.status === "cancelled") {
             options?.onOutput?.(
               "\nSudo cancelled — falling back to unprivileged TCP connect scan (-sT -Pn).\n",
               "stderr",
             );
+          } else if (auth.status === "failed") {
+            const detail = auth.detail ? `\n${auth.detail}` : "";
+            options?.onOutput?.(
+              `\nSudo authentication failed; using an unprivileged TCP connect scan instead.${detail}\n`,
+              "stderr",
+            );
           } else {
-            const stdinPassword = formatSudoStdinPassword(password);
-            // Validate password first for a clear error (wrong password →
-            // connect-scan fallback without starting nmap).
-            const auth = await spawnArgv({
+            // Pipe the password into the real scan. Do NOT use `sudo -n`
+            // after -v: OpenTUI spawns detached non-TTY children, so the
+            // macOS sudo timestamp ticket does not stick and you get
+            // "access confirmed" then "sudo: a password is required".
+            attempts.push({
               command: "sudo",
-              argv: ["-S", "-p", "", "-v"],
-              stdinText: stdinPassword,
-              timeoutMs: 30_000,
-              signal: options.signal,
-              onOutput: options.onOutput,
-              noArtifact: true,
+              argv: ["-S", "-p", "", "nmap", ...scanArgv],
+              stdinText: formatSudoStdinPassword(auth.password),
               interactiveStdin: false,
+              note: "Administrator access confirmed. Starting stealth scan (ESC cancels).",
             });
-            if (options?.signal?.aborted || auth.exitCode === 130) {
-              options?.onOutput?.(
-                "\nSudo aborted — falling back to unprivileged TCP connect scan (-sT -Pn).\n",
-                "stderr",
-              );
-            } else if (auth.ok) {
-              // Pipe the password into the real scan. Do NOT use `sudo -n`
-              // after -v: OpenTUI spawns detached non-TTY children, so the
-              // macOS sudo timestamp ticket does not stick and you get
-              // "access confirmed" then "sudo: a password is required".
-              attempts.push({
-                command: "sudo",
-                argv: ["-S", "-p", "", "nmap", ...scanArgv],
-                stdinText: stdinPassword,
-                interactiveStdin: false,
-                note: "Administrator access confirmed. Starting stealth scan (ESC cancels).",
-              });
-            } else {
-              const detail = auth.output?.trim()
-                ? `\n${auth.output.trim().slice(0, 400)}`
-                : "";
-              options?.onOutput?.(
-                `\nSudo authentication failed; using an unprivileged TCP connect scan instead.${detail}\n`,
-                "stderr",
-              );
-            }
           }
         } else {
           // Classic line REPL only (inherit allowed). TTY -v creates a
@@ -354,6 +343,16 @@ export async function runNmapScan(
     }
 
     last = result;
+    // A privileged attempt that sudo itself rejected means the cached
+    // password went stale (changed mid-session) — drop it so the next scan
+    // prompts again instead of replaying a dead secret.
+    if (
+      !result.ok &&
+      attempt.stdinText !== undefined &&
+      looksLikeSudoAuthError(result.output)
+    ) {
+      evictSudoSession();
+    }
     // Success, or a non-privilege failure we shouldn't paper over → return.
     const isLastAttempt = i === attempts.length - 1;
     if (result.ok || isLastAttempt || !looksLikePrivilegeError(result.output)) {

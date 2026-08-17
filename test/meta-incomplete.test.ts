@@ -127,6 +127,40 @@ describe("meta provider response.incomplete handling", () => {
     expect(result.finishReason).toBe("incomplete");
   });
 
+  it("does not regenerate after reasoning was already streamed", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      calls += 1;
+      return sseResponse([
+        { type: "response.created", response: { id: "r-published" } },
+        { type: "response.reasoning_summary_text.delta", delta: "visible reasoning trace" },
+        incompleteEvent(8192, 8100),
+      ]);
+    }));
+    const tokens: string[] = [];
+    const reasoningDeltas: string[] = [];
+    const streamMethod = metaProvider.stream;
+    const error = await streamMethod!(
+      {
+        ...reasoningRequest(8192),
+        onStreamEvent: (event) => {
+          if (event.type === "reasoning_delta") reasoningDeltas.push(event.text);
+        },
+      },
+      { apiKey: "test-key-12345" },
+      (token) => tokens.push(token),
+    ).catch((e: unknown) => e);
+    expect(calls).toBe(1);
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("output budget");
+    expect(message).toContain("Lower the effort");
+    const joined = reasoningDeltas.join("");
+    expect(joined).toContain("visible reasoning trace");
+    expect(joined.split("visible reasoning trace").length - 1).toBe(1);
+    expect(tokens.join("")).toBe("");
+  });
+
   it("complete() retries with a doubled budget on an incomplete max_output_tokens response", async () => {
     const bodies: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: { body?: string }) => {

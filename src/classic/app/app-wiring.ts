@@ -140,9 +140,8 @@ export class ClassicAppWiring implements WiringHost {
     });
 
     this.ladder = new CancelLadder({
-      session: this.services.session,
+      coordinator: this.services.cancel,
       overlay: this.services.overlay,
-      jobs: this.services.ports.jobs,
       notify: (notice) => {
         this.services.toast.show(notice.text, {
           level: notice.level,

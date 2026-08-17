@@ -105,6 +105,7 @@ export function scriptedEvents(): readonly AgentEvent[] {
       summary: "earlier work",
       beforeTokens: 120_000,
       afterTokens: 30_000,
+      contextScope: "assembled-request",
     },
     { type: "turn-aborted" },
   ];

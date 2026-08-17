@@ -1,5 +1,4 @@
-import type { ChatImage, ChatMessage } from "../types.js";
-import { readImageDimensions } from "../attachments/image-content.js";
+import type { ChatMessage } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
 import { stripThinking } from "../ui/thinking.js";
 import {
@@ -29,58 +28,20 @@ import {
   isResponderResultLedgerMessage,
   RESPONDER_RESULT_LEDGER_PREFIX,
 } from "./responder-context.js";
+import { slimToolArgs } from "./message-slim.js";
 import {
-  measureToolCallsChars,
-  slimToolArgs,
-} from "./message-slim.js";
+  estimateImageTokens,
+  estimateMessagesTokens,
+  estimateTextTokens as estimateTokens,
+} from "./request-accounting.js";
+
+export { estimateImageTokens, estimateMessagesTokens, estimateTokens };
 
 /**
- * Per-char token estimator. Real tokenization varies by provider, but for
- * budgeting a chars/3.3 heuristic is close enough for mixed text/code/JSON
- * (which tokenizes less efficiently than pure English prose). We
- * deliberately over-estimate — better to compact one turn too early than to
- * lose state to a provider context-window error.
+ * Token estimation lives in `request-accounting.ts` — the one serialized-
+ * request accounting service. The exports above keep this module's historic
+ * public surface; nothing here owns a chars-per-token ratio anymore.
  */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3.3);
-}
-
-const MIN_IMAGE_TOKENS = 300;
-const MAX_IMAGE_TOKENS = 6_000;
-
-export function estimateImageTokens(image: ChatImage): number {
-  const rawBytes = Math.ceil((image.dataBase64.length * 3) / 4);
-  if (rawBytes <= 0) return MIN_IMAGE_TOKENS;
-  const dimensions = readImageDimensions(
-    Buffer.from(image.dataBase64.slice(0, 8192), "base64"),
-  );
-  const tokens = dimensions
-    ? Math.ceil((dimensions.width * dimensions.height) / 750)
-    : Math.ceil(rawBytes / 900);
-  return Math.min(MAX_IMAGE_TOKENS, Math.max(MIN_IMAGE_TOKENS, tokens));
-}
-
-export function estimateMessagesTokens(messages: ChatMessage[]): number {
-  let sum = 0;
-  for (const message of messages) {
-    sum += estimateTokens(message.content) + 4; // role overhead
-    // Native toolCalls often carry full fs.write bodies — must count them or
-    // auto-compact never fires and RAM climbs with every scaffold write.
-    if (message.toolCalls?.length) {
-      const toolChars = Math.min(
-        measureToolCallsChars(message.toolCalls),
-        2_000_000,
-      );
-      sum += Math.ceil(toolChars / 3.3);
-    }
-    if (message.images) {
-      for (const image of message.images) {
-        sum += estimateImageTokens(image);
-      }
-    }
-  }
-  return sum;
-}
 
 /**
  * Agent-loop auto-compact threshold (estimated tokens). Shared with `/context`
@@ -132,7 +93,28 @@ export interface CompactOptions {
   // ledger) built by the caller from durable stores. Fed to the summarizer as
   // authoritative state and re-injected verbatim after compaction.
   durableEnvelope?: string | undefined;
+  /**
+   * At most one summarizer dispatch: forbids automatic map/reduce. When the
+   * full settled range does not fit one pass, summarize the oldest complete
+   * message-aligned slice (emergency_prefix_slice) and retain the untouched
+   * middle/recent tail.
+   */
+  singleAdmission?: boolean | undefined;
+  /**
+   * Choose the direct single pass whenever source messages exist, skipping the
+   * estimate gate. Callers set this only after pre-flighting that the exact
+   * assembled request fits (e.g. a cache-preserving snapshot replay planned
+   * with `planCompactionReplay`) — the raw estimate gate is deliberately
+   * conservative and would otherwise reject requests that fit fine.
+   */
+  forceDirectSinglePass?: boolean | undefined;
 }
+
+export type CompactionStrategy =
+  | "direct"
+  | "single"
+  | "emergency_prefix_slice"
+  | "map_reduce";
 
 export interface CompactResult {
   messages: ChatMessage[];
@@ -141,6 +123,7 @@ export interface CompactResult {
   beforeTokens: number;
   afterTokens: number;
   summarized: boolean;
+  strategy?: CompactionStrategy | undefined;
 }
 
 const DEFAULT_BUDGET_TOKENS = 32_000;
@@ -435,8 +418,9 @@ export async function compactMessagesWithSummary(
     : Number.POSITIVE_INFINITY;
   const useDirectSinglePass =
     Boolean(directSourceMessages?.length) &&
-    singlePassInputBudget > 0 &&
-    directInputTokens <= singlePassInputBudget;
+    (options.forceDirectSinglePass === true ||
+      (singlePassInputBudget > 0 &&
+        directInputTokens <= singlePassInputBudget));
   const serializedPromptTokens = estimateTokens(
     buildCompactionUserPrompt({
       messageTranscript: "",
@@ -483,12 +467,16 @@ export async function compactMessagesWithSummary(
   };
 
   let modelSummary: string;
+  let strategy: CompactionStrategy;
+  let retainedMiddle: ChatMessage[] = [];
   if (useDirectSinglePass && directSourceMessages) {
+    strategy = "direct";
     modelSummary = await summarizeUsable(directPrompt, {
       phase: "single",
       sourceMessages: directSourceMessages,
     });
   } else if (chunks.length <= 1) {
+    strategy = "single";
     modelSummary = await summarizeUsable(
       buildCompactionUserPrompt({
         visualTranscript: visual || undefined,
@@ -498,7 +486,73 @@ export async function compactMessagesWithSummary(
       }),
       { phase: "single" },
     );
+  } else if (options.singleAdmission) {
+    if (visual) {
+      throw new Error(
+        "compaction failed: single-admission compaction cannot slice a visual transcript — run /compact explicitly",
+      );
+    }
+    let sliceEnd = 0;
+    let sliceChars = 0;
+    for (let index = 0; index < older.length; index += 1) {
+      const message = older[index]!;
+      if (message.role === "system" && isDurableSystem(message.content)) {
+        continue;
+      }
+      let content = redactSecrets(message.content);
+      if (message.role === "assistant") {
+        content = stripThinking(content).visible;
+      }
+      const rendered = `${message.role.toUpperCase()}: ${content}${
+        message.toolCalls?.length
+          ? `\n[tools: ${message.toolCalls.map((t) => t.name).join(", ")}]`
+          : ""
+      }`;
+      if (sliceChars > 0 && sliceChars + rendered.length > dynamicChunkChars) {
+        break;
+      }
+      sliceChars += rendered.length + 2;
+      sliceEnd = index + 1;
+    }
+    if (sliceEnd === 0) sliceEnd = 1;
+    while (
+      sliceEnd < older.length &&
+      older[sliceEnd - 1]?.role === "assistant" &&
+      older[sliceEnd - 1]!.toolCalls?.length &&
+      older[sliceEnd]?.role === "tool"
+    ) {
+      sliceEnd += 1;
+    }
+    strategy = "emergency_prefix_slice";
+    retainedMiddle = older.slice(sliceEnd);
+    const sliceTranscript = older
+      .slice(0, sliceEnd)
+      .filter(
+        (message) =>
+          !(message.role === "system" && isDurableSystem(message.content)),
+      )
+      .map((message) => {
+        let content = redactSecrets(message.content);
+        if (message.role === "assistant") {
+          content = stripThinking(content).visible;
+        }
+        return `${message.role.toUpperCase()}: ${content}${
+          message.toolCalls?.length
+            ? `\n[tools: ${message.toolCalls.map((t) => t.name).join(", ")}]`
+            : ""
+        }`;
+      })
+      .join("\n\n");
+    modelSummary = await summarizeUsable(
+      buildCompactionUserPrompt({
+        messageTranscript: sliceTranscript,
+        durableState: durableState || undefined,
+        purpose: options.purpose,
+      }),
+      { phase: "single" },
+    );
   } else {
+    strategy = "map_reduce";
     const mapped = await Promise.all(
       chunks.map(async (chunk, index) => {
         const partial = await summarizeUsable(
@@ -548,7 +602,13 @@ export async function compactMessagesWithSummary(
   }
 
   const head = preserveSystemHead ? [messages[0]!] : [];
-  const rawTail = messages.slice(tailStart);
+  let rawTail = [...retainedMiddle, ...messages.slice(tailStart)];
+  if (options.durableEnvelope?.trim()) {
+    rawTail = rawTail.filter(
+      (message) =>
+        !(message.role === "system" && isDurableEnvelopeContent(message.content)),
+    );
+  }
   let responderLedger: ChatMessage | undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (isResponderResultLedgerMessage(messages[index]!)) {
@@ -609,6 +669,7 @@ export async function compactMessagesWithSummary(
     beforeTokens,
     afterTokens,
     summarized: true,
+    strategy,
   };
 }
 

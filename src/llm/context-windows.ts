@@ -1,0 +1,140 @@
+import type { ProviderId } from "../types.js";
+
+/**
+ * Known model context windows (tokens). Patterns are tested in order;
+ * first match wins. Keep conservative defaults so % never under-reports fill.
+ */
+const CONTEXT_WINDOW_RULES: ReadonlyArray<{
+  pattern: RegExp;
+  tokens: number;
+}> = [
+  // Anthropic
+  { pattern: /claude-(?:fable|mythos)-5/i, tokens: 1_000_000 },
+  { pattern: /claude-(?:opus|sonnet)-5/i, tokens: 1_000_000 },
+  { pattern: /claude-(?:opus|sonnet)-4\.[678]/i, tokens: 1_000_000 },
+  { pattern: /claude-(?:opus|sonnet)-4/i, tokens: 200_000 },
+  { pattern: /claude-haiku-4/i, tokens: 200_000 },
+  { pattern: /claude-3-7/i, tokens: 200_000 },
+  { pattern: /claude-3-5/i, tokens: 200_000 },
+  { pattern: /claude-3/i, tokens: 200_000 },
+  // OpenAI
+  { pattern: /gpt-5\.[456](?:[-.]|$)/i, tokens: 1_050_000 },
+  { pattern: /gpt-5/i, tokens: 400_000 },
+  { pattern: /gpt-4\.1/i, tokens: 1_047_576 },
+  { pattern: /gpt-4o/i, tokens: 128_000 },
+  { pattern: /gpt-4-turbo/i, tokens: 128_000 },
+  // Plain gpt-4 is 8k (32k for the -32k variant); the generic 128k rule below
+  // used to over-size it, so no warning arrived before a hard context error.
+  { pattern: /gpt-4-32k/i, tokens: 32_768 },
+  { pattern: /^gpt-4(?:-\d{4})?$/i, tokens: 8_192 },
+  { pattern: /gpt-4/i, tokens: 128_000 },
+  { pattern: /o3/i, tokens: 200_000 },
+  { pattern: /o4/i, tokens: 200_000 },
+  { pattern: /o1/i, tokens: 200_000 },
+  // Google — keep explicit rules ahead of the generic /gemini/i fallback, which
+  // used to catch the shipped gemini-3.x default at an order of magnitude low.
+  { pattern: /gemini-3/i, tokens: 1_048_576 },
+  { pattern: /gemini-2\.5/i, tokens: 1_048_576 },
+  { pattern: /gemini-2\.0/i, tokens: 1_048_576 },
+  { pattern: /gemini-1\.5/i, tokens: 1_048_576 },
+  { pattern: /gemini/i, tokens: 128_000 },
+  // Meta / Groq
+  { pattern: /llama-4/i, tokens: 128_000 },
+  { pattern: /llama-3\.3/i, tokens: 128_000 },
+  { pattern: /llama-3\.1/i, tokens: 128_000 },
+  { pattern: /llama-3/i, tokens: 128_000 },
+  // DeepSeek / Qwen / Kimi / GLM / etc.
+  { pattern: /deepseek-v4/i, tokens: 1_000_000 },
+  { pattern: /deepseek/i, tokens: 128_000 },
+  { pattern: /qwen3\.7/i, tokens: 1_000_000 },
+  { pattern: /qwen3\.(?:8|6|5)/i, tokens: 262_144 },
+  { pattern: /qwen3/i, tokens: 128_000 },
+  { pattern: /qwen2\.5/i, tokens: 128_000 },
+  { pattern: /qwen/i, tokens: 128_000 },
+  // Kimi-K3 is a 1M-window model. Keep this before generic Kimi/K2 rules so
+  // Modal and gateway model IDs such as `moonshotai/Kimi-K3` are not clamped
+  // to the legacy 128k family window.
+  { pattern: /kimi-k3/i, tokens: 1_000_000 },
+  { pattern: /kimi-k2/i, tokens: 256_000 },
+  { pattern: /kimi/i, tokens: 128_000 },
+  { pattern: /glm-?5\.2/i, tokens: 1_000_000 },
+  { pattern: /glm-?5/i, tokens: 200_000 },
+  { pattern: /glm-?4\.[56]/i, tokens: 200_000 },
+  { pattern: /glm-?4/i, tokens: 128_000 },
+  { pattern: /minimax-m3/i, tokens: 1_000_000 },
+  { pattern: /minimax-m2\.7/i, tokens: 204_800 },
+  { pattern: /minimax/i, tokens: 128_000 },
+  { pattern: /mimo/i, tokens: 128_000 },
+  { pattern: /gpt-oss/i, tokens: 128_000 },
+  { pattern: /nemotron/i, tokens: 128_000 },
+  { pattern: /muse-spark/i, tokens: 1_048_576 },
+];
+
+const DEFAULT_CONTEXT_WINDOW = 250_000;
+
+/**
+ * Provider-specific served windows that are smaller than the model's nominal
+ * one. The `provider` argument used to be accepted and discarded, so `%` of
+ * context was wrong wherever a gateway serves a truncated window.
+ */
+const PROVIDER_CONTEXT_OVERRIDES: Partial<
+  Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
+> = {
+  // Groq serves these two on a low TPM tier; the usable prompt is far below the
+  // model's nominal window (mirrors `groqInputTokenBudget`).
+  groq: [
+    { pattern: /qwen\/qwen3-32b/i, tokens: 5_500 },
+    { pattern: /openai\/gpt-oss-20b/i, tokens: 7_500 },
+  ],
+  // TokenRouter publishes the real upstream window per model id, and several
+  // are far larger than the generic family rules below would guess. Model ids
+  // are vendor-namespaced (`deepseek/deepseek-v4-pro`) but older sessions and
+  // catalogs still carry the bare alias, so both forms must match (MR-033).
+  tokenrouter: [
+    { pattern: /^(?:[a-z0-9-]+\/)?deepseek-v4-(?:pro|flash)$/i, tokens: 1_000_000 },
+    { pattern: /^(?:[a-z0-9-]+\/)?minimax-m3$/i, tokens: 524_288 },
+    { pattern: /^(?:[a-z0-9-]+\/)?minimax-m2p7$/i, tokens: 196_608 },
+    { pattern: /^(?:[a-z0-9-]+\/)?kimi-k2(?:p\d|\.\d)/i, tokens: 262_144 },
+    { pattern: /^(?:[a-z0-9-]+\/)?qwen3p\d-plus$/i, tokens: 262_144 },
+    { pattern: /^(?:[a-z0-9-]+\/)?glm-5p1(?:-fast)?$/i, tokens: 202_752 },
+    { pattern: /^(?:[a-z0-9-]+\/)?gpt-oss-120b$/i, tokens: 131_072 },
+  ],
+};
+
+export function modelContextWindow(
+  model: string | undefined,
+  provider?: ProviderId | undefined,
+): number {
+  if (!model) return DEFAULT_CONTEXT_WINDOW;
+  const overrides = provider ? PROVIDER_CONTEXT_OVERRIDES[provider] : undefined;
+  if (overrides) {
+    for (const rule of overrides) {
+      if (rule.pattern.test(model)) return rule.tokens;
+    }
+  }
+  return nominalModelContextWindow(model);
+}
+
+/**
+ * The model's nominal family window, ignoring provider-served overrides.
+ * Some overrides (Groq's low-TPM tiers) are budget advisories that steer
+ * earlier compaction, not physical maximums a dispatch gate should enforce.
+ */
+export function nominalModelContextWindow(model: string | undefined): number {
+  if (!model) return DEFAULT_CONTEXT_WINDOW;
+  for (const rule of CONTEXT_WINDOW_RULES) {
+    if (rule.pattern.test(model)) return rule.tokens;
+  }
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/** Exact served window for a provider-published alias, when one exists. */
+export function providerContextOverrideTokens(
+  provider: ProviderId,
+  model: string | undefined,
+): number | undefined {
+  if (!model) return undefined;
+  const overrides = PROVIDER_CONTEXT_OVERRIDES[provider];
+  if (!overrides) return undefined;
+  return overrides.find((rule) => rule.pattern.test(model))?.tokens;
+}

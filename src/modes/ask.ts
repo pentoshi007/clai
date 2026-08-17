@@ -1,4 +1,11 @@
-import type { ChatMessage, ChatImage, ProviderId, ToolCall } from "../types.js";
+import type {
+  ChatMessage,
+  ChatImage,
+  CompletionResult,
+  NativeToolCall,
+  ProviderId,
+  ToolCall,
+} from "../types.js";
 import type { AgentEvent } from "../agent/events.js";
 import { streamWithProvider } from "../llm/router.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
@@ -214,8 +221,10 @@ async function streamAskRound(
   text: string;
   provider: ProviderId;
   model: string;
-  toolCalls?: ToolCall[];
+  toolCalls?: NativeToolCall[];
   nativeIds?: string[];
+  reasoningBlock?: CompletionResult["reasoningBlock"];
+  reasoningArtifacts?: CompletionResult["reasoningArtifacts"];
 }> {
   let full = "";
   let forwardedLen = 0;
@@ -246,11 +255,14 @@ async function streamAskRound(
       text,
       provider: completion.provider,
       model: completion.model,
-      toolCalls: completion.toolCalls.map((tc) => ({
-        name: tc.name,
-        args: tc.args,
-      })),
+      toolCalls: completion.toolCalls,
       nativeIds: completion.toolCalls.map((tc) => tc.id),
+      ...(completion.reasoningBlock
+        ? { reasoningBlock: completion.reasoningBlock }
+        : {}),
+      ...(completion.reasoningArtifacts
+        ? { reasoningArtifacts: completion.reasoningArtifacts }
+        : {}),
     };
   }
   return {
@@ -439,6 +451,9 @@ async function resolveAskAnswer(
             id: nativeIds[index] ?? syntheticToolCallId(index),
             name: c.name,
             args: c.args,
+            ...(c.thoughtSignature
+              ? { thoughtSignature: c.thoughtSignature }
+              : {}),
           })),
           toolCallIdsInHistory(messages),
         )
@@ -450,6 +465,8 @@ async function resolveAskAnswer(
         messages,
         stripToolCallSyntax(text),
         historyNativeCalls,
+        roundResult.reasoningBlock,
+        roundResult.reasoningArtifacts,
       );
     } else {
       messages.push({ role: "assistant", content: text });

@@ -99,6 +99,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "TokenRouter keys usually start with sk- (create one under My Account → API Keys)";
   if (provider === "meta")
     return "Meta Model API keys are alphanumeric (issued in your Meta Model API dashboard, MODEL_API_KEY)";
+  if (provider === "orcarouter")
+    return "OrcaRouter keys usually start with sk- (create one at https://www.orcarouter.ai/console)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

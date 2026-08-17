@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPACTION_MAX_COMPLETION_TOKENS } from "../../src/agent/compaction-summary.js";
 import type { AgentPort } from "../../src/app/ports/agent-port.js";
+import type { SuccessfulRequestSnapshot } from "../../src/types.js";
 import type {
   PersistencePort,
   SaveSessionOptions,
@@ -9,6 +10,7 @@ import {
   isCompactionMemoryMessage,
 } from "../../src/agent/context-manager.js";
 import { SessionController } from "../../src/app/controllers/session-controller.js";
+import { createContextSnapshot } from "../../src/llm/context-snapshot.js";
 import { createTurnOutcome } from "../../src/agent/turn-outcome.js";
 import type { AnyAppEvent } from "../../src/app/events/app-event.js";
 
@@ -50,6 +52,37 @@ function fakeAgent(): AgentPort {
       return createTurnOutcome({ status: "succeeded", answer: "y", steps: 1, remainingCriteria: [] });
     },
   };
+}
+
+function primeCompactionSnapshot(session: SessionController): void {
+  const history = session.messages.map((message) => structuredClone(message));
+  const snapshot: SuccessfulRequestSnapshot = {
+    provider: "groq",
+    model: "test-model",
+    messages: [
+      { role: "system", content: "main system prompt" },
+      ...history.slice(0, -1),
+    ],
+    temperature: 0.2,
+    thinking: { enabled: true, effort: "medium" },
+    tools: [
+      {
+        name: "fs.read",
+        description: "read a file",
+        parameters: {
+          type: "object",
+          properties: { path: { type: "string" } },
+        },
+      },
+    ],
+    toolChoice: "auto",
+    parallelToolCalls: true,
+  };
+  (
+    session as unknown as {
+      lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
+    }
+  ).lastMainRequestSnapshot = snapshot;
 }
 
 function renderedCompaction(events: readonly AnyAppEvent[]): string {
@@ -224,12 +257,22 @@ describe("SessionController parity helpers (V2-080)", () => {
       "USER INTENT/PROMPT:\nfollow-up after resume\n\n---\n\n" +
       "ASSISTANT RESPONSE:\nfollow-up answer";
 
+    primeCompactionSnapshot(session);
     const result = await session.compact(visual, 2);
     expect(result.summarized).toBe(true);
     expect(completeWithProvider).toHaveBeenCalled();
-    const prompt = String(completeWithProvider.mock.calls[0]?.[0]?.messages?.[1]?.content ?? "");
-    expect(prompt).toContain("history prompt one");
-    expect(prompt).toContain("follow-up after resume");
+    const request = completeWithProvider.mock.calls[0]?.[0] as {
+      messages?: Array<{ role: string; content: string }>;
+    };
+    expect(request.messages?.map((message) => message.content)).toContain(
+      "history prompt one",
+    );
+    expect(request.messages?.map((message) => message.content)).toContain(
+      "follow-up after resume",
+    );
+    expect(request.messages?.at(-1)?.content).toContain(
+      "entire conversation above this instruction",
+    );
     // Recent tail kept; memory inserted.
     expect(session.messages.slice(-2).map((m) => m.content)).toEqual([
       "follow-up after resume",
@@ -252,18 +295,19 @@ describe("SessionController parity helpers (V2-080)", () => {
     if (completed?.type === "compaction-completed") {
       expect(completed.payload.summary).toContain(visibleSummary);
       expect(completed.payload.summary).not.toMatch(/<\/?think|hidden compaction/i);
+      expect(completed.payload.contextScope).toBe("message-history");
     }
+    expect(session.getState().contextSnapshot).toMatchObject({
+      scope: "message-history",
+      precision: "estimate",
+    });
   });
 
-  it("retries a reasoning-only manual summary with thinking disabled", async () => {
-    const visibleSummary =
-      "User goals: preserve the session. Current state: continue implementation.";
-    completeWithProvider
-      .mockResolvedValueOnce({
-        text: "<think>reasoning consumed the first allowance</think>",
-        chunks: ["<thi", "nk>reasoning consumed the first allowance</think>"],
-      })
-      .mockResolvedValueOnce({ text: visibleSummary });
+  it("fails closed after one reasoning-only manual summary", async () => {
+    completeWithProvider.mockResolvedValueOnce({
+      text: "<think>reasoning consumed the allowance</think>",
+      chunks: ["<thi", "nk>reasoning consumed the allowance</think>"],
+    });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
       agent: fakeAgent(),
@@ -282,33 +326,32 @@ describe("SessionController parity helpers (V2-080)", () => {
       ],
       { sessionId: "sess-thinking-retry" },
     );
+    const original = session.messages.map((message) => ({ ...message }));
+    primeCompactionSnapshot(session);
 
-    const result = await session.compact(undefined, 2);
+    await expect(session.compact(undefined, 2)).rejects.toThrow(
+      /no visible summary/i,
+    );
 
-    expect(result.summarized).toBe(true);
-    expect(completeWithProvider).toHaveBeenCalledTimes(2);
-    expect(completeWithProvider.mock.calls[1]?.[0]).toMatchObject({
+    expect(completeWithProvider).toHaveBeenCalledTimes(1);
+    expect(completeWithProvider.mock.calls[0]?.[0]).toMatchObject({
       maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
-      temperature: 0,
-      thinking: { enabled: false, effort: "none" },
+      temperature: 0.2,
+      thinking: { enabled: true, effort: "medium" },
+      toolChoice: "auto",
+      parallelToolCalls: true,
     });
-    const streamed = renderedCompaction(events);
-    expect(streamed).toBe(visibleSummary);
-    expect(streamed).not.toMatch(/reasoning consumed|<\/?think/i);
-    expect(session.messages.some(isCompactionMemoryMessage)).toBe(true);
+    expect(renderedCompaction(events)).toBe("");
+    expect(session.messages).toEqual(original);
   });
 
-  it("rewrites an output-limit manual summary before emitting it", async () => {
-    const accepted =
-      "## User goals\nPreserve the session.\n## Remaining work\nContinue implementation.";
-    completeWithProvider
-      .mockResolvedValueOnce({
-        text: "## User goals\nPreserve the session.\n## Remaining work\nContinue with",
-        chunks: ["## User goals\nPreserve the session.", "\n## Remaining work\nContinue with"],
-        finishReason: "length",
-        usage: { completionTokens: COMPACTION_MAX_COMPLETION_TOKENS },
-      })
-      .mockResolvedValueOnce({ text: accepted, finishReason: "stop" });
+  it("fails closed after one output-limited manual summary", async () => {
+    completeWithProvider.mockResolvedValueOnce({
+      text: "## User goals\nPreserve the session.\n## Remaining work\nContinue with",
+      chunks: ["## User goals\nPreserve the session.", "\n## Remaining work\nContinue with"],
+      finishReason: "length",
+      usage: { completionTokens: COMPACTION_MAX_COMPLETION_TOKENS },
+    });
     const events: AnyAppEvent[] = [];
     const session = new SessionController({
       agent: fakeAgent(),
@@ -327,31 +370,18 @@ describe("SessionController parity helpers (V2-080)", () => {
       ],
       { sessionId: "sess-length-retry" },
     );
+    const original = session.messages.map((message) => ({ ...message }));
+    primeCompactionSnapshot(session);
 
-    await expect(session.compact(undefined, 2)).resolves.toMatchObject({
-      summarized: true,
-    });
-    expect(completeWithProvider).toHaveBeenCalledTimes(2);
-    expect(
-      completeWithProvider.mock.calls[1]?.[0]?.messages?.at(-1)?.content,
-    ).toMatch(/hit its output limit|rewrite the entire/i);
-    const streamed = renderedCompaction(events);
-    expect(streamed).toBe(accepted);
-    const deltas = events.filter(
-      (event) => event.type === "compaction-delta",
+    await expect(session.compact(undefined, 2)).rejects.toThrow(
+      /summary output limit/i,
     );
-    const resetIndex = deltas.findIndex((event) => event.payload.replace === true);
-    expect(resetIndex).toBeGreaterThan(0);
-    expect(
-      deltas
-        .slice(0, resetIndex)
-        .map((event) => event.payload.text)
-        .join(""),
-    ).toContain("Continue with");
-    expect(streamed).not.toContain("Continue with");
+    expect(completeWithProvider).toHaveBeenCalledTimes(1);
+    expect(renderedCompaction(events)).toContain("Continue with");
+    expect(session.messages).toEqual(original);
   });
 
-  it("keeps the exact original messages when both manual summary attempts contain only reasoning", async () => {
+  it("keeps the exact original messages when a manual summary contains only reasoning", async () => {
     completeWithProvider
       .mockResolvedValueOnce({
         text: "<think>first hidden-only summary</think>",
@@ -379,12 +409,13 @@ describe("SessionController parity helpers (V2-080)", () => {
       { sessionId: "sess-thinking-failure" },
     );
     const original = session.messages.map((message) => ({ ...message }));
+    primeCompactionSnapshot(session);
 
     await expect(session.compact(undefined, 2)).rejects.toThrow(
-      /model returned an empty summary/,
+      /no visible summary/i,
     );
 
-    expect(completeWithProvider).toHaveBeenCalledTimes(2);
+    expect(completeWithProvider).toHaveBeenCalledTimes(1);
     expect(session.messages).toEqual(original);
     expect(events.some((event) => event.type === "compaction-completed")).toBe(
       false,
@@ -438,6 +469,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       { sessionId: "sess-tail-no-user" },
     );
 
+    primeCompactionSnapshot(session);
     const result = await session.compact(undefined, 2);
 
     expect(result.summarized).toBe(true);
@@ -475,6 +507,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       { sessionId: "sess-plan-handoff" },
     );
 
+    primeCompactionSnapshot(session);
     await session.compact(undefined, 2, undefined, {
       purpose: "plan-implement",
     });
@@ -574,10 +607,21 @@ describe("SessionController parity helpers (V2-080)", () => {
           contextTokens: 88_000,
           contextLimit: 128_000,
           exact: true,
+          contextSnapshot: createContextSnapshot({
+            contextTokens: 88_000,
+            lastCompletionTokens: 0,
+            sessionPromptTokens: 0,
+            sessionCompletionTokens: 0,
+            scope: "provider-request",
+            precision: "provider-exact",
+            limit: { source: "unknown" },
+            observedAt: 0,
+          }),
         },
       },
     );
 
+    primeCompactionSnapshot(session);
     // Simulate a slow pre-compaction autosave. Compaction captures a newer
     // snapshot while this write is blocked and must queue behind it.
     const staleSave = session.persistNow();
@@ -597,7 +641,12 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(generations[0]).not.toBe("");
     expect(generations[1]).toBe(generations[0]);
     expect(saved[0]?.options?.contextUsage?.contextTokens).toBe(88_000);
-    expect(saved[1]?.options?.contextUsage?.contextTokens).toBeLessThan(88_000);
+    // The compaction snapshot stays on the request scale it started from: it may
+    // only shrink by what the transcript shrank, never collapse to a
+    // history-only figure that omits the system prefix and tool schemas.
+    const compactedTokens = saved[1]?.options?.contextUsage?.contextTokens ?? 0;
+    expect(compactedTokens).toBeLessThanOrEqual(88_000);
+    expect(compactedTokens).toBeGreaterThan(80_000);
     expect(saved[1]?.options?.transcript?.map((item) => item.kind)).toEqual([
       "compacted",
     ]);

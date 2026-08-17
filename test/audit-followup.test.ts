@@ -530,8 +530,10 @@ describe("audit#6 — http helpers cap responses and watchdog streams", () => {
         messages: [{ role: "user", content: "hi" }],
         onToken: () => {},
       });
-      // Thinking-only is no longer a hard provider error — runner recovers.
-      expect(result.text).toMatch(/I should search/i);
+      // Thinking-only is no longer a hard provider error — the reasoning
+      // travels on the typed channel so the runner can salvage tool calls.
+      expect(result.text).toBe("");
+      expect(result.reasoningBlock?.text).toMatch(/I should search/i);
       expect(result.toolCalls ?? []).toHaveLength(0);
     } finally {
       globalThis.fetch = originalFetch;

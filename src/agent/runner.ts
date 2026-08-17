@@ -1,17 +1,19 @@
-import chalk from "chalk";
-
 import { join } from "node:path";
 import type {
   ChatMessage,
   ChatImage,
+  CompletionResult,
   Mode,
   NativeToolCall,
   ProviderId,
+  SuccessfulRequestSnapshot,
   ToolCall,
   ToolDefinition,
   ToolResult,
 } from "../types.js";
 import { completeWithProvider, streamWithProvider } from "../llm/router.js";
+import { operationUsageFromError } from "../llm/operation-ledger.js";
+import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { modelContextWindow } from "../llm/token-usage.js";
 import { streamAlreadyEmitted } from "../llm/stream-progress.js";
 import {
@@ -111,6 +113,10 @@ import {
   repairToolProtocol,
 } from "./tool-history.js";
 import {
+  legacyReasoningBlockFromArtifacts,
+  reasoningArtifactsForPersistence,
+} from "../llm/reasoning-artifacts.js";
+import {
   compactMessagesWithSummary,
   estimateTokens,
   estimateMessagesTokens,
@@ -126,6 +132,11 @@ import {
   describeDominantContextBlock,
   toolSchemaHash,
 } from "./context-breakdown.js";
+import { recordRequestTokenObservation } from "../llm/token-estimate-calibration.js";
+import {
+  accountAssembledRequest,
+  RequestOverLimitError,
+} from "./request-accounting.js";
 import {
   autoCompactTriggerTokens,
   dedupeToolContextOutput,
@@ -139,14 +150,11 @@ import { loadScope, isScopeActive } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
   createThinkingStreamParser,
-  rememberThinkingFromText,
+  rememberThinking,
   stripThinking,
 } from "../ui/thinking.js";
-import {
-  hasReasoningMarker,
-  REASONING_CLOSE,
-  REASONING_OPEN,
-} from "../llm/reasoning-marker.js";
+import { hasReasoningMarker } from "../llm/reasoning-marker.js";
+import type { ProviderStreamEvent } from "../llm/stream-events.js";
 import { safeCwd } from "../os/cwd.js";
 import {
   analyzeTask,
@@ -161,16 +169,22 @@ import {
   type EnvelopeJobState,
 } from "./durable-envelope.js";
 import {
-  buildCompactionRetryPrompt,
+  buildDirectCompactionPrompt,
   compactionSinglePassInputBudget,
   COMPACTION_SYSTEM_PROMPT,
   COMPACTION_MAX_COMPLETION_TOKENS,
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
-  isCompactionCompletionTruncated,
-  looksLikeIncompleteCompactionSummary,
-  looksLikeTranscriptReplay,
   normalizeCompactionSummary,
 } from "./compaction-summary.js";
+import {
+  executeCompactionSummary,
+  planCompactionReplay,
+} from "./compaction-executor.js";
+import {
+  isOperationPolicyError,
+  OperationLedger,
+  singleAdmissionOperationPolicy,
+} from "../llm/operation-ledger.js";
 import {
   maybeAppendPlanModeReminder,
   PLAN_REMINDER_TOAST,
@@ -233,7 +247,6 @@ import {
   narrowNmapOperationDirective,
   pentestWorkflowDirective,
   pentestNoLocalServerDirective,
-  shouldDimToolChatter,
   looksLikePromptLeak,
 } from "./tool-call-parser.js";
 import {
@@ -420,10 +433,6 @@ export {
 } from "./session-policy.js";
 export { type ConfirmPort } from "./confirm-port.js";
 
-export function styleToolChatter(call: ToolCall, text: string): string {
-  return shouldDimToolChatter(call) ? chalk.dim(text) : text;
-}
-
 
 /**
  * A foreground task waits for a responder child only when the plan
@@ -501,6 +510,15 @@ export interface AgentRunOptions {
    * results), not just its prose answers.
    */
   onMessages?: ((messages: ChatMessage[]) => void) | undefined;
+  onSuccessfulRequest?:
+  | ((snapshot: SuccessfulRequestSnapshot) => void)
+  | undefined;
+  /**
+   * The session's last successful main request from an earlier turn. Seeds the
+   * local snapshot so a first-iteration auto-compaction can still replay the
+   * exact cached prefix instead of re-rendering the transcript.
+   */
+  previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
   onOutcome?: ((outcome: import("./turn-outcome.js").TurnOutcome) => void) | undefined;
   confirm?: ConfirmPort | undefined;
   requestSecret?:
@@ -558,7 +576,6 @@ export async function runAgentTurn(
       ? options.mode
       : "agent";
   const isPlanMode = agentMode === "plan";
-  const writesDirectly = !options.onEvent;
   const emit = (event: AgentEvent): void => options.onEvent?.(event);
   // Whether the CURRENT model iteration has already committed its visible
   // prose to the transcript with an `assistant-message` event. The recovery
@@ -654,18 +671,13 @@ export async function runAgentTurn(
       ...(options?.replace ? { replace: true } : {}),
     });
   };
-  const writeToolCall = (
-    id: string,
-    call: ToolCall,
-    rendered: string,
-  ): void => {
+  const writeToolCall = (id: string, call: ToolCall): void => {
     emit({
       type: "tool-call",
       id,
       name: call.name,
       argsDisplay: formatToolArgs(call),
     });
-    if (writesDirectly) process.stdout.write(rendered);
   };
   const writePlanUpdate = (plan: SessionPlan): void => {
     emit({ type: "plan-update", plan });
@@ -733,6 +745,7 @@ export async function runAgentTurn(
       summary,
       beforeTokens,
       afterTokens,
+      contextScope: "assembled-request",
     });
   };
   const writeCompactionFailed = (
@@ -1368,7 +1381,10 @@ export async function runAgentTurn(
       }
       return text;
     };
-    const pushAssistantHistory = (content: string): void => {
+    const pushAssistantHistory = (
+      content: string,
+      reasoning?: Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock">,
+    ): void => {
       const cleaned = sanitizeAssistantText(
         hasReasoningMarker(content) ? stripThinking(content).visible : content,
       );
@@ -1376,17 +1392,34 @@ export async function runAgentTurn(
         const prose = recoveryProse(cleaned);
         if (prose) writeAssistantMessage(prose);
       }
+      const persistedArtifacts = reasoningArtifactsForPersistence({
+        artifacts: reasoning?.reasoningArtifacts,
+        hasToolCalls: false,
+      });
+      const reasoningBlock = persistedArtifacts
+        ? legacyReasoningBlockFromArtifacts(persistedArtifacts)
+        : reasoning?.reasoningArtifacts
+          ? undefined
+          : reasoning?.reasoningBlock;
       messages.push({
         role: "assistant",
         content: cleaned.trim()
           ? cleaned
           : "[No visible assistant response was produced.]",
+        ...(reasoningBlock?.text || reasoningBlock?.items?.length
+          ? { reasoningBlock }
+          : {}),
+        ...(persistedArtifacts ? { reasoningArtifacts: persistedArtifacts } : {}),
       });
     };
 
 
     const loopGuard = new LoopGuard();
     let lastExactPromptTokens = 0;
+    // Uncalibrated estimate for the request currently in flight. Paired with the
+    // provider's reported prompt size below so the estimator learns this route's
+    // bias instead of permanently over-reporting it.
+    let dispatchedRawRequestTokens = 0;
     let consecutiveSynthesizedRounds = 0;
     const engagementPolicy = new EngagementPolicyEngine();
     const probeStateKey = (call: ToolCall): string | undefined => {
@@ -1723,6 +1756,10 @@ export async function runAgentTurn(
     let stepMaxTokens = 0;
     let nextToolEventId = 0;
     const alreadyPrintedIds = new Set<string>();
+    const executedWireOccurrences = new Map<
+      string,
+      { call: ToolCall; result: ToolResult; contextOutput: string; ok: boolean }
+    >();
 
     const promptMutex = {
       promise: Promise.resolve(),
@@ -1815,15 +1852,7 @@ export async function runAgentTurn(
         summary: string,
       ): void => {
         if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+          writeToolCall(toolEventId, call);
           alreadyPrintedIds.add(toolEventId);
         }
         emit({ type: "tool-start", id: toolEventId });
@@ -1904,15 +1933,7 @@ export async function runAgentTurn(
       // no execution, until the model re-issues the identical batch to confirm.
       if (call.name === "task.update" && batchRemindCalls.has(rawCall)) {
         if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+          writeToolCall(toolEventId, call);
           alreadyPrintedIds.add(toolEventId);
         }
         const result = { ok: false, output: batchReminderNote, exitCode: 1 };
@@ -2045,15 +2066,7 @@ export async function runAgentTurn(
             unreadResponderNotificationIds.delete(responderWakeNotificationId);
           }
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
           const result = {
@@ -2121,15 +2134,7 @@ export async function runAgentTurn(
             if (!gate.ok) {
               writeNotice("warn", gate.reason);
               if (!alreadyPrintedIds.has(toolEventId)) {
-                writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+                writeToolCall(toolEventId, call);
                 alreadyPrintedIds.add(toolEventId);
               }
               const result = {
@@ -2222,15 +2227,7 @@ export async function runAgentTurn(
           }
 
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
 
@@ -2249,7 +2246,6 @@ export async function runAgentTurn(
             pendingSessionStatePlan = null;
             removePlanContextMessage(messages);
             emit({ type: "plan-cleared", sessionId: session.sessionId });
-            if (writesDirectly) process.stdout.write(planResult.display);
           }
 
           const result = { ok: planResult.ok, output: planResult.modelNote };
@@ -2307,15 +2303,7 @@ export async function runAgentTurn(
             `Accept the plan (y/i or /implement) to switch to agent and execute.`;
           writeNotice("warn", reason);
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
           const result = { ok: false, output: reason, exitCode: 1 };
@@ -2459,15 +2447,7 @@ export async function runAgentTurn(
             : `Scaffold was not run: the existing target${target ? ` at ${target}` : ""} is incomplete. Inspect and repair it before completing the scaffold task; do not retry the scaffolder into this non-empty directory.`;
           writeNotice("info", message);
           if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+            writeToolCall(toolEventId, call);
             alreadyPrintedIds.add(toolEventId);
           }
           const result = { ok: true, output: message, exitCode: 0 };
@@ -2483,15 +2463,7 @@ export async function runAgentTurn(
       }
 
       if (!alreadyPrintedIds.has(toolEventId)) {
-        writeToolCall(
-              toolEventId,
-              call,
-              styleToolChatter(
-                call,
-                chalk.cyan(`  ▶ ${call.name}`) +
-                  chalk.gray(` ${formatToolArgs(call)}`),
-              ) + "\n",
-            );
+        writeToolCall(toolEventId, call);
         alreadyPrintedIds.add(toolEventId);
       }
 
@@ -3616,6 +3588,21 @@ export async function runAgentTurn(
     let lastCompactionMsgCount = 0;
     const compactionAttempts = new CompactionAttemptLedger();
     let activeCompactionId: string | undefined;
+    let activeCompactionLedger: OperationLedger | undefined;
+    /**
+     * The last successful main request exactly as dispatched. A compaction
+     * that replays it (plus the messages appended since) keeps the entire
+     * prior prompt as a strict prefix, so APC providers serve the compaction
+     * request from cache instead of re-billing the whole context.
+     */
+    let lastSuccessfulRequestSnapshot: SuccessfulRequestSnapshot | undefined =
+      options.previousSuccessfulRequest;
+    /**
+     * Per-attempt replay decision made by maybeAutoCompact and read by
+     * summarizeForCompaction. When undefined the legacy transcript-rendered
+     * requests are used (no snapshot yet, or the replay would not fit).
+     */
+    let compactionReplaySnapshot: SuccessfulRequestSnapshot | undefined;
     /** E5: identical tool bodies within this turn → pointer instead of re-append. */
     const toolResultHashes = new Map<
       string,
@@ -3643,145 +3630,63 @@ export async function runAgentTurn(
       const compactionTools = sourceMessages
         ? selectToolDefs(nativeToolsActive, useCompactSystemPrompt)
         : undefined;
-      const request = {
+      // Cache-preserving replay: resend the last successful request verbatim
+      // (same provider, model, tools, sampling and reasoning settings) with
+      // only the new tail and the compaction instruction appended. Anything
+      // else — a different system prompt, dropped tool schemas, a re-rendered
+      // transcript — changes the first bytes of the prompt and throws away the
+      // whole cached prefix.
+      const replay = compactionReplaySnapshot;
+      return executeCompactionSummary({
         provider,
         model,
-        messages: sourceMessages
-          ? [
-              ...sourceMessages,
-              { role: "user" as const, content: summaryPrompt },
-            ]
-          : [
-              { role: "system" as const, content: COMPACTION_SYSTEM_PROMPT },
-              { role: "user" as const, content: summaryPrompt },
-            ],
-        temperature: 0.1,
+        systemContent: COMPACTION_SYSTEM_PROMPT,
+        prompt: summaryPrompt,
         maxTokens,
-        thinking: { enabled: false, effort: "none" as const },
         signal: options.signal,
-        allowModelFallback: true,
-        ...(compactionTools?.length
+        ...(replay
           ? {
-              tools: compactionTools,
-              toolChoice: "none" as const,
+              baseRequest: replay,
+              history: messages,
+              ...(currentContextLimitTokens() !== undefined
+                ? { contextLimitTokens: currentContextLimitTokens() }
+                : {}),
             }
+          : {
+              ...(sourceMessages ? { sourceMessages } : {}),
+              ...(compactionTools?.length ? { tools: compactionTools } : {}),
+            }),
+        ...(activeCompactionLedger
+          ? { operation: activeCompactionLedger }
           : {}),
-      };
-      const runAttempt = async (
-        attemptRequest: typeof request,
-        replace = false,
-      ) => {
-        if (compactionId && replace) {
-          writeCompactionDelta(compactionId, "", true);
-        }
-        const parser = createThinkingStreamParser(
-          (text) => {
-            if (compactionId) writeCompactionDelta(compactionId, text);
-          },
-          undefined,
-          { remember: false },
-        );
-        const result = await streamWithProvider(
-          attemptRequest,
-          (token) => parser.push(token),
-          { onStatus: () => undefined, maxRetries: 0 },
-        );
-        parser.finish();
-        return result;
-      };
-      const first = await runAttempt(request);
-      let visible = normalizeCompactionSummary(
-        stripThinking(first.text).visible,
-      );
-      let retryReason:
-        | "truncated"
-        | "incomplete"
-        | "reasoning-only"
-        | "replayed"
-        | undefined;
-      if (isCompactionCompletionTruncated(first, maxTokens)) {
-        retryReason = "truncated";
-      } else if (!visible) {
-        retryReason = "reasoning-only";
-      } else if (looksLikeTranscriptReplay(visible)) {
-        retryReason = "replayed";
-      } else if (looksLikeIncompleteCompactionSummary(visible)) {
-        retryReason = "incomplete";
-      }
-
-      if (retryReason) {
-        const retry = await runAttempt(
-          {
-            ...request,
-            messages: sourceMessages
-              ? [
-                  ...sourceMessages,
-                  {
-                    role: "user" as const,
-                    content: buildCompactionRetryPrompt(
-                      summaryPrompt,
-                      retryReason,
-                    ),
-                  },
-                ]
-              : [
-                  {
-                    role: "system" as const,
-                    content: `${COMPACTION_SYSTEM_PROMPT}\nReturn only a complete continuation-memory summary. Do not include analysis, reasoning, or <think> tags.`,
-                  },
-                  {
-                    role: "user" as const,
-                    content: buildCompactionRetryPrompt(
-                      summaryPrompt,
-                      retryReason,
-                    ),
-                  },
-                ],
-            temperature: 0,
-            maxTokens,
-            thinking: { enabled: false, effort: "none" as const },
-            allowModelFallback: true,
-          },
-          true,
-        );
-        if (isCompactionCompletionTruncated(retry, maxTokens)) {
-          throw new Error(
-            "compaction failed: model hit the summary output limit twice — original context retained",
-          );
-        }
-        visible = normalizeCompactionSummary(
-          stripThinking(retry.text).visible,
-        );
-        if (!visible) {
-          throw new Error("compaction failed: model returned an empty summary");
-        }
-        if (looksLikeTranscriptReplay(visible)) {
-          throw new Error(
-            "compaction failed: model replayed the transcript twice — original context retained",
-          );
-        }
-        if (looksLikeIncompleteCompactionSummary(visible)) {
-          throw new Error(
-            "compaction failed: model returned an incomplete summary twice — original context retained",
-          );
-        }
-      }
-
-      return visible;
+        qualityRetry: false,
+        retryOnServerError: true,
+        stream: true,
+        onToken: compactionId
+          ? (text, replace) =>
+              writeCompactionDelta(compactionId, text, replace)
+          : undefined,
+      });
     };
 
     /**
-     * Estimate the complete next model request, including attached native-tool
-     * schemas. This must match the request-context accounting used by the UI
-     * and audit trail: large schemas can otherwise push an actual request past
-     * the compaction threshold while message-only accounting says it is safe.
+     * Estimate the complete next model request through the one serialized-
+     * request accounting service, including attached native-tool schemas and
+     * reasoning replay payloads. The same service owns the final pre-dispatch
+     * fit check, so the trigger path and the dispatch path cannot disagree.
      */
     const estimateNextRequestTokens = (
       contextMessages: readonly ChatMessage[],
     ): number => {
       const { native } = resolveNativeTools(provider, model);
       const nextTools = selectToolDefs(native, useCompactSystemPrompt);
-      return buildContextBreakdown(contextMessages, nextTools).estimatedTotalTokens;
+      return accountAssembledRequest({
+        provider,
+        model,
+        messages: contextMessages,
+        stream: true,
+        ...(nextTools?.length ? { tools: nextTools } : {}),
+      }).accounting.requestTokens;
     };
 
     /**
@@ -3837,8 +3742,9 @@ export async function runAgentTurn(
       reason: string,
       force = false,
     ): Promise<void> {
+      const beforeRequestTokens = estimateNextRequestTokens(messages);
       const beforeTokens = Math.max(
-        estimateNextRequestTokens(messages),
+        beforeRequestTokens,
         lastExactPromptTokens,
       );
       const contextLimitTokens = currentContextLimitTokens();
@@ -3865,6 +3771,36 @@ export async function runAgentTurn(
       if (!force && compactionAttempts.isSuppressed(attemptKey)) return;
       const compactionId = `compact-${randomUUID().slice(0, 12)}`;
       activeCompactionId = compactionId;
+      // Admissions: the pinned dispatch plus the executor's bounded error
+      // retry. Still a hard cap — every admission re-sends the full prompt.
+      const compactionLedger = new OperationLedger(
+        singleAdmissionOperationPolicy("compaction", 3),
+      );
+      activeCompactionLedger = compactionLedger;
+      // Plan the cache-preserving replay up front: resend the last successful
+      // request with the tail + instruction appended. When it fits, the direct
+      // single pass is forced (the raw estimate gate would otherwise reject a
+      // request that fits fine); when it does not, compaction falls back to
+      // the legacy transcript-rendered requests so it still succeeds.
+      const replaySnapshot = lastSuccessfulRequestSnapshot;
+      const replayPlan = replaySnapshot
+        ? planCompactionReplay({
+            baseRequest: replaySnapshot,
+            history: messages,
+            prompt: buildDirectCompactionPrompt({
+              ...(durableEnvelope ? { durableState: durableEnvelope } : {}),
+            }),
+            maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
+            ...(contextLimitTokens !== undefined
+              ? { contextLimitTokens }
+              : { contextLimitTokens: modelContextWindow(model, provider) }),
+            stream: true,
+          })
+        : undefined;
+      compactionReplaySnapshot =
+        replayPlan && !replayPlan.accounting.overLimit
+          ? replaySnapshot
+          : undefined;
       writeCompactionStarted(compactionId, beforeTokens);
       try {
         const compactionTools = selectToolDefs(
@@ -3881,6 +3817,10 @@ export async function runAgentTurn(
           {
             budgetTokens: 0,
             keepRecent: AUTO_COMPACT_KEEP_RECENT,
+            singleAdmission: true,
+            ...(compactionReplaySnapshot
+              ? { forceDirectSinglePass: true }
+              : {}),
             singlePassInputBudgetTokens: Math.max(
               0,
               compactionSinglePassInputBudget(
@@ -3932,23 +3872,63 @@ export async function runAgentTurn(
           );
           return;
         }
-        messages.splice(0, messages.length, ...result.messages);
-        compactionAttempts.recordSuccess(attemptKey);
-        loopGuard.resetReadOnly();
-        lastExactPromptTokens = 0;
-        // Token stats use the same complete request estimate as the trigger.
-        const compactedTokens = estimateNextRequestTokens(messages);
-        // Re-inject the live plan so the model keeps full plan awareness even
-        // after older turns (which carried the plan context) were summarized.
+        // Re-inject the live plan on a candidate copy first so the commit is
+        // validated against the complete next request, not the bare summary.
         const livePlan = await loadPlan(session.sessionId).catch(
           () => undefined,
         );
+        const candidateMessages = [...result.messages];
         if (livePlan) {
           upsertPlanContextMessage(
-            messages,
+            candidateMessages,
             planContextMessage(livePlan, session.planApproved.value),
           );
         }
+        if (contextLimitTokens !== undefined) {
+          const finalFit = accountAssembledRequest({
+            provider,
+            model,
+            messages: candidateMessages,
+            stream: true,
+            ...(selectToolDefs(nativeToolsActive, useCompactSystemPrompt)?.length
+              ? {
+                  tools: selectToolDefs(
+                    nativeToolsActive,
+                    useCompactSystemPrompt,
+                  ),
+                }
+              : {}),
+            contextLimitTokens,
+          });
+          if (finalFit.accounting.overLimit) {
+            const dominant = describeDominantContextBlock(candidateMessages);
+            compactionAttempts.recordFailure(attemptKey);
+            await auditLog("agent.compact.overflow", {
+              reason,
+              candidateTokens: finalFit.accounting.requestTokens,
+              safeLimit: finalFit.accounting.limit.effectiveSafeTokens,
+              trigger: compactTrigger,
+              dominant,
+            });
+            writeNotice(
+              "warn",
+              `compacted request would still exceed the effective safe context limit (~${finalFit.accounting.requestTokens.toLocaleString()} > ~${(finalFit.accounting.limit.effectiveSafeTokens ?? 0).toLocaleString()} tokens) — largest block: ${dominant}; run /compact or trim large outputs`,
+            );
+            writeCompactionFailed(
+              compactionId,
+              `Compacted request would not fit the effective safe context limit; largest block: ${dominant}.`,
+              beforeTokens,
+            );
+            return;
+          }
+        }
+        messages.splice(0, messages.length, ...candidateMessages);
+        compactionAttempts.recordSuccess(attemptKey);
+        loopGuard.resetReadOnly();
+        lastExactPromptTokens = 0;
+        // The snapshot predates the rewrite: replaying it would resurrect the
+        // pre-compaction history. The next successful request re-seeds it.
+        lastSuccessfulRequestSnapshot = undefined;
         // Re-inject live SESSION STATE after compaction (older flags survive).
         refreshSessionState(livePlan);
         lastCompactionMsgCount = messages.length;
@@ -3958,6 +3938,8 @@ export async function runAgentTurn(
           newLength: messages.length,
           estimatedTokens: afterTokens,
           reason,
+          strategy: result.strategy ?? "single",
+          compactionAdmissions: compactionLedger.snapshot().attempts.length,
         });
 
         const insertedSummary =
@@ -3979,13 +3961,17 @@ export async function runAgentTurn(
         writeCompactionCompleted(compactionId, summaryText, beforeTokens, afterTokens);
         writeNotice(
           "info",
-          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)`,
+          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)${result.strategy === "emergency_prefix_slice" ? " — oldest slice only (lower confidence); run /compact for a full summary" : ""}`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         writeCompactionFailed(
           compactionId,
-          /aborted/i.test(message) ? "Compaction was cancelled." : message,
+          /aborted/i.test(message)
+            ? "Compaction was cancelled."
+            : isOperationPolicyError(error)
+              ? "Compaction is limited to one pinned request (plus its bounded retry) and none completed; the original context was retained."
+              : message,
           beforeTokens,
         );
         if (
@@ -3998,6 +3984,10 @@ export async function runAgentTurn(
         await auditLog("agent.compact.failed", { reason: message });
       } finally {
         if (activeCompactionId === compactionId) activeCompactionId = undefined;
+        if (activeCompactionLedger === compactionLedger) {
+          activeCompactionLedger = undefined;
+        }
+        compactionReplaySnapshot = undefined;
       }
     }
 
@@ -4042,6 +4032,8 @@ export async function runAgentTurn(
         let emittedThinkingStatus = false;
         let generatedTokens = 0;
         let accumulatedText = "";
+        let streamedReasoningText = "";
+        let typedReasoningOpen = false;
         const callIds: string[] = [];
         let streamedCallsCount = 0;
         // A model can think silently for minutes. Without a heartbeat the UI
@@ -4062,7 +4054,6 @@ export async function runAgentTurn(
         const deferredToolCalls: {
           eventId: string;
           call: ToolCall;
-          rendered: string;
           shown: boolean;
         }[] = [];
         const streamedNativeCallNames = new Map<number, string>();
@@ -4103,11 +4094,6 @@ export async function runAgentTurn(
             messages,
             toolsAttached ? turnTools : undefined,
           );
-          emit({
-            type: "context-estimate",
-            estimatedTokens: contextBreakdown.estimatedTotalTokens,
-            model,
-          });
           // E4: advisory only — never blocks free-tier users.
           if (!freeTierLargeContextWarned) {
             const notices = freeTierGuardNotices({
@@ -4146,6 +4132,8 @@ export async function runAgentTurn(
               toolsAttached,
               recoveryNudge: retryWithoutThinking,
               truncationDepth: truncatedBudgetRounds,
+              thinkingEnabled:
+                Boolean(config.thinking?.enabled) && !retryWithoutThinking,
             }),
           });
           // Resume / mid-turn abort can leave orphan tool rows or a user
@@ -4161,8 +4149,50 @@ export async function runAgentTurn(
             toolsAttached,
             recoveryNudge: retryWithoutThinking,
             truncationDepth: truncatedBudgetRounds,
+            thinkingEnabled:
+              Boolean(config.thinking?.enabled) && !retryWithoutThinking,
           });
           try {
+          // MR-007: the fit verdict is taken on the final assembled request —
+          // after protocol repair and every live-state reinjection — and a
+          // request that cannot fit the effective safe limit never dispatches.
+          const finalAccounting = accountAssembledRequest({
+            provider,
+            model,
+            messages,
+            stream: true,
+            ...(toolsAttached && turnTools?.length
+              ? { tools: turnTools, toolChoice: "auto" as const, parallelToolCalls: true }
+              : {}),
+            ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
+          }).accounting;
+          dispatchedRawRequestTokens = finalAccounting.rawRequestTokens;
+          // The chip reports the request that is actually about to be sent, from
+          // the same accounting the fit gate and the compaction card use, so the
+          // three can never disagree.
+          emit({
+            type: "context-estimate",
+            estimatedTokens: finalAccounting.requestTokens,
+            model,
+          });
+          if (finalAccounting.overLimit) {
+            await auditLog("agent.request.over-limit-blocked", {
+              provider,
+              model,
+              estimatedTokens: finalAccounting.requestTokens,
+              effectiveSafeTokens: finalAccounting.limit.effectiveSafeTokens,
+              limitSource: finalAccounting.limit.source,
+              reservedOutputTokens: finalAccounting.limit.reservedOutputTokens,
+              safetyMarginTokens: finalAccounting.limit.safetyMarginTokens,
+            });
+            writeNotice(
+              "warn",
+              `estimated request (~${finalAccounting.requestTokens.toLocaleString()} tokens) exceeds the model's safe context window (~${finalAccounting.limit.effectiveSafeTokens?.toLocaleString()} tokens) — run /compact, trim large outputs, or raise the session context limit`,
+            );
+            throw new RequestOverLimitError(
+              `estimated request (~${finalAccounting.requestTokens.toLocaleString()} tokens) exceeds the effective safe context limit (~${finalAccounting.limit.effectiveSafeTokens?.toLocaleString()} tokens); dispatch blocked`,
+            );
+          }
           if (
             responderDelivery &&
             !jobManager.markDeliveryStarted(responderDelivery.id, session.sessionId)
@@ -4231,48 +4261,62 @@ export async function runAgentTurn(
                     deferredToolCalls.push({
                       eventId,
                       call,
-                      rendered: "",
                       shown: true,
                     });
-                    writeToolCall(
-                      eventId,
-                      call,
-                      styleToolChatter(
-                        call,
-                        chalk.cyan(`  ▶ ${call.name}`) +
-                          chalk.gray(` ${formatToolArgs(call)}`),
-                      ) + "\n",
-                    );
+                    writeToolCall(eventId, call);
                     emit({ type: "status", text: call.name });
                     streamedCallsCount += 1;
                   }
                 }
               }
 
+              if (typedReasoningOpen) {
+                typedReasoningOpen = false;
+                inThinking = false;
+                generatedTokens = 0;
+              }
               if (
                 !sawReasoning &&
-                (token.includes(REASONING_OPEN) ||
-                  /^\s*<think(?:ing)?\b/i.test(accumulatedText))
+                /^\s*<think(?:ing)?\b/i.test(accumulatedText)
               ) {
                 sawReasoning = true;
                 inThinking = true;
                 emit({ type: "status", text: "thinking" });
               }
-              if (
-                token.includes(REASONING_CLOSE) ||
-                (inThinking && /<\/think(?:ing)?>/i.test(token))
-              ) {
+              if (inThinking && /<\/think(?:ing)?>/i.test(token)) {
                 inThinking = false;
                 generatedTokens = 0;
               }
             },
-            (status) => {
-              writeStatus(status);
-              // Toast only on key *switch* after a failure — never on sticky
-              // "using" or retry countdown ticks (those stay in composer status).
-              if (/^switching /i.test(status.trim())) {
-                writeNotice("warn", status.trim());
-              }
+            {
+              onStatus: (status) => {
+                writeStatus(status);
+                // Toast only on key *switch* after a failure — never on sticky
+                // "using" or retry countdown ticks (those stay in composer status).
+                if (/^switching /i.test(status.trim())) {
+                  writeNotice("warn", status.trim());
+                }
+              },
+              onStreamEvent: (event: ProviderStreamEvent) => {
+                if (event.type !== "reasoning_delta") return;
+                streamedReasoningText += event.text;
+                typedReasoningOpen = true;
+                sawReasoning = true;
+                inThinking = true;
+                generatedTokens += 1;
+                if (!emittedThinkingStatus) {
+                  emittedThinkingStatus = true;
+                  emit({ type: "status", text: "thinking" });
+                }
+                emit({ type: "thinking-delta", text: event.text });
+              },
+              // Capture every successful dispatch locally as well: an
+              // auto-compaction later in this turn replays the exact request
+              // so the whole prior prompt stays a cached prefix.
+              onSuccessfulRequest: (snapshot) => {
+                lastSuccessfulRequestSnapshot = snapshot;
+                options.onSuccessfulRequest?.(snapshot);
+              },
             },
           );
           freeTierConsecutiveFailures = 0;
@@ -4286,6 +4330,9 @@ export async function runAgentTurn(
           } catch (streamError) {
             // User cancelled (double-Esc) — never try to recover, just stop.
             if (options.signal?.aborted) throw streamError;
+            // A blocked over-limit request is a policy stop, not a route
+            // failure — retrying it would just re-bill the same doomed prefix.
+            if (streamError instanceof RequestOverLimitError) throw streamError;
 
             // E4: track free-tier failures for advisory notices (never blocks).
             freeTierConsecutiveFailures += 1;
@@ -4309,9 +4356,32 @@ export async function runAgentTurn(
             // We only rethrow (stop the turn) in the worst case: every approach
             // for that failure class is exhausted or the total budget is spent.
             const failureKind = classifyStreamFailure(streamError);
+            const failedOperationUsage = operationUsageFromError(streamError);
+            const failedUsage = failedOperationUsage?.aggregate.usage;
+            const failedAttempt = failedOperationUsage?.attempts.at(-1);
+            if (failedUsage && failedAttempt) {
+              emit({
+                type: "token-usage",
+                usage: failedUsage,
+                model: failedAttempt.model,
+                provider: failedAttempt.provider,
+              });
+            }
             const partialStream =
               streamAlreadyEmitted(streamError) || accumulatedText.length > 0;
-            const partial = rememberThinkingFromText(accumulatedText);
+            const partialSplit = stripThinking(accumulatedText);
+            const partialThinkContent = [
+              streamedReasoningText.trim(),
+              partialSplit.thinkContent,
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+            if (partialThinkContent) rememberThinking(partialThinkContent);
+            const partial = {
+              visible: partialSplit.visible,
+              hasThinking: partialThinkContent.length > 0,
+              thinkContent: partialThinkContent,
+            };
             const rawPartialVisible = partialStream
               ? textBeforeToolCall(
                   stripThinking(collapseRepeatedText(accumulatedText)).visible,
@@ -4449,12 +4519,22 @@ export async function runAgentTurn(
         if (completion.usage) {
           if (completion.usage.exact && completion.usage.promptTokens > 0) {
             lastExactPromptTokens = completion.usage.promptTokens;
+            recordRequestTokenObservation({
+              provider: completion.provider,
+              model: completion.model,
+              estimatedRequestTokens: dispatchedRawRequestTokens,
+              actualPromptTokens: completion.usage.promptTokens,
+            });
           }
+          const attempt = contextAttemptFromOperationUsage(
+            completion.operationUsage,
+          );
           emit({
             type: "token-usage",
             usage: completion.usage,
             model: completion.model,
             provider: completion.provider,
+            ...(attempt.kind === "generation" ? { attempt } : {}),
           });
           // Cache telemetry: without read/create counts there is no way to tell
           // whether the stable prefix is actually being reused.
@@ -4483,7 +4563,20 @@ export async function runAgentTurn(
         const usedNativeProtocol = Boolean(completion.toolCalls?.length) ||
           (toolsAttached && !isTextOnlyModel(provider, model));
 
-        const assistantTextResult = rememberThinkingFromText(completion.text);
+        const completionSplit = stripThinking(completion.text);
+        const completionThinkContent = [
+          streamedReasoningText.trim() ||
+            (completion.reasoningBlock?.text ?? "").trim(),
+          completionSplit.thinkContent,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        if (completionThinkContent) rememberThinking(completionThinkContent);
+        const assistantTextResult = {
+          visible: completionSplit.visible,
+          hasThinking: completionThinkContent.length > 0,
+          thinkContent: completionThinkContent,
+        };
         const continuedVisible = trimExactContinuationOverlap(
           interruptedVisible,
           assistantTextResult.visible,
@@ -4511,7 +4604,7 @@ export async function runAgentTurn(
               });
             }
           }
-          pushAssistantHistory(historyText);
+          pushAssistantHistory(historyText, completion);
           interruptedVisible = "";
           interruptedReasoning = "";
           lowYieldResumptions = 0;
@@ -4536,7 +4629,6 @@ export async function runAgentTurn(
               deferredToolCalls.push({
                 eventId,
                 call: normalized,
-                rendered: "",
                 shown: false,
               });
             }
@@ -4559,7 +4651,6 @@ export async function runAgentTurn(
                 const entry = {
                   eventId,
                   call: normalized,
-                  rendered: "",
                   shown: existing?.shown ?? false,
                 };
                 if (existing) deferredToolCalls[i] = entry;
@@ -4657,6 +4748,7 @@ export async function runAgentTurn(
                         (assistantText.hasThinking && assistantText.thinkContent
                           ? { text: assistantText.thinkContent }
                           : undefined),
+                      completion.reasoningArtifacts,
                     );
                     for (const tc of salvageHistoryCalls) {
                       appendToolResult(
@@ -4769,6 +4861,38 @@ export async function runAgentTurn(
             );
             continue;
           }
+          if (
+            hitOutputLimit &&
+            !truncatedRoundText.trim() &&
+            assistantText.hasThinking &&
+            truncatedBudgetRounds < 4
+          ) {
+            truncatedBudgetRounds += 1;
+            interruptedReasoning = appendInterruptedReasoning(
+              interruptedReasoning,
+              assistantText.thinkContent,
+            );
+            const preservedBudgetReasoning = interruptedReasoning;
+            writeNotice(
+              "warn",
+              "reasoning used the whole output budget — preserving it and widening the budget",
+            );
+            commitAssistantRetry(assistantText.visible);
+            interruptedReasoning = preservedBudgetReasoning;
+            messages.push(
+              recoveryUserMessage(
+                [
+                  "Your previous response spent the entire output budget on reasoning and was cut off before any visible answer. " +
+                    "Do not restart the analysis — your conclusions so far are preserved below. " +
+                    "Wrap up the reasoning now and emit the next tool call or the final answer directly.",
+                  interruptedReasoningBrief(interruptedReasoning),
+                ]
+                  .filter((part): part is string => Boolean(part))
+                  .join("\n\n"),
+              ),
+            );
+            continue;
+          }
           const incompleteNativeStream =
             nativeToolCalls.length === 0 &&
             streamedNativeCallNames.size > 0;
@@ -4790,7 +4914,7 @@ export async function runAgentTurn(
             if (assistantText.hasThinking) {
               writeNotice(
                 "warn",
-                "model produced only thinking — nudging it to take action",
+                "model produced only thinking — preserving the reasoning and nudging it to act",
               );
             } else {
               writeNotice(
@@ -4798,10 +4922,20 @@ export async function runAgentTurn(
                 "model returned an empty response — nudging it to answer",
               );
             }
-            if (assistantText.hasThinking) retryWithoutThinking = true;
+            if (assistantText.hasThinking) {
+              interruptedReasoning = appendInterruptedReasoning(
+                interruptedReasoning,
+                assistantText.thinkContent,
+              );
+            }
+            const preservedReasoning = interruptedReasoning;
+            if (assistantText.hasThinking && emptyVisibleRetries >= 2) {
+              retryWithoutThinking = true;
+            }
             commitAssistantRetry(assistantText.visible);
+            interruptedReasoning = preservedReasoning;
             // Keep nudges SHORT — cheap models lose the key instruction in long text.
-            const buildNudge =
+            const baseNudge =
               incompleteNativeStream
                 ? "Your native tool call was incomplete, so nothing ran. Use exactly one complete fenced ```tool block now; do not repeat the incomplete native call."
                 : isPlanMode && !activePlan
@@ -4813,6 +4947,17 @@ export async function runAgentTurn(
                     ? "No visible output. " + toolNudge(true)
                     : "No visible output. Emit a ```tool block or give your final answer. " +
                     "Do NOT hide tool calls in <think> tags — put them in the visible response.";
+            const reasoningBrief = assistantText.hasThinking
+              ? interruptedReasoningBrief(interruptedReasoning)
+              : undefined;
+            const buildNudge = reasoningBrief
+              ? "Your previous response contained only reasoning and no visible answer or tool call. " +
+                "Do not restart the analysis — your reasoning so far is preserved below. " +
+                "Build on it and act now: emit the next tool call or the final answer.\n\n" +
+                reasoningBrief +
+                "\n\n" +
+                baseNudge
+              : baseNudge;
             messages.push(recoveryUserMessage(buildNudge));
             continue;
           }
@@ -4827,6 +4972,7 @@ export async function runAgentTurn(
           emptyVisibleRetries = 0;
           truncatedBudgetRounds = 0;
           retryWithoutThinking = false;
+          interruptedReasoning = "";
         }
 
 
@@ -5309,6 +5455,7 @@ export async function runAgentTurn(
           id: string;
           call: ToolCall;
           native: NativeToolCall;
+          wireId?: string | undefined;
         };
         let bound: BoundCall[] = [];
         if (nativeToolCalls.length) {
@@ -5322,7 +5469,7 @@ export async function runAgentTurn(
                 },
               }
               : normalizeToolCall({ name: tc.name, args: tc.args });
-            return { index, id: tc.id, call, native: tc };
+            return { index, id: tc.id, call, native: tc, wireId: tc.id };
           });
         } else {
           let parsed = parseAllToolCalls(
@@ -5462,15 +5609,7 @@ export async function runAgentTurn(
           for (const { b, resultReason, result } of suppressedResults) {
             const queued = deferredToolCalls[b.index];
             const eventId = queued?.eventId ?? `tool-${++nextToolEventId}`;
-            writeToolCall(
-              eventId,
-              b.call,
-              styleToolChatter(
-                b.call,
-                chalk.cyan(`  ▶ ${b.call.name}`) +
-                  chalk.gray(` ${formatToolArgs(b.call)}`),
-              ) + "\n",
-            );
+            writeToolCall(eventId, b.call);
             alreadyPrintedIds.add(eventId);
             emit({ type: "tool-start", id: eventId });
             const output = resultReason.endsWith("\n")
@@ -5496,6 +5635,7 @@ export async function runAgentTurn(
                 (assistantText.hasThinking && assistantText.thinkContent
                   ? { text: assistantText.thinkContent }
                   : undefined),
+              completion.reasoningArtifacts,
             );
             for (const { b, resultReason } of suppressedResults) {
               appendToolResult(messages, b.id, deniedContent(b, resultReason), b.call.name, false);
@@ -5506,7 +5646,7 @@ export async function runAgentTurn(
               bound
                 .map((b) => `\`\`\`tool\n${JSON.stringify(b.call)}\n\`\`\``)
                 .join("\n\n");
-            pushAssistantHistory(standardizedContent);
+            pushAssistantHistory(standardizedContent, completion);
             for (const { b, resultReason } of suppressedResults) {
               messages.push({ role: "tool", content: deniedContent(b, resultReason) });
             }
@@ -5581,17 +5721,10 @@ export async function runAgentTurn(
               formatToolArgs(finalCall) !== formatToolArgs(deferred.call));
           if (stale) {
             deferred.call = finalCall!;
-            const refreshedLine =
-              chalk.cyan(`  ▶ ${finalCall!.name}`) +
-              chalk.gray(` ${formatToolArgs(finalCall!)}`);
-            deferred.rendered =
-              styleToolChatter(finalCall!, refreshedLine) + "\n";
           }
-          if (!deferred.shown) {
-            writeToolCall(deferred.eventId, deferred.call, deferred.rendered);
+          if (!deferred.shown || stale) {
+            writeToolCall(deferred.eventId, deferred.call);
             deferred.shown = true;
-          } else if (stale) {
-            writeToolCall(deferred.eventId, deferred.call, "");
           }
         }
 
@@ -5604,6 +5737,7 @@ export async function runAgentTurn(
               (assistantText.hasThinking && assistantText.thinkContent
                 ? { text: assistantText.thinkContent }
                 : undefined),
+            completion.reasoningArtifacts,
           );
         } else {
           const standardizedContent =
@@ -5611,7 +5745,7 @@ export async function runAgentTurn(
             allCalls
               .map((c) => `\`\`\`tool\n${JSON.stringify(c)}\n\`\`\``)
               .join("\n\n");
-          pushAssistantHistory(standardizedContent);
+          pushAssistantHistory(standardizedContent, completion);
         }
 
 
@@ -5975,6 +6109,63 @@ export async function runAgentTurn(
           }
         }
 
+        const replayExecutedOccurrence = (
+          bc: BoundCall,
+          uiId: string,
+        ):
+          | {
+              call: ToolCall;
+              result: ToolResult;
+              contextOutput: string;
+              ok: boolean;
+              suppressedRepeat: true;
+            }
+          | undefined => {
+          const prior = bc.wireId
+            ? executedWireOccurrences.get(bc.wireId)
+            : undefined;
+          if (!prior) return undefined;
+          const notice =
+            "This exact provider tool call already executed this turn. " +
+            "The earlier result is replayed below; the tool did not run again.";
+          const output = `${notice}\n\n${prior.contextOutput}`;
+          const result: ToolResult = { ...prior.result, output, suppressedRepeat: true };
+          if (!alreadyPrintedIds.has(uiId)) {
+            writeToolCall(uiId, bc.call);
+            alreadyPrintedIds.add(uiId);
+            emit({ type: "tool-start", id: uiId });
+          }
+          writeToolOutput(uiId, output.endsWith("\n") ? output : `${output}\n`);
+          emitToolResult(uiId, result, output);
+          return {
+            call: bc.call,
+            result,
+            contextOutput: output,
+            ok: prior.ok,
+            suppressedRepeat: true,
+          };
+        };
+        const rememberExecutedOccurrence = (
+          bc: BoundCall,
+          res: {
+            call: ToolCall;
+            result: ToolResult;
+            contextOutput: string;
+            ok: boolean;
+            aborted?: boolean | undefined;
+            suppressedRepeat?: boolean | undefined;
+          },
+        ): void => {
+          if (!bc.wireId || executedWireOccurrences.has(bc.wireId)) return;
+          if (!res.ok || res.aborted || res.suppressedRepeat) return;
+          executedWireOccurrences.set(bc.wireId, {
+            call: res.call,
+            result: res.result,
+            contextOutput: res.contextOutput,
+            ok: res.ok,
+          });
+        };
+
         const groups = groupToolCallsForExecution(
           allCalls,
           isParallelSafe,
@@ -5990,12 +6181,18 @@ export async function runAgentTurn(
               callIds[bc.index] = `tool-${++nextToolEventId}`;
             }
             const id = callIds[bc.index]!;
+            const replayed = replayExecutedOccurrence(bc, id);
+            if (replayed) {
+              recordResult(bc, replayed);
+              continue;
+            }
             const res = await executeSingleTool(
               call,
               id,
               options.signal || new AbortController().signal,
             );
             recordResult(bc, res);
+            rememberExecutedOccurrence(bc, res);
           } else {
             // Concurrent group — BoundCall via Map; record in document order.
             const groupBound: BoundCall[] = [];
@@ -6010,16 +6207,19 @@ export async function runAgentTurn(
               uiIds.push(callIds[bc.index]!);
             }
             const results = await Promise.all(
-              groupBound.map((bc, k) =>
-                executeSingleTool(
+              groupBound.map((bc, k) => {
+                const replayed = replayExecutedOccurrence(bc, uiIds[k]!);
+                if (replayed) return replayed;
+                return executeSingleTool(
                   bc.call,
                   uiIds[k]!,
                   options.signal || new AbortController().signal,
-                ),
-              ),
+                );
+              }),
             );
             for (let k = 0; k < results.length; k += 1) {
               recordResult(groupBound[k]!, results[k]!);
+              rememberExecutedOccurrence(groupBound[k]!, results[k]!);
             }
           }
         }

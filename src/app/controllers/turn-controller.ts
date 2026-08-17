@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentEvent } from "../../agent/events.js";
 import { renderTurnOutcome, type TurnOutcome } from "../../agent/turn-outcome.js";
-import type { ChatMessage } from "../../types.js";
+import type { ChatMessage, SuccessfulRequestSnapshot } from "../../types.js";
 import { isAbortError, type SessionPolicy } from "../../agent/session-policy.js";
 import { asTurnId, type AnyAppEvent, type TurnId } from "../events/app-event.js";
 import type { EventSequencer } from "../events/sequencer.js";
@@ -27,6 +27,9 @@ export interface TurnRunOptions {
   readonly requestSecret?: SecretPort["request"] | undefined;
   readonly session?: SessionPolicy | undefined;
   readonly onMessages?: ((messages: ChatMessage[]) => void) | undefined;
+  readonly onSuccessfulRequest?:
+    | ((snapshot: SuccessfulRequestSnapshot) => void)
+    | undefined;
   readonly onStarted?: (() => void) | undefined;
   readonly signal?: AbortSignal | undefined;
 }
@@ -157,6 +160,7 @@ export class TurnController implements Disposable {
       const outcome = await this.deps.agent.runTurn(request, {
         onEvent: (event) => coalescer.push(event),
         onMessages: options.onMessages,
+        onSuccessfulRequest: options.onSuccessfulRequest,
         signal: ac.signal,
         confirm: options.confirm,
         requestSecret: options.requestSecret,

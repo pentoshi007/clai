@@ -53,6 +53,23 @@ describe("modelSupportsVision", () => {
     expect(modelSupportsVision("groq", "llama-3.3-70b-versatile")).toBe(false);
     expect(modelSupportsVision("anthropic", "claude-2")).toBe(false);
   });
+
+  it("resolves TokenRouter namespaced vision metadata", () => {
+    expect(modelSupportsVision("tokenrouter", "moonshotai/kimi-k2.7-code")).toBe(
+      true,
+    );
+    expect(modelSupportsVision("tokenrouter", "qwen/qwen3p5-vl")).toBe(true);
+    expect(modelSupportsVision("tokenrouter", "minimax/minimax-m3")).toBe(true);
+    expect(modelSupportsVision("tokenrouter", "deepseek/deepseek-v4-pro")).toBe(
+      false,
+    );
+    expect(modelSupportsVision("tokenrouter", "openai/gpt-oss-120b")).toBe(
+      false,
+    );
+    expect(preferredVisionModel("tokenrouter", "deepseek/deepseek-v4-pro")).toBe(
+      "moonshotai/kimi-k2.7-code",
+    );
+  });
 });
 
 describe("vision-first image inspection", () => {

@@ -1,4 +1,9 @@
-import type { CompletionRequest, CompletionResult } from "../types.js";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  ReasoningArtifactReplayObserver,
+  ReasoningArtifactReplayTarget,
+} from "../types.js";
 import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
 import {
   readJson,
@@ -10,15 +15,31 @@ import {
   THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS,
   STREAM_STALL_MARKER,
 } from "./http.js";
-import { modelAcceptsImages } from "./capabilities.js";
-import { resolveSampling } from "./sampling.js";
+import {
+  completeGenerationAttempt,
+  generationFetch,
+  runGenerationAttempt,
+} from "./operation-usage.js";
+import { isOperationPolicyError } from "./operation-ledger.js";
 import { toWireName, fromWireName, parseToolArguments } from "./tool-protocol.js";
 import { normalizeTokenUsage } from "./token-usage.js";
 import {
-  REASONING_CLOSE,
-  REASONING_OPEN,
-  wrapReasoning,
-} from "./reasoning-marker.js";
+  createReasoningArtifact,
+  createReasoningArtifactProvenance,
+  reasoningArtifactItems,
+  reasoningArtifactsForMessage,
+  selectReasoningArtifactsForReplay,
+} from "./reasoning-artifacts.js";
+import { compileRequestPlan } from "./request-plan.js";
+import {
+  emitStreamReasoningArtifacts,
+  emitStreamReasoningDelta,
+} from "./stream-events.js";
+import {
+  META_STREAM_TERMINAL,
+  requireTerminalProof,
+} from "./stream-terminal.js";
+import type { StreamTerminalProof } from "./provider-profile.js";
 import type { TokenUsage } from "./token-usage.js";
 import type { NativeToolCall, ToolDefinition } from "../types.js";
 import type { ReasoningPreference } from "../types.js";
@@ -48,7 +69,54 @@ function metaReasoningPayload(reasoning: ReasoningPreference | undefined): Recor
   return { effort: eff, summary };
 }
 
-function toResponsesInput(messages: import("../types.js").ChatMessage[], supportsVision: boolean): Array<Record<string, unknown>> {
+interface MetaReasoningReplayOptions {
+  readonly target: ReasoningArtifactReplayTarget;
+  readonly observe?: ReasoningArtifactReplayObserver | undefined;
+}
+
+function metaReplayArtifacts(
+  message: import("../types.js").ChatMessage,
+  replay: MetaReasoningReplayOptions,
+): Array<{
+  items: Array<Record<string, unknown>>;
+  toolCallIndex?: number | undefined;
+}> {
+  return selectReasoningArtifactsForReplay({
+    artifacts: reasoningArtifactsForMessage(message),
+    target: replay.target,
+    context: { hasToolCalls: Boolean(message.toolCalls?.length) },
+    observe: replay.observe,
+  })
+    .filter((artifact) => artifact.kind === "encrypted")
+    .sort((left, right) => left.position.sequence - right.position.sequence)
+    .map((artifact) => {
+      const byId = artifact.position.toolCallId
+        ? message.toolCalls?.findIndex(
+            (toolCall) => toolCall.id === artifact.position.toolCallId,
+          )
+        : undefined;
+      const toolCallIndex =
+        artifact.position.toolCallIndex ??
+        (byId !== undefined && byId >= 0 ? byId : undefined);
+      return {
+        items: reasoningArtifactItems(artifact),
+        ...(toolCallIndex === undefined ? {} : { toolCallIndex }),
+      };
+    });
+}
+
+function appendMetaReplayItems(
+  input: Array<Record<string, unknown>>,
+  entries: readonly { items: Array<Record<string, unknown>> }[],
+): void {
+  for (const entry of entries) input.push(...entry.items);
+}
+
+function toResponsesInput(
+  messages: import("../types.js").ChatMessage[],
+  supportsVision: boolean,
+  replay: MetaReasoningReplayOptions,
+): Array<Record<string, unknown>> {
   const input: Array<Record<string, unknown>> = [];
   for (const m of messages) {
     if (m.role === "system") {
@@ -83,12 +151,20 @@ function toResponsesInput(messages: import("../types.js").ChatMessage[], support
       continue;
     }
     if (m.role === "assistant") {
-      const replayItems = m.reasoningBlock?.items;
-      if (Array.isArray(replayItems) && replayItems.length > 0) {
-        for (const item of replayItems) input.push(item);
+      const replayArtifacts = metaReplayArtifacts(m, replay);
+      const leadingArtifacts = replayArtifacts.filter(
+        (artifact) => artifact.toolCallIndex === undefined,
+      );
+      const artifactsByTool = new Map<number, typeof replayArtifacts>();
+      for (const artifact of replayArtifacts) {
+        if (artifact.toolCallIndex === undefined) continue;
+        const current = artifactsByTool.get(artifact.toolCallIndex) ?? [];
+        current.push(artifact);
+        artifactsByTool.set(artifact.toolCallIndex, current);
       }
       const hasTools = m.toolCalls && m.toolCalls.length > 0;
       if (hasTools) {
+        appendMetaReplayItems(input, leadingArtifacts);
         if (m.content && m.content.trim()) {
           input.push({
             type: "message",
@@ -97,7 +173,11 @@ function toResponsesInput(messages: import("../types.js").ChatMessage[], support
             content: [{ type: "output_text", text: m.content }],
           });
         }
-        for (const tc of m.toolCalls!) {
+        for (const [toolCallIndex, tc] of m.toolCalls!.entries()) {
+          appendMetaReplayItems(
+            input,
+            artifactsByTool.get(toolCallIndex) ?? [],
+          );
           const wire = toWireName(tc.name);
           input.push({
             type: "function_call",
@@ -108,6 +188,7 @@ function toResponsesInput(messages: import("../types.js").ChatMessage[], support
         }
         continue;
       }
+      appendMetaReplayItems(input, replayArtifacts);
       if (m.content !== undefined && m.content !== null) {
         input.push({
           type: "message",
@@ -139,7 +220,7 @@ function toResponsesTools(tools: ToolDefinition[] | undefined): Array<Record<str
   }));
 }
 
-function parseMetaUsage(raw: unknown): TokenUsage | undefined {
+export function parseMetaUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const u = raw as Record<string, unknown>;
   const inputTokens =
@@ -150,18 +231,33 @@ function parseMetaUsage(raw: unknown): TokenUsage | undefined {
     (u.output_tokens as number | undefined) ??
     (u.completion_tokens as number | undefined) ??
     (u.outputTokens as number | undefined);
-  const totalTokens = (u.total_tokens as number | undefined) ?? (u.totalTokens as number | undefined);
-  const cached =
-    (u.input_tokens_details as Record<string, unknown> | undefined)?.cached_tokens ??
-    (u.prompt_tokens_details as Record<string, unknown> | undefined)?.cached_tokens;
+  const totalTokens =
+    (u.total_tokens as number | undefined) ??
+    (u.totalTokens as number | undefined);
+  const inputDetails = u.input_tokens_details as Record<string, unknown> | undefined;
+  const promptDetails = u.prompt_tokens_details as Record<string, unknown> | undefined;
+  const outputDetails = u.output_tokens_details as Record<string, unknown> | undefined;
+  const completionDetails =
+    u.completion_tokens_details as Record<string, unknown> | undefined;
+  const cached = inputDetails?.cached_tokens ?? promptDetails?.cached_tokens;
+  const cacheCreation =
+    inputDetails?.cache_creation_tokens ??
+    promptDetails?.cache_creation_tokens ??
+    u.cache_creation_input_tokens;
+  const uncached =
+    inputDetails?.uncached_tokens ??
+    promptDetails?.uncached_tokens ??
+    u.prompt_cache_miss_tokens;
   const reasoning =
-    (u.output_tokens_details as Record<string, unknown> | undefined)?.reasoning_tokens ??
-    (u.completion_tokens_details as Record<string, unknown> | undefined)?.reasoning_tokens;
+    outputDetails?.reasoning_tokens ?? completionDetails?.reasoning_tokens;
   return normalizeTokenUsage({
     promptTokens: inputTokens,
     completionTokens: outputTokens,
     totalTokens,
     cachedPromptTokens: typeof cached === "number" ? cached : undefined,
+    cacheCreationTokens:
+      typeof cacheCreation === "number" ? cacheCreation : undefined,
+    uncachedPromptTokens: typeof uncached === "number" ? uncached : undefined,
     reasoningTokens: typeof reasoning === "number" ? reasoning : undefined,
     exact: true,
   });
@@ -188,32 +284,49 @@ function buildResponsesBody(options: {
   temperature?: number | undefined;
   stream: boolean;
   reasoning?: ReasoningPreference | undefined;
-  supportsVision: boolean;
   tools?: ToolDefinition[] | undefined;
   parallelToolCalls?: boolean | undefined;
+  purpose?: import("../types.js").CompletionRequestPurpose | undefined;
+  reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
 }): string {
-  const reasoning = metaReasoningPayload(options.reasoning);
-  const input = toResponsesInput(options.messages, options.supportsVision);
-  const tools = toResponsesTools(options.tools);
-  const reasoningOn = Boolean(options.reasoning?.enabled);
-  const defaultMax = reasoningOn ? 8192 : 4096;
-  const effectiveMax = Math.max(16, options.maxTokens ?? defaultMax);
-  const sampling = resolveSampling({
+  const plan = compileRequestPlan({
+    provider: "meta",
     model: options.model,
-    reasoningEnabled: reasoningOn,
-    requestedTemperature: options.temperature,
+    messages: options.messages,
+    stream: options.stream,
+    endpoint: baseUrl,
+    reasoning: options.reasoning,
+    tools: options.tools,
+    parallelToolCalls: options.parallelToolCalls,
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
   });
+  const reasoning = metaReasoningPayload(plan.controls.reasoning);
+  const input = toResponsesInput([...plan.timeline.messages], plan.images.visionAccepted, {
+    target: plan.replay.target,
+    observe: options.reasoningArtifactReplayObserver,
+  });
+  const tools = toResponsesTools(
+    plan.tools.definitions.length ? [...plan.tools.definitions] : undefined,
+  );
+  const reasoningOn = Boolean(plan.controls.reasoning?.enabled);
+  const defaultMax = reasoningOn ? 8192 : 4096;
+  const effectiveMax = Math.max(16, plan.controls.requestedMaxTokens ?? defaultMax);
   const body: Record<string, unknown> = {
     model: options.model,
     input,
     store: false,
-    prompt_cache_key: "clai",
+    // Turn and compaction requests share one bucket on purpose so a compaction
+    // prompt can reuse the turn's cached prefix. Auxiliary requests get their
+    // own bucket so their unrelated short prefix cannot evict it.
+    prompt_cache_key:
+      options.purpose === "auxiliary" ? "clai-auxiliary" : "clai",
     prompt_cache_retention: "24h",
     include: ["reasoning.encrypted_content"],
     max_output_tokens: effectiveMax,
-    temperature: sampling.temperature,
+    temperature: plan.controls.temperature,
   };
-  if (sampling.topP !== undefined) body.top_p = sampling.topP;
+  if (plan.controls.topP !== undefined) body.top_p = plan.controls.topP;
   if (reasoning) body.reasoning = reasoning;
   if (options.stream) body.stream = true;
   if (tools) {
@@ -249,17 +362,31 @@ function budgetExhaustedError(request: CompletionRequest, reasoningOn: boolean, 
   );
 }
 
+interface MetaReasoningItemPosition {
+  readonly sequence: number;
+  readonly toolCallIndex?: number | undefined;
+}
+
 function parseResponsesOutput(data: {
   output?: unknown;
   usage?: unknown;
   id?: string;
-}): { text: string; toolCalls: NativeToolCall[]; usage?: TokenUsage | undefined; reasoningSummary: string; reasoningItems: Array<Record<string, unknown>> } {
+}): {
+  text: string;
+  toolCalls: NativeToolCall[];
+  usage?: TokenUsage | undefined;
+  reasoningSummary: string;
+  reasoningItems: Array<Record<string, unknown>>;
+  reasoningItemPositions: MetaReasoningItemPosition[];
+} {
   const output = Array.isArray(data.output) ? data.output : [];
   let text = "";
   let reasoningSummary = "";
   const toolCalls: NativeToolCall[] = [];
   const reasoningItems: Array<Record<string, unknown>> = [];
-  for (const item of output) {
+  const reasoningItemSequences: number[] = [];
+  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
+  for (const [sequence, item] of output.entries()) {
     if (!item || typeof item !== "object") continue;
     const obj = item as Record<string, unknown>;
     if (obj.type === "message" && obj.role === "assistant") {
@@ -275,12 +402,8 @@ function parseResponsesOutput(data: {
       const s = extractReasoningSummary(obj);
       if (s) reasoningSummary += s;
       if (typeof obj.encrypted_content === "string" && obj.encrypted_content) {
-        reasoningItems.push({
-          type: "reasoning",
-          ...(typeof obj.id === "string" ? { id: obj.id } : {}),
-          summary: Array.isArray(obj.summary) ? obj.summary : [],
-          encrypted_content: obj.encrypted_content,
-        });
+        reasoningItems.push({ ...obj });
+        reasoningItemSequences.push(sequence);
       }
     } else if (obj.type === "function_call") {
       const callId = typeof obj.call_id === "string" ? obj.call_id : typeof obj.id === "string" ? obj.id : `call_${toolCalls.length}`;
@@ -295,24 +418,59 @@ function parseResponsesOutput(data: {
       } catch {
         args = parseToolArguments(rawArgs);
       }
+      const toolCallIndex = toolCalls.length;
       toolCalls.push({ id: callId, name: canonical, args, rawArguments: rawArgs });
+      toolCallSequences.push({ sequence, toolCallIndex });
     }
   }
+  const reasoningItemPositions = reasoningItemSequences.map((sequence) => {
+    const followingTool = toolCallSequences.find(
+      (toolCall) => toolCall.sequence > sequence,
+    );
+    return followingTool
+      ? { sequence, toolCallIndex: followingTool.toolCallIndex }
+      : { sequence };
+  });
   const usage = parseMetaUsage(data.usage);
-  return { text, toolCalls, usage, reasoningSummary, reasoningItems };
+  return {
+    text,
+    toolCalls,
+    usage,
+    reasoningSummary,
+    reasoningItems,
+    reasoningItemPositions,
+  };
 }
 
-function foldResponsesReasoning(text: string, reasoningSummary: string, usage?: TokenUsage | undefined, effort?: string | undefined): string {
-  if (reasoningSummary && reasoningSummary.trim()) {
-    return `${wrapReasoning(reasoningSummary)}${text}`;
-  }
-  const tokens = usage?.reasoningTokens ?? 0;
-  if (tokens > 0) {
-    const effortText = effort ? ` at ${effort} effort` : "";
-    const note = `Reasoning is private on Meta Model API: the model reasoned${effortText} and used ${tokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
-    return `${wrapReasoning(note)}${text}`;
-  }
-  return text;
+function metaReasoningArtifacts(
+  model: string,
+  items: readonly Record<string, unknown>[],
+  positions: readonly MetaReasoningItemPosition[],
+) {
+  const provenance = createReasoningArtifactProvenance({
+    provider: "meta",
+    model,
+    dialect: "meta-responses",
+    endpoint: baseUrl,
+  });
+  const artifacts = items.map((item, index) => {
+    const position = positions[index] ?? { sequence: index };
+    const replayable = position.toolCallIndex !== undefined;
+    return createReasoningArtifact({
+      kind: "encrypted",
+      raw: item,
+      provenance,
+      replay: replayable
+        ? { scope: "tool-turn", persistence: "tool-turn" }
+        : { scope: "none", persistence: "never" },
+      position: {
+        sequence: position.sequence,
+        placement: replayable ? "before-tool-call" : "assistant",
+        ...(replayable ? { toolCallIndex: position.toolCallIndex } : {}),
+      },
+    });
+  });
+  return artifacts.length ? artifacts : undefined;
 }
 
 function readWithAbort(
@@ -351,6 +509,7 @@ function readWithAbort(
 
 export const metaProvider: LlmProvider = {
   id: "meta",
+  reasoningStyle: "meta",
   displayName: "Meta Model API",
   defaultModel: defaultModels.meta,
   envVar: "MODEL_API_KEY",
@@ -386,7 +545,15 @@ export const metaProvider: LlmProvider = {
   async complete(request: CompletionRequest, auth: ProviderAuth): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Meta Model API key is required");
     const model = request.model ?? defaultModels.meta;
-    const supportsVision = modelAcceptsImages("meta", model);
+    return runGenerationAttempt(
+      request,
+      {
+        provider: "meta",
+        model,
+        mode: "complete",
+        reason: request.attemptReason ?? "initial",
+      },
+      async () => {
     const body = buildResponsesBody({
       model,
       messages: request.messages,
@@ -394,13 +561,15 @@ export const metaProvider: LlmProvider = {
       temperature: request.temperature,
       stream: false,
       reasoning: request.thinking,
-      supportsVision,
       tools: request.tools,
       parallelToolCalls: request.parallelToolCalls,
+      purpose: request.purpose,
+      reasoningArtifactReplayObserver:
+        request.onReasoningArtifactReplayDecision,
     });
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}/responses`, {
+      response = await generationFetch(`${baseUrl}/responses`, {
         method: "POST",
         signal: request.signal ?? null,
         headers: {
@@ -413,6 +582,7 @@ export const metaProvider: LlmProvider = {
       } as unknown as RequestInit);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") throw error;
+      if (isOperationPolicyError(error)) throw error;
       const msg = error instanceof Error ? error.message : String(error);
       throw new ProviderError(`Meta Model API request could not be sent (${msg}). Check connectivity to ${baseUrl}.`);
     }
@@ -426,23 +596,34 @@ export const metaProvider: LlmProvider = {
       throw error;
     }
     const parsed = parseResponsesOutput(data as { output?: unknown; usage?: unknown });
+    const reasoningArtifacts = metaReasoningArtifacts(
+      model,
+      parsed.reasoningItems,
+      parsed.reasoningItemPositions,
+    );
     const usage = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
-    const effort = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
-    const full = foldResponsesReasoning(parsed.text, parsed.reasoningSummary, usage, effort);
     if (!parsed.text.trim() && parsed.toolCalls.length === 0) {
       const respStatus = (data as Record<string, unknown>).status;
       const details = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
       if (respStatus === "incomplete" && details?.reason === "max_output_tokens") {
         const retryRequest = incompleteBudgetRetry(request, Boolean(request.thinking?.enabled));
-        if (retryRequest) return metaProvider.complete(retryRequest, auth);
+        if (retryRequest) {
+          completeGenerationAttempt("failure", usage);
+          retryRequest.attemptReason = "provider-retry";
+          return metaProvider.complete(retryRequest, auth);
+        }
         throw budgetExhaustedError(request, Boolean(request.thinking?.enabled), JSON.stringify(data));
       }
     }
-    if (!full.trim() && parsed.toolCalls.length === 0) {
+    if (
+      !parsed.text.trim() &&
+      parsed.toolCalls.length === 0 &&
+      !parsed.reasoningSummary.trim()
+    ) {
       throw new ProviderError(`Meta Model API returned no completion text (model=${model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`);
     }
     return {
-      text: full,
+      text: parsed.text,
       provider: "meta",
       model,
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
@@ -451,12 +632,23 @@ export const metaProvider: LlmProvider = {
       ...(parsed.reasoningItems.length
         ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
         : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
     };
+      },
+    );
   },
   async stream(request: CompletionRequest, auth: ProviderAuth, onToken: (token: string) => void): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Meta Model API key is required");
     const model = request.model ?? defaultModels.meta;
-    const supportsVision = modelAcceptsImages("meta", model);
+    return runGenerationAttempt(
+      request,
+      {
+        provider: "meta",
+        model,
+        mode: "stream",
+        reason: request.attemptReason ?? "initial",
+      },
+      async () => {
     const reasoningOn = Boolean(request.thinking?.enabled);
     const idleTimeoutMs = THINKING_STREAM_IDLE_TIMEOUT_MS;
     const initialIdleTimeoutMs = THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS;
@@ -508,9 +700,11 @@ export const metaProvider: LlmProvider = {
       temperature: request.temperature,
       stream: true,
       reasoning: request.thinking,
-      supportsVision,
       tools: request.tools,
       parallelToolCalls: request.parallelToolCalls,
+      purpose: request.purpose,
+      reasoningArtifactReplayObserver:
+        request.onReasoningArtifactReplayDecision,
     });
 
     let response: Response | undefined;
@@ -527,7 +721,7 @@ export const metaProvider: LlmProvider = {
         }
       }
       try {
-        response = await fetch(`${baseUrl}/responses`, {
+        response = await generationFetch(`${baseUrl}/responses`, {
           method: "POST",
           signal: idleController.signal,
           headers: {
@@ -578,49 +772,80 @@ export const metaProvider: LlmProvider = {
     }
     const contentType = response.headers.get("content-type") ?? "";
     if (response.status === 202 || /\bapplication\/json\b/i.test(contentType)) {
-      clearIdleTimers();
-      request.signal?.removeEventListener("abort", onCallerAbort);
-      const data = await readJson<{
-        output?: unknown;
-        usage?: unknown;
-        id?: string;
-        requestId?: string;
-      }>(response);
-      if (response.status === 202) {
-        const requestId = (data as Record<string, unknown>).requestId ?? (data as Record<string, unknown>).id;
-        throw new ProviderError(
-          `Meta Model API returned a pending async response${requestId ? ` (${requestId})` : ""}; streaming did not start.`,
-          response.status,
-          JSON.stringify(data).slice(0, 1_000),
-        );
-      }
-      const parsed = parseResponsesOutput(data);
-      const usageTmp = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
-      const effortTmp = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
-      const full = foldResponsesReasoning(parsed.text, parsed.reasoningSummary, usageTmp, effortTmp);
-      const jsonStatus = (data as Record<string, unknown>).status;
-      const jsonDetails = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
-      if (!parsed.text.trim() && parsed.toolCalls.length === 0 && jsonStatus === "incomplete" && jsonDetails?.reason === "max_output_tokens") {
-        const retryRequest = incompleteBudgetRetry(request, reasoningOn);
-        const streamMethod = metaProvider.stream;
-        if (retryRequest && streamMethod) return streamMethod(retryRequest, auth, onToken);
-        throw budgetExhaustedError(request, reasoningOn, JSON.stringify(data));
-      }
-      if (full.trim() || parsed.toolCalls.length > 0) {
-        if (full.trim()) onToken(full);
-        return {
-          text: full,
-          provider: "meta",
+      try {
+        const data = await readJson<{
+          output?: unknown;
+          usage?: unknown;
+          id?: string;
+          requestId?: string;
+        }>(response, idleController.signal);
+        if (response.status === 202) {
+          const requestId = (data as Record<string, unknown>).requestId ?? (data as Record<string, unknown>).id;
+          throw new ProviderError(
+            `Meta Model API returned a pending async response${requestId ? ` (${requestId})` : ""}; streaming did not start.`,
+            response.status,
+            JSON.stringify(data).slice(0, 1_000),
+          );
+        }
+        const parsed = parseResponsesOutput(data);
+        const reasoningArtifacts = metaReasoningArtifacts(
           model,
-          ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
-          ...(parsed.toolCalls.length ? { finishReason: "tool_calls" } : { finishReason: "stop" }),
-          ...(usageTmp ? { usage: usageTmp } : {}),
-          ...(parsed.reasoningItems.length
-            ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
-            : {}),
-        };
+          parsed.reasoningItems,
+          parsed.reasoningItemPositions,
+        );
+        const usageTmp = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
+        const jsonStatus = (data as Record<string, unknown>).status;
+        const jsonDetails = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
+        if (!parsed.text.trim() && parsed.toolCalls.length === 0 && jsonStatus === "incomplete" && jsonDetails?.reason === "max_output_tokens") {
+          const retryRequest = incompleteBudgetRetry(request, reasoningOn);
+          const streamMethod = metaProvider.stream;
+          if (retryRequest && streamMethod) {
+            completeGenerationAttempt("failure", usageTmp);
+            retryRequest.attemptReason = "provider-retry";
+            return streamMethod(retryRequest, auth, onToken);
+          }
+          completeGenerationAttempt("failure", usageTmp);
+          throw budgetExhaustedError(request, reasoningOn, JSON.stringify(data));
+        }
+        if (
+          parsed.text.trim() ||
+          parsed.toolCalls.length > 0 ||
+          parsed.reasoningSummary.trim()
+        ) {
+          emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
+          if (parsed.text) onToken(parsed.text);
+          return {
+            text: parsed.text,
+            provider: "meta",
+            model,
+            ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
+            ...(parsed.toolCalls.length ? { finishReason: "tool_calls" } : { finishReason: "stop" }),
+            ...(usageTmp ? { usage: usageTmp } : {}),
+            ...(parsed.reasoningItems.length
+              ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
+              : {}),
+            ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
+          };
+        }
+        throw new ProviderError(`Meta Model API returned JSON instead of an SSE stream, but no completion text was present.`, response.status, JSON.stringify(data).slice(0, 1_000));
+      } catch (error) {
+        if (idleFired) {
+          const seconds = Math.round(firedBudgetMs / 1000);
+          if (firedWatchdog === "transport" || !sawTransportActivity) {
+            if (!sawTransportActivity) {
+              throw new ProviderError(`Meta Model API request timed out before any response (${seconds}s) — no data arrived on the connection.`);
+            }
+            throw new ProviderError(`Meta Model API stream transport timeout (${seconds}s) — no data arrived on the connection after it had started.`);
+          }
+          throw new ProviderError(
+            `Meta Model API stream stalled — ${STREAM_STALL_MARKER} for ${seconds}s`,
+          );
+        }
+        throw error;
+      } finally {
+        clearIdleTimers();
+        request.signal?.removeEventListener("abort", onCallerAbort);
       }
-      throw new ProviderError(`Meta Model API returned JSON instead of an SSE stream, but no completion text was present.`, response.status, JSON.stringify(data).slice(0, 1_000));
     }
 
     const decoder = new TextDecoder();
@@ -629,56 +854,81 @@ export const metaProvider: LlmProvider = {
     let full = "";
     let visible = "";
     let reasoningSeen = "";
-    let inReasoning = false;
     let finishReason: string | undefined;
+    let sawTerminalProof: StreamTerminalProof | undefined;
     let streamUsage: TokenUsage | undefined;
     const toolCallState = new Map<string, { id?: string; name?: string; arguments: string; callId?: string }>();
     const outputIndexToItemId = new Map<number, string>();
+    const outputIndexToToolCallIndex = new Map<number, number>();
     let responseId: string | undefined;
     const reasoningItems: Array<Record<string, unknown>> = [];
-    const reasoningItemKeys = new Set<string>();
-    const noteReasoningItem = (item: Record<string, unknown>): void => {
+    const reasoningItemSequences: number[] = [];
+    const reasoningItemToolCallIndices: Array<number | undefined> = [];
+    const reasoningItemIndexes = new Map<string, number>();
+    const noteReasoningItem = (
+      item: Record<string, unknown>,
+      sequence?: number | undefined,
+      toolCallIndex?: number | undefined,
+    ): void => {
       const encrypted = typeof item.encrypted_content === "string" ? item.encrypted_content : "";
       if (!encrypted) return;
       const id = typeof item.id === "string" ? item.id : undefined;
       const key = id ?? encrypted.slice(0, 64);
-      if (reasoningItemKeys.has(key)) return;
-      reasoningItemKeys.add(key);
-      reasoningItems.push({
-        type: "reasoning",
-        ...(id ? { id } : {}),
-        summary: Array.isArray(item.summary) ? item.summary : [],
-        encrypted_content: encrypted,
+      const existingIndex = reasoningItemIndexes.get(key);
+      if (existingIndex !== undefined) {
+        reasoningItems[existingIndex] = { ...item };
+        if (sequence !== undefined) reasoningItemSequences[existingIndex] = sequence;
+        if (toolCallIndex !== undefined) {
+          reasoningItemToolCallIndices[existingIndex] = toolCallIndex;
+        }
+        return;
+      }
+      reasoningItemIndexes.set(key, reasoningItems.length);
+      reasoningItems.push({ ...item });
+      reasoningItemSequences.push(sequence ?? Number.MAX_SAFE_INTEGER);
+      reasoningItemToolCallIndices.push(toolCallIndex);
+    };
+    const reasoningReplay = () => {
+      if (!reasoningItems.length) {
+        return reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {};
+      }
+      const toolCallSequences = [...outputIndexToToolCallIndex.entries()]
+        .map(([sequence, toolCallIndex]) => ({ sequence, toolCallIndex }))
+        .sort((left, right) => left.sequence - right.sequence);
+      const positions = reasoningItemSequences.map((sequence, index) => {
+        const storedToolCallIndex = reasoningItemToolCallIndices[index];
+        if (storedToolCallIndex !== undefined) {
+          return { sequence, toolCallIndex: storedToolCallIndex };
+        }
+        const followingTool = toolCallSequences.find(
+          (toolCall) => toolCall.sequence > sequence,
+        );
+        return followingTool
+          ? { sequence, toolCallIndex: followingTool.toolCallIndex }
+          : { sequence };
       });
+      const reasoningArtifacts = metaReasoningArtifacts(
+        model,
+        reasoningItems,
+        positions,
+      );
+      emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
+      return {
+        reasoningBlock: { text: reasoningSeen, items: reasoningItems },
+        ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
+      };
     };
-    const reasoningReplay = (): { reasoningBlock: { text: string; items: Array<Record<string, unknown>> } } | Record<string, never> =>
-      reasoningItems.length ? { reasoningBlock: { text: reasoningSeen, items: reasoningItems } } : {};
 
-    const enterReasoning = (): void => {
-      if (inReasoning) return;
-      inReasoning = true;
-      full += REASONING_OPEN;
-      onToken(REASONING_OPEN);
-    };
-    const exitReasoning = (): void => {
-      if (!inReasoning) return;
-      inReasoning = false;
-      full += REASONING_CLOSE;
-      onToken(REASONING_CLOSE);
-    };
     const emitVisible = (text: string): void => {
       if (!text) return;
-      if (inReasoning) exitReasoning();
       visible += text;
       full += text;
       onToken(text);
     };
     const emitReasoningDelta = (text: string): void => {
       if (!text) return;
-      enterReasoning();
       reasoningSeen += text;
-      full += text;
-      onToken(text);
+      emitStreamReasoningDelta(request.onStreamEvent, text);
     };
     const cleanup = (): void => {
       clearIdleTimers();
@@ -712,9 +962,6 @@ export const metaProvider: LlmProvider = {
               const effortText = effort ? ` at ${effort} effort` : "";
               const note = `Reasoning is private on Meta Model API: the model reasoned${effortText} and used ${streamUsage.reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
               emitReasoningDelta(note);
-              exitReasoning();
-            } else {
-              exitReasoning();
             }
             cleanup();
             const toolCalls: NativeToolCall[] = [];
@@ -779,13 +1026,18 @@ export const metaProvider: LlmProvider = {
               const callId = typeof item.call_id === "string" ? item.call_id : id;
               const name = typeof item.name === "string" ? item.name : "";
               const args = typeof item.arguments === "string" ? item.arguments : "";
+              const toolCallIndex = toolCallState.size;
               toolCallState.set(id, { id, callId, name, arguments: args });
+              if (outputIndex !== undefined) {
+                outputIndexToToolCallIndex.set(outputIndex, toolCallIndex);
+              }
               resetIdleTimer();
               if (request.onToolCallDelta) {
                 const canonical = name ? fromWireName(name) ?? name : undefined;
                 request.onToolCallDelta({ index: toolCallState.size - 1, ...(callId ? { id: callId } : {}), ...(canonical ? { name: canonical } : {}), argumentsBytes: args.length });
               }
             } else if (item.type === "reasoning") {
+              noteReasoningItem(item, outputIndex);
               const s = extractReasoningSummary(item);
               if (s) {
                 resetIdleTimer();
@@ -798,7 +1050,14 @@ export const metaProvider: LlmProvider = {
           }
           if (type === "response.output_item.done") {
             const item = parsed.item as Record<string, unknown> | undefined;
-            if (item?.type === "reasoning") noteReasoningItem(item);
+            if (item?.type === "reasoning") {
+              noteReasoningItem(
+                item,
+                typeof parsed.output_index === "number"
+                  ? parsed.output_index
+                  : undefined,
+              );
+            }
             if (item?.type === "function_call") {
               const id = typeof item.id === "string" ? item.id : typeof (parsed as Record<string, unknown>).item_id === "string" ? (parsed as Record<string, unknown>).item_id as string : undefined;
               if (id && toolCallState.has(id)) {
@@ -840,7 +1099,6 @@ export const metaProvider: LlmProvider = {
                 emitReasoningDelta(remaining);
               }
             }
-            exitReasoning();
             continue;
           }
           if (type === "response.function_call_arguments.delta") {
@@ -886,6 +1144,7 @@ export const metaProvider: LlmProvider = {
             continue;
           }
           if (type === "response.completed") {
+            sawTerminalProof = "response-completed";
             const resp = (parsed.response ?? parsed) as Record<string, unknown>;
             if (resp.usage) {
               const u = parseMetaUsage(resp.usage);
@@ -894,10 +1153,16 @@ export const metaProvider: LlmProvider = {
             if (typeof resp.status === "string") finishReason = resp.status as string;
             if (Array.isArray(resp.output)) {
               const out = parseResponsesOutput(resp as { output?: unknown; usage?: unknown });
-              for (const item of out.reasoningItems) noteReasoningItem(item);
+              for (const [index, item] of out.reasoningItems.entries()) {
+                const position = out.reasoningItemPositions[index];
+                noteReasoningItem(
+                  item,
+                  position?.sequence,
+                  position?.toolCallIndex,
+                );
+              }
               if (out.reasoningSummary && !reasoningSeen.trim()) {
                 emitReasoningDelta(out.reasoningSummary);
-                exitReasoning();
               }
               if (out.text && !visible.trim()) {
                 emitVisible(out.text);
@@ -922,17 +1187,22 @@ export const metaProvider: LlmProvider = {
                 if (u) streamUsage = u;
               }
               if (reason === "max_output_tokens" && !visible.trim() && toolCallState.size === 0) {
-                const retryRequest = incompleteBudgetRetry(request, reasoningOn);
+                const retryRequest = reasoningSeen.trim()
+                  ? undefined
+                  : incompleteBudgetRetry(request, reasoningOn);
                 const streamMethod = metaProvider.stream;
                 if (retryRequest && streamMethod && !request.signal?.aborted) {
-                  exitReasoning();
                   cleanup();
+                  completeGenerationAttempt("failure", streamUsage);
+                  retryRequest.attemptReason = "provider-retry";
                   return streamMethod(retryRequest, auth, onToken);
                 }
+                completeGenerationAttempt("failure", streamUsage);
                 throw budgetExhaustedError(request, reasoningOn, payload);
               }
-              finishReason = "incomplete";
-              continue;
+            finishReason = "incomplete";
+            sawTerminalProof = "response-incomplete";
+            continue;
             }
             const err = resp.error as Record<string, unknown> | undefined;
             const rawDetail = err?.message ?? err?.code ?? type;
@@ -959,21 +1229,22 @@ export const metaProvider: LlmProvider = {
         const effort = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
         const effortText = effort ? ` at ${effort} effort` : "";
         const note = `Reasoning is private on Meta Model API: the model reasoned${effortText} and used ${streamUsage.reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
-        if (!inReasoning) {
-          full += REASONING_OPEN;
-          visible = full;
-          onToken(REASONING_OPEN);
-        }
-        full += note;
         reasoningSeen += note;
-        onToken(note);
-        full += REASONING_CLOSE;
-        onToken(REASONING_CLOSE);
-        inReasoning = false;
-      } else {
-        exitReasoning();
+        emitStreamReasoningDelta(request.onStreamEvent, note);
       }
       cleanup();
+      let metaToolArgumentBytes = 0;
+      for (const state of toolCallState.values()) {
+        metaToolArgumentBytes += state.arguments.length;
+      }
+      requireTerminalProof({
+        provider: "Meta Model API",
+        policy: META_STREAM_TERMINAL,
+        signal: sawTerminalProof,
+        answerBytes: full.length,
+        reasoningBytes: reasoningSeen.length,
+        toolArgumentBytes: metaToolArgumentBytes,
+      });
       const toolCalls: NativeToolCall[] = [];
       for (const [, state] of toolCallState) {
         if (!state.name && !state.arguments) continue;
@@ -1030,5 +1301,7 @@ export const metaProvider: LlmProvider = {
         reader.releaseLock();
       } catch {}
     }
+      },
+    );
   },
 };

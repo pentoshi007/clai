@@ -21,6 +21,7 @@ import {
   ingestOpenAiModelCatalog,
   streamIdleBudgets,
 } from "./http.js";
+import { generationFetch } from "./operation-usage.js";
 import {
   anthropicToolBodyFields,
   createAnthropicToolStreamState,
@@ -36,20 +37,42 @@ import {
 } from "./system-messages.js";
 import { anthropicMaxTokens } from "./anthropic.js";
 import {
-  REASONING_CLOSE,
-  REASONING_OPEN,
-  wrapReasoning,
-} from "./reasoning-marker.js";
+  emitStreamReasoningArtifacts,
+  emitStreamReasoningDelta,
+} from "./stream-events.js";
+import { ANTHROPIC_STREAM_TERMINAL, requireTerminalProof } from "./stream-terminal.js";
 import {
   mergeAnthropicStreamUsage,
   parseAnthropicUsage,
 } from "./token-usage.js";
 import type { TokenUsage } from "../types.js";
+import {
+  createReasoningArtifactProvenance,
+  createReasoningArtifactReplayTarget,
+  createSignedThinkingArtifacts,
+} from "./reasoning-artifacts.js";
+import type { AnthropicThinkingBlock } from "./adapters/anthropic-tools.js";
 
 const baseUrl = "https://bedrock-mantle.ap-south-1.api.aws/anthropic/v1";
 const openAiBaseUrl = "https://bedrock-mantle.ap-south-1.api.aws/v1";
 const modelsBaseUrl = "https://bedrock-mantle.ap-south-1.api.aws";
 const anthropicVersion = "2023-06-01";
+
+function mantleAnthropicReasoningArtifacts(
+  model: string,
+  blocks: readonly AnthropicThinkingBlock[],
+) {
+  const artifacts = createSignedThinkingArtifacts({
+    blocks,
+    provenance: createReasoningArtifactProvenance({
+      provider: "aws-mantle",
+      model,
+      dialect: "anthropic-messages",
+      endpoint: baseUrl,
+    }),
+  });
+  return artifacts.length ? artifacts : undefined;
+}
 
 function getWorkspaceId(): string {
   return process.env.ANTHROPIC_WORKSPACE_ID ?? "default";
@@ -91,6 +114,7 @@ function isAnthropicMantleModel(model: string): boolean {
 
 export const mantleProvider: LlmProvider = {
   id: "aws-mantle",
+  reasoningStyle: "nvidia",
   displayName: "AWS Mantle",
   defaultModel: defaultModels["aws-mantle"],
   envVar: "ANTHROPIC_API_KEY",
@@ -141,6 +165,7 @@ export const mantleProvider: LlmProvider = {
         tools: request.tools,
         toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
+        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
       });
       return toCompletionResult("aws-mantle", model, payload);
     }
@@ -150,13 +175,23 @@ export const mantleProvider: LlmProvider = {
     ]
       .filter((value): value is string => Boolean(value))
       .join("\n\n");
+    const reasoningArtifactReplay = {
+      target: createReasoningArtifactReplayTarget({
+        provider: "aws-mantle",
+        model,
+        dialect: "anthropic-messages",
+        endpoint: baseUrl,
+      }),
+      observe: request.onReasoningArtifactReplayDecision,
+    };
     const messages = toAnthropicToolMessages(
       withoutRequestContextSystemMessages(
         imageCapableMessages("aws-mantle", model, request.messages),
       ),
+      reasoningArtifactReplay,
     );
     const thinking = anthropicThinkingField(request.thinking, model);
-    const response = await fetch(`${baseUrl}/messages`, {
+    const response = await generationFetch(`${baseUrl}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: {
@@ -200,16 +235,18 @@ export const mantleProvider: LlmProvider = {
       parsed.thinkingSignature && parsed.thinkingText
         ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
         : undefined;
-    const final = parsed.thinkingText
-      ? `${wrapReasoning(parsed.thinkingText)}${parsed.text}`
-      : parsed.text;
+    const reasoningArtifacts = mantleAnthropicReasoningArtifacts(
+      model,
+      parsed.thinkingBlocks,
+    );
     return {
-      text: final,
+      text: parsed.text,
       provider: "aws-mantle",
       model,
       ...(usage ? { usage } : {}),
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningBlock ? { reasoningBlock } : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(data.stop_reason
         ? {
             finishReason:
@@ -240,11 +277,13 @@ export const mantleProvider: LlmProvider = {
         signal: request.signal,
         onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
         reasoning: request.thinking,
         reasoningStyle: "nvidia",
         tools: request.tools,
         toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
+        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
       });
       return toCompletionResult("aws-mantle", model, payload);
     }
@@ -254,13 +293,23 @@ export const mantleProvider: LlmProvider = {
     ]
       .filter((value): value is string => Boolean(value))
       .join("\n\n");
+    const reasoningArtifactReplay = {
+      target: createReasoningArtifactReplayTarget({
+        provider: "aws-mantle",
+        model,
+        dialect: "anthropic-messages",
+        endpoint: baseUrl,
+      }),
+      observe: request.onReasoningArtifactReplayDecision,
+    };
     const messages = toAnthropicToolMessages(
       withoutRequestContextSystemMessages(
         imageCapableMessages("aws-mantle", model, request.messages),
       ),
+      reasoningArtifactReplay,
     );
     const thinking = anthropicThinkingField(request.thinking, model);
-    const response = await fetch(`${baseUrl}/messages`, {
+    const response = await generationFetch(`${baseUrl}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: {
@@ -290,31 +339,19 @@ export const mantleProvider: LlmProvider = {
       throw new Error("Mantle returned no stream body");
     }
     let full = "";
-    let inThinking = false;
     const streamState = createAnthropicToolStreamState();
     let stopReason: string | undefined;
+    let sawMessageStop = false;
     let streamUsage: TokenUsage | undefined;
-
-    const enterThinking = (): void => {
-      if (inThinking) return;
-      inThinking = true;
-      full += REASONING_OPEN;
-      onToken(REASONING_OPEN);
-    };
-    const exitThinking = (): void => {
-      if (!inThinking) return;
-      inThinking = false;
-      full += REASONING_CLOSE;
-      onToken(REASONING_CLOSE);
-    };
 
     const sseFrames = createSseFrameAssembler();
     let outputProgress = 0;
+    let thinkingChars = 0;
     const toolArgumentBytes = new Map<number, number>();
     for await (const line of readStreamLines(response, {
       signal: request.signal,
       ...streamIdleBudgets(Boolean(request.thinking?.enabled)),
-      outputProgress: () => outputProgress + full.length,
+      outputProgress: () => outputProgress + full.length + thinkingChars,
     })) {
       const payload = sseFrames.pushLine(line);
       if (payload === undefined) continue;
@@ -332,11 +369,13 @@ export const mantleProvider: LlmProvider = {
             name?: string;
             text?: string;
             thinking?: string;
+            signature?: string;
           };
           delta?: {
             type?: string;
             text?: string;
             thinking?: string;
+            signature?: string;
             partial_json?: string;
             stop_reason?: string;
           };
@@ -349,6 +388,7 @@ export const mantleProvider: LlmProvider = {
             payload.slice(0, 500),
           );
         }
+        if (parsed.type === "message_stop") sawMessageStop = true;
         if (parsed.type === "message_start" && parsed.message?.usage) {
           streamUsage = parseAnthropicUsage(parsed.message.usage) ?? streamUsage;
         }
@@ -369,12 +409,10 @@ export const mantleProvider: LlmProvider = {
         ) {
           const deltas = handleAnthropicStreamEvent(streamState, parsed);
           if (deltas.thinkingDelta) {
-            enterThinking();
-            full += deltas.thinkingDelta;
-            onToken(deltas.thinkingDelta);
+            thinkingChars += deltas.thinkingDelta.length;
+            emitStreamReasoningDelta(request.onStreamEvent, deltas.thinkingDelta);
           }
           if (deltas.textDelta) {
-            if (inThinking) exitThinking();
             full += deltas.textDelta;
             onToken(deltas.textDelta);
           }
@@ -404,9 +442,29 @@ export const mantleProvider: LlmProvider = {
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }
-    exitThinking();
     const finalized = finalizeAnthropicToolStream(streamState);
-    if (!full.trim() && finalized.toolCalls.length === 0) {
+    let mantleToolArgumentBytes = 0;
+    for (const value of toolArgumentBytes.values()) {
+      mantleToolArgumentBytes += value;
+    }
+    requireTerminalProof({
+      provider: "AWS Mantle",
+      policy: ANTHROPIC_STREAM_TERMINAL,
+      signal: sawMessageStop ? "message-stop" : undefined,
+      answerBytes: full.length,
+      reasoningBytes: finalized.thinkingText.length,
+      toolArgumentBytes: mantleToolArgumentBytes,
+    });
+    const reasoningArtifacts = mantleAnthropicReasoningArtifacts(
+      model,
+      finalized.thinkingBlocks,
+    );
+    emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
+    if (
+      !full.trim() &&
+      !finalized.thinkingText &&
+      finalized.toolCalls.length === 0
+    ) {
       throw new Error("Mantle returned no completion text");
     }
     return {
@@ -423,6 +481,7 @@ export const mantleProvider: LlmProvider = {
             },
           }
         : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(stopReason
         ? {
             finishReason:

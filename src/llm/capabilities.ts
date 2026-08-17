@@ -1,5 +1,9 @@
 import { providerIds } from "../types.js";
-import type { ProviderId } from "../types.js";
+import type {
+  ProviderId,
+  ReasoningEffort,
+  ReasoningPreference,
+} from "../types.js";
 import type { ToolDialect, ToolCallingMode } from "./tool-protocol.js";
 import { isTextOnlyModel } from "./tool-protocol.js";
 import {
@@ -86,6 +90,19 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
   meta: [/muse-spark/i],
   fireworks: [/kimi/i, /deepseek/i, /qwen3/i, /glm-?5/i, /gpt-oss/i, /nemotron/i, /minimax/i, /mimo/i],
   hetzner: [/qwen3/i, /qwen/i],
+  // OrcaRouter exposes one unified reasoning_effort knob across every routed
+  // upstream; match the reasoning families its catalog publishes.
+  orcarouter: [
+    /o[134]/i,
+    /gpt-5/i,
+    /claude-(?:opus|sonnet)/i,
+    /gemini-2\.5|gemini-3/i,
+    /deepseek-reasoner/i,
+    /grok.*reason/i,
+    /qwen3/i,
+    /kimi/i,
+    /glm/i,
+  ],
 };
 
 // Session-sticky set of provider/model routes that rejected our
@@ -108,6 +125,16 @@ export function isReasoningUnsupported(provider: ProviderId, model: string): boo
 
 export function clearReasoningUnsupported(): void {
   reasoningUnsupportedModels.clear();
+}
+
+export function effectiveThinkingEffort(
+  provider: ProviderId,
+  model: string,
+  thinking: ReasoningPreference | undefined,
+): ReasoningEffort | undefined {
+  if (!thinking?.enabled) return undefined;
+  if (isReasoningUnsupported(provider, model)) return undefined;
+  return thinking.effort;
 }
 
 const catalogReasoningSupport = new Map<string, boolean>();
@@ -316,6 +343,20 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
   meta: [/muse-spark/i],
   fireworks: [/kimi-k2/i, /qwen3.*vl/i, /qwen.*vl/i, /vision/i, /vl$/i, /llama-4/i, /pixtral/i, /glm-4.*v/i],
   hetzner: [/qwen/i, /vision/i, /vl/i],
+  // Vision-capable ids per OrcaRouter's capability table: gpt-4o family,
+  // gemini-2.5/3.x, grok-4, plus the routed Claude/Qwen-VL/Kimi families.
+  orcarouter: [
+    /gpt-4o/i,
+    /gpt-4\.1/i,
+    /gpt-5/i,
+    /claude-(?:opus|sonnet|haiku)/i,
+    /gemini-/i,
+    /grok-/i,
+    /qwen.*vl/i,
+    /kimi/i,
+    /vision/i,
+    /vl$/i,
+  ],
 };
 
 const visionCapabilityCache = new Map<
@@ -665,6 +706,7 @@ const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   meta: "muse-spark-1.2",
   fireworks: "accounts/fireworks/models/kimi-k2p6",
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
+  orcarouter: "openai/gpt-4o-mini",
 };
 
 
@@ -709,6 +751,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   meta: "openai",
   fireworks: "openai",
   hetzner: "openai",
+  orcarouter: "openai",
   anthropic: "anthropic",
   "aws-mantle": "openai", // refined by model below
   gemini: "gemini",
@@ -748,6 +791,14 @@ function isAwsMantleAnthropicModel(model: string): boolean {
 }
 
 
+/** Tool capability a custom provider declared in its validated profile. */
+function customToolCapability(provider: ProviderId): "supported" | "unsupported" | "unknown" {
+  const def = (getConfig().customProviders ?? []).find(
+    (definition) => definition.id === provider,
+  );
+  return def?.profile?.tools ?? "unknown";
+}
+
 export function resolveToolDialect(
   provider: ProviderId,
   model: string,
@@ -767,6 +818,13 @@ export function resolveToolDialect(
     // native-preferred: only attach for known tool-capable families
     if (ollamaToolFamilies.some((re) => re.test(model))) return "ollama";
     return "none";
+  }
+
+  if (providerToolDialect[provider] === undefined) {
+    // Custom routes serialize native tools only when declared supported;
+    // unknown stays conservative so an undeclared server never receives
+    // optional tool fields it may reject.
+    return customToolCapability(provider) === "supported" ? "openai" : "none";
   }
 
   return providerToolDialect[provider] ?? "none";

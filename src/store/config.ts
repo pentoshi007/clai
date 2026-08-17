@@ -49,7 +49,9 @@ const endpointEnvVars: Partial<Record<ProviderId, string>> = {
 function providerEndpointEnvVar(provider: ProviderId): string | undefined {
   if (endpointEnvVars[provider]) return endpointEnvVars[provider];
   const def = findCustomProviderDefSync(provider);
-  return def?.envVar;
+  // The endpoint environment is a separate field; an API-key env var must
+  // never be interpreted as a URL override (MR-028).
+  return def?.baseUrlEnv ?? def?.profile?.baseUrlEnv;
 }
 
 export type LearnedVisionEntry = boolean | { vision: boolean; at: string };
@@ -172,6 +174,8 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   meta: "paid-cloud",
   fireworks: "paid-cloud",
   hetzner: "free-cloud",
+  // Zero token markup, but billing is per token at provider list price.
+  orcarouter: "paid-cloud",
 };
 
 /**

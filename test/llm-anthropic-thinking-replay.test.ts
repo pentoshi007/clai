@@ -81,7 +81,13 @@ describe("replaying signed thinking", () => {
   ];
 
   it("emits the thinking block first on the tool_use turn", () => {
-    const messages = toAnthropicToolMessages(history);
+    const messages = toAnthropicToolMessages(history, {
+      target: {
+        provider: "anthropic",
+        model: "test-claude",
+        dialect: "anthropic-messages",
+      },
+    });
     const assistant = messages.find((m) => m.role === "assistant")!;
     const blocks = assistant.content as Array<Record<string, unknown>>;
     expect(blocks[0]).toEqual({

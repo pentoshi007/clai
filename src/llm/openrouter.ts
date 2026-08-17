@@ -25,6 +25,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
 
 export const openrouterProvider: LlmProvider = {
   id: "openrouter",
+  reasoningStyle: "openrouter",
   displayName: "OpenRouter",
   defaultModel: defaultModels.openrouter,
   envVar: "OPENROUTER_API_KEY",
@@ -75,6 +76,7 @@ export const openrouterProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("openrouter", model, payload);
   },
@@ -98,11 +100,13 @@ export const openrouterProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openrouter",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("openrouter", model, payload);
   },

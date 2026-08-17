@@ -5,6 +5,7 @@ import type { AgentPort } from "../../../src/app/ports/agent-port.js";
 import type { PersistencePort } from "../../../src/app/ports/persistence-port.js";
 import type { SessionPlan } from "../../../src/store/plan.js";
 import type { ChatMessage } from "../../../src/types.js";
+import { createContextSnapshot } from "../../../src/llm/context-snapshot.js";
 import { createCompositionRoot } from "../../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../../src/ui-core/bootstrap/capabilities.js";
 import { createTurnOutcome } from "../../../src/agent/turn-outcome.js";
@@ -281,6 +282,16 @@ describe("plan lifecycle (PLAN-004, F-021/023, V2-070)", () => {
         contextTokens: 88_000,
         contextLimit: 128_000,
         exact: true,
+        contextSnapshot: createContextSnapshot({
+          contextTokens: 88_000,
+          lastCompletionTokens: 0,
+          sessionPromptTokens: 0,
+          sessionCompletionTokens: 0,
+          scope: "provider-request",
+          precision: "provider-exact",
+          limit: { source: "unknown" },
+          observedAt: 0,
+        }),
       },
     });
     services.transcript.hydrate(

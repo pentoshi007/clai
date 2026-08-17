@@ -18,6 +18,16 @@ import {
   ingestOpenAiModelCatalog,
   isStreamOptionsUnsupportedError,
 } from "./http.js";
+import type { CompatibleUsageAliases } from "./token-usage.js";
+import {
+  customReasoningStyle,
+  endpointPrivacyHash,
+  resolveCustomHeaders,
+  validateCustomProviderProfile,
+  type CustomProviderProfileSpec,
+} from "./custom-provider-profile.js";
+import { recordControlRejection } from "./provider-profile.js";
+import { CHAT_COMPLETIONS_STREAM_TERMINAL } from "./stream-terminal.js";
 
 /** Persisted shape of one user-defined provider (JSON-serialisable). */
 export interface CustomProviderDef {
@@ -26,24 +36,75 @@ export interface CustomProviderDef {
   /** Normalised base URL ending in `/v1`. */
   readonly baseUrl: string;
   readonly envVar?: string | undefined;
+  /** Separate API-key environment; takes precedence over `envVar`. */
+  readonly keyEnv?: string | undefined;
+  /** Separate endpoint environment; `envVar` never doubles as one. */
+  readonly baseUrlEnv?: string | undefined;
   readonly defaultModel: string;
+  /** Optional telemetry-only aliases relative to a compatible `usage` object. */
+  readonly usageAliases?: CompatibleUsageAliases | undefined;
+  /** Optional validated wire-profile declaration. */
+  readonly profile?: CustomProviderProfileSpec | undefined;
+}
+
+/** Validation errors for a definition's declared profile, if any. */
+export function customProviderProfileErrors(
+  def: CustomProviderDef,
+): string[] {
+  if (!def.profile) return [];
+  return validateCustomProviderProfile(def.profile).errors;
+}
+
+function resolveBaseUrl(def: CustomProviderDef, auth: ProviderAuth): string {
+  const override = normalizeEndpointUrl(auth.baseUrl ?? "");
+  return override || def.baseUrl;
+}
+
+function authHeaders(
+  def: CustomProviderDef,
+  apiKey: string | undefined,
+): Record<string, string> | undefined {
+  const declared = resolveCustomHeaders(def.profile?.headers);
+  if (def.profile?.authType === "none-keyless") return declared;
+  if (def.profile?.authType === "custom-headers") return declared;
+  if (declared && apiKey) {
+    return { authorization: `Bearer ${apiKey}`, ...declared };
+  }
+  return undefined;
 }
 
 /** Build an OpenAI-compatible `LlmProvider` for a custom definition. */
 export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
   const providerId = def.id as ProviderId;
-  const baseUrl = def.baseUrl;
   const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
   const CACHE_TTL_MS = 60 * 60 * 1000;
-  let includeStreamUsage = true;
+  const keyless =
+    def.profile?.authType === "none-keyless" ||
+    def.profile?.authType === "custom-headers";
+  // Declared stream-option capability: "supported" suppresses the adaptive
+  // retry (a rejection becomes route evidence, not a second request);
+  // "unsupported" omits the field from the first request onward.
+  const declaredStreamOptions = def.profile?.streamOptions;
+  let includeStreamUsage = declaredStreamOptions !== "unsupported";
+  const reasoningStyle = customReasoningStyle(def.profile);
+
+  const requireKey = (auth: ProviderAuth): string | undefined => {
+    if (keyless) return undefined;
+    if (!auth.apiKey) throw new Error(`${def.displayName} API key is required`);
+    return auth.apiKey;
+  };
 
   return {
     id: providerId,
     displayName: def.displayName,
     defaultModel: def.defaultModel,
-    ...(def.envVar ? { envVar: def.envVar } : {}),
+    reasoningStyle,
+    ...(def.keyEnv ?? def.envVar
+      ? { envVar: def.keyEnv ?? def.envVar }
+      : {}),
     validateKey: (key: string) => key.trim().length >= 8,
     async listModels(auth: ProviderAuth): Promise<string[]> {
+      const baseUrl = resolveBaseUrl(def, auth);
       const cacheKey = `${baseUrl}|${auth.apiKey ?? ""}`;
       const now = Date.now();
       const cached = modelCache.get(cacheKey);
@@ -61,42 +122,67 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       }
     },
     async ping(auth: ProviderAuth): Promise<void> {
-      if (!auth.apiKey) throw new Error(`${def.displayName} API key is required`);
-      await openAiCompatiblePing(baseUrl, auth.apiKey);
+      const apiKey = requireKey(auth);
+      await openAiCompatiblePing(
+        resolveBaseUrl(def, auth),
+        apiKey ?? "",
+        authHeaders(def, apiKey),
+      );
     },
     async complete(request: CompletionRequest, auth: ProviderAuth): Promise<CompletionResult> {
-      if (!auth.apiKey) throw new Error(`${def.displayName} API key is required`);
+      const apiKey = requireKey(auth);
       const model = request.model ?? def.defaultModel;
       const payload = await openAiCompatibleComplete({
-        provider: def.displayName, providerId, baseUrl, apiKey: auth.apiKey, model,
+        provider: def.displayName, providerId,
+        baseUrl: resolveBaseUrl(def, auth), apiKey: apiKey ?? "",
+        headers: authHeaders(def, apiKey), model,
         messages: request.messages, maxTokens: request.maxTokens,
         temperature: request.temperature, signal: request.signal,
-        reasoning: request.thinking, reasoningStyle: "openai",
+        reasoning: request.thinking, reasoningStyle,
         tools: request.tools, toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
+        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        usageAliases: def.usageAliases,
       });
       return toCompletionResult(providerId, model, payload);
     },
     async stream(
       request: CompletionRequest, auth: ProviderAuth, onToken: (token: string) => void,
     ): Promise<CompletionResult> {
-      if (!auth.apiKey) throw new Error(`${def.displayName} API key is required`);
-      const apiKey = auth.apiKey;
+      const apiKey = requireKey(auth);
       const model = request.model ?? def.defaultModel;
+      const baseUrl = resolveBaseUrl(def, auth);
+      const headers = authHeaders(def, apiKey);
       const stream = (withUsage: boolean) => openAiCompatibleStream({
-        provider: def.displayName, providerId, baseUrl, apiKey, model,
+        provider: def.displayName, providerId, baseUrl,
+        apiKey: apiKey ?? "", headers, model,
         messages: request.messages, maxTokens: request.maxTokens,
         temperature: request.temperature, signal: request.signal, onToken,
-        onToolCallDelta: request.onToolCallDelta, reasoning: request.thinking,
-        reasoningStyle: "openai", tools: request.tools, toolChoice: request.toolChoice,
+        onToolCallDelta: request.onToolCallDelta, onStreamEvent: request.onStreamEvent, reasoning: request.thinking,
+        reasoningStyle, tools: request.tools, toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
+        reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
         includeStreamUsage: withUsage,
+        usageAliases: def.usageAliases,
+        streamTerminal:
+          def.profile?.terminal?.naturalEofAccepted === true
+            ? { ...CHAT_COMPLETIONS_STREAM_TERMINAL, naturalEofAccepted: true }
+            : undefined,
       });
       let payload;
       try {
         payload = await stream(includeStreamUsage);
       } catch (error) {
         if (!includeStreamUsage || !isStreamOptionsUnsupportedError(error)) throw error;
+        if (declaredStreamOptions === "supported") {
+          recordControlRejection({
+            provider: def.id,
+            model,
+            endpointHash: endpointPrivacyHash(baseUrl),
+            field: "stream_options",
+          });
+          throw error;
+        }
         includeStreamUsage = false;
         payload = await stream(false);
       }
@@ -130,7 +216,7 @@ export function findCustomProviderDef(
 /** In-memory cache of materialised `LlmProvider` instances keyed by id. */
 const providerCache = new Map<string, LlmProvider>();
 
-/** Resolve the `LlmProvider` for a custom provider id. */
+/** Resolve a custom definition by id. */
 export async function getCustomProvider(id: string): Promise<LlmProvider | undefined> {
   const cached = providerCache.get(id);
   if (cached) return cached;
@@ -143,14 +229,8 @@ export async function getCustomProvider(id: string): Promise<LlmProvider | undef
 }
 
 /**
- * Sync variant: resolve the `LlmProvider` for a custom provider id by reading
- * the config directly. Used by the router's sync `getProvider` so the provider
- * map lookup works for custom ids without an `await`.
- *
- * The static import of `getCustomProviders` below does NOT create a runtime
- * cycle: `store/config.js` only imports the `CustomProviderDef` *type* from
- * this module (erased at compile time), so there is no runtime edge from
- * config → custom-providers to close the loop.
+ * Sync variant: resolve a custom definition by reading the config directly.
+ * This remains safe because config imports this module's type only.
  */
 import { getCustomProviders } from "../store/config.js";
 
@@ -188,4 +268,3 @@ export function normalizeCustomProviderId(raw: string, existing: readonly string
 export function normalizeCustomBaseUrl(raw: string): string {
   return normalizeEndpointUrl(raw);
 }
-

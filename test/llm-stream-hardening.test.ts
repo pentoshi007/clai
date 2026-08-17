@@ -111,12 +111,21 @@ describe("cumulative stream snapshots", () => {
         "data: [DONE]\n\n",
       ]),
     );
+    const events: Array<{ type: string; text?: string }> = [];
+    const tokens: string[] = [];
     const result = await openAiCompatibleStream({
       ...baseOptions,
-      onToken: () => {},
+      onToken: (token: string) => tokens.push(token),
+      onStreamEvent: (event) => {
+        if (event.type === "reasoning_delta") {
+          events.push({ type: event.type, text: event.text });
+        }
+      },
     });
-    expect(result.text.split(`${reasoning}end`)).toHaveLength(2);
-    expect(result.text.endsWith("answer")).toBe(true);
+    expect(result.text).toBe("answer");
+    expect(tokens.join("")).toBe("answer");
+    expect(events.map((event) => event.text).join("")).toBe(`${reasoning}end`);
+    expect(result.reasoningBlock?.text).toBe(`${reasoning}end`);
   });
 });
 

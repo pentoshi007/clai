@@ -70,6 +70,18 @@ afterEach(async () => {
 function scriptedAgent(answer: string): AgentPort {
   return {
     async runTurn(request, handlers) {
+      const requestMessages = [
+        { role: "system" as const, content: "main system prompt" },
+        ...(request.history ?? []),
+        { role: "user" as const, content: request.prompt },
+      ];
+      handlers.onSuccessfulRequest?.({
+        provider: request.provider ?? ("groq" as never),
+        model: request.model ?? "test-model",
+        messages: requestMessages,
+        temperature: 0.2,
+        thinking: { enabled: false, effort: "none" },
+      });
       handlers.onEvent({ type: "turn-start", prompt: request.prompt });
       handlers.onEvent({ type: "assistant-message", text: answer });
       handlers.onMessages?.([

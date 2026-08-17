@@ -15,6 +15,7 @@ import { useKeyboard, usePaste } from "@opentui/react";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import { formatAttachmentReference } from "../../ui/mentions.js";
 import { getConfig } from "../../store/config.js";
+import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
@@ -126,7 +127,11 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     session.provider ?? cfg.defaultProvider,
     session.model ?? cfg.defaultModel,
     cfg.permissions ?? "default",
-    cfg.thinking.enabled ? cfg.thinking.effort : undefined,
+    effectiveThinkingEffort(
+      session.provider ?? cfg.defaultProvider,
+      session.model ?? cfg.defaultModel,
+      cfg.thinking,
+    ),
   );
 
   const shouldOwnKeyboard =

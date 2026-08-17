@@ -40,6 +40,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export const tokenrouterProvider: LlmProvider = {
   id: "tokenrouter",
+  reasoningStyle: "openai",
   displayName: "TokenRouter",
   defaultModel: defaultModels.tokenrouter,
   envVar: "TOKENROUTER_API_KEY",
@@ -63,8 +64,9 @@ export const tokenrouterProvider: LlmProvider = {
         return models;
       }
       return cached?.models ?? models;
-    } catch {
-      return cached?.models ?? [];
+    } catch (err) {
+      if (cached?.models && cached.models.length > 0) return cached.models;
+      throw err;
     }
   },
   async ping(auth: ProviderAuth): Promise<void> {
@@ -92,6 +94,7 @@ export const tokenrouterProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("tokenrouter", model, payload);
   },
@@ -114,11 +117,13 @@ export const tokenrouterProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openai",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("tokenrouter", model, payload);
   },

@@ -1,3 +1,4 @@
+import type { ContextAttemptReference, ContextSnapshotScope } from "../../llm/context-snapshot.js";
 import type { SessionPlan } from "../../store/plan.js";
 import type { ProviderId } from "../../types.js";
 
@@ -108,6 +109,10 @@ export interface AppEventPayloads {
     readonly summary: string;
     readonly beforeTokens: number;
     readonly afterTokens: number;
+    readonly contextScope: Extract<
+      ContextSnapshotScope,
+      "message-history" | "assembled-request"
+    >;
   };
   "compaction-failed": {
     readonly compactionId: string;
@@ -126,8 +131,15 @@ export interface AppEventPayloads {
     readonly completionTokens: number;
     readonly totalTokens: number;
     readonly exact: boolean;
+    /** False only when the provider omitted the prompt measurement. */
+    readonly promptTokensKnown?: false | undefined;
+    readonly cachedPromptTokens?: number | undefined;
+    readonly cacheCreationTokens?: number | undefined;
+    readonly uncachedPromptTokens?: number | undefined;
+    readonly reasoningTokens?: number | undefined;
     readonly model?: string | undefined;
     readonly provider?: ProviderId | undefined;
+    readonly attempt?: ContextAttemptReference | undefined;
   };
   "context-estimate": {
     readonly estimatedTokens: number;

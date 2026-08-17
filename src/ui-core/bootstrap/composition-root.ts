@@ -26,6 +26,7 @@ import type { InteractiveSessionsPort } from "../../app/ports/interactive-sessio
 import { createCurrentUpdatesPort } from "../../app/adapters/current-updates-adapter.js";
 import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import { SessionController } from "../../app/controllers/session-controller.js";
+import { CancelCoordinator } from "../../app/controllers/cancel-coordinator.js";
 import {
   buildDefaultCommandRegistry,
   type CommandRegistry,
@@ -108,6 +109,7 @@ export interface AppServices {
   readonly overlay: OverlayController;
   /** Cancellable non-session operations (e.g. /update download + install). */
   readonly interruptible: InterruptibleController;
+  readonly cancel: CancelCoordinator;
   readonly pagerExport: PagerExportPort;
   readonly requestExit: () => void;
   readonly capabilities: TerminalCapabilityReport;
@@ -145,16 +147,36 @@ export function createCompositionRoot(
           completionTokens: event.payload.completionTokens,
           totalTokens: event.payload.totalTokens,
           exact: event.payload.exact,
+          ...(event.payload.promptTokensKnown === false
+            ? { promptTokensKnown: false }
+            : {}),
+          ...(event.payload.cachedPromptTokens !== undefined
+            ? { cachedPromptTokens: event.payload.cachedPromptTokens }
+            : {}),
+          ...(event.payload.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: event.payload.cacheCreationTokens }
+            : {}),
+          ...(event.payload.uncachedPromptTokens !== undefined
+            ? { uncachedPromptTokens: event.payload.uncachedPromptTokens }
+            : {}),
+          ...(event.payload.reasoningTokens !== undefined
+            ? { reasoningTokens: event.payload.reasoningTokens }
+            : {}),
         },
         event.payload.model,
         event.payload.provider,
+        event.payload.attempt,
       );
     }
     // Auto-compaction mutates history through onMessages. Its provider usage is
     // otherwise stale until the following model response, so immediately use
     // the same final assembled-request estimate shown on the compaction card.
     if (event.type === "compaction-completed" && sessionRef) {
-      sessionRef.noteContextCompacted(event.payload.afterTokens);
+      sessionRef.noteContextCompacted(
+        event.payload.afterTokens,
+        event.payload.contextScope,
+        event.payload.compactionId,
+      );
     }
     if (event.type === "context-estimate" && sessionRef) {
       sessionRef.noteContextEstimate(event.payload.estimatedTokens);
@@ -217,10 +239,18 @@ export function createCompositionRoot(
     getTranscriptSnapshot: () => {
       const live = sessionRef;
       if (!live) return undefined;
-      return serializeForHistory(transcript.getState(), (id) => live.spool.tail(id));
+      return transcript.mergePersistSnapshot(
+        serializeForHistory(transcript.getState(), (id) => live.spool.tail(id)),
+      );
     },
   });
   sessionRef = session;
+  const cancel = new CancelCoordinator({
+    session,
+    sessionId: () => session.sessionId,
+    jobs: ports.jobs,
+    interruptible,
+  });
   const unsubscribePlanJobs = ports.jobs.subscribe((change) => {
     if (change.type !== "notification") return;
     const job = ports.jobs.get(change.jobId);
@@ -256,6 +286,7 @@ export function createCompositionRoot(
     plan,
     overlay,
     interruptible,
+    cancel,
     pagerExport,
     requestExit: options.requestExit ?? (() => {}),
     capabilities,

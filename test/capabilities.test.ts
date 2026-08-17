@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearModelVisionCapabilities,
+  clearReasoningUnsupported,
+  effectiveThinkingEffort,
+  markReasoningUnsupported,
   modelSupportsThinking,
   modelSupportsVision,
   preferredVisionModel,
@@ -59,5 +62,27 @@ describe("runtime vision capability metadata", () => {
     });
     expect(modelSupportsVision("openai", "gpt-4o-mini")).toBe(false);
     expect(visionCapabilitySource("openai", "gpt-4o-mini")).toBe("user");
+  });
+});
+describe("effectiveThinkingEffort", () => {
+  it("returns undefined when thinking is disabled or absent", () => {
+    expect(effectiveThinkingEffort("openai", "gpt-5.1", undefined)).toBeUndefined();
+    expect(
+      effectiveThinkingEffort("openai", "gpt-5.1", { enabled: false, effort: "max" }),
+    ).toBeUndefined();
+  });
+
+  it("returns the configured effort when reasoning is supported", () => {
+    expect(
+      effectiveThinkingEffort("openai", "gpt-5.1", { enabled: true, effort: "max" }),
+    ).toBe("max");
+  });
+
+  it("returns undefined after the route is marked reasoning-unsupported", () => {
+    markReasoningUnsupported("openai", "gpt-5.1");
+    expect(
+      effectiveThinkingEffort("openai", "gpt-5.1", { enabled: true, effort: "max" }),
+    ).toBeUndefined();
+    clearReasoningUnsupported();
   });
 });

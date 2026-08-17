@@ -47,6 +47,7 @@ export interface Theme {
   readonly magenta: string;
   /** Soft cyan for command labels (legacy #67E8F9). */
   readonly cyan: string;
+  readonly aqua: string;
   readonly white: string;
   /** Assistant / model reply body (user request: green chat text). */
   readonly response: string;
@@ -135,6 +136,7 @@ const DARK_THEME: Theme = {
   // Top of CLAI wordmark "I" (magentaBright) — plan pane + agent card frame.
   magenta: "#FF55FF",
   cyan: "#67E8F9",
+  aqua: "#2EEBFF",
   white: "#FFFFFF",
   response: "#4ADE80",
   activity: "#FACC15",
@@ -191,6 +193,7 @@ const LIGHT_THEME: Theme = {
   // Top of CLAI wordmark "I" (slightly deeper on light bg for contrast).
   magenta: "#D946EF",
   cyan: "#0891b2",
+  aqua: "#0891B2",
   white: "#FFFFFF",
   response: "#15803d",
   activity: "#a16207",

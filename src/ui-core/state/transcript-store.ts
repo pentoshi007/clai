@@ -9,6 +9,7 @@
  */
 
 import type { AnyAppEvent } from "../../app/events/app-event.js";
+import type { TranscriptItem as ClassicTranscriptItem } from "../../app/ports/transcript-item.js";
 import { applyAppEvent } from "./transcript-reducer.js";
 import { EMPTY_TRANSCRIPT_STATE, type TranscriptState } from "./transcript-types.js";
 
@@ -19,6 +20,8 @@ export class TranscriptStore {
   private readonly listeners = new Set<TranscriptListener>();
   private notifyTimer: ReturnType<typeof setTimeout> | undefined;
   private notifyPending = false;
+  private persistBase: readonly ClassicTranscriptItem[] = [];
+  private persistHydratedIds = new Set<string>();
 
   // Token-rate events fire dozens of times per second; notifying React on each
   // one re-reconciles the whole transcript and starves composer input. Batch
@@ -109,16 +112,36 @@ export class TranscriptStore {
   }
 
   reset(): void {
+    this.persistBase = [];
+    this.persistHydratedIds = new Set();
     this.setState(EMPTY_TRANSCRIPT_STATE);
   }
 
   /**
    * Replace the entire visual transcript (used by /history resume).
    * Preserves global expand toggles so user prefs survive a session switch.
+   * `rebaseSequence: false` keeps the live sequence clock (in-session restores
+   * must never rewind it, or the next sequencer event arrives as a gap).
    */
-  hydrate(next: TranscriptState): void {
+  hydrate(
+    next: TranscriptState,
+    options?:
+      | {
+          readonly rebaseSequence?: boolean;
+          readonly persistBase?: readonly ClassicTranscriptItem[] | undefined;
+        }
+      | undefined,
+  ): void {
+    if (options && "persistBase" in options) {
+      this.persistBase = options.persistBase ?? [];
+      this.persistHydratedIds = new Set(next.order);
+    }
+    const rebase = options?.rebaseSequence !== false;
     this.setState({
       ...next,
+      ...(rebase
+        ? {}
+        : { lastSequence: Math.max(this.state.lastSequence, next.lastSequence) }),
       expandThinkingGlobal: this.state.expandThinkingGlobal,
       expandOutputGlobal: this.state.expandOutputGlobal,
       expandFileDiffsGlobal: this.state.expandFileDiffsGlobal,
@@ -128,6 +151,14 @@ export class TranscriptStore {
       pendingThinkingId: undefined,
       runningStatus: undefined,
     });
+  }
+
+  mergePersistSnapshot(items: ClassicTranscriptItem[]): ClassicTranscriptItem[] {
+    if (this.persistBase.length === 0 && this.persistHydratedIds.size === 0) {
+      return items;
+    }
+    const fresh = items.filter((item) => !this.persistHydratedIds.has(item.id));
+    return [...this.persistBase, ...fresh];
   }
 
   private setState(next: TranscriptState): void {

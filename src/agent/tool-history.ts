@@ -1,4 +1,14 @@
-import type { ChatMessage, NativeToolCall, ReasoningBlock } from "../types.js";
+import type {
+  ChatMessage,
+  NativeToolCall,
+  ReasoningArtifact,
+  ReasoningBlock,
+} from "../types.js";
+import {
+  legacyReasoningBlockFromArtifacts,
+  rebindReasoningArtifactsToToolCalls,
+  reasoningArtifactsForPersistence,
+} from "../llm/reasoning-artifacts.js";
 import { syntheticToolCallId } from "../llm/tool-protocol.js";
 import { slimToolArgs } from "./message-slim.js";
 import { isSessionStateMessage } from "./session-state.js";
@@ -143,16 +153,30 @@ export function appendAssistantWithTools(
    * thinking is on; other dialects ignore the field.
    */
   reasoningBlock?: ReasoningBlock | undefined,
+  reasoningArtifacts?: readonly ReasoningArtifact[] | undefined,
 ): void {
+  const durableCalls = slimNativeToolCallsForHistory(toolCalls);
+  const reboundArtifacts = rebindReasoningArtifactsToToolCalls({
+    artifacts: reasoningArtifacts,
+    toolCalls: durableCalls,
+  });
+  const persistedArtifacts = reasoningArtifactsForPersistence({
+    artifacts: reboundArtifacts,
+    hasToolCalls: durableCalls.length > 0,
+  });
+  const durableReasoningBlock =
+    reasoningBlock ??
+    (persistedArtifacts
+      ? legacyReasoningBlockFromArtifacts(persistedArtifacts)
+      : undefined);
   messages.push({
     role: "assistant",
     content: text ?? "",
-    ...(toolCalls.length
-      ? { toolCalls: slimNativeToolCallsForHistory(toolCalls) }
+    ...(durableCalls.length ? { toolCalls: durableCalls } : {}),
+    ...(durableReasoningBlock?.text || durableReasoningBlock?.items?.length
+      ? { reasoningBlock: durableReasoningBlock }
       : {}),
-    ...(reasoningBlock?.text || reasoningBlock?.items?.length
-      ? { reasoningBlock }
-      : {}),
+    ...(persistedArtifacts ? { reasoningArtifacts: persistedArtifacts } : {}),
   });
 }
 

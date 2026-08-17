@@ -246,6 +246,61 @@ describe("V2-021 AgentEventAdapter", () => {
     ]);
   });
 
+  it("preserves real attempt metadata and explicit compaction scope", () => {
+    const attempt = {
+      kind: "generation" as const,
+      sequence: 2,
+      provider: "openai" as const,
+      model: "gpt-test",
+      mode: "stream" as const,
+      reason: "initial" as const,
+      outcome: "success" as const,
+    };
+    const out = collectFrom([
+      {
+        type: "token-usage",
+        usage: {
+          promptTokens: 120,
+          completionTokens: 20,
+          totalTokens: 140,
+          exact: true,
+          cachedPromptTokens: 96,
+          cacheCreationTokens: 4,
+          uncachedPromptTokens: 20,
+          reasoningTokens: 12,
+        },
+        provider: "openai",
+        model: "gpt-test",
+        attempt,
+      },
+      {
+        type: "compaction-completed",
+        id: "compact-1",
+        summary: "condensed",
+        beforeTokens: 120,
+        afterTokens: 40,
+        contextScope: "assembled-request",
+      },
+    ]);
+
+    expect(out).toMatchObject([
+      {
+        type: "token-usage",
+        payload: {
+          attempt,
+          cachedPromptTokens: 96,
+          cacheCreationTokens: 4,
+          uncachedPromptTokens: 20,
+          reasoningTokens: 12,
+        },
+      },
+      {
+        type: "compaction-completed",
+        payload: { contextScope: "assembled-request" },
+      },
+    ]);
+  });
+
   it("produces byte-identical output on replay with a deterministic id factory", () => {
     const first = collectFrom(scriptedAgentEvents, "run-");
     const second = collectFrom(scriptedAgentEvents, "run-");

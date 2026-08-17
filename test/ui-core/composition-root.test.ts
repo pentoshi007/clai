@@ -8,6 +8,7 @@ import type { ChatMessage } from "../../src/types.js";
 import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
+import { handleContext } from "../../src/ui-core/commands/session-commands.js";
 import { createTurnOutcome, type TurnOutcome } from "../../src/agent/turn-outcome.js";
 
 class StubAgent implements AgentPort {
@@ -22,6 +23,38 @@ class StubAgent implements AgentPort {
     handlers.onMessages?.([
       { role: "user", content: "go" },
       { role: "assistant", content: "hi" },
+    ]);
+    return outcome;
+  }
+}
+
+class UsageAgent implements AgentPort {
+  async runTurn(
+    _req: RunTurnRequest,
+    handlers: RunTurnHandlers,
+  ): Promise<TurnOutcome> {
+    const outcome = createTurnOutcome({ status: "succeeded", answer: "usage", steps: 1, remainingCriteria: [] });
+    handlers.onEvent({ type: "turn-start", prompt: "usage" });
+    handlers.onEvent({
+      type: "token-usage",
+      provider: "openai",
+      model: "gpt-test",
+      usage: {
+        promptTokens: 120,
+        completionTokens: 20,
+        totalTokens: 140,
+        exact: true,
+        cachedPromptTokens: 96,
+        cacheCreationTokens: 4,
+        uncachedPromptTokens: 20,
+        reasoningTokens: 12,
+      },
+    });
+    handlers.onEvent({ type: "assistant-message", text: "usage" });
+    handlers.onEvent({ type: "turn-end", outcome, finalAnswer: "usage", steps: 1 });
+    handlers.onMessages?.([
+      { role: "user", content: "usage" },
+      { role: "assistant", content: "usage" },
     ]);
     return outcome;
   }
@@ -110,6 +143,40 @@ describe("createCompositionRoot", () => {
     // sequence is monotonic per session
     const seqs = services.recordedEvents.map((e) => e.sequence);
     expect([...seqs]).toEqual([...seqs].sort((a, b) => a - b));
+    services.dispose();
+  });
+
+  it("propagates cache and reasoning telemetry into the shared context inspection command", async () => {
+    const services = createCompositionRoot({
+      agent: new UsageAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+      captureEvents: true,
+    });
+
+    await services.session.submit("usage");
+
+    expect(services.session.getState().contextSnapshot).toMatchObject({
+      cache: {
+        kind: "reported",
+        readTokens: 96,
+        creationTokens: 4,
+        uncachedTokens: 20,
+      },
+      reasoning: { kind: "reported", outputTokens: 12 },
+    });
+
+    handleContext(services);
+    const notice = services.recordedEvents.at(-1);
+    expect(notice).toMatchObject({
+      type: "notice",
+      payload: {
+        text: expect.stringContaining("cache read 96 / write 4 / uncached 20"),
+      },
+    });
+    expect(
+      notice?.type === "notice" ? notice.payload.text : "",
+    ).toContain("reasoning output 12");
     services.dispose();
   });
 

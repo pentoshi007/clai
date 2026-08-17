@@ -1,4 +1,5 @@
 import type { Mode } from "../types.js";
+import { estimateTextTokens } from "./request-accounting.js";
 
 export type PromptSectionKind =
   | "safety"
@@ -43,8 +44,6 @@ const priority: Record<PromptSectionKind, number> = {
   context: 8,
 };
 
-const estimateTokens = (value: string): number => Math.ceil(value.length / 4);
-
 /** Canonical composer used immediately before every provider request. */
 export function composeAgentSystemPrompt(ctx: AgentPromptContext): ComposedPrompt {
   const modeSection: AgentPromptSection = {
@@ -57,13 +56,13 @@ export function composeAgentSystemPrompt(ctx: AgentPromptContext): ComposedPromp
     .sort((a, b) => priority[a.kind] - priority[b.kind]);
   const selected: AgentPromptSection[] = [];
   const omitted: PromptSectionKind[] = [];
-  const maxChars = ctx.maxTokens === undefined ? Infinity : Math.max(0, ctx.maxTokens * 4);
+  const maxSectionTokens = ctx.maxTokens ?? Number.POSITIVE_INFINITY;
   let used = 0;
 
   for (const section of ordered) {
-    const separator = selected.length === 0 ? 0 : 2;
-    const size = section.content.length + separator;
-    if (section.mandatory || used + size <= maxChars) {
+    // One shared estimator decides section admission; no local chars ratio.
+    const size = estimateTextTokens(section.content) + (selected.length === 0 ? 0 : 1);
+    if (section.mandatory || used + size <= maxSectionTokens) {
       selected.push(section);
       used += size;
     } else {
@@ -76,6 +75,6 @@ export function composeAgentSystemPrompt(ctx: AgentPromptContext): ComposedPromp
     content,
     included: selected.map((section) => section.kind),
     omitted,
-    estimatedTokens: estimateTokens(content),
+    estimatedTokens: estimateTextTokens(content),
   };
 }

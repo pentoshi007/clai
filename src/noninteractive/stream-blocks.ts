@@ -645,11 +645,22 @@ export function buildTokenUsageLines(
   event: Extract<AgentEvent, { type: "token-usage" }>,
 ): readonly string[] {
   if (!verbose(ctx)) return [];
-  const body = meta(ctx, [
+  const usage = event.usage;
+  const parts: (string | undefined)[] = [
     event.model,
-    `${event.usage.promptTokens.toLocaleString()} in`,
-    `${event.usage.completionTokens.toLocaleString()} out`,
-  ]);
+    `${usage.promptTokens.toLocaleString()} in`,
+    `${usage.completionTokens.toLocaleString()} out`,
+  ];
+  if (usage.cachedPromptTokens !== undefined) {
+    parts.push(`${usage.cachedPromptTokens.toLocaleString()} cached`);
+  }
+  if (usage.cacheCreationTokens !== undefined) {
+    parts.push(`${usage.cacheCreationTokens.toLocaleString()} cache-write`);
+  }
+  if (usage.reasoningTokens !== undefined) {
+    parts.push(`${usage.reasoningTokens.toLocaleString()} reasoning`);
+  }
+  const body = meta(ctx, parts);
   return [row(ctx, styled(ctx, body, { fg: "muted" }))];
 }
 

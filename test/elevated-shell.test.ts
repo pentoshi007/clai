@@ -1,15 +1,22 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   formatSudoStdinPassword,
   prepareElevatedBackgroundCommand,
   preparePrivilegedBackgroundArgv,
   tryRunElevatedWithoutTty,
 } from "../src/tools/elevated-shell.js";
+import { resetSudoSession } from "../src/tools/sudo-session.js";
 import {
   getAllowInteractiveStdinInherit,
   setAllowInteractiveStdinInherit,
 } from "../src/tools/shell.js";
 import type { spawnArgv } from "../src/tools/shell.js";
+
+// The sudo session cache is module-level: each test must start cold so its
+// own requestSecret/runAuth spies observe the prompt + validation.
+beforeEach(() => {
+  resetSudoSession();
+});
 
 describe("formatSudoStdinPassword", () => {
   it("strips trailing newlines but keeps spaces and ends with one newline", () => {

@@ -40,6 +40,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export const lightningProvider: LlmProvider = {
   id: "lightning",
+  reasoningStyle: "openai",
   displayName: "Lightning AI",
   defaultModel: defaultModels.lightning,
   envVar: "LIGHTNING_API_KEY",
@@ -93,6 +94,7 @@ export const lightningProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("lightning", model, payload);
   },
@@ -115,11 +117,13 @@ export const lightningProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openai",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("lightning", model, payload);
   },

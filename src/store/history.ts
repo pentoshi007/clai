@@ -30,6 +30,7 @@ import { prepareImageForModel } from "../attachments/image-prepare.js";
 import type { TranscriptItem } from "../app/ports/transcript-item.js";
 import type { PreviousTurnSignal } from "../agent/continue-orient.js";
 import { redactSecrets } from "../llm/provider.js";
+import { canonicalizeChatMessageReasoningArtifacts } from "../llm/reasoning-artifacts.js";
 import { redactSecretsCached } from "./redaction-cache.js";
 import { getConfig } from "./config.js";
 import { safeCwd } from "../os/cwd.js";
@@ -95,6 +96,8 @@ export interface PersistedContextUsage {
   sessionPromptTokens?: number | undefined;
   sessionCompletionTokens?: number | undefined;
   exact: boolean;
+  /** Additive canonical snapshot; old records retain the six legacy fields. */
+  contextSnapshot?: import("../llm/context-snapshot.js").ContextSnapshotV1 | undefined;
 }
 
 export interface HistoryRecord {
@@ -279,6 +282,13 @@ function newId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function hydrateHistoryRecord(record: HistoryRecord): HistoryRecord {
+  return {
+    ...record,
+    messages: record.messages.map(canonicalizeChatMessageReasoningArtifacts),
+  };
+}
+
 function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((message) => {
     const { images, ...rest } = message;
@@ -287,11 +297,11 @@ function scrubMessages(messages: ChatMessage[]): ChatMessage[] {
         ? [{ mediaType: image.mediaType, dataBase64: "", path: image.path }]
         : [],
     );
-    return {
+    return canonicalizeChatMessageReasoningArtifacts({
       ...rest,
       content: redactSecretsCached(message.content),
       ...(persistedImages?.length ? { images: persistedImages } : {}),
-    };
+    });
   });
 }
 
@@ -656,7 +666,8 @@ async function readJsonlRecordsFrom(path: string): Promise<HistoryRecord[]> {
           return null;
         }
       })
-      .filter((record): record is HistoryRecord => record !== null);
+      .filter((record): record is HistoryRecord => record !== null)
+      .map(hydrateHistoryRecord);
   } catch (err: any) {
     if (err && err.code === "EACCES") handlePermissionError(err);
     return [];
@@ -748,7 +759,9 @@ export async function recoverOrphanedHistory(): Promise<{
         const lines = raw.split("\n").filter((line) => line.trim().length > 0);
         for (const line of lines) {
           try {
-            active.push(JSON.parse(line) as HistoryRecord);
+            active.push(
+              hydrateHistoryRecord(JSON.parse(line) as HistoryRecord),
+            );
           } catch {
             activeCorrupt = true;
           }
@@ -1182,7 +1195,7 @@ async function upsertJsonlUnderLock(
       jsonlFilePath(),
       existingEntry,
     );
-    if (stored) return stored;
+    if (stored) return hydrateHistoryRecord(stored);
   }
 
   const result = await appendIndexedHistoryRecord(
@@ -1262,7 +1275,7 @@ function rowToSession(row: unknown): HistoryRecord {
         workspaceCode?: string;
       };
   const messages = Array.isArray(parsed) ? parsed : parsed.messages ?? [];
-  return {
+  return hydrateHistoryRecord({
     id: data.id,
     writerGeneration: data.writer_generation ?? undefined,
     revision:
@@ -1279,7 +1292,7 @@ function rowToSession(row: unknown): HistoryRecord {
     previousTurn: Array.isArray(parsed) ? undefined : parsed.previousTurn,
     workspaceFolder: Array.isArray(parsed) ? undefined : parsed.workspaceFolder,
     workspaceCode: Array.isArray(parsed) ? undefined : parsed.workspaceCode,
-  };
+  });
 }
 
 function rowToSummary(row: unknown): HistorySummary {
@@ -1464,7 +1477,7 @@ export async function getSession(
       jsonlFilePath(),
       entry,
     );
-    if (indexed) return indexed;
+    if (indexed) return hydrateHistoryRecord(indexed);
   }
 
   const db = await loadDatabase();
@@ -1490,12 +1503,13 @@ export async function getSession(
       jsonlFilePath(),
       jsonlIndexFilePath(),
     );
-    return active;
+    return hydrateHistoryRecord(active);
   }
-  return findHistoryRecordStreaming<HistoryRecord>(
+  const archived = await findHistoryRecordStreaming<HistoryRecord>(
     archiveFilePath(),
     sessionId,
   );
+  return archived ? hydrateHistoryRecord(archived) : undefined;
 }
 
 export function getHistoryPath(): string {

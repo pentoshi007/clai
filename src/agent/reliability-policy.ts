@@ -149,6 +149,7 @@ export function resolveStepMaxTokens(input: {
   toolsAttached: boolean;
   recoveryNudge?: boolean | undefined;
   truncationDepth?: number | undefined;
+  thinkingEnabled?: boolean | undefined;
   policy?: ReliabilityPolicy | undefined;
 }): number {
   const policy = input.policy ?? getReliabilityPolicy();
@@ -157,10 +158,14 @@ export function resolveStepMaxTokens(input: {
     if (input.recoveryNudge) {
       return Math.max(ADAPTIVE_MAX_TOKENS_FLOOR, ADAPTIVE_MAX_TOKENS_LIGHT);
     }
-    if (input.toolsAttached || input.nativeToolsActive) {
-      return ADAPTIVE_MAX_TOKENS_TOOL_STEP;
+    const adaptive =
+      input.toolsAttached || input.nativeToolsActive
+        ? ADAPTIVE_MAX_TOKENS_TOOL_STEP
+        : ADAPTIVE_MAX_TOKENS_LIGHT;
+    if (input.thinkingEnabled) {
+      return Math.max(adaptive, LEGACY_MAX_TOKENS);
     }
-    return ADAPTIVE_MAX_TOKENS_LIGHT;
+    return adaptive;
   })();
   const depth = input.truncationDepth ?? 0;
   return depth > 0 ? Math.min(65_536, base * 2 ** depth) : base;

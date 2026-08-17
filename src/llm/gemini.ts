@@ -18,25 +18,67 @@ import {
   readStreamLines,
   streamIdleBudgets,
 } from "./http.js";
+import { generationFetch } from "./operation-usage.js";
 import { registerProviderModels } from "./capabilities.js";
 import {
   geminiToolBodyFields,
   parseGeminiFunctionCalls,
   toGeminiToolContents,
+  type GeminiReasoningPart,
 } from "./adapters/gemini-tools.js";
 import { fromWireName } from "./tool-protocol.js";
 import { parseGeminiUsage } from "./token-usage.js";
 import {
-  REASONING_CLOSE,
-  REASONING_OPEN,
-  wrapReasoning,
-} from "./reasoning-marker.js";
+  emitStreamReasoningArtifacts,
+  emitStreamReasoningDelta,
+} from "./stream-events.js";
+import { GEMINI_STREAM_TERMINAL, requireTerminalProof } from "./stream-terminal.js";
 import {
   firstSystemPrompt,
   requestContextSystemPrompts,
   withoutRequestContextSystemMessages,
 } from "./system-messages.js";
-import { resolveSampling } from "./sampling.js";
+import {
+  createReasoningArtifact,
+  createReasoningArtifactProvenance,
+} from "./reasoning-artifacts.js";
+import { compileRequestPlan, type RequestPlanV1 } from "./request-plan.js";
+
+const GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+
+function geminiReasoningArtifacts(
+  model: string,
+  parts: readonly GeminiReasoningPart[],
+) {
+  const provenance = createReasoningArtifactProvenance({
+    provider: "gemini",
+    model,
+    dialect: "gemini-generate-content",
+    endpoint: GEMINI_API_BASE_URL,
+  });
+  const artifacts = parts.map((part) => {
+    const boundToTool = part.toolCallIndex !== undefined;
+    return createReasoningArtifact({
+      kind: part.kind === "thought" ? "plaintext" : "thought-signature",
+      raw: part.raw,
+      ...(part.displaySummary ? { displaySummary: part.displaySummary } : {}),
+      provenance,
+      replay: boundToTool
+        ? { scope: "tool-turn", persistence: "tool-turn" }
+        : { scope: "none", persistence: "never" },
+      position: {
+        sequence: part.sequence,
+        placement: boundToTool
+          ? part.kind === "thought-signature"
+            ? "on-tool-call"
+            : "before-tool-call"
+          : "assistant",
+        ...(boundToTool ? { toolCallIndex: part.toolCallIndex } : {}),
+      },
+    });
+  });
+  return artifacts.length ? artifacts : undefined;
+}
 
 type GeminiPart =
   | { text: string }
@@ -44,9 +86,16 @@ type GeminiPart =
 
 function geminiContents(
   messages: ChatMessage[],
+  model: string,
+  observe: CompletionRequest["onReasoningArtifactReplayDecision"],
+  target: RequestPlanV1["replay"]["target"],
 ): Array<{ role: "user" | "model"; parts: GeminiPart[] }> {
   return toGeminiToolContents(
     withoutRequestContextSystemMessages(messages),
+    {
+      target,
+      observe,
+    },
   ) as Array<{
     role: "user" | "model";
     parts: GeminiPart[];
@@ -171,27 +220,36 @@ export function clampGeminiThinkingBudget(
   return { ...thinkingConfig, thinkingBudget: allowed };
 }
 
-export function geminiBody(request: CompletionRequest): string {
+export function geminiBody(request: CompletionRequest, stream = false): string {
   const model = request.model ?? defaultModels.gemini;
-  const defaultMaxTokens = request.thinking?.enabled ? 8_192 : 4_096;
-  const maxOutputTokens = request.maxTokens ?? defaultMaxTokens;
-  const thinkingConfig = clampGeminiThinkingBudget(
-    geminiThinkingConfig(request.thinking, model),
-    maxOutputTokens,
-  );
-  const sampling = resolveSampling({
+  const plan = compileRequestPlan({
     provider: "gemini",
     model,
-    reasoningEnabled: Boolean(request.thinking?.enabled),
-    requestedTemperature: request.temperature,
+    messages: request.messages,
+    stream,
+    endpoint: GEMINI_API_BASE_URL,
+    reasoning: request.thinking,
+    tools: request.tools,
+    toolChoice: request.toolChoice,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens,
   });
+  const defaultMaxTokens = plan.controls.reasoning?.enabled ? 8_192 : 4_096;
+  const maxOutputTokens = plan.controls.requestedMaxTokens ?? defaultMaxTokens;
+  const thinkingConfig = clampGeminiThinkingBudget(
+    geminiThinkingConfig(plan.controls.reasoning, model),
+    maxOutputTokens,
+  );
   const body: Record<string, unknown> = {
     contents: geminiContents(
-      imageCapableMessages("gemini", model, request.messages),
+      imageCapableMessages("gemini", model, [...plan.timeline.messages]),
+      model,
+      request.onReasoningArtifactReplayDecision,
+      plan.replay.target,
     ),
     generationConfig: {
-      temperature: sampling.temperature,
-      ...(sampling.topP !== undefined ? { topP: sampling.topP } : {}),
+      temperature: plan.controls.temperature,
+      ...(plan.controls.topP !== undefined ? { topP: plan.controls.topP } : {}),
       maxOutputTokens,
       ...(thinkingConfig !== undefined
         ? { thinkingConfig }
@@ -199,11 +257,13 @@ export function geminiBody(request: CompletionRequest): string {
     },
     safetySettings: GEMINI_SAFETY_SETTINGS,
     ...geminiToolBodyFields({
-      tools: request.tools,
-      toolChoice: request.toolChoice,
+      tools: plan.tools.definitions.length
+        ? [...plan.tools.definitions]
+        : undefined,
+      toolChoice: plan.tools.choice,
     }),
   };
-  const sys = systemInstruction(request.messages);
+  const sys = systemInstruction([...plan.timeline.messages]);
   if (sys) body.systemInstruction = sys;
   return JSON.stringify(body);
 }
@@ -253,7 +313,7 @@ export const geminiProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Gemini API key is required");
     const model = request.model ?? defaultModels.gemini;
-    const response = await fetch(
+    const response = await generationFetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(auth.apiKey)}`,
       {
         method: "POST",
@@ -281,25 +341,22 @@ export const geminiProvider: LlmProvider = {
       usageMetadata?: unknown;
     }>(response);
     const parts = data.candidates?.[0]?.content?.parts ?? [];
-    const thought = parts
-      .filter((part) => part.thought)
-      .map((part) => part.text ?? "")
-      .join("")
-      .trim();
     const parsed = parseGeminiFunctionCalls(parts);
+    const reasoningArtifacts = geminiReasoningArtifacts(
+      model,
+      parsed.reasoningParts,
+    );
     if (!parsed.text && parsed.toolCalls.length === 0) {
       assertGeminiFinishReasonAllowed(data.candidates?.[0]?.finishReason);
       throw new ProviderError("Gemini completed without a visible answer.");
     }
-    const final = thought
-      ? `${wrapReasoning(thought)}${parsed.text}`
-      : parsed.text;
     const usage = parseGeminiUsage(data.usageMetadata);
     return {
-      text: final,
+      text: parsed.text,
       provider: "gemini",
       model,
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(data.candidates?.[0]?.finishReason
         ? { finishReason: data.candidates[0].finishReason }
         : parsed.toolCalls.length
@@ -315,13 +372,13 @@ export const geminiProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Gemini API key is required");
     const model = request.model ?? defaultModels.gemini;
-    const response = await fetch(
+    const response = await generationFetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(auth.apiKey)}`,
       {
         method: "POST",
         signal: request.signal ?? null,
         headers: { "content-type": "application/json" },
-        body: geminiBody(request),
+        body: geminiBody(request, true),
       },
     );
     if (!response.ok) {
@@ -332,7 +389,7 @@ export const geminiProvider: LlmProvider = {
     }
     let full = "";
     let visible = "";
-    let inThought = false;
+    let reasoningChars = 0;
     const collectedParts: Array<{
       text?: string;
       thought?: boolean;
@@ -346,24 +403,11 @@ export const geminiProvider: LlmProvider = {
     let finishReason: string | undefined;
     let streamUsage: TokenUsage | undefined;
 
-    const enterThought = (): void => {
-      if (inThought) return;
-      inThought = true;
-      full += REASONING_OPEN;
-      onToken(REASONING_OPEN);
-    };
-    const exitThought = (): void => {
-      if (!inThought) return;
-      inThought = false;
-      full += REASONING_CLOSE;
-      onToken(REASONING_CLOSE);
-    };
-
     const sseFrames = createSseFrameAssembler();
     for await (const line of readStreamLines(response, {
       signal: request.signal,
       ...streamIdleBudgets(Boolean(request.thinking?.enabled)),
-      outputProgress: () => full.length + collectedParts.length,
+      outputProgress: () => full.length + reasoningChars + collectedParts.length,
     })) {
       const payload = sseFrames.pushLine(line);
       if (payload === undefined) continue;
@@ -413,11 +457,9 @@ export const geminiProvider: LlmProvider = {
           }
           if (!part.text) continue;
           if (part.thought) {
-            enterThought();
-            full += part.text;
-            onToken(part.text);
+            reasoningChars += part.text.length;
+            emitStreamReasoningDelta(request.onStreamEvent, part.text);
           } else {
-            if (inThought) exitThought();
             visible += part.text;
             full += part.text;
             onToken(part.text);
@@ -428,8 +470,28 @@ export const geminiProvider: LlmProvider = {
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }
-    exitThought();
+    let geminiToolArgumentBytes = 0;
+    for (const part of collectedParts) {
+      if (part.functionCall) {
+        geminiToolArgumentBytes += JSON.stringify(
+          part.functionCall.args ?? {},
+        ).length;
+      }
+    }
+    requireTerminalProof({
+      provider: "Gemini",
+      policy: GEMINI_STREAM_TERMINAL,
+      signal: finishReason ? "finish-reason" : undefined,
+      answerBytes: visible.length,
+      reasoningBytes: reasoningChars,
+      toolArgumentBytes: geminiToolArgumentBytes,
+    });
     const toolParsed = parseGeminiFunctionCalls(collectedParts);
+    const reasoningArtifacts = geminiReasoningArtifacts(
+      model,
+      toolParsed.reasoningParts,
+    );
+    emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
     if (!visible.trim() && toolParsed.toolCalls.length === 0) {
       assertGeminiFinishReasonAllowed(finishReason);
       throw new ProviderError("Gemini completed without a visible answer.");
@@ -441,6 +503,7 @@ export const geminiProvider: LlmProvider = {
       ...(toolParsed.toolCalls.length
         ? { toolCalls: toolParsed.toolCalls }
         : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(finishReason
         ? { finishReason }
         : toolParsed.toolCalls.length

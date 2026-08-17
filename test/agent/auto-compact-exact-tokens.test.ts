@@ -107,6 +107,38 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
               totalTokens: 180_012,
               exact: true,
             },
+            operationUsage: {
+              attempts: [
+                {
+                  sequence: 1,
+                  provider: "nvidia",
+                  model: "test-model",
+                  mode: "stream",
+                  reason: "initial",
+                  outcome: "success",
+                  usage: {
+                    kind: "known",
+                    value: {
+                      promptTokens: 180_000,
+                      completionTokens: 12,
+                      totalTokens: 180_012,
+                      exact: true,
+                    },
+                  },
+                },
+              ],
+              aggregate: {
+                status: "known",
+                knownAdmissions: 1,
+                unknownAdmissions: 0,
+                usage: {
+                  promptTokens: 180_000,
+                  completionTokens: 12,
+                  totalTokens: 180_012,
+                  exact: true,
+                },
+              },
+            },
           });
         }
         onToken("done");
@@ -132,6 +164,22 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
       "expected compaction to start when exact usage (180k) exceeded the 175k session limit trigger (~122.5k) despite small estimates",
     ).toBe(true);
     expect(events.some((e) => e.type === "compaction-completed")).toBe(true);
+    expect(
+      events.find((event) => event.type === "token-usage"),
+    ).toMatchObject({
+      attempt: {
+        kind: "generation",
+        sequence: 1,
+        provider: "nvidia",
+        model: "test-model",
+        mode: "stream",
+        reason: "initial",
+        outcome: "success",
+      },
+    });
+    expect(
+      events.find((event) => event.type === "compaction-completed"),
+    ).toMatchObject({ contextScope: "assembled-request" });
     const finalRequest = stream.mock.calls.at(-1)?.[0] as {
       messages?: Array<{ role: string; content: string }>;
     };

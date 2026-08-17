@@ -61,6 +61,19 @@ describe("status line hints and Esc semantics", () => {
     expect(statusLine).toContain('overflow: "hidden"');
   });
 
+  it("renders the context chip in both busy and idle branches", () => {
+    const statusLine = readFileSync(STATUS_LINE, "utf8");
+    const busyStart = statusLine.indexOf("if (busy) {");
+    const idleStart = statusLine.indexOf("\n\n  return (", busyStart);
+
+    expect(busyStart).toBeGreaterThanOrEqual(0);
+    expect(idleStart).toBeGreaterThan(busyStart);
+    expect(statusLine.slice(busyStart, idleStart)).toContain(
+      "<ContextLimitChip",
+    );
+    expect(statusLine.slice(idleStart)).toContain("<ContextLimitChip");
+  });
+
   it("shows context from the initial zero-token state", () => {
     expect(
       contextChipForDensity(

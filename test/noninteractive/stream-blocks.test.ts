@@ -152,6 +152,7 @@ const BUILDERS: readonly (readonly [string, (ctx: StreamContext) => readonly str
         summary: "s",
         beforeTokens: 120_000,
         afterTokens: 30_000,
+        contextScope: "assembled-request",
       }),
   ],
   [

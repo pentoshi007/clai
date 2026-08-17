@@ -1,6 +1,10 @@
 import type {
   ChatMessage,
   NativeToolCall,
+  ReasoningArtifact,
+  ReasoningArtifactReplayObserver,
+  ReasoningArtifactReplayTarget,
+  ReasoningBlock,
   ReasoningPreference,
   ProviderId,
   TokenUsage,
@@ -27,12 +31,37 @@ import {
   openAiToolBodyFields,
   toOpenAiToolMessages,
 } from "./adapters/openai-tools.js";
-import { parseOpenAiUsage } from "./token-usage.js";
 import {
-  REASONING_CLOSE,
-  REASONING_OPEN,
-  wrapReasoning,
-} from "./reasoning-marker.js";
+  parseFireworksUsage,
+  parseOpenAiUsage,
+  type CompatibleUsageAliases,
+} from "./token-usage.js";
+import { generationFetch } from "./operation-usage.js";
+import { isOperationPolicyError } from "./operation-ledger.js";
+import {
+  emitStreamReasoningArtifacts,
+  emitStreamReasoningDelta,
+  type ProviderStreamEventSink,
+} from "./stream-events.js";
+import {
+  CHAT_COMPLETIONS_STREAM_TERMINAL,
+  requireTerminalProof,
+  type StreamTerminalPolicy,
+} from "./stream-terminal.js";
+import type { StreamTerminalProof } from "./provider-profile.js";
+import {
+  createReasoningArtifact,
+  createReasoningArtifactProvenance,
+} from "./reasoning-artifacts.js";
+import {
+  classifyBynaraModel,
+  classifyNvidiaModel,
+} from "./model-families.js";
+import {
+  compileRequestPlan,
+  type RequestPlanV1,
+} from "./request-plan.js";
+import { singleLeadingSystemMessages } from "./system-messages.js";
 
 export class ProviderError extends Error {
   constructor(
@@ -247,8 +276,15 @@ export function ingestOpenAiModelCatalog(
   return ingestModelCatalogEntries(provider, entries);
 }
 
-export async function readJson<T>(response: Response): Promise<T> {
-  const text = await readBodyCapped(response, MAX_JSON_RESPONSE_BYTES);
+export async function readJson<T>(
+  response: Response,
+  signal?: AbortSignal,
+): Promise<T> {
+  const text = await readBodyCapped(
+    response,
+    MAX_JSON_RESPONSE_BYTES,
+    signal,
+  );
   if (!response.ok) {
     
     let detail = "";
@@ -356,19 +392,31 @@ export function bodyAddsInformation(bodyText: string, extracted: string): boolea
 async function readBodyCapped(
   response: Response,
   maxBytes: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   const reader = response.body?.getReader();
   if (!reader) {
-    
+    if (signal?.aborted) {
+      throw signal.reason ?? new Error("Response body read aborted");
+    }
     const text = await response.text();
     return text.length > maxBytes ? text.slice(0, maxBytes) : text;
   }
   const decoder = new TextDecoder("utf-8", { fatal: false });
   let collected = "";
   let bytesRead = 0;
+  const cancelOnAbort = (): void => {
+    void reader.cancel(signal?.reason).catch(() => undefined);
+  };
+  signal?.addEventListener("abort", cancelOnAbort, { once: true });
   try {
     while (bytesRead < maxBytes) {
-      const { done, value } = await reader.read();
+      const { done, value } = signal
+        ? await readWithAbort(reader, signal)
+        : await reader.read();
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("Response body read aborted");
+      }
       if (done) break;
       if (!value) continue;
       const remaining = maxBytes - bytesRead;
@@ -389,6 +437,7 @@ async function readBodyCapped(
     }
     collected += decoder.decode();
   } finally {
+    signal?.removeEventListener("abort", cancelOnAbort);
     try {
       reader.releaseLock();
     } catch {
@@ -412,9 +461,9 @@ async function readBodyCapped(
  */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 240_000;
 
-export const THINKING_STREAM_IDLE_TIMEOUT_MS = 600_000;
+export const THINKING_STREAM_IDLE_TIMEOUT_MS = 900_000;
 
-export const THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS = 600_000;
+export const THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS = 900_000;
 
 export function streamIdleBudgets(reasoningEnabled: boolean): {
   idleTimeoutMs: number;
@@ -626,12 +675,116 @@ type OpenAiContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string; detail: "high" } };
 
+/** Controls how a compatible route's captured plaintext/details can persist. */
+export interface CompatibleReasoningArtifactPolicy {
+  readonly scope: ReasoningArtifact["replay"]["scope"];
+  readonly persistence: ReasoningArtifact["replay"]["persistence"];
+}
+
+const DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY: CompatibleReasoningArtifactPolicy = {
+  scope: "all-history",
+  persistence: "tool-turn",
+};
+
 /** Result of OpenAI-compatible complete/stream (text + optional native tools). */
 export interface OpenAiCompatibleResult {
   text: string;
   toolCalls?: NativeToolCall[] | undefined;
   finishReason?: string | undefined;
   usage?: TokenUsage | undefined;
+  reasoningBlock?: ReasoningBlock | undefined;
+  reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
+}
+
+function artifactRaw(value: unknown): ReasoningArtifact["raw"] | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") {
+    return value as Readonly<Record<string, unknown>>;
+  }
+  return undefined;
+}
+
+function compatibleReasoningArtifacts(input: {
+  providerId: ProviderId;
+  model: string;
+  baseUrl: string;
+  toolCalls: readonly NativeToolCall[];
+  policy?: CompatibleReasoningArtifactPolicy | undefined;
+  reasoning?: { text: string; sequence: number } | undefined;
+  details?: readonly { raw: ReasoningArtifact["raw"]; sequence: number }[] | undefined;
+  thoughtSignatures?: readonly {
+    raw: string;
+    sequence: number;
+    toolCallIndex?: number | undefined;
+  }[] | undefined;
+}): readonly ReasoningArtifact[] | undefined {
+  const policy = input.policy ?? DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY;
+  const provenance = createReasoningArtifactProvenance({
+    provider: input.providerId,
+    model: input.model,
+    dialect: "openai-compatible",
+    endpoint: input.baseUrl,
+  });
+  const artifacts: ReasoningArtifact[] = [];
+  const primaryToolPosition = input.toolCalls.length > 0 ? 0 : undefined;
+  if (input.reasoning?.text) {
+    artifacts.push(
+      createReasoningArtifact({
+        kind: "plaintext",
+        raw: input.reasoning.text,
+        displaySummary: input.reasoning.text,
+        provenance,
+        replay: policy,
+        position: {
+          sequence: input.reasoning.sequence,
+          placement:
+            primaryToolPosition === undefined ? "assistant" : "before-tool-call",
+          ...(primaryToolPosition === undefined
+            ? {}
+            : { toolCallIndex: primaryToolPosition }),
+        },
+      }),
+    );
+  }
+  for (const detail of input.details ?? []) {
+    artifacts.push(
+      createReasoningArtifact({
+        kind: "structured-details",
+        raw: detail.raw,
+        provenance,
+        replay: policy,
+        position: {
+          sequence: detail.sequence,
+          placement:
+            primaryToolPosition === undefined ? "assistant" : "before-tool-call",
+          ...(primaryToolPosition === undefined
+            ? {}
+            : { toolCallIndex: primaryToolPosition }),
+        },
+      }),
+    );
+  }
+  for (const signature of input.thoughtSignatures ?? []) {
+    const toolCallIndex = signature.toolCallIndex;
+    artifacts.push(
+      createReasoningArtifact({
+        kind: "thought-signature",
+        raw: signature.raw,
+        provenance,
+        replay:
+          toolCallIndex === undefined
+            ? { scope: "none", persistence: "never" }
+            : { scope: "tool-turn", persistence: "tool-turn" },
+        position: {
+          sequence: signature.sequence,
+          placement: toolCallIndex === undefined ? "assistant" : "on-tool-call",
+          ...(toolCallIndex === undefined ? {} : { toolCallIndex }),
+        },
+      }),
+    );
+  }
+  return artifacts.length ? artifacts : undefined;
 }
 
 /** Map shared OpenAI-compatible payload → CompletionResult (includes usage). */
@@ -647,6 +800,10 @@ export function toCompletionResult(
     ...(payload.toolCalls?.length ? { toolCalls: payload.toolCalls } : {}),
     ...(payload.finishReason ? { finishReason: payload.finishReason } : {}),
     ...(payload.usage ? { usage: payload.usage } : {}),
+    ...(payload.reasoningBlock ? { reasoningBlock: payload.reasoningBlock } : {}),
+    ...(payload.reasoningArtifacts
+      ? { reasoningArtifacts: payload.reasoningArtifacts }
+      : {}),
   };
 }
 
@@ -705,6 +862,10 @@ export function createSseFrameAssembler(options?: {
 export function toOpenAiMessages(
   messages: ChatMessage[],
   supportsVision = true,
+  replay?: {
+    target: ReasoningArtifactReplayTarget;
+    observe?: ReasoningArtifactReplayObserver | undefined;
+  },
 ): Array<Record<string, unknown>> {
   return toOpenAiToolMessages(messages, (message) => {
     if (
@@ -726,7 +887,7 @@ export function toOpenAiMessages(
       return parts;
     }
     return message.content;
-  }) as Array<Record<string, unknown>>;
+  }, replay) as Array<Record<string, unknown>>;
 }
 
 export type ReasoningStyle =
@@ -741,53 +902,19 @@ export type ReasoningStyle =
   | "bynara"
   | "none";
 
-
-export type NvidiaReasoningKind =
-  | "kimi-thinking" // Kimi K2.6 — reasoning is on by default; `thinking:false` disables it
-  | "deepseek-v4" // DeepSeek V4 — `thinking` plus V4's none/high reasoning effort
-  | "thinking" // DeepSeek-R1/V3, older Nemotron — `chat_template_kwargs.thinking`
-  | "nemotron-3" // Nemotron-3 — `enable_thinking` + reasoning_budget
-  | "glm-thinking" // GLM-5/4.5 — `enable_thinking` + `clear_thinking:false`
-  | "enable-thinking" // Gemma 3/4 — `chat_template_kwargs.enable_thinking`
-  | "effort-only" // gpt-oss, qwen3, mistral 3+ — top-level `reasoning_effort`
-  | "none"; // Llama, MiniMax m2.x, Step, Sarvam — no thinking knob
-
-export function classifyNvidiaModel(model: string): NvidiaReasoningKind {
-  const m = model.toLowerCase();
-  if (/kimi-k2(?:\.6|-thinking|-instruct)?/.test(m)) return "kimi-thinking";
-  if (/deepseek-v4/.test(m)) return "deepseek-v4";
-  // Match newer Nemotron-3 (uses enable_thinking + reasoning_budget) before
-  // the legacy Nemotron pattern below — the older `nemotron` bucket would
-  // otherwise swallow these too.
-  if (/nemotron-3/.test(m)) return "nemotron-3";
-  if (/glm-?[345]/.test(m)) return "glm-thinking";
-  if (/gemma-?[34]/.test(m)) return "enable-thinking";
-  if (/deepseek-(?:v3|r1)|nemotron/.test(m)) return "thinking";
-  if (/gpt-oss|qwen3|mistral-(?:medium|small|large)-(?:[3-9]|\d{2,})/.test(m))
-    return "effort-only";
-  return "none";
-}
+export {
+  classifyBynaraModel,
+  classifyNvidiaModel,
+} from "./model-families.js";
+export type {
+  BynaraReasoningKind,
+  NvidiaReasoningKind,
+} from "./model-families.js";
 
 function supportsOpenRouterReasoning(model: string): boolean {
   return /:thinking|deepseek-r1|qwen3|kimi-k2|claude-(?:opus|sonnet|haiku)-4|gpt-5|(?:^|\/)o[134]|grok.*reasoner/i.test(
     model,
   );
-}
-
-export type BynaraReasoningKind =
-  | "kimi"
-  | "deepseek"
-  | "agnes"
-  | "stepfun"
-  | "none";
-
-export function classifyBynaraModel(model: string): BynaraReasoningKind {
-  const m = model.toLowerCase();
-  if (/kimi/.test(m)) return "kimi";
-  if (/deepseek/.test(m)) return "deepseek";
-  if (/agnes/.test(m)) return "agnes";
-  if (/stepfun|step-3/.test(m)) return "stepfun";
-  return "none";
 }
 
 const MODAL_DEFAULT_EFFORTS = ["low", "high", "max"];
@@ -1159,7 +1286,7 @@ export function isOpenAiReasoningModel(model: string): boolean {
   );
 }
 
-export function buildChatBody(options: {
+export interface ChatCompletionsBodyOptions {
   model: string;
   /**
    * Canonical provider id. When given, the capability table is consulted so the
@@ -1179,7 +1306,11 @@ export function buildChatBody(options: {
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
-}): string {
+  replayTarget?: ReasoningArtifactReplayTarget | undefined;
+  reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
+}
+
+function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   // Skip reasoning knobs entirely for models observed to reject them this
   // session (see isReasoningUnsupportedError). This is how thinking degrades
   // gracefully: the request still runs, just without the unsupported option.
@@ -1198,7 +1329,7 @@ export function buildChatBody(options: {
           options.model,
           options.providerId,
         );
-  
+
   const reasoningOn = Boolean(options.reasoning?.enabled);
   // Kimchi exposes this model as `minimax-m3`; NVIDIA uses the longer
   // `minimaxai/minimax-m3` ID. Both need the larger default output budget.
@@ -1227,8 +1358,20 @@ export function buildChatBody(options: {
     : (options.maxTokens ?? defaultMaxTokens);
   const body: Record<string, unknown> = {
     model: options.model,
-    messages: toOpenAiMessages(options.messages, options.supportsVision),
+    messages: toOpenAiMessages(
+      singleLeadingSystemMessages(options.messages),
+      options.supportsVision,
+      options.replayTarget
+        ? {
+            target: options.replayTarget,
+            observe: options.reasoningArtifactReplayObserver,
+          }
+        : undefined,
+    ),
     stream: options.stream,
+    ...(options.providerId === "fireworks"
+      ? { perf_metrics_in_response: true }
+      : {}),
     ...(reasoningModel
       ? { max_completion_tokens: effectiveMaxTokens }
       : { max_tokens: effectiveMaxTokens }),
@@ -1252,6 +1395,44 @@ export function buildChatBody(options: {
     body.stream_options = { include_usage: true };
   }
   return JSON.stringify(body);
+}
+
+export function buildChatBody(options: ChatCompletionsBodyOptions): string {
+  return emitChatCompletionsBody(options);
+}
+
+/**
+ * Serializes a compiled canonical plan onto the Chat Completions wire. Wire
+ * dialect knobs that the plan intentionally does not model (gateway reasoning
+ * style, stream-usage flag, replay observer) stay serializer-side extras.
+ */
+export function chatCompletionsBodyFromPlan(
+  plan: RequestPlanV1,
+  extras: {
+    reasoningStyle?: ReasoningStyle | undefined;
+    includeStreamUsage?: boolean | undefined;
+    reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
+  } = {},
+): string {
+  return emitChatCompletionsBody({
+    model: plan.route.model,
+    providerId: plan.route.provider,
+    messages: [...plan.timeline.messages],
+    maxTokens: plan.controls.requestedMaxTokens,
+    temperature: plan.controls.temperature,
+    stream: plan.controls.stream,
+    includeStreamUsage: extras.includeStreamUsage,
+    reasoning: plan.controls.reasoning,
+    reasoningStyle: extras.reasoningStyle,
+    supportsVision: plan.images.visionAccepted,
+    tools: plan.tools.definitions.length
+      ? [...plan.tools.definitions]
+      : undefined,
+    toolChoice: plan.tools.choice,
+    parallelToolCalls: plan.tools.parallelToolCalls,
+    replayTarget: plan.replay.target,
+    reasoningArtifactReplayObserver: extras.reasoningArtifactReplayObserver,
+  });
 }
 
 function sentReasoningEffort(requestBody: string): string | undefined {
@@ -1281,23 +1462,6 @@ function privateReasoningNote(
   return `Reasoning is private on ${provider}: the model reasoned${effortText} and used ${reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
 }
 
-function foldReasoning(
-  provider: string,
-  requestBody: string,
-  text: string,
-  reasoning: string | undefined,
-  usage: TokenUsage | undefined,
-): string {
-  if (reasoning && reasoning.trim()) {
-    return `${wrapReasoning(reasoning)}${text}`;
-  }
-  const tokens = usage?.reasoningTokens ?? 0;
-  if (tokens > 0) {
-    return `${wrapReasoning(privateReasoningNote(provider, requestBody, tokens))}${text}`;
-  }
-  return text;
-}
-
 export async function openAiCompatibleComplete(options: {
   provider: string;
   /** Canonical provider id used for capability lookups. */
@@ -1315,25 +1479,33 @@ export async function openAiCompatibleComplete(options: {
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
+  /** Optional response-usage aliases for one configured compatible route. */
+  usageAliases?: CompatibleUsageAliases | undefined;
+  /** Explicit route policy; without one, final-turn artifacts are not retained. */
+  reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
+  /** Metadata-only replay decisions; raw artifact payloads are never exposed. */
+  reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
 }): Promise<OpenAiCompatibleResult> {
-  const supportsVision = modelAcceptsImages(options.providerId, options.model);
-  const requestBody = buildChatBody({
+  const plan = compileRequestPlan({
+    provider: options.providerId,
     model: options.model,
-    providerId: options.providerId,
     messages: options.messages,
-    maxTokens: options.maxTokens,
-    temperature: options.temperature,
     stream: false,
+    endpoint: options.baseUrl,
     reasoning: options.reasoning,
-    reasoningStyle: options.reasoningStyle,
-    supportsVision,
     tools: options.tools,
     toolChoice: options.toolChoice,
     parallelToolCalls: options.parallelToolCalls,
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+  });
+  const requestBody = chatCompletionsBodyFromPlan(plan, {
+    reasoningStyle: options.reasoningStyle,
+    reasoningArtifactReplayObserver: options.reasoningArtifactReplayObserver,
   });
   let response: Response;
   try {
-    response = await fetch(`${options.baseUrl}/chat/completions`, {
+    response = await generationFetch(`${options.baseUrl}/chat/completions`, {
       method: "POST",
       signal: options.signal ?? null,
       headers: {
@@ -1349,6 +1521,7 @@ export async function openAiCompatibleComplete(options: {
     } as any);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
+    if (isOperationPolicyError(error)) throw error;
     const msg = error instanceof Error ? error.message : String(error);
     throw new ProviderError(
       `${options.provider} request could not be sent (${msg}). Check connectivity to ${options.baseUrl}.`,
@@ -1361,6 +1534,8 @@ export async function openAiCompatibleComplete(options: {
         content?: string | null;
         reasoning_content?: string;
         reasoning?: string;
+        reasoning_details?: unknown;
+        extra_content?: { google?: { thought_signature?: string } };
         tool_calls?: Array<{
           id?: string;
           type?: string;
@@ -1394,20 +1569,47 @@ export async function openAiCompatibleComplete(options: {
   }
   // If the API returns reasoning separately, prepend it inside <think>
   // tags so the existing thinking parser can pick it up uniformly.
-  const usage = parseOpenAiUsage(data.usage);
+  // Fireworks exposes cache metrics in headers for complete calls and can also
+  // include them in perf_metrics. Other compatible routes use their standard
+  // usage object plus any explicitly configured aliases.
+  const usage =
+    options.providerId === "fireworks"
+      ? parseFireworksUsage(
+          data.usage,
+          (data as { perf_metrics?: unknown }).perf_metrics,
+          response.headers,
+        )
+      : parseOpenAiUsage(data.usage, options.usageAliases);
   const reasoning = message?.reasoning_content ?? message?.reasoning;
+  const detailsRaw = artifactRaw(message?.reasoning_details);
+  const thoughtSignature = message?.extra_content?.google?.thought_signature;
+  const reasoningArtifacts = compatibleReasoningArtifacts({
+    providerId: options.providerId,
+    model: options.model,
+    baseUrl: options.baseUrl,
+    toolCalls,
+    policy: options.reasoningArtifactPolicy,
+    ...(typeof reasoning === "string" && reasoning
+      ? { reasoning: { text: reasoning, sequence: 0 } }
+      : {}),
+    ...(detailsRaw ? { details: [{ raw: detailsRaw, sequence: 1 }] } : {}),
+    ...(thoughtSignature
+      ? {
+          thoughtSignatures: [
+            {
+              raw: thoughtSignature,
+              sequence: 2,
+              ...(toolCalls.length ? { toolCallIndex: 0 } : {}),
+            },
+          ],
+        }
+      : {}),
+  });
   if (typeof reasoning === "string" && reasoning.trim()) {
     learnModelEmitsReasoning(options.providerId, options.model);
   }
-  const full = foldReasoning(
-    options.provider,
-    requestBody,
-    text,
-    reasoning,
-    usage,
-  );
   return {
-    text: full,
+    text,
     ...(toolCalls.length ? { toolCalls } : {}),
     ...(choice?.finish_reason
       ? { finishReason: choice.finish_reason }
@@ -1415,6 +1617,10 @@ export async function openAiCompatibleComplete(options: {
         ? { finishReason: "tool_calls" }
         : {}),
     ...(usage ? { usage } : {}),
+    ...(typeof reasoning === "string" && reasoning
+      ? { reasoningBlock: { text: reasoning } }
+      : {}),
+    ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
   };
 }
 
@@ -1436,8 +1642,16 @@ export async function openAiCompatibleStream(options: {
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
+  onStreamEvent?: ProviderStreamEventSink | undefined;
+  streamTerminal?: StreamTerminalPolicy | undefined;
   /** Omit usage stream options for strict OpenAI-compatible gateways. */
   includeStreamUsage?: boolean | undefined;
+  /** Optional response-usage aliases for one configured compatible route. */
+  usageAliases?: CompatibleUsageAliases | undefined;
+  /** Explicit route policy; without one, final-turn artifacts are not retained. */
+  reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
+  /** Metadata-only replay decisions; raw artifact payloads are never exposed. */
+  reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
   /** Early native tool-call name/args progress (P2-3). */
   onToolCallDelta?:
     | ((delta: {
@@ -1546,25 +1760,27 @@ export async function openAiCompatibleStream(options: {
   const onCallerAbort = (): void => idleController.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
 
-  const supportsVision = modelAcceptsImages(options.providerId, options.model);
-  const requestBody = buildChatBody({
+  const plan = compileRequestPlan({
+    provider: options.providerId,
     model: options.model,
-    providerId: options.providerId,
     messages: options.messages,
-    maxTokens: options.maxTokens,
-    temperature: options.temperature,
     stream: true,
-    includeStreamUsage: options.includeStreamUsage,
+    endpoint: options.baseUrl,
     reasoning: options.reasoning,
-    reasoningStyle: options.reasoningStyle,
-    supportsVision,
     tools: options.tools,
     toolChoice: options.toolChoice,
     parallelToolCalls: options.parallelToolCalls,
+    temperature: options.temperature,
+    maxTokens: options.maxTokens,
+  });
+  const requestBody = chatCompletionsBodyFromPlan(plan, {
+    reasoningStyle: options.reasoningStyle,
+    includeStreamUsage: options.includeStreamUsage,
+    reasoningArtifactReplayObserver: options.reasoningArtifactReplayObserver,
   });
   let response: Response;
   try {
-    response = await fetch(`${options.baseUrl}/chat/completions`, {
+    response = await generationFetch(`${options.baseUrl}/chat/completions`, {
       method: "POST",
       signal: idleController.signal,
       headers: {
@@ -1614,66 +1830,122 @@ export async function openAiCompatibleStream(options: {
 
   const contentType = response.headers.get("content-type") ?? "";
   if (response.status === 202 || /\bapplication\/json\b/i.test(contentType)) {
-    clearIdleTimers();
-    options.signal?.removeEventListener("abort", onCallerAbort);
-    const data = await readJson<{
-      id?: string;
-      requestId?: string;
-      status?: string;
-      usage?: unknown;
-      choices?: Array<{
-        finish_reason?: string;
-        message?: {
-          content?: string | null;
-          reasoning_content?: string;
-          reasoning?: string;
-          tool_calls?: Array<{
-            id?: string;
-            type?: string;
-            function?: { name?: string; arguments?: string };
-          }>;
+    try {
+      const data = await readJson<{
+        id?: string;
+        requestId?: string;
+        status?: string;
+        usage?: unknown;
+        choices?: Array<{
+          finish_reason?: string;
+          message?: {
+            content?: string | null;
+            reasoning_content?: string;
+            reasoning?: string;
+            reasoning_details?: unknown;
+            extra_content?: { google?: { thought_signature?: string } };
+            tool_calls?: Array<{
+              id?: string;
+              type?: string;
+              function?: { name?: string; arguments?: string };
+            }>;
+          };
+        }>;
+      }>(response, idleController.signal);
+      if (response.status === 202) {
+        const requestId = data.requestId ?? data.id;
+        throw new ProviderError(
+          `${options.provider} returned a pending async response${requestId ? ` (${requestId})` : ""}; streaming did not start.`,
+          response.status,
+          JSON.stringify(data).slice(0, 1_000),
+        );
+      }
+      const choice = data.choices?.[0];
+      const message = choice?.message;
+      const toolCalls = parseOpenAiMessageToolCalls(message?.tool_calls);
+      const text = message?.content ?? "";
+      const jsonUsage =
+        options.providerId === "fireworks"
+          ? parseFireworksUsage(
+              data.usage,
+              (data as { perf_metrics?: unknown }).perf_metrics,
+              response.headers,
+            )
+          : parseOpenAiUsage(data.usage, options.usageAliases);
+      const reasoning = message?.reasoning_content ?? message?.reasoning;
+      const detailsRaw = artifactRaw(message?.reasoning_details);
+      const thoughtSignature = message?.extra_content?.google?.thought_signature;
+      const reasoningArtifacts = compatibleReasoningArtifacts({
+        providerId: options.providerId,
+        model: options.model,
+        baseUrl: options.baseUrl,
+        toolCalls,
+        policy: options.reasoningArtifactPolicy,
+        ...(typeof reasoning === "string" && reasoning
+          ? { reasoning: { text: reasoning, sequence: 0 } }
+          : {}),
+        ...(detailsRaw ? { details: [{ raw: detailsRaw, sequence: 1 }] } : {}),
+        ...(thoughtSignature
+          ? {
+              thoughtSignatures: [
+                {
+                  raw: thoughtSignature,
+                  sequence: 2,
+                  ...(toolCalls.length ? { toolCallIndex: 0 } : {}),
+                },
+              ],
+            }
+          : {}),
+      });
+      if (
+        text.trim() ||
+        toolCalls.length > 0 ||
+        (typeof reasoning === "string" && reasoning.trim())
+      ) {
+        emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
+        if (text) options.onToken(text);
+        return {
+          text,
+          ...(toolCalls.length ? { toolCalls } : {}),
+          ...(choice?.finish_reason
+            ? { finishReason: choice.finish_reason }
+            : toolCalls.length
+              ? { finishReason: "tool_calls" }
+              : {}),
+          ...(jsonUsage ? { usage: jsonUsage } : {}),
+          ...(typeof reasoning === "string" && reasoning
+            ? { reasoningBlock: { text: reasoning } }
+            : {}),
+          ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
         };
-      }>;
-    }>(response);
-    if (response.status === 202) {
-      const requestId = data.requestId ?? data.id;
+      }
       throw new ProviderError(
-        `${options.provider} returned a pending async response${requestId ? ` (${requestId})` : ""}; streaming did not start.`,
+        `${options.provider} returned JSON instead of an SSE stream, but no completion text was present.`,
         response.status,
         JSON.stringify(data).slice(0, 1_000),
       );
+    } catch (error) {
+      if (idleFired) {
+        const seconds = Math.round(firedBudgetMs / 1000);
+        if (firedWatchdog === "transport" || !sawTransportActivity) {
+          if (!sawTransportActivity) {
+            throw new ProviderError(
+              `${options.provider} request timed out before any response (${seconds}s) — no data arrived on the connection.`,
+            );
+          }
+          throw new ProviderError(
+            `${options.provider} stream transport timeout (${seconds}s) — no data arrived on the connection after it had started.`,
+          );
+        }
+        throw new ProviderError(
+          `${options.provider} stream stalled — ${STREAM_STALL_MARKER} for ${seconds}s`,
+        );
+      }
+      throw error;
+    } finally {
+      clearIdleTimers();
+      options.signal?.removeEventListener("abort", onCallerAbort);
     }
-    const choice = data.choices?.[0];
-    const message = choice?.message;
-    const toolCalls = parseOpenAiMessageToolCalls(message?.tool_calls);
-    const text = message?.content ?? "";
-    const jsonUsage = parseOpenAiUsage(data.usage);
-    const reasoning = message?.reasoning_content ?? message?.reasoning;
-    const full = foldReasoning(
-      options.provider,
-      requestBody,
-      text,
-      reasoning,
-      jsonUsage,
-    );
-    if (full.trim() || toolCalls.length > 0) {
-      if (full.trim()) options.onToken(full);
-      return {
-        text: full,
-        ...(toolCalls.length ? { toolCalls } : {}),
-        ...(choice?.finish_reason
-          ? { finishReason: choice.finish_reason }
-          : toolCalls.length
-            ? { finishReason: "tool_calls" }
-            : {}),
-        ...(jsonUsage ? { usage: jsonUsage } : {}),
-      };
-    }
-    throw new ProviderError(
-      `${options.provider} returned JSON instead of an SSE stream, but no completion text was present.`,
-      response.status,
-      JSON.stringify(data).slice(0, 1_000),
-    );
   }
 
   const decoder = new TextDecoder();
@@ -1684,13 +1956,80 @@ export async function openAiCompatibleStream(options: {
   let reasoningSeen = "";
   let contentWireSeen = "";
   let reasoningWireSeen = "";
-  let inReasoning = false;
   let finishReason: string | undefined;
-  let streamUsage: TokenUsage | undefined;
+  let terminalSignal: StreamTerminalProof | undefined;
+  const terminalPolicy =
+    options.streamTerminal ?? CHAT_COMPLETIONS_STREAM_TERMINAL;
+  const emittedByteCounts = (): {
+    answerBytes: number;
+    reasoningBytes: number;
+    toolArgumentBytes: number;
+  } => {
+    let toolArgumentBytes = 0;
+    for (const state of toolCallState.values()) {
+      toolArgumentBytes += state.arguments.length;
+    }
+    return {
+      answerBytes: visible.length,
+      reasoningBytes: reasoningSeen.length,
+      toolArgumentBytes,
+    };
+  };
+  let streamUsage: TokenUsage | undefined =
+    options.providerId === "fireworks"
+      ? parseFireworksUsage(undefined, undefined, response.headers)
+      : undefined;
   const toolCallState = new Map<
     number,
     { id?: string; name?: string; arguments: string }
   >();
+  let reasoningArtifactSequence: number | undefined;
+  let nextArtifactSequence = 0;
+  let lastToolCallIndex: number | undefined;
+  const structuredDetails: Array<{
+    raw: ReasoningArtifact["raw"];
+    sequence: number;
+  }> = [];
+  const thoughtSignatures: Array<{
+    raw: string;
+    sequence: number;
+    toolCallIndex?: number | undefined;
+  }> = [];
+  const pendingThoughtSignatures: Array<{
+    raw: string;
+    sequence: number;
+    toolCallIndex?: number | undefined;
+  }> = [];
+
+  const finalReasoningArtifacts = (toolCalls: readonly NativeToolCall[]) => {
+    if (pendingThoughtSignatures.length) {
+      const toolCallIndex = toolCalls.length ? 0 : undefined;
+      for (const capture of pendingThoughtSignatures.splice(0)) {
+        thoughtSignatures.push(
+          toolCallIndex === undefined
+            ? capture
+            : { ...capture, toolCallIndex },
+        );
+      }
+    }
+    return compatibleReasoningArtifacts({
+      providerId: options.providerId,
+      model: options.model,
+      baseUrl: options.baseUrl,
+      toolCalls,
+      policy: options.reasoningArtifactPolicy,
+      ...(reasoningSeen
+        ? {
+            reasoning: {
+              text: reasoningSeen,
+              sequence: reasoningArtifactSequence ?? 0,
+            },
+          }
+        : {}),
+      ...(structuredDetails.length ? { details: structuredDetails } : {}),
+      ...(thoughtSignatures.length ? { thoughtSignatures } : {}),
+    });
+  };
 
   const normalizeChannelDelta = (
     token: string,
@@ -1702,28 +2041,13 @@ export async function openAiCompatibleStream(options: {
     return { delta: token, seen: seen + token };
   };
 
-  const enterReasoning = (): void => {
-    if (inReasoning) return;
-    inReasoning = true;
-    full += REASONING_OPEN;
-    options.onToken(REASONING_OPEN);
-  };
-  const exitReasoning = (): void => {
-    if (!inReasoning) return;
-    inReasoning = false;
-    full += REASONING_CLOSE;
-    options.onToken(REASONING_CLOSE);
-  };
   const emitPrivateReasoningNote = (hasToolCalls: boolean): void => {
     if (reasoningSeen.trim()) return;
     if (!visible.trim() && !hasToolCalls) return;
     const tokens = streamUsage?.reasoningTokens ?? 0;
     if (tokens <= 0) return;
     const note = privateReasoningNote(options.provider, requestBody, tokens);
-    enterReasoning();
-    full += note;
-    options.onToken(note);
-    exitReasoning();
+    emitStreamReasoningDelta(options.onStreamEvent, note);
   };
 
   /**
@@ -1748,7 +2072,6 @@ export async function openAiCompatibleStream(options: {
 
   const emitVisible = (text: string): void => {
     if (!text) return;
-    if (inReasoning) exitReasoning();
     visible += text;
     full += text;
     options.onToken(text);
@@ -1760,9 +2083,7 @@ export async function openAiCompatibleStream(options: {
    */
   const emitReasoningEcho = (text: string): void => {
     if (!text) return;
-    enterReasoning();
-    full += text;
-    options.onToken(text);
+    emitStreamReasoningDelta(options.onStreamEvent, text);
   };
   /** Release a still-undecided hold-back as the answer (stream ended early). */
   const flushEchoBuffer = (): void => {
@@ -1857,11 +2178,19 @@ export async function openAiCompatibleStream(options: {
         const payload = sseFrames.pushLine(line);
         if (payload === undefined) continue;
         if (payload === "[DONE]") {
+          terminalSignal = "done-sentinel";
+          requireTerminalProof({
+            provider: options.provider,
+            policy: terminalPolicy,
+            signal: terminalSignal,
+            ...emittedByteCounts(),
+          });
           flushEchoBuffer();
-          exitReasoning();
           cleanup();
           const toolCalls = finalizeOpenAiToolCalls(toolCallState);
           emitPrivateReasoningNote(toolCalls.length > 0);
+          const reasoningArtifacts = finalReasoningArtifacts(toolCalls);
+          emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
           if (!visible.trim() && toolCalls.length === 0) {
             // Thinking models (Kimi/Moonshot via Mantle, etc.) often emit only
             // reasoning, sometimes with tool sentinels inside <think>. Returning
@@ -1872,6 +2201,8 @@ export async function openAiCompatibleStream(options: {
                 text: full,
                 ...(finishReason ? { finishReason } : { finishReason: "stop" }),
                 ...(streamUsage ? { usage: streamUsage } : {}),
+                ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+                ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
               };
             }
             throw new ProviderError(
@@ -1887,6 +2218,8 @@ export async function openAiCompatibleStream(options: {
                 ? { finishReason: "tool_calls" }
                 : {}),
             ...(streamUsage ? { usage: streamUsage } : {}),
+            ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+            ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
           };
         }
         let parsed: {
@@ -1898,6 +2231,8 @@ export async function openAiCompatibleStream(options: {
               content?: string;
               reasoning_content?: string;
               reasoning?: string;
+              reasoning_details?: unknown;
+              extra_content?: { google?: { thought_signature?: string } };
               role?: string;
               tool_calls?: Array<{
                 index?: number;
@@ -1935,12 +2270,22 @@ export async function openAiCompatibleStream(options: {
           );
         }
         {
-          const chunkUsage = parseOpenAiUsage(parsed.usage);
+          const chunkUsage =
+            options.providerId === "fireworks"
+              ? parseFireworksUsage(
+                  parsed.usage,
+                  (parsed as { perf_metrics?: unknown }).perf_metrics,
+                  response.headers,
+                )
+              : parseOpenAiUsage(parsed.usage, options.usageAliases);
           if (chunkUsage) streamUsage = chunkUsage;
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
           const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
           const token = delta?.content;
+          const detailRaw = artifactRaw(delta?.reasoning_details);
+          const thoughtSignature = delta?.extra_content?.google?.thought_signature;
+          const artifactSequence = nextArtifactSequence++;
           const toolProgress = delta?.tool_calls?.some((toolCall) =>
             Boolean(
               toolCall.id ||
@@ -1953,11 +2298,16 @@ export async function openAiCompatibleStream(options: {
             chunkUsage ||
             reasoningToken ||
             token ||
+            detailRaw ||
+            thoughtSignature ||
             toolProgress
           ) {
             resetIdleTimer();
           }
-          if (choice?.finish_reason) finishReason = choice.finish_reason;
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason;
+            terminalSignal = "finish-reason";
+          }
           if (reasoningToken) {
             const normalized = normalizeChannelDelta(
               reasoningToken,
@@ -1965,54 +2315,88 @@ export async function openAiCompatibleStream(options: {
             );
             reasoningWireSeen = normalized.seen;
             if (normalized.delta) {
+              reasoningArtifactSequence ??= artifactSequence;
               if (!reasoningSeen) {
                 learnModelEmitsReasoning(options.providerId, options.model);
               }
-              enterReasoning();
               reasoningSeen += normalized.delta;
-              full += normalized.delta;
-              options.onToken(normalized.delta);
+              emitStreamReasoningDelta(options.onStreamEvent, normalized.delta);
             }
+          }
+          if (detailRaw) {
+            structuredDetails.push({ raw: detailRaw, sequence: artifactSequence });
           }
           if (token) {
             const normalized = normalizeChannelDelta(token, contentWireSeen);
             contentWireSeen = normalized.seen;
             if (normalized.delta) handleContentToken(normalized.delta);
           }
+          const deltaToolCallIndices: number[] = [];
           if (delta?.tool_calls?.length) {
             for (const tc of delta.tool_calls) {
               const accInfo = accumulateOpenAiToolCallDelta(toolCallState, tc);
-              if (!options.onToolCallDelta) continue;
-              const wire = accInfo.name;
-              const canonical = wire
-                ? (fromWireName(wire) ?? wire)
-                : undefined;
-              
-              const largeArgTick =
-                !accInfo.nameBecameKnown &&
-                accInfo.argumentsBytes > 0 &&
-                accInfo.argumentsBytes % 4096 <
-                  (typeof tc.function?.arguments === "string"
-                    ? tc.function.arguments.length
-                    : 0);
-              if (accInfo.nameBecameKnown || largeArgTick) {
-                options.onToolCallDelta({
-                  index: accInfo.index,
-                  ...(accInfo.id !== undefined ? { id: accInfo.id } : {}),
-                  ...(canonical !== undefined ? { name: canonical } : {}),
-                  argumentsBytes: accInfo.argumentsBytes,
-                });
+              deltaToolCallIndices.push(accInfo.index);
+              lastToolCallIndex = accInfo.index;
+              if (options.onToolCallDelta) {
+                const wire = accInfo.name;
+                const canonical = wire
+                  ? (fromWireName(wire) ?? wire)
+                  : undefined;
+                const largeArgTick =
+                  !accInfo.nameBecameKnown &&
+                  accInfo.argumentsBytes > 0 &&
+                  accInfo.argumentsBytes % 4096 <
+                    (typeof tc.function?.arguments === "string"
+                      ? tc.function.arguments.length
+                      : 0);
+                if (accInfo.nameBecameKnown || largeArgTick) {
+                  options.onToolCallDelta({
+                    index: accInfo.index,
+                    ...(accInfo.id !== undefined ? { id: accInfo.id } : {}),
+                    ...(canonical !== undefined ? { name: canonical } : {}),
+                    argumentsBytes: accInfo.argumentsBytes,
+                  });
+                }
               }
+            }
+          }
+          const signatureToolCallIndex =
+            deltaToolCallIndices[0] ?? lastToolCallIndex;
+          if (thoughtSignature) {
+            const capture = {
+              raw: thoughtSignature,
+              sequence: artifactSequence,
+              ...(signatureToolCallIndex === undefined
+                ? {}
+                : { toolCallIndex: signatureToolCallIndex }),
+            };
+            if (signatureToolCallIndex === undefined) {
+              pendingThoughtSignatures.push(capture);
+            } else {
+              thoughtSignatures.push(capture);
+            }
+          }
+          if (deltaToolCallIndices.length && pendingThoughtSignatures.length) {
+            const toolCallIndex = deltaToolCallIndices[0]!;
+            for (const capture of pendingThoughtSignatures.splice(0)) {
+              thoughtSignatures.push({ ...capture, toolCallIndex });
             }
           }
         }
       }
     }
     flushEchoBuffer();
-    exitReasoning();
     cleanup();
+    requireTerminalProof({
+      provider: options.provider,
+      policy: terminalPolicy,
+      signal: terminalSignal,
+      ...emittedByteCounts(),
+    });
     const toolCalls = finalizeOpenAiToolCalls(toolCallState);
     emitPrivateReasoningNote(toolCalls.length > 0);
+    const reasoningArtifacts = finalReasoningArtifacts(toolCalls);
+    emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
     if (!visible.trim() && toolCalls.length === 0) {
       // See [DONE] branch — hand thinking-only streams to the runner so it can
       // salvage sentinel tool blocks (or nudge) instead of hard-failing.
@@ -2021,6 +2405,8 @@ export async function openAiCompatibleStream(options: {
           text: full,
           ...(finishReason ? { finishReason } : { finishReason: "stop" }),
           ...(streamUsage ? { usage: streamUsage } : {}),
+          ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+          ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
         };
       }
       throw new ProviderError(
@@ -2036,6 +2422,8 @@ export async function openAiCompatibleStream(options: {
           ? { finishReason: "tool_calls" }
           : {}),
       ...(streamUsage ? { usage: streamUsage } : {}),
+      ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
     };
   } catch (error) {
     if (idleFired) {

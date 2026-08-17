@@ -31,6 +31,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const fireworksProvider: LlmProvider = {
   id: "fireworks",
+  reasoningStyle: "openai",
   displayName: "Fireworks",
   defaultModel: defaultModels.fireworks,
   envVar: "FIREWORKS_API_KEY",
@@ -81,6 +82,7 @@ export const fireworksProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("fireworks", model, payload);
   },
@@ -103,11 +105,13 @@ export const fireworksProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openai",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("fireworks", model, payload);
   },

@@ -4,11 +4,13 @@ import type {
   ProviderId,
 } from "../types.js";
 import { providerIds } from "../types.js";
+import type { ReasoningStyle } from "./http.js";
 
 export interface LlmProvider {
   id: ProviderId;
   displayName: string;
   defaultModel: string;
+  reasoningStyle?: ReasoningStyle | undefined;
   envVar?: string | undefined;
   validateKey(key: string): boolean;
   ping(options: ProviderAuth): Promise<void>;
@@ -83,6 +85,9 @@ export const providerAliases: Record<string, ProviderId> = {
   hetzner: "hetzner",
   "hetzner-inference": "hetzner",
   "hetzner-experiments": "hetzner",
+  orcarouter: "orcarouter",
+  "orca-router": "orcarouter",
+  orca: "orcarouter",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -108,6 +113,8 @@ export const defaultModels: Record<ProviderId, string> = {
   meta: "muse-spark-1.2",
   fireworks: "accounts/fireworks/models/kimi-k2p6",
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
+  // OrcaRouter namespaces model ids by upstream vendor (openai/gpt-4o-mini).
+  orcarouter: "openai/gpt-4o-mini",
 };
 
 const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
@@ -175,6 +182,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   meta: "MODEL_API_KEY",
   fireworks: "FIREWORKS_API_KEY",
   hetzner: "HETZNER_API_KEY",
+  orcarouter: "ORCAROUTER_API_KEY",
 };
 
 /** Resolve the env var for any provider, including user-defined custom ones. */
@@ -753,6 +761,67 @@ GOOD TO KNOW
 
 Docs: https://experiments.hetzner.com/docs/inference
 API:  https://inference.hetzner.com/api/v1`,
+  orcarouter: `OrcaRouter — one key for OpenAI, Anthropic, Google, DeepSeek,
+Grok, Qwen, Kimi, MiniMax and GLM at provider cost price
+
+WHAT IT IS
+  An OpenAI-compatible gateway at https://api.orcarouter.ai/v1 that routes
+  eleven upstream providers behind one bearer key, with zero token markup
+  (you pay each provider's published price). Model ids are vendor-prefixed:
+    openai/gpt-4o-mini, openai/gpt-5, openai/o3-mini
+    anthropic/claude-sonnet-4.6, anthropic/claude-opus-4.7
+    google/gemini-2.5-flash, google/gemini-3-pro-preview
+    deepseek/deepseek-reasoner, grok/grok-4-fast-reasoning
+    qwen/qwen3-max, kimi/kimi-k2.6, minimax/minimax-m2.7, z-ai/glm-5.1
+  Chat Completions with SSE streaming, native tool calling, structured
+  outputs (response_format json_schema), vision via image_url and a unified
+  reasoning_effort knob all work.
+
+  Base URL   https://api.orcarouter.ai/v1
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions
+
+MODELS
+  Ids are namespaced by upstream vendor and case-sensitive. /model reads the
+  live list from /models (cached 1h), filtered to models reachable over Chat
+  Completions — image/video/tts/embedding ids are hidden. orcarouter/auto
+  picks the cheapest model that fits the request.
+
+REASONING
+  One unified syntax: top-level reasoning_effort (low/medium/high, plus
+  minimal/max on some models). The gateway translates it per upstream —
+  OpenAI native, Claude thinking budgets, Gemini thinkingConfig, Grok
+  native. /think and /effort map onto it; thinking arrives as
+  reasoning_content and folds into the usual thinking block.
+
+COST
+  Zero markup: provider list price per token. Revenue comes from optional
+  subscription plans, not inflated token cost. clai classes it paid-cloud,
+  so /freeonly on keeps it out of the fallback chain.
+
+SETUP
+  1. Create an API key at https://www.orcarouter.ai/console (starts sk-…).
+  2. clai set orcarouter sk-yourKey
+  3. clai use orcarouter
+  4. /model openai/gpt-4o-mini      (or any id from /model)
+
+MANAGING KEYS IN CLAI
+  clai set orcarouter <key>          add a key (up to 10, rotated on failure)
+  clai set orcarouter <key2>         add another; the last that worked is sticky
+  clai keys                          masked keys + the active endpoint
+  clai unset orcarouter              remove every stored key
+  /set orcarouter                    TUI: multi-key editor
+  /info orcarouter                   this page
+
+GOOD TO KNOW
+  - Multi-key rotation, prompt caching, tool calling and compaction behave
+    exactly like every other OpenAI-compatible provider.
+  - Per-key options at creation: name, credit limit, expiration. Rate limits
+    are workspace-level, not per-key.
+  - Env var: ORCAROUTER_API_KEY (used when nothing is stored).
+
+Docs: https://docs.orcarouter.ai
+API:  https://api.orcarouter.ai/v1 (OpenAI-compatible; /models, /chat/completions)`,
 };
 
 export function getProviderInfoText(provider: string): string {

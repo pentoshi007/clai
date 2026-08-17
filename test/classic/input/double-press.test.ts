@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CancelCoordinator } from "../../../src/app/controllers/cancel-coordinator.js";
 import { CancelLadder } from "../../../src/classic/input/cancel-ladder.js";
 import {
   CTRL_C_QUIT_WINDOW_MS,
@@ -12,6 +13,7 @@ interface HarnessOptions {
   readonly queued?: readonly string[];
   readonly runningJobs?: number;
   readonly pendingNotifications?: number;
+  readonly interruptibleWork?: boolean;
   readonly blockingPrompt?: boolean;
   readonly cancelAllOk?: boolean;
 }
@@ -20,12 +22,11 @@ function harness(options: HarnessOptions = {}) {
   let now = 10_000;
   const calls: string[] = [];
   let running = options.running === true;
+  let interruptible = options.interruptibleWork === true;
   let blocking = options.blockingPrompt === true;
 
-  const ladder = new CancelLadder({
-    now: () => now,
+  const coordinator = new CancelCoordinator({
     session: {
-      sessionId: "s1",
       getState: () => ({
         running,
         compacting: options.compacting === true,
@@ -38,9 +39,28 @@ function harness(options: HarnessOptions = {}) {
       cancelAll: async () => {
         calls.push("cancelAll");
         running = false;
-        return { ok: options.cancelAllOk !== false };
+        return { ok: options.cancelAllOk !== false, output: "" };
       },
     },
+    sessionId: () => "s1",
+    jobs: {
+      running: () => Array.from({ length: options.runningJobs ?? 0 }),
+      pendingNotifications: () =>
+        Array.from({ length: options.pendingNotifications ?? 0 }),
+    },
+    interruptible: {
+      hasWork: () => interruptible,
+      cancelAll: () => {
+        const count = interruptible ? 1 : 0;
+        interruptible = false;
+        return count;
+      },
+    },
+  });
+
+  const ladder = new CancelLadder({
+    now: () => now,
+    coordinator,
     overlay: {
       cancelBlockingPrompt: () => {
         if (!blocking) return false;
@@ -48,11 +68,6 @@ function harness(options: HarnessOptions = {}) {
         calls.push("dismissPrompt");
         return true;
       },
-    },
-    jobs: {
-      running: () => Array.from({ length: options.runningJobs ?? 0 }),
-      pendingNotifications: () =>
-        Array.from({ length: options.pendingNotifications ?? 0 }),
     },
     notify: (notice) => calls.push(`notify(${notice.level}):${notice.text}`),
     requestExit: () => calls.push("requestExit"),
@@ -74,6 +89,15 @@ describe("Ctrl+C ladder", () => {
     expect(h.calls).toEqual([
       "abort",
       "notify(warn):Turn aborted · Ctrl+C again to exit",
+    ]);
+    expect(h.ladder.quitArmed).toBe(true);
+  });
+
+  it("cancels interruptible work on the first press when no turn is running", () => {
+    const h = harness({ interruptibleWork: true });
+    h.ladder.interrupt();
+    expect(h.calls).toEqual([
+      "notify(warn):Operation cancelled · Ctrl+C again to exit",
     ]);
     expect(h.ladder.quitArmed).toBe(true);
   });
@@ -192,6 +216,13 @@ describe("Esc ladder", () => {
     const pending = harness({ pendingNotifications: 2 });
     pending.ladder.escape(false);
     expect(pending.ladder.escapeArmed).toBe(true);
+  });
+
+  it("arms on interruptible work alone", () => {
+    const h = harness({ interruptibleWork: true });
+    h.ladder.escape(false);
+    expect(h.ladder.escapeArmed).toBe(true);
+    expect(h.calls).toEqual(["notify(info):esc again to cancel"]);
   });
 
   it("reports a dismissal when there is nothing to cancel", () => {

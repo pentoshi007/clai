@@ -184,6 +184,7 @@ async function listSourceModels(
 
 export const freeProvider: LlmProvider = {
   id: "free",
+  reasoningStyle: "openai",
   displayName: "Free (zen + kilo)",
   defaultModel: defaultModels.free,
   envVar: "FREE_API_KEY",
@@ -232,6 +233,7 @@ export const freeProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("free", requested, payload);
   },
@@ -257,6 +259,7 @@ export const freeProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: FREE_REASONING_STYLE,
       idleTimeoutMs: budgets.idleTimeoutMs,
@@ -267,6 +270,7 @@ export const freeProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("free", requested, payload);
   },

@@ -6,7 +6,10 @@ import {
   type AnyAppEvent,
 } from "../../../src/app/events/app-event.js";
 import { createCountingIdFactory, EventSequencer } from "../../../src/app/events/sequencer.js";
-import { applyAppEvent } from "../../../src/ui-core/state/transcript-reducer.js";
+import {
+  applyAppEvent,
+  TranscriptSequenceError,
+} from "../../../src/ui-core/state/transcript-reducer.js";
 import {
   compactionTokenLabel,
   EMPTY_TRANSCRIPT_STATE,
@@ -131,6 +134,110 @@ describe("transcript reducer (V2-050)", () => {
     );
     const item = transcriptItems(state)[0] as ThinkingItem;
     expect(item).toMatchObject({ kind: "thinking", content: "reasoning", streaming: false });
+  });
+
+  it("merges a resumed thinking round into the dropped block it continues", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(state, seq.build("thinking-delta", { text: "first pass " }, turnId));
+    state = applyAppEvent(state, seq.build("thinking-delta", { text: "reasoning" }, turnId));
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "thinking-block",
+        { messageId: seq.ids.message(), content: "first pass reasoning" },
+        turnId,
+      ),
+    );
+    expect(transcriptItems(state)).toHaveLength(1);
+
+    state = applyAppEvent(state, seq.build("thinking-delta", { text: "resumed pass" }, turnId));
+    expect(transcriptItems(state)).toHaveLength(1);
+    expect(state.pendingThinkingId).toBe(state.order[0]);
+
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "thinking-block",
+        { messageId: seq.ids.message(), content: "resumed pass" },
+        turnId,
+      ),
+    );
+    const items = transcriptItems(state);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "thinking",
+      content: "first pass reasoning\n\nresumed pass",
+      streaming: false,
+    });
+  });
+
+  it("merges consecutive buffered thinking-blocks of one turn into a single item", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("thinking-block", { messageId: seq.ids.message(), content: "round one" }, turnId),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build("thinking-block", { messageId: seq.ids.message(), content: "round two" }, turnId),
+    );
+    const items = transcriptItems(state);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "thinking",
+      content: "round one\n\nround two",
+      streaming: false,
+    });
+  });
+
+  it("keeps thinking blocks separated by a tool entry distinct", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("thinking-block", { messageId: seq.ids.message(), content: "plan the call" }, turnId),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "tool-call",
+        { toolCallId: asToolCallId("c1"), name: "fs.read", argsDisplay: "src/index.ts" },
+        turnId,
+      ),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build("thinking-block", { messageId: seq.ids.message(), content: "read the result" }, turnId),
+    );
+    const kinds = transcriptItems(state).map((i) => i.kind);
+    expect(kinds).toEqual(["thinking", "tool", "thinking"]);
+  });
+
+  it("does not merge thinking blocks across turn boundaries", () => {
+    const seq = buildSequencer();
+    const turnOne = asTurnId("turn-1");
+    const turnTwo = asTurnId("turn-2");
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("thinking-block", { messageId: seq.ids.message(), content: "turn one" }, turnOne),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build("turn-started", { prompt: "backend directive", displayPrompt: null }, turnTwo),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build("thinking-block", { messageId: seq.ids.message(), content: "turn two" }, turnTwo),
+    );
+    const items = transcriptItems(state);
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => (i as ThinkingItem).content)).toEqual(["turn one", "turn two"]);
   });
 
   it("discards unfinalized assistant stream when a tool-call arrives (no tool JSON as Response)", () => {
@@ -952,5 +1059,58 @@ describe("turn summary rows", () => {
     expect(turnSummaryLabel(76_000, "completed")).toBe("Worked for 1m16s");
     expect(turnSummaryLabel(5_000, "aborted")).toBe("Worked for 5.0s · aborted");
     expect(turnSummaryLabel(2_500, "error")).toBe("Worked for 2.5s · error");
+  });
+});
+
+describe("transcript sequence policy (T620 / MR-017)", () => {
+  const withSequence = (event: AnyAppEvent, sequence: number): AnyAppEvent =>
+    ({ ...event, sequence }) as AnyAppEvent;
+
+  it("fails loudly when an event arrives with a gap", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    const first = seq.build("turn-started", { prompt: "hello" }, turnId);
+    const skipped = seq.build("assistant-delta", { text: "never seen" }, turnId);
+    const later = seq.build("assistant-message", { messageId: seq.ids.message(), text: "Hello!" }, turnId);
+    const state = fold([first]);
+    expect(() =>
+      applyAppEvent(state, withSequence(later, first.sequence + 2)),
+    ).toThrow(TranscriptSequenceError);
+    expect(() =>
+      applyAppEvent(state, withSequence(skipped, first.sequence + 3)),
+    ).toThrow(/transcript sequence gap: expected 2 but received 4/);
+  });
+
+  it("still ignores redelivered earlier events without throwing", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    const started = seq.build("turn-started", { prompt: "hello" }, turnId);
+    const delta = seq.build("assistant-delta", { text: "Hi" }, turnId);
+    const state = fold([started, delta]);
+    expect(applyAppEvent(state, withSequence(started, started.sequence))).toBe(state);
+    expect(applyAppEvent(state, withSequence(delta, delta.sequence))).toBe(state);
+    expect(state.lastSequence).toBe(delta.sequence);
+  });
+
+  it("advances one event at a time and preserves every item", () => {
+    const seq = buildSequencer();
+    const turnId = asTurnId("turn-1");
+    const events = [
+      seq.build("turn-started", { prompt: "hello" }, turnId),
+      seq.build("assistant-delta", { text: "Hel" }, turnId),
+      seq.build("assistant-delta", { text: "lo!" }, turnId),
+      seq.build("assistant-message", { messageId: seq.ids.message(), text: "Hello!" }, turnId),
+    ];
+    const state = fold(events);
+    expect(state.lastSequence).toBe(events.length);
+    expect(transcriptItems(state).map((item) => item.kind)).toEqual([
+      "user",
+      "assistant",
+    ]);
+    let stepped = fold(events.slice(0, 1));
+    for (const event of events.slice(1)) {
+      stepped = applyAppEvent(stepped, event);
+    }
+    expect(stepped).toEqual(state);
   });
 });

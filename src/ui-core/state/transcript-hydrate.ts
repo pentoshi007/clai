@@ -523,10 +523,10 @@ export interface BoundedSessionVisualInput {
   readonly omittedMessages: number;
 }
 
-const VISUAL_TRANSCRIPT_ITEMS = 300;
-const VISUAL_MESSAGE_ITEMS = 500;
+const VISUAL_TRANSCRIPT_ITEMS = 2_000;
+const VISUAL_MESSAGE_ITEMS = 2_000;
 const VISUAL_FIELD_CHARS = 32_000;
-const VISUAL_TOTAL_CHARS = 2_000_000;
+const VISUAL_TOTAL_CHARS = 8_000_000;
 
 function capVisualField(value: string): string {
   if (value.length <= VISUAL_FIELD_CHARS) return value;

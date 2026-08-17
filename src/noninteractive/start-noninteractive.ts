@@ -1,5 +1,6 @@
 import type { ChatImage, Mode, ProviderId } from "../types.js";
 import type { TurnOutcome } from "../agent/turn-outcome.js";
+import { CancelCoordinator } from "../app/controllers/cancel-coordinator.js";
 import { runAgent } from "../modes/agent.js";
 import { interactiveSessionManager } from "../interactive-session/manager.js";
 import { saveSession } from "../store/history.js";
@@ -84,8 +85,34 @@ export async function startNoninteractive(
   const forwardAbort = (): void => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) forwardAbort();
   else options.signal?.addEventListener("abort", forwardAbort, { once: true });
+  let turnRunning = false;
+  const cancel = new CancelCoordinator({
+    session: {
+      getState: () => ({ running: turnRunning, compacting: false, queued: [] }),
+      abort: () => {
+        if (!controller.signal.aborted) controller.abort(new Error("Aborted."));
+      },
+      cancelAll: async () => {
+        if (!controller.signal.aborted) controller.abort(new Error("Aborted."));
+        const cleanup = await interactiveSessionManager
+          .closeAll("app-shutdown")
+          .catch(() => undefined);
+        const failures = cleanup?.failures ?? [];
+        return {
+          ok: failures.length === 0,
+          output:
+            failures.length === 0
+              ? "Cancelled turn and interactive sessions"
+              : `Cancellation completed with ${failures.length} failure(s)`,
+        };
+      },
+    },
+    sessionId: () => "noninteractive",
+    jobs: { running: () => [], pendingNotifications: () => [] },
+    interruptible: { hasWork: () => false, cancelAll: () => 0 },
+  });
   const abortFromProcess = (): void => {
-    if (!controller.signal.aborted) controller.abort(new Error("Aborted."));
+    cancel.abortForeground();
   };
   process.once("SIGINT", abortFromProcess);
   process.once("SIGTERM", abortFromProcess);
@@ -93,6 +120,7 @@ export async function startNoninteractive(
   let answer = "";
 
   try {
+    turnRunning = true;
     answer = await runAgent(options.prompt, {
       provider: options.provider,
       model: options.model,
@@ -110,6 +138,7 @@ export async function startNoninteractive(
       },
     });
     if (!outcome) throw new Error("Agent completed without a turn outcome");
+    turnRunning = false;
     renderer.finish(outcome);
     if (!options.noHistory) {
       await saveSession([

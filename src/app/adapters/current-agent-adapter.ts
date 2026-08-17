@@ -15,6 +15,7 @@ export function createCurrentAgentPort(): AgentPort {
         maxSteps: request.maxSteps,
         onEvent: handlers.onEvent,
         onMessages: handlers.onMessages,
+        onSuccessfulRequest: handlers.onSuccessfulRequest,
         signal: handlers.signal,
         confirm: handlers.confirm,
         requestSecret: handlers.requestSecret,
@@ -22,6 +23,9 @@ export function createCurrentAgentPort(): AgentPort {
         mode: request.mode,
         displayPrompt: request.displayPrompt,
         previousTurn: request.previousTurn,
+        ...(request.previousSuccessfulRequest
+          ? { previousSuccessfulRequest: request.previousSuccessfulRequest }
+          : {}),
         contextLimitTokens: request.contextLimitTokens,
         ...(request.getContextLimitTokens
           ? { getContextLimitTokens: request.getContextLimitTokens }

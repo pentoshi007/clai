@@ -125,6 +125,7 @@ const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min: endpoints change when redeployed
 
 export const modalProvider: LlmProvider = {
   id: "modal",
+  reasoningStyle: "modal",
   displayName: "Modal",
   defaultModel: defaultModels.modal,
   envVar: "MODAL_PROXY_TOKEN_ID",
@@ -184,6 +185,7 @@ export const modalProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("modal", model, payload);
   },
@@ -208,6 +210,7 @@ export const modalProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "modal",
       // Endpoints scale to zero, so the first request after idle pays a cold
@@ -228,6 +231,7 @@ export const modalProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("modal", model, payload);
   },

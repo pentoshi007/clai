@@ -4,6 +4,7 @@ import {
   type ToolStatus,
 } from "../../ui-core/state/transcript-types.js";
 import { presentOutput, presentTool } from "../../ui-core/rendering/tool-presenter.js";
+import { shouldShowToolElapsed } from "../../ui-core/rendering/duration.js";
 import { alignEnds, clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
@@ -49,7 +50,7 @@ export function toolGlyph(ctx: BlockContext, status: ToolStatus): string {
 }
 
 export function toolElapsed(ctx: BlockContext, item: ToolItem): string | undefined {
-  if (item.status === "blocked") return undefined;
+  if (item.status === "blocked" || !shouldShowToolElapsed(item.name)) return undefined;
   const end = item.endedAt;
   const open = item.status === "running" || item.status === "queued";
   const span = open ? ctx.now - item.timestamp : end === undefined ? -1 : end - item.timestamp;

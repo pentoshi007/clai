@@ -1,4 +1,9 @@
-import type { ChatMessage, Mode, ProviderId } from "../../types.js";
+import type {
+  ChatMessage,
+  Mode,
+  ProviderId,
+  SuccessfulRequestSnapshot,
+} from "../../types.js";
 import { materializeHistoryImages } from "../../store/history.js";
 import { resolveTurnInput } from "../../attachments/service.js";
 import { imageBudgetFor } from "../../attachments/image-content.js";
@@ -13,6 +18,7 @@ export interface TurnRequestInput {
   readonly materializeImages: boolean;
   readonly displayPrompt?: string | null | undefined;
   readonly previousTurn?: PreviousTurnSignal | undefined;
+  readonly previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
   readonly contextLimitTokens?: number | undefined;
   readonly getContextLimitTokens?: (
     provider: ProviderId | undefined,
@@ -52,6 +58,9 @@ export function buildTurnRequest(input: TurnRequestInput): BuiltTurnRequest {
       ? { displayPrompt: input.displayPrompt }
       : {}),
     ...(input.previousTurn ? { previousTurn: input.previousTurn } : {}),
+    ...(input.previousSuccessfulRequest
+      ? { previousSuccessfulRequest: input.previousSuccessfulRequest }
+      : {}),
     ...(input.contextLimitTokens
       ? { contextLimitTokens: input.contextLimitTokens }
       : {}),

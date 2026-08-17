@@ -55,12 +55,15 @@ describe("agent recovery request shaping", () => {
     updateConfig({ thinking: configBefore.thinking });
   });
 
-  it("keeps a non-empty assistant turn and disables thinking after a thinking-only reply", async () => {
+  it("keeps a non-empty assistant turn and preserves reasoning after a thinking-only reply", async () => {
+    const longReasoning =
+      "First I mapped the xray opacity rules per system: external parts drop to 0.10 when xray is on and the part belongs to the current system. " +
+      "Then I checked the muscular layer: it is outside the current system but xray still applies, so it should fade to 0.25 instead of hiding.";
     const requests: CompletionRequest[] = [];
     stream
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
         requests.push(request);
-        return reply("<think>reasoned but emitted nothing visible</think>")(request, onToken);
+        return reply(`<think>${longReasoning}</think>`)(request, onToken);
       })
       .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
         requests.push(request);
@@ -75,13 +78,18 @@ describe("agent recovery request shaping", () => {
     });
 
     expect(requests).toHaveLength(2);
-    expect(requests[1]!.thinking).toEqual({ enabled: false, effort: "low" });
+    expect(requests[1]!.thinking).toEqual({ enabled: true, effort: "low" });
     const recoveredAssistant = requests[1]!.messages.findLast(
       (message) => message.role === "assistant",
     );
     expect(recoveredAssistant?.content).toBe(
       "[No visible assistant response was produced.]",
     );
+
+    const nudge = requests[1]!.messages.at(-1);
+    expect(nudge?.role).toBe("user");
+    expect(nudge?.content).toContain("preserved_reasoning");
+    expect(nudge?.content).toContain("xray opacity rules");
 
     const body = JSON.parse(geminiBody(requests[1]!)) as {
       contents: Array<{ role: string; parts: Array<{ text?: string }> }>;
@@ -94,7 +102,44 @@ describe("agent recovery request shaping", () => {
     const thinkingConfig = (body as {
       generationConfig: { thinkingConfig?: Record<string, unknown> };
     }).generationConfig.thinkingConfig;
-    expect(thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+    expect(thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
+  });
+
+  it("disables thinking only after repeated thinking-only replies", async () => {
+    const firstReasoning =
+      "First long reasoning pass: I mapped the xray opacity rules per system and concluded external parts drop to 0.10 when xray is on and the part belongs to the current system selection.";
+    const secondReasoning =
+      "Second reasoning pass: I rechecked the muscular layer fade logic and confirmed it sits outside the current system but xray still applies, so it should fade rather than hide.";
+    const requests: CompletionRequest[] = [];
+    stream
+      .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
+        requests.push(request);
+        return reply(`<think>${firstReasoning}</think>`)(request, onToken);
+      })
+      .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
+        requests.push(request);
+        return reply(`<think>${secondReasoning}</think>`)(request, onToken);
+      })
+      .mockImplementationOnce((request: CompletionRequest, onToken: (token: string) => void) => {
+        requests.push(request);
+        return reply("Visible recovery answer.")(request, onToken);
+      });
+
+    await runAgent("Please answer this.", {
+      provider: "gemini",
+      model: "gemini-3.1-flash-lite",
+      session: session("agent-recovery-thinking-twice"),
+      maxSteps: 1,
+    });
+
+    expect(requests).toHaveLength(3);
+    expect(requests[1]!.thinking).toEqual({ enabled: true, effort: "low" });
+    expect(requests[2]!.thinking).toEqual({ enabled: false, effort: "low" });
+    const firstNudge = requests[1]!.messages.at(-1)?.content ?? "";
+    const secondNudge = requests[2]!.messages.at(-1)?.content ?? "";
+    expect(firstNudge).toContain("xray opacity rules");
+    expect(secondNudge).toContain("preserved_reasoning");
+    expect(secondNudge).toContain("muscular layer fade logic");
   });
 
   it("drops empty Gemini turns and coalesces adjacent user content", () => {

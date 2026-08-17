@@ -1,4 +1,11 @@
-import type { ChatMessage, Mode, ProviderId, TokenUsage, ToolResult } from "../../types.js";
+import type {
+  ChatMessage,
+  Mode,
+  ProviderId,
+  SuccessfulRequestSnapshot,
+  TokenUsage,
+  ToolResult,
+} from "../../types.js";
 import {
   estimateMessagesTokens,
   isCompactionMemoryMessage,
@@ -6,20 +13,29 @@ import {
 } from "../../agent/context-manager.js";
 import { repairToolProtocol } from "../../agent/tool-history.js";
 import {
-  formatContextChip, snapshotFromEstimate, type ContextUsageSnapshot,
+  formatContextChip,
+  type ContextUsageSnapshot,
 } from "../../llm/token-usage.js";
+import type {
+  ContextAttemptReference,
+  ContextSnapshotV1,
+} from "../../llm/context-snapshot.js";
 import {
-  compactedUsageSnapshot, recordUsageSnapshot, resolveContextUsageSnapshot,
-  restoredUsageSnapshot, createContextProjector, estimatedUsageSnapshot,
+  compactedContextSnapshot,
+  recordContextUsageSnapshot,
+  resolveContextSnapshot as resolveSnapshot,
+  restoredContextSnapshot,
+  createContextProjector,
+  estimatedContextSnapshot,
   type PartialUsageSnapshot,
-  type ContextProjection, type ContextUsageTarget,
+  type ContextProjection,
+  type ContextUsageTarget,
 } from "./session-context-usage.js";
 import { createSessionPolicy, type SessionPolicy } from "../../agent/session-policy.js";
 import { previousTurnSignal } from "./turn-continuation.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import { buildTurnRequest } from "./session-turn-request.js";
 import { resolveTurnInput } from "../../attachments/service.js";
-import { generateSessionTitle } from "../../agent/session-title.js";
 import { clearTextOnlyModels } from "../../llm/tool-protocol.js";
 import { getConfig, getProviderModel } from "../../store/config.js";
 import { beginSessionWorkspace, getActiveSessionWorkspace, type SessionWorkspace } from "../../store/session-workspace.js";
@@ -54,6 +70,7 @@ import {
   type ResponderRuntimeState,
 } from "./session-responder.js";
 import { SessionContextLimits } from "./session-context-limits.js";
+import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
 
 export interface SessionState {
   readonly sessionId: SessionId;
@@ -66,6 +83,9 @@ export interface SessionState {
   readonly queued: readonly string[];
   readonly responder: ResponderRuntimeState;
   readonly title: string | undefined;
+  /** Canonical versioned context measurement for runtime consumers. */
+  readonly contextSnapshot: ContextSnapshotV1 | undefined;
+  /** Six-field legacy projection retained for existing renderers. */
   readonly contextUsage: ContextUsageSnapshot | undefined;
   readonly contextChip: string | undefined;
 }
@@ -92,6 +112,7 @@ export interface SessionControllerDeps {
   /** When true, never persist sessions or generate AI titles (CLI --no-history). */
   readonly noHistory?: boolean | undefined;
   readonly notifyResponderDelivery?: ((summary: string) => void) | undefined;
+  readonly titleCompleter?: ((messages: ChatMessage[]) => Promise<string>) | undefined;
 }
 
 
@@ -144,19 +165,20 @@ export class SessionController implements Disposable {
   private compactingFlag = false;
   private readonly activeCompactions = new Set<string>();
   private compactAbort: AbortController | undefined; // cancels in-flight /compact
-  /** Display name written into history.db (AI title or explicit /save name). */
+  /** Display name written into history.db. */
   private sessionTitle: string | undefined;
-  /** User-message count at last successful AI title (classic refresh cadence). */
-  private titledAtUserCount = 0;
-  private titleInFlight = false;
+  private readonly namer: SessionNamer;
+  private lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
   /** Throttle mid-turn history autosaves so abort/crash still keep tools on disk. */
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
   /** Orders autosave, terminal, compaction, title, switch, and shutdown writes. */
   private readonly persistence: SessionPersistenceQueue;
   private static readonly AUTOSAVE_MIN_MS = 15_000;
-  /** Last known context / session token totals for the status strip. */
-  private contextUsage: ContextUsageSnapshot | undefined;
+  /** Last known versioned context measurement for the session. */
+  private contextSnapshot: ContextSnapshotV1 | undefined;
+  /** Avoid applying the same manual compaction in both commit and event paths. */
+  private lastContextCompactionId: string | undefined;
   private readonly contextLimits = new SessionContextLimits();
   /** Bumped by reset/history load/dispose so late callbacks can be ignored. */
   private lifecycleGeneration = 0;
@@ -199,6 +221,21 @@ export class SessionController implements Disposable {
       runTurn: (prompt, options) => this.runTurn(prompt, options),
       lastTurnResult: () => this.lastTurnResult,
     });
+    this.namer = new SessionNamer({
+      complete:
+        deps.titleCompleter ??
+        ((messages) =>
+          completeForSessionNaming(messages, {
+            provider: this.provider,
+            model: this.model,
+          })),
+      applyTitle: (title) => {
+        this.sessionTitle = title;
+        this.notifyState();
+        void this.persistNow().catch(() => undefined);
+      },
+      enabled: () => !this.deps.noHistory && !getConfig().privateMode,
+    });
     if (deps.jobs) {
       this.responder = new SessionResponder({
         jobs: deps.jobs,
@@ -237,7 +274,8 @@ export class SessionController implements Disposable {
   }
 
   getState(): SessionState {
-    const { contextUsage, contextChip } = this.contextUsageProjection();
+    const { contextSnapshot, contextUsage, contextChip } =
+      this.contextUsageProjection();
     return {
       sessionId: this.sessionIdValue,
       mode: this.mode,
@@ -251,13 +289,19 @@ export class SessionController implements Disposable {
       queued: this.prompts.snapshot(),
       responder: this.responder?.getState() ?? IDLE_RESPONDER_STATE,
       title: this.sessionTitle,
+      contextSnapshot,
       contextUsage,
       contextChip,
     };
   }
 
   private contextUsageProjection(): ContextProjection {
-    return this.projectContext(this.usageTarget, this.history, this.contextUsage);
+    return this.projectContext(
+      this.usageTarget,
+      this.history,
+      this.contextSnapshot,
+      () => this.contextTimestamp(),
+    );
   }
 
   private get contextLimitTokens(): number | undefined {
@@ -273,26 +317,95 @@ export class SessionController implements Disposable {
     };
   }
 
-  private resolveContextUsage(): ContextUsageSnapshot | undefined {
-    return resolveContextUsageSnapshot(this.usageTarget, this.history, this.contextUsage);
+  private contextTimestamp(): number {
+    return this.deps.clock?.now() ?? Date.now();
   }
 
-  recordTokenUsage(usage: TokenUsage, model?: string, provider?: ProviderId): void {
+  private setContextSnapshot(snapshot: ContextSnapshotV1 | undefined): void {
+    this.contextSnapshot = snapshot;
+  }
+
+  private resolveContextSnapshot(): ContextSnapshotV1 | undefined {
+    return resolveSnapshot(
+      this.usageTarget,
+      this.history,
+      this.contextSnapshot,
+      () => this.contextTimestamp(),
+    );
+  }
+
+  /** Next-request occupancy, only when a request-scoped measurement exists. */
+  private requestScopedContextTokens(): number | undefined {
+    const snapshot = this.contextSnapshot;
+    if (!snapshot || snapshot.contextTokens <= 0) return undefined;
+    return snapshot.scope === "provider-request" ||
+      snapshot.scope === "assembled-request"
+      ? snapshot.contextTokens
+      : undefined;
+  }
+
+  recordTokenUsage(
+    usage: TokenUsage,
+    model?: string,
+    provider?: ProviderId,
+    attempt?: ContextAttemptReference,
+  ): void {
     if (provider !== undefined) this.provider = provider;
     if (model !== undefined) this.model = model;
-    this.contextUsage = recordUsageSnapshot({ provider: provider ?? this.provider, model: model ?? this.model }, this.contextUsage, usage);
+    this.setContextSnapshot(
+      recordContextUsageSnapshot(
+        this.usageTarget,
+        this.contextSnapshot,
+        usage,
+        attempt,
+        () => this.contextTimestamp(),
+      ),
+    );
     this.notifyState();
   }
 
-  noteContextCompacted(afterTokens?: number): void {
-    this.contextUsage = compactedUsageSnapshot(this.usageTarget, this.contextUsage, this.history, afterTokens); this.notifyState();
+  noteContextCompacted(
+    afterTokens?: number,
+    scope: "message-history" | "assembled-request" = "assembled-request",
+    compactionId?: string,
+  ): void {
+    if (compactionId && compactionId === this.lastContextCompactionId) return;
+    this.setContextSnapshot(
+      compactedContextSnapshot(
+        this.usageTarget,
+        this.contextSnapshot,
+        this.history,
+        afterTokens,
+        scope,
+        () => this.contextTimestamp(),
+      ),
+    );
+    if (compactionId) this.lastContextCompactionId = compactionId;
+    this.notifyState();
   }
+
   noteContextEstimate(estimatedTokens: number): void {
-    const next = estimatedUsageSnapshot(this.usageTarget, this.contextUsage, estimatedTokens); if (next !== this.contextUsage) { this.contextUsage = next; this.notifyState(); }
+    const next = estimatedContextSnapshot(
+      this.usageTarget,
+      this.contextSnapshot,
+      estimatedTokens,
+      () => this.contextTimestamp(),
+    );
+    if (next !== this.contextSnapshot) {
+      this.setContextSnapshot(next);
+      this.notifyState();
+    }
   }
 
   private refreshEstimatedContext(): void {
-    this.contextUsage = snapshotFromEstimate(this.history, this.model, this.provider, undefined);
+    this.setContextSnapshot(
+      resolveSnapshot(
+        this.usageTarget,
+        this.history,
+        undefined,
+        () => this.contextTimestamp(),
+      ),
+    );
   }
 
   get messages(): readonly ChatMessage[] {
@@ -307,20 +420,22 @@ export class SessionController implements Disposable {
 
   setProvider(provider: ProviderId | undefined): void {
     this.provider = provider;
-    this.contextUsage = this.resolveContextUsage();
+    this.lastMainRequestSnapshot = undefined;
+    this.setContextSnapshot(this.resolveContextSnapshot());
     clearTextOnlyModels();
     this.notifyState();
   }
 
   setContextLimitTokens(limit: number | undefined): void {
     this.contextLimits.set(this.provider, this.model, limit);
-    this.contextUsage = this.resolveContextUsage();
+    this.setContextSnapshot(this.resolveContextSnapshot());
     this.notifyState();
   }
 
   setModel(model: string | undefined): void {
     this.model = model;
-    this.contextUsage = this.resolveContextUsage();
+    this.lastMainRequestSnapshot = undefined;
+    this.setContextSnapshot(this.resolveContextSnapshot());
     // Allow native tools again after /model switch (sticky text-only is process-global).
     clearTextOnlyModels();
     this.notifyState();
@@ -363,18 +478,20 @@ export class SessionController implements Disposable {
     this.restoredPreviousTurn = options.previousTurn;
     this.prompts.clear();
     this.spool.clear();
-    // Keep the resumed session's existing title; only refresh after the user
-    // adds more turns (same cadence as classic TUI).
     this.sessionTitle = options.title;
-    this.titledAtUserCount = messages.filter((m) => m.role === "user").length;
-    this.titleInFlight = false;
+    this.namer.restore(options.title);
     // Prefer the exact snapshot saved during the live turn; only estimate when
     // older sessions have no usage payload (would otherwise drop 39k → ~11k).
-    const restored = restoredUsageSnapshot(this.usageTarget, options.contextUsage);
+    this.lastContextCompactionId = undefined;
+    const restored = restoredContextSnapshot(
+      this.usageTarget,
+      options.contextUsage,
+      () => this.contextTimestamp(),
+    );
     if (restored) {
-      this.contextUsage = restored;
+      this.setContextSnapshot(restored);
     } else {
-      this.contextUsage = undefined;
+      this.setContextSnapshot(undefined);
       this.refreshEstimatedContext();
     }
     if (options.sessionId) {
@@ -421,13 +538,14 @@ export class SessionController implements Disposable {
    */
   reset(options: { mintNewId?: boolean } = {}): void {
     this.beginLifecycleGeneration();
+    this.sequencer.rebind(this.sessionIdValue);
     this.history = [];
     this.restoredPreviousTurn = undefined;
     this.prompts.clear();
     this.sessionTitle = undefined;
-    this.titledAtUserCount = 0;
-    this.titleInFlight = false;
-    this.contextUsage = undefined;
+    this.namer.reset();
+    this.setContextSnapshot(undefined);
+    this.lastContextCompactionId = undefined;
     this.spool.clear();
     if (options.mintNewId) {
       this.fenceInteractiveOwner(this.sessionIdValue);
@@ -445,11 +563,18 @@ export class SessionController implements Disposable {
   /** Roll back history after a rejected plan-implement compaction. */
   restoreMessages(
     messages: readonly ChatMessage[],
-    contextUsage?: ContextUsageSnapshot | undefined,
+    contextSnapshot?: ContextSnapshotV1 | ContextUsageSnapshot | undefined,
   ): void {
     this.history = [...messages];
-    if (contextUsage) {
-      this.contextUsage = { ...contextUsage };
+    this.lastMainRequestSnapshot = undefined;
+    this.lastContextCompactionId = undefined;
+    const restored = restoredContextSnapshot(
+      this.usageTarget,
+      contextSnapshot,
+      () => this.contextTimestamp(),
+    );
+    if (restored) {
+      this.setContextSnapshot(restored);
     } else {
       this.refreshEstimatedContext();
     }
@@ -473,13 +598,21 @@ export class SessionController implements Disposable {
     const provider = this.provider ?? (cfg.defaultProvider as ProviderId | undefined);
     const history = [...this.history];
     const persist = options.persist !== false;
+    const requestTokensBefore = this.requestScopedContextTokens();
     const generation = this.lifecycleGeneration;
+    const compactionId = String(this.sequencer.ids.message());
     const abortController = new AbortController();
     this.compactingFlag = true;
     this.compactAbort = abortController;
     if (signal?.aborted) abortController.abort();
     else signal?.addEventListener("abort", () => abortController.abort(), { once: true });
     this.notifyState();
+
+    const resumedRequest: SuccessfulRequestSnapshot | undefined =
+      this.lastMainRequestSnapshot ??
+      (provider !== undefined && requestTokensBefore !== undefined
+        ? { provider, model: this.model ?? cfg.defaultModel, messages: history }
+        : undefined);
 
     try {
       return await runSessionCompaction({
@@ -490,17 +623,26 @@ export class SessionController implements Disposable {
         purpose: options.purpose,
         provider,
         model: this.model ?? cfg.defaultModel,
+        ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
         ...(this.contextLimitTokens
           ? { contextLimitTokens: this.contextLimitTokens }
           : {}),
+        ...(requestTokensBefore !== undefined ? { requestTokensBefore } : {}),
         persist,
-        compactionId: String(this.sequencer.ids.message()),
+        compactionId,
         sequencer: this.sequencer,
         emit: this.deps.emit,
         isCurrent: () => generation === this.lifecycleGeneration,
-        commit: (result) => {
+        commit: (result, reported) => {
           this.history = result.messages;
-          if (result.summarized) this.noteContextCompacted(result.afterTokens);
+          if (result.summarized) {
+            this.lastMainRequestSnapshot = undefined;
+            this.noteContextCompacted(
+              reported.afterTokens,
+              reported.scope,
+              compactionId,
+            );
+          }
           this.notifyState();
         },
         persistNow: () => this.persistNow(),
@@ -541,9 +683,14 @@ export class SessionController implements Disposable {
     if (!this.history.some((m) => m.role === "user" || isCompactionMemoryMessage(m))) {
       return;
     }
-    if (name) this.sessionTitle = name;
+    if (name) {
+      this.sessionTitle = name;
+      this.namer.markManual();
+    }
 
-    const contextUsage = persistedContextUsage(this.resolveContextUsage());
+    const contextSnapshot = this.resolveContextSnapshot();
+    this.setContextSnapshot(contextSnapshot);
+    const contextUsage = persistedContextUsage(contextSnapshot);
     await this.persistence.save(this.history, {
       sessionId: this.sessionIdValue,
       name: name ?? this.sessionTitle,
@@ -554,49 +701,11 @@ export class SessionController implements Disposable {
     this.settlePersistedResponderResults();
   }
 
-  async maybeRefreshTitle(): Promise<void> {
-    if (this.deps.noHistory || getConfig().privateMode) return;
-    if (this.titleInFlight) return;
-    const userCount = this.history.filter((m) => m.role === "user").length;
-    const hasAssistant = this.history.some(
-      (m) => m.role === "assistant" && m.content.trim().length > 0,
-    );
-    if (userCount === 0 || !hasAssistant) return;
-    const shouldGenerate =
-      this.titledAtUserCount === 0 || userCount - this.titledAtUserCount >= 2;
-    if (!shouldGenerate) return;
-
-    const provider = this.provider ?? getConfig().defaultProvider;
-    const model = this.model ?? getProviderModel(provider);
-    if (!provider || !model) return;
-
-    this.titleInFlight = true;
-    const sessionIdAtStart = this.sessionIdValue;
-    const targetCount = userCount;
-    try {
-      const title = await generateSessionTitle(this.history, {
-        provider,
-        model,
-      });
-      if (!title) return;
-      // Discard if the user started / resumed another session while waiting.
-      if (this.sessionIdValue !== sessionIdAtStart) return;
-      this.titledAtUserCount = targetCount;
-      this.sessionTitle = title;
-      await this.persistNow(title);
-      this.notifyState();
-    } catch {
-      // Title is best-effort; derived name from first user message remains.
-    } finally {
-      this.titleInFlight = false;
-    }
-  }
-
   estimateContext(): { messages: number; tokens: number } {
-    const snap = this.resolveContextUsage();
+    const snapshot = this.resolveContextSnapshot();
     return {
       messages: this.history.length,
-      tokens: snap?.contextTokens ?? estimateMessagesTokens(this.history),
+      tokens: snapshot?.contextTokens ?? estimateMessagesTokens(this.history),
     };
   }
 
@@ -620,6 +729,7 @@ export class SessionController implements Disposable {
   }
 
   enqueue(prompt: string, opts?: TurnDisplayOptions): void {
+    this.namer.noteUserPrompt(opts?.displayPrompt !== null);
     this.prompts.enqueue(prompt, opts);
   }
 
@@ -673,6 +783,7 @@ export class SessionController implements Disposable {
   }
 
   async submit(prompt: string, opts?: TurnDisplayOptions): Promise<TurnResult> {
+    this.namer.noteUserPrompt(opts?.displayPrompt !== null);
     this.responder?.activate();
     this.loopRecoveryAttempts.clear();
     return this.prompts.submit(prompt, opts);
@@ -705,6 +816,9 @@ export class SessionController implements Disposable {
         ? { displayPrompt: opts.displayPrompt }
         : {}),
       ...(checkpoint ? { previousTurn: checkpoint } : {}),
+      ...(this.lastMainRequestSnapshot
+        ? { previousSuccessfulRequest: this.lastMainRequestSnapshot }
+        : {}),
       ...(this.contextLimitTokens
         ? { contextLimitTokens: this.contextLimitTokens }
         : {}),
@@ -727,6 +841,10 @@ export class SessionController implements Disposable {
         this.notifyState();
         // Periodic durable snapshot so Esc/kill mid-run does not wipe tools.
         this.scheduleAutosave();
+      },
+      onSuccessfulRequest: (snapshot) => {
+        if (turnGeneration !== this.lifecycleGeneration) return;
+        this.lastMainRequestSnapshot = snapshot;
       },
       onStarted: opts?.onStarted,
     });
@@ -752,9 +870,7 @@ export class SessionController implements Disposable {
       ) {
         await this.persistNow();
       }
-      if (sameGeneration && result.status === "completed") {
-        void this.maybeRefreshTitle();
-      }
+      if (sameGeneration) this.namer.maybeRename(this.history);
       for (const listener of this.turnEndListeners) listener(result);
       if (sameGeneration) this.prompts.settle(result);
       return result;
@@ -829,13 +945,13 @@ export class SessionController implements Disposable {
     this.lifecycleGeneration += 1;
     this.lastTurnResult = undefined;
     this.restoredPreviousTurn = undefined;
+    this.lastMainRequestSnapshot = undefined;
     this.loopRecoveryAttempts.clear();
     if (this.turn.running) this.turn.abort();
     this.compactAbort?.abort();
     this.compactAbort = undefined;
     this.compactingFlag = false;
     this.activeCompactions.clear();
-    this.titleInFlight = false;
     this.responder?.invalidateWake();
   }
 

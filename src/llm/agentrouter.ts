@@ -1,4 +1,5 @@
 import type { CompletionRequest, CompletionResult } from "../types.js";
+import { runGenerationAttempt } from "./operation-usage.js";
 import {
   defaultModels,
   type LlmProvider,
@@ -136,6 +137,7 @@ export function bumpMaxTokensForThinkingBudget(
 
 export const agentrouterProvider: LlmProvider = {
   id: "agentrouter",
+  reasoningStyle: "agentrouter",
   displayName: "AgentRouter",
   defaultModel: defaultModels.agentrouter,
   envVar: "AGENTROUTER_API_KEY",
@@ -180,35 +182,52 @@ export const agentrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("AgentRouter API key is required");
     const apiKey = auth.apiKey;
     const model = request.model ?? defaultModels.agentrouter;
+    let attemptIndex = 0;
     const invoke = (maxTokens: number | undefined) =>
       withAuthorizedClient((headers) =>
-        openAiCompatibleComplete({
-          provider: "AgentRouter",
-          providerId: "agentrouter",
-          baseUrl,
-          apiKey,
-          model,
-          messages: request.messages,
-          maxTokens,
-          temperature: request.temperature,
-          signal: request.signal,
-          reasoning: request.thinking,
-          reasoningStyle: "agentrouter",
-          headers,
-          tools: request.tools,
-          toolChoice: request.toolChoice,
-          parallelToolCalls: request.parallelToolCalls,
-        }),
+        runGenerationAttempt(
+          request,
+          {
+            provider: "agentrouter",
+            model,
+            mode: "complete",
+            reason:
+              attemptIndex++ === 0
+                ? (request.attemptReason ?? "initial")
+                : "provider-retry",
+          },
+          async () => {
+            const payload = await openAiCompatibleComplete({
+              provider: "AgentRouter",
+              providerId: "agentrouter",
+              baseUrl,
+              apiKey,
+              model,
+              messages: request.messages,
+              maxTokens,
+              temperature: request.temperature,
+              signal: request.signal,
+              reasoning: request.thinking,
+              reasoningStyle: "agentrouter",
+              headers,
+              tools: request.tools,
+              toolChoice: request.toolChoice,
+              parallelToolCalls: request.parallelToolCalls,
+              reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+            });
+            return toCompletionResult("agentrouter", model, payload);
+          },
+        ),
       );
-    let payload;
+    let result: CompletionResult;
     try {
-      payload = await invoke(request.maxTokens);
+      result = await invoke(request.maxTokens);
     } catch (error) {
       const bumped = bumpMaxTokensForThinkingBudget(error, request.maxTokens);
       if (bumped === undefined) throw error;
-      payload = await invoke(bumped);
+      result = await invoke(bumped);
     }
-    return toCompletionResult("agentrouter", model, payload);
+    return result;
   },
   async stream(
     request: CompletionRequest,
@@ -218,41 +237,55 @@ export const agentrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("AgentRouter API key is required");
     const apiKey = auth.apiKey;
     const model = request.model ?? defaultModels.agentrouter;
+    let attemptIndex = 0;
     const invoke = (maxTokens: number | undefined) =>
       withAuthorizedClient((headers) =>
-        openAiCompatibleStream({
-          provider: "AgentRouter",
-          providerId: "agentrouter",
-          baseUrl,
-          apiKey,
-          model,
-          messages: request.messages,
-          maxTokens,
-          temperature: request.temperature,
-          signal: request.signal,
-          onToken,
-          onToolCallDelta: request.onToolCallDelta,
-          reasoning: request.thinking,
-          reasoningStyle: "agentrouter",
-          // 60s first byte, but the mid-stream budget has to survive a fully
-          // buffered tool call (see DEFAULT_STREAM_IDLE_TIMEOUT_MS).
-          initialIdleTimeoutMs: 60_000,
-          headers,
-          tools: request.tools,
-          toolChoice: request.toolChoice,
-          parallelToolCalls: request.parallelToolCalls,
-        }),
+        runGenerationAttempt(
+          request,
+          {
+            provider: "agentrouter",
+            model,
+            mode: "stream",
+            reason:
+              attemptIndex++ === 0
+                ? (request.attemptReason ?? "initial")
+                : "provider-retry",
+          },
+          async () => {
+            const payload = await openAiCompatibleStream({
+              provider: "AgentRouter",
+              providerId: "agentrouter",
+              baseUrl,
+              apiKey,
+              model,
+              messages: request.messages,
+              maxTokens,
+              temperature: request.temperature,
+              signal: request.signal,
+              onToken,
+              onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
+              reasoning: request.thinking,
+              reasoningStyle: "agentrouter",
+              initialIdleTimeoutMs: 60_000,
+              headers,
+              tools: request.tools,
+              toolChoice: request.toolChoice,
+              parallelToolCalls: request.parallelToolCalls,
+              reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+            });
+            return toCompletionResult("agentrouter", model, payload);
+          },
+        ),
       );
-    let payload;
+    let result: CompletionResult;
     try {
-      // A thinking-budget rejection is returned before any SSE token is
-      // emitted, so retrying with a larger ceiling never double-streams.
-      payload = await invoke(request.maxTokens);
+      result = await invoke(request.maxTokens);
     } catch (error) {
       const bumped = bumpMaxTokensForThinkingBudget(error, request.maxTokens);
       if (bumped === undefined) throw error;
-      payload = await invoke(bumped);
+      result = await invoke(bumped);
     }
-    return toCompletionResult("agentrouter", model, payload);
+    return result;
   },
 };

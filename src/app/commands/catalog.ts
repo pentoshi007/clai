@@ -331,6 +331,30 @@ export const knownModels: Record<string, string[]> = {
     "lightning-ai/nemotron-3-ultra-550b-a55b",
     "lightning-ai/nemotron-3-nano-omni-30b-a3b-reasoning",
   ],
+  // OrcaRouter routes eleven upstreams under vendor-prefixed ids; the live
+  // catalog at api.orcarouter.ai/v1/models is authoritative — offline subset.
+  orcarouter: [
+    "orcarouter/auto",
+    "openai/gpt-4o-mini",
+    "openai/gpt-4o",
+    "openai/gpt-5",
+    "openai/gpt-5-mini",
+    "openai/o3-mini",
+    "openai/o4-mini",
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4.7",
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-pro",
+    "google/gemini-3-pro-preview",
+    "deepseek/deepseek-chat",
+    "deepseek/deepseek-reasoner",
+    "grok/grok-4-fast-reasoning",
+    "qwen/qwen3-max",
+    "qwen/qwen3.6-plus",
+    "kimi/kimi-k2.6",
+    "minimax/minimax-m2.7",
+    "z-ai/glm-5.1",
+  ],
 };
 
 export function getKnownModels(provider: string): string[] {

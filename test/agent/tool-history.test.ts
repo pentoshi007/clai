@@ -3,13 +3,19 @@ import {
   allToolCallsHaveResults,
   appendAssistantWithTools,
   appendToolResult,
+  ensureUniqueToolCallIds,
   expandKeepStartForToolPairs,
   fillMissingToolResults,
   hasOrphanToolMessages,
   missingToolResultIds,
   repairToolProtocol,
+  toolCallIdsInHistory,
   validateToolProtocol,
 } from "../../src/agent/tool-history.js";
+import {
+  createReasoningArtifact,
+  createReasoningArtifactProvenance,
+} from "../../src/llm/reasoning-artifacts.js";
 import type { ChatMessage, NativeToolCall } from "../../src/types.js";
 
 describe("tool-history", () => {
@@ -274,6 +280,82 @@ describe("tool-history", () => {
     for (const call of [...calls].reverse()) {
       appendToolResult(messages, call.id, "ok", call.name, true);
     }
+    expect(validateToolProtocol(messages)).toEqual([]);
+  });
+});
+
+describe("reasoning signature adjacency (T620)", () => {
+  const signatureArtifact = (signature: string, toolCallId: string, toolCallIndex: number) =>
+    createReasoningArtifact({
+      kind: "thought-signature",
+      raw: signature,
+      provenance: createReasoningArtifactProvenance({
+        provider: "anthropic",
+        model: "claude-test",
+        dialect: "anthropic-thinking",
+      }),
+      replay: { scope: "tool-turn", persistence: "tool-turn" },
+      position: { sequence: 0, placement: "before-tool-call", toolCallId, toolCallIndex },
+    });
+
+  it("keeps every signature on its exact occurrence when duplicate wire ids are rewritten", () => {
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      { id: "dupe", name: "fs.read", args: { path: "first" } },
+    ]);
+    appendToolResult(messages, "dupe", "first body", "fs.read", true);
+
+    const rewritten = ensureUniqueToolCallIds(
+      [
+        { id: "dupe", name: "fs.read", args: { path: "second" } },
+        { id: "fresh", name: "fs.read", args: { path: "third" } },
+      ],
+      toolCallIdsInHistory(messages),
+    );
+    expect(rewritten[0]!.id).not.toBe("dupe");
+    expect(rewritten[1]!.id).toBe("fresh");
+
+    appendAssistantWithTools(
+      messages,
+      "",
+      rewritten,
+      undefined,
+      [
+        signatureArtifact("sig-second", "dupe", 0),
+        signatureArtifact("sig-third", "fresh", 1),
+      ],
+    );
+    const persisted = messages.at(-1)!.reasoningArtifacts!;
+    const boundIds = persisted
+      .filter((artifact) => artifact.position.placement === "before-tool-call")
+      .map((artifact) => artifact.position.toolCallId);
+    expect(boundIds).toEqual([rewritten[0]!.id, "fresh"]);
+    for (const artifact of persisted) {
+      const owner = rewritten.find(
+        (call) => call.id === artifact.position.toolCallId,
+      );
+      expect(owner).toBeDefined();
+      expect(artifact.raw).toBe(
+        owner!.args.path === "second" ? "sig-second" : "sig-third",
+      );
+    }
+  });
+
+  it("keeps pairing valid when a replayed occurrence gets a synthetic id", () => {
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      { id: "gateway-reuse", name: "fs.list", args: { path: "." } },
+    ]);
+    appendToolResult(messages, "gateway-reuse", "listed once", "fs.list", true);
+    const rewritten = ensureUniqueToolCallIds(
+      [{ id: "gateway-reuse", name: "fs.list", args: { path: "." } }],
+      toolCallIdsInHistory(messages),
+    );
+    expect(rewritten[0]!.id).not.toBe("gateway-reuse");
+    appendAssistantWithTools(messages, "", rewritten);
+    appendToolResult(messages, rewritten[0]!.id, "replayed result", "fs.list", true);
+    expect(hasOrphanToolMessages(messages)).toBe(false);
+    expect(allToolCallsHaveResults(messages)).toBe(true);
     expect(validateToolProtocol(messages)).toEqual([]);
   });
 });

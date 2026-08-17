@@ -24,7 +24,7 @@ describe("intro header layout", () => {
     const leftInner = divider - 1;
     const rightInner = frame.length - divider - 2;
     expect(Math.abs(leftInner - rightInner)).toBeLessThanOrEqual(1);
-    expect(lines.some((line) => line.includes("variant") && line.includes("high"))).toBe(true);
+    expect(lines.some((line) => line.includes("effort") && line.includes("high"))).toBe(true);
   });
 
   it("keeps the narrow fallback inside its width with equal outer borders", () => {
@@ -34,6 +34,6 @@ describe("intro header layout", () => {
     const top = lines.find((line) => line.includes("╭"))!;
     const bottom = lines.find((line) => line.includes("╰"))!;
     expect(stringWidth(top)).toBe(stringWidth(bottom));
-    expect(lines.some((line) => line.includes("vari") && line.includes("high"))).toBe(true);
+expect(lines.some((line) => line.includes("effo") && line.includes("high"))).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ const baseUrl = "https://api.openai.com/v1";
 
 export const openaiProvider: LlmProvider = {
   id: "openai",
+  reasoningStyle: "openai",
   displayName: "OpenAI",
   defaultModel: defaultModels.openai,
   envVar: "OPENAI_API_KEY",
@@ -54,6 +55,7 @@ export const openaiProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("openai", model, payload);
   },
@@ -76,11 +78,13 @@ export const openaiProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "openai",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("openai", model, payload);
   },

@@ -9,7 +9,7 @@ import { blockContextFor } from "../../../src/classic/feed/feed-blocks.js";
 import { buildUserLines } from "../../../src/classic/blocks/user-lines.js";
 import { buildThinkingLines } from "../../../src/classic/blocks/thinking-lines.js";
 import { buildNoticeLines } from "../../../src/classic/blocks/notice-lines.js";
-import { buildToolLines } from "../../../src/classic/blocks/tool-lines.js";
+import { buildToolLines, toolElapsed } from "../../../src/classic/blocks/tool-lines.js";
 import { buildBatchLines } from "../../../src/classic/blocks/batch-lines.js";
 import { buildCompactedLines } from "../../../src/classic/blocks/compacted-lines.js";
 import { displayWidth, stripAnsi } from "../../../src/classic/render/measure.js";
@@ -60,6 +60,18 @@ describe("buildFeedBlocks", () => {
     expect(byName.get("shell.exec")).toBe("tool");
     expect(byName.get("fs.edit")).toBe("diff");
     expect(byName.get("tool.batch")).toBe("batch");
+  });
+
+  it("hides filesystem elapsed time except for fs.search", () => {
+    const item = transcriptItems(turn.state).find(
+      (candidate): candidate is ToolItem => candidate.kind === "tool" && candidate.name === "shell.exec",
+    );
+    expect(item).toBeDefined();
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns: 80 }));
+    expect(toolElapsed(ctx, { ...item!, name: "fs.read" })).toBeUndefined();
+    expect(toolElapsed(ctx, { ...item!, name: "fs.write" })).toBeUndefined();
+    expect(toolElapsed(ctx, { ...item!, name: "fs.search" })).toBeDefined();
+    expect(toolElapsed(ctx, item!)).toBeDefined();
   });
 
   it("keeps diff hunks visible while tool output is minimized", () => {

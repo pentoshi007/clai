@@ -136,7 +136,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
     infoRow("workdir", cwd, chalk.white),
     infoRow("model", model, chalk.cyan),
     infoRow("provider", provider, chalk.green),
-    ...(variant ? [infoRow("variant", variant, chalk.magenta)] : []),
+    ...(variant ? [infoRow("effort", variant, chalk.magenta)] : []),
     infoRow("version", version, chalk.white),
     "",
     modeBanner,
@@ -260,7 +260,7 @@ function renderCompactCard(args: {
   lines.push(row(chip("workdir", cwd, chalk.white)));
   lines.push(row(chip("model", model, chalk.cyan)));
   lines.push(row(chip("provider", provider, chalk.green)));
-  if (variant) lines.push(row(chip("variant", variant, chalk.magenta)));
+  if (variant) lines.push(row(chip("effort", variant, chalk.magenta)));
   lines.push(row(chip("version", version, chalk.white)));
   lines.push(row(""));
   lines.push(row(modeBanner));

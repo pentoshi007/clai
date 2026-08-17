@@ -3,10 +3,12 @@ import type { ToolResult } from "../types.js";
 import type { BackgroundSpawnSpec } from "./jobs.js";
 import type { ToolRunOptions } from "./tool-types.js";
 import { interactiveStdinKind, spawnArgv } from "./shell.js";
+import {
+  formatSudoStdinPassword,
+  obtainSudoPassword,
+} from "./sudo-session.js";
 
-export function formatSudoStdinPassword(password: string): string {
-  return `${password.replace(/[\r\n]+$/g, "")}\n`;
-}
+export { formatSudoStdinPassword } from "./sudo-session.js";
 
 export type PreparedElevation =
   | { prepared: true; spec: BackgroundSpawnSpec }
@@ -70,13 +72,19 @@ export async function preparePrivilegedBackgroundArgv(
     };
   }
 
-  const password = await options.requestSecret({
-    title: options.title ?? "Administrator access",
-    prompt:
-      options.prompt ??
-      "Enter your password for sudo. It is sent only to sudo stdin and is never stored. Esc cancels.",
-  });
-  if (password === undefined) {
+  const outcome = await obtainSudoPassword(
+    {
+      requestSecret: options.requestSecret,
+      title: options.title ?? "Administrator access",
+      prompt:
+        options.prompt ??
+        "Enter your password for sudo. It is sent only to sudo stdin, kept in memory for a few minutes so parallel privileged commands don't ask again, and never written to disk. Esc cancels.",
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.onOutput ? { onOutput: options.onOutput } : {}),
+    },
+    { ...(dependencies.runAuth ? { runAuth: dependencies.runAuth } : {}) },
+  );
+  if (outcome.status === "cancelled") {
     return {
       prepared: false,
       result: {
@@ -86,52 +94,18 @@ export async function preparePrivilegedBackgroundArgv(
       },
     };
   }
-
-  const stdinText = formatSudoStdinPassword(password);
-  const runAuth = dependencies.runAuth ?? spawnArgv;
-  let auth: ToolResult;
-  try {
-    auth = await runAuth({
-      command: "sudo",
-      argv: ["-S", "-p", "", "-v"],
-      stdinText,
-      timeoutMs: 30_000,
-      signal: options.signal,
-      onOutput: options.onOutput,
-      noArtifact: true,
-      interactiveStdin: false,
-    });
-  } catch (error) {
+  if (outcome.status === "failed") {
     return {
       prepared: false,
       result: {
         ok: false,
         exitCode: 1,
-        output: `sudo authentication could not start: ${error instanceof Error ? error.message : String(error)}`,
-      },
-    };
-  }
-  if (options.signal?.aborted || auth.exitCode === 130) {
-    return {
-      prepared: false,
-      result: {
-        ok: false,
-        exitCode: 130,
-        output: auth.output || "Administrator authentication aborted; no background job was started.",
-      },
-    };
-  }
-  if (!auth.ok) {
-    return {
-      prepared: false,
-      result: {
-        ok: false,
-        exitCode: auth.exitCode ?? 1,
-        output: `sudo authentication failed; no background job was started.\n${(auth.output ?? "").trim().slice(0, 400)}`.trim(),
+        output: `sudo authentication failed; no background job was started.\n${outcome.detail}`.trim(),
       },
     };
   }
 
+  const stdinText = formatSudoStdinPassword(outcome.password);
   return {
     prepared: true,
     spec: {
@@ -214,11 +188,18 @@ export async function tryRunElevatedWithoutTty(
     };
   }
 
-  const password = await options.requestSecret({
-    title: "Administrator access",
-    prompt: `Enter your password for sudo. Command: ${truncateForPrompt(command)}. It is sent only to sudo and is never stored. Esc cancels.`,
-  });
-  if (password === undefined) {
+  const run = dependencies.run ?? spawnArgv;
+  const outcome = await obtainSudoPassword(
+    {
+      requestSecret: options.requestSecret,
+      title: "Administrator access",
+      prompt: `Enter your password for sudo. Command: ${truncateForPrompt(command)}. It is sent only to sudo stdin, kept in memory for a few minutes so parallel privileged commands don't ask again, and never written to disk. Esc cancels.`,
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.onOutput ? { onOutput: options.onOutput } : {}),
+    },
+    { ...(dependencies.run ? { runAuth: dependencies.run } : {}) },
+  );
+  if (outcome.status === "cancelled") {
     return {
       ok: false,
       exitCode: 130,
@@ -226,38 +207,15 @@ export async function tryRunElevatedWithoutTty(
         "Administrator authentication cancelled. Re-run and enter your password, or run without sudo.",
     };
   }
-
-  const stdinPassword = formatSudoStdinPassword(password);
-  const run = dependencies.run ?? spawnArgv;
-
-  const auth = await run({
-    command: "sudo",
-    argv: ["-S", "-p", "", "-v"],
-    stdinText: stdinPassword,
-    timeoutMs: 30_000,
-    signal: options.signal,
-    onOutput: options.onOutput,
-    noArtifact: true,
-    interactiveStdin: false,
-  });
-  if (options.signal?.aborted || auth.exitCode === 130) {
-    return auth.ok
-      ? auth
-      : {
-          ok: false,
-          exitCode: 130,
-          output: auth.output || "Administrator authentication aborted.",
-        };
-  }
-  if (!auth.ok) {
+  if (outcome.status === "failed") {
     return {
       ok: false,
-      exitCode: auth.exitCode ?? 1,
-      output:
-        `sudo authentication failed.\n${(auth.output ?? "").trim().slice(0, 400)}`.trim(),
+      exitCode: 1,
+      output: `sudo authentication failed.\n${outcome.detail}`.trim(),
     };
   }
 
+  const stdinPassword = formatSudoStdinPassword(outcome.password);
   return run({
     command: "sudo",
     argv: ["-S", "-p", "", "sh", "-c", command],

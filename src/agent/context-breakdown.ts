@@ -7,6 +7,7 @@
 
 import { createHash } from "node:crypto";
 import type { ChatMessage, ToolDefinition } from "../types.js";
+import { reasoningArtifactTokensForMessage } from "../llm/reasoning-artifacts.js";
 import {
   estimateMessagesTokens,
   estimateTokens,
@@ -132,6 +133,7 @@ export function buildContextBreakdown(
             JSON.stringify(message.toolCalls),
           );
         }
+        assistantTokens += reasoningArtifactTokensForMessage(message);
         break;
       case "tool":
         toolMessageCount += 1;

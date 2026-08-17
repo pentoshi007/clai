@@ -14,6 +14,12 @@ import type { ChatMessage } from "../types.js";
 export interface TokenUsage {
   /** Input / prompt / context tokens for this request. */
   readonly promptTokens: number;
+  /**
+   * Present only when the provider omitted an input measurement while still
+   * reporting another counter. Absence preserves the historic API contract:
+   * a supplied promptTokens value is known, including an explicit zero.
+   */
+  readonly promptTokensKnown?: false | undefined;
   /** Output / completion tokens for this response. */
   readonly completionTokens: number;
   /** Total when provided; otherwise prompt + completion. */
@@ -22,10 +28,27 @@ export interface TokenUsage {
   readonly exact: boolean;
   /** Prompt tokens served from a provider cache, when reported. */
   readonly cachedPromptTokens?: number | undefined;
-  /** Prompt tokens written into a provider cache, when reported. */
+  /** Prompt tokens written into the provider cache, when reported. */
   readonly cacheCreationTokens?: number | undefined;
+  /** Prompt tokens that were explicitly not served from the provider cache. */
+  readonly uncachedPromptTokens?: number | undefined;
   /** Reasoning tokens included in completion usage, when reported. */
   readonly reasoningTokens?: number | undefined;
+}
+
+/**
+ * Optional response-field paths for a user-configured OpenAI-compatible route.
+ * Paths are relative to that route's `usage` object. They are telemetry input
+ * only: they never affect request construction or cache eligibility.
+ */
+export interface CompatibleUsageAliases {
+  readonly promptTokens?: string | undefined;
+  readonly completionTokens?: string | undefined;
+  readonly totalTokens?: string | undefined;
+  readonly cachedPromptTokens?: string | undefined;
+  readonly cacheCreationTokens?: string | undefined;
+  readonly uncachedPromptTokens?: string | undefined;
+  readonly reasoningTokens?: string | undefined;
 }
 
 export interface ContextUsageSnapshot {
@@ -43,6 +66,172 @@ export interface ContextUsageSnapshot {
   readonly exact: boolean;
 }
 
+type UsageCounter = keyof CompatibleUsageAliases;
+
+const OPENAI_USAGE_PATHS: Readonly<Record<UsageCounter, readonly string[]>> = {
+  promptTokens: ["prompt_tokens", "promptTokens", "input_tokens", "inputTokens"],
+  completionTokens: [
+    "completion_tokens",
+    "completionTokens",
+    "output_tokens",
+    "outputTokens",
+  ],
+  totalTokens: ["total_tokens", "totalTokens"],
+  cachedPromptTokens: [
+    "prompt_tokens_details.cached_tokens",
+    "promptTokensDetails.cachedTokens",
+    "cached_prompt_tokens",
+    "cachedPromptTokens",
+    "prompt_cache_hit_tokens",
+    "promptCacheHitTokens",
+  ],
+  cacheCreationTokens: [
+    "cache_creation_input_tokens",
+    "cacheCreationInputTokens",
+    "prompt_tokens_details.cache_creation_tokens",
+    "promptTokensDetails.cacheCreationTokens",
+  ],
+  uncachedPromptTokens: [
+    "prompt_cache_miss_tokens",
+    "promptCacheMissTokens",
+    "uncached_prompt_tokens",
+    "uncachedPromptTokens",
+  ],
+  reasoningTokens: [
+    "completion_tokens_details.reasoning_tokens",
+    "completionTokensDetails.reasoningTokens",
+    "reasoning_tokens",
+    "reasoningTokens",
+  ],
+};
+
+const FIREWORKS_PERFORMANCE_PATHS: Readonly<
+  Record<UsageCounter, readonly string[]>
+> = {
+  promptTokens: ["prompt-tokens", "prompt_tokens", "promptTokens"],
+  completionTokens: [],
+  totalTokens: [],
+  cachedPromptTokens: [
+    "cached-prompt-tokens",
+    "cached_prompt_tokens",
+    "cachedPromptTokens",
+  ],
+  cacheCreationTokens: [],
+  uncachedPromptTokens: [
+    "uncached-prompt-tokens",
+    "uncached_prompt_tokens",
+    "uncachedPromptTokens",
+  ],
+  reasoningTokens: [],
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonNegInt(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.floor(value));
+}
+
+function numericPathValue(raw: unknown, path: string): number | undefined {
+  if (!path || !/^[A-Za-z0-9_.-]+$/.test(path)) return undefined;
+  let current: unknown = raw;
+  for (const segment of path.split(".")) {
+    if (
+      segment === "__proto__" ||
+      segment === "constructor" ||
+      segment === "prototype" ||
+      !isRecord(current) ||
+      !Object.prototype.hasOwnProperty.call(current, segment)
+    ) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return nonNegInt(current);
+}
+
+function configuredPath(
+  aliases: CompatibleUsageAliases | undefined,
+  counter: UsageCounter,
+): string | undefined {
+  const value = aliases?.[counter];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function counterFromPaths(
+  raw: unknown,
+  counter: UsageCounter,
+  defaults: Readonly<Record<UsageCounter, readonly string[]>>,
+  aliases?: CompatibleUsageAliases | undefined,
+): number | undefined {
+  const configured = configuredPath(aliases, counter);
+  const paths = configured
+    ? [configured, ...defaults[counter]]
+    : defaults[counter];
+  for (const path of paths) {
+    const value = numericPathValue(raw, path);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
+function knownPrompt(usage: TokenUsage | undefined): usage is TokenUsage {
+  return usage !== undefined && usage.promptTokensKnown !== false;
+}
+
+function firstDefined<T>(values: readonly (T | undefined)[]): T | undefined {
+  return values.find((value): value is T => value !== undefined);
+}
+
+function mergeProviderUsage(
+  usages: readonly (TokenUsage | undefined)[],
+  deriveUncachedFromPrompt = false,
+): TokenUsage | undefined {
+  const available = usages.filter(
+    (usage): usage is TokenUsage => usage !== undefined,
+  );
+  if (available.length === 0) return undefined;
+
+  const promptUsage = available.find(knownPrompt);
+  const promptTokens = promptUsage?.promptTokens;
+  const completionTokens = available[0]!.completionTokens;
+  const cachedPromptTokens = firstDefined(
+    available.map((usage) => usage.cachedPromptTokens),
+  );
+  const cacheCreationTokens = firstDefined(
+    available.map((usage) => usage.cacheCreationTokens),
+  );
+  const reportedUncached = firstDefined(
+    available.map((usage) => usage.uncachedPromptTokens),
+  );
+  const uncachedPromptTokens =
+    reportedUncached ??
+    (deriveUncachedFromPrompt &&
+    promptTokens !== undefined &&
+    cachedPromptTokens !== undefined
+      ? Math.max(0, promptTokens - cachedPromptTokens)
+      : undefined);
+  const reasoningTokens = firstDefined(
+    available.map((usage) => usage.reasoningTokens),
+  );
+
+  return normalizeTokenUsage({
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
+    completionTokens,
+    totalTokens:
+      promptTokens !== undefined
+        ? promptTokens + completionTokens
+        : available[0]!.totalTokens,
+    exact: available.every((usage) => usage.exact),
+    ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
+    ...(uncachedPromptTokens !== undefined ? { uncachedPromptTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+  });
+}
+
 /** Normalize sparse provider payloads into TokenUsage. */
 export function normalizeTokenUsage(input: {
   promptTokens?: number | undefined;
@@ -51,6 +240,7 @@ export function normalizeTokenUsage(input: {
   exact?: boolean | undefined;
   cachedPromptTokens?: number | undefined;
   cacheCreationTokens?: number | undefined;
+  uncachedPromptTokens?: number | undefined;
   reasoningTokens?: number | undefined;
 }): TokenUsage | undefined {
   const prompt = nonNegInt(input.promptTokens);
@@ -64,73 +254,130 @@ export function normalizeTokenUsage(input: {
   if (total === undefined) total = p + c;
   const cached = nonNegInt(input.cachedPromptTokens);
   const cacheCreation = nonNegInt(input.cacheCreationTokens);
+  const uncached = nonNegInt(input.uncachedPromptTokens);
   const reasoning = nonNegInt(input.reasoningTokens);
   return {
     promptTokens: p,
+    ...(prompt === undefined ? { promptTokensKnown: false as const } : {}),
     completionTokens: c,
     totalTokens: total,
     exact: input.exact !== false,
     ...(cached !== undefined ? { cachedPromptTokens: cached } : {}),
     ...(cacheCreation !== undefined ? { cacheCreationTokens: cacheCreation } : {}),
+    ...(uncached !== undefined ? { uncachedPromptTokens: uncached } : {}),
     ...(reasoning !== undefined ? { reasoningTokens: reasoning } : {}),
   };
 }
 
-function nonNegInt(value: unknown): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  const n = Math.max(0, Math.floor(value));
-  return n;
-}
-
 /**
  * Parse OpenAI-compatible `usage` object (stream final chunk or complete body).
- * Handles prompt_tokens / completion_tokens / total_tokens and camelCase aliases.
+ * Handles standard counters, documented DeepSeek cache hit/miss fields, and
+ * optional configured aliases for a user-defined compatible endpoint.
  */
-export function parseOpenAiUsage(raw: unknown): TokenUsage | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const u = raw as Record<string, unknown>;
+export function parseOpenAiUsage(
+  raw: unknown,
+  aliases?: CompatibleUsageAliases | undefined,
+): TokenUsage | undefined {
+  if (!isRecord(raw)) return undefined;
   return normalizeTokenUsage({
-    promptTokens:
-      (u.prompt_tokens as number | undefined) ??
-      (u.promptTokens as number | undefined) ??
-      (u.input_tokens as number | undefined) ??
-      (u.inputTokens as number | undefined),
-    completionTokens:
-      (u.completion_tokens as number | undefined) ??
-      (u.completionTokens as number | undefined) ??
-      (u.output_tokens as number | undefined) ??
-      (u.outputTokens as number | undefined),
-    totalTokens:
-      (u.total_tokens as number | undefined) ??
-      (u.totalTokens as number | undefined),
-    // OpenAI, Groq, OpenRouter and DeepSeek-style gateways report cache and
-    // reasoning detail here; it used to be dropped entirely.
-    cachedPromptTokens: nonNegInt(
-      (u.prompt_tokens_details as Record<string, unknown> | undefined)
-        ?.cached_tokens,
+    promptTokens: counterFromPaths(raw, "promptTokens", OPENAI_USAGE_PATHS, aliases),
+    completionTokens: counterFromPaths(
+      raw,
+      "completionTokens",
+      OPENAI_USAGE_PATHS,
+      aliases,
     ),
-    reasoningTokens: nonNegInt(
-      (u.completion_tokens_details as Record<string, unknown> | undefined)
-        ?.reasoning_tokens,
+    totalTokens: counterFromPaths(raw, "totalTokens", OPENAI_USAGE_PATHS, aliases),
+    cachedPromptTokens: counterFromPaths(
+      raw,
+      "cachedPromptTokens",
+      OPENAI_USAGE_PATHS,
+      aliases,
+    ),
+    cacheCreationTokens: counterFromPaths(
+      raw,
+      "cacheCreationTokens",
+      OPENAI_USAGE_PATHS,
+      aliases,
+    ),
+    uncachedPromptTokens: counterFromPaths(
+      raw,
+      "uncachedPromptTokens",
+      OPENAI_USAGE_PATHS,
+      aliases,
+    ),
+    reasoningTokens: counterFromPaths(
+      raw,
+      "reasoningTokens",
+      OPENAI_USAGE_PATHS,
+      aliases,
     ),
     exact: true,
   });
 }
 
+function headerCounter(headers: Headers | undefined, name: string): number | undefined {
+  if (!headers) return undefined;
+  const value = headers.get(name);
+  if (value === null || !value.trim()) return undefined;
+  return nonNegInt(Number(value));
+}
+
+/**
+ * Fireworks emits normal compatible usage plus optional performance metrics.
+ * The latter are available in response headers for complete calls and in the
+ * final body frame when `perf_metrics_in_response` is requested for streams.
+ */
+export function parseFireworksUsage(
+  rawUsage: unknown,
+  performanceMetrics?: unknown,
+  headers?: Headers | undefined,
+): TokenUsage | undefined {
+  const headerUsage = normalizeTokenUsage({
+    promptTokens: headerCounter(headers, "fireworks-prompt-tokens"),
+    cachedPromptTokens: headerCounter(headers, "fireworks-cached-prompt-tokens"),
+    exact: true,
+  });
+  const performanceUsage = isRecord(performanceMetrics)
+    ? normalizeTokenUsage({
+        promptTokens: counterFromPaths(
+          performanceMetrics,
+          "promptTokens",
+          FIREWORKS_PERFORMANCE_PATHS,
+        ),
+        cachedPromptTokens: counterFromPaths(
+          performanceMetrics,
+          "cachedPromptTokens",
+          FIREWORKS_PERFORMANCE_PATHS,
+        ),
+        uncachedPromptTokens: counterFromPaths(
+          performanceMetrics,
+          "uncachedPromptTokens",
+          FIREWORKS_PERFORMANCE_PATHS,
+        ),
+        exact: true,
+      })
+    : undefined;
+  return mergeProviderUsage(
+    [parseOpenAiUsage(rawUsage), performanceUsage, headerUsage],
+    true,
+  );
+}
+
 /** Anthropic message usage: input_tokens / output_tokens. */
 export function parseAnthropicUsage(raw: unknown): TokenUsage | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const u = raw as Record<string, unknown>;
-  // Prompt caching moves most context into cache_read/creation; sum all three.
-  const input = nonNegInt(u.input_tokens) ?? 0;
-  const cacheRead = nonNegInt(u.cache_read_input_tokens) ?? 0;
-  const cacheCreate = nonNegInt(u.cache_creation_input_tokens) ?? 0;
-  const prompt = input + cacheRead + cacheCreate;
+  if (!isRecord(raw)) return undefined;
+  const input = nonNegInt(raw.input_tokens);
+  const cacheRead = nonNegInt(raw.cache_read_input_tokens);
+  const cacheCreate = nonNegInt(raw.cache_creation_input_tokens);
+  const promptKnown =
+    input !== undefined || cacheRead !== undefined || cacheCreate !== undefined;
+  const prompt = (input ?? 0) + (cacheRead ?? 0) + (cacheCreate ?? 0);
   return normalizeTokenUsage({
-    promptTokens: prompt > 0 ? prompt : undefined,
-    completionTokens: u.output_tokens as number | undefined,
-    ...(cacheRead > 0 ? { cachedPromptTokens: cacheRead } : {}),
-    ...(cacheCreate > 0 ? { cacheCreationTokens: cacheCreate } : {}),
+    ...(promptKnown ? { promptTokens: prompt } : {}),
+    completionTokens: nonNegInt(raw.output_tokens),
+    ...(cacheRead !== undefined ? { cachedPromptTokens: cacheRead } : {}),
+    ...(cacheCreate !== undefined ? { cacheCreationTokens: cacheCreate } : {}),
     exact: true,
   });
 }
@@ -145,37 +392,49 @@ export function mergeAnthropicStreamUsage(
   previous: TokenUsage | undefined,
   current: TokenUsage,
 ): TokenUsage {
-  const promptTokens = previous?.promptTokens ?? current.promptTokens;
+  const promptSource = knownPrompt(current)
+    ? current
+    : knownPrompt(previous)
+      ? previous
+      : undefined;
+  const promptTokens = promptSource?.promptTokens;
   const completionTokens =
     current.completionTokens || previous?.completionTokens || 0;
   const cachedPromptTokens =
     previous?.cachedPromptTokens ?? current.cachedPromptTokens;
   const cacheCreationTokens =
     previous?.cacheCreationTokens ?? current.cacheCreationTokens;
-  return {
-    promptTokens,
+  const uncachedPromptTokens =
+    previous?.uncachedPromptTokens ?? current.uncachedPromptTokens;
+  const reasoningTokens = current.reasoningTokens ?? previous?.reasoningTokens;
+  return normalizeTokenUsage({
+    ...(promptTokens !== undefined ? { promptTokens } : {}),
     completionTokens,
-    totalTokens: promptTokens + completionTokens,
+    totalTokens: (promptTokens ?? 0) + completionTokens,
     exact: true,
     ...(cachedPromptTokens !== undefined ? { cachedPromptTokens } : {}),
     ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
-  };
+    ...(uncachedPromptTokens !== undefined ? { uncachedPromptTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+  })!;
 }
 
 /** Gemini usageMetadata. */
 export function parseGeminiUsage(raw: unknown): TokenUsage | undefined {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const u = raw as Record<string, unknown>;
+  if (!isRecord(raw)) return undefined;
   return normalizeTokenUsage({
     promptTokens:
-      (u.promptTokenCount as number | undefined) ??
-      (u.prompt_token_count as number | undefined),
+      nonNegInt(raw.promptTokenCount) ?? nonNegInt(raw.prompt_token_count),
     completionTokens:
-      (u.candidatesTokenCount as number | undefined) ??
-      (u.candidates_token_count as number | undefined),
+      nonNegInt(raw.candidatesTokenCount) ??
+      nonNegInt(raw.candidates_token_count),
     totalTokens:
-      (u.totalTokenCount as number | undefined) ??
-      (u.total_token_count as number | undefined),
+      nonNegInt(raw.totalTokenCount) ?? nonNegInt(raw.total_token_count),
+    cachedPromptTokens:
+      nonNegInt(raw.cachedContentTokenCount) ??
+      nonNegInt(raw.cached_content_token_count),
+    reasoningTokens:
+      nonNegInt(raw.thoughtsTokenCount) ?? nonNegInt(raw.thoughts_token_count),
     exact: true,
   });
 }
@@ -205,121 +464,11 @@ export function estimateUsageFromMessages(
   };
 }
 
-/**
- * Known model context windows (tokens). Patterns are tested in order;
- * first match wins. Keep conservative defaults so % never under-reports fill.
- */
-const CONTEXT_WINDOW_RULES: ReadonlyArray<{
-  pattern: RegExp;
-  tokens: number;
-}> = [
-  // Anthropic
-  { pattern: /claude-(?:fable|mythos)-5/i, tokens: 1_000_000 },
-  { pattern: /claude-(?:opus|sonnet)-5/i, tokens: 1_000_000 },
-  { pattern: /claude-(?:opus|sonnet)-4\.[678]/i, tokens: 1_000_000 },
-  { pattern: /claude-(?:opus|sonnet)-4/i, tokens: 200_000 },
-  { pattern: /claude-haiku-4/i, tokens: 200_000 },
-  { pattern: /claude-3-7/i, tokens: 200_000 },
-  { pattern: /claude-3-5/i, tokens: 200_000 },
-  { pattern: /claude-3/i, tokens: 200_000 },
-  // OpenAI
-  { pattern: /gpt-5\.[456](?:[-.]|$)/i, tokens: 1_050_000 },
-  { pattern: /gpt-5/i, tokens: 400_000 },
-  { pattern: /gpt-4\.1/i, tokens: 1_047_576 },
-  { pattern: /gpt-4o/i, tokens: 128_000 },
-  { pattern: /gpt-4-turbo/i, tokens: 128_000 },
-  // Plain gpt-4 is 8k (32k for the -32k variant); the generic 128k rule below
-  // used to over-size it, so no warning arrived before a hard context error.
-  { pattern: /gpt-4-32k/i, tokens: 32_768 },
-  { pattern: /^gpt-4(?:-\d{4})?$/i, tokens: 8_192 },
-  { pattern: /gpt-4/i, tokens: 128_000 },
-  { pattern: /o3/i, tokens: 200_000 },
-  { pattern: /o4/i, tokens: 200_000 },
-  { pattern: /o1/i, tokens: 200_000 },
-  // Google — keep explicit rules ahead of the generic /gemini/i fallback, which
-  // used to catch the shipped gemini-3.x default at an order of magnitude low.
-  { pattern: /gemini-3/i, tokens: 1_048_576 },
-  { pattern: /gemini-2\.5/i, tokens: 1_048_576 },
-  { pattern: /gemini-2\.0/i, tokens: 1_048_576 },
-  { pattern: /gemini-1\.5/i, tokens: 1_048_576 },
-  { pattern: /gemini/i, tokens: 128_000 },
-  // Meta / Groq
-  { pattern: /llama-4/i, tokens: 128_000 },
-  { pattern: /llama-3\.3/i, tokens: 128_000 },
-  { pattern: /llama-3\.1/i, tokens: 128_000 },
-  { pattern: /llama-3/i, tokens: 128_000 },
-  // DeepSeek / Qwen / Kimi / GLM / etc.
-  { pattern: /deepseek-v4/i, tokens: 1_000_000 },
-  { pattern: /deepseek/i, tokens: 128_000 },
-  { pattern: /qwen3\.7/i, tokens: 1_000_000 },
-  { pattern: /qwen3\.(?:8|6|5)/i, tokens: 262_144 },
-  { pattern: /qwen3/i, tokens: 128_000 },
-  { pattern: /qwen2\.5/i, tokens: 128_000 },
-  { pattern: /qwen/i, tokens: 128_000 },
-  // Kimi-K3 is a 1M-window model. Keep this before generic Kimi/K2 rules so
-  // Modal and gateway model IDs such as `moonshotai/Kimi-K3` are not clamped
-  // to the legacy 128k family window.
-  { pattern: /kimi-k3/i, tokens: 1_000_000 },
-  { pattern: /kimi-k2/i, tokens: 256_000 },
-  { pattern: /kimi/i, tokens: 128_000 },
-  { pattern: /glm-?5\.2/i, tokens: 1_000_000 },
-  { pattern: /glm-?5/i, tokens: 200_000 },
-  { pattern: /glm-?4\.[56]/i, tokens: 200_000 },
-  { pattern: /glm-?4/i, tokens: 128_000 },
-  { pattern: /minimax-m3/i, tokens: 1_000_000 },
-  { pattern: /minimax-m2\.7/i, tokens: 204_800 },
-  { pattern: /minimax/i, tokens: 128_000 },
-  { pattern: /mimo/i, tokens: 128_000 },
-  { pattern: /gpt-oss/i, tokens: 128_000 },
-  { pattern: /nemotron/i, tokens: 128_000 },
-  { pattern: /muse-spark/i, tokens: 1_048_576 },
-];
-
-const DEFAULT_CONTEXT_WINDOW = 250_000;
-
-/**
- * Provider-specific served windows that are smaller than the model's nominal
- * one. The `provider` argument used to be accepted and discarded, so `%` of
- * context was wrong wherever a gateway serves a truncated window.
- */
-const PROVIDER_CONTEXT_OVERRIDES: Partial<
-  Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
-> = {
-  // Groq serves these two on a low TPM tier; the usable prompt is far below the
-  // model's nominal window (mirrors `groqInputTokenBudget`).
-  groq: [
-    { pattern: /qwen\/qwen3-32b/i, tokens: 5_500 },
-    { pattern: /openai\/gpt-oss-20b/i, tokens: 7_500 },
-  ],
-  // TokenRouter publishes the real upstream window per model id, and several
-  // are far larger than the generic family rules below would guess.
-  tokenrouter: [
-    { pattern: /^deepseek-v4-(?:pro|flash)$/i, tokens: 1_000_000 },
-    { pattern: /^minimax-m3$/i, tokens: 524_288 },
-    { pattern: /^minimax-m2p7$/i, tokens: 196_608 },
-    { pattern: /^kimi-k2p\d/i, tokens: 262_144 },
-    { pattern: /^qwen3p\d-plus$/i, tokens: 262_144 },
-    { pattern: /^glm-5p1(?:-fast)?$/i, tokens: 202_752 },
-    { pattern: /^gpt-oss-120b$/i, tokens: 131_072 },
-  ],
-};
-
-export function modelContextWindow(
-  model: string | undefined,
-  provider?: ProviderId | undefined,
-): number {
-  if (!model) return DEFAULT_CONTEXT_WINDOW;
-  const overrides = provider ? PROVIDER_CONTEXT_OVERRIDES[provider] : undefined;
-  if (overrides) {
-    for (const rule of overrides) {
-      if (rule.pattern.test(model)) return rule.tokens;
-    }
-  }
-  for (const rule of CONTEXT_WINDOW_RULES) {
-    if (rule.pattern.test(model)) return rule.tokens;
-  }
-  return DEFAULT_CONTEXT_WINDOW;
-}
+import { modelContextWindow } from "./context-windows.js";
+export {
+  modelContextWindow,
+  providerContextOverrideTokens,
+} from "./context-windows.js";
 
 /** Compact integer: 128450 → "128,450"; large → "128.5k" when compact. */
 export function formatTokenCount(n: number, compact = false): string {
@@ -356,29 +505,29 @@ export function formatContextChip(
     : `ctx ${approx}${used}/${budget} ${percent}%`;
 }
 
-/** Merge a new usage into session totals; prefer latest prompt as context fill. */
+/** Merge a new usage into session totals; prefer latest known prompt as context fill. */
 export function applyUsageToSnapshot(
   prev: ContextUsageSnapshot | undefined,
   usage: TokenUsage,
   contextLimit: number,
 ): ContextUsageSnapshot {
+  const hasPromptMeasurement = usage.promptTokensKnown !== false;
   const sessionPrompt =
-    (prev?.sessionPromptTokens ?? 0) + (usage.exact ? usage.promptTokens : 0);
+    (prev?.sessionPromptTokens ?? 0) +
+    (usage.exact && hasPromptMeasurement ? usage.promptTokens : 0);
   const sessionCompletion =
     (prev?.sessionCompletionTokens ?? 0) +
     (usage.exact ? usage.completionTokens : 0);
-  // Latest prompt_tokens is the true context fill for that request.
-  const contextTokens =
-    usage.promptTokens > 0
-      ? usage.promptTokens
-      : (prev?.contextTokens ?? usage.totalTokens);
+  const contextTokens = hasPromptMeasurement
+    ? usage.promptTokens
+    : (prev?.contextTokens ?? usage.totalTokens);
   return {
     contextTokens,
     contextLimit,
     lastCompletionTokens: usage.completionTokens,
     sessionPromptTokens: sessionPrompt,
     sessionCompletionTokens: sessionCompletion,
-    exact: usage.exact || Boolean(prev?.exact && usage.promptTokens === 0),
+    exact: usage.exact && hasPromptMeasurement,
   };
 }
 

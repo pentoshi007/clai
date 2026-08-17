@@ -14,6 +14,14 @@ import {
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+const compatibleReplay = {
+  target: {
+    provider: "openai",
+    model: "test-compatible",
+    dialect: "openai-compatible",
+  },
+} as const;
+
 describe("openai tools adapter", () => {
   it("toOpenAiTools shape", () => {
     const defs = getToolDefinitions({ names: ["fs.write"] });
@@ -48,6 +56,7 @@ describe("openai tools adapter", () => {
         },
       ],
       (m) => m.content,
+      compatibleReplay,
     );
     expect(wire[1]).toMatchObject({
       role: "assistant",
@@ -79,6 +88,7 @@ describe("openai tools adapter", () => {
         { role: "tool", toolCallId: "call_1", name: "fs.read", content: "x" },
       ],
       (m) => m.content,
+      compatibleReplay,
     );
     expect(wire[1]).toMatchObject({
       role: "assistant",
@@ -98,6 +108,7 @@ describe("openai tools adapter", () => {
         },
       ],
       (m) => m.content,
+      compatibleReplay,
     );
     expect(wire[1]).not.toHaveProperty("reasoning_content");
   });
@@ -113,6 +124,7 @@ describe("openai tools adapter", () => {
         },
       ],
       (m) => m.content,
+      compatibleReplay,
     );
     expect(wire[1]).toMatchObject({
       role: "assistant",
@@ -131,6 +143,7 @@ describe("openai tools adapter", () => {
         },
       ],
       (m) => m.content,
+      compatibleReplay,
     );
     expect(wire[1]).not.toHaveProperty("reasoning_content");
   });

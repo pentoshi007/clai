@@ -680,9 +680,9 @@ describe("boundSessionVisualInput", () => {
             done: true,
           },
     );
-    const messages = Array.from({ length: 550 }, (_, index) => ({
+    const messages = Array.from({ length: 2500 }, (_, index) => ({
       role: "assistant" as const,
-      content: "m".repeat(index === 549 ? 80_000 : 20),
+      content: "m".repeat(index === 2499 ? 80_000 : 20),
       toolCalls: [
         {
           id: `call-${index}`,
@@ -694,8 +694,8 @@ describe("boundSessionVisualInput", () => {
 
     const bounded = boundSessionVisualInput(transcript, messages);
 
-    expect(bounded.transcript!.length).toBeLessThanOrEqual(300);
-    expect(bounded.messages.length).toBeLessThanOrEqual(500);
+    expect(bounded.transcript!.length).toBeLessThanOrEqual(2_000);
+    expect(bounded.messages.length).toBeLessThanOrEqual(2_000);
     expect(bounded.omittedItems).toBeGreaterThan(0);
     expect(bounded.omittedMessages).toBeGreaterThan(0);
     const tool = bounded.transcript!.find((item) => item.kind === "tool");

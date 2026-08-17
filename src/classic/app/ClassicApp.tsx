@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { Mode } from "../../types.js";
 import { getConfig } from "../../store/config.js";
+import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import { formatComposerMeta } from "../../ui-core/composer/composer-meta.js";
 import { useServices } from "../../ui-core/react/providers.js";
 import { clipSegment, modeIndicatorPresentation } from "../../ui-core/rendering/status-segments.js";
@@ -105,7 +106,11 @@ export function ClassicApp(
     session.provider ?? cfg.defaultProvider,
     session.model ?? cfg.defaultModel,
     cfg.permissions ?? "default",
-    cfg.thinking.enabled ? cfg.thinking.effort : undefined,
+    effectiveThinkingEffort(
+      session.provider ?? cfg.defaultProvider,
+      session.model ?? cfg.defaultModel,
+      cfg.thinking,
+    ),
   );
   const frame = composerFrame({ columns: shellWidth, allocatedRows: layout.composer, text: composer.state.text, mode: session.mode, phase, unicode: feed.ink.unicode, metaLabel });
   const blinkOn = Math.floor(snapshot.animationTick / 2) % 2 === 0;

@@ -89,17 +89,52 @@ export function handleThink(services: AppServices): void {
 
 export function handleContext(services: AppServices): void {
   const { messages, tokens } = services.session.estimateContext();
-  const snap = services.session.getState().contextUsage;
-  const exact = snap?.exact === true;
+  const state = services.session.getState();
+  const legacy = state.contextUsage;
+  const snapshot = state.contextSnapshot;
+  const exact = legacy?.exact === true;
   // Used tokens only — do not invent a model window (limits vary / are unknown).
   const usedLabel = exact
     ? `${tokens.toLocaleString()} tokens`
     : `~${tokens.toLocaleString()} tokens (estimate)`;
   const sessionBits =
-    snap && (snap.sessionPromptTokens > 0 || snap.sessionCompletionTokens > 0)
-      ? ` · session in ${snap.sessionPromptTokens.toLocaleString()} / out ${snap.sessionCompletionTokens.toLocaleString()}`
+    legacy && (legacy.sessionPromptTokens > 0 || legacy.sessionCompletionTokens > 0)
+      ? ` · session in ${legacy.sessionPromptTokens.toLocaleString()} / out ${legacy.sessionCompletionTokens.toLocaleString()}`
       : "";
-  const text = `context: ${messages} messages · ${usedLabel}${sessionBits}`;
+  const details: string[] = [];
+  if (snapshot?.cache.kind === "reported") {
+    const cache = [
+      snapshot.cache.readTokens !== undefined
+        ? `read ${snapshot.cache.readTokens.toLocaleString()}`
+        : undefined,
+      snapshot.cache.creationTokens !== undefined
+        ? `write ${snapshot.cache.creationTokens.toLocaleString()}`
+        : undefined,
+      snapshot.cache.uncachedTokens !== undefined
+        ? `uncached ${snapshot.cache.uncachedTokens.toLocaleString()}`
+        : undefined,
+    ].filter((value): value is string => value !== undefined);
+    details.push(cache.length > 0 ? `cache ${cache.join(" / ")}` : "cache unavailable");
+  } else {
+    details.push("cache unavailable");
+  }
+  if (snapshot?.reasoning.kind === "reported") {
+    const reasoning = [
+      snapshot.reasoning.outputTokens !== undefined
+        ? `output ${snapshot.reasoning.outputTokens.toLocaleString()}`
+        : undefined,
+      snapshot.reasoning.inputArtifactTokens !== undefined
+        ? `input ${snapshot.reasoning.inputArtifactTokens.toLocaleString()}`
+        : undefined,
+    ].filter((value): value is string => value !== undefined);
+    details.push(
+      reasoning.length > 0 ? `reasoning ${reasoning.join(" / ")}` : "reasoning unavailable",
+    );
+  } else {
+    details.push("reasoning unavailable");
+  }
+  if (snapshot) details.push(`scope ${snapshot.scope}`);
+  const text = `context: ${messages} messages · ${usedLabel}${sessionBits} · ${details.join(" · ")}`;
   notice(services, "info", text);
 }
 

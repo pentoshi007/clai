@@ -1,4 +1,17 @@
-import type { ChatMessage, NativeToolCall, ToolDefinition } from "../../types.js";
+import type {
+  ChatMessage,
+  NativeToolCall,
+  ReasoningArtifact,
+  ReasoningArtifactReplayObserver,
+  ReasoningArtifactReplayTarget,
+  ToolDefinition,
+} from "../../types.js";
+import {
+  reasoningArtifactSignature,
+  reasoningArtifactText,
+  reasoningArtifactsForMessage,
+  selectReasoningArtifactsForReplay,
+} from "../reasoning-artifacts.js";
 import {
   fromWireName,
   mapToolChoiceToAnthropic,
@@ -26,7 +39,7 @@ export function toAnthropicTools(defs: ToolDefinition[]): Array<{
 
 type AnthropicContentBlock =
   | { type: "text"; text: string }
-  | { type: "thinking"; thinking: string; signature: string }
+  | ({ type: "thinking"; thinking: string; signature: string } & Record<string, unknown>)
   | {
       type: "image";
       source: { type: "base64"; media_type: string; data: string };
@@ -44,6 +57,65 @@ type AnthropicContentBlock =
       is_error?: boolean;
     };
 
+function thinkingBlockFromArtifact(
+  artifact: ReasoningArtifact,
+): AnthropicContentBlock | undefined {
+  if (artifact.kind !== "signed") return undefined;
+  const thinking = reasoningArtifactText(artifact);
+  const signature = reasoningArtifactSignature(artifact);
+  if (!thinking || !signature) return undefined;
+  if (
+    artifact.raw &&
+    typeof artifact.raw === "object" &&
+    !Array.isArray(artifact.raw)
+  ) {
+    return {
+      ...(artifact.raw as Record<string, unknown>),
+      type: "thinking",
+      thinking,
+      signature,
+    } as AnthropicContentBlock;
+  }
+  return { type: "thinking", thinking, signature };
+}
+
+interface AnthropicReasoningReplayOptions {
+  readonly target: ReasoningArtifactReplayTarget;
+  readonly observe?: ReasoningArtifactReplayObserver | undefined;
+}
+
+function assistantThinkingArtifacts(
+  message: ChatMessage,
+  replay?: AnthropicReasoningReplayOptions,
+): Array<{
+  block: AnthropicContentBlock;
+  toolCallIndex?: number | undefined;
+}> {
+  if (!replay) return [];
+  return [
+    ...selectReasoningArtifactsForReplay({
+      artifacts: reasoningArtifactsForMessage(message),
+      target: replay.target,
+      context: { hasToolCalls: Boolean(message.toolCalls?.length) },
+      observe: replay.observe,
+    }),
+  ]
+    .sort((left, right) => left.position.sequence - right.position.sequence)
+    .flatMap((artifact) => {
+      const block = thinkingBlockFromArtifact(artifact);
+      if (!block) return [];
+      const byId = artifact.position.toolCallId
+        ? message.toolCalls?.findIndex(
+            (toolCall) => toolCall.id === artifact.position.toolCallId,
+          )
+        : undefined;
+      const toolCallIndex =
+        artifact.position.toolCallIndex ??
+        (byId !== undefined && byId >= 0 ? byId : undefined);
+      return [{ block, ...(toolCallIndex === undefined ? {} : { toolCallIndex }) }];
+    });
+}
+
 /**
  * Convert dialect-neutral history to Anthropic Messages API messages.
  * The first system message is owned by the top-level `system` field; later
@@ -52,6 +124,7 @@ type AnthropicContentBlock =
  */
 export function toAnthropicToolMessages(
   messages: ChatMessage[],
+  replay?: AnthropicReasoningReplayOptions,
 ): Array<{ role: "user" | "assistant"; content: string | AnthropicContentBlock[] }> {
   const out: Array<{
     role: "user" | "assistant";
@@ -72,7 +145,6 @@ export function toAnthropicToolMessages(
           type: "tool_result",
           tool_use_id: tr.toolCallId ?? "",
           content: tr.content,
-          // Prefer explicit ok flag; fall back to "ok=false" in content prefix.
           is_error:
             tr.ok === false ||
             (tr.ok !== true && /\bok=false\b/i.test(tr.content)),
@@ -85,22 +157,26 @@ export function toAnthropicToolMessages(
 
     if (message.role === "assistant" && message.toolCalls?.length) {
       const blocks: AnthropicContentBlock[] = [];
-      // Anthropic requires the signed thinking block to be the FIRST
-      // block of an assistant turn that carries tool_use while thinking is
-      // enabled; without it the follow-up request is rejected and the model
-      // loses its own chain of thought between tool calls.
-      const reasoning = message.reasoningBlock;
-      if (reasoning?.signature && reasoning.text) {
-        blocks.push({
-          type: "thinking",
-          thinking: reasoning.text,
-          signature: reasoning.signature,
-        });
+      const thinkingArtifacts = assistantThinkingArtifacts(message, replay);
+      const leadingArtifacts = thinkingArtifacts.filter(
+        (artifact) => artifact.toolCallIndex === undefined,
+      );
+      const artifactsByTool = new Map<number, AnthropicContentBlock[]>();
+      for (const artifact of thinkingArtifacts) {
+        if (artifact.toolCallIndex === undefined) continue;
+        const current = artifactsByTool.get(artifact.toolCallIndex) ?? [];
+        current.push(artifact.block);
+        artifactsByTool.set(artifact.toolCallIndex, current);
       }
+      blocks.push(...leadingArtifacts.map((artifact) => artifact.block));
+      blocks.push(...(artifactsByTool.get(0) ?? []));
       if (message.content.trim()) {
         blocks.push({ type: "text", text: message.content });
       }
-      for (const tc of message.toolCalls) {
+      for (const [toolCallIndex, tc] of message.toolCalls.entries()) {
+        if (toolCallIndex > 0) {
+          blocks.push(...(artifactsByTool.get(toolCallIndex) ?? []));
+        }
         blocks.push({
           type: "tool_use",
           id: tc.id,
@@ -152,21 +228,31 @@ export function anthropicToolBodyFields(options: {
   };
 }
 
+export interface AnthropicThinkingBlock {
+  readonly sequence: number;
+  readonly thinking: string;
+  readonly signature?: string | undefined;
+  readonly raw: Record<string, unknown>;
+  readonly toolCallIndex?: number | undefined;
+}
+
+type AnthropicWireContentBlock = {
+  type: string;
+  text?: string;
+  thinking?: string;
+  signature?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  [key: string]: unknown;
+};
+
 export function parseAnthropicToolUseBlocks(
-  content:
-    | Array<{
-        type: string;
-        text?: string;
-        thinking?: string;
-        signature?: string;
-        id?: string;
-        name?: string;
-        input?: unknown;
-      }>
-    | undefined,
+  content: AnthropicWireContentBlock[] | undefined,
 ): {
   text: string;
   thinkingText: string;
+  thinkingBlocks: AnthropicThinkingBlock[];
   toolCalls: NativeToolCall[];
   thinkingSignature?: string;
 } {
@@ -174,13 +260,26 @@ export function parseAnthropicToolUseBlocks(
   let thinkingText = "";
   let thinkingSignature: string | undefined;
   const toolCalls: NativeToolCall[] = [];
-  if (!content) return { text, thinkingText, toolCalls };
+  const thinkingBlocks: Array<Omit<AnthropicThinkingBlock, "toolCallIndex">> = [];
+  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
+  if (!content) return { text, thinkingText, thinkingBlocks, toolCalls };
 
-  for (const part of content) {
+  for (const [sequence, part] of content.entries()) {
     if (part.type === "text" && part.text) text += part.text;
     if (part.type === "thinking") {
-      if (part.thinking) thinkingText += part.thinking;
-      if (part.signature) thinkingSignature = part.signature;
+      const thinking = typeof part.thinking === "string" ? part.thinking : "";
+      if (thinking) thinkingText += thinking;
+      if (typeof part.signature === "string" && part.signature) {
+        thinkingSignature = part.signature;
+      }
+      thinkingBlocks.push({
+        sequence,
+        thinking,
+        ...(typeof part.signature === "string" && part.signature
+          ? { signature: part.signature }
+          : {}),
+        raw: { ...part },
+      });
     }
     if (part.type === "tool_use") {
       const wire = part.name ?? "";
@@ -191,19 +290,39 @@ export function parseAnthropicToolUseBlocks(
           : parseToolArguments(
               typeof input === "string" ? input : JSON.stringify(input ?? {}),
             );
+      const toolCallIndex = toolCalls.length;
       toolCalls.push({
-        id: part.id ?? syntheticToolCallId(toolCalls.length),
+        id: part.id ?? syntheticToolCallId(toolCallIndex),
         name: fromWireName(wire) ?? wire,
         args,
       });
+      toolCallSequences.push({ sequence, toolCallIndex });
     }
   }
+  const positionedThinkingBlocks = thinkingBlocks.map((block) => {
+    const followingTool = toolCallSequences.find(
+      (toolCall) => toolCall.sequence > block.sequence,
+    );
+    return followingTool
+      ? { ...block, toolCallIndex: followingTool.toolCallIndex }
+      : block;
+  });
   return {
     text: text.trim(),
     thinkingText: thinkingText.trim(),
+    thinkingBlocks: positionedThinkingBlocks,
     toolCalls,
     ...(thinkingSignature ? { thinkingSignature } : {}),
   };
+}
+
+interface AnthropicStreamBlock {
+  kind: "text" | "thinking" | "tool_use";
+  id?: string;
+  name?: string;
+  json: string;
+  text: string;
+  signature: string;
 }
 
 export interface AnthropicToolStreamState {
@@ -211,17 +330,8 @@ export interface AnthropicToolStreamState {
   thinking: string;
   /** Anthropic `signature_delta` for the thinking block. */
   thinkingSignature: string;
-  /** block index → partial tool_use */
-  blocks: Map<
-    number,
-    {
-      kind: "text" | "thinking" | "tool_use";
-      id?: string;
-      name?: string;
-      json: string;
-      text: string;
-    }
-  >;
+  /** block index → partial content block */
+  blocks: Map<number, AnthropicStreamBlock>;
 }
 
 export function createAnthropicToolStreamState(): AnthropicToolStreamState {
@@ -276,16 +386,11 @@ export function handleAnthropicStreamEvent(
     const index = event.index ?? 0;
     const cb = event.content_block;
     if (cb.type === "tool_use") {
-      const block: {
-        kind: "tool_use";
-        id?: string;
-        name?: string;
-        json: string;
-        text: string;
-      } = {
+      const block: AnthropicStreamBlock = {
         kind: "tool_use",
         json: "",
         text: "",
+        signature: "",
       };
       if (cb.id !== undefined) block.id = cb.id;
       if (cb.name !== undefined) block.name = cb.name;
@@ -303,16 +408,21 @@ export function handleAnthropicStreamEvent(
       state.blocks.set(index, {
         kind: "text",
         json: "",
-        text: "",
+        text: cb.text ?? "",
+        signature: "",
       });
+      if (cb.text) state.text += cb.text;
     } else if (cb.type === "thinking") {
+      const thinking = cb.thinking ?? "";
+      const signature = cb.signature ?? "";
       state.blocks.set(index, {
         kind: "thinking",
         json: "",
-        text: "",
+        text: thinking,
+        signature,
       });
-      if (cb.thinking) state.thinking += cb.thinking;
-      if (cb.signature) state.thinkingSignature = cb.signature;
+      state.thinking += thinking;
+      state.thinkingSignature += signature;
     }
   }
 
@@ -320,7 +430,7 @@ export function handleAnthropicStreamEvent(
     const index = event.index ?? 0;
     let block = state.blocks.get(index);
     if (!block) {
-      block = { kind: "text", json: "", text: "" };
+      block = { kind: "text", json: "", text: "", signature: "" };
       state.blocks.set(index, block);
     }
     if (event.delta.type === "text_delta" && event.delta.text) {
@@ -333,8 +443,8 @@ export function handleAnthropicStreamEvent(
       state.thinking += event.delta.thinking;
       result.thinkingDelta = event.delta.thinking;
     }
-    // The signature arrives as its own delta and must be kept.
     if (event.delta.type === "signature_delta" && event.delta.signature) {
+      block.signature += event.delta.signature;
       state.thinkingSignature += event.delta.signature;
     }
     if (
@@ -347,7 +457,6 @@ export function handleAnthropicStreamEvent(
           `Tool call arguments exceeded ${MAX_TOOL_ARG_BYTES} bytes — split the file or reduce content size.`,
         );
       }
-      // Periodic large-arg progress for early UI cards.
       if (
         block.kind === "tool_use" &&
         block.json.length > 0 &&
@@ -373,26 +482,53 @@ export function finalizeAnthropicToolStream(
 ): {
   text: string;
   thinkingText: string;
+  thinkingBlocks: AnthropicThinkingBlock[];
   toolCalls: NativeToolCall[];
   thinkingSignature?: string;
 } {
   const toolCalls: NativeToolCall[] = [];
+  const thinkingBlocks: Array<Omit<AnthropicThinkingBlock, "toolCallIndex">> = [];
+  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
   const indices = [...state.blocks.keys()].sort((a, b) => a - b);
   for (const index of indices) {
     const block = state.blocks.get(index)!;
+    if (block.kind === "thinking") {
+      thinkingBlocks.push({
+        sequence: index,
+        thinking: block.text,
+        ...(block.signature ? { signature: block.signature } : {}),
+        raw: {
+          type: "thinking",
+          thinking: block.text,
+          ...(block.signature ? { signature: block.signature } : {}),
+        },
+      });
+      continue;
+    }
     if (block.kind !== "tool_use") continue;
     const wire = block.name ?? "";
     const args = parseToolArguments(block.json);
+    const toolCallIndex = toolCalls.length;
     toolCalls.push({
       id: block.id ?? syntheticToolCallId(index),
       name: fromWireName(wire) ?? wire,
       args,
       ...(block.json ? { rawArguments: block.json } : {}),
     });
+    toolCallSequences.push({ sequence: index, toolCallIndex });
   }
+  const positionedThinkingBlocks = thinkingBlocks.map((block) => {
+    const followingTool = toolCallSequences.find(
+      (toolCall) => toolCall.sequence > block.sequence,
+    );
+    return followingTool
+      ? { ...block, toolCallIndex: followingTool.toolCallIndex }
+      : block;
+  });
   return {
     text: state.text.trim(),
     thinkingText: state.thinking.trim(),
+    thinkingBlocks: positionedThinkingBlocks,
     toolCalls,
     ...(state.thinkingSignature
       ? { thinkingSignature: state.thinkingSignature }

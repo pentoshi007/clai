@@ -26,6 +26,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const hetznerProvider: LlmProvider = {
   id: "hetzner",
+  reasoningStyle: "stepfun",
   displayName: "Hetzner",
   defaultModel: defaultModels.hetzner,
   envVar: "HETZNER_API_KEY",
@@ -76,6 +77,7 @@ export const hetznerProvider: LlmProvider = {
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("hetzner", model, payload);
   },
@@ -98,11 +100,13 @@ export const hetznerProvider: LlmProvider = {
       signal: request.signal,
       onToken,
       onToolCallDelta: request.onToolCallDelta,
+      onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "stepfun",
       tools: request.tools,
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
+      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
     });
     return toCompletionResult("hetzner", model, payload);
   },

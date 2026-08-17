@@ -25,7 +25,10 @@ export function contextChipForDensity(
   _density: StatusDensity,
 ): string | undefined {
   if (!usage) return undefined;
-  const used = formatContextK(usage.contextTokens);
+  // An estimate and a provider-reported count are not the same claim; the chip
+  // says which one it is rather than presenting both as measured.
+  const approx = !usage.exact && usage.contextTokens > 0 ? "~" : "";
+  const used = `${approx}${formatContextK(usage.contextTokens)}`;
   return usage.contextLimit > 0
     ? `ctx ${used}/${formatContextK(usage.contextLimit)}`
     : `ctx ${used}`;

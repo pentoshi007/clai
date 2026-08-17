@@ -122,11 +122,15 @@ async function compactResearchForImplement(
   if (session.getState().running || session.getState().compacting) return;
 
   const beforeMessages = [...session.messages];
+  const beforeContextSnapshot = session.getState().contextSnapshot;
   const beforeContextUsage = session.getState().contextUsage;
   const beforeTranscript = services.transcript.getState();
   const restoreBeforeCompaction = (): void => {
-    services.transcript.hydrate(beforeTranscript);
-    session.restoreMessages(beforeMessages, beforeContextUsage);
+    services.transcript.hydrate(beforeTranscript, { rebaseSequence: false });
+    session.restoreMessages(
+      beforeMessages,
+      beforeContextSnapshot ?? beforeContextUsage,
+    );
   };
   const beforeTokens = estimateMessagesTokens(beforeMessages);
   if (beforeTokens < PLAN_IMPLEMENT_COMPACT_MIN_TOKENS) return;

@@ -65,3 +65,45 @@ describe("sampling reaches the OpenAI-compatible body", () => {
     expect(body).not.toHaveProperty("top_p");
   });
 });
+
+describe("Chat Completions body system-message placement", () => {
+  it("hoists the first system message and demotes later ones to marked user turns", () => {
+    const body = JSON.parse(
+      buildChatBody({
+        model: "qwen/qwen3.8-max-free",
+        messages: [
+          { role: "system", content: "base prompt" },
+          { role: "user", content: "hello" },
+          { role: "system", content: "REQUEST CONTEXT\nlive turn" },
+          { role: "user", content: "next" },
+        ],
+        stream: false,
+      }),
+    ) as { messages: Array<{ role: string; content: string }> };
+    const roles = body.messages.map((message) => message.role);
+    expect(roles[0]).toBe("system");
+    expect(roles.slice(1)).not.toContain("system");
+    expect(body.messages[0]!.content).toBe("base prompt");
+    const marked = body.messages.find(
+      (message) => message.role === "user" && message.content.includes("REQUEST CONTEXT"),
+    );
+    expect(marked?.content.startsWith("[SYSTEM]")).toBe(true);
+  });
+
+  it("passes through requests with no system message unchanged", () => {
+    const body = JSON.parse(
+      buildChatBody({
+        model: "qwen/qwen3.8-max-free",
+        messages: [
+          { role: "user", content: "hello" },
+          { role: "assistant", content: "hi" },
+        ],
+        stream: false,
+      }),
+    ) as { messages: Array<{ role: string }> };
+    expect(body.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+    ]);
+  });
+});

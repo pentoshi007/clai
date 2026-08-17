@@ -48,6 +48,8 @@ export interface ToolItem extends ItemBase {
   readonly artifactPath: string | undefined;
   readonly reason: string | undefined;
   readonly outputBytes: number;
+  /** Wall-clock of `tool-started`; absent while queued or hydrated. */
+  readonly startedAt?: number | undefined;
   /** Wall-clock of `tool-result` / `tool-blocked`; absent while open or hydrated. */
   readonly endedAt?: number | undefined;
   /** Structured file diffs for fs.edit / write / append / delete / … */

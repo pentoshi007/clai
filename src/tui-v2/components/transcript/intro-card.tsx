@@ -17,6 +17,7 @@ import { ansiToStyledText } from "../../rendering/ansi-to-styled.js";
 import { renderIntroHeaderLines } from "../../../ui-core/rendering/intro-header.js";
 import { getCurrentVersion } from "../../../commands/update.js";
 import { getConfig } from "../../../store/config.js";
+import { effectiveThinkingEffort } from "../../../llm/capabilities.js";
 import { safeCwd } from "../../../os/cwd.js";
 
 export interface IntroCardProps {
@@ -47,7 +48,7 @@ export function IntroCard(props: IntroCardProps): ReactNode {
   // composer meta line, even before the session selection is populated.
   const provider = session.provider ?? cfg.defaultProvider;
   const model = session.model ?? cfg.defaultModel;
-  const variant = cfg.thinking.enabled ? cfg.thinking.effort : "off";
+  const variant = effectiveThinkingEffort(provider, model, cfg.thinking) ?? "off";
 
   const lines = useMemo(
     () =>

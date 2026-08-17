@@ -102,6 +102,32 @@ function withSequence(state: TranscriptState, sequence: number): TranscriptState
   return { ...state, lastSequence: sequence };
 }
 
+function joinThinkingChunks(existing: string, incoming: string): string {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  if (existing.endsWith("\n\n") || incoming.startsWith("\n\n")) return existing + incoming;
+  if (existing.endsWith("\n") || incoming.startsWith("\n")) return `${existing}\n${incoming}`;
+  return `${existing}\n\n${incoming}`;
+}
+
+function lastAdjacentThinking(
+  state: TranscriptState,
+  turnId: string | undefined,
+): ThinkingItem | undefined {
+  let index = state.order.length - 1;
+  let last = index >= 0 ? state.byId.get(state.order[index]!) : undefined;
+  if (
+    last?.kind === "assistant" &&
+    state.pendingAssistantId === last.id &&
+    isEmptyAssistantPlaceholder(state, last.id)
+  ) {
+    index -= 1;
+    last = index >= 0 ? state.byId.get(state.order[index]!) : undefined;
+  }
+  if (last?.kind !== "thinking" || last.turnId !== turnId) return undefined;
+  return last;
+}
+
 function appendDelta(
   state: TranscriptState,
   event: AnyAppEvent,
@@ -126,6 +152,17 @@ function appendDelta(
       ...(item as ThinkingItem),
       content: (item as ThinkingItem).content + text,
     }));
+  }
+  if (kind === "thinking") {
+    const mergeTarget = lastAdjacentThinking(state, event.turnId);
+    if (mergeTarget) {
+      const reopened = updateItem(state, mergeTarget.id, (item) => ({
+        ...(item as ThinkingItem),
+        content: joinThinkingChunks((item as ThinkingItem).content, text),
+        streaming: true,
+      }));
+      return { ...reopened, [pendingKey]: mergeTarget.id } as TranscriptState;
+    }
   }
   const id = `${kind}-${event.id}`;
   const base = {
@@ -174,12 +211,33 @@ function finalizeMessage(
   const pendingId = state[pendingKey];
   let next = state;
   if (pendingId) {
-    next = updateItem(next, pendingId, (item) =>
-      kind === "assistant"
-        ? { ...(item as AssistantItem), text, streaming: false }
-        : { ...(item as ThinkingItem), content: text, streaming: false },
-    );
+    next = updateItem(next, pendingId, (item) => {
+      if (kind === "assistant") {
+        return { ...(item as AssistantItem), text, streaming: false };
+      }
+      const existing = (item as ThinkingItem).content;
+      const content =
+        !text.trim() || existing.trim().endsWith(text.trim()) ? existing : text;
+      return { ...(item as ThinkingItem), content, streaming: false };
+    });
   } else {
+    if (kind === "thinking") {
+      const mergeTarget = lastAdjacentThinking(next, event.turnId);
+      if (mergeTarget) {
+        next = updateItem(next, mergeTarget.id, (item) => {
+          const existing = (item as ThinkingItem).content;
+          const content =
+            !text.trim() || existing.trim().endsWith(text.trim())
+              ? existing
+              : joinThinkingChunks(existing, text);
+          return { ...(item as ThinkingItem), content, streaming: false };
+        });
+        return {
+          ...next,
+          [pendingKey]: undefined,
+        };
+      }
+    }
     const id = `${kind}-${event.id}`;
     const base = {
       id,
@@ -305,8 +363,24 @@ function closePendingThinking(state: TranscriptState): TranscriptState {
   return { ...next, pendingThinkingId: undefined };
 }
 
+export class TranscriptSequenceError extends Error {
+  constructor(
+    readonly expected: number,
+    readonly received: number,
+  ) {
+    super(
+      `transcript sequence gap: expected ${expected} but received ${received} — ` +
+        `events must reach the store in gap-free order (event ${expected} was never seen)`,
+    );
+    this.name = "TranscriptSequenceError";
+  }
+}
+
 export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): TranscriptState {
   if (event.sequence <= state.lastSequence) return state;
+  if (event.sequence > state.lastSequence + 1) {
+    throw new TranscriptSequenceError(state.lastSequence + 1, event.sequence);
+  }
   const withSeq = withSequence(state, event.sequence);
   switch (event.type) {
     case "turn-started": {
@@ -451,6 +525,9 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         ...updateToolItem(started, event.payload.toolCallId, (item) => ({
           ...item,
           status: item.status === "queued" ? "running" : item.status,
+          // Record the real start wall-clock so the elapsed timer begins only
+          // when the command actually runs — not when it was queued.
+          ...(item.status === "queued" ? { startedAt: event.timestamp } : {}),
         })),
         runningStatus: startedName ?? started.runningStatus,
       };

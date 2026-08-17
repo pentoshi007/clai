@@ -2,43 +2,37 @@
  * Summarizer callback used by SessionController.compact (keeps the controller slim).
  */
 
-import type { ChatMessage, ProviderId } from "../../types.js";
+import type {
+  ChatMessage,
+  ProviderId,
+  SuccessfulRequestSnapshot,
+} from "../../types.js";
 import {
-  buildCompactionRetryPrompt,
+  buildDirectCompactionPrompt,
   compactionSinglePassInputBudget,
   COMPACTION_MAX_COMPLETION_TOKENS,
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
-  isCompactionCompletionTruncated,
-  looksLikeIncompleteCompactionSummary,
-  looksLikeTranscriptReplay,
-  normalizeCompactionSummary,
 } from "../../agent/compaction-summary.js";
+import {
+  executeCompactionSummary,
+  planCompactionReplay,
+} from "../../agent/compaction-executor.js";
 import {
   compactMessagesWithSummary,
   estimateMessagesTokens,
   isCompactionMemoryMessage,
   type CompactResult,
 } from "../../agent/context-manager.js";
-import { completeWithProvider, streamWithProvider } from "../../llm/router.js";
-import { streamAlreadyEmitted } from "../../llm/stream-progress.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
-import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
+import {
+  OperationLedger,
+  singleAdmissionOperationPolicy,
+} from "../../llm/operation-ledger.js";
 import type {
   AnyAppEvent,
   AppEventPayloads,
 } from "../events/app-event.js";
 import type { EventSequencer } from "../events/sequencer.js";
-
-function isCompactionServerError(error: unknown): boolean {
-  if (streamAlreadyEmitted(error)) return false;
-  const status =
-    error && typeof error === "object" && "status" in error
-      ? Number((error as { status?: number }).status)
-      : 0;
-  if (status >= 500 && status <= 504) return true;
-  const message = error instanceof Error ? error.message : String(error);
-  return /internal server error/i.test(message);
-}
 
 export async function summarizeForSessionCompact(
   prompt: string,
@@ -50,6 +44,10 @@ export async function summarizeForSessionCompact(
     purpose?: "default" | "plan-implement" | undefined;
     stage?: "single" | "map" | "reduce" | undefined;
     sourceMessages?: readonly ChatMessage[] | undefined;
+    baseRequest?: SuccessfulRequestSnapshot | undefined;
+    history?: readonly ChatMessage[] | undefined;
+    contextLimitTokens?: number | undefined;
+    operation?: OperationLedger | undefined;
     onToken?: ((token: string, replace?: boolean) => void) | undefined;
   },
 ): Promise<string> {
@@ -62,139 +60,25 @@ export async function summarizeForSessionCompact(
       ? "Write concise, non-redundant research memory for an agent executing an approved plan. Do not add framing: the PLAN MODE HANDOFF wrapper and active plan are injected separately. For coding target 600–1000 tokens; preserve only verified state, reusable research/artifacts, decisions, blockers, and risks. Security handoffs may be longer to preserve findings and coverage. Never invent or cut a fact mid-token. You are summarizing, not continuing: never emit tool calls or fabricate tool results, file receipts, or transcript lines."
       : "You compress conversation history into accurate continuation memory. You are SUMMARIZING the past session, not continuing it: do not answer the user, do not perform the next task, and never emit tool calls or fabricate tool results, file-write receipts (bytes/lines/sha256), exit codes, or 'TOOL:'/'[tools: …]' transcript lines. Describe what already happened in your own words.";
 
-  const completeSummary = async (
-    p: string,
-    onToken?: (token: string, replace?: boolean) => void,
-  ): Promise<string> => {
-    const request = {
-      provider: opts.provider,
-      model: opts.model,
-      messages: opts.sourceMessages
-        ? [
-            ...opts.sourceMessages,
-            { role: "user" as const, content: p },
-          ]
-        : [
-            {
-              role: "system" as const,
-              content: systemContent,
-            },
-            { role: "user" as const, content: p },
-          ],
-      temperature: 0.1,
-      maxTokens,
-      thinking: { enabled: false, effort: "none" as const },
-      signal: opts.signal,
-    };
-    const runProviderAttempt = async (
-      attemptRequest: typeof request,
-      replace = false,
-    ) => {
-      if (!onToken) {
-        return completeWithProvider(attemptRequest, { maxRetries: 0 });
-      }
-      if (replace) onToken("", true);
-      const parser = createThinkingStreamParser(
-        (text) => onToken(text),
-        undefined,
-        { remember: false },
-      );
-      const result = await streamWithProvider(
-        attemptRequest,
-        (token) => parser.push(token),
-        { onStatus: () => undefined, maxRetries: 0 },
-      );
-      parser.finish();
-      return result;
-    };
-    const runAttempt = async (
-      attemptRequest: typeof request,
-      replace = false,
-    ) => {
-      try {
-        return await runProviderAttempt(attemptRequest, replace);
-      } catch (error) {
-        if (!isCompactionServerError(error)) throw error;
-        return await runProviderAttempt(attemptRequest, replace);
-      }
-    };
-    const first = await runAttempt(request);
-    let visible = normalizeCompactionSummary(
-      stripThinking(first.text).visible,
-    );
-    let retryReason:
-      | "truncated"
-      | "incomplete"
-      | "reasoning-only"
-      | "replayed"
-      | undefined;
-    if (isCompactionCompletionTruncated(first, maxTokens)) {
-      retryReason = "truncated";
-    } else if (!visible) {
-      retryReason = "reasoning-only";
-    } else if (looksLikeTranscriptReplay(visible)) {
-      retryReason = "replayed";
-    } else if (looksLikeIncompleteCompactionSummary(visible)) {
-      retryReason = "incomplete";
-    }
-
-    if (retryReason) {
-      const retry = await runAttempt(
-        {
-          ...request,
-          messages: opts.sourceMessages
-            ? [
-                ...opts.sourceMessages,
-                {
-                  role: "user" as const,
-                  content: buildCompactionRetryPrompt(p, retryReason),
-                },
-              ]
-            : [
-                {
-                  role: "system" as const,
-                  content: `${systemContent}\nReturn only a complete continuation-memory summary. Do not include analysis, reasoning, or <think> tags.`,
-                },
-                {
-                  role: "user" as const,
-                  content: buildCompactionRetryPrompt(p, retryReason),
-                },
-              ],
-          temperature: 0,
-          maxTokens,
-          thinking: { enabled: false, effort: "none" as const },
-        },
-        true,
-      );
-      if (isCompactionCompletionTruncated(retry, maxTokens)) {
-        throw new Error(
-          "compaction failed: model hit the summary output limit twice — original context retained",
-        );
-      }
-      visible = normalizeCompactionSummary(
-        stripThinking(retry.text).visible,
-      );
-      if (!visible) {
-        throw new Error("compaction failed: model returned an empty summary");
-      }
-      if (looksLikeTranscriptReplay(visible)) {
-        throw new Error(
-          "compaction failed: model replayed the transcript twice — original context retained",
-        );
-      }
-      if (looksLikeIncompleteCompactionSummary(visible)) {
-        throw new Error(
-          "compaction failed: model returned an incomplete summary twice — original context retained",
-        );
-      }
-    }
-
-    return visible;
-  };
-
-  // `compactMessagesWithSummary` owns chunking/map-reduce. A second splitting
-  // layer here multiplied one /compact into N map calls plus another reduce.
-  return completeSummary(prompt, opts.onToken);
+  return executeCompactionSummary({
+    provider: opts.provider,
+    model: opts.model,
+    systemContent,
+    prompt,
+    maxTokens,
+    signal: opts.signal,
+    ...(opts.sourceMessages ? { sourceMessages: opts.sourceMessages } : {}),
+    ...(opts.baseRequest ? { baseRequest: opts.baseRequest } : {}),
+    ...(opts.history ? { history: opts.history } : {}),
+    ...(opts.contextLimitTokens !== undefined
+      ? { contextLimitTokens: opts.contextLimitTokens }
+      : {}),
+    ...(opts.operation ? { operation: opts.operation } : {}),
+    stream: Boolean(opts.onToken),
+    retryOnServerError: true,
+    qualityRetry: false,
+    onToken: opts.onToken,
+  });
 }
 
 interface RunSessionCompactionOptions {
@@ -205,14 +89,27 @@ interface RunSessionCompactionOptions {
   readonly purpose?: "default" | "plan-implement" | undefined;
   readonly provider: ProviderId | undefined;
   readonly model: string | undefined;
+  readonly successfulRequest?: SuccessfulRequestSnapshot | undefined;
   readonly contextLimitTokens?: number | undefined;
+  /**
+   * Current occupancy of the next model request, when the session already has a
+   * request-scoped measurement. Reporting against it keeps the manual card on
+   * the same scale as the automatic one and as the composer chip.
+   */
+  readonly requestTokensBefore?: number | undefined;
   readonly persist: boolean;
   readonly compactionId: string;
   readonly sequencer: EventSequencer;
   readonly emit: (event: AnyAppEvent) => void;
   readonly isCurrent: () => boolean;
-  readonly commit: (result: CompactResult) => void;
+  readonly commit: (result: CompactResult, reported: ReportedCompaction) => void;
   readonly persistNow: () => Promise<void>;
+}
+
+export interface ReportedCompaction {
+  readonly beforeTokens: number;
+  readonly afterTokens: number;
+  readonly scope: "message-history" | "assembled-request";
 }
 
 export async function runSessionCompaction(
@@ -232,7 +129,34 @@ export async function runSessionCompaction(
     );
   };
 
-  const beforeTokens = estimateMessagesTokens(options.history);
+  const historyTokensBefore = estimateMessagesTokens(options.history);
+  // The request-scoped measurement is the same provider-reported number the
+  // composer chip shows. The raw history estimate can exceed it (deliberately
+  // conservative chars-per-token ratio); preferring the estimate here made the
+  // compaction card disagree with the chip, so the request-scoped figure wins
+  // whenever one exists.
+  const requestTokensBefore =
+    typeof options.requestTokensBefore === "number" &&
+    Number.isFinite(options.requestTokensBefore) &&
+    options.requestTokensBefore > 0
+      ? Math.floor(options.requestTokensBefore)
+      : undefined;
+  const scope = requestTokensBefore === undefined ? "message-history" : "assembled-request";
+  const beforeTokens = requestTokensBefore ?? historyTokensBefore;
+  // Compaction only rewrites messages: the system prefix and tool schemas are
+  // untouched, so the request shrinks by exactly what the history shrinks by.
+  const reportedFor = (result: CompactResult): ReportedCompaction => ({
+    beforeTokens,
+    afterTokens:
+      requestTokensBefore === undefined
+        ? result.afterTokens
+        : Math.max(
+            0,
+            requestTokensBefore -
+              Math.max(0, result.beforeTokens - result.afterTokens),
+          ),
+    scope,
+  });
   if (options.persist) {
     emit("compaction-started", {
       compactionId: options.compactionId,
@@ -241,19 +165,65 @@ export async function runSessionCompaction(
   }
 
   let settled = false;
+  const operation = new OperationLedger({
+    kind: "compaction",
+    admissionBudget: 64,
+    continuationBudget: 0,
+  });
   try {
+    const successfulRequest = options.successfulRequest;
+    if (!successfulRequest) {
+      throw new Error(
+        "compaction failed: no successful live model request is available for cache-preserving compaction; complete a turn first",
+      );
+    }
+    const contextLimitTokens =
+      options.contextLimitTokens ??
+      modelContextWindow(successfulRequest.model, successfulRequest.provider);
+    const instruction = buildDirectCompactionPrompt({
+      ...(options.purpose ? { purpose: options.purpose } : {}),
+    });
+    // Cache-preserving replay: the summary request resends the last
+    // successful turn request verbatim with the instruction appended, so the
+    // whole prior prompt is served from cache. When that assembled request
+    // would not fit (e.g. compacting a nearly-full session), fall back to the
+    // legacy transcript-rendered requests rather than failing closed.
+    const replayPlan = planCompactionReplay({
+      baseRequest: successfulRequest,
+      history: options.history,
+      prompt: instruction,
+      maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
+      contextLimitTokens,
+      stream: true,
+    });
+    const replay =
+      replayPlan && !replayPlan.accounting.overLimit
+        ? successfulRequest
+        : undefined;
     const result = await compactMessagesWithSummary(
       options.history,
       (prompt, stage) =>
-        summarizeForSessionCompact(prompt, {
+        summarizeForSessionCompact(replay ? instruction : prompt, {
           provider: options.provider,
           model: options.model,
           signal: options.signal,
           purpose: options.purpose,
           stage: stage?.phase,
-          ...(stage?.sourceMessages
-            ? { sourceMessages: stage.sourceMessages }
-            : {}),
+          ...(replay
+            ? {
+                baseRequest: replay,
+                history: options.history,
+                contextLimitTokens,
+              }
+            : {
+                // Legacy path: the direct strategy carries the full source
+                // messages; the transcript strategies embed the material in
+                // the prompt itself and need no sourceMessages.
+                ...(stage?.sourceMessages
+                  ? { sourceMessages: stage.sourceMessages }
+                  : {}),
+              }),
+          operation,
           ...(options.persist && stage?.phase !== "map"
             ? {
                 onToken: (text: string, replace?: boolean) => {
@@ -272,16 +242,17 @@ export async function runSessionCompaction(
         budgetTokens: 0,
         keepRecent: options.keepRecent,
         purpose: options.purpose,
+        singleAdmission: true,
+        ...(replay ? { forceDirectSinglePass: true } : {}),
         singlePassInputBudgetTokens: compactionSinglePassInputBudget(
-          options.contextLimitTokens ??
-            modelContextWindow(options.model, options.provider),
+          contextLimitTokens,
         ),
       },
-      options.sessionTranscript,
     );
 
     if (!options.isCurrent()) return result;
-    options.commit(result);
+    const reported = reportedFor(result);
+    options.commit(result, reported);
     if (options.persist && result.summarized) {
       const summary =
         [...result.messages]
@@ -291,8 +262,9 @@ export async function runSessionCompaction(
       emit("compaction-completed", {
         compactionId: options.compactionId,
         summary,
-        beforeTokens: result.beforeTokens,
-        afterTokens: result.afterTokens,
+        beforeTokens: reported.beforeTokens,
+        afterTokens: reported.afterTokens,
+        contextScope: reported.scope,
       });
     } else if (options.persist) {
       emit("compaction-failed", {

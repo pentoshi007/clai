@@ -1,3 +1,4 @@
+import type { ContextAttemptReference, ContextSnapshotScope } from "../llm/context-snapshot.js";
 import type { SessionPlan } from "../store/plan.js";
 import type { ProviderId, TokenUsage } from "../types.js";
 import type { TurnOutcome } from "./turn-outcome.js";
@@ -50,6 +51,10 @@ export type AgentEvent =
       summary: string;
       beforeTokens: number;
       afterTokens: number;
+      contextScope: Extract<
+        ContextSnapshotScope,
+        "message-history" | "assembled-request"
+      >;
     }
   | {
       type: "compaction-failed";
@@ -60,6 +65,12 @@ export type AgentEvent =
   /** Legacy one-shot compaction event retained for non-streaming integrations. */
   | { type: "compacted"; summary: string; beforeTokens: number; afterTokens: number }
   /** Provider-reported token usage after a model completion. */
-  | { type: "token-usage"; usage: TokenUsage; model?: string | undefined; provider?: ProviderId | undefined }
+  | {
+      type: "token-usage";
+      usage: TokenUsage;
+      model?: string | undefined;
+      provider?: ProviderId | undefined;
+      attempt?: ContextAttemptReference | undefined;
+    }
   /** Authoritative assembled-request estimate (same measure as compaction). */
   | { type: "context-estimate"; estimatedTokens: number; model?: string | undefined };

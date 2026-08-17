@@ -110,6 +110,39 @@ describe("reliability policy (E1–E6)", () => {
     ).toBe(LEGACY_MAX_TOKENS);
   });
 
+  it("E3: thinking-enabled steps keep the legacy 32k budget so reasoning cannot starve the answer", () => {
+    expect(
+      resolveStepMaxTokens({
+        nativeToolsActive: true,
+        toolsAttached: true,
+        thinkingEnabled: true,
+      }),
+    ).toBe(LEGACY_MAX_TOKENS);
+    expect(
+      resolveStepMaxTokens({
+        nativeToolsActive: false,
+        toolsAttached: false,
+        thinkingEnabled: true,
+      }),
+    ).toBe(LEGACY_MAX_TOKENS);
+    expect(
+      resolveStepMaxTokens({
+        nativeToolsActive: true,
+        toolsAttached: true,
+        thinkingEnabled: true,
+        recoveryNudge: true,
+      }),
+    ).toBeLessThan(LEGACY_MAX_TOKENS);
+    expect(
+      resolveStepMaxTokens({
+        nativeToolsActive: true,
+        toolsAttached: true,
+        thinkingEnabled: true,
+        truncationDepth: 1,
+      }),
+    ).toBe(65_536);
+  });
+
   it("E4: free-tier notices are advisory only and never empty for large context", () => {
     const large = freeTierGuardNotices({
       provider: "bynara",

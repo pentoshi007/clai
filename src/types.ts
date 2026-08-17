@@ -18,6 +18,7 @@ export const providerIds = [
   "meta",
   "fireworks",
   "hetzner",
+  "orcarouter",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];
@@ -80,6 +81,118 @@ export interface ReasoningBlock {
   items?: Array<Record<string, unknown>> | undefined;
 }
 
+/** Canonical raw-state formats captured from reasoning-capable routes. */
+export type ReasoningArtifactKind =
+  | "plaintext"
+  | "signed"
+  | "encrypted"
+  | "structured-details"
+  | "thought-signature"
+  | "summary";
+
+/** Wire dialect that originally produced the artifact. */
+export type ReasoningArtifactDialect =
+  | "anthropic-messages"
+  | "gemini-generate-content"
+  | "meta-responses"
+  | "openai-compatible"
+  | "ollama-chat"
+  | "legacy";
+
+/** How long an artifact can legally remain on the provider replay timeline. */
+export type ReasoningArtifactReplayScope =
+  | "none"
+  | "tool-turn"
+  | "next-turn"
+  | "all-history";
+
+/** Whether a final assistant turn may persist the artifact. */
+export type ReasoningArtifactPersistence =
+  | "never"
+  | "tool-turn"
+  | "final-turn"
+  | "all-turns";
+
+/** Original part/call placement, preserved independently of display text. */
+export interface ReasoningArtifactPosition {
+  readonly sequence: number;
+  readonly placement: "assistant" | "before-tool-call" | "on-tool-call";
+  readonly toolCallId?: string | undefined;
+  readonly toolCallIndex?: number | undefined;
+}
+
+/**
+ * Origin metadata used for conservative replay. `endpointHash` is a SHA-256
+ * identifier, never a raw endpoint/query string; legacy payloads predate full
+ * route provenance and are restricted to their known protocol family.
+ */
+export interface ReasoningArtifactProvenance {
+  readonly provider: ProviderId | "legacy";
+  readonly model?: string | undefined;
+  readonly endpointHash?: string | undefined;
+  readonly dialect: ReasoningArtifactDialect;
+  readonly legacy?: true | undefined;
+}
+
+/** Target route used at a serializer boundary for artifact compatibility. */
+export interface ReasoningArtifactReplayTarget {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly endpointHash?: string | undefined;
+  readonly dialect: ReasoningArtifactDialect;
+}
+
+/** Immutable raw provider state; text shown to users lives in `displaySummary`. */
+export type ReasoningArtifactRaw =
+  | string
+  | Readonly<Record<string, unknown>>
+  | readonly unknown[];
+
+/**
+ * Versioned reasoning state. Raw payloads are immutable replay data and must
+ * never be used as transcript/display text or operation telemetry.
+ */
+export interface ReasoningArtifact {
+  readonly version: 1;
+  readonly kind: ReasoningArtifactKind;
+  readonly raw: ReasoningArtifactRaw;
+  readonly displaySummary?: string | undefined;
+  readonly provenance: ReasoningArtifactProvenance;
+  readonly replay: {
+    readonly scope: ReasoningArtifactReplayScope;
+    readonly persistence: ReasoningArtifactPersistence;
+  };
+  readonly position: ReasoningArtifactPosition;
+  readonly accounting: {
+    readonly byteLength: number;
+    readonly estimatedTokens: number;
+  };
+}
+
+/** Metadata-only serializer decision. It intentionally contains no raw state. */
+export type ReasoningArtifactOmissionReason =
+  | "replay-disabled"
+  | "not-a-tool-turn"
+  | "provider-mismatch"
+  | "model-mismatch"
+  | "endpoint-mismatch"
+  | "endpoint-unknown"
+  | "dialect-mismatch";
+
+export interface ReasoningArtifactReplayDecision {
+  readonly version: 1;
+  readonly action: "replayed" | "omitted";
+  readonly kind: ReasoningArtifactKind;
+  readonly reason?: ReasoningArtifactOmissionReason | undefined;
+  readonly source: ReasoningArtifactProvenance;
+  readonly target: ReasoningArtifactReplayTarget;
+  readonly byteLength: number;
+}
+
+export type ReasoningArtifactReplayObserver = (
+  decision: ReasoningArtifactReplayDecision,
+) => void;
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -106,6 +219,8 @@ export interface ChatMessage {
    * understand it ignore it.
    */
   reasoningBlock?: ReasoningBlock | undefined;
+  /** Canonical immutable artifact timeline; legacy `reasoningBlock` remains additive. */
+  reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
   /**
    * Model-only recovery / governor nudge. Kept in API history so the agent
    * continues correctly, but never rendered as a YOU bubble or WARN notice
@@ -154,9 +269,110 @@ export interface ToolDefinition {
   askMode?: boolean | undefined;
 }
 
+export type GenerationAttemptMode = "complete" | "stream";
+
+export type GenerationAttemptReason =
+  | "initial"
+  | "retry"
+  | "fallback"
+  | "adaptation"
+  | "provider-retry";
+
+export type GenerationAttemptOutcome = "success" | "failure" | "cancelled";
+
+export type RequestFingerprintSerializerId =
+  | "chat-completions"
+  | "anthropic-messages"
+  | "gemini-generate-content"
+  | "meta-responses"
+  | "ollama-chat";
+
+export type RequestFingerprintSectionKind =
+  | "instructions"
+  | "tools"
+  | "history"
+  | "settings";
+
+export interface RequestFingerprintSection {
+  readonly section: RequestFingerprintSectionKind;
+  readonly byteLength: number;
+  readonly sha256: string;
+  readonly itemCount?: number | undefined;
+}
+
+export interface RequestFingerprintPrefix {
+  readonly ordinal: number;
+  readonly section: RequestFingerprintSectionKind | "wire";
+  readonly boundary: "field" | "history-item" | "wire";
+  readonly byteLength: number;
+  readonly sha256: string;
+  readonly historyItems?: number | undefined;
+}
+
+/** Metadata-only digest of a final request body; never contains wire values. */
+export interface RequestFingerprintV1 {
+  readonly version: 1;
+  readonly serializer: {
+    readonly id: RequestFingerprintSerializerId;
+    readonly version: 1;
+  };
+  readonly body: {
+    readonly byteLength: number;
+    readonly sha256: string;
+  };
+  readonly sections: readonly RequestFingerprintSection[];
+  readonly prefixes: readonly RequestFingerprintPrefix[];
+}
+
+export interface GenerationAttemptInput {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly mode: GenerationAttemptMode;
+  readonly reason: GenerationAttemptReason;
+  /** Final-wire metadata only; no body, header, URL, or request value is retained. */
+  readonly requestFingerprint?: RequestFingerprintV1 | undefined;
+}
+
+export interface GenerationAttemptHandle {
+  complete(
+    outcome: GenerationAttemptOutcome,
+    usage?: TokenUsage | undefined,
+    statusCode?: number | undefined,
+  ): void;
+}
+
+export interface GenerationAttemptUsageSink {
+  begin(input: GenerationAttemptInput): GenerationAttemptHandle;
+}
+
+/**
+ * Logical role of a request. Turn and compaction requests deliberately share a
+ * cache identity so a compaction prompt can reuse the turn's cached prefix;
+ * auxiliary requests (titles, classifications) are isolated so their unrelated
+ * short prefix can never evict it.
+ */
+export type CompletionRequestPurpose = "turn" | "compaction" | "auxiliary";
+
+export interface SuccessfulRequestSnapshot {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly messages: readonly ChatMessage[];
+  readonly temperature?: number | undefined;
+  readonly thinking?: ReasoningPreference | undefined;
+  readonly tools?: readonly ToolDefinition[] | undefined;
+  readonly toolChoice?: ToolChoice | undefined;
+  readonly parallelToolCalls?: boolean | undefined;
+}
+
 export interface CompletionRequest {
   provider?: ProviderId | undefined;
   model?: string | undefined;
+  /** Scopes provider cache-affinity keys; defaults to a turn request. */
+  purpose?: CompletionRequestPurpose | undefined;
+  /** Internal per-operation admission accounting; serializers must ignore it. */
+  attemptUsage?: GenerationAttemptUsageSink | undefined;
+  /** Internal reason for providers that issue nested physical admissions. */
+  attemptReason?: GenerationAttemptReason | undefined;
   /**
    * Permit the configured provider chain to use each fallback provider's
    * default model when the explicitly selected model cannot produce a usable
@@ -183,11 +399,20 @@ export interface CompletionRequest {
   parallelToolCalls?: boolean | undefined;
   /** Fired as native tool_call name/args stream in (early UI cards). */
   onToolCallDelta?: ((delta: ToolCallStreamDelta) => void) | undefined;
+  /** Metadata-only artifact replay decisions emitted during request serialization. */
+  onReasoningArtifactReplayDecision?: ReasoningArtifactReplayObserver | undefined;
+  onStreamEvent?: import("./llm/stream-events.js").ProviderStreamEventSink | undefined;
 }
 
 /** Provider-reported or estimated token counts for one completion. */
 export interface TokenUsage {
   readonly promptTokens: number;
+  /**
+   * Present only when another provider counter arrived without a prompt count.
+   * Absence preserves legacy callers: any supplied promptTokens value is known,
+   * including an explicit zero.
+   */
+  readonly promptTokensKnown?: false | undefined;
   readonly completionTokens: number;
   readonly totalTokens: number;
   /** true when values came from the provider API. */
@@ -196,6 +421,8 @@ export interface TokenUsage {
   readonly cachedPromptTokens?: number | undefined;
   /** Prompt tokens written into the provider cache, when reported. */
   readonly cacheCreationTokens?: number | undefined;
+  /** Prompt tokens explicitly not served from provider cache, when reported. */
+  readonly uncachedPromptTokens?: number | undefined;
   /** Reasoning tokens inside the completion, when reported. */
   readonly reasoningTokens?: number | undefined;
 }
@@ -210,8 +437,12 @@ export interface CompletionResult {
   rawAssistantMessage?: unknown | undefined;
   /** Exact usage when the provider reported it; omit when unknown. */
   usage?: TokenUsage | undefined;
+  /** Per-admission usage for the logical operation that produced this result. */
+  operationUsage?: import("./llm/operation-usage.js").OperationUsageSnapshot | undefined;
   /** Signed reasoning block to replay on the next request. */
   reasoningBlock?: ReasoningBlock | undefined;
+  /** Canonical immutable replay artifacts emitted by the provider. */
+  reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
 }
 
 export interface ProviderStatus {

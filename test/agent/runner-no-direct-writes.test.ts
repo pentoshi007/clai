@@ -7,9 +7,14 @@ const runnerPath = fileURLToPath(
 );
 const source = readFileSync(runnerPath, "utf8");
 
-describe("agent runner presentation branch", () => {
-  it("uses writesDirectly for the classic REPL path", () => {
-    expect(source).toMatch(/\bwritesDirectly\b/);
+describe("agent runner has no direct process output", () => {
+  it("never writes to process stdout or stderr", () => {
+    expect(source).not.toMatch(/process\.stdout\.write/);
+    expect(source).not.toMatch(/process\.stderr\.write/);
+  });
+
+  it("keeps the legacy direct-write branch removed", () => {
+    expect(source).not.toMatch(/\bwritesDirectly\b/);
   });
 
   it("imports no spinner", () => {

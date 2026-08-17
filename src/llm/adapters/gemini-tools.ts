@@ -1,4 +1,16 @@
-import type { ChatMessage, NativeToolCall, ToolDefinition } from "../../types.js";
+import type {
+  ChatMessage,
+  NativeToolCall,
+  ReasoningArtifact,
+  ReasoningArtifactReplayObserver,
+  ReasoningArtifactReplayTarget,
+  ToolDefinition,
+} from "../../types.js";
+import {
+  reasoningArtifactSignature,
+  reasoningArtifactsForMessage,
+  selectReasoningArtifactsForReplay,
+} from "../reasoning-artifacts.js";
 import {
   fromWireName,
   mapToolChoiceToGemini,
@@ -131,7 +143,7 @@ export function geminiToolBodyFields(options: {
 }
 
 type GeminiPart =
-  | { text: string; thought?: boolean; thoughtSignature?: string }
+  | ({ text: string; thought?: boolean; thoughtSignature?: string } & Record<string, unknown>)
   | { inlineData: { mimeType: string; data: string } }
   | {
       functionCall: {
@@ -149,6 +161,95 @@ type GeminiPart =
       };
     };
 
+export interface GeminiReasoningPart {
+  readonly kind: "thought" | "thought-signature";
+  readonly raw: ReasoningArtifact["raw"];
+  readonly sequence: number;
+  readonly displaySummary?: string | undefined;
+  readonly toolCallIndex?: number | undefined;
+}
+
+function artifactToolCallIndex(
+  artifact: ReasoningArtifact,
+  toolCalls: readonly NativeToolCall[] | undefined,
+): number | undefined {
+  if (artifact.position.toolCallIndex !== undefined) {
+    return artifact.position.toolCallIndex;
+  }
+  if (!artifact.position.toolCallId || !toolCalls?.length) return undefined;
+  const index = toolCalls.findIndex(
+    (toolCall) => toolCall.id === artifact.position.toolCallId,
+  );
+  return index >= 0 ? index : undefined;
+}
+
+function thoughtPartFromArtifact(
+  artifact: ReasoningArtifact,
+): GeminiPart | undefined {
+  if (
+    artifact.kind !== "plaintext" ||
+    !artifact.raw ||
+    typeof artifact.raw !== "object" ||
+    Array.isArray(artifact.raw)
+  ) {
+    return undefined;
+  }
+  const raw = artifact.raw as Record<string, unknown>;
+  if (raw.thought !== true || typeof raw.text !== "string") return undefined;
+  const {
+    functionCall: _functionCall,
+    thoughtSignature: _thoughtSignature,
+    ...thoughtPart
+  } = raw;
+  return {
+    ...thoughtPart,
+    text: raw.text,
+    thought: true,
+  } as GeminiPart;
+}
+
+interface GeminiReasoningReplayOptions {
+  readonly target: ReasoningArtifactReplayTarget;
+  readonly observe?: ReasoningArtifactReplayObserver | undefined;
+}
+
+function assistantReasoningParts(
+  message: ChatMessage,
+  replay?: GeminiReasoningReplayOptions,
+): {
+  thoughts: Array<{ part: GeminiPart; toolCallIndex?: number | undefined }>;
+  signatureForTool: (toolCall: NativeToolCall, toolCallIndex: number) => string | undefined;
+} {
+  const artifacts = replay
+    ? [
+        ...selectReasoningArtifactsForReplay({
+          artifacts: reasoningArtifactsForMessage(message),
+          target: replay.target,
+          context: { hasToolCalls: Boolean(message.toolCalls?.length) },
+          observe: replay.observe,
+        }),
+      ].sort((left, right) => left.position.sequence - right.position.sequence)
+    : [];
+  const thoughts = artifacts.flatMap((artifact) => {
+    const part = thoughtPartFromArtifact(artifact);
+    if (!part) return [];
+    const toolCallIndex = artifactToolCallIndex(artifact, message.toolCalls);
+    return [{ part, ...(toolCallIndex === undefined ? {} : { toolCallIndex }) }];
+  });
+  return {
+    thoughts,
+    signatureForTool: (toolCall, toolCallIndex) => {
+      const artifact = artifacts.find(
+        (candidate) =>
+          candidate.kind === "thought-signature" &&
+          (candidate.position.toolCallId === toolCall.id ||
+            artifactToolCallIndex(candidate, message.toolCalls) === toolCallIndex),
+      );
+      return artifact ? reasoningArtifactSignature(artifact) : undefined;
+    },
+  };
+}
+
 /**
  * Convert dialect-neutral history to Gemini contents with functionCall /
  * functionResponse parts. The first system message is owned by
@@ -157,6 +258,7 @@ type GeminiPart =
  */
 export function toGeminiToolContents(
   messages: ChatMessage[],
+  replay?: GeminiReasoningReplayOptions,
 ): Array<{ role: "user" | "model"; parts: GeminiPart[] }> {
   const contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }> = [];
 
@@ -184,24 +286,36 @@ export function toGeminiToolContents(
       continue;
     }
 
+    const reasoning = assistantReasoningParts(message, replay);
     if (message.role === "assistant" && message.toolCalls?.length) {
       const parts: GeminiPart[] = [];
+      const leadingThoughts = reasoning.thoughts.filter(
+        (thought) => thought.toolCallIndex === undefined,
+      );
+      const thoughtsByTool = new Map<number, GeminiPart[]>();
+      for (const thought of reasoning.thoughts) {
+        if (thought.toolCallIndex === undefined) continue;
+        const current = thoughtsByTool.get(thought.toolCallIndex) ?? [];
+        current.push(thought.part);
+        thoughtsByTool.set(thought.toolCallIndex, current);
+      }
+      parts.push(...leadingThoughts.map((thought) => thought.part));
+      parts.push(...(thoughtsByTool.get(0) ?? []));
       if (message.content.trim()) {
         parts.push({ text: message.content });
       }
-      for (const tc of message.toolCalls) {
+      for (const [toolCallIndex, tc] of message.toolCalls.entries()) {
+        if (toolCallIndex > 0) {
+          parts.push(...(thoughtsByTool.get(toolCallIndex) ?? []));
+        }
+        const thoughtSignature = reasoning.signatureForTool(tc, toolCallIndex);
         parts.push({
           functionCall: {
             name: toWireName(tc.name),
             args: tc.args ?? {},
             ...(tc.id ? { id: tc.id } : {}),
           },
-          // Gemini 3 requires the exact thoughtSignature it returned on this
-          // functionCall part to be echoed back, or the request 400s. See
-          // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
-          ...(tc.thoughtSignature
-            ? { thoughtSignature: tc.thoughtSignature }
-            : {}),
+          ...(thoughtSignature ? { thoughtSignature } : {}),
         });
       }
       contents.push({ role: "model", parts });
@@ -211,6 +325,9 @@ export function toGeminiToolContents(
 
     const role = message.role === "assistant" ? "model" : "user";
     const parts: GeminiPart[] = [];
+    if (role === "model") {
+      parts.push(...reasoning.thoughts.map((thought) => thought.part));
+    }
     if (message.content.trim()) parts.push({ text: message.content });
     if (role === "user" && message.images) {
       for (const img of message.images) {
@@ -248,34 +365,73 @@ export function parseGeminiFunctionCalls(
         };
       }>
     | undefined,
-): { text: string; toolCalls: NativeToolCall[] } {
+): {
+  text: string;
+  toolCalls: NativeToolCall[];
+  reasoningParts: GeminiReasoningPart[];
+} {
   let text = "";
   const toolCalls: NativeToolCall[] = [];
-  if (!parts) return { text, toolCalls };
+  const reasoningParts: GeminiReasoningPart[] = [];
+  const thoughtParts: Array<Omit<GeminiReasoningPart, "toolCallIndex">> = [];
+  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
+  if (!parts) return { text, toolCalls, reasoningParts };
 
-  for (const part of parts) {
-    // Always parse functionCall even when the part is also tagged as thought.
+  for (const [sequence, part] of parts.entries()) {
+    let toolCallIndex: number | undefined;
     if (part.functionCall?.name) {
       const wire = part.functionCall.name;
       const args = part.functionCall.args
         ? parseToolArguments(part.functionCall.args)
         : {};
+      toolCallIndex = toolCalls.length;
       toolCalls.push({
-        id: part.functionCall.id ?? syntheticToolCallId(toolCalls.length),
+        id: part.functionCall.id ?? syntheticToolCallId(toolCallIndex),
         name: fromWireName(wire) ?? wire,
         args,
-        // Gemini 3 attaches this only to the first functionCall part in a
-        // step — capture it wherever it lands so it can be echoed back.
         ...(part.thoughtSignature
           ? { thoughtSignature: part.thoughtSignature }
           : {}),
       });
+      toolCallSequences.push({ sequence, toolCallIndex });
+      if (part.thoughtSignature) {
+        reasoningParts.push({
+          kind: "thought-signature",
+          raw: part.thoughtSignature,
+          sequence,
+          toolCallIndex,
+        });
+      }
     }
-    // Skip thought text from user-visible content.
+    if (part.thought && typeof part.text === "string" && part.text) {
+      thoughtParts.push({
+        kind: "thought",
+        raw: { ...part },
+        sequence,
+        displaySummary: part.text,
+      });
+    } else if (part.thoughtSignature && toolCallIndex === undefined) {
+      reasoningParts.push({
+        kind: "thought-signature",
+        raw: part.thoughtSignature,
+        sequence,
+      });
+    }
     if (part.thought) continue;
     if (typeof part.text === "string" && part.text) {
       text += part.text;
     }
   }
-  return { text: text.trim(), toolCalls };
+  for (const thought of thoughtParts) {
+    const followingTool = toolCallSequences.find(
+      (toolCall) => toolCall.sequence > thought.sequence,
+    );
+    reasoningParts.push(
+      followingTool
+        ? { ...thought, toolCallIndex: followingTool.toolCallIndex }
+        : thought,
+    );
+  }
+  reasoningParts.sort((left, right) => left.sequence - right.sequence);
+  return { text: text.trim(), toolCalls, reasoningParts };
 }

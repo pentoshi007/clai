@@ -5,7 +5,11 @@
 
 import { getProvider, providerAuth } from "../../llm/router.js";
 import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
-import { modelSupportsThinking } from "../../llm/capabilities.js";
+import {
+  effectiveThinkingEffort,
+  modelReasoningEfforts,
+  modelSupportsThinking,
+} from "../../llm/capabilities.js";
 import { assertProvider } from "../../llm/provider.js";
 import { assertSearchProvider } from "../../tools/web/providers/provider.js";
 import { searchProviders } from "../../tools/web/providers/provider.js";
@@ -77,7 +81,7 @@ const REASONING_DESCRIPTIONS: Record<string, string> = {
   medium: "balanced",
   high: "deep reasoning",
   xhigh: "maximum depth",
-  max: "highest supported depth",
+  max: "highest supported depth (falls back if rejected)",
 };
 
 /**
@@ -928,13 +932,17 @@ export function handleReasoning(services: AppServices, invocation: CommandInvoca
   const provider = services.session.getState().provider ?? getConfig().defaultProvider;
   const model = services.session.getState().model ?? "";
   const supported = modelSupportsThinking(provider, model) ? "supported" : "model may ignore it";
+  const advertised = modelReasoningEfforts(provider, model);
+  const advertisedHint = advertised?.length
+    ? ` · model accepts: ${advertised.join(", ")}`
+    : "";
   const options: PickerOption[] = Object.entries(REASONING_DESCRIPTIONS).map(([value, description]) => ({
     value,
     label: value,
     description,
-    active: value === (current.enabled ? current.effort : "off"),
+    active: value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
   }));
-  services.overlay.openPicker({ title: `Reasoning · ${supported}`, options }, (value) => {
+  services.overlay.openPicker({ title: `Reasoning · ${supported}${advertisedHint}`, options }, (value) => {
     applyReasoning(services, value);
     services.overlay.close();
   });
@@ -1127,7 +1135,9 @@ export async function handleHistory(services: AppServices, invocation?: CommandI
         visual.transcript,
         visual.messages,
       );
-      services.transcript.hydrate(hydrated.state);
+      services.transcript.hydrate(hydrated.state, {
+        persistBase: session.transcript,
+      });
       if (visual.omittedItems > 0 || visual.omittedMessages > 0) {
         services.session.notice(
           "info",

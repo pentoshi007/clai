@@ -102,12 +102,7 @@ export function App(): ReactNode {
   useEffect(() => {
     const disarmWhenIdle = (): void => {
       if (!escapeCancelArmedRef.current) return;
-      const state = services.session.getState();
-      const hasForegroundWork = state.running || state.compacting;
-      const hasResponderWork =
-        services.ports.jobs.running(services.session.sessionId).length > 0 ||
-        services.ports.jobs.pendingNotifications(services.session.sessionId).length > 0;
-      if (!hasForegroundWork && !hasResponderWork && !services.interruptible.hasWork()) clearEscapeCancellation();
+      if (!services.cancel.hasCancelableWork()) clearEscapeCancellation();
     };
     const unsubJobs = services.ports.jobs.subscribe(disarmWhenIdle);
     const unsubInterruptible = services.interruptible.subscribe(disarmWhenIdle);
@@ -213,8 +208,7 @@ export function App(): ReactNode {
             lastCtrlC.current > 0 &&
             now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
           if (services.session.getState().running) {
-            services.interruptible.cancelAll();
-            services.session.abort();
+            services.cancel.abortForeground();
           }
           if (doublePress) {
             services.requestExit();
@@ -282,9 +276,8 @@ export function App(): ReactNode {
         const doublePress =
           lastCtrlC.current > 0 &&
           now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
-        if (services.session.getState().running) {
-          services.interruptible.cancelAll();
-          services.session.abort();
+        const outcome = services.cancel.abortForeground();
+        if (outcome.turnAborted) {
           if (doublePress) {
             services.requestExit();
             break;
@@ -296,8 +289,7 @@ export function App(): ReactNode {
           });
           break;
         }
-        if (services.interruptible.hasWork()) {
-          services.interruptible.cancelAll();
+        if (outcome.interruptibleCancelled > 0) {
           if (doublePress) {
             services.requestExit();
             break;
@@ -493,27 +485,17 @@ export function App(): ReactNode {
     const doublePress =
       lastEscape.current > 0 &&
       now - lastEscape.current < ESC_CANCEL_WINDOW_MS;
-    const sessionState = services.session.getState();
-    const sessionId = services.session.sessionId;
-    const hasResponderWork =
-      services.ports.jobs.running(sessionId).length > 0 ||
-      services.ports.jobs.pendingNotifications(sessionId).length > 0;
-    const hasCancelableWork =
-      sessionState.running ||
-      sessionState.compacting ||
-      hasResponderWork ||
-      services.interruptible.hasWork();
+    const hasCancelableWork = services.cancel.hasCancelableWork();
 
     if (doublePress && hasCancelableWork) {
       clearEscapeCancellation();
       services.overlay.cancelBlockingPrompt();
-      services.interruptible.cancelAll();
-      void services.session.cancelAll().then((result) => {
+      void services.cancel.cancelAll().then((outcome) => {
         clearEscapeCancellation();
-        const text = result.ok
+        const text = outcome.ok
           ? "Cancelled turn and Responder jobs"
           : "Cancellation completed with job stop failures — open Jobs for details";
-        if (result.ok) {
+        if (outcome.ok) {
           notify(services, text, {
             key: "escape-cancel-all",
             durationMs: 2400,

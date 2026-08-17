@@ -10,6 +10,7 @@ import {
   readStreamLines,
   streamIdleBudgets,
 } from "./http.js";
+import { generationFetch } from "./operation-usage.js";
 import {
   parseOllamaToolCalls,
   toOllamaToolMessages,
@@ -17,6 +18,8 @@ import {
 } from "./adapters/ollama-tools.js";
 import { modelContextWindow, parseOllamaUsage } from "./token-usage.js";
 import { resolveSampling } from "./sampling.js";
+import { compileRequestPlan } from "./request-plan.js";
+import { OLLAMA_STREAM_TERMINAL, PartialStreamError } from "./stream-terminal.js";
 import type { TokenUsage } from "../types.js";
 
 /**
@@ -59,6 +62,42 @@ function base(auth: ProviderAuth): string {
   );
 }
 
+function ollamaChatBody(
+  request: CompletionRequest,
+  auth: ProviderAuth,
+  stream: boolean,
+): { model: string; body: Record<string, unknown> } {
+  const model = request.model ?? defaultModels.ollama;
+  const plan = compileRequestPlan({
+    provider: "ollama",
+    model,
+    messages: request.messages,
+    stream,
+    endpoint: base(auth),
+    reasoning: request.thinking,
+    tools: request.tools,
+    temperature: request.temperature,
+    maxTokens: request.maxTokens,
+  });
+  const body: Record<string, unknown> = {
+    model,
+    messages: toOllamaToolMessages(
+      imageCapableMessages("ollama", model, [...plan.timeline.messages]),
+    ),
+    stream,
+    options: ollamaOptions(model, {
+      temperature: plan.controls.temperature,
+      maxTokens: plan.controls.requestedMaxTokens,
+      reasoningEnabled: Boolean(plan.controls.reasoning?.enabled),
+    }),
+    keep_alive: OLLAMA_KEEP_ALIVE,
+  };
+  if (plan.tools.definitions.length) {
+    body.tools = toOllamaTools([...plan.tools.definitions]);
+  }
+  return { model, body };
+}
+
 export const ollamaProvider: LlmProvider = {
   id: "ollama",
   displayName: "Ollama",
@@ -73,23 +112,8 @@ export const ollamaProvider: LlmProvider = {
     request: CompletionRequest,
     auth: ProviderAuth,
   ): Promise<CompletionResult> {
-    const model = request.model ?? defaultModels.ollama;
-    const body: Record<string, unknown> = {
-      model,
-      messages: toOllamaToolMessages(
-        imageCapableMessages("ollama", model, request.messages),
-      ),
-      stream: false,
-      options: ollamaOptions(model, {
-        ...request,
-        reasoningEnabled: Boolean(request.thinking?.enabled),
-      }),
-      keep_alive: OLLAMA_KEEP_ALIVE,
-    };
-    if (request.tools?.length) {
-      body.tools = toOllamaTools(request.tools);
-    }
-    const response = await fetch(`${base(auth)}/api/chat`, {
+    const { model, body } = ollamaChatBody(request, auth, false);
+    const response = await generationFetch(`${base(auth)}/api/chat`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: { "content-type": "application/json" },
@@ -132,23 +156,8 @@ export const ollamaProvider: LlmProvider = {
     auth: ProviderAuth,
     onToken: (token: string) => void,
   ): Promise<CompletionResult> {
-    const model = request.model ?? defaultModels.ollama;
-    const body: Record<string, unknown> = {
-      model,
-      messages: toOllamaToolMessages(
-        imageCapableMessages("ollama", model, request.messages),
-      ),
-      stream: true,
-      options: ollamaOptions(model, {
-        ...request,
-        reasoningEnabled: Boolean(request.thinking?.enabled),
-      }),
-      keep_alive: OLLAMA_KEEP_ALIVE,
-    };
-    if (request.tools?.length) {
-      body.tools = toOllamaTools(request.tools);
-    }
-    const response = await fetch(`${base(auth)}/api/chat`, {
+    const { model, body } = ollamaChatBody(request, auth, true);
+    const response = await generationFetch(`${base(auth)}/api/chat`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: { "content-type": "application/json" },
@@ -225,16 +234,14 @@ export const ollamaProvider: LlmProvider = {
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }
-    if (!full.trim() && toolCalls.length === 0) {
-      throw new Error("Ollama returned no completion text");
+    let ollamaToolArgumentBytes = 0;
+    for (const call of toolCalls) {
+      ollamaToolArgumentBytes += JSON.stringify(call.args ?? {}).length;
     }
-    return {
-      text: full,
-      provider: "ollama",
-      model,
-      ...(toolCalls.length ? { toolCalls } : {}),
-      ...(toolCalls.length ? { finishReason: "tool_calls" } : {}),
-      ...(streamUsage ? { usage: streamUsage } : {}),
-    };
+    throw new PartialStreamError("Ollama", OLLAMA_STREAM_TERMINAL.proofs, {
+      answerBytes: full.length,
+      reasoningBytes: 0,
+      toolArgumentBytes: ollamaToolArgumentBytes,
+    });
   },
 };
