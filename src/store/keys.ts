@@ -138,9 +138,18 @@ async function writeFallback(keys: FallbackKeys): Promise<void> {
     const dir = dirname(keysFile);
     await mkdir(dir, { recursive: true });
     await fixOwner(dir);
-    await writeFile(keysFile, `${JSON.stringify(keys, null, 2)}\n`, { mode: 0o600 });
+    const content = `${JSON.stringify(keys, null, 2)}\n`;
+    await writeFile(keysFile, content, { mode: 0o600 });
     if (process.platform !== 'win32') {
-      await chmod(keysFile, 0o600);
+      try {
+        await chmod(keysFile, 0o600);
+      } catch {
+        try {
+          await rm(keysFile, { force: true });
+          await writeFile(keysFile, content, { mode: 0o600 });
+        } catch {
+        }
+      }
     }
     await fixOwner(keysFile);
   } catch (err: any) {
