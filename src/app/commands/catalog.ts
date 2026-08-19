@@ -71,7 +71,10 @@ export const slashCommands: SlashCommand[] = [
     usage: "[on|off|none|minimal|low|medium|high|xhigh|max]",
     description: "alias for /effort",
   },
-  { command: "/clear", description: "clear context" },
+  {
+    command: "/clear",
+    description: "delete this session everywhere and start fresh",
+  },
   {
     command: "/new",
     description: "start a fresh session (clear context, no history carryover)",
@@ -149,10 +152,6 @@ export const slashCommands: SlashCommand[] = [
     description: "control permission level for tool confirmation prompts",
   },
   { command: "/update", description: "check for updates" },
-  {
-    command: "/clean",
-    description: "clear screen and reset chat (fresh start)",
-  },
   { command: "/exit", description: "quit" },
   { command: "/quit", description: "alias for /exit" },
   { command: "/help", description: "list commands" },
@@ -165,17 +164,6 @@ export const slashCommands: SlashCommand[] = [
 // Well-known models per provider (refreshed May 2026)
 /** Curated model choices used by both frontends. */
 export const knownModels: Record<string, string[]> = {
-  groq: [
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-safeguard-20b",
-    "qwen/qwen3-32b",
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "groq/compound-mini",
-    "groq/compound",
-  ],
   gemini: [
     "gemini-3.5-flash",
     "gemini-3.1-pro-preview",
@@ -246,11 +234,6 @@ export const knownModels: Record<string, string[]> = {
     "claude-opus-4-8",
     "glm-5.2",
     "gpt-5.5",
-  ],
-  kimchi: [
-    "kimi-k2.6",
-    "minimax-m2.7",
-    "nemotron-3-super-fp4",
   ],
   "aws-mantle": [],
   bynara: [

@@ -36,7 +36,6 @@ export const providerAliases: Record<string, ProviderId> = {
   zen: "free",
   opencode: "free",
   "opencode-zen": "free",
-  groq: "groq",
   gemini: "gemini",
   google: "gemini",
   openrouter: "openrouter",
@@ -49,8 +48,6 @@ export const providerAliases: Record<string, ProviderId> = {
   agentrouter: "agentrouter",
   "agent-router": "agentrouter",
   router: "agentrouter",
-  kimchi: "kimchi",
-  castai: "kimchi",
   "aws-mantle": "aws-mantle",
   ollama: "ollama",
   local: "ollama",
@@ -92,14 +89,12 @@ export const providerAliases: Record<string, ProviderId> = {
 
 export const defaultModels: Record<ProviderId, string> = {
   free: "free-1/deepseek-v4-flash-free",
-  groq: "llama-3.3-70b-versatile",
   gemini: "gemini-3.5-flash",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-5.4-mini",
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "openai/gpt-oss-20b",
   agentrouter: "claude-opus-4-6",
-  kimchi: "kimi-k2.6",
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.1:8b",
   bynara: "mimo-v2.5-free",
@@ -118,15 +113,6 @@ export const defaultModels: Record<ProviderId, string> = {
 };
 
 const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
-  groq: {
-    "gemma2-9b-it": "llama-3.1-8b-instant",
-    "moonshotai/kimi-k2-instruct": "openai/gpt-oss-120b",
-    "deepseek-r1-distill-llama-70b": "llama-3.3-70b-versatile",
-    "llama3-70b-8192": "llama-3.3-70b-versatile",
-    "llama3-8b-8192": "llama-3.1-8b-instant",
-    "meta-llama/llama-4-maverick-17b-128e-instruct":
-      "meta-llama/llama-4-scout-17b-16e-instruct",
-  },
   gemini: {
     "gemini-2.0-flash": "gemini-3.5-flash",
     "gemini-2.0-flash-lite": "gemini-3.1-flash-lite",
@@ -161,14 +147,12 @@ const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string
 
 export const envVars: Record<ProviderId, string | undefined> = {
   free: "FREE_API_KEY",
-  groq: "GROQ_API_KEY",
   gemini: "GEMINI_API_KEY",
   openrouter: "OPENROUTER_API_KEY",
   openai: "OPENAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
   nvidia: "NVIDIA_API_KEY",
   agentrouter: "AGENTROUTER_API_KEY",
-  kimchi: "CASTAI_API_KEY",
   "aws-mantle": "ANTHROPIC_API_KEY",
   ollama: "OLLAMA_HOST",
   bynara: "BYNARA_API_KEY",

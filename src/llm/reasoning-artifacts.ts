@@ -27,6 +27,7 @@ export interface CreateReasoningArtifactInput {
 /** Metadata needed at a serializer boundary to decide whether replay is safe. */
 export interface ReasoningArtifactReplayContext {
   readonly hasToolCalls?: boolean | undefined;
+  readonly forceScope?: boolean | undefined;
 }
 
 function immutableClone(value: unknown): unknown {
@@ -511,11 +512,13 @@ export function reasoningArtifactReplayDecision(
   target: ReasoningArtifactReplayTarget,
   context: ReasoningArtifactReplayContext = {},
 ): ReasoningArtifactReplayDecision {
-  if (artifact.replay.scope === "none") {
-    return decision(artifact, target, "omitted", "replay-disabled");
-  }
-  if (artifact.replay.scope === "tool-turn" && !context.hasToolCalls) {
-    return decision(artifact, target, "omitted", "not-a-tool-turn");
+  if (!context.forceScope) {
+    if (artifact.replay.scope === "none") {
+      return decision(artifact, target, "omitted", "replay-disabled");
+    }
+    if (artifact.replay.scope === "tool-turn" && !context.hasToolCalls) {
+      return decision(artifact, target, "omitted", "not-a-tool-turn");
+    }
   }
 
   const source = artifact.provenance;

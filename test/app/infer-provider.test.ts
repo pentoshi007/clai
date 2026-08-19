@@ -14,12 +14,12 @@ describe("inferProviderForModel", () => {
     expect(inferProviderForModel("gemini-3.5-flash")).toBe("gemini");
   });
 
-  it("maps a groq model to groq", () => {
-    expect(inferProviderForModel("llama-3.3-70b-versatile")).toBe("groq");
+  it("maps an nvidia llama model to nvidia", () => {
+    expect(inferProviderForModel("meta/llama-3.3-70b-instruct")).toBe("nvidia");
   });
 
-  it("maps a kimchi model to kimchi", () => {
-    expect(inferProviderForModel("kimi-k2.6")).toBe("kimchi");
+  it("maps a kimi gateway model to bynara", () => {
+    expect(inferProviderForModel("kimi-k2.6")).toBe("bynara");
   });
 
   it("maps a bynara model to bynara", () => {

@@ -14,6 +14,7 @@ import {
   type TranscriptWindow,
 } from "../feed/transcript-window.js";
 import { createInkTheme, type InkTheme } from "../render/ink-theme.js";
+import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 
 export interface FeedSnapshot {
   readonly ink: InkTheme;
@@ -40,7 +41,12 @@ export function introInputFor(services: AppServices): IntroBlockInput {
     model: session.model ?? cfg.defaultModel,
     permissions: cfg.permissions ?? "default",
     workdir: displayWorkdir(safeCwd()),
-    variant: cfg.thinking.enabled ? cfg.thinking.effort : "off",
+    variant:
+      effectiveThinkingEffort(
+        session.provider ?? cfg.defaultProvider,
+        session.model ?? cfg.defaultModel,
+        cfg.thinking,
+      ) ?? "off",
   };
 }
 

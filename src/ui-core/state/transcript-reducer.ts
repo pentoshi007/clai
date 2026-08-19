@@ -113,6 +113,7 @@ function joinThinkingChunks(existing: string, incoming: string): string {
 function lastAdjacentThinking(
   state: TranscriptState,
   turnId: string | undefined,
+  reasoningId?: string | undefined,
 ): ThinkingItem | undefined {
   let index = state.order.length - 1;
   let last = index >= 0 ? state.byId.get(state.order[index]!) : undefined;
@@ -125,7 +126,86 @@ function lastAdjacentThinking(
     last = index >= 0 ? state.byId.get(state.order[index]!) : undefined;
   }
   if (last?.kind !== "thinking" || last.turnId !== turnId) return undefined;
+  if (reasoningId !== undefined && last.reasoningId !== undefined) {
+    return last.reasoningId === reasoningId ? last : undefined;
+  }
   return last;
+}
+
+function thinkingRowOwnedBy(
+  state: TranscriptState,
+  turnId: string | undefined,
+  reasoningId: string,
+): ThinkingItem | undefined {
+  for (let index = state.order.length - 1; index >= 0; index -= 1) {
+    const item = state.byId.get(state.order[index]!);
+    if (
+      item?.kind === "thinking" &&
+      item.turnId === turnId &&
+      item.reasoningId === reasoningId
+    ) {
+      return item;
+    }
+  }
+  return undefined;
+}
+
+function finalizedThinkingContent(
+  existing: string,
+  final: string,
+  reasoningId?: string | undefined,
+): string {
+  if (!final.trim()) return existing;
+  if (reasoningId !== undefined) return final;
+  return existing.trim().endsWith(final.trim()) ? existing : final;
+}
+
+function ownedPendingId(
+  state: TranscriptState,
+  kind: "assistant" | "thinking",
+  reasoningId?: string | undefined,
+): string | undefined {
+  const pendingId =
+    kind === "assistant" ? state.pendingAssistantId : state.pendingThinkingId;
+  if (pendingId === undefined || kind === "assistant") return pendingId;
+  if (reasoningId === undefined) return pendingId;
+  const pending = state.byId.get(pendingId);
+  if (pending?.kind !== "thinking" || pending.reasoningId === undefined) {
+    return pendingId;
+  }
+  return pending.reasoningId === reasoningId ? pendingId : undefined;
+}
+
+function turnHasThinkingRow(
+  state: TranscriptState,
+  turnId: string | undefined,
+): boolean {
+  for (const id of state.order) {
+    const item = state.byId.get(id);
+    if (item?.kind === "thinking" && item.turnId === turnId) return true;
+  }
+  return false;
+}
+
+function firstAssistantIdInTurn(
+  state: TranscriptState,
+  turnId: string | undefined,
+): string | undefined {
+  for (const id of state.order) {
+    const item = state.byId.get(id);
+    if (item?.kind === "assistant" && item.turnId === turnId) return id;
+  }
+  return undefined;
+}
+
+function thinkingHoistTarget(
+  state: TranscriptState,
+  turnId: string | undefined,
+): string | undefined {
+  const pending = state.pendingAssistantId;
+  if (pending && isEmptyAssistantPlaceholder(state, pending)) return pending;
+  if (turnHasThinkingRow(state, turnId)) return undefined;
+  return firstAssistantIdInTurn(state, turnId);
 }
 
 function appendDelta(
@@ -133,9 +213,10 @@ function appendDelta(
   event: AnyAppEvent,
   kind: "assistant" | "thinking",
   text: string,
+  reasoningId?: string | undefined,
 ): TranscriptState {
   const pendingKey = kind === "assistant" ? "pendingAssistantId" : "pendingThinkingId";
-  const pendingId = state[pendingKey];
+  const pendingId = ownedPendingId(state, kind, reasoningId);
   if (pendingId) {
     if (kind === "assistant") {
       const pushed = pushStripChunk(
@@ -154,7 +235,7 @@ function appendDelta(
     }));
   }
   if (kind === "thinking") {
-    const mergeTarget = lastAdjacentThinking(state, event.turnId);
+    const mergeTarget = lastAdjacentThinking(state, event.turnId, reasoningId);
     if (mergeTarget) {
       const reopened = updateItem(state, mergeTarget.id, (item) => ({
         ...(item as ThinkingItem),
@@ -189,16 +270,14 @@ function appendDelta(
     kind: "thinking",
     content: text,
     streaming: true,
+    ...(reasoningId !== undefined ? { reasoningId } : {}),
   };
-  // Some models (e.g. Kimi K2-thinking) send reasoning_content tokens *after*
-  // content tokens. Hoisting is only safe while the assistant row is still an
-  // empty placeholder: moving thinking above prose the user has already read
-  // makes painted rows jump and falsifies chronology.
-  let next: TranscriptState = { ...appendItem(state, item), [pendingKey]: id } as TranscriptState;
-  if (state.pendingAssistantId && isEmptyAssistantPlaceholder(state, state.pendingAssistantId)) {
-    next = moveItemBefore(next, id, state.pendingAssistantId);
-  }
-  return next;
+  const next: TranscriptState = {
+    ...appendItem(state, item),
+    [pendingKey]: id,
+  } as TranscriptState;
+  const hoistTarget = thinkingHoistTarget(state, event.turnId);
+  return hoistTarget ? moveItemBefore(next, id, hoistTarget) : next;
 }
 
 function finalizeMessage(
@@ -206,9 +285,15 @@ function finalizeMessage(
   event: AnyAppEvent,
   kind: "assistant" | "thinking",
   text: string,
+  reasoningId?: string | undefined,
 ): TranscriptState {
   const pendingKey = kind === "assistant" ? "pendingAssistantId" : "pendingThinkingId";
-  const pendingId = state[pendingKey];
+  const ownedId =
+    kind === "thinking" && reasoningId !== undefined
+      ? (thinkingRowOwnedBy(state, event.turnId, reasoningId)?.id ??
+        ownedPendingId(state, kind, reasoningId))
+      : state[pendingKey];
+  const pendingId = ownedId;
   let next = state;
   if (pendingId) {
     next = updateItem(next, pendingId, (item) => {
@@ -216,13 +301,12 @@ function finalizeMessage(
         return { ...(item as AssistantItem), text, streaming: false };
       }
       const existing = (item as ThinkingItem).content;
-      const content =
-        !text.trim() || existing.trim().endsWith(text.trim()) ? existing : text;
+      const content = finalizedThinkingContent(existing, text, reasoningId);
       return { ...(item as ThinkingItem), content, streaming: false };
     });
   } else {
     if (kind === "thinking") {
-      const mergeTarget = lastAdjacentThinking(next, event.turnId);
+      const mergeTarget = lastAdjacentThinking(next, event.turnId, reasoningId);
       if (mergeTarget) {
         next = updateItem(next, mergeTarget.id, (item) => {
           const existing = (item as ThinkingItem).content;
@@ -442,7 +526,13 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
 
     case "thinking-delta":
       return {
-        ...appendDelta(withSeq, event, "thinking", event.payload.text),
+        ...appendDelta(
+          withSeq,
+          event,
+          "thinking",
+          event.payload.text,
+          event.payload.reasoningId,
+        ),
         runningStatus: "thinking",
       };
 
@@ -454,7 +544,13 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       ) {
         return withSeq;
       }
-      return finalizeMessage(withSeq, event, "thinking", event.payload.content);
+      return finalizeMessage(
+        withSeq,
+        event,
+        "thinking",
+        event.payload.content,
+        event.payload.reasoningId,
+      );
     }
 
     case "notice":

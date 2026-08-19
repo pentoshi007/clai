@@ -30,10 +30,15 @@ import {
   type ContextLimitSpec,
   type ProfileReplayScope,
   type ProfileTriState,
+  type OutputBudgetPolicy,
+  type ReasoningCapability,
   type ReasoningControlDialect,
   type ReasoningGeneration,
+  type SamplingPolicySpec,
 } from "./provider-profile.js";
+import type { StreamTerminalPolicy } from "./stream-terminal.js";
 import { providerWireApi, resolveBuiltInProfile } from "./provider-profiles.js";
+import { customProviderProfileFor } from "./custom-provider-profile.js";
 
 /**
  * Canonical request plan (doc 03 §"Canonical request plan", doc 06 §3).
@@ -67,7 +72,7 @@ export type RequestPlanControlSuppression =
 export interface RequestPlanControls {
   readonly reasoning?: ReasoningPreference | undefined;
   readonly controlSuppression?: RequestPlanControlSuppression | undefined;
-  readonly temperature: number;
+  readonly temperature?: number | undefined;
   readonly topP?: number | undefined;
   readonly requestedMaxTokens?: number | undefined;
   readonly stream: boolean;
@@ -118,6 +123,11 @@ export interface RequestPlanRoutePolicy {
   readonly replayScope: ProfileReplayScope;
   readonly cache: CachePolicySpec;
   readonly limits: ContextLimitSpec;
+  readonly reasoning: ReasoningCapability;
+  readonly sampling: SamplingPolicySpec;
+  readonly outputBudget: OutputBudgetPolicy;
+  readonly terminal: StreamTerminalPolicy;
+  readonly acceptedParameters?: readonly string[] | undefined;
 }
 
 export interface RequestPlanV1 {
@@ -226,7 +236,7 @@ function cacheAffectingValue(
   controls: {
     reasoningEnabled: boolean;
     effort: string;
-    temperature: number;
+    temperature?: number | undefined;
     topP?: number | undefined;
   },
 ): string {
@@ -270,6 +280,21 @@ function cacheSection(
  * Deterministically compile one immutable plan. Compilation is pure: the same
  * inputs always produce a deep-equal plan with identical section hashes.
  */
+const warnedSamplingOmissions = new Set<string>();
+
+function warnSamplingFieldNotModifiable(
+  provider: string,
+  model: string,
+  field: string,
+): void {
+  const key = `${provider}:${model}:${field}`;
+  if (warnedSamplingOmissions.has(key)) return;
+  warnedSamplingOmissions.add(key);
+  process.emitWarning(
+    `${provider} declares ${field} is not modifiable for ${model}; the requested value was dropped.`,
+  );
+}
+
 export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV1 {
   const messages = Object.freeze([...input.messages]);
   const wire = providerWireApi(input.provider, input.model);
@@ -314,11 +339,6 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
 
   const reasoningEnabled = Boolean(input.reasoning?.enabled);
   const effort = input.reasoning?.effort ?? "medium";
-  const controlSuppression = isReasoningUnsupported(input.provider, input.model)
-    ? ("observed-rejection" as const)
-    : reasoningEnabled && !modelSupportsThinking(input.provider, input.model)
-      ? ("capability-denied" as const)
-      : undefined;
   const sampling = resolveSampling({
     provider: input.provider,
     model: input.model,
@@ -332,12 +352,35 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
         model: input.model,
         endpointHash: target.endpointHash,
       })
-    : resolveProviderProfile({
+    : (customProviderProfileFor({
+        provider: input.provider,
+        model: input.model,
+        baseUrl: input.endpoint ?? "",
+      }) ??
+      resolveProviderProfile({
         provider: input.provider,
         model: input.model,
         wireApi: wire,
         endpointHash: target.endpointHash,
-      });
+      }));
+
+  const samplingOmit = new Set(profile.sampling.omit ?? []);
+  const emittedTemperature = samplingOmit.has("temperature")
+    ? undefined
+    : sampling.temperature;
+  const emittedTopP = samplingOmit.has("top_p") ? undefined : sampling.topP;
+  if (input.temperature !== undefined && emittedTemperature === undefined) {
+    warnSamplingFieldNotModifiable(input.provider, input.model, "temperature");
+  }
+
+  const controlDeclared = profile.reasoning.control.status === "supported";
+  const controlSuppression = isReasoningUnsupported(input.provider, input.model)
+    ? ("observed-rejection" as const)
+    : reasoningEnabled &&
+        !controlDeclared &&
+        !modelSupportsThinking(input.provider, input.model)
+      ? ("capability-denied" as const)
+      : undefined;
 
   const decisions: RequestPlanArtifactDecision[] = [];
   const replayedArtifactParts: string[] = [];
@@ -382,8 +425,8 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
   const settingsValueInput = {
     reasoningEnabled,
     effort,
-    temperature: sampling.temperature,
-    topP: sampling.topP,
+    temperature: emittedTemperature,
+    topP: emittedTopP,
   };
 
   const cacheSections: RequestPlanCacheSection[] = [
@@ -436,8 +479,10 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     controls: Object.freeze({
       ...(input.reasoning ? { reasoning: input.reasoning } : {}),
       ...(controlSuppression ? { controlSuppression } : {}),
-      temperature: sampling.temperature,
-      ...(sampling.topP !== undefined ? { topP: sampling.topP } : {}),
+      ...(emittedTemperature !== undefined
+        ? { temperature: emittedTemperature }
+        : {}),
+      ...(emittedTopP !== undefined ? { topP: emittedTopP } : {}),
       ...(input.maxTokens !== undefined
         ? { requestedMaxTokens: input.maxTokens }
         : {}),
@@ -455,6 +500,13 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
       replayScope: profile.reasoning.replayScope,
       cache: profile.cache,
       limits: profile.limits,
+      reasoning: profile.reasoning,
+      sampling: profile.sampling,
+      outputBudget: profile.outputBudget,
+      terminal: profile.terminal,
+      ...(profile.capabilities.acceptedParameters
+        ? { acceptedParameters: profile.capabilities.acceptedParameters }
+        : {}),
     }),
     budget: Object.freeze({ plannedAdmissions: 1 as const }),
     cache: Object.freeze({

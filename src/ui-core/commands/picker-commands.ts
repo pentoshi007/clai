@@ -8,6 +8,8 @@ import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
 import {
   effectiveThinkingEffort,
   modelReasoningEfforts,
+  modelReasoningEvidence,
+  modelReasoningIsMandatory,
   modelSupportsThinking,
 } from "../../llm/capabilities.js";
 import { assertProvider } from "../../llm/provider.js";
@@ -423,8 +425,7 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
     services.overlay.openPicker(
       {
         title: "Providers",
-        // Search provider name + model name.
-        searchDescription: true,
+        searchDescription: false,
         options,
       },
       (value) => {
@@ -931,21 +932,45 @@ export function handleReasoning(services: AppServices, invocation: CommandInvoca
   const current = getConfig().thinking;
   const provider = services.session.getState().provider ?? getConfig().defaultProvider;
   const model = services.session.getState().model ?? "";
-  const supported = modelSupportsThinking(provider, model) ? "supported" : "model may ignore it";
-  const advertised = modelReasoningEfforts(provider, model);
-  const advertisedHint = advertised?.length
-    ? ` · model accepts: ${advertised.join(", ")}`
-    : "";
-  const options: PickerOption[] = Object.entries(REASONING_DESCRIPTIONS).map(([value, description]) => ({
+  const options: PickerOption[] = reasoningOptionValues(provider, model).map((value) => ({
     value,
     label: value,
-    description,
+    description: REASONING_DESCRIPTIONS[value] ?? "",
     active: value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
   }));
-  services.overlay.openPicker({ title: `Reasoning · ${supported}${advertisedHint}`, options }, (value) => {
-    applyReasoning(services, value);
-    services.overlay.close();
-  });
+  services.overlay.openPicker(
+    { title: reasoningPickerTitle(provider, model), options },
+    (value) => {
+      applyReasoning(services, value);
+      services.overlay.close();
+    },
+  );
+}
+
+function reasoningOptionValues(
+  provider: ProviderId,
+  model: string,
+): readonly string[] {
+  const scale = Object.keys(REASONING_DESCRIPTIONS).filter((value) => value !== "off");
+  if (
+    !modelSupportsThinking(provider, model) &&
+    modelReasoningEvidence(provider, model) !== "unknown"
+  ) {
+    return ["off"];
+  }
+  const accepted = modelReasoningEfforts(provider, model) ?? [];
+  const efforts =
+    accepted.length > 0 ? scale.filter((value) => accepted.includes(value)) : scale;
+  return modelReasoningIsMandatory(model) ? efforts : ["off", ...efforts];
+}
+
+function reasoningPickerTitle(provider: ProviderId, model: string): string {
+  const status = modelReasoningIsMandatory(model)
+    ? "always on"
+    : modelSupportsThinking(provider, model)
+      ? "supported"
+      : "model may ignore it";
+  return `Reasoning · ${status} · via ${modelReasoningEvidence(provider, model)}`;
 }
 
 function applyReasoning(services: AppServices, value: string): void {
@@ -963,9 +988,22 @@ function applyReasoning(services: AppServices, value: string): void {
   if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(lower)) {
     setThinking({ enabled: true, effort: lower as ReasoningEffort });
     services.session.notice("info", `thinking → ${lower}`);
+    warnUnacceptedEffort(services, lower);
     return;
   }
   services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
+}
+
+function warnUnacceptedEffort(services: AppServices, effort: string): void {
+  const provider = services.session.getState().provider ?? getConfig().defaultProvider;
+  const model = services.session.getState().model ?? "";
+  if (!model) return;
+  const accepted = modelReasoningEfforts(provider, model) ?? [];
+  if (accepted.length === 0 || accepted.includes(effort)) return;
+  services.session.notice(
+    "warn",
+    `${provider}/${model} advertises ${accepted.join(", ")} — ${effort} will be mapped to the nearest of those`,
+  );
 }
 
 export async function handleHistory(services: AppServices, invocation?: CommandInvocation): Promise<void> {

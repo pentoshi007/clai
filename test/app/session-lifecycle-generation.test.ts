@@ -14,7 +14,7 @@ const succeeded = (): TurnOutcome =>
 
 function primeCompactionSnapshot(session: SessionController): void {
   const snapshot: SuccessfulRequestSnapshot = {
-    provider: "groq",
+    provider: "nvidia",
     model: "test-model",
     messages: [
       { role: "system", content: "main system prompt" },
@@ -48,7 +48,7 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
       async runTurn(_request: RunTurnRequest, handlers: RunTurnHandlers) {
         emitLate = () => {
           handlers.onSuccessfulRequest?.({
-            provider: "groq",
+            provider: "nvidia",
             model: "test-model",
             messages: [{ role: "user", content: "old prompt" }],
           });

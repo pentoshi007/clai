@@ -214,6 +214,7 @@ export const agentrouterProvider: LlmProvider = {
               toolChoice: request.toolChoice,
               parallelToolCalls: request.parallelToolCalls,
               reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+              ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
             });
             return toCompletionResult("agentrouter", model, payload);
           },
@@ -273,6 +274,7 @@ export const agentrouterProvider: LlmProvider = {
               toolChoice: request.toolChoice,
               parallelToolCalls: request.parallelToolCalls,
               reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+              ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
             });
             return toCompletionResult("agentrouter", model, payload);
           },

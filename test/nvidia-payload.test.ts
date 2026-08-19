@@ -3,11 +3,6 @@ import {
   buildReasoningPayload,
   classifyNvidiaModel,
 } from "../src/llm/http.js";
-import {
-  GROQ_VIABLE_COMPLETION_TOKENS,
-  groqInputTokenBudget,
-  groqMaxTokens,
-} from "../src/llm/groq.js";
 import { geminiBody } from "../src/llm/gemini.js";
 
 describe("NVIDIA NIM model classification", () => {
@@ -153,73 +148,7 @@ describe("NVIDIA NIM model classification", () => {
     });
   });
 
-  it("does not send Groq reasoning_effort to non-reasoning Groq models", () => {
-    expect(
-      buildReasoningPayload(
-        { enabled: true, effort: "medium" },
-        "groq",
-        "llama-3.3-70b-versatile",
-      ),
-    ).toEqual({});
-  });
-
-  it("maps Groq Qwen3 reasoning to Qwen's none/default values", () => {
-    expect(
-      buildReasoningPayload(
-        { enabled: true, effort: "high" },
-        "groq",
-        "qwen/qwen3-32b",
-      ),
-    ).toEqual({ reasoning_effort: "default" });
-    expect(
-      buildReasoningPayload(
-        { enabled: false, effort: "medium" },
-        "groq",
-        "qwen/qwen3-32b",
-      ),
-    ).toEqual({ reasoning_effort: "none" });
-  });
-
-  it("keeps Groq GPT-OSS on low/medium/high and caps large output budgets", () => {
-    expect(
-      buildReasoningPayload(
-        { enabled: true, effort: "low" },
-        "groq",
-        "openai/gpt-oss-120b",
-      ),
-    ).toEqual({ reasoning_effort: "low", include_reasoning: true });
-    // Plain chat keeps the TPM guard.
-    expect(groqMaxTokens("openai/gpt-oss-120b", 8_192)).toBe(1_024);
-    expect(groqMaxTokens("openai/gpt-oss-20b", 8_192)).toBe(2_048);
-    expect(groqMaxTokens("qwen/qwen3-32b", 8_192)).toBe(2_048);
-  });
-
-  it("LLM-004 — never starves a tool or reasoning step below a viable floor", () => {
-    // A tool step asks for 24 576; the guard may reduce it, but not below the
-    // floor that can still close a tool-call JSON.
-    expect(
-      groqMaxTokens("openai/gpt-oss-120b", 24_576, { toolsAttached: true }),
-    ).toBe(GROQ_VIABLE_COMPLETION_TOKENS);
-    expect(
-      groqMaxTokens("qwen/qwen3-32b", 24_576, { reasoningEnabled: true }),
-    ).toBe(GROQ_VIABLE_COMPLETION_TOKENS);
-    // A smaller explicit request is still honored as-is.
-    expect(
-      groqMaxTokens("openai/gpt-oss-120b", 4_096, { toolsAttached: true }),
-    ).toBe(4_096);
-    // Models without a TPM guard pass the request through untouched.
-    expect(
-      groqMaxTokens("llama-3.3-70b-versatile", 24_576, { toolsAttached: true }),
-    ).toBe(24_576);
-  });
-
-  it("reserves input headroom for Groq's low-TPM models", () => {
-    expect(groqInputTokenBudget("qwen/qwen3-32b")).toBe(5_500);
-    expect(groqInputTokenBudget("openai/gpt-oss-20b")).toBe(7_500);
-    expect(groqInputTokenBudget("llama-3.3-70b-versatile")).toBeUndefined();
-  });
-
-  it("keeps OpenRouter reasoning payloads separate from Groq and NVIDIA fields", () => {
+  it("keeps OpenRouter reasoning payloads separate from the NVIDIA fields", () => {
     const payload = buildReasoningPayload(
       { enabled: true, effort: "high" },
       "openrouter",
@@ -280,13 +209,6 @@ describe("NVIDIA NIM model classification", () => {
         "openai/gpt-oss-20b",
       ),
     ).toEqual({ reasoning_effort: "low" });
-    expect(
-      buildReasoningPayload(
-        { enabled: false, effort: "low" },
-        "groq",
-        "openai/gpt-oss-20b",
-      ),
-    ).toEqual({ reasoning_effort: "low", include_reasoning: false });
   });
 
   it("does not send Gemini thinkingConfig to non-thinking Gemini models", () => {

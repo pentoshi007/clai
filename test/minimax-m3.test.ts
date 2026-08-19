@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nvidiaProvider } from "../src/llm/nvidia.js";
-import { kimchiProvider } from "../src/llm/kimchi.js";
+import { tokenrouterProvider } from "../src/llm/tokenrouter.js";
 
 describe("NVIDIA NIM minimax-m3 payload alignment", () => {
   afterEach(() => {
@@ -67,18 +67,18 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
     expect(body.top_p).toBe(0.95);
   });
 
-  it("applies MiniMax M3 sampling to Kimchi's short model ID", async () => {
+  it("applies MiniMax M3 sampling to a gateway's short model ID", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       choices: [{ message: { content: "hello world" } }],
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await kimchiProvider.complete(
+    await tokenrouterProvider.complete(
       {
         model: "minimax-m3",
         messages: [{ role: "user", content: "hello" }],
       },
-      { apiKey: "kimchi-test-key" },
+      { apiKey: "gateway-test-key" },
     );
 
     const options = fetchMock.mock.calls[0]![1] as RequestInit;

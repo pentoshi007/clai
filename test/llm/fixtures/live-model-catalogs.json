@@ -1,0 +1,826 @@
+{
+  "aws-mantle": {
+    "entries": [
+      {
+        "created": 1764460800,
+        "data_retention": {
+          "allowed_modes": [
+            "none",
+            "default",
+            "provider_data_share"
+          ],
+          "mode": "default",
+          "source": "model_default"
+        },
+        "id": "moonshotai.kimi-k2-thinking",
+        "object": "model",
+        "owned_by": "system",
+        "status": "available"
+      }
+    ],
+    "envelope": "data"
+  },
+  "bynara": {
+    "entries": [
+      {
+        "context_window": 512000,
+        "id": "agnes-2.0-flash",
+        "object": "model",
+        "owned_by": "byNara",
+        "reasoning": true,
+        "vision": true,
+        "weight": 0.1
+      },
+      {
+        "context_window": 1000000,
+        "id": "kimi-k3",
+        "object": "model",
+        "owned_by": "byNara",
+        "reasoning": true,
+        "vision": true,
+        "weight": 4
+      },
+      {
+        "context_window": 1000000,
+        "id": "qwen3.8-max",
+        "object": "model",
+        "owned_by": "byNara",
+        "reasoning": true,
+        "vision": true,
+        "weight": 1
+      }
+    ],
+    "envelope": "data"
+  },
+  "fireworks": {
+    "entries": [
+      {
+        "context_length": 262144,
+        "created": 1776455694,
+        "id": "accounts/fireworks/models/kimi-k2p6",
+        "kind": "HF_BASE_MODEL",
+        "object": "model",
+        "owned_by": "fireworks",
+        "supports_chat": true,
+        "supports_image_input": true,
+        "supports_tools": true
+      },
+      {
+        "created": 1781036419,
+        "id": "accounts/fireworks/models/qwen3p7-plus",
+        "kind": "CUSTOM_MODEL",
+        "object": "model",
+        "owned_by": "fireworks",
+        "supports_chat": true,
+        "supports_image_input": true,
+        "supports_tools": true
+      },
+      {
+        "context_length": 1048576,
+        "created": 1784483409,
+        "id": "accounts/fireworks/models/kimi-k3",
+        "kind": "HF_BASE_MODEL",
+        "object": "model",
+        "owned_by": "fireworks",
+        "supports_chat": true,
+        "supports_image_input": true,
+        "supports_tools": true
+      }
+    ],
+    "envelope": "data"
+  },
+  "free": {
+    "entries": [
+      {
+        "created": 1787118569,
+        "id": "kimi-k3",
+        "object": "model",
+        "owned_by": "opencode"
+      },
+      {
+        "created": 1787118569,
+        "id": "deepseek-v4-flash-free",
+        "object": "model",
+        "owned_by": "opencode"
+      }
+    ],
+    "envelope": "data"
+  },
+  "free-kilo": {
+    "entries": [
+      {
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Other"
+        },
+        "autoRouting": {
+          "models": [
+            "poolside/laguna-s-2.1:free",
+            "stepfun/step-3.7-flash:free"
+          ]
+        },
+        "context_length": 256000,
+        "created": 0,
+        "id": "kilo-auto/free",
+        "isFree": true,
+        "mayTrainOnYourPrompts": true,
+        "name": "Auto Free",
+        "preferredIndex": 3,
+        "supported_parameters": [
+          "max_tokens",
+          "temperature",
+          "tools",
+          "reasoning",
+          "include_reasoning"
+        ],
+        "top_provider": {
+          "context_length": 256000,
+          "is_moderated": false,
+          "max_completion_tokens": 10000
+        }
+      }
+    ],
+    "envelope": "data"
+  },
+  "gemini": {
+    "entries": [
+      {
+        "displayName": "Gemini 2.5 Flash",
+        "inputTokenLimit": 1048576,
+        "maxTemperature": 2,
+        "name": "models/gemini-2.5-flash",
+        "outputTokenLimit": 65536,
+        "temperature": 1,
+        "thinking": true,
+        "topK": 64,
+        "topP": 0.95,
+        "version": "001"
+      },
+      {
+        "displayName": "Gemini 2.5 Pro",
+        "inputTokenLimit": 1048576,
+        "maxTemperature": 2,
+        "name": "models/gemini-2.5-pro",
+        "outputTokenLimit": 65536,
+        "temperature": 1,
+        "thinking": true,
+        "topK": 64,
+        "topP": 0.95,
+        "version": "2.5"
+      }
+    ],
+    "envelope": "models"
+  },
+  "hetzner": {
+    "entries": [
+      {
+        "created": 1787118560,
+        "id": "Qwen/Qwen3.6-35B-A3B-FP8",
+        "max_model_len": 262144,
+        "object": "model",
+        "owned_by": "hetzner",
+        "parent": null,
+        "root": "/model"
+      }
+    ],
+    "envelope": "data"
+  },
+  "lightning": {
+    "entries": [
+      {
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": [
+            "text"
+          ]
+        },
+        "context_length": 1048576,
+        "id": "lightning-ai/deepseek-v4-pro",
+        "max_tokens": 0,
+        "name": "deepseek-v4-pro",
+        "provider": {
+          "name": "lightning-ai"
+        }
+      }
+    ],
+    "envelope": "data"
+  },
+  "meta": {
+    "entries": [
+      {
+        "created": 0,
+        "id": "muse-spark-1.2",
+        "object": "model",
+        "owned_by": "meta"
+      }
+    ],
+    "envelope": "data"
+  },
+  "modal": {
+    "entries": [
+      {
+        "base_model_id": "moonshotai/Kimi-K3",
+        "context_length": 1048576,
+        "created": 0,
+        "id": "moonshotai/Kimi-K3",
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "interleaved": {
+          "field": "reasoning_content"
+        },
+        "max_output_length": 1048576,
+        "name": "MoonshotAI: Kimi K3",
+        "object": "model",
+        "output_modalities": [
+          "text"
+        ],
+        "owned_by": "modal",
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": [
+              "low",
+              "high",
+              "max"
+            ]
+          }
+        ],
+        "supported_features": [
+          "tools",
+          "json_mode",
+          "structured_outputs",
+          "reasoning"
+        ],
+        "supported_sampling_parameters": [
+          "temperature",
+          "top_p",
+          "stop",
+          "max_tokens"
+        ]
+      }
+    ],
+    "envelope": "data"
+  },
+  "nvidia": {
+    "entries": [
+      {
+        "created": 735790403,
+        "id": "moonshotai/kimi-k2.6",
+        "object": "model",
+        "owned_by": "moonshotai"
+      },
+      {
+        "created": 735790403,
+        "id": "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "object": "model",
+        "owned_by": "nvidia"
+      }
+    ],
+    "envelope": "data"
+  },
+  "openai": {
+    "entries": [
+      {
+        "created": 1782228658,
+        "id": "gpt-5.6-luna",
+        "object": "model",
+        "owned_by": "system",
+        "shutdown_date": null
+      }
+    ],
+    "envelope": "data"
+  },
+  "openrouter": {
+    "entries": [
+      {
+        "architecture": {
+          "input_modalities": [
+            "text",
+            "image",
+            "video"
+          ],
+          "instruct_type": null,
+          "modality": "text+image+video->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Other"
+        },
+        "context_length": 1048576,
+        "created": 1784215858,
+        "default_parameters": {
+          "frequency_penalty": null,
+          "presence_penalty": null,
+          "repetition_penalty": null,
+          "temperature": null,
+          "top_k": null,
+          "top_p": 0.95
+        },
+        "id": "moonshotai/kimi-k3",
+        "name": "MoonshotAI: Kimi K3",
+        "reasoning": {
+          "default_effort": "max",
+          "default_enabled": true,
+          "mandatory": false,
+          "supported_efforts": [
+            "max",
+            "high",
+            "low"
+          ]
+        },
+        "supported_parameters": [
+          "frequency_penalty",
+          "include_reasoning",
+          "logit_bias",
+          "logprobs",
+          "max_tokens",
+          "min_p",
+          "presence_penalty",
+          "reasoning",
+          "reasoning_effort",
+          "repetition_penalty",
+          "response_format",
+          "seed",
+          "stop",
+          "structured_outputs",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_k",
+          "top_logprobs",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 1048576,
+          "is_moderated": false,
+          "max_completion_tokens": null
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "instruct_type": null,
+          "modality": "text+image->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Other"
+        },
+        "context_length": 262144,
+        "created": 1776699402,
+        "default_parameters": {
+          "frequency_penalty": null,
+          "presence_penalty": null,
+          "repetition_penalty": null,
+          "temperature": null,
+          "top_k": null,
+          "top_p": null
+        },
+        "id": "moonshotai/kimi-k2.6",
+        "name": "MoonshotAI: Kimi K2.6",
+        "reasoning": {
+          "default_enabled": true,
+          "mandatory": false
+        },
+        "supported_parameters": [
+          "frequency_penalty",
+          "include_reasoning",
+          "logit_bias",
+          "logprobs",
+          "max_tokens",
+          "min_p",
+          "parallel_tool_calls",
+          "presence_penalty",
+          "reasoning",
+          "repetition_penalty",
+          "response_format",
+          "seed",
+          "stop",
+          "structured_outputs",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_k",
+          "top_logprobs",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 262144,
+          "is_moderated": false,
+          "max_completion_tokens": 262144
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text",
+            "image",
+            "video"
+          ],
+          "instruct_type": null,
+          "modality": "text+image+video->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Qwen"
+        },
+        "context_length": 1000000,
+        "created": 1785731612,
+        "default_parameters": {},
+        "id": "qwen/qwen3.8-max",
+        "name": "Qwen: Qwen3.8 Max",
+        "reasoning": {
+          "default_effort": "xhigh",
+          "default_enabled": true,
+          "mandatory": true,
+          "supported_efforts": [
+            "xhigh",
+            "high",
+            "medium",
+            "low",
+            "minimal"
+          ]
+        },
+        "supported_parameters": [
+          "frequency_penalty",
+          "include_reasoning",
+          "logprobs",
+          "max_tokens",
+          "presence_penalty",
+          "reasoning",
+          "reasoning_effort",
+          "response_format",
+          "seed",
+          "stop",
+          "structured_outputs",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_k",
+          "top_logprobs",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 1000000,
+          "is_moderated": false,
+          "max_completion_tokens": 131072
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "instruct_type": null,
+          "modality": "text->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "DeepSeek"
+        },
+        "context_length": 1048576,
+        "created": 1777000679,
+        "default_parameters": {
+          "temperature": 1,
+          "top_p": 1
+        },
+        "id": "deepseek/deepseek-v4-pro",
+        "name": "DeepSeek: DeepSeek V4 Pro 0423",
+        "reasoning": {
+          "default_effort": "high",
+          "mandatory": false,
+          "supported_efforts": [
+            "xhigh",
+            "high"
+          ]
+        },
+        "supported_parameters": [
+          "frequency_penalty",
+          "include_reasoning",
+          "logit_bias",
+          "logprobs",
+          "max_completion_tokens",
+          "max_tokens",
+          "min_p",
+          "presence_penalty",
+          "reasoning",
+          "reasoning_effort",
+          "repetition_penalty",
+          "response_format",
+          "seed",
+          "stop",
+          "structured_outputs",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_k",
+          "top_logprobs",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 1048576,
+          "is_moderated": false,
+          "max_completion_tokens": 384000
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "instruct_type": null,
+          "modality": "text->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Other"
+        },
+        "context_length": 512288,
+        "created": 1780551208,
+        "default_parameters": {
+          "frequency_penalty": null,
+          "presence_penalty": null,
+          "repetition_penalty": null,
+          "temperature": 1,
+          "top_k": null,
+          "top_p": 0.95
+        },
+        "id": "nvidia/nemotron-3-ultra-550b-a55b",
+        "name": "NVIDIA: Nemotron 3 Ultra",
+        "reasoning": {
+          "default_effort": "high",
+          "default_enabled": true,
+          "mandatory": false,
+          "supported_efforts": [
+            "high",
+            "medium"
+          ],
+          "supports_max_tokens": true
+        },
+        "supported_parameters": [
+          "frequency_penalty",
+          "include_reasoning",
+          "logit_bias",
+          "max_tokens",
+          "min_p",
+          "presence_penalty",
+          "reasoning",
+          "reasoning_effort",
+          "repetition_penalty",
+          "response_format",
+          "seed",
+          "stop",
+          "structured_outputs",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_k",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 512288,
+          "is_moderated": false,
+          "max_completion_tokens": null
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text",
+            "image",
+            "video"
+          ],
+          "instruct_type": null,
+          "modality": "text+image+video->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Qwen"
+        },
+        "context_length": 1000000,
+        "created": 1785190561,
+        "default_parameters": {
+          "frequency_penalty": null,
+          "presence_penalty": null,
+          "repetition_penalty": null,
+          "temperature": null,
+          "top_k": null,
+          "top_p": null
+        },
+        "id": "qwen/qwen3.7-flash",
+        "name": "Qwen: Qwen3.7 Flash",
+        "reasoning": {
+          "default_enabled": true,
+          "mandatory": false,
+          "supports_max_tokens": true
+        },
+        "supported_parameters": [
+          "include_reasoning",
+          "logprobs",
+          "max_tokens",
+          "presence_penalty",
+          "reasoning",
+          "response_format",
+          "seed",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_logprobs",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 1000000,
+          "is_moderated": false,
+          "max_completion_tokens": 65536
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "instruct_type": null,
+          "modality": "text->text",
+          "output_modalities": [
+            "text"
+          ],
+          "tokenizer": "Other"
+        },
+        "context_length": 1048576,
+        "created": 1787086655,
+        "default_parameters": {
+          "temperature": 1,
+          "top_p": 0.95
+        },
+        "id": "z-ai/glm-5.3",
+        "name": "Z.ai: GLM 5.3",
+        "reasoning": {
+          "default_effort": "max",
+          "default_enabled": true,
+          "mandatory": true,
+          "supported_efforts": [
+            "max",
+            "high",
+            "low"
+          ]
+        },
+        "supported_parameters": [
+          "include_reasoning",
+          "max_tokens",
+          "reasoning",
+          "reasoning_effort",
+          "response_format",
+          "temperature",
+          "tool_choice",
+          "tools",
+          "top_k",
+          "top_p"
+        ],
+        "top_provider": {
+          "context_length": 1048576,
+          "is_moderated": false,
+          "max_completion_tokens": 131072
+        }
+      }
+    ],
+    "envelope": "data"
+  },
+  "orcarouter": {
+    "entries": [
+      {
+        "architecture": {
+          "input_modalities": [
+            "text",
+            "image"
+          ],
+          "output_modalities": [
+            "text"
+          ]
+        },
+        "context_length": 1048576,
+        "created": 1626777600,
+        "id": "kimi/kimi-k3",
+        "name": "MoonshotAI: Kimi K3",
+        "object": "model",
+        "owned_by": "custom",
+        "supported_endpoint_types": [
+          "openai",
+          "openai-response"
+        ],
+        "top_provider": {
+          "context_length": 1048576,
+          "max_completion_tokens": 0
+        }
+      },
+      {
+        "architecture": {
+          "input_modalities": [
+            "text"
+          ],
+          "output_modalities": null
+        },
+        "context_length": 1048576,
+        "created": 1626777600,
+        "id": "deepseek/deepseek-reasoner",
+        "max_completion_tokens": 384000,
+        "object": "model",
+        "owned_by": "custom",
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "top_provider": {
+          "context_length": 1048576,
+          "max_completion_tokens": 384000
+        }
+      }
+    ],
+    "envelope": "data"
+  },
+  "qwen-cloud": {
+    "entries": [
+      {
+        "created": 1786098182,
+        "id": "qwen3.8-max",
+        "object": "model",
+        "owned_by": "system"
+      },
+      {
+        "created": 1786372099,
+        "id": "qwen3.7-plus",
+        "object": "model",
+        "owned_by": "system"
+      },
+      {
+        "created": 1784964952,
+        "id": "kimi-k2.7-code",
+        "object": "model",
+        "owned_by": "system"
+      }
+    ],
+    "envelope": "data"
+  },
+  "tokenharber": {
+    "entries": [
+      {
+        "created": 1700000000,
+        "function_call": true,
+        "id": "kimi-k3",
+        "label": "Kimi K3",
+        "object": "model",
+        "owned_by": "moonshot",
+        "supports_prompt_cache": true,
+        "tier": "high",
+        "tool_call": true
+      }
+    ],
+    "envelope": "data"
+  },
+  "tokenrouter": {
+    "entries": [
+      {
+        "created": 1787155200,
+        "id": "moonshotai/kimi-k3",
+        "object": "model",
+        "owned_by": "custom",
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "tags": "Text"
+      },
+      {
+        "created": 1781264306,
+        "id": "moonshotai/kimi-k2.7-code",
+        "object": "model",
+        "owned_by": "custom",
+        "supported_endpoint_types": [
+          "openai"
+        ],
+        "tags": "Text"
+      },
+      {
+        "created": 1787155201,
+        "id": "qwen/qwen3.8-max",
+        "object": "model",
+        "owned_by": "custom",
+        "supported_endpoint_types": [
+          "openai",
+          "openai-response"
+        ],
+        "tags": "Text"
+      }
+    ],
+    "envelope": "data"
+  }
+}

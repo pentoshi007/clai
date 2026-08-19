@@ -10,10 +10,16 @@ import {
   type ProviderProfileLayer,
   type ProviderProfileSourceLayers,
   type ReasoningDisableForm,
+  type ReasoningControlDialect,
   type ReasoningGeneration,
   type ReasoningOutputShape,
 } from "./provider-profile.js";
-import { directDeepSeekV4Layer } from "./provider-profiles.js";
+import { customProfileSpecFor } from "./custom-profile-resolver.js";
+import {
+  catalogLayerFor,
+  directDeepSeekV4Layer,
+  modelFamilyLayerFor,
+} from "./provider-profiles.js";
 import type { ReasoningStyle } from "./http.js";
 import type {
   CachePolicyKind,
@@ -39,7 +45,7 @@ export interface CustomProviderProfileSpec {
   readonly reasoning?:
     | {
         readonly generation?: ReasoningGeneration | undefined;
-        readonly controlDialect?: "openai-effort" | "none" | undefined;
+        readonly controlDialect?: ReasoningControlDialect | undefined;
         readonly acceptedEfforts?: readonly string[] | undefined;
         readonly disable?: ProfileTriState | undefined;
         readonly disableForm?: ReasoningDisableForm | undefined;
@@ -141,6 +147,24 @@ const GENERATIONS: readonly ReasoningGeneration[] = [
   "default-on",
   "mandatory",
   "unknown",
+];
+const CONTROL_DIALECTS: readonly ReasoningControlDialect[] = [
+  "openai-effort",
+  "openai-nested-reasoning",
+  "anthropic-thinking",
+  "deepseek-thinking",
+  "qwen-enable-thinking",
+  "kimi-template-thinking",
+  "glm-enable-thinking",
+  "chat-template-thinking",
+  "nemotron-reasoning-budget",
+  "gemini-thinking-config",
+  "meta-reasoning-effort",
+  "ollama-think",
+  "groq-model-specific",
+  "modal-advertised-effort",
+  "openrouter-reasoning-max-tokens",
+  "none",
 ];
 const OUTPUT_SHAPES: readonly ReasoningOutputShape[] = [
   "reasoning-content",
@@ -305,16 +329,10 @@ export function validateCustomProviderProfile(
       if (r.generation !== undefined && generation === undefined) {
         errors.push(`reasoning.generation must be one of ${GENERATIONS.join(", ")}`);
       }
-      const controlDialect = oneOf(r.controlDialect, [
-        "openai-effort",
-        "none",
-      ] as const);
-      if (
-        r.controlDialect !== undefined &&
-        controlDialect === undefined
-      ) {
+      const controlDialect = oneOf(r.controlDialect, CONTROL_DIALECTS);
+      if (r.controlDialect !== undefined && controlDialect === undefined) {
         errors.push(
-          "reasoning.controlDialect must be openai-effort or none (other dialects are not serializable on custom routes yet)",
+          `reasoning.controlDialect must be one of ${CONTROL_DIALECTS.join(", ")}`,
         );
       }
       const disable = oneOf(r.disable, TRI_STATES);
@@ -683,18 +701,38 @@ export function resolveCustomProviderProfile(input: {
   const layers: {
     userConfig?: ProviderProfileLayer;
     builtin?: ProviderProfileLayer;
+    catalog?: ProviderProfileLayer;
+    modelFamily?: ProviderProfileLayer;
   } = {};
   const userLayer = customProfileLayer(input.profile);
   if (userLayer) layers.userConfig = userLayer;
   if (isDirectDeepSeekRoute(input.baseUrl, input.model)) {
     layers.builtin = directDeepSeekV4Layer();
   }
+  const catalog = catalogLayerFor(input.id, input.model);
+  if (catalog) layers.catalog = catalog;
+  const modelFamily = modelFamilyLayerFor(input.id, input.model);
+  if (modelFamily) layers.modelFamily = modelFamily;
   return resolveProviderProfile({
     provider: input.id,
     model: input.model,
     wireApi: "chat-completions",
     endpointHash: endpointPrivacyHash(input.baseUrl),
     layers,
+  });
+}
+
+export function customProviderProfileFor(input: {
+  provider: string;
+  model: string;
+  baseUrl: string;
+}): ProviderProfile | undefined {
+  const spec = customProfileSpecFor(input.provider);
+  return resolveCustomProviderProfile({
+    id: input.provider,
+    model: input.model,
+    baseUrl: input.baseUrl,
+    ...(spec ? { profile: spec } : {}),
   });
 }
 

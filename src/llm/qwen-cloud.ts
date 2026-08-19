@@ -73,6 +73,7 @@ export const qwenCloudProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("qwen-cloud", model, payload);
   },
@@ -102,6 +103,7 @@ export const qwenCloudProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("qwen-cloud", model, payload);
   },

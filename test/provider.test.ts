@@ -6,9 +6,7 @@ describe('provider helpers', () => {
   it('normalizes aliases', () => {
     expect(normalizeProvider('google')).toBe('gemini');
     expect(normalizeProvider('LOCAL')).toBe('ollama');
-    expect(normalizeProvider('kimchi')).toBe('kimchi');
     expect(normalizeProvider('aws-mantle')).toBe('aws-mantle');
-    expect(normalizeProvider('castai')).toBe('kimchi');
     expect(normalizeProvider('bynara-router')).toBe('bynara');
     expect(normalizeProvider('nara')).toBe('bynara');
   });

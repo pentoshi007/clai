@@ -37,6 +37,8 @@ import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import { buildTurnRequest } from "./session-turn-request.js";
 import { resolveTurnInput } from "../../attachments/service.js";
 import { clearTextOnlyModels } from "../../llm/tool-protocol.js";
+import { prefetchProviderCatalog } from "../../llm/catalog-prefetch.js";
+import { publishRouteReasoningVocabulary } from "../../llm/route-vocabulary.js";
 import { getConfig, getProviderModel } from "../../store/config.js";
 import { beginSessionWorkspace, getActiveSessionWorkspace, type SessionWorkspace } from "../../store/session-workspace.js";
 import { materializeHistoryImages } from "../../store/history.js";
@@ -199,6 +201,8 @@ export class SessionController implements Disposable {
     void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     // Isolate scratch + tool outputs for this session immediately.
     beginSessionWorkspace();
+    void prefetchProviderCatalog(this.provider);
+    publishRouteReasoningVocabulary(this.provider, this.model);
     this.sequencer = new EventSequencer(
       this.sessionIdValue,
       deps.idFactory,
@@ -423,6 +427,8 @@ export class SessionController implements Disposable {
     this.lastMainRequestSnapshot = undefined;
     this.setContextSnapshot(this.resolveContextSnapshot());
     clearTextOnlyModels();
+    void prefetchProviderCatalog(provider);
+    publishRouteReasoningVocabulary(provider, this.model);
     this.notifyState();
   }
 
@@ -438,6 +444,7 @@ export class SessionController implements Disposable {
     this.setContextSnapshot(this.resolveContextSnapshot());
     // Allow native tools again after /model switch (sticky text-only is process-global).
     clearTextOnlyModels();
+    publishRouteReasoningVocabulary(this.provider, model);
     this.notifyState();
   }
 

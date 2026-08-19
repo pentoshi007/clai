@@ -17,7 +17,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 
@@ -222,6 +222,23 @@ export function beginSessionWorkspace(existing?: {
 /** Drop the active binding (tests / process teardown). Does not delete files. */
 export function clearActiveSessionWorkspace(): void {
   active = undefined;
+}
+
+export function removeSessionWorkspaceFolder(folderName: string): boolean {
+  if (active?.folderName === folderName) return false;
+  let root: string;
+  try {
+    root = sessionWorkspaceRoot(folderName);
+  } catch {
+    return false;
+  }
+  if (!isUnderSessionWorkspaceParent(root)) return false;
+  try {
+    rmSync(root, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Absolute scratch root for the active session, if any. */

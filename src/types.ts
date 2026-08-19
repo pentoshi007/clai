@@ -1,13 +1,11 @@
 export const providerIds = [
   "free",
-  "groq",
   "gemini",
   "openrouter",
   "openai",
   "anthropic",
   "nvidia",
   "agentrouter",
-  "kimchi",
   "aws-mantle",
   "ollama",
   "bynara",
@@ -393,6 +391,7 @@ export interface CompletionRequest {
   maxTokens?: number | undefined;
   signal?: AbortSignal | undefined;
   thinking?: ReasoningPreference | undefined;
+  forceReasoningReplay?: boolean | undefined;
   /** Native tool definitions (canonical). Adapters convert to wire format. */
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;

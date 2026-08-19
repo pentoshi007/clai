@@ -196,31 +196,6 @@ describe("agent recovery request shaping", () => {
     expect(requests[1]!.toolChoice).toBe("auto");
   });
 
-  it("uses the compact agent prompt for low-TPM Groq models", async () => {
-    let request: CompletionRequest | undefined;
-    stream.mockImplementation((nextRequest: CompletionRequest, onToken: (token: string) => void) => {
-      request = nextRequest;
-      return reply("Done.")(nextRequest, onToken);
-    });
-
-    await runAgent("hi", {
-      provider: "groq",
-      model: "qwen/qwen3-32b",
-      session: session("agent-recovery-groq"),
-      maxSteps: 1,
-    });
-
-    const system = request?.messages[0];
-    expect(system).toMatchObject({ role: "system" });
-    // Compact path: either legacy fence teaching or native compact tools.
-    expect(
-      system?.content?.includes("Call one tool") ||
-        system?.content?.includes("Call them natively"),
-    ).toBe(true);
-    expect(system?.content).not.toContain("SECURITY POSTURE — FULL OFFENSIVE CAPABILITY");
-    expect(estimateTokens(system?.content ?? "")).toBeLessThan(2_000);
-  });
-
   it("leaves sampling to the provider policy instead of pinning 0.2 (LLM-010)", async () => {
     let request: CompletionRequest | undefined;
     stream.mockImplementation((nextRequest: CompletionRequest, onToken: (token: string) => void) => {
@@ -229,8 +204,8 @@ describe("agent recovery request shaping", () => {
     });
 
     await runAgent("hi", {
-      provider: "kimchi",
-      model: "minimax-m3",
+      provider: "tokenrouter",
+      model: "MiniMax-M3",
       session: session("agent-recovery-minimax"),
       maxSteps: 1,
     });
@@ -239,7 +214,7 @@ describe("agent recovery request shaping", () => {
     // model inside the provider (MiniMax M3 → 1.0, top_p 0.95).
     expect(request?.temperature).toBeUndefined();
     expect(
-      samplingDefaults({ provider: "kimchi", model: "minimax-m3" }),
+      samplingDefaults({ provider: "tokenrouter", model: "MiniMax-M3" }),
     ).toEqual({ temperature: 1.0, topP: 0.95 });
   });
 });

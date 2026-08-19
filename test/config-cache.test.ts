@@ -28,12 +28,12 @@ describe("config snapshot cache", () => {
     updateConfig({ sandboxRoots: ["/tmp/one"] });
     const first = getConfig();
     first.sandboxRoots.push("/tmp/injected");
-    first.providerModels.groq = "poisoned";
+    first.providerModels.nvidia = "poisoned";
     first.thinking.enabled = true;
 
     const second = getConfig();
     expect(second.sandboxRoots).toEqual(["/tmp/one"]);
-    expect(second.providerModels.groq).toBeUndefined();
+    expect(second.providerModels.nvidia).toBeUndefined();
     expect(second.thinking.enabled).toBe(false);
   });
 

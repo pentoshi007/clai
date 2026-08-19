@@ -28,35 +28,35 @@ afterEach(async () => {
 describe("SessionContextLimits (durable config-backed overrides)", () => {
   it("survives a fresh instance", () => {
     const first = new limits();
-    first.set("groq", "llama-3.3-70b", 131_072);
+    first.set("nvidia", "llama-3.3-70b", 131_072);
 
     const second = new limits();
-    expect(second.get("groq", "llama-3.3-70b")).toBe(131_072);
+    expect(second.get("nvidia", "llama-3.3-70b")).toBe(131_072);
   });
 
   it("clear() removes persisted limits", () => {
     const contextLimits = new limits();
-    contextLimits.set("groq", "llama-3.3-70b", 200_000);
-    expect(contextLimits.get("groq", "llama-3.3-70b")).toBe(200_000);
+    contextLimits.set("nvidia", "llama-3.3-70b", 200_000);
+    expect(contextLimits.get("nvidia", "llama-3.3-70b")).toBe(200_000);
 
     contextLimits.clear();
-    expect(contextLimits.get("groq", "llama-3.3-70b")).toBeUndefined();
+    expect(contextLimits.get("nvidia", "llama-3.3-70b")).toBeUndefined();
   });
 
   it("scopes limits per provider/model route", () => {
     const contextLimits = new limits();
-    contextLimits.set("groq", "llama-3.3-70b", 100_000);
+    contextLimits.set("nvidia", "llama-3.3-70b", 100_000);
     contextLimits.set("gemini", "gemini-2.0-flash", 1_000_000);
 
-    expect(contextLimits.get("groq", "llama-3.3-70b")).toBe(100_000);
+    expect(contextLimits.get("nvidia", "llama-3.3-70b")).toBe(100_000);
     expect(contextLimits.get("gemini", "gemini-2.0-flash")).toBe(1_000_000);
-    expect(contextLimits.get("groq", "gemini-2.0-flash")).toBeUndefined();
+    expect(contextLimits.get("nvidia", "gemini-2.0-flash")).toBeUndefined();
   });
 
   it("rejects limits below the 20k floor", () => {
     const contextLimits = new limits();
-    contextLimits.set("groq", "llama-3.3-70b", 5_000);
-    expect(contextLimits.get("groq", "llama-3.3-70b")).toBeUndefined();
+    contextLimits.set("nvidia", "llama-3.3-70b", 5_000);
+    expect(contextLimits.get("nvidia", "llama-3.3-70b")).toBeUndefined();
   });
 
   it("picks up external edits to the config file", async () => {

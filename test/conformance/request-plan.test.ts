@@ -33,12 +33,10 @@ beforeEach(() => {
 
 const CHAT_STYLE_BY_ROUTE: Record<string, string> = {
   free: "none",
-  groq: "groq",
   openai: "openai",
   openrouter: "openrouter",
   nvidia: "nvidia",
   agentrouter: "agentrouter",
-  kimchi: "openai",
   bynara: "bynara",
   "qwen-cloud": "openai",
   modal: "modal",
@@ -80,7 +78,7 @@ function planInputForCase(
 
 describe("canonical request plan", () => {
   it("exposes deterministic stable/mutable boundaries", () => {
-    const input = planInputForCase("groq", "llama-3.3-70b-versatile", "tools", true);
+    const input = planInputForCase("nvidia", "meta/llama-3.3-70b-instruct", "tools", true);
     const first = compileRequestPlan(input);
     const second = compileRequestPlan(input);
     expect(second).toEqual(first);
@@ -116,7 +114,7 @@ describe("canonical request plan", () => {
       { role: "tool", content: "example file contents", toolCallId: "call_plan_1", name: "fs.read" },
     ];
     const common = {
-      provider: "groq" as const,
+      provider: "nvidia" as const,
       model: "llama-3.3-70b-versatile",
       stream: true,
     };
@@ -259,8 +257,8 @@ describe("canonical request plan", () => {
   });
 
   it("records reasoning control suppression with its cause", () => {
-    const input = planInputForCase("groq", "llama-3.3-70b-versatile", "reasoning-control", false);
-    markReasoningUnsupported("groq", "llama-3.3-70b-versatile");
+    const input = planInputForCase("nvidia", "meta/llama-3.3-70b-instruct", "reasoning-control", false);
+    markReasoningUnsupported("nvidia", "meta/llama-3.3-70b-instruct");
     const plan = compileRequestPlan(input);
     expect(plan.controls.controlSuppression).toBe("observed-rejection");
     expect(plan.controls.reasoning?.enabled).toBe(true);
@@ -283,7 +281,7 @@ describe("canonical request plan", () => {
 
   it("resolves the serializer id and replay dialect for every wire family", () => {
     const cases: Array<{ provider: ProviderId; model: string; serializer: string; dialect: string }> = [
-      { provider: "groq", model: "llama-3.3-70b-versatile", serializer: "chat-completions", dialect: "openai-compatible" },
+      { provider: "nvidia", model: "meta/llama-3.3-70b-instruct", serializer: "chat-completions", dialect: "openai-compatible" },
       { provider: "anthropic", model: "claude-3-5-haiku-latest", serializer: "anthropic-messages", dialect: "anthropic-messages" },
       { provider: "gemini", model: "gemini-3.5-flash", serializer: "gemini-generate-content", dialect: "gemini-generate-content" },
       { provider: "meta", model: "muse-spark-1.2", serializer: "meta-responses", dialect: "meta-responses" },
@@ -328,12 +326,36 @@ describe("canonical request plan", () => {
 describe("chat-completions bodies compile from plans", () => {
   const chatRoutes = CONFORMANCE_ROUTES.filter((r) => r.family === "chat_completions");
 
-  it("produces byte-identical bodies to the legacy serializer for every fixture case", () => {
+  const PROFILE_DRIVEN_KEYS: readonly string[] = [
+    "max_completion_tokens",
+    "max_tokens",
+    "temperature",
+    "top_p",
+    "reasoning",
+    "reasoning_budget",
+    "reasoning_effort",
+    "chat_template_kwargs",
+    "enable_thinking",
+    "include_reasoning",
+    "preserve_thinking",
+    "think",
+    "thinking",
+    "thinkingConfig",
+    "thinking_budget",
+  ];
+
+  function withoutControlFields(body: string): Record<string, unknown> {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    for (const key of PROFILE_DRIVEN_KEYS) delete parsed[key];
+    return parsed;
+  }
+
+  it("produces byte-identical bodies to the legacy serializer outside the profile-driven fields", () => {
     for (const route of chatRoutes) {
       const style = (CHAT_STYLE_BY_ROUTE[route.id] ?? "none") as
         | "none"
         | "openai"
-        | "groq"
+        | "nvidia"
         | "openrouter"
         | "nvidia"
         | "agentrouter"
@@ -373,7 +395,15 @@ describe("chat-completions bodies compile from plans", () => {
             toolChoice: request.toolChoice,
             parallelToolCalls: request.parallelToolCalls,
           });
-          expect(chatCompletionsBodyFromPlan(plan, { reasoningStyle: style })).toBe(legacy);
+          const planBody = chatCompletionsBodyFromPlan(plan, {
+            reasoningStyle: style,
+          });
+          expect(JSON.stringify(JSON.parse(planBody).messages)).toBe(
+            JSON.stringify(JSON.parse(legacy).messages),
+          );
+          expect(withoutControlFields(planBody)).toEqual(
+            withoutControlFields(legacy),
+          );
         }
       }
     }

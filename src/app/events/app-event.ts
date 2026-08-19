@@ -51,8 +51,12 @@ export interface AppEventPayloads {
     readonly displayPrompt?: string | null | undefined;
   };
   status: { readonly text: string; readonly step?: number | undefined };
-  "thinking-delta": { readonly text: string };
-  "thinking-block": { readonly messageId: MessageId; readonly content: string };
+  "thinking-delta": { readonly text: string; readonly reasoningId: string };
+  "thinking-block": {
+    readonly messageId: MessageId;
+    readonly content: string;
+    readonly reasoningId: string;
+  };
   "assistant-delta": { readonly text: string };
   "assistant-message": { readonly messageId: MessageId; readonly text: string };
   notice: { readonly level: "info" | "warn"; readonly text: string };

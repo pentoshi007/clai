@@ -12,7 +12,7 @@ import {
 import { ProviderError } from "../src/llm/http.js";
 import type { LlmProvider } from "../src/llm/provider.js";
 
-let groqMultiKey = false;
+let hetznerMultiKey = false;
 
 vi.mock("../src/store/keys.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/store/keys.js")>();
@@ -22,7 +22,7 @@ vi.mock("../src/store/keys.js", async (importOriginal) => {
       provider: Parameters<typeof actual.getProviderKeys>[0],
     ) => {
       const real = await actual.getProviderKeys(provider);
-      if (provider === "groq" && groqMultiKey && real.keys.length === 1) {
+      if (provider === "hetzner" && hetznerMultiKey && real.keys.length === 1) {
         return {
           ...real,
           keys: [
@@ -50,9 +50,9 @@ describe("phase 7 — free-only provider categories", () => {
 
   it("labels each built-in provider with a category", () => {
     expect(providerCategory.nvidia).toBe("free-cloud");
-    expect(providerCategory.groq).toBe("free-cloud");
-    expect(providerCategory.gemini).toBe("free-cloud");
     expect(providerCategory.openrouter).toBe("free-cloud");
+    expect(providerCategory.gemini).toBe("free-cloud");
+    expect(providerCategory.hetzner).toBe("free-cloud");
     expect(providerCategory.ollama).toBe("local");
     expect(providerCategory.openai).toBe("paid-cloud");
     expect(providerCategory.anthropic).toBe("paid-cloud");
@@ -73,7 +73,7 @@ describe("phase 7 — free-only provider categories", () => {
     expect(chain).not.toContain("openai");
     expect(chain).not.toContain("anthropic");
     expect(chain[0]).toBe("nvidia");
-    expect(chain).toContain("groq");
+    expect(chain).toContain("hetzner");
     expect(chain).toContain("ollama");
   });
 
@@ -97,32 +97,32 @@ describe("phase 7 — free-only provider categories", () => {
   });
 
   it("provider fallback defaults to the selected provider only", () => {
-    expect(buildFallbackChain("groq", false)).toEqual(["groq"]);
+    expect(buildFallbackChain("hetzner", false)).toEqual(["hetzner"]);
   });
 });
 
 describe("provider fallback rate limits", () => {
-  const originalGroq = providers.groq;
+  const originalHetzner = providers.hetzner;
   const originalNvidia = providers.nvidia;
   const originalFree = providers.free;
   const beforeFallback = getConfig().providerFallback;
-  const beforeGroqKey = process.env.GROQ_API_KEY;
+  const beforeHetznerKey = process.env.HETZNER_API_KEY;
   const beforeNvidiaKey = process.env.NVIDIA_API_KEY;
 
   beforeEach(() => {
     updateConfig({ providerFallback: false });
-    groqMultiKey = false;
+    hetznerMultiKey = false;
   });
 
   afterEach(() => {
-    providers.groq = originalGroq;
+    providers.hetzner = originalHetzner;
     providers.nvidia = originalNvidia;
     providers.free = originalFree;
     updateConfig({ providerFallback: beforeFallback });
-    if (beforeGroqKey === undefined) {
-      delete process.env.GROQ_API_KEY;
+    if (beforeHetznerKey === undefined) {
+      delete process.env.HETZNER_API_KEY;
     } else {
-      process.env.GROQ_API_KEY = beforeGroqKey;
+      process.env.HETZNER_API_KEY = beforeHetznerKey;
     }
     if (beforeNvidiaKey === undefined) {
       delete process.env.NVIDIA_API_KEY;
@@ -133,11 +133,11 @@ describe("provider fallback rate limits", () => {
 
   it("stays on the selected model when it is rate limited, even if fallback is enabled", async () => {
     updateConfig({ providerFallback: true });
-    process.env.GROQ_API_KEY = "gsk_test";
+    process.env.HETZNER_API_KEY = "hz-test";
     process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
     let nvidiaCalled = false;
-    providers.groq = {
-      ...originalGroq,
+    providers.hetzner = {
+      ...originalHetzner,
       async stream() {
         throw new ProviderError(
           "Provider request failed with HTTP 429 (retry after 35s)",
@@ -163,7 +163,7 @@ describe("provider fallback rate limits", () => {
     await expect(
       streamWithProvider(
         {
-          provider: "groq",
+          provider: "hetzner",
           model: "llama-3.3-70b-versatile",
           messages: [{ role: "user", content: "hi" }],
         },
@@ -171,7 +171,7 @@ describe("provider fallback rate limits", () => {
         (message) => statuses.push(message),
       ),
     ).rejects.toThrow(
-      /No provider could stream the request\. — groq: Model is rate limited[\s\S]*Exact provider error: Provider request failed with HTTP 429 \(retry after 35s\)/,
+      /No provider could stream the request\. — hetzner: Model is rate limited[\s\S]*Exact provider error: Provider request failed with HTTP 429 \(retry after 35s\)/,
     );
 
     expect(nvidiaCalled).toBe(false);
@@ -181,11 +181,11 @@ describe("provider fallback rate limits", () => {
 
   it("stays on the selected model when auth fails, even if fallback is enabled", async () => {
     updateConfig({ providerFallback: true });
-    process.env.GROQ_API_KEY = "gsk_test";
+    process.env.HETZNER_API_KEY = "hz-test";
     process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
     let nvidiaCalled = false;
-    providers.groq = {
-      ...originalGroq,
+    providers.hetzner = {
+      ...originalHetzner,
       async stream() {
         throw new ProviderError("Provider request failed with HTTP 401 — bad key", 401);
       },
@@ -201,14 +201,14 @@ describe("provider fallback rate limits", () => {
     await expect(
       streamWithProvider(
         {
-          provider: "groq",
+          provider: "hetzner",
           model: "llama-3.3-70b-versatile",
           messages: [{ role: "user", content: "hi" }],
         },
         () => undefined,
       ),
     ).rejects.toThrow(
-      /No provider could stream the request\. — groq:.*(401|Authentication|authorization)/i,
+      /No provider could stream the request\. — hetzner:.*(401|Authentication|authorization)/i,
     );
 
     expect(nvidiaCalled).toBe(false);
@@ -216,12 +216,12 @@ describe("provider fallback rate limits", () => {
 
   it("allows configured fallback after a provider input-limit 413", async () => {
     updateConfig({ providerFallback: true });
-    process.env.GROQ_API_KEY = "gsk_test";
+    process.env.HETZNER_API_KEY = "hz-test";
     process.env.NVIDIA_API_KEY = "nvapi_test_key_for_router";
-    groqMultiKey = true;
+    hetznerMultiKey = true;
     let nvidiaCalled = false;
-    providers.groq = {
-      ...originalGroq,
+    providers.hetzner = {
+      ...originalHetzner,
       async stream() {
         throw new ProviderError("Provider request failed with HTTP 413", 413);
       },
@@ -242,7 +242,7 @@ describe("provider fallback rate limits", () => {
 
     const result = await streamWithProvider(
       {
-        provider: "groq",
+        provider: "hetzner",
         // Agent turns opt in to a fallback model even when users selected a
         // non-default model, such as GPT-OSS.
         model: "openai/gpt-oss-20b",

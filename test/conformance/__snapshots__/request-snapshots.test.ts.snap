@@ -1263,7 +1263,7 @@ exports[`serialized request snapshots > aws-mantle-compatible / minimal 1`] = `
 exports[`serialized request snapshots > aws-mantle-compatible / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -1299,7 +1299,7 @@ exports[`serialized request snapshots > aws-mantle-compatible / reasoning-contro
 exports[`serialized request snapshots > aws-mantle-compatible / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -1398,7 +1398,7 @@ exports[`serialized request snapshots > aws-mantle-compatible / tool-loop-replay
 exports[`serialized request snapshots > aws-mantle-compatible / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -1661,7 +1661,7 @@ exports[`serialized request snapshots > bynara / minimal 1`] = `
 exports[`serialized request snapshots > bynara / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -1697,7 +1697,7 @@ exports[`serialized request snapshots > bynara / reasoning-control 1`] = `
 exports[`serialized request snapshots > bynara / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -1796,7 +1796,7 @@ exports[`serialized request snapshots > bynara / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > bynara / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2009,7 +2009,6 @@ exports[`serialized request snapshots > fireworks / images 1`] = `
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -2046,7 +2045,6 @@ exports[`serialized request snapshots > fireworks / minimal 1`] = `
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -2061,7 +2059,7 @@ exports[`serialized request snapshots > fireworks / minimal 1`] = `
 exports[`serialized request snapshots > fireworks / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2084,7 +2082,6 @@ exports[`serialized request snapshots > fireworks / reasoning-control 1`] = `
     "perf_metrics_in_response": true,
     "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -2099,7 +2096,7 @@ exports[`serialized request snapshots > fireworks / reasoning-control 1`] = `
 exports[`serialized request snapshots > fireworks / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2142,7 +2139,6 @@ exports[`serialized request snapshots > fireworks / tool-loop-replay 1`] = `
     "perf_metrics_in_response": true,
     "reasoning_effort": "medium",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -2200,7 +2196,7 @@ exports[`serialized request snapshots > fireworks / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > fireworks / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2244,7 +2240,6 @@ exports[`serialized request snapshots > fireworks / tool-loop-replay-unsigned 1`
     "perf_metrics_in_response": true,
     "reasoning_effort": "medium",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -2324,7 +2319,6 @@ exports[`serialized request snapshots > fireworks / tools 1`] = `
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -2415,7 +2409,9 @@ exports[`serialized request snapshots > free / images 1`] = `
     ],
     "model": "deepseek-v4-flash-free",
     "stream": false,
-    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
   },
   "headers": {
     "accept": "application/json",
@@ -2450,7 +2446,9 @@ exports[`serialized request snapshots > free / minimal 1`] = `
     ],
     "model": "deepseek-v4-flash-free",
     "stream": false,
-    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
   },
   "headers": {
     "accept": "application/json",
@@ -2464,7 +2462,7 @@ exports[`serialized request snapshots > free / minimal 1`] = `
 exports[`serialized request snapshots > free / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2486,7 +2484,9 @@ exports[`serialized request snapshots > free / reasoning-control 1`] = `
     "model": "deepseek-v4-flash-free",
     "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
   },
   "headers": {
     "accept": "application/json",
@@ -2500,7 +2500,7 @@ exports[`serialized request snapshots > free / reasoning-control 1`] = `
 exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2540,9 +2540,11 @@ exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
       },
     ],
     "model": "deepseek-v4-flash-free",
-    "reasoning_effort": "medium",
+    "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
     "tool_choice": "auto",
     "tools": [
       {
@@ -2599,7 +2601,7 @@ exports[`serialized request snapshots > free / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -2640,9 +2642,11 @@ exports[`serialized request snapshots > free / tool-loop-replay-unsigned 1`] = `
       },
     ],
     "model": "deepseek-v4-flash-free",
-    "reasoning_effort": "medium",
+    "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
+    "thinking": {
+      "type": "enabled",
+    },
     "tool_choice": "auto",
     "tools": [
       {
@@ -2720,7 +2724,9 @@ exports[`serialized request snapshots > free / tools 1`] = `
     ],
     "model": "deepseek-v4-flash-free",
     "stream": false,
-    "temperature": 0.2,
+    "thinking": {
+      "type": "disabled",
+    },
     "tool_choice": "auto",
     "tools": [
       {
@@ -3384,404 +3390,6 @@ exports[`serialized request snapshots > gemini / tools 1`] = `
 }
 `;
 
-exports[`serialized request snapshots > groq / images 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": [
-          {
-            "text": "describe this image",
-            "type": "text",
-          },
-          {
-            "image_url": {
-              "detail": "high",
-              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
-            },
-            "type": "image_url",
-          },
-        ],
-        "role": "user",
-      },
-    ],
-    "model": "llama-3.3-70b-versatile",
-    "stream": false,
-    "temperature": 0.2,
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://api.groq.com/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > groq / minimal 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "second user turn",
-        "role": "user",
-      },
-    ],
-    "model": "llama-3.3-70b-versatile",
-    "stream": false,
-    "temperature": 0.2,
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://api.groq.com/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > groq / reasoning-control 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "second user turn",
-        "role": "user",
-      },
-    ],
-    "model": "llama-3.3-70b-versatile",
-    "stream": false,
-    "temperature": 0.2,
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://api.groq.com/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > groq / tool-loop-replay 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "read the example file",
-        "role": "user",
-      },
-      {
-        "content": null,
-        "role": "assistant",
-        "tool_calls": [
-          {
-            "function": {
-              "arguments": "{"path":"docs/example.md"}",
-              "name": "fs_read",
-            },
-            "id": "call_replay_1",
-            "type": "function",
-          },
-        ],
-      },
-      {
-        "content": "example file contents",
-        "name": "fs_read",
-        "role": "tool",
-        "tool_call_id": "call_replay_1",
-      },
-    ],
-    "model": "llama-3.3-70b-versatile",
-    "stream": false,
-    "temperature": 0.2,
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://api.groq.com/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > groq / tool-loop-replay-unsigned 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "read the example file",
-        "role": "user",
-      },
-      {
-        "content": null,
-        "reasoning_content": "the file must be inspected first",
-        "role": "assistant",
-        "tool_calls": [
-          {
-            "function": {
-              "arguments": "{"path":"docs/example.md"}",
-              "name": "fs_read",
-            },
-            "id": "call_replay_1",
-            "type": "function",
-          },
-        ],
-      },
-      {
-        "content": "example file contents",
-        "name": "fs_read",
-        "role": "tool",
-        "tool_call_id": "call_replay_1",
-      },
-    ],
-    "model": "llama-3.3-70b-versatile",
-    "stream": false,
-    "temperature": 0.2,
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://api.groq.com/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > groq / tools 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "second user turn",
-        "role": "user",
-      },
-    ],
-    "model": "llama-3.3-70b-versatile",
-    "stream": false,
-    "temperature": 0.2,
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://api.groq.com/openai/v1/chat/completions",
-}
-`;
-
 exports[`serialized request snapshots > hetzner / images 1`] = `
 {
   "body": {
@@ -3876,9 +3484,10 @@ exports[`serialized request snapshots > hetzner / reasoning-control 1`] = `
 {
   "body": {
     "chat_template_kwargs": {
+      "clear_thinking": false,
       "enable_thinking": true,
     },
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -3916,9 +3525,10 @@ exports[`serialized request snapshots > hetzner / tool-loop-replay 1`] = `
 {
   "body": {
     "chat_template_kwargs": {
+      "clear_thinking": false,
       "enable_thinking": true,
     },
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -4019,9 +3629,10 @@ exports[`serialized request snapshots > hetzner / tool-loop-replay-unsigned 1`] 
 {
   "body": {
     "chat_template_kwargs": {
+      "clear_thinking": false,
       "enable_thinking": true,
     },
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -4201,407 +3812,6 @@ exports[`serialized request snapshots > hetzner / tools 1`] = `
 }
 `;
 
-exports[`serialized request snapshots > kimchi / images 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": [
-          {
-            "text": "describe this image",
-            "type": "text",
-          },
-          {
-            "image_url": {
-              "detail": "high",
-              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
-            },
-            "type": "image_url",
-          },
-        ],
-        "role": "user",
-      },
-    ],
-    "model": "kimi-k2.6",
-    "stream": false,
-    "temperature": 0.2,
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://llm.kimchi.dev/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > kimchi / minimal 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "second user turn",
-        "role": "user",
-      },
-    ],
-    "model": "kimi-k2.6",
-    "stream": false,
-    "temperature": 0.2,
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://llm.kimchi.dev/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > kimchi / reasoning-control 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "second user turn",
-        "role": "user",
-      },
-    ],
-    "model": "kimi-k2.6",
-    "reasoning_effort": "high",
-    "stream": false,
-    "temperature": 0.2,
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://llm.kimchi.dev/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > kimchi / tool-loop-replay 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "read the example file",
-        "role": "user",
-      },
-      {
-        "content": null,
-        "role": "assistant",
-        "tool_calls": [
-          {
-            "function": {
-              "arguments": "{"path":"docs/example.md"}",
-              "name": "fs_read",
-            },
-            "id": "call_replay_1",
-            "type": "function",
-          },
-        ],
-      },
-      {
-        "content": "example file contents",
-        "name": "fs_read",
-        "role": "tool",
-        "tool_call_id": "call_replay_1",
-      },
-    ],
-    "model": "kimi-k2.6",
-    "reasoning_effort": "medium",
-    "stream": false,
-    "temperature": 0.2,
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://llm.kimchi.dev/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > kimchi / tool-loop-replay-unsigned 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "read the example file",
-        "role": "user",
-      },
-      {
-        "content": null,
-        "reasoning_content": "the file must be inspected first",
-        "role": "assistant",
-        "tool_calls": [
-          {
-            "function": {
-              "arguments": "{"path":"docs/example.md"}",
-              "name": "fs_read",
-            },
-            "id": "call_replay_1",
-            "type": "function",
-          },
-        ],
-      },
-      {
-        "content": "example file contents",
-        "name": "fs_read",
-        "role": "tool",
-        "tool_call_id": "call_replay_1",
-      },
-    ],
-    "model": "kimi-k2.6",
-    "reasoning_effort": "medium",
-    "stream": false,
-    "temperature": 0.2,
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://llm.kimchi.dev/openai/v1/chat/completions",
-}
-`;
-
-exports[`serialized request snapshots > kimchi / tools 1`] = `
-{
-  "body": {
-    "max_tokens": 1024,
-    "messages": [
-      {
-        "content": "stable system prefix for cache reuse",
-        "role": "system",
-      },
-      {
-        "content": "first user turn",
-        "role": "user",
-      },
-      {
-        "content": "first assistant answer",
-        "role": "assistant",
-      },
-      {
-        "content": "second user turn",
-        "role": "user",
-      },
-    ],
-    "model": "kimi-k2.6",
-    "stream": false,
-    "temperature": 0.2,
-    "tool_choice": "auto",
-    "tools": [
-      {
-        "function": {
-          "description": "read a file",
-          "name": "fs_read",
-          "parameters": {
-            "properties": {
-              "limit": {
-                "type": "number",
-              },
-              "path": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "path",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-      {
-        "function": {
-          "description": "run a shell command",
-          "name": "shell_run",
-          "parameters": {
-            "additionalProperties": false,
-            "properties": {
-              "command": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "command",
-            ],
-            "type": "object",
-          },
-        },
-        "type": "function",
-      },
-    ],
-  },
-  "headers": {
-    "accept": "application/json",
-    "authorization": "<redacted>",
-    "content-type": "application/json",
-  },
-  "method": "POST",
-  "url": "https://llm.kimchi.dev/openai/v1/chat/completions",
-}
-`;
-
 exports[`serialized request snapshots > lightning / images 1`] = `
 {
   "body": {
@@ -4637,6 +3847,7 @@ exports[`serialized request snapshots > lightning / images 1`] = `
       },
     ],
     "model": "openai/gpt-5",
+    "reasoning_effort": "minimal",
     "stream": false,
   },
   "headers": {
@@ -4672,6 +3883,7 @@ exports[`serialized request snapshots > lightning / minimal 1`] = `
       },
     ],
     "model": "openai/gpt-5",
+    "reasoning_effort": "minimal",
     "stream": false,
   },
   "headers": {
@@ -4687,7 +3899,7 @@ exports[`serialized request snapshots > lightning / minimal 1`] = `
 exports[`serialized request snapshots > lightning / reasoning-control 1`] = `
 {
   "body": {
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -4723,7 +3935,7 @@ exports[`serialized request snapshots > lightning / reasoning-control 1`] = `
 exports[`serialized request snapshots > lightning / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -4822,7 +4034,7 @@ exports[`serialized request snapshots > lightning / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > lightning / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -4942,6 +4154,7 @@ exports[`serialized request snapshots > lightning / tools 1`] = `
       },
     ],
     "model": "openai/gpt-5",
+    "reasoning_effort": "minimal",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -5590,9 +4803,8 @@ exports[`serialized request snapshots > modal / images 1`] = `
       },
     ],
     "model": "moonshotai/Kimi-K3",
-    "reasoning_effort": "none",
+    "reasoning_effort": "low",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -5630,9 +4842,8 @@ exports[`serialized request snapshots > modal / minimal 1`] = `
       },
     ],
     "model": "moonshotai/Kimi-K3",
-    "reasoning_effort": "none",
+    "reasoning_effort": "low",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -5650,7 +4861,7 @@ exports[`serialized request snapshots > modal / minimal 1`] = `
 exports[`serialized request snapshots > modal / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -5672,7 +4883,6 @@ exports[`serialized request snapshots > modal / reasoning-control 1`] = `
     "model": "moonshotai/Kimi-K3",
     "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -5690,7 +4900,7 @@ exports[`serialized request snapshots > modal / reasoning-control 1`] = `
 exports[`serialized request snapshots > modal / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -5732,7 +4942,6 @@ exports[`serialized request snapshots > modal / tool-loop-replay 1`] = `
     "model": "moonshotai/Kimi-K3",
     "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -5793,7 +5002,7 @@ exports[`serialized request snapshots > modal / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > modal / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -5836,7 +5045,6 @@ exports[`serialized request snapshots > modal / tool-loop-replay-unsigned 1`] = 
     "model": "moonshotai/Kimi-K3",
     "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -5917,9 +5125,8 @@ exports[`serialized request snapshots > modal / tools 1`] = `
       },
     ],
     "model": "moonshotai/Kimi-K3",
-    "reasoning_effort": "none",
+    "reasoning_effort": "low",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -6066,7 +5273,7 @@ exports[`serialized request snapshots > nvidia / minimal 1`] = `
 exports[`serialized request snapshots > nvidia / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -6103,7 +5310,7 @@ exports[`serialized request snapshots > nvidia / reasoning-control 1`] = `
 exports[`serialized request snapshots > nvidia / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -6203,7 +5410,7 @@ exports[`serialized request snapshots > nvidia / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > nvidia / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -6819,6 +6026,7 @@ exports[`serialized request snapshots > openai / images 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "reasoning_effort": "minimal",
     "stream": false,
   },
   "headers": {
@@ -6854,6 +6062,7 @@ exports[`serialized request snapshots > openai / minimal 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "reasoning_effort": "minimal",
     "stream": false,
   },
   "headers": {
@@ -6869,7 +6078,7 @@ exports[`serialized request snapshots > openai / minimal 1`] = `
 exports[`serialized request snapshots > openai / reasoning-control 1`] = `
 {
   "body": {
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -6905,7 +6114,7 @@ exports[`serialized request snapshots > openai / reasoning-control 1`] = `
 exports[`serialized request snapshots > openai / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7004,7 +6213,7 @@ exports[`serialized request snapshots > openai / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > openai / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_completion_tokens": 1024,
+    "max_completion_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7124,6 +6333,7 @@ exports[`serialized request snapshots > openai / tools 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "reasoning_effort": "minimal",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -7214,8 +6424,10 @@ exports[`serialized request snapshots > openrouter / images 1`] = `
       },
     ],
     "model": "deepseek/deepseek-v4-pro",
+    "reasoning": {
+      "enabled": false,
+    },
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -7252,8 +6464,10 @@ exports[`serialized request snapshots > openrouter / minimal 1`] = `
       },
     ],
     "model": "deepseek/deepseek-v4-pro",
+    "reasoning": {
+      "enabled": false,
+    },
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -7270,7 +6484,7 @@ exports[`serialized request snapshots > openrouter / minimal 1`] = `
 exports[`serialized request snapshots > openrouter / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7290,8 +6504,11 @@ exports[`serialized request snapshots > openrouter / reasoning-control 1`] = `
       },
     ],
     "model": "deepseek/deepseek-v4-pro",
+    "reasoning": {
+      "effort": "high",
+      "enabled": true,
+    },
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -7308,7 +6525,7 @@ exports[`serialized request snapshots > openrouter / reasoning-control 1`] = `
 exports[`serialized request snapshots > openrouter / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7348,8 +6565,11 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay 1`] = `
       },
     ],
     "model": "deepseek/deepseek-v4-pro",
+    "reasoning": {
+      "effort": "medium",
+      "enabled": true,
+    },
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -7409,7 +6629,7 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > openrouter / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7450,8 +6670,12 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay-unsigned 1
       },
     ],
     "model": "deepseek/deepseek-v4-pro",
+    "reasoning": {
+      "context": "all_turns",
+      "effort": "medium",
+      "enabled": true,
+    },
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -7531,8 +6755,10 @@ exports[`serialized request snapshots > openrouter / tools 1`] = `
       },
     ],
     "model": "deepseek/deepseek-v4-pro",
+    "reasoning": {
+      "enabled": false,
+    },
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -7676,7 +6902,7 @@ exports[`serialized request snapshots > orcarouter / minimal 1`] = `
 exports[`serialized request snapshots > orcarouter / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7696,6 +6922,7 @@ exports[`serialized request snapshots > orcarouter / reasoning-control 1`] = `
       },
     ],
     "model": "openai/gpt-4o-mini",
+    "reasoning_effort": "high",
     "stream": false,
     "temperature": 0.2,
   },
@@ -7712,7 +6939,7 @@ exports[`serialized request snapshots > orcarouter / reasoning-control 1`] = `
 exports[`serialized request snapshots > orcarouter / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7752,6 +6979,7 @@ exports[`serialized request snapshots > orcarouter / tool-loop-replay 1`] = `
       },
     ],
     "model": "openai/gpt-4o-mini",
+    "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
     "tool_choice": "auto",
@@ -7811,7 +7039,7 @@ exports[`serialized request snapshots > orcarouter / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > orcarouter / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -7852,6 +7080,7 @@ exports[`serialized request snapshots > orcarouter / tool-loop-replay-unsigned 1
       },
     ],
     "model": "openai/gpt-4o-mini",
+    "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
     "tool_choice": "auto",
@@ -7990,6 +7219,7 @@ exports[`serialized request snapshots > orcarouter / tools 1`] = `
 exports[`serialized request snapshots > qwen-cloud / images 1`] = `
 {
   "body": {
+    "enable_thinking": false,
     "max_tokens": 1024,
     "messages": [
       {
@@ -8038,6 +7268,7 @@ exports[`serialized request snapshots > qwen-cloud / images 1`] = `
 exports[`serialized request snapshots > qwen-cloud / minimal 1`] = `
 {
   "body": {
+    "enable_thinking": false,
     "max_tokens": 1024,
     "messages": [
       {
@@ -8074,7 +7305,8 @@ exports[`serialized request snapshots > qwen-cloud / minimal 1`] = `
 exports[`serialized request snapshots > qwen-cloud / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "enable_thinking": true,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -8094,9 +7326,9 @@ exports[`serialized request snapshots > qwen-cloud / reasoning-control 1`] = `
       },
     ],
     "model": "qwen3.7-plus",
-    "reasoning_effort": "high",
     "stream": false,
     "temperature": 0.2,
+    "thinking_budget": 16384,
     "top_p": 0.95,
   },
   "headers": {
@@ -8112,7 +7344,8 @@ exports[`serialized request snapshots > qwen-cloud / reasoning-control 1`] = `
 exports[`serialized request snapshots > qwen-cloud / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "enable_thinking": true,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -8152,9 +7385,9 @@ exports[`serialized request snapshots > qwen-cloud / tool-loop-replay 1`] = `
       },
     ],
     "model": "qwen3.7-plus",
-    "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
+    "thinking_budget": 8192,
     "tool_choice": "auto",
     "tools": [
       {
@@ -8213,7 +7446,8 @@ exports[`serialized request snapshots > qwen-cloud / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > qwen-cloud / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "enable_thinking": true,
+    "max_tokens": 16384,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -8254,9 +7488,10 @@ exports[`serialized request snapshots > qwen-cloud / tool-loop-replay-unsigned 1
       },
     ],
     "model": "qwen3.7-plus",
-    "reasoning_effort": "medium",
+    "preserve_thinking": true,
     "stream": false,
     "temperature": 0.2,
+    "thinking_budget": 8192,
     "tool_choice": "auto",
     "tools": [
       {
@@ -8315,6 +7550,7 @@ exports[`serialized request snapshots > qwen-cloud / tool-loop-replay-unsigned 1
 exports[`serialized request snapshots > qwen-cloud / tools 1`] = `
 {
   "body": {
+    "enable_thinking": false,
     "max_tokens": 1024,
     "messages": [
       {
@@ -8426,8 +7662,8 @@ exports[`serialized request snapshots > tokenrouter / images 1`] = `
       },
     ],
     "model": "moonshotai/kimi-k3",
+    "reasoning_effort": "low",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -8462,8 +7698,8 @@ exports[`serialized request snapshots > tokenrouter / minimal 1`] = `
       },
     ],
     "model": "moonshotai/kimi-k3",
+    "reasoning_effort": "low",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -8478,7 +7714,7 @@ exports[`serialized request snapshots > tokenrouter / minimal 1`] = `
 exports[`serialized request snapshots > tokenrouter / reasoning-control 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -8500,7 +7736,6 @@ exports[`serialized request snapshots > tokenrouter / reasoning-control 1`] = `
     "model": "moonshotai/kimi-k3",
     "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
   },
   "headers": {
     "accept": "application/json",
@@ -8515,7 +7750,7 @@ exports[`serialized request snapshots > tokenrouter / reasoning-control 1`] = `
 exports[`serialized request snapshots > tokenrouter / tool-loop-replay 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -8555,9 +7790,8 @@ exports[`serialized request snapshots > tokenrouter / tool-loop-replay 1`] = `
       },
     ],
     "model": "moonshotai/kimi-k3",
-    "reasoning_effort": "medium",
+    "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -8615,7 +7849,7 @@ exports[`serialized request snapshots > tokenrouter / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > tokenrouter / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "max_tokens": 1024,
+    "max_tokens": 16000,
     "messages": [
       {
         "content": "stable system prefix for cache reuse",
@@ -8656,9 +7890,8 @@ exports[`serialized request snapshots > tokenrouter / tool-loop-replay-unsigned 
       },
     ],
     "model": "moonshotai/kimi-k3",
-    "reasoning_effort": "medium",
+    "reasoning_effort": "high",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {
@@ -8736,8 +7969,8 @@ exports[`serialized request snapshots > tokenrouter / tools 1`] = `
       },
     ],
     "model": "moonshotai/kimi-k3",
+    "reasoning_effort": "low",
     "stream": false,
-    "temperature": 0.2,
     "tool_choice": "auto",
     "tools": [
       {

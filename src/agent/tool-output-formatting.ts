@@ -49,6 +49,74 @@ export async function saveToolOutput(
 const ERROR_LINE_RE =
   /\b(?:error|exception|failed|failure|fatal|traceback|panic|ECONNREFUSED|ENOENT|TypeError|SyntaxError|ReferenceError|Cannot find|not found|exit code)\b/i;
 
+const MIN_PARTIAL_LINE_CHARS = 200;
+
+function lineOmissionNotice(omittedChars: number): string {
+  return `… (${omittedChars.toLocaleString()} chars of this line omitted)`;
+}
+
+function partialLineKeepChars(line: string, budget: number): number {
+  const keep = budget - lineOmissionNotice(line.length).length - 1;
+  return keep >= MIN_PARTIAL_LINE_CHARS ? keep : 0;
+}
+
+function headPartialLine(line: string, budget: number): string | undefined {
+  const keep = partialLineKeepChars(line, budget);
+  if (keep === 0) return undefined;
+  return `${line.slice(0, keep)}${lineOmissionNotice(line.length - keep)}`;
+}
+
+function tailPartialLine(line: string, budget: number): string | undefined {
+  const keep = partialLineKeepChars(line, budget);
+  if (keep === 0) return undefined;
+  return `${lineOmissionNotice(line.length - keep)}${line.slice(line.length - keep)}`;
+}
+
+function collectHead(
+  lines: readonly string[],
+  budget: number,
+): { kept: string[]; used: number } {
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const cost = line.length + 1;
+    if (used + cost > budget) {
+      const partial = headPartialLine(line, budget - used);
+      if (partial) {
+        kept.push(partial);
+        used += partial.length + 1;
+      }
+      break;
+    }
+    kept.push(line);
+    used += cost;
+  }
+  return { kept, used };
+}
+
+function collectTail(
+  lines: readonly string[],
+  budget: number,
+): { kept: string[]; used: number } {
+  const kept: string[] = [];
+  let used = 0;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!;
+    const cost = line.length + 1;
+    if (used + cost > budget) {
+      const partial = tailPartialLine(line, budget - used);
+      if (partial) {
+        kept.unshift(partial);
+        used += partial.length + 1;
+      }
+      break;
+    }
+    kept.unshift(line);
+    used += cost;
+  }
+  return { kept, used };
+}
+
 /**
  * Truncate long tool output for the model. When `preferErrors` is set (failed
  * commands), keep error-bearing lines and a heavy tail so stack traces survive.
@@ -67,23 +135,8 @@ export function summarizeOutput(
     const errorLines = lines.filter((l) => ERROR_LINE_RE.test(l));
     const tailBudget = Math.floor(maxChars * 0.55);
     const errBudget = maxChars - tailBudget - 80;
-    const errBlock: string[] = [];
-    let used = 0;
-    for (const line of errorLines.slice(-80)) {
-      const cost = line.length + 1;
-      if (used + cost > errBudget) break;
-      errBlock.push(line);
-      used += cost;
-    }
-    const tail: string[] = [];
-    used = 0;
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const line = lines[i]!;
-      const cost = line.length + 1;
-      if (used + cost > tailBudget) break;
-      tail.unshift(line);
-      used += cost;
-    }
+    const errBlock = collectHead(errorLines.slice(-80), errBudget).kept;
+    const tail = collectTail(lines, tailBudget).kept;
     const body = [
       ...(errBlock.length
         ? ["[error-relevant lines]", ...errBlock, ""]
@@ -94,26 +147,9 @@ export function summarizeOutput(
     return { text: body.slice(0, maxChars + 200), truncated: true };
   }
 
-  const head: string[] = [];
-  const tail: string[] = [];
-  let used = 0;
   const half = Math.floor(maxChars / 2);
-
-  for (const line of lines) {
-    const cost = line.length + 1;
-    if (used + cost > half) break;
-    head.push(line);
-    used += cost;
-  }
-
-  used = 0;
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]!;
-    const cost = line.length + 1;
-    if (used + cost > half) break;
-    tail.unshift(line);
-    used += cost;
-  }
+  const head = collectHead(lines, half).kept;
+  const tail = collectTail(lines, half).kept;
 
   return {
     text: [
@@ -121,6 +157,86 @@ export function summarizeOutput(
       `... (${lines.length.toLocaleString()} output lines truncated) ...`,
       ...tail,
     ].join("\n"),
+    truncated: true,
+  };
+}
+
+const FETCH_REGION_MARKERS = ["\nBody:\n", "\n---\n", "\nContent:\n"] as const;
+
+const FETCH_PRIORITY_HEADER_RE =
+  /^(?:set-cookie|server|x-powered-by|x-aspnet|x-generator|content-type|content-length|content-encoding|location|www-authenticate|strict-transport-security|content-security-policy|x-frame-options|x-content-type-options|cache-control|retry-after|link|allow|via|x-request-id)$/i;
+
+const FETCH_STRUCTURAL_LINE_RE =
+  /^(?:redirects|capture|tls|note|attempts|url|status|bytes|mode)$/i;
+
+const FETCH_HEADER_LINE_RE = /^\s{0,4}([A-Za-z0-9][A-Za-z0-9_-]*):\s/;
+
+const FETCH_PREAMBLE_CAP_CHARS = 2_000;
+
+function splitFetchRegions(
+  output: string,
+): { preamble: string; marker: string; body: string } | undefined {
+  let best: { index: number; marker: string } | undefined;
+  for (const marker of FETCH_REGION_MARKERS) {
+    const index = output.indexOf(marker);
+    if (index < 0) continue;
+    if (!best || index < best.index) best = { index, marker };
+  }
+  if (!best) return undefined;
+  return {
+    preamble: output.slice(0, best.index),
+    marker: best.marker.trim(),
+    body: output.slice(best.index + best.marker.length),
+  };
+}
+
+function condenseFetchPreamble(preamble: string, budget: number): string {
+  if (preamble.length <= budget) return preamble;
+  const lines = preamble.split("\n");
+  const kept: string[] = [];
+  let dropped = 0;
+  for (const [index, line] of lines.entries()) {
+    const match = index === 0 ? null : FETCH_HEADER_LINE_RE.exec(line);
+    const name = match?.[1];
+    if (
+      name === undefined ||
+      FETCH_STRUCTURAL_LINE_RE.test(name) ||
+      FETCH_PRIORITY_HEADER_RE.test(name)
+    ) {
+      kept.push(line);
+      continue;
+    }
+    dropped += 1;
+  }
+  if (dropped > 0) {
+    kept.push(
+      `(${dropped.toLocaleString()} more response headers omitted from this view; complete set in the artifact)`,
+    );
+  }
+  const condensed = kept.join("\n");
+  if (condensed.length <= budget) return condensed;
+  return collectHead(condensed.split("\n"), budget).kept.join("\n");
+}
+
+export function summarizeFetchOutput(
+  output: string,
+  maxChars: number,
+  opts?: { preferErrors?: boolean },
+): { text: string; truncated: boolean } {
+  if (output.length <= maxChars) return { text: output, truncated: false };
+  const regions = splitFetchRegions(output);
+  if (!regions) return summarizeOutput(output, maxChars, opts);
+  const preamble = condenseFetchPreamble(
+    regions.preamble,
+    Math.min(FETCH_PREAMBLE_CAP_CHARS, Math.floor(maxChars * 0.25)),
+  );
+  const bodyBudget = Math.max(
+    1_000,
+    maxChars - preamble.length - regions.marker.length - 2,
+  );
+  const body = summarizeOutput(regions.body, bodyBudget, opts);
+  return {
+    text: `${preamble}\n${regions.marker}\n${body.text}`,
     truncated: true,
   };
 }
@@ -176,7 +292,7 @@ export function fsPassthroughCapChars(): number {
   return getReliabilityPolicy().fsPassthroughCapChars;
 }
 
-const HTTP_FETCH_CAP_CHARS = 8_000;
+const HTTP_FETCH_CAP_CHARS = 14_000;
 const WEB_FETCH_CAP_CHARS = 14_000;
 const WEB_SEARCH_CAP_CHARS = 24_000;
 /** Default for shell and other tools after optional structured polish. */
@@ -233,7 +349,9 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
   if (call.name === "web.fetch" || call.name === "http.fetch") {
     const cap =
       call.name === "http.fetch" ? HTTP_FETCH_CAP_CHARS : WEB_FETCH_CAP_CHARS;
-    const { text, truncated } = summarizeOutput(output, cap, { preferErrors });
+    const { text, truncated } = summarizeFetchOutput(output, cap, {
+      preferErrors,
+    });
     const body =
       text + artifactFooter(result.outputPath, truncated, cap, "Response");
     return [failLine, body].filter(Boolean).join("\n").trim();

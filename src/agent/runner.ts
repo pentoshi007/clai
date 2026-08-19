@@ -15,6 +15,7 @@ import { completeWithProvider, streamWithProvider } from "../llm/router.js";
 import { operationUsageFromError } from "../llm/operation-ledger.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { modelContextWindow } from "../llm/token-usage.js";
+import { providerInputTokenBudget } from "../llm/context-windows.js";
 import { streamAlreadyEmitted } from "../llm/stream-progress.js";
 import {
   classifyStreamFailure,
@@ -57,7 +58,6 @@ import {
   beginSessionWorkspace,
   getActiveSessionWorkspace,
 } from "../store/session-workspace.js";
-import { groqInputTokenBudget } from "../llm/groq.js";
 import {
   classifyToolCall,
   isPentestToolCall,
@@ -888,12 +888,11 @@ export async function runAgentTurn(
       options.getContextLimitTokens
         ? options.getContextLimitTokens(provider, model)
         : options.contextLimitTokens;
-    // Some Groq free-tier models have a per-request/per-minute input budget
-    // below the normal agent prompt alone. Select a purpose-built compact
+    // Some free-tier routes have a per-request/per-minute input budget below
+    // the normal agent prompt alone. Select a purpose-built compact
     // instruction set before the request is made, rather than treating the
     // provider's 413 as a context-window failure after the fact.
-    const inputTokenBudget =
-      provider === "groq" ? groqInputTokenBudget(model) : undefined;
+    const inputTokenBudget = providerInputTokenBudget(provider, model);
     const useCompactSystemPrompt = inputTokenBudget !== undefined;
     const resolveNativeTools = (
       p: ProviderId,

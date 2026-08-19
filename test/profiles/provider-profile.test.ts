@@ -92,7 +92,7 @@ describe("emits reasoning but rejects the control", () => {
 describe("mandatory reasoning with unsupported disable", () => {
   it("represents both facts independently", () => {
     const profile = resolveProviderProfile({
-      provider: "kimchi",
+      provider: "bynara",
       model: "kimi-k3",
       layers: {
         builtin: {

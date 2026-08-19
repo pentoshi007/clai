@@ -13,10 +13,10 @@ import { panelFrameRows } from "../../../src/classic/panels/panel-frame.js";
 import { createHarness, ink, rowsOf } from "./harness.js";
 
 const REQUEST: KeysEditorRequest = {
-  provider: "groq",
+  provider: "nvidia",
   initialKeys: [
-    { id: "k1", masked: "gsk_••••••••••••3f9a" },
-    { id: "k2", masked: "gsk_••••••••••••7b21" },
+    { id: "k1", masked: "nvapi-••••••••••••3f9a" },
+    { id: "k2", masked: "nvapi-••••••••••••7b21" },
   ],
   activeIndex: 0,
 };
@@ -33,15 +33,15 @@ function press(state: KeysPanelState, chord: string, text?: string, request = RE
 describe("keys rows", () => {
   it("marks the sticky rotation key", () => {
     const { rows } = render();
-    expect(rows[1]).toContain("★ 1  gsk_••••••••••••3f9a");
-    expect(rows[2]).toContain("☆ 2  gsk_••••••••••••7b21");
+    expect(rows[1]).toContain("★ 1  nvapi-••••••••••••3f9a");
+    expect(rows[2]).toContain("☆ 2  nvapi-••••••••••••7b21");
   });
 
   it("titles by provider and item label", () => {
-    expect(render().frame.title).toBe("groq · API keys");
+    expect(render().frame.title).toBe("nvidia · API keys");
     expect(
       render(undefined, { ...REQUEST, itemLabel: "endpoint URL" }).frame.title,
-    ).toBe("groq · endpoint URLs");
+    ).toBe("nvidia · endpoint URLs");
   });
 
   it("lists the add row and the editor hints", () => {
@@ -122,7 +122,7 @@ describe("keys keys", () => {
     const answer = harness.overlay.openKeysEditor(REQUEST);
     harness.press("up");
     harness.press("enter");
-    for (const char of "gsk_new") harness.press(char, char);
+    for (const char of "nvapi-new") harness.press(char, char);
     harness.press("enter");
     harness.press("ctrl+s");
     await expect(answer).resolves.toEqual({
@@ -130,7 +130,7 @@ describe("keys keys", () => {
       rows: [
         { slotId: "k1", value: "", disabled: false },
         { slotId: "k2", value: "", disabled: false },
-        { value: "gsk_new", disabled: false },
+        { value: "nvapi-new", disabled: false },
       ],
       activeIndex: 0,
     });

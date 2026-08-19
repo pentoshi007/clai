@@ -197,7 +197,7 @@ export function compactionSinglePassInputBudget(
   );
 }
 
-export const COMPACTION_MAP_MAX_COMPLETION_TOKENS = 4_096;
+export const COMPACTION_MAP_MAX_COMPLETION_TOKENS = 16_384;
 
 export const COMPACTION_CHUNK_CHAR_BUDGET = 64_000;
 

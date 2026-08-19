@@ -50,7 +50,7 @@ describe("modelSupportsVision", () => {
 
   it("does not flag text-only models", () => {
     expect(modelSupportsVision("nvidia", "openai/gpt-oss-20b")).toBe(false);
-    expect(modelSupportsVision("groq", "llama-3.3-70b-versatile")).toBe(false);
+    expect(modelSupportsVision("nvidia", "meta/llama-3.3-70b-instruct")).toBe(false);
     expect(modelSupportsVision("anthropic", "claude-2")).toBe(false);
   });
 

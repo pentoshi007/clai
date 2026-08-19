@@ -52,7 +52,7 @@ describe('reasoning capability knowledge', () => {
 
     expect(modelSupportsThinking('bynara', 'mimo-v2.5-free')).toBe(true);
     expect(modelReasoningEvidence('bynara', 'mimo-v2.5-free')).toBe('observed');
-    expect(modelSupportsThinking('kimchi', 'mimo-v2.5-free')).toBe(false);
+    expect(modelSupportsThinking('tokenrouter', 'mimo-v2.5-free')).toBe(false);
   });
 
   it('keeps a rejected knob off even when the model reasons by default', () => {

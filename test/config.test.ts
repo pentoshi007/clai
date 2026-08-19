@@ -45,7 +45,7 @@ describe('config store', () => {
     const { getProviderModel } = await loadConfigStore();
 
     expect(getProviderModel('free')).toBe('free-1/deepseek-v4-flash-free');
-    expect(getProviderModel('groq')).toBe('llama-3.3-70b-versatile');
+    expect(getProviderModel('openrouter')).toBe('meta-llama/llama-3.3-70b-instruct:free');
     expect(getProviderModel('gemini')).toBe('gemini-3.5-flash');
     expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
     expect(getProviderModel('ollama')).toBe('llama3.1:8b');
@@ -58,13 +58,13 @@ describe('config store', () => {
       defaultProvider: 'nvidia',
       defaultModel: 'nvidia/llama-3.3-nemotron-super-49b-v1',
       providerModels: {
-        groq: 'gemma2-9b-it',
+        gemini: 'gemini-2.0-flash',
         nvidia: 'nvidia/llama-3.3-nemotron-super-49b-v1',
       },
     });
 
     expect(getConfig().defaultModel).toBe('openai/gpt-oss-20b');
-    expect(getProviderModel('groq')).toBe('llama-3.1-8b-instant');
+    expect(getProviderModel('gemini')).toBe('gemini-3.5-flash');
     expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');
   });
 

@@ -54,6 +54,12 @@ export interface ProfileCapabilities {
   readonly images: ProfileTriState;
   readonly structuredOutput: ProfileTriState;
   readonly streamOptions: ProfileTriState;
+  readonly acceptedParameters?: readonly string[] | undefined;
+}
+
+export interface SamplingPolicySpec {
+  readonly omit: readonly string[];
+  readonly defaults: Readonly<Record<string, number>>;
 }
 
 /** Matrix 02§Required conceptual split: the generation fact is independent of controls. */
@@ -79,6 +85,7 @@ export type ReasoningControlDialect =
   | "ollama-think"
   | "groq-model-specific"
   | "modal-advertised-effort"
+  | "openrouter-reasoning-max-tokens"
   | "none";
 
 export type ReasoningDisableForm =
@@ -122,6 +129,11 @@ export type ProfileReplayScope =
   | "server-state"
   | "configurable";
 
+export type ReplayOptIn =
+  | "qwen-preserve-thinking"
+  | "kimi-thinking-keep"
+  | "openrouter-reasoning-context";
+
 export interface ReasoningCapability {
   readonly generation: ReasoningGeneration;
   readonly generationEvidence: ProfileEvidence;
@@ -132,6 +144,9 @@ export interface ReasoningCapability {
   readonly outputShapes: readonly ReasoningOutputShape[];
   readonly replayScope: ProfileReplayScope;
   readonly finalTurnPreservation: FinalTurnPreservation;
+  readonly replayOptIn?: ReplayOptIn | undefined;
+  readonly defaultEffort?: string | undefined;
+  readonly minOutputTokens?: number | undefined;
 }
 
 export interface OutputBudgetPolicy {
@@ -207,6 +222,7 @@ export interface ProviderProfile {
   readonly transport: TransportSpec;
   readonly capabilities: ProfileCapabilities;
   readonly reasoning: ReasoningCapability;
+  readonly sampling: SamplingPolicySpec;
   readonly outputBudget: OutputBudgetPolicy;
   readonly limits: ContextLimitSpec;
   readonly cache: CachePolicySpec;
@@ -225,6 +241,7 @@ export interface ProviderProfileLayer {
       })
     | undefined;
   readonly outputBudget?: Partial<OutputBudgetPolicy> | undefined;
+  readonly sampling?: Partial<SamplingPolicySpec> | undefined;
   readonly limits?: Partial<ContextLimitSpec> | undefined;
   readonly cache?: Partial<CachePolicySpec> | undefined;
   readonly usage?: Partial<UsageAliasSpec> | undefined;
@@ -235,6 +252,7 @@ export interface ProviderProfileSourceLayers {
   readonly userConfig?: ProviderProfileLayer | undefined;
   readonly builtin?: ProviderProfileLayer | undefined;
   readonly catalog?: ProviderProfileLayer | undefined;
+  readonly modelFamily?: ProviderProfileLayer | undefined;
   readonly family?: ProviderProfileLayer | undefined;
   readonly observed?: ProviderProfileLayer | undefined;
 }
@@ -243,6 +261,7 @@ const LAYER_PRECEDENCE: readonly (keyof ProviderProfileSourceLayers)[] = [
   "userConfig",
   "builtin",
   "catalog",
+  "modelFamily",
   "family",
   "observed",
 ];
@@ -292,6 +311,7 @@ function unknownProfile(
       replayScope: "none",
       finalTurnPreservation: "unknown",
     },
+    sampling: { omit: [], defaults: {} },
     outputBudget: {
       sharedReasoningCap: true,
       visibleAnswerReserveTokens: 1024,
@@ -409,6 +429,22 @@ function mergeLayers(
   const disable =
     firstDefined(layers, (l) => l.reasoning?.disable) ??
     (generation === "mandatory" ? "unsupported" : "unknown");
+  const acceptedParameters = firstList(
+    layers,
+    (l) => l.capabilities?.acceptedParameters,
+  );
+  const replayOptIn = firstDefined(layers, (l) => l.reasoning?.replayOptIn);
+  const defaultEffort = firstDefined(layers, (l) => l.reasoning?.defaultEffort);
+  const minOutputTokens = firstDefined(
+    layers,
+    (l) => l.reasoning?.minOutputTokens,
+  );
+  const samplingOmit = firstList(layers, (l) => l.sampling?.omit);
+  const samplingDefaultsLayer = layers.find(
+    (layer) =>
+      layer.sampling?.defaults !== undefined &&
+      Object.keys(layer.sampling.defaults).length > 0,
+  );
 
   return {
     version: 1,
@@ -440,6 +476,7 @@ function mergeLayers(
       streamOptions:
         firstDefined(layers, (l) => l.capabilities?.streamOptions) ??
         base.capabilities.streamOptions,
+      ...(acceptedParameters !== undefined ? { acceptedParameters } : {}),
     },
     reasoning: {
       generation,
@@ -472,6 +509,13 @@ function mergeLayers(
       finalTurnPreservation:
         firstDefined(layers, (l) => l.reasoning?.finalTurnPreservation) ??
         base.reasoning.finalTurnPreservation,
+      ...(replayOptIn !== undefined ? { replayOptIn } : {}),
+      ...(defaultEffort !== undefined ? { defaultEffort } : {}),
+      ...(minOutputTokens !== undefined ? { minOutputTokens } : {}),
+    },
+    sampling: {
+      omit: samplingOmit ?? base.sampling.omit,
+      defaults: samplingDefaultsLayer?.sampling?.defaults ?? base.sampling.defaults,
     },
     outputBudget: {
       sharedReasoningCap:
@@ -618,6 +662,7 @@ const CONTROL_FIELD_BY_DIALECT: Record<ReasoningControlDialect, string> = {
   "ollama-think": "think",
   "groq-model-specific": "reasoning_effort",
   "modal-advertised-effort": "reasoning_effort",
+  "openrouter-reasoning-max-tokens": "reasoning",
   none: "",
 };
 

@@ -102,7 +102,6 @@ describe("command parity (V2-080)", () => {
       "ask",
       "agent",
       "clear",
-      "clean",
       "think",
       "context",
       "cwd",
@@ -163,28 +162,20 @@ describe("command parity (V2-080)", () => {
     expect(getConfig().defaultMode).toBe("agent");
   });
 
-  it("/clear resets transcript and history without minting a new session id", async () => {
+  it("/clear resets transcript and history and abandons the session id", async () => {
     const services = buildServices();
     services.session.loadHistory([{ role: "user", content: "hi" }]);
     const id = services.session.sessionId;
     await services.commands.dispatch({ name: "clear", args: "" });
     expect(services.session.messages).toHaveLength(0);
-    expect(services.session.sessionId).toBe(id);
+    expect(services.session.sessionId).not.toBe(id);
     // Clear feedback is toast-only — transcript stays empty of notice rows.
     expect(services.transcript.getState().order).toHaveLength(0);
-    expect(notices(services).some((t) => t.includes("Context cleared"))).toBe(true);
+    expect(notices(services).some((t) => t.includes("Session cleared"))).toBe(true);
   });
 
-  it("/clean mints a new session id", async () => {
-    const services = buildServices();
-    const before = services.session.sessionId;
-    await services.commands.dispatch({ name: "clean", args: "" });
-    expect(services.session.sessionId).not.toBe(before);
-    expect(notices(services).some((t) => t.includes("Fresh session"))).toBe(true);
-  });
-
-  it("/new and /clean clear the projected plan before loading the new session", async () => {
-    for (const command of ["new", "clean"] as const) {
+  it("/new and /clear clear the projected plan before loading the new session", async () => {
+    for (const command of ["new", "clear"] as const) {
       const services = buildServices();
       setActiveProjectRoot("/tmp/clai-previous-project");
       expect(getActiveProjectRoot()).toBe("/tmp/clai-previous-project");
@@ -292,11 +283,11 @@ describe("command parity (V2-080)", () => {
 
   it("/info opens a provider info pager", async () => {
     const services = buildServices();
-    services.session.setProvider("groq");
+    services.session.setProvider("nvidia");
     await services.commands.dispatch({ name: "info", args: "" });
     const state = services.overlay.getState();
     expect(state.kind).toBe("pager");
-    if (state.kind === "pager") expect(state.title).toContain("groq");
+    if (state.kind === "pager") expect(state.title).toContain("nvidia");
   });
 
   it("/update checks the updates port without throwing", async () => {

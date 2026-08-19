@@ -156,6 +156,7 @@ export const orcarouterProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("orcarouter", model, payload);
   },
@@ -185,6 +186,7 @@ export const orcarouterProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("orcarouter", model, payload);
   },

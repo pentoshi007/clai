@@ -42,7 +42,7 @@ describe("overlay-backed confirm/secret ports (CORE-002, V2-073)", () => {
     const overlay = new OverlayController(new FocusController());
     const request = createOverlaySecretPort(overlay);
 
-    const pending = request({ title: "groq API key", prompt: "enter it" });
+    const pending = request({ title: "nvidia API key", prompt: "enter it" });
     expect(overlay.getState().kind).toBe("secret");
     overlay.answerSecret("sk-abc");
     expect(await pending).toBe("sk-abc");

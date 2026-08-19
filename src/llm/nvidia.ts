@@ -127,6 +127,7 @@ export const nvidiaProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("nvidia", model, payload);
   },
@@ -160,6 +161,7 @@ export const nvidiaProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("nvidia", model, payload);
   },

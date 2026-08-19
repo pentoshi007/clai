@@ -33,7 +33,7 @@ function sectionFor(command: string): string {
     return "Permissions & safety";
   }
   if (
-    ["history", "clear", "new", "clean", "save", "reset", "compact", "context", "think", "thinking", "output", "cwd"].includes(
+    ["history", "clear", "new", "save", "reset", "compact", "context", "think", "thinking", "output", "cwd"].includes(
       name,
     )
   ) {

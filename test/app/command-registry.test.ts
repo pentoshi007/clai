@@ -53,11 +53,11 @@ describe("V2-024 command registry", () => {
     const registry = buildDefaultCommandRegistry();
     const handler = vi.fn();
     registry.setHandler("provider", handler);
-    const handled = await registry.dispatch({ name: "use", args: "groq" });
+    const handled = await registry.dispatch({ name: "use", args: "nvidia" });
     expect(handled).toBe(true);
     expect(handler).toHaveBeenCalledWith({
       name: "provider",
-      args: "groq",
+      args: "nvidia",
       context: "global",
     });
   });

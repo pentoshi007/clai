@@ -60,6 +60,7 @@ export type OpenAiWireMessage =
 interface CompatibleReasoningReplayOptions {
   readonly target: ReasoningArtifactReplayTarget;
   readonly observe?: ReasoningArtifactReplayObserver | undefined;
+  readonly forceScope?: boolean | undefined;
 }
 
 function compatibleReasoningFields(
@@ -75,7 +76,10 @@ function compatibleReasoningFields(
     ...selectReasoningArtifactsForReplay({
       artifacts: reasoningArtifactsForMessage(message),
       target: replay.target,
-      context: { hasToolCalls: Boolean(message.toolCalls?.length) },
+      context: {
+        hasToolCalls: Boolean(message.toolCalls?.length),
+        ...(replay.forceScope ? { forceScope: true } : {}),
+      },
       observe: replay.observe,
     }),
   ].sort((left, right) => left.position.sequence - right.position.sequence);

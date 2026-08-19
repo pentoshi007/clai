@@ -9,9 +9,9 @@ import type { ProviderStatus } from "../../src/types.js";
 
 describe("parseProviderKeysPayload", () => {
   it("treats legacy plain string as one key", () => {
-    const p = parseProviderKeysPayload("gsk_legacykey12345678");
+    const p = parseProviderKeysPayload("nvapi-legacykey12345678");
     expect(p.keys).toHaveLength(1);
-    expect(p.keys[0]!.value).toBe("gsk_legacykey12345678");
+    expect(p.keys[0]!.value).toBe("nvapi-legacykey12345678");
     expect(p.activeIndex).toBe(0);
   });
 
@@ -66,7 +66,7 @@ describe("parseProviderKeysPayload", () => {
 
 describe("mask helpers", () => {
   it("maskSecretTail shows last 4", () => {
-    expect(maskSecretTail("gsk_abcdefghijklmnop")).toBe("…mnop");
+    expect(maskSecretTail("nvapi-abcdefghijklmnop")).toBe("…mnop");
     expect(maskSecretTail("ab")).toBe("••••");
   });
 });
@@ -75,18 +75,18 @@ describe("formatKeyStatus multi-key", () => {
   it("lists each masked key with active star", () => {
     const llm: ProviderStatus[] = [
       {
-        provider: "groq",
-        label: "groq",
+        provider: "nvidia",
+        label: "nvidia",
         active: true,
         configured: true,
         source: "fallback",
-        maskedKey: maskSecret("gsk_aaaa1111bbbb2222"),
+        maskedKey: maskSecret("nvapi-aaaa1111bbbb2222"),
         keyCount: 2,
         maskedKeys: [
-          maskSecret("gsk_aaaa1111bbbb2222"),
-          maskSecret("gsk_cccc3333dddd4444"),
+          maskSecret("nvapi-aaaa1111bbbb2222"),
+          maskSecret("nvapi-cccc3333dddd4444"),
         ],
-        activeMaskedKey: maskSecret("gsk_cccc3333dddd4444"),
+        activeMaskedKey: maskSecret("nvapi-cccc3333dddd4444"),
         model: "llama",
       },
     ];

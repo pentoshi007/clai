@@ -239,7 +239,7 @@ describe("artifact persistence and resume", () => {
     const { installFakeTransport } = await import("./fake-transport.js");
 
     const send = async (
-      provider: "anthropic" | "groq",
+      provider: "anthropic" | "nvidia",
       family: "anthropic_messages" | "chat_completions",
       auth: { apiKey: string },
       model: string,
@@ -276,7 +276,7 @@ describe("artifact persistence and resume", () => {
     vi.unstubAllGlobals();
 
     const compatibleBody = await send(
-      "groq",
+      "nvidia",
       "chat_completions",
       { apiKey: "gsk_conformance_key" },
       "llama-3.3-70b-versatile",

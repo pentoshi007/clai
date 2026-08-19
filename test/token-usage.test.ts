@@ -154,7 +154,7 @@ describe("token-usage format + context window", () => {
       262_144,
     );
     expect(modelContextWindow("qwen3.7-plus")).toBe(1_000_000);
-    expect(modelContextWindow("qwen/qwen3-32b", "groq")).toBe(5_500);
+    expect(modelContextWindow("kimi-k2.6", "tokenrouter")).toBe(262_144);
     expect(modelContextWindow("unknown-model-xyz")).toBe(250_000);
   });
 
@@ -234,8 +234,8 @@ describe("modelContextWindow sizing", () => {
   });
 
   it("honors provider-specific served windows", () => {
-    expect(modelContextWindow("qwen/qwen3-32b")).toBe(128_000);
-    expect(modelContextWindow("qwen/qwen3-32b", "groq")).toBe(5_500);
-    expect(modelContextWindow("openai/gpt-oss-20b", "groq")).toBe(7_500);
+    expect(modelContextWindow("MiniMax-M3")).toBe(1_000_000);
+    expect(modelContextWindow("MiniMax-M3", "tokenrouter")).toBe(524_288);
+    expect(modelContextWindow("openai/gpt-oss-120b", "tokenrouter")).toBe(131_072);
   });
 });

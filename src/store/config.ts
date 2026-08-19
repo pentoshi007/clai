@@ -2,6 +2,7 @@ import Conf from "conf";
 import { dirname } from "node:path";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import type { Mode, ProviderId, ReasoningPreference } from "../types.js";
+import { providerIds } from "../types.js";
 import type { ExaSearchType, SearchProviderId } from "../tools/web/types.js";
 import { DEFAULT_EXA_SEARCH_TYPE } from "../tools/web/types.js";
 import { defaultModels, sanitizeProviderModel } from "../llm/provider.js";
@@ -56,6 +57,17 @@ function providerEndpointEnvVar(provider: ProviderId): string | undefined {
 
 export type LearnedVisionEntry = boolean | { vision: boolean; at: string };
 
+export interface LearnedRouteEntry {
+  readonly at: string;
+  readonly controlDialect?: string | undefined;
+  readonly vision?: boolean | undefined;
+  readonly reasoning?: boolean | undefined;
+  readonly acceptedEfforts?: readonly string[] | undefined;
+  readonly rejectedFields?: readonly string[] | undefined;
+  readonly contextTokens?: number | undefined;
+  readonly maxOutputTokens?: number | undefined;
+}
+
 export interface ClaiConfig {
   defaultProvider: ProviderId;
   defaultModel: string;
@@ -103,6 +115,7 @@ export interface ClaiConfig {
   /** Permissions mode for auto-confirming tool calls ("default" or "allow-all"). */
   permissions?: "default" | "allow-all";
   learnedVisionCapabilities: Record<string, LearnedVisionEntry>;
+  learnedRouteCapabilities?: Record<string, LearnedRouteEntry>;
   /**
    * Tool calling protocol:
    * - auto (default): native when dialect supports it, text fallback otherwise
@@ -150,7 +163,6 @@ export interface ClaiConfig {
  */
 export const providerCategory: Record<ProviderId, ProviderCategory> = {
   free: "free-cloud",
-  groq: "free-cloud",
   gemini: "free-cloud",
   openrouter: "free-cloud",
   nvidia: "free-cloud",
@@ -158,7 +170,6 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   openai: "paid-cloud",
   anthropic: "paid-cloud",
   agentrouter: "paid-cloud",
-  kimchi: "free-cloud",
   "aws-mantle": "paid-cloud",
   bynara: "free-cloud",
   "qwen-cloud": "paid-cloud",
@@ -225,6 +236,7 @@ const defaults: ClaiConfig = {
   toolResultDedup: true,
   slimNativePrompt: true,
   learnedVisionCapabilities: {},
+  learnedRouteCapabilities: {},
   contextLimitTokens: {},
   customProviders: [],
 };
@@ -248,12 +260,14 @@ const store = (() => {
 // Inject the custom-provider id resolver so `normalizeProvider`/`assertProvider`
 // recognise user-defined provider ids. Done once, after the store is live.
 import { setCustomDefaultModelResolver, setCustomProviderInfoResolver, setCustomProviderResolver, setEnvVarResolver } from "../llm/provider.js";
+import { setCustomProfileSpecResolver } from "../llm/custom-profile-resolver.js";
 setCustomProviderResolver((id: string): boolean => {
   const list = getConfig().customProviders ?? [];
   return list.some((d) => d.id === id);
 });
 setEnvVarResolver((provider) => findCustomProviderDefSync(provider)?.envVar);
 setCustomDefaultModelResolver((provider) => findCustomProviderDefSync(provider)?.defaultModel);
+setCustomProfileSpecResolver((provider) => findCustomProviderDefSync(provider)?.profile);
 setCustomProviderInfoResolver((provider) => {
   const def = findCustomProviderDefSync(provider);
   if (!def) return undefined;
@@ -356,20 +370,38 @@ export function getConfig(): ClaiConfig {
   return cloneConfig(resolved);
 }
 
+function knownProviderId(
+  id: string | undefined,
+  custom: readonly CustomProviderDef[] | undefined,
+): id is ProviderId {
+  if (!id) return false;
+  if ((providerIds as readonly string[]).includes(id)) return true;
+  return (custom ?? []).some((def) => def.id === id);
+}
+
 function readConfigFromStore(): ClaiConfig {
   const current = store.store;
   const providerModels: Partial<Record<ProviderId, string>> = {};
   for (const [provider, model] of Object.entries(current.providerModels ?? {}) as Array<
     [ProviderId, string]
   >) {
+    if (!knownProviderId(provider, current.customProviders)) continue;
     providerModels[provider] = sanitizeProviderModel(provider, model);
   }
+  const defaultProvider = knownProviderId(
+    current.defaultProvider,
+    current.customProviders,
+  )
+    ? current.defaultProvider
+    : defaults.defaultProvider;
+  const defaultModel =
+    defaultProvider === current.defaultProvider
+      ? current.defaultModel
+      : (providerModels[defaultProvider] ?? defaultModels[defaultProvider]);
   return {
     ...current,
-    defaultModel: sanitizeProviderModel(
-      current.defaultProvider,
-      current.defaultModel,
-    ),
+    defaultProvider,
+    defaultModel: sanitizeProviderModel(defaultProvider, defaultModel),
     providerModels,
   };
 }

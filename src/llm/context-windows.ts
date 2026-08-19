@@ -1,4 +1,5 @@
 import type { ProviderId } from "../types.js";
+import { modelCatalogFacts } from "./capabilities.js";
 
 /**
  * Known model context windows (tokens). Patterns are tested in order;
@@ -80,12 +81,6 @@ const DEFAULT_CONTEXT_WINDOW = 250_000;
 const PROVIDER_CONTEXT_OVERRIDES: Partial<
   Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
 > = {
-  // Groq serves these two on a low TPM tier; the usable prompt is far below the
-  // model's nominal window (mirrors `groqInputTokenBudget`).
-  groq: [
-    { pattern: /qwen\/qwen3-32b/i, tokens: 5_500 },
-    { pattern: /openai\/gpt-oss-20b/i, tokens: 7_500 },
-  ],
   // TokenRouter publishes the real upstream window per model id, and several
   // are far larger than the generic family rules below would guess. Model ids
   // are vendor-namespaced (`deepseek/deepseek-v4-pro`) but older sessions and
@@ -112,7 +107,20 @@ export function modelContextWindow(
       if (rule.pattern.test(model)) return rule.tokens;
     }
   }
+  const published = provider
+    ? modelCatalogFacts(provider, model)?.contextTokens
+    : undefined;
+  if (published !== undefined) return published;
   return nominalModelContextWindow(model);
+}
+
+export function modelMaxOutputTokens(
+  provider: ProviderId | string | undefined,
+  model: string | undefined,
+  profileOutputTokens?: number | undefined,
+): number | undefined {
+  if (!provider || !model) return profileOutputTokens;
+  return modelCatalogFacts(provider, model)?.maxOutputTokens ?? profileOutputTokens;
 }
 
 /**
@@ -137,4 +145,18 @@ export function providerContextOverrideTokens(
   const overrides = PROVIDER_CONTEXT_OVERRIDES[provider];
   if (!overrides) return undefined;
   return overrides.find((rule) => rule.pattern.test(model))?.tokens;
+}
+
+const PROVIDER_INPUT_TOKEN_BUDGETS: Partial<
+  Record<ProviderId, ReadonlyArray<{ pattern: RegExp; tokens: number }>>
+> = {};
+
+export function providerInputTokenBudget(
+  provider: ProviderId,
+  model: string | undefined,
+): number | undefined {
+  if (!model) return undefined;
+  const budgets = PROVIDER_INPUT_TOKEN_BUDGETS[provider];
+  if (!budgets) return undefined;
+  return budgets.find((rule) => rule.pattern.test(model))?.tokens;
 }

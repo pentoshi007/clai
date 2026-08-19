@@ -1,12 +1,21 @@
 /**
- * Session lifecycle slash commands (V2-080): mode, clear/new/clean, save/reset,
+ * Session lifecycle slash commands (V2-080): mode, clear/new, save/reset,
  * allow/disallow, think, context, compact.
  */
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { setDefaultMode, getConfig } from "../../store/config.js";
-import { upsertSession, clearAllHistory } from "../../store/history.js";
+import {
+  clearAllHistory,
+  getSession,
+  purgeSession,
+  upsertSession,
+} from "../../store/history.js";
+import {
+  getActiveSessionWorkspace,
+  removeSessionWorkspaceFolder,
+} from "../../store/session-workspace.js";
 import { safeCwd } from "../../os/cwd.js";
 import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
@@ -44,13 +53,54 @@ export function handleMode(services: AppServices, mode: Mode): void {
   flash(services, `Mode · ${mode}`, { key: "mode", level: "success" });
 }
 
-export function handleClear(services: AppServices): void {
-  services.session.reset();
+export async function handleClear(services: AppServices): Promise<void> {
+  const purgedId = services.session.sessionId;
+  const purgedWorkspace = getActiveSessionWorkspace()?.folderName;
+
+  clearActiveProjectRoot();
+  services.plan.clear();
+  services.session.reset({ mintNewId: true });
   services.transcript.reset();
-  // Drop in-memory plan; session id is unchanged so the on-disk plan remains
-  // for this session, but the UI should not show a stale card after clear.
-  void services.plan.load(services.session.sessionId).catch(() => undefined);
-  flash(services, "Context cleared", { key: "session", level: "success" });
+  services.session.setPlanApproved(false);
+  flash(services, "Session cleared", { key: "session", level: "success" });
+  await services.plan.load(services.session.sessionId).catch(() => undefined);
+
+  const outcome = await purgeCurrentSession(purgedId, purgedWorkspace);
+  if (outcome === "failed") {
+    notice(
+      services,
+      "warn",
+      "cleared this session in memory, but some of its saved copy could not be deleted",
+    );
+  }
+}
+
+async function purgeCurrentSession(
+  sessionId: string,
+  workspaceFolder: string | undefined,
+): Promise<"purged" | "nothing-to-purge" | "failed"> {
+  let removedWorkspace = false;
+  let failed = false;
+  let purged = false;
+  try {
+    const first = await purgeSession(sessionId);
+    purged = first.deleted;
+    removedWorkspace = first.removedWorkspace;
+    if (first.deleted && (await getSession(sessionId))) {
+      const second = await purgeSession(sessionId);
+      removedWorkspace = removedWorkspace || second.removedWorkspace;
+      if (await getSession(sessionId)) failed = true;
+    } else if (!first.deleted && (await getSession(sessionId))) {
+      failed = true;
+    }
+  } catch {
+    failed = true;
+  }
+  if (!removedWorkspace && workspaceFolder) {
+    removeSessionWorkspaceFolder(workspaceFolder);
+  }
+  if (failed) return "failed";
+  return purged ? "purged" : "nothing-to-purge";
 }
 
 export async function handleNew(services: AppServices): Promise<void> {
@@ -69,15 +119,6 @@ export async function handleNew(services: AppServices): Promise<void> {
   flash(services, "Fresh session", { key: "session", level: "success" });
 }
 
-export function handleClean(services: AppServices): void {
-  clearActiveProjectRoot();
-  services.plan.clear();
-  services.session.reset({ mintNewId: true });
-  services.transcript.reset();
-  void services.plan.load(services.session.sessionId).catch(() => undefined);
-  services.session.setPlanApproved(false);
-  flash(services, "Fresh session", { key: "session", level: "success" });
-}
 
 export function handleThink(services: AppServices): void {
   services.transcript.toggleThinkingGlobal();

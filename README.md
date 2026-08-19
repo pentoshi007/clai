@@ -6,14 +6,14 @@
 
 Two things make it practical for everyday use:
 
-- **It's cheap-to-free to run.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key. Point it at Groq, Google Gemini, NVIDIA NIM, OpenRouter, Bynara, Kimchi, Hetzner, or a local Ollama — all have free access — and clai stacks them. Add several keys per provider; when one hits a rate limit, it rotates to the next automatically. Want frontier models instead? Serve **Kimi K3 on your own Modal endpoint** on Modal's **$30/month of free credit**, or start on **Lightning AI's 40M free tokens**.
+- **It's cheap-to-free to run.** A fresh install runs **keyless out of the box** on the built-in Free provider — no signup, no API key. Point it at Google Gemini, NVIDIA NIM, OpenRouter, Bynara, Hetzner, or a local Ollama — all have free access — and clai stacks them. Add several keys per provider; when one hits a rate limit, it rotates to the next automatically. Want frontier models instead? Serve **Kimi K3 on your own Modal endpoint** on Modal's **$30/month of free credit**, or start on **Lightning AI's 40M free tokens**.
 - **It's honest.** Findings need real tool output. Builds get typechecked/run before "done." Compaction and history keep long sessions coherent instead of hallucinating progress.
 
 ---
 
 ## Highlights
 
-- **Free-tier first.** 19 providers wired in, 8 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
+- **Free-tier first.** 18 providers wired in, 6 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Disable any key or endpoint row to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
 - **Bring your own endpoint.** Deploy Kimi K3 (or Qwen / DeepSeek / GLM / GPT-OSS / your own fine-tune) to a [Modal](#modal--run-kimi-k3-on-your-own-endpoint-on-30month-of-free-credit) endpoint and drive it from clai on **$30/month of free compute credit**. Modal, Lightning AI and TokenRouter each keep a list of up to 10 base URLs with a sticky active one, so several deployments live side by side and you switch with one command — same editor, same ★ active row as keys.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -105,9 +105,9 @@ clai          # launch the full-screen agent console (already on the free provid
 Prefer a different provider? Get a free key, add it, and go:
 
 ```sh
-# Add a free key (Groq shown; NVIDIA/Gemini/OpenRouter/Bynara/Kimchi/Hetzner work the same)
-clai set groq gsk_your_key_here
-clai use groq
+# Add a free key (NVIDIA shown; Gemini/OpenRouter/Bynara/Hetzner work the same)
+clai set nvidia nvapi-your_key_here
+clai use nvidia
 
 # Launch the full-screen agent console
 clai
@@ -138,11 +138,9 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 |----------|---------------|------|---------|
 | Free (keyless) | `free-1/deepseek-v4-flash-free` | Free · keyless | — (no key needed) |
 | NVIDIA NIM | `openai/gpt-oss-20b` | Free | `NVIDIA_API_KEY` |
-| Groq | `llama-3.3-70b-versatile` | Free | `GROQ_API_KEY` |
 | Google Gemini | `gemini-3.5-flash` | Free | `GEMINI_API_KEY` |
 | OpenRouter | `meta-llama/llama-3.3-70b-instruct:free` | Free | `OPENROUTER_API_KEY` |
 | Bynara | `mimo-v2.5-free` | Free | `BYNARA_API_KEY` |
-| Kimchi | `kimi-k2.6` | Free | `CASTAI_API_KEY` |
 | Ollama | `llama3.1:8b` | Local / free | `OLLAMA_HOST` |
 | OpenAI | `gpt-5.4-mini` | Paid | `OPENAI_API_KEY` |
 | Anthropic | `claude-3-5-haiku-latest` | Paid | `ANTHROPIC_API_KEY` |
@@ -267,10 +265,10 @@ Streaming, native tool calling, structured outputs (`response_format`), vision v
 ### Manage keys
 
 ```sh
-clai set groq gsk_first_key            # store a key (appends if one exists)
-clai set groq gsk_second_key           # add another key for the same provider
+clai set nvidia nvapi-first_key        # store a key (appends if one exists)
+clai set nvidia nvapi-second_key       # add another key for the same provider
 clai set gemini --from-env GEMINI_API_KEY
-echo "gsk_..." | clai set groq --stdin
+echo "nvapi-..." | clai set nvidia --stdin
 clai set ollama --url http://localhost:11434
 clai set modal --url https://ws--ep-kimi-k3-server.us-west.modal.direct   # endpoint (repeatable)
 clai set modal wk-tokenId:ws-tokenSecret   # …then the proxy token pair
@@ -282,9 +280,9 @@ clai set orcarouter sk-your-key        # OrcaRouter (orcarouter.ai/console)
 clai set free <key>                    # optional: unlock premium models (free is keyless by default)
 clai unset modal --url                 # drop stored endpoint URLs, keep the keys
 clai keys                              # providers + masked keys (★ active) + endpoint URLs
-clai use groq                          # set active provider
+clai use nvidia                        # set active provider
 clai provider                          # interactive provider/model picker
-clai unset groq                        # remove ALL keys for a provider
+clai unset nvidia                      # remove ALL keys for a provider
 ```
 
 In the console, **`/set`** opens a multi-row editor: add rows with `+`, remove rows, star a row to make it the active one, or disable a row to skip it in rotation without deleting it (`d` in the classic UI, `Ctrl+D` or the ○ marker in OpenTUI) — then **Save**, or **Reset all**. Providers with their own base URL (Modal, Lightning AI, TokenRouter) get a second **endpoints** row in the `/set` picker that edits their URL list the same way — URLs are shown in full rather than masked, since they aren't secrets. `/set <provider> https://…` adds and activates one URL directly. **`/keys`** lists keys masked plus the active endpoint, marking disabled rows `(disabled)`; **`/unset`** clears a provider. Disabled entries are never tried until re-enabled, and disabling every key for a provider fails fast with a clear error instead of burning requests.
@@ -296,7 +294,7 @@ In the console, **`/set`** opens a multi-row editor: add rows with `+`, remove r
 - **What triggers a switch** — HTTP 429 (rate limit), 401/403 (auth), 402 / quota / billing text, transient network errors, 500–504, and empty completions. Auth and quota errors switch **immediately** (no backoff wait); rate limits back off briefly first.
 - **Cross-provider fallback** *(opt-in)* — `/fallback on` lets clai try other configured providers after the active one is exhausted (only when running a provider's default model).
 - **Free-only mode** *(opt-in)* — `/freeonly on` excludes paid-cloud providers from the fallback chain, so you never accidentally spend.
-- **Quiet status** — a single non-stacking status line shows what happened, e.g. `switching groq key [2/4] …ab12 (rate limited)`. Keys are always masked to the last 4 chars.
+- **Quiet status** — a single non-stacking status line shows what happened, e.g. `switching nvidia key [2/4] …ab12 (rate limited)`. Keys are always masked to the last 4 chars.
 
 ```sh
 /freeonly on      # stay on free tiers only
@@ -423,12 +421,12 @@ Tool cards show the command/input clearly, with a live elapsed timer next to the
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
 | `/compact` · `/context` | Compact history now · show context size |
-| `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle |
+| `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle (`/clear` deletes the current session outright) |
 | `/allow <tool>` · `/disallow <tool>` · `/permissions` | Tool permissions |
 | `/cwd <path>` | Change working directory |
 | `/think` · `/thinking` | Show thinking from the last response |
 | `/privacy [...]` | Private mode · clear history/logs/artifacts |
-| `/update` · `/help` · `/shortcuts` · `/clean` · `/exit` | Housekeeping |
+| `/update` · `/help` · `/shortcuts` · `/exit` | Housekeeping |
 
 ---
 
@@ -596,7 +594,7 @@ clai/
 ├─ src/
 │  ├─ index.ts          # CLI entry + subcommands
 │  ├─ agent/            # loop, plans, compaction, resume orientation, tool parsing
-│  ├─ llm/              # 19 providers, streaming, native tools, key rotation + fallback
+│  ├─ llm/              # 18 providers, streaming, native tools, key rotation + fallback
 │  ├─ tools/            # fs, shell, net, http, web, pentest, batch, plan
 │  ├─ safety/           # risk classifier + engagement (scope) policy
 │  ├─ store/            # config, history, keys, plans, scope

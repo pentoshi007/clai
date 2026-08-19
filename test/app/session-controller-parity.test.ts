@@ -57,7 +57,7 @@ function fakeAgent(): AgentPort {
 function primeCompactionSnapshot(session: SessionController): void {
   const history = session.messages.map((message) => structuredClone(message));
   const snapshot: SuccessfulRequestSnapshot = {
-    provider: "groq",
+    provider: "nvidia",
     model: "test-model",
     messages: [
       { role: "system", content: "main system prompt" },
@@ -236,7 +236,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       persistence: fakePersistence(),
       emit: (e) => events.push(e),
       sessionId: "sess-hist-compact",
-      provider: "groq" as never,
+      provider: "nvidia" as never,
       model: "test-model",
     });
 
@@ -590,7 +590,7 @@ describe("SessionController parity helpers (V2-080)", () => {
       },
       getTranscriptSnapshot: () => transcript as never,
       sessionId: "sess-ordered-compact",
-      provider: "groq" as never,
+      provider: "nvidia" as never,
       model: "test-model",
     });
     session.loadHistory(

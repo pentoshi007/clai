@@ -88,17 +88,17 @@ describe("command handlers (V2-072..075)", () => {
 
   it("/model <name> sets the model directly and persists it for the provider", async () => {
     const services = buildServices();
-    services.session.setProvider("groq");
-    await services.commands.dispatch({ name: "model", args: "llama-3.3-70b-versatile" });
-    expect(services.session.getState().model).toBe("llama-3.3-70b-versatile");
-    expect(getConfig().providerModels.groq).toBe("llama-3.3-70b-versatile");
+    services.session.setProvider("nvidia");
+    await services.commands.dispatch({ name: "model", args: "meta/llama-3.3-70b-instruct" });
+    expect(services.session.getState().model).toBe("meta/llama-3.3-70b-instruct");
+    expect(getConfig().providerModels.nvidia).toBe("meta/llama-3.3-70b-instruct");
   });
 
   it("/model with no args opens a picker (static known list when API empty)", async () => {
     const services = buildServices();
-    services.session.setProvider("groq");
+    services.session.setProvider("nvidia");
     const { getProvider } = await import("../../../src/llm/router.js");
-    const impl = getProvider("groq");
+    const impl = getProvider("nvidia");
     // Force known-list path without a network call.
     const spy = vi.spyOn(impl, "listModels" as "listModels").mockResolvedValue([]);
 
@@ -111,17 +111,17 @@ describe("command handlers (V2-072..075)", () => {
       expect(state.request.title).not.toMatch(/· live$/);
       services.overlay.selectPicker(state.request.options[0]!.value);
     }
-    expect(services.session.getState().model).toBe(getConfig().providerModels.groq);
+    expect(services.session.getState().model).toBe(getConfig().providerModels.nvidia);
     spy.mockRestore();
   });
 
   it("/model refreshes via provider.listModels when available", async () => {
     const services = buildServices();
-    services.session.setProvider("groq");
-    const { groqProvider } = await import("../../../src/llm/groq.js");
-    const live = ["live-model-a", "live-model-b", "llama-3.3-70b-versatile"];
+    services.session.setProvider("nvidia");
+    const { nvidiaProvider } = await import("../../../src/llm/nvidia.js");
+    const live = ["live-model-a", "live-model-b", "meta/llama-3.3-70b-instruct"];
     const listModels = vi.fn(async () => live);
-    const spy = vi.spyOn(groqProvider, "listModels").mockImplementation(listModels);
+    const spy = vi.spyOn(nvidiaProvider, "listModels").mockImplementation(listModels);
 
     await services.commands.dispatch({ name: "model", args: "" });
     await waitUntil(() => services.overlay.getState().kind === "picker");
@@ -141,9 +141,9 @@ describe("command handlers (V2-072..075)", () => {
 
   it("/model falls back to known models when listModels fails", async () => {
     const services = buildServices();
-    services.session.setProvider("groq");
+    services.session.setProvider("nvidia");
     const { getProvider } = await import("../../../src/llm/router.js");
-    const impl = getProvider("groq");
+    const impl = getProvider("nvidia");
     const spy = vi
       .spyOn(impl, "listModels" as "listModels")
       .mockRejectedValue(new Error("network down"));
@@ -314,7 +314,7 @@ describe("command handlers (V2-072..075)", () => {
     if (state.kind === "picker") {
       const values = state.request.options.map((o) => o.value);
       expect(values).toContain("__add_custom_provider__");
-      expect(values).toContain("groq");
+      expect(values).toContain("nvidia");
       expect(values).toContain("nvidia");
     }
     services.overlay.close();

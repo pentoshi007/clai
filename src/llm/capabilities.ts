@@ -6,17 +6,39 @@ import type {
 } from "../types.js";
 import type { ToolDialect, ToolCallingMode } from "./tool-protocol.js";
 import { isTextOnlyModel } from "./tool-protocol.js";
+import type { CatalogFacts } from "./catalog-facts.js";
+import { modelFamilyFor } from "./model-families.js";
 import {
-  getConfig,
-  updateConfig,
-  type LearnedVisionEntry,
-} from "../store/config.js";
+  clampEffortToRoute,
+  clearRouteDialectRegistry,
+  forgetNegativeControlDialect,
+  negativeLearnedUnderAnotherDialect,
+  routeControlDialect,
+  setNegativeControlDialect,
+  setRouteControlDialect,
+} from "./route-dialect-registry.js";
+import { getConfig } from "../store/config.js";
+import type { LearnedRouteEntry } from "../store/config.js";
+import {
+  clearPersistedLearnedRoutes,
+  clearPersistedLearnedVision,
+  learnedRouteAt,
+  learnedRouteCapabilities,
+  learnedRouteRejectedFields,
+  learnedVisionCapabilities,
+  negativeIsStale,
+  clearPersistedLearnedRouteReasoning,
+  persistLearnedRoute,
+  persistLearnedVision,
+  readLearnedRoute,
+  readLearnedVisionEntry,
+  UNATTRIBUTED_CONTROL_DIALECT,
+} from "./learned-capabilities.js";
 
 // Patterns of model names that support an explicit reasoning/thinking
 // toggle. The match is case-insensitive substring or regex.
 const reasoningPatterns: Record<ProviderId, RegExp[]> = {
   free: [/deepseek/i, /kimi/i, /minimax/i, /mimo/i, /nemotron/i],
-  groq: [/qwen\/qwen3-32b/i, /gpt-oss/i],
   gemini: [/gemini-2\.5/i, /gemini-3/i, /gemini-3\.5/i],
   openrouter: [
     /:thinking/i,
@@ -49,7 +71,6 @@ const reasoningPatterns: Record<ProviderId, RegExp[]> = {
     /kimi-k2/i,
     /o[134]/i,
   ],
-  kimchi: [/kimi-k2/i, /minimax-m2/i, /minimax-m3/i, /nemotron-3-super/i],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
   bynara: [/kimi/i, /deepseek/i, /agnes/i, /stepfun/i],
   "qwen-cloud": [/qwen3/i, /qwen2/i],
@@ -115,12 +136,34 @@ const reasoningKey = (provider: ProviderId, model: string): string =>
 
 /** Mark a model as having rejected reasoning options so we stop sending them. */
 export function markReasoningUnsupported(provider: ProviderId, model: string): void {
-  reasoningUnsupportedModels.add(reasoningKey(provider, model));
+  const key = reasoningKey(provider, model);
+  reasoningUnsupportedModels.add(key);
+  const dialect = routeControlDialect(key) ?? UNATTRIBUTED_CONTROL_DIALECT;
+  setNegativeControlDialect(key, dialect);
+  learnRouteReasoningSupport(provider, model, false, dialect);
+}
+
+export function registerRouteControlDialect(
+  provider: ProviderId,
+  model: string,
+  dialect: string,
+): void {
+  if (!model.trim()) return;
+  setRouteControlDialect(reasoningKey(provider, model), dialect);
 }
 
 /** Whether a model was observed to reject reasoning options this session. */
 export function isReasoningUnsupported(provider: ProviderId, model: string): boolean {
-  return reasoningUnsupportedModels.has(reasoningKey(provider, model));
+  loadLearnedCapabilities();
+  const key = reasoningKey(provider, model);
+  if (!reasoningUnsupportedModels.has(key)) return false;
+  if (negativeLearnedUnderAnotherDialect(key)) {
+    reasoningUnsupportedModels.delete(key);
+    forgetNegativeControlDialect(key);
+    clearPersistedLearnedRouteReasoning(key);
+    return false;
+  }
+  return true;
 }
 
 export function clearReasoningUnsupported(): void {
@@ -134,7 +177,17 @@ export function effectiveThinkingEffort(
 ): ReasoningEffort | undefined {
   if (!thinking?.enabled) return undefined;
   if (isReasoningUnsupported(provider, model)) return undefined;
-  return thinking.effort;
+  if (!modelSupportsThinking(provider, model)) return undefined;
+  return clampEffortToRoute(thinking.effort, modelReasoningEfforts(provider, model));
+}
+
+export function registerRouteAcceptedEfforts(
+  provider: ProviderId,
+  model: string,
+  efforts: readonly string[],
+): void {
+  if (!model.trim() || efforts.length === 0) return;
+  catalogReasoningEfforts.set(reasoningKey(provider, model), [...efforts]);
 }
 
 const catalogReasoningSupport = new Map<string, boolean>();
@@ -181,12 +234,16 @@ export function resetReasoningKnowledge(): void {
   catalogReasoningSupport.clear();
   observedReasoningModels.clear();
   catalogReasoningEfforts.clear();
+  catalogFactsByRoute.clear();
+  clearRouteDialectRegistry();
+  learnedLoaded = true;
 }
 
 export function modelSupportsThinking(
   provider: ProviderId,
   model: string,
 ): boolean {
+  loadLearnedCapabilities();
   const key = reasoningKey(provider, model);
   if (reasoningUnsupportedModels.has(key)) return false;
   if (observedReasoningModels.has(key)) return true;
@@ -244,12 +301,6 @@ const universalVisionPatterns: RegExp[] = [
 
 const visionPatterns: Record<ProviderId, RegExp[]> = {
   free: [],
-  groq: [
-    // Llama 4 (scout/maverick) and llama-3.2 vision models on Groq.
-    /llama-4/i,
-    /llama-3\.2-(?:11b|90b)-vision/i,
-    /meta-llama\/llama-4/i,
-  ],
   gemini: [
     // All current Gemini models are natively multimodal.
     /gemini-/i,
@@ -307,7 +358,6 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /glm-4\.?\d*v/i,
     /glm-?5/i,
   ],
-  kimchi: [/kimi-k2/i, /minimax-m2/i, /minimax-m3/i, /nemotron-3-super/i],
   "aws-mantle": [
     /claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i,
     /claude-3(?:-|\.|$)/i,
@@ -387,9 +437,32 @@ export interface CatalogModel {
   readonly vision?: boolean | undefined;
   readonly reasoning?: boolean | undefined;
   readonly reasoningEfforts?: readonly string[] | undefined;
+  readonly facts?: CatalogFacts | undefined;
 }
 
 const catalogReasoningEfforts = new Map<string, readonly string[]>();
+const catalogFactsByRoute = new Map<string, CatalogFacts>();
+
+export function registerModelCatalogFacts(
+  provider: ProviderId,
+  facts: CatalogFacts,
+): void {
+  if (!facts.id.trim()) return;
+  catalogFactsByRoute.set(reasoningKey(provider, facts.id), facts);
+}
+
+export function modelCatalogFacts(
+  provider: ProviderId | string,
+  model: string,
+): CatalogFacts | undefined {
+  return catalogFactsByRoute.get(
+    `${provider}:${model.trim().toLowerCase()}`,
+  );
+}
+
+export function clearModelCatalogFacts(): void {
+  catalogFactsByRoute.clear();
+}
 
 export function registerModelReasoningEfforts(
   provider: ProviderId,
@@ -407,7 +480,17 @@ export function modelReasoningEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
-  return catalogReasoningEfforts.get(reasoningKey(provider, model));
+  loadLearnedCapabilities();
+  const learned = catalogReasoningEfforts.get(reasoningKey(provider, model));
+  if (learned?.length) return learned;
+  const family = modelFamilyFor(model);
+  return family && family.acceptedEfforts.length > 0
+    ? family.acceptedEfforts
+    : undefined;
+}
+
+export function modelReasoningIsMandatory(model: string): boolean {
+  return modelFamilyFor(model)?.generation === "mandatory";
 }
 
 export function clearModelReasoningEfforts(): void {
@@ -424,6 +507,7 @@ export function registerModelCatalog(
   );
   for (const model of models) {
     if (!model.id) continue;
+    if (model.facts) registerModelCatalogFacts(provider, model.facts);
     if (model.reasoningEfforts?.length) {
       registerModelReasoningEfforts(provider, model.id, model.reasoningEfforts);
     }
@@ -529,35 +613,12 @@ export function registerModelVisionCapability(input: {
 
 let learnedLoaded = false;
 
-const NEGATIVE_CAPABILITY_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-const MAX_LEARNED_CAPABILITIES = 400;
-
-function readLearnedEntry(
-  entry: LearnedVisionEntry | undefined,
-): { vision: boolean; at: number } | undefined {
-  if (typeof entry === "boolean") return { vision: entry, at: 0 };
-  if (!entry || typeof entry.vision !== "boolean") return undefined;
-  const at = typeof entry.at === "string" ? Date.parse(entry.at) : Number.NaN;
-  return { vision: entry.vision, at: Number.isFinite(at) ? at : 0 };
-}
-
-function negativeIsStale(at: number): boolean {
-  return Date.now() - at > NEGATIVE_CAPABILITY_TTL_MS;
-}
-
-function loadLearnedVisionCapabilities(): void {
+function loadLearnedCapabilities(): void {
   if (learnedLoaded) return;
   learnedLoaded = true;
-  let learned: Record<string, LearnedVisionEntry> | undefined;
-  try {
-    learned = getConfig().learnedVisionCapabilities;
-  } catch {
-    return;
-  }
-  if (!learned) return;
-  for (const [key, raw] of Object.entries(learned)) {
+  for (const [key, raw] of Object.entries(learnedVisionCapabilities())) {
     if (visionCapabilityCache.has(key)) continue;
-    const entry = readLearnedEntry(raw);
+    const entry = readLearnedVisionEntry(raw);
     if (!entry) continue;
     if (!entry.vision && negativeIsStale(entry.at)) continue;
     visionCapabilityCache.set(key, {
@@ -566,6 +627,56 @@ function loadLearnedVisionCapabilities(): void {
       observedAt: new Date(entry.at).toISOString(),
     });
   }
+  for (const [key, entry] of Object.entries(learnedRouteCapabilities())) {
+    applyLearnedRouteEntry(key, entry);
+  }
+}
+
+function applyLearnedRouteEntry(key: string, entry: LearnedRouteEntry): void {
+  const at = learnedRouteAt(entry);
+  const stale = negativeIsStale(at);
+  if (
+    entry.vision !== undefined &&
+    !visionCapabilityCache.has(key) &&
+    (entry.vision || !stale)
+  ) {
+    visionCapabilityCache.set(key, {
+      vision: entry.vision,
+      source: "provider",
+      observedAt: new Date(at).toISOString(),
+    });
+  }
+  if (entry.reasoning === true) observedReasoningModels.add(key);
+  else if (entry.reasoning === false) {
+    if (!stale && entry.controlDialect) {
+      reasoningUnsupportedModels.add(key);
+      setNegativeControlDialect(key, entry.controlDialect);
+    } else clearPersistedLearnedRouteReasoning(key);
+  }
+  if (entry.acceptedEfforts?.length) {
+    catalogReasoningEfforts.set(
+      key,
+      entry.acceptedEfforts
+        .map((effort: string) => effort.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+  if (entry.contextTokens === undefined && entry.maxOutputTokens === undefined) {
+    return;
+  }
+  const model = key.slice(key.indexOf(":") + 1);
+  if (!model) return;
+  const existing = catalogFactsByRoute.get(key);
+  catalogFactsByRoute.set(key, {
+    ...existing,
+    id: existing?.id ?? model,
+    ...(entry.contextTokens !== undefined
+      ? { contextTokens: entry.contextTokens }
+      : {}),
+    ...(entry.maxOutputTokens !== undefined
+      ? { maxOutputTokens: entry.maxOutputTokens }
+      : {}),
+  });
 }
 
 export function learnModelVisionCapability(
@@ -573,40 +684,70 @@ export function learnModelVisionCapability(
   model: string,
   vision: boolean,
 ): void {
-  loadLearnedVisionCapabilities();
+  loadLearnedCapabilities();
   const key = capabilityKey(provider, model);
   const existing = visionCapabilityCache.get(key);
   registerModelVisionCapability({ provider, model, vision });
   if (existing?.vision === vision && existing.source === "provider") return;
-  try {
-    const learned = { ...(getConfig().learnedVisionCapabilities ?? {}) };
-    const current = readLearnedEntry(learned[key]);
-    if (current?.vision === vision && (vision || !negativeIsStale(current.at))) {
-      return;
-    }
-    learned[key] = { vision, at: new Date().toISOString() };
-    updateConfig({ learnedVisionCapabilities: pruneLearned(learned) });
-  } catch {
-  }
+  persistLearnedVision(key, vision);
 }
 
-function pruneLearned(
-  learned: Record<string, LearnedVisionEntry>,
-): Record<string, LearnedVisionEntry> {
-  const live: Record<string, LearnedVisionEntry> = {};
-  for (const [key, raw] of Object.entries(learned)) {
-    const entry = readLearnedEntry(raw);
-    if (!entry) continue;
-    if (!entry.vision && negativeIsStale(entry.at)) continue;
-    live[key] = raw;
+export function learnRouteReasoningSupport(
+  provider: ProviderId,
+  model: string,
+  reasoning: boolean,
+  controlDialect?: string,
+): void {
+  if (!model.trim()) return;
+  persistLearnedRoute(reasoningKey(provider, model), {
+    reasoning,
+    ...(controlDialect ? { controlDialect } : {}),
+  });
+}
+
+export function learnRouteAcceptedEfforts(
+  provider: ProviderId,
+  model: string,
+  acceptedEfforts: readonly string[],
+): void {
+  const normalized = acceptedEfforts
+    .map((effort) => effort.trim().toLowerCase())
+    .filter(Boolean);
+  if (normalized.length === 0) return;
+  persistLearnedRoute(reasoningKey(provider, model), {
+    acceptedEfforts: normalized,
+  });
+}
+
+export function learnRouteLimits(
+  provider: ProviderId,
+  model: string,
+  limits: { contextTokens?: number | undefined; maxOutputTokens?: number | undefined },
+): void {
+  if (limits.contextTokens === undefined && limits.maxOutputTokens === undefined) {
+    return;
   }
-  const keys = Object.keys(live);
-  if (keys.length <= MAX_LEARNED_CAPABILITIES) return live;
-  const trimmed: Record<string, LearnedVisionEntry> = {};
-  for (const key of keys.slice(keys.length - MAX_LEARNED_CAPABILITIES)) {
-    trimmed[key] = live[key]!;
-  }
-  return trimmed;
+  persistLearnedRoute(reasoningKey(provider, model), {
+    ...(limits.contextTokens !== undefined
+      ? { contextTokens: limits.contextTokens }
+      : {}),
+    ...(limits.maxOutputTokens !== undefined
+      ? { maxOutputTokens: limits.maxOutputTokens }
+      : {}),
+  });
+}
+
+export function learnRouteRejectedField(
+  provider: ProviderId,
+  model: string,
+  field: string,
+): void {
+  const name = field.trim().toLowerCase();
+  if (!name) return;
+  const key = reasoningKey(provider, model);
+  const existing = readLearnedRoute(key)?.rejectedFields ?? [];
+  if (existing.includes(name)) return;
+  persistLearnedRoute(key, { rejectedFields: [...existing, name] });
 }
 
 export function clearModelVisionCapabilities(): void {
@@ -617,11 +758,19 @@ export function clearModelVisionCapabilities(): void {
 export function clearLearnedVisionCapabilities(): void {
   visionCapabilityCache.clear();
   learnedLoaded = true;
-  try {
-    updateConfig({ learnedVisionCapabilities: {} });
-  } catch {
-  }
+  clearPersistedLearnedVision();
 }
+
+export function clearLearnedRouteCapabilities(): void {
+  clearPersistedLearnedRoutes();
+}
+
+export function reloadLearnedCapabilities(): void {
+  learnedLoaded = false;
+  loadLearnedCapabilities();
+}
+
+export { learnedRouteRejectedFields };
 
 export function visionCapabilitySource(
   provider: ProviderId,
@@ -648,7 +797,7 @@ export function visionEvidence(
   provider: ProviderId,
   model: string,
 ): VisionEvidence {
-  loadLearnedVisionCapabilities();
+  loadLearnedCapabilities();
   if (visionCapabilityCache.has(capabilityKey(provider, model))) {
     return "observed";
   }
@@ -660,7 +809,7 @@ export function modelVisionSupport(
   model: string,
 ): VisionSupport {
   warnOnUnknownProviderId("modelVisionSupport", provider);
-  loadLearnedVisionCapabilities();
+  loadLearnedCapabilities();
   const cached = visionCapabilityCache.get(capabilityKey(provider, model));
   if (cached) return cached.vision ? "yes" : "no";
   const configured = configuredVisionModel(provider);
@@ -689,14 +838,12 @@ export function modelAcceptsImages(
 
 
 const preferredVisionModels: Partial<Record<ProviderId, string>> = {
-  groq: "meta-llama/llama-4-scout-17b-16e-instruct",
   gemini: "gemini-3.5-flash",
   openrouter: "google/gemini-2.5-flash",
   openai: "gpt-4o-mini",
   anthropic: "claude-3-5-haiku-latest",
   nvidia: "meta/llama-4-maverick-17b-128e-instruct",
   agentrouter: "claude-opus-4-6",
-  kimchi: "kimi-k2.6",
   "aws-mantle": "anthropic.claude-haiku-4-5",
   ollama: "llama3.2-vision",
   bynara: "mimo-v2.5-free",
@@ -738,11 +885,9 @@ export function preferredVisionModel(
 const providerToolDialect: Record<ProviderId, ToolDialect> = {
   free: "openai",
   openai: "openai",
-  groq: "openai",
   openrouter: "openai",
   nvidia: "openai",
   agentrouter: "openai",
-  kimchi: "openai",
   bynara: "openai",
   "qwen-cloud": "openai",
   modal: "openai",

@@ -23,6 +23,7 @@ import type { TLSSocket } from "node:tls";
 
 import { Capture, type CapturedFields } from "./capture.js";
 import { decodeTextBody } from "./decode.js";
+import { decodeContentEncoding } from "./content-encoding.js";
 import { enforce as enforceBudget } from "./budget.js";
 import { toReadableText } from "./readable.js";
 import { applyToCookies, applyToHeaders } from "./redact.js";
@@ -1163,7 +1164,32 @@ function headerString(value: string | string[] | undefined): string | undefined 
  * flag. Listener cleanup is handled in `finally` so no event emitter
  * leaks if the caller's body classifier subsequently throws.
  */
+function contentEncodingHeader(res: IncomingMessage): string | undefined {
+  const raw = res.headers["content-encoding"];
+  if (Array.isArray(raw)) return raw.join(", ");
+  return typeof raw === "string" ? raw : undefined;
+}
+
 function readBody(
+  res: IncomingMessage,
+  maxBytes: number,
+  controller: AbortController,
+): Promise<{ body: Buffer; truncated: boolean; bytesReceived: number }> {
+  return readRawBody(res, maxBytes, controller).then((raw) => {
+    const decoded = decodeContentEncoding(raw.body, contentEncodingHeader(res));
+    if (decoded.applied.length === 0) return raw;
+    if (decoded.body.byteLength <= maxBytes) {
+      return { ...raw, body: decoded.body };
+    }
+    return {
+      body: decoded.body.subarray(0, maxBytes),
+      truncated: true,
+      bytesReceived: raw.bytesReceived,
+    };
+  });
+}
+
+function readRawBody(
   res: IncomingMessage,
   maxBytes: number,
   _controller: AbortController,

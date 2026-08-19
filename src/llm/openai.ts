@@ -56,6 +56,7 @@ export const openaiProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("openai", model, payload);
   },
@@ -85,6 +86,7 @@ export const openaiProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("openai", model, payload);
   },

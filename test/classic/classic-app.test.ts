@@ -68,11 +68,11 @@ function fakePersistence(): PersistencePort {
   };
 }
 
-function buildServices(columns = 80): AppServices {
+function buildServices(columns = 80, model = "llama-3.3-70b"): AppServices {
   return createCompositionRoot({
     persistence: fakePersistence(),
     mode: "ask",
-    model: "llama-3.3-70b",
+    model,
     capabilities: detectCapabilities({
       env: {},
       stdoutIsTTY: true,
@@ -145,6 +145,28 @@ describe("ClassicApp", () => {
   it("shows the enabled model effort on the composer boundary", () => {
     const previousThinking = getConfig().thinking;
     updateConfig({ thinking: { enabled: true, effort: "high" } });
+    const services = buildServices(80, "deepseek-v4-flash-free");
+    const wiring = buildWiring(services);
+    const { lastFrame, unmount } = render(
+      createElement(ServicesProvider, {
+        services,
+        children: createElement(ClassicApp, { wiring }),
+      }),
+    );
+
+    try {
+      expect(lastFrame()).toContain("deepseek-v4-flash-free(high)");
+    } finally {
+      unmount();
+      wiring.dispose();
+      services.dispose();
+      updateConfig({ thinking: previousThinking });
+    }
+  });
+
+  it("omits the effort for a model the route sends no reasoning control for", () => {
+    const previousThinking = getConfig().thinking;
+    updateConfig({ thinking: { enabled: true, effort: "high" } });
     const services = buildServices();
     const wiring = buildWiring(services);
     const { lastFrame, unmount } = render(
@@ -155,7 +177,8 @@ describe("ClassicApp", () => {
     );
 
     try {
-      expect(lastFrame()).toContain("llama-3.3-70b(high)");
+      expect(lastFrame()).toContain("llama-3.3-70b");
+      expect(lastFrame()).not.toContain("llama-3.3-70b(high)");
     } finally {
       unmount();
       wiring.dispose();

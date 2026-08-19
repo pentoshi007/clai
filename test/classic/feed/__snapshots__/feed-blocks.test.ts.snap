@@ -14,7 +14,7 @@ exports[`golden fixtures > renders the scripted turn at 40c none ascii 1`] = `
   │                                    │
   │  work  ~/dev/clai                  │
   │  mode  kimi-k2-thinking            │
-  │  prov  groq                        │
+  │  prov  nvidia                      │
   │  vers  3.17.0                      │
   │                                    │
   │  AGENT MODE                        │
@@ -98,7 +98,7 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
   │                                    │
   │  work  ~/dev/clai                  │
   │  mode  kimi-k2-thinking            │
-  │  prov  groq                        │
+  │  prov  nvidia                      │
   │  vers  3.17.0                      │
   │                                    │
   │  AGENT MODE                        │
@@ -182,7 +182,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
   [96m│[39m                                    [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m work [22m[39m[49m [37m~/dev/clai[39m                  [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m mode [22m[39m[49m [36mkimi-k2-thinking[39m            [96m│[39m
-  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mgroq[39m                        [96m│[39m
+  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mnvidia[39m                      [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m vers [22m[39m[49m [37m3.17.0[39m                      [96m│[39m
   [96m│[39m                                    [96m│[39m
   [96m│[39m [48;2;180;83;9m[97m[1m AGENT MODE [22m[39m[49m                       [96m│[39m[0m
@@ -266,7 +266,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
   [96m│[39m                                    [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m work [22m[39m[49m [37m~/dev/clai[39m                  [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m mode [22m[39m[49m [36mkimi-k2-thinking[39m            [96m│[39m
-  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mgroq[39m                        [96m│[39m
+  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mnvidia[39m                      [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m vers [22m[39m[49m [37m3.17.0[39m                      [96m│[39m
   [96m│[39m                                    [96m│[39m
   [96m│[39m [48;2;180;83;9m[97m[1m AGENT MODE [22m[39m[49m                       [96m│[39m[0m
@@ -350,7 +350,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none ascii 1`] = `
   │                                            │
   │  work  ~/dev/clai                          │
   │  mode  kimi-k2-thinking                    │
-  │  prov  groq                                │
+  │  prov  nvidia                              │
   │  vers  3.17.0                              │
   │                                            │
   │  AGENT MODE                                │
@@ -428,7 +428,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
   │                                            │
   │  work  ~/dev/clai                          │
   │  mode  kimi-k2-thinking                    │
-  │  prov  groq                                │
+  │  prov  nvidia                              │
   │  vers  3.17.0                              │
   │                                            │
   │  AGENT MODE                                │
@@ -506,7 +506,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
   [96m│[39m                                            [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m work [22m[39m[49m [37m~/dev/clai[39m                          [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m mode [22m[39m[49m [36mkimi-k2-thinking[39m                    [96m│[39m
-  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mgroq[39m                                [96m│[39m
+  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mnvidia[39m                              [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m vers [22m[39m[49m [37m3.17.0[39m                              [96m│[39m
   [96m│[39m                                            [96m│[39m
   [96m│[39m [48;2;180;83;9m[97m[1m AGENT MODE [22m[39m[49m                               [96m│[39m[0m
@@ -584,7 +584,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
   [96m│[39m                                            [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m work [22m[39m[49m [37m~/dev/clai[39m                          [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m mode [22m[39m[49m [36mkimi-k2-thinking[39m                    [96m│[39m
-  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mgroq[39m                                [96m│[39m
+  [96m│[39m [48;2;51;65;85m[97m[1m prov [22m[39m[49m [32mnvidia[39m                              [96m│[39m
   [96m│[39m [48;2;51;65;85m[97m[1m vers [22m[39m[49m [37m3.17.0[39m                              [96m│[39m
   [96m│[39m                                            [96m│[39m
   [96m│[39m [48;2;180;83;9m[97m[1m AGENT MODE [22m[39m[49m                               [96m│[39m[0m
@@ -655,7 +655,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none ascii 1`] = `
   │                               │                                │
   │   ███   █       ███   █████   │  workdir   ~/dev/clai          │
   │  █   █  █      █   █    █     │  model     kimi-k2-thinking    │
-  │  █      █      █   █    █     │  provider  groq                │
+  │  █      █      █   █    █     │  provider  nvidia              │
   │  █      █      █████    █     │  version   3.17.0              │
   │  █      █      █   █    █     │                                │
   │  █   █  █      █   █    █     │   AGENT MODE                   │
@@ -724,7 +724,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
   │                               │                                │
   │   ███   █       ███   █████   │  workdir   ~/dev/clai          │
   │  █   █  █      █   █    █     │  model     kimi-k2-thinking    │
-  │  █      █      █   █    █     │  provider  groq                │
+  │  █      █      █   █    █     │  provider  nvidia              │
   │  █      █      █████    █     │  version   3.17.0              │
   │  █      █      █   █    █     │                                │
   │  █   █  █      █   █    █     │   AGENT MODE                   │
@@ -793,7 +793,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
   [96m│[39m                               [96m│[39m                                [96m│[39m
   [96m│[39m  [95m ███   █       ███   █████[39m   [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m          [96m│[39m
   [96m│[39m  [35m█   █  █      █   █    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m    [96m│[39m
-  [96m│[39m  [94m█      █      █   █    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                [96m│[39m
+  [96m│[39m  [94m█      █      █   █    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m              [96m│[39m
   [96m│[39m  [96m█      █      █████    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m              [96m│[39m
   [96m│[39m  [36m█      █      █   █    █  [39m   [96m│[39m                                [96m│[39m
   [96m│[39m  [94m█   █  █      █   █    █  [39m   [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                 [96m│[39m[0m
@@ -862,7 +862,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
   [96m│[39m                               [96m│[39m                                [96m│[39m
   [96m│[39m  [95m ███   █       ███   █████[39m   [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m          [96m│[39m
   [96m│[39m  [35m█   █  █      █   █    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m    [96m│[39m
-  [96m│[39m  [94m█      █      █   █    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                [96m│[39m
+  [96m│[39m  [94m█      █      █   █    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m              [96m│[39m
   [96m│[39m  [96m█      █      █████    █  [39m   [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m              [96m│[39m
   [96m│[39m  [36m█      █      █   █    █  [39m   [96m│[39m                                [96m│[39m
   [96m│[39m  [94m█   █  █      █   █    █  [39m   [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                 [96m│[39m[0m
@@ -931,7 +931,7 @@ exports[`golden fixtures > renders the scripted turn at 80c none ascii 1`] = `
   │                                     │                                      │
   │      ███   █       ███   █████      │  workdir   ~/dev/clai                │
   │     █   █  █      █   █    █        │  model     kimi-k2-thinking          │
-  │     █      █      █   █    █        │  provider  groq                      │
+  │     █      █      █   █    █        │  provider  nvidia                    │
   │     █      █      █████    █        │  version   3.17.0                    │
   │     █      █      █   █    █        │                                      │
   │     █   █  █      █   █    █        │   AGENT MODE                         │
@@ -1000,7 +1000,7 @@ exports[`golden fixtures > renders the scripted turn at 80c none unicode 1`] = `
   │                                     │                                      │
   │      ███   █       ███   █████      │  workdir   ~/dev/clai                │
   │     █   █  █      █   █    █        │  model     kimi-k2-thinking          │
-  │     █      █      █   █    █        │  provider  groq                      │
+  │     █      █      █   █    █        │  provider  nvidia                    │
   │     █      █      █████    █        │  version   3.17.0                    │
   │     █      █      █   █    █        │                                      │
   │     █   █  █      █   █    █        │   AGENT MODE                         │
@@ -1069,7 +1069,7 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor ascii 1`] 
   [96m│[39m                                     [96m│[39m                                      [96m│[39m
   [96m│[39m     [95m ███   █       ███   █████[39m      [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                [96m│[39m
   [96m│[39m     [35m█   █  █      █   █    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m          [96m│[39m
-  [96m│[39m     [94m█      █      █   █    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                      [96m│[39m
+  [96m│[39m     [94m█      █      █   █    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                    [96m│[39m
   [96m│[39m     [96m█      █      █████    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                    [96m│[39m
   [96m│[39m     [36m█      █      █   █    █  [39m      [96m│[39m                                      [96m│[39m
   [96m│[39m     [94m█   █  █      █   █    █  [39m      [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                       [96m│[39m[0m
@@ -1138,7 +1138,7 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor unicode 1`
   [96m│[39m                                     [96m│[39m                                      [96m│[39m
   [96m│[39m     [95m ███   █       ███   █████[39m      [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                [96m│[39m
   [96m│[39m     [35m█   █  █      █   █    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m          [96m│[39m
-  [96m│[39m     [94m█      █      █   █    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                      [96m│[39m
+  [96m│[39m     [94m█      █      █   █    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                    [96m│[39m
   [96m│[39m     [96m█      █      █████    █  [39m      [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                    [96m│[39m
   [96m│[39m     [36m█      █      █   █    █  [39m      [96m│[39m                                      [96m│[39m
   [96m│[39m     [94m█   █  █      █   █    █  [39m      [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                       [96m│[39m[0m
@@ -1207,7 +1207,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none ascii 1`] = `
   │                                             │                                              │
   │          ███   █       ███   █████          │  workdir   ~/dev/clai                        │
   │         █   █  █      █   █    █            │  model     kimi-k2-thinking                  │
-  │         █      █      █   █    █            │  provider  groq                              │
+  │         █      █      █   █    █            │  provider  nvidia                            │
   │         █      █      █████    █            │  version   3.17.0                            │
   │         █      █      █   █    █            │                                              │
   │         █   █  █      █   █    █            │   AGENT MODE                                 │
@@ -1275,7 +1275,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
   │                                             │                                              │
   │          ███   █       ███   █████          │  workdir   ~/dev/clai                        │
   │         █   █  █      █   █    █            │  model     kimi-k2-thinking                  │
-  │         █      █      █   █    █            │  provider  groq                              │
+  │         █      █      █   █    █            │  provider  nvidia                            │
   │         █      █      █████    █            │  version   3.17.0                            │
   │         █      █      █   █    █            │                                              │
   │         █   █  █      █   █    █            │   AGENT MODE                                 │
@@ -1343,7 +1343,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
   [96m│[39m                                             [96m│[39m                                              [96m│[39m
   [96m│[39m         [95m ███   █       ███   █████[39m          [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                        [96m│[39m
   [96m│[39m         [35m█   █  █      █   █    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m                  [96m│[39m
-  [96m│[39m         [94m█      █      █   █    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                              [96m│[39m
+  [96m│[39m         [94m█      █      █   █    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                            [96m│[39m
   [96m│[39m         [96m█      █      █████    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                            [96m│[39m
   [96m│[39m         [36m█      █      █   █    █  [39m          [96m│[39m                                              [96m│[39m
   [96m│[39m         [94m█   █  █      █   █    █  [39m          [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                               [96m│[39m[0m
@@ -1411,7 +1411,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
   [96m│[39m                                             [96m│[39m                                              [96m│[39m
   [96m│[39m         [95m ███   █       ███   █████[39m          [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                        [96m│[39m
   [96m│[39m         [35m█   █  █      █   █    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m                  [96m│[39m
-  [96m│[39m         [94m█      █      █   █    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                              [96m│[39m
+  [96m│[39m         [94m█      █      █   █    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                            [96m│[39m
   [96m│[39m         [96m█      █      █████    █  [39m          [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                            [96m│[39m
   [96m│[39m         [36m█      █      █   █    █  [39m          [96m│[39m                                              [96m│[39m
   [96m│[39m         [94m█   █  █      █   █    █  [39m          [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                               [96m│[39m[0m
@@ -1479,7 +1479,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none ascii 1`] = `
   │                                                         │                                                          │
   │                ███   █       ███   █████                │  workdir   ~/dev/clai                                    │
   │               █   █  █      █   █    █                  │  model     kimi-k2-thinking                              │
-  │               █      █      █   █    █                  │  provider  groq                                          │
+  │               █      █      █   █    █                  │  provider  nvidia                                        │
   │               █      █      █████    █                  │  version   3.17.0                                        │
   │               █      █      █   █    █                  │                                                          │
   │               █   █  █      █   █    █                  │   AGENT MODE                                             │
@@ -1546,7 +1546,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
   │                                                         │                                                          │
   │                ███   █       ███   █████                │  workdir   ~/dev/clai                                    │
   │               █   █  █      █   █    █                  │  model     kimi-k2-thinking                              │
-  │               █      █      █   █    █                  │  provider  groq                                          │
+  │               █      █      █   █    █                  │  provider  nvidia                                        │
   │               █      █      █████    █                  │  version   3.17.0                                        │
   │               █      █      █   █    █                  │                                                          │
   │               █   █  █      █   █    █                  │   AGENT MODE                                             │
@@ -1613,7 +1613,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
   [96m│[39m                                                         [96m│[39m                                                          [96m│[39m
   [96m│[39m               [95m ███   █       ███   █████[39m                [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                                    [96m│[39m
   [96m│[39m               [35m█   █  █      █   █    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m                              [96m│[39m
-  [96m│[39m               [94m█      █      █   █    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                                          [96m│[39m
+  [96m│[39m               [94m█      █      █   █    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                                        [96m│[39m
   [96m│[39m               [96m█      █      █████    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                                        [96m│[39m
   [96m│[39m               [36m█      █      █   █    █  [39m                [96m│[39m                                                          [96m│[39m
   [96m│[39m               [94m█   █  █      █   █    █  [39m                [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                                           [96m│[39m[0m
@@ -1680,7 +1680,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
   [96m│[39m                                                         [96m│[39m                                                          [96m│[39m
   [96m│[39m               [95m ███   █       ███   █████[39m                [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                                    [96m│[39m
   [96m│[39m               [35m█   █  █      █   █    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m                              [96m│[39m
-  [96m│[39m               [94m█      █      █   █    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                                          [96m│[39m
+  [96m│[39m               [94m█      █      █   █    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                                        [96m│[39m
   [96m│[39m               [96m█      █      █████    █  [39m                [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                                        [96m│[39m
   [96m│[39m               [36m█      █      █   █    █  [39m                [96m│[39m                                                          [96m│[39m
   [96m│[39m               [94m█   █  █      █   █    █  [39m                [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                                           [96m│[39m[0m
@@ -1747,7 +1747,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none ascii 1`] = `
   │                                                                                                 │                                                                                                  │
   │                                    ███   █       ███   █████                                    │  workdir   ~/dev/clai                                                                            │
   │                                   █   █  █      █   █    █                                      │  model     kimi-k2-thinking                                                                      │
-  │                                   █      █      █   █    █                                      │  provider  groq                                                                                  │
+  │                                   █      █      █   █    █                                      │  provider  nvidia                                                                                │
   │                                   █      █      █████    █                                      │  version   3.17.0                                                                                │
   │                                   █      █      █   █    █                                      │                                                                                                  │
   │                                   █   █  █      █   █    █                                      │   AGENT MODE                                                                                     │
@@ -1814,7 +1814,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
   │                                                                                                 │                                                                                                  │
   │                                    ███   █       ███   █████                                    │  workdir   ~/dev/clai                                                                            │
   │                                   █   █  █      █   █    █                                      │  model     kimi-k2-thinking                                                                      │
-  │                                   █      █      █   █    █                                      │  provider  groq                                                                                  │
+  │                                   █      █      █   █    █                                      │  provider  nvidia                                                                                │
   │                                   █      █      █████    █                                      │  version   3.17.0                                                                                │
   │                                   █      █      █   █    █                                      │                                                                                                  │
   │                                   █   █  █      █   █    █                                      │   AGENT MODE                                                                                     │
@@ -1881,7 +1881,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
   [96m│[39m                                                                                                 [96m│[39m                                                                                                  [96m│[39m
   [96m│[39m                                   [95m ███   █       ███   █████[39m                                    [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                                                                            [96m│[39m
   [96m│[39m                                   [35m█   █  █      █   █    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m                                                                      [96m│[39m
-  [96m│[39m                                   [94m█      █      █   █    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                                                                                  [96m│[39m
+  [96m│[39m                                   [94m█      █      █   █    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                                                                                [96m│[39m
   [96m│[39m                                   [96m█      █      █████    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                                                                                [96m│[39m
   [96m│[39m                                   [36m█      █      █   █    █  [39m                                    [96m│[39m                                                                                                  [96m│[39m
   [96m│[39m                                   [94m█   █  █      █   █    █  [39m                                    [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                                                                                   [96m│[39m[0m
@@ -1948,7 +1948,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
   [96m│[39m                                                                                                 [96m│[39m                                                                                                  [96m│[39m
   [96m│[39m                                   [95m ███   █       ███   █████[39m                                    [96m│[39m [48;2;51;65;85m[97m[1m workdir  [22m[39m[49m [37m~/dev/clai[39m                                                                            [96m│[39m
   [96m│[39m                                   [35m█   █  █      █   █    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m model    [22m[39m[49m [36mkimi-k2-thinking[39m                                                                      [96m│[39m
-  [96m│[39m                                   [94m█      █      █   █    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mgroq[39m                                                                                  [96m│[39m
+  [96m│[39m                                   [94m█      █      █   █    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m provider [22m[39m[49m [32mnvidia[39m                                                                                [96m│[39m
   [96m│[39m                                   [96m█      █      █████    █  [39m                                    [96m│[39m [48;2;51;65;85m[97m[1m version  [22m[39m[49m [37m3.17.0[39m                                                                                [96m│[39m
   [96m│[39m                                   [36m█      █      █   █    █  [39m                                    [96m│[39m                                                                                                  [96m│[39m
   [96m│[39m                                   [94m█   █  █      █   █    █  [39m                                    [96m│[39m [48;2;180;83;9m[97m[1m  AGENT MODE  [22m[39m[49m                                                                                   [96m│[39m[0m

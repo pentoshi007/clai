@@ -31,7 +31,7 @@ describe("classifyStreamFailure", () => {
       "rate-limit",
     );
     expect(
-      classifyStreamFailure(new Error("groq: Model is rate limited (429)")),
+      classifyStreamFailure(new Error("nvidia: Model is rate limited (429)")),
     ).toBe("rate-limit");
   });
 

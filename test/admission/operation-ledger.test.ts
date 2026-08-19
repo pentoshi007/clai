@@ -138,7 +138,7 @@ describe("single-admission operation policy", () => {
   it("caps cross-provider fallback at one generation HTTP request", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
       openai: keySlots(["sk-y"]),
     };
     const transport = installScript(contextTooLarge);
@@ -161,7 +161,7 @@ describe("single-admission operation policy", () => {
   it("pins the route so a single-dispatch operation never reaches the guard", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
       openai: keySlots(["sk-y"]),
     };
     const transport = installScript(rateLimitedWithoutBackoff);
@@ -328,19 +328,19 @@ describe("fallback adoption policy", () => {
   it("keeps a successful fallback session-local by default", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
     };
     installTransport((request) =>
       new URL(request.url).host.includes("nvidia")
         ? contextTooLarge()
-        : chatCompletion("fallback answer", providers.groq.defaultModel),
+        : chatCompletion("fallback answer", providers.openrouter.defaultModel),
     );
 
     const result = await completeWithProvider(turn({ model: undefined }), {
       maxRetries: 0,
     });
 
-    expect(result.provider).toBe("groq");
+    expect(result.provider).toBe("openrouter");
     expect(defaultProviderWrites).toEqual([]);
     expect(providerModelWrites).toEqual([]);
   });
@@ -348,12 +348,12 @@ describe("fallback adoption policy", () => {
   it("persists the fallback route only when adoption is explicit", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
     };
     installTransport((request) =>
       new URL(request.url).host.includes("nvidia")
         ? contextTooLarge()
-        : chatCompletion("fallback answer", providers.groq.defaultModel),
+        : chatCompletion("fallback answer", providers.openrouter.defaultModel),
     );
 
     const result = await completeWithProvider(turn({ model: undefined }), {
@@ -361,10 +361,10 @@ describe("fallback adoption policy", () => {
       adoptFallback: true,
     });
 
-    expect(result.provider).toBe("groq");
-    expect(defaultProviderWrites).toEqual(["groq"]);
+    expect(result.provider).toBe("openrouter");
+    expect(defaultProviderWrites).toEqual(["openrouter"]);
     expect(providerModelWrites).toEqual([
-      ["groq", providers.groq.defaultModel],
+      ["openrouter", providers.openrouter.defaultModel],
     ]);
   });
 });

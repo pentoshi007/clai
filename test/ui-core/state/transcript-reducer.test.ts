@@ -446,7 +446,7 @@ describe("transcript reducer (V2-050)", () => {
     ]);
   });
 
-  it("never moves a late thinking-delta above already-painted assistant text", () => {
+  it("hoists a turn's only thinking row above the answer it produced", () => {
     const seq = buildSequencer();
     const turnId = asTurnId("turn-1");
     let state = EMPTY_TRANSCRIPT_STATE;
@@ -462,10 +462,9 @@ describe("transcript reducer (V2-050)", () => {
         turnId,
       ),
     );
-    // Painted prose stays put: the reasoning arrived later and reads later.
     expect(transcriptItems(state).map((item) => item.kind)).toEqual([
-      "assistant",
       "thinking",
+      "assistant",
     ]);
     state = applyAppEvent(
       state,
@@ -490,10 +489,10 @@ describe("transcript reducer (V2-050)", () => {
       ),
     );
     const items = transcriptItems(state);
-    expect(items.map((i) => i.kind)).toEqual(["assistant", "thinking"]);
-    expect((items[0] as AssistantItem).text).toMatch(/Risk: LOW/);
-    expect((items[1] as ThinkingItem).content).toMatch(/final summary/);
-    expect((items[1] as ThinkingItem).streaming).toBe(false);
+    expect(items.map((i) => i.kind)).toEqual(["thinking", "assistant"]);
+    expect((items[0] as ThinkingItem).content).toMatch(/final summary/);
+    expect((items[0] as ThinkingItem).streaming).toBe(false);
+    expect((items[1] as AssistantItem).text).toMatch(/Risk: LOW/);
   });
 
   it("keeps pre-tool prose open through preview and closes it when execution starts", () => {

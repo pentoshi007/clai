@@ -18,10 +18,10 @@ describe("modelSupportsThinking", () => {
     expect(modelSupportsThinking("nvidia", "moonshotai/kimi-k2.6")).toBe(true);
   });
 
-  it("recognizes DeepSeek R1 on NVIDIA and current Groq reasoning models", () => {
+  it("recognizes DeepSeek R1 and current NVIDIA reasoning models", () => {
     expect(modelSupportsThinking("nvidia", "deepseek-ai/deepseek-r1")).toBe(true);
-    expect(modelSupportsThinking("groq", "qwen/qwen3-32b")).toBe(true);
-    expect(modelSupportsThinking("groq", "openai/gpt-oss-20b")).toBe(true);
+    expect(modelSupportsThinking("nvidia", "qwen/qwen3-32b")).toBe(true);
+    expect(modelSupportsThinking("nvidia", "openai/gpt-oss-20b")).toBe(true);
   });
 
   it("recognizes GPT-5/o-series on OpenAI", () => {
@@ -29,14 +29,14 @@ describe("modelSupportsThinking", () => {
     expect(modelSupportsThinking("openai", "o3-mini")).toBe(true);
   });
 
-  it("recognizes MiniMax M3 on Kimchi", () => {
-    expect(modelSupportsThinking("kimchi", "minimax-m3")).toBe(true);
-    expect(modelSupportsVision("kimchi", "minimax-m3")).toBe(true);
+  it("recognizes MiniMax M3 on TokenRouter", () => {
+    expect(modelSupportsThinking("tokenrouter", "MiniMax-M3")).toBe(true);
+    expect(modelSupportsVision("tokenrouter", "MiniMax-M3")).toBe(true);
   });
 
   it("returns false for non-thinking models", () => {
     expect(modelSupportsThinking("openai", "gpt-4o-mini")).toBe(false);
-    expect(modelSupportsThinking("groq", "llama-3.3-70b-versatile")).toBe(false);
+    expect(modelSupportsThinking("nvidia", "meta/llama-3.3-70b-instruct")).toBe(false);
   });
 });
 
@@ -72,10 +72,13 @@ describe("effectiveThinkingEffort", () => {
     ).toBeUndefined();
   });
 
-  it("returns the configured effort when reasoning is supported", () => {
+  it("clamps the configured effort to what the route advertises", () => {
     expect(
       effectiveThinkingEffort("openai", "gpt-5.1", { enabled: true, effort: "max" }),
-    ).toBe("max");
+    ).toBe("high");
+    expect(
+      effectiveThinkingEffort("openai", "gpt-5.1", { enabled: true, effort: "low" }),
+    ).toBe("low");
   });
 
   it("returns undefined after the route is marked reasoning-unsupported", () => {

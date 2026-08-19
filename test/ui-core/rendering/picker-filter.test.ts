@@ -14,6 +14,18 @@ function models(): PickerOption[] {
 }
 
 describe("filterPickerOptions (PICK-001)", () => {
+  it("does not match a provider by the model configured for it", () => {
+    const providers: PickerOption[] = [
+      { value: "bynara", label: "bynara", description: "ling-3.0-flash-free" },
+      { value: "nvidia", label: "nvidia", description: "meta/llama-3.3-70b-instruct" },
+    ];
+    const scoped = filterPickerOptions(providers, "ling", { searchDescription: false });
+    expect(scoped).toEqual([]);
+    expect(
+      filterPickerOptions(providers, "byn", { searchDescription: false })[0]?.value,
+    ).toBe("bynara");
+  });
+
   it("returns every option unchanged for an empty query", () => {
     expect(filterPickerOptions(models(), "")).toEqual(models());
   });

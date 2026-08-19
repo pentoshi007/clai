@@ -335,7 +335,7 @@ describe("T210 reasoning artifact capture", () => {
     );
     const streamed = await openAiCompatibleStream({
       provider: "Kimi synthetic",
-      providerId: "kimchi",
+      providerId: "bynara",
       baseUrl: "https://synthetic.kimi.example/v1",
       apiKey: "synthetic-key",
       model: "synthetic-compatible",
@@ -353,7 +353,7 @@ describe("T210 reasoning artifact capture", () => {
   });
 
   it("captures Qwen and Kimi plaintext reasoning from the common compatible transport", async () => {
-    for (const providerId of ["qwen-cloud", "kimchi"] as const) {
+    for (const providerId of ["qwen-cloud", "bynara"] as const) {
       installTransport(() =>
         jsonResponse({
           choices: [

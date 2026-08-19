@@ -21,6 +21,8 @@ type BufferedMetaTool = {
 
 export class AgentEventAdapter {
   private turnId: TurnId | undefined;
+  private reasoningSpan = 0;
+  private reasoningSpanOpen = false;
   private readonly bufferedMetaTools = new Map<string, BufferedMetaTool>();
 
   constructor(
@@ -32,8 +34,24 @@ export class AgentEventAdapter {
 
   /** Bind subsequent events to a turn; pass undefined for session-level events. */
   setTurn(turnId: TurnId | undefined): void {
-    if (this.turnId !== turnId) this.bufferedMetaTools.clear();
+    if (this.turnId !== turnId) {
+      this.bufferedMetaTools.clear();
+      this.reasoningSpan = 0;
+      this.reasoningSpanOpen = false;
+    }
     this.turnId = turnId;
+  }
+
+  private currentReasoningId(): string {
+    if (!this.reasoningSpanOpen) {
+      this.reasoningSpan += 1;
+      this.reasoningSpanOpen = true;
+    }
+    return `reasoning-${this.reasoningSpan}`;
+  }
+
+  private closeReasoningSpan(): void {
+    this.reasoningSpanOpen = false;
   }
 
   ingest(event: AgentEvent): void {
@@ -89,18 +107,27 @@ export class AgentEventAdapter {
         });
         return;
       case "thinking-delta":
-        this.push("thinking-delta", { text: event.text });
+        this.push("thinking-delta", {
+          text: event.text,
+          reasoningId: this.currentReasoningId(),
+        });
         return;
-      case "thinking-block":
+      case "thinking-block": {
+        const reasoningId = this.currentReasoningId();
+        this.closeReasoningSpan();
         this.push("thinking-block", {
           messageId: this.sequencer.ids.message(),
           content: event.content,
+          reasoningId,
         });
         return;
+      }
       case "assistant-delta":
+        this.closeReasoningSpan();
         this.push("assistant-delta", { text: event.text });
         return;
       case "assistant-message":
+        this.closeReasoningSpan();
         this.push("assistant-message", {
           messageId: this.sequencer.ids.message(),
           text: event.text,
@@ -110,6 +137,7 @@ export class AgentEventAdapter {
         this.push("notice", { level: event.level, text: event.text });
         return;
       case "tool-call": {
+        this.closeReasoningSpan();
         const toolCallId = this.toolCallId(event.id);
         if (isQuietMetaTool(event.name)) {
           this.bufferedMetaTools.set(toolCallId, {

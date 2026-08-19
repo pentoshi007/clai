@@ -234,6 +234,7 @@ export const freeProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("free", requested, payload);
   },
@@ -271,6 +272,7 @@ export const freeProvider: LlmProvider = {
       toolChoice: request.toolChoice,
       parallelToolCalls: request.parallelToolCalls,
       reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
     });
     return toCompletionResult("free", requested, payload);
   },

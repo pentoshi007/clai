@@ -10,7 +10,6 @@ import type { CommandInvocation } from "../../app/commands/command.js";
 import { discardPlan, implementPlan } from "../plan/plan-lifecycle.js";
 import {
   handleAllow,
-  handleClean,
   handleClear,
   handleCompact,
   handleContext,
@@ -99,9 +98,8 @@ export function attachCommandHandlers(services: AppServices): void {
       services.session.notice("info", `plan discarded · ${before.goal}`);
     })(),
   );
-  c.setHandler("clear", () => handleClear(services));
+  c.setHandler("clear", () => void handleClear(services));
   c.setHandler("new", () => void handleNew(services));
-  c.setHandler("clean", () => handleClean(services));
   c.setHandler("think", () => handleThink(services));
   c.setHandler("context", () => handleContext(services));
   c.setHandler("compact", () => void handleCompact(services));

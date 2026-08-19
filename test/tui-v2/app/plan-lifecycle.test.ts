@@ -255,7 +255,7 @@ describe("plan lifecycle (PLAN-004, F-021/023, V2-070)", () => {
     const services = createCompositionRoot({
       agent: fakeAgent([]),
       persistence,
-      provider: "groq" as never,
+      provider: "nvidia" as never,
       model: "test-model",
       capabilities: detectCapabilities({
         env: {},

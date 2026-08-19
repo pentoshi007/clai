@@ -5,10 +5,10 @@ import { ProviderError } from "../src/llm/http.js";
 
 const NVIDIA_KEY = "nvapi-single";
 const NVIDIA_KEY2 = "nvapi-second";
-const GROQ_KEY = "gsk_fallback";
+const HETZNER_KEY = "hz-fallback";
 
 const nvidiaComplete = vi.fn();
-const groqComplete = vi.fn();
+const hetznerComplete = vi.fn();
 
 vi.mock("../src/llm/nvidia.js", () => ({
   nvidiaProvider: {
@@ -22,20 +22,20 @@ vi.mock("../src/llm/nvidia.js", () => ({
   },
 }));
 
-vi.mock("../src/llm/groq.js", () => ({
-  groqProvider: {
-    id: "groq",
-    displayName: "Groq",
+vi.mock("../src/llm/hetzner.js", () => ({
+  hetznerProvider: {
+    id: "openrouter",
+    displayName: "Hetzner",
     defaultModel: "llama-3.3-70b-versatile",
     validateKey: () => true,
     ping: async () => undefined,
     complete: (request: CompletionRequest, auth: ProviderAuth) =>
-      groqComplete(request, auth) as Promise<CompletionResult>,
+      hetznerComplete(request, auth) as Promise<CompletionResult>,
   },
 }));
 
 let nvidiaKeys: Array<{ id: string; value: string; createdAt: number }> = [];
-let groqKeys: Array<{ id: string; value: string; createdAt: number }> = [];
+let hetznerKeys: Array<{ id: string; value: string; createdAt: number }> = [];
 
 vi.mock("../src/store/keys.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/store/keys.js")>();
@@ -45,8 +45,8 @@ vi.mock("../src/store/keys.js", async (importOriginal) => {
       if (provider === "nvidia") {
         return { keys: nvidiaKeys, activeIndex: 0, source: "fallback" };
       }
-      if (provider === "groq") {
-        return { keys: groqKeys, activeIndex: 0, source: "fallback" };
+      if (provider === "hetzner") {
+        return { keys: hetznerKeys, activeIndex: 0, source: "fallback" };
       }
       return { keys: [], activeIndex: 0, source: "missing" };
     },
@@ -83,10 +83,10 @@ function request(): CompletionRequest {
   };
 }
 
-function groqOk(): CompletionResult {
+function hetznerOk(): CompletionResult {
   return {
-    text: "groq-ok",
-    provider: "groq",
+    text: "hetzner-ok",
+    provider: "hetzner",
     model: "llama-3.3-70b-versatile",
     finishReason: "stop",
   };
@@ -95,8 +95,8 @@ function groqOk(): CompletionResult {
 describe("single-key provider fallback gate", () => {
   beforeEach(() => {
     nvidiaComplete.mockReset();
-    groqComplete.mockReset();
-    groqKeys = [{ id: "g1", value: GROQ_KEY, createdAt: 0 }];
+    hetznerComplete.mockReset();
+    hetznerKeys = [{ id: "g1", value: HETZNER_KEY, createdAt: 0 }];
   });
 
   it("does not switch provider/model when the requested provider has one API key", async () => {
@@ -109,7 +109,7 @@ describe("single-key provider fallback gate", () => {
     ).rejects.toThrow();
 
     expect(nvidiaComplete).toHaveBeenCalled();
-    expect(groqComplete).not.toHaveBeenCalled();
+    expect(hetznerComplete).not.toHaveBeenCalled();
   });
 
   it("still falls back when the requested provider has multiple keys", async () => {
@@ -118,12 +118,12 @@ describe("single-key provider fallback gate", () => {
       { id: "n2", value: NVIDIA_KEY2, createdAt: 0 },
     ];
     nvidiaComplete.mockRejectedValue(new ProviderError("server error", 500));
-    groqComplete.mockResolvedValue(groqOk());
+    hetznerComplete.mockResolvedValue(hetznerOk());
 
     const { completeWithProvider } = await import("../src/llm/router.js");
     const result = await completeWithProvider(request(), { maxRetries: 0 });
 
-    expect(result.text).toBe("groq-ok");
-    expect(groqComplete).toHaveBeenCalled();
+    expect(result.text).toBe("hetzner-ok");
+    expect(hetznerComplete).toHaveBeenCalled();
   });
 });

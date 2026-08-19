@@ -32,8 +32,8 @@ describe("resolveToolDialect", () => {
 
   it("sticky text-only disables native", () => {
     clearTextOnlyModels();
-    markTextOnlyModel("groq", "some-model");
-    expect(modelSupportsNativeTools("groq", "some-model", "auto")).toBe(false);
+    markTextOnlyModel("nvidia", "some-model");
+    expect(modelSupportsNativeTools("nvidia", "some-model", "auto")).toBe(false);
     clearTextOnlyModels();
   });
 });

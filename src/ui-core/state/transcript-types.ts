@@ -33,6 +33,7 @@ export interface ThinkingItem extends ItemBase {
   readonly kind: "thinking";
   readonly content: string;
   readonly streaming: boolean;
+  readonly reasoningId?: string;
 }
 
 export type ToolStatus = "queued" | "running" | "ok" | "failed" | "blocked";

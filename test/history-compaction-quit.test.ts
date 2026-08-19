@@ -76,7 +76,7 @@ function scriptedAgent(answer: string): AgentPort {
         { role: "user" as const, content: request.prompt },
       ];
       handlers.onSuccessfulRequest?.({
-        provider: request.provider ?? ("groq" as never),
+        provider: request.provider ?? ("nvidia" as never),
         model: request.model ?? "test-model",
         messages: requestMessages,
         temperature: 0.2,
@@ -132,7 +132,7 @@ describe("terminal compaction survives quit (regression)", () => {
 
     const services = createCompositionRoot({
       agent: scriptedAgent("a fairly detailed answer " + "z ".repeat(60)),
-      provider: "groq" as never,
+      provider: "nvidia" as never,
       model: "test-model",
       capabilities: capabilities(),
     });

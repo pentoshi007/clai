@@ -166,6 +166,7 @@ export const mantleProvider: LlmProvider = {
         toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
         reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
       });
       return toCompletionResult("aws-mantle", model, payload);
     }
@@ -284,6 +285,7 @@ export const mantleProvider: LlmProvider = {
         toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
         reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
       });
       return toCompletionResult("aws-mantle", model, payload);
     }

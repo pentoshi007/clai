@@ -74,7 +74,7 @@ describe("W01 command catalogue lives in the app layer", () => {
 
   it("still serves the curated model lists", () => {
     expect(Object.keys(knownModels).length).toBeGreaterThan(3);
-    expect(getKnownModels("groq").length).toBeGreaterThan(0);
+    expect(getKnownModels("nvidia").length).toBeGreaterThan(0);
     for (const provider of Object.keys(knownModels)) {
       expect(getKnownModels(provider), provider).toEqual(knownModels[provider]);
     }
@@ -82,8 +82,8 @@ describe("W01 command catalogue lives in the app layer", () => {
   });
 
   it("returns a copy of the model list so callers cannot mutate the catalogue", () => {
-    const first = getKnownModels("groq");
+    const first = getKnownModels("nvidia");
     first.push("mutated");
-    expect(getKnownModels("groq")).not.toContain("mutated");
+    expect(getKnownModels("nvidia")).not.toContain("mutated");
   });
 });

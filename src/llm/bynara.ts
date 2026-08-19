@@ -104,6 +104,7 @@ export const bynaraProvider: LlmProvider = {
               toolChoice: request.toolChoice,
               parallelToolCalls: request.parallelToolCalls,
               reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+              ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
             });
             return toCompletionResult("bynara", model, payload);
           },
@@ -164,6 +165,7 @@ export const bynaraProvider: LlmProvider = {
               toolChoice: request.toolChoice,
               parallelToolCalls: request.parallelToolCalls,
               reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+              ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
             });
             return toCompletionResult("bynara", model, payload);
           },

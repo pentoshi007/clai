@@ -544,7 +544,7 @@ export async function getProviderKeys(provider: ProviderId): Promise<ProviderKey
  *      legacy bare `<provider>` account) — i.e. a key the user explicitly
  *      stored via `clai set <provider> <key>` always wins.
  *   2. Restricted-permission plaintext fallback file (`~/.clai/keys.json`)
- *   3. Provider env var (e.g. `GROQ_API_KEY`) — used only when nothing has
+ *   3. Provider env var (e.g. `OPENAI_API_KEY`) — used only when nothing has
  *      been explicitly stored, so a stale ambient export can never override
  *      a key the user deliberately set with `clai set`.
  *

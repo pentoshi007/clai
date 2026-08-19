@@ -45,8 +45,8 @@ describe("panel host", () => {
       [() => void harness.overlay.openSecret({ title: "sudo", prompt: "pw" }), "sudo"],
       [() => void harness.overlay.openScopeEditor({ initialTargets: [] }), "Engagement scope"],
       [
-        () => void harness.overlay.openKeysEditor({ provider: "groq", initialKeys: [] }),
-        "groq",
+        () => void harness.overlay.openKeysEditor({ provider: "nvidia", initialKeys: [] }),
+        "nvidia",
       ],
       [
         () => harness.overlay.openPromptActions({ prompt: "hello", onResend: vi.fn() }),

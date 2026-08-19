@@ -134,17 +134,17 @@ describe('custom providers', () => {
       defaultModel: 'm1',
     });
     // freeOnly off: the custom provider appears after the built-ins.
-    const chain = router.buildFallbackChain('groq', false, true);
+    const chain = router.buildFallbackChain('nvidia', false, true);
     expect(chain).toContain('myllm');
     // freeOnly on: custom providers are paid-cloud by default, so excluded.
-    const freeChain = router.buildFallbackChain('groq', true, true);
+    const freeChain = router.buildFallbackChain('nvidia', true, true);
     expect(freeChain).not.toContain('myllm');
   });
 
   it('normalizeCustomProviderId rejects collisions and bad slugs', async () => {
     const { cp } = await loadModules();
-    expect(cp.normalizeCustomProviderId('myllm', ['groq'])).toBe('myllm');
-    expect(cp.normalizeCustomProviderId('groq', ['groq'])).toBe('');
+    expect(cp.normalizeCustomProviderId('myllm', ['nvidia'])).toBe('myllm');
+    expect(cp.normalizeCustomProviderId('nvidia', ['nvidia'])).toBe('');
     expect(cp.normalizeCustomProviderId('Bad Slug!', [])).toBe('');
     expect(cp.normalizeCustomProviderId('', [])).toBe('');
   });

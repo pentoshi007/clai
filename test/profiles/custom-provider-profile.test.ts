@@ -67,11 +67,26 @@ describe("custom profile validation", () => {
     expect(errors.join("\n")).toContain("requires a disableForm");
   });
 
-  it("rejects control dialects the custom serializer cannot emit", () => {
+  it("accepts every dialect the shared control emitter can serialize", () => {
+    for (const dialect of [
+      "deepseek-thinking",
+      "qwen-enable-thinking",
+      "glm-enable-thinking",
+      "nemotron-reasoning-budget",
+      "openrouter-reasoning-max-tokens",
+    ] as const) {
+      const { errors } = validateCustomProviderProfile({
+        reasoning: { controlDialect: dialect },
+      });
+      expect(errors.join("\n")).not.toContain("controlDialect");
+    }
+  });
+
+  it("rejects a control dialect that is not in the taxonomy", () => {
     const { errors } = validateCustomProviderProfile({
-      reasoning: { controlDialect: "deepseek-thinking" },
+      reasoning: { controlDialect: "invented-dialect" as never },
     });
-    expect(errors.join("\n")).toContain("not serializable on custom routes yet");
+    expect(errors.join("\n")).toContain("reasoning.controlDialect must be one of");
   });
 
   it("rejects malformed limits and enum values", () => {
@@ -145,14 +160,17 @@ describe("custom profile resolution", () => {
     expect(profile.limits.source).toBe("user-config");
   });
 
-  it("a DeepSeek model on a non-DeepSeek host gets no upstream fields", () => {
+  it("a DeepSeek model on a non-DeepSeek host gets the vendor dialect but no host facets", () => {
     const profile = resolveCustomProviderProfile({
       id: "gateway",
       model: "deepseek-v4-pro",
       baseUrl: "https://gw.example.com/v1",
     });
-    expect(profile.reasoning.control.dialect).toBe("none");
-    expect(profile.reasoning.control.status).toBe("unknown");
+    expect(profile.reasoning.control.dialect).toBe("deepseek-thinking");
+    expect(profile.limits.contextTokens).not.toBe(1_000_000);
+    expect(profile.usage.cachedInput ?? []).not.toContain(
+      "usage.prompt_cache_hit_tokens",
+    );
   });
 });
 

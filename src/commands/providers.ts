@@ -71,7 +71,6 @@ async function promptForSecret(provider: ProviderId): Promise<string> {
 }
 
 function invalidFormatHint(provider: ProviderId): string {
-  if (provider === "groq") return "Groq keys usually start with gsk_";
   if (provider === "gemini")
     return "Gemini keys usually start with AIza or AQ.";
   if (provider === "openrouter")
@@ -83,8 +82,6 @@ function invalidFormatHint(provider: ProviderId): string {
     return "NVIDIA NIM keys usually start with nvapi-";
   if (provider === "agentrouter")
     return "AgentRouter keys usually start with sk- (issued at https://agentrouter.org/console/token)";
-  if (provider === "kimchi")
-    return "Kimchi keys are alphanumeric (at least 8 characters)";
   if (provider === "aws-mantle")
     return "Mantle keys are alphanumeric with base64 characters (at least 8 characters)";
   if (provider === "bynara")

@@ -23,19 +23,20 @@ describe("every built-in provider resolves deterministically", () => {
 });
 
 describe("unknown models stay conservative", () => {
-  it("sends no optional control and keeps replay disabled", () => {
+  it("assumes nothing model-specific and keeps replay disabled", () => {
     const profile = resolveBuiltInProfile({
       provider: "tokenrouter",
       model: "totally-unknown-model",
     });
-    expect(profile.reasoning.control.status).toBe("unknown");
+    expect(profile.reasoning.control.dialect).toBe("openai-effort");
+    expect(profile.reasoning.generation).toBe("unknown");
     expect(profile.reasoning.acceptedEfforts).toHaveLength(0);
     expect(profile.reasoning.replayScope).toBe("none");
   });
 
   it("falls back to permissive output parsing when the route has no output evidence", () => {
     const profile = resolveBuiltInProfile({
-      provider: "groq",
+      provider: "openai",
       model: "totally-unknown-model",
     });
     expect(profile.reasoning.outputShapes.length).toBeGreaterThan(3);
@@ -44,10 +45,19 @@ describe("unknown models stay conservative", () => {
   it("does not infer a control dialect from the model name alone", () => {
     const profile = resolveBuiltInProfile({
       provider: "free",
-      model: "kimi-k3-mystery-hosted",
+      model: "mystery-hosted-1",
     });
     expect(profile.reasoning.control.dialect).toBe("none");
     expect(profile.reasoning.control.status).toBe("unknown");
+  });
+
+  it("treats a documented family id as declared evidence for the dialect", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "free",
+      model: "kimi-k3-mystery-hosted",
+    });
+    expect(profile.reasoning.control.dialect).toBe("openai-effort");
+    expect(profile.reasoning.acceptedEfforts).toEqual(["low", "high", "max"]);
   });
 });
 
@@ -68,7 +78,10 @@ describe("deepseek v4 route separation", () => {
     expect(layer.usage!.uncachedInput).toContain(
       "usage.prompt_cache_miss_tokens",
     );
-    expect(profile.reasoning.control.dialect).not.toBe("deepseek-thinking");
+    expect(profile.limits.contextTokens).not.toBe(1_000_000);
+    expect(profile.usage.cachedInput ?? []).not.toContain(
+      "usage.prompt_cache_hit_tokens",
+    );
   });
 
   it("nvidia hosts v4 through chat-template kwargs, not the direct toggle", () => {
@@ -102,29 +115,46 @@ describe("deepseek v4 route separation", () => {
     expect(profile.cache.cacheAffectingFields).toContain("reasoning_history");
   });
 
-  it("tokenrouter and modal omit upstream control fields entirely", () => {
-    for (const provider of ["tokenrouter", "modal"] as const) {
+  it("keeps gateway routes on the gateway's own effort control", () => {
+    for (const [provider, dialect] of [
+      ["tokenrouter", "openai-effort"],
+      ["modal", "modal-advertised-effort"],
+    ] as const) {
       const profile = resolveBuiltInProfile({
         provider,
         model: "deepseek/deepseek-v4-pro",
       });
       expect(profile.reasoning.generation).toBe("default-on");
-      expect(profile.reasoning.control.status).toBe("unknown");
-      expect(profile.reasoning.control.dialect === "deepseek-thinking").toBe(
-        false,
-      );
+      expect(profile.reasoning.control.dialect).toBe(dialect);
     }
+  });
+
+  it("keeps the vendor toggle where the endpoint declares it", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "free",
+      model: "deepseek-v4-pro",
+    });
+    expect(profile.reasoning.control.dialect).toBe("deepseek-thinking");
+    expect(profile.reasoning.disableForm).toBe("thinking-disabled");
+  });
+
+  it("keeps openrouter on its own normalized control instead of the vendor one", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4-pro",
+    });
+    expect(profile.reasoning.control.dialect).toBe("openai-nested-reasoning");
   });
 });
 
 describe("kimi preservation matrix", () => {
   it("k3 and k2.7 are mandatory all-history", () => {
     for (const model of ["kimi-k3", "moonshotai/kimi-k2.7-code"]) {
-      const profile = resolveBuiltInProfile({ provider: "kimchi", model });
+      const profile = resolveBuiltInProfile({ provider: "tokenrouter", model });
       expect(profile.reasoning.generation).toBe("mandatory");
       expect(profile.reasoning.replayScope).toBe("all-history");
       expect(profile.reasoning.finalTurnPreservation).toBe("required");
-      expect(profile.reasoning.control.status).toBe("unknown");
+      expect(profile.reasoning.disableForm).toBe("none-documented");
       expect(profile.outputBudget.mandatoryReasoningReserveTokens).toBeGreaterThan(
         0,
       );
@@ -228,7 +258,7 @@ describe("route-specific contracts", () => {
       model: "moonshotai/Kimi-K3",
     });
     expect(profile.transport.authType).toBe("proxy-headers");
-    expect(profile.reasoning.control.status).toBe("unknown");
+    expect(profile.reasoning.control.dialect).toBe("modal-advertised-effort");
     expect(profile.reasoning.generation).toBe("mandatory");
   });
 

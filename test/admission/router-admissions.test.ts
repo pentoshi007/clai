@@ -153,7 +153,7 @@ describe("key rotation admissions", () => {
   it("issues four admissions for two keys even with maxRetries 0", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
     };
     const transport = installScript(rateLimitedWithoutBackoff);
 
@@ -224,7 +224,7 @@ describe("cross-provider fallback admissions", () => {
   it("admits once per keyed provider when every route rejects the input size", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
       openai: keySlots(["sk-y"]),
     };
     const transport = installScript(contextTooLarge);
@@ -236,7 +236,7 @@ describe("cross-provider fallback admissions", () => {
     expect(transport.generations).toHaveLength(3);
     expect(admittedHosts(transport)).toEqual([
       "integrate.api.nvidia.com",
-      "api.groq.com",
+      "openrouter.ai",
       "api.openai.com",
     ]);
   });
@@ -244,7 +244,7 @@ describe("cross-provider fallback admissions", () => {
   it("keeps a rate-limited turn on the requested provider", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
     };
     const transport = installScript(rateLimitedWithoutBackoff);
 
@@ -261,7 +261,7 @@ describe("cross-provider fallback admissions", () => {
   });
 
   it("disables fallback entirely when exactly one key is configured", async () => {
-    slotsByProvider = { nvidia: keySlots(["nvapi-a"]), groq: keySlots(["gsk-x"]) };
+    slotsByProvider = { nvidia: keySlots(["nvapi-a"]), openrouter: keySlots(["sk-or-x"]) };
     const transport = installScript(contextTooLarge);
 
     await expect(
@@ -275,7 +275,7 @@ describe("cross-provider fallback admissions", () => {
     providerFallback = false;
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
     };
     const transport = installScript(contextTooLarge);
 
@@ -468,7 +468,7 @@ describe("operation attempt usage", () => {
   it("marks cross-provider admissions as fallback", async () => {
     slotsByProvider = {
       nvidia: keySlots(["nvapi-a", "nvapi-b"]),
-      groq: keySlots(["gsk-x"]),
+      openrouter: keySlots(["sk-or-x"]),
       openai: keySlots(["sk-y"]),
     };
     installScript(contextTooLarge);
@@ -489,7 +489,7 @@ describe("operation attempt usage", () => {
       })),
     ).toEqual([
       { provider: "nvidia", reason: "initial", outcome: "failure" },
-      { provider: "groq", reason: "fallback", outcome: "failure" },
+      { provider: "openrouter", reason: "fallback", outcome: "failure" },
       { provider: "openai", reason: "fallback", outcome: "failure" },
     ]);
   });

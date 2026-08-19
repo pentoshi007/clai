@@ -36,6 +36,40 @@ function truncateUtf8(text: string, maxBytes: number): string {
   return compact;
 }
 
+const BODY_REGION_MARKERS = ["\nBody:\n", "\n---\n", "\nContent:\n"] as const;
+
+function bodyRegionSplit(
+  text: string,
+): { preamble: string; marker: string; body: string } | undefined {
+  let best: { index: number; marker: string } | undefined;
+  for (const marker of BODY_REGION_MARKERS) {
+    const index = text.indexOf(marker);
+    if (index < 0) continue;
+    if (!best || index < best.index) best = { index, marker };
+  }
+  if (!best) return undefined;
+  return {
+    preamble: text.slice(0, best.index),
+    marker: best.marker,
+    body: text.slice(best.index + best.marker.length),
+  };
+}
+
+function truncateUtf8PreservingBody(text: string, maxBytes: number): string {
+  const regions = bodyRegionSplit(text);
+  if (!regions) return truncateUtf8(text, maxBytes);
+  const markerBytes = Buffer.byteLength(regions.marker, "utf8");
+  const preambleBudget = Math.min(
+    Buffer.byteLength(regions.preamble, "utf8"),
+    Math.floor(maxBytes * 0.25),
+  );
+  const preamble = truncateUtf8(regions.preamble, preambleBudget);
+  const bodyBudget =
+    maxBytes - Buffer.byteLength(preamble, "utf8") - markerBytes;
+  if (bodyBudget <= 0) return truncateUtf8(text, maxBytes);
+  return `${preamble}${regions.marker}${truncateUtf8(regions.body, bodyBudget)}`;
+}
+
 /** Apply model-requested line windows, then a strict UTF-8 byte ceiling. */
 export function selectOutput(
   text: string,
@@ -58,12 +92,26 @@ export function selectOutput(
         ].join("\n");
       }
     } else if (top !== undefined) {
-      selected = lines.slice(0, top).join("\n");
+      selected =
+        top >= lines.length
+          ? text
+          : [
+              ...lines.slice(0, top),
+              `... (${lines.length - top} lines omitted)`,
+            ].join("\n");
     } else if (bottom !== undefined) {
-      selected = lines.slice(Math.max(0, lines.length - bottom)).join("\n");
+      selected =
+        bottom >= lines.length
+          ? text
+          : [
+              `... (${lines.length - bottom} lines omitted)`,
+              ...lines.slice(lines.length - bottom),
+            ].join("\n");
     }
   }
 
   const maxBytes = nonNegativeInteger(selection.maxOutputBytes);
-  return maxBytes === undefined ? selected : truncateUtf8(selected, maxBytes);
+  return maxBytes === undefined
+    ? selected
+    : truncateUtf8PreservingBody(selected, maxBytes);
 }

@@ -72,8 +72,8 @@ describe("serialized-request accounting service", () => {
   it("matches the legacy breakdown totals exactly (no heuristic drift)", () => {
     const legacy = buildContextBreakdown(HISTORY, [...TOOLS]).estimatedTotalTokens;
     const { accounting } = accountAssembledRequest({
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
+      provider: "nvidia",
+      model: "meta/llama-3.3-70b-instruct",
       messages: HISTORY,
       stream: true,
       tools: TOOLS,
@@ -208,16 +208,16 @@ describe("serialized-request accounting service", () => {
 
   it("accounts a compiled plan directly with identical totals", () => {
     const plan = compileRequestPlan({
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
+      provider: "nvidia",
+      model: "meta/llama-3.3-70b-instruct",
       messages: HISTORY,
       stream: true,
       tools: TOOLS,
     });
-    const fromPlan = accountRequestPlan(plan, { provider: "groq", model: "llama-3.3-70b-versatile" });
+    const fromPlan = accountRequestPlan(plan, { provider: "nvidia", model: "meta/llama-3.3-70b-instruct" });
     const assembled = accountAssembledRequest({
-      provider: "groq",
-      model: "llama-3.3-70b-versatile",
+      provider: "nvidia",
+      model: "meta/llama-3.3-70b-instruct",
       messages: HISTORY,
       stream: true,
       tools: TOOLS,

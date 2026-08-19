@@ -92,16 +92,16 @@ describe("formatKeyEventStatus", () => {
     expect(
       formatKeyEventStatus({
         type: "using",
-        provider: "groq",
+        provider: "nvidia",
         maskedTail: "…ab12",
         keyIndex: 0,
         keyCount: 2,
       }),
-    ).toContain("using groq");
+    ).toContain("using nvidia");
     expect(
       formatKeyEventStatus({
         type: "switch",
-        provider: "groq",
+        provider: "nvidia",
         maskedTail: "…cd34",
         reason: "rate limited",
         keyIndex: 1,
@@ -111,7 +111,7 @@ describe("formatKeyEventStatus", () => {
     expect(
       formatKeyEventStatus({
         type: "retry",
-        provider: "groq",
+        provider: "nvidia",
         maskedTail: "…ab12",
         reason: "rate limited",
         waitMs: 2000,

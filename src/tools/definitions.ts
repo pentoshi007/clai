@@ -566,20 +566,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           enum: ["full", "headers", "body"],
           description: "Return full evidence (default), headers/status only, or body only",
         },
-        topLines: {
-          type: "integer",
-          minimum: 0,
-          description: "Return only the first N rendered lines. Omit to retain complete evidence in the saved artifact.",
-        },
         bottomLines: {
           type: "integer",
           minimum: 0,
-          description: "Return only the last N rendered lines. Omit to retain complete evidence in the saved artifact.",
+          description: "Return only the last N rendered lines. Drops everything before them from the model's view; an omission marker is inserted. Evidence stays complete in the saved artifact.",
         },
         maxOutputBytes: {
           type: "integer",
           minimum: 0,
-          description: "Strict final-output ceiling. Omit to retain complete evidence; model context is capped separately.",
+          description: "Strict final-output ceiling in bytes. Cuts content the model would otherwise see; a body slice is preserved but the rest is dropped. Model context is capped separately, so this only makes the view smaller.",
         },
         forwardSensitiveHeaders: {
           type: "boolean",
@@ -787,17 +782,17 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         topLines: {
           type: "integer",
           minimum: 0,
-          description: "Return only the first N rendered lines (combine with bottomLines for head+tail)",
+          description: "Return only the first N rendered lines. Everything after them is dropped from the model's view behind an omission marker (combine with bottomLines for head+tail).",
         },
         bottomLines: {
           type: "integer",
           minimum: 0,
-          description: "Return only the last N rendered lines (combine with topLines for head+tail)",
+          description: "Return only the last N rendered lines. Everything before them is dropped from the model's view behind an omission marker (combine with topLines for head+tail).",
         },
         maxOutputBytes: {
           type: "integer",
           minimum: 0,
-          description: "Strict byte ceiling applied to the final rendered output",
+          description: "Strict byte ceiling on the final rendered output. Cuts content the model would otherwise see; a body slice is preserved but the rest is dropped.",
         },
         redactSensitive: { type: "boolean" },
       },

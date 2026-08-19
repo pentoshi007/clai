@@ -11,8 +11,8 @@ import { createHarness, ink, rowsOf } from "./harness.js";
 const MODELS: PickerRequest = {
   title: "Select model",
   options: [
-    { value: "kimi-k2-thinking", label: "kimi-k2-thinking", description: "groq · 128k" },
-    { value: "kimi-k2-instruct", label: "kimi-k2-instruct", description: "groq · 128k" },
+    { value: "kimi-k2-thinking", label: "kimi-k2-thinking", description: "nvidia · 128k" },
+    { value: "kimi-k2-instruct", label: "kimi-k2-instruct", description: "nvidia · 128k" },
     { value: "gpt-oss-20b", label: "gpt-oss-20b", description: "openrouter", active: true },
   ],
 };
@@ -50,15 +50,15 @@ describe("picker panel rows", () => {
   });
 
   it("drops descriptions below 68 columns", () => {
-    expect(render(MODELS, pickerInitialState(MODELS), 80).rows[1]).toContain("groq");
-    expect(render(MODELS, pickerInitialState(MODELS), 44).rows[1]).not.toContain("groq");
+    expect(render(MODELS, pickerInitialState(MODELS), 80).rows[1]).toContain("nvidia");
+    expect(render(MODELS, pickerInitialState(MODELS), 44).rows[1]).not.toContain("nvidia");
   });
 
   it("puts the description on its own row for twoLine requests", () => {
     const request: PickerRequest = { ...MODELS, twoLine: true };
     const { rows } = render(request, { query: "", cursor: 0, top: 0 });
     expect(rows[1]).toContain("kimi-k2-thinking");
-    expect(rows[2]).toContain("groq · 128k");
+    expect(rows[2]).toContain("nvidia · 128k");
     expect(rows[2]).not.toContain("kimi");
   });
 

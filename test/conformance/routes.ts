@@ -25,14 +25,6 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     note: "keyless free-tier gateway",
   },
   {
-    id: "groq",
-    provider: "groq",
-    family: "chat_completions",
-    model: "llama-3.3-70b-versatile",
-    auth: { apiKey: "gsk_conformance_key" },
-    urlContains: "/chat/completions",
-  },
-  {
     id: "openai",
     provider: "openai",
     family: "chat_completions",
@@ -62,14 +54,6 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     family: "chat_completions",
     model: "claude-opus-4-6",
     auth: { apiKey: "sk-conformance" },
-    urlContains: "/chat/completions",
-  },
-  {
-    id: "kimchi",
-    provider: "kimchi",
-    family: "chat_completions",
-    model: "kimi-k2.6",
-    auth: { apiKey: "conformance-key" },
     urlContains: "/chat/completions",
   },
   {

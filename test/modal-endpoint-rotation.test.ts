@@ -8,11 +8,11 @@ const EP1 = "https://ws-one--ep-kimi.us-west.modal.direct/v1";
 const EP2 = "https://ws-two--ep-kimi.us-west.modal.direct/v1";
 const KEY1 = "wk-aaa111:ws-secret111";
 const KEY2 = "wk-bbb222:ws-secret222";
-const GROQ_KEY1 = "gsk_test1111";
-const GROQ_KEY2 = "gsk_test2222";
+const GROQ_KEY1 = "nvapi-test1111";
+const GROQ_KEY2 = "nvapi-test2222";
 
 const modalComplete = vi.fn();
-const groqComplete = vi.fn();
+const nvidiaComplete = vi.fn();
 
 vi.mock("../src/llm/modal.js", () => ({
   modalProvider: {
@@ -26,20 +26,20 @@ vi.mock("../src/llm/modal.js", () => ({
   },
 }));
 
-vi.mock("../src/llm/groq.js", () => ({
-  groqProvider: {
-    id: "groq",
-    displayName: "Groq",
+vi.mock("../src/llm/nvidia.js", () => ({
+  nvidiaProvider: {
+    id: "nvidia",
+    displayName: "NVIDIA",
     defaultModel: "llama-3.3-70b-versatile",
     validateKey: () => true,
     ping: async () => undefined,
     complete: (request: CompletionRequest, auth: ProviderAuth) =>
-      groqComplete(request, auth) as Promise<CompletionResult>,
+      nvidiaComplete(request, auth) as Promise<CompletionResult>,
   },
 }));
 
 let modalKeys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }> = [];
-let groqKeys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }> = [];
+let nvidiaKeys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }> = [];
 let endpointUrls: string[] = [EP1, EP2];
 let disabledEndpoints: string[] = [];
 let persistedEndpointIndex: number | undefined;
@@ -50,7 +50,7 @@ vi.mock("../src/store/keys.js", async (importOriginal) => {
   return {
     ...actual,
     getProviderKeys: async (provider: string) => ({
-      keys: provider === "modal" ? modalKeys : groqKeys,
+      keys: provider === "modal" ? modalKeys : nvidiaKeys,
       activeIndex: 0,
       source: "fallback",
     }),
@@ -95,9 +95,9 @@ function request(): CompletionRequest {
   };
 }
 
-function groqRequest(): CompletionRequest {
+function nvidiaRequest(): CompletionRequest {
   return {
-    provider: "groq",
+    provider: "nvidia",
     model: "llama-3.3-70b-versatile",
     messages: [{ role: "user", content: "hi" }],
   };
@@ -112,10 +112,10 @@ function ok(): CompletionResult {
   };
 }
 
-function groqOk(): CompletionResult {
+function nvidiaOk(): CompletionResult {
   return {
-    text: "groq-ok",
-    provider: "groq",
+    text: "nvidia-ok",
+    provider: "nvidia",
     model: "llama-3.3-70b-versatile",
     finishReason: "stop",
   };
@@ -124,7 +124,7 @@ function groqOk(): CompletionResult {
 describe("modal endpoint + key rotation", () => {
   beforeEach(() => {
     modalComplete.mockReset();
-    groqComplete.mockReset();
+    nvidiaComplete.mockReset();
     endpointUrls = [EP1, EP2];
     disabledEndpoints = [];
     persistedEndpointIndex = undefined;
@@ -133,7 +133,7 @@ describe("modal endpoint + key rotation", () => {
       { id: "k1", value: KEY1, createdAt: 0 },
       { id: "k2", value: KEY2, createdAt: 0 },
     ];
-    groqKeys = [
+    nvidiaKeys = [
       { id: "g1", value: GROQ_KEY1, createdAt: 0 },
       { id: "g2", value: GROQ_KEY2, createdAt: 0 },
     ];
@@ -343,27 +343,27 @@ describe("modal endpoint + key rotation", () => {
 
   describe("provider without endpoints", () => {
     it("rotates keys with no baseUrl in auth and no endpoint events", async () => {
-      groqComplete
+      nvidiaComplete
         .mockRejectedValueOnce(new ProviderError("server error", 500))
         .mockRejectedValueOnce(new ProviderError("server error", 500))
-        .mockResolvedValueOnce(groqOk());
+        .mockResolvedValueOnce(nvidiaOk());
 
       const events: ProviderKeyEvent[] = [];
       const { completeWithProvider } = await import("../src/llm/router.js");
-      const result = await completeWithProvider(groqRequest(), {
+      const result = await completeWithProvider(nvidiaRequest(), {
         maxRetries: 0,
         onKeyEvent: (event) => events.push(event),
       });
 
-      expect(result.text).toBe("groq-ok");
-      expect(groqComplete).toHaveBeenCalledTimes(3);
-      expect(groqComplete.mock.calls[0]![1]).toMatchObject({
+      expect(result.text).toBe("nvidia-ok");
+      expect(nvidiaComplete).toHaveBeenCalledTimes(3);
+      expect(nvidiaComplete.mock.calls[0]![1]).toMatchObject({
         apiKey: GROQ_KEY1,
       });
-      expect(groqComplete.mock.calls[2]![1]).toMatchObject({
+      expect(nvidiaComplete.mock.calls[2]![1]).toMatchObject({
         apiKey: GROQ_KEY2,
       });
-      for (const call of groqComplete.mock.calls) {
+      for (const call of nvidiaComplete.mock.calls) {
         expect(call[1]).not.toHaveProperty("baseUrl");
       }
       expect(events.some((event) => event.type === "endpoint")).toBe(false);

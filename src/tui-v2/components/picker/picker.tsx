@@ -387,7 +387,7 @@ function PickerRow(props: {
   }
 
   // Single-line: label + optional "active" + description (model) in green.
-  // Classic: `groq openai/gpt-oss-20b` with model in response green.
+  // Classic: `nvidia openai/gpt-oss-20b` with model in response green.
   const labelFg = focused || option.active ? theme.white : theme.foreground;
   const activeFg = focused ? theme.white : theme.cyan;
   const modelFg = focused ? theme.white : theme.response;

@@ -142,6 +142,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
         tools: request.tools, toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
         reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
         usageAliases: def.usageAliases,
       });
       return toCompletionResult(providerId, model, payload);
@@ -162,6 +163,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
         reasoningStyle, tools: request.tools, toolChoice: request.toolChoice,
         parallelToolCalls: request.parallelToolCalls,
         reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+        ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
         includeStreamUsage: withUsage,
         usageAliases: def.usageAliases,
         streamTerminal:

@@ -128,7 +128,7 @@ export function scriptedTurn(): ScriptedTurn {
       afterTokens: 9_100,
       summary: "Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.",
     }, turnId),
-    seq.build("notice", { level: "warn", text: "provider fell back to groq" }, turnId),
+    seq.build("notice", { level: "warn", text: "provider fell back to nvidia" }, turnId),
   ];
 
   return { state: events.reduce(applyAppEvent, EMPTY_TRANSCRIPT_STATE), spool };
@@ -157,7 +157,7 @@ export function feedView(turn: ScriptedTurn, options: ViewOptions): FeedViewInpu
       ? {
           version: "3.17.0",
           mode: "AGENT",
-          provider: "groq",
+          provider: "nvidia",
           model: "kimi-k2-thinking",
           permissions: "auto-approve reads",
           workdir: "~/dev/clai",

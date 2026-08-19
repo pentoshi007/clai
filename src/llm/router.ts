@@ -25,7 +25,6 @@ import {
 } from "../store/keys.js";
 import { anthropicProvider } from "./anthropic.js";
 import { geminiProvider } from "./gemini.js";
-import { groqProvider } from "./groq.js";
 import {
   ProviderError,
   bodyAddsInformation,
@@ -50,6 +49,14 @@ import {
 import { applyImageViewAvailability } from "../prompts/index.js";
 import { fallbackEffortsFor } from "./effort-fallback.js";
 import {
+  isMissingReasoningContentError,
+  isUnattributableRequestBodyError,
+  mentionsReasoning,
+} from "./reasoning-errors.js";
+import { EFFORT_SCALE, nearestAcceptedEffort } from "./reasoning-controls.js";
+import { resolveBuiltInProfile } from "./provider-profiles.js";
+import type { ReasoningEffort } from "../types.js";
+import {
   markStreamEmittedBytes,
   streamAlreadyEmitted,
   streamEmittedBytes,
@@ -73,7 +80,6 @@ import {
 import { freeProvider } from "./free.js";
 import { nvidiaProvider } from "./nvidia.js";
 import { agentrouterProvider } from "./agentrouter.js";
-import { kimchiProvider } from "./kimchi.js";
 import { bynaraProvider } from "./bynara.js";
 import { mantleProvider } from "./aws-mantle.js";
 import { ollamaProvider } from "./ollama.js";
@@ -215,25 +221,27 @@ function isServerError(error: unknown): boolean {
   return status >= 500 && status <= 504;
 }
 
-function isReasoningRelatedServerError(
-  error: unknown,
-  providerId: ProviderId,
-): boolean {
+function isReasoningRelatedServerError(error: unknown): boolean {
   if (!isServerError(error)) return false;
-  if (providerId === "tokenrouter") return true;
-  const message = error instanceof Error ? error.message : String(error);
-  const body = error instanceof ProviderError ? (error.body ?? "") : "";
-  return /reasoning|effort|thinking/i.test(`${message} ${body}`);
+  return mentionsReasoning(error);
 }
 
-function shouldContinueEffortLadder(
-  error: unknown,
+function shouldContinueEffortLadder(error: unknown): boolean {
+  return isReasoningUnsupportedError(error) || isReasoningRelatedServerError(error);
+}
+
+export function effortCandidatesFor(
   providerId: ProviderId,
-): boolean {
-  return (
-    isReasoningUnsupportedError(error) ||
-    isReasoningRelatedServerError(error, providerId)
-  );
+  model: string,
+  requested: ReasoningEffort,
+): readonly ReasoningEffort[] {
+  const declared = resolveBuiltInProfile({ provider: providerId, model }).reasoning
+    .acceptedEfforts;
+  if (declared.length === 0) return fallbackEffortsFor(requested);
+  const nearest = nearestAcceptedEffort(requested, declared);
+  if (nearest === undefined || nearest === requested) return [];
+  const scaled = EFFORT_SCALE.find((effort) => effort === nearest);
+  return scaled ? [scaled] : [];
 }
 
 function shouldEnterEffortLadder(
@@ -247,7 +255,7 @@ function shouldEnterEffortLadder(
   if (singleDispatch) return false;
   if (!thinking?.enabled) return false;
   if (isReasoningUnsupported(providerId, model)) return false;
-  return isReasoningRelatedServerError(error, providerId);
+  return isReasoningRelatedServerError(error);
 }
 
 function isCacheOnlyColdError(error: unknown): boolean {
@@ -543,14 +551,12 @@ export function isEmptyCompletionError(error: unknown): boolean {
 
 export const providers: Record<ProviderId, LlmProvider> = {
   free: freeProvider,
-  groq: groqProvider,
   gemini: geminiProvider,
   openrouter: openrouterProvider,
   openai: openaiProvider,
   anthropic: anthropicProvider,
   nvidia: nvidiaProvider,
   agentrouter: agentrouterProvider,
-  kimchi: kimchiProvider,
   "aws-mantle": mantleProvider,
   ollama: ollamaProvider,
   bynara: bynaraProvider,
@@ -567,11 +573,9 @@ export const providers: Record<ProviderId, LlmProvider> = {
 const fallbackOrder: ProviderId[] = [
   "free",
   "nvidia",
-  "groq",
   "gemini",
   "openrouter",
   "agentrouter",
-  "kimchi",
   "bynara",
   "openai",
   "anthropic",
@@ -778,6 +782,21 @@ async function tryCompleteOnce(
       };
       return await runAttempt(textRequest, "adaptation");
     }
+    if (isMissingReasoningContentError(error) && !activeRequest.forceReasoningReplay) {
+      if (singleDispatch) throw error;
+      onStatus?.(
+        `ℹ ${providerId}/${model} needs its reasoning replayed — retrying with it attached`,
+      );
+      try {
+        return await runAttempt(
+          { ...activeRequest, forceReasoningReplay: true },
+          "adaptation",
+        );
+      } catch (retryError) {
+        if (!isMissingReasoningContentError(retryError)) throw retryError;
+        return await runAttempt(withoutReasoning(activeRequest), "adaptation");
+      }
+    }
     if (shouldEnterEffortLadder(error, activeRequest.thinking, providerId, model, singleDispatch)) {
       if (singleDispatch) {
         markReasoningUnsupported(providerId, model);
@@ -789,7 +808,7 @@ async function tryCompleteOnce(
         const seen = new Set<string>([
           reasoningWireKey(thinking, style, model, providerId),
         ]);
-        for (const effort of fallbackEffortsFor(thinking.effort)) {
+        for (const effort of effortCandidatesFor(providerId, model, thinking.effort)) {
           const candidate = { ...thinking, effort };
           const key = reasoningWireKey(candidate, style, model, providerId);
           if (seen.has(key)) continue;
@@ -804,13 +823,23 @@ async function tryCompleteOnce(
           try {
             return await runAttempt(retryRequest, "adaptation");
           } catch (retryError) {
-            if (!shouldContinueEffortLadder(retryError, providerId)) throw retryError;
+            if (!shouldContinueEffortLadder(retryError)) throw retryError;
           }
         }
       }
       markReasoningUnsupported(providerId, model);
       onStatus?.(
         `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
+      );
+      return await runAttempt(withoutReasoning(activeRequest), "adaptation");
+    }
+    if (
+      !singleDispatch &&
+      activeRequest.thinking?.enabled &&
+      isUnattributableRequestBodyError(error)
+    ) {
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected the request body — retrying without reasoning options`,
       );
       return await runAttempt(withoutReasoning(activeRequest), "adaptation");
     }
@@ -1089,6 +1118,30 @@ async function tryStreamOnce(
     // Walk down the effort ladder first (max → xhigh → high → medium → low) so
     // a model that merely rejects the highest requested depth keeps reasoning;
     // only strip reasoning entirely once every candidate has been rejected.
+    if (
+      emittedBytes === 0 &&
+      isMissingReasoningContentError(error) &&
+      !activeRequest.forceReasoningReplay
+    ) {
+      if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
+      onStatus?.(
+        `ℹ ${providerId}/${model} needs its reasoning replayed — retrying with it attached`,
+      );
+      try {
+        return await runAttempt(
+          { ...activeRequest, forceReasoningReplay: true },
+          "adaptation",
+        );
+      } catch (retryError) {
+        if (!isMissingReasoningContentError(retryError)) {
+          throw markStreamEmittedBytes(
+            preservedFailure(retryError, error),
+            emittedBytes,
+          );
+        }
+        return await runAttempt(withoutReasoning(activeRequest), "adaptation");
+      }
+    }
     if (emittedBytes === 0 && shouldEnterEffortLadder(error, activeRequest.thinking, providerId, model, singleDispatch)) {
       if (singleDispatch) {
         markReasoningUnsupported(providerId, model);
@@ -1100,7 +1153,7 @@ async function tryStreamOnce(
         const seen = new Set<string>([
           reasoningWireKey(thinking, style, model, providerId),
         ]);
-        for (const effort of fallbackEffortsFor(thinking.effort)) {
+        for (const effort of effortCandidatesFor(providerId, model, thinking.effort)) {
           const candidate = { ...thinking, effort };
           const key = reasoningWireKey(candidate, style, model, providerId);
           if (seen.has(key)) continue;
@@ -1115,7 +1168,7 @@ async function tryStreamOnce(
           try {
             return await runAttempt(retryRequest, "adaptation");
           } catch (retryError) {
-            if (!shouldContinueEffortLadder(retryError, providerId)) {
+            if (!shouldContinueEffortLadder(retryError)) {
               throw markStreamEmittedBytes(
                 preservedFailure(retryError, error),
                 emittedBytes,
@@ -1131,6 +1184,24 @@ async function tryStreamOnce(
       const retryRequest = withoutReasoning(activeRequest);
       try {
         return await runAttempt(retryRequest, "adaptation");
+      } catch (retryError) {
+        throw markStreamEmittedBytes(
+          preservedFailure(retryError, error),
+          emittedBytes,
+        );
+      }
+    }
+    if (
+      emittedBytes === 0 &&
+      !singleDispatch &&
+      activeRequest.thinking?.enabled &&
+      isUnattributableRequestBodyError(error)
+    ) {
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected the request body — retrying without reasoning options`,
+      );
+      try {
+        return await runAttempt(withoutReasoning(activeRequest), "adaptation");
       } catch (retryError) {
         throw markStreamEmittedBytes(
           preservedFailure(retryError, error),

@@ -134,14 +134,14 @@ describe("classic command parity (W12)", () => {
   spec(["provider", "use"], "/provider <id> and its /use alias switch provider", async () => {
     const { services } = open();
     expect(services.commands.resolve("use")).toBe("provider");
-    const savedGroqKey = process.env.GROQ_API_KEY;
-    process.env.GROQ_API_KEY = "gsk_classic_commands_test";
+    const savedKey = process.env.NVIDIA_API_KEY;
+    process.env.NVIDIA_API_KEY = "nvapi-classic-commands-test";
     try {
-      await run(services, "use", "groq");
-      await vi.waitFor(() => expect(services.session.getState().provider).toBe("groq"));
+      await run(services, "use", "nvidia");
+      await vi.waitFor(() => expect(services.session.getState().provider).toBe("nvidia"));
     } finally {
-      if (savedGroqKey === undefined) delete process.env.GROQ_API_KEY;
-      else process.env.GROQ_API_KEY = savedGroqKey;
+      if (savedKey === undefined) delete process.env.NVIDIA_API_KEY;
+      else process.env.NVIDIA_API_KEY = savedKey;
     }
   });
 
@@ -167,12 +167,12 @@ describe("classic command parity (W12)", () => {
 
   spec(["info"], "/info opens a provider info pager", async () => {
     const { services } = open();
-    services.session.setProvider("groq");
+    services.session.setProvider("nvidia");
     await run(services, "info");
     await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("pager"));
     const overlay = services.overlay.getState();
     expect(overlay.kind).toBe("pager");
-    if (overlay.kind === "pager") expect(overlay.title).toContain("groq");
+    if (overlay.kind === "pager") expect(overlay.title).toContain("nvidia");
   });
 
   spec(
@@ -198,15 +198,18 @@ describe("classic command parity (W12)", () => {
     expect(getConfig().thinking.enabled).toBe(false);
   });
 
-  spec(["clear"], "/clear empties the transcript and keeps the session id", async () => {
+  spec(["clear"], "/clear empties the transcript and abandons the session id", async () => {
     const { services } = open();
     services.session.loadHistory([{ role: "user", content: "hi" }]);
     const id = services.session.sessionId;
+    const cleared = vi.spyOn(services.plan, "clear");
     await run(services, "clear");
     expect(services.session.messages).toHaveLength(0);
-    expect(services.session.sessionId).toBe(id);
+    expect(services.session.sessionId).not.toBe(id);
+    expect(services.session.isPlanApproved()).toBe(false);
+    expect(cleared).toHaveBeenCalled();
     expect(services.transcript.getState().order).toHaveLength(0);
-    expect(noticed(services, "Context cleared")).toBe(true);
+    expect(noticed(services, "Session cleared")).toBe(true);
   });
 
   spec(["new"], "/new mints a new session id", async () => {
@@ -216,15 +219,6 @@ describe("classic command parity (W12)", () => {
     expect(services.session.sessionId).not.toBe(before);
     expect(services.session.isPlanApproved()).toBe(false);
     expect(noticed(services, "Fresh session")).toBe(true);
-  });
-
-  spec(["clean"], "/clean mints a new session id and clears the plan", async () => {
-    const { services } = open();
-    const before = services.session.sessionId;
-    const clear = vi.spyOn(services.plan, "clear");
-    await run(services, "clean");
-    expect(services.session.sessionId).not.toBe(before);
-    expect(clear).toHaveBeenCalled();
   });
 
   spec(["history"], "/history opens the session picker with the live session first", async () => {

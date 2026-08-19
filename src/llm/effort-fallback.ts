@@ -3,6 +3,7 @@ import type {
   ReasoningEffort,
   ReasoningPreference,
 } from "../types.js";
+import { isMissingReasoningContentError } from "./reasoning-errors.js";
 
 /**
  * Gradual reasoning-effort fallback ladder.
@@ -69,6 +70,7 @@ export function effortCandidates(
  * wording providers use for "value must be one of …" rejections.
  */
 export function isEffortRejectedError(error: unknown): boolean {
+  if (isMissingReasoningContentError(error)) return false;
   const status =
     error && typeof error === "object" && "status" in error
       ? Number((error as { status?: number }).status)

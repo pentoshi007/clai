@@ -265,7 +265,7 @@ describe("NoticeBlock (hydrated history only)", () => {
     turnId: undefined,
     timestamp: 0,
     level: "warn" as const,
-    text: "provider fell back to groq because the primary key was rate limited",
+    text: "provider fell back to nvidia because the primary key was rate limited",
   };
 
   it("renders a fixed-width plate and a 7-column body", () => {
