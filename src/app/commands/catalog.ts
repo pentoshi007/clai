@@ -28,11 +28,6 @@ export const slashCommands: SlashCommand[] = [
     description: "switch provider or open picker",
   },
   {
-    command: "/use",
-    usage: "<provider>",
-    description: "alias for /provider <name>",
-  },
-  {
     command: "/set",
     usage: "[provider] [key]",
     description: "manage multi API keys (editor) or append one key",
@@ -122,6 +117,11 @@ export const slashCommands: SlashCommand[] = [
   },
   { command: "/compact", description: "compact session history now" },
   { command: "/context", description: "show estimated context size" },
+  {
+    command: "/usage",
+    description:
+      "token usage for this session per provider/model (input, output, cached, cache rate) plus totals",
+  },
   {
     command: "/plan",
     usage: "[view|off]",

@@ -98,6 +98,9 @@ export interface PersistedContextUsage {
   exact: boolean;
   /** Additive canonical snapshot; old records retain the six legacy fields. */
   contextSnapshot?: import("../llm/context-snapshot.js").ContextSnapshotV1 | undefined;
+  routeUsage?:
+    | readonly import("../app/controllers/session-usage-ledger.js").PersistedRouteUsage[]
+    | undefined;
 }
 
 export interface HistoryRecord {
@@ -1833,6 +1836,13 @@ export async function purgeSession(sessionId: string): Promise<{
     removedPlan = true;
   } catch {
     removedPlan = false;
+  }
+
+  try {
+    const { releaseSessionScope } = await import("./scope.js");
+    await releaseSessionScope(id);
+  } catch {
+    void 0;
   }
 
   let removedWorkspace = false;

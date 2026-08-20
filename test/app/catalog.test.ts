@@ -11,7 +11,7 @@ import {
 } from "../../src/app/commands/catalog.js";
 import { buildDefaultCommandRegistry } from "../../src/app/commands/registry.js";
 
-const ALIASES = ["/use", "/search-provider", "/reasoning", "/thinking", "/quit"];
+const ALIASES = ["/search-provider", "/reasoning", "/thinking", "/quit"];
 
 describe("W01 command catalogue lives in the app layer", () => {
   const registry = buildDefaultCommandRegistry();

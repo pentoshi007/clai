@@ -35,6 +35,7 @@ import { ActionRouter } from "../actions/action-router.js";
 import { FocusController } from "../controllers/focus-controller.js";
 import { SelectionController } from "../controllers/selection-controller.js";
 import { ToastController, DEFAULT_TOAST_DURATION_MS } from "../controllers/toast-controller.js";
+import { isProviderFailureStatus } from "../../llm/key-rotation.js";
 import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
 import { TranscriptStore } from "../state/transcript-store.js";
@@ -189,9 +190,15 @@ export function createCompositionRoot(
       // every step). Same replace-key so chips never stack.
       const apiKeyRotation =
         /^switching /i.test(text.trim()) || /API keys failed/i.test(text);
+      const providerFailure =
+        !apiKeyRotation && event.payload.level === "warn" && isProviderFailureStatus(text);
       toast.show(text, {
-        level: apiKeyRotation ? "warn" : level,
-        key: apiKeyRotation ? "api-key-rotation" : `notice-${level}`,
+        level: apiKeyRotation || providerFailure ? "warn" : level,
+        key: apiKeyRotation
+          ? "api-key-rotation"
+          : providerFailure
+            ? "provider-status"
+            : `notice-${level}`,
         durationMs: apiKeyRotation ? 3000 : DEFAULT_TOAST_DURATION_MS,
       });
     }

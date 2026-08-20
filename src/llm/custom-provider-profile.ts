@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  CHAT_COMPLETIONS_TERMINAL_PROOFS,
   resolveProviderProfile,
   type FinalTurnPreservation,
   type ProfileEvidence,
@@ -661,7 +662,7 @@ export function customProfileLayer(
     usage: spec.usage,
     terminal: spec.terminal
       ? {
-          proofs: ["done-sentinel", "finish-reason"],
+          proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
           naturalEofAccepted: spec.terminal.naturalEofAccepted ?? false,
         }
       : undefined,

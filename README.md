@@ -412,7 +412,7 @@ Tool cards show the command/input clearly, with a live elapsed timer next to the
 |---------|------|
 | `/ask` · `/agent` · `/plan` | Switch mode (plan = design-then-approve) |
 | `/implement` · `/discard` | Approve+execute or drop the current plan |
-| `/model [name\|#]` · `/provider [name]` · `/use <provider>` | Pick model / switch provider |
+| `/model [name\|#]` · `/provider [name]` | Pick model / switch provider |
 | `/set [provider]` · `/unset [provider]` · `/keys` · `/info [provider]` | Manage API keys, endpoint URLs, and view provider setup / pricing info |
 | `/effort [level]` · `/reasoning [level]` | Thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |

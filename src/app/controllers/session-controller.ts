@@ -60,6 +60,8 @@ import type { SecretPort } from "../ports/secret-port.js";
 import { TurnController, type TurnResult } from "./turn-controller.js";
 import { CompositeDisposable, type Disposable } from "./disposable.js";
 import {
+  mintSessionId,
+  pathBackedMessages,
   persistedContextUsage,
   SessionPersistenceQueue,
 } from "./session-persistence.js";
@@ -68,10 +70,15 @@ import {
   type TurnDisplayOptions,
 } from "./session-prompt-queue.js";
 import {
+  IDLE_RESPONDER_STATE,
   SessionResponder,
   type ResponderRuntimeState,
 } from "./session-responder.js";
 import { SessionContextLimits } from "./session-context-limits.js";
+import {
+  SessionUsageLedger,
+  type SessionUsageReport,
+} from "./session-usage-ledger.js";
 import { completeForSessionNaming, SessionNamer } from "./session-naming.js";
 
 export interface SessionState {
@@ -121,32 +128,6 @@ export interface SessionControllerDeps {
 export type TurnEndListener = (result: TurnResult) => void;
 export type SessionStateListener = () => void;
 
-function mintSessionId(): string {
-  return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function pathBackedMessages(messages: readonly ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => {
-    if (!message.images?.length) return { ...message };
-    const images = message.images.flatMap((image) =>
-      image.path
-        ? [{ mediaType: image.mediaType, dataBase64: "", path: image.path }]
-        : [],
-    );
-    const { images: _images, ...rest } = message;
-    return images.length > 0 ? { ...rest, images } : rest;
-  });
-}
-
-const IDLE_RESPONDER_STATE = {
-  mode: "off",
-  running: 0,
-  ready: 0,
-  delivered: 0,
-  archived: 0,
-  failed: 0,
-} as const;
-
 export class SessionController implements Disposable {
   readonly spool = new OutputSpool();
 
@@ -182,6 +163,7 @@ export class SessionController implements Disposable {
   /** Avoid applying the same manual compaction in both commit and event paths. */
   private lastContextCompactionId: string | undefined;
   private readonly contextLimits = new SessionContextLimits();
+  private readonly usageLedger = new SessionUsageLedger();
   /** Bumped by reset/history load/dispose so late callbacks can be ignored. */
   private lifecycleGeneration = 0;
   private lastTurnResult: TurnResult | undefined;
@@ -356,6 +338,7 @@ export class SessionController implements Disposable {
   ): void {
     if (provider !== undefined) this.provider = provider;
     if (model !== undefined) this.model = model;
+    this.usageLedger.record(usage, this.provider, this.model);
     this.setContextSnapshot(
       recordContextUsageSnapshot(
         this.usageTarget,
@@ -366,6 +349,10 @@ export class SessionController implements Disposable {
       ),
     );
     this.notifyState();
+  }
+
+  usageReport(): SessionUsageReport {
+    return this.usageLedger.report();
   }
 
   noteContextCompacted(
@@ -495,6 +482,9 @@ export class SessionController implements Disposable {
       options.contextUsage,
       () => this.contextTimestamp(),
     );
+    this.usageLedger.restore(
+      (options.contextUsage as { routeUsage?: unknown } | undefined)?.routeUsage,
+    );
     if (restored) {
       this.setContextSnapshot(restored);
     } else {
@@ -553,6 +543,7 @@ export class SessionController implements Disposable {
     this.namer.reset();
     this.setContextSnapshot(undefined);
     this.lastContextCompactionId = undefined;
+    this.usageLedger.clear();
     this.spool.clear();
     if (options.mintNewId) {
       this.fenceInteractiveOwner(this.sessionIdValue);
@@ -697,7 +688,10 @@ export class SessionController implements Disposable {
 
     const contextSnapshot = this.resolveContextSnapshot();
     this.setContextSnapshot(contextSnapshot);
-    const contextUsage = persistedContextUsage(contextSnapshot);
+    const contextUsage = persistedContextUsage(
+      contextSnapshot,
+      this.usageLedger.persist(),
+    );
     await this.persistence.save(this.history, {
       sessionId: this.sessionIdValue,
       name: name ?? this.sessionTitle,

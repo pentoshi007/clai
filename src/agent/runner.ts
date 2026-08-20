@@ -12,6 +12,7 @@ import type {
   ToolResult,
 } from "../types.js";
 import { completeWithProvider, streamWithProvider } from "../llm/router.js";
+import { isProviderFailureStatus } from "../llm/key-rotation.js";
 import { operationUsageFromError } from "../llm/operation-ledger.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { modelContextWindow } from "../llm/token-usage.js";
@@ -146,7 +147,7 @@ import {
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
-import { loadScope, isScopeActive } from "../store/scope.js";
+import { loadScopeForSession, isScopeActive } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
   createThinkingStreamParser,
@@ -1148,7 +1149,9 @@ export async function runAgentTurn(
     }
 
     {
-      const engScope = await loadScope().catch(() => undefined);
+      const engScope = await loadScopeForSession(session.sessionId).catch(
+        () => undefined,
+      );
       const scopeBlock = scopeContextMessage(engScope);
       if (scopeBlock && (pentestSession || pentestLikeTurn) && !idleOrSocialPrompt) {
         systemSections.push(scopeBlock);
@@ -2260,7 +2263,7 @@ export async function runAgentTurn(
         }
       }
 
-      const scope = await loadScope();
+      const scope = await loadScopeForSession(session.sessionId);
       const decision = classifyToolCall(call, { scope });
       await auditLog("tool.classified", {
         call,
@@ -4290,11 +4293,8 @@ export async function runAgentTurn(
             {
               onStatus: (status) => {
                 writeStatus(status);
-                // Toast only on key *switch* after a failure — never on sticky
-                // "using" or retry countdown ticks (those stay in composer status).
-                if (/^switching /i.test(status.trim())) {
-                  writeNotice("warn", status.trim());
-                }
+                const full = status.replace(/\s+/g, " ").trim();
+                if (isProviderFailureStatus(full)) writeNotice("warn", full);
               },
               onStreamEvent: (event: ProviderStreamEvent) => {
                 if (event.type !== "reasoning_delta") return;
@@ -5748,7 +5748,9 @@ export async function runAgentTurn(
         }
 
 
-        const scopeForBatch = await loadScope().catch(() => undefined);
+        const scopeForBatch = await loadScopeForSession(session.sessionId).catch(
+          () => undefined,
+        );
 
         const isParallelSafe = (c: ToolCall): boolean => {
           if (

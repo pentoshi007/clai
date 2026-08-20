@@ -14,6 +14,7 @@ import { QueuePanel } from "../chrome/QueuePanel.js";
 import { ResponderStrip } from "../chrome/ResponderStrip.js";
 import { StatusBar } from "../chrome/StatusBar.js";
 import { ToastRow } from "../chrome/ToastRow.js";
+import { toastRowsWanted } from "../chrome/toast-rows.js";
 import { composerFrame, composerTextRowsWanted } from "../chrome/composer-frame.js";
 import { responderVisible } from "../chrome/responder-row.js";
 import { allocateChrome, type ChromeDemand } from "../chrome/row-budget.js";
@@ -70,7 +71,7 @@ export function ClassicApp(
     columns: shellWidth,
     composerTextRows: composerTextRowsWanted({ columns: shellWidth, text: composer.state.text }),
     statusRowsWanted: statusRowsWanted(),
-    toastCount: snapshot.toasts.length,
+    toastCount: toastRowsWanted(snapshot.toasts, shellWidth),
     queueCount: session.queued.length,
     responderVisible: responderVisible(session.responder),
     planVisible: snapshot.planVisible && plan !== undefined,

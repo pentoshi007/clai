@@ -1,4 +1,5 @@
 import type { StreamTerminalProof } from "./provider-profile.js";
+import { CHAT_COMPLETIONS_TERMINAL_PROOFS } from "./provider-profile.js";
 
 export interface StreamTerminalPolicy {
   readonly proofs: readonly StreamTerminalProof[];
@@ -12,7 +13,7 @@ export interface PartialStreamByteCounts {
 }
 
 export const CHAT_COMPLETIONS_STREAM_TERMINAL: StreamTerminalPolicy = {
-  proofs: ["done-sentinel", "finish-reason"],
+  proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
   naturalEofAccepted: false,
 };
 

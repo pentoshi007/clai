@@ -199,6 +199,12 @@ export type StreamTerminalProof =
   | "done-true"
   | "usage-chunk";
 
+export const CHAT_COMPLETIONS_TERMINAL_PROOFS: readonly StreamTerminalProof[] = [
+  "done-sentinel",
+  "finish-reason",
+  "usage-chunk",
+];
+
 export interface TerminalPolicySpec {
   readonly proofs: readonly StreamTerminalProof[];
   readonly naturalEofAccepted: boolean;

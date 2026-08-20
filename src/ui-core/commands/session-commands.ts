@@ -21,6 +21,8 @@ import { clearActiveProjectRoot } from "../../agent/project-root.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { Mode } from "../../types.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
+import { usageCacheHitRate } from "../../app/controllers/session-usage-ledger.js";
+import { formatSessionUsage } from "../rendering/format-usage.js";
 import { serializeTranscriptForCompaction } from "../state/transcript-compaction.js";
 import { conversationItemCount } from "../state/transcript-types.js";
 
@@ -179,8 +181,35 @@ export function handleContext(services: AppServices): void {
   notice(services, "info", text);
 }
 
-export async function handleCompact(services: AppServices): Promise<void> {
-  if (services.session.getState().running) {
+export function handleUsage(services: AppServices): void {
+  const state = services.session.getState();
+  const report = services.session.usageReport();
+  const body = formatSessionUsage(report, {
+    sessionId: state.sessionId,
+    ...(state.title ? { title: state.title } : {}),
+  });
+  const opened = services.overlay.openPager(
+    "Session usage",
+    body,
+    undefined,
+    undefined,
+    "force",
+  );
+  if (opened) return;
+  const { totals } = report;
+  if (totals.requests === 0) {
+    notice(services, "info", "usage: no provider token usage recorded yet in this session");
+    return;
+  }
+  const rate = usageCacheHitRate(totals);
+  notice(
+    services,
+    "info",
+    `usage: ${totals.routes} route${totals.routes === 1 ? "" : "s"} · ${totals.requests} request${totals.requests === 1 ? "" : "s"} · in ${totals.promptTokens.toLocaleString()} / out ${totals.completionTokens.toLocaleString()} · total ${totals.totalTokens.toLocaleString()}${rate === undefined ? "" : ` · cache ${(rate * 100).toFixed(1)}%`}`,
+  );
+}
+
+export async function handleCompact(services: AppServices): Promise<void> {  if (services.session.getState().running) {
     notice(services, "warn", "wait for the current operation to finish");
     return;
   }

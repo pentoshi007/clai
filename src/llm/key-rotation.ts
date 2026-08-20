@@ -152,3 +152,13 @@ export function formatKeyEventStatus(event: ProviderKeyEvent): string {
       return `${event.provider}${keyPart}`;
   }
 }
+
+const PROVIDER_FAILURE_SHAPE = /^(?:switching\b|⏳|all\s+\S+\s+API keys failed\b)/i;
+const PROVIDER_FAILURE_REASON =
+  /\b(?:rate limited|insufficient credits|auth failed|server error|connection glitch|quota|overloaded|unavailable|timed out|timeout)\b/i;
+
+export function isProviderFailureStatus(text: string): boolean {
+  const line = text.replace(/\s+/g, " ").trim();
+  if (!line) return false;
+  return PROVIDER_FAILURE_SHAPE.test(line) || PROVIDER_FAILURE_REASON.test(line);
+}

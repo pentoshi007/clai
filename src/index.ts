@@ -440,19 +440,22 @@ async function main(): Promise<void> {
 
   const scopeCommand = program
     .command("scope")
-    .description("manage the pentest engagement scope (authorized targets)");
+    .description(
+      "manage the default pentest engagement scope (authorized targets) inherited by new sessions; use /scope inside a session to scope that session only",
+    );
 
   scopeCommand
     .command("show")
-    .description("print the current engagement scope")
+    .description("print the default engagement scope for new sessions")
     .action(async () => {
       const { loadScope, isScopeActive, getScopePath, resetScopeCache } =
         await import("./store/scope.js");
       resetScopeCache();
       const scope = await loadScope();
       if (!scope) {
-        console.log("No engagement scope configured.");
+        console.log("No default engagement scope configured.");
         console.log(`  expected at: ${getScopePath()}`);
+        console.log("  sessions that ran /scope keep their own scope instead.");
         return;
       }
       console.log(JSON.stringify(scope, null, 2));
@@ -461,11 +464,14 @@ async function main(): Promise<void> {
           ? "  status: active"
           : "  status: expired or empty",
       );
+      console.log(
+        "  applies to sessions that have not set their own scope with /scope.",
+      );
     });
 
   scopeCommand
     .command("new")
-    .description("create or replace the engagement scope")
+    .description("create or replace the default engagement scope for new sessions")
     .requiredOption(
       "--targets <list>",
       "comma-separated authorized targets (domains, IPs, CIDRs)",

@@ -131,13 +131,13 @@ describe("classic command parity (W12)", () => {
     expect(fetching?.message).toContain("collecting models");
   });
 
-  spec(["provider", "use"], "/provider <id> and its /use alias switch provider", async () => {
+  spec(["provider"], "/provider <id> switches provider", async () => {
     const { services } = open();
-    expect(services.commands.resolve("use")).toBe("provider");
+    expect(services.commands.resolve("use")).toBeUndefined();
     const savedKey = process.env.NVIDIA_API_KEY;
     process.env.NVIDIA_API_KEY = "nvapi-classic-commands-test";
     try {
-      await run(services, "use", "nvidia");
+      await run(services, "provider", "nvidia");
       await vi.waitFor(() => expect(services.session.getState().provider).toBe("nvidia"));
     } finally {
       if (savedKey === undefined) delete process.env.NVIDIA_API_KEY;
@@ -422,6 +422,18 @@ describe("classic command parity (W12)", () => {
     if (overlay.kind === "pager") {
       expect(overlay.title).toBe("Keyboard shortcuts");
       expect(overlay.body.length).toBeGreaterThan(0);
+    }
+  });
+
+  spec(["usage"], "/usage opens the formatted pager with the session token ledger", async () => {
+    const { services } = open();
+    await run(services, "usage");
+    const overlay = services.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind === "pager") {
+      expect(overlay.title).toContain("usage");
+      expect(overlay.markdown).toBe("force");
+      expect(overlay.body).toContain("# Session usage");
     }
   });
 

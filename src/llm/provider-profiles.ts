@@ -1,6 +1,7 @@
 import type { ProviderId } from "../types.js";
 import {
   applyObservedControlRejections,
+  CHAT_COMPLETIONS_TERMINAL_PROOFS,
   isBuiltInProviderId,
   resolveProviderProfile,
   type ProfileEvidence,
@@ -301,7 +302,7 @@ export function directDeepSeekV4Layer(): ProviderProfileLayer {
       uncachedInput: ["usage.prompt_cache_miss_tokens"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
     capabilities: { tools: "supported" },

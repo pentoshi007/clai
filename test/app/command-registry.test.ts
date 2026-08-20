@@ -15,7 +15,7 @@ describe("V2-024 command registry", () => {
 
   it("resolves aliases to their canonical command", () => {
     const registry = buildDefaultCommandRegistry();
-    expect(registry.resolve("/use")).toBe("provider");
+    expect(registry.resolve("/use")).toBeUndefined();
     expect(registry.resolve("/search-provider")).toBe("search");
     expect(registry.resolve("/reasoning")).toBe("effort");
     expect(registry.resolve("/legacy-effort")).toBeUndefined();
@@ -36,11 +36,12 @@ describe("V2-024 command registry", () => {
 
   it("parses a slash line into a resolved invocation", () => {
     const registry = buildDefaultCommandRegistry();
-    expect(registry.parse("/use nvidia")).toEqual({
-      name: "provider",
-      args: "nvidia",
+    expect(registry.parse("/search-provider tavily")).toEqual({
+      name: "search",
+      args: "tavily",
       context: "global",
     });
+    expect(registry.parse("/use nvidia")).toBeUndefined();
     expect(registry.parse("/model")).toEqual({
       name: "model",
       args: "",
@@ -52,12 +53,12 @@ describe("V2-024 command registry", () => {
   it("dispatches to a handler registered on the canonical name via an alias", async () => {
     const registry = buildDefaultCommandRegistry();
     const handler = vi.fn();
-    registry.setHandler("provider", handler);
-    const handled = await registry.dispatch({ name: "use", args: "nvidia" });
+    registry.setHandler("search", handler);
+    const handled = await registry.dispatch({ name: "search-provider", args: "tavily" });
     expect(handled).toBe(true);
     expect(handler).toHaveBeenCalledWith({
-      name: "provider",
-      args: "nvidia",
+      name: "search",
+      args: "tavily",
       context: "global",
     });
   });
@@ -70,8 +71,10 @@ describe("V2-024 command registry", () => {
 
   it("suggests commands by prefix over names and aliases", () => {
     const registry = buildDefaultCommandRegistry();
-    const provider = registry.suggestions("us").map((d) => d.name);
-    expect(provider).toContain("provider"); // matched via alias "use"
+    const us = registry.suggestions("us").map((d) => d.name);
+    expect(us).toContain("usage");
+    expect(us).not.toContain("provider");
+    expect(registry.parse("/us")).toMatchObject({ name: "usage" });
     const model = registry.suggestions("mod").map((d) => d.name);
     expect(model).toContain("model");
   });

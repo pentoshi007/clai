@@ -7,11 +7,12 @@ import { installUpdate } from "../../commands/update.js";
 import { clearAllHistory } from "../../store/history.js";
 import { clearAuditLogs, clearArtifacts } from "../../store/logs.js";
 import {
-  addScopeTargets,
-  clearScope,
-  loadScope,
-  replaceScopeTargets,
-  saveScope,
+  addSessionScopeTargets,
+  clearSessionScope,
+  loadScopeForSession,
+  normalizeScopeTarget,
+  replaceSessionScopeTargets,
+  saveSessionScope,
 } from "../../store/scope.js";
 import { formatShortcutsReference } from "../actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../rendering/format-help.js";
@@ -80,6 +81,7 @@ export async function handleScope(
 ): Promise<void> {
   const trimmed = invocation.args.trim();
   const [sub = "", ...parts] = trimmed.split(/\s+/).filter(Boolean);
+  const sessionId = services.session.sessionId;
 
   // Bare `/scope` or `/scope edit` → multi-input modal.
   const openEditor =
@@ -92,8 +94,8 @@ export async function handleScope(
 
   try {
     if (["clear", "reset", "off"].includes(sub)) {
-      await clearScope();
-      notice(services, "info", "engagement scope cleared · scoping disabled");
+      await clearSessionScope(sessionId);
+      notice(services, "info", "engagement scope cleared for this session · scoping disabled");
       return;
     }
     if (sub === "add") {
@@ -102,8 +104,12 @@ export async function handleScope(
         notice(services, "warn", "usage: /scope add <target1,target2>");
         return;
       }
-      const scope = await addScopeTargets(targets);
-      notice(services, "info", `scope updated · ${scope.authorizedTargets.join(", ")}`);
+      const scope = await addSessionScopeTargets(sessionId, targets);
+      notice(
+        services,
+        "info",
+        `scope updated for this session · ${scope.authorizedTargets.join(", ")}`,
+      );
       return;
     }
     if (sub === "new" || sub === "set") {
@@ -112,16 +118,22 @@ export async function handleScope(
         notice(services, "warn", "usage: /scope new <target1,target2>");
         return;
       }
-      await saveScope({
-        authorizedTargets: targets,
+      const scope = await saveSessionScope(sessionId, {
+        authorizedTargets: targets.map(normalizeScopeTarget).filter(Boolean),
         createdAt: new Date().toISOString(),
       });
-      notice(services, "info", `scope created · ${targets.join(", ")}`);
+      notice(
+        services,
+        "info",
+        scope
+          ? `scope created for this session · ${scope.authorizedTargets.join(", ")}`
+          : "no valid targets · scoping still disabled for this session",
+      );
       return;
     }
 
     if (openEditor) {
-      const current = await loadScope();
+      const current = await loadScopeForSession(sessionId);
       const initial = current?.authorizedTargets ?? [];
       const result = await services.overlay.openScopeEditor({
         initialTargets: initial,
@@ -131,12 +143,12 @@ export async function handleScope(
         return;
       }
       if (result.length === 0) {
-        await clearScope();
-        notice(services, "info", "engagement scope cleared · scoping disabled");
+        await clearSessionScope(sessionId);
+        notice(services, "info", "engagement scope cleared for this session · scoping disabled");
         return;
       }
       // Full replace (not merge) so removed rows stay gone.
-      const scope = await replaceScopeTargets(result, {
+      const scope = await replaceSessionScopeTargets(sessionId, result, {
         name: current?.name,
         createdAt: current?.createdAt,
       });
@@ -144,8 +156,8 @@ export async function handleScope(
         services,
         "info",
         scope
-          ? `scope saved · ${scope.authorizedTargets.join(", ")}`
-          : "engagement scope cleared · scoping disabled",
+          ? `scope saved for this session · ${scope.authorizedTargets.join(", ")}`
+          : "engagement scope cleared for this session · scoping disabled",
       );
       return;
     }

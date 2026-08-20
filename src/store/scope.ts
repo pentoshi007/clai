@@ -1,9 +1,10 @@
-import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat, rm } from "node:fs/promises";
 import { fixOwner, handlePermissionError, safeExists } from "../os/permissions.js";
 
 import { dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import net from "node:net";
+import { getDataDir } from "./paths.js";
 
 const scopeFile =
   process.env.CLAI_SCOPE_FILE ??
@@ -193,6 +194,173 @@ export function resetScopeCache(): void {
   cached = undefined;
   cacheLoaded = false;
   cachedMtimeMs = 0;
+  sessionBindings.clear();
+}
+
+interface SessionScopeBinding {
+  readonly bound: boolean;
+  readonly scope: EngagementScope | undefined;
+}
+
+const UNBOUND: SessionScopeBinding = Object.freeze({
+  bound: false,
+  scope: undefined,
+});
+
+const sessionBindings = new Map<string, SessionScopeBinding>();
+
+function sessionScopeDir(): string {
+  return process.env.CLAI_SCOPE_DIR?.trim() || join(getDataDir(), "scopes");
+}
+
+export function getSessionScopePath(sessionId: string): string {
+  return join(sessionScopeDir(), `${encodeURIComponent(sessionId)}.json`);
+}
+
+function sanitizeScope(value: unknown): EngagementScope | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const targets = Array.isArray(raw.authorizedTargets)
+    ? raw.authorizedTargets.filter(
+        (target): target is string => typeof target === "string" && target.trim() !== "",
+      )
+    : [];
+  if (targets.length === 0) return undefined;
+  return { ...(raw as unknown as EngagementScope), authorizedTargets: targets };
+}
+
+async function readSessionBinding(sessionId: string): Promise<SessionScopeBinding> {
+  const cachedBinding = sessionBindings.get(sessionId);
+  if (cachedBinding) return cachedBinding;
+  const file = getSessionScopePath(sessionId);
+  let binding: SessionScopeBinding = UNBOUND;
+  try {
+    if (await safeExists(file)) {
+      const raw = await readFile(file, "utf8");
+      if (raw.trim()) {
+        const parsed = JSON.parse(raw) as { scope?: unknown };
+        binding = { bound: true, scope: sanitizeScope(parsed?.scope) };
+      }
+    }
+  } catch (err: any) {
+    if (err && err.code === "EACCES") handlePermissionError(err);
+    return UNBOUND;
+  }
+  sessionBindings.set(sessionId, binding);
+  return binding;
+}
+
+async function writeSessionBinding(
+  sessionId: string,
+  scope: EngagementScope | undefined,
+): Promise<void> {
+  const file = getSessionScopePath(sessionId);
+  try {
+    const dir = dirname(file);
+    await mkdir(dir, { recursive: true });
+    await fixOwner(dir);
+    const envelope = {
+      version: 1,
+      sessionId,
+      scope: scope ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeFile(file, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
+    await fixOwner(file);
+  } catch (err: any) {
+    handlePermissionError(err);
+  }
+  sessionBindings.set(sessionId, { bound: true, scope });
+}
+
+export async function loadScopeForSession(
+  sessionId: string | undefined,
+): Promise<EngagementScope | undefined> {
+  if (!sessionId) return loadScope();
+  const binding = await readSessionBinding(sessionId);
+  return binding.bound ? binding.scope : loadScope();
+}
+
+export async function saveSessionScope(
+  sessionId: string,
+  scope: EngagementScope,
+): Promise<EngagementScope | undefined> {
+  const normalized = sanitizeScope(scope);
+  await writeSessionBinding(sessionId, normalized);
+  return normalized;
+}
+
+export async function clearSessionScope(sessionId: string): Promise<void> {
+  await writeSessionBinding(sessionId, undefined);
+}
+
+export async function releaseSessionScope(sessionId: string): Promise<void> {
+  sessionBindings.delete(sessionId);
+  const file = getSessionScopePath(sessionId);
+  try {
+    await rm(file, { force: true });
+  } catch {
+    return;
+  }
+}
+
+export async function addSessionScopeTargets(
+  sessionId: string,
+  targets: string[],
+  patch: Partial<Omit<EngagementScope, "authorizedTargets">> = {},
+): Promise<EngagementScope> {
+  const normalized = targets
+    .map(normalizeScopeTarget)
+    .filter((target) => target.length > 0);
+  if (normalized.length === 0) {
+    throw new Error("No valid targets supplied");
+  }
+  const existing = await loadScopeForSession(sessionId);
+  const authorizedTargets = Array.from(
+    new Set([
+      ...(existing?.authorizedTargets ?? []).map(normalizeScopeTarget),
+      ...normalized,
+    ]),
+  ).filter(Boolean);
+  const now = new Date().toISOString();
+  const scope: EngagementScope = {
+    ...(existing ?? {}),
+    ...patch,
+    authorizedTargets,
+    createdAt: existing?.createdAt ?? patch.createdAt ?? now,
+    updatedAt: now,
+  };
+  await writeSessionBinding(sessionId, scope);
+  return scope;
+}
+
+export async function replaceSessionScopeTargets(
+  sessionId: string,
+  targets: string[],
+  patch: Partial<Omit<EngagementScope, "authorizedTargets">> = {},
+): Promise<EngagementScope | undefined> {
+  const normalized = targets
+    .map(normalizeScopeTarget)
+    .filter((target) => target.length > 0);
+  if (normalized.length === 0) {
+    await clearSessionScope(sessionId);
+    return undefined;
+  }
+  const existing = await loadScopeForSession(sessionId);
+  const now = new Date().toISOString();
+  const scope: EngagementScope = {
+    ...(existing ?? {}),
+    ...patch,
+    authorizedTargets: Array.from(new Set(normalized)),
+    createdAt: existing?.createdAt ?? patch.createdAt ?? now,
+    updatedAt: now,
+  };
+  await writeSessionBinding(sessionId, scope);
+  return scope;
+}
+
+export function resetSessionScopeCache(): void {
+  sessionBindings.clear();
 }
 
 /** Loopback aliases that all mean "this machine" for local app verify. */

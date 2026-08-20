@@ -38,7 +38,7 @@ import {
   type ResponseMode,
 } from "./web/types.js";
 import { classifyToolCall } from "../safety/classifier.js";
-import { loadScope } from "../store/scope.js";
+import { loadScopeForSession } from "../store/scope.js";
 import {
   parseHost,
   parsePortSpec,
@@ -1601,7 +1601,9 @@ async function runToolBatch(
   // Re-classify each child: block always refused; confirm allowed only when
   // the parent turn already confirmed (options.confirmed) so shell/fs mutates
   // cannot sneak past the safety gate as a "safe" batch wrapper.
-  const scope = await loadScope().catch(() => undefined);
+  const scope = await loadScopeForSession(options?.sessionId).catch(
+    () => undefined,
+  );
   let needsSerial = false;
   for (const spec of calls) {
     const decision = classifyToolCall(

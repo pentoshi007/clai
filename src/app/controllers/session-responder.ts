@@ -20,6 +20,15 @@ export interface ResponderRuntimeState {
   readonly failed: number;
 }
 
+export const IDLE_RESPONDER_STATE: ResponderRuntimeState = Object.freeze({
+  mode: "off",
+  running: 0,
+  ready: 0,
+  delivered: 0,
+  archived: 0,
+  failed: 0,
+});
+
 interface SessionResponderDeps {
   readonly jobs: JobsPort;
   readonly persistence: PersistencePort;

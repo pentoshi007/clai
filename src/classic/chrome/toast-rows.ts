@@ -15,6 +15,27 @@ const PLATE: Readonly<Record<ToastLevel, ThemeToken>> = {
 
 const H_PAD = 2;
 
+function pillInnerWidth(columns: number): number {
+  const width = Math.max(1, Math.floor(columns));
+  const maxPill = Math.max(20, Math.min(width - 4, Math.floor(width * 0.85)));
+  return Math.max(8, maxPill - H_PAD * 2);
+}
+
+export function toastRowsWanted(
+  toasts: readonly ToastItem[],
+  columns: number,
+): number {
+  if (toasts.length === 0) return 0;
+  const inner = pillInnerWidth(columns);
+  let rows = 0;
+  for (const toast of toasts) {
+    const body = `·  ${toast.message.replace(/\s+/g, " ").trim()}`;
+    rows += Math.max(1, Math.min(wrapAnsiLine(body, inner).length, MAX_TOAST_ROWS));
+    if (rows >= MAX_TOAST_ROWS) return MAX_TOAST_ROWS;
+  }
+  return Math.min(rows, MAX_TOAST_ROWS);
+}
+
 export interface ToastViewInput {
   readonly ink: InkTheme;
   readonly columns: number;

@@ -6,7 +6,7 @@
  * transcripts, and returns the structured result under `interactiveSession`.
  */
 
-import { loadScope, type EngagementScope } from "../store/scope.js";
+import { loadScopeForSession, type EngagementScope } from "../store/scope.js";
 import {
   InteractiveSessionManager,
   interactiveSessionManager,
@@ -116,8 +116,10 @@ async function parseInput(
   throw new Error("kind must be text, secret, control, or eof");
 }
 
-async function activeScope(): Promise<EngagementScope | undefined> {
-  return loadScope();
+async function activeScope(
+  options: ToolRunOptions | undefined,
+): Promise<EngagementScope | undefined> {
+  return loadScopeForSession(options?.sessionId);
 }
 
 function requireOwner(options: ToolRunOptions | undefined, operation: SessionOperation): string {
@@ -274,7 +276,7 @@ export function createInteractiveSessionHandlers(
           deadlineMs: optionalNumber(args, "deadlineMs"),
           signal: options?.signal,
           confirm: confirmPort(options),
-          scope: await activeScope(),
+          scope: await activeScope(options),
         });
       }),
     "terminal.send": async (args, options) =>
@@ -290,7 +292,7 @@ export function createInteractiveSessionHandlers(
           view: optionalView(args),
           signal: options?.signal,
           confirm: confirmPort(options),
-          scope: await activeScope(),
+          scope: await activeScope(options),
         });
       }),
     "terminal.read": async (args, options) =>

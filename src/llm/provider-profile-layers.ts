@@ -1,5 +1,6 @@
 import type { ProviderId } from "../types.js";
 import { classifyBynaraModel, classifyNvidiaModel } from "./model-families.js";
+import { CHAT_COMPLETIONS_TERMINAL_PROOFS } from "./provider-profile.js";
 import type {
   ProfileEvidence,
   ProviderProfileLayer,
@@ -172,7 +173,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -195,7 +196,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -211,7 +212,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -227,7 +228,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -243,7 +244,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -264,7 +265,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       finalTurnPreservation: "supported",
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -294,7 +295,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -311,7 +312,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
     },
     cache: { kind: "unknown", cacheAffectingFields: [] },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -341,7 +342,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       ],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -357,7 +358,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -378,7 +379,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -395,7 +396,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },
@@ -411,7 +412,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       outputShapes: ["reasoning-content"],
     },
     terminal: {
-      proofs: ["done-sentinel", "finish-reason"],
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
     },
   },

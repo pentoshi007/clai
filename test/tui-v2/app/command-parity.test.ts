@@ -59,7 +59,7 @@ function notices(services: AppServices): string[] {
   return services.toast.getToasts().map((t) => t.message);
 }
 
-const ALIAS_ONLY = new Set(["use", "search-provider", "reasoning", "thinking", "quit"]);
+const ALIAS_ONLY = new Set(["search-provider", "reasoning", "thinking", "quit"]);
 
 describe("command parity (V2-080)", () => {
   beforeEach(() => {

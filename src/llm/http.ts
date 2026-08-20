@@ -93,6 +93,36 @@ export class ProviderError extends Error {
   }
 }
 
+const USAGE_INPUT_KEYS = [
+  "prompt_tokens",
+  "promptTokens",
+  "input_tokens",
+  "inputTokens",
+] as const;
+
+const USAGE_OUTPUT_KEYS = [
+  "completion_tokens",
+  "completionTokens",
+  "output_tokens",
+  "outputTokens",
+] as const;
+
+function isFinalUsageFrame(parsed: {
+  usage?: unknown;
+  choices?: unknown[] | undefined;
+}): boolean {
+  if (Array.isArray(parsed.choices) && parsed.choices.length > 0) return false;
+  const usage = parsed.usage;
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return false;
+  const raw = usage as Record<string, unknown>;
+  const reported = (keys: readonly string[]): boolean =>
+    keys.some((key) => {
+      const value = raw[key];
+      return typeof value === "number" && Number.isFinite(value);
+    });
+  return reported(USAGE_INPUT_KEYS) && reported(USAGE_OUTPUT_KEYS);
+}
+
 function parseRetryAfterHeader(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number.parseFloat(value);
@@ -2269,6 +2299,7 @@ export async function openAiCompatibleStream(options: {
                 )
               : parseOpenAiUsage(parsed.usage, options.usageAliases);
           if (chunkUsage) streamUsage = chunkUsage;
+          const finalUsageFrame = isFinalUsageFrame(parsed);
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
           const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
@@ -2294,9 +2325,17 @@ export async function openAiCompatibleStream(options: {
           ) {
             resetIdleTimer();
           }
+          if (
+            terminalSignal === "usage-chunk" &&
+            (token || reasoningToken || toolProgress)
+          ) {
+            terminalSignal = undefined;
+          }
           if (choice?.finish_reason) {
             finishReason = choice.finish_reason;
             terminalSignal = "finish-reason";
+          } else if (finalUsageFrame && terminalSignal === undefined) {
+            terminalSignal = "usage-chunk";
           }
           if (reasoningToken) {
             const normalized = normalizeChannelDelta(

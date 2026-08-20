@@ -20,6 +20,7 @@ import {
   handleReset,
   handleSave,
   handleThink,
+  handleUsage,
 } from "./session-commands.js";
 import {
   handleExit,
@@ -102,6 +103,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("new", () => void handleNew(services));
   c.setHandler("think", () => handleThink(services));
   c.setHandler("context", () => handleContext(services));
+  c.setHandler("usage", () => handleUsage(services));
   c.setHandler("compact", () => void handleCompact(services));
   c.setHandler("save", (i) => void handleSave(services, i));
   c.setHandler("reset", () => void handleReset(services));
