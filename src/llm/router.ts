@@ -32,6 +32,7 @@ import {
   collapseWhitespace,
   isImageInputUnsupportedError,
   isReasoningUnsupportedError,
+  reasoningRejectionAdvice,
   stripImagesFromMessages,
   MAX_ERROR_BODY_IN_MESSAGE_CHARS,
   STREAM_STALL_MARKER,
@@ -41,7 +42,10 @@ import {
   isReasoningUnsupported,
   learnModelVisionCapability,
   markModelUnavailable,
+  learnedRouteEfforts,
+  markReasoningMandatory,
   markReasoningUnsupported,
+  registerWireRejectionEfforts,
   modelAcceptsImages,
   modelSupportsVision,
   visionSubstitutionOrigin,
@@ -235,6 +239,15 @@ export function effortCandidatesFor(
   model: string,
   requested: ReasoningEffort,
 ): readonly ReasoningEffort[] {
+  const learned = learnedRouteEfforts(providerId, model);
+  if (learned?.length) {
+    const usable = learned.filter(
+      (effort) => effort !== requested && effort !== "none",
+    );
+    const corrected = nearestAcceptedEffort(requested, usable);
+    const scaledLearned = EFFORT_SCALE.find((effort) => effort === corrected);
+    return scaledLearned ? [scaledLearned] : [];
+  }
   const declared = resolveBuiltInProfile({ provider: providerId, model }).reasoning
     .acceptedEfforts;
   if (declared.length === 0) return fallbackEffortsFor(requested);
@@ -798,8 +811,13 @@ async function tryCompleteOnce(
       }
     }
     if (shouldEnterEffortLadder(error, activeRequest.thinking, providerId, model, singleDispatch)) {
+      const advice = reasoningRejectionAdvice(error);
+      if (advice?.acceptedEfforts.length) {
+        registerWireRejectionEfforts(providerId, model, advice.acceptedEfforts);
+      }
+      if (advice?.mandatory) markReasoningMandatory(providerId, model);
       if (singleDispatch) {
-        markReasoningUnsupported(providerId, model);
+        if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
         throw error;
       }
       const thinking = activeRequest.thinking;
@@ -827,9 +845,11 @@ async function tryCompleteOnce(
           }
         }
       }
-      markReasoningUnsupported(providerId, model);
+      if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
       onStatus?.(
-        `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
+        advice?.mandatory
+          ? `ℹ ${providerId}/${model} requires reasoning — retrying at its lowest accepted effort`
+          : `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
       );
       return await runAttempt(withoutReasoning(activeRequest), "adaptation");
     }
@@ -1143,8 +1163,13 @@ async function tryStreamOnce(
       }
     }
     if (emittedBytes === 0 && shouldEnterEffortLadder(error, activeRequest.thinking, providerId, model, singleDispatch)) {
+      const advice = reasoningRejectionAdvice(error);
+      if (advice?.acceptedEfforts.length) {
+        registerWireRejectionEfforts(providerId, model, advice.acceptedEfforts);
+      }
+      if (advice?.mandatory) markReasoningMandatory(providerId, model);
       if (singleDispatch) {
-        markReasoningUnsupported(providerId, model);
+        if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
         throw markStreamEmittedBytes(error, emittedBytes);
       }
       const thinking = activeRequest.thinking;
@@ -1177,9 +1202,11 @@ async function tryStreamOnce(
           }
         }
       }
-      markReasoningUnsupported(providerId, model);
+      if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
       onStatus?.(
-        `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
+        advice?.mandatory
+          ? `ℹ ${providerId}/${model} requires reasoning — retrying at its lowest accepted effort`
+          : `ℹ ${providerId}/${model} rejected reasoning options — retrying without them`,
       );
       const retryRequest = withoutReasoning(activeRequest);
       try {

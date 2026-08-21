@@ -82,7 +82,15 @@ function telemetry(route: SessionUsageRoute): string | undefined {
   if (route.uncachedPromptTokens !== undefined) {
     parts.push(`uncached input ${count(route.uncachedPromptTokens)}`);
   }
-  if (route.reasoningTokens !== undefined) {
+  if (route.reasoningObserved) {
+    if (route.reasoningTokens && route.reasoningTokens > 0) {
+      parts.push(`reasoning ${count(route.reasoningTokens)}`);
+    } else if (route.reasoningTokens === 0) {
+      parts.push("reasoning observed (provider reported 0 tokens)");
+    } else {
+      parts.push("reasoning observed (token count not reported)");
+    }
+  } else if (route.reasoningTokens !== undefined) {
     parts.push(`reasoning ${count(route.reasoningTokens)}`);
   }
   if (route.estimatedRequests > 0) {

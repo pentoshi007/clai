@@ -172,6 +172,9 @@ export function createCompositionRoot(
     // Auto-compaction mutates history through onMessages. Its provider usage is
     // otherwise stale until the following model response, so immediately use
     // the same final assembled-request estimate shown on the compaction card.
+    if (event.type === "compaction-started" && sessionRef) {
+      sessionRef.noteContextEstimate(event.payload.beforeTokens);
+    }
     if (event.type === "compaction-completed" && sessionRef) {
       sessionRef.noteContextCompacted(
         event.payload.afterTokens,

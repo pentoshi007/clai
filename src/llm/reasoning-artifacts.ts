@@ -397,6 +397,52 @@ export function reasoningArtifactTokensForMessage(message: ChatMessage): number 
   );
 }
 
+const REDACTED_DETAIL = /^\s*\[?redacted]?\s*$/i;
+
+function detailVisibleField(entry: Record<string, unknown>): string | undefined {
+  const type = typeof entry.type === "string" ? entry.type : "";
+  if (type.includes("encrypted")) return undefined;
+  for (const key of ["text", "summary"] as const) {
+    const value = entry[key];
+    if (typeof value !== "string" || !value.trim()) continue;
+    if (REDACTED_DETAIL.test(value)) continue;
+    return value;
+  }
+  return undefined;
+}
+
+export function visibleReasoningDetailText(
+  raw: ReasoningArtifact["raw"] | undefined,
+): string | undefined {
+  if (raw === undefined) return undefined;
+  const entries: unknown[] = Array.isArray(raw)
+    ? [...raw]
+    : raw && typeof raw === "object"
+      ? [raw]
+      : [];
+  const parts: string[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const nested = record.reasoning_details;
+    if (Array.isArray(nested)) {
+      const inner = visibleReasoningDetailText(nested as ReasoningArtifact["raw"]);
+      if (inner) parts.push(inner);
+      continue;
+    }
+    const visible = detailVisibleField(record);
+    if (visible) parts.push(visible);
+  }
+  const text = parts.join("");
+  return text.trim() ? text : undefined;
+}
+
+export function reasoningArtifactsObserved(
+  artifacts: readonly ReasoningArtifact[] | undefined,
+): boolean {
+  return (artifacts?.length ?? 0) > 0;
+}
+
 export interface SignedThinkingArtifactInput {
   readonly sequence: number;
   readonly thinking: string;

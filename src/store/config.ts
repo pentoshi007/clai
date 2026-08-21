@@ -62,6 +62,7 @@ export interface LearnedRouteEntry {
   readonly controlDialect?: string | undefined;
   readonly vision?: boolean | undefined;
   readonly reasoning?: boolean | undefined;
+  readonly reasoningMandatory?: boolean | undefined;
   readonly acceptedEfforts?: readonly string[] | undefined;
   readonly rejectedFields?: readonly string[] | undefined;
   readonly contextTokens?: number | undefined;

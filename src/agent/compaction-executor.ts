@@ -165,6 +165,7 @@ export function buildCompactionReplayMessages(
 export interface CompactionReplayPlan {
   readonly messages: ChatMessage[];
   readonly accounting: RequestAccounting;
+  readonly continuationAccounting: RequestAccounting;
 }
 
 /**
@@ -200,31 +201,47 @@ export function planCompactionReplay(input: {
     if (historyHead.role === "system") return undefined;
     if (tail.length >= input.history.length) return undefined;
   }
-  const messages: ChatMessage[] = [
+  const continuationMessages: ChatMessage[] = [
     ...baseRequest.messages.map((message) => structuredClone(message)),
     ...tail,
+  ];
+  const messages: ChatMessage[] = [
+    ...continuationMessages,
     { role: "user" as const, content: input.prompt },
   ];
-  const { accounting } = accountAssembledRequest({
-    provider: baseRequest.provider,
-    model: baseRequest.model,
+  const account = (
+    candidateMessages: readonly ChatMessage[],
+    compactionRequest: boolean,
+  ): RequestAccounting =>
+    accountAssembledRequest({
+      provider: baseRequest.provider,
+      model: baseRequest.model,
+      messages: candidateMessages,
+      stream: input.stream ?? true,
+      ...(baseRequest.tools?.length ? { tools: baseRequest.tools } : {}),
+      ...(baseRequest.toolChoice !== undefined
+        ? { toolChoice: baseRequest.toolChoice }
+        : {}),
+      ...(baseRequest.parallelToolCalls !== undefined
+        ? { parallelToolCalls: baseRequest.parallelToolCalls }
+        : {}),
+      ...(baseRequest.thinking ? { reasoning: baseRequest.thinking } : {}),
+      ...(input.contextLimitTokens !== undefined
+        ? { contextLimitTokens: input.contextLimitTokens }
+        : {}),
+      ...(compactionRequest
+        ? {
+            reservedOutputTokens: input.maxTokens,
+            safetyMarginTokens:
+              SAFETY_MARGIN_TOKENS + REPLAY_PLAN_SLACK_TOKENS,
+          }
+        : {}),
+    }).accounting;
+  return {
     messages,
-    stream: input.stream ?? true,
-    ...(baseRequest.tools?.length ? { tools: baseRequest.tools } : {}),
-    ...(baseRequest.toolChoice !== undefined
-      ? { toolChoice: baseRequest.toolChoice }
-      : {}),
-    ...(baseRequest.parallelToolCalls !== undefined
-      ? { parallelToolCalls: baseRequest.parallelToolCalls }
-      : {}),
-    ...(baseRequest.thinking ? { reasoning: baseRequest.thinking } : {}),
-    ...(input.contextLimitTokens !== undefined
-      ? { contextLimitTokens: input.contextLimitTokens }
-      : {}),
-    reservedOutputTokens: input.maxTokens,
-    safetyMarginTokens: SAFETY_MARGIN_TOKENS + REPLAY_PLAN_SLACK_TOKENS,
-  });
-  return { messages, accounting };
+    accounting: account(messages, true),
+    continuationAccounting: account(continuationMessages, false),
+  };
 }
 
 export async function executeCompactionSummary(

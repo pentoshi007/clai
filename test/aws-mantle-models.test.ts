@@ -43,9 +43,20 @@ describe("AWS Mantle model discovery", () => {
     await mantleProvider.complete({
       provider: "aws-mantle",
       model: "anthropic.claude-haiku-4-5",
-      messages: [{ role: "user", content: "hi" }],
+      messages: [
+        { role: "system", content: "stable ".repeat(800) },
+        { role: "user", content: "hi" },
+      ],
     }, { apiKey: "test-key" });
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/anthropic/v1/messages");
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as {
+      system: Array<Record<string, unknown>>;
+    };
+    expect(body.system[0]).toMatchObject({
+      type: "text",
+      cache_control: { type: "ephemeral" },
+    });
   });
 });

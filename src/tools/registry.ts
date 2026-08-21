@@ -1057,6 +1057,13 @@ export const toolRegistry: Record<string, ToolHandler> = {
   async "shell.stop"(args) {
     return jobManager.stopJob(requireString(args, "id"));
   },
+  async "shell.wait"(args, options) {
+    const timeoutMs = optionalNumber(args, "timeoutMs");
+    return jobManager.waitForJob(requireString(args, "id"), {
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
+  },
   async "fs.edit"(args, options) {
     return fsEdit(
       requireString(args, "path"),

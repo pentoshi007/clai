@@ -34,6 +34,7 @@ export interface TokenUsage {
   readonly uncachedPromptTokens?: number | undefined;
   /** Reasoning tokens included in completion usage, when reported. */
   readonly reasoningTokens?: number | undefined;
+  readonly reasoningObserved?: true | undefined;
 }
 
 /**
@@ -80,6 +81,8 @@ const OPENAI_USAGE_PATHS: Readonly<Record<UsageCounter, readonly string[]>> = {
   cachedPromptTokens: [
     "prompt_tokens_details.cached_tokens",
     "promptTokensDetails.cachedTokens",
+    "input_tokens_details.cached_tokens",
+    "inputTokensDetails.cachedTokens",
     "cached_prompt_tokens",
     "cachedPromptTokens",
     "prompt_cache_hit_tokens",
@@ -88,6 +91,10 @@ const OPENAI_USAGE_PATHS: Readonly<Record<UsageCounter, readonly string[]>> = {
   cacheCreationTokens: [
     "cache_creation_input_tokens",
     "cacheCreationInputTokens",
+    "prompt_tokens_details.cache_write_tokens",
+    "promptTokensDetails.cacheWriteTokens",
+    "input_tokens_details.cache_write_tokens",
+    "inputTokensDetails.cacheWriteTokens",
     "prompt_tokens_details.cache_creation_tokens",
     "promptTokensDetails.cacheCreationTokens",
   ],
@@ -100,6 +107,8 @@ const OPENAI_USAGE_PATHS: Readonly<Record<UsageCounter, readonly string[]>> = {
   reasoningTokens: [
     "completion_tokens_details.reasoning_tokens",
     "completionTokensDetails.reasoningTokens",
+    "output_tokens_details.reasoning_tokens",
+    "outputTokensDetails.reasoningTokens",
     "reasoning_tokens",
     "reasoningTokens",
   ],
@@ -216,6 +225,7 @@ function mergeProviderUsage(
   const reasoningTokens = firstDefined(
     available.map((usage) => usage.reasoningTokens),
   );
+  const reasoningObserved = available.some((usage) => usage.reasoningObserved);
 
   return normalizeTokenUsage({
     ...(promptTokens !== undefined ? { promptTokens } : {}),
@@ -229,6 +239,7 @@ function mergeProviderUsage(
     ...(cacheCreationTokens !== undefined ? { cacheCreationTokens } : {}),
     ...(uncachedPromptTokens !== undefined ? { uncachedPromptTokens } : {}),
     ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    ...(reasoningObserved ? { reasoningObserved: true } : {}),
   });
 }
 
@@ -242,6 +253,7 @@ export function normalizeTokenUsage(input: {
   cacheCreationTokens?: number | undefined;
   uncachedPromptTokens?: number | undefined;
   reasoningTokens?: number | undefined;
+  reasoningObserved?: boolean | undefined;
 }): TokenUsage | undefined {
   const prompt = nonNegInt(input.promptTokens);
   const completion = nonNegInt(input.completionTokens);
@@ -266,7 +278,16 @@ export function normalizeTokenUsage(input: {
     ...(cacheCreation !== undefined ? { cacheCreationTokens: cacheCreation } : {}),
     ...(uncached !== undefined ? { uncachedPromptTokens: uncached } : {}),
     ...(reasoning !== undefined ? { reasoningTokens: reasoning } : {}),
+    ...(input.reasoningObserved ? { reasoningObserved: true as const } : {}),
   };
+}
+
+export function withReasoningObservation(
+  usage: TokenUsage | undefined,
+  observed: boolean,
+): TokenUsage | undefined {
+  if (!usage || !observed || usage.reasoningObserved) return usage;
+  return { ...usage, reasoningObserved: true };
 }
 
 /**

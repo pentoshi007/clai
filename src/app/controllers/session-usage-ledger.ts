@@ -11,6 +11,7 @@ export interface SessionUsageRoute {
   readonly cacheCreationTokens: number | undefined;
   readonly uncachedPromptTokens: number | undefined;
   readonly reasoningTokens: number | undefined;
+  readonly reasoningObserved: boolean;
   readonly cacheBasePromptTokens: number | undefined;
   readonly estimatedRequests: number;
   readonly unmeasuredPromptRequests: number;
@@ -26,6 +27,7 @@ export interface SessionUsageTotals {
   readonly cacheCreationTokens: number | undefined;
   readonly uncachedPromptTokens: number | undefined;
   readonly reasoningTokens: number | undefined;
+  readonly reasoningObserved: boolean;
   readonly cacheBasePromptTokens: number | undefined;
   readonly estimatedRequests: number;
   readonly unmeasuredPromptRequests: number;
@@ -47,6 +49,7 @@ export interface PersistedRouteUsage {
   readonly cacheCreationTokens?: number | undefined;
   readonly uncachedPromptTokens?: number | undefined;
   readonly reasoningTokens?: number | undefined;
+  readonly reasoningObserved?: boolean | undefined;
   readonly cacheBasePromptTokens?: number | undefined;
   readonly estimatedRequests?: number | undefined;
   readonly unmeasuredPromptRequests?: number | undefined;
@@ -64,6 +67,7 @@ interface MutableRoute {
   cacheCreationTokens: number | undefined;
   uncachedPromptTokens: number | undefined;
   reasoningTokens: number | undefined;
+  reasoningObserved: boolean;
   cacheBasePromptTokens: number | undefined;
   estimatedRequests: number;
   unmeasuredPromptRequests: number;
@@ -120,6 +124,7 @@ function toRoute(entry: MutableRoute): SessionUsageRoute {
     cacheCreationTokens: entry.cacheCreationTokens,
     uncachedPromptTokens: entry.uncachedPromptTokens,
     reasoningTokens: entry.reasoningTokens,
+    reasoningObserved: entry.reasoningObserved,
     cacheBasePromptTokens: entry.cacheBasePromptTokens,
     estimatedRequests: entry.estimatedRequests,
     unmeasuredPromptRequests: entry.unmeasuredPromptRequests,
@@ -165,6 +170,7 @@ export class SessionUsageLedger {
         cacheCreationTokens: undefined,
         uncachedPromptTokens: undefined,
         reasoningTokens: undefined,
+        reasoningObserved: false,
         cacheBasePromptTokens: undefined,
         estimatedRequests: 0,
         unmeasuredPromptRequests: 0,
@@ -194,6 +200,7 @@ export class SessionUsageLedger {
       entry.reasoningTokens,
       optionalNonNegativeInteger(usage.reasoningTokens),
     );
+    entry.reasoningObserved ||= usage.reasoningObserved === true;
     if (cached !== undefined && promptMeasured) {
       entry.cacheBasePromptTokens =
         (entry.cacheBasePromptTokens ?? 0) + promptTokens;
@@ -227,6 +234,7 @@ export class SessionUsageLedger {
     let cacheCreationTokens: number | undefined;
     let uncachedPromptTokens: number | undefined;
     let reasoningTokens: number | undefined;
+    let reasoningObserved = false;
     let cacheBasePromptTokens: number | undefined;
     let estimatedRequests = 0;
     let unmeasuredPromptRequests = 0;
@@ -245,6 +253,7 @@ export class SessionUsageLedger {
         route.uncachedPromptTokens,
       );
       reasoningTokens = addOptional(reasoningTokens, route.reasoningTokens);
+      reasoningObserved ||= route.reasoningObserved;
       cacheBasePromptTokens = addOptional(
         cacheBasePromptTokens,
         route.cacheBasePromptTokens,
@@ -265,6 +274,7 @@ export class SessionUsageLedger {
         cacheCreationTokens,
         uncachedPromptTokens,
         reasoningTokens,
+        reasoningObserved,
         cacheBasePromptTokens,
         estimatedRequests,
         unmeasuredPromptRequests,
@@ -296,6 +306,7 @@ export class SessionUsageLedger {
         ...(entry.reasoningTokens !== undefined
           ? { reasoningTokens: entry.reasoningTokens }
           : {}),
+        ...(entry.reasoningObserved ? { reasoningObserved: true } : {}),
         ...(entry.cacheBasePromptTokens !== undefined
           ? { cacheBasePromptTokens: entry.cacheBasePromptTokens }
           : {}),
@@ -337,6 +348,7 @@ export class SessionUsageLedger {
         cacheCreationTokens: optionalNonNegativeInteger(raw.cacheCreationTokens),
         uncachedPromptTokens: optionalNonNegativeInteger(raw.uncachedPromptTokens),
         reasoningTokens: optionalNonNegativeInteger(raw.reasoningTokens),
+        reasoningObserved: raw.reasoningObserved === true,
         cacheBasePromptTokens: optionalNonNegativeInteger(
           raw.cacheBasePromptTokens,
         ),

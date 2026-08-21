@@ -16,7 +16,9 @@ import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
 import {
   isReasoningUnsupported,
+  routeReasoningIsMandatory,
   modelCatalogFacts,
+  learnedRouteEfforts,
   modelReasoningEfforts,
 } from "./capabilities.js";
 import { providerContextOverrideTokens } from "./token-usage.js";
@@ -224,12 +226,15 @@ export function builtInProfileLayers(
 function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
   const { provider, model } = profile.route;
   if (!isBuiltInProviderId(provider)) return profile;
-  const suppressed = isReasoningUnsupported(provider, model);
+  const mandatory = routeReasoningIsMandatory(provider, model);
+  const suppressed = !mandatory && isReasoningUnsupported(provider, model);
+  const wireEfforts = learnedRouteEfforts(provider, model);
   const learnedEfforts =
-    profile.reasoning.acceptedEfforts.length === 0
+    wireEfforts ??
+    (profile.reasoning.acceptedEfforts.length === 0
       ? modelReasoningEfforts(provider, model)
-      : undefined;
-  if (!suppressed && !learnedEfforts?.length) return profile;
+      : undefined);
+  if (!suppressed && !mandatory && !learnedEfforts?.length) return profile;
   const observed: ProfileEvidence = {
     source: "observed",
     confidence: "inferred",
@@ -239,6 +244,9 @@ function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
     reasoning: {
       ...profile.reasoning,
       ...(learnedEfforts?.length ? { acceptedEfforts: learnedEfforts } : {}),
+      ...(mandatory
+        ? { generation: "mandatory" as const, disable: "unsupported" as const }
+        : {}),
       ...(suppressed
         ? {
             control: {

@@ -10,7 +10,9 @@ import type {
   TokenUsage,
   ToolChoice,
   ToolDefinition,
+  ReasoningEffort,
 } from "../types.js";
+import { cacheAffinityKey } from "./cache-affinity.js";
 import {
   modelAcceptsImages,
   modelSupportsThinking,
@@ -39,6 +41,7 @@ import {
 import {
   parseFireworksUsage,
   parseOpenAiUsage,
+  withReasoningObservation,
   type CompatibleUsageAliases,
 } from "./token-usage.js";
 import { generationFetch } from "./operation-usage.js";
@@ -70,6 +73,8 @@ import {
 import {
   createReasoningArtifact,
   createReasoningArtifactProvenance,
+  reasoningArtifactsObserved,
+  visibleReasoningDetailText,
 } from "./reasoning-artifacts.js";
 import {
   classifyBynaraModel,
@@ -689,10 +694,12 @@ function compatibleReasoningArtifacts(input: {
     );
   }
   for (const detail of input.details ?? []) {
+    const visible = visibleReasoningDetailText(detail.raw);
     artifacts.push(
       createReasoningArtifact({
         kind: "structured-details",
         raw: detail.raw,
+        ...(visible ? { displaySummary: visible } : {}),
         provenance,
         replay: policy,
         position: {
@@ -734,13 +741,18 @@ export function toCompletionResult(
   model: string,
   payload: OpenAiCompatibleResult,
 ): import("../types.js").CompletionResult {
+  const usage = withReasoningObservation(
+    payload.usage,
+    Boolean(payload.reasoningBlock?.text.trim()) ||
+      reasoningArtifactsObserved(payload.reasoningArtifacts),
+  );
   return {
     text: payload.text,
     provider,
     model,
     ...(payload.toolCalls?.length ? { toolCalls: payload.toolCalls } : {}),
     ...(payload.finishReason ? { finishReason: payload.finishReason } : {}),
-    ...(payload.usage ? { usage: payload.usage } : {}),
+    ...(usage ? { usage } : {}),
     ...(payload.reasoningBlock ? { reasoningBlock: payload.reasoningBlock } : {}),
     ...(payload.reasoningArtifacts
       ? { reasoningArtifacts: payload.reasoningArtifacts }
@@ -1151,6 +1163,50 @@ export function isReasoningUnsupportedError(error: unknown): boolean {
   );
 }
 
+export interface ReasoningRejectionAdvice {
+  mandatory: boolean;
+  acceptedEfforts: readonly ReasoningEffort[];
+}
+
+const EFFORT_VOCABULARY: readonly ReasoningEffort[] = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function reasoningRejectionAdvice(
+  error: unknown,
+): ReasoningRejectionAdvice | undefined {
+  const body =
+    error && typeof error === "object" && "body" in error
+      ? String((error as { body?: string }).body ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error);
+  const hay = `${message}\n${body}`.toLowerCase();
+
+  const mandatory =
+    /always\s+(?:engages?\s+in|uses?|performs?)\s+(?:thinking|reasoning)|(?:thinking|reasoning)\s+cannot\s+be\s+disabled|cannot\s+be\s+disabled|can(?:no|')t\s+be\s+(?:disabled|turned\s+off)/.test(
+      hay,
+    );
+
+  const clause =
+    /(?:please\s+use|must\s+be\s+one\s+of|must\s+be|one\s+of|supported\s+values?(?:\s+are)?|valid\s+values?(?:\s+are)?|allowed\s+values?(?:\s+are)?|use)\s*:?\s*([^.;\n}"]{0,120})/.exec(
+      hay,
+    );
+  const acceptedEfforts = clause
+    ? EFFORT_VOCABULARY.filter((effort) =>
+        new RegExp(`\\b${effort}\\b`).test(clause[1] ?? ""),
+      )
+    : [];
+
+  if (!mandatory && acceptedEfforts.length === 0) return undefined;
+  return { mandatory, acceptedEfforts };
+}
+
 export function isStreamOptionsUnsupportedError(error: unknown): boolean {
   const status =
     error && typeof error === "object" && "status" in error
@@ -1343,6 +1399,10 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   const effectiveMaxTokens = reasoningOn
     ? outputBudgetWithReasoning(claudeFloored, options)
     : claudeFloored;
+  const affinityKey =
+    options.providerId === "openrouter" || options.providerId === "fireworks"
+      ? cacheAffinityKey(options.providerId, options.model, options.messages)
+      : undefined;
   const body: Record<string, unknown> = {
     model: options.model,
     messages: toOpenAiMessages(
@@ -1357,8 +1417,19 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
         : undefined,
     ),
     stream: options.stream,
+    ...(options.providerId === "openrouter" && affinityKey
+      ? { session_id: affinityKey }
+      : {}),
     ...(options.providerId === "fireworks"
-      ? { perf_metrics_in_response: true }
+      ? {
+          perf_metrics_in_response: true,
+          ...(affinityKey
+            ? {
+                prompt_cache_key: affinityKey,
+                prompt_cache_isolation_key: affinityKey,
+              }
+            : {}),
+        }
       : {}),
     ...(reasoningModel
       ? { max_completion_tokens: effectiveMaxTokens }
@@ -1619,6 +1690,10 @@ export async function openAiCompatibleComplete(options: {
   if (typeof reasoning === "string" && reasoning.trim()) {
     learnModelEmitsReasoning(options.providerId, options.model);
   }
+  const displayReasoning =
+    typeof reasoning === "string" && reasoning
+      ? reasoning
+      : (visibleReasoningDetailText(detailsRaw) ?? "");
   return {
     text,
     ...(toolCalls.length ? { toolCalls } : {}),
@@ -1628,9 +1703,7 @@ export async function openAiCompatibleComplete(options: {
         ? { finishReason: "tool_calls" }
         : {}),
     ...(usage ? { usage } : {}),
-    ...(typeof reasoning === "string" && reasoning
-      ? { reasoningBlock: { text: reasoning } }
-      : {}),
+    ...(displayReasoning ? { reasoningBlock: { text: displayReasoning } } : {}),
     ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
   };
 }
@@ -1930,7 +2003,13 @@ export async function openAiCompatibleStream(options: {
           ...(jsonUsage ? { usage: jsonUsage } : {}),
           ...(typeof reasoning === "string" && reasoning
             ? { reasoningBlock: { text: reasoning } }
-            : {}),
+            : visibleReasoningDetailText(detailsRaw)
+              ? {
+                  reasoningBlock: {
+                    text: visibleReasoningDetailText(detailsRaw)!,
+                  },
+                }
+              : {}),
           ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
         };
       }
@@ -2049,6 +2128,13 @@ export async function openAiCompatibleStream(options: {
       ...(structuredDetails.length ? { details: structuredDetails } : {}),
       ...(thoughtSignatures.length ? { thoughtSignatures } : {}),
     });
+  };
+
+  const displayReasoningText = (): string => {
+    if (reasoningSeen) return reasoningSeen;
+    return structuredDetails
+      .map((detail) => visibleReasoningDetailText(detail.raw) ?? "")
+      .join("");
   };
 
   const normalizeChannelDelta = (
@@ -2221,7 +2307,7 @@ export async function openAiCompatibleStream(options: {
                 text: full,
                 ...(finishReason ? { finishReason } : { finishReason: "stop" }),
                 ...(streamUsage ? { usage: streamUsage } : {}),
-                ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+                ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
                 ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
               };
             }
@@ -2238,7 +2324,7 @@ export async function openAiCompatibleStream(options: {
                 ? { finishReason: "tool_calls" }
                 : {}),
             ...(streamUsage ? { usage: streamUsage } : {}),
-            ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+            ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
             ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
           };
         }
@@ -2434,7 +2520,7 @@ export async function openAiCompatibleStream(options: {
           text: full,
           ...(finishReason ? { finishReason } : { finishReason: "stop" }),
           ...(streamUsage ? { usage: streamUsage } : {}),
-          ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+          ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
           ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
         };
       }
@@ -2451,7 +2537,7 @@ export async function openAiCompatibleStream(options: {
           ? { finishReason: "tool_calls" }
           : {}),
       ...(streamUsage ? { usage: streamUsage } : {}),
-      ...(reasoningSeen ? { reasoningBlock: { text: reasoningSeen } } : {}),
+      ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
       ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
     };
   } catch (error) {

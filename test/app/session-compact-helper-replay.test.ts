@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../src/types.js";
+import type { AnyAppEvent } from "../../src/app/events/app-event.js";
 
 const complete = vi.fn();
 const stream = vi.fn();
@@ -18,6 +19,9 @@ const { runSessionCompaction } = await import(
   "../../src/app/controllers/session-compact-helper.js"
 );
 const { EventSequencer } = await import("../../src/app/events/sequencer.js");
+const { accountAssembledRequest } = await import(
+  "../../src/agent/request-accounting.js"
+);
 
 const SUMMARY =
   "## Work completed\n- Did the thing.\n\n## Remaining work\n- Nothing.";
@@ -102,6 +106,63 @@ describe("runSessionCompaction cache-preserving replay", () => {
     // identity is untouched.
     expect(sent.temperature).toBe(0.7);
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
+  });
+
+  it("reports current assembled accounting instead of a stale provider snapshot", async () => {
+    stream.mockResolvedValueOnce(okResult());
+    const successfulRequest = {
+      ...SNAPSHOT,
+      messages: [
+        { role: "system" as const, content: "stable constitution" },
+        {
+          role: "user" as const,
+          content: "historical user detail ".repeat(12_000),
+        },
+        {
+          role: "assistant" as const,
+          content: "historical assistant detail ".repeat(12_000),
+        },
+      ],
+    };
+    const history: ChatMessage[] = [
+      ...successfulRequest.messages,
+      { role: "assistant", content: "done — feature built" },
+      { role: "user", content: "now compact" },
+    ];
+    const expectedBefore = accountAssembledRequest({
+      provider: successfulRequest.provider,
+      model: successfulRequest.model,
+      messages: history,
+      stream: true,
+      reasoning: successfulRequest.thinking,
+      contextLimitTokens: 1_000_000,
+    }).accounting.requestTokens;
+    const events: AnyAppEvent[] = [];
+    const { options } = harness(history);
+
+    await runSessionCompaction({
+      ...options,
+      successfulRequest,
+      requestTokensBefore: 78_200,
+      persist: true,
+      emit: (event) => events.push(event),
+    });
+
+    const started = events.find((event) => event.type === "compaction-started");
+    const completed = events.find(
+      (event) => event.type === "compaction-completed",
+    );
+    expect(expectedBefore).toBeGreaterThan(78_200);
+    expect(started?.payload.beforeTokens).toBe(expectedBefore);
+    expect(completed?.payload).toMatchObject({
+      beforeTokens: expectedBefore,
+      contextScope: "assembled-request",
+    });
+    expect(
+      completed?.type === "compaction-completed"
+        ? completed.payload.afterTokens
+        : expectedBefore,
+    ).toBeLessThan(expectedBefore);
   });
 
   it("falls back to transcript-rendered requests when the replay cannot fit", async () => {

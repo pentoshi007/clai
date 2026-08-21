@@ -811,6 +811,7 @@ export function classifyToolCall(
   if (
     call.name === "shell.jobs" ||
     call.name === "shell.tail" ||
+    call.name === "shell.wait" ||
     call.name === "shell.stop"
   ) {
     return { level: "safe", reason: "Read-only job management" };

@@ -5,6 +5,7 @@ import type {
   ReasoningArtifactReplayTarget,
 } from "../types.js";
 import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
+import { cacheAffinityKey } from "./cache-affinity.js";
 import {
   readJson,
   ingestOpenAiModelCatalog,
@@ -22,7 +23,10 @@ import {
 } from "./operation-usage.js";
 import { isOperationPolicyError } from "./operation-ledger.js";
 import { toWireName, fromWireName, parseToolArguments } from "./tool-protocol.js";
-import { normalizeTokenUsage } from "./token-usage.js";
+import {
+  normalizeTokenUsage,
+  withReasoningObservation,
+} from "./token-usage.js";
 import {
   createReasoningArtifact,
   createReasoningArtifactProvenance,
@@ -316,11 +320,7 @@ function buildResponsesBody(options: {
     model: options.model,
     input,
     store: false,
-    // Turn and compaction requests share one bucket on purpose so a compaction
-    // prompt can reuse the turn's cached prefix. Auxiliary requests get their
-    // own bucket so their unrelated short prefix cannot evict it.
-    prompt_cache_key:
-      options.purpose === "auxiliary" ? "clai-auxiliary" : "clai",
+    prompt_cache_key: `${options.purpose === "auxiliary" ? "aux-" : ""}${cacheAffinityKey("meta", options.model, options.messages)}`,
     prompt_cache_retention: "24h",
     include: ["reasoning.encrypted_content"],
     max_output_tokens: effectiveMax,
@@ -601,7 +601,10 @@ export const metaProvider: LlmProvider = {
       parsed.reasoningItems,
       parsed.reasoningItemPositions,
     );
-    const usage = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
+    const usage = withReasoningObservation(
+      parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage),
+      Boolean(parsed.reasoningSummary.trim()),
+    );
     if (!parsed.text.trim() && parsed.toolCalls.length === 0) {
       const respStatus = (data as Record<string, unknown>).status;
       const details = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
@@ -918,6 +921,13 @@ export const metaProvider: LlmProvider = {
         ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       };
     };
+    const usageResult = (): { usage: TokenUsage } | Record<string, never> => {
+      const usage = withReasoningObservation(
+        streamUsage,
+        Boolean(reasoningSeen.trim()),
+      );
+      return usage ? { usage } : {};
+    };
 
     const emitVisible = (text: string): void => {
       if (!text) return;
@@ -981,7 +991,7 @@ export const metaProvider: LlmProvider = {
             }
             if (!visible.trim() && toolCalls.length === 0) {
               if (reasoningSeen.trim()) {
-                return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...(streamUsage ? { usage: streamUsage } : {}), ...reasoningReplay() };
+                return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...usageResult(), ...reasoningReplay() };
               }
               throw new ProviderError(`Meta Model API completed without a visible answer.`);
             }
@@ -991,7 +1001,7 @@ export const metaProvider: LlmProvider = {
               model,
               ...(toolCalls.length ? { toolCalls } : {}),
               ...(finishReason ? { finishReason } : toolCalls.length ? { finishReason: "tool_calls" } : {}),
-              ...(streamUsage ? { usage: streamUsage } : {}),
+              ...usageResult(),
               ...reasoningReplay(),
             };
           }
@@ -1264,7 +1274,7 @@ export const metaProvider: LlmProvider = {
       }
       if (!visible.trim() && toolCalls.length === 0) {
         if (reasoningSeen.trim()) {
-          return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...(streamUsage ? { usage: streamUsage } : {}), ...reasoningReplay() };
+          return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...usageResult(), ...reasoningReplay() };
         }
         throw new ProviderError(`Meta Model API completed without a visible answer.`);
       }
@@ -1274,7 +1284,7 @@ export const metaProvider: LlmProvider = {
         model,
         ...(toolCalls.length ? { toolCalls } : {}),
         ...(finishReason ? { finishReason } : toolCalls.length ? { finishReason: "tool_calls" } : {}),
-        ...(streamUsage ? { usage: streamUsage } : {}),
+        ...usageResult(),
         ...reasoningReplay(),
       };
     } catch (error) {

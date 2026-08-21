@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LoopGuard } from "../src/agent/loop-guard.js";
+import { IDENTICAL_POLL_BLOCK_THRESHOLD, LoopGuard } from "../src/agent/loop-guard.js";
 import { completedOperationObservationDigest, completedOperationSignature } from "../src/agent/outcomes.js";
 
 describe("LoopGuard", () => {
@@ -655,23 +655,55 @@ describe("LoopGuard", () => {
     expect(guard.observeActionSequence(seq).suppress).toBe(true);
   });
 
-  it("never blocks unchanged successful polling retries via shouldBlock", () => {
+  it("keeps polling unblocked while the observation keeps changing", () => {
     const guard = new LoopGuard();
     const args = { id: "job-1" };
-    const output = "[job-1] running exit=? total=119";
 
-    for (let step = 0; step < 6; step++) {
+    for (let step = 0; step < 20; step++) {
       expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
-      guard.recordAttempt(step, "shell.tail", args, true, 0, output);
+      guard.recordAttempt(
+        step,
+        "shell.tail",
+        args,
+        true,
+        0,
+        `[job-1] running exit=? total=${100 + step * 7}`,
+      );
     }
     expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
   });
 
-  it("never blocks empty-output polling successes", () => {
+  it("bounds identical polling once it cannot produce new information", () => {
+    const guard = new LoopGuard();
+    const args = { id: "job-1" };
+    const output = "[job-1] running exit=? total=119";
+
+    for (let step = 0; step <= IDENTICAL_POLL_BLOCK_THRESHOLD; step++) {
+      expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
+      guard.recordAttempt(step, "shell.tail", args, true, 0, output);
+    }
+    const decision = guard.shouldBlock("shell.tail", args);
+    expect(decision.block).toBe(true);
+    expect(decision.reason).toContain("shell.wait");
+  });
+
+  it("resumes polling after the observation changes again", () => {
+    const guard = new LoopGuard();
+    const args = { id: "job-1" };
+
+    for (let step = 0; step <= IDENTICAL_POLL_BLOCK_THRESHOLD; step++) {
+      guard.recordAttempt(step, "shell.tail", args, true, 0, "identical");
+    }
+    expect(guard.shouldBlock("shell.tail", args).block).toBe(true);
+    guard.recordAttempt(99, "shell.tail", args, true, 0, "something new");
+    expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
+  });
+
+  it("never blocks empty-output polling successes below the identical cap", () => {
     const guard = new LoopGuard();
     const args = { id: "job-2", offset: 119 };
 
-    for (let step = 0; step < 5; step++) {
+    for (let step = 0; step < IDENTICAL_POLL_BLOCK_THRESHOLD; step++) {
       guard.recordAttempt(step, "shell.tail", args, true, 0, "");
       expect(guard.shouldBlock("shell.tail", args).block).toBe(false);
     }

@@ -134,6 +134,9 @@ function aggregateAttempts(
           ),
         }
       : {}),
+    ...(known.some((attempt) => attempt.usage.value.reasoningObserved)
+      ? { reasoningObserved: true }
+      : {}),
   });
 
   return Object.freeze({

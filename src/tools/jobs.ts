@@ -277,13 +277,19 @@ function launchFollowUp(id: string, responder: boolean): string {
         "Do not poll it with shell.tail/shell.jobs, sleep, or read its artifact. " +
         "Continue other work; if not already delivered, its terminal result will be delivered automatically."
     : "OS launch does not prove application readiness or continued liveness. " +
-        `This is a normal background job: use shell.tail {"id":"${id}"} with nextOffset and shell.jobs for status; ` +
-        "for a server or watcher, also run an application readiness probe. Do not launch a duplicate.";
+        `If this command is finite, block once with shell.wait {"id":"${id}"} rather than polling for status; ` +
+        "repeated identical polls return no new information and are refused. " +
+        `If it is a persistent server or watcher, run an application readiness probe and read new output with shell.tail {"id":"${id}"} using nextOffset. ` +
+        "Do not launch a duplicate.";
 }
 
 const PER_FILE_BYTES = 1024 * 1024;
 const MAX_STREAM_BYTES = 16 * 1024 * 1024;
 const DEFAULT_TAIL_BYTES = 8_000;
+const WAIT_JOB_DEFAULT_TIMEOUT_MS = 120_000;
+const WAIT_JOB_MAX_TIMEOUT_MS = 600_000;
+const WAIT_JOB_INTERVAL_MS = 500;
+const WAIT_JOB_TAIL_BYTES = 4_000;
 const REGISTRY_FILE = "registry-v1.json";
 const TRANSIENT_V2_REGISTRY_FILE = "registry-v2.json";
 /** Cap durable terminal jobs kept on disk/in memory (per process). */
@@ -1999,6 +2005,53 @@ export class JobManager {
       this.emit({ type: "notification", jobId: job.id, notificationId: completion.notification.id });
     }
     return job;
+  }
+
+  async waitForJob(
+    id: string,
+    options?: { timeoutMs?: number | undefined; signal?: AbortSignal | undefined },
+  ): Promise<ToolResult> {
+    const resolved = this.resolveJobId(id);
+    const job = resolved ? this.jobs.get(resolved) : undefined;
+    if (!job) {
+      const known = [...this.jobs.keys()].join(", ") || "none";
+      return {
+        ok: false,
+        output: `Job "${id}" not found. Canonical job IDs: ${known}.`,
+        exitCode: 1,
+      };
+    }
+    const timeoutMs = Math.max(
+      1_000,
+      Math.min(options?.timeoutMs ?? WAIT_JOB_DEFAULT_TIMEOUT_MS, WAIT_JOB_MAX_TIMEOUT_MS),
+    );
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      this.refreshJobLiveness(job);
+      if (!this.isLive(job)) break;
+      if (options?.signal?.aborted) break;
+      if (Date.now() >= deadline) {
+        return {
+          ok: true,
+          output:
+            `[${job.id}] still ${job.status} after waiting ${formatJobElapsed({ startedAt: new Date(Date.now() - timeoutMs).toISOString() })}. ` +
+            `exit=? health=${processAlive(job.pid) ? "alive" : "unresponsive"} elapsed=${formatJobElapsed(job)}\n` +
+            `$ ${job.commandDisplay}\n` +
+            "The wait timed out, not the job. Do other useful work and wait again with a longer timeoutMs, " +
+            "or stop it with shell.stop if it is no longer needed. Do not poll shell.jobs in a loop.",
+          exitCode: 0,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, WAIT_JOB_INTERVAL_MS));
+    }
+    const tail = await this.tailJob(job.id, { bytes: WAIT_JOB_TAIL_BYTES });
+    return {
+      ok: job.status === "exited" && (job.exitCode ?? 0) === 0,
+      output:
+        `[${job.id}] ${job.status} exit=${job.exitCode ?? "?"} elapsed=${formatJobElapsed(job)}\n` +
+        `$ ${job.commandDisplay}\n${tail.output}`,
+      exitCode: job.exitCode ?? 0,
+    };
   }
 
   async tailJob(id: string, bytesOrCursor?: number | TailCursor): Promise<ToolResult> {

@@ -24,7 +24,11 @@ import {
   parseAnthropicToolUseBlocks,
   toAnthropicToolMessages,
 } from "./adapters/anthropic-tools.js";
-import { mergeAnthropicStreamUsage, parseAnthropicUsage } from "./token-usage.js";
+import {
+  mergeAnthropicStreamUsage,
+  parseAnthropicUsage,
+  withReasoningObservation,
+} from "./token-usage.js";
 import { generationFetch } from "./operation-usage.js";
 import {
   firstSystemPrompt,
@@ -183,6 +187,7 @@ export function buildAnthropicBody(request: CompletionRequest, stream: boolean):
     model,
     system,
     messages,
+    cache_control: { type: "ephemeral" },
     // A 1024 default sits below `anthropicThinkingBudget` (up to 8192), which
     // Anthropic rejects outright, and is far below every Claude output cap.
     max_tokens: anthropicMaxTokens(plan.controls.requestedMaxTokens, thinking),
@@ -269,7 +274,10 @@ export const anthropicProvider: LlmProvider = {
       model,
       parsed.thinkingBlocks,
     );
-    const usage = parseAnthropicUsage(data.usage);
+    const usage = withReasoningObservation(
+      parseAnthropicUsage(data.usage),
+      Boolean(parsed.thinkingText.trim()),
+    );
     return {
       text: parsed.text,
       provider: "anthropic",
@@ -443,6 +451,10 @@ export const anthropicProvider: LlmProvider = {
     ) {
       throw new Error("Anthropic returned no completion text");
     }
+    const usage = withReasoningObservation(
+      streamUsage,
+      Boolean(finalized.thinkingText.trim()),
+    );
     return {
       text: full,
       provider: "anthropic",
@@ -467,7 +479,7 @@ export const anthropicProvider: LlmProvider = {
         : finalized.toolCalls.length
           ? { finishReason: "tool_calls" }
           : {}),
-      ...(streamUsage ? { usage: streamUsage } : {}),
+      ...(usage ? { usage } : {}),
     };
   },
 };
