@@ -129,14 +129,16 @@ CLAI_NO_MIRROR=1
 1. **Create the bucket.** Cloudflare dashboard → R2 → Create bucket, e.g. `clai-releases`. Any location hint works.
 2. **Make it publicly readable.** Bucket → Settings → Public access:
    - **Option A — `r2.dev` (zero DNS config):** enable the managed "r2.dev URL" → you get `https://pub-<hash>.r2.dev`.
-   - **Option B — custom domain (the default everywhere in this repo):** add `downloads.clai.aniketpandey.website` as a custom domain (requires the zone's DNS on Cloudflare). Served over the edge cache with free SSL.
+   - **Option B — custom domain (the default everywhere in this repo):** add `downloads.clai.aniketpandey.website` as a custom domain (requires the zone's DNS on Cloudflare). Free SSL, and eligible for the edge cache once the cache rule in step 7 is in place.
    If you end up on a different hostname, update `DEFAULT_MIRROR_BASE` in `src/commands/update-install.ts`, the default base in `install/install.sh` and `install/install.ps1`, and the URLs in `manifests/` — or export `CLAI_DOWNLOAD_BASE` until a release ships the change.
 3. **Create an API token.** R2 → Manage R2 API Tokens → Create API token: permission **Object Read & Write**, scoped to the `clai-releases` bucket only. Keep the **Access Key ID**, **Secret Access Key**, and the **Account ID** shown on the token page.
 4. **Add repo secrets** (GitHub repo → Settings → Secrets and variables → Actions → Secrets): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`.
 5. **Add repo variable** (Variables tab): `R2_PUBLIC_URL` = your public base URL, e.g. `https://downloads.clai.aniketpandey.website`, no trailing slash.
 6. **Done.** On every `v*.*.*` tag, the `publish-r2` job in `.github/workflows/release.yml` uploads binaries + checksums to `/vX.Y.Z/` and `/latest/`, refreshes `/install/` and `/version.json`, re-downloads every asset through the public URL to re-verify its SHA256 against the sidecars, then purges superseded `vX.Y.Z/` prefixes. Missing secrets → the job skips without failing the release; missing `R2_PUBLIC_URL` → the public-URL verification is skipped and, because nothing was verified, pruning is skipped too. The `/version.json` write is advisory: if the token cannot write bucket-root objects the job warns and mirrors the manifest to `/latest/version.json` instead, since update checks already fall back to GitHub Releases.
 
-**Cost:** the R2 free tier covers 10 GB-months of storage, 1M Class A and 10M Class B operations per month, and egress is always free — assets served via the custom domain ride the edge cache, so this stays $0 at clai's scale.
+7. **Turn on edge caching (one cache rule).** Release binaries have no file extension, and Cloudflare's default cache only covers known static extensions — so without a rule every download is served from R2 origin and `cf-cache-status` stays `DYNAMIC`. Add a Cache Rule (dashboard → Caching → Cache Rules) matching `Hostname eq downloads.clai.aniketpandey.website` with **Cache eligibility: Eligible for cache** and **Use origin cache-control: on**. The upload job already stamps the right `Cache-Control` on every object — `public, max-age=31536000, immutable` for `/vX.Y.Z/` (content-addressed by version, so it can never go stale), `max-age=300` for `/latest/` and `/install/`, and `max-age=60` for `/version.json`. Verify with `curl -sI <url> | grep cf-cache-status`: the second request for the same asset should report `HIT`.
+
+**Cost:** the R2 free tier covers 10 GB-months of storage, 1M Class A and 10M Class B operations per month, and egress is always free, so this stays $0 at clai's scale. With the cache rule in place repeat downloads are served from the edge and never reach R2, which also keeps Class B operations near zero.
 
 ---
 

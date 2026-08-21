@@ -176,13 +176,16 @@ jobs:
         run: |
           set -euo pipefail
           command -v rclone >/dev/null 2>&1 || sudo apt-get install -y rclone
-          rclone copy release "r2:${R2_BUCKET_NAME}/${VERSION}" --transfers 8 --checkers 8 --retries 5 --stats-one-line
-          rclone copy release "r2:${R2_BUCKET_NAME}/latest" --transfers 8 --checkers 8 --retries 5 --stats-one-line
-          rclone copy install "r2:${R2_BUCKET_NAME}/install" --transfers 8 --checkers 8 --retries 5 --stats-one-line
+          immutable='Cache-Control: public, max-age=31536000, immutable'
+          rolling='Cache-Control: public, max-age=300'
+          manifest='Cache-Control: public, max-age=60'
+          rclone copy release "r2:${R2_BUCKET_NAME}/${VERSION}" --header-upload "$immutable" --transfers 8 --checkers 8 --retries 5 --stats-one-line
+          rclone copy release "r2:${R2_BUCKET_NAME}/latest" --header-upload "$rolling" --transfers 8 --checkers 8 --retries 5 --stats-one-line
+          rclone copy install "r2:${R2_BUCKET_NAME}/install" --header-upload "$rolling" --transfers 8 --checkers 8 --retries 5 --stats-one-line
           printf '{"version":"%s"}\n' "${VERSION#v}" > version.json
           published=false
           for target in "version.json" "latest/version.json"; do
-            if rclone copyto version.json "r2:${R2_BUCKET_NAME}/${target}" --retries 5 --stats-one-line; then
+            if rclone copyto version.json "r2:${R2_BUCKET_NAME}/${target}" --header-upload "$manifest" --retries 5 --stats-one-line; then
               echo "Published update-check manifest to ${target}."
               if [ "$target" = "version.json" ]; then
                 published=true
