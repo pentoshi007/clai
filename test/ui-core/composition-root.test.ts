@@ -60,6 +60,56 @@ class UsageAgent implements AgentPort {
   }
 }
 
+class CompactionCountAgent implements AgentPort {
+  async runTurn(
+    _req: RunTurnRequest,
+    handlers: RunTurnHandlers,
+  ): Promise<TurnOutcome> {
+    const outcome = createTurnOutcome({
+      status: "succeeded",
+      answer: "compacted",
+      steps: 1,
+      remainingCriteria: [],
+    });
+    handlers.onEvent({ type: "turn-start", prompt: "compact" });
+    handlers.onEvent({
+      type: "token-usage",
+      provider: "openrouter",
+      model: "stealth/ox-alpha",
+      usage: {
+        promptTokens: 78_200,
+        completionTokens: 100,
+        totalTokens: 78_300,
+        exact: true,
+      },
+    });
+    handlers.onEvent({
+      type: "compaction-start",
+      id: "compact-count",
+      beforeTokens: 229_182,
+    });
+    handlers.onEvent({
+      type: "compaction-completed",
+      id: "compact-count",
+      summary: "condensed",
+      beforeTokens: 229_182,
+      afterTokens: 10_371,
+      contextScope: "assembled-request",
+    });
+    handlers.onEvent({
+      type: "turn-end",
+      outcome,
+      finalAnswer: "compacted",
+      steps: 1,
+    });
+    handlers.onMessages?.([
+      { role: "user", content: "compact" },
+      { role: "assistant", content: "compacted" },
+    ]);
+    return outcome;
+  }
+}
+
 class BurstAgent implements AgentPort {
   async runTurn(
     _req: RunTurnRequest,
@@ -177,6 +227,40 @@ describe("createCompositionRoot", () => {
     expect(
       notice?.type === "notice" ? notice.payload.text : "",
     ).toContain("reasoning output 12");
+    services.dispose();
+  });
+
+  it("synchronizes the footer with the compaction card counts", async () => {
+    const observed: Array<[string, number | undefined]> = [];
+    let services: ReturnType<typeof createCompositionRoot>;
+    services = createCompositionRoot({
+      agent: new CompactionCountAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+      emit: (event) => {
+        if (
+          event.type === "compaction-started" ||
+          event.type === "compaction-completed"
+        ) {
+          observed.push([
+            event.type,
+            services.session.getState().contextSnapshot?.contextTokens,
+          ]);
+        }
+      },
+    });
+
+    await services.session.submit("compact");
+
+    expect(observed).toEqual([
+      ["compaction-started", 229_182],
+      ["compaction-completed", 10_371],
+    ]);
+    expect(services.session.getState().contextSnapshot).toMatchObject({
+      contextTokens: 10_371,
+      scope: "assembled-request",
+      precision: "estimate",
+    });
     services.dispose();
   });
 

@@ -205,12 +205,6 @@ export function estimatedContextSnapshot(
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 | undefined {
   if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
-  if (
-    current?.scope === "provider-request" &&
-    current.precision === "provider-exact"
-  ) {
-    return current;
-  }
   return createContextSnapshot({
     contextTokens: Math.floor(estimatedTokens),
     lastCompletionTokens: current?.lastCompletionTokens,

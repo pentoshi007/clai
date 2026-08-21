@@ -295,10 +295,10 @@ describe("SessionController parity helpers (V2-080)", () => {
     if (completed?.type === "compaction-completed") {
       expect(completed.payload.summary).toContain(visibleSummary);
       expect(completed.payload.summary).not.toMatch(/<\/?think|hidden compaction/i);
-      expect(completed.payload.contextScope).toBe("message-history");
+      expect(completed.payload.contextScope).toBe("assembled-request");
     }
     expect(session.getState().contextSnapshot).toMatchObject({
-      scope: "message-history",
+      scope: "assembled-request",
       precision: "estimate",
     });
   });

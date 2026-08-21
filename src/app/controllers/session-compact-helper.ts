@@ -23,6 +23,7 @@ import {
   isCompactionMemoryMessage,
   type CompactResult,
 } from "../../agent/context-manager.js";
+import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
 import {
   OperationLedger,
@@ -130,33 +131,65 @@ export async function runSessionCompaction(
   };
 
   const historyTokensBefore = estimateMessagesTokens(options.history);
-  // The request-scoped measurement is the same provider-reported number the
-  // composer chip shows. The raw history estimate can exceed it (deliberately
-  // conservative chars-per-token ratio); preferring the estimate here made the
-  // compaction card disagree with the chip, so the request-scoped figure wins
-  // whenever one exists.
-  const requestTokensBefore =
+  const successfulRequest = options.successfulRequest;
+  const contextLimitTokens =
+    options.contextLimitTokens ??
+    modelContextWindow(
+      successfulRequest?.model ?? options.model,
+      successfulRequest?.provider ?? options.provider,
+    );
+  const instruction = buildDirectCompactionPrompt({
+    ...(options.purpose ? { purpose: options.purpose } : {}),
+  });
+  const replayPlan = successfulRequest
+    ? planCompactionReplay({
+        baseRequest: successfulRequest,
+        history: options.history,
+        prompt: instruction,
+        maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
+        contextLimitTokens,
+        stream: true,
+      })
+    : undefined;
+  const continuationAccounting = replayPlan?.continuationAccounting;
+  const snapshotRequestTokensBefore =
     typeof options.requestTokensBefore === "number" &&
     Number.isFinite(options.requestTokensBefore) &&
     options.requestTokensBefore > 0
       ? Math.floor(options.requestTokensBefore)
       : undefined;
-  const scope = requestTokensBefore === undefined ? "message-history" : "assembled-request";
+  const useContinuationAccounting =
+    continuationAccounting !== undefined &&
+    (snapshotRequestTokensBefore === undefined ||
+      continuationAccounting.requestTokens >= snapshotRequestTokensBefore);
+  const requestTokensBefore = useContinuationAccounting
+    ? continuationAccounting.requestTokens
+    : snapshotRequestTokensBefore ?? continuationAccounting?.requestTokens;
+  const scope =
+    requestTokensBefore === undefined
+      ? "message-history"
+      : "assembled-request";
   const beforeTokens = requestTokensBefore ?? historyTokensBefore;
-  // Compaction only rewrites messages: the system prefix and tool schemas are
-  // untouched, so the request shrinks by exactly what the history shrinks by.
-  const reportedFor = (result: CompactResult): ReportedCompaction => ({
-    beforeTokens,
-    afterTokens:
-      requestTokensBefore === undefined
-        ? result.afterTokens
-        : Math.max(
-            0,
-            requestTokensBefore -
-              Math.max(0, result.beforeTokens - result.afterTokens),
-          ),
-    scope,
-  });
+  const reportedFor = (result: CompactResult): ReportedCompaction => {
+    const removedHistoryTokens = Math.max(
+      0,
+      result.beforeTokens - result.afterTokens,
+    );
+    const afterTokens =
+      useContinuationAccounting && continuationAccounting
+        ? calibratedRequestTokens(
+            successfulRequest?.provider,
+            successfulRequest?.model,
+            Math.max(
+              0,
+              continuationAccounting.rawRequestTokens - removedHistoryTokens,
+            ),
+          )
+        : requestTokensBefore === undefined
+          ? result.afterTokens
+          : Math.max(0, requestTokensBefore - removedHistoryTokens);
+    return { beforeTokens, afterTokens, scope };
+  };
   if (options.persist) {
     emit("compaction-started", {
       compactionId: options.compactionId,
@@ -171,31 +204,16 @@ export async function runSessionCompaction(
     continuationBudget: 0,
   });
   try {
-    const successfulRequest = options.successfulRequest;
     if (!successfulRequest) {
       throw new Error(
         "compaction failed: no successful live model request is available for cache-preserving compaction; complete a turn first",
       );
     }
-    const contextLimitTokens =
-      options.contextLimitTokens ??
-      modelContextWindow(successfulRequest.model, successfulRequest.provider);
-    const instruction = buildDirectCompactionPrompt({
-      ...(options.purpose ? { purpose: options.purpose } : {}),
-    });
     // Cache-preserving replay: the summary request resends the last
     // successful turn request verbatim with the instruction appended, so the
     // whole prior prompt is served from cache. When that assembled request
     // would not fit (e.g. compacting a nearly-full session), fall back to the
     // legacy transcript-rendered requests rather than failing closed.
-    const replayPlan = planCompactionReplay({
-      baseRequest: successfulRequest,
-      history: options.history,
-      prompt: instruction,
-      maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
-      contextLimitTokens,
-      stream: true,
-    });
     const replay =
       replayPlan && !replayPlan.accounting.overLimit
         ? successfulRequest

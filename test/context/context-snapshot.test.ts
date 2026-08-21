@@ -243,7 +243,7 @@ describe("ContextSnapshotV1", () => {
     });
   });
 
-  it("keeps provider-exact usage visible until the next provider measurement", () => {
+  it("shows a newer assembled observation until the provider measures that request", () => {
     const current = recordContextUsageSnapshot(
       target,
       undefined,
@@ -260,7 +260,12 @@ describe("ContextSnapshotV1", () => {
       () => 3,
     );
 
-    expect(inFlight).toBe(current);
+    expect(inFlight).toMatchObject({
+      contextTokens: 720,
+      scope: "assembled-request",
+      precision: "estimate",
+      observedAt: 2,
+    });
     expect(completed).toMatchObject({
       contextTokens: 640,
       scope: "provider-request",

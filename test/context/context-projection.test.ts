@@ -8,11 +8,13 @@ import {
 import { reasoningArtifactTokensForMessage } from "../../src/llm/reasoning-artifacts.js";
 import {
   compactedUsageSnapshot,
+  estimatedContextSnapshot,
   estimatedUsageSnapshot,
   resolveContextUsageSnapshot,
   type ContextUsageTarget,
 } from "../../src/app/controllers/session-context-usage.js";
 import { parseMetaUsage } from "../../src/llm/meta.js";
+import { createContextSnapshot } from "../../src/llm/context-snapshot.js";
 import {
   applyUsageToSnapshot,
   formatContextChip,
@@ -309,6 +311,33 @@ describe("exactness lifetime", () => {
 
     expect(refreshed.contextTokens).toBe(250_000);
     expect(refreshed.exact).toBe(false);
+  });
+
+  it("replaces a provider-exact snapshot with a newer assembled-request estimate", () => {
+    const previous = createContextSnapshot({
+      contextTokens: 78_200,
+      lastCompletionTokens: 100,
+      sessionPromptTokens: 78_200,
+      sessionCompletionTokens: 100,
+      scope: "provider-request",
+      precision: "provider-exact",
+      limit: { source: "session-override", tokens: 300_000 },
+      observedAt: 1,
+    });
+
+    const refreshed = estimatedContextSnapshot(
+      { ...target, contextLimitTokens: 300_000 },
+      previous,
+      229_182,
+      () => 2,
+    );
+
+    expect(refreshed).toMatchObject({
+      contextTokens: 229_182,
+      scope: "assembled-request",
+      precision: "estimate",
+      observedAt: 2,
+    });
   });
 
   it("demotes to an estimate after compaction", () => {
