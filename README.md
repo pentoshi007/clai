@@ -101,10 +101,19 @@ Mirror layout at `https://downloads.clai.aniketpandey.website`:
 
 | Path | Contents |
 |---|---|
-| `/vX.Y.Z/` | Binaries + `.sha256` sidecars for release vX.Y.Z |
+| `/vX.Y.Z/` | Binaries + `.sha256` sidecars for release vX.Y.Z (latest release only — see retention) |
 | `/latest/` | Same files, refreshed on every release |
 | `/install/` | `install.sh` / `install.ps1` used by the one-liners above |
 | `/version.json` | Latest released version (update-check fallback) |
+
+**Retention.** R2's free tier covers 10 GB and a single release is roughly 650 MB across six
+platforms, so the mirror keeps only the newest release: after the new binaries are uploaded
+*and* re-verified byte-for-byte through the public URL, superseded `vX.Y.Z/` prefixes are
+purged. `/latest/`, `/install/` and `/version.json` are always retained. Set the repo variable
+`R2_KEEP_RELEASES` to keep more than one version (default `1`). Pruning never runs unless the
+new release verified successfully, and a failed purge only warns — it can never fail a release.
+GitHub Releases keeps every version permanently, so older downloads still work through the
+automatic fallback; only the CDN acceleration is lost for them.
 
 **Security model:** installers and `clai update` try the R2 mirror first for speed and fall back to GitHub Releases automatically. The SHA256 checksum is fetched from GitHub Releases (falling back to the mirror) and verified locally before anything is installed — the trust anchor stays with GitHub, so a bad mirror can only slow you down, never feed you tampered bytes. `CLAI_SKIP_CHECKSUM=1` still bypasses verification, at your own risk. If the mirror is unreachable but raw.githubusercontent.com works, grab the installer from `https://raw.githubusercontent.com/pentoshi007/clai/main/install/` instead — it makes the same mirror-first/fallback choices when it runs.
 
@@ -125,7 +134,7 @@ CLAI_NO_MIRROR=1
 3. **Create an API token.** R2 → Manage R2 API Tokens → Create API token: permission **Object Read & Write**, scoped to the `clai-releases` bucket only. Keep the **Access Key ID**, **Secret Access Key**, and the **Account ID** shown on the token page.
 4. **Add repo secrets** (GitHub repo → Settings → Secrets and variables → Actions → Secrets): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`.
 5. **Add repo variable** (Variables tab): `R2_PUBLIC_URL` = your public base URL, e.g. `https://downloads.clai.aniketpandey.website`, no trailing slash.
-6. **Done.** On every `v*.*.*` tag, the `publish-r2` job in `.github/workflows/release.yml` uploads binaries + checksums to `/vX.Y.Z/` and `/latest/`, refreshes `/install/` and `/version.json`, then re-downloads every asset through the public URL and re-verifies its SHA256 against the sidecars. Missing secrets → the job skips without failing the release; missing `R2_PUBLIC_URL` → only the public-URL verification step is skipped.
+6. **Done.** On every `v*.*.*` tag, the `publish-r2` job in `.github/workflows/release.yml` uploads binaries + checksums to `/vX.Y.Z/` and `/latest/`, refreshes `/install/` and `/version.json`, re-downloads every asset through the public URL to re-verify its SHA256 against the sidecars, then purges superseded `vX.Y.Z/` prefixes. Missing secrets → the job skips without failing the release; missing `R2_PUBLIC_URL` → the public-URL verification is skipped and, because nothing was verified, pruning is skipped too. The `/version.json` write is advisory: if the token cannot write bucket-root objects the job warns and mirrors the manifest to `/latest/version.json` instead, since update checks already fall back to GitHub Releases.
 
 **Cost:** the R2 free tier covers 10 GB-months of storage, 1M Class A and 10M Class B operations per month, and egress is always free — assets served via the custom domain ride the edge cache, so this stays $0 at clai's scale.
 
