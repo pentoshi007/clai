@@ -160,6 +160,7 @@ jobs:
 
       - name: Upload binaries, checksums and installers to R2
         if: steps.gate.outputs.skip != 'true'
+        id: upload
         env:
           RCLONE_CONFIG_R2_TYPE: s3
           RCLONE_CONFIG_R2_PROVIDER: Cloudflare
@@ -167,22 +168,38 @@ jobs:
           RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
           RCLONE_CONFIG_R2_ACL: private
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+          RCLONE_CONFIG_R2_DISABLE_CHECKSUM: "true"
+          RCLONE_CONFIG_R2_UPLOAD_CUTOFF: 5Gi
           R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
           VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           command -v rclone >/dev/null 2>&1 || sudo apt-get install -y rclone
-          rclone copy release "r2:${R2_BUCKET_NAME}/${VERSION}" --transfers 8 --checkers 8 --stats-one-line
-          rclone copy release "r2:${R2_BUCKET_NAME}/latest" --transfers 8 --checkers 8 --stats-one-line
-          rclone copy install "r2:${R2_BUCKET_NAME}/install" --transfers 8 --checkers 8 --stats-one-line
+          rclone copy release "r2:${R2_BUCKET_NAME}/${VERSION}" --transfers 8 --checkers 8 --retries 5 --stats-one-line
+          rclone copy release "r2:${R2_BUCKET_NAME}/latest" --transfers 8 --checkers 8 --retries 5 --stats-one-line
+          rclone copy install "r2:${R2_BUCKET_NAME}/install" --transfers 8 --checkers 8 --retries 5 --stats-one-line
           printf '{"version":"%s"}\n' "${VERSION#v}" > version.json
-          rclone copyto version.json "r2:${R2_BUCKET_NAME}/version.json"
+          published=false
+          for target in "version.json" "latest/version.json"; do
+            if rclone copyto version.json "r2:${R2_BUCKET_NAME}/${target}" --retries 5 --stats-one-line; then
+              echo "Published update-check manifest to ${target}."
+              if [ "$target" = "version.json" ]; then
+                published=true
+              fi
+            else
+              echo "::warning title=R2 update-check manifest::Could not write ${target} to the mirror. Release assets are unaffected; update checks fall back to GitHub Releases. Re-issue the R2 API token with Object Read & Write on the whole bucket to restore it."
+            fi
+          done
+          echo "version_json=${published}" >> "$GITHUB_OUTPUT"
 
       - name: Verify public mirror serves the exact bytes
+        id: verify
         if: steps.gate.outputs.skip != 'true' && vars.R2_PUBLIC_URL != ''
         env:
           R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
           VERSION: ${{ github.ref_name }}
+          VERSION_JSON_PUBLISHED: ${{ steps.upload.outputs.version_json }}
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
@@ -192,7 +209,53 @@ jobs:
             curl -fsSL "${R2_PUBLIC_URL}/${VERSION}/${name}" -o "${tmp}/${name}"
             echo "$(awk '{print $1}' "${asset}.sha256")  ${tmp}/${name}" | sha256sum -c -
           done
-          curl -fsSL "${R2_PUBLIC_URL}/version.json" | grep -q "\"${VERSION#v}\""
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+          if [ "${VERSION_JSON_PUBLISHED}" = "true" ]; then
+            if ! curl -fsSL "${R2_PUBLIC_URL}/version.json" | grep -q "\"${VERSION#v}\""; then
+              echo "::warning title=R2 update-check manifest::${R2_PUBLIC_URL}/version.json does not report ${VERSION#v} yet. Release assets verified; update checks fall back to GitHub Releases."
+            fi
+          fi
+
+      - name: Prune superseded releases from R2
+        if: steps.verify.outputs.verified == 'true'
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          VERSION: ${{ github.ref_name }}
+          KEEP_RELEASES: ${{ vars.R2_KEEP_RELEASES }}
+        run: |
+          set -euo pipefail
+          keep="${KEEP_RELEASES:-1}"
+          case "$keep" in '' | *[!0-9]*) keep=1 ;; esac
+          if [ "$keep" -lt 1 ]; then
+            keep=1
+          fi
+          rclone lsf --dirs-only "r2:${R2_BUCKET_NAME}/" \
+            | sed 's#/$##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' \
+            | sort -Vr > versions.txt || true
+          if ! grep -qxF "${VERSION}" versions.txt; then
+            echo "::warning title=R2 prune skipped::${VERSION} was not found in the bucket listing, so nothing was deleted."
+            exit 0
+          fi
+          grep -vxF "${VERSION}" versions.txt | tail -n "+${keep}" > purge.txt || true
+          if [ ! -s purge.txt ]; then
+            echo "Nothing to prune; retaining ${VERSION} plus $((keep - 1)) earlier release(s)."
+            exit 0
+          fi
+          while read -r stale; do
+            [ -n "$stale" ] || continue
+            echo "Purging r2:${R2_BUCKET_NAME}/${stale}"
+            if ! rclone purge "r2:${R2_BUCKET_NAME}/${stale}" --retries 3 --stats-one-line; then
+              echo "::warning title=R2 prune::Could not purge ${stale}; it still occupies mirror storage."
+            fi
+          done < purge.txt
+          echo "Retained ${VERSION} and latest/; GitHub Releases remains the archive for older versions."
 
   publish-npm:
     # validate already ran typecheck + tests once; build produced verified
