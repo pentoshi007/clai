@@ -6,6 +6,7 @@ import { getConfig, updateConfig } from "../store/config.js";
 import { VERSION as GENERATED_VERSION } from "../version.generated.js";
 import {
   detectInstallMethod,
+  mirrorBaseUrl,
   performUpdate,
   resolveInstallEnv,
   type InstallMethod,
@@ -77,7 +78,7 @@ export function getCurrentVersion(): string {
 }
 
 /** Fetch the latest release from GitHub (5s timeout, swallows errors) */
-async function fetchLatestRelease(): Promise<GitHubRelease | null> {
+async function fetchLatestReleaseFromGitHub(): Promise<GitHubRelease | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -97,6 +98,36 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
   } catch {
     return null;
   }
+}
+
+async function fetchLatestReleaseFromMirror(): Promise<GitHubRelease | null> {
+  if (process.env.CLAI_NO_MIRROR === "1") return null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(`${mirrorBaseUrl()}/version.json`, {
+      headers: { "User-Agent": "clai-updater" },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { version?: string };
+    const version = data.version?.trim();
+    if (!version) return null;
+    return {
+      tag_name: `v${version.replace(/^v/, "")}`,
+      html_url: `https://github.com/${REPO}/releases/latest`,
+      published_at: "",
+      assets: [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchLatestRelease(): Promise<GitHubRelease | null> {
+  const release = await fetchLatestReleaseFromGitHub();
+  return release ?? fetchLatestReleaseFromMirror();
 }
 
 /** Latest published version without the leading `v`, or undefined if unknown. */

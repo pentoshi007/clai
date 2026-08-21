@@ -11,20 +11,20 @@ class Clai < Formula
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-darwin-arm64"
+      url "https://downloads.clai.aniketpandey.website/v#{version}/clai-bun-darwin-arm64"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000"
     else
-      url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-darwin-x64"
+      url "https://downloads.clai.aniketpandey.website/v#{version}/clai-bun-darwin-x64"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-linux-arm64"
+      url "https://downloads.clai.aniketpandey.website/v#{version}/clai-bun-linux-arm64"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000"
     else
-      url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-linux-x64"
+      url "https://downloads.clai.aniketpandey.website/v#{version}/clai-bun-linux-x64"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000"
     end
   end
