@@ -38,13 +38,13 @@ describe('config store', () => {
     const config = getConfig();
 
     expect(config.defaultProvider).toBe('free');
-    expect(config.defaultModel).toBe('free-1/deepseek-v4-flash-free');
+    expect(config.defaultModel).toBe('free-2/kilo-auto/free');
   });
 
   it('returns correct default model for each provider', async () => {
     const { getProviderModel } = await loadConfigStore();
 
-    expect(getProviderModel('free')).toBe('free-1/deepseek-v4-flash-free');
+    expect(getProviderModel('free')).toBe('free-2/kilo-auto/free');
     expect(getProviderModel('openrouter')).toBe('meta-llama/llama-3.3-70b-instruct:free');
     expect(getProviderModel('gemini')).toBe('gemini-3.5-flash');
     expect(getProviderModel('nvidia')).toBe('openai/gpt-oss-20b');

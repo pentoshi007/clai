@@ -166,7 +166,11 @@ describe("ClassicApp", () => {
 
   it("omits the effort for a model the route sends no reasoning control for", () => {
     const previousThinking = getConfig().thinking;
-    updateConfig({ thinking: { enabled: true, effort: "high" } });
+    const previousProvider = getConfig().defaultProvider;
+    updateConfig({
+      thinking: { enabled: true, effort: "high" },
+      defaultProvider: "ollama",
+    });
     const services = buildServices();
     const wiring = buildWiring(services);
     const { lastFrame, unmount } = render(
@@ -183,7 +187,10 @@ describe("ClassicApp", () => {
       unmount();
       wiring.dispose();
       services.dispose();
-      updateConfig({ thinking: previousThinking });
+      updateConfig({
+        thinking: previousThinking,
+        defaultProvider: previousProvider,
+      });
     }
   });
 

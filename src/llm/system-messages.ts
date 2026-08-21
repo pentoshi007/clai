@@ -31,6 +31,16 @@ export function withoutRequestContextSystemMessages(
   return messages.filter((message) => !isRequestContextSystemMessage(message));
 }
 
+export function upsertRequestContextMessage(
+  messages: ChatMessage[],
+  content: string,
+): void {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (isRequestContextSystemMessage(messages[index]!)) messages.splice(index, 1);
+  }
+  messages.push({ role: "system", content });
+}
+
 /**
  * One shared ordered normalization contract for dialects with a
  * single system slot.

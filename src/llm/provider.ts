@@ -88,7 +88,7 @@ export const providerAliases: Record<string, ProviderId> = {
 };
 
 export const defaultModels: Record<ProviderId, string> = {
-  free: "free-1/deepseek-v4-flash-free",
+  free: "free-2/kilo-auto/free",
   gemini: "gemini-3.5-flash",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-5.4-mini",
@@ -302,10 +302,10 @@ WHAT IT IS
 MODELS
   /model lists the live catalogs from both gateways (each cached for an
   hour), namespaced by source:
-    free-1/deepseek-v4-flash-free              (clai default)
+    free-2/kilo-auto/free                      (clai default)
     free-1/mimo-v2.5-free
     free-1/hy3-free
-    free-2/kilo-auto/free
+    free-1/x-preview-f-free
     free-2/stepfun/step-3.7-flash:free
     free-2/nvidia/nemotron-3-ultra-550b-a55b:free
   zen free ids end in -free; kilo free ids end in :free or /free (the kilo
