@@ -79,10 +79,12 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
         false,
       ),
     ) as {
+      cache_control: { type: string };
       system: Array<Record<string, unknown>>;
       messages: Array<{ content: unknown }>;
     };
 
+    expect(body.cache_control).toEqual({ type: "ephemeral" });
     expect(body.system).toHaveLength(2);
     expect(body.system[0]).toMatchObject({
       text: CONSTITUTION,

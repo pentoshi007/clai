@@ -427,6 +427,23 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     { mutates: true },
   ),
   def(
+    "shell.wait",
+    "Block until a tracked background job reaches a terminal state (exited, failed, killed, lost), then return its exit code and output tail in one call. Use this instead of polling shell.jobs or shell.tail in a loop for a finite command such as a build, test run, or `gh run watch`: one shell.wait replaces every poll. If the wait times out the job is left running and you are told so; do other useful work and wait again with a larger timeoutMs. Never use this on a persistent server that has no terminal state.",
+    {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        timeoutMs: {
+          type: "integer",
+          description: "Maximum time to block (default 120000, max 600000)",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    { readOnly: true },
+  ),
+  def(
     "pkg.install",
     "Install a package via the OS package manager if the binary is missing.",
     {
@@ -1399,6 +1416,7 @@ export function getToolDefinitions(filter?: {
       "shell.start",
       "shell.jobs",
       "shell.tail",
+      "shell.wait",
       "shell.stop",
       "terminal.start",
       "terminal.send",

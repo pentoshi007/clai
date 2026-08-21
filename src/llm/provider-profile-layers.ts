@@ -191,9 +191,21 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       replayScope: "tool-turn",
       replayOptIn: "openrouter-reasoning-context",
     },
-    cache: { kind: "unknown", cacheAffectingFields: [] },
+    cache: {
+      kind: "affinity-key",
+      affinityField: "session_id",
+      cacheAffectingFields: [
+        "messages",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "session_id",
+      ],
+    },
     usage: {
       cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      cacheWrite: ["usage.prompt_tokens_details.cache_write_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
     },
     terminal: {
       proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,

@@ -7,8 +7,10 @@ import { getProvider, providerAuth } from "../../llm/router.js";
 import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
 import {
   effectiveThinkingEffort,
+  clearReasoningRejection,
   displayReasoningEfforts,
   modelReasoningEvidence,
+  routeReasoningIsMandatory,
   modelReasoningIsMandatory,
   modelSupportsThinking,
 } from "../../llm/capabilities.js";
@@ -952,30 +954,40 @@ function reasoningOptionValues(
   model: string,
 ): readonly string[] {
   const scale = Object.keys(REASONING_DESCRIPTIONS).filter((value) => value !== "off");
+  const evidence = modelReasoningEvidence(provider, model);
   if (
     !modelSupportsThinking(provider, model) &&
-    modelReasoningEvidence(provider, model) !== "unknown"
+    evidence !== "unknown" &&
+    evidence !== "rejected"
   ) {
     return ["off"];
   }
   const accepted = displayReasoningEfforts(provider, model) ?? [];
   const efforts =
     accepted.length > 0 ? scale.filter((value) => accepted.includes(value)) : scale;
-  return modelReasoningIsMandatory(model) ? efforts : ["off", ...efforts];
+  return modelReasoningIsMandatory(model) ||
+    routeReasoningIsMandatory(provider, model)
+    ? efforts
+    : ["off", ...efforts];
 }
 
 function reasoningPickerTitle(provider: ProviderId, model: string): string {
-  const status = modelReasoningIsMandatory(model)
-    ? "always on"
-    : modelSupportsThinking(provider, model)
-      ? "supported"
-      : "model may ignore it";
-  return `Reasoning · ${status} · via ${modelReasoningEvidence(provider, model)}`;
+  const evidence = modelReasoningEvidence(provider, model);
+  const status =
+    modelReasoningIsMandatory(model) || routeReasoningIsMandatory(provider, model)
+      ? "always on"
+      : evidence === "rejected"
+        ? "previously rejected — picking a level retries it"
+        : modelSupportsThinking(provider, model)
+          ? "supported"
+          : "model may ignore it";
+  return `Reasoning · ${status} · via ${evidence}`;
 }
 
 function applyReasoning(services: AppServices, value: string): void {
   const lower = value.toLowerCase();
   if (/^(on|enable|true)$/.test(lower)) {
+    clearRouteReasoningRejection(services);
     setThinking({ enabled: true });
     services.session.notice("info", `thinking → ${getConfig().thinking.effort}`);
     return;
@@ -986,12 +998,20 @@ function applyReasoning(services: AppServices, value: string): void {
     return;
   }
   if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(lower)) {
+    clearRouteReasoningRejection(services);
     setThinking({ enabled: true, effort: lower as ReasoningEffort });
     services.session.notice("info", `thinking → ${lower}`);
     warnUnacceptedEffort(services, lower);
     return;
   }
   services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
+}
+
+function clearRouteReasoningRejection(services: AppServices): void {
+  const provider = services.session.getState().provider ?? getConfig().defaultProvider;
+  const model = services.session.getState().model ?? "";
+  if (!model) return;
+  clearReasoningRejection(provider, model);
 }
 
 function warnUnacceptedEffort(services: AppServices, effort: string): void {

@@ -287,6 +287,22 @@ describe("formatSessionUsage markdown", () => {
     expect(body).toContain("1 estimated request");
   });
 
+
+  it("distinguishes observed reasoning from a provider-reported zero", () => {
+    const ledger = new SessionUsageLedger();
+    ledger.record(
+      usage({ reasoningTokens: 0, reasoningObserved: true }),
+      "openrouter",
+      "stealth/ox-alpha",
+    );
+    const report = ledger.report();
+    expect(report.routes[0]?.reasoningObserved).toBe(true);
+    const body = formatSessionUsage(report, { sessionId: "s" });
+    expect(body).toContain(
+      "reasoning observed (provider reported 0 tokens)",
+    );
+    expect(body).not.toContain("reasoning 0");
+  });
   it("escapes pipes so a model id cannot break the table", () => {
     const ledger = new SessionUsageLedger();
     ledger.record(usage(), "openai", "weird|model");

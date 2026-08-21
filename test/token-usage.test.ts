@@ -210,6 +210,41 @@ describe("OpenAI usage detail (cache / reasoning)", () => {
     });
   });
 
+
+  it("parses OpenRouter cache writes and Responses detail shapes", () => {
+    expect(
+      parseOpenAiUsage({
+        prompt_tokens: 2_000,
+        completion_tokens: 300,
+        prompt_tokens_details: {
+          cached_tokens: 1_500,
+          cache_write_tokens: 400,
+        },
+        completion_tokens_details: { reasoning_tokens: 250 },
+      }),
+    ).toMatchObject({
+      cachedPromptTokens: 1_500,
+      cacheCreationTokens: 400,
+      reasoningTokens: 250,
+    });
+    expect(
+      parseOpenAiUsage({
+        input_tokens: 3_000,
+        output_tokens: 500,
+        input_tokens_details: {
+          cached_tokens: 2_800,
+          cache_write_tokens: 100,
+        },
+        output_tokens_details: { reasoning_tokens: 450 },
+      }),
+    ).toMatchObject({
+      promptTokens: 3_000,
+      completionTokens: 500,
+      cachedPromptTokens: 2_800,
+      cacheCreationTokens: 100,
+      reasoningTokens: 450,
+    });
+  });
   it("omits the detail fields when the gateway does not report them", () => {
     expect(
       parseOpenAiUsage({ prompt_tokens: 10, completion_tokens: 2 }),

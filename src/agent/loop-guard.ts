@@ -72,6 +72,16 @@ const SEQUENCE_BLOCK_THRESHOLD = 2;
 const SEQUENCE_REPEAT_WARN_THRESHOLD = 3;
 const SEQUENCE_REPEAT_HARD_CAP = 4;
 
+export const IDENTICAL_POLL_WARN_THRESHOLD = 2;
+export const IDENTICAL_POLL_BLOCK_THRESHOLD = 4;
+
+const POLL_ALTERNATIVES: Record<string, string> = {
+  "shell.jobs": 'shell.wait {"id":"<job id>"}',
+  "shell.tail": 'shell.wait {"id":"<job id>"}',
+  "terminal.read": 'terminal.read with a longer waitMs',
+  "terminal.status": 'terminal.read with a longer waitMs',
+};
+
 const IMMEDIATE_SEQUENCE_SUPPRESSION_TOOLS = new Set([
   "fs.write",
   "fs.writeMany",
@@ -159,8 +169,35 @@ export class LoopGuard {
     }
   >();
   private lastSuccessfulNonMetaStep = -1;
+  private identicalPolls = new Map<string, { digest: string; repeats: number }>();
 
   constructor(_options: LoopGuardOptions = {}) {}
+
+  private recordPollObservation(
+    name: string,
+    sig: string,
+    ok: boolean,
+    digest: string | undefined,
+  ): void {
+    if (!STATE_POLLING_TOOLS.has(name)) return;
+    if (!ok || digest === undefined) {
+      this.identicalPolls.delete(sig);
+      return;
+    }
+    const prior = this.identicalPolls.get(sig);
+    this.identicalPolls.set(sig, {
+      digest,
+      repeats: prior?.digest === digest ? prior.repeats + 1 : 0,
+    });
+  }
+
+  identicalPollRepeats(name: string, args: Record<string, unknown>): number {
+    return this.identicalPolls.get(this.canonicalize(name, args))?.repeats ?? 0;
+  }
+
+  clearIdenticalPolls(): void {
+    this.identicalPolls.clear();
+  }
 
   restoreCompletedOperations(operations: readonly CompletedOperation[]): void {
     for (const operation of operations) {
@@ -561,6 +598,7 @@ export class LoopGuard {
     if (this.attempts.length > MAX_ATTEMPT_HISTORY) {
       this.attempts.splice(0, this.attempts.length - MAX_ATTEMPT_HISTORY);
     }
+    this.recordPollObservation(name, sig, ok, observationDigest);
     this.signatureCount.set(sig, (this.signatureCount.get(sig) ?? 0) + 1);
     if (ok) {
       this.signatureSuccess.set(sig, true);
@@ -761,6 +799,23 @@ export class LoopGuard {
     }
 
     const sig = this.canonicalize(name, args);
+    const pollRepeats = this.identicalPolls.get(sig)?.repeats ?? 0;
+    if (
+      STATE_POLLING_TOOLS.has(name) &&
+      pollRepeats >= IDENTICAL_POLL_BLOCK_THRESHOLD
+    ) {
+      const alternative = POLL_ALTERNATIVES[name];
+      return {
+        block: true,
+        kind: "unchanged-success",
+        reason:
+          `${name} returned the same observation ${pollRepeats + 1} times in a row, so polling it again cannot produce new information. ` +
+          (alternative
+            ? `Block on the state change instead with ${alternative}, or `
+            : "Wait for the state to change by doing other work, or ") +
+          "advance to a different action; if the state is already terminal, report what the observation shows.",
+      };
+    }
     const emptySuccess = this.emptySuccessfulCalls.get(sig);
     if (emptySuccess) {
       if (

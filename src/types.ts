@@ -424,6 +424,7 @@ export interface TokenUsage {
   readonly uncachedPromptTokens?: number | undefined;
   /** Reasoning tokens inside the completion, when reported. */
   readonly reasoningTokens?: number | undefined;
+  readonly reasoningObserved?: true | undefined;
 }
 
 export interface CompletionResult {

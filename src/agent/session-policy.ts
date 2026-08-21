@@ -58,6 +58,7 @@ const PRE_APPROVAL_ALLOWED_TOOLS = new Set<string>([
   "pdf.read",
   "shell.jobs",
   "shell.tail",
+  "shell.wait",
 ]);
 
 /**

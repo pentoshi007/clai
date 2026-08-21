@@ -35,7 +35,7 @@ import {
   requestContextSystemPrompts,
   withoutRequestContextSystemMessages,
 } from "./system-messages.js";
-import { anthropicMaxTokens } from "./anthropic.js";
+import { anthropicMaxTokens, anthropicSystemBlocks } from "./anthropic.js";
 import {
   emitStreamReasoningArtifacts,
   emitStreamReasoningDelta,
@@ -44,6 +44,7 @@ import { ANTHROPIC_STREAM_TERMINAL, requireTerminalProof } from "./stream-termin
 import {
   mergeAnthropicStreamUsage,
   parseAnthropicUsage,
+  withReasoningObservation,
 } from "./token-usage.js";
 import type { TokenUsage } from "../types.js";
 import {
@@ -170,12 +171,10 @@ export const mantleProvider: LlmProvider = {
       });
       return toCompletionResult("aws-mantle", model, payload);
     }
-    const system = [
+    const system = anthropicSystemBlocks(
       firstSystemPrompt(request.messages),
-      ...requestContextSystemPrompts(request.messages),
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join("\n\n");
+      requestContextSystemPrompts(request.messages),
+    );
     const reasoningArtifactReplay = {
       target: createReasoningArtifactReplayTarget({
         provider: "aws-mantle",
@@ -227,8 +226,11 @@ export const mantleProvider: LlmProvider = {
       stop_reason?: string;
       usage?: unknown;
     }>(response);
-    const usage = parseAnthropicUsage(data.usage);
     const parsed = parseAnthropicToolUseBlocks(data.content);
+    const usage = withReasoningObservation(
+      parseAnthropicUsage(data.usage),
+      Boolean(parsed.thinkingText.trim()),
+    );
     if (!parsed.text && parsed.toolCalls.length === 0) {
       throw new Error("Mantle returned no completion text");
     }
@@ -289,12 +291,10 @@ export const mantleProvider: LlmProvider = {
       });
       return toCompletionResult("aws-mantle", model, payload);
     }
-    const system = [
+    const system = anthropicSystemBlocks(
       firstSystemPrompt(request.messages),
-      ...requestContextSystemPrompts(request.messages),
-    ]
-      .filter((value): value is string => Boolean(value))
-      .join("\n\n");
+      requestContextSystemPrompts(request.messages),
+    );
     const reasoningArtifactReplay = {
       target: createReasoningArtifactReplayTarget({
         provider: "aws-mantle",
@@ -469,11 +469,15 @@ export const mantleProvider: LlmProvider = {
     ) {
       throw new Error("Mantle returned no completion text");
     }
+    const usage = withReasoningObservation(
+      streamUsage,
+      Boolean(finalized.thinkingText.trim()),
+    );
     return {
       text: full,
       provider: "aws-mantle",
       model,
-      ...(streamUsage ? { usage: streamUsage } : {}),
+      ...(usage ? { usage } : {}),
       ...(finalized.toolCalls.length ? { toolCalls: finalized.toolCalls } : {}),
       ...(finalized.thinkingSignature && finalized.thinkingText
         ? {

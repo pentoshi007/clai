@@ -410,6 +410,9 @@ exports[`serialized request snapshots > agentrouter / tools 1`] = `
 exports[`serialized request snapshots > anthropic / images 1`] = `
 {
   "body": {
+    "cache_control": {
+      "type": "ephemeral",
+    },
     "max_tokens": 1024,
     "messages": [
       {
@@ -455,6 +458,9 @@ exports[`serialized request snapshots > anthropic / images 1`] = `
 exports[`serialized request snapshots > anthropic / minimal 1`] = `
 {
   "body": {
+    "cache_control": {
+      "type": "ephemeral",
+    },
     "max_tokens": 1024,
     "messages": [
       {
@@ -487,6 +493,9 @@ exports[`serialized request snapshots > anthropic / minimal 1`] = `
 exports[`serialized request snapshots > anthropic / reasoning-control 1`] = `
 {
   "body": {
+    "cache_control": {
+      "type": "ephemeral",
+    },
     "max_tokens": 9216,
     "messages": [
       {
@@ -522,6 +531,9 @@ exports[`serialized request snapshots > anthropic / reasoning-control 1`] = `
 exports[`serialized request snapshots > anthropic / tool-loop-replay 1`] = `
 {
   "body": {
+    "cache_control": {
+      "type": "ephemeral",
+    },
     "max_tokens": 5120,
     "messages": [
       {
@@ -625,6 +637,9 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > anthropic / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
+    "cache_control": {
+      "type": "ephemeral",
+    },
     "max_tokens": 5120,
     "messages": [
       {
@@ -723,6 +738,9 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay-unsigned 1`
 exports[`serialized request snapshots > anthropic / tools 1`] = `
 {
   "body": {
+    "cache_control": {
+      "type": "ephemeral",
+    },
     "max_tokens": 1024,
     "messages": [
       {
@@ -2008,6 +2026,8 @@ exports[`serialized request snapshots > fireworks / images 1`] = `
     ],
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
+    "prompt_cache_isolation_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
+    "prompt_cache_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
     "stream": false,
   },
   "headers": {
@@ -2044,6 +2064,8 @@ exports[`serialized request snapshots > fireworks / minimal 1`] = `
     ],
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
+    "prompt_cache_isolation_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
+    "prompt_cache_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
     "stream": false,
   },
   "headers": {
@@ -2080,6 +2102,8 @@ exports[`serialized request snapshots > fireworks / reasoning-control 1`] = `
     ],
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
+    "prompt_cache_isolation_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
+    "prompt_cache_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
     "reasoning_effort": "high",
     "stream": false,
   },
@@ -2137,6 +2161,8 @@ exports[`serialized request snapshots > fireworks / tool-loop-replay 1`] = `
     ],
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
+    "prompt_cache_isolation_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
+    "prompt_cache_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
     "reasoning_effort": "medium",
     "stream": false,
     "tool_choice": "auto",
@@ -2238,6 +2264,8 @@ exports[`serialized request snapshots > fireworks / tool-loop-replay-unsigned 1`
     ],
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
+    "prompt_cache_isolation_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
+    "prompt_cache_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
     "reasoning_effort": "medium",
     "stream": false,
     "tool_choice": "auto",
@@ -2318,6 +2346,8 @@ exports[`serialized request snapshots > fireworks / tools 1`] = `
     ],
     "model": "accounts/fireworks/models/kimi-k2p6",
     "perf_metrics_in_response": true,
+    "prompt_cache_isolation_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
+    "prompt_cache_key": "clai-39516f3e6bef3f5754e71d578996bab1c8f0cb81",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -4265,7 +4295,7 @@ exports[`serialized request snapshots > meta / images 1`] = `
     ],
     "max_output_tokens": 1024,
     "model": "muse-spark-1.2",
-    "prompt_cache_key": "clai",
+    "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
       "effort": "minimal",
@@ -4333,7 +4363,7 @@ exports[`serialized request snapshots > meta / minimal 1`] = `
     ],
     "max_output_tokens": 1024,
     "model": "muse-spark-1.2",
-    "prompt_cache_key": "clai",
+    "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
       "effort": "minimal",
@@ -4401,7 +4431,7 @@ exports[`serialized request snapshots > meta / reasoning-control 1`] = `
     ],
     "max_output_tokens": 1024,
     "model": "muse-spark-1.2",
-    "prompt_cache_key": "clai",
+    "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
       "effort": "high",
@@ -4482,7 +4512,7 @@ exports[`serialized request snapshots > meta / tool-loop-replay 1`] = `
     "max_output_tokens": 1024,
     "model": "muse-spark-1.2",
     "parallel_tool_calls": true,
-    "prompt_cache_key": "clai",
+    "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
       "effort": "medium",
@@ -4602,7 +4632,7 @@ exports[`serialized request snapshots > meta / tool-loop-replay-unsigned 1`] = `
     "max_output_tokens": 1024,
     "model": "muse-spark-1.2",
     "parallel_tool_calls": true,
-    "prompt_cache_key": "clai",
+    "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
       "effort": "medium",
@@ -4711,7 +4741,7 @@ exports[`serialized request snapshots > meta / tools 1`] = `
     "max_output_tokens": 1024,
     "model": "muse-spark-1.2",
     "parallel_tool_calls": true,
-    "prompt_cache_key": "clai",
+    "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
       "effort": "minimal",
@@ -6427,6 +6457,7 @@ exports[`serialized request snapshots > openrouter / images 1`] = `
     "reasoning": {
       "enabled": false,
     },
+    "session_id": "clai-a652c939955b41abe54745dffd3d628b34c058a6",
     "stream": false,
   },
   "headers": {
@@ -6467,6 +6498,7 @@ exports[`serialized request snapshots > openrouter / minimal 1`] = `
     "reasoning": {
       "enabled": false,
     },
+    "session_id": "clai-a652c939955b41abe54745dffd3d628b34c058a6",
     "stream": false,
   },
   "headers": {
@@ -6508,6 +6540,7 @@ exports[`serialized request snapshots > openrouter / reasoning-control 1`] = `
       "effort": "high",
       "enabled": true,
     },
+    "session_id": "clai-a652c939955b41abe54745dffd3d628b34c058a6",
     "stream": false,
   },
   "headers": {
@@ -6569,6 +6602,7 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay 1`] = `
       "effort": "medium",
       "enabled": true,
     },
+    "session_id": "clai-a652c939955b41abe54745dffd3d628b34c058a6",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -6675,6 +6709,7 @@ exports[`serialized request snapshots > openrouter / tool-loop-replay-unsigned 1
       "effort": "medium",
       "enabled": true,
     },
+    "session_id": "clai-a652c939955b41abe54745dffd3d628b34c058a6",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -6758,6 +6793,7 @@ exports[`serialized request snapshots > openrouter / tools 1`] = `
     "reasoning": {
       "enabled": false,
     },
+    "session_id": "clai-a652c939955b41abe54745dffd3d628b34c058a6",
     "stream": false,
     "tool_choice": "auto",
     "tools": [

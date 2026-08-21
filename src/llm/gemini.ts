@@ -27,7 +27,10 @@ import {
   type GeminiReasoningPart,
 } from "./adapters/gemini-tools.js";
 import { fromWireName } from "./tool-protocol.js";
-import { parseGeminiUsage } from "./token-usage.js";
+import {
+  parseGeminiUsage,
+  withReasoningObservation,
+} from "./token-usage.js";
 import {
   emitStreamReasoningArtifacts,
   emitStreamReasoningDelta,
@@ -350,7 +353,10 @@ export const geminiProvider: LlmProvider = {
       assertGeminiFinishReasonAllowed(data.candidates?.[0]?.finishReason);
       throw new ProviderError("Gemini completed without a visible answer.");
     }
-    const usage = parseGeminiUsage(data.usageMetadata);
+    const usage = withReasoningObservation(
+      parseGeminiUsage(data.usageMetadata),
+      parsed.reasoningParts.length > 0,
+    );
     return {
       text: parsed.text,
       provider: "gemini",
@@ -496,6 +502,10 @@ export const geminiProvider: LlmProvider = {
       assertGeminiFinishReasonAllowed(finishReason);
       throw new ProviderError("Gemini completed without a visible answer.");
     }
+    const usage = withReasoningObservation(
+      streamUsage,
+      toolParsed.reasoningParts.length > 0,
+    );
     return {
       text: full,
       provider: "gemini",
@@ -509,7 +519,7 @@ export const geminiProvider: LlmProvider = {
         : toolParsed.toolCalls.length
           ? { finishReason: "tool_calls" }
           : {}),
-      ...(streamUsage ? { usage: streamUsage } : {}),
+      ...(usage ? { usage } : {}),
     };
   },
 };

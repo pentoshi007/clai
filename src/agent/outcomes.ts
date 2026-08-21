@@ -469,7 +469,9 @@ function stableOperationOutput(tool: string, output: string): string {
     .replace(/Full artifact: \S+/g, "Full artifact: <artifact>")
     .replace(/\b(?:\/var\/folders|\/tmp|\/var\/tmp|%TEMP%)[\w/.-]*\/clai\/[\w/.-]+/g, "<artifact>");
   if (tool === "shell.jobs") {
-    stable = stable.replace(/\b(elapsed|age)=?\s*<?\d+(?:\.\d+)?(?:ms|s|m|h)\b/gi, "$1=<elapsed>");
+    stable = stable
+      .replace(/\b(elapsed|age)=?\s*<?\d+(?:\.\d+)?(?:ms|s|m|h)\b/gi, "$1=<elapsed>")
+      .replace(/(?:<1s|\b\d+m\d+s|\b\d+(?:\.\d+)?(?:ms|s|m|h))(?=\s)/g, "<elapsed>");
   }
   if (tool === "http.fetch" || tool === "web.fetch") {
     stable = stable

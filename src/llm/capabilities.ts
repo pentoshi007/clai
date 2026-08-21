@@ -46,7 +46,7 @@ import {
 const reasoningUnsupportedModels = new Set<string>();
 
 const reasoningKey = (provider: ProviderId, model: string): string =>
-  `${provider}:${model.trim().toLowerCase()}`;
+  `${provider}:${model.trim().toLowerCase().replace(/^free-\d+\//, "")}`;
 
 /** Mark a model as having rejected reasoning options so we stop sending them. */
 export function markReasoningUnsupported(provider: ProviderId, model: string): void {
@@ -104,6 +104,59 @@ export function registerRouteAcceptedEfforts(
   catalogReasoningEfforts.set(reasoningKey(provider, model), [...efforts]);
 }
 
+const mandatoryReasoningRoutes = new Set<string>();
+const wireRejectionEfforts = new Map<string, readonly string[]>();
+
+export function registerWireRejectionEfforts(
+  provider: ProviderId,
+  model: string,
+  efforts: readonly string[],
+): void {
+  if (!model.trim() || efforts.length === 0) return;
+  wireRejectionEfforts.set(reasoningKey(provider, model), [...efforts]);
+  registerRouteAcceptedEfforts(provider, model, efforts);
+  persistLearnedRoute(reasoningKey(provider, model), {
+    acceptedEfforts: [...efforts],
+  });
+}
+
+export function markReasoningMandatory(
+  provider: ProviderId,
+  model: string,
+): void {
+  if (!model.trim()) return;
+  const key = reasoningKey(provider, model);
+  mandatoryReasoningRoutes.add(key);
+  reasoningUnsupportedModels.delete(key);
+  catalogReasoningSupport.set(key, true);
+  observedReasoningModels.add(key);
+  persistLearnedRoute(key, { reasoning: true, reasoningMandatory: true });
+}
+
+export function routeReasoningIsMandatory(
+  provider: ProviderId,
+  model: string,
+): boolean {
+  return mandatoryReasoningRoutes.has(reasoningKey(provider, model));
+}
+
+export function learnedRouteEfforts(
+  provider: ProviderId,
+  model: string,
+): readonly string[] | undefined {
+  const efforts = wireRejectionEfforts.get(reasoningKey(provider, model));
+  return efforts?.length ? efforts : undefined;
+}
+
+export function clearReasoningRejection(
+  provider: ProviderId,
+  model: string,
+): void {
+  const key = reasoningKey(provider, model);
+  reasoningUnsupportedModels.delete(key);
+  clearPersistedLearnedRouteReasoning(key);
+}
+
 const catalogReasoningSupport = new Map<string, boolean>();
 const observedReasoningModels = new Set<string>();
 
@@ -147,6 +200,8 @@ export function modelReasoningEvidence(
 
 export function resetReasoningKnowledge(): void {
   reasoningUnsupportedModels.clear();
+  mandatoryReasoningRoutes.clear();
+  wireRejectionEfforts.clear();
   catalogReasoningSupport.clear();
   observedReasoningModels.clear();
   catalogReasoningEfforts.clear();
@@ -578,6 +633,19 @@ function applyLearnedRouteEntry(key: string, entry: LearnedRouteEntry): void {
       reasoningUnsupportedModels.add(key);
       setNegativeControlDialect(key, entry.controlDialect);
     } else clearPersistedLearnedRouteReasoning(key);
+  }
+  if (entry.reasoningMandatory === true) {
+    mandatoryReasoningRoutes.add(key);
+    reasoningUnsupportedModels.delete(key);
+    catalogReasoningSupport.set(key, true);
+    if (entry.acceptedEfforts?.length) {
+      wireRejectionEfforts.set(
+        key,
+        entry.acceptedEfforts
+          .map((effort: string) => effort.trim().toLowerCase())
+          .filter(Boolean),
+      );
+    }
   }
   if (entry.acceptedEfforts?.length) {
     catalogReasoningEfforts.set(
