@@ -305,10 +305,65 @@ function logOf(log: ((line: string) => void) | undefined): (line: string) => voi
   return log ?? ((line) => console.log(line));
 }
 
+export const ELEVATION_TIMEOUT_MS = 20_000;
+
+function escalationFailure(execPath: string): Error {
+  return new Error(
+    `needs elevated permission to replace ${execPath} — run \`sudo clai update\` in a terminal to finish`,
+  );
+}
+
+async function elevateReplace(
+  tmp: string,
+  execPath: string,
+  interactive: boolean,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const args = interactive
+      ? ["mv", tmp, execPath]
+      : ["-n", "mv", tmp, execPath];
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("sudo", args, {
+        stdio: interactive ? "inherit" : ["ignore", "ignore", "pipe"],
+        windowsHide: true,
+      });
+    } catch {
+      reject(escalationFailure(execPath));
+      return;
+    }
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(
+      () => {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+        finish(() => reject(escalationFailure(execPath)));
+      },
+      interactive ? 120_000 : ELEVATION_TIMEOUT_MS,
+    );
+    (timer as unknown as { unref?: () => void }).unref?.();
+    child.on("error", () => finish(() => reject(escalationFailure(execPath))));
+    child.on("close", (status) =>
+      finish(() => {
+        if (status === 0) resolve();
+        else reject(escalationFailure(execPath));
+      }),
+    );
+  });
+}
+
 async function replaceExecutable(
   tmp: string,
   execPath: string,
   platform: NodeJS.Platform,
+  interactive: boolean,
 ): Promise<void> {
   if (platform !== "win32") {
     try {
@@ -317,43 +372,7 @@ async function replaceExecutable(
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "EACCES" && code !== "EPERM") throw error;
-      // Binary lives in a root-owned dir (e.g. /usr/local/bin): escalate.
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn("sudo", ["mv", tmp, execPath], {
-          stdio: "inherit",
-        });
-        let settled = false;
-        const finish = (fn: () => void): void => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          fn();
-        };
-        const timer = setTimeout(() => {
-          try {
-            child.kill("SIGKILL");
-          } catch {}
-          finish(() =>
-            reject(new Error(`could not write ${execPath} (sudo timed out)`)),
-          );
-        }, 120_000);
-        child.on("error", () =>
-          finish(() =>
-            reject(
-              new Error(`could not write ${execPath} (permission denied)`),
-            ),
-          ),
-        );
-        child.on("close", (status) =>
-          finish(() => {
-            if (status === 0) resolve();
-            else
-              reject(
-                new Error(`could not write ${execPath} (permission denied)`),
-              );
-          }),
-        );
-      });
+      await elevateReplace(tmp, execPath, interactive);
       return;
     }
   }
@@ -451,7 +470,12 @@ export async function installDirectBinary(
         // ignore
       }
     }
-    await replaceExecutable(tmp, execPath, process.platform);
+    await replaceExecutable(
+      tmp,
+      execPath,
+      process.platform,
+      (options.stdio ?? "inherit") === "inherit",
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

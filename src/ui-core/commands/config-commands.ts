@@ -304,7 +304,10 @@ export async function handleUpdate(services: AppServices): Promise<void> {
     level: "success" | "warn" | "error",
     message: string,
   ): void => {
-    services.toast[level](message, { key: UPDATE_TOAST_KEY, durationMs: 6000 });
+    services.toast[level](message, {
+      key: UPDATE_TOAST_KEY,
+      durationMs: level === "success" ? 6000 : 14_000,
+    });
   };
 
   if (services.interruptible.hasWork()) {
