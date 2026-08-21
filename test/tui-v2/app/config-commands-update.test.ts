@@ -48,7 +48,11 @@ function buildServices(options: {
 }
 
 function lastNotice(services: AppServices): string | undefined {
-  return services.toast.getToasts().at(-1)?.message;
+  const toasts = services.toast.getToasts();
+  return (
+    toasts.findLast((toast) => toast.key === "update")?.message ??
+    toasts.at(-1)?.message
+  );
 }
 
 beforeEach(() => {
@@ -103,6 +107,62 @@ describe("/update in the running TUI", () => {
     expect(requestExit).not.toHaveBeenCalled();
     vi.runAllTimers();
     expect(requestExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps one steady progress chip from download through install", async () => {
+    let report: ((progress: unknown) => void) | undefined;
+    vi.mocked(installUpdate).mockImplementation(
+      async (
+        _version: string,
+        _log?: (line: string) => void,
+        _stdio?: "inherit" | "pipe",
+        onProgress?: (progress: never) => void,
+      ) => {
+        report = onProgress as (progress: unknown) => void;
+        return {
+          ok: true,
+          message: "installed",
+          method: "binary",
+          needsRestart: true,
+        };
+      },
+    );
+    const services = buildServices({
+      status: {
+        state: "update-available",
+        currentVersion: "3.13.2",
+        latestVersion: "3.14.0",
+        updateAvailable: true,
+      },
+    });
+
+    await services.commands.dispatch({ name: "update", args: "" });
+    expect(report).toBeDefined();
+
+    const chip = () =>
+      services.toast.getToasts().find((toast) => toast.key === "update");
+    const before = chip();
+    expect(before).toBeDefined();
+    const index = services.toast
+      .getToasts()
+      .findIndex((toast) => toast.key === "update");
+
+    for (const receivedBytes of [1_000_000, 40_000_000, 78_000_000]) {
+      report?.({ phase: "downloading", receivedBytes, totalBytes: 78_000_000 });
+    }
+    report?.({ phase: "verifying" });
+    report?.({ phase: "installing", detail: "clai-bun-darwin-arm64" });
+
+    const after = chip();
+    expect(after?.id).toBe(before?.id);
+    expect(after?.createdAt).toBe(before?.createdAt);
+    expect(after?.message).toContain("installing");
+    expect(
+      services.toast.getToasts().findIndex((toast) => toast.key === "update"),
+    ).toBe(index);
+    expect(
+      services.toast.getToasts().filter((toast) => toast.key === "update"),
+    ).toHaveLength(1);
   });
 
   it("warns and does not exit when the install fails", async () => {

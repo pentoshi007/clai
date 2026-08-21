@@ -4,7 +4,7 @@
  * Lifecycle (host animates enter/exit):
  *   enter (~200ms) → hold (default 5000ms) → exit (~200ms) → dismiss
  *
- * Same-key shows replace the previous toast so rapid toggles do not stack.
+ * Same-key shows update that toast in place, preserving its id, stack position and enter animation.
  */
 
 export type ToastLevel = "info" | "success" | "warn" | "error";
@@ -82,32 +82,54 @@ export class ToastController {
         ? options.key.trim()
         : undefined;
 
-    // Replace prior toast with the same key (toggle spam).
-    if (key) {
-      for (const existing of this.items) {
-        if (existing.key === key) this.dismiss(existing.id);
-      }
-    }
-
-    const id = `toast-${++this.seq}`;
     const durationMs =
       typeof options.durationMs === "number" &&
       Number.isFinite(options.durationMs) &&
       options.durationMs > 0
         ? Math.floor(options.durationMs)
         : DEFAULT_TOAST_DURATION_MS;
+    const sticky = options.sticky === true;
+    const body =
+      text.length > MAX_MESSAGE_CHARS
+        ? `${text.slice(0, MAX_MESSAGE_CHARS - 1)}…`
+        : text;
+    const level = options.level ?? "info";
+
+    if (key) {
+      const index = this.items.findIndex((existing) => existing.key === key);
+      if (index >= 0) {
+        const previous = this.items[index] as ToastItem;
+        const item: ToastItem = {
+          id: previous.id,
+          message: body,
+          level,
+          createdAt:
+            previous.sticky === true && sticky
+              ? previous.createdAt
+              : Date.now(),
+          durationMs,
+          key,
+          ...(sticky ? { sticky: true } : {}),
+        };
+        const next = [...this.items];
+        next[index] = item;
+        this.items = next;
+        this.resetTimer(item);
+        this.emit();
+        return item.id;
+      }
+    }
+
+    const id = `toast-${++this.seq}`;
 
     const item: ToastItem = {
       id,
-      message:
-        text.length > MAX_MESSAGE_CHARS
-          ? `${text.slice(0, MAX_MESSAGE_CHARS - 1)}…`
-          : text,
-      level: options.level ?? "info",
+      message: body,
+      level,
       createdAt: Date.now(),
       durationMs,
       ...(key ? { key } : {}),
-      ...(options.sticky === true ? { sticky: true } : {}),
+      ...(sticky ? { sticky: true } : {}),
     };
 
     this.items = [...this.items, item].slice(-MAX_VISIBLE_TOASTS);
@@ -118,20 +140,24 @@ export class ToastController {
       }
     }
 
-    if (options.sticky === true) {
-      this.emit();
-      return id;
-    }
-
-    // Dismiss after enter + hold + exit so the host can finish exit animation.
-    const timer = setTimeout(
-      () => this.dismiss(id),
-      toastTotalLifetimeMs(durationMs),
-    );
-    (timer as unknown as { unref?: () => void }).unref?.();
-    this.timers.set(id, timer);
+    this.resetTimer(item);
     this.emit();
     return id;
+  }
+
+  private resetTimer(item: ToastItem): void {
+    const existing = this.timers.get(item.id);
+    if (existing) {
+      clearTimeout(existing);
+      this.timers.delete(item.id);
+    }
+    if (item.sticky === true) return;
+    const timer = setTimeout(
+      () => this.dismiss(item.id),
+      toastTotalLifetimeMs(item.durationMs),
+    );
+    (timer as unknown as { unref?: () => void }).unref?.();
+    this.timers.set(item.id, timer);
   }
 
   info(message: string, options: Omit<ShowToastOptions, "level"> = {}): string {
