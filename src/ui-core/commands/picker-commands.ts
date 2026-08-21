@@ -7,7 +7,7 @@ import { getProvider, providerAuth } from "../../llm/router.js";
 import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
 import {
   effectiveThinkingEffort,
-  modelReasoningEfforts,
+  displayReasoningEfforts,
   modelReasoningEvidence,
   modelReasoningIsMandatory,
   modelSupportsThinking,
@@ -958,7 +958,7 @@ function reasoningOptionValues(
   ) {
     return ["off"];
   }
-  const accepted = modelReasoningEfforts(provider, model) ?? [];
+  const accepted = displayReasoningEfforts(provider, model) ?? [];
   const efforts =
     accepted.length > 0 ? scale.filter((value) => accepted.includes(value)) : scale;
   return modelReasoningIsMandatory(model) ? efforts : ["off", ...efforts];
@@ -998,7 +998,7 @@ function warnUnacceptedEffort(services: AppServices, effort: string): void {
   const provider = services.session.getState().provider ?? getConfig().defaultProvider;
   const model = services.session.getState().model ?? "";
   if (!model) return;
-  const accepted = modelReasoningEfforts(provider, model) ?? [];
+  const accepted = displayReasoningEfforts(provider, model) ?? [];
   if (accepted.length === 0 || accepted.includes(effort)) return;
   services.session.notice(
     "warn",

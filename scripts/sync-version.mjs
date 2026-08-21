@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pkgPath = join(root, "package.json");
+const MIRROR_BASE = (process.env.CLAI_MIRROR_BASE ?? "https://downloads.clai.aniketpandey.website").replace(/\/+$/, "");
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 const version = pkg.version;
 if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
@@ -63,7 +64,7 @@ if (existsSync(scoopPath)) {
   scoop.version = version;
   if (scoop.architecture?.["64bit"]?.url) {
     scoop.architecture["64bit"].url =
-      `https://github.com/pentoshi007/clai/releases/download/v${version}/clai-bun-windows-x64.exe#/clai.exe`;
+      `${MIRROR_BASE}/v${version}/clai-bun-windows-x64.exe#/clai.exe`;
   }
   const next = `${JSON.stringify(scoop, null, 2)}\n`;
   writeIfChanged(scoopPath, next);

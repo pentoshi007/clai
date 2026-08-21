@@ -418,8 +418,40 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
   },
 };
 
-export const kimiMandatoryLayer: ProviderProfileLayer = {
-  evidence: viaGateway("kimi-k3-k2p7-official-contract"),
+const freeGatewayEffortLayer: ProviderProfileLayer = {
+  evidence: codeFact("zen-kilo-free-effort-probed"),
+  transport: { authType: "none-keyless", systemPolicy: "single-leading" },
+  capabilities: { tools: "supported" },
+  reasoning: {
+    control: {
+      dialect: "openai-effort",
+      status: "supported",
+      evidence: codeFact("zen-kilo-free-effort-probed"),
+    },
+    generation: "optional",
+    acceptedEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    disable: "supported",
+    disableForm: "effort-none",
+    outputShapes: ["reasoning-content", "reasoning-field", "structured-details"],
+  },
+  outputBudget: {
+    sharedReasoningCap: true,
+    visibleAnswerReserveTokens: 1024,
+    mandatoryReasoningReserveTokens: 0,
+  },
+  terminal: {
+    proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+    naturalEofAccepted: false,
+  },
+};
+
+export const FAMILYLESS_ENDPOINT_LAYERS: Partial<
+  Record<ProviderId, ProviderProfileLayer>
+> = {
+  free: freeGatewayEffortLayer,
+};
+
+export const kimiMandatoryLayer: ProviderProfileLayer = {  evidence: viaGateway("kimi-k3-k2p7-official-contract"),
   reasoning: {
     generation: "mandatory",
     replayScope: "all-history",

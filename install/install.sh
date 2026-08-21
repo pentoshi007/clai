@@ -6,13 +6,22 @@ set -eu
 # checksums file (clai-bun-<platform>-<arch>.sha256) on the release page,
 # and installs it into /usr/local/bin (or $CLAI_BIN_DIR).
 #
+# Binaries are served from the Cloudflare R2 mirror (fast, global) with
+# automatic fallback to GitHub Releases; checksums are fetched from GitHub
+# Releases first so a compromised mirror cannot substitute both artifacts.
+#
 # Skip checksum verification at your own risk by exporting
 # CLAI_SKIP_CHECKSUM=1, but the default is to fail closed.
+# Override the mirror with CLAI_DOWNLOAD_BASE or disable it with
+# CLAI_NO_MIRROR=1.
 
 repo="${CLAI_REPO:-pentoshi007/clai}"
 version="${CLAI_VERSION:-latest}"
 bin_dir="${CLAI_BIN_DIR:-/usr/local/bin}"
 skip_checksum="${CLAI_SKIP_CHECKSUM:-0}"
+mirror_base="${CLAI_DOWNLOAD_BASE:-https://downloads.clai.aniketpandey.website}"
+mirror_base="${mirror_base%/}"
+no_mirror="${CLAI_NO_MIRROR:-0}"
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"
@@ -32,11 +41,16 @@ name="clai-bun-${platform}-${arch}"
 sum_name="${name}.sha256"
 
 if [ "$version" = "latest" ]; then
-  url="https://github.com/${repo}/releases/latest/download/${name}"
-  sum_url="https://github.com/${repo}/releases/latest/download/${sum_name}"
+  gh_url="https://github.com/${repo}/releases/latest/download/${name}"
+  gh_sum_url="https://github.com/${repo}/releases/latest/download/${sum_name}"
+  mirror_url="${mirror_base}/latest/${name}"
+  mirror_sum_url="${mirror_base}/latest/${sum_name}"
 else
-  url="https://github.com/${repo}/releases/download/${version}/${name}"
-  sum_url="https://github.com/${repo}/releases/download/${version}/${sum_name}"
+  case "$version" in v*) ;; *) version="v${version}" ;; esac
+  gh_url="https://github.com/${repo}/releases/download/${version}/${name}"
+  gh_sum_url="https://github.com/${repo}/releases/download/${version}/${sum_name}"
+  mirror_url="${mirror_base}/${version}/${name}"
+  mirror_sum_url="${mirror_base}/${version}/${sum_name}"
 fi
 
 tmp="$(mktemp)"
@@ -47,20 +61,32 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "⬇ Downloading clai for ${platform}-${arch}..."
-curl -fsSL "$url" -o "$tmp"
+if [ "$no_mirror" = "1" ]; then
+  echo "⬇ Downloading clai for ${platform}-${arch} from GitHub Releases..."
+  curl -fsSL "$gh_url" -o "$tmp"
+else
+  echo "⬇ Downloading clai for ${platform}-${arch} from the Cloudflare R2 mirror..."
+  if ! curl -fsSL "$mirror_url" -o "$tmp"; then
+    echo "… mirror unavailable, falling back to GitHub Releases"
+    curl -fsSL "$gh_url" -o "$tmp"
+  fi
+fi
 
 if [ "$skip_checksum" != "1" ]; then
   echo "🔐 Verifying SHA256..."
-  if ! curl -fsSL "$sum_url" -o "$sum_tmp"; then
-    echo "Could not fetch ${sum_url}." >&2
-    echo "Re-run with CLAI_SKIP_CHECKSUM=1 to install without verification (not recommended)." >&2
-    exit 1
+  if ! curl -fsSL "$gh_sum_url" -o "$sum_tmp"; then
+    if [ "$no_mirror" != "1" ] && curl -fsSL "$mirror_sum_url" -o "$sum_tmp"; then
+      :
+    else
+      echo "Could not fetch ${gh_sum_url}." >&2
+      echo "Re-run with CLAI_SKIP_CHECKSUM=1 to install without verification (not recommended)." >&2
+      exit 1
+    fi
   fi
 
   expected="$(awk '{print $1}' "$sum_tmp" | head -n1)"
   if [ -z "$expected" ]; then
-    echo "Empty checksum from ${sum_url}." >&2
+    echo "Empty checksum from ${gh_sum_url}." >&2
     exit 1
   fi
 
@@ -92,7 +118,6 @@ else
   sudo mv "$tmp" "$bin_dir/clai"
 fi
 
-# Verify the binary works
 if "$bin_dir/clai" --version > /dev/null 2>&1; then
   echo "✓ Verified: $($bin_dir/clai --version 2>/dev/null || echo 'ok')"
 else

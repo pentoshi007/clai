@@ -114,6 +114,86 @@ jobs:
           files: release/*
           generate_release_notes: true
 
+  publish-r2:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if R2 credentials are missing
+        id: gate
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          if [ -z "${R2_ACCOUNT_ID}" ] || [ -z "${R2_ACCESS_KEY_ID}" ] || [ -z "${R2_SECRET_ACCESS_KEY}" ] || [ -z "${R2_BUCKET_NAME}" ]; then
+            echo "R2 secrets not set; skipping Cloudflare R2 mirror upload." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.skip != 'true'
+
+      - name: Download release binaries
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Verify checksum sidecars locally
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          cd release
+          for asset in clai-bun-*; do
+            case "$asset" in *.sha256) continue ;; esac
+            if [ ! -f "${asset}.sha256" ]; then
+              echo "Missing checksum sidecar for ${asset}" >&2
+              exit 1
+            fi
+            echo "$(awk '{print $1}' "${asset}.sha256")  ${asset}" | sha256sum -c -
+          done
+
+      - name: Upload binaries, checksums and installers to R2
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          RCLONE_CONFIG_R2_ACL: private
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          command -v rclone >/dev/null 2>&1 || sudo apt-get install -y rclone
+          rclone copy release "r2:${R2_BUCKET_NAME}/${VERSION}" --transfers 8 --checkers 8 --stats-one-line
+          rclone copy release "r2:${R2_BUCKET_NAME}/latest" --transfers 8 --checkers 8 --stats-one-line
+          rclone copy install "r2:${R2_BUCKET_NAME}/install" --transfers 8 --checkers 8 --stats-one-line
+          printf '{"version":"%s"}\n' "${VERSION#v}" > version.json
+          rclone copyto version.json "r2:${R2_BUCKET_NAME}/version.json"
+
+      - name: Verify public mirror serves the exact bytes
+        if: steps.gate.outputs.skip != 'true' && vars.R2_PUBLIC_URL != ''
+        env:
+          R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          for asset in release/clai-bun-*; do
+            case "$asset" in *.sha256) continue ;; esac
+            name="$(basename "$asset")"
+            curl -fsSL "${R2_PUBLIC_URL}/${VERSION}/${name}" -o "${tmp}/${name}"
+            echo "$(awk '{print $1}' "${asset}.sha256")  ${tmp}/${name}" | sha256sum -c -
+          done
+          curl -fsSL "${R2_PUBLIC_URL}/version.json" | grep -q "\"${VERSION#v}\""
+
   publish-npm:
     # validate already ran typecheck + tests once; build produced verified
     # binaries. This job only checks version/publish-state and publishes.
@@ -259,11 +339,17 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
+          R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
           DARWIN_ARM64: ${{ steps.sha.outputs.darwin_arm64 }}
           DARWIN_X64: ${{ steps.sha.outputs.darwin_x64 }}
           LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
           LINUX_X64: ${{ steps.sha.outputs.linux_x64 }}
         run: |
+          if [ -n "${R2_PUBLIC_URL:-}" ]; then
+            BASE="${R2_PUBLIC_URL%/}/v#{version}"
+          else
+            BASE="https://github.com/pentoshi007/clai/releases/download/v#{version}"
+          fi
           mkdir -p tap/Formula
           cat > tap/Formula/clai.rb <<RUBY
           class Clai < Formula
@@ -274,20 +360,20 @@ jobs:
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-darwin-arm64"
+                url "${BASE}/clai-bun-darwin-arm64"
                 sha256 "${DARWIN_ARM64}"
               else
-                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-darwin-x64"
+                url "${BASE}/clai-bun-darwin-x64"
                 sha256 "${DARWIN_X64}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-linux-arm64"
+                url "${BASE}/clai-bun-linux-arm64"
                 sha256 "${LINUX_ARM64}"
               else
-                url "https://github.com/pentoshi007/clai/releases/download/v#{version}/clai-bun-linux-x64"
+                url "${BASE}/clai-bun-linux-x64"
                 sha256 "${LINUX_X64}"
               end
             end

@@ -9,6 +9,10 @@ import { isTextOnlyModel } from "./tool-protocol.js";
 import type { CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
 import {
+  endpointAcceptedEfforts,
+  REASONING_PATTERNS,
+} from "./reasoning-capability.js";
+import {
   clampEffortToRoute,
   clearRouteDialectRegistry,
   forgetNegativeControlDialect,
@@ -35,96 +39,6 @@ import {
   UNATTRIBUTED_CONTROL_DIALECT,
 } from "./learned-capabilities.js";
 
-// Patterns of model names that support an explicit reasoning/thinking
-// toggle. The match is case-insensitive substring or regex.
-const reasoningPatterns: Record<ProviderId, RegExp[]> = {
-  free: [/deepseek/i, /kimi/i, /minimax/i, /mimo/i, /nemotron/i],
-  gemini: [/gemini-2\.5/i, /gemini-3/i, /gemini-3\.5/i],
-  openrouter: [
-    /:thinking/i,
-    /deepseek-r1/i,
-    /qwen3/i,
-    /kimi-k2/i,
-    /claude-(?:opus|sonnet|haiku)-4/i,
-    /gpt-5/i,
-    /o[134]/i,
-    /grok.*reasoner/i,
-  ],
-  openai: [/gpt-5/i, /o1/i, /o3/i, /o4/i],
-  anthropic: [/claude-(?:opus|sonnet|haiku)-(?:3-7|4|4-\d)/i, /claude-3-7/i],
-  nvidia: [
-    /kimi-k2/i,
-    /deepseek-r1/i,
-    /deepseek-v[34]/i,
-    /qwen3/i,
-    /nemotron/i,
-    /glm-?5/i,
-    /gpt-oss/i,
-  ],
-  ollama: [/deepseek-r1/i, /qwen3/i, /qwq/i],
-  agentrouter: [
-    /gpt-5/i,
-    /claude-(?:opus|sonnet|haiku)-4/i,
-    /deepseek-(?:v[34]|r1)/i,
-    /glm-?[45]/i,
-    /qwen3/i,
-    /kimi-k2/i,
-    /o[134]/i,
-  ],
-  "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
-  bynara: [/kimi/i, /deepseek/i, /agnes/i, /stepfun/i],
-  "qwen-cloud": [/qwen3/i, /qwen2/i],
-  // Modal Endpoints serve the open-weight catalog (Kimi, Qwen, DeepSeek, GLM,
-  // Gemma, GPT-OSS, Nemotron); the thinking families among them are matched by
-  // their repo id, which is also the model name on the wire.
-  modal: [
-    /kimi/i,
-    /qwen3/i,
-    /deepseek/i,
-    /glm-?[45]/i,
-    /gpt-oss/i,
-    /nemotron/i,
-    /gemma-?[34]/i,
-  ],
-  // Lightning AI proxies vendor models under namespaced ids (openai/gpt-5,
-  // anthropic/claude-opus-4-8, google/gemini-3.5-flash, lightning-ai/...).
-  lightning: [
-    /gpt-5/i,
-    /o[134](?:-mini)?\b/i,
-    /claude-(?:opus|sonnet|haiku)-4/i,
-    /claude-fable/i,
-    /gemini-3/i,
-    /gemini-2\.5/i,
-    /deepseek/i,
-    /gpt-oss/i,
-    /nemotron/i,
-  ],
-  // TokenRouter documents reasoning support for every model it serves.
-  tokenrouter: [
-    /kimi/i,
-    /deepseek/i,
-    /qwen3/i,
-    /glm-?5/i,
-    /gpt-oss/i,
-    /minimax/i,
-  ],
-  meta: [/muse-spark/i],
-  fireworks: [/kimi/i, /deepseek/i, /qwen3/i, /glm-?5/i, /gpt-oss/i, /nemotron/i, /minimax/i, /mimo/i],
-  hetzner: [/qwen3/i, /qwen/i],
-  // OrcaRouter exposes one unified reasoning_effort knob across every routed
-  // upstream; match the reasoning families its catalog publishes.
-  orcarouter: [
-    /o[134]/i,
-    /gpt-5/i,
-    /claude-(?:opus|sonnet)/i,
-    /gemini-2\.5|gemini-3/i,
-    /deepseek-reasoner/i,
-    /grok.*reason/i,
-    /qwen3/i,
-    /kimi/i,
-    /glm/i,
-  ],
-};
 
 // Session-sticky set of provider/model routes that rejected our
 // reasoning/thinking options at runtime. Populated by the router when a
@@ -178,7 +92,7 @@ export function effectiveThinkingEffort(
   if (!thinking?.enabled) return undefined;
   if (isReasoningUnsupported(provider, model)) return undefined;
   if (!modelSupportsThinking(provider, model)) return undefined;
-  return clampEffortToRoute(thinking.effort, modelReasoningEfforts(provider, model));
+  return clampEffortToRoute(thinking.effort, displayReasoningEfforts(provider, model));
 }
 
 export function registerRouteAcceptedEfforts(
@@ -215,6 +129,7 @@ export type ReasoningEvidence =
   | "observed"
   | "catalog"
   | "pattern"
+  | "endpoint"
   | "unknown";
 
 export function modelReasoningEvidence(
@@ -225,8 +140,9 @@ export function modelReasoningEvidence(
   if (reasoningUnsupportedModels.has(key)) return "rejected";
   if (observedReasoningModels.has(key)) return "observed";
   if (catalogReasoningSupport.has(key)) return "catalog";
-  const patterns = reasoningPatterns[provider] ?? [];
-  return patterns.some((pattern) => pattern.test(model)) ? "pattern" : "unknown";
+  const patterns = REASONING_PATTERNS[provider] ?? [];
+  if (patterns.some((pattern) => pattern.test(model))) return "pattern";
+  return endpointAcceptedEfforts(provider) ? "endpoint" : "unknown";
 }
 
 export function resetReasoningKnowledge(): void {
@@ -249,9 +165,19 @@ export function modelSupportsThinking(
   if (observedReasoningModels.has(key)) return true;
   const declared = catalogReasoningSupport.get(key);
   if (declared !== undefined) return declared;
-  const patterns = reasoningPatterns[provider];
+  const patterns = REASONING_PATTERNS[provider];
   if (patterns === undefined) return true;
-  return patterns.some((pattern) => pattern.test(model));
+  if (patterns.some((pattern) => pattern.test(model))) return true;
+  return endpointAcceptedEfforts(provider) !== undefined;
+}
+
+export function displayReasoningEfforts(
+  provider: ProviderId,
+  model: string,
+): readonly string[] | undefined {
+  return (
+    modelReasoningEfforts(provider, model) ?? endpointAcceptedEfforts(provider)
+  );
 }
 
 

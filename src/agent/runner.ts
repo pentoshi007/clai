@@ -13,6 +13,10 @@ import type {
 } from "../types.js";
 import { completeWithProvider, streamWithProvider } from "../llm/router.js";
 import { isProviderFailureStatus } from "../llm/key-rotation.js";
+import {
+  REQUEST_CONTEXT_PREFIX,
+  upsertRequestContextMessage,
+} from "../llm/system-messages.js";
 import { operationUsageFromError } from "../llm/operation-ledger.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { modelContextWindow } from "../llm/token-usage.js";
@@ -1253,14 +1257,12 @@ export async function runAgentTurn(
     if (options.images && options.images.length > 0) {
       userMessage.images = options.images;
     }
+    const requestContextMessage = `${REQUEST_CONTEXT_PREFIX}\n${requestContext}`;
     const messages: ChatMessage[] = [
       { role: "system", content: fullSystemPrompt },
       ...(options.history ?? []),
-      // Keep all per-request authority after prior history. This preserves the
-      // longest shared prefix for APC providers while single-system dialects
-      // retain it in place as a marked user turn.
-      { role: "system", content: `REQUEST CONTEXT\n${requestContext}` },
       userMessage,
+      { role: "system", content: requestContextMessage },
     ];
     liveMessages = messages;
     if (activePlan) {
@@ -1655,6 +1657,7 @@ export async function runAgentTurn(
           : undefined,
       };
       snap.nextHint = inferNextHint(snap);
+      upsertRequestContextMessage(messages, requestContextMessage);
       // One live plan copy, refreshed at the same protocol-safe points as
       // SESSION STATE so advancing tasks are never contradicted by a stale copy.
       if (p) {

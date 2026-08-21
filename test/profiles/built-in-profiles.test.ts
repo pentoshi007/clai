@@ -47,8 +47,25 @@ describe("unknown models stay conservative", () => {
       provider: "free",
       model: "mystery-hosted-1",
     });
-    expect(profile.reasoning.control.dialect).toBe("none");
-    expect(profile.reasoning.control.status).toBe("unknown");
+    expect(profile.reasoning.control.dialect).toBe("openai-effort");
+    expect(profile.reasoning.control.evidence.detail).toBe(
+      "zen-kilo-free-effort-probed",
+    );
+    expect(profile.reasoning.acceptedEfforts).toEqual([
+      "none",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    const undeclared = resolveBuiltInProfile({
+      provider: "aws-mantle",
+      model: "mystery-hosted-1",
+    });
+    expect(undeclared.reasoning.control.dialect).toBe("none");
+    expect(undeclared.reasoning.generation).toBe("unknown");
+    expect(undeclared.reasoning.acceptedEfforts).toEqual([]);
   });
 
   it("treats a documented family id as declared evidence for the dialect", () => {

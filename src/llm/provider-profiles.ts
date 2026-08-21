@@ -21,7 +21,11 @@ import {
 } from "./capabilities.js";
 import { providerContextOverrideTokens } from "./token-usage.js";
 import { modelLayerFor } from "./provider-model-layers.js";
-import { FAMILY_LAYERS, providerDoc } from "./provider-profile-layers.js";
+import {
+  FAMILY_LAYERS,
+  FAMILYLESS_ENDPOINT_LAYERS,
+  providerDoc,
+} from "./provider-profile-layers.js";
 
 const NATIVE_WIRE_API: Partial<Record<ProviderId, WireApi>> = {
   anthropic: "anthropic-messages",
@@ -183,12 +187,15 @@ export function builtInProfileLayers(
     endpointControlDialect(modelLayer, family),
   );
   const overrideTokens = providerContextOverrideTokens(provider, model);
-  const familyWithLimits: ProviderProfileLayer | undefined = family
+  const effectiveFamily = modelFamilyLayer
+    ? family
+    : (FAMILYLESS_ENDPOINT_LAYERS[provider] ?? family);
+  const familyWithLimits: ProviderProfileLayer | undefined = effectiveFamily
     ? {
-        ...family,
+        ...effectiveFamily,
         limits: overrideTokens
           ? { contextTokens: overrideTokens, source: "catalog" }
-          : family.limits,
+          : effectiveFamily.limits,
       }
     : undefined;
   const catalog = catalogLayerFor(provider, model);

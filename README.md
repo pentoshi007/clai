@@ -13,7 +13,7 @@ Two things make it practical for everyday use:
 
 ## Highlights
 
-- **Free-tier first.** 18 providers wired in, 6 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-1/deepseek-v4-flash-free`) so a fresh install runs at no cost with zero setup — no API key required.
+- **Free-tier first.** 18 providers wired in, 6 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-2/kilo-auto/free`) so a fresh install runs at no cost with zero setup — no API key required.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Disable any key or endpoint row to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
 - **Bring your own endpoint.** Deploy Kimi K3 (or Qwen / DeepSeek / GLM / GPT-OSS / your own fine-tune) to a [Modal](#modal--run-kimi-k3-on-your-own-endpoint-on-30month-of-free-credit) endpoint and drive it from clai on **$30/month of free compute credit**. Modal, Lightning AI and TokenRouter each keep a list of up to 10 base URLs with a sticky active one, so several deployments live side by side and you switch with one command — same editor, same ★ active row as keys.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -31,17 +31,17 @@ Two things make it practical for everyday use:
 ```sh
 brew tap pentoshi007/clai && brew install clai
 # or
-curl -fsSL https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.sh | sh
+curl -fsSL https://downloads.clai.aniketpandey.website/install/install.sh | sh
 ```
 
 ### Linux
 ```sh
-curl -fsSL https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.sh | sh
+curl -fsSL https://downloads.clai.aniketpandey.website/install/install.sh | sh
 ```
 
 ### Windows
 ```powershell
-irm https://raw.githubusercontent.com/pentoshi007/clai/main/install/install.ps1 | iex
+irm https://downloads.clai.aniketpandey.website/install/install.ps1 | iex
 # or
 scoop bucket add clai https://github.com/pentoshi007/clai && scoop install clai
 ```
@@ -93,6 +93,44 @@ The full-screen TUI uses mouse tracking and hover events via OpenTUI's Zig FFI r
 
 ---
 
+## Fast downloads (Cloudflare R2 mirror)
+
+Release binaries are mirrored to a **Cloudflare R2** bucket served through Cloudflare's global CDN — significantly faster than GitHub's release hosting in most regions, and free for this project's traffic (R2 has **zero egress fees**).
+
+Mirror layout at `https://downloads.clai.aniketpandey.website`:
+
+| Path | Contents |
+|---|---|
+| `/vX.Y.Z/` | Binaries + `.sha256` sidecars for release vX.Y.Z |
+| `/latest/` | Same files, refreshed on every release |
+| `/install/` | `install.sh` / `install.ps1` used by the one-liners above |
+| `/version.json` | Latest released version (update-check fallback) |
+
+**Security model:** installers and `clai update` try the R2 mirror first for speed and fall back to GitHub Releases automatically. The SHA256 checksum is fetched from GitHub Releases (falling back to the mirror) and verified locally before anything is installed — the trust anchor stays with GitHub, so a bad mirror can only slow you down, never feed you tampered bytes. `CLAI_SKIP_CHECKSUM=1` still bypasses verification, at your own risk. If the mirror is unreachable but raw.githubusercontent.com works, grab the installer from `https://raw.githubusercontent.com/pentoshi007/clai/main/install/` instead — it makes the same mirror-first/fallback choices when it runs.
+
+User knobs:
+
+```sh
+CLAI_DOWNLOAD_BASE=https://your-mirror.example
+CLAI_NO_MIRROR=1
+```
+
+### Maintainer setup (one-time, ~10 minutes)
+
+1. **Create the bucket.** Cloudflare dashboard → R2 → Create bucket, e.g. `clai-releases`. Any location hint works.
+2. **Make it publicly readable.** Bucket → Settings → Public access:
+   - **Option A — `r2.dev` (zero DNS config):** enable the managed "r2.dev URL" → you get `https://pub-<hash>.r2.dev`.
+   - **Option B — custom domain (the default everywhere in this repo):** add `downloads.clai.aniketpandey.website` as a custom domain (requires the zone's DNS on Cloudflare). Served over the edge cache with free SSL.
+   If you end up on a different hostname, update `DEFAULT_MIRROR_BASE` in `src/commands/update-install.ts`, the default base in `install/install.sh` and `install/install.ps1`, and the URLs in `manifests/` — or export `CLAI_DOWNLOAD_BASE` until a release ships the change.
+3. **Create an API token.** R2 → Manage R2 API Tokens → Create API token: permission **Object Read & Write**, scoped to the `clai-releases` bucket only. Keep the **Access Key ID**, **Secret Access Key**, and the **Account ID** shown on the token page.
+4. **Add repo secrets** (GitHub repo → Settings → Secrets and variables → Actions → Secrets): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`.
+5. **Add repo variable** (Variables tab): `R2_PUBLIC_URL` = your public base URL, e.g. `https://downloads.clai.aniketpandey.website`, no trailing slash.
+6. **Done.** On every `v*.*.*` tag, the `publish-r2` job in `.github/workflows/release.yml` uploads binaries + checksums to `/vX.Y.Z/` and `/latest/`, refreshes `/install/` and `/version.json`, then re-downloads every asset through the public URL and re-verifies its SHA256 against the sidecars. Missing secrets → the job skips without failing the release; missing `R2_PUBLIC_URL` → only the public-URL verification step is skipped.
+
+**Cost:** the R2 free tier covers 10 GB-months of storage, 1M Class A and 10M Class B operations per month, and egress is always free — assets served via the custom domain ride the edge cache, so this stays $0 at clai's scale.
+
+---
+
 
 ## Quick start
 
@@ -136,7 +174,7 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 
 | Provider | Default model | Tier | Env var |
 |----------|---------------|------|---------|
-| Free (keyless) | `free-1/deepseek-v4-flash-free` | Free · keyless | — (no key needed) |
+| Free (keyless) | `free-2/kilo-auto/free` | Free · keyless | — (no key needed) |
 | NVIDIA NIM | `openai/gpt-oss-20b` | Free | `NVIDIA_API_KEY` |
 | Google Gemini | `gemini-3.5-flash` | Free | `GEMINI_API_KEY` |
 | OpenRouter | `meta-llama/llama-3.3-70b-instruct:free` | Free | `OPENROUTER_API_KEY` |
@@ -159,7 +197,7 @@ Several "paid" providers also expose limited free allowances — the tier label 
 
 #### Free — keyless, zero setup
 
-clai's default provider needs **no account, no API key, and no config**. It bundles **two keyless gateways** under one provider, namespaced by source so overlapping model names never collide: `free-1/…` ids come from the primary gateway and `free-2/…` ids from the [Kilo gateway](https://api.kilo.ai/api/gateway). Both serve rotating catalogs of free OpenAI-compatible models — `free-1/deepseek-v4-flash-free` (default), `free-1/mimo-v2.5-free`, `free-1/hy3-free`, `free-2/kilo-auto/free`, `free-2/stepfun/step-3.7-flash:free`, `free-2/nvidia/nemotron-3-ultra-550b-a55b:free` — with SSE streaming, native tool calling, and `reasoning_content` thinking folded into the normal `/think` block.
+clai's default provider needs **no account, no API key, and no config**. It bundles **two keyless gateways** under one provider, namespaced by source so overlapping model names never collide: `free-1/…` ids come from the primary gateway and `free-2/…` ids from the [Kilo gateway](https://api.kilo.ai/api/gateway). Both serve rotating catalogs of free OpenAI-compatible models — `free-2/kilo-auto/free` (default), `free-1/mimo-v2.5-free`, `free-1/hy3-free`, `free-1/x-preview-f-free`, `free-2/stepfun/step-3.7-flash:free`, `free-2/nvidia/nemotron-3-ultra-550b-a55b:free` — with SSE streaming, native tool calling, `/effort` reasoning levels, and `reasoning_content` thinking folded into the normal `/think` block.
 
 ```sh
 clai                          # already on free — nothing to set up

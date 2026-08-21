@@ -17,6 +17,12 @@ import chalk from "chalk";
 
 export const REPO = "pentoshi007/clai";
 export const PACKAGE_NAME = "@pentoshi/clai";
+export const DEFAULT_MIRROR_BASE = "https://downloads.clai.aniketpandey.website";
+
+export function mirrorBaseUrl(): string {
+  const override = process.env.CLAI_DOWNLOAD_BASE?.trim();
+  return (override ? override : DEFAULT_MIRROR_BASE).replace(/\/+$/, "");
+}
 
 export type InstallMethodType =
   | "npm"
@@ -381,19 +387,52 @@ export async function installDirectBinary(
   const repo = options.repo ?? REPO;
   const execPath = options.execPath ?? process.execPath;
   const base = `https://github.com/${repo}/releases/download/v${options.version}`;
-  const url = `${base}/${target.file}`;
-  const sumUrl = `${base}/${target.file}.sha256`;
+  const mirror = mirrorBaseUrl();
+  const useMirror = process.env.CLAI_NO_MIRROR !== "1";
+  const binUrls = useMirror
+    ? [`${mirror}/v${options.version}/${target.file}`, `${base}/${target.file}`]
+    : [`${base}/${target.file}`];
+  const sumUrls = useMirror
+    ? [`${base}/${target.file}.sha256`, `${mirror}/v${options.version}/${target.file}.sha256`]
+    : [`${base}/${target.file}.sha256`];
 
   log(chalk.dim(`  ⬇ Downloading ${target.file} (v${options.version})…`));
-  const bin = await downloadBinary(
-    url,
-    120_000,
-    (progress) => options.onProgress?.({ phase: "downloading", ...progress }),
-    options.signal,
-  );
+  let bin: Buffer | null = null;
+  let lastError: unknown;
+  for (const [index, binUrl] of binUrls.entries()) {
+    try {
+      bin = await downloadBinary(
+        binUrl,
+        120_000,
+        (progress) => options.onProgress?.({ phase: "downloading", ...progress }),
+        options.signal,
+      );
+      break;
+    } catch (error) {
+      lastError = error;
+      if (options.signal?.aborted) throw error;
+      if (index + 1 < binUrls.length) {
+        log(chalk.dim("  Mirror unavailable, trying GitHub releases…"));
+      }
+    }
+  }
+  if (bin === null) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError ?? "download failed"));
+  }
   log(chalk.dim(`  🔐 Verifying sha256…`));
   options.onProgress?.({ phase: "verifying" });
-  const expected = (await downloadBinary(sumUrl, 120_000, undefined, options.signal)).toString("utf8").trim().split(/\s+/)[0] ?? "";
+  let expected = "";
+  for (const sum of sumUrls) {
+    try {
+      expected = (await downloadBinary(sum, 120_000, undefined, options.signal)).toString("utf8").trim().split(/\s+/)[0] ?? "";
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      continue;
+    }
+    if (expected) break;
+  }
   const actual = sha256(bin);
   if (!expected || expected !== actual) {
     throw new Error(`checksum mismatch for ${target.file} (expected ${expected}, got ${actual})`);
