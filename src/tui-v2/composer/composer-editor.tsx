@@ -43,6 +43,8 @@ import { notify } from "../../ui-core/notify.js";
 import { CompletionMenuView } from "../components/completion/completion-menu.js";
 import { ComposerInputBox } from "../components/composer/composer-input-box.js";
 import { PasteChipRow } from "../components/composer/paste-chip.js";
+import { paintSkillMentions } from "./skill-highlight.js";
+import { skillNamesSnapshot } from "../../skills/registry.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
 import { useSessionState } from "../../ui-core/react/use-session-state.js";
 import { clipComposerMeta, formatComposerMeta } from "../../ui-core/composer/composer-meta.js";
@@ -270,6 +272,13 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
   }
 
   /** Grow/shrink the input box with newlines and soft-wrap (classic parity). */
+  function syncSkillMentions(): void {
+    const editor = editorRef.current;
+    const known = skillNamesSnapshot();
+    if (!editor || known.size === 0) return;
+    paintSkillMentions(editor, known, theme.activity);
+  }
+
   function syncContentRows(): void {
     const editor = editorRef.current;
     if (!editor) {
@@ -277,6 +286,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       setPasteChips([]);
       return;
     }
+    syncSkillMentions();
     // Prompt (2) + borders (2) + horizontal padding (2) leave this for text.
     const wrapWidth = Math.max(10, props.width - 6);
     const estimatedRows = countComposerVisualLines(editor.plainText, wrapWidth);
@@ -786,6 +796,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
         width={inputWidth}
         onExpand={expandPasteChip}
       />
+
       <ComposerInputBox
         theme={theme}
         editorRef={editorRef}

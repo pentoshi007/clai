@@ -2066,7 +2066,8 @@ export function isLumpedSingleTask(taskTitles: string[]): boolean {
  */
 export function buildWorkflowDirective(): string {
   return [
-    "BUILD FOCUS (this turn is a build/scaffold/feature — use judgment, not a rigid script):",
+    "BUILD FOCUS (guidance for build/scaffold/feature work — use judgment, not a rigid script):",
+    "This block was attached because the wording of this turn resembled build work. That guess can be wrong: if the user is actually asking a question, raising a doubt, or asking you to explain, review, or advise, ignore everything below and answer them instead — attaching this block is not permission to start building.",
     "EXPLORE once: read WORKSPACE STATUS; list the user destination and candidate project only as needed. After a project root is known, work there — do NOT repeatedly relist the parent destination. Non-empty dirs → CONTINUE an existing project / existing stack (NEVER re-scaffold). 'Operation cancelled' = failure.",
     "UNDERSTAND: match existing stack from manifests/lockfiles (package manager from lockfile). Empty path → pick a modern default and say so. Stack-agnostic scaffolding only into NEW EMPTY folders.",
     "Scaffold destination is the new subfolder (e.g. Desktop/app), not the parent. Feature apps: replace starter boilerplate — scaffold alone is a failure. Use plan/tasks only when a durable checklist materially helps; direct execution is valid, and an existing active plan must be preserved.",

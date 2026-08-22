@@ -425,6 +425,19 @@ describe("classic command parity (W12)", () => {
     }
   });
 
+  spec(["skills"], "/skills opens the skill picker, or explains where skills live", async () => {
+    const { services } = open();
+    await run(services, "skills");
+    await vi.waitFor(() => {
+      const overlay = services.overlay.getState();
+      if (overlay.kind === "picker") {
+        expect(overlay.request.title).toContain("Skills");
+        return;
+      }
+      expect(notices(services).some((text) => /skill/i.test(text))).toBe(true);
+    });
+  });
+
   spec(["usage"], "/usage opens the formatted pager with the session token ledger", async () => {
     const { services } = open();
     await run(services, "usage");

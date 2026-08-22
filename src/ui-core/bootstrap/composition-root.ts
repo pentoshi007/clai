@@ -38,6 +38,8 @@ import { ToastController, DEFAULT_TOAST_DURATION_MS } from "../controllers/toast
 import { isProviderFailureStatus } from "../../llm/key-rotation.js";
 import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
+import { getSkillIndex } from "../../skills/registry.js";
+import { safeCwd } from "../../os/cwd.js";
 import { TranscriptStore } from "../state/transcript-store.js";
 import { serializeForHistory } from "../state/transcript-hydrate.js";
 import { PlanController } from "../../app/controllers/plan-controller.js";
@@ -282,6 +284,8 @@ export function createCompositionRoot(
           columns: undefined,
           rows: undefined,
         }));
+
+  void getSkillIndex({ cwd: safeCwd() }).catch(() => undefined);
 
   let disposed = false;
   return {

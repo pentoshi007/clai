@@ -12,6 +12,18 @@ import {
 import { syntheticToolCallId } from "../llm/tool-protocol.js";
 import { slimToolArgs } from "./message-slim.js";
 import { isSessionStateMessage } from "./session-state.js";
+import {
+  isActiveSkillsMessage,
+  isAgentInstructionsMessage,
+} from "./injected-blocks.js";
+
+function isBenignTrailingSystemBlock(content: string): boolean {
+  return (
+    isSessionStateMessage(content) ||
+    isAgentInstructionsMessage(content) ||
+    isActiveSkillsMessage(content)
+  );
+}
 
 function nextUniqueToolCallId(index: number, seen: Set<string>): string {
   let id = syntheticToolCallId(index);
@@ -110,7 +122,7 @@ function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
       groupOpen &&
       message.role === "system" &&
       typeof message.content === "string" &&
-      isSessionStateMessage(message.content)
+      isBenignTrailingSystemBlock(message.content)
     ) {
       continue;
     }
@@ -500,7 +512,7 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
       pending.size > 0 &&
       message.role === "system" &&
       typeof message.content === "string" &&
-      isSessionStateMessage(message.content)
+      isBenignTrailingSystemBlock(message.content)
     ) {
       parkedBenignSystem.push(message);
       repairs += 1; // reordered relative to the broken history

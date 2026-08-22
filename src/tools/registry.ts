@@ -38,6 +38,8 @@ import {
   type ResponseMode,
 } from "./web/types.js";
 import { classifyToolCall } from "../safety/classifier.js";
+import { instructionsRecordTool } from "./instructions.js";
+import { skillListTool, skillLoadTool } from "./skills.js";
 import { loadScopeForSession } from "../store/scope.js";
 import {
   parseHost,
@@ -1111,6 +1113,15 @@ export const toolRegistry: Record<string, ToolHandler> = {
       { confirmed: options?.confirmed },
     );
   },
+  async "skill.list"(args) {
+    return skillListTool(args);
+  },
+  async "skill.load"(args) {
+    return skillLoadTool(args);
+  },
+  async "instructions.record"(args) {
+    return instructionsRecordTool(args);
+  },
 };
 
 export function availableToolNames(): string[] {
@@ -1420,6 +1431,8 @@ export const BATCH_SAFE_TOOLS = new Set([
   "web.fetch",
   "shell.jobs",
   "shell.tail",
+  "skill.list",
+  "skill.load",
 ]);
 
 /**
@@ -1434,6 +1447,7 @@ const BATCH_FORBIDDEN_TOOLS = new Set([
   "task.read",
   "task.update",
   "agent.handoff",
+  "instructions.record",
 ]);
 
 const BATCH_MAX_CALLS = 20;

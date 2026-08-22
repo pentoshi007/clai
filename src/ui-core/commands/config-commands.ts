@@ -388,6 +388,7 @@ export async function handleUpdate(services: AppServices): Promise<void> {
         }
       },
       controller.signal,
+      services.ports.requestSecret ?? undefined,
     );
 
     if (!result.ok) {
@@ -403,10 +404,12 @@ export async function handleUpdate(services: AppServices): Promise<void> {
       settle("warn", "update cancelled");
       return;
     }
-    settle(
-      "error",
-      `update failed · ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("update cancelled")) {
+      settle("warn", message);
+      return;
+    }
+    settle("error", `update failed · ${message}`);
   } finally {
     services.interruptible.end(controller);
   }

@@ -19,6 +19,7 @@ import {
   type CompletionMenu,
 } from "../../ui-core/composer/completion.js";
 import { cutDraft, cutDraftMessage } from "../../ui-core/composer/draft-actions.js";
+import { tokenInsertion } from "../../ui-core/composer/insert-token.js";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import {
   isLargePaste,
@@ -31,12 +32,17 @@ import {
   completeCommonPrefix,
 } from "../panels/completion-accept.js";
 import { completionItemValues } from "../panels/completion-rows.js";
+import { findSkillMentions } from "../../skills/mentions.js";
+import { skillNamesSnapshot } from "../../skills/registry.js";
 import { editorEditFor } from "./composer-keys.js";
+import type { EditorSpan } from "./editor-view.js";
 import { EMPTY_EDITOR, caretPosition, insert, logicalLines, type EditorState } from "./editor-model.js";
 
 const NO_MENU: CompletionMenu = { kind: "none" };
+const EMPTY_SPANS: readonly EditorSpan[] = [];
 
 export interface ComposerSnapshot {
+  readonly skillSpans: readonly EditorSpan[];
   readonly state: EditorState;
   readonly menu: CompletionMenu;
   readonly active: number;
@@ -63,6 +69,7 @@ export class ComposerController {
     active: 0,
     pastes: [],
     acceptedSlash: undefined,
+    skillSpans: EMPTY_SPANS,
   };
 
   private readonly listeners = new Set<() => void>();
@@ -105,6 +112,12 @@ export class ComposerController {
   insertText(text: string): void {
     if (text.length === 0) return;
     this.commit(insert(this.snapshot.state, text), { resetHistory: true });
+  }
+
+  insertToken(token: string): void {
+    if (token.length === 0) return;
+    const { text, cursor } = this.snapshot.state;
+    this.insertText(tokenInsertion(text.slice(0, cursor), token));
   }
 
   paste(text: string): void {
@@ -420,8 +433,18 @@ export class ComposerController {
     });
   }
 
-  private publish(snapshot: ComposerSnapshot): void {
-    this.snapshot = snapshot;
+  private publish(snapshot: Omit<ComposerSnapshot, "skillSpans">): void {
+    const known = skillNamesSnapshot();
+    this.snapshot = {
+      ...snapshot,
+      skillSpans:
+        known.size === 0
+          ? EMPTY_SPANS
+          : findSkillMentions(snapshot.state.text, known).map((mention) => ({
+              start: mention.start,
+              end: mention.end,
+            })),
+    };
     for (const listener of this.listeners) listener();
   }
 }

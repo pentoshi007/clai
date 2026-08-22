@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  accessSync,
   chmodSync,
   constants,
   existsSync,
@@ -12,8 +13,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import chalk from "chalk";
+import {
+  evictSudoSession,
+  formatSudoStdinPassword,
+  looksLikeSudoAuthError,
+  obtainSudoPassword,
+  type SudoAuthOutcome,
+} from "../tools/sudo-session.js";
 
 export const REPO = "pentoshi007/clai";
 export const PACKAGE_NAME = "@pentoshi/clai";
@@ -288,8 +296,9 @@ export interface PerformUpdateOptions {
   /** inherit: let the child write to the terminal (CLI). pipe: capture + log (TUI). */
   readonly stdio?: "inherit" | "pipe";
   readonly onProgress?: ((progress: UpdateProgress) => void) | undefined;
-  /** Abort an in-flight download/install (TUI Esc / Ctrl+C). */
   readonly signal?: AbortSignal | undefined;
+  readonly requestSecret?: SecretRequester | undefined;
+  readonly elevation?: UpdateElevation | undefined;
 }
 
 export type UpdateProgress =
@@ -306,11 +315,25 @@ function logOf(log: ((line: string) => void) | undefined): (line: string) => voi
 }
 
 export const ELEVATION_TIMEOUT_MS = 20_000;
+const SUDO_MOVE_TIMEOUT_MS = 30_000;
+
+export interface UpdateElevation {
+  readonly auth: SudoAuthOutcome;
+}
+
+export type SecretRequester = (request: {
+  title: string;
+  prompt: string;
+}) => Promise<string | undefined>;
 
 function escalationFailure(execPath: string): Error {
   return new Error(
     `needs elevated permission to replace ${execPath} — run \`sudo clai update\` in a terminal to finish`,
   );
+}
+
+function escalationCancelled(execPath: string): Error {
+  return new Error(`update cancelled: could not replace ${execPath} without elevated permission`);
 }
 
 async function elevateReplace(
@@ -359,11 +382,160 @@ async function elevateReplace(
   });
 }
 
+function buildWindowsSwapScript(
+  sourcePath: string,
+  execPath: string,
+  exe: string,
+  cleanupStageDir?: string,
+): string {
+  return (
+    `@echo off\r\n` +
+    `:loop\r\n` +
+    `tasklist /FI "IMAGENAME eq ${exe}" 2>nul | find /I "${exe}" >nul && (timeout /t 1 /nobreak >nul & goto loop)\r\n` +
+    `move /y "${sourcePath}" "${execPath}"\r\n` +
+    (cleanupStageDir
+      ? `cd /d "%TEMP%"\r\nrd /s /q "${cleanupStageDir}"\r\n`
+      : `del "%~f0"\r\n`)
+  );
+}
+
+function stageElevatedWindowsSwap(
+  tmp: string,
+  execPath: string,
+  exe: string,
+): Promise<void> {
+  const stageDir = mkdtempSync(join(tmpdir(), "clai-update-stage-"));
+  const stagedBin = join(stageDir, exe);
+  renameSync(tmp, stagedBin);
+  const batPath = join(stageDir, "apply-update.cmd");
+  writeFileSync(batPath, buildWindowsSwapScript(stagedBin, execPath, exe, stageDir));
+  return new Promise<void>((resolve, reject) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-WindowStyle",
+          "Hidden",
+          "-Command",
+          `Start-Process -Verb RunAs -WindowStyle Hidden -FilePath '${batPath.replace(/'/g, "''")}'`,
+        ],
+        { stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
+      );
+    } catch {
+      reject(
+        new Error(
+          `needs administrator permission to replace ${execPath} — close clai and run \`clai update\` from a terminal started with "Run as administrator"`,
+        ),
+      );
+      return;
+    }
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {}
+      finish(() =>
+        reject(
+          new Error(
+            `timed out waiting for the administrator approval dialog — close clai and run \`clai update\` from a terminal started with "Run as administrator"`,
+          ),
+        ),
+      );
+    }, 120_000);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    child.on("error", () =>
+      finish(() =>
+        reject(
+          new Error(
+            `needs administrator permission to replace ${execPath} — close clai and run \`clai update\` from a terminal started with "Run as administrator"`,
+          ),
+        ),
+      ),
+    );
+    child.on("close", (status) =>
+      finish(() => {
+        if (status === 0) {
+          resolve();
+          return;
+        }
+        reject(
+          new Error(
+            `administrator approval was declined — update aborted before replacing ${execPath}`,
+          ),
+        );
+      }),
+    );
+  });
+}
+
+function spawnElevatedMove(
+  tmp: string,
+  execPath: string,
+  password: string,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("sudo", ["-S", "-p", "", "--", "mv", "-f", tmp, execPath], {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch {
+      reject(escalationFailure(execPath));
+      return;
+    }
+    let stderrText = "";
+    let settled = false;
+    const finish = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {}
+      finish(() => reject(escalationFailure(execPath)));
+    }, SUDO_MOVE_TIMEOUT_MS);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    child.stdout?.on("data", () => {});
+    child.stderr?.on("data", (d) => {
+      if (stderrText.length < 4096) stderrText += String(d);
+    });
+    child.on("error", () => finish(() => reject(escalationFailure(execPath))));
+    child.on("close", (status) =>
+      finish(() => {
+        if (status === 0) {
+          resolve();
+          return;
+        }
+        if (looksLikeSudoAuthError(stderrText)) evictSudoSession(password);
+        reject(escalationFailure(execPath));
+      }),
+    );
+    try {
+      child.stdin?.write(formatSudoStdinPassword(password));
+      child.stdin?.end();
+    } catch {}
+  });
+}
+
 async function replaceExecutable(
   tmp: string,
   execPath: string,
   platform: NodeJS.Platform,
   interactive: boolean,
+  elevation?: UpdateElevation,
 ): Promise<void> {
   if (platform !== "win32") {
     try {
@@ -372,6 +544,11 @@ async function replaceExecutable(
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "EACCES" && code !== "EPERM") throw error;
+      if (elevation?.auth.status === "granted") {
+        await spawnElevatedMove(tmp, execPath, elevation.auth.password);
+        return;
+      }
+      if (elevation?.auth.status === "cancelled") throw escalationCancelled(execPath);
       await elevateReplace(tmp, execPath, interactive);
       return;
     }
@@ -381,14 +558,15 @@ async function replaceExecutable(
   const newPath = `${execPath}.update`;
   const batPath = `${execPath}.update.cmd`;
   const exe = basename(execPath);
-  renameSync(tmp, newPath);
-  const script =
-    `@echo off\r\n` +
-    `:loop\r\n` +
-    `tasklist /FI "IMAGENAME eq ${exe}" 2>nul | find /I "${exe}" >nul && (timeout /t 1 /nobreak >nul & goto loop)\r\n` +
-    `move /y "${newPath}" "${execPath}"\r\n` +
-    `del "%~f0"\r\n`;
-  writeFileSync(batPath, script);
+  try {
+    renameSync(tmp, newPath);
+    writeFileSync(batPath, buildWindowsSwapScript(newPath, execPath, exe));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EACCES" && code !== "EPERM") throw error;
+    await stageElevatedWindowsSwap(tmp, execPath, exe);
+    return;
+  }
   const child = spawn("cmd", ["/c", "start", "", "/min", batPath], {
     detached: true,
     stdio: "ignore",
@@ -414,6 +592,38 @@ export async function installDirectBinary(
   const sumUrls = useMirror
     ? [`${base}/${target.file}.sha256`, `${mirror}/v${options.version}/${target.file}.sha256`]
     : [`${base}/${target.file}.sha256`];
+
+  let elevation = options.elevation;
+  if (process.platform !== "win32") {
+    let writable = false;
+    try {
+      accessSync(dirname(execPath), constants.W_OK | constants.X_OK);
+      writable = true;
+    } catch {
+      writable = false;
+    }
+    if (!writable && (process.getuid?.() ?? 1) === 0) {
+      writable = true;
+    }
+    if (!writable && elevation === undefined) {
+      if (options.requestSecret) {
+        const auth = await obtainSudoPassword(
+          {
+            requestSecret: options.requestSecret,
+            title: "Administrator access",
+            prompt: `Updating clai will replace ${execPath}, which needs admin permission. Enter your password for sudo. It is sent only to sudo stdin, kept in memory briefly, and never written to disk. Esc cancels.`,
+            ...(options.signal ? { signal: options.signal } : {}),
+          },
+          {},
+        );
+        if (auth.status === "cancelled") throw escalationCancelled(execPath);
+        if (auth.status === "failed") {
+          throw new Error(`sudo authentication failed — could not replace ${execPath}${auth.detail ? ` (${auth.detail})` : ""}`);
+        }
+        elevation = { auth };
+      }
+    }
+  }
 
   log(chalk.dim(`  ⬇ Downloading ${target.file} (v${options.version})…`));
   let bin: Buffer | null = null;
@@ -475,6 +685,7 @@ export async function installDirectBinary(
       execPath,
       process.platform,
       (options.stdio ?? "inherit") === "inherit",
+      elevation,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

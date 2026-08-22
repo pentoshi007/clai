@@ -1,6 +1,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { safeCwd } from "../../os/cwd.js";
+import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js";
 import { readTerminalSize, RESIZE_DEBOUNCE_MS } from "../chrome/use-terminal-size.js";
 import { ESC_CANCEL_WINDOW_MS } from "../input/terminal-sequences.js";
@@ -68,6 +69,11 @@ export function disposeWiring(host: WiringHost): void {
 
 export function attachWiring(host: WiringHost): void {
   host.disposers.push(
+    composerActionPort.registerInsert((text) => {
+      host.services.focus.focusRegion("composer");
+      host.composer.insertToken(text);
+      host.schedulePaint();
+    }),
     host.composer.subscribe(() => host.schedulePaint()),
     host.panels.subscribe(() => {
       host.syncSearchFocus();

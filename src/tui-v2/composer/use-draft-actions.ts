@@ -8,6 +8,7 @@ import type { TextareaRenderable } from "@opentui/core";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { cutDraft, cutDraftMessage, primeCommandMenu } from "../../ui-core/composer/draft-actions.js";
+import { tokenInsertion } from "../../ui-core/composer/insert-token.js";
 
 export interface DraftActionsInput {
   readonly editorRef: RefObject<TextareaRenderable | null>;
@@ -33,6 +34,7 @@ export interface DraftActions {
   readonly cut: () => Promise<void>;
   /** Show every slash command, as typing "/" in the composer does. */
   readonly showCommands: () => void;
+  readonly insert: (text: string) => void;
 }
 
 export function useDraftActions(input: DraftActionsInput): DraftActions {
@@ -66,6 +68,17 @@ export function useDraftActions(input: DraftActionsInput): DraftActions {
     input.syncContentRows();
   };
 
+  const insert = (text: string): void => {
+    const editor = input.editorRef.current;
+    if (!editor) return;
+    input.focusComposer();
+    editor.insertText(
+      tokenInsertion(editor.plainText.slice(0, editor.cursorOffset), text),
+    );
+    input.refreshMenu();
+    input.syncContentRows();
+  };
+
   // Re-registered every render so the handlers close over current state.
   useEffect(() => {
     const unregisterClear = composerActionPort.registerClear(() => {
@@ -79,12 +92,14 @@ export function useDraftActions(input: DraftActionsInput): DraftActions {
     });
     const unregisterCommands =
       composerActionPort.registerOpenCommands(showCommands);
+    const unregisterInsert = composerActionPort.registerInsert(insert);
     return () => {
       unregisterClear();
       unregisterCut();
       unregisterCommands();
+      unregisterInsert();
     };
   });
 
-  return { clear, cut, showCommands };
+  return { clear, cut, showCommands, insert };
 }

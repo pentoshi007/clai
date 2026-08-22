@@ -151,6 +151,20 @@ import {
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
+import { loadAgentInstructions } from "../instructions/load.js";
+import { ensureProjectInstructionFiles } from "../instructions/scaffold.js";
+import {
+  upsertActiveSkillsMessage,
+  upsertAgentInstructionsMessage,
+} from "./injected-blocks.js";
+import { getSkillIndex, loadSkill } from "../skills/registry.js";
+import { skillMentionNames } from "../skills/mentions.js";
+import {
+  renderActiveSkills,
+  renderSkillCatalog,
+  SKILLS_CATALOG_PREFIX,
+} from "../skills/catalog.js";
+import type { LoadedSkill } from "../skills/types.js";
 import { loadScopeForSession, isScopeActive } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
@@ -845,6 +859,11 @@ export async function runAgentTurn(
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;
     const projectContext = await loadProjectContext();
+    const skillIndex = await getSkillIndex({
+      cwd: safeCwd(),
+      ...(getActiveProjectRoot() ? { projectRoot: getActiveProjectRoot()! } : {}),
+    });
+    const skillsAvailable = skillIndex.skills.length > 0;
     const hasAttachedImages = Boolean(options.images?.length);
     const imageOcrEnabled = shouldEnableImageOcr(
       prompt,
@@ -861,6 +880,9 @@ export async function runAgentTurn(
         if (name === "image.ocr") return imageOcrEnabled;
         if (name === "image.view") {
           return modelSupportsVision(routeProvider, routeModel);
+        }
+        if (name === "skill.load" || name === "skill.list") {
+          return skillsAvailable;
         }
         return true;
       });
@@ -987,6 +1009,44 @@ export async function runAgentTurn(
     if (!pinnedProject && discoveredProjects.length === 1) {
       setActiveProjectRootIfValid(discoveredProjects[0]);
     }
+
+    const instructionScanInput = {
+      cwd: safeCwd(),
+      ...(getActiveProjectRoot() ? { projectRoot: getActiveProjectRoot()! } : {}),
+    };
+    if (!idleOrSocialPrompt && !informationalQuery) {
+      const scaffold = await ensureProjectInstructionFiles(
+        instructionScanInput,
+      ).catch(() => undefined);
+      if (scaffold && scaffold.created.length > 0) {
+        writeNotice(
+          "info",
+          `created ${scaffold.created.join(" and ")} — put your project rules in CLAI.md`,
+        );
+      }
+    }
+    let agentInstructionsBlock = (
+      await loadAgentInstructions(instructionScanInput).catch(() => undefined)
+    )?.block;
+    const refreshAgentInstructions = async (): Promise<void> => {
+      const reloaded = await loadAgentInstructions(instructionScanInput).catch(
+        () => undefined,
+      );
+      agentInstructionsBlock = reloaded?.block;
+    };
+
+    const selectedSkillNames = skillsAvailable
+      ? skillMentionNames(prompt, skillIndex.names)
+      : [];
+    const activeSkills: LoadedSkill[] = [];
+    for (const name of selectedSkillNames) {
+      const loaded = await loadSkill(name, instructionScanInput).catch(
+        () => undefined,
+      );
+      if (loaded) activeSkills.push(loaded);
+    }
+    const activeSkillsBlock = renderActiveSkills(activeSkills);
+
     // Only long-lived instructions belong in the provider-cached system prefix.
     // Request, project, workspace, recovery, scope, and plan state are appended
     // later as system-marked turns so a changing byte cannot invalidate the
@@ -1178,9 +1238,22 @@ export async function runAgentTurn(
       }
     }
 
+    if (skillsAvailable && !idleOrSocialPrompt) {
+      const catalog = renderSkillCatalog({
+        skills: skillIndex.skills,
+        prompt,
+        pinned: selectedSkillNames,
+        truncatedScan: skillIndex.truncated,
+        ...(inputTokenBudget ? { maxTokens: 260 } : {}),
+      });
+      if (catalog) systemSections.push(catalog);
+    }
+
     const promptSections = (): AgentPromptSection[] => {
       const sections: AgentPromptSection[] = systemSections.map((content) => ({
-        kind: content.startsWith("ACTIVE PLAN")
+        kind: content.startsWith(SKILLS_CATALOG_PREFIX)
+          ? "context"
+          : content.startsWith("ACTIVE PLAN")
           ? "plan"
           : content.startsWith("ENGAGEMENT SCOPE")
             ? "scope"
@@ -1192,23 +1265,24 @@ export async function runAgentTurn(
                   ? "focus"
                   : "context",
         content,
-        mandatory:
-          content.startsWith("ACTIVE PLAN") ||
-          content.startsWith("ENGAGEMENT SCOPE") ||
-          content.startsWith("REQUEST ENVIRONMENT") ||
-          content.startsWith("Project context from .clai/context.md:") ||
-          content.startsWith("ACTIVE PROJECT ROOT:") ||
-          content.startsWith("USER DESTINATION:") ||
-          content.startsWith("WORKSPACE STATUS") ||
-          content.includes("MODE") ||
-          content.includes("OUTCOME"),
+        mandatory: content.startsWith(SKILLS_CATALOG_PREFIX)
+          ? selectedSkillNames.length > 0
+          : content.startsWith("ACTIVE PLAN") ||
+            content.startsWith("ENGAGEMENT SCOPE") ||
+            content.startsWith("REQUEST ENVIRONMENT") ||
+            content.startsWith("Project context from .clai/context.md:") ||
+            content.startsWith("ACTIVE PROJECT ROOT:") ||
+            content.startsWith("USER DESTINATION:") ||
+            content.startsWith("WORKSPACE STATUS") ||
+            content.includes("MODE") ||
+            content.includes("OUTCOME"),
       }));
       const has = (kind: AgentPromptSection["kind"]): boolean =>
         sections.some((section) => section.kind === kind);
       if (!has("outcome")) {
         sections.push({
           kind: "outcome",
-          content: `OUTCOME CONTRACT\nGoal: ${prompt}\nSuccess requires evidence that the requested result is complete; otherwise return partial, blocked, failed, aborted, or paused_budget with remaining criteria.`,
+          content: `OUTCOME CONTRACT\nGoal: ${prompt}\nDecide first what this request actually asks for: a question or doubt is satisfied by an accurate, grounded answer, while a directive to change something is satisfied only by the verified change. Success requires evidence that whichever of those the user asked for is delivered; otherwise return partial, blocked, failed, aborted, or paused_budget with remaining criteria.`,
           mandatory: true,
         });
       }
@@ -1265,6 +1339,11 @@ export async function runAgentTurn(
       { role: "system", content: requestContextMessage },
     ];
     liveMessages = messages;
+    const refreshInjectedBlocks = (): void => {
+      upsertAgentInstructionsMessage(messages, agentInstructionsBlock);
+      upsertActiveSkillsMessage(messages, activeSkillsBlock);
+    };
+    refreshInjectedBlocks();
     if (activePlan) {
       upsertPlanContextMessage(
         messages,
@@ -1492,6 +1571,7 @@ export async function runAgentTurn(
     const recovery = createRecoveryBudgets();
     let sawServerStart = false;
     let sawPlanCreateOk = false;
+    let instructionsChangedThisRound = false;
     let sawServerTail = false;
     let sawLocalHttpProbe = false;
     let sawFailedLocalHttpProbe = false;
@@ -1603,6 +1683,7 @@ export async function runAgentTurn(
     }
 
     refreshSessionState = (plan?: SessionPlan | null | undefined): void => {
+      refreshInjectedBlocks();
       if (idleOrSocialPrompt || informationalQuery) return;
       const runningJobs = jobManager.getRunningJobs(session.sessionId);
       const p = plan === null ? undefined : plan ?? activePlan;
@@ -3883,6 +3964,8 @@ export async function runAgentTurn(
           () => undefined,
         );
         const candidateMessages = [...result.messages];
+        upsertAgentInstructionsMessage(candidateMessages, agentInstructionsBlock);
+        upsertActiveSkillsMessage(candidateMessages, activeSkillsBlock);
         if (livePlan) {
           upsertPlanContextMessage(
             candidateMessages,
@@ -6033,6 +6116,9 @@ export async function runAgentTurn(
               sawLocalAppMaterialWork = true;
             }
           }
+          if (res.call.name === "instructions.record" && res.ok) {
+            instructionsChangedThisRound = true;
+          }
           if (res.call.name === "plan.create" && res.ok) {
             sawPlanCreateOk = true;
             if (isPlanMode) {
@@ -6340,6 +6426,11 @@ export async function runAgentTurn(
         // protocol repair preserves the real successful job.read body.
         for (const notification of deferredResponderLedgerNotifications.splice(0)) {
           upsertResponderResultLedger(messages, notification);
+        }
+
+        if (instructionsChangedThisRound) {
+          instructionsChangedThisRound = false;
+          await refreshAgentInstructions();
         }
 
         // SESSION STATE only after the assistant→tool group is closed.

@@ -10,6 +10,7 @@ import {
   performUpdate,
   resolveInstallEnv,
   type InstallMethod,
+  type SecretRequester,
   type UpdateProgress,
 } from "./update-install.js";
 
@@ -194,6 +195,7 @@ export async function installUpdate(
   stdio: "inherit" | "pipe" = "inherit",
   onProgress?: (progress: UpdateProgress) => void,
   signal?: AbortSignal,
+  requestSecret?: SecretRequester,
 ): Promise<{ ok: boolean; message: string; method: string; needsRestart: boolean }> {
   const method = await detectInstallMethodOrDev();
   const result = await performUpdate({
@@ -203,6 +205,7 @@ export async function installUpdate(
     ...(log ? { log } : {}),
     ...(onProgress ? { onProgress } : {}),
     ...(signal ? { signal } : {}),
+    ...(requestSecret ? { requestSecret } : {}),
   });
   return {
     ok: result.ok,

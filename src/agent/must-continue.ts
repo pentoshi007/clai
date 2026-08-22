@@ -79,6 +79,9 @@ export function recoveryForErrorDiagnosis(nativeTools: boolean): RecoveryAction 
   };
 }
 
+const INTENT_ESCAPE =
+  " Before doing that, re-read the user's latest message. This nudge fires from a keyword guess about their wording and can be wrong: if they were asking a question, raising a doubt, or asking you to explain, review, compare, or advise, then an answer with no changes was the correct deliverable — say so in one line and finish, without calling a tool and without starting work they did not ask for.";
+
 export function recoveryForNarration(
   nativeTools: boolean,
   mode: "plan_open" | "pentest" | "web" | "build_plan_prose" | "build" | "generic",
@@ -100,9 +103,11 @@ export function recoveryForNarration(
     return {
       ...base,
       notice: "described a security action but emitted no tool call",
-      message: nativeTools
-        ? "You described security work but called NO tool. Call a real tool now (net.scan / http.fetch / dns.lookup / shell.exec)."
-        : "You described security work but emitted NO ```tool block. Emit a real tool call now (e.g. sysinfo, net.scan, http.fetch).",
+      message:
+        (nativeTools
+          ? "You described security work but called NO tool. Call a real tool now (net.scan / http.fetch / dns.lookup / shell.exec)."
+          : "You described security work but emitted NO ```tool block. Emit a real tool call now (e.g. sysinfo, net.scan, http.fetch).") +
+        INTENT_ESCAPE,
     };
   }
   if (mode === "web") {
@@ -118,24 +123,30 @@ export function recoveryForNarration(
     return {
       ...base,
       notice: "plan was written as text, not created",
-      message: nativeTools
-        ? 'You wrote the plan as prose but did NOT call plan.create. Call plan.create now with goal, detail, tasks, and a specific kind you choose to fit the work (e.g. build, frontend, feature, bugfix, pentest, recon — not "general").'
-        : "You wrote the plan as prose but did NOT call plan.create. Emit one plan.create tool block now.",
+      message:
+        (nativeTools
+          ? 'You wrote the plan as prose but did NOT call plan.create. Call plan.create now with goal, detail, tasks, and a specific kind you choose to fit the work (e.g. build, frontend, feature, bugfix, pentest, recon — not "general").'
+          : "You wrote the plan as prose but did NOT call plan.create. Emit one plan.create tool block now.") +
+        " If the user only asked how you would approach something rather than telling you to do it, the prose answer was correct — say so in one line and finish instead of creating a plan.",
     };
   }
   if (mode === "build") {
     return {
       ...base,
-      message: nativeTools
-        ? 'You described work but called NO tool. Call a tool now (e.g. fs.list path="."), then plan.create when ready.'
-        : "You described work but emitted NO ```tool block. Explore first, then plan.create when ready.",
+      message:
+        (nativeTools
+          ? 'You described work but called NO tool. Call a tool now (e.g. fs.list path="."), then plan.create when ready.'
+          : "You described work but emitted NO ```tool block. Explore first, then plan.create when ready.") +
+        INTENT_ESCAPE,
     };
   }
   return {
     ...base,
-    message: nativeTools
-      ? "You described an action but called NO tool. Call the appropriate tool now."
-      : "You described an action but emitted NO ```tool block. Emit a real tool call now.",
+    message:
+      (nativeTools
+        ? "You described an action but called NO tool. Call the appropriate tool now."
+        : "You described an action but emitted NO ```tool block. Emit a real tool call now.") +
+      INTENT_ESCAPE,
   };
 }
 

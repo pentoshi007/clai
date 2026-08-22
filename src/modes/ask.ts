@@ -17,6 +17,8 @@ import {
 import { getConfig, getProviderModel } from "../store/config.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { loadProjectContext } from "../store/project.js";
+import { loadAgentInstructions } from "../instructions/load.js";
+import { safeCwd } from "../os/cwd.js";
 import { parseAllToolCalls, formatToolArgs, looksLikePromptLeak } from "../agent/runner.js";
 import { runToolCall } from "../tools/registry.js";
 import { getToolDefinitions } from "../tools/definitions.js";
@@ -151,6 +153,9 @@ async function buildAskMessages(
   await ensureProviderConfigured(provider);
   const model = options.model ?? getProviderModel(provider);
   const projectContext = await loadProjectContext();
+  const instructions = await loadAgentInstructions({ cwd: safeCwd() }).catch(
+    () => undefined,
+  );
   const native =
     resolveToolDialect(provider, model, config.toolCalling) !== "none";
   const systemPrompt = renderAskSystemPrompt({
@@ -173,6 +178,7 @@ async function buildAskMessages(
         content: [
           "REQUEST CONTEXT",
           renderRequestEnvironmentContext(),
+          ...(instructions?.block ? [instructions.block] : []),
           ...(projectContext
             ? [`Project context from .clai/context.md:\n${projectContext}`]
             : []),

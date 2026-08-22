@@ -6,9 +6,12 @@
 type Handler = () => void;
 type DraftListener = (hasDraft: boolean) => void;
 
+type InsertHandler = (text: string) => void;
+
 let clearHandler: Handler | undefined;
 let cutHandler: Handler | undefined;
 let openCommandsHandler: Handler | undefined;
+let insertHandler: InsertHandler | undefined;
 let hasDraft = false;
 const draftListeners = new Set<DraftListener>();
 
@@ -64,6 +67,17 @@ export const composerActionPort = {
   },
   openCommands(): void {
     openCommandsHandler?.();
+  },
+  registerInsert(handler: InsertHandler): () => void {
+    insertHandler = handler;
+    return () => {
+      if (insertHandler === handler) insertHandler = undefined;
+    };
+  },
+  insert(text: string): boolean {
+    if (!insertHandler) return false;
+    insertHandler(text);
+    return true;
   },
   /** Publish draft emptiness so status chrome can gate draft-only hints. */
   setHasDraft(next: boolean): void {

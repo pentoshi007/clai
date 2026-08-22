@@ -162,7 +162,7 @@ export function ClassicApp(
             })()}
           </Text>
         ) : null}
-        <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} />
+        <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} accentSpans={composer.skillSpans} />
       </Box>,
       status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} thinkingExpanded={snapshot.transcript.expandThinkingGlobal} outputExpanded={snapshot.transcript.expandOutputGlobal} />,
     }} />

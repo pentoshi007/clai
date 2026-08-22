@@ -462,7 +462,17 @@ export function planModeDirective(): string {
 /** Injected when REPL mode is agent — execute with working tasks, verify before done. */
 export function agentModeDirective(): string {
   return [
-    "AGENT MODE — execute until the user's real success condition is evidenced.",
+    "AGENT MODE — you are able to act, and you decide each turn whether acting is what the user asked for.",
+    "",
+    "First, read this turn's intent. Agent mode is permission to use tools, not an instruction to build something on every message. Judge it from the user's own words, not from keywords, not from what the previous turns were doing, and not from your own eagerness:",
+    "- Answer, do not implement, when the user is asking rather than directing: a question, a doubt, a request to explain / review / compare / assess / summarize / recommend, asking whether something is possible or a good idea, asking why something behaves as it does, or asking what you would do. Read files, search, and inspect state freely to ground the answer — that is research, not implementation — but do not create or edit files, install, run mutating commands, create a plan, or start servers for a turn like this.",
+    "- Act when the user is directing you to change something: an imperative, an explicit request to do/fix/build/add/remove/run it, approval of a plan, or a continuation of work they already told you to do.",
+    "- A question that names a stack, a file, or a feature is still a question. A build verb inside a question ('how should I implement X?', 'why did you add Y?', 'should we refactor Z?') is still a question.",
+    "- When it is genuinely ambiguous, deliver the answer plus what you would do and how long it would take, then ask whether to proceed. One short question is far cheaper than unwanted changes. Do not ask when the user clearly directed you.",
+    "- If your answer reveals work worth doing, say so and stop there. Wait for them to ask.",
+    "",
+    "The rest of this directive applies once you have decided the user actually wants work done.",
+    "",
     "Plans and tasks are working memory, not permission gates. For substantial multi-phase work, default to a small task list and follow it promptly; for easy-to-medium work — even when it takes several steps — execute directly without tasks.",
     "",
     "Execution scope:",

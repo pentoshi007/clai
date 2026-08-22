@@ -1070,6 +1070,59 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     { readOnly: true, askMode: true },
   ),
   def(
+    "skill.load",
+    "Read the full instructions of one Agent Skill listed in the AVAILABLE SKILLS block, then follow them. Load a skill when its description covers the work you are about to do — before starting that work, not after. Never guess a skill's contents, never load a skill unrelated to the task, and never load the same skill twice in a session.",
+    {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Exact skill name from the AVAILABLE SKILLS block",
+        },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+    { readOnly: true, askMode: true },
+  ),
+  def(
+    "skill.list",
+    "List installed Agent Skills with descriptions and file paths. Use only when the AVAILABLE SKILLS block says entries were omitted, or when you need a skill's directory to read its bundled files.",
+    {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Optional substring filter over name and description",
+        },
+      },
+      additionalProperties: false,
+    },
+    { readOnly: true, askMode: true },
+  ),
+  def(
+    "instructions.record",
+    "Persist a standing instruction to .clai/INSTRUCTIONS.md so it survives context compaction. Call this as soon as the user states a rule you must keep honoring for the rest of the work — a required style, a forbidden action, a workflow you must repeat (for example \"never add comments\", \"do not push to GitHub\", \"commit after each change\"). One short imperative sentence per entry. Never record task steps, findings, plan items, or anything already in an instruction file. Use remove when the user retracts a rule.",
+    {
+      type: "object",
+      properties: {
+        add: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Standing rules to persist, one imperative sentence each (max 12 per call)",
+        },
+        remove: {
+          type: "array",
+          items: { type: "string" },
+          description: "Existing rules to drop, by their text or 1-based number",
+        },
+      },
+      additionalProperties: false,
+    },
+    { mutates: true },
+  ),
+  def(
     "plan.clear",
     "Discard the active plan and all its tasks. Use when the plan should no longer be executed, needs full replacement instead of revision, or the work it tracked is being undone. After clearing, no plan exists until the next plan.create.",
     emptyObject,
@@ -1437,6 +1490,9 @@ export function getToolDefinitions(filter?: {
       "tool.check",
       "image.view",
       "image.ocr",
+      "skill.load",
+      "skill.list",
+      "instructions.record",
       "plan.create",
       "task.add",
       "task.move",

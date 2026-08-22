@@ -82,6 +82,11 @@ export function scrollTop(layout: EditorLayout, height: number, previousTop = 0)
   return Math.max(0, Math.min(top, max));
 }
 
+export interface EditorSpan {
+  readonly start: number;
+  readonly end: number;
+}
+
 export interface RenderEditorInput {
   readonly state: EditorState;
   readonly layout: EditorLayout;
@@ -90,6 +95,7 @@ export interface RenderEditorInput {
   readonly scrollTop: number;
   readonly showCaret: boolean;
   readonly placeholder: string | undefined;
+  readonly accentSpans?: readonly EditorSpan[] | undefined;
 }
 
 export interface RenderedEditor {
@@ -122,6 +128,75 @@ export function renderCaretRow(
   return sealStyle(`${text}${ink.inverse(" ")}`);
 }
 
+function paintAccentText(
+  ink: InkTheme,
+  text: string,
+  origin: number,
+  spans: readonly EditorSpan[],
+): string {
+  if (text.length === 0) return "";
+  const end = origin + text.length;
+  const overlapping = spans
+    .filter((span) => span.end > origin && span.start < end)
+    .sort((a, b) => a.start - b.start);
+  if (overlapping.length === 0) return ink.fg("white", text);
+  const pieces: string[] = [];
+  let cursor = origin;
+  for (const span of overlapping) {
+    const from = Math.max(span.start, origin);
+    const to = Math.min(span.end, end);
+    if (to <= cursor) continue;
+    if (from > cursor) {
+      pieces.push(ink.fg("white", text.slice(cursor - origin, from - origin)));
+    }
+    pieces.push(
+      ink.style(text.slice(from - origin, to - origin), {
+        fg: "activity",
+        bold: true,
+      }),
+    );
+    cursor = to;
+  }
+  if (cursor < end) pieces.push(ink.fg("white", text.slice(cursor - origin)));
+  return pieces.join("");
+}
+
+function paintAccentRow(
+  ink: InkTheme,
+  row: VisualRow,
+  spans: readonly EditorSpan[],
+): string {
+  return sealStyle(paintAccentText(ink, row.text, row.start, spans));
+}
+
+function paintCaretRow(
+  ink: InkTheme,
+  row: VisualRow,
+  caretColumn: number,
+  showCaret: boolean,
+  spans: readonly EditorSpan[],
+): string {
+  if (!showCaret) return paintAccentRow(ink, row, spans);
+  const text = row.text;
+  const bounds = boundaries(text);
+  let column = 0;
+  for (let index = 1; index < bounds.length; index += 1) {
+    const from = bounds[index - 1]!;
+    const to = bounds[index]!;
+    if (column === caretColumn) {
+      return sealStyle(
+        paintAccentText(ink, text.slice(0, from), row.start, spans) +
+          ink.inverse(text.slice(from, to)) +
+          paintAccentText(ink, text.slice(to), row.start + to, spans),
+      );
+    }
+    column += layoutWidth(text.slice(from, to));
+  }
+  return sealStyle(
+    paintAccentText(ink, text, row.start, spans) + ink.inverse(" "),
+  );
+}
+
 export function renderEditor(input: RenderEditorInput): RenderedEditor {
   const { layout, ink } = input;
   const height = Math.max(1, input.height);
@@ -147,12 +222,12 @@ export function renderEditor(input: RenderEditorInput): RenderedEditor {
     };
   }
 
+  const accentSpans = input.accentSpans ?? [];
   const rows = visible.map((row, index) => {
     const absolute = top + index;
-    const text = absolute === layout.caretRow
-      ? renderCaretRow(ink, row.text, layout.caretColumn, input.showCaret)
-      : row.text;
-    return ink.fg("white", text);
+    return absolute === layout.caretRow
+      ? paintCaretRow(ink, row, layout.caretColumn, input.showCaret, accentSpans)
+      : paintAccentRow(ink, row, accentSpans);
   });
   while (rows.length < height) rows.push("");
 

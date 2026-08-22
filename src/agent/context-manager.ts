@@ -29,6 +29,8 @@ import {
   RESPONDER_RESULT_LEDGER_PREFIX,
 } from "./responder-context.js";
 import { slimToolArgs } from "./message-slim.js";
+import { AGENT_INSTRUCTIONS_PREFIX } from "../instructions/load.js";
+import { ACTIVE_SKILLS_PREFIX } from "../skills/catalog.js";
 import {
   estimateImageTokens,
   estimateMessagesTokens,
@@ -319,6 +321,7 @@ export async function compactMessagesWithSummary(
   }
 
   const isDurableSystem = (content: string): boolean =>
+    isReinjectedSystem(content) ||
     isDurableEnvelopeContent(content) ||
     content.startsWith("ACTIVE PLAN") ||
     content.startsWith("SESSION STATE") ||
@@ -366,7 +369,12 @@ export async function compactMessagesWithSummary(
     Boolean(visual) && uncoveredHistory.length === 0;
 
   const durableBits = messages
-    .filter((m) => m.role === "system" && isDurableSystem(m.content))
+    .filter(
+      (m) =>
+        m.role === "system" &&
+        isDurableSystem(m.content) &&
+        !isReinjectedSystem(m.content),
+    )
     .map((m) => {
       // Large system prompts: extract only durable subsections when present.
       if (m.content.length > 4_000) {
@@ -715,8 +723,16 @@ export function shouldApplyAutoCompact(input: {
   return true;
 }
 
+function isReinjectedSystem(content: string): boolean {
+  return (
+    content.startsWith(AGENT_INSTRUCTIONS_PREFIX) ||
+    content.startsWith(ACTIVE_SKILLS_PREFIX)
+  );
+}
+
 function isStaleDurableSystem(content: string): boolean {
   return (
+    isReinjectedSystem(content) ||
     isDurableEnvelopeContent(content) ||
     content.startsWith("ACTIVE PLAN") ||
     content.startsWith("SESSION STATE") ||

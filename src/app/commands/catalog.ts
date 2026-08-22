@@ -115,7 +115,16 @@ export const slashCommands: SlashCommand[] = [
     description:
       "try other configured providers after a failure (off by default)",
   },
-  { command: "/compact", description: "compact session history now" },
+  {
+    command: "/skills",
+    usage: "[name|list|refresh]",
+    description:
+      "browse Agent Skills and attach one to your next prompt as skill:name · /skills list shows paths",
+  },
+  {
+    command: "/compact",
+    description: "compact session history now",
+  },
   { command: "/context", description: "show estimated context size" },
   {
     command: "/usage",

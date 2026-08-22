@@ -606,6 +606,17 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only operation" };
   }
 
+  if (call.name === "skill.load" || call.name === "skill.list") {
+    return { level: "safe", reason: "Read-only Agent Skill lookup" };
+  }
+
+  if (call.name === "instructions.record") {
+    return {
+      level: "safe",
+      reason: "Records standing instructions in .clai/INSTRUCTIONS.md",
+    };
+  }
+
   if (call.name === "dns.lookup" || call.name === "whois.lookup") {
     // Single-shot DNS / whois queries are passive lookups. They never
     // touch the target's network stack, so we don't gate them behind

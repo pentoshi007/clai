@@ -5,7 +5,12 @@ import type { InkTheme } from "../render/ink-theme.js";
 import { layoutWidth } from "../render/measure.js";
 import type { ComposerFrame } from "./composer-frame.js";
 import type { EditorState } from "./editor-model.js";
-import { layoutEditor, renderEditor, scrollTop } from "./editor-view.js";
+import {
+  layoutEditor,
+  renderEditor,
+  scrollTop,
+  type EditorSpan,
+} from "./editor-view.js";
 
 export interface ComposerProps {
   readonly ink: InkTheme;
@@ -13,6 +18,7 @@ export interface ComposerProps {
   readonly state: EditorState;
   readonly scrollTop?: number | undefined;
   readonly onScrollTop?: ((top: number) => void) | undefined;
+  readonly accentSpans?: readonly EditorSpan[] | undefined;
 }
 
 /**
@@ -65,6 +71,7 @@ export function Composer(props: ComposerProps): ReactNode {
     scrollTop: top,
     showCaret: frame.showCaret,
     placeholder: state.text.length === 0 ? frame.placeholder : undefined,
+    ...(props.accentSpans ? { accentSpans: props.accentSpans } : {}),
   });
 
   const glyphs = ink.glyphs;
