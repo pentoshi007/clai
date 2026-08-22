@@ -9,7 +9,13 @@ import {
 } from "../../ui-core/bootstrap/composition-root.js";
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
+import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
+import {
+  applyResumeResolution,
+  resolveResumeTarget,
+  type ResumeTarget,
+} from "../../ui-core/bootstrap/session-resume.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { createPagerExportPort } from "../../ui-core/ports/pager-export-port.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
@@ -27,12 +33,14 @@ export interface StartClassicOptions {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly noHistory?: boolean | undefined;
+  readonly resume?: ResumeTarget | undefined;
 }
 
 export async function startClassic(
   options: StartClassicOptions = {},
 ): Promise<void> {
   setAllowInteractiveStdinInherit(false);
+  const startedAt = Date.now();
   const capabilities = readCapabilitiesFromProcess();
   const session = createTerminalSession();
   const servicesRef: { current: AppServices | undefined } = { current: undefined };
@@ -83,6 +91,15 @@ export async function startClassic(
   });
   servicesRef.current = services;
   attachCommandHandlers(services);
+  const epilogue = createExitEpilogue({
+    services,
+    startedAt,
+    enabled: capabilities.isTTY,
+    write: (text) => session.write(text),
+  });
+  const pendingResume = options.resume
+    ? await resolveResumeTarget(options.resume)
+    : undefined;
   const wiring = createClassicAppWiring({
     services,
     mouse: session.mouseEnabled,
@@ -112,6 +129,7 @@ export async function startClassic(
   const lifecycle = new RendererLifecycle({
     handle,
     disposers: [
+      epilogue.capture,
       async () => {
         await services.session.persistNow().catch(() => undefined);
       },
@@ -127,6 +145,7 @@ export async function startClassic(
         }
       },
     ],
+    epilogue: epilogue.run,
     onSigint: () => {
       const dismissed = services.overlay.cancelBlockingPrompt();
       if (services.session.getState().running) {
@@ -155,5 +174,6 @@ export async function startClassic(
   lifecycleRef.current = lifecycle;
 
   await lifecycle.start();
+  await applyResumeResolution(services, pendingResume);
   await done;
 }

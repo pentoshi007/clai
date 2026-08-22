@@ -103,6 +103,89 @@ describe("RendererLifecycle teardown", () => {
   });
 });
 
+describe("RendererLifecycle epilogue", () => {
+  it("runs after the renderer released the terminal and before exit", async () => {
+    const order: string[] = [];
+    const proc = new FakeProcess();
+    proc.exit = (code = 0) => {
+      order.push(`exit:${code}`);
+    };
+    const life = new RendererLifecycle({
+      handle: makeHandle(order),
+      process: proc,
+      disposers: [() => void order.push("dispose")],
+      epilogue: () => void order.push("epilogue"),
+    });
+    await life.start();
+    await life.shutdownAndExit(0);
+    expect(order).toEqual(["start", "dispose", "destroy", "epilogue", "exit:0"]);
+  });
+
+  it("awaits an async epilogue before exiting", async () => {
+    const order: string[] = [];
+    const proc = new FakeProcess();
+    proc.exit = () => void order.push("exit");
+    const life = new RendererLifecycle({
+      handle: makeHandle([]),
+      process: proc,
+      epilogue: async () => {
+        await Promise.resolve();
+        order.push("epilogue");
+      },
+    });
+    await life.start();
+    await life.shutdownAndExit(0);
+    expect(order).toEqual(["epilogue", "exit"]);
+  });
+
+  it("runs exactly once across repeated and racing shutdowns", async () => {
+    const epilogue = vi.fn();
+    const proc = new FakeProcess();
+    const life = new RendererLifecycle({
+      handle: makeHandle([]),
+      process: proc,
+      epilogue,
+    });
+    await life.start();
+    await Promise.all([life.shutdownAndExit(0), life.shutdownAndExit(130)]);
+    await life.shutdown();
+    expect(epilogue).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failing epilogue through onError without blocking exit", async () => {
+    const errors: unknown[] = [];
+    const proc = new FakeProcess();
+    const life = new RendererLifecycle({
+      handle: makeHandle([]),
+      process: proc,
+      epilogue: () => {
+        throw new Error("epilogue failed");
+      },
+      onError: (error) => void errors.push(error),
+    });
+    await life.start();
+    await life.shutdownAndExit(0);
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toBe("epilogue failed");
+    expect(proc.exitCalls).toEqual([0]);
+  });
+
+  it("still runs on a fatal signal", async () => {
+    const epilogue = vi.fn();
+    const proc = new FakeProcess();
+    const life = new RendererLifecycle({
+      handle: makeHandle([]),
+      process: proc,
+      epilogue,
+    });
+    await life.start();
+    proc.emit("SIGTERM");
+    await flushUntil(() => proc.exitCalls.length > 0);
+    expect(epilogue).toHaveBeenCalledTimes(1);
+    expect(proc.exitCalls).toContain(143);
+  });
+});
+
 describe("RendererLifecycle signal handling", () => {
   it("first SIGINT is cooperative (onSigint), second SIGINT exits", async () => {
     const log: string[] = [];

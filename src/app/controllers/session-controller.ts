@@ -8,7 +8,6 @@ import type {
 } from "../../types.js";
 import {
   estimateMessagesTokens,
-  isCompactionMemoryMessage,
   type CompactResult,
 } from "../../agent/context-manager.js";
 import { repairToolProtocol } from "../../agent/tool-history.js";
@@ -60,6 +59,7 @@ import type { SecretPort } from "../ports/secret-port.js";
 import { TurnController, type TurnResult } from "./turn-controller.js";
 import { CompositeDisposable, type Disposable } from "./disposable.js";
 import {
+  hasPersistableHistory,
   mintSessionId,
   pathBackedMessages,
   persistedContextUsage,
@@ -670,15 +670,20 @@ export class SessionController implements Disposable {
     return previousTurnSignal(this.lastTurnResult) ?? this.restoredPreviousTurn;
   }
 
+  canResumeFromHistory(): boolean {
+    return (
+      !this.deps.noHistory &&
+      !getConfig().privateMode &&
+      hasPersistableHistory(this.history)
+    );
+  }
+
   async persistNow(name?: string): Promise<void> {
     if (this.deps.noHistory || getConfig().privateMode) {
       this.settlePersistedResponderResults();
       return;
     }
-    if (this.history.length === 0) {
-      return;
-    }
-    if (!this.history.some((m) => m.role === "user" || isCompactionMemoryMessage(m))) {
+    if (!hasPersistableHistory(this.history)) {
       return;
     }
     if (name) {
@@ -928,7 +933,7 @@ export class SessionController implements Disposable {
    */
   private scheduleAutosave(): void {
     if (this.deps.noHistory || getConfig().privateMode) return;
-    if (!this.history.some((m) => m.role === "user" || isCompactionMemoryMessage(m))) return;
+    if (!hasPersistableHistory(this.history)) return;
     const now = Date.now();
     if (now - this.lastAutosaveAt < SessionController.AUTOSAVE_MIN_MS) return;
     if (this.autosaveInFlight) return;

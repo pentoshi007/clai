@@ -453,6 +453,8 @@ The old line REPL has been removed — there are only full surfaces now. An Open
 
 Tool cards show the command/input clearly, with a live elapsed timer next to the command name while they run (the final duration stays visible afterwards), and keep long scan tails in an expandable OUTPUT pager (search, copy, export). File writes show a diff preview. When the agent finishes each prompt — naturally or aborted — a `✻ Worked for 1m16s` row is appended under the response, and it is restored when the session is resumed from `/history`. The status line names what the agent is actually doing right now — `responding` while streaming, `compacting` during auto or manual context compaction — instead of holding the last tool name. Prompts typed while the agent is busy are queued and run automatically in order once the turn settles; the queue pauses only when the previous turn was cancelled, errored, or stopped by the loop guard. Compaction cards preserve session memory without dropping the plan, and `/history` restores full sessions — prompts, tool results, and the matching plan — even after an abort or autosave.
 
+On exit, both interactive surfaces leave the alternate screen and print a sign-off card on the normal terminal: the wordmark beside a labelled block — session title, folder, elapsed time and message count, reasoning/cache token notes, and the command that reopens the session — followed by the same per-provider/model token table `/usage` shows. Resuming is `clai --resume <id>` (a unique id prefix is enough, and `-c/--continue` picks the newest session for the current directory). Sessions that were never persisted (`--no-history`, private mode, or nothing sent) say so instead of offering a resume command. The card is borderless and reflows down to very narrow terminals: the wordmark drops from six rows to four, then the block stacks beneath it, and labels give way before the resume command is ever shortened.
+
 ---
 
 ## Slash commands
@@ -488,6 +490,7 @@ clai [prompt...]                       # interactive UI, or one-shot with a prom
   --show-thinking  --verbose  --quiet    # one-shot stream controls
   --tui  --classic
   --ui <tui|v2|opentui|classic|legacy|ink> # aliases; ignored with a prompt
+  --resume <sessionId>  -c/--continue    # reopen a saved session; ignored with a prompt
 
 clai set <provider> [key]              # --from-env <VAR> | --stdin | --url <url> (repeatable) | --skip-ping
 clai unset <provider>                  # remove all keys for a provider (--url = endpoint URLs instead)
@@ -499,7 +502,7 @@ clai mode <ask|agent|plan>             # set default mode
 clai search-provider <brave|tavily|duckduckgo>
 clai config [key] [value]              # print / get / set config
 clai doctor                            # check installed tools + provider config
-clai history [--show <id>]             # list sessions / print one
+clai history [--show <id>]             # list sessions / print one (with resume commands)
 clai update                            # check for updates
 clai authorize-pentest AGREE           # enable scan/attack tools (one-time ack)
 clai scope <show|new|add|clear>        # engagement scope (new: --targets --exclude --phases

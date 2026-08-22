@@ -43,6 +43,8 @@ import {
   UI_FLAG_CHOICES,
   resolveUiChoice,
 } from "./ui-core/bootstrap/ui-selection.js";
+import type { ResumeTarget } from "./ui-core/bootstrap/session-resume.js";
+import { resumeCommand } from "./ui-core/rendering/exit-summary.js";
 import { warnOnce } from "./ui/warn-once.js";
 
 interface GlobalOptions {
@@ -57,6 +59,16 @@ interface GlobalOptions {
   tui?: boolean | undefined;
   classic?: boolean | undefined;
   ui?: string | undefined;
+  resume?: string | undefined;
+  continue?: boolean | undefined;
+}
+
+function resolveResumeOption(
+  options: GlobalOptions,
+): ResumeTarget | undefined {
+  const id = options.resume?.trim();
+  if (id) return { kind: "id", id };
+  return options.continue ? { kind: "latest" } : undefined;
 }
 
 function modeOption(): Option {
@@ -78,6 +90,7 @@ async function startInteractive(
     provider: ProviderId | undefined;
     model: string;
     noHistory: boolean | undefined;
+    resume?: ResumeTarget | undefined;
   },
 ): Promise<void> {
   const ui = resolveUiChoice(options);
@@ -135,14 +148,23 @@ async function oneShot(
       ? await readStdinText(process.stdin)
       : "");
 
+  const resume = resolveResumeOption(options);
+
   if (!prompt) {
     await startInteractive(options, {
       mode,
       provider,
       model,
       noHistory: options.noHistory,
+      ...(resume ? { resume } : {}),
     });
     return;
+  }
+
+  if (resume) {
+    warnOnce(
+      "--resume/--continue apply to the interactive UI only; ignored for a one-shot prompt.",
+    );
   }
 
   const resolved = resolveTurnInput({
@@ -205,6 +227,14 @@ async function main(): Promise<void> {
     .option("--quiet", "write only the final answer to stdout")
     .option("--tui", "launch OpenTUI; ignored when a prompt is supplied")
     .option("--classic", "launch classic UI; ignored when a prompt is supplied")
+    .option(
+      "--resume <sessionId>",
+      "resume a saved session by id (accepts a unique id prefix); ignored when a prompt is supplied",
+    )
+    .option(
+      "-c, --continue",
+      "resume the most recent session for this directory; ignored when a prompt is supplied",
+    )
     .addOption(
       new Option(
         "--ui <mode>",
@@ -416,6 +446,7 @@ async function main(): Promise<void> {
         console.log(
           `${session.updatedAt} ${session.name ?? session.id} (${session.messageCount} messages) ${session.cwd}`,
         );
+        console.log(`  ${resumeCommand(session.id)}`);
       }
     });
 

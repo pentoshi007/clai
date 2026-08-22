@@ -69,10 +69,9 @@ import {
 import { relativeTime, shortCwd } from "../rendering/text-format.js";
 import { conversationItemCount } from "../state/transcript-types.js";
 import {
-  boundSessionVisualInput,
-  hydrateSessionVisual,
-  transcriptLooksIncomplete,
-} from "../state/transcript-hydrate.js";
+  applySessionResume,
+  resumeNotices,
+} from "../bootstrap/session-resume.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
@@ -1163,92 +1162,9 @@ export async function handleHistory(services: AppServices, invocation?: CommandI
         }
       }
 
-      clearActiveProjectRoot();
-      services.plan.clear();
-      services.session.loadHistory(session.messages, {
-        sessionId: session.id,
-        title: session.name,
-        persistenceRevision: session.revision,
-        ...(session.previousTurn
-          ? { previousTurn: session.previousTurn }
-          : {}),
-        ...(session.contextUsage
-          ? { contextUsage: session.contextUsage }
-          : {}),
-        ...(session.workspaceFolder
-          ? {
-              workspaceFolder: session.workspaceFolder,
-              workspaceCode: session.workspaceCode,
-            }
-          : {}),
-      });
-
-      // Prefer the richer of visual transcript vs model messages (tools often
-      // survive only in messages after abort-before-save of the UI snapshot).
-      const visual = boundSessionVisualInput(
-        session.transcript,
-        session.messages,
-      );
-      const hydrated = hydrateSessionVisual(
-        visual.transcript,
-        visual.messages,
-      );
-      services.transcript.hydrate(hydrated.state, {
-        persistBase: session.transcript,
-      });
-      if (visual.omittedItems > 0 || visual.omittedMessages > 0) {
-        services.session.notice(
-          "info",
-          `Loaded recent history view; ${Math.max(visual.omittedItems, visual.omittedMessages)} older item(s) remain available to the model on continue.`,
-        );
-      }
-
-      // Seed tool output spools so click-to-pager still has bodies.
-      for (const [toolCallId, output] of hydrated.toolOutputs) {
-        services.session.spool.replace(toolCallId, output);
-      }
-
-      // Plans are stored per sessionId (plans.jsonl / sqlite), separate from
-      // the chat transcript. Reload them so Ctrl+H / Ctrl+P show the plan
-      // that belonged to this resumed session (classic clai parity).
-      const plan = await services.plan.load(session.id).catch(() => undefined);
-      // Clear approval gate for a resumed plan — user must /implement again
-      // if the plan was still draft/approved but execution should not resume
-      // silently.
-      services.session.setPlanApproved(
-        plan?.status === "approved" || plan?.status === "in_progress",
-      );
-
-      // Notices are UI-only — exclude from item counts (and they are never
-      // model messages; session.messages is already the real LLM history).
-      const itemCount = conversationItemCount(hydrated.state);
-      const titleBit = session.name
-        ? ` · ${session.name.length > 28 ? `${session.name.slice(0, 27)}…` : session.name}`
-        : "";
-      const planBit = plan ? " · plan" : "";
-      const toolCards = [...hydrated.state.byId.values()].filter(
-        (i) => i.kind === "tool",
-      ).length;
-      const incomplete =
-        transcriptLooksIncomplete(
-          session.transcript?.length ?? 0,
-          session.messages,
-        ) ||
-        (Boolean(plan?.tasks?.length) &&
-          toolCards === 0 &&
-          (session.transcript?.length ?? 0) < 8);
-      // Short toast — full counts were too wide for the chip.
-      services.session.notice(
-        "info",
-        `resumed${titleBit}${planBit} · ${itemCount} items`,
-      );
-      if (incomplete) {
-        services.session.notice(
-          "warn",
-          plan?.tasks?.length
-            ? "thin history · plan OK · /implement to continue"
-            : "thin history · some tools may be missing",
-        );
+      const outcome = await applySessionResume(services, session);
+      for (const entry of resumeNotices(outcome)) {
+        services.session.notice(entry.level, entry.text);
       }
       services.overlay.close();
     })();

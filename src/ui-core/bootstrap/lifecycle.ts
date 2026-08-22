@@ -37,6 +37,13 @@ export interface LifecycleOptions {
    * `kill -INT` remains a reliable way to leave the TUI.
    */
   readonly onSigint?: (() => void) | undefined;
+  /**
+   * Sign-off written after the renderer has released the terminal and before
+   * the process exits, so it lands on the normal screen instead of the
+   * alternate buffer the renderer just discarded. Runs exactly once, cannot
+   * block teardown, and its failures are reported through {@link onError}.
+   */
+  readonly epilogue?: (() => void | Promise<void>) | undefined;
 }
 
 /** Double-SIGINT quit window — matches the App Ctrl+C exit window. */
@@ -54,6 +61,7 @@ export class RendererLifecycle {
   private shuttingDown = false;
   private shutdownPromise: Promise<void> | undefined;
   private destroyed = false;
+  private epilogueRan = false;
   private lastSigintAt = 0;
   private readonly listeners: Array<{
     event: string;
@@ -115,6 +123,19 @@ export class RendererLifecycle {
     if (!this.destroyed) {
       this.destroyed = true;
       await this.options.handle.destroy();
+    }
+    await this.runEpilogue();
+  }
+
+  private async runEpilogue(): Promise<void> {
+    if (this.epilogueRan) return;
+    this.epilogueRan = true;
+    const epilogue = this.options.epilogue;
+    if (!epilogue) return;
+    try {
+      await epilogue();
+    } catch (error) {
+      this.options.onError?.(error);
     }
   }
 

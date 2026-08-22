@@ -1,6 +1,7 @@
 import type { ChatMessage } from "../../types.js";
 import type { PersistedContextUsage } from "../../store/history.js";
 import type { PersistedRouteUsage } from "./session-usage-ledger.js";
+import { isCompactionMemoryMessage } from "../../agent/context-manager.js";
 import {
   toLegacyContextUsage,
   type ContextSnapshotV1,
@@ -9,6 +10,19 @@ import type {
   PersistencePort,
   SaveSessionOptions,
 } from "../ports/persistence-port.js";
+
+/**
+ * A session is worth writing (and therefore worth resuming) once it holds a
+ * real user turn or a compaction memory. Shared by every persistence trigger
+ * so `persistNow`, autosave, and the exit epilogue never disagree.
+ */
+export function hasPersistableHistory(
+  messages: readonly ChatMessage[],
+): boolean {
+  return messages.some(
+    (message) => message.role === "user" || isCompactionMemoryMessage(message),
+  );
+}
 
 // High-resolution epoch time orders resume ownership; a process-local counter
 // makes repeated rebinds monotonic even if the clock reading does not advance.

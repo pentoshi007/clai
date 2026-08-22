@@ -17,6 +17,12 @@ import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.j
 import { readCapabilitiesFromProcess } from "../../ui-core/bootstrap/capabilities.js";
 import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
 import { RendererLifecycle, type RendererHandle } from "../../ui-core/bootstrap/lifecycle.js";
+import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
+import {
+  applyResumeResolution,
+  resolveResumeTarget,
+  type ResumeTarget,
+} from "../../ui-core/bootstrap/session-resume.js";
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
@@ -30,6 +36,7 @@ export interface StartTuiV2Options {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly noHistory?: boolean | undefined;
+  readonly resume?: ResumeTarget | undefined;
 }
 
 export async function startTuiV2(
@@ -37,6 +44,7 @@ export async function startTuiV2(
 ): Promise<void> {
   patchOpenTuiTextContent();
   setAllowInteractiveStdinInherit(false);
+  const startedAt = Date.now();
   const capabilities = readCapabilitiesFromProcess();
   const fallbackClipboard = createSystemClipboardPort();
   // We own Ctrl+C (abort then double-press exit). OpenTUI must not kill the
@@ -67,6 +75,21 @@ export async function startTuiV2(
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   attachCommandHandlers(services);
+  const epilogue = createExitEpilogue({
+    services,
+    startedAt,
+    enabled: Boolean(process.stdout.isTTY),
+    write: (text) => {
+      try {
+        process.stdout.write(text);
+      } catch {
+        /* the terminal went away; nothing to sign off to */
+      }
+    },
+  });
+  const pendingResume = options.resume
+    ? await resolveResumeTarget(options.resume)
+    : undefined;
   const root = createRoot(renderer);
 
   let resolveDone: () => void = () => {};
@@ -109,6 +132,7 @@ export async function startTuiV2(
     // Flush chat + visual transcript before the renderer is destroyed so an
     // aborted mid-run session still restores tools/code under /history.
     disposers: [
+      epilogue.capture,
       async () => {
         await services.session.persistNow().catch(() => undefined);
       },
@@ -124,6 +148,7 @@ export async function startTuiV2(
         }
       },
     ],
+    epilogue: epilogue.run,
     // Ctrl+C / SIGINT: first signal aborts a live turn (or arms quit via the
     // App handler path when the key event arrives). A second SIGINT within
     // the window still exits so kill -INT remains usable without the TUI.
@@ -159,5 +184,6 @@ export async function startTuiV2(
   lifecycleRef.current = lifecycle;
 
   await lifecycle.start();
+  await applyResumeResolution(services, pendingResume);
   await done;
 }
