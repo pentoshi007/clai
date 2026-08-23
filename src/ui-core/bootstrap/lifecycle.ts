@@ -122,7 +122,11 @@ export class RendererLifecycle {
     }
     if (!this.destroyed) {
       this.destroyed = true;
-      await this.options.handle.destroy();
+      try {
+        await this.options.handle.destroy();
+      } catch (error) {
+        this.options.onError?.(error);
+      }
     }
     await this.runEpilogue();
   }
@@ -144,8 +148,11 @@ export class RendererLifecycle {
    * runs until the (possibly already in-flight) shutdown has fully completed.
    */
   async shutdownAndExit(code: number): Promise<void> {
-    await this.shutdown();
-    this.proc.exit(code);
+    try {
+      await this.shutdown();
+    } finally {
+      this.proc.exit(code);
+    }
   }
 
   private installHandlers(): void {

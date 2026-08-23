@@ -46,10 +46,6 @@ export async function fixOwner(path: string): Promise<void> {
 export function handlePermissionError(err: any): never {
   if (err && err.code === "EACCES") {
     const configPath = err.path || "your configuration directory";
-    console.error(`\n\x1b[31mError: Permission denied accessing config/history file or directory.\x1b[0m`);
-    console.error(`Path: ${configPath}`);
-    console.error(`\nThis usually happens if clai was previously run with 'sudo' or as root, causing the configuration files to be owned by root.`);
-    console.error(`To fix this, please restore ownership to your current user by running:`);
 
     let chownDir = configPath;
     const claiConfigIndex = configPath.indexOf("clai-nodejs");
@@ -65,8 +61,15 @@ export function handlePermissionError(err: any): never {
         chownDir = configPath;
       }
     }
-    console.error(`\x1b[36m  sudo chown -R $(whoami) "${chownDir}"\x1b[0m\n`);
-    process.exit(1);
+
+    throw new Error(
+      `Permission denied accessing config/history file or directory.\n` +
+        `Path: ${configPath}\n` +
+        `This usually happens if clai was previously run with sudo or as root, leaving files owned by root.\n` +
+        `Fix it by restoring ownership to your current user:\n` +
+        `  sudo chown -R $(whoami) "${chownDir}"`,
+      { cause: err },
+    );
   }
   throw err;
 }

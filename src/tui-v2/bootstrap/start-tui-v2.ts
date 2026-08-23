@@ -24,6 +24,7 @@ import {
   type ResumeTarget,
 } from "../../ui-core/bootstrap/session-resume.js";
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
+import { installTerminalRescue } from "../../ui-core/bootstrap/terminal-rescue.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { createPagerExportPort } from "./pager-export.js";
@@ -55,6 +56,7 @@ export async function startTuiV2(
     useMouse: true,
     clearOnShutdown: true,
   });
+  const disarmTerminalRescue = installTerminalRescue();
   // lifecycle is assigned before requestExit runs; use a holder so the
   // composition root can close over a stable callback.
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
@@ -107,10 +109,20 @@ export async function startTuiV2(
       );
     },
     destroy() {
-      root.unmount();
-      renderer.destroy();
-      services.dispose();
-      resolveDone();
+      let unmountError: unknown;
+      try {
+        root.unmount();
+      } catch (error) {
+        unmountError = error;
+      }
+      try {
+        renderer.destroy();
+        disarmTerminalRescue();
+      } finally {
+        services.dispose();
+        resolveDone();
+      }
+      if (unmountError !== undefined) throw unmountError;
     },
   };
 

@@ -1,3 +1,5 @@
+import { installTerminalRescue } from "../../ui-core/bootstrap/terminal-rescue.js";
+
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
 export const CURSOR_HIDE = "\x1b[?25l";
@@ -56,6 +58,7 @@ export class TerminalSession {
   private inputAttachedValue = false;
   private listener: ((chunk: string | Buffer) => void) | undefined;
   private handler: TerminalDataListener | undefined;
+  private rescueDisarm: (() => void) | undefined;
 
   constructor(
     options: TerminalSessionOptions = {},
@@ -94,6 +97,10 @@ export class TerminalSession {
     this.emit(BRACKETED_PASTE_ON);
     this.emit(CURSOR_HIDE);
     if (this.mouse) this.emit(MOUSE_ON);
+    this.rescueDisarm = installTerminalRescue({
+      stdout: this.stdout,
+      stdin: this.stdin,
+    });
   }
 
   leave(): void {
@@ -104,6 +111,8 @@ export class TerminalSession {
     this.emit(CURSOR_SHOW);
     this.emit(BRACKETED_PASTE_OFF);
     if (this.mode.alternateScreen) this.emit(ALT_SCREEN_OFF);
+    this.rescueDisarm?.();
+    this.rescueDisarm = undefined;
   }
 
   attachInput(onData?: TerminalDataListener): void {

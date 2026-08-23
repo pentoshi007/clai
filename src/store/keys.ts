@@ -139,7 +139,13 @@ async function writeFallback(keys: FallbackKeys): Promise<void> {
     await mkdir(dir, { recursive: true });
     await fixOwner(dir);
     const content = `${JSON.stringify(keys, null, 2)}\n`;
-    await writeFile(keysFile, content, { mode: 0o600 });
+    try {
+      await writeFile(keysFile, content, { mode: 0o600 });
+    } catch (writeError: any) {
+      if (writeError?.code !== 'EACCES' && writeError?.code !== 'EPERM') throw writeError;
+      await rm(keysFile, { force: true });
+      await writeFile(keysFile, content, { mode: 0o600 });
+    }
     if (process.platform !== 'win32') {
       try {
         await chmod(keysFile, 0o600);
