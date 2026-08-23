@@ -110,6 +110,65 @@ class CompactionCountAgent implements AgentPort {
   }
 }
 
+class FailedCompactionCountAgent implements AgentPort {
+  async runTurn(
+    _req: RunTurnRequest,
+    handlers: RunTurnHandlers,
+  ): Promise<TurnOutcome> {
+    const outcome = createTurnOutcome({
+      status: "succeeded",
+      answer: "retained",
+      steps: 1,
+      remainingCriteria: [],
+    });
+    handlers.onEvent({ type: "turn-start", prompt: "compact" });
+    handlers.onEvent({
+      type: "token-usage",
+      provider: "bynara",
+      model: "qwen-3.8-max-free",
+      usage: {
+        promptTokens: 79_927,
+        completionTokens: 100,
+        totalTokens: 80_027,
+        exact: true,
+      },
+    });
+    handlers.onEvent({
+      type: "compaction-start",
+      id: "compact-first",
+      beforeTokens: 137_391,
+    });
+    handlers.onEvent({
+      type: "compaction-failed",
+      id: "compact-first",
+      message: "Compaction was cancelled.",
+      retainedTokens: 137_391,
+    });
+    handlers.onEvent({
+      type: "compaction-start",
+      id: "compact-second",
+      beforeTokens: 163_345,
+    });
+    handlers.onEvent({
+      type: "compaction-failed",
+      id: "compact-second",
+      message: "Compaction was cancelled.",
+      retainedTokens: 163_345,
+    });
+    handlers.onEvent({
+      type: "turn-end",
+      outcome,
+      finalAnswer: "retained",
+      steps: 1,
+    });
+    handlers.onMessages?.([
+      { role: "user", content: "compact" },
+      { role: "assistant", content: "retained" },
+    ]);
+    return outcome;
+  }
+}
+
 class BurstAgent implements AgentPort {
   async runTurn(
     _req: RunTurnRequest,
@@ -230,7 +289,7 @@ describe("createCompositionRoot", () => {
     services.dispose();
   });
 
-  it("synchronizes the footer with the compaction card counts", async () => {
+  it("keeps the footer stable until compaction succeeds", async () => {
     const observed: Array<[string, number | undefined]> = [];
     let services: ReturnType<typeof createCompositionRoot>;
     services = createCompositionRoot({
@@ -253,13 +312,49 @@ describe("createCompositionRoot", () => {
     await services.session.submit("compact");
 
     expect(observed).toEqual([
-      ["compaction-started", 229_182],
+      ["compaction-started", 78_200],
       ["compaction-completed", 10_371],
     ]);
     expect(services.session.getState().contextSnapshot).toMatchObject({
       contextTokens: 10_371,
       scope: "assembled-request",
       precision: "estimate",
+    });
+    services.dispose();
+  });
+
+  it("keeps provider context unchanged across cancelled compactions", async () => {
+    const observed: Array<[string, number | undefined]> = [];
+    let services: ReturnType<typeof createCompositionRoot>;
+    services = createCompositionRoot({
+      agent: new FailedCompactionCountAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+      emit: (event) => {
+        if (
+          event.type === "compaction-started" ||
+          event.type === "compaction-failed"
+        ) {
+          observed.push([
+            event.type,
+            services.session.getState().contextSnapshot?.contextTokens,
+          ]);
+        }
+      },
+    });
+
+    await services.session.submit("compact");
+
+    expect(observed).toEqual([
+      ["compaction-started", 79_927],
+      ["compaction-failed", 79_927],
+      ["compaction-started", 79_927],
+      ["compaction-failed", 79_927],
+    ]);
+    expect(services.session.getState().contextSnapshot).toMatchObject({
+      contextTokens: 79_927,
+      scope: "provider-request",
+      precision: "provider-exact",
     });
     services.dispose();
   });

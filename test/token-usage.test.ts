@@ -245,6 +245,31 @@ describe("OpenAI usage detail (cache / reasoning)", () => {
       reasoningTokens: 450,
     });
   });
+  it("parses compatible flat cache read and write counters", () => {
+    expect(
+      parseOpenAiUsage({
+        prompt_tokens: 2_000,
+        completion_tokens: 200,
+        cache_read_input_tokens: 1_600,
+        cache_write_tokens: 300,
+      }),
+    ).toMatchObject({
+      cachedPromptTokens: 1_600,
+      cacheCreationTokens: 300,
+    });
+    expect(
+      parseOpenAiUsage({
+        inputTokens: 900,
+        outputTokens: 100,
+        cachedTokens: 700,
+        cacheWriteInputTokens: 150,
+      }),
+    ).toMatchObject({
+      cachedPromptTokens: 700,
+      cacheCreationTokens: 150,
+    });
+  });
+
   it("omits the detail fields when the gateway does not report them", () => {
     expect(
       parseOpenAiUsage({ prompt_tokens: 10, completion_tokens: 2 }),

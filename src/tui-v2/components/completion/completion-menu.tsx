@@ -76,7 +76,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
       <text
         content={padLine(
           menu.kind === "slash"
-            ? `  commands · ${menu.items.length}  ·  ↑↓:move  ·  tab/enter:accept  ·  click:accept  ·  esc:dismiss`
+            ? `  commands · ${menu.items.length}  ·  ↑↓:move  ·  tab:complete  ·  enter/click:run  ·  esc:dismiss`
             : `  files & dirs · ${menu.items.length}  ·  ↑↓:move  ·  enter:attach  ·  click:open/attach  ·  esc:dismiss`,
           contentWidth,
         )}

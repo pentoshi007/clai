@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { CommandRegistry } from "../../../src/app/commands/registry.js";
+import { ComposerController } from "../../../src/classic/chrome/composer-controller.js";
 import { resolveCompletionMenu, type CompletionMenu } from "../../../src/ui-core/composer/completion.js";
 import {
   acceptCompletion,
@@ -38,6 +39,20 @@ function registry(): CommandRegistry {
   return commands;
 }
 
+function composerController(onSubmit = vi.fn()) {
+  return {
+    composer: new ComposerController({
+      commands: registry(),
+      clipboard: { async writeText() {} },
+      onSubmit,
+      onToast: vi.fn(),
+      onScrollChat: vi.fn(),
+      onJumpTop: vi.fn(),
+    }),
+    onSubmit,
+  };
+}
+
 function draft(text: string): EditorState {
   return { text, cursor: text.length };
 }
@@ -66,6 +81,34 @@ describe("slash menu", () => {
   it("narrows by prefix and matches aliases", () => {
     expect(completionItemValues(menuFor("/mod"))).toEqual(["/model", "/models", "/mode"]);
     expect(completionItemValues(menuFor("/us"))).toEqual(["/model"]);
+  });
+
+  it("runs the selected mid-prompt command on Enter and preserves the draft", () => {
+    const { composer, onSubmit } = composerController();
+    composer.setText("draft /he");
+    expect(composer.getSnapshot().menu.kind).toBe("slash");
+    expect(composer.handleChord("enter")).toBe(true);
+    expect(onSubmit).toHaveBeenCalledWith("/help");
+    expect(composer.getSnapshot().state).toEqual({
+      text: "draft ",
+      cursor: 6,
+    });
+  });
+
+  it("completes on Tab without running the selected command", () => {
+    const { composer, onSubmit } = composerController();
+    composer.setText("draft /he");
+    expect(composer.handleChord("tab")).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(composer.text).toBe("draft /help ");
+  });
+
+  it("submits normally when a slash token has no matches", () => {
+    const { composer, onSubmit } = composerController();
+    composer.setText("draft /not-a-command");
+    expect(composer.getSnapshot().menu.kind).toBe("none");
+    expect(composer.handleAction("editor.submit")).toBe(true);
+    expect(onSubmit).toHaveBeenCalledWith("draft /not-a-command");
   });
 
   it("treats an absolute path as a prompt, never a command", () => {

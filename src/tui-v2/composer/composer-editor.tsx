@@ -31,6 +31,7 @@ import {
   type PastePlaceholderEntry,
 } from "../../ui-core/composer/paste-placeholder.js";
 import {
+  activateSlashCompletion,
   resolveCompletionMenu,
   sameCompletionMenu,
   type CompletionMenu,
@@ -450,22 +451,51 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     });
   }
 
+  function runSlashCompletion(index: number): void {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const activated = activateSlashCompletion(
+      menuRef.current,
+      editor.plainText,
+      index,
+    );
+    if (!activated) return;
+    editor.setText(activated.value);
+    try {
+      editor.editBuffer.setCursorByOffset?.(activated.cursorOffset);
+    } catch {
+      try {
+        editor.setCursor(0, activated.cursorOffset);
+      } catch {
+        editor.gotoBufferEnd();
+      }
+    }
+    menuRef.current = { kind: "none" };
+    menuKindRef.current = "none";
+    acceptedSlashRef.current = undefined;
+    setMenu({ kind: "none" });
+    setAcceptedSlash(undefined);
+    selectedRef.current = 0;
+    setSelected(0);
+    services.focus.focusRegion("composer");
+    editor.focus();
+    syncContentRows();
+    void dispatchOrRunTurn(activated.command);
+  }
+
   function submit(): void {
     const editor = editorRef.current;
     if (!editor) return;
     const current = menuRef.current;
-    const accepted = acceptedSlashRef.current;
-    // With the slash menu open on an already-accepted token (`/model `),
-    // Enter runs the command. Otherwise Enter accepts the highlight first.
-    if (current.kind !== "none" && !(current.kind === "slash" && accepted)) {
-      // Enter on a directory attaches the whole folder; Tab drills (handled
-      // in the key handler). Enter here defaults to attach for dirs.
-      if (current.kind === "mention") {
-        const item = current.items[selectedRef.current];
-        if (item?.isDir) {
-          acceptSuggestion({ attachDir: true });
-          return;
-        }
+    if (current.kind === "slash") {
+      runSlashCompletion(selectedRef.current);
+      return;
+    }
+    if (current.kind === "mention") {
+      const item = current.items[selectedRef.current];
+      if (item?.isDir) {
+        acceptSuggestion({ attachDir: true });
+        return;
       }
       acceptSuggestion();
       return;
@@ -547,7 +577,6 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     if (!editor) return;
     const chord = chordFromKeyEvent(key);
     const current = menuRef.current;
-    const accepted = acceptedSlashRef.current;
 
     // Esc while a turn runs (or a compaction is in progress): arm the
     // double-Esc cancel via App's shared handler (first press shows "Esc again
@@ -582,12 +611,16 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
         key.preventDefault();
         return;
       }
-      if (chord === "enter" && current.kind === "slash" && accepted) {
-        submit();
+      if (chord === "enter" && current.kind === "slash") {
+        runSlashCompletion(selectedRef.current);
         key.preventDefault();
         return;
       }
-      if (chord === "tab" && current.kind === "slash" && accepted) {
+      if (
+        chord === "tab" &&
+        current.kind === "slash" &&
+        acceptedSlashRef.current
+      ) {
         key.preventDefault();
         return;
       }
@@ -769,7 +802,11 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     focusComposer();
     const current = menuRef.current;
     if (current.kind === "none") return;
-    if (current.kind === "mention" && current.items[index]?.isDir) {
+    if (current.kind === "slash") {
+      runSlashCompletion(index);
+      return;
+    }
+    if (current.items[index]?.isDir) {
       acceptSuggestion({ index, drillDir: true });
       return;
     }

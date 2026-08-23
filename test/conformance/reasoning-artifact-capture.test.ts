@@ -352,6 +352,81 @@ describe("T210 reasoning artifact capture", () => {
     ).toMatchObject({ placement: "on-tool-call", toolCallIndex: 0 });
   });
 
+  it("replays deduplicated Bynara Qwen reasoning on the next tool turn", async () => {
+    const first = "I've grasped";
+    const second = `${first} the requested change.`;
+    const reasoning = `${second} Inspect the file next.`;
+    installTransport(() =>
+      textStreamResponse([
+        sse({ choices: [{ delta: { reasoning_content: first } }] }),
+        sse({ choices: [{ delta: { reasoning_content: second } }] }),
+        sse({ choices: [{ delta: { reasoning_content: reasoning } }] }),
+        sse({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "bynara-tool",
+                    type: "function",
+                    function: { name: "fs_read", arguments: '{"path":"a.md"}' },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }),
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const firstTurn = await openAiCompatibleStream({
+      provider: "Bynara",
+      providerId: "bynara",
+      baseUrl: "https://router.bynara.id/v1",
+      apiKey: "synthetic-key",
+      model: "qwen-3.8-max-free",
+      messages: REQUEST.messages,
+      tools: REQUEST.tools,
+      toolChoice: "auto",
+      onToken: () => {},
+    });
+    expect(firstTurn.reasoningBlock?.text).toBe(reasoning);
+
+    const history: ChatMessage[] = [...REQUEST.messages];
+    appendAssistantWithTools(
+      history,
+      "",
+      firstTurn.toolCalls ?? [],
+      firstTurn.reasoningBlock,
+      firstTurn.reasoningArtifacts,
+    );
+    appendToolResult(history, "bynara-tool", "file contents", "fs.read", true);
+
+    vi.unstubAllGlobals();
+    const transport = installTransport(() =>
+      jsonResponse({
+        choices: [{ message: { content: "done" }, finish_reason: "stop" }],
+      }),
+    );
+    await openAiCompatibleComplete({
+      provider: "Bynara",
+      providerId: "bynara",
+      baseUrl: "https://router.bynara.id/v1",
+      apiKey: "synthetic-key",
+      model: "qwen-3.8-max-free",
+      messages: history,
+      tools: REQUEST.tools,
+      toolChoice: "auto",
+    });
+    const body = transport.generations[0]?.body as Record<string, unknown>;
+    const wireMessages = body.messages as Array<Record<string, unknown>>;
+    const assistant = wireMessages.find((message) => message.role === "assistant");
+    expect(assistant?.reasoning_content).toBe(reasoning);
+    expect(JSON.stringify(body).split(reasoning)).toHaveLength(2);
+  });
+
   it("captures Qwen and Kimi plaintext reasoning from the common compatible transport", async () => {
     for (const providerId of ["qwen-cloud", "bynara"] as const) {
       installTransport(() =>

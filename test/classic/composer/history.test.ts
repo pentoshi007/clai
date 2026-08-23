@@ -195,14 +195,12 @@ describe("arrow intent", () => {
 });
 
 describe("submit", () => {
-  it("accepts the completion first, then submits on the second enter", () => {
+  it("runs the selected completion on the first enter", () => {
     const h = harness();
     h.composer.setText("/mod");
     expect(h.composer.menuOpen()).toBe(true);
     h.composer.handleAction("editor.submit");
-    expect(h.composer.text).toBe("/model ");
-    expect(h.onSubmit).not.toHaveBeenCalled();
-    h.composer.handleAction("editor.submit");
+    expect(h.composer.text).toBe("");
     expect(h.onSubmit).toHaveBeenCalledWith("/model");
   });
 

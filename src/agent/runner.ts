@@ -4182,11 +4182,12 @@ export async function runAgentTurn(
             messages,
             toolsAttached ? turnTools : undefined,
           );
+          const estimatedInputTokens = estimateNextRequestTokens(messages);
           // E4: advisory only — never blocks free-tier users.
           if (!freeTierLargeContextWarned) {
             const notices = freeTierGuardNotices({
               provider,
-              estimatedInputTokens: contextBreakdown.estimatedTotalTokens,
+              estimatedInputTokens,
               consecutiveFailures: freeTierConsecutiveFailures,
             });
             for (const notice of notices) {
@@ -4424,7 +4425,7 @@ export async function runAgentTurn(
             if (!freeTierAdvisoryShown) {
               for (const notice of freeTierGuardNotices({
                 provider,
-                estimatedInputTokens: contextBreakdown.estimatedTotalTokens,
+                estimatedInputTokens,
                 consecutiveFailures: freeTierConsecutiveFailures,
               })) {
                 if (notice.includes("Large context")) continue; // already shown above

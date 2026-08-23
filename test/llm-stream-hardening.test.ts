@@ -127,6 +127,50 @@ describe("cumulative stream snapshots", () => {
     expect(events.map((event) => event.text).join("")).toBe(`${reasoning}end`);
     expect(result.reasoningBlock?.text).toBe(`${reasoning}end`);
   });
+
+  it("normalizes short Bynara reasoning snapshots and keeps cache telemetry", async () => {
+    const first = "I've grasped";
+    const second = `${first} the situation.`;
+    const third = `${second} Continue from the completed action.`;
+    stubFetch(
+      sseResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: first } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: second } }] })}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: third } }] })}\n\n`,
+        'data: {"choices":[{"delta":{"reasoning_content":"!"}}]}\n\n',
+        'data: {"choices":[{"delta":{"reasoning_content":"!"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"done"}}]}\n\n',
+        `data: ${JSON.stringify({
+          choices: [],
+          usage: {
+            prompt_tokens: 1_000,
+            completion_tokens: 100,
+            total_tokens: 1_100,
+            cache_read_input_tokens: 800,
+            cache_write_tokens: 50,
+          },
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const events: string[] = [];
+    const result = await openAiCompatibleStream({
+      ...baseOptions,
+      provider: "Bynara",
+      providerId: "bynara",
+      model: "qwen-3.8-max-free",
+      onToken: () => {},
+      onStreamEvent: (event) => {
+        if (event.type === "reasoning_delta") events.push(event.text);
+      },
+    });
+    expect(events.join("")).toBe(`${third}!!`);
+    expect(result.reasoningBlock?.text).toBe(`${third}!!`);
+    expect(result.usage).toMatchObject({
+      cachedPromptTokens: 800,
+      cacheCreationTokens: 50,
+    });
+  });
 });
 
 describe("readStreamLines caller abort", () => {

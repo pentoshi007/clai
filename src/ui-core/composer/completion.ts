@@ -17,20 +17,19 @@ export interface SlashToken {
 }
 
 export function detectSlashToken(value: string, cursorOffset: number): SlashToken | undefined {
-  if (!value.startsWith("/")) return undefined;
-  const firstLineEnd = value.indexOf("\n");
-  const lineEnd = firstLineEnd === -1 ? value.length : firstLineEnd;
-  if (cursorOffset > lineEnd) return undefined;
-  const line = value.slice(0, lineEnd);
-  const boundary = line.search(/\s/);
-  const tokenEnd = boundary === -1 ? line.length : boundary;
-  if (cursorOffset > tokenEnd && /\S/.test(line.slice(tokenEnd))) return undefined;
-  const token = line.slice(0, tokenEnd);
-  // Absolute/relative path drops (`/Users/...`, `/\...`) are not commands —
-  // leave the menu free for normal prompt + @-mention flow.
+  const upto = value.slice(0, cursorOffset);
+  if (!/(^|\s)\/[^\/\s]*\s*$/.test(upto)) return undefined;
+  const slash = upto.lastIndexOf("/");
+  const lineEnd = value.indexOf("\n", slash);
+  const searchEnd = lineEnd === -1 ? value.length : lineEnd;
+  const rest = value.slice(slash, searchEnd);
+  const boundary = rest.search(/\s/);
+  const tokenEnd = boundary === -1 ? searchEnd : slash + boundary;
+  if (cursorOffset > tokenEnd && /\S/.test(value.slice(tokenEnd, searchEnd))) return undefined;
+  const token = value.slice(slash, tokenEnd);
   const name = token.slice(1);
   if (name.includes("/") || name.includes("\\")) return undefined;
-  return { token, start: 0, end: tokenEnd };
+  return { token, start: slash, end: tokenEnd };
 }
 
 export function slashSuggestions(
@@ -65,6 +64,28 @@ export type CompletionMenu =
   | { readonly kind: "slash"; readonly start: number; readonly end: number; readonly items: readonly CommandDefinition[] }
   | { readonly kind: "mention"; readonly start: number; readonly items: readonly FileSuggestion[] }
   | { readonly kind: "none" };
+
+export interface ActivatedSlashCompletion {
+  readonly command: string;
+  readonly value: string;
+  readonly cursorOffset: number;
+}
+
+export function activateSlashCompletion(
+  menu: CompletionMenu,
+  value: string,
+  index: number,
+): ActivatedSlashCompletion | undefined {
+  if (menu.kind !== "slash") return undefined;
+  const item = menu.items[index];
+  if (!item) return undefined;
+  const suffix = value.slice(menu.end).replace(/^[ \t]+/, "");
+  return {
+    command: `/${item.name}`,
+    value: value.slice(0, menu.start) + suffix,
+    cursorOffset: menu.start,
+  };
+}
 
 /** True when a native cursor/input event would render the identical menu. */
 export function sameCompletionMenu(a: CompletionMenu, b: CompletionMenu): boolean {

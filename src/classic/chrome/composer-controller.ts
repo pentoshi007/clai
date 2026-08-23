@@ -14,6 +14,7 @@ import {
   resolveArrowIntent,
 } from "../../ui-core/composer/arrow-intent.js";
 import {
+  activateSlashCompletion,
   resolveCompletionMenu,
   sameCompletionMenu,
   type CompletionMenu,
@@ -282,15 +283,32 @@ export class ComposerController {
     if (chord !== "tab" && chord !== "enter") return false;
 
     const menu = this.snapshot.menu;
+    if (chord === "enter" && menu.kind === "slash") {
+      const activated = activateSlashCompletion(
+        menu,
+        this.snapshot.state.text,
+        this.snapshot.active,
+      );
+      if (!activated) return true;
+      this.history.reset();
+      this.publish({
+        state: {
+          text: activated.value,
+          cursor: activated.cursorOffset,
+        },
+        menu: NO_MENU,
+        active: 0,
+        pastes: this.pastes.activeIn(activated.value),
+        acceptedSlash: undefined,
+      });
+      this.deps.onSubmit(activated.command);
+      return true;
+    }
     if (
-      chord === "enter" &&
+      chord === "tab" &&
       menu.kind === "slash" &&
       this.snapshot.acceptedSlash !== undefined
     ) {
-      this.submit();
-      return true;
-    }
-    if (chord === "tab" && menu.kind === "slash" && this.snapshot.acceptedSlash !== undefined) {
       return true;
     }
     if (chord === "tab") {

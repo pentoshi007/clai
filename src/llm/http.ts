@@ -2140,8 +2140,16 @@ export async function openAiCompatibleStream(options: {
   const normalizeChannelDelta = (
     token: string,
     seen: string,
+    snapshotThreshold = 64,
   ): { delta: string; seen: string } => {
-    if (seen.length >= 64 && token.length >= seen.length && token.startsWith(seen)) {
+    const extendsSnapshot =
+      token.length > seen.length && token.startsWith(seen);
+    const repeatsEstablishedSnapshot =
+      seen.length >= 64 && token.length === seen.length && token === seen;
+    if (
+      seen.length >= snapshotThreshold &&
+      (extendsSnapshot || repeatsEstablishedSnapshot)
+    ) {
       return { delta: token.slice(seen.length), seen: token };
     }
     return { delta: token, seen: seen + token };
@@ -2427,6 +2435,7 @@ export async function openAiCompatibleStream(options: {
             const normalized = normalizeChannelDelta(
               reasoningToken,
               reasoningWireSeen,
+              options.providerId === "bynara" ? 1 : 64,
             );
             reasoningWireSeen = normalized.seen;
             if (normalized.delta) {
