@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { fixOwner, fixOwnerSync, handlePermissionError, safeExists } from "../os/permissions.js";
 
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { getConfig } from "./config.js";
@@ -432,11 +433,9 @@ function enqueuePlanWrite<T>(task: () => Promise<T>): Promise<T> {
 
 const jsonlLockDir = `${jsonlFile}.lock`;
 const JSONL_LOCK_STALE_MS = 10_000;
-let jsonlLockDepth = 0;
 
 /** Cross-process advisory lock for the JSONL fallback (atomic mkdir). */
 async function withJsonlLock<T>(task: () => Promise<T>): Promise<T> {
-  if (jsonlLockDepth > 0) return task();
   const deadline = Date.now() + 5_000;
   try {
     await mkdir(dirname(jsonlFile), { recursive: true });
@@ -459,15 +458,15 @@ async function withJsonlLock<T>(task: () => Promise<T>): Promise<T> {
       } catch {
         continue;
       }
-      if (Date.now() > deadline) break; // proceed rather than deadlock
+      if (Date.now() > deadline) {
+        throw new Error(`Timed out acquiring plan store lock: ${jsonlLockDir}`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 15));
     }
   }
   try {
-    jsonlLockDepth += 1;
     return await task();
   } finally {
-    jsonlLockDepth -= 1;
     await rm(jsonlLockDir, { recursive: true, force: true }).catch(
       () => undefined,
     );
@@ -653,7 +652,7 @@ async function writeJsonlAtomic(plans: readonly SessionPlan[]): Promise<void> {
   await mkdir(planDir, { recursive: true });
   await fixOwner(planDir);
   const body = plans.map((p) => JSON.stringify(p)).join("\n");
-  const tmp = `${jsonlFile}.${process.pid}.${Date.now()}.tmp`;
+  const tmp = `${jsonlFile}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(tmp, body ? `${body}\n` : "", { mode: 0o600 });
   await rename(tmp, jsonlFile);
   await fixOwner(jsonlFile);
@@ -807,10 +806,12 @@ export async function deletePlan(sessionId: string): Promise<void> {
       db.prepare("DELETE FROM plans WHERE session_id = ?").run(sessionId);
       return;
     }
-    const existing = await readAllJsonl();
-    const remaining = existing.filter((p) => p.sessionId !== sessionId);
-    if (remaining.length === existing.length) return;
-    await withJsonlLock(() => writeJsonlAtomic(remaining));
+    await withJsonlLock(async () => {
+      const existing = await readAllJsonl();
+      const remaining = existing.filter((p) => p.sessionId !== sessionId);
+      if (remaining.length === existing.length) return;
+      await writeJsonlAtomic(remaining);
+    });
   } catch (err: any) {
     handlePermissionError(err);
   }

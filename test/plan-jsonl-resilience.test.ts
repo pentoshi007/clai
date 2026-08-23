@@ -69,4 +69,19 @@ describe("plan jsonl resilience", () => {
     expect(await loadPlan("s1")).toBeUndefined();
     expect((await loadPlan("s2"))?.goal).toBe("second");
   });
+
+  it("serializes concurrent deletions with identical timestamps", async () => {
+    await savePlan(planFor("s1", "first"));
+    await savePlan(planFor("s2", "second"));
+    await savePlan(planFor("s3", "third"));
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      await Promise.all([deletePlan("s1"), deletePlan("s2")]);
+    } finally {
+      now.mockRestore();
+    }
+    expect(await loadPlan("s1")).toBeUndefined();
+    expect(await loadPlan("s2")).toBeUndefined();
+    expect((await loadPlan("s3"))?.goal).toBe("third");
+  });
 });
