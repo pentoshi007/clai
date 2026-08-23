@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   installTerminalRescue,
   TERMINAL_RESET_SEQUENCE,
-} from "../src/ui-core/bootstrap/terminal-rescue.js";
+} from "../src/os/terminal-rescue.js";
 
 function createFakeProc() {
   const listeners = new Set<(code?: number) => void>();

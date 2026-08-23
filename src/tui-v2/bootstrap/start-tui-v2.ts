@@ -24,7 +24,7 @@ import {
   type ResumeTarget,
 } from "../../ui-core/bootstrap/session-resume.js";
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
-import { installTerminalRescue } from "../../ui-core/bootstrap/terminal-rescue.js";
+import { installTerminalRescue } from "../../os/terminal-rescue.js";
 import { getLogsDirRoot } from "../../store/paths.js";
 import { createOsc52ClipboardPort } from "../../ui-core/ports/clipboard-osc52.js";
 import { createPagerExportPort } from "./pager-export.js";

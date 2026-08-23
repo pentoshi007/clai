@@ -1,4 +1,4 @@
-import { installTerminalRescue } from "../../ui-core/bootstrap/terminal-rescue.js";
+import { installTerminalRescue } from "../../os/terminal-rescue.js";
 
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
