@@ -20,8 +20,31 @@ describe("sanitizeDisplayText", () => {
     expect(sanitizeDisplayText("a\tb\nc")).toBe("a\tb\nc");
   });
 
-  it("drops null and DEL", () => {
-    expect(stripControlChars("a\x00b\x7fc")).toBe("abc");
+  it("drops null, ESC, and DEL", () => {
+    expect(stripControlChars("a\x00b\x1bc\x7fd")).toBe("abcd");
+  });
+
+  it("removes orphan escapes from malformed ANSI output", () => {
+    const dirty = "\x1b\x1bError\x1b: Test timed out in 5000ms.";
+    const clean = sanitizeDisplayText(dirty);
+    expect(clean).toBe("rror: Test timed out in 5000ms.");
+    expect(clean).not.toContain("\x1b");
+  });
+
+  it("neutralizes incomplete and chunk-split escape sequences", () => {
+    expect(sanitizeDisplayText("\x1b[31")).toBe("[31");
+    expect(sanitizeDisplayText("\x1b") + sanitizeDisplayText("[31mred")).toBe(
+      "[31mred",
+    );
+  });
+
+  it("drops cursor controls, BEL, carriage return, backspace, and C1", () => {
+    expect(sanitizeDisplayText("a\rB\bC\x07D\u009b2JE")).toBe("aBCD2JE");
+  });
+
+  it("strips unterminated OSC and DCS strings", () => {
+    expect(sanitizeDisplayText("a\x1b]0;title")).toBe("a");
+    expect(sanitizeDisplayText("b\x1bPpayload")).toBe("b");
   });
 
   it("full sanitize is idempotent", () => {

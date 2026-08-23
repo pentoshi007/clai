@@ -728,10 +728,10 @@ main().catch((error) => {
 // Handle uncaught exceptions at the process level so the binary never
 // "hangs then exits silently" — it always prints *something*.
 process.on('uncaughtException', (err) => {
-  try { process.stderr.write(`\nclai: uncaught error: ${err?.message ?? err}\n`); } catch { /* */ }
+  try { console.error(`clai: uncaught error: ${err?.message ?? err}`); } catch { /* */ }
   process.exitCode = 1;
 });
 process.on('unhandledRejection', (reason) => {
-  try { process.stderr.write(`\nclai: unhandled rejection: ${reason}\n`); } catch { /* */ }
+  try { console.error(`clai: unhandled rejection: ${reason}`); } catch { /* */ }
   process.exitCode = 1;
 });

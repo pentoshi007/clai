@@ -13,8 +13,8 @@ import { useKeyboard, usePaste } from "@opentui/react";
 import {
   TextAttributes,
   decodePasteBytes,
-  stripAnsiSequences,
 } from "@opentui/core";
+import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
@@ -132,7 +132,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
   // Paste into the secret buffer (composer paste is disabled while overlay open).
   usePaste((event) => {
     try {
-      const text = stripAnsiSequences(decodePasteBytes(event.bytes));
+      const text = sanitizeDisplayText(decodePasteBytes(event.bytes));
       if (!text || !isPrintableSequence(text.replace(/\r?\n/g, ""))) return;
       event.preventDefault();
       const cleaned = text.replace(/\r?\n/g, "");

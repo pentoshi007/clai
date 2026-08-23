@@ -5,6 +5,7 @@
  */
 
 import { TextRenderable, stringToStyledText, StyledText } from "@opentui/core";
+import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 
 let patched = false;
 
@@ -15,6 +16,32 @@ function isStyledText(value: unknown): value is StyledText {
       value !== null &&
       Array.isArray((value as { chunks?: unknown }).chunks))
   );
+}
+
+export function sanitizeOpenTuiTextContent(value: unknown): string | StyledText {
+  if (value == null) return " ";
+  if (typeof value === "string") {
+    const sanitized = sanitizeDisplayText(value);
+    return sanitized.length === 0 ? " " : sanitized;
+  }
+  if (isStyledText(value)) {
+    if (!value.chunks || value.chunks.length === 0) return " ";
+    let changed = false;
+    const chunks = value.chunks.map((chunk) => {
+      const sanitized = sanitizeDisplayText(chunk.text);
+      if (sanitized === chunk.text) return chunk;
+      changed = true;
+      return { ...chunk, text: sanitized };
+    });
+    if (chunks.every((chunk) => chunk.text.length === 0)) return " ";
+    return changed ? new StyledText(chunks) : value;
+  }
+  try {
+    const sanitized = sanitizeDisplayText(String(value));
+    return stringToStyledText(sanitized.length === 0 ? " " : sanitized);
+  } catch {
+    return " ";
+  }
 }
 
 export function patchOpenTuiTextContent(): void {
@@ -33,27 +60,7 @@ export function patchOpenTuiTextContent(): void {
     enumerable: desc.enumerable ?? true,
     get: desc.get,
     set(value: unknown) {
-      if (value == null) {
-        originalSet.call(this, " ");
-        return;
-      }
-      if (typeof value === "string") {
-        originalSet.call(this, value.length === 0 ? " " : value);
-        return;
-      }
-      if (isStyledText(value)) {
-        if (!value.chunks || value.chunks.length === 0) {
-          originalSet.call(this, " ");
-          return;
-        }
-        originalSet.call(this, value);
-        return;
-      }
-      try {
-        originalSet.call(this, stringToStyledText(String(value)));
-      } catch {
-        originalSet.call(this, " ");
-      }
+      originalSet.call(this, sanitizeOpenTuiTextContent(value));
     },
   });
 }

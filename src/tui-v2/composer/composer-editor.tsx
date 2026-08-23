@@ -6,13 +6,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   decodePasteBytes,
-  stripAnsiSequences,
   type KeyEvent,
   type MouseEvent,
   type TextareaRenderable,
 } from "@opentui/core";
 import { useKeyboard, usePaste } from "@opentui/react";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
+import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { formatAttachmentReference } from "../../ui/mentions.js";
 import { getConfig } from "../../store/config.js";
 import { effectiveThinkingEffort } from "../../llm/capabilities.js";
@@ -251,7 +251,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       services.focus.focusRegion("composer");
       editorRef.current?.focus();
     }
-    const text = stripAnsiSequences(decodePasteBytes(event.bytes));
+    const text = sanitizeDisplayText(decodePasteBytes(event.bytes));
     if (imagePaste.handlePaste(text, event)) return;
     if (imagePaste.handleDroppedImages(text, event)) return;
     if (!isLargePaste(text)) return;

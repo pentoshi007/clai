@@ -139,8 +139,8 @@ export async function startClassic(
           .closeAll("app-shutdown")
           .catch(() => undefined);
         for (const failure of result?.failures ?? []) {
-          process.stderr.write(
-            `clai interactive-session cleanup: [${failure.code}] ${failure.message}\n`,
+          console.warn(
+            `clai interactive-session cleanup: [${failure.code}] ${failure.message}`,
           );
         }
       },
@@ -166,8 +166,8 @@ export async function startClassic(
       }
     },
     onError: (error) => {
-      process.stderr.write(
-        `clai classic error: ${error instanceof Error ? error.message : String(error)}\n`,
+      console.error(
+        `clai classic error: ${error instanceof Error ? error.message : String(error)}`,
       );
     },
   });

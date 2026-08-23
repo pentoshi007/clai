@@ -88,8 +88,8 @@ function noteKeychainRuntimeFailure(error: unknown): void {
   if (!keychainRuntimeWarned) {
     keychainRuntimeWarned = true;
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(
-      `clai: OS keychain unavailable (${message.split('\n')[0]}); using restricted-permission plaintext file at ${keysFile}\n`,
+    console.warn(
+      `clai: OS keychain unavailable (${message.split('\n')[0]}); using restricted-permission plaintext file at ${keysFile}`,
     );
   }
 }

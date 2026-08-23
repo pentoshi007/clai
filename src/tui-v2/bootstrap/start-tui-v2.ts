@@ -154,8 +154,8 @@ export async function startTuiV2(
           .closeAll("app-shutdown")
           .catch(() => undefined);
         for (const failure of result?.failures ?? []) {
-          process.stderr.write(
-            `clai interactive-session cleanup: [${failure.code}] ${failure.message}\n`,
+          console.warn(
+            `clai interactive-session cleanup: [${failure.code}] ${failure.message}`,
           );
         }
       },
@@ -187,9 +187,8 @@ export async function startTuiV2(
       }
     },
     onError: (error) => {
-      // The renderer owns the terminal; surface the error after teardown.
-      process.stderr.write(
-        `clai v2 error: ${error instanceof Error ? error.message : String(error)}\n`,
+      console.error(
+        `clai v2 error: ${error instanceof Error ? error.message : String(error)}`,
       );
     },
   });

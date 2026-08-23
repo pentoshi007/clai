@@ -14,7 +14,7 @@
 const ANSI_ESCAPE_RE =
   /\x1b(?:\[<[0-9;]*[Mm]|\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|P[^\x1b]*(?:\x1b\\)?|[@-Z\\_])/g;
 // C0 controls except TAB (0x09) and LF (0x0a); DEL; C1 0x80–0x9f.
-const CONTROL_CHARS_RE = /[\x00-\x08\x0b-\x1a\x1c-\x1f\x7f\x80-\x9f]/g;
+const CONTROL_CHARS_RE = /[\x00-\x08\x0b-\x1f\x7f\x80-\x9f]/g;
 
 export function stripAnsiSequences(text: string): string {
   return text.replace(ANSI_ESCAPE_RE, "");
