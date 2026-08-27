@@ -131,6 +131,19 @@ describe("status rows", () => {
     expect(busy).not.toContain("/ commands");
   });
 
+  it("never renders MCP live state or tool counts in the status row", () => {
+    const injected = {
+      ...base(120),
+      mcpStatus: "MCP live · 2/3 servers · 5 tools",
+    } as StatusViewInput;
+    for (const columns of WIDTHS) {
+      const row = plainText(statusRows({ ...injected, columns })[0]!);
+      expect(row).not.toContain("MCP live");
+      expect(row).not.toContain("2/3 servers");
+      expect(row).not.toContain("5 tools");
+    }
+  });
+
   it("says compacting instead of the activity while compacting", () => {
     expect(plainText(statusRows(base(120, { compacting: true }))[0]!)).toContain("compacting");
   });

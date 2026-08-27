@@ -1,7 +1,7 @@
 /**
- * CLAI theme tokens (V2-030 / QUALITY "visual correctness").
+ * clai theme tokens (V2-030 / QUALITY "visual correctness").
  *
- * Palette is anchored to the CLAI wordmark gradient (magenta → blue → cyan)
+ * Palette is anchored to the clai wordmark gradient (teal → aqua → cyan)
  * plus the legacy amber mode badge, green READY/success, and aqua chrome.
  * Components should pull from these tokens — never scatter raw hex.
  */
@@ -41,7 +41,7 @@ export interface Theme {
    */
   readonly failedBg: string;
   /**
-   * Wordmark top-of-"I" magenta (`WORDMARK_TOP_HEX` / chalk.magentaBright).
+   * Magenta accent (chalk.magentaBright).
    * Used for plan/task pane border, agent-card frame, output accents.
    */
   readonly magenta: string;
@@ -133,7 +133,7 @@ const DARK_THEME: Theme = {
   successBg: "#166534",
   // Solid dark red for "failed" badge fills.
   failedBg: "#991B1B",
-  // Top of CLAI wordmark "I" (magentaBright) — plan pane + agent card frame.
+  // Magenta accent (magentaBright) — plan pane + agent card frame.
   magenta: "#FF55FF",
   cyan: "#67E8F9",
   aqua: "#2EEBFF",
@@ -190,7 +190,7 @@ const LIGHT_THEME: Theme = {
   successBg: "#14532d",
   // Darker plate for "failed" chips on light terminals.
   failedBg: "#7f1d1d",
-  // Top of CLAI wordmark "I" (slightly deeper on light bg for contrast).
+  // Magenta accent (slightly deeper on light bg for contrast).
   magenta: "#D946EF",
   cyan: "#0891b2",
   aqua: "#0891B2",

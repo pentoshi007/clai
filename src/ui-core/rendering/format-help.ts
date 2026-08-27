@@ -25,6 +25,9 @@ function sectionFor(command: string): string {
   if (["set", "unset", "keys", "info"].includes(name)) {
     return "Credentials";
   }
+  if (["skills", "mcp"].includes(name)) {
+    return "Extensions";
+  }
   if (
     ["permissions", "allow", "disallow", "freeonly", "fallback", "scope", "privacy"].includes(
       name,
@@ -49,6 +52,7 @@ const SECTION_ORDER = [
   "Mode & plan",
   "Model & providers",
   "Credentials",
+  "Extensions",
   "Permissions & safety",
   "Session",
   "App",

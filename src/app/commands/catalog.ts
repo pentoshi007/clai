@@ -122,6 +122,13 @@ export const slashCommands: SlashCommand[] = [
       "browse Agent Skills and attach one to your next prompt as skill:name · /skills list shows paths",
   },
   {
+    command: "/mcp",
+    usage:
+      "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|add [json]]",
+    description:
+      "inspect MCP sources/tools, add to project .clai/mcp.json, and choose session-active tools (off by default)",
+  },
+  {
     command: "/compact",
     description: "compact session history now",
   },

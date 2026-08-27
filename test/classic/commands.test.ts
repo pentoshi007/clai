@@ -411,6 +411,10 @@ describe("classic command parity (W12)", () => {
       expect(overlay.title).toContain("Command");
       expect(overlay.body).toContain("/model");
       expect(overlay.body).toContain("/jobs");
+      expect(overlay.body).toContain("## Extensions");
+      expect(overlay.body).toContain("/mcp");
+      expect(overlay.body).toContain(".clai/mcp.json");
+      expect(overlay.body).toContain("off by default");
     }
   });
 
@@ -436,6 +440,19 @@ describe("classic command parity (W12)", () => {
       }
       expect(notices(services).some((text) => /skill/i.test(text))).toBe(true);
     });
+  });
+
+  spec(["mcp"], "/mcp opens the shared server picker with project configuration actions", async () => {
+    const { services } = open();
+    void run(services, "mcp");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
+    const overlay = services.overlay.getState();
+    if (overlay.kind === "picker") {
+      expect(overlay.request.title).toContain(".clai/mcp.json");
+      expect(overlay.request.options.map((option) => option.label)).toEqual(
+        expect.arrayContaining(["+ add MCP server", "MCP tools off"]),
+      );
+    }
   });
 
   spec(["usage"], "/usage opens the formatted pager with the session token ledger", async () => {

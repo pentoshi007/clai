@@ -8,47 +8,40 @@ import {
 import { renderAgentSystemPrompt } from "../src/prompts/index.js";
 
 describe("pentestWorkflowDirective", () => {
-  it("states this is a pentest / security engagement", () => {
+  it("frames security work as an objective- and evidence-driven specialization", () => {
     const directive = pentestWorkflowDirective();
     expect(directive.toLowerCase()).toContain("pentest");
     expect(directive.toLowerCase()).toContain("security");
-    expect(directive).toContain("engagement");
-  });
-
-  it("calls out recon-first guidance", () => {
-    const directive = pentestWorkflowDirective();
-    expect(directive.toLowerCase()).toContain("recon");
-  });
-
-  it("instructs the agent to plan only after real findings", () => {
-    const directive = pentestWorkflowDirective();
-    expect(directive.toLowerCase()).toContain("finding");
-  });
-
-  it("bases plan.create on returned evidence without a fixed recon gate", () => {
-    const directive = pentestWorkflowDirective();
-    expect(directive).toContain("plan.create");
-    expect(directive).toContain("returned tool evidence");
-    expect(directive).toContain("fixed recon gate");
-  });
-
-  it("adds follow-up work only for evidence-driven discoveries", () => {
-    const directive = pentestWorkflowDirective();
-    expect(directive).toContain("Add follow-up tasks only for discoveries");
-  });
-
-  it("leaves reconnaissance and tool selection to model judgment", () => {
-    const directive = pentestWorkflowDirective();
-    expect(directive).toContain("options rather than a mandatory checklist");
-    expect(directive).toContain("Use only what can resolve a meaningful hypothesis");
+    expect(directive).toContain("soft classification");
+    expect(directive).toContain("attacker objective");
+    expect(directive).toContain("current evidence");
     expect(directive).toContain("expected impact");
   });
 
-  it("reinforces the engagement scope boundary and out-of-scope flagging", () => {
+  it("uses an attack-surface ledger and branches discoveries without a fixed sequence", () => {
     const directive = pentestWorkflowDirective();
-    expect(directive.toLowerCase()).toContain("scope");
-    expect(directive.toLowerCase()).toContain("out-of-scope");
-    expect(directive.toLowerCase()).toMatch(/flag/);
+    expect(directive).toContain("attack-surface ledger");
+    expect(directive).toContain("tested/untested");
+    expect(directive).toContain("task.add/reprioritization");
+    expect(directive).toContain("options—not a mandatory checklist or sequence");
+    expect(directive).toContain("hypotheses");
+  });
+
+  it("requires validated impact, saturation, and explicit residual coverage", () => {
+    const directive = pentestWorkflowDirective();
+    expect(directive).toContain("reproducible PoC");
+    expect(directive).toContain("first finding or clean scanner run is not completion");
+    expect(directive).toContain("materially improve coverage, confidence, or impact");
+    expect(directive).toContain("reconcile the ledger with scope and objective");
+    expect(directive).toContain("residual/untested surface");
+    expect(directive.toLowerCase()).toMatch(/flag.*out-of-scope/);
+  });
+
+  it("bases durable plans on evidence instead of a recon gate", () => {
+    const directive = pentestWorkflowDirective();
+    expect(directive).toContain("plan.create");
+    expect(directive).toContain("base it on evidence rather than a fixed recon gate");
+    expect(directive).toContain("preserve completed evidence");
   });
 });
 
@@ -71,9 +64,6 @@ describe("looksLikePentestTask", () => {
   });
 
   it("still detects pentest keywords that don't end with the bare stem", () => {
-    // Regression: the original regex required \bvulnerabilit\b followed by
-    // a word boundary, which never matches "vulnerability" — only the
-    // nonsense fragment "vulnerabilit" itself.
     expect(
       looksLikePentestTask("scan for vulnerabilities on the target"),
     ).toBe(true);
@@ -96,8 +86,8 @@ describe("renderAgentSystemPrompt — pentest planning guidance", () => {
   it("keeps the methodology out of a non-pentest turn", () => {
     const coding = renderAgentSystemPrompt(toolList);
     expect(coding).not.toContain("# PENTEST METHODOLOGY");
-    expect(coding).not.toContain("Choose each next action by expected information or access gain");
-    // Everything else the constitution guarantees must survive the slice.
+    expect(coding).not.toContain("**Attack-surface ledger:**");
+    expect(coding).toContain("Professional execution method — applies to every domain");
     expect(coding).toContain("# OPERATING RULES");
     expect(coding).toContain("# CROSS-OS AWARENESS");
     expect(coding.length).toBeLessThan(
@@ -117,16 +107,17 @@ describe("renderAgentSystemPrompt — pentest planning guidance", () => {
   });
 });
 
-describe("buildWorkflowDirective — stack-agnostic explore/continue guidance", () => {
-  it("requires explore and handles existing vs new projects", () => {
+describe("buildWorkflowDirective — adaptive software specialization", () => {
+  it("orients once, models contracts, and verifies the complete behavior", () => {
     const directive = buildWorkflowDirective();
-    expect(directive).toMatch(/EXPLORE/i);
-    expect(directive).toMatch(/existing stack/i);
-    expect(directive).toMatch(/CONTINUE an existing project|NEVER re-scaffold/i);
-    expect(directive).toMatch(/Operation cancelled/i);
-    expect(directive).toMatch(/stack-agnostic/i);
-    expect(directive).toMatch(/durable checklist/i);
-    expect(directive).toMatch(/direct execution is valid/i);
-    expect(directive).toMatch(/do NOT repeatedly relist the parent/i);
+    expect(directive).toMatch(/soft classification/i);
+    expect(directive).toMatch(/ORIENT once/i);
+    expect(directive).toMatch(/non-empty destination means continue/i);
+    expect(directive).toMatch(/MODEL before edit/i);
+    expect(directive).toMatch(/contracts, callers, schemas, data\/control flow/i);
+    expect(directive).toMatch(/scaffold[\s\S]*does not prove the requested feature/i);
+    expect(directive).toMatch(/positive, negative, boundary, regression, and integration paths/i);
+    expect(directive).toMatch(/Libraries and non-server artifacts use their own observable proof/i);
+    expect(directive).toMatch(/reconcile changed files and affected surfaces/i);
   });
 });

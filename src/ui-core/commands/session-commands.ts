@@ -330,6 +330,7 @@ export function handleCwd(services: AppServices, invocation: CommandInvocation):
   try {
     process.chdir(target);
     notice(services, "info", `cwd → ${target}`);
+    void services.mcp.refresh().catch(() => undefined);
   } catch (error) {
     notice(
       services,

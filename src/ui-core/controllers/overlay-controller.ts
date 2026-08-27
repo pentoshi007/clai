@@ -54,6 +54,7 @@ export interface SecretRequestView {
    * masking a long URL just hides typos.
    */
   readonly reveal?: boolean | undefined;
+  readonly initialValue?: string | undefined;
 }
 
 /** Multi-row engagement scope editor (/scope). */

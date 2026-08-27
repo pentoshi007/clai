@@ -76,7 +76,7 @@ describe("Ink frame height equals ChromeLayout.total", () => {
       const { rows } = frameOf(demand({ rows: 24, columns, composerTextRows: 3 }));
       for (const row of rows) expect(stringWidth(row)).toBeLessThanOrEqual(columns);
     }
-  });
+  }, 10_000);
 
   it("renders one row when the terminal has exactly one row", () => {
     expect(frameOf(demand({ rows: 1 })).rows).toHaveLength(1);

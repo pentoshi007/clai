@@ -62,6 +62,16 @@ describe("native prompts", () => {
     expect(p).toMatch(/confirms/i);
   });
 
+  it("keeps shell and interactive terminal selection unambiguous", () => {
+    const p = renderAgentSystemPrompt(
+      "shell.exec, shell.start, terminal.start, terminal.send, terminal.read",
+      { nativeTools: true },
+    );
+    expect(p).toContain("Finite chatty work → shell.exec");
+    expect(p).toContain("persistent work → shell.start");
+    expect(p).toMatch(/ssh\/gpg\/passwd need a real TTY: use terminal\.start/i);
+  });
+
   it("agent prompt requires leave server running + report URL for coding plans", () => {
     const p = renderAgentSystemPrompt("shell.start, fs.write", {
       nativeTools: true,

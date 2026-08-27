@@ -5,24 +5,28 @@
  */
 
 import type { ReactNode } from "react";
+import type { MouseEvent } from "@opentui/core";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import type { CompletionMenu } from "../../../ui-core/composer/completion.js";
+import {
+  completionAbsoluteIndex,
+  completionViewportWindow,
+  completionWheelRows,
+} from "../../../ui-core/composer/completion-viewport.js";
 import type { CommandDefinition } from "../../../app/commands/command.js";
 import type { FileSuggestion } from "../../../ui/mentions.js";
 
 export interface CompletionMenuViewProps {
   readonly menu: CompletionMenu;
   readonly selected: number;
+  readonly hoveredIndex?: number | undefined;
+  readonly viewportOffset: number;
   readonly theme: Theme;
   readonly width: number;
   readonly maxRows?: number | undefined;
-  /** Highlight the row under the mouse (keyboard selection stays independent). */
-  readonly onHoverIndex?: ((index: number) => void) | undefined;
-  /**
-   * Activate a row on click.
-   * Slash / file → accept; directory → typically drill (caller decides).
-   */
+  readonly onHoverIndex?: ((index: number | undefined) => void) | undefined;
   readonly onActivateIndex?: ((index: number) => void) | undefined;
+  readonly onScrollRows?: ((rows: number) => void) | undefined;
 }
 
 function padLine(text: string, width: number): string {
@@ -35,33 +39,41 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
   const {
     menu,
     selected,
+    hoveredIndex,
+    viewportOffset,
     theme,
     width,
     maxRows = 10,
     onHoverIndex,
     onActivateIndex,
+    onScrollRows,
   } = props;
   if (menu.kind === "none") return null;
 
-  const visibleCount = Math.min(maxRows, menu.items.length);
-  // Keep the active command on screen while allowing the menu to show a
-  // useful window of the whole catalogue instead of permanently clipping it
-  // to the first handful of options.
-  const start = Math.min(
-    Math.max(0, selected - Math.floor(visibleCount / 2)),
-    Math.max(0, menu.items.length - visibleCount),
+  const window = completionViewportWindow(
+    menu.items.length,
+    maxRows,
+    viewportOffset,
   );
-  const items = menu.items.slice(start, start + visibleCount);
-  const before = start;
-  const after = menu.items.length - start - items.length;
+  const items = menu.items.slice(window.start, window.end);
+  const before = window.before;
+  const after = window.after;
   // Header (hints) + rule boundary + optional earlier/more rows + items.
   const menuHeight = 4 + items.length + (before > 0 ? 1 : 0) + (after > 0 ? 1 : 0);
   // Borders consume two terminal columns; padding to the outer width used to
   // make the last character overwrite the right rail on narrow terminals.
   const contentWidth = Math.max(10, width - 2);
+  const onMouseScroll = (event: MouseEvent): void => {
+    if (!event.scroll) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rows = completionWheelRows(event.scroll.direction, event.scroll.delta);
+    if (rows !== 0) onScrollRows?.(rows);
+  };
 
   return (
     <box
+      onMouseScroll={onMouseScroll}
       style={{
         flexDirection: "column",
         width: "100%",
@@ -76,8 +88,8 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
       <text
         content={padLine(
           menu.kind === "slash"
-            ? `  commands · ${menu.items.length}  ·  ↑↓:move  ·  tab:complete  ·  enter/click:run  ·  esc:dismiss`
-            : `  files & dirs · ${menu.items.length}  ·  ↑↓:move  ·  enter:attach  ·  click:open/attach  ·  esc:dismiss`,
+            ? `  commands · ${menu.items.length}  ·  ↑↓:select  ·  wheel:scroll  ·  tab:complete  ·  enter/click:run  ·  esc:dismiss`
+            : `  files & dirs · ${menu.items.length}  ·  ↑↓:select  ·  wheel:scroll  ·  enter:attach  ·  click:open/attach  ·  esc:dismiss`,
           contentWidth,
         )}
         style={{ fg: theme.muted, bg: theme.rowA }}
@@ -94,9 +106,21 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
         />
       ) : null}
       {items.map((item, i) => {
-        const itemIndex = start + i;
+        const itemIndex = completionAbsoluteIndex(
+          menu.items.length,
+          maxRows,
+          viewportOffset,
+          i,
+        )!;
         const focused = itemIndex === selected;
-        const bg = focused ? theme.selection : i % 2 === 0 ? theme.rowA : theme.rowB;
+        const hovered = itemIndex === hoveredIndex;
+        const bg = focused
+          ? theme.selection
+          : hovered
+            ? theme.chip
+            : i % 2 === 0
+              ? theme.rowA
+              : theme.rowB;
         const line =
           menu.kind === "slash"
             ? formatSlash(item as CommandDefinition, focused, contentWidth)
@@ -111,11 +135,16 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
                 onMouseOver: () => {
                   onHoverIndex(itemIndex);
                 },
+                onMouseOut: () => {
+                  onHoverIndex(undefined);
+                },
               }
             : {}),
           ...(onActivateIndex
             ? {
-                onMouseDown: () => {
+                onMouseDown: (event: MouseEvent) => {
+                  event.preventDefault();
+                  event.stopPropagation();
                   onActivateIndex(itemIndex);
                 },
               }
@@ -130,7 +159,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
             <text
               content={line}
               style={{
-                fg: focused ? theme.white : theme.foreground,
+                fg: focused || hovered ? theme.white : theme.foreground,
                 bg,
               }}
             />

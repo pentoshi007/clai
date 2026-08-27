@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CompletionRequest, CompletionResult } from "../../src/types.js";
+import { runAgentLoop } from "../../src/agent/runner.js";
 import { clearTextOnlyModels } from "../../src/llm/tool-protocol.js";
 
 const streamMock = vi.fn();
@@ -126,7 +127,6 @@ describe("tool occurrence execution gate (T620)", () => {
       },
     );
 
-    const { runAgentLoop } = await import("../../src/agent/runner.js");
     await expect(
       runAgentLoop("run the counter twice", {
         provider: "openai",
@@ -194,7 +194,6 @@ describe("tool occurrence execution gate (T620)", () => {
       },
     );
 
-    const { runAgentLoop } = await import("../../src/agent/runner.js");
     await expect(
       runAgentLoop("inspect the probe twice", {
         provider: "openai",
@@ -262,7 +261,6 @@ describe("tool occurrence execution gate (T620)", () => {
       },
     );
 
-    const { runAgentLoop } = await import("../../src/agent/runner.js");
     await expect(
       runAgentLoop("retry the failing command", {
         provider: "openai",
@@ -312,7 +310,6 @@ describe("tool occurrence execution gate (T620)", () => {
       },
     );
 
-    const { runAgentLoop } = await import("../../src/agent/runner.js");
     await expect(
       runAgentLoop("list the directory", {
         provider: "openai",

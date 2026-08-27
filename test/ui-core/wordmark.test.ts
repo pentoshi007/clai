@@ -16,7 +16,7 @@ const rows = (
   size: WordmarkSize = "compact",
   style: WordmarkStyle = "block",
 ): string[] =>
-  renderWordmark("CLAI", { indent: "", size, style })
+  renderWordmark("clai", { indent: "", size, style })
     .split("\n")
     .map(stripAnsi);
 
@@ -37,13 +37,13 @@ describe("wordmark", () => {
   });
 
   it("reports a width every row honors", () => {
-    expect(wordmarkWidth("CLAI")).toBe(29);
-    expect(wordmarkWidth("CLAI", "large")).toBe(41);
+    expect(wordmarkWidth("clai")).toBe(22);
+    expect(wordmarkWidth("clai", "large")).toBe(30);
     for (const size of ["compact", "large"] as const) {
       for (const style of ["block", "ascii"] as const) {
         for (const row of rows(size, style)) {
           expect(renderColumns(row)).toBeLessThanOrEqual(
-            wordmarkWidth("CLAI", size),
+            wordmarkWidth("clai", size),
           );
         }
       }
@@ -52,22 +52,37 @@ describe("wordmark", () => {
 
   it("draws two-pixel strokes at the compact size", () => {
     expect(rows("compact")).toEqual([
-      "▄████▄  ██     ▄████▄  ██████",
-      "██      ██     ██  ██    ██  ",
-      "██      ██     ██████    ██  ",
-      "▀████▀  █████  ██  ██  ██████",
+      " ▄▄▄▄   ██   ▄▄▄▄   ██",
+      "██      ██   ▄▄▄██    ",
+      "██      ██  ██  ██  ██",
+      "▀█▄▄▄   ██  ▀█▄▄██  ██",
     ]);
   });
 
   it("draws three-pixel strokes at the large size", () => {
     expect(rows("large")).toEqual([
-      "▄███████▄  ███       ▄███████▄  █████████",
-      "███▀▀▀▀▀▀  ███       ███▀▀▀███  ▀▀▀███▀▀▀",
-      "███        ███       ███   ███     ███   ",
-      "███        ███       █████████     ███   ",
-      "███▄▄▄▄▄▄  ███▄▄▄▄▄  ███▀▀▀███  ▄▄▄███▄▄▄",
-      "▀███████▀  ████████  ███   ███  █████████",
+      "           ███             ███",
+      " ▄▄▄▄▄▄▄   ███   ▄▄▄▄▄▄▄      ",
+      "███▀▀▀▀▀▀  ███        ███  ███",
+      "███        ███  ▄██▀▀▀███  ███",
+      "███        ███  ███   ███  ███",
+      "▀███████▀  ███  ▀██▄▄▄███  ███",
     ]);
+  });
+
+  it("raises the l as an ascender and floats a cursor dot over the i", () => {
+    const compact = rows("compact");
+    expect(compact[0]).toContain("██");
+    expect(compact[0]).toContain("▄");
+    expect(compact[0]!.endsWith("██")).toBe(true);
+    expect(compact[1]!.endsWith("    ")).toBe(true);
+    expect(compact[2]!.endsWith("██")).toBe(true);
+    expect(compact[3]!.endsWith("██")).toBe(true);
+
+    const large = rows("large");
+    expect(large[0]!.trimEnd().endsWith("███")).toBe(true);
+    expect(large[1]!.endsWith("      ")).toBe(true);
+    expect(large[5]!.endsWith("███")).toBe(true);
   });
 
   it("uses only block glyphs in block style and hashes in ascii style", () => {
@@ -77,20 +92,28 @@ describe("wordmark", () => {
     }
   });
 
-  it("sweeps the ramp left to right, from brand magenta to brand cyan", () => {
+  it("sweeps an analogous teal-to-cyan ramp with no magenta", () => {
     for (const size of ["compact", "large"] as const) {
       const painted =
-        renderWordmark("CLAI", { indent: "", size }).split("\n")[0] ?? "";
-      const colors = painted.match(/\x1b\[38;2;[0-9;]+m/g) ?? [];
-      expect(colors.length).toBeGreaterThan(3);
-      expect(colors[0]).toBe("\x1b[38;2;255;85;255m");
-      expect(colors.at(-1)).toBe("\x1b[38;2;46;235;255m");
+        renderWordmark("clai", { indent: "", size }).split("\n")[0] ?? "";
+      const codes = painted.match(/\x1b\[38;2;\d+;\d+;\d+m/g) ?? [];
+      expect(codes.length).toBeGreaterThan(3);
+      const rgb = codes.map((code) => {
+        const [, r, g, b] = code.match(/38;2;(\d+);(\d+);(\d+)/)!;
+        return { r: Number(r), g: Number(g), b: Number(b) };
+      });
+      for (const { r, g, b } of rgb) {
+        expect(r).toBeLessThanOrEqual(g);
+        expect(r).toBeLessThanOrEqual(b);
+      }
+      expect(rgb.at(-1)!.b).toBeGreaterThan(rgb[0]!.b);
+      expect(codes.at(-1)).toBe("\x1b[38;2;143;239;255m");
     }
-    expect(WORDMARK_TOP_HEX).toBe("#FF55FF");
+    expect(WORDMARK_TOP_HEX).toBe("#12D9B0");
   });
 
   it("indents every row", () => {
-    for (const row of renderWordmark("CLAI", { indent: "    " }).split("\n")) {
+    for (const row of renderWordmark("clai", { indent: "    " }).split("\n")) {
       expect(stripAnsi(row).startsWith("    ")).toBe(true);
     }
   });

@@ -317,6 +317,7 @@ export interface NormalizedPlanTask {
   dependencies: string[];
   dependenciesSpecified: boolean;
   resourceLocks: string[];
+  acceptanceCriteria?: string | undefined;
 }
 
 /**
@@ -348,7 +349,7 @@ export function normalizePlanTaskEntries(
   }
   if (!Array.isArray(raw)) return [];
   return raw
-    .map((t) => {
+    .map((t): NormalizedPlanTask | null => {
       const title = normalizeTaskTitle(t);
       if (!title || isBareTaskIdTitle(title)) return null;
       const aliases: string[] = [];
@@ -375,6 +376,21 @@ export function normalizePlanTaskEntries(
         Array.isArray(value)
           ? [...new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))]
           : [];
+      const rawAcceptance =
+        object.acceptance ??
+        object.acceptanceCriteria ??
+        object.successCriteria ??
+        object.verify;
+      const acceptanceCriteria =
+        typeof rawAcceptance === "string"
+          ? rawAcceptance.trim()
+          : Array.isArray(rawAcceptance)
+            ? rawAcceptance
+                .filter((item): item is string => typeof item === "string")
+                .map((item) => item.trim())
+                .filter(Boolean)
+                .join("; ")
+            : "";
       return {
         title,
         aliases: [...new Set(aliases)],
@@ -383,6 +399,7 @@ export function normalizePlanTaskEntries(
           Object.prototype.hasOwnProperty.call(object, "dependencies") ||
           Object.prototype.hasOwnProperty.call(object, "dependsOn"),
         resourceLocks: stringArray(object.resourceLocks ?? object.resources),
+        ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
       };
     })
     .filter((x): x is NormalizedPlanTask => Boolean(x));
@@ -489,11 +506,14 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
     const evidenceHint = t.evidence?.successWorkCount
       ? ` [evidence: ${t.evidence.successWorkCount} successful tool${t.evidence.successWorkCount === 1 ? "" : "s"}${t.evidence.lastOkTool ? `; last ${t.evidence.lastOkTool}` : ""}]`
       : "";
+    const acceptanceHint = t.acceptanceCriteria?.trim()
+      ? ` [acceptance: ${t.acceptanceCriteria.trim()}]`
+      : "";
     const hierarchyHint = t.parentTaskId ? ` [child of ${t.parentTaskId}]` : "";
     const jobHint = t.jobId
       ? ` [responder job=${t.jobId}${t.processId ? ` pid=${t.processId}` : ""}]`
       : "";
-    lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}${hierarchyHint}${jobHint}${aliasHint}${dependencyHint}${resourceHint}${evidenceHint}`);
+    lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}${hierarchyHint}${jobHint}${aliasHint}${dependencyHint}${resourceHint}${acceptanceHint}${evidenceHint}`);
   });
   lines.push(
     "task.update taskId MUST be t1, t2, … from this list (or a listed alias). Use task.add for newly discovered work; it is placed before unfinished report creation. Use task.move with position/beforeTaskId/afterTaskId to rearrange work without changing ids or evidence. Responder-owned job tasks advance automatically; never task.update them. After analyzing a delivered Responder result, job.read its job or notification before finalizing.",
@@ -547,26 +567,28 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
           "summary; when the summary and these task states disagree, trust these task states.",
       );
       lines.push(
-        "Let the task states drive your next action and next reads: open the in_progress or failed task, read only its " +
-          "own artifacts plus the specific earlier-task outputs you need to confirm what is already done, then continue " +
-          "strictly task-by-task from there. Do NOT re-scan the whole project or read unrelated files to rediscover " +
-          "status. You are advised to work through every task, but you may stop without finishing all of them when " +
-          "genuinely blocked or when the situation requires it — report the remaining tasks honestly instead of " +
-          "forcing completion.",
+        "Let task states identify the current foreground outcome and avoid rediscovering settled work. Read that task's " +
+          "artifacts plus only the prior evidence needed for its dependencies. One foreground task stays in_progress for " +
+          "state integrity, but the plan is a living outcome map rather than an inflexible script: if evidence exposes " +
+          "required work or invalidates priority, add the discovery, return the current task to pending when necessary, " +
+          "and deliberately open the new highest-priority ready task. Preserve completed evidence and never re-scan the " +
+          "whole project merely to recover status. You may stop with open tasks only when genuinely blocked, told to stop, " +
+          "or waiting on declared external work; report the exact remainder honestly.",
       );
     }
     lines.push(
-      "Flow: task.update in_progress → real work → WAIT for and READ every tool result for that task → " +
-        "only then mark done when the task outcome is satisfied → immediately open the next task. " +
-        "Never mark done right after firing a foreground command on the hope it will succeed — analyze the actual output first. " +
-        "A durable background launch creates a Responder-owned child task: launch high-value slow enumeration/fuzzing early, continue independent fast work, and never busy-poll or start a duplicate. " +
-        "If only Responder-owned child tasks remain, yield honestly; Responder will inject the durable completion and wake the session without forcing an empty turn. " +
-        "Durable evidence shown beside a task survives resume; use it to close that task rather than repeating already-confirmed work. " +
-        "Independent read-only lookups may parallelize within a task. " +
-        "If a tool fails: mark failed or stay in progress, fix, retry until the task is truly done. " +
-        "For software builds: run automated checks (typecheck/build/tests when applicable) then live/runtime proof. " +
-        "For run/verify: prove runtime (shell.start, ready tail, LISTEN, or localhost GET), leave server running, final message includes URL, port, and job id. " +
-        "Do not re-open done tasks. If mid-task evidence shows the plan is wrong, adapt (fix root cause; for pentest, revise plan with completed tasks preserved).",
+      "Flow: task.update in_progress → pursue the task's outcome using the evidence-appropriate method → WAIT for and READ every result → " +
+        "verify its acceptance evidence → mark done only when the outcome holds → open the next ready task. " +
+        "A launched command is not evidence of completion, and one successful path may not cover the task's relevant edge, integration, or regression surface. " +
+        "Capture unrelated or newly required discoveries with task.add; do not silently broaden scope or discard them. " +
+        "A durable background launch creates a Responder-owned child task: launch high-value slow work early only when independent work remains, and never busy-poll or duplicate it. " +
+        "If only Responder-owned child tasks remain, yield honestly; Responder will inject the durable completion. " +
+        "Durable evidence beside a task survives resume; reuse it rather than repeating confirmed work. " +
+        "Independent read-only lookups may parallelize when their results do not depend on each other. " +
+        "If a tool fails, interpret why, revise the hypothesis or environment, and retry with a materially improved approach instead of ritual repetition. " +
+        "Before finalizing, reconcile every requested acceptance criterion, task, affected surface, and material residual uncertainty. " +
+        "For software, use applicable automated and runtime/integration proof. For security, use remote target evidence and explicit attack-surface residuals. " +
+        "Do not re-open done tasks.",
     );
   } else {
     lines.push(
@@ -786,6 +808,8 @@ export async function handlePlanTool(
       if (aliases.length) plan.tasks[i]!.aliases = aliases;
       const locks = taskEntries[i]?.resourceLocks ?? [];
       if (locks.length) plan.tasks[i]!.resourceLocks = locks;
+      const acceptanceCriteria = taskEntries[i]?.acceptanceCriteria;
+      if (acceptanceCriteria) plan.tasks[i]!.acceptanceCriteria = acceptanceCriteria;
     }
     for (let i = 0; i < plan.tasks.length; i++) {
       const rawDependencies = taskEntries[i]?.dependencies ?? [];
@@ -815,6 +839,8 @@ export async function handlePlanTool(
             id: match.id,
             state: match.state,
             note: match.note,
+            acceptanceCriteria:
+              task.acceptanceCriteria ?? match.acceptanceCriteria,
             evidence: match.evidence,
             parentTaskId: match.parentTaskId,
             jobId: match.jobId,
@@ -1265,6 +1291,12 @@ export async function handlePlanTool(
       title,
       state: "pending",
       note: typeof call.args.note === "string" ? call.args.note : undefined,
+      acceptanceCriteria:
+        typeof call.args.acceptanceCriteria === "string"
+          ? call.args.acceptanceCriteria.trim()
+          : typeof call.args.acceptance === "string"
+            ? call.args.acceptance.trim()
+            : undefined,
       aliases: [slugifyTaskId(title)].filter(Boolean),
       dependencies,
       resourceLocks: stringArray(
@@ -1621,9 +1653,10 @@ export async function handlePlanTool(
       "Do not batch later tasks. Do not start a later task's tools early.";
   } else if (stateRaw === "in_progress") {
     modelNote =
-      `Task [${taskId}] is now in_progress. Do ONLY this task's work, wait for tool results, ` +
-      `and mark done only when you are satisfied the results prove success. ` +
-      `Then task.update {taskId:"${taskId}", state:"done"}. Do not open or work on later tasks yet.`;
+      `Task [${taskId}] is now in_progress and owns the foreground outcome. Choose the method from current evidence, ` +
+      `read each result, and keep working until the task's acceptance evidence holds. Capture newly discovered required ` +
+      `work with task.add. If a discovery must preempt this task, move [${taskId}] back to pending before opening the ` +
+      `higher-priority task; otherwise preserve focus and avoid starting unrelated later work. Mark done only after verification.`;
   } else if (stateRaw === "pending") {
     modelNote =
       `Task [${taskId}] is pending. If you deferred it to switch priorities, ` +

@@ -124,12 +124,15 @@ export function fitSegments(
 function idleSegments(input: StatusViewInput, density: StatusDensity): string[] {
   const { ink } = input;
   const baseHints = idleHintIds(density, input.hasDraft).map((id) => HINT_LABELS[id]);
-  const hints: Array<{ label: string; token: ThemeToken }> = baseHints.map((label) => {
-    let token: ThemeToken = "muted";
-    if (label === HINT_LABELS.thinking && input.thinkingExpanded) token = "inputBorder";
-    else if (label === HINT_LABELS.output && input.outputExpanded) token = "inputBorder";
-    return { label, token };
-  });
+  const hints: Array<{ label: string; token: ThemeToken }> = [];
+  hints.push(
+    ...baseHints.map((label) => {
+      let token: ThemeToken = "muted";
+      if (label === HINT_LABELS.thinking && input.thinkingExpanded) token = "inputBorder";
+      else if (label === HINT_LABELS.output && input.outputExpanded) token = "inputBorder";
+      return { label, token };
+    }),
+  );
   // Classic-only: ^N newline (Ctrl+N) works on all OS, shown in the existing status row only.
   if (density !== "xs") {
     const thinkingIdx = hints.findIndex((h) => h.label === HINT_LABELS.thinking);

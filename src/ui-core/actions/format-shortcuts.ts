@@ -191,6 +191,11 @@ const COMPOSER_TEXTAREA_NOTES: readonly { chord: string; label: string }[] = [
     label: "Quit",
   },
   {
+    chord: "/mcp",
+    label:
+      "Browse MCP servers, add project .clai/mcp.json entries, and choose session-active tools (off by default)",
+  },
+  {
     chord: "/shortcuts",
     label: "This reference",
   },

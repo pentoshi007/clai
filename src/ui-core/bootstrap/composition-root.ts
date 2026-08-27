@@ -38,6 +38,7 @@ import { ToastController, DEFAULT_TOAST_DURATION_MS } from "../controllers/toast
 import { isProviderFailureStatus } from "../../llm/key-rotation.js";
 import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
+import { McpRuntime } from "../../mcp/runtime.js";
 import { getSkillIndex } from "../../skills/registry.js";
 import { safeCwd } from "../../os/cwd.js";
 import { TranscriptStore } from "../state/transcript-store.js";
@@ -70,6 +71,7 @@ export interface AppPorts {
 }
 
 export interface CompositionOptions {
+  readonly mcp?: McpRuntime | undefined;
   readonly agent?: AgentPort | undefined;
   readonly persistence?: PersistencePort | undefined;
   readonly jobs?: JobsPort | undefined;
@@ -97,6 +99,7 @@ export interface CompositionOptions {
 }
 
 export interface AppServices {
+  readonly mcp: McpRuntime;
   readonly ports: AppPorts;
   readonly commands: CommandRegistry;
   readonly session: SessionController;
@@ -124,6 +127,7 @@ export interface AppServices {
 export function createCompositionRoot(
   options: CompositionOptions = {},
 ): AppServices {
+  const mcp = options.mcp ?? new McpRuntime();
   const recorded: AnyAppEvent[] = [];
   const captureEvents = options.captureEvents === true;
   const transcript = new TranscriptStore();
@@ -209,7 +213,7 @@ export function createCompositionRoot(
   };
 
   const ports: AppPorts = {
-    agent: options.agent ?? createCurrentAgentPort(),
+    agent: options.agent ?? createCurrentAgentPort({ mcp }),
     persistence,
     jobs: options.jobs ?? createCurrentJobsPort(),
     interactiveSessions:
@@ -283,6 +287,7 @@ export function createCompositionRoot(
 
   let disposed = false;
   return {
+    mcp,
     ports,
     commands,
     session,
@@ -309,6 +314,7 @@ export function createCompositionRoot(
       toast.dispose();
       plan.dispose();
       session.dispose();
+      void mcp.closeAll();
     },
   };
 }

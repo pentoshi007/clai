@@ -301,7 +301,7 @@ export class PanelController {
         this.publish({ ...base, jobs: JOBS_INITIAL_STATE });
         return;
       case "secret":
-        this.publish({ ...base, secret: secretInitialState() });
+        this.publish({ ...base, secret: secretInitialState(state.request.initialValue) });
         return;
       case "scope-editor":
         this.publish({ ...base, scope: scopeInitialState(state.request) });

@@ -1,3 +1,4 @@
+import { McpRuntime } from "../mcp/runtime.js";
 import type { ChatImage, Mode, ProviderId } from "../types.js";
 import type { TurnOutcome } from "../agent/turn-outcome.js";
 import { CancelCoordinator } from "../app/controllers/cancel-coordinator.js";
@@ -81,6 +82,7 @@ export async function startNoninteractive(
   });
   const confirm = createStdioConfirmPort({ input, output: err });
   const requestSecret = createStdioSecretPort({ input, output: err });
+  const mcp = new McpRuntime();
   const controller = new AbortController();
   const forwardAbort = (): void => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) forwardAbort();
@@ -122,6 +124,7 @@ export async function startNoninteractive(
   try {
     turnRunning = true;
     answer = await runAgent(options.prompt, {
+      mcp,
       provider: options.provider,
       model: options.model,
       autoConfirm: options.yes,
@@ -159,6 +162,7 @@ export async function startNoninteractive(
     const cleanup = await interactiveSessionManager
       .closeAll("app-shutdown")
       .catch(() => undefined);
+    await mcp.closeAll().catch(() => undefined);
     for (const failure of cleanup?.failures ?? []) {
       err.write(
         `interactive-session cleanup: [${failure.code}] ${failure.message}\n`,

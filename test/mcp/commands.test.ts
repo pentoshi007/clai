@@ -1,0 +1,293 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { PersistencePort } from "../../src/app/ports/persistence-port.js";
+import { McpManager, type McpTransportFactory } from "../../src/mcp/manager.js";
+import { McpRuntime } from "../../src/mcp/runtime.js";
+import type { McpTransport } from "../../src/mcp/transport.js";
+import type {
+  JsonRpcNotification,
+  JsonRpcRequest,
+  JsonRpcResponse,
+} from "../../src/mcp/types.js";
+import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
+import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
+import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
+
+class CommandTransport implements McpTransport {
+  readonly kind = "stdio" as const;
+
+  start(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  request(message: JsonRpcRequest): Promise<JsonRpcResponse> {
+    if (message.method === "initialize") {
+      return Promise.resolve({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          serverInfo: { name: "docs", version: "1" },
+        },
+      });
+    }
+    if (message.method === "tools/list") {
+      return Promise.resolve({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          tools: [
+            {
+              name: "search",
+              description: "Search documentation",
+              inputSchema: {
+                type: "object",
+                properties: { query: { type: "string" } },
+              },
+              annotations: { readOnlyHint: true },
+            },
+          ],
+        },
+      });
+    }
+    return Promise.resolve({ jsonrpc: "2.0", id: message.id, result: {} });
+  }
+
+  notify(_message: JsonRpcNotification): Promise<void> {
+    return Promise.resolve();
+  }
+
+  close(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  sessionId(): string | undefined {
+    return undefined;
+  }
+
+  setProtocolVersion(): void {}
+}
+
+const factory: McpTransportFactory = () => new CommandTransport();
+
+function persistence(): PersistencePort {
+  return {
+    async saveSession() {},
+    async loadPlan() {
+      return undefined;
+    },
+    async savePlan() {},
+    async deletePlan() {},
+  };
+}
+
+let root: string;
+let workspace: string;
+let home: string;
+let previousCwd: string;
+let runtime: McpRuntime;
+
+beforeEach(async () => {
+  previousCwd = process.cwd();
+  root = mkdtempSync(join(tmpdir(), "clai-mcp-command-"));
+  workspace = join(root, "project");
+  home = join(root, "home");
+  mkdirSync(join(workspace, ".clai"), { recursive: true });
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    join(workspace, ".clai", "mcp.json"),
+    JSON.stringify({ servers: { docs: { command: "docs-server" } } }),
+  );
+  process.chdir(workspace);
+  runtime = new McpRuntime({
+    manager: new McpManager({
+      discovery: {
+        workspaceFolder: workspace,
+        homeDir: home,
+        env: { XDG_CONFIG_HOME: join(home, ".config") },
+        platform: "linux",
+      },
+      transportFactory: factory,
+    }),
+  });
+});
+
+afterEach(async () => {
+  await runtime.closeAll();
+  process.chdir(previousCwd);
+  rmSync(root, { recursive: true, force: true });
+});
+
+function services() {
+  const app = createCompositionRoot({
+    mcp: runtime,
+    persistence: persistence(),
+    capabilities: detectCapabilities({
+      env: {},
+      stdoutIsTTY: true,
+      stdinIsTTY: true,
+      columns: 120,
+      rows: 40,
+    }),
+  });
+  attachCommandHandlers(app);
+  return app;
+}
+
+describe("/mcp shared command", () => {
+  it("opens a status-rich picker and applies server selection", async () => {
+    const start = vi.spyOn(runtime, "start");
+    const ensureReady = vi.spyOn(runtime, "ensureReady");
+    const app = services();
+    expect(app.commands.resolve("mcp")).toBe("mcp");
+    expect(start).not.toHaveBeenCalled();
+    expect(ensureReady).not.toHaveBeenCalled();
+    expect(runtime.getState().selection).toEqual({ mode: "off" });
+    expect(runtime.toolNames()).toEqual([]);
+
+    await app.commands.dispatch({ name: "mcp", args: "" });
+    expect(ensureReady).toHaveBeenCalledOnce();
+    expect(start).not.toHaveBeenCalled();
+    const overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("picker");
+    if (overlay.kind === "picker") {
+      expect(overlay.request.title).toContain("1/1 live");
+      expect(overlay.request.title).toContain("0 active tools");
+      expect(overlay.request.options.find((option) => option.value === "__mcp_add__")?.label)
+        .toBe("+ add MCP server");
+      expect(overlay.request.options.find((option) => option.value === "__mcp_off__"))
+        .toMatchObject({ active: true });
+      const docs = overlay.request.options.find((option) => option.value === "docs");
+      expect(docs?.description).toContain("stdio");
+      expect(docs?.description).toContain("clai-project");
+      expect(docs?.description).toContain("1 tool");
+      app.overlay.selectPicker("docs");
+    }
+
+    expect(runtime.getState().selection).toEqual({
+      mode: "server",
+      serverName: "docs",
+    });
+    expect(runtime.toolNames()).toEqual(["mcp.docs.search"]);
+    app.dispose();
+  });
+
+  it("shows canonical tools and source paths in list/status pagers", async () => {
+    const app = services();
+    await app.commands.dispatch({ name: "mcp", args: "list" });
+    let overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind === "pager") {
+      expect(overlay.body).toContain("Project config: .clai/mcp.json");
+      expect(overlay.body).toContain("mcp.docs.search");
+      expect(overlay.body).toContain(".clai/mcp.json");
+      expect(overlay.body).toContain("ready");
+      expect(overlay.body).toContain("Selection: off · active tools: 0");
+    }
+
+    app.overlay.close();
+    await app.commands.dispatch({ name: "mcp", args: "status" });
+    overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind === "pager") {
+      expect(overlay.body).toContain("Project config: .clai/mcp.json");
+      expect(overlay.body).toContain("Selection: off · 0 active tools");
+    }
+    app.dispose();
+  });
+
+  it("switches between off and all-live session semantics", async () => {
+    const app = services();
+    expect(runtime.getState().selection).toEqual({ mode: "off" });
+    expect(runtime.toolNames()).toEqual([]);
+
+    await app.commands.dispatch({ name: "mcp", args: "all" });
+    expect(runtime.getState().selection).toEqual({ mode: "all" });
+    expect(runtime.toolNames()).toEqual(["mcp.docs.search"]);
+
+    await app.commands.dispatch({ name: "mcp", args: "off" });
+    expect(runtime.getState().selection).toEqual({ mode: "off" });
+    expect(runtime.toolNames()).toEqual([]);
+    app.dispose();
+  });
+
+  it("shows project and discovered inherited configuration locations", async () => {
+    const inherited = join(home, ".config", "clai", "mcp.json");
+    mkdirSync(join(home, ".config", "clai"), { recursive: true });
+    writeFileSync(
+      inherited,
+      JSON.stringify({ servers: { global: { command: "global-server" } } }),
+    );
+    await runtime.refresh({ force: true });
+
+    const app = services();
+    await app.commands.dispatch({ name: "mcp", args: "locations" });
+    const overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("pager");
+    if (overlay.kind === "pager") {
+      expect(overlay.title).toBe("MCP configuration locations");
+      expect(overlay.body).toContain("Project config: .clai/mcp.json");
+      expect(overlay.body).toContain(`Inherited config: ${inherited}`);
+    }
+    app.dispose();
+  });
+
+  it("adds one supplied server to project config and selects it", async () => {
+    const app = services();
+    await app.commands.dispatch({
+      name: "mcp",
+      args: 'add {"name":"alpha","command":"alpha-server","args":[]}',
+    });
+
+    expect(runtime.getState().selection).toEqual({
+      mode: "server",
+      serverName: "alpha",
+    });
+    expect(runtime.toolNames()).toEqual(["mcp.alpha.search"]);
+    const config = JSON.parse(
+      readFileSync(join(workspace, ".clai", "mcp.json"), "utf8"),
+    ) as { servers: Record<string, unknown> };
+    expect(Object.keys(config.servers)).toEqual(["alpha", "docs"]);
+    expect(config.servers.alpha).toEqual({ args: [], command: "alpha-server" });
+    expect(
+      app.toast.getToasts().some((toast) =>
+        toast.message.includes("added MCP server alpha in .clai/mcp.json · selected"),
+      ),
+    ).toBe(true);
+    app.dispose();
+  });
+
+  it("opens a visible add-server editor with an empty input", async () => {
+    const app = services();
+    await app.commands.dispatch({ name: "mcp", args: "" });
+    app.overlay.selectPicker("__mcp_add__");
+
+    let overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("secret");
+    if (overlay.kind === "secret") {
+      expect(overlay.request).toMatchObject({
+        title: "Add MCP server",
+        reveal: true,
+      });
+      expect(overlay.request.initialValue).toBeUndefined();
+      expect(overlay.request.prompt).toContain(".clai/mcp.json");
+    }
+
+    app.overlay.answerSecret(
+      '{"servers":{"local":{"command":"local-server"}}}',
+    );
+    await vi.waitFor(() => {
+      expect(runtime.getState().selection).toEqual({
+        mode: "server",
+        serverName: "local",
+      });
+    });
+    overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("none");
+    expect(runtime.toolNames()).toEqual(["mcp.local.search"]);
+    app.dispose();
+  });
+});

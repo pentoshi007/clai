@@ -42,11 +42,17 @@ function isPrintableSequence(seq: string): boolean {
 
 export function SecretModal(props: SecretModalProps): ReactNode {
   const { services, theme, request, docked } = props;
-  const bufferRef = useRef(new SecretBuffer());
-  const [mask, setMask] = useState("");
-  // Non-secret values (endpoint URLs, hosts) opt out of masking: a bulleted
-  // 60-character URL is impossible to proofread.
+  const bufferRef = useRef(
+    (() => {
+      const buffer = new SecretBuffer();
+      buffer.insert(request.initialValue ?? "", 0);
+      return buffer;
+    })(),
+  );
   const revealed = request.reveal === true;
+  const [mask, setMask] = useState(() =>
+    revealed ? bufferRef.current.reveal() : bufferRef.current.masked(),
+  );
 
   function refreshMask(): void {
     setMask(revealed ? bufferRef.current.reveal() : bufferRef.current.masked());

@@ -2066,13 +2066,13 @@ export function isLumpedSingleTask(taskTitles: string[]): boolean {
  */
 export function buildWorkflowDirective(): string {
   return [
-    "BUILD FOCUS (guidance for build/scaffold/feature work — use judgment, not a rigid script):",
-    "This block was attached because the wording of this turn resembled build work. That guess can be wrong: if the user is actually asking a question, raising a doubt, or asking you to explain, review, or advise, ignore everything below and answer them instead — attaching this block is not permission to start building.",
-    "EXPLORE once: read WORKSPACE STATUS; list the user destination and candidate project only as needed. After a project root is known, work there — do NOT repeatedly relist the parent destination. Non-empty dirs → CONTINUE an existing project / existing stack (NEVER re-scaffold). 'Operation cancelled' = failure.",
-    "UNDERSTAND: match existing stack from manifests/lockfiles (package manager from lockfile). Empty path → pick a modern default and say so. Stack-agnostic scaffolding only into NEW EMPTY folders.",
-    "Scaffold destination is the new subfolder (e.g. Desktop/app), not the parent. Feature apps: replace starter boilerplate — scaffold alone is a failure. Use plan/tasks only when a durable checklist materially helps; direct execution is valid, and an existing active plan must be preserved.",
-    "Local apps end with shell.start + probe; LEAVE the server running; report URL/port/job id. Absolute paths; never write the user app into the agent package tree.",
-    "On tool WARN/error: change approach — never retry the identical failing command. Debug by root cause; never stop at diagnosis without fix+re-verify.",
+    "BUILD FOCUS (specialization for software work — apply the professional loop, not a rigid scaffold script):",
+    "This block is a soft classification. If the user is asking for explanation, review, comparison, or advice rather than directing a change, answer that question and do not mutate anything.",
+    "ORIENT once: establish the actual project root, existing/new state, manifests/lockfile, conventions, and user boundary. A non-empty destination means continue the existing system; never re-scaffold over it. Do not repeatedly relist known parent directories.",
+    "MODEL before edit: derive acceptance criteria and implicit invariants; trace touched contracts, callers, schemas, data/control flow, persistence, error states, and integration boundaries. Inspect only what resolves a decision-changing uncertainty.",
+    "IMPLEMENT the complete behavior, not a thin proxy. A scaffold, generated file, successful compile, or happy path alone does not prove the requested feature. Preserve existing behavior outside the requested boundary.",
+    "VERIFY proportionally: exercise relevant positive, negative, boundary, regression, and integration paths; run the stack's applicable checks and fix failures. For a local runtime deliverable, prove readiness/behavior, leave the server running, and report its URL/port/job id. Libraries and non-server artifacts use their own observable proof instead.",
+    "On warnings or failures, interpret the evidence, revisit the causal model, and change layer or approach rather than repeating an identical command. Before finishing, reconcile changed files and affected surfaces against every acceptance criterion and disclose any residual gap.",
   ].join("\n");
 }
 
@@ -2093,12 +2093,13 @@ export function narrowNmapOperationDirective(): string {
  */
 export function pentestWorkflowDirective(): string {
   return [
-    "PENTEST FOCUS (security / pentest / VAPT engagement — pursue the real objective with verified evidence, not activity theater):",
-    "Choose each next action from the target, scope, current evidence, and expected impact. Reconnaissance, manual validation, directory/content discovery, service expansion, client analysis, and automated scanners are options rather than a mandatory checklist or sequence. Use only what can resolve a meaningful hypothesis, and pivot when evidence changes.",
-    "When you choose a long self-completing operation, the Responder can run it durably while you continue independent useful work. Do not poll or relaunch a Responder-owned job; analyze its delivered evidence once and acknowledge it with job.read when satisfied.",
-    "Develop a threat model from observed behavior, focus on high-value vectors supported by the surface, and confirm findings with safe PoC evidence. Keep going while an in-scope action can materially improve confidence or impact; never pad work with equivalent tools.",
-    "Use plan.create when a durable roadmap improves the engagement, based on returned tool evidence rather than a fixed recon gate. Add follow-up tasks only for discoveries that require real work. Report findings with severity, evidence, reproduction, impact, remediation, and explicit residual or untested risk.",
-    "Never claim mature posture when material uncertainty remains. Stay in engagement scope; FLAG out-of-scope hosts. Non-destructive default. No local dev server for remote targets.",
+    "PENTEST FOCUS (security / pentest / VAPT specialization — pursue the objective with verified coverage, not activity theater):",
+    "This is a soft classification. Derive each action from the authorized scope, attacker objective, observed system, current evidence, and expected impact. Reconnaissance, manual validation, content discovery, service expansion, client analysis, and scanners are options—not a mandatory checklist or sequence.",
+    "Maintain a proportional attack-surface ledger across observed hosts, services, routes/parameters, identities/roles, assets, and trust boundaries. Mark material entries tested/untested with evidence. When a new surface or privilege boundary appears, branch it into task.add/reprioritization instead of ignoring it or erasing completed work.",
+    "Develop and update hypotheses and a threat model from behavior. Prioritize high-impact authentication, authorization, business-flow, injection, and feature-specific paths only when the surface supports them; use safe controls to reject false positives and validate exploitability/impact with a reproducible PoC.",
+    "A first finding or clean scanner run is not completion. Continue while an in-scope test can materially improve coverage, confidence, or impact; deepen and chain findings proportionally, but do not pad the engagement with equivalent tools or destructive proof.",
+    "Use plan.create only when a durable outcome roadmap improves execution, and base it on evidence rather than a fixed recon gate. Record discoveries as outcome tasks, preserve completed evidence, and move reporting behind unresolved material work.",
+    "Before closing, reconcile the ledger with scope and objective. Report severity, affected asset, evidence, reproduction, impact, remediation, and every material residual/untested surface with its reason. Never infer mature posture from untested classes. Flag out-of-scope assets; no local dev server for remote targets.",
   ].join("\n");
 }
 

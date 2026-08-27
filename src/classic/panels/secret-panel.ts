@@ -13,8 +13,10 @@ export interface SecretPanelState {
   readonly cursor: number;
 }
 
-export function secretInitialState(): SecretPanelState {
-  return { buffer: new SecretBuffer(), cursor: 0 };
+export function secretInitialState(initialValue = ""): SecretPanelState {
+  const buffer = new SecretBuffer();
+  const cursor = buffer.insert(sanitizeSecretInput(initialValue), 0);
+  return { buffer, cursor };
 }
 
 /** Pasted bytes reach the buffer stripped of escapes and line breaks. */

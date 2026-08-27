@@ -1,11 +1,18 @@
 import { runAgentTurn } from "../../agent/runner.js";
+import type { McpRuntime } from "../../mcp/runtime.js";
 import type { AgentPort } from "../ports/agent-port.js";
 
+export interface CurrentAgentPortOptions {
+  readonly mcp?: McpRuntime | undefined;
+}
 
-export function createCurrentAgentPort(): AgentPort {
+export function createCurrentAgentPort(
+  options: CurrentAgentPortOptions = {},
+): AgentPort {
   return {
     runTurn(request, handlers) {
       return runAgentTurn(request.prompt, {
+        ...(options.mcp ? { mcp: options.mcp } : {}),
         provider: request.provider,
         model: request.model,
         history: request.history ? [...request.history] : undefined,

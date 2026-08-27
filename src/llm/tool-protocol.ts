@@ -36,8 +36,16 @@ export function toSnakeWireName(canonical: string): string {
  */
 const wireToCanonical = new Map<string, string>();
 
+export function registeredCanonicalForWire(wire: string): string | undefined {
+  return wireToCanonical.get(wire);
+}
+
 export function registerWireName(canonical: string, wire?: string): void {
   const w = wire ?? toWireName(canonical);
+  const existing = wireToCanonical.get(w);
+  if (existing !== undefined && existing !== canonical) {
+    throw new Error(`Tool wire name collision: ${w} maps to both ${existing} and ${canonical}`);
+  }
   wireToCanonical.set(w, canonical);
 }
 

@@ -1152,6 +1152,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
                   title: { type: "string" },
                   task: { type: "string" },
                   name: { type: "string" },
+                  acceptanceCriteria: {
+                    type: "string",
+                    description:
+                      "Observable evidence required before this task is done; state the outcome, not a preferred tool command.",
+                  },
+                  dependencies: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Task ids or aliases that must finish first",
+                  },
+                  resourceLocks: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Optional shared resources that prevent unsafe overlap",
+                  },
                 },
               },
             ],
@@ -1189,6 +1204,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           items: { type: "string" },
         },
         note: { type: "string" },
+        acceptanceCriteria: {
+          type: "string",
+          description:
+            "Observable evidence required before this task is done; describe the outcome rather than prescribing a tool.",
+        },
       },
       required: ["title"],
       additionalProperties: false,

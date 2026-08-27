@@ -34,6 +34,7 @@ import {
   handleUpdate,
 } from "./config-commands.js";
 import { handleInfo, handleKeys, handleSet, handleUnset } from "./key-commands.js";
+import { handleMcp } from "./mcp-commands.js";
 import { handleSkills } from "./skill-commands.js";
 import {
   handleHistory,
@@ -107,6 +108,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("usage", () => handleUsage(services));
   c.setHandler("compact", () => void handleCompact(services));
   c.setHandler("skills", (i) => void handleSkills(services, i));
+  c.setHandler("mcp", (i) => handleMcp(services, i));
   c.setHandler("save", (i) => void handleSave(services, i));
   c.setHandler("reset", () => void handleReset(services));
   c.setHandler("allow", (i) => handleAllow(services, i));

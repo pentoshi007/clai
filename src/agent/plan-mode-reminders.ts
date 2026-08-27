@@ -65,11 +65,11 @@ export function planModeResearchReminder(opts: PlanReminderTextOpts): string {
 
   return (
     `\n\n[plan-mode reminder · step ${step}] ` +
-    `This is only a reminder — do NOT stop, limit, or cut research short because of this note. ` +
-    `Continue and take as much time as you need. Do not miss important ${domain} by hurrying. ` +
-    `Keep gathering until you honestly believe nothing material is left to discover for a strong plan. ` +
-    `Plan mode’s deliverable is still one comprehensive plan.create (goal, evidence-backed detail, ordered tasks for post-accept work). ` +
-    `When research is truly complete, present the plan and await accept — put remaining implement/test/exploit work in tasks.`
+    `This is a calibration note, not a stop order or a demand to keep collecting data. ` +
+    `Reconcile what you know against the requested outcome, material ${domain}, and the decisions the plan must make. ` +
+    `Continue research where an unresolved uncertainty could change scope, architecture, priority, safety, or verification; avoid repeating low-yield work once those decisions are supported. ` +
+    `Represent important unresolved or untested surfaces explicitly in the plan rather than hiding them or researching forever. ` +
+    `When material coverage is mapped and plan-changing uncertainty is resolved, deliver one comprehensive plan.create with evidence, assumptions, risks, ordered outcome tasks, branch conditions, and verification, then await acceptance.`
   );
 }
 

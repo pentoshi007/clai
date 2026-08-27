@@ -361,7 +361,7 @@ SETUP
   3. clai use tokenrouter
   4. /model moonshotai/kimi-k3      (or any id from /model)
 
-MANAGING KEYS AND ENDPOINTS IN CLAI
+MANAGING KEYS AND ENDPOINTS IN clai
   clai set tokenrouter <key>            add a key (up to 10, rotated on failure)
   clai keys                             masked keys + the active endpoint
   clai unset tokenrouter                remove every stored key
@@ -427,7 +427,7 @@ SETUP — STEP BY STEP
   Or export it instead of storing it:
        LIGHTNING_API_KEY=<your-api-key>
 
-MANAGING KEYS AND ENDPOINTS IN CLAI
+MANAGING KEYS AND ENDPOINTS IN clai
   clai set lightning <key>            add a key (up to 10, rotated on failure)
   clai set lightning <key2>           add another; the last that worked is sticky
   clai keys                           masked keys + the active endpoint
@@ -528,7 +528,7 @@ KEYS — WHAT IS NEEDED AND WHERE IT GOES
   Proxy tokens (wk-/ws-) are NOT Modal API tokens (ak-/as-). API tokens
   authenticate the CLI and SDK; they will not work as endpoint headers.
 
-MANAGING ENDPOINTS AND KEYS IN CLAI
+MANAGING ENDPOINTS AND KEYS IN clai
   Both are multi-entry lists with a sticky active choice, up to 10 each.
 
   clai set modal --url <endpoint>          add an endpoint, make it active
@@ -633,7 +633,7 @@ SETUP
   3. clai use meta
   4. /model muse-spark-1.2      (or any id from /model)
 
-MANAGING KEYS IN CLAI
+MANAGING KEYS IN clai
   clai set meta <key>            add a key (up to 10, rotated on failure)
   clai set meta <key2>           add another; the last that worked is sticky
   clai keys                      masked keys + the active endpoint
@@ -679,7 +679,7 @@ SETUP
   3. clai use fireworks
   4. /model accounts/fireworks/models/kimi-k2p6
 
-MANAGING KEYS IN CLAI
+MANAGING KEYS IN clai
   clai set fireworks <key>           add a key (up to 10, rotated on failure)
   clai set fireworks <key2>          add another; last success is sticky
   clai keys                          masked keys
@@ -725,7 +725,7 @@ SETUP
   3. clai use hetzner
   4. /model Qwen/Qwen3.6-35B-A3B-FP8
 
-MANAGING KEYS IN CLAI
+MANAGING KEYS IN clai
   clai set hetzner <key>               add a key (up to 10, rotated on failure)
   clai set hetzner <key2>              add another; last success is sticky
   clai keys                            masked keys
@@ -789,7 +789,7 @@ SETUP
   3. clai use orcarouter
   4. /model openai/gpt-4o-mini      (or any id from /model)
 
-MANAGING KEYS IN CLAI
+MANAGING KEYS IN clai
   clai set orcarouter <key>          add a key (up to 10, rotated on failure)
   clai set orcarouter <key2>         add another; the last that worked is sticky
   clai keys                          masked keys + the active endpoint

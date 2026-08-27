@@ -74,6 +74,14 @@ describe("status line hints and Esc semantics", () => {
     expect(statusLine.slice(idleStart)).toContain("<ContextLimitChip");
   });
 
+  it("never accepts or renders MCP live state in the status line", () => {
+    const statusLine = readFileSync(STATUS_LINE, "utf8");
+    const app = readFileSync(APP, "utf8");
+    expect(statusLine).not.toContain("mcpStatus");
+    expect(statusLine).not.toMatch(/MCP live|active MCP tools|MCP tool count/i);
+    expect(app).not.toContain("mcpStatus=");
+  });
+
   it("shows context from the initial zero-token state", () => {
     expect(
       contextChipForDensity(

@@ -21,6 +21,7 @@ Two things make it practical for everyday use:
 - **Durable plans.** `plan.create` / `task.update` drive a live checklist that survives context compaction and reloads with `/history` — the agent works task-by-task and won't fake completion.
 - **Persistent interactive terminals.** Conversation-owned PTY or pipe sessions keep REPLs such as Python, Metasploit, Meterpreter, database consoles, and debuggers open across model turns. The agent can send follow-up input, read incremental output, resize, interrupt, and close them without losing state.
 - **Native + text tool calling.** Uses provider-native function calling where available, with a text-fence fallback (`toolCalling: auto|native|text`).
+- **MCP, explicitly controlled.** Discovers local stdio and remote HTTP/SSE servers from project and compatible inherited configs. MCP tools are off by default; `/mcp` lets you inspect, add, and select one server or all live servers for the current session.
 - **Safety gate you control.** Every action is classified safe / confirm / block; deletes always confirm with a preview; destructive patterns are blocked.
 
 ---
@@ -435,7 +436,7 @@ You own authorization; clai still gates risk on every action:
 
 ## Terminal UI
 
-The old line REPL has been removed — there are only full surfaces now. An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. In the classic UI, mouse reporting is on by default so wheel swipes scroll the live tail and panels instead of being misread as prompt-history keys; native text selection stays one modifier away (Shift/Option/Fn), and `CLAI_CLASSIC_MOUSE=0` turns mouse reporting off. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts.
+The old line REPL has been removed — there are only full surfaces now. An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. In the classic UI, mouse reporting is on by default so wheel swipes scroll the live tail and panels instead of being misread as prompt-history keys; native text selection stays one modifier away (Shift/Option/Fn), and `CLAI_CLASSIC_MOUSE=0` turns mouse reporting off. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts. MCP tools stay off by default; selecting exactly one server with `/mcp` adds an aqua `@mcp:<server>` token to the composer, while `all` and `off` show no MCP token and MCP counts never appear in status bars.
 
 | Action | Key |
 |--------|-----|
@@ -449,7 +450,8 @@ The old line REPL has been removed — there are only full surfaces now. An Open
 | Search transcript | `Ctrl+R` |
 | Copy selection | `Ctrl+Shift+C` |
 | Commands / file mentions | `/` · `@` |
-| Help / shortcuts | `Ctrl+G` |
+| MCP servers / project config | `/mcp` |
+| Command help / shortcut reference | `Ctrl+G` / `/shortcuts` |
 
 Tool cards show the command/input clearly, with a live elapsed timer next to the command name while they run (the final duration stays visible afterwards), and keep long scan tails in an expandable OUTPUT pager (search, copy, export). File writes show a diff preview. When the agent finishes each prompt — naturally or aborted — a `✻ Worked for 1m16s` row is appended under the response, and it is restored when the session is resumed from `/history`. The status line names what the agent is actually doing right now — `responding` while streaming, `compacting` during auto or manual context compaction — instead of holding the last tool name. Prompts typed while the agent is busy are queued and run automatically in order once the turn settles; the queue pauses only when the previous turn was cancelled, errored, or stopped by the loop guard. Compaction cards preserve session memory without dropping the plan, and `/history` restores full sessions — prompts, tool results, and the matching plan — even after an abort or autosave.
 
@@ -468,6 +470,7 @@ On exit, both interactive surfaces leave the alternate screen and print a sign-o
 | `/effort [level]` · `/reasoning [level]` | Thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |
+| `/mcp [server\|all\|off\|list\|status\|tools\|locations\|refresh]` | Browse and select MCP servers; add/reconnect servers and inspect project/inherited configuration |
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
@@ -524,6 +527,65 @@ enabled with `CLAI_SHOW_THINKING=1`.
 
 ---
 
+## Model Context Protocol (MCP)
+
+clai can discover and call tools from local or remote MCP servers. MCP tools are **off by default** and are not sent to the model until you select one server or choose all live servers for the current session. Run `/mcp` to discover configured servers and open the shared picker in Classic or OpenTUI. Selecting exactly one server displays an aqua `@mcp:<server>` token in the composer; `all` and `off` intentionally display no MCP token.
+
+### Project configuration
+
+The native project file is `.clai/mcp.json`. It accepts JSON or JSONC and the common `servers` / `mcpServers` shapes. A minimal configuration can mix stdio and Streamable HTTP servers:
+
+```json
+{
+  "servers": {
+    "local": {
+      "command": "my-mcp-server",
+      "args": ["--root", "${workspaceFolder}"],
+      "env": {
+        "MCP_TOKEN": "${env:MCP_TOKEN}"
+      }
+    },
+    "remote": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:MCP_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+A `command` entry uses stdio. A `url` entry uses Streamable HTTP by default; set `"type": "sse"` for a legacy SSE endpoint. `${workspaceFolder}`, `${env:NAME}` / `${env.NAME}`, and compatible `${input:name}` substitutions are resolved at discovery time, and resolved secret values are redacted from diagnostics.
+
+The picker can add one server without hand-editing the file: choose **+ add MCP server**, paste one server object into the initially empty editor, and confirm. You can also supply the fragment inline:
+
+```text
+/mcp add {"name":"docs","command":"docs-server","args":[]}
+```
+
+The add flow accepts one named object or a one-entry `servers` / `mcpServers` fragment, validates it, then atomically merges it into the current project `.clai/mcp.json` with deterministic server ordering and restrictive permissions. Existing unrelated metadata is preserved.
+
+clai also inherits compatible configuration from `CLAI_MCP_CONFIG` (an OS-delimited file list), ancestor `.clai/mcp.json` and `.mcp.json` files, repository `.github/mcp.json` and `.vscode/mcp.json`, clai user config, and supported Copilot, Claude, and VS Code user locations. Higher-precedence definitions deterministically shadow inherited servers with the same name. `/mcp locations` shows the exact project target and inherited paths for the current workspace.
+
+### Select and inspect servers
+
+```text
+/mcp                         # picker: add, off, all, or one server
+/mcp docs                    # expose only docs tools for this session
+/mcp all                     # expose tools from every live server
+/mcp off                     # default: expose no MCP tools
+/mcp list                    # sources, transports, state, selection, and catalog
+/mcp status                  # live, failed, and invalid server details
+/mcp tools [server]          # canonical mcp.<server>.<tool> names
+/mcp locations               # project and inherited configuration paths
+/mcp refresh                 # rediscover configs and live tools
+/mcp reconnect docs          # restart one server connection
+```
+
+Static built-in tools always remain first; selected MCP definitions are appended in deterministic order as `mcp.<server>.<tool>`. A tool explicitly annotated read-only can run under the normal safe/parallel policy. Unmarked, mutating, or destructive MCP tools require the usual confirmation, and ask mode exposes only safe tools. Server descriptions and results are treated as untrusted data, secrets are redacted, response sizes and lifecycles are bounded, and HTTP credentials are never forwarded through redirects.
+
+---
+
 ## Built-in tools
 
 | Group | Tools |
@@ -575,7 +637,7 @@ Search-provider keys are multi-key and rotate just like model providers.
 
 ## Per-project context
 
-Drop a `.clai/context.md` in a repo and its contents are injected every turn — lab topology, in-scope hosts, stack assumptions, coding conventions, or anything the agent should always know for that project.
+Drop a `.clai/context.md` in a repo and its contents are injected every turn — lab topology, in-scope hosts, stack assumptions, coding conventions, or anything the agent should always know for that project. Project-scoped MCP servers belong in `.clai/mcp.json`; use `/mcp locations` to see that target plus every inherited compatible source.
 
 ---
 
@@ -647,6 +709,7 @@ clai/
 │  ├─ index.ts          # CLI entry + subcommands
 │  ├─ agent/            # loop, plans, compaction, resume orientation, tool parsing
 │  ├─ llm/              # 18 providers, streaming, native tools, key rotation + fallback
+│  ├─ mcp/              # discovery, validation, transports, lifecycle, and tool dispatch
 │  ├─ tools/            # fs, shell, net, http, web, pentest, batch, plan
 │  ├─ safety/           # risk classifier + engagement (scope) policy
 │  ├─ store/            # config, history, keys, plans, scope

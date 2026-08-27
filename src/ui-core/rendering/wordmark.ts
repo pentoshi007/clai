@@ -11,100 +11,100 @@ import chalk from "chalk";
  * which has a pane to fill.
  */
 const COMPACT_I: readonly string[] = [
-  "######",
-  "######",
-  "..##..",
-  "..##..",
-  "..##..",
-  "..##..",
-  "######",
-  "######",
+  "##",
+  "##",
+  "..",
+  "..",
+  "##",
+  "##",
+  "##",
+  "##",
 ];
 
 const COMPACT_GLYPHS: Record<string, readonly string[]> = {
-  C: [
+  c: [
+    "......",
     ".####.",
-    "######",
     "##....",
     "##....",
     "##....",
     "##....",
-    "######",
+    "##....",
     ".####.",
   ],
-  L: ["##...", "##...", "##...", "##...", "##...", "##...", "#####", "#####"],
-  A: [
+  l: ["##", "##", "##", "##", "##", "##", "##", "##"],
+  a: [
+    "......",
     ".####.",
-    "######",
+    "....##",
+    ".#####",
     "##..##",
     "##..##",
-    "######",
-    "######",
     "##..##",
-    "##..##",
+    ".#####",
   ],
-  I: COMPACT_I,
+  i: COMPACT_I,
 };
 
 const LARGE_I: readonly string[] = [
-  "#########",
-  "#########",
-  "#########",
-  "...###...",
-  "...###...",
-  "...###...",
-  "...###...",
-  "...###...",
-  "...###...",
-  "#########",
-  "#########",
-  "#########",
+  "###",
+  "###",
+  "...",
+  "...",
+  "###",
+  "###",
+  "###",
+  "###",
+  "###",
+  "###",
+  "###",
+  "###",
 ];
 
 const LARGE_GLYPHS: Record<string, readonly string[]> = {
-  C: [
+  c: [
+    ".........",
+    ".........",
+    ".........",
     ".#######.",
     "#########",
-    "#########",
     "###......",
     "###......",
     "###......",
     "###......",
     "###......",
-    "###......",
-    "#########",
     "#########",
     ".#######.",
   ],
-  L: [
-    "###.....",
-    "###.....",
-    "###.....",
-    "###.....",
-    "###.....",
-    "###.....",
-    "###.....",
-    "###.....",
-    "###.....",
-    "########",
-    "########",
-    "########",
+  l: [
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
+    "###",
   ],
-  A: [
+  a: [
+    ".........",
+    ".........",
+    ".........",
     ".#######.",
-    "#########",
-    "#########",
+    "......###",
+    "......###",
+    ".########",
     "###...###",
     "###...###",
     "###...###",
-    "#########",
-    "#########",
-    "#########",
     "###...###",
-    "###...###",
-    "###...###",
+    ".########",
   ],
-  I: LARGE_I,
+  i: LARGE_I,
 };
 
 /** `block` uses half blocks; `ascii` samples every second pixel row. */
@@ -133,25 +133,25 @@ const SPECS: Record<WordmarkSize, Spec> = {
 
 const ON = "#";
 
-/** First stop of the wordmark ramp (also the plan/task pane accent). */
-export const WORDMARK_TOP_HEX = "#FF55FF";
+/** First stop of the wordmark ramp. */
+export const WORDMARK_TOP_HEX = "#12D9B0";
 
 /**
- * A cool analogous ramp — magenta through violet and blue into the brand cyan.
+ * An analogous cool ramp — teal through the brand aqua into a soft cyan.
  * Applied left to right so every cell holds a single hue, which is what lets
  * half blocks carry a gradient at all.
  */
 const RAMP: readonly string[] = [
   WORDMARK_TOP_HEX,
-  "#A96BFF",
-  "#5B8CFF",
+  "#1FE4DA",
   "#2EEBFF",
+  "#8FEFFF",
 ];
 
 const RAMP_STEPS = 12;
 
 function glyphsOf(word: string, spec: Spec): readonly string[][] {
-  return [...word.toUpperCase()].map((char) => [
+  return [...word.toLowerCase()].map((char) => [
     ...(spec.glyphs[char] ?? spec.fallback),
   ]);
 }

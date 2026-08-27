@@ -40,6 +40,8 @@ vi.mock("../../src/agent/confirm-port.js", async () => {
   };
 });
 
+await import("../../src/agent/runner.js");
+
 describe("native tool loop integration", () => {
   let cwd: string;
   let prevCwd: string;
