@@ -217,24 +217,23 @@ describe("single-admission operation policy", () => {
     expect(transport.generations).toHaveLength(1);
   });
 
-  it("caps provider-internal recursion at one generation HTTP request", async () => {
+  it("surfaces Meta output exhaustion within one generation HTTP request", async () => {
     slotsByProvider = { meta: keySlots(["meta-a"]) };
     const transport = installScript(() => metaBudgetIncomplete(META_MODEL));
     const ledger = new OperationLedger(singleAdmissionOperationPolicy("compaction"));
 
-    await expect(
-      completeWithProvider(
-        { provider: "meta", messages: userTurn() },
-        { maxRetries: 0, operation: ledger },
-      ),
-    ).rejects.toBeInstanceOf(OperationAdmissionBudgetExceededError);
+    const result = await completeWithProvider(
+      { provider: "meta", messages: userTurn() },
+      { maxRetries: 0, operation: ledger },
+    );
 
+    expect(result.finishReason).toBe("length");
     expect(transport.generations).toHaveLength(1);
     expect(ledger.snapshot().attempts).toHaveLength(1);
     expect(ledger.snapshot().attempts[0]).toMatchObject({
       provider: "meta",
       reason: "initial",
-      outcome: "failure",
+      outcome: "success",
     });
     expect(ledger.snapshot().aggregate.usage).toMatchObject({
       promptTokens: 12,
@@ -245,7 +244,7 @@ describe("single-admission operation policy", () => {
 });
 
 describe("semantic output policy", () => {
-  it("stops Meta budget exhaustion after streamed reasoning without regenerating", async () => {
+  it("returns Meta budget exhaustion after streamed reasoning without regenerating", async () => {
     slotsByProvider = { meta: keySlots(["meta-a"]) };
     const transport = installTransport(() =>
       metaSseReasoningThenBudgetIncomplete(),
@@ -254,22 +253,21 @@ describe("semantic output policy", () => {
 
     const tokens: string[] = [];
     const reasoningDeltas: string[] = [];
-    await expect(
-      streamWithProvider(
-        { provider: "meta", messages: userTurn() },
-        (token) => tokens.push(token),
-        {
-          maxRetries: 0,
-          operation: ledger,
-          onStreamEvent: (event) => {
-            if (event.type === "reasoning_delta") {
-              reasoningDeltas.push(event.text);
-            }
-          },
+    const result = await streamWithProvider(
+      { provider: "meta", messages: userTurn() },
+      (token) => tokens.push(token),
+      {
+        maxRetries: 0,
+        operation: ledger,
+        onStreamEvent: (event) => {
+          if (event.type === "reasoning_delta") {
+            reasoningDeltas.push(event.text);
+          }
         },
-      ),
-    ).rejects.toThrow(/output budget/);
+      },
+    );
 
+    expect(result.finishReason).toBe("length");
     expect(transport.generations).toHaveLength(1);
     const joined = reasoningDeltas.join("");
     expect(joined).toContain("planning the visible answer");
@@ -278,7 +276,7 @@ describe("semantic output policy", () => {
     expect(ledger.semanticOutputPublished).toBe(true);
     expect(ledger.snapshot().attempts).toHaveLength(1);
     expect(ledger.snapshot().attempts[0]).toMatchObject({
-      outcome: "failure",
+      outcome: "success",
       usage: { kind: "known" },
     });
   });

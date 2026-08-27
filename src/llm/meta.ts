@@ -17,7 +17,6 @@ import {
   STREAM_STALL_MARKER,
 } from "./http.js";
 import {
-  completeGenerationAttempt,
   generationFetch,
   runGenerationAttempt,
 } from "./operation-usage.js";
@@ -315,7 +314,14 @@ function buildResponsesBody(options: {
   );
   const reasoningOn = Boolean(plan.controls.reasoning?.enabled);
   const defaultMax = reasoningOn ? 8192 : 4096;
-  const effectiveMax = Math.max(16, plan.controls.requestedMaxTokens ?? defaultMax);
+  const requestedMax = Math.max(
+    16,
+    plan.controls.requestedMaxTokens ?? defaultMax,
+  );
+  const effectiveMax =
+    plan.policy.limits.outputTokens === undefined
+      ? requestedMax
+      : Math.min(requestedMax, plan.policy.limits.outputTokens);
   const body: Record<string, unknown> = {
     model: options.model,
     input,
@@ -335,31 +341,6 @@ function buildResponsesBody(options: {
     body.parallel_tool_calls = options.parallelToolCalls === false ? false : true;
   }
   return JSON.stringify(body);
-}
-
-const META_MAX_OUTPUT_TOKENS_CAP = 65536;
-const MAX_INCOMPLETE_BUDGET_RETRIES = 2;
-const incompleteBudgetRetries = new WeakMap<CompletionRequest, number>();
-
-function incompleteBudgetRetry(request: CompletionRequest, reasoningOn: boolean): CompletionRequest | undefined {
-  const used = incompleteBudgetRetries.get(request) ?? 0;
-  const currentBudget = Math.max(16, request.maxTokens ?? (reasoningOn ? 8192 : 4096));
-  const nextBudget = Math.min(currentBudget * 2, META_MAX_OUTPUT_TOKENS_CAP);
-  if (used >= MAX_INCOMPLETE_BUDGET_RETRIES || nextBudget <= currentBudget) return undefined;
-  const retryRequest: CompletionRequest = { ...request, maxTokens: nextBudget };
-  incompleteBudgetRetries.set(retryRequest, used + 1);
-  return retryRequest;
-}
-
-function budgetExhaustedError(request: CompletionRequest, reasoningOn: boolean, payload: string): ProviderError {
-  const currentBudget = Math.max(16, request.maxTokens ?? (reasoningOn ? 8192 : 4096));
-  const effort = (metaReasoningPayload(request.thinking) as Record<string, unknown>)?.effort as string | undefined;
-  const retried = (incompleteBudgetRetries.get(request) ?? 0) > 0;
-  return new ProviderError(
-    `Meta Model API spent the entire output budget (${currentBudget} tokens${effort ? `, mostly on reasoning at ${effort} effort` : ""}) without producing an answer${retried ? ", even after raising max_output_tokens" : ""}. Lower the effort with /effort high or raise max_tokens.`,
-    undefined,
-    payload.slice(0, 1000),
-  );
 }
 
 interface MetaReasoningItemPosition {
@@ -605,20 +586,14 @@ export const metaProvider: LlmProvider = {
       parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage),
       Boolean(parsed.reasoningSummary.trim()),
     );
-    if (!parsed.text.trim() && parsed.toolCalls.length === 0) {
-      const respStatus = (data as Record<string, unknown>).status;
-      const details = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
-      if (respStatus === "incomplete" && details?.reason === "max_output_tokens") {
-        const retryRequest = incompleteBudgetRetry(request, Boolean(request.thinking?.enabled));
-        if (retryRequest) {
-          completeGenerationAttempt("failure", usage);
-          retryRequest.attemptReason = "provider-retry";
-          return metaProvider.complete(retryRequest, auth);
-        }
-        throw budgetExhaustedError(request, Boolean(request.thinking?.enabled), JSON.stringify(data));
-      }
-    }
+    const responseStatus = (data as Record<string, unknown>).status;
+    const incompleteDetails = (data as Record<string, unknown>)
+      .incomplete_details as Record<string, unknown> | undefined;
+    const outputBudgetIncomplete =
+      responseStatus === "incomplete" &&
+      incompleteDetails?.reason === "max_output_tokens";
     if (
+      !outputBudgetIncomplete &&
       !parsed.text.trim() &&
       parsed.toolCalls.length === 0 &&
       !parsed.reasoningSummary.trim()
@@ -630,11 +605,17 @@ export const metaProvider: LlmProvider = {
       provider: "meta",
       model,
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
-      ...(parsed.toolCalls.length ? { finishReason: "tool_calls" } : { finishReason: "stop" }),
+      ...(parsed.toolCalls.length
+        ? { finishReason: "tool_calls" }
+        : outputBudgetIncomplete
+          ? { finishReason: "length" }
+          : { finishReason: "stop" }),
       ...(usage ? { usage } : {}),
       ...(parsed.reasoningItems.length
         ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
-        : {}),
+        : parsed.reasoningSummary
+          ? { reasoningBlock: { text: parsed.reasoningSummary } }
+          : {}),
       ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
     };
       },
@@ -652,7 +633,6 @@ export const metaProvider: LlmProvider = {
         reason: request.attemptReason ?? "initial",
       },
       async () => {
-    const reasoningOn = Boolean(request.thinking?.enabled);
     const idleTimeoutMs = THINKING_STREAM_IDLE_TIMEOUT_MS;
     const initialIdleTimeoutMs = THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS;
     const outputIdleTimeoutMs = Math.round(Math.max(idleTimeoutMs, initialIdleTimeoutMs) * 1.5);
@@ -798,35 +778,41 @@ export const metaProvider: LlmProvider = {
         );
         const usageTmp = parsed.usage ?? parseMetaUsage((data as Record<string, unknown>).usage);
         const jsonStatus = (data as Record<string, unknown>).status;
-        const jsonDetails = (data as Record<string, unknown>).incomplete_details as Record<string, unknown> | undefined;
-        if (!parsed.text.trim() && parsed.toolCalls.length === 0 && jsonStatus === "incomplete" && jsonDetails?.reason === "max_output_tokens") {
-          const retryRequest = incompleteBudgetRetry(request, reasoningOn);
-          const streamMethod = metaProvider.stream;
-          if (retryRequest && streamMethod) {
-            completeGenerationAttempt("failure", usageTmp);
-            retryRequest.attemptReason = "provider-retry";
-            return streamMethod(retryRequest, auth, onToken);
-          }
-          completeGenerationAttempt("failure", usageTmp);
-          throw budgetExhaustedError(request, reasoningOn, JSON.stringify(data));
-        }
+        const jsonDetails = (data as Record<string, unknown>)
+          .incomplete_details as Record<string, unknown> | undefined;
+        const outputBudgetIncomplete =
+          jsonStatus === "incomplete" &&
+          jsonDetails?.reason === "max_output_tokens";
         if (
+          outputBudgetIncomplete ||
           parsed.text.trim() ||
           parsed.toolCalls.length > 0 ||
           parsed.reasoningSummary.trim()
         ) {
           emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
+          if (parsed.reasoningSummary) {
+            emitStreamReasoningDelta(
+              request.onStreamEvent,
+              parsed.reasoningSummary,
+            );
+          }
           if (parsed.text) onToken(parsed.text);
           return {
             text: parsed.text,
             provider: "meta",
             model,
             ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
-            ...(parsed.toolCalls.length ? { finishReason: "tool_calls" } : { finishReason: "stop" }),
+            ...(parsed.toolCalls.length
+              ? { finishReason: "tool_calls" }
+              : outputBudgetIncomplete
+                ? { finishReason: "length" }
+                : { finishReason: "stop" }),
             ...(usageTmp ? { usage: usageTmp } : {}),
             ...(parsed.reasoningItems.length
               ? { reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems } }
-              : {}),
+              : parsed.reasoningSummary
+                ? { reasoningBlock: { text: parsed.reasoningSummary } }
+                : {}),
             ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
           };
         }
@@ -990,7 +976,7 @@ export const metaProvider: LlmProvider = {
               toolCalls.push({ id: state.callId ?? state.id ?? `call_${toolCalls.length}`, name: canonical, args, rawArguments: raw });
             }
             if (!visible.trim() && toolCalls.length === 0) {
-              if (reasoningSeen.trim()) {
+              if (reasoningSeen.trim() || finishReason === "length") {
                 return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...usageResult(), ...reasoningReplay() };
               }
               throw new ProviderError(`Meta Model API completed without a visible answer.`);
@@ -1190,29 +1176,50 @@ export const metaProvider: LlmProvider = {
           if (type === "response.failed" || type === "response.incomplete") {
             const resp = (parsed.response ?? parsed) as Record<string, unknown>;
             if (type === "response.incomplete") {
-              const details = resp.incomplete_details as Record<string, unknown> | undefined;
-              const reason = typeof details?.reason === "string" ? details.reason : "";
+              const details = resp.incomplete_details as
+                | Record<string, unknown>
+                | undefined;
+              const reason =
+                typeof details?.reason === "string" ? details.reason : "";
               if (resp.usage) {
                 const u = parseMetaUsage(resp.usage);
                 if (u) streamUsage = u;
               }
-              if (reason === "max_output_tokens" && !visible.trim() && toolCallState.size === 0) {
-                const retryRequest = reasoningSeen.trim()
-                  ? undefined
-                  : incompleteBudgetRetry(request, reasoningOn);
-                const streamMethod = metaProvider.stream;
-                if (retryRequest && streamMethod && !request.signal?.aborted) {
-                  cleanup();
-                  completeGenerationAttempt("failure", streamUsage);
-                  retryRequest.attemptReason = "provider-retry";
-                  return streamMethod(retryRequest, auth, onToken);
+              if (Array.isArray(resp.output)) {
+                const out = parseResponsesOutput(
+                  resp as { output?: unknown; usage?: unknown },
+                );
+                for (const [index, item] of out.reasoningItems.entries()) {
+                  const position = out.reasoningItemPositions[index];
+                  noteReasoningItem(
+                    item,
+                    position?.sequence,
+                    position?.toolCallIndex,
+                  );
                 }
-                completeGenerationAttempt("failure", streamUsage);
-                throw budgetExhaustedError(request, reasoningOn, payload);
+                if (out.reasoningSummary && !reasoningSeen.trim()) {
+                  emitReasoningDelta(out.reasoningSummary);
+                }
+                if (out.text && !visible.trim()) emitVisible(out.text);
+                for (const tc of out.toolCalls) {
+                  const exists = Array.from(toolCallState.values()).some(
+                    (state) => state.callId === tc.id,
+                  );
+                  if (!exists) {
+                    toolCallState.set(tc.id, {
+                      id: tc.id,
+                      callId: tc.id,
+                      name: toWireName(tc.name),
+                      arguments:
+                        tc.rawArguments ?? JSON.stringify(tc.args),
+                    });
+                  }
+                }
               }
-            finishReason = "incomplete";
-            sawTerminalProof = "response-incomplete";
-            continue;
+              finishReason =
+                reason === "max_output_tokens" ? "length" : "incomplete";
+              sawTerminalProof = "response-incomplete";
+              continue;
             }
             const err = resp.error as Record<string, unknown> | undefined;
             const rawDetail = err?.message ?? err?.code ?? type;
@@ -1273,7 +1280,7 @@ export const metaProvider: LlmProvider = {
         toolCalls.push({ id: state.callId ?? state.id ?? `call_${toolCalls.length}`, name: canonical, args, rawArguments: raw });
       }
       if (!visible.trim() && toolCalls.length === 0) {
-        if (reasoningSeen.trim()) {
+        if (reasoningSeen.trim() || finishReason === "length") {
           return { text: full, provider: "meta", model, finishReason: finishReason ?? "stop", ...usageResult(), ...reasoningReplay() };
         }
         throw new ProviderError(`Meta Model API completed without a visible answer.`);

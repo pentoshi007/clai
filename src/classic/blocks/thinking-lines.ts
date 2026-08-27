@@ -1,4 +1,5 @@
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
+import { thinkingElapsedLabel } from "../../ui-core/rendering/duration.js";
 import { liveThinkingDisplay } from "../../ui-core/rendering/thinking-tail.js";
 import { isItemExpanded, type ThinkingItem } from "../../ui-core/state/transcript-types.js";
 import { wrapWithPrefixes } from "../render/wrap.js";
@@ -15,6 +16,7 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
   });
   const expanded = isItemExpanded(ctx.state, item);
   const content = sanitizeDisplayText(item.content);
+  const elapsed = thinkingElapsedLabel(item, ctx.now);
 
   const header = (): string =>
     clipRow(
@@ -22,8 +24,15 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
       `${gutter}${ctx.ink.style(
         joinMeta(ctx, [
           "thinking",
+          elapsed,
           `${thinkingTokenEstimate(content).toLocaleString()} tokens`,
-          expanded ? "Ctrl+T to hide" : "Ctrl+T to expand",
+          item.streaming
+            ? expanded
+              ? "live · Ctrl+T to collapse when done"
+              : "live · Ctrl+T to keep open"
+            : expanded
+              ? "Ctrl+T to hide"
+              : "Ctrl+T to expand",
         ]),
         { fg: "thinking" },
       )}`,
@@ -40,7 +49,7 @@ export function buildThinkingLines(ctx: BlockContext, item: ThinkingItem): strin
   if (item.streaming) {
     const tail = liveThinkingDisplay(content);
     if (!tail.trim()) return [header()];
-    return bodyRows(tail);
+    return [header(), ...bodyRows(tail)];
   }
 
   if (!content.trim()) return [];

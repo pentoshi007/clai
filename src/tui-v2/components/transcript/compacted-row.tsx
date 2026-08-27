@@ -4,7 +4,14 @@
  * pager modal (same as tool OUTPUT), not an in-chat mega-expand.
  */
 
-import { Fragment, useMemo, useRef, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import type { CompactedItem } from "../../../ui-core/state/transcript-types.js";
@@ -19,6 +26,7 @@ import {
 import { renderStyledStreamingMarkdown } from "../../rendering/styled-markdown.js";
 import { liveCompactionHeadTail } from "../../../ui-core/rendering/thinking-tail.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
+import { compactionElapsedLabel } from "../../../ui-core/rendering/duration.js";
 
 const PREVIEW_LINES = 4;
 
@@ -34,6 +42,13 @@ export function CompactedRow(props: {
 }): ReactNode {
   const { item, theme, services, contentWidth } = props;
   const { width: termWidth } = useTerminalDimensions();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!item.streaming) return;
+    const clock = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(clock);
+  }, [item.streaming]);
+  const elapsedLabel = compactionElapsedLabel(item, now);
   const wrapWidth = Math.max(
     20,
     contentWidth != null
@@ -114,9 +129,11 @@ export function CompactedRow(props: {
           paddingBottom: 0,
         }}
       >
-        <text selectable style={{ fg: borderFg, attributes: TextAttributes.BOLD }}>
-          ✦ Compacted context{item.streaming ? " …" : ""}
-        </text>
+        <text
+          content={`✦ Compacted context${item.streaming ? " …" : ""}${elapsedLabel ? ` · ${elapsedLabel}` : ""}`}
+          selectable
+          style={{ fg: borderFg, attributes: TextAttributes.BOLD }}
+        />
         <text content=" " selectable />
         <text
           selectable

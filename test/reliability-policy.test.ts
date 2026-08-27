@@ -6,11 +6,13 @@ import {
   DEFAULT_SOFT_COMPACT_TOKEN_BUDGET,
   HARD_COMPACT_TOKEN_BUDGET,
   LEGACY_MAX_TOKENS,
+  MAX_STEP_COMPLETION_TOKENS,
   autoCompactTriggerTokens,
   dedupeToolContextOutput,
   freeTierGuardNotices,
   getReliabilityPolicy,
   hashToolResultContent,
+  outputBudgetWasExhausted,
   resolveStepMaxTokens,
 } from "../src/agent/reliability-policy.js";
 
@@ -140,7 +142,58 @@ describe("reliability policy (E1–E6)", () => {
         thinkingEnabled: true,
         truncationDepth: 1,
       }),
-    ).toBe(65_536);
+    ).toBe(MAX_STEP_COMPLETION_TOKENS);
+  });
+
+  it("E3: clamps continuation budgets to the route ceiling without shrinking their floor", () => {
+    expect(
+      resolveStepMaxTokens({
+        nativeToolsActive: false,
+        toolsAttached: false,
+        recoveryNudge: true,
+        truncationDepth: 1,
+        minimumTokens: 32_768,
+        outputTokenLimit: 20_000,
+      }),
+    ).toBe(20_000);
+    expect(
+      resolveStepMaxTokens({
+        nativeToolsActive: false,
+        toolsAttached: false,
+        recoveryNudge: true,
+        truncationDepth: 1,
+        minimumTokens: 32_768,
+      }),
+    ).toBe(32_768);
+  });
+
+  it("E3: recognizes provider max-token finish reasons and exact usage exhaustion", () => {
+    for (const finishReason of [
+      "length",
+      "MAX_TOKENS",
+      "max_tokens",
+      "max-output-tokens",
+    ]) {
+      expect(
+        outputBudgetWasExhausted({
+          finishReason,
+          requestedMaxTokens: 8_000,
+        }),
+      ).toBe(true);
+    }
+    expect(
+      outputBudgetWasExhausted({
+        completionTokens: 7_950,
+        requestedMaxTokens: 8_000,
+      }),
+    ).toBe(true);
+    expect(
+      outputBudgetWasExhausted({
+        finishReason: "stop",
+        completionTokens: 7_000,
+        requestedMaxTokens: 8_000,
+      }),
+    ).toBe(false);
   });
 
   it("E4: free-tier notices are advisory only and never empty for large context", () => {

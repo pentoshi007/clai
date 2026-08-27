@@ -66,7 +66,9 @@ export function createArtifactPagerSource(
     const { buffer, total } = await readRange(requested, boundedPageBytes + 4);
     let start = 0;
     while (start < Math.min(4, buffer.length) && (buffer[start]! & 0xc0) === 0x80) start += 1;
-    const visible = buffer.subarray(start);
+    let end = Math.min(buffer.length, boundedPageBytes);
+    while (end < buffer.length && (buffer[end]! & 0xc0) === 0x80) end += 1;
+    const visible = buffer.subarray(start, end);
     const pageCount = Math.max(1, Math.ceil(total / boundedPageBytes));
     return {
       body: new TextDecoder("utf-8", { fatal: false }).decode(visible),
@@ -136,5 +138,71 @@ export function createArtifactPagerSource(
       return buffer.toString("utf8");
     },
     dispose() { disposed = true; },
+  };
+}
+
+export function createTextPagerSource(
+  text: string,
+  path = "memory://pager",
+  pageBytes = DEFAULT_ARTIFACT_PAGE_BYTES,
+): ArtifactPagerSource {
+  const boundedPageBytes = Math.max(1024, Math.min(MAX_PAGE_BYTES, Math.floor(pageBytes)));
+  let data = Buffer.from(text, "utf8");
+  let disposed = false;
+  const assertOpen = (): void => {
+    if (disposed) throw new Error("artifact pager source is disposed");
+  };
+  const readPage = async (offset: number): Promise<ArtifactPage> => {
+    assertOpen();
+    const total = data.length;
+    const requested = Math.max(0, Math.min(Math.floor(offset), total));
+    let start = requested;
+    while (start < total && (data[start]! & 0xc0) === 0x80) start += 1;
+    let end = Math.min(total, requested + boundedPageBytes);
+    while (end < total && (data[end]! & 0xc0) === 0x80) end += 1;
+    const pageCount = Math.max(1, Math.ceil(total / boundedPageBytes));
+    return {
+      body: data.subarray(start, end).toString("utf8"),
+      offset: requested,
+      nextOffset: Math.min(total, requested + boundedPageBytes),
+      totalBytes: total,
+      pageNumber: Math.min(pageCount, Math.floor(requested / boundedPageBytes) + 1),
+      pageCount,
+    };
+  };
+  return {
+    path,
+    pageBytes: boundedPageBytes,
+    readPage,
+    readTail: async () => {
+      assertOpen();
+      return readPage(Math.max(0, data.length - boundedPageBytes));
+    },
+    async search(query, fromOffset = 0, reverse = false) {
+      assertOpen();
+      const needle = Buffer.from(query, "utf8");
+      if (needle.length === 0) return readPage(fromOffset);
+      const requested = Math.max(0, Math.min(Math.floor(fromOffset), data.length));
+      const from = reverse && requested === 0 ? data.length : requested;
+      const index = reverse
+        ? data.lastIndexOf(needle, Math.max(0, from - 1))
+        : data.indexOf(needle, from);
+      return index < 0
+        ? undefined
+        : readPage(Math.max(0, index - Math.floor(boundedPageBytes / 2)));
+    },
+    async readAll() {
+      assertOpen();
+      if (data.length > MAX_FULL_ARTIFACT_EXPORT_BYTES) {
+        throw new Error(
+          `artifact is ${data.length.toLocaleString()} bytes; full copy/export is limited to ${MAX_FULL_ARTIFACT_EXPORT_BYTES.toLocaleString()} bytes. Page it in the UI instead.`,
+        );
+      }
+      return data.toString("utf8");
+    },
+    dispose() {
+      disposed = true;
+      data = Buffer.alloc(0);
+    },
   };
 }

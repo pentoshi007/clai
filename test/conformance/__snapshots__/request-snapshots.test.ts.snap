@@ -410,9 +410,6 @@ exports[`serialized request snapshots > agentrouter / tools 1`] = `
 exports[`serialized request snapshots > anthropic / images 1`] = `
 {
   "body": {
-    "cache_control": {
-      "type": "ephemeral",
-    },
     "max_tokens": 1024,
     "messages": [
       {
@@ -430,6 +427,9 @@ exports[`serialized request snapshots > anthropic / images 1`] = `
             "type": "text",
           },
           {
+            "cache_control": {
+              "type": "ephemeral",
+            },
             "source": {
               "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
               "media_type": "image/png",
@@ -458,9 +458,6 @@ exports[`serialized request snapshots > anthropic / images 1`] = `
 exports[`serialized request snapshots > anthropic / minimal 1`] = `
 {
   "body": {
-    "cache_control": {
-      "type": "ephemeral",
-    },
     "max_tokens": 1024,
     "messages": [
       {
@@ -472,7 +469,15 @@ exports[`serialized request snapshots > anthropic / minimal 1`] = `
         "role": "assistant",
       },
       {
-        "content": "second user turn",
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
         "role": "user",
       },
     ],
@@ -493,9 +498,6 @@ exports[`serialized request snapshots > anthropic / minimal 1`] = `
 exports[`serialized request snapshots > anthropic / reasoning-control 1`] = `
 {
   "body": {
-    "cache_control": {
-      "type": "ephemeral",
-    },
     "max_tokens": 9216,
     "messages": [
       {
@@ -507,7 +509,15 @@ exports[`serialized request snapshots > anthropic / reasoning-control 1`] = `
         "role": "assistant",
       },
       {
-        "content": "second user turn",
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
         "role": "user",
       },
     ],
@@ -531,9 +541,6 @@ exports[`serialized request snapshots > anthropic / reasoning-control 1`] = `
 exports[`serialized request snapshots > anthropic / tool-loop-replay 1`] = `
 {
   "body": {
-    "cache_control": {
-      "type": "ephemeral",
-    },
     "max_tokens": 5120,
     "messages": [
       {
@@ -569,6 +576,9 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay 1`] = `
       {
         "content": [
           {
+            "cache_control": {
+              "type": "ephemeral",
+            },
             "content": "example file contents",
             "is_error": false,
             "tool_use_id": "call_replay_1",
@@ -637,9 +647,6 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay 1`] = `
 exports[`serialized request snapshots > anthropic / tool-loop-replay-unsigned 1`] = `
 {
   "body": {
-    "cache_control": {
-      "type": "ephemeral",
-    },
     "max_tokens": 5120,
     "messages": [
       {
@@ -670,6 +677,9 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay-unsigned 1`
       {
         "content": [
           {
+            "cache_control": {
+              "type": "ephemeral",
+            },
             "content": "example file contents",
             "is_error": false,
             "tool_use_id": "call_replay_1",
@@ -738,9 +748,6 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay-unsigned 1`
 exports[`serialized request snapshots > anthropic / tools 1`] = `
 {
   "body": {
-    "cache_control": {
-      "type": "ephemeral",
-    },
     "max_tokens": 1024,
     "messages": [
       {
@@ -752,7 +759,15 @@ exports[`serialized request snapshots > anthropic / tools 1`] = `
         "role": "assistant",
       },
       {
-        "content": "second user turn",
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
         "role": "user",
       },
     ],
@@ -829,6 +844,9 @@ exports[`serialized request snapshots > aws-mantle-anthropic / images 1`] = `
             "type": "text",
           },
           {
+            "cache_control": {
+              "type": "ephemeral",
+            },
             "source": {
               "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
               "media_type": "image/png",
@@ -869,7 +887,15 @@ exports[`serialized request snapshots > aws-mantle-anthropic / minimal 1`] = `
         "role": "assistant",
       },
       {
-        "content": "second user turn",
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
         "role": "user",
       },
     ],
@@ -902,7 +928,15 @@ exports[`serialized request snapshots > aws-mantle-anthropic / reasoning-control
         "role": "assistant",
       },
       {
-        "content": "second user turn",
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
         "role": "user",
       },
     ],
@@ -957,6 +991,9 @@ exports[`serialized request snapshots > aws-mantle-anthropic / tool-loop-replay 
       {
         "content": [
           {
+            "cache_control": {
+              "type": "ephemeral",
+            },
             "content": "example file contents",
             "is_error": false,
             "tool_use_id": "call_replay_1",
@@ -1056,6 +1093,9 @@ exports[`serialized request snapshots > aws-mantle-anthropic / tool-loop-replay-
       {
         "content": [
           {
+            "cache_control": {
+              "type": "ephemeral",
+            },
             "content": "example file contents",
             "is_error": false,
             "tool_use_id": "call_replay_1",
@@ -1136,7 +1176,15 @@ exports[`serialized request snapshots > aws-mantle-anthropic / tools 1`] = `
         "role": "assistant",
       },
       {
-        "content": "second user turn",
+        "content": [
+          {
+            "cache_control": {
+              "type": "ephemeral",
+            },
+            "text": "second user turn",
+            "type": "text",
+          },
+        ],
         "role": "user",
       },
     ],

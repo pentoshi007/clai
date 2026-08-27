@@ -175,6 +175,7 @@ export function buildAnthropicBody(request: CompletionRequest, stream: boolean):
   const reasoningArtifactReplay = {
     target: plan.replay.target,
     observe: request.onReasoningArtifactReplayDecision,
+    cacheConversation: true,
   };
   const messages = toAnthropicToolMessages(
     withoutRequestContextSystemMessages(
@@ -187,7 +188,6 @@ export function buildAnthropicBody(request: CompletionRequest, stream: boolean):
     model,
     system,
     messages,
-    cache_control: { type: "ephemeral" },
     // A 1024 default sits below `anthropicThinkingBudget` (up to 8192), which
     // Anthropic rejects outright, and is far below every Claude output cap.
     max_tokens: anthropicMaxTokens(plan.controls.requestedMaxTokens, thinking),

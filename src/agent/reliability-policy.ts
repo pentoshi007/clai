@@ -41,6 +41,8 @@ export const ADAPTIVE_MAX_TOKENS_TOOL_STEP = 24_576;
 export const ADAPTIVE_MAX_TOKENS_LIGHT = 12_288;
 export const ADAPTIVE_MAX_TOKENS_FLOOR = 8_192;
 export const LEGACY_MAX_TOKENS = 32_768;
+export const MAX_STEP_COMPLETION_TOKENS = 65_536;
+export const MAX_OUTPUT_BUDGET_CONTINUATIONS = 1;
 
 export interface ReliabilityPolicy {
   readonly softEarlyCompact: boolean;
@@ -150,6 +152,8 @@ export function resolveStepMaxTokens(input: {
   recoveryNudge?: boolean | undefined;
   truncationDepth?: number | undefined;
   thinkingEnabled?: boolean | undefined;
+  minimumTokens?: number | undefined;
+  outputTokenLimit?: number | undefined;
   policy?: ReliabilityPolicy | undefined;
 }): number {
   const policy = input.policy ?? getReliabilityPolicy();
@@ -168,7 +172,55 @@ export function resolveStepMaxTokens(input: {
     return adaptive;
   })();
   const depth = input.truncationDepth ?? 0;
-  return depth > 0 ? Math.min(65_536, base * 2 ** depth) : base;
+  const expanded =
+    depth > 0
+      ? Math.min(MAX_STEP_COMPLETION_TOKENS, base * 2 ** depth)
+      : base;
+  const minimum =
+    typeof input.minimumTokens === "number" &&
+    Number.isFinite(input.minimumTokens) &&
+    input.minimumTokens > 0
+      ? Math.floor(input.minimumTokens)
+      : 0;
+  const withMinimum = Math.min(
+    MAX_STEP_COMPLETION_TOKENS,
+    Math.max(expanded, minimum),
+  );
+  const outputTokenLimit =
+    typeof input.outputTokenLimit === "number" &&
+    Number.isFinite(input.outputTokenLimit) &&
+    input.outputTokenLimit > 0
+      ? Math.floor(input.outputTokenLimit)
+      : undefined;
+  return outputTokenLimit === undefined
+    ? withMinimum
+    : Math.min(withMinimum, outputTokenLimit);
+}
+
+export function outputBudgetWasExhausted(input: {
+  finishReason?: string | undefined;
+  completionTokens?: number | undefined;
+  requestedMaxTokens: number;
+}): boolean {
+  const normalized = input.finishReason
+    ?.trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (
+    normalized === "length" ||
+    normalized === "max_tokens" ||
+    normalized === "max_output_tokens" ||
+    normalized === "token_limit" ||
+    normalized === "output_token_limit"
+  ) {
+    return true;
+  }
+  const completionTokens = input.completionTokens ?? 0;
+  return (
+    completionTokens > 0 &&
+    input.requestedMaxTokens > 0 &&
+    completionTokens >= input.requestedMaxTokens - 64
+  );
 }
 
 export function isFreeCloudProvider(provider: ProviderId): boolean {

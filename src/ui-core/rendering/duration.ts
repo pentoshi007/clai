@@ -1,4 +1,8 @@
-import type { ToolItem } from "../state/transcript-types.js";
+import type {
+  CompactedItem,
+  ThinkingItem,
+  ToolItem,
+} from "../state/transcript-types.js";
 
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "";
@@ -9,6 +13,42 @@ export function formatDurationMs(ms: number): string {
   const minutes = Math.floor(whole / 60);
   if (minutes < 60) return `${minutes}m${String(whole % 60).padStart(2, "0")}s`;
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+function elapsedLabel(
+  item: {
+    readonly timestamp: number;
+    readonly startedAt?: number | undefined;
+    readonly endedAt?: number | undefined;
+  },
+  now: number,
+  live: boolean,
+): string | undefined {
+  const start = item.startedAt ?? item.timestamp;
+  const end = live ? now : item.endedAt;
+  if (end === undefined) return undefined;
+  const label = formatDurationMs(end - start);
+  return label === "" ? undefined : label;
+}
+
+export function thinkingElapsedLabel(
+  item: Pick<
+    ThinkingItem,
+    "streaming" | "timestamp" | "startedAt" | "endedAt"
+  >,
+  now: number,
+): string | undefined {
+  return elapsedLabel(item, now, item.streaming);
+}
+
+export function compactionElapsedLabel(
+  item: Pick<
+    CompactedItem,
+    "streaming" | "timestamp" | "startedAt" | "endedAt"
+  >,
+  now: number,
+): string | undefined {
+  return elapsedLabel(item, now, item.streaming === true);
 }
 
 export function shouldShowToolElapsed(toolName: string): boolean {

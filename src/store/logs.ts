@@ -63,6 +63,26 @@ export function getLogsDir(): string {
   return logsDir;
 }
 
+const ARTIFACT_CLEANUP_CONCURRENCY = 64;
+
+async function forEachArtifactEntry(
+  entries: readonly string[],
+  run: (entry: string) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(ARTIFACT_CLEANUP_CONCURRENCY, entries.length) },
+    async () => {
+      while (next < entries.length) {
+        const entry = entries[next];
+        next += 1;
+        if (entry !== undefined) await run(entry);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
 export async function clearArtifacts(): Promise<{ removed: number }> {
   let removed = 0;
 
@@ -70,23 +90,22 @@ export async function clearArtifacts(): Promise<{ removed: number }> {
   const globalDir = getGlobalArtifactDir();
   if (existsSync(globalDir)) {
     const entries = await readdir(globalDir).catch(() => []);
-    for (const entry of entries) {
+    await forEachArtifactEntry(entries, async (entry) => {
       try {
         await rm(join(globalDir, entry), { force: true, recursive: true });
         removed += 1;
       } catch {
         // best-effort
       }
-    }
+    });
   }
 
   // 2) Per-session tool outputs under {tmpdir}/clai/*/temp
   const sessionsParent = getSessionWorkspaceParent();
   if (existsSync(sessionsParent)) {
     const sessionFolders = await readdir(sessionsParent).catch(() => []);
-    for (const folder of sessionFolders) {
+    await forEachArtifactEntry(sessionFolders, async (folder) => {
       const tempDir = join(sessionsParent, folder, "temp");
-      if (!existsSync(tempDir)) continue;
       const entries = await readdir(tempDir).catch(() => []);
       for (const entry of entries) {
         try {
@@ -96,7 +115,7 @@ export async function clearArtifacts(): Promise<{ removed: number }> {
           // best-effort
         }
       }
-    }
+    });
   }
 
   return { removed };

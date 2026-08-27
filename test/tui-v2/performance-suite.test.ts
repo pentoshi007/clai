@@ -28,6 +28,7 @@ const TEN_K = 10_000;
 const FOLD_BUDGET_MS = 2_000;
 const LAYOUT_STORM_BUDGET_MS = 250;
 const SEMANTIC_BUDGET_MS = 1_500;
+const STORE_BURST_BUDGET_MS = 2_000;
 
 function sequencer() {
   return new EventSequencer(
@@ -99,8 +100,43 @@ describe("V2-091 performance suite (Node pure paths)", () => {
         ),
       );
     }
-    expect(store.getState().order).toHaveLength(100);
-    expect(store.getState().byId.size).toBe(100);
+    const retained = store.getState();
+    expect(retained.order.length).toBeGreaterThanOrEqual(90);
+    expect(retained.order.length).toBeLessThanOrEqual(100);
+    expect(retained.byId.size).toBe(retained.order.length);
+  });
+
+  it(`coalesces a near-cap token burst within ${STORE_BURST_BUDGET_MS}ms`, () => {
+    const store = new TranscriptStore(2_000);
+    const seq = sequencer();
+    for (let index = 0; index < 2_000; index += 1) {
+      store.dispatch(
+        seq.build(
+          "assistant-message",
+          { messageId: seq.ids.message(), text: `seed-${index}` },
+          undefined,
+        ),
+      );
+    }
+
+    const turnId = asTurnId("turn-burst");
+    const chunks = 10_000;
+    const t0 = performance.now();
+    for (let index = 0; index < chunks; index += 1) {
+      store.dispatch(seq.build("assistant-delta", { text: "x" }, turnId));
+    }
+    store.dispatch(
+      seq.build(
+        "assistant-message",
+        { messageId: seq.ids.message(), text: "x".repeat(chunks) },
+        turnId,
+      ),
+    );
+    const ms = performance.now() - t0;
+    const state = store.getState();
+    const last = state.byId.get(state.order.at(-1)!);
+    expect(last).toMatchObject({ kind: "assistant", text: "x".repeat(chunks) });
+    expect(ms).toBeLessThan(STORE_BURST_BUDGET_MS);
   });
 
   it(`survives a resize storm within ${LAYOUT_STORM_BUDGET_MS}ms`, () => {

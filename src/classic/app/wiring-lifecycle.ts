@@ -118,6 +118,7 @@ export function attachWiring(host: WiringHost): void {
 
   host.tickTimer = setInterval(() => {
     if (!host.needsCadence()) return;
+    host.feedNowValue = host.now();
     host.tickValue += 1;
     host.schedulePaint();
   }, TICK_INTERVAL_MS);

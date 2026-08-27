@@ -22,6 +22,7 @@ import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import { wheelChatDelta } from "../../composer/composer-wheel.js";
 import { useTranscriptState } from "../../../ui-core/react/use-transcript-store.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
 import {
@@ -29,6 +30,15 @@ import {
   isItemExpanded,
   transcriptItems,
 } from "../../../ui-core/state/transcript-types.js";
+import {
+  DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+  resolveTranscriptMountWindow,
+  resolveTranscriptScrollIntent,
+  shiftTranscriptWindowStart,
+  transcriptWindowStartForItem,
+  shouldPinTranscriptBottom,
+} from "../../../ui-core/state/transcript-window.js";
+import { copyFocusedThinking } from "../../../ui-core/state/thinking-copy.js";
 import {
   findMatches,
   nextMatchIndex,
@@ -64,7 +74,7 @@ function maxScrollTop(sb: ScrollBoxRenderable): number {
   const vh = sb.viewport?.height ?? 0;
   return Math.max(0, sb.scrollHeight - vh);
 }
-function isNearBottom(sb: ScrollBoxRenderable, slack = 2): boolean {
+function isNearBottom(sb: ScrollBoxRenderable, slack = 0): boolean {
   const max = maxScrollTop(sb);
   if (max <= 0) return true;
   return sb.scrollTop >= max - slack;
@@ -133,15 +143,36 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const { width: termWidth } = useTerminalDimensions();
   const paneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const introWidth = Math.max(40, paneWidth);
+  const [windowStart, setWindowStart] = useState<number | undefined>(undefined);
+  const mountWindow = useMemo(
+    () =>
+      resolveTranscriptMountWindow(
+        items.length,
+        windowStart,
+        DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+      ),
+    [items.length, windowStart],
+  );
+  const mountedItems = useMemo(
+    () => items.slice(mountWindow.start, mountWindow.end),
+    [items, mountWindow.start, mountWindow.end],
+  );
   const internalScrollRef = useRef<ScrollBoxRenderable>(null);
   const scrollRef = (externalScrollRef ?? internalScrollRef) as React.RefObject<ScrollBoxRenderable | null>;
   const closeOverlay = useRef<(() => void) | undefined>(undefined);
-  const lastCount = useRef(items.length);
+  const lastTailId = useRef(items.at(-1)?.id);
   /**
    * Product-level follow flag (force re-pin). OpenTUI sticky scroll is the
    * primary follower; this tracks intentional scroll-away.
    */
   const followBottom = useRef(true);
+  /**
+   * Render mirror of `followBottom`. The ref is mutated synchronously by
+   * scroll handlers, but `stickyScroll` is read during render, so re-engaging
+   * follow (End / Ctrl+D) must also re-render or native sticky stays off and
+   * the viewport never settles at a growing bottom.
+   */
+  const [followSticky, setFollowSticky] = useState(true);
   const wasRunning = useRef(false);
   const dragPointer = useRef<{ x: number; y: number } | undefined>(undefined);
   const dragFrame = useRef<number | undefined>(undefined);
@@ -149,6 +180,10 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const copySemanticOnRelease = useRef(false);
   const scrollSnapshot = useRef<
     { scrollTop: number; scrollHeight: number; viewportHeight: number } | undefined
+  >(undefined);
+  const windowShiftPending = useRef(false);
+  const pendingWindowJump = useRef<
+    { itemId?: string; edge?: "top" | "bottom" } | undefined
   >(undefined);
 
   const followKey = useTranscriptFollowKey(state, session.running);
@@ -227,7 +262,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   function updateTranscriptDrag(x: number, y: number): void {
     const pointer = { x, y };
     selection.onMouseDrag(pointer);
-    followBottom.current = false;
+    setFollowing(false);
     const sb = scrollRef.current;
     if (!sb) return;
     if (isAutoScrollEdge(sb, y)) {
@@ -284,11 +319,14 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     if (event.button !== 0) return;
     if (event.defaultPrevented) return;
     stopDragRefresh();
+    // A press anywhere outside a thinking card releases its wheel focus.
+    // Presses inside a card body arrive defaultPrevented and return above.
+    services.transcript.blurThinking();
     pointerGestureActive.current = true;
     copySemanticOnRelease.current = false;
     selection.onMouseDown(event);
     services.focus.focusRegion("transcript");
-    followBottom.current = false;
+    setFollowing(false);
   }
 
   function onTranscriptMouseDrag(event: MouseEvent): void {
@@ -312,11 +350,21 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   }
 
   /** Scroll to the true bottom after layout settles (double-rAF). */
-  function pinToBottom(): void {
-    if (pointerGestureActive.current) return;
-    const sb = scrollRef.current;
-    if (!sb) return;
+  function pinToBottom(options?: { forced?: boolean }): void {
+    const forced = options?.forced === true;
     const go = (): void => {
+      if (!followBottom.current) return;
+      if (
+        !shouldPinTranscriptBottom({
+          following: followBottom.current,
+          pointerGestureActive: pointerGestureActive.current,
+          forced,
+        })
+      ) {
+        return;
+      }
+      const sb = scrollRef.current;
+      if (!sb) return;
       const next = maxScrollTop(sb);
       if (sb.scrollTop === next) return;
       clearNativeSelection();
@@ -329,18 +377,97 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     });
   }
 
-  function setFollowing(on: boolean): void {
+  function setFollowing(on: boolean, options?: { forced?: boolean }): void {
     followBottom.current = on;
-    if (on) pinToBottom();
+    setFollowSticky(on);
+    if (!on) {
+      setWindowStart((current) => current ?? mountWindow.start);
+      return;
+    }
+    const tail = resolveTranscriptMountWindow(
+      items.length,
+      undefined,
+      DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+    );
+    if (mountWindow.start !== tail.start) {
+      pendingWindowJump.current = { edge: "bottom" };
+      windowShiftPending.current = true;
+    } else {
+      pendingWindowJump.current = undefined;
+      windowShiftPending.current = false;
+    }
+    setWindowStart(undefined);
+    pinToBottom(options);
   }
 
-  // /history hydrate (or /new) swaps the first item id — re-pin to bottom.
-  const sessionFingerprint = state.order[0] ?? "__empty__";
+  function updateFollowingFromPosition(atLiveBottom: boolean): void {
+    setFollowing(atLiveBottom && mountWindow.newerCount === 0);
+  }
+
+  function changeWindow(
+    nextStart: number,
+    jump: { itemId?: string; edge?: "top" | "bottom" },
+  ): boolean {
+    const resolved = resolveTranscriptMountWindow(
+      items.length,
+      nextStart,
+      DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+    );
+    if (resolved.start === mountWindow.start) return false;
+    pendingWindowJump.current = jump;
+    windowShiftPending.current = true;
+    setWindowStart(resolved.start);
+    followBottom.current = false;
+    return true;
+  }
+
+  function showOlderWindow(): boolean {
+    if (mountWindow.olderCount === 0 || windowShiftPending.current) return false;
+    const next = shiftTranscriptWindowStart(
+      items.length,
+      mountWindow.start,
+      "older",
+      DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+    );
+    const itemId = mountedItems[0]?.id;
+    return changeWindow(next, itemId ? { itemId } : { edge: "bottom" });
+  }
+
+  function showNewerWindow(): boolean {
+    if (mountWindow.newerCount === 0 || windowShiftPending.current) return false;
+    const next = shiftTranscriptWindowStart(
+      items.length,
+      mountWindow.start,
+      "newer",
+      DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+    );
+    const itemId = mountedItems.at(-1)?.id;
+    return changeWindow(next, itemId ? { itemId } : { edge: "top" });
+  }
+
+  useLayoutEffect(() => {
+    const jump = pendingWindowJump.current;
+    if (!jump) return;
+    const frame = requestAnimationFrame(() => {
+      const sb = scrollRef.current;
+      if (sb) {
+        if (jump.itemId) sb.scrollChildIntoView(jump.itemId);
+        else if (jump.edge === "top") sb.scrollTo(0);
+        else if (jump.edge === "bottom") sb.scrollTo(maxScrollTop(sb));
+        publishScrollRemainder(sb);
+      }
+      pendingWindowJump.current = undefined;
+      windowShiftPending.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mountWindow.start, mountWindow.end]);
+
+  const sessionFingerprint = session.sessionId;
   const lastSessionFp = useRef(sessionFingerprint);
   useEffect(() => {
     if (sessionFingerprint === lastSessionFp.current) return;
     lastSessionFp.current = sessionFingerprint;
-    lastCount.current = items.length;
+    lastTailId.current = items.at(-1)?.id;
     setFollowing(true);
   }, [sessionFingerprint, items.length]);
 
@@ -354,29 +481,26 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   }, [session.running, state.runningStatus]);
 
   useEffect(() => {
-    const grew = items.length - lastCount.current;
-    lastCount.current = items.length;
+    const tailId = items.at(-1)?.id;
+    const tailChanged = tailId !== lastTailId.current;
+    lastTailId.current = tailId;
     if (pointerGestureActive.current) return;
 
-    // New user prompt always re-engages follow (classic: show what you just sent).
-    if (grew > 0) {
-      const last = items[items.length - 1];
+    if (tailChanged) {
+      const last = items.at(-1);
       if (last?.kind === "user") {
-        followBottom.current = true;
+        setFollowing(true);
       }
     }
 
-    // While a turn is live, keep following unless the user has scrolled away.
-    // (followBottom is cleared by wheel/keys; stickyScroll also respects that.)
     if (followBottom.current) {
       pinToBottom();
       return;
     }
 
-    if (grew > 0) {
+    if (tailChanged) {
       const sb = scrollRef.current;
       if (!sb || isNearBottom(sb)) {
-        // Near bottom → re-engage follow.
         setFollowing(true);
       }
     }
@@ -399,39 +523,51 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     sb.horizontalScrollBar.visible = false;
   }, [items.length, introWidth]);
 
+  function scrollMainBy(dy: number): void {
+    if (!Number.isFinite(dy) || dy === 0) return;
+    if (dy < 0) setFollowing(false);
+    clearNativeSelection();
+    const sb = scrollRef.current;
+    if (!sb) return;
+    const intent = resolveTranscriptScrollIntent(
+      sb.scrollTop,
+      maxScrollTop(sb),
+      dy,
+    );
+    if (intent.reachedOlderEdge && showOlderWindow()) return;
+    if (intent.reachedNewerEdge && showNewerWindow()) return;
+    sb.scrollTo(intent.nextScrollTop);
+    if (!intent.leaveTail) updateFollowingFromPosition(intent.atBottom);
+    publishScrollRemainder(sb);
+  }
+
   // App + composer forward every free wheel event here so trackpad never
   // lands on the focused textarea and walks prompt history instead.
   useEffect(() => {
-    return registerTranscriptScrollPort((dy) => {
-      clearNativeSelection();
-      const sb = scrollRef.current;
-      if (!sb) return;
-      const max = maxScrollTop(sb);
-      const next = Math.max(0, Math.min(max, sb.scrollTop + dy));
-      sb.scrollTo(next);
-      followBottom.current = next >= max - 1;
-      publishScrollRemainder(sb);
-    });
-  }, []);
+    return registerTranscriptScrollPort(scrollMainBy);
+  }, [items.length, mountWindow.start, mountWindow.end]);
 
   // g / G absolute jumps (also reachable from App when transcript is focused).
   useEffect(() => {
     return registerTranscriptJumpHandlers(
       () => {
         clearNativeSelection();
+        if (mountWindow.start > 0) {
+          changeWindow(0, { edge: "top" });
+          return;
+        }
         const sb = scrollRef.current;
         if (!sb) return;
+        setFollowing(false);
         sb.scrollTo(0);
-        followBottom.current = false;
         publishScrollRemainder(sb);
       },
       () => {
-        followBottom.current = true;
-        pinToBottom();
+        jumpToBottom();
         queueMicrotask(() => publishScrollRemainder(scrollRef.current));
       },
     );
-  }, []);
+  }, [items.length, mountWindow.start, mountWindow.end]);
 
   // Publish ▲/▼ remaining-line metrics for the status strip under the input.
   // Poll lightly: OpenTUI ScrollBox has no scroll-event subscription.
@@ -469,7 +605,11 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   }, []);
 
   function jumpToBottom(): void {
-    setFollowing(true);
+    // An explicit jump ends any pointer gesture: a press released outside the
+    // transcript never delivers mouse-up here, and a stale flag would
+    // otherwise swallow every later End / Ctrl+D.
+    pointerGestureActive.current = false;
+    setFollowing(true, { forced: true });
   }
 
   function openSearch(): void {
@@ -488,7 +628,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       }
     }
     setSearchOpen(true);
-    followBottom.current = false;
+    setFollowing(false);
   }
 
   /** Drop filter input + sticky query + highlights. */
@@ -517,8 +657,19 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     const match = matches[index];
     if (!match) return;
     clearNativeSelection();
-    followBottom.current = false;
-    // Defer until after paint so the row id exists in the scroll tree.
+    setFollowing(false);
+    const itemIndex = items.findIndex((item) => item.id === match.itemId);
+    if (
+      itemIndex >= 0 &&
+      (itemIndex < mountWindow.start || itemIndex >= mountWindow.end)
+    ) {
+      const start = transcriptWindowStartForItem(
+        items.length,
+        itemIndex,
+        DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+      );
+      if (changeWindow(start, { itemId: match.itemId })) return;
+    }
     queueMicrotask(() => {
       scrollRef.current?.scrollChildIntoView(match.itemId);
       publishScrollRemainder(scrollRef.current);
@@ -592,23 +743,12 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     [services, resendPrompt],
   );
 
-  /**
-   * Wheel over the chat pane: claim focus so ↑/↓ don’t walk prompt history,
-   * and stop bubble so App doesn’t also scroll via the port (double-step).
-   * Actual motion is handled by ScrollBox’s native onMouseEvent.
-   */
   function onWheelScroll(event: MouseEvent): void {
     if (!event.scroll) return;
-    clearNativeSelection();
+    event.preventDefault();
     event.stopPropagation();
     services.focus.focusRegion("transcript");
-    // Keep followBottom in sync after the native ScrollBox applies the delta.
-    queueMicrotask(() => {
-      const sb = scrollRef.current;
-      if (!sb) return;
-      followBottom.current = isNearBottom(sb);
-      publishScrollRemainder(sb);
-    });
+    scrollMainBy(wheelChatDelta(event.scroll.direction, event.scroll.delta));
   }
 
   useKeyboard((key) => {
@@ -656,6 +796,41 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       return;
     }
 
+    // `c` copies the focused thinking card, then releases it so the chat
+    // scrolls normally again. Ignored when no card is focused, so the chord
+    // stays free everywhere else.
+    if (
+      services.focus.activeContext() === "transcript" &&
+      services.router.resolve(chord, "transcript") === "transcript.copy-thinking" &&
+      state.focusedThinkingId !== undefined
+    ) {
+      key.preventDefault();
+      void copyFocusedThinking(state, services.ports.clipboard).then((result) => {
+        if (result === "copied") {
+          services.transcript.blurThinking();
+          services.toast.success("Reasoning copied", {
+            key: "clipboard",
+            durationMs: 1600,
+          });
+          return;
+        }
+        if (result === "empty") {
+          services.toast.info("Nothing to copy", {
+            key: "clipboard",
+            durationMs: 1400,
+          });
+          return;
+        }
+        if (result === "failed") {
+          services.toast.error("Copy failed", {
+            key: "clipboard",
+            durationMs: 2200,
+          });
+        }
+      });
+      return;
+    }
+
     // Selection chords first: Esc only lands here when there is a selection to
     // clear, so the global cancel ladder still sees every other Esc.
     if (selection.handleKey(key, chord)) return;
@@ -674,44 +849,31 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       const sb = scrollRef.current;
       if (!sb) return;
       const page = sb.viewport.height || 10;
-      const max = maxScrollTop(sb);
       if (chord === "up" || chord === "k") {
         key.preventDefault();
-        clearNativeSelection();
-        sb.scrollTo(Math.max(0, sb.scrollTop - 1));
-        followBottom.current = false;
-        publishScrollRemainder(sb);
+        scrollMainBy(-1);
       } else if (chord === "down" || chord === "j") {
         key.preventDefault();
-        clearNativeSelection();
-        const next = Math.min(max, sb.scrollTop + 1);
-        sb.scrollTo(next);
-        followBottom.current = next >= max - 1;
-        publishScrollRemainder(sb);
+        scrollMainBy(1);
       } else if (chord === "pageup") {
         key.preventDefault();
-        clearNativeSelection();
-        sb.scrollTo(Math.max(0, sb.scrollTop - page));
-        followBottom.current = false;
-        publishScrollRemainder(sb);
+        scrollMainBy(-page);
       } else if (chord === "pagedown") {
         key.preventDefault();
-        clearNativeSelection();
-        const next = Math.min(max, sb.scrollTop + page);
-        sb.scrollTo(next);
-        followBottom.current = next >= max - 1;
-        publishScrollRemainder(sb);
+        scrollMainBy(page);
       } else if (chord === "end" || chord === "ctrl+d") {
-        // ^D / End — absolute bottom of the chat.
         key.preventDefault();
         jumpToBottom();
         publishScrollRemainder(sb);
       } else if (chord === "home" || chord === "ctrl+u") {
-        // ^U / Home — absolute top of the chat (intro card).
         key.preventDefault();
         clearNativeSelection();
+        if (mountWindow.start > 0) {
+          changeWindow(0, { edge: "top" });
+          return;
+        }
+        setFollowing(false);
         sb.scrollTo(0);
-        followBottom.current = false;
         publishScrollRemainder(sb);
       }
     }
@@ -747,7 +909,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
         focused={focused}
         // Native auto-follow: when content grows and the user is (or returns)
         // at the bottom, stay pinned to the latest agent output.
-        stickyScroll
+        stickyScroll={followSticky}
         stickyStart={items.length > 0 ? "bottom" : "top"}
         viewportCulling
         scrollY
@@ -760,7 +922,17 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       >
         {/* Persistent intro/model card — first scroll child, same as legacy TUI. */}
         <IntroCard services={services} theme={theme} width={introWidth} />
-        {items.map((item) => (
+        {mountWindow.olderCount > 0 ? (
+          <box
+            id="transcript-window-older"
+            style={{ width: "100%", paddingLeft: 1, paddingBottom: 1 }}
+          >
+            <text style={{ fg: theme.muted }}>
+              {`↑ ${mountWindow.olderCount.toLocaleString()} earlier rows · scroll up or PageUp to load`}
+            </text>
+          </box>
+        ) : null}
+        {mountedItems.map((item) => (
           <TranscriptRow
             key={item.id}
             item={item}
@@ -779,8 +951,19 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
             contentWidth={paneWidth}
             searchMatched={searchActive && matchedItemIds.has(item.id)}
             searchActiveMatch={item.id === activeMatchItemId}
+            thinkingFocused={state.focusedThinkingId === item.id}
           />
         ))}
+        {mountWindow.newerCount > 0 ? (
+          <box
+            id="transcript-window-newer"
+            style={{ width: "100%", paddingLeft: 1, paddingTop: 1 }}
+          >
+            <text style={{ fg: theme.muted }}>
+              {`↓ ${mountWindow.newerCount.toLocaleString()} newer rows · scroll down or PageDown to load`}
+            </text>
+          </box>
+        ) : null}
       </scrollbox>
     </box>
   );

@@ -183,6 +183,7 @@ export const mantleProvider: LlmProvider = {
         endpoint: baseUrl,
       }),
       observe: request.onReasoningArtifactReplayDecision,
+      cacheConversation: true,
     };
     const messages = toAnthropicToolMessages(
       withoutRequestContextSystemMessages(
@@ -303,6 +304,7 @@ export const mantleProvider: LlmProvider = {
         endpoint: baseUrl,
       }),
       observe: request.onReasoningArtifactReplayDecision,
+      cacheConversation: true,
     };
     const messages = toAnthropicToolMessages(
       withoutRequestContextSystemMessages(

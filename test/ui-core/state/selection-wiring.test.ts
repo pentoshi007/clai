@@ -69,7 +69,12 @@ describe("transcript selection wiring (TUI-005)", () => {
   it("never clears the native selection while a pointer drag is active", () => {
     const source = readFileSync(TRANSCRIPT_VIEW, "utf8");
     expect(source).toContain("renderer.hasSelection && !pointerGestureActive.current");
+    // Tail-growth pins skip entirely while a gesture is live.
     const guards = source.match(/if \(pointerGestureActive\.current\) return;/g);
-    expect(guards?.length).toBeGreaterThanOrEqual(2);
+    expect(guards?.length).toBeGreaterThanOrEqual(1);
+    // Queued bottom pins consult the same flag, and only an explicit
+    // End / Ctrl+D jump is allowed to outrank it.
+    expect(source).toContain("pointerGestureActive: pointerGestureActive.current");
+    expect(source).toContain("shouldPinTranscriptBottom");
   });
 });

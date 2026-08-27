@@ -217,6 +217,9 @@ function appendDelta(
 ): TranscriptState {
   const pendingKey = kind === "assistant" ? "pendingAssistantId" : "pendingThinkingId";
   const pendingId = ownedPendingId(state, kind, reasoningId);
+  if (kind === "thinking" && state.pendingThinkingId && pendingId === undefined) {
+    state = closePendingThinking(state, event.timestamp);
+  }
   if (pendingId) {
     if (kind === "assistant") {
       const pushed = pushStripChunk(
@@ -232,6 +235,8 @@ function appendDelta(
     return updateItem(state, pendingId, (item) => ({
       ...(item as ThinkingItem),
       content: (item as ThinkingItem).content + text,
+      startedAt: (item as ThinkingItem).startedAt ?? item.timestamp,
+      endedAt: undefined,
     }));
   }
   if (kind === "thinking") {
@@ -241,6 +246,8 @@ function appendDelta(
         ...(item as ThinkingItem),
         content: joinThinkingChunks((item as ThinkingItem).content, text),
         streaming: true,
+        startedAt: (item as ThinkingItem).startedAt ?? item.timestamp,
+        endedAt: undefined,
       }));
       return { ...reopened, [pendingKey]: mergeTarget.id } as TranscriptState;
     }
@@ -270,6 +277,7 @@ function appendDelta(
     kind: "thinking",
     content: text,
     streaming: true,
+    startedAt: event.timestamp,
     ...(reasoningId !== undefined ? { reasoningId } : {}),
   };
   const next: TranscriptState = {
@@ -300,21 +308,34 @@ function finalizeMessage(
       if (kind === "assistant") {
         return { ...(item as AssistantItem), text, streaming: false };
       }
-      const existing = (item as ThinkingItem).content;
-      const content = finalizedThinkingContent(existing, text, reasoningId);
-      return { ...(item as ThinkingItem), content, streaming: false };
+      const thinking = item as ThinkingItem;
+      const content = finalizedThinkingContent(thinking.content, text, reasoningId);
+      return {
+        ...thinking,
+        content,
+        streaming: false,
+        startedAt: thinking.startedAt ?? thinking.timestamp,
+        endedAt: event.timestamp,
+      };
     });
   } else {
     if (kind === "thinking") {
       const mergeTarget = lastAdjacentThinking(next, event.turnId, reasoningId);
       if (mergeTarget) {
         next = updateItem(next, mergeTarget.id, (item) => {
-          const existing = (item as ThinkingItem).content;
+          const thinking = item as ThinkingItem;
+          const existing = thinking.content;
           const content =
             !text.trim() || existing.trim().endsWith(text.trim())
               ? existing
               : joinThinkingChunks(existing, text);
-          return { ...(item as ThinkingItem), content, streaming: false };
+          return {
+            ...thinking,
+            content,
+            streaming: false,
+            startedAt: thinking.startedAt ?? thinking.timestamp,
+            endedAt: event.timestamp,
+          };
         });
         return {
           ...next,
@@ -332,7 +353,15 @@ function finalizeMessage(
     const item: TranscriptItem =
       kind === "assistant"
         ? { ...base, kind: "assistant", text, streaming: false }
-        : { ...base, kind: "thinking", content: text, streaming: false };
+        : {
+            ...base,
+            kind: "thinking",
+            content: text,
+            streaming: false,
+            startedAt: event.timestamp,
+            endedAt: event.timestamp,
+            ...(reasoningId !== undefined ? { reasoningId } : {}),
+          };
     next = appendItem(next, item);
     // Same rule as streaming deltas: only hoist above an assistant row that has
     // not painted any text yet.
@@ -386,7 +415,7 @@ function appendTurnSummary(
   });
 }
 
-function closePending(state: TranscriptState): TranscriptState {
+function closePending(state: TranscriptState, endedAt: number): TranscriptState {
   let next = state;
   if (next.pendingAssistantId) {
     next = updateItem(next, next.pendingAssistantId, (item) => ({
@@ -397,10 +426,15 @@ function closePending(state: TranscriptState): TranscriptState {
     next = { ...next, pendingAssistantId: undefined };
   }
   if (next.pendingThinkingId) {
-    next = updateItem(next, next.pendingThinkingId, (item) => ({
-      ...(item as ThinkingItem),
-      streaming: false,
-    }));
+    next = updateItem(next, next.pendingThinkingId, (item) => {
+      const thinking = item as ThinkingItem;
+      return {
+        ...thinking,
+        streaming: false,
+        startedAt: thinking.startedAt ?? thinking.timestamp,
+        endedAt,
+      };
+    });
     next = { ...next, pendingThinkingId: undefined };
   }
   return next;
@@ -438,12 +472,20 @@ function turnThinkingContent(
 }
 
 /** Close open thinking so tool cards never sit under a still-streaming block. */
-function closePendingThinking(state: TranscriptState): TranscriptState {
+function closePendingThinking(
+  state: TranscriptState,
+  endedAt: number,
+): TranscriptState {
   if (!state.pendingThinkingId) return state;
-  const next = updateItem(state, state.pendingThinkingId, (item) => ({
-    ...(item as ThinkingItem),
-    streaming: false,
-  }));
+  const next = updateItem(state, state.pendingThinkingId, (item) => {
+    const thinking = item as ThinkingItem;
+    return {
+      ...thinking,
+      streaming: false,
+      startedAt: thinking.startedAt ?? thinking.timestamp,
+      endedAt,
+    };
+  });
   return { ...next, pendingThinkingId: undefined };
 }
 
@@ -491,7 +533,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
 
     case "assistant-delta": {
       const visible = event.payload.text.trim().length > 0;
-      const base = visible ? closePendingThinking(withSeq) : withSeq;
+      const base = visible ? closePendingThinking(withSeq, event.timestamp) : withSeq;
       return {
         ...appendDelta(base, event, "assistant", event.payload.text),
         runningStatus: "responding",
@@ -499,7 +541,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     }
 
     case "assistant-message": {
-      const closed = closePendingThinking(withSeq);
+      const closed = closePendingThinking(withSeq, event.timestamp);
       // Never finalize a Response card that is only tool-call fences.
       const text = stripToolCallSurfaces(event.payload.text).trim();
       if (!text || isToolFenceOnlyText(event.payload.text)) {
@@ -560,7 +602,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
 
     case "tool-call": {
       const cleaned = discardPendingToolFenceStream(
-        closePendingThinking(withSeq),
+        closePendingThinking(withSeq, event.timestamp),
       );
       for (let index = cleaned.order.length - 1; index >= 0; index -= 1) {
         const existing = cleaned.byId.get(cleaned.order[index]!);
@@ -607,7 +649,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
 
     case "tool-started": {
       const started = closePendingAssistant(
-        discardPendingToolFenceStream(closePendingThinking(withSeq)),
+        discardPendingToolFenceStream(closePendingThinking(withSeq, event.timestamp)),
       );
       let startedName: string | undefined;
       for (let i = started.order.length - 1; i >= 0; i -= 1) {
@@ -657,12 +699,17 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "compaction-started": {
       const id = `compacted-${event.payload.compactionId}`;
       if (withSeq.byId.has(id)) {
-        return updateItem(withSeq, id, (item) => ({
-          ...(item as CompactedItem),
-          streaming: true,
-          error: undefined,
-          beforeTokens: event.payload.beforeTokens,
-        }));
+        return updateItem(withSeq, id, (item) => {
+          const compacted = item as CompactedItem;
+          return {
+            ...compacted,
+            streaming: true,
+            error: undefined,
+            beforeTokens: event.payload.beforeTokens,
+            startedAt: compacted.startedAt ?? event.timestamp,
+            endedAt: undefined,
+          };
+        });
       }
       return appendItem(withSeq, {
         id,
@@ -674,35 +721,58 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         beforeTokens: event.payload.beforeTokens,
         afterTokens: event.payload.beforeTokens,
         streaming: true,
+        startedAt: event.timestamp,
       });
     }
 
     case "compaction-delta": {
       const id = `compacted-${event.payload.compactionId}`;
       if (!withSeq.byId.has(id)) return withSeq;
-      return updateItem(withSeq, id, (item) => ({
-        ...(item as CompactedItem),
-        summary: event.payload.replace
-          ? event.payload.text
-          : (item as CompactedItem).summary + event.payload.text,
-        streaming: true,
-      }));
+      return updateItem(withSeq, id, (item) => {
+        const compacted = item as CompactedItem;
+        return {
+          ...compacted,
+          summary: event.payload.replace
+            ? event.payload.text
+            : compacted.summary + event.payload.text,
+          streaming: true,
+          startedAt: compacted.startedAt ?? compacted.timestamp,
+          endedAt: undefined,
+        };
+      });
     }
 
     case "compaction-completed": {
       const id = `compacted-${event.payload.compactionId}`;
-      const completed: CompactedItem = {
-        id,
-        sequence: event.sequence,
-        turnId: event.turnId,
-        timestamp: event.timestamp,
-        kind: "compacted",
-        summary: event.payload.summary,
-        beforeTokens: event.payload.beforeTokens,
-        afterTokens: event.payload.afterTokens,
-        streaming: false,
-      };
-      return withSeq.byId.has(id)
+      const existing = withSeq.byId.get(id);
+      const completed: CompactedItem =
+        existing?.kind === "compacted"
+          ? {
+              ...existing,
+              sequence: event.sequence,
+              turnId: event.turnId,
+              summary: event.payload.summary,
+              beforeTokens: event.payload.beforeTokens,
+              afterTokens: event.payload.afterTokens,
+              streaming: false,
+              error: undefined,
+              startedAt: existing.startedAt ?? existing.timestamp,
+              endedAt: event.timestamp,
+            }
+          : {
+              id,
+              sequence: event.sequence,
+              turnId: event.turnId,
+              timestamp: event.timestamp,
+              kind: "compacted",
+              summary: event.payload.summary,
+              beforeTokens: event.payload.beforeTokens,
+              afterTokens: event.payload.afterTokens,
+              streaming: false,
+              startedAt: event.timestamp,
+              endedAt: event.timestamp,
+            };
+      return existing
         ? updateItem(withSeq, id, () => completed)
         : appendItem(withSeq, completed);
     }
@@ -713,21 +783,33 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       const retainedTokens =
         event.payload.retainedTokens ??
         (existing?.kind === "compacted" ? existing.beforeTokens : 0);
-      const failed: CompactedItem = {
-        id,
-        sequence: event.sequence,
-        turnId: event.turnId,
-        timestamp: event.timestamp,
-        kind: "compacted",
-        summary: "",
-        beforeTokens:
-          existing?.kind === "compacted"
-            ? existing.beforeTokens
-            : retainedTokens,
-        afterTokens: retainedTokens,
-        streaming: false,
-        error: event.payload.message,
-      };
+      const failed: CompactedItem =
+        existing?.kind === "compacted"
+          ? {
+              ...existing,
+              sequence: event.sequence,
+              turnId: event.turnId,
+              summary: "",
+              afterTokens: retainedTokens,
+              streaming: false,
+              error: event.payload.message,
+              startedAt: existing.startedAt ?? existing.timestamp,
+              endedAt: event.timestamp,
+            }
+          : {
+              id,
+              sequence: event.sequence,
+              turnId: event.turnId,
+              timestamp: event.timestamp,
+              kind: "compacted",
+              summary: "",
+              beforeTokens: retainedTokens,
+              afterTokens: retainedTokens,
+              streaming: false,
+              error: event.payload.message,
+              startedAt: event.timestamp,
+              endedAt: event.timestamp,
+            };
       return existing
         ? updateItem(withSeq, id, () => failed)
         : appendItem(withSeq, failed);
@@ -748,7 +830,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
 
     case "turn-ended":
       return appendTurnSummary(
-        { ...closePending(withSeq), runningStatus: undefined },
+        { ...closePending(withSeq, event.timestamp), runningStatus: undefined },
         event,
         "completed",
       );
@@ -757,7 +839,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       const steered = event.payload.reason === "steer";
       return appendTurnSummary(
         pushNotice(
-          { ...closePending(withSeq), runningStatus: undefined },
+          { ...closePending(withSeq, event.timestamp), runningStatus: undefined },
           event,
           steered ? "info" : "warn",
           steered ? "Prompt steered." : "Turn aborted.",
@@ -770,7 +852,7 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "turn-error":
       return appendTurnSummary(
         pushNotice(
-          { ...closePending(withSeq), runningStatus: undefined },
+          { ...closePending(withSeq, event.timestamp), runningStatus: undefined },
           event,
           "error",
           event.payload.message,

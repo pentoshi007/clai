@@ -34,6 +34,8 @@ export interface ThinkingItem extends ItemBase {
   readonly content: string;
   readonly streaming: boolean;
   readonly reasoningId?: string;
+  readonly startedAt?: number | undefined;
+  readonly endedAt?: number | undefined;
 }
 
 export type ToolStatus = "queued" | "running" | "ok" | "failed" | "blocked";
@@ -72,6 +74,8 @@ export interface CompactedItem extends ItemBase {
   readonly afterTokens: number;
   readonly streaming?: boolean | undefined;
   readonly error?: string | undefined;
+  readonly startedAt?: number | undefined;
+  readonly endedAt?: number | undefined;
 }
 
 export function compactionTokenLabel(
@@ -129,6 +133,12 @@ export interface TranscriptState {
   readonly itemOverrides: ReadonlyMap<string, boolean>;
   /** Per-tool-card file-diff expand override (key = tool item id). */
   readonly fileDiffOverrides: ReadonlyMap<string, boolean>;
+  /**
+   * Thinking card that currently owns the pointer wheel, set by clicking it.
+   * A focused card scrolls its own body at both extremes instead of handing
+   * the wheel back to the transcript. Ctrl+T never focuses a card.
+   */
+  readonly focusedThinkingId: string | undefined;
   /** Incremental strip state for the open assistant stream (bounded tail). */
   readonly assistantStripStreams: ReadonlyMap<string, StripStream>;
 }
@@ -145,6 +155,7 @@ export const EMPTY_TRANSCRIPT_STATE: TranscriptState = {
   expandFileDiffsGlobal: true,
   itemOverrides: new Map(),
   fileDiffOverrides: new Map(),
+  focusedThinkingId: undefined,
   assistantStripStreams: new Map(),
 };
 

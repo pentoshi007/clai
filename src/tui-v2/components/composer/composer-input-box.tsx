@@ -56,7 +56,9 @@ export function ComposerInputBox(props: {
         ? {
             title: ` ${metaShown} `,
             titleAlignment: "right" as const,
-            titleColor: focused ? theme.muted : theme.chip,
+            // Focus changes the border colour only; the provider/model/
+            // permissions label keeps one readable colour in both states.
+            titleColor: theme.muted,
           }
         : {})}
       style={{

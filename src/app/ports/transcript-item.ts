@@ -23,6 +23,8 @@ export interface ThinkingItem {
   id: string;
   content: string;
   done: boolean;
+  startedAt?: number | undefined;
+  endedAt?: number | undefined;
 }
 
 export interface ToolItem {
@@ -67,6 +69,8 @@ export interface CompactedItem {
   error?: string | undefined;
   beforeTokens?: number | undefined;
   afterTokens?: number | undefined;
+  startedAt?: number | undefined;
+  endedAt?: number | undefined;
 }
 
 export interface TurnSummaryItem {

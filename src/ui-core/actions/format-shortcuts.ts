@@ -71,6 +71,7 @@ const ACTION_LABELS: Partial<Record<ActionId, string>> = {
   "transcript.search": "Search transcript",
   "transcript.expand-toggle": "Expand / collapse focused card",
   "transcript.toggle-thinking": "Toggle thinking blocks",
+  "transcript.copy-thinking": "Copy the focused thinking block",
   "transcript.toggle-output": "Toggle tool / compacted output",
   "selection.copy": "Copy selection",
   "selection.clear": "Clear selection",

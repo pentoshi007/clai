@@ -285,3 +285,33 @@ describe("NoticeBlock (hydrated history only)", () => {
     expect(new Set(widths).size).toBe(1);
   });
 });
+
+describe("classic reasoning and compaction timers", () => {
+  it("renders live elapsed labels in both card headers", () => {
+    const ctx = blockContextFor(turn.state, feedView(turn, { columns: 96 }));
+    const thinking = transcriptItems(turn.state).find(
+      (item) => item.kind === "thinking",
+    );
+    const compacted = transcriptItems(turn.state).find(
+      (item) => item.kind === "compacted",
+    );
+    expect(thinking).toBeDefined();
+    expect(compacted).toBeDefined();
+
+    const thinkingLines = buildThinkingLines(ctx, {
+      ...thinking!,
+      streaming: true,
+      startedAt: ctx.now - 12_000,
+      endedAt: undefined,
+    } as never);
+    const compactedLines = buildCompactedLines(ctx, {
+      ...compacted!,
+      streaming: true,
+      startedAt: ctx.now - 12_000,
+      endedAt: undefined,
+    } as never);
+
+    expect(stripAnsi(thinkingLines[0]!)).toContain("12s");
+    expect(stripAnsi(compactedLines[0]!)).toContain("12s");
+  });
+});

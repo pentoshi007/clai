@@ -83,6 +83,9 @@ export const defaultKeymap: readonly KeyBinding[] = [
   binding("home", "transcript.top", "transcript"),
   binding("end", "transcript.bottom", "transcript"),
   binding("ctrl+r", "transcript.search", "transcript"),
+  // Bare `c` copies the focused thinking card. Only reachable while the
+  // transcript owns the keyboard, so it never swallows typing in the composer.
+  binding("c", "transcript.copy-thinking", "transcript"),
   binding("enter", "transcript.expand-toggle", "transcript"),
   // Terminals that reserve Ctrl+C for copy use Ctrl+Shift+C for selection copy.
   binding("ctrl+shift+c", "selection.copy", "transcript"),

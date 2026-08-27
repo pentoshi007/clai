@@ -450,6 +450,13 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
   const prefixHash = createHash("sha256").update(PLAN_HASH_DOMAIN, "utf8");
   for (const section of cacheSections) prefixHash.update(section.sha256, "hex");
 
+  const requestedMaxTokens =
+    input.maxTokens === undefined
+      ? undefined
+      : profile.limits.outputTokens === undefined
+        ? input.maxTokens
+        : Math.min(input.maxTokens, profile.limits.outputTokens);
+
   return Object.freeze({
     version: REQUEST_PLAN_VERSION,
     route: Object.freeze({
@@ -483,8 +490,8 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
         ? { temperature: emittedTemperature }
         : {}),
       ...(emittedTopP !== undefined ? { topP: emittedTopP } : {}),
-      ...(input.maxTokens !== undefined
-        ? { requestedMaxTokens: input.maxTokens }
+      ...(requestedMaxTokens !== undefined
+        ? { requestedMaxTokens }
         : {}),
       stream: input.stream,
     }),

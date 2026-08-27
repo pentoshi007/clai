@@ -1209,7 +1209,10 @@ export function handlePermissions(services: AppServices, invocation: CommandInvo
   );
 }
 
-export function handleOutput(services: AppServices, invocation: CommandInvocation): void {
+export async function handleOutput(
+  services: AppServices,
+  invocation: CommandInvocation,
+): Promise<void> {
   const state = services.transcript.getState();
   const toolItems = [...state.byId.values()].filter((item) => item.kind === "tool");
   if (toolItems.length === 0) {
@@ -1249,7 +1252,7 @@ export function handleOutput(services: AppServices, invocation: CommandInvocatio
     arg !== "last"
       ? toolItems.find((t) => t.toolCallId === arg || t.id === arg)
       : toolItems.at(-1);
-  if (target) void openToolOutputPager(services, target);
+  if (target) await openToolOutputPager(services, target);
   else services.session.notice("info", arg ? `no tool output: ${arg}` : "no tool output yet");
 }
 

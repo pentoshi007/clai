@@ -159,12 +159,10 @@ export async function runSessionCompaction(
       ? Math.floor(options.requestTokensBefore)
       : undefined;
   const useContinuationAccounting =
-    continuationAccounting !== undefined &&
-    (snapshotRequestTokensBefore === undefined ||
-      continuationAccounting.requestTokens >= snapshotRequestTokensBefore);
-  const requestTokensBefore = useContinuationAccounting
-    ? continuationAccounting.requestTokens
-    : snapshotRequestTokensBefore ?? continuationAccounting?.requestTokens;
+    snapshotRequestTokensBefore === undefined &&
+    continuationAccounting !== undefined;
+  const requestTokensBefore =
+    snapshotRequestTokensBefore ?? continuationAccounting?.requestTokens;
   const scope =
     requestTokensBefore === undefined
       ? "message-history"

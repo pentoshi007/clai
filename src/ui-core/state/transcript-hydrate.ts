@@ -87,11 +87,21 @@ export function hydrateFromClassicTranscript(
         break;
       }
       case "thinking": {
+        const startedAt =
+          typeof raw.startedAt === "number" && Number.isFinite(raw.startedAt)
+            ? raw.startedAt
+            : undefined;
+        const endedAt =
+          typeof raw.endedAt === "number" && Number.isFinite(raw.endedAt)
+            ? raw.endedAt
+            : undefined;
         const item: ThinkingItem = {
           ...base,
+          ...(startedAt !== undefined ? { timestamp: startedAt, startedAt } : {}),
           kind: "thinking",
           content: raw.content ?? "",
           streaming: false,
+          ...(endedAt !== undefined ? { endedAt } : {}),
         };
         byId.set(id, item);
         order.push(id);
@@ -142,13 +152,23 @@ export function hydrateFromClassicTranscript(
         // (would inflate item counts and reappear after every /history).
         break;
       case "compacted": {
+        const startedAt =
+          typeof raw.startedAt === "number" && Number.isFinite(raw.startedAt)
+            ? raw.startedAt
+            : undefined;
+        const endedAt =
+          typeof raw.endedAt === "number" && Number.isFinite(raw.endedAt)
+            ? raw.endedAt
+            : undefined;
         const item: CompactedItem = {
           ...base,
+          ...(startedAt !== undefined ? { timestamp: startedAt, startedAt } : {}),
           kind: "compacted",
           summary: raw.summary ?? "Compacted context",
           beforeTokens: raw.beforeTokens ?? 0,
           afterTokens: raw.afterTokens ?? raw.beforeTokens ?? 0,
           ...(raw.error ? { error: raw.error } : {}),
+          ...(endedAt !== undefined ? { endedAt } : {}),
         };
         byId.set(id, item);
         order.push(id);
@@ -703,6 +723,8 @@ export function serializeForHistory(
           id: item.id,
           content: item.content,
           done: true,
+          startedAt: item.startedAt,
+          endedAt: item.endedAt,
         });
         break;
       case "tool": {
@@ -758,6 +780,8 @@ export function serializeForHistory(
           done: true,
           beforeTokens: item.beforeTokens,
           afterTokens: item.afterTokens,
+          startedAt: item.startedAt,
+          endedAt: item.endedAt,
           ...(item.error ? { error: item.error } : {}),
         });
         break;
