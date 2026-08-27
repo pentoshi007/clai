@@ -29,6 +29,9 @@ describe("formatShortcutsReference", () => {
     expect(body).toMatch(/Delete previous word/i);
     expect(body).toMatch(/Delete the whole line/i);
     expect(body).toMatch(/\/shortcuts/);
+    expect(body).toMatch(/\/mcp/);
+    expect(body).toContain(".clai/mcp.json");
+    expect(body).toMatch(/off by default/i);
   });
 });
 

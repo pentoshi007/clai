@@ -123,9 +123,10 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/mcp",
-    usage: "[server|all|off|list|status|tools|refresh|reconnect <server>]",
+    usage:
+      "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|add [json]]",
     description:
-      "browse live MCP servers and select which server tools are active for this session",
+      "inspect MCP sources/tools, add to project .clai/mcp.json, and choose session-active tools (off by default)",
   },
   {
     command: "/compact",

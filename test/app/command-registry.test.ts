@@ -13,6 +13,14 @@ describe("V2-024 command registry", () => {
     }
   });
 
+  it("describes the complete MCP project and selection workflow", () => {
+    const mcp = slashCommands.find((entry) => entry.command === "/mcp");
+    expect(mcp?.usage).toContain("add");
+    expect(mcp?.usage).toContain("locations");
+    expect(mcp?.description).toContain(".clai/mcp.json");
+    expect(mcp?.description).toMatch(/off by default/i);
+  });
+
   it("resolves aliases to their canonical command", () => {
     const registry = buildDefaultCommandRegistry();
     expect(registry.resolve("/use")).toBeUndefined();

@@ -411,6 +411,10 @@ describe("classic command parity (W12)", () => {
       expect(overlay.title).toContain("Command");
       expect(overlay.body).toContain("/model");
       expect(overlay.body).toContain("/jobs");
+      expect(overlay.body).toContain("## Extensions");
+      expect(overlay.body).toContain("/mcp");
+      expect(overlay.body).toContain(".clai/mcp.json");
+      expect(overlay.body).toContain("off by default");
     }
   });
 
