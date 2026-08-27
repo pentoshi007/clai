@@ -1,10 +1,11 @@
-import type {
-  ChatMessage,
-  NativeToolCall,
-  ReasoningArtifact,
-  ReasoningArtifactReplayObserver,
-  ReasoningArtifactReplayTarget,
-  ToolDefinition,
+import {
+  isInternalChatMessage,
+  type ChatMessage,
+  type NativeToolCall,
+  type ReasoningArtifact,
+  type ReasoningArtifactReplayObserver,
+  type ReasoningArtifactReplayTarget,
+  type ToolDefinition,
 } from "../../types.js";
 import {
   reasoningArtifactSignature,
@@ -82,6 +83,50 @@ function thinkingBlockFromArtifact(
 interface AnthropicReasoningReplayOptions {
   readonly target: ReasoningArtifactReplayTarget;
   readonly observe?: ReasoningArtifactReplayObserver | undefined;
+  readonly cacheConversation?: boolean | undefined;
+}
+
+function conversationCacheTarget(
+  messages: readonly ChatMessage[],
+): ChatMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role !== "system" && !isInternalChatMessage(message)) {
+      return message;
+    }
+  }
+  return undefined;
+}
+
+function withConversationCacheBreakpoint(
+  content: string | AnthropicContentBlock[],
+): string | AnthropicContentBlock[] {
+  if (typeof content === "string") {
+    if (!content.trim()) return content;
+    return [
+      {
+        type: "text",
+        text: content,
+        cache_control: { type: "ephemeral" },
+      } as AnthropicContentBlock,
+    ];
+  }
+  let target = content.length - 1;
+  while (
+    target >= 0 &&
+    (content[target]!.type === "thinking" ||
+      (content[target]!.type === "text" &&
+        !(content[target] as { text: string }).text.trim()))
+  ) {
+    target -= 1;
+  }
+  if (target < 0) return content;
+  const blocks = [...content];
+  blocks[target] = {
+    ...blocks[target]!,
+    cache_control: { type: "ephemeral" },
+  } as AnthropicContentBlock;
+  return blocks;
 }
 
 function assistantThinkingArtifacts(
@@ -130,6 +175,22 @@ export function toAnthropicToolMessages(
     role: "user" | "assistant";
     content: string | AnthropicContentBlock[];
   }> = [];
+  const cacheTarget = replay?.cacheConversation
+    ? conversationCacheTarget(messages)
+    : undefined;
+  const push = (
+    source: ChatMessage,
+    role: "user" | "assistant",
+    content: string | AnthropicContentBlock[],
+  ): void => {
+    out.push({
+      role,
+      content:
+        source === cacheTarget
+          ? withConversationCacheBreakpoint(content)
+          : content,
+    });
+  };
 
   let i = 0;
   const nonSystem = normalizeSystemMessages(messages).rest;
@@ -139,8 +200,10 @@ export function toAnthropicToolMessages(
 
     if (message.role === "tool") {
       const blocks: AnthropicContentBlock[] = [];
+      let source = message;
       while (i < nonSystem.length && nonSystem[i]!.role === "tool") {
         const tr = nonSystem[i]!;
+        source = tr;
         blocks.push({
           type: "tool_result",
           tool_use_id: tr.toolCallId ?? "",
@@ -151,7 +214,7 @@ export function toAnthropicToolMessages(
         });
         i += 1;
       }
-      out.push({ role: "user", content: blocks });
+      push(source, "user", blocks);
       continue;
     }
 
@@ -184,7 +247,7 @@ export function toAnthropicToolMessages(
           input: tc.args ?? {},
         });
       }
-      out.push({ role: "assistant", content: blocks });
+      push(message, "assistant", blocks);
       i += 1;
       continue;
     }
@@ -204,13 +267,13 @@ export function toAnthropicToolMessages(
           },
         });
       }
-      out.push({ role: "user", content: blocks });
+      push(message, "user", blocks);
       i += 1;
       continue;
     }
 
     const role = message.role === "assistant" ? "assistant" : "user";
-    out.push({ role, content: message.content });
+    push(message, role, message.content);
     i += 1;
   }
 

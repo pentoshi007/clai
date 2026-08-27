@@ -50,26 +50,13 @@ describe("meta provider response.incomplete handling", () => {
     vi.unstubAllGlobals();
   });
 
-  it("retries with a doubled output budget when reasoning exhausts max_output_tokens", async () => {
+  it("surfaces max_output_tokens as a length stop without restarting the request", async () => {
     const bodies: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: { body?: string }) => {
       bodies.push(String(init?.body ?? ""));
-      if (bodies.length === 1) {
-        return sseResponse([
-          { type: "response.created", response: { id: "r1" } },
-          incompleteEvent(8192, 8100),
-        ]);
-      }
       return sseResponse([
-        { type: "response.created", response: { id: "r2" } },
-        { type: "response.output_text.delta", delta: "hello" },
-        {
-          type: "response.completed",
-          response: {
-            status: "completed",
-            usage: { input_tokens: 100, output_tokens: 5, total_tokens: 105 },
-          },
-        },
+        { type: "response.created", response: { id: "r1" } },
+        incompleteEvent(8192, 8100),
       ]);
     }));
     const tokens: string[] = [];
@@ -80,31 +67,28 @@ describe("meta provider response.incomplete handling", () => {
       { apiKey: "test-key-12345" },
       (token) => tokens.push(token),
     );
-    expect(bodies).toHaveLength(2);
+    expect(bodies).toHaveLength(1);
     expect(JSON.parse(bodies[0]!).max_output_tokens).toBe(8192);
-    expect(JSON.parse(bodies[1]!).max_output_tokens).toBe(16384);
-    expect(result.text).toContain("hello");
-    expect(tokens.join("")).toContain("hello");
+    expect(result.finishReason).toBe("length");
+    expect(result.usage?.completionTokens).toBe(8192);
+    expect(tokens).toEqual([]);
   });
 
-  it("throws a clean actionable error after the retry budget is exhausted", async () => {
+  it("never spends hidden retry admissions for repeated budget exhaustion", async () => {
     let calls = 0;
     vi.stubGlobal("fetch", vi.fn(async () => {
       calls += 1;
       return sseResponse([incompleteEvent(8192, 8100)]);
     }));
     const streamMethod = metaProvider.stream;
-    const error = await streamMethod!(
+    const result = await streamMethod!(
       reasoningRequest(8192),
       { apiKey: "test-key-12345" },
       () => {},
-    ).catch((e: unknown) => e);
-    expect(calls).toBe(3);
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain("output budget");
-    expect(message).toContain("even after raising max_output_tokens");
-    expect(message).not.toContain("response.incomplete");
+    );
+    expect(calls).toBe(1);
+    expect(result.finishReason).toBe("length");
+    expect(result.usage?.reasoningTokens).toBe(8100);
   });
 
   it("returns partial output instead of throwing when the stream ends incomplete", async () => {
@@ -124,10 +108,10 @@ describe("meta provider response.incomplete handling", () => {
     );
     expect(calls).toBe(1);
     expect(result.text).toContain("partial answer");
-    expect(result.finishReason).toBe("incomplete");
+    expect(result.finishReason).toBe("length");
   });
 
-  it("does not regenerate after reasoning was already streamed", async () => {
+  it("returns already-streamed reasoning exactly once with the length stop", async () => {
     let calls = 0;
     vi.stubGlobal("fetch", vi.fn(async () => {
       calls += 1;
@@ -140,7 +124,7 @@ describe("meta provider response.incomplete handling", () => {
     const tokens: string[] = [];
     const reasoningDeltas: string[] = [];
     const streamMethod = metaProvider.stream;
-    const error = await streamMethod!(
+    const result = await streamMethod!(
       {
         ...reasoningRequest(8192),
         onStreamEvent: (event) => {
@@ -149,54 +133,68 @@ describe("meta provider response.incomplete handling", () => {
       },
       { apiKey: "test-key-12345" },
       (token) => tokens.push(token),
-    ).catch((e: unknown) => e);
+    );
     expect(calls).toBe(1);
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain("output budget");
-    expect(message).toContain("Lower the effort");
+    expect(result.finishReason).toBe("length");
     const joined = reasoningDeltas.join("");
     expect(joined).toContain("visible reasoning trace");
     expect(joined.split("visible reasoning trace").length - 1).toBe(1);
+    expect(result.reasoningBlock?.text).toBe("visible reasoning trace");
     expect(tokens.join("")).toBe("");
   });
 
-  it("complete() retries with a doubled budget on an incomplete max_output_tokens response", async () => {
+  it("keeps encrypted reasoning artifacts on an incomplete response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      sseResponse([
+        {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            id: "reasoning-1",
+            type: "reasoning",
+            encrypted_content: "opaque-state",
+            summary: [{ type: "summary_text", text: "preserved summary" }],
+          },
+        },
+        incompleteEvent(8192, 8100),
+      ]),
+    ));
+    const streamMethod = metaProvider.stream;
+    const result = await streamMethod!(
+      reasoningRequest(8192),
+      { apiKey: "test-key-12345" },
+      () => {},
+    );
+
+    expect(result.finishReason).toBe("length");
+    expect(result.reasoningBlock?.text).toContain("preserved summary");
+    expect(result.reasoningArtifacts).toHaveLength(1);
+    expect(result.reasoningArtifacts?.[0]?.kind).toBe("encrypted");
+  });
+
+  it("complete() surfaces an incomplete max_output_tokens response without retrying", async () => {
     const bodies: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: { body?: string }) => {
       bodies.push(String(init?.body ?? ""));
-      if (bodies.length === 1) {
-        return new Response(JSON.stringify({
-          status: "incomplete",
-          incomplete_details: { reason: "max_output_tokens" },
-          output: [],
-          usage: {
-            input_tokens: 100,
-            output_tokens: 8192,
-            total_tokens: 8292,
-            output_tokens_details: { reasoning_tokens: 8100 },
-          },
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
       return new Response(JSON.stringify({
-        status: "completed",
-        output: [
-          {
-            type: "message",
-            role: "assistant",
-            content: [{ type: "output_text", text: "done" }],
-          },
-        ],
-        usage: { input_tokens: 100, output_tokens: 4, total_tokens: 104 },
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 8192,
+          total_tokens: 8292,
+          output_tokens_details: { reasoning_tokens: 8100 },
+        },
       }), { status: 200, headers: { "content-type": "application/json" } });
     }));
     const result = await metaProvider.complete(
       reasoningRequest(8192),
       { apiKey: "test-key-12345" },
     );
-    expect(bodies).toHaveLength(2);
+    expect(bodies).toHaveLength(1);
     expect(JSON.parse(bodies[0]!).max_output_tokens).toBe(8192);
-    expect(JSON.parse(bodies[1]!).max_output_tokens).toBe(16384);
-    expect(result.text).toContain("done");
+    expect(result.finishReason).toBe("length");
+    expect(result.usage?.completionTokens).toBe(8192);
   });
 });

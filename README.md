@@ -447,11 +447,14 @@ The old line REPL has been removed — there are only full surfaces now. An Open
 | Plan pane / plan detail | `Ctrl+H` / `Ctrl+P` |
 | Background jobs | `Ctrl+J` |
 | Expand thinking / tool output | `Ctrl+T` / `Ctrl+O` |
+| Copy the focused thinking block | `c` |
 | Search transcript | `Ctrl+R` |
 | Copy selection | `Ctrl+Shift+C` |
 | Commands / file mentions | `/` · `@` |
 | MCP servers / project config | `/mcp` |
 | Command help / shortcut reference | `Ctrl+G` / `/shortcuts` |
+
+Completed thinking collapses to one clickable `✦ Thought for 3.2s` line; clicking it (or `Ctrl+T`) opens the reasoning in a card that scrolls internally when the reasoning is long. Clicking a card focuses it — the border turns violet and the wheel scrolls that card instead of the chat, even at its first and last row — while an unfocused card dims, shows `click to focus`, and leaves the wheel to the transcript. Moving the pointer out or clicking elsewhere releases it, and `c` copies the focused block's full reasoning and then releases it.
 
 Tool cards show the command/input clearly, with a live elapsed timer next to the command name while they run (the final duration stays visible afterwards), and keep long scan tails in an expandable OUTPUT pager (search, copy, export). File writes show a diff preview. When the agent finishes each prompt — naturally or aborted — a `✻ Worked for 1m16s` row is appended under the response, and it is restored when the session is resumed from `/history`. The status line names what the agent is actually doing right now — `responding` while streaming, `compacting` during auto or manual context compaction — instead of holding the last tool name. Prompts typed while the agent is busy are queued and run automatically in order once the turn settles; the queue pauses only when the previous turn was cancelled, errored, or stopped by the loop guard. Compaction cards preserve session memory without dropping the plan, and `/history` restores full sessions — prompts, tool results, and the matching plan — even after an abort or autosave.
 

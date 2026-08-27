@@ -56,6 +56,7 @@ export const ACTION_IDS = [
   "transcript.search",
   "transcript.expand-toggle",
   "transcript.toggle-thinking",
+  "transcript.copy-thinking",
   "transcript.toggle-output",
   // pane selection
   "selection.copy",

@@ -371,38 +371,41 @@ describe("in-place route adaptation admissions", () => {
   });
 });
 
-describe("provider-internal recursion admissions", () => {
-  it("hides three admissions inside one Meta output-budget call", async () => {
+describe("Meta output-budget admissions", () => {
+  it("surfaces one incomplete admission instead of hiding recursive retries", async () => {
     slotsByProvider = { meta: keySlots(["meta-a"]) };
     const transport = installScript(() => metaBudgetIncomplete(META_MODEL));
 
-    await expect(
-      completeWithProvider(
-        { provider: "meta", messages: userTurn() },
-        { maxRetries: 0 },
-      ),
-    ).rejects.toThrow(/output budget/i);
+    const result = await completeWithProvider(
+      { provider: "meta", messages: userTurn() },
+      { maxRetries: 0 },
+    );
 
-    expect(transport.generations).toHaveLength(3);
+    expect(transport.generations).toHaveLength(1);
     expect(
       transport.generations.map(
         (request) =>
           (request.body as { max_output_tokens?: number }).max_output_tokens,
       ),
-    ).toEqual([4096, 8192, 16384]);
+    ).toEqual([4096]);
+    expect(result.finishReason).toBe("length");
   });
 
-  it("drops the usage reported by discarded Meta attempts", async () => {
+  it("retains usage from the surfaced incomplete admission", async () => {
     slotsByProvider = { meta: keySlots(["meta-a"]) };
     installScript(() => metaBudgetIncomplete(META_MODEL));
 
-    const error = await completeWithProvider(
+    const result = await completeWithProvider(
       { provider: "meta", messages: userTurn() },
       { maxRetries: 0 },
-    ).catch((caught: unknown) => caught);
+    );
 
-    expect(error).toBeInstanceOf(Error);
-    expect(Object.keys(error as object)).not.toContain("usage");
+    expect(result.usage).toMatchObject({
+      promptTokens: 12,
+      completionTokens: 64,
+      totalTokens: 76,
+    });
+    expect(result.operationUsage?.attempts).toHaveLength(1);
   });
 });
 
@@ -807,91 +810,37 @@ describe("operation attempt usage", () => {
     });
   }
 
-  it("retains usage from Meta admissions discarded by provider recursion", async () => {
-    slotsByProvider = { meta: keySlots(["meta-a"]) };
-    installScript(() => metaBudgetIncomplete(META_MODEL));
-    const recorder = new OperationUsageRecorder();
+  for (const { label, responseFactory } of [
+    {
+      label: "JSON",
+      responseFactory: () => metaBudgetIncomplete(META_MODEL),
+    },
+    { label: "SSE", responseFactory: metaSseBudgetIncomplete },
+  ]) {
+    it(`surfaces one Meta ${label} stream budget stop as one admission`, async () => {
+      slotsByProvider = { meta: keySlots(["meta-a"]) };
+      const transport = installScript(responseFactory);
+      const recorder = new OperationUsageRecorder();
 
-    await expect(
-      completeWithProvider(
+      const result = await streamWithProvider(
         { provider: "meta", messages: userTurn() },
+        () => {},
         { maxRetries: 0, attemptUsage: recorder },
-      ),
-    ).rejects.toThrow(/output budget/i);
+      );
 
-    const snapshot = recorder.snapshot();
-    expect(snapshot.attempts).toHaveLength(3);
-    expect(snapshot.attempts.map((attempt) => attempt.reason)).toEqual([
-      "initial",
-      "provider-retry",
-      "provider-retry",
-    ]);
-    expect(snapshot.attempts.map((attempt) => attempt.usage.kind)).toEqual([
-      "known",
-      "known",
-      "unknown",
-    ]);
-    expect(snapshot.aggregate).toMatchObject({
-      status: "partial",
-      knownAdmissions: 2,
-      unknownAdmissions: 1,
-      usage: { promptTokens: 24, completionTokens: 128, totalTokens: 152 },
+      expect(result.finishReason).toBe("length");
+      expect(transport.generations).toHaveLength(1);
+      expect(recorder.snapshot().attempts).toMatchObject([
+        {
+          provider: "meta",
+          mode: "stream",
+          reason: "initial",
+          outcome: "success",
+          usage: { kind: "known" },
+        },
+      ]);
     });
-  });
-
-  it("records Meta JSON stream budget recursion as separate admissions", async () => {
-    slotsByProvider = { meta: keySlots(["meta-a"]) };
-    const transport = installScript(
-      () => metaBudgetIncomplete(META_MODEL),
-      () => buildWireResponse("meta_responses", "complete", "answer", META_MODEL),
-    );
-    const recorder = new OperationUsageRecorder();
-
-    await streamWithProvider(
-      { provider: "meta", messages: userTurn() },
-      () => {},
-      { maxRetries: 0, attemptUsage: recorder },
-    );
-
-    expect(transport.generations).toHaveLength(2);
-    expect(
-      recorder.snapshot().attempts.map(({ reason, outcome, usage }) => ({
-        reason,
-        outcome,
-        usage: usage.kind,
-      })),
-    ).toEqual([
-      { reason: "initial", outcome: "failure", usage: "known" },
-      { reason: "provider-retry", outcome: "success", usage: "known" },
-    ]);
-  });
-
-  it("records Meta SSE stream budget recursion as separate admissions", async () => {
-    slotsByProvider = { meta: keySlots(["meta-a"]) };
-    const transport = installScript(
-      metaSseBudgetIncomplete,
-      () => buildWireResponse("meta_responses", "stream", "answer", META_MODEL),
-    );
-    const recorder = new OperationUsageRecorder();
-
-    await streamWithProvider(
-      { provider: "meta", messages: userTurn() },
-      () => {},
-      { maxRetries: 0, attemptUsage: recorder },
-    );
-
-    expect(transport.generations).toHaveLength(2);
-    expect(
-      recorder.snapshot().attempts.map(({ reason, outcome, usage }) => ({
-        reason,
-        outcome,
-        usage: usage.kind,
-      })),
-    ).toEqual([
-      { reason: "initial", outcome: "failure", usage: "known" },
-      { reason: "provider-retry", outcome: "success", usage: "known" },
-    ]);
-  });
+  }
 
   it("keeps Meta transient stream fetches and records one-to-one on exhaustion", async () => {
     vi.useFakeTimers();

@@ -79,12 +79,11 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
         false,
       ),
     ) as {
-      cache_control: { type: string };
       system: Array<Record<string, unknown>>;
-      messages: Array<{ content: unknown }>;
+      messages: Array<{ role: string; content: unknown }>;
     };
 
-    expect(body.cache_control).toEqual({ type: "ephemeral" });
+    expect(body).not.toHaveProperty("cache_control");
     expect(body.system).toHaveLength(2);
     expect(body.system[0]).toMatchObject({
       text: CONSTITUTION,
@@ -94,6 +93,16 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
       text: expect.stringContaining("OUTCOME CONTRACT"),
     });
     expect(JSON.stringify(body.messages)).not.toContain(REQUEST_CONTEXT_PREFIX);
+    expect(body.messages.at(-1)).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "current",
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+    });
   });
 
   it("marks the long system prefix as a cache breakpoint", () => {
@@ -121,5 +130,118 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
     expect(usage.cachedPromptTokens).toBe(40_000);
     expect(usage.cacheCreationTokens).toBe(2_000);
     expect(usage.completionTokens).toBe(300);
+  });
+});
+
+describe("Anthropic explicit conversation cache breakpoints", () => {
+  it("marks the last stable message before mutable system and internal tails", () => {
+    const body = JSON.parse(
+      buildAnthropicBody(
+        request([
+          { role: "system", content: CONSTITUTION },
+          { role: "user", content: "prior request" },
+          { role: "assistant", content: "stable answer" },
+          { role: "system", content: "ACTIVE PLAN v2\nmutable" },
+          {
+            role: "system",
+            content: "SESSION STATE / WORKING MEMORY\nmutable",
+          },
+          { role: "user", content: "retry guidance", internal: true },
+        ]),
+        false,
+      ),
+    ) as {
+      system: Array<Record<string, unknown>>;
+      messages: Array<{ role: string; content: unknown }>;
+    };
+
+    const marked = body.messages.filter((message) =>
+      JSON.stringify(message).includes('"cache_control"'),
+    );
+    expect(marked).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "stable answer",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(body.messages.slice(-3))).not.toContain(
+      '"cache_control"',
+    );
+    const allMarkers = JSON.stringify({
+      system: body.system,
+      messages: body.messages,
+    }).match(/"cache_control"/g);
+    expect(allMarkers).toHaveLength(2);
+  });
+
+  it("keeps tool-use and tool-result blocks separate while marking the final result", () => {
+    const body = JSON.parse(
+      buildAnthropicBody(
+        request([
+          { role: "system", content: CONSTITUTION },
+          { role: "user", content: "inspect both files" },
+          {
+            role: "assistant",
+            content: "checking",
+            toolCalls: [
+              { id: "tool-1", name: "fs.read", args: { path: "a.ts" } },
+              { id: "tool-2", name: "fs.read", args: { path: "b.ts" } },
+            ],
+          },
+          {
+            role: "tool",
+            toolCallId: "tool-1",
+            content: "a contents",
+            ok: true,
+          },
+          {
+            role: "tool",
+            toolCallId: "tool-2",
+            content: "b contents",
+            ok: true,
+          },
+          { role: "system", content: "ACTIVE PLAN v3\nmutable" },
+        ]),
+        false,
+      ),
+    ) as {
+      messages: Array<{
+        role: string;
+        content: string | Array<Record<string, unknown>>;
+      }>;
+    };
+
+    const assistant = body.messages.find((message) =>
+      Array.isArray(message.content) &&
+      message.content.some((block) => block.type === "tool_use"),
+    );
+    const results = body.messages.find((message) =>
+      Array.isArray(message.content) &&
+      message.content.some((block) => block.type === "tool_result"),
+    );
+    expect((assistant?.content as Array<Record<string, unknown>>).map((block) => block.type)).toEqual([
+      "text",
+      "tool_use",
+      "tool_use",
+    ]);
+    expect(assistant).not.toHaveProperty(
+      "content.2.cache_control",
+    );
+    expect((results?.content as Array<Record<string, unknown>>).map((block) => block.type)).toEqual([
+      "tool_result",
+      "tool_result",
+    ]);
+    expect(results).toHaveProperty(
+      "content.1.cache_control",
+      { type: "ephemeral" },
+    );
+    expect(results).toHaveProperty("content.0.tool_use_id", "tool-1");
+    expect(results).toHaveProperty("content.1.tool_use_id", "tool-2");
   });
 });

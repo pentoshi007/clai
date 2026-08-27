@@ -22,6 +22,7 @@ import { operationUsageFromError } from "../llm/operation-ledger.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { modelContextWindow } from "../llm/token-usage.js";
 import { providerInputTokenBudget } from "../llm/context-windows.js";
+import { resolveBuiltInProfile } from "../llm/provider-profiles.js";
 import { streamAlreadyEmitted } from "../llm/stream-progress.js";
 import {
   classifyStreamFailure,
@@ -149,6 +150,9 @@ import {
   dedupeToolContextOutput,
   freeTierGuardNotices,
   getReliabilityPolicy,
+  MAX_OUTPUT_BUDGET_CONTINUATIONS,
+  MAX_STEP_COMPLETION_TOKENS,
+  outputBudgetWasExhausted,
   resolveStepMaxTokens,
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
@@ -1522,7 +1526,6 @@ export async function runAgentTurn(
 
 
     const loopGuard = new LoopGuard();
-    let lastExactPromptTokens = 0;
     // Uncalibrated estimate for the request currently in flight. Paired with the
     // provider's reported prompt size below so the estimator learns this route's
     // bias instead of permanently over-reporting it.
@@ -1564,6 +1567,7 @@ export async function runAgentTurn(
     // to actually act instead of silently returning an empty answer.
     let emptyVisibleRetries = 0;
     let truncatedBudgetRounds = 0;
+    let continuationBudgetFloor = 0;
 
     let retryWithoutThinking = false;
 
@@ -3864,11 +3868,7 @@ export async function runAgentTurn(
       reason: string,
       force = false,
     ): Promise<void> {
-      const beforeRequestTokens = estimateNextRequestTokens(messages);
-      const beforeTokens = Math.max(
-        beforeRequestTokens,
-        lastExactPromptTokens,
-      );
+      const beforeTokens = estimateNextRequestTokens(messages);
       const contextLimitTokens = currentContextLimitTokens();
       const compactTrigger = autoCompactTriggerTokens(getReliabilityPolicy(), {
         provider,
@@ -4049,7 +4049,6 @@ export async function runAgentTurn(
         messages.splice(0, messages.length, ...candidateMessages);
         compactionAttempts.recordSuccess(attemptKey);
         loopGuard.resetReadOnly();
-        lastExactPromptTokens = 0;
         // The snapshot predates the rewrite: replaying it would resurrect the
         // pre-compaction history. The next successful request re-seeds it.
         lastSuccessfulRequestSnapshot = undefined;
@@ -4234,6 +4233,22 @@ export async function runAgentTurn(
             }
           }
           const contextLimitTokens = currentContextLimitTokens();
+          const routeOutputTokenLimit = resolveBuiltInProfile({
+            provider,
+            model,
+          }).limits.outputTokens;
+          stepMaxTokens = resolveStepMaxTokens({
+            nativeToolsActive,
+            toolsAttached,
+            recoveryNudge: retryWithoutThinking,
+            truncationDepth: truncatedBudgetRounds,
+            thinkingEnabled:
+              Boolean(config.thinking?.enabled) && !retryWithoutThinking,
+            minimumTokens: continuationBudgetFloor,
+            ...(routeOutputTokenLimit !== undefined
+              ? { outputTokenLimit: routeOutputTokenLimit }
+              : {}),
+          });
           await auditLog("agent.turn", {
             provider,
             model,
@@ -4252,14 +4267,10 @@ export async function runAgentTurn(
                   : {}),
               },
             ),
-            maxTokensBudget: resolveStepMaxTokens({
-              nativeToolsActive,
-              toolsAttached,
-              recoveryNudge: retryWithoutThinking,
-              truncationDepth: truncatedBudgetRounds,
-              thinkingEnabled:
-                Boolean(config.thinking?.enabled) && !retryWithoutThinking,
-            }),
+            maxTokensBudget: stepMaxTokens,
+            ...(routeOutputTokenLimit !== undefined
+              ? { outputTokenLimit: routeOutputTokenLimit }
+              : {}),
           });
           // Resume / mid-turn abort can leave orphan tool rows or a user
           // "continue" before tool results. Heal first so multi-key retry and
@@ -4268,15 +4279,6 @@ export async function runAgentTurn(
           // ok=true so the model doesn't thrash on fake exit=130 failures.
           repairToolProtocol(messages);
           assertValidToolProtocol(messages);
-          // E3: adaptive completion budget (still large enough for writes).
-          stepMaxTokens = resolveStepMaxTokens({
-            nativeToolsActive,
-            toolsAttached,
-            recoveryNudge: retryWithoutThinking,
-            truncationDepth: truncatedBudgetRounds,
-            thinkingEnabled:
-              Boolean(config.thinking?.enabled) && !retryWithoutThinking,
-          });
           try {
           // MR-007: the fit verdict is taken on the final assembled request —
           // after protocol repair and every live-state reinjection — and a
@@ -4640,7 +4642,6 @@ export async function runAgentTurn(
         model = completion.model;
         if (completion.usage) {
           if (completion.usage.exact && completion.usage.promptTokens > 0) {
-            lastExactPromptTokens = completion.usage.promptTokens;
             recordRequestTokenObservation({
               provider: completion.provider,
               model: completion.model,
@@ -4708,6 +4709,12 @@ export async function runAgentTurn(
           ...assistantTextResult,
           visible: continuedVisible,
         };
+        const retryReasoning =
+          completion.reasoningArtifacts?.length || completion.reasoningBlock
+            ? completion
+            : assistantText.hasThinking
+              ? { reasoningBlock: { text: assistantText.thinkContent } }
+              : completion;
         const commitAssistantRetry = (historyText: string): void => {
           const hasShownToolCall = deferredToolCalls.some((entry) => entry.shown);
           if (!hasShownToolCall) {
@@ -4726,7 +4733,7 @@ export async function runAgentTurn(
               });
             }
           }
-          pushAssistantHistory(historyText, completion);
+          pushAssistantHistory(historyText, retryReasoning);
           interruptedVisible = "";
           interruptedReasoning = "";
           lowYieldResumptions = 0;
@@ -4958,55 +4965,78 @@ export async function runAgentTurn(
         }
 
 
-        if (!canonicalAssistantVisible.trim() && !call) {
-          const completionTokens = completion.usage?.completionTokens ?? 0;
-          const hitOutputLimit =
-            completion.finishReason === "length" ||
-            (completionTokens > 0 && stepMaxTokens > 0 && completionTokens >= stepMaxTokens - 64);
-          const truncatedRoundText = collapseRepeatedText(completion.text ?? "");
-          if (hitOutputLimit && truncatedRoundText.trim() && truncatedBudgetRounds < 2) {
-            truncatedBudgetRounds += 1;
-            writeNotice(
-              "warn",
-              "response hit the output token limit — continuing from where it stopped",
-            );
-            messages.push({
-              role: "assistant",
-              content: sanitizeAssistantText(truncatedRoundText),
-            });
-            messages.push(
-              recoveryUserMessage(
-                "Your previous response was cut off by the output token limit before it completed. " +
-                  "Continue directly from where it stopped — do not restart the analysis or repeat prior text. " +
-                  "Finish briefly: emit the next tool call, or the final answer if the task is complete.",
-              ),
-            );
-            continue;
-          }
+        const completionTokens = completion.usage?.completionTokens ?? 0;
+        const completionRouteProfile = resolveBuiltInProfile({
+          provider,
+          model,
+        });
+        const completionBudget =
+          completionRouteProfile.limits.outputTokens === undefined
+            ? stepMaxTokens
+            : Math.min(
+                stepMaxTokens,
+                completionRouteProfile.limits.outputTokens,
+              );
+        const hitOutputLimit = outputBudgetWasExhausted({
+          finishReason: completion.finishReason,
+          completionTokens,
+          requestedMaxTokens: completionBudget,
+        });
+        const incompleteNativeStream =
+          nativeToolCalls.length === 0 && streamedNativeCallNames.size > 0;
+        const outputLimitLooksLikeTool =
+          incompleteNativeStream ||
+          countToolFences(assistantText.visible) > 0 ||
+          looksLikeTruncatedToolCall(assistantText.visible);
+        if (hitOutputLimit && !call && !outputLimitLooksLikeTool) {
           if (
-            hitOutputLimit &&
-            !truncatedRoundText.trim() &&
-            assistantText.hasThinking &&
-            truncatedBudgetRounds < 4
+            truncatedBudgetRounds < MAX_OUTPUT_BUDGET_CONTINUATIONS
           ) {
             truncatedBudgetRounds += 1;
-            interruptedReasoning = appendInterruptedReasoning(
-              interruptedReasoning,
-              assistantText.thinkContent,
+            const desiredContinuationBudget = Math.min(
+              MAX_STEP_COMPLETION_TOKENS,
+              Math.max(completionBudget, completionBudget * 2),
             );
+            continuationBudgetFloor =
+              completionRouteProfile.limits.outputTokens === undefined
+                ? desiredContinuationBudget
+                : Math.min(
+                    desiredContinuationBudget,
+                    completionRouteProfile.limits.outputTokens,
+                  );
+            retryWithoutThinking =
+              completionRouteProfile.reasoning.generation !== "mandatory";
+            if (assistantText.hasThinking) {
+              interruptedReasoning = appendInterruptedReasoning(
+                interruptedReasoning,
+                assistantText.thinkContent,
+              );
+            }
             const preservedBudgetReasoning = interruptedReasoning;
+            if (canonicalAssistantVisible.trim()) {
+              visibleCommitted = true;
+              pushAssistantHistory(assistantText.visible, retryReasoning);
+              interruptedVisible = canonicalAssistantVisible;
+              lowYieldResumptions = 0;
+            } else {
+              commitAssistantRetry(assistantText.visible);
+              interruptedReasoning = preservedBudgetReasoning;
+            }
             writeNotice(
               "warn",
-              "reasoning used the whole output budget — preserving it and widening the budget",
+              retryWithoutThinking
+                ? "response used the whole output budget — preserving it and continuing once with optional reasoning disabled"
+                : "response used the whole output budget — preserving it and continuing once at the route limit",
             );
-            commitAssistantRetry(assistantText.visible);
-            interruptedReasoning = preservedBudgetReasoning;
             messages.push(
               recoveryUserMessage(
                 [
-                  "Your previous response spent the entire output budget on reasoning and was cut off before any visible answer. " +
-                    "Do not restart the analysis — your conclusions so far are preserved below. " +
-                    "Wrap up the reasoning now and emit the next tool call or the final answer directly.",
+                  canonicalAssistantVisible.trim()
+                    ? "Your previous response was cut off by the output token limit. Continue from the exact stopping point without repeating any prior text."
+                    : "Your previous response spent the output budget before producing a visible answer. Do not restart the analysis; use the preserved conclusions and answer now.",
+                  retryWithoutThinking
+                    ? "Optional reasoning is disabled for this continuation. Emit the next tool call or final answer directly and briefly."
+                    : "Finish the reasoning briefly, then emit the next tool call or final answer directly.",
                   interruptedReasoningBrief(interruptedReasoning),
                 ]
                   .filter((part): part is string => Boolean(part))
@@ -5015,9 +5045,25 @@ export async function runAgentTurn(
             );
             continue;
           }
-          const incompleteNativeStream =
-            nativeToolCalls.length === 0 &&
-            streamedNativeCallNames.size > 0;
+          writeNotice(
+            "warn",
+            canonicalAssistantVisible.trim()
+              ? "response reached the output limit again after its bounded continuation — returning the preserved partial answer"
+              : "response reached the output limit again after its bounded continuation — stopping without restarting the reasoning",
+          );
+          if (!canonicalAssistantVisible.trim()) {
+            commitAssistantRetry(assistantText.visible);
+            return finishTurn(
+              "The model exhausted its output budget again after one preserved continuation. No visible answer was produced.",
+              step + 1,
+              "partial",
+              ["Retry at a lower reasoning effort or choose a model with a larger output limit."],
+              "The model exhausted the route's output budget twice without a visible answer.",
+            );
+          }
+        }
+
+        if (!canonicalAssistantVisible.trim() && !call) {
           if (incompleteNativeStream) {
             const reason =
               "The provider began this native tool call but never completed it. Nothing ran; reissue a complete call.";
@@ -5093,6 +5139,7 @@ export async function runAgentTurn(
           // Reset the counter on any successful visible output or recovered call.
           emptyVisibleRetries = 0;
           truncatedBudgetRounds = 0;
+          continuationBudgetFloor = 0;
           retryWithoutThinking = false;
           interruptedReasoning = "";
         }
@@ -5552,17 +5599,20 @@ export async function runAgentTurn(
               : outcomeStatus === "partial"
                 ? "Required outcome criteria remain unsupported by current evidence."
                 : undefined,
-            displayCleaned,
+            interruptedVisible ? cleaned : displayCleaned,
           );
         }
 
         // A valid primary tool call exists for this fresh model turn. Show any
         // prose / thinking that preceded it, record the assistant message ONCE.
+        const toolDisplayText = interruptedVisible
+          ? canonicalAssistantVisible
+          : assistantText.visible;
         const beforeTool = recoveredFromBareJson
           ? ""
           : nativeToolCalls.length
-            ? assistantText.visible.trim()
-            : textBeforeToolCall(assistantText.visible);
+            ? toolDisplayText.trim()
+            : textBeforeToolCall(toolDisplayText);
         if (beforeTool) {
           writeAssistantMessage(beforeTool);
         } else {

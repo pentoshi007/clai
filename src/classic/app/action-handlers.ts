@@ -146,6 +146,9 @@ export class ClassicActionHandlers {
       case "jobs.close":
         this.deps.panels.handleKey(chord, key.text);
         return;
+      // OpenTUI-only: classic has no focusable thinking card to copy from.
+      case "transcript.copy-thinking":
+        return;
       default: {
         const exhaustive: never = action;
         void exhaustive;

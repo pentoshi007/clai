@@ -3,6 +3,7 @@ import { runAgent } from "../../src/modes/agent.js";
 import { deletePlan } from "../../src/store/plan.js";
 import type { AgentEvent } from "../../src/agent/events.js";
 import type { ChatMessage } from "../../src/types.js";
+import { resetRequestTokenCalibration } from "../../src/llm/token-estimate-calibration.js";
 
 const stream = vi.fn();
 const complete = vi.fn();
@@ -88,6 +89,7 @@ describe("automatic compaction single-admission policy", () => {
   beforeEach(async () => {
     stream.mockReset();
     complete.mockReset();
+    resetRequestTokenCalibration({ removePersisted: true });
     await deletePlan("session-auto-single-admission").catch(() => {});
   });
 
@@ -127,13 +129,27 @@ describe("automatic compaction single-admission policy", () => {
       },
     );
 
+    const history = smallHistory();
+    history.splice(1, 1, {
+      role: "user",
+      content: "x ".repeat(160_000),
+    });
     const events: AgentEvent[] = [];
     await runAgent("continue", {
       session: makeSession("session-auto-single-admission"),
-      history: smallHistory(),
+      provider: "nvidia",
+      model: "test-model",
+      history,
       maxSteps: 4,
       contextLimitTokens: 175_000,
       onEvent: (event) => events.push(event),
+    }).catch((error: unknown) => {
+      if (
+        !(error instanceof Error) ||
+        !/exceeds the effective safe context/i.test(error.message)
+      ) {
+        throw error;
+      }
     });
 
     const starts = events.filter(

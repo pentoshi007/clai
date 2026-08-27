@@ -1113,3 +1113,133 @@ describe("transcript sequence policy (T620 / MR-017)", () => {
     expect(stepped).toEqual(state);
   });
 });
+
+describe("thinking and compaction lifecycle timing", () => {
+  it("preserves a thinking start across reopen and freezes each close", () => {
+    let now = 1_000;
+    const seq = new EventSequencer(
+      asSessionId("sess-thinking-timer"),
+      createCountingIdFactory("timer-thinking-"),
+      { now: () => now },
+    );
+    const turnId = asTurnId("turn-thinking-timer");
+    let state = applyAppEvent(
+      EMPTY_TRANSCRIPT_STATE,
+      seq.build(
+        "thinking-delta",
+        { text: "first", reasoningId: "reasoning-timer" },
+        turnId,
+      ),
+    );
+    let thinking = transcriptItems(state)[0] as ThinkingItem;
+    expect(thinking.startedAt).toBe(1_000);
+    expect(thinking.endedAt).toBeUndefined();
+
+    now = 13_000;
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "thinking-block",
+        {
+          messageId: seq.ids.message(),
+          content: "first",
+          reasoningId: "reasoning-timer",
+        },
+        turnId,
+      ),
+    );
+    thinking = transcriptItems(state)[0] as ThinkingItem;
+    expect(thinking.endedAt).toBe(13_000);
+
+    now = 20_000;
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "thinking-delta",
+        { text: "second", reasoningId: "reasoning-timer" },
+        turnId,
+      ),
+    );
+    thinking = transcriptItems(state)[0] as ThinkingItem;
+    expect(thinking.startedAt).toBe(1_000);
+    expect(thinking.endedAt).toBeUndefined();
+    expect(thinking.streaming).toBe(true);
+
+    now = 25_000;
+    state = applyAppEvent(
+      state,
+      seq.build("assistant-delta", { text: "answer" }, turnId),
+    );
+    thinking = transcriptItems(state)[0] as ThinkingItem;
+    expect(thinking.startedAt).toBe(1_000);
+    expect(thinking.endedAt).toBe(25_000);
+    expect(thinking.streaming).toBe(false);
+  });
+
+  it("preserves a compaction start through completion and retry failure", () => {
+    let now = 2_000;
+    const seq = new EventSequencer(
+      asSessionId("sess-compaction-timer"),
+      createCountingIdFactory("timer-compaction-"),
+      { now: () => now },
+    );
+    let state = applyAppEvent(
+      EMPTY_TRANSCRIPT_STATE,
+      seq.build(
+        "compaction-started",
+        { compactionId: "timer", beforeTokens: 90_000 },
+        undefined,
+      ),
+    );
+
+    now = 17_000;
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "compaction-completed",
+        {
+          compactionId: "timer",
+          summary: "memory",
+          beforeTokens: 90_000,
+          afterTokens: 20_000,
+          contextScope: "assembled-request",
+        },
+        undefined,
+      ),
+    );
+    let compacted = transcriptItems(state)[0] as CompactedItem;
+    expect(compacted.timestamp).toBe(2_000);
+    expect(compacted.startedAt).toBe(2_000);
+    expect(compacted.endedAt).toBe(17_000);
+
+    now = 20_000;
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "compaction-started",
+        { compactionId: "timer", beforeTokens: 90_000 },
+        undefined,
+      ),
+    );
+    compacted = transcriptItems(state)[0] as CompactedItem;
+    expect(compacted.startedAt).toBe(2_000);
+    expect(compacted.endedAt).toBeUndefined();
+
+    now = 29_000;
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "compaction-failed",
+        {
+          compactionId: "timer",
+          message: "retry failed",
+          retainedTokens: 90_000,
+        },
+        undefined,
+      ),
+    );
+    compacted = transcriptItems(state)[0] as CompactedItem;
+    expect(compacted.startedAt).toBe(2_000);
+    expect(compacted.endedAt).toBe(29_000);
+  });
+});

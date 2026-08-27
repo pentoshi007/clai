@@ -43,6 +43,8 @@ export function TranscriptRowImpl(props: {
   searchMatched?: boolean | undefined;
   /** This item is the currently selected n/N match. */
   searchActiveMatch?: boolean | undefined;
+  /** This thinking card owns the pointer wheel (clicked, not Ctrl+T). */
+  thinkingFocused?: boolean | undefined;
 }): ReactNode {
   const {
     item,
@@ -59,6 +61,7 @@ export function TranscriptRowImpl(props: {
     contentWidth,
     searchMatched,
     searchActiveMatch,
+    thinkingFocused,
   } = props;
 
   let body: ReactNode;
@@ -89,7 +92,15 @@ export function TranscriptRowImpl(props: {
           theme={theme}
           expanded={expanded}
           contentWidth={contentWidth}
-          onToggle={() => store.toggleItemOverride(item.id, expandThinkingGlobal)}
+          focused={thinkingFocused ?? false}
+          onFocus={() => {
+            // Keyboard must follow the click so `c` copies this card instead
+            // of typing into the composer.
+            services.focus.focusRegion("transcript");
+            store.focusThinking(item.id);
+          }}
+          onBlur={() => store.blurThinking()}
+          onToggle={() => store.toggleThinkingItem(item.id, expandThinkingGlobal)}
         />
       );
       break;

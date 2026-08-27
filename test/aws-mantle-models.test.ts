@@ -53,10 +53,70 @@ describe("AWS Mantle model discovery", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(init.body)) as {
       system: Array<Record<string, unknown>>;
+      messages: Array<{ role: string; content: unknown }>;
     };
+    expect(body).not.toHaveProperty("cache_control");
     expect(body.system[0]).toMatchObject({
       type: "text",
       cache_control: { type: "ephemeral" },
     });
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "hi",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("AWS Mantle prompt cache placement", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps mutable suffix messages after the explicit conversation breakpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      content: [{ type: "text", text: "ok" }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await mantleProvider.complete({
+      provider: "aws-mantle",
+      model: "anthropic.claude-haiku-4-5",
+      messages: [
+        { role: "system", content: "stable ".repeat(800) },
+        { role: "user", content: "request" },
+        { role: "assistant", content: "stable answer" },
+        { role: "system", content: "ACTIVE PLAN v2\nmutable" },
+        { role: "user", content: "recovery", internal: true },
+      ],
+    }, { apiKey: "test-key" });
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    const marked = body.messages.filter((message) =>
+      JSON.stringify(message).includes('"cache_control"'),
+    );
+    expect(marked).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "stable answer",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(body.messages.slice(-2))).not.toContain(
+      '"cache_control"',
+    );
   });
 });

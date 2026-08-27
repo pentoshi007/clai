@@ -6,8 +6,14 @@
  * one messy minified blob.
  */
 
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import { readFile, stat } from "node:fs/promises";
-import { createArtifactPagerSource, type ArtifactPagerSource } from "./artifact-pager-source.js";
+import {
+  createArtifactPagerSource,
+  createTextPagerSource,
+  type ArtifactPagerSource,
+} from "./artifact-pager-source.js";
 import { asToolCallId } from "../../app/events/app-event.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { ToolItem } from "../state/transcript-types.js";
@@ -138,12 +144,16 @@ export function cleanArgsLabel(
 /** Absolute path for on-disk open (fs.read / similar) when recoverable. */
 export function pathFromArgsDisplay(argsDisplay: string | undefined): string | undefined {
   const label = cleanArgsLabel("fs.read", argsDisplay);
-  if (!label) return undefined;
-  // Plain absolute / home-relative path only — never treat shell commands as paths.
-  if (label.startsWith("/") || label.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(label)) {
-    return label;
+  if (!label || label.includes("\0") || /[\r\n]/.test(label) || label.includes("://")) {
+    return undefined;
   }
-  return undefined;
+  if (label.startsWith("~/")) return join(homedir(), label.slice(2));
+  if (isAbsolute(label) || /^[A-Za-z]:[\\/]/.test(label)) return label;
+  if (/(?:&&|\|\||[;<>`])/.test(label)) return undefined;
+  if (!/[\\/]/.test(label) && !/^[^\s]+\.[A-Za-z0-9]{1,12}$/.test(label)) {
+    return undefined;
+  }
+  return resolve(label);
 }
 
 /** Short, stable title: `web.search · output` (args live in the body header). */
@@ -157,10 +167,34 @@ export function toolPagerTitle(
   return `${name} · ${label}`;
 }
 
-/** Inline full artifact into the pager when small enough (no paging UI needed). */
-const INLINE_ARTIFACT_MAX_BYTES = 512 * 1024;
-/** Cap when opening the real source file for fs.read in the pager. */
-const FULL_SOURCE_FILE_MAX_BYTES = 2 * 1024 * 1024;
+const INLINE_ARTIFACT_MAX_BYTES = 128 * 1024;
+const FULL_SOURCE_FILE_MAX_BYTES = 128 * 1024;
+const INLINE_PAGER_MAX_LINES = 2_000;
+
+function exceedsInlinePagerBudget(body: string): boolean {
+  if (Buffer.byteLength(body, "utf8") > INLINE_ARTIFACT_MAX_BYTES) return true;
+  let lines = 1;
+  let index = -1;
+  while ((index = body.indexOf("\n", index + 1)) >= 0) {
+    lines += 1;
+    if (lines > INLINE_PAGER_MAX_LINES) return true;
+  }
+  return false;
+}
+
+async function pageTextBody(
+  body: string,
+  path?: string,
+): Promise<{ body: string; source: ArtifactPagerSource }> {
+  const source = createTextPagerSource(body, path);
+  try {
+    const page = await source.readPage(0);
+    return { body: page.body || "(no output)", source };
+  } catch (error) {
+    source.dispose();
+    throw error;
+  }
+}
 
 export interface OpenToolOutputOptions {
   /**
@@ -179,7 +213,15 @@ export interface OpenToolOutputOptions {
   readonly fileChange?: FileChange;
 }
 
-async function resolveFileChangeBody(change: FileChange): Promise<string> {
+interface ResolvedFileChangeBody {
+  readonly change: FileChange;
+  readonly body: string;
+  readonly source?: ArtifactPagerSource | undefined;
+}
+
+async function resolveFileChangeBody(
+  change: FileChange,
+): Promise<ResolvedFileChangeBody> {
   let full: FileChange = change;
   if (!change.afterText && change.snapshotPath) {
     try {
@@ -188,11 +230,25 @@ async function resolveFileChangeBody(change: FileChange): Promise<string> {
       if (parsed && typeof parsed === "object") {
         full = { ...change, ...parsed, afterText: parsed.afterText ?? change.afterText };
       }
-    } catch {
-      /* use inline change as-is */
-    }
+    } catch {}
   }
-  return formatModalPlainText(full);
+  if (!full.afterText && full.kind !== "delete") {
+    try {
+      const info = await stat(full.path);
+      if (info.isFile() && info.size > FULL_SOURCE_FILE_MAX_BYTES) {
+        const source = createArtifactPagerSource(full.path);
+        const page = await source.readPage(0);
+        return { change: full, body: page.body || "(empty file)", source };
+      }
+      if (info.isFile()) {
+        full = { ...full, afterText: await readFile(full.path, "utf8") };
+      }
+    } catch {}
+  }
+  const body = formatModalPlainText(full);
+  if (!exceedsInlinePagerBudget(body)) return { change: full, body };
+  const paged = await pageTextBody(body, full.path);
+  return { change: full, ...paged };
 }
 
 export async function openToolOutputPager(
@@ -211,31 +267,29 @@ export async function openToolOutputPager(
         : undefined);
 
     if (fileChange && options.bodyOverride === undefined) {
-      const guttered = await resolveFileChangeBody(fileChange);
+      const resolved = await resolveFileChangeBody(fileChange);
+      const fullChange = resolved.change;
       const title =
         options.titleOverride ??
-        `${fileChange.kind === "create" ? "Created" : fileChange.kind === "delete" ? "Deleted" : fileChange.kind === "append" ? "Appended" : fileChange.kind === "overwrite" ? "Wrote" : "Edited"} · ${fileChange.basename}`;
+        `${fullChange.kind === "create" ? "Created" : fullChange.kind === "delete" ? "Deleted" : fullChange.kind === "append" ? "Appended" : fullChange.kind === "overwrite" ? "Wrote" : "Edited"} · ${fullChange.basename}`;
       const mdMode = defaultPagerMarkdownMode({
         kind: "file-change",
-        fileChange,
-        path: fileChange.path,
-        body: fileChange.afterText,
+        fileChange: fullChange,
+        path: fullChange.path,
+        body: fullChange.afterText,
       });
-      // Always open the guttered green/red editor body by default.
-      // (mdMode is plain for file mutations; `f` still formats if the user wants.)
       const body =
-        mdMode === "force"
-          ? stripPagerLineGutters(guttered) ||
-            fileChange.afterText ||
-            guttered ||
+        mdMode === "force" && !resolved.source
+          ? stripPagerLineGutters(resolved.body) ||
+            fullChange.afterText ||
+            resolved.body ||
             "(empty file)"
-          : guttered || "(empty file)";
+          : resolved.body || "(empty file)";
       const opened = services.overlay.openPager(
         title,
         body,
-        undefined,
-        // Keep path for raw syntax highlighting of the green editor view.
-        mdMode === "force" ? undefined : fileChange.path,
+        resolved.source,
+        mdMode === "force" ? undefined : fullChange.path,
         mdMode,
       );
       if (!opened) {
@@ -255,18 +309,29 @@ export async function openToolOutputPager(
       !options.fileChange
     ) {
       const parts: string[] = [];
-      for (const ch of item.fileChanges) {
-        parts.push(await resolveFileChangeBody(ch));
+      for (const change of item.fileChanges) {
+        const resolved = await resolveFileChangeBody(change);
+        if (resolved.source) {
+          resolved.source.dispose();
+          parts.push(
+            `${change.kind} · ${change.path}\n+${change.stats.added} −${change.stats.removed} lines\nOpen this file's diff card for the complete paged content.`,
+          );
+        } else {
+          parts.push(resolved.body);
+        }
         parts.push("\n────────\n");
       }
       const title =
         options.titleOverride ??
         toolPagerTitle(item.name, item.argsDisplay);
-      // Multi-file: always raw (mixed files / diffs).
+      const combined = parts.join("\n").trim() || "(no output)";
+      const paged = exceedsInlinePagerBudget(combined)
+        ? await pageTextBody(combined, item.fileChanges[0]?.path)
+        : { body: combined, source: undefined };
       const opened = services.overlay.openPager(
         title,
-        parts.join("\n").trim() || "(no output)",
-        undefined,
+        paged.body,
+        paged.source,
         item.fileChanges[0]?.path,
         "plain",
       );
@@ -393,12 +458,20 @@ export async function openToolOutputPager(
     });
     // Formatted md reads: pure file markdown (no `N: ` gutters / # fs.read chrome).
     // Prefer on-disk file when available; otherwise strip the spool dump.
-    const finalBody =
+    let finalBody =
       mdMode === "force"
         ? openedSourceFile
           ? body || "(no output)"
           : extractFsReadFileBody(body) || body || "(no output)"
         : pagerBody;
+    if (!artifactSource && exceedsInlinePagerBudget(finalBody)) {
+      const paged = await pageTextBody(
+        finalBody,
+        highlightPath ?? item.artifactPath,
+      );
+      finalBody = paged.body;
+      artifactSource = paged.source;
+    }
     const opened = services.overlay.openPager(
       title,
       finalBody,

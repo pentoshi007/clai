@@ -706,3 +706,48 @@ describe("boundSessionVisualInput", () => {
     });
   });
 });
+
+describe("thinking and compaction timer persistence", () => {
+  it("round-trips lifecycle timestamps through classic history", () => {
+    const classic: ClassicItem[] = [
+      {
+        kind: "thinking",
+        id: "thinking-timed",
+        content: "reasoning",
+        done: true,
+        startedAt: 10_000,
+        endedAt: 22_000,
+      },
+      {
+        kind: "compacted",
+        id: "compacted-timed",
+        summary: "memory",
+        originalItems: [],
+        done: true,
+        beforeTokens: 80_000,
+        afterTokens: 20_000,
+        startedAt: 30_000,
+        endedAt: 45_000,
+      },
+    ];
+
+    const { state } = hydrateFromClassicTranscript(classic);
+    const thinking = state.byId.get("thinking-timed");
+    const compacted = state.byId.get("compacted-timed");
+    expect(thinking).toMatchObject({
+      kind: "thinking",
+      timestamp: 10_000,
+      startedAt: 10_000,
+      endedAt: 22_000,
+    });
+    expect(compacted).toMatchObject({
+      kind: "compacted",
+      timestamp: 30_000,
+      startedAt: 30_000,
+      endedAt: 45_000,
+    });
+
+    const serialized = serializeForHistory(state, () => "");
+    expect(serialized).toEqual(classic);
+  });
+});

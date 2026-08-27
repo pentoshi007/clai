@@ -89,6 +89,15 @@ describe("output budget clears the reasoning floor", () => {
       id: "moonshotai/kimi-k3",
       maxOutputTokens: 8_000,
     });
+    const plan = compileRequestPlan({
+      provider: "tokenrouter",
+      model: "moonshotai/kimi-k3",
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoning: { enabled: true, effort: "high" },
+      maxTokens: 40_000,
+    });
+    expect(plan.controls.requestedMaxTokens).toBe(8_000);
     const budget = budgetFor("tokenrouter", "moonshotai/kimi-k3", {
       reasoning: true,
       maxTokens: 1_024,

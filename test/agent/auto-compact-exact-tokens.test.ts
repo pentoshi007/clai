@@ -3,6 +3,7 @@ import { runAgent } from "../../src/modes/agent.js";
 import { deletePlan } from "../../src/store/plan.js";
 import type { AgentEvent } from "../../src/agent/events.js";
 import type { ChatMessage } from "../../src/types.js";
+import { resetRequestTokenCalibration } from "../../src/llm/token-estimate-calibration.js";
 
 const stream = vi.fn();
 const complete = vi.fn();
@@ -63,6 +64,7 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
       provider: "nvidia",
       model: "test-model",
     });
+    resetRequestTokenCalibration({ removePersisted: true });
     await cleanUnsuedPlans();
   });
 
@@ -75,7 +77,7 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
     vi.restoreAllMocks();
   });
 
-  it("compacts when the provider's exact prompt tokens exceed the session limit trigger even though local estimates are small", async () => {
+  it("does not compact a small current request because an older provider count was large", async () => {
     const history = smallHistory(12);
     let call = 0;
     stream.mockImplementation(
@@ -153,17 +155,16 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
     const events: AgentEvent[] = [];
     await runAgent("continue", {
       session: makeSession("session-exact-compact"),
+      provider: "nvidia",
+      model: "test-model",
       history,
       maxSteps: 6,
       contextLimitTokens: 175_000,
       onEvent: (e) => events.push(e),
     });
 
-    expect(
-      events.some((e) => e.type === "compaction-start"),
-      "expected compaction to start when exact usage (180k) exceeded the 175k session limit trigger (~122.5k) despite small estimates",
-    ).toBe(true);
-    expect(events.some((e) => e.type === "compaction-completed")).toBe(true);
+    expect(events.some((e) => e.type === "compaction-start")).toBe(false);
+    expect(events.some((e) => e.type === "compaction-completed")).toBe(false);
     expect(
       events.find((event) => event.type === "token-usage"),
     ).toMatchObject({
@@ -177,24 +178,16 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
         outcome: "success",
       },
     });
-    expect(
-      events.find((event) => event.type === "compaction-completed"),
-    ).toMatchObject({ contextScope: "assembled-request" });
-    const finalRequest = stream.mock.calls.at(-1)?.[0] as {
-      messages?: Array<{ role: string; content: string }>;
-    };
-    expect(finalRequest.messages!.length).toBeLessThan(10);
-    const hasCompactionMemory = finalRequest.messages?.some(
-      (m) =>
-        typeof m.content === "string" &&
-        (m.content.includes("Completed compaction") ||
-          m.content.includes("summary text")),
-    );
-    expect(hasCompactionMemory).toBe(true);
+    const estimates = events
+      .filter((event) => event.type === "context-estimate")
+      .map((event) => event.estimatedTokens);
+    expect(estimates.length).toBeGreaterThan(0);
+    expect(Math.max(...estimates)).toBeLessThan(122_500);
   });
 
-  it("picks up session context-limit changes mid-run (chip edit) and fires on the very next round", async () => {
+  it("picks up session context-limit changes against the current request on the next round", async () => {
     const history = smallHistory(12);
+    history.splice(1, 1, { role: "user", content: "x ".repeat(200_000) });
     let liveLimit: number | undefined = undefined;
     let call = 0;
     stream.mockImplementation(
@@ -221,9 +214,9 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
             model: "test-model",
             toolCalls: [{ id: `c${call}`, name: "sysinfo", args: {} }],
             usage: {
-              promptTokens: 170_000,
+              promptTokens: 130_000,
               completionTokens: 5,
-              totalTokens: 170_005,
+              totalTokens: 130_005,
               exact: true,
             },
           });
@@ -244,6 +237,8 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
     const events: AgentEvent[] = [];
     await runAgent("continue", {
       session: makeSession("session-live-limit"),
+      provider: "nvidia",
+      model: "test-model",
       history,
       maxSteps: 8,
       getContextLimitTokens: () => liveLimit,
@@ -252,7 +247,7 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
 
     expect(
       events.some((e) => e.type === "compaction-start"),
-      "expected compaction once the mid-run limit (175k) dropped the trigger below the exact 170k usage",
+      "expected compaction once the mid-run limit lowered the trigger below the current assembled request",
     ).toBe(true);
   });
 });

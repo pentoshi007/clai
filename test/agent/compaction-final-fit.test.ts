@@ -6,6 +6,7 @@ import type { ChatMessage } from "../../src/types.js";
 import { fingerprintFinalRequest, classifyPrefixAffinity } from "../../src/llm/request-fingerprint.js";
 import { compactMessagesWithSummary } from "../../src/agent/context-manager.js";
 import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../../src/agent/durable-envelope.js";
+import { resetRequestTokenCalibration } from "../../src/llm/token-estimate-calibration.js";
 
 const stream = vi.fn();
 
@@ -137,6 +138,7 @@ describe("versioned envelope replacement", () => {
 describe("compaction final fit gate", () => {
   beforeEach(async () => {
     stream.mockReset();
+    resetRequestTokenCalibration({ removePersisted: true });
     await deletePlan("session-final-fit").catch(() => {});
   });
 
@@ -251,10 +253,16 @@ describe("compaction final fit gate", () => {
         content: `answer ${index} with a few words`,
       });
     }
+    history.splice(1, 1, {
+      role: "user",
+      content: "x ".repeat(200_000),
+    });
 
     const events: AgentEvent[] = [];
     await runAgent("continue", {
       session: makeSession("session-final-fit"),
+      provider: "nvidia",
+      model: "test-model",
       history,
       maxSteps: 2,
       contextLimitTokens: 175_000,

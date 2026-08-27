@@ -24,7 +24,7 @@ exports[`golden fixtures > renders the scripted turn at 40c none ascii 1`] = `
 |      endpoint and return metadata in
 |      the response body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to ex...
+: thinking - 0.4s - 18 tokens - Ctrl+...
 ── assistant closed
 * I'll read the route handler first.
 
@@ -73,8 +73,8 @@ v Edited users.ts
   v fs.read
   Ctrl+O to expand - 2 done · 1 runni...
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100
-  tokens
+* Compacted context - 0.4s - ~48,200 →
+  ~9,100 tokens
   \\ Session goal: add pagination. Files
     touched: src/db/users.ts,
     src/routes/users.ts. Tests pass.
@@ -105,7 +105,7 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
 ▌      endpoint and return metadata in
 ▌      the response body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expa…
+│ thinking · 0.4s · 18 tokens · Ctrl+T …
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -154,8 +154,8 @@ exports[`golden fixtures > renders the scripted turn at 40c none unicode 1`] = `
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running…
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100
-  tokens
+✦ Compacted context · 0.4s · ~48,200 →
+  ~9,100 tokens
   └ Session goal: add pagination. Files
     touched: src/db/users.ts,
     src/routes/users.ts. Tests pass.
@@ -186,7 +186,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
 [38;2;245;179;81m|[39m[0m      [38;2;255;255;255mendpoint and return metadata in [39m[0m
 [38;2;245;179;81m|[39m[0m      [38;2;255;255;255mthe response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to ex[0m...
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+[0m...
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -235,8 +235,8 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor ascii 1`] 
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 runni[0m...
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100[39m[0m
-  [38;2;103;232;249mtokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 →[39m[0m
+  [38;2;103;232;249m~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files[39m[0m
     [38;2;148;163;184mtouched: src/db/users.ts,[39m[0m
     [38;2;148;163;184msrc/routes/users.ts. Tests pass.[39m[0m
@@ -267,7 +267,7 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
 [38;2;245;179;81m▌[39m[0m      [38;2;255;255;255mendpoint and return metadata in [39m[0m
 [38;2;245;179;81m▌[39m[0m      [38;2;255;255;255mthe response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expa[0m…
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T [0m…
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -316,8 +316,8 @@ exports[`golden fixtures > renders the scripted turn at 40c truecolor unicode 1`
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running[0m…
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100[39m[0m
-  [38;2;103;232;249mtokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 →[39m[0m
+  [38;2;103;232;249m~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files[39m[0m
     [38;2;148;163;184mtouched: src/db/users.ts,[39m[0m
     [38;2;148;163;184msrc/routes/users.ts. Tests pass.[39m[0m
@@ -347,7 +347,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none ascii 1`] = `
 | YOU  add pagination to the users endpoint and
 |      return metadata in the response body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to expand
+: thinking - 0.4s - 18 tokens - Ctrl+T to expand
 ── assistant closed
 * I'll read the route handler first.
 
@@ -392,7 +392,8 @@ v Edited users.ts                          +3 -2
   v fs.read
   Ctrl+O to expand - 2 done · 1 running · 3 t...
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100 tokens
+* Compacted context - 0.4s - ~48,200 → ~9,100
+  tokens
   \\ Session goal: add pagination. Files touched:
     src/db/users.ts, src/routes/users.ts. Tests
     pass.
@@ -422,7 +423,7 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
 ▌ YOU  add pagination to the users endpoint and
 ▌      return metadata in the response body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expand
+│ thinking · 0.4s · 18 tokens · Ctrl+T to expand
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -467,7 +468,8 @@ exports[`golden fixtures > renders the scripted turn at 48c none unicode 1`] = `
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running · 3 tot…
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100 tokens
+✦ Compacted context · 0.4s · ~48,200 → ~9,100
+  tokens
   └ Session goal: add pagination. Files touched:
     src/db/users.ts, src/routes/users.ts. Tests
     pass.
@@ -497,7 +499,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
 [38;2;245;179;81m|[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and [39m[0m
 [38;2;245;179;81m|[39m[0m      [38;2;255;255;255mreturn metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to expand[39m[0m
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -542,7 +544,8 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor ascii 1`] 
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 running · 3 t[0m...
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100[39m[0m
+  [38;2;103;232;249mtokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched:[39m[0m
     [38;2;148;163;184msrc/db/users.ts, src/routes/users.ts. Tests[39m[0m
     [38;2;148;163;184mpass.[39m[0m
@@ -572,7 +575,7 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
 [38;2;245;179;81m▌[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and [39m[0m
 [38;2;245;179;81m▌[39m[0m      [38;2;255;255;255mreturn metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expand[39m[0m
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -617,7 +620,8 @@ exports[`golden fixtures > renders the scripted turn at 48c truecolor unicode 1`
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running · 3 tot[0m…
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100[39m[0m
+  [38;2;103;232;249mtokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched:[39m[0m
     [38;2;148;163;184msrc/db/users.ts, src/routes/users.ts. Tests[39m[0m
     [38;2;148;163;184mpass.[39m[0m
@@ -646,7 +650,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none ascii 1`] = `
 | YOU  add pagination to the users endpoint and return metadata in
 |      the response body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to expand
+: thinking - 0.4s - 18 tokens - Ctrl+T to expand
 ── assistant closed
 * I'll read the route handler first.
 
@@ -687,7 +691,7 @@ v Edited users.ts                                              +3 -2
   v fs.read
   Ctrl+O to expand - 2 done · 1 running · 3 total
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100 tokens
+* Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts,
     src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
@@ -715,7 +719,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
 ▌ YOU  add pagination to the users endpoint and return metadata in
 ▌      the response body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expand
+│ thinking · 0.4s · 18 tokens · Ctrl+T to expand
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -756,7 +760,7 @@ exports[`golden fixtures > renders the scripted turn at 68c none unicode 1`] = `
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running · 3 total
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100 tokens
+✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts,
     src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
@@ -784,7 +788,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
 [38;2;245;179;81m|[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in [39m[0m
 [38;2;245;179;81m|[39m[0m      [38;2;255;255;255mthe response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to expand[39m[0m
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -825,7 +829,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor ascii 1`] 
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
     [38;2;148;163;184msrc/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
@@ -853,7 +857,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
 [38;2;245;179;81m▌[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in [39m[0m
 [38;2;245;179;81m▌[39m[0m      [38;2;255;255;255mthe response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expand[39m[0m
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -894,7 +898,7 @@ exports[`golden fixtures > renders the scripted turn at 68c truecolor unicode 1`
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
     [38;2;148;163;184msrc/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
@@ -922,7 +926,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 | YOU  add pagination to the users endpoint and return metadata in the response
 |      body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to expand
+: thinking - 0.4s - 18 tokens - Ctrl+T to expand
 ── assistant closed
 * I'll read the route handler first.
 
@@ -963,7 +967,7 @@ v Edited users.ts                                                          +3 -2
   v fs.read
   Ctrl+O to expand - 2 done · 1 running · 3 total
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100 tokens
+* Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts,
     src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
@@ -991,7 +995,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
 ▌ YOU  add pagination to the users endpoint and return metadata in the response
 ▌      body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expand
+│ thinking · 0.4s · 18 tokens · Ctrl+T to expand
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -1032,7 +1036,7 @@ AI-powered terminal assistant · ask & agent mode…ell, files & security workfl
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running · 3 total
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100 tokens
+✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts,
     src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
@@ -1060,7 +1064,7 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor ascii 1`] 
 [38;2;245;179;81m|[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response [39m[0m
 [38;2;245;179;81m|[39m[0m      [38;2;255;255;255mbody[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to expand[39m[0m
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1101,7 +1105,7 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor ascii 1`] 
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
     [38;2;148;163;184msrc/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
@@ -1129,7 +1133,7 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor unicode 1`
 [38;2;245;179;81m▌[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response [39m[0m
 [38;2;245;179;81m▌[39m[0m      [38;2;255;255;255mbody[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expand[39m[0m
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1170,7 +1174,7 @@ exports[`golden fixtures > renders the scripted turn at 80c truecolor unicode 1`
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts,[39m[0m
     [38;2;148;163;184msrc/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
@@ -1197,7 +1201,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none ascii 1`] = `
 ── user closed
 | YOU  add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to expand
+: thinking - 0.4s - 18 tokens - Ctrl+T to expand
 ── assistant closed
 * I'll read the route handler first.
 
@@ -1238,7 +1242,7 @@ v Edited users.ts                                                               
   v fs.read
   Ctrl+O to expand - 2 done · 1 running · 3 total
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100 tokens
+* Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests
     pass.
     Ctrl+O to expand"
@@ -1265,7 +1269,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
 ── user closed
 ▌ YOU  add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expand
+│ thinking · 0.4s · 18 tokens · Ctrl+T to expand
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -1306,7 +1310,7 @@ exports[`golden fixtures > renders the scripted turn at 96c none unicode 1`] = `
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running · 3 total
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100 tokens
+✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests
     pass.
     Ctrl+O to expand"
@@ -1333,7 +1337,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
 ── user closed
 [38;2;245;179;81m|[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to expand[39m[0m
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1374,7 +1378,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor ascii 1`] 
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests[39m[0m
     [38;2;148;163;184mpass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
@@ -1401,7 +1405,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
 ── user closed
 [38;2;245;179;81m▌[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expand[39m[0m
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1442,7 +1446,7 @@ exports[`golden fixtures > renders the scripted turn at 96c truecolor unicode 1`
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests[39m[0m
     [38;2;148;163;184mpass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
@@ -1469,7 +1473,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none ascii 1`] = `
 ── user closed
 | YOU  add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to expand
+: thinking - 0.4s - 18 tokens - Ctrl+T to expand
 ── assistant closed
 * I'll read the route handler first.
 
@@ -1510,7 +1514,7 @@ v Edited users.ts                                                               
   v fs.read
   Ctrl+O to expand - 2 done · 1 running · 3 total
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100 tokens
+* Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
 `;
@@ -1536,7 +1540,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
 ── user closed
 ▌ YOU  add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expand
+│ thinking · 0.4s · 18 tokens · Ctrl+T to expand
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -1577,7 +1581,7 @@ exports[`golden fixtures > renders the scripted turn at 120c none unicode 1`] = 
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running · 3 total
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100 tokens
+✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
 `;
@@ -1603,7 +1607,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
 ── user closed
 [38;2;245;179;81m|[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to expand[39m[0m
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1644,7 +1648,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor ascii 1`]
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
 `;
@@ -1670,7 +1674,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
 ── user closed
 [38;2;245;179;81m▌[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expand[39m[0m
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1711,7 +1715,7 @@ exports[`golden fixtures > renders the scripted turn at 120c truecolor unicode 1
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
 `;
@@ -1737,7 +1741,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none ascii 1`] = `
 ── user closed
 | YOU  add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-: thinking - 18 tokens - Ctrl+T to expand
+: thinking - 0.4s - 18 tokens - Ctrl+T to expand
 ── assistant closed
 * I'll read the route handler first.
 
@@ -1778,7 +1782,7 @@ v Edited users.ts                                                               
   v fs.read
   Ctrl+O to expand - 2 done · 1 running · 3 total
 ── compacted closed
-* Compacted context - ~48,200 → ~9,100 tokens
+* Compacted context - 0.4s - ~48,200 → ~9,100 tokens
   \\ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
 `;
@@ -1804,7 +1808,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
 ── user closed
 ▌ YOU  add pagination to the users endpoint and return metadata in the response body
 ── thinking closed
-│ thinking · 18 tokens · Ctrl+T to expand
+│ thinking · 0.4s · 18 tokens · Ctrl+T to expand
 ── assistant closed
 ◆ I'll read the route handler first.
 
@@ -1845,7 +1849,7 @@ exports[`golden fixtures > renders the scripted turn at 200c none unicode 1`] = 
   ✓ fs.read
   Ctrl+O to expand · 2 done · 1 running · 3 total
 ── compacted closed
-✦ Compacted context · ~48,200 → ~9,100 tokens
+✦ Compacted context · 0.4s · ~48,200 → ~9,100 tokens
   └ Session goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.
     Ctrl+O to expand"
 `;
@@ -1871,7 +1875,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
 ── user closed
 [38;2;245;179;81m|[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 18 tokens - Ctrl+T to expand[39m[0m
+[38;2;167;139;250m: [39m[0m[38;2;167;139;250mthinking - 0.4s - 18 tokens - Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m* [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1912,7 +1916,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor ascii 1`]
   [38;2;74;222;128mv[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand - 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m*[39m[0m [38;2;103;232;249mCompacted context - 0.4s - ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  \\ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
 `;
@@ -1938,7 +1942,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
 ── user closed
 [38;2;245;179;81m▌[39m[0m[48;2;180;83;9m[38;2;255;255;255m[1m YOU [22m[39m[49m[0m [38;2;255;255;255madd pagination to the users endpoint and return metadata in the response body[39m[0m
 ── thinking closed
-[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 18 tokens · Ctrl+T to expand[39m[0m
+[38;2;167;139;250m│ [39m[0m[38;2;167;139;250mthinking · 0.4s · 18 tokens · Ctrl+T to expand[39m[0m
 ── assistant closed
 [38;2;255;85;255m◆ [39m[0m[38;2;74;222;128mI'll read the route handler first.[39m[0m
 
@@ -1979,7 +1983,7 @@ exports[`golden fixtures > renders the scripted turn at 200c truecolor unicode 1
   [38;2;74;222;128m✓[39m[0m [38;2;103;232;249mfs.read[39m[0m
   [38;2;148;163;184mCtrl+O to expand · 2 done · 1 running · 3 total[39m[0m
 ── compacted closed
-[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · ~48,200 → ~9,100 tokens[39m[0m
+[38;2;103;232;249m✦[39m[0m [38;2;103;232;249mCompacted context · 0.4s · ~48,200 → ~9,100 tokens[39m[0m
 [38;2;148;163;184m  └ [39m[0m[38;2;148;163;184mSession goal: add pagination. Files touched: src/db/users.ts, src/routes/users.ts. Tests pass.[39m[0m
     [38;2;148;163;184mCtrl+O to expand[39m[0m"
 `;

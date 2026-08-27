@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  compactionElapsedLabel,
   formatDurationMs,
+  thinkingElapsedLabel,
   toolElapsedLabel,
   turnSummaryLabel,
 } from "../../../src/ui-core/rendering/duration.js";
@@ -107,5 +109,53 @@ describe("turnSummaryLabel", () => {
     expect(turnSummaryLabel(76_000, "completed")).toBe("Worked for 1m16s");
     expect(turnSummaryLabel(5_000, "aborted")).toBe("Worked for 5.0s · aborted");
     expect(turnSummaryLabel(2_500, "error")).toBe("Worked for 2.5s · error");
+  });
+});
+
+describe("thinkingElapsedLabel / compactionElapsedLabel", () => {
+  it("advances live timers from their lifecycle start", () => {
+    expect(
+      thinkingElapsedLabel(
+        { streaming: true, timestamp: 1_000, startedAt: 30_000 },
+        42_000,
+      ),
+    ).toBe("12s");
+    expect(
+      compactionElapsedLabel(
+        { streaming: true, timestamp: 1_000, startedAt: 30_000 },
+        42_000,
+      ),
+    ).toBe("12s");
+  });
+
+  it("freezes final timers at endedAt and hides unavailable legacy durations", () => {
+    expect(
+      thinkingElapsedLabel(
+        {
+          streaming: false,
+          timestamp: 1_000,
+          startedAt: 30_000,
+          endedAt: 42_000,
+        },
+        99_000,
+      ),
+    ).toBe("12s");
+    expect(
+      compactionElapsedLabel(
+        {
+          streaming: false,
+          timestamp: 1_000,
+          startedAt: 30_000,
+          endedAt: 42_000,
+        },
+        99_000,
+      ),
+    ).toBe("12s");
+    expect(
+      thinkingElapsedLabel({ streaming: false, timestamp: 1_000 }, 99_000),
+    ).toBeUndefined();
+    expect(
+      compactionElapsedLabel({ streaming: false, timestamp: 1_000 }, 99_000),
+    ).toBeUndefined();
   });
 });

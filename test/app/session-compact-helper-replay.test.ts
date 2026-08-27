@@ -19,9 +19,6 @@ const { runSessionCompaction } = await import(
   "../../src/app/controllers/session-compact-helper.js"
 );
 const { EventSequencer } = await import("../../src/app/events/sequencer.js");
-const { accountAssembledRequest } = await import(
-  "../../src/agent/request-accounting.js"
-);
 
 const SUMMARY =
   "## Work completed\n- Did the thing.\n\n## Remaining work\n- Nothing.";
@@ -108,7 +105,7 @@ describe("runSessionCompaction cache-preserving replay", () => {
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
   });
 
-  it("reports current assembled accounting instead of a stale provider snapshot", async () => {
+  it("keeps restored request accounting instead of replacing it with a stale replay", async () => {
     stream.mockResolvedValueOnce(okResult());
     const successfulRequest = {
       ...SNAPSHOT,
@@ -129,14 +126,6 @@ describe("runSessionCompaction cache-preserving replay", () => {
       { role: "assistant", content: "done — feature built" },
       { role: "user", content: "now compact" },
     ];
-    const expectedBefore = accountAssembledRequest({
-      provider: successfulRequest.provider,
-      model: successfulRequest.model,
-      messages: history,
-      stream: true,
-      reasoning: successfulRequest.thinking,
-      contextLimitTokens: 1_000_000,
-    }).accounting.requestTokens;
     const events: AnyAppEvent[] = [];
     const { options } = harness(history);
 
@@ -152,17 +141,16 @@ describe("runSessionCompaction cache-preserving replay", () => {
     const completed = events.find(
       (event) => event.type === "compaction-completed",
     );
-    expect(expectedBefore).toBeGreaterThan(78_200);
-    expect(started?.payload.beforeTokens).toBe(expectedBefore);
+    expect(started?.payload.beforeTokens).toBe(78_200);
     expect(completed?.payload).toMatchObject({
-      beforeTokens: expectedBefore,
+      beforeTokens: 78_200,
       contextScope: "assembled-request",
     });
     expect(
       completed?.type === "compaction-completed"
         ? completed.payload.afterTokens
-        : expectedBefore,
-    ).toBeLessThan(expectedBefore);
+        : 78_200,
+    ).toBeLessThan(78_200);
   });
 
   it("falls back to transcript-rendered requests when the replay cannot fit", async () => {

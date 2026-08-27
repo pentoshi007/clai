@@ -1,4 +1,5 @@
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
+import { compactionElapsedLabel } from "../../ui-core/rendering/duration.js";
 import { liveCompactionHeadTail } from "../../ui-core/rendering/thinking-tail.js";
 import {
   compactionTokenLabel,
@@ -17,9 +18,11 @@ const BODY_INDENT = 4;
 export function buildCompactedLines(ctx: BlockContext, item: CompactedItem): string[] {
   const expanded = isItemExpanded(ctx.state, item);
   const label = compactionTokenLabel(item);
+  const elapsed = compactionElapsedLabel(item, ctx.now);
   const glyph = ctx.ink.fg("cyan", ctx.glyphs.compacted);
   const head = joinMeta(ctx, [
     item.error ? "Compaction failed" : "Compacted context",
+    elapsed,
     label === "" ? undefined : label,
   ]);
   const headRows = wrapWithPrefixes(head, { width: Math.max(1, ctx.width - 2) });
