@@ -370,11 +370,9 @@ export function ThinkingBlock(props: {
             width: bodyWidth,
             height: 1,
             flexShrink: 0,
-            fg: focused ? theme.thinking : theme.muted,
+            fg: focused ? theme.thinking : theme.thinkingDim,
             bg: theme.thinkingBg,
-            attributes: focused
-              ? TextAttributes.ITALIC
-              : TextAttributes.ITALIC | TextAttributes.DIM,
+            attributes: TextAttributes.ITALIC,
           }}
         />
       ))}

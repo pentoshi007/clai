@@ -112,6 +112,7 @@ export class ClassicAppWiring implements WiringHost {
       commands: this.services.commands,
       clipboard: this.services.ports.clipboard,
       baseDir: this.cwdValue,
+      mcp: this.services.mcp,
       onSubmit: (prompt) => this.submit(prompt),
       onToast: (text) => notify(this.services, text),
       onScrollChat: (delta) => this.scrollFeed(-delta),

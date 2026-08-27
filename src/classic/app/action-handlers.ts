@@ -316,6 +316,7 @@ export function panelContextFor(kind: string): OverlayContext | undefined {
     case "confirm":
     case "scope-editor":
     case "keys-editor":
+    case "text-editor":
     case "prompt-actions":
       return "modal";
     case "secret":

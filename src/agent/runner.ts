@@ -1,5 +1,7 @@
 import { join } from "node:path";
-import type { McpRuntime } from "../mcp/runtime.js";
+import type { McpRuntime, McpTurnLease } from "../mcp/runtime.js";
+import { hasMcpMentionSyntax } from "../mcp/mentions.js";
+import { isCanonicalToolName } from "../mcp/names.js";
 import type {
   ChatMessage,
   ChatImage,
@@ -855,6 +857,8 @@ export async function runAgentTurn(
     return outcome;
   };
 
+  let mcpLease: McpTurnLease | undefined;
+
   try {
     emit({
       type: "turn-start",
@@ -865,11 +869,17 @@ export async function runAgentTurn(
     });
     const config = getConfig();
     const mcpRuntime = options.mcp;
-    if (mcpRuntime && mcpRuntime.getState().selection.mode !== "off") {
+    const mcpMentioned = hasMcpMentionSyntax(prompt);
+    if (
+      mcpRuntime &&
+      (mcpRuntime.getState().selection.mode !== "off" || mcpMentioned)
+    ) {
       await mcpRuntime.ensureReady();
     }
+    if (mcpRuntime && mcpMentioned) mcpRuntime.applyMentionSelection(prompt);
     const mcpToolDefinitions =
       mcpRuntime?.toolDefinitions({ ...(agentMode === "ask" ? { askMode: true } : {}) }) ?? [];
+    mcpLease = mcpRuntime?.beginTurn();
     const mcpToolNames = mcpToolDefinitions.map((definition) => definition.name);
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;
@@ -2946,7 +2956,9 @@ export async function runAgentTurn(
        */
       const runToolWithForcedSettle = (): Promise<ToolResult> => {
         const work =
-          mcpRuntime?.getTool(call.name) !== undefined
+          mcpRuntime !== undefined &&
+          (mcpRuntime.getTool(call.name) !== undefined ||
+            isCanonicalToolName(call.name))
             ? mcpRuntime.callTool(call.name, call.args, { signal: toolAc.signal })
             : runToolCall(call, {
           signal: toolAc.signal,
@@ -6619,6 +6631,8 @@ export async function runAgentTurn(
       message: error instanceof Error ? error.message : String(error),
     });
     throw error;
+  } finally {
+    mcpLease?.release();
   }
 }
 

@@ -35,6 +35,7 @@ import {
 import { completionItemValues } from "../panels/completion-rows.js";
 import { findSkillMentions } from "../../skills/mentions.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
+import { findMcpMentions } from "../../mcp/mentions.js";
 import { editorEditFor } from "./composer-keys.js";
 import type { EditorSpan } from "./editor-view.js";
 import { EMPTY_EDITOR, caretPosition, insert, logicalLines, type EditorState } from "./editor-model.js";
@@ -42,8 +43,13 @@ import { EMPTY_EDITOR, caretPosition, insert, logicalLines, type EditorState } f
 const NO_MENU: CompletionMenu = { kind: "none" };
 const EMPTY_SPANS: readonly EditorSpan[] = [];
 
+export interface McpMentionTarget {
+  serverNames(): ReadonlySet<string>;
+  applyMentionSelection(text: string): unknown;
+}
+
 export interface ComposerSnapshot {
-  readonly skillSpans: readonly EditorSpan[];
+  readonly mentionSpans: readonly EditorSpan[];
   readonly state: EditorState;
   readonly menu: CompletionMenu;
   readonly active: number;
@@ -55,6 +61,7 @@ export interface ComposerControllerDeps {
   readonly commands: CommandRegistry;
   readonly clipboard: ClipboardPort;
   readonly baseDir?: string | undefined;
+  readonly mcp?: McpMentionTarget | undefined;
   readonly onSubmit: (prompt: string) => void;
   readonly onToast: (text: string) => void;
   readonly onScrollChat: (delta: number) => void;
@@ -70,7 +77,7 @@ export class ComposerController {
     active: 0,
     pastes: [],
     acceptedSlash: undefined,
-    skillSpans: EMPTY_SPANS,
+    mentionSpans: EMPTY_SPANS,
   };
 
   private readonly listeners = new Set<() => void>();
@@ -451,18 +458,26 @@ export class ComposerController {
     });
   }
 
-  private publish(snapshot: Omit<ComposerSnapshot, "skillSpans">): void {
-    const known = skillNamesSnapshot();
+  private publish(snapshot: Omit<ComposerSnapshot, "mentionSpans">): void {
+    const text = snapshot.state.text;
+    const skills = skillNamesSnapshot();
+    const servers = this.deps.mcp?.serverNames() ?? new Set<string>();
+    const spans: EditorSpan[] = [
+      ...findSkillMentions(text, skills).map((mention) => ({
+        start: mention.start,
+        end: mention.end,
+      })),
+      ...findMcpMentions(text, servers).map((mention) => ({
+        start: mention.start,
+        end: mention.end,
+        color: "aqua" as const,
+      })),
+    ];
     this.snapshot = {
       ...snapshot,
-      skillSpans:
-        known.size === 0
-          ? EMPTY_SPANS
-          : findSkillMentions(snapshot.state.text, known).map((mention) => ({
-              start: mention.start,
-              end: mention.end,
-            })),
+      mentionSpans: spans.length === 0 ? EMPTY_SPANS : spans,
     };
+    this.deps.mcp?.applyMentionSelection(text);
     for (const listener of this.listeners) listener();
   }
 }

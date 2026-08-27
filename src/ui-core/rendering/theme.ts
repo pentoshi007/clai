@@ -72,6 +72,7 @@ export interface Theme {
   readonly prompt: string;
   /** Thinking / reasoning text (violet). */
   readonly thinking: string;
+  readonly thinkingDim: string;
   readonly thinkingBg: string;
   /**
    * Input / composer border, ❯ mark, and cursor — electric aqua, a step
@@ -150,6 +151,7 @@ const DARK_THEME: Theme = {
   // YOU badge plate — darker amber so white "YOU" stays crisp.
   prompt: "#B45309",
   thinking: "#A78BFA",
+  thinkingDim: "#8B79C4",
   thinkingBg: "#171225",
   // Stronger aqua than /command border (#22D3EE) — high-sat electric cyan.
   inputBorder: "#2EEBFF",
@@ -208,6 +210,7 @@ const LIGHT_THEME: Theme = {
   // YOU badge plate — deep amber.
   prompt: "#b45309",
   thinking: "#7c3aed",
+  thinkingDim: "#9a72e0",
   thinkingBg: "#F5F0FF",
   // Stronger aqua than /command border (#0891B2) for light terminals.
   inputBorder: "#06B6D4",

@@ -39,6 +39,14 @@ import {
 } from "./web/types.js";
 import { classifyToolCall } from "../safety/classifier.js";
 import { instructionsRecordTool } from "./instructions.js";
+import {
+  canonicalizeExternalToolName,
+  externalToolDispatcher,
+  externalToolNames,
+  isExternalToolName,
+  isExternalToolParallelSafe,
+} from "./external-tools.js";
+import { isCanonicalToolName } from "../mcp/names.js";
 import { skillListTool, skillLoadTool } from "./skills.js";
 import { loadScopeForSession } from "../store/scope.js";
 import {
@@ -1134,12 +1142,15 @@ export function knownToolNames(): string[] {
 
 export function unknownToolErrorMessage(name: string): string {
   const known = knownToolNames();
+  const external = externalToolNames();
   const mapped = fromWireName(name);
   const hint =
     mapped && mapped !== name && known.includes(mapped)
       ? ` Did you mean ${mapped}?`
       : "";
-  return `Unknown tool: ${name}.${hint} Tool names are dotted namespace.action pairs (task.update, not task_update). Available tools: ${known.join(", ")}`;
+  const extra =
+    external.length > 0 ? `, ${[...external].sort().join(", ")}` : "";
+  return `Unknown tool: ${name}.${hint} Tool names are dotted namespace.action pairs (task.update, not task_update). Available tools: ${known.join(", ")}${extra}`;
 }
 
 /**
@@ -1392,6 +1403,27 @@ export async function runToolCall(
   const normalized = normalizeToolCall(call);
   const handler = toolRegistry[normalized.name];
   if (!handler) {
+    const dispatcher = externalToolDispatcher();
+    const canonical = dispatcher
+      ? canonicalizeExternalToolName(normalized.name)
+      : normalized.name;
+    if (dispatcher?.hasTool(canonical) === true) {
+      return normalizeToolResult(
+        canonical,
+        await dispatcher.callTool(canonical, normalized.args, {
+          ...(options.signal ? { signal: options.signal } : {}),
+        }),
+      );
+    }
+    if (isCanonicalToolName(normalized.name)) {
+      return {
+        ok: false,
+        exitCode: 1,
+        output:
+          dispatcher?.unavailableToolMessage?.(normalized.name) ??
+          `MCP tool "${normalized.name}" is unavailable: no MCP server is connected. Run /mcp status.`,
+      };
+    }
     throw new Error(unknownToolErrorMessage(normalized.name));
   }
   const elidedStub = findElidedStubArg(normalized.args);
@@ -1479,6 +1511,8 @@ export function normalizeBatchToolName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return trimmed;
   if (toolRegistry[trimmed] || NON_REGISTRY_TOOL_NAMES.has(trimmed)) return trimmed;
+  const external = canonicalizeExternalToolName(trimmed);
+  if (isExternalToolName(external)) return external;
   const mapped = fromWireName(trimmed);
   if (mapped && (toolRegistry[mapped] || NON_REGISTRY_TOOL_NAMES.has(mapped))) return mapped;
   // Underscore-all form that fromWireName may still leave as-is if unregistered
@@ -1525,11 +1559,14 @@ function parseBatchCalls(value: unknown): BatchCallSpec[] {
         `tool.batch refuses to run "${rawName}" — ${name} cannot be nested inside a batch`,
       );
     }
-    if (!toolRegistry[name]) {
+    if (!toolRegistry[name] && !isExternalToolName(name)) {
       throw new Error(
         `tool.batch refuses unknown tool "${rawName}"` +
           (name !== rawName ? ` (normalized to "${name}")` : "") +
-          `. Available tools: ${knownToolNames().join(", ")}`,
+          `. Available tools: ${knownToolNames().join(", ")}` +
+          (externalToolNames().length > 0
+            ? `, ${[...externalToolNames()].sort().join(", ")}`
+            : ""),
       );
     }
     const id = resolveBatchCallId(rec, index, seenIds);
@@ -1651,7 +1688,10 @@ async function runToolBatch(
       needsSerial = true;
     }
     // Non-parallel-safe tools always serialize to avoid racing writes/shells.
-    if (!BATCH_SAFE_TOOLS.has(spec.name)) {
+    if (
+      !BATCH_SAFE_TOOLS.has(spec.name) &&
+      !isExternalToolParallelSafe(spec.name)
+    ) {
       needsSerial = true;
     }
   }

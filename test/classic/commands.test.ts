@@ -443,6 +443,9 @@ describe("classic command parity (W12)", () => {
   });
 
   spec(["mcp"], "/mcp opens the shared server picker with project configuration actions", async () => {
+    // Discovery must not reach this repo's own .clai/mcp.json: a real remote
+    // server there would make the picker wait on a live connection.
+    process.chdir(sandbox);
     const { services } = open();
     void run(services, "mcp");
     await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));

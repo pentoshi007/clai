@@ -12,6 +12,7 @@ import { PromptActionsPanel } from "./PromptActionsPanel.js";
 import { ScopePanel } from "./ScopePanel.js";
 import { SearchPanel } from "./SearchPanel.js";
 import { SecretPanel } from "./SecretPanel.js";
+import { TextEditorPanel } from "./TextEditorPanel.js";
 import type { TranscriptState } from "../../ui-core/state/transcript-types.js";
 
 export interface PanelHostProps {
@@ -63,6 +64,14 @@ export function PanelHost(props: PanelHostProps): ReactNode {
       return <ConfirmPanel {...shared} request={overlay.request} />;
     case "secret":
       return <SecretPanel {...shared} request={overlay.request} state={snapshot.secret} />;
+    case "text-editor":
+      return (
+        <TextEditorPanel
+          {...shared}
+          request={overlay.request}
+          state={snapshot.textEditor}
+        />
+      );
     case "scope-editor":
       return <ScopePanel {...shared} state={snapshot.scope} />;
     case "keys-editor":

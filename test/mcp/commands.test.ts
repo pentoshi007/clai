@@ -14,6 +14,7 @@ import type {
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
+import { composerActionPort } from "../../src/ui-core/composer/composer-action-port.js";
 
 class CommandTransport implements McpTransport {
   readonly kind = "stdio" as const;
@@ -138,17 +139,23 @@ function services() {
 }
 
 describe("/mcp shared command", () => {
-  it("opens a status-rich picker and applies server selection", async () => {
+  it("opens a status-rich picker and inserts the picked server as a composer token", async () => {
     const start = vi.spyOn(runtime, "start");
     const ensureReady = vi.spyOn(runtime, "ensureReady");
     const app = services();
+    const inserted: string[] = [];
+    const release = composerActionPort.registerInsert((text) => inserted.push(text));
     expect(app.commands.resolve("mcp")).toBe("mcp");
     expect(start).not.toHaveBeenCalled();
     expect(ensureReady).not.toHaveBeenCalled();
     expect(runtime.getState().selection).toEqual({ mode: "off" });
     expect(runtime.toolNames()).toEqual([]);
 
-    await app.commands.dispatch({ name: "mcp", args: "" });
+    const pending = app.commands.dispatch({ name: "mcp", args: "" });
+    // The picker must be on screen before discovery resolves: a remote server
+    // can take up to the connect timeout, and waiting looked like a freeze.
+    expect(app.overlay.getState().kind).toBe("picker");
+    await pending;
     expect(ensureReady).toHaveBeenCalledOnce();
     expect(start).not.toHaveBeenCalled();
     const overlay = app.overlay.getState();
@@ -167,11 +174,32 @@ describe("/mcp shared command", () => {
       app.overlay.selectPicker("docs");
     }
 
-    expect(runtime.getState().selection).toEqual({
-      mode: "server",
-      serverName: "docs",
+    expect(inserted).toEqual(["@mcp:docs "]);
+    expect(runtime.getState().selection).toEqual({ mode: "off" });
+    expect(runtime.applyMentionSelection("read @mcp:docs now").selection).toEqual({
+      mode: "servers",
+      serverNames: ["docs"],
     });
     expect(runtime.toolNames()).toEqual(["mcp.docs.search"]);
+    release();
+    app.dispose();
+  });
+
+  it("keeps every mentioned server live and drops the ones deleted from the draft", async () => {
+    const app = services();
+    await runtime.refresh();
+    expect(runtime.applyMentionSelection("@mcp:docs @mcp:docs go").selection).toEqual({
+      mode: "servers",
+      serverNames: ["docs"],
+    });
+    expect(runtime.applyMentionSelection("go").selection).toEqual({ mode: "off" });
+
+    await app.commands.dispatch({ name: "mcp", args: "all" });
+    expect(runtime.applyMentionSelection("@mcp:docs go").selection).toEqual({
+      mode: "servers",
+      serverNames: ["docs"],
+    });
+    expect(runtime.applyMentionSelection("go").selection).toEqual({ mode: "all" });
     app.dispose();
   });
 
@@ -243,8 +271,8 @@ describe("/mcp shared command", () => {
     });
 
     expect(runtime.getState().selection).toEqual({
-      mode: "server",
-      serverName: "alpha",
+      mode: "servers",
+      serverNames: ["alpha"],
     });
     expect(runtime.toolNames()).toEqual(["mcp.alpha.search"]);
     const config = JSON.parse(
@@ -254,40 +282,67 @@ describe("/mcp shared command", () => {
     expect(config.servers.alpha).toEqual({ args: [], command: "alpha-server" });
     expect(
       app.toast.getToasts().some((toast) =>
-        toast.message.includes("added MCP server alpha in .clai/mcp.json · selected"),
+        toast.message.includes(
+          "added MCP server alpha in .clai/mcp.json · use @mcp:alpha in your prompt",
+        ),
       ),
     ).toBe(true);
     app.dispose();
   });
 
-  it("opens a visible add-server editor with an empty input", async () => {
+  it("opens a multiline add-server editor with an empty buffer", async () => {
     const app = services();
     await app.commands.dispatch({ name: "mcp", args: "" });
     app.overlay.selectPicker("__mcp_add__");
 
     let overlay = app.overlay.getState();
-    expect(overlay.kind).toBe("secret");
-    if (overlay.kind === "secret") {
+    expect(overlay.kind).toBe("text-editor");
+    if (overlay.kind === "text-editor") {
       expect(overlay.request).toMatchObject({
         title: "Add MCP server",
-        reveal: true,
+        submitLabel: "add server",
       });
       expect(overlay.request.initialValue).toBeUndefined();
+      expect(overlay.request.placeholder).toContain("command");
       expect(overlay.request.prompt).toContain(".clai/mcp.json");
     }
 
-    app.overlay.answerSecret(
-      '{"servers":{"local":{"command":"local-server"}}}',
+    app.overlay.answerTextEditor(
+      '{\n  "servers": {\n    "local": {\n      "command": "local-server"\n    }\n  }\n}',
     );
     await vi.waitFor(() => {
       expect(runtime.getState().selection).toEqual({
-        mode: "server",
-        serverName: "local",
+        mode: "servers",
+        serverNames: ["local"],
       });
     });
     overlay = app.overlay.getState();
     expect(overlay.kind).toBe("none");
     expect(runtime.toolNames()).toEqual(["mcp.local.search"]);
+    app.dispose();
+  });
+
+  it("reopens the editor with the text intact when the JSON is rejected", async () => {
+    const app = services();
+    await app.commands.dispatch({ name: "mcp", args: "" });
+    app.overlay.selectPicker("__mcp_add__");
+    expect(app.overlay.getState().kind).toBe("text-editor");
+
+    const broken = '{\n  "servers": {\n    "oops": {}\n';
+    app.overlay.answerTextEditor(broken);
+    await vi.waitFor(() => {
+      const overlay = app.overlay.getState();
+      expect(overlay.kind).toBe("text-editor");
+      if (overlay.kind === "text-editor") {
+        expect(overlay.request.initialValue).toBe(broken);
+        expect(overlay.request.title).toContain("retry");
+      }
+    });
+
+    app.overlay.answerTextEditor(undefined);
+    await vi.waitFor(() => {
+      expect(app.overlay.getState().kind).toBe("none");
+    });
     app.dispose();
   });
 });

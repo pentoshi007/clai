@@ -1,5 +1,5 @@
 import { padToWidth, sealStyle } from "../render/ansi-text.js";
-import type { InkTheme } from "../render/ink-theme.js";
+import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
 import { layoutWidth } from "../render/measure.js";
 import { boundaries, type EditorState } from "./editor-model.js";
 
@@ -85,6 +85,7 @@ export function scrollTop(layout: EditorLayout, height: number, previousTop = 0)
 export interface EditorSpan {
   readonly start: number;
   readonly end: number;
+  readonly color?: ThemeToken | undefined;
 }
 
 export interface RenderEditorInput {
@@ -151,7 +152,7 @@ function paintAccentText(
     }
     pieces.push(
       ink.style(text.slice(from - origin, to - origin), {
-        fg: "activity",
+        fg: span.color ?? "activity",
         bold: true,
       }),
     );

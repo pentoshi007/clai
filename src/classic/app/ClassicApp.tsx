@@ -47,15 +47,6 @@ export function ClassicApp(
   { wiring: providedWiring }: { readonly wiring?: ClassicAppWiring } = {},
 ): ReactNode {
   const services = useServices();
-  const mcpState = useSyncExternalStore(
-    services.mcp.subscribe,
-    services.mcp.getState,
-    services.mcp.getState,
-  );
-  const selectedMcpServer =
-    mcpState.selection.mode === "server"
-      ? mcpState.selection.serverName
-      : undefined;
   const wiring = useMemo(
     () => providedWiring ?? createClassicAppWiring({ services, mouse: services.capabilities.mouse }),
     [providedWiring, services],
@@ -171,7 +162,7 @@ export function ClassicApp(
             })()}
           </Text>
         ) : null}
-        <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} accentSpans={composer.skillSpans} selectedMcpServer={selectedMcpServer} />
+        <Composer ink={feed.ink} frame={frameWithBlink} state={composer.state} accentSpans={composer.mentionSpans} />
       </Box>,
       status: <StatusBar ink={feed.ink} columns={shellWidth} allocatedRows={layout.status} mode={session.mode} contextChip={session.contextChip} contextUsage={session.contextUsage} contextLimitEditing={wiring.contextLimitEditingValue} contextLimitDraft={wiring.contextLimitDraftValue} running={session.running} compacting={session.compacting} activity={snapshot.transcript.runningStatus} cancelArmed={snapshot.cancelArmed} tick={snapshot.tick + snapshot.animationTick} hasDraft={composer.state.text.length > 0} queued={session.queued.length} planVisible={snapshot.planVisible} hasActivePlan={plan !== undefined} thinkingExpanded={snapshot.transcript.expandThinkingGlobal} outputExpanded={snapshot.transcript.expandOutputGlobal} />,
     }} />

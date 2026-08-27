@@ -10,7 +10,7 @@
  * Plan split/overlay reserves chat width so the agent card stays intact.
  */
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import {
@@ -64,15 +64,6 @@ function planOverlayWidth(termWidth: number): number {
 export function App(): ReactNode {
   const { width, height } = useTerminalDimensions();
   const services = useServices();
-  const mcpState = useSyncExternalStore(
-    services.mcp.subscribe,
-    services.mcp.getState,
-    services.mcp.getState,
-  );
-  const selectedMcpServer =
-    mcpState.selection.mode === "server"
-      ? mcpState.selection.serverName
-      : undefined;
   const theme = useTheme();
   const [focusContext, setFocusContext] = useState(services.focus.activeContext());
   /** User / auto request to show the task pane. */
@@ -754,7 +745,6 @@ export function App(): ReactNode {
           width={contentInnerWidth}
           height={composerMaxTextRows}
           focused={composerFocused}
-          selectedMcpServer={selectedMcpServer}
           maxSuggestions={completionRows}
           running={session.running}
           inputSuspended={contextLimitEditing}

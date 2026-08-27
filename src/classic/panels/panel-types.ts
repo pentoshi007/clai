@@ -15,6 +15,7 @@ import type { PromptActionsPanelState } from "./prompt-actions-panel.js";
 import type { ScopePanelState } from "./scope-panel.js";
 import type { SearchPanelState } from "./search-panel.js";
 import type { SecretPanelState } from "./secret-panel.js";
+import type { TextEditorPanelState } from "./text-editor-panel.js";
 
 export type PanelKind = OverlayState["kind"] | "search";
 
@@ -28,6 +29,7 @@ export interface PanelSnapshot {
   readonly pagerLive: boolean;
   readonly jobs: JobsPanelState;
   readonly secret: SecretPanelState;
+  readonly textEditor: TextEditorPanelState;
   readonly scope: ScopePanelState;
   readonly keys: KeysPanelState;
   readonly promptActions: PromptActionsPanelState;

@@ -20,6 +20,7 @@ import { PromptActionsModal } from "../modal/prompt-actions-modal.js";
 import { SecretModal } from "../modal/secret-modal.js";
 import { ScopeModal } from "../modal/scope-modal.js";
 import { KeysModal } from "../modal/keys-modal.js";
+import { TextEditorModal } from "../modal/text-editor-modal.js";
 import { Pager } from "../pager/pager.js";
 import { JobsPanel } from "../jobs/jobs-panel.js";
 
@@ -134,6 +135,15 @@ export function OverlayHost(props: OverlayHostProps): ReactNode {
         />
       ) : null}
       {state.kind === "jobs" ? <JobsPanel services={services} theme={theme} /> : null}
+      {state.kind === "text-editor" ? (
+        <TextEditorModal
+          services={services}
+          theme={theme}
+          request={state.request}
+          width={width}
+          height={height}
+        />
+      ) : null}
     </box>
   );
 }

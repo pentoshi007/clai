@@ -27,6 +27,11 @@ import { panelWheelMove } from "./panel-wheel.js";
 import { scopeInitialState, scopeKey } from "./scope-panel.js";
 import { searchKey, SEARCH_INITIAL_STATE } from "./search-panel.js";
 import { secretInitialState, secretKey, secretPaste } from "./secret-panel.js";
+import {
+  textEditorInitialState,
+  textEditorKey,
+  textEditorPaste,
+} from "./text-editor-panel.js";
 import { OVERLAY_MIN_ROWS } from "../chrome/row-budget.js";
 
 export type { PanelControllerDeps, PanelKind, PanelSnapshot } from "./panel-types.js";
@@ -44,6 +49,7 @@ export class PanelController {
       overlay: this.tracked,
       kind: this.tracked.kind,
       secret: secretInitialState(),
+      textEditor: textEditorInitialState(),
       search: undefined,
     };
     this.unsubscribe = deps.overlay.subscribe(() => this.onOverlayChange());
@@ -104,6 +110,16 @@ export class PanelController {
   handlePaste(text: string): boolean {
     if (this.snapshot.overlay.kind === "secret") {
       this.publish({ ...this.snapshot, secret: secretPaste(this.snapshot.secret, text) });
+      return true;
+    }
+    if (this.snapshot.overlay.kind === "text-editor") {
+      this.publish({
+        ...this.snapshot,
+        textEditor: textEditorPaste(this.snapshot.textEditor, text, {
+          columns: this.deps.columns(),
+          rows: this.deps.rows(),
+        }),
+      });
       return true;
     }
     return this.handleKey("", text);
@@ -185,6 +201,18 @@ export class PanelController {
       case "secret": {
         const result = secretKey({ state: snapshot.secret, chord, text });
         this.publish({ ...snapshot, secret: result.state });
+        this.apply(result.effects);
+        return result.handled;
+      }
+      case "text-editor": {
+        const result = textEditorKey({
+          state: snapshot.textEditor,
+          chord,
+          text,
+          columns: this.deps.columns(),
+          rows,
+        });
+        this.publish({ ...snapshot, textEditor: result.state });
         this.apply(result.effects);
         return result.handled;
       }
@@ -302,6 +330,9 @@ export class PanelController {
         return;
       case "secret":
         this.publish({ ...base, secret: secretInitialState(state.request.initialValue) });
+        return;
+      case "text-editor":
+        this.publish({ ...base, textEditor: textEditorInitialState(state.request) });
         return;
       case "scope-editor":
         this.publish({ ...base, scope: scopeInitialState(state.request) });

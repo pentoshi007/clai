@@ -21,7 +21,7 @@ Two things make it practical for everyday use:
 - **Durable plans.** `plan.create` / `task.update` drive a live checklist that survives context compaction and reloads with `/history` — the agent works task-by-task and won't fake completion.
 - **Persistent interactive terminals.** Conversation-owned PTY or pipe sessions keep REPLs such as Python, Metasploit, Meterpreter, database consoles, and debuggers open across model turns. The agent can send follow-up input, read incremental output, resize, interrupt, and close them without losing state.
 - **Native + text tool calling.** Uses provider-native function calling where available, with a text-fence fallback (`toolCalling: auto|native|text`).
-- **MCP, explicitly controlled.** Discovers local stdio and remote HTTP/SSE servers from project and compatible inherited configs. MCP tools are off by default; `/mcp` lets you inspect, add, and select one server or all live servers for the current session.
+- **MCP, explicitly controlled.** Discovers local stdio and remote HTTP/SSE servers from project and compatible inherited configs. MCP tools are off by default; `/mcp` inspects and adds servers, and picking one drops an editable `@mcp:<server>` token into your prompt — stack as many as you need, delete one with backspace, or switch the whole session on with `/mcp all`.
 - **Safety gate you control.** Every action is classified safe / confirm / block; deletes always confirm with a preview; destructive patterns are blocked.
 
 ---
@@ -436,7 +436,7 @@ You own authorization; clai still gates risk on every action:
 
 ## Terminal UI
 
-The old line REPL has been removed — there are only full surfaces now. An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. In the classic UI, mouse reporting is on by default so wheel swipes scroll the live tail and panels instead of being misread as prompt-history keys; native text selection stays one modifier away (Shift/Option/Fn), and `CLAI_CLASSIC_MOUSE=0` turns mouse reporting off. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts. MCP tools stay off by default; selecting exactly one server with `/mcp` adds an aqua `@mcp:<server>` token to the composer, while `all` and `off` show no MCP token and MCP counts never appear in status bars.
+The old line REPL has been removed — there are only full surfaces now. An OpenTUI full-screen console is selected for a sufficiently large interactive POSIX terminal. The classic Ink UI is selected on Windows, on smaller terminals, or with `--classic`; non-TTY prompts use the noninteractive stream renderer. In the classic UI, mouse reporting is on by default so wheel swipes scroll the live tail and panels instead of being misread as prompt-history keys; native text selection stays one modifier away (Shift/Option/Fn), and `CLAI_CLASSIC_MOUSE=0` turns mouse reporting off. The interactive surfaces provide streaming chat, nested tool cards (including `tool.batch` sub-calls), file diffs, a live plan pane, pickers, history, and secure masked key prompts. MCP tools stay off by default; picking a server with `/mcp` inserts an aqua `@mcp:<server>` token into the prompt you are typing — several tokens can coexist, backspace deletes one like any other text, and `all` / `off` add no token. MCP counts never appear in status bars.
 
 | Action | Key |
 |--------|-----|
@@ -532,7 +532,7 @@ enabled with `CLAI_SHOW_THINKING=1`.
 
 ## Model Context Protocol (MCP)
 
-clai can discover and call tools from local or remote MCP servers. MCP tools are **off by default** and are not sent to the model until you select one server or choose all live servers for the current session. Run `/mcp` to discover configured servers and open the shared picker in Classic or OpenTUI. Selecting exactly one server displays an aqua `@mcp:<server>` token in the composer; `all` and `off` intentionally display no MCP token.
+clai can discover and call tools from local or remote MCP servers. MCP tools are **off by default** and are not sent to the model until a prompt mentions a server or the session is switched on with `/mcp all`. Run `/mcp` to discover configured servers and open the shared picker in Classic or OpenTUI. Picking a server inserts an aqua `@mcp:<server>` token into the composer text, exactly like a `skill:` mention: it is ordinary editable text, so backspace removes it, and several tokens select several servers for that prompt. `all` and `off` insert no token.
 
 ### Project configuration
 
@@ -560,7 +560,7 @@ The native project file is `.clai/mcp.json`. It accepts JSON or JSONC and the co
 
 A `command` entry uses stdio. A `url` entry uses Streamable HTTP by default; set `"type": "sse"` for a legacy SSE endpoint. `${workspaceFolder}`, `${env:NAME}` / `${env.NAME}`, and compatible `${input:name}` substitutions are resolved at discovery time, and resolved secret values are redacted from diagnostics.
 
-The picker can add one server without hand-editing the file: choose **+ add MCP server**, paste one server object into the initially empty editor, and confirm. You can also supply the fragment inline:
+The picker can add one server without hand-editing the file: choose **+ add MCP server** and a full multiline editor opens — visible caret, arrow-key and word/line navigation, mid-text edits, selection, and multi-line paste. `Enter` inserts a newline, `Ctrl+S` saves, `Esc` cancels. If the JSON does not validate, the editor reopens with your text intact and the parse error in the header, so a long paste is never retyped. You can also supply the fragment inline:
 
 ```text
 /mcp add {"name":"docs","command":"docs-server","args":[]}
@@ -574,7 +574,7 @@ clai also inherits compatible configuration from `CLAI_MCP_CONFIG` (an OS-delimi
 
 ```text
 /mcp                         # picker: add, off, all, or one server
-/mcp docs                    # expose only docs tools for this session
+/mcp docs                    # drop @mcp:docs into the prompt (repeat for more servers)
 /mcp all                     # expose tools from every live server
 /mcp off                     # default: expose no MCP tools
 /mcp list                    # sources, transports, state, selection, and catalog

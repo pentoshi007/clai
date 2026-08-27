@@ -63,6 +63,20 @@ export interface ScopeEditorRequest {
   readonly initialTargets: readonly string[];
 }
 
+/**
+ * Full multiline text editor for long, structured input (MCP server JSON).
+ * Unlike the secret prompt this keeps a visible caret, arrow-key navigation,
+ * mid-text edits and newlines.
+ */
+export interface TextEditorRequest {
+  readonly title: string;
+  readonly prompt: string;
+  readonly initialValue?: string | undefined;
+  readonly placeholder?: string | undefined;
+  /** Footer label for the submit chord. Defaults to "save". */
+  readonly submitLabel?: string | undefined;
+}
+
 /** One existing key shown masked in the multi-key editor (/set). */
 export interface KeysEditorSlotView {
   readonly id: string;
@@ -117,6 +131,12 @@ export type OverlayState =
       readonly planResolve?: ((result: PlanConfirmResult) => void) | undefined;
     }
   | { readonly kind: "secret"; readonly request: SecretRequestView; readonly resolve: (value: string | undefined) => void }
+  | {
+      readonly kind: "text-editor";
+      readonly request: TextEditorRequest;
+      /** undefined = cancel. */
+      readonly resolve: (value: string | undefined) => void;
+    }
   | {
       readonly kind: "scope-editor";
       readonly request: ScopeEditorRequest;
@@ -187,11 +207,15 @@ export class OverlayController {
     );
   }
 
-  replacePickerOptions(options: readonly PickerOption[]): void {
+  replacePickerOptions(options: readonly PickerOption[], title?: string): void {
     if (this.state.kind !== "picker") return;
     this.state = {
       ...this.state,
-      request: { ...this.state.request, options },
+      request: {
+        ...this.state.request,
+        options,
+        ...(title !== undefined ? { title } : {}),
+      },
     };
     this.notify();
   }
@@ -294,13 +318,28 @@ export class OverlayController {
     });
   }
 
+  /** Multiline editor. Resolves the edited text, or `undefined` on cancel. */
+  openTextEditor(request: TextEditorRequest): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      const opened = this.open({ kind: "text-editor", request, resolve }, "modal");
+      if (!opened) resolve(undefined);
+    });
+  }
+
+  answerTextEditor(value: string | undefined): void {
+    if (this.state.kind !== "text-editor") return;
+    const { resolve } = this.state;
+    this.state = { kind: "text-editor", request: this.state.request, resolve: () => undefined };
+    this.forceClose();
+    resolve(value);
+  }
+
   /**
    * Multi-input scope editor. Resolves:
    * - `undefined` cancel / overlay busy
    * - `[]` clear (scoping disabled)
    * - non-empty string[] save those targets
-   */
-  openScopeEditor(request: ScopeEditorRequest): Promise<string[] | undefined> {
+   */  openScopeEditor(request: ScopeEditorRequest): Promise<string[] | undefined> {
     return new Promise((resolve) => {
       const opened = this.open(
         { kind: "scope-editor", request, resolve },
@@ -398,6 +437,10 @@ export class OverlayController {
       this.answerKeys(undefined);
       return true;
     }
+    if (this.state.kind === "text-editor") {
+      this.answerTextEditor(undefined);
+      return true;
+    }
     return false;
   }
 
@@ -436,6 +479,7 @@ export class OverlayController {
         this.state.resolve(false);
       }
     } else if (this.state.kind === "secret") this.state.resolve(undefined);
+    else if (this.state.kind === "text-editor") this.state.resolve(undefined);
     else if (this.state.kind === "scope-editor") this.state.resolve(undefined);
     else if (this.state.kind === "keys-editor") this.state.resolve(undefined);
     this.suspended = undefined;
@@ -515,15 +559,20 @@ export class OverlayController {
           previous.resolve(false);
         }
       } else if (previous.kind === "secret") previous.resolve(undefined);
+      else if (previous.kind === "text-editor") previous.resolve(undefined);
     }
     this.notify();
   }
 
   private forceClose(): void {
     if (this.state.kind === "pager") this.state.source?.dispose();
+    // A promise-bearing editor must never be closed without an answer, or the
+    // caller awaits forever (Esc / overlay.close from global key handling).
+    const pending = this.state.kind === "text-editor" ? this.state.resolve : undefined;
     this.state = NONE;
     this.closeFocus?.();
     this.closeFocus = undefined;
+    pending?.(undefined);
     this.notify();
   }
 

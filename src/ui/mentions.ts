@@ -421,7 +421,9 @@ export function extractMentionTokens(line: string): string[] {
   const mentionRe = /(^|\s)@(\S+)/g;
   let match: RegExpExecArray | null;
   while ((match = mentionRe.exec(line)) !== null) {
-    tokens.push(`@${match[2]}`);
+    const token = `@${match[2]}`;
+    if (/^@mcp:/i.test(token)) continue;
+    tokens.push(token);
   }
 
   const referenceRe = /file:\/\/[^\s)\]}>]+/gi;

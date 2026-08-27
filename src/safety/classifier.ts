@@ -23,6 +23,7 @@ import {
 } from "./patterns.js";
 import { normalizeScopeTarget, type EngagementScope } from "../store/scope.js";
 import { classifyHost } from "../tools/web/ssrf-guard.js";
+import { externalToolRisk } from "../tools/external-tools.js";
 import { pathInsideSandbox } from "../tools/fs.js";
 import { packageBinaryName } from "../tools/package-binary.js";
 import { findExecutableSync } from "../os/command.js";
@@ -594,6 +595,9 @@ export function classifyToolCall(
   call: ToolCall,
   options: ClassifyOptions = {},
 ): RiskDecision {
+  const external = externalToolRisk(call.name);
+  if (external) return external;
+
   if (
     call.name === "fs.read" ||
     call.name === "fs.list" ||

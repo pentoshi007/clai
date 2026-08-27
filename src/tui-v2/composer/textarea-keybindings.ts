@@ -111,3 +111,19 @@ export function buildComposerTextareaOverrides(): TextareaKeyBindingLike[] {
 
   return overrides;
 }
+
+/**
+ * Editor-modal bindings: Enter inserts a newline (Ctrl+S saves instead), while
+ * the word/line kill and selection chords stay identical to the composer.
+ */
+export function buildTextEditorTextareaOverrides(): TextareaKeyBindingLike[] {
+  const overrides = buildComposerTextareaOverrides().filter(
+    (binding) =>
+      !(ENTER_NAMES as readonly string[]).includes(binding.name) ||
+      binding.action !== "submit",
+  );
+  for (const name of ENTER_NAMES) {
+    overrides.push({ name, action: "newline" });
+  }
+  return overrides;
+}

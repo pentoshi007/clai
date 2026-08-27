@@ -12,6 +12,7 @@ export type PanelEffect =
   | { readonly kind: "view-plan" }
   | { readonly kind: "view-file" }
   | { readonly kind: "secret"; readonly value: string | undefined }
+  | { readonly kind: "text-editor"; readonly value: string | undefined }
   | { readonly kind: "scope"; readonly targets: string[] | undefined }
   | { readonly kind: "keys"; readonly answer: KeysEditorAnswer | undefined }
   | { readonly kind: "copy"; readonly text: string }

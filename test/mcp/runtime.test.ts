@@ -185,14 +185,52 @@ describe("McpRuntime catalog", () => {
     runtime.selectAll();
     expect(runtime.toolNames({ askMode: true })).toEqual(["mcp.alpha.lookup"]);
     runtime.selectServer("beta");
-    expect(runtime.getState().selection).toEqual({ mode: "server", serverName: "beta" });
+    expect(runtime.getState().selection).toEqual({
+      mode: "servers",
+      serverNames: ["beta"],
+    });
     expect(runtime.toolNames()).toEqual(["mcp.beta.change"]);
+    runtime.selectServers(["alpha", "beta"]);
+    expect(runtime.toolNames()).toEqual(["mcp.alpha.lookup", "mcp.beta.change"]);
     runtime.selectOff();
     expect(runtime.getState().selection).toEqual({ mode: "off" });
     expect(runtime.toolNames()).toEqual([]);
     runtime.selectAll();
     expect(runtime.getState().selection).toEqual({ mode: "all" });
     expect(runtime.toolNames()).toHaveLength(2);
+    await runtime.closeAll();
+  });
+
+  it("routes @mcp mentions to a multi-server selection and back to the base mode", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+
+    expect(runtime.serverNames()).toEqual(new Set(["alpha", "beta"]));
+    expect(runtime.applyMentionSelection("use @mcp:alpha please").selection).toEqual({
+      mode: "servers",
+      serverNames: ["alpha"],
+    });
+    expect(
+      runtime.applyMentionSelection("@mcp:alpha and @mcp:beta and @mcp:ghost").selection,
+    ).toEqual({ mode: "servers", serverNames: ["alpha", "beta"] });
+    expect(runtime.toolNames()).toEqual(["mcp.alpha.lookup", "mcp.beta.change"]);
+
+    expect(runtime.applyMentionSelection("plain prompt").selection).toEqual({
+      mode: "off",
+    });
+    expect(runtime.toolNames()).toEqual([]);
+
+    runtime.selectAll();
+    expect(runtime.applyMentionSelection("@mcp:beta only").selection).toEqual({
+      mode: "servers",
+      serverNames: ["beta"],
+    });
+    expect(runtime.applyMentionSelection("plain prompt").selection).toEqual({
+      mode: "all",
+    });
+
+    const state = runtime.getState();
+    expect(runtime.applyMentionSelection("still plain")).toBe(state);
     await runtime.closeAll();
   });
 });

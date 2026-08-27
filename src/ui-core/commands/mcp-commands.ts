@@ -5,18 +5,19 @@ import {
   writeProjectMcpServer,
 } from "../../mcp/config-file.js";
 import { formatCatalog, formatStatuses, formatToolLine } from "../../mcp/format.js";
+import { formatMcpToken } from "../../mcp/mentions.js";
+import { mcpSelectionLabel } from "../../mcp/runtime.js";
 import { MCP_SOURCE_LABELS, type McpServerStatus } from "../../mcp/types.js";
+import type { PickerOption } from "../rendering/picker-filter.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
+import { composerActionPort } from "../composer/composer-action-port.js";
 
 const ADD_VALUE = "__mcp_add__";
 const ALL_VALUE = "__mcp_all__";
 const OFF_VALUE = "__mcp_off__";
 
 function selectionText(services: AppServices): string {
-  const selection = services.mcp.getState().selection;
-  if (selection.mode === "all") return "all live servers";
-  if (selection.mode === "off") return "off";
-  return `server ${selection.serverName}`;
+  return mcpSelectionLabel(services.mcp.getState().selection);
 }
 
 function statusDescription(status: McpServerStatus): string {
@@ -46,10 +47,15 @@ function selectServer(services: AppServices, status: McpServerStatus): void {
     );
     return;
   }
+  const token = formatMcpToken(status.name);
+  if (composerActionPort.insert(`${token} `)) {
+    services.focus.focusRegion("composer");
+    return;
+  }
   services.mcp.selectServer(status.name);
   services.session.notice(
     "info",
-    `MCP selection · ${status.name} · ${status.toolCount} live tool${status.toolCount === 1 ? "" : "s"} · session only`,
+    `type ${token} in your prompt to use this server · ${status.toolCount} live tool${status.toolCount === 1 ? "" : "s"}`,
   );
 }
 
@@ -66,75 +72,120 @@ function locationLines(services: AppServices): string[] {
   ];
 }
 
+const ADD_TEMPLATE = `{
+  "docs": {
+    "command": "docs-server",
+    "args": []
+  }
+}`;
+
 async function addServer(services: AppServices, supplied = ""): Promise<void> {
   const target = projectMcpConfigPath();
   const displayPath = displayMcpConfigPath(target);
-  const input = supplied ||
-    (await services.overlay.openSecret({
-      title: "Add MCP server",
-      prompt: `Paste one server JSON object for ${displayPath}. Use {\"name\":\"docs\",\"command\":\"docs-server\",\"args\":[]} or a one-entry {\"servers\":{...}} fragment.`,
-      reveal: true,
-    }));
-  if (!input) return;
-  const written = await writeProjectMcpServer(input);
-  if (!written.ok) {
+  let draft = supplied.trim();
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (!draft) {
+      const input = await services.overlay.openTextEditor({
+        title: "Add MCP server",
+        prompt: `Paste one server JSON object for ${displayPath} — a named object, or a one-entry {"servers":{…}} fragment.`,
+        placeholder: ADD_TEMPLATE,
+        submitLabel: "add server",
+        ...(attempt > 0 ? { initialValue: draft } : {}),
+      });
+      if (input === undefined || input.trim() === "") return;
+      draft = input;
+    }
+    const written = await writeProjectMcpServer(draft);
+    if (!written.ok) {
+      services.session.notice(
+        "warn",
+        `MCP config not changed · ${written.displayPath} · ${written.error}`,
+      );
+      // Reopen with the text intact so a long paste is never retyped.
+      const retry = await services.overlay.openTextEditor({
+        title: "Add MCP server · fix and retry",
+        prompt: `${written.error}`,
+        initialValue: draft,
+        placeholder: ADD_TEMPLATE,
+        submitLabel: "add server",
+      });
+      if (retry === undefined || retry.trim() === "") return;
+      draft = retry;
+      continue;
+    }
+    const state = await services.mcp.refresh({ force: true });
+    const status = state.snapshot.statuses.find(
+      (candidate) => candidate.name === written.serverName,
+    );
+    if (status?.status === "ready") selectServer(services, status);
     services.session.notice(
-      "warn",
-      `MCP config not changed · ${written.displayPath} · ${written.error}`,
+      status?.status === "ready" ? "info" : "warn",
+      `${written.replaced ? "updated" : "added"} MCP server ${written.serverName} in ${written.displayPath}${status?.status === "ready" ? ` · use ${formatMcpToken(written.serverName)} in your prompt · ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}` : ` · ${status?.status ?? "not discovered"}${status?.detail ? ` · ${status.detail}` : ""}`}`,
     );
     return;
   }
-  const state = await services.mcp.refresh({ force: true });
-  const status = state.snapshot.statuses.find(
-    (candidate) => candidate.name === written.serverName,
-  );
-  if (status?.status === "ready") services.mcp.selectServer(written.serverName);
-  services.session.notice(
-    status?.status === "ready" ? "info" : "warn",
-    `${written.replaced ? "updated" : "added"} MCP server ${written.serverName} in ${written.displayPath}${status?.status === "ready" ? ` · selected · ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}` : ` · ${status?.status ?? "not discovered"}${status?.detail ? ` · ${status.detail}` : ""}`}`,
-  );
 }
 
-function openPicker(services: AppServices): void {
+function pickerTitle(services: AppServices): string {
   const state = services.mcp.getState();
   const statuses = state.snapshot.statuses;
   const ready = statuses.filter((status) => status.status === "ready").length;
   const target = displayMcpConfigPath(projectMcpConfigPath());
+  const progress = state.refreshing
+    ? " · connecting…"
+    : state.snapshot.createdAt === 0
+      ? " · discovering…"
+      : "";
+  return `MCP · ${target} · ${ready}/${statuses.length} live · ${state.activeToolCount} active tools${progress}`;
+}
 
+function pickerOptions(services: AppServices): PickerOption[] {
+  const state = services.mcp.getState();
+  const target = displayMcpConfigPath(projectMcpConfigPath());
+  return [
+    {
+      value: ADD_VALUE,
+      label: "+ add MCP server",
+      description: `paste one JSON server object · merge into ${target}`,
+    },
+    {
+      value: OFF_VALUE,
+      label: "MCP tools off",
+      description: "default · hide MCP tools from agent requests for this session",
+      active: state.selection.mode === "off",
+    },
+    {
+      value: ALL_VALUE,
+      label: "all live servers",
+      description: "expose every ready MCP tool for this session",
+      active: state.selection.mode === "all",
+    },
+    ...state.snapshot.statuses.map((status) => ({
+      value: status.name,
+      label: `${status.status === "ready" ? "live" : status.status} · ${status.name}`,
+      description: statusDescription(status),
+      active:
+        state.selection.mode === "servers" &&
+        state.selection.serverNames.includes(status.name),
+    })),
+  ];
+}
+
+/**
+ * Opens immediately from the current snapshot: a remote server can take up to
+ * the 30s connect timeout, and blocking the picker on that looked like a hang.
+ * Rows and title are replaced in place once discovery settles.
+ */
+function openPicker(services: AppServices): void {
   services.overlay.openPicker(
     {
-      title: `MCP · ${target} · ${ready}/${statuses.length} live · ${state.activeToolCount} active tools`,
+      title: pickerTitle(services),
       searchDescription: true,
       twoLine: true,
-      options: [
-        {
-          value: ADD_VALUE,
-          label: "+ add MCP server",
-          description: `paste one JSON server object · merge into ${target}`,
-        },
-        {
-          value: OFF_VALUE,
-          label: "MCP tools off",
-          description: "default · hide MCP tools from agent requests for this session",
-          active: state.selection.mode === "off",
-        },
-        {
-          value: ALL_VALUE,
-          label: "all live servers",
-          description: "expose every ready MCP tool for this session",
-          active: state.selection.mode === "all",
-        },
-        ...statuses.map((status) => ({
-          value: status.name,
-          label: `${status.status === "ready" ? "live" : status.status} · ${status.name}`,
-          description: statusDescription(status),
-          active:
-            state.selection.mode === "server" &&
-            state.selection.serverName === status.name,
-        })),
-      ],
+      options: pickerOptions(services),
     },
     (value) => {
+      const statuses = services.mcp.getState().snapshot.statuses;
       services.overlay.close();
       if (value === ADD_VALUE) {
         void addServer(services);
@@ -153,6 +204,14 @@ function openPicker(services: AppServices): void {
       const status = statuses.find((candidate) => candidate.name === value);
       if (status) selectServer(services, status);
     },
+  );
+}
+
+function refreshOpenPicker(services: AppServices): void {
+  if (services.overlay.getState().kind !== "picker") return;
+  services.overlay.replacePickerOptions(
+    pickerOptions(services),
+    pickerTitle(services),
   );
 }
 
@@ -225,7 +284,6 @@ export async function handleMcp(
   services: AppServices,
   invocation: CommandInvocation,
 ): Promise<void> {
-  await services.mcp.ensureReady();
   const args = invocation.args.trim();
   const [rawCommand = "", ...rest] = args.split(/\s+/);
   const command = rawCommand.toLowerCase();
@@ -233,8 +291,11 @@ export async function handleMcp(
 
   if (!command) {
     openPicker(services);
+    await services.mcp.ensureReady();
+    refreshOpenPicker(services);
     return;
   }
+  await services.mcp.ensureReady();
   if (command === "add" || command === "new") {
     await addServer(services, tail);
     return;

@@ -53,6 +53,9 @@ function applyPanelEffect(effect: PanelEffect, context: PanelEffectContext): voi
     case "secret":
       overlay.answerSecret(effect.value);
       return;
+    case "text-editor":
+      overlay.answerTextEditor(effect.value);
+      return;
     case "scope":
       overlay.answerScope(effect.targets);
       return;

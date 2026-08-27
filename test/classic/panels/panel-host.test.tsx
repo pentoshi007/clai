@@ -52,6 +52,14 @@ describe("panel host", () => {
         () => harness.overlay.openPromptActions({ prompt: "hello", onResend: vi.fn() }),
         "Prompt",
       ],
+      [
+        () =>
+          void harness.overlay.openTextEditor({
+            title: "Add MCP server",
+            prompt: "paste json",
+          }),
+        "Add MCP server",
+      ],
     ];
     let harness = createHarness();
     for (const [open, expected] of cases) {

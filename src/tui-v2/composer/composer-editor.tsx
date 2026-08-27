@@ -49,7 +49,7 @@ import { notify } from "../../ui-core/notify.js";
 import { CompletionMenuView } from "../components/completion/completion-menu.js";
 import { ComposerInputBox } from "../components/composer/composer-input-box.js";
 import { PasteChipRow } from "../components/composer/paste-chip.js";
-import { paintSkillMentions } from "./skill-highlight.js";
+import { paintDraftMentions } from "./composer-highlight.js";
 import { skillNamesSnapshot } from "../../skills/registry.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
 import { useSessionState } from "../../ui-core/react/use-session-state.js";
@@ -84,7 +84,6 @@ export interface ComposerEditorProps {
   readonly inputSuspended?: boolean | undefined;
   /** Visual region focus from the shell (Tab cycle). */
   readonly focused: boolean;
-  readonly selectedMcpServer?: string | undefined;
   /**
    * Esc while a turn runs: arm/cancel via the shared double-Esc handler
    * (shows "Esc again to cancel", second press cancels turn + queue + jobs).
@@ -301,14 +300,23 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     });
   }
 
-  /** Grow/shrink the input box with newlines and soft-wrap (classic parity). */
-  function syncSkillMentions(): void {
+  function syncMentions(): void {
     const editor = editorRef.current;
-    const known = skillNamesSnapshot();
-    if (!editor || known.size === 0) return;
-    paintSkillMentions(editor, known, theme.activity);
+    if (!editor) return;
+    const text = editor.plainText;
+    const servers = services.mcp.serverNames();
+    paintDraftMentions({
+      editor,
+      text,
+      skills: skillNamesSnapshot(),
+      skillColor: theme.activity,
+      servers,
+      serverColor: theme.aqua,
+    });
+    services.mcp.applyMentionSelection(text);
   }
 
+  /** Grow/shrink the input box with newlines and soft-wrap (classic parity). */
   function syncContentRows(): void {
     const editor = editorRef.current;
     if (!editor) {
@@ -316,7 +324,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       setPasteChips([]);
       return;
     }
-    syncSkillMentions();
+    syncMentions();
     // Prompt (2) + borders (2) + horizontal padding (2) leave this for text.
     const wrapWidth = Math.max(10, props.width - 6);
     const estimatedRows = countComposerVisualLines(editor.plainText, wrapWidth);
@@ -872,11 +880,6 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
         width={inputWidth}
         boxHeight={boxHeight}
         metaShown={metaShown}
-        selectedMcpServer={
-          props.selectedMcpServer
-            ? sanitizeDisplayText(props.selectedMcpServer).slice(0, 32)
-            : undefined
-        }
         chromeFg={chromeFg}
         keyBindings={textareaKeyBindings}
         onMouseDown={focusComposer}
