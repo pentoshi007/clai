@@ -187,7 +187,7 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
 
   it("picks up session context-limit changes against the current request on the next round", async () => {
     const history = smallHistory(12);
-    history.splice(1, 1, { role: "user", content: "x ".repeat(200_000) });
+    history.splice(1, 1, { role: "user", content: "x ".repeat(198_000) });
     let liveLimit: number | undefined = undefined;
     let call = 0;
     stream.mockImplementation(
