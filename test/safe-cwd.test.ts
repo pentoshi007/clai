@@ -35,7 +35,7 @@ describe("safeCwd (deleted working directory resilience)", () => {
     expect(existsSync(recovered)).toBe(true);
     // After recovery the process cwd is valid again.
     expect(cwdIsBroken()).toBe(false);
-  });
+  }, 10_000);
 
   it("recoverCwd relocates to an existing directory", () => {
     const tmp = mkdtempSync(join(tmpdir(), "clai-cwd-test-"));

@@ -21,6 +21,7 @@ export function ComposerInputBox(props: {
   readonly width: number;
   readonly boxHeight: number;
   readonly metaShown: string;
+  readonly selectedMcpServer?: string | undefined;
   readonly chromeFg: string;
   readonly keyBindings: never;
   readonly onMouseDown: () => void;
@@ -38,6 +39,7 @@ export function ComposerInputBox(props: {
     width,
     boxHeight,
     metaShown,
+    selectedMcpServer,
     chromeFg,
     keyBindings,
     onMouseDown,
@@ -81,6 +83,16 @@ export function ComposerInputBox(props: {
           attributes: focused ? TextAttributes.BOLD : TextAttributes.DIM,
         }}
       />
+      {selectedMcpServer ? (
+        <text
+          content={`@mcp:${selectedMcpServer} `}
+          style={{
+            fg: theme.aqua,
+            flexShrink: 1,
+            attributes: TextAttributes.BOLD,
+          }}
+        />
+      ) : null}
       <textarea
         ref={editorRef}
         focused={focused}

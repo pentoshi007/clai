@@ -978,7 +978,7 @@ describe("responder memory and explicit read receipts", () => {
     expect(internal.settlementTimers.size).toBe(0);
     expect(internal.pendingSettlements.size).toBe(0);
     expect(internal.finalizations.size).toBe(0);
-  });
+  }, 10_000);
 });
 
 

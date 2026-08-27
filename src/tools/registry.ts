@@ -1319,7 +1319,12 @@ export function normalizeToolCall(call: ToolCall): ToolCall {
   if (name && !toolRegistry[name]) {
     const cleaned = sanitizeToolName(name);
     const mapped = fromWireName(cleaned) ?? fromWireName(name) ?? cleaned;
-    if (mapped && (toolRegistry[mapped] || NON_REGISTRY_TOOL_NAMES.has(mapped))) {
+    if (
+      mapped &&
+      (toolRegistry[mapped] ||
+        NON_REGISTRY_TOOL_NAMES.has(mapped) ||
+        mapped.startsWith("mcp."))
+    ) {
       return { name: mapped, args: unwrapGatewayToolArgs(originalArgs) };
     }
     if (cleaned && cleaned !== name) name = cleaned;

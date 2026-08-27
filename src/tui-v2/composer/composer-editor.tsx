@@ -36,6 +36,11 @@ import {
   sameCompletionMenu,
   type CompletionMenu,
 } from "../../ui-core/composer/completion.js";
+import {
+  initialCompletionViewportState,
+  reduceCompletionViewport,
+  type CompletionViewportAction,
+} from "../../ui-core/composer/completion-viewport.js";
 import { buildComposerTextareaOverrides } from "./textarea-keybindings.js";
 import { composerActionPort } from "../../ui-core/composer/composer-action-port.js";
 import { useDraftActions } from "./use-draft-actions.js";
@@ -79,6 +84,7 @@ export interface ComposerEditorProps {
   readonly inputSuspended?: boolean | undefined;
   /** Visual region focus from the shell (Tab cycle). */
   readonly focused: boolean;
+  readonly selectedMcpServer?: string | undefined;
   /**
    * Esc while a turn runs: arm/cancel via the shared double-Esc handler
    * (shows "Esc again to cancel", second press cancels turn + queue + jobs).
@@ -105,7 +111,9 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
   /** Trackpad-as-arrows: count rapid ↑/↓ so we scroll chat instead of history. */
   const arrowBurst = useRef({ count: 0, lastAt: 0 });
   const [menu, setMenu] = useState<CompletionMenu>({ kind: "none" });
-  const [selected, setSelected] = useState(0);
+  const [completionView, setCompletionView] = useState(
+    initialCompletionViewportState,
+  );
   const [acceptedSlash, setAcceptedSlash] = useState<string | undefined>(undefined);
   /** Visual rows of current prompt — drives grow-with-content height. */
   const [contentRows, setContentRows] = useState(1);
@@ -114,13 +122,34 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
   // after @ completion or focus reclaim (the intermittent "arrows dead / /
   // menu missing" failure mode).
   const menuRef = useRef(menu);
-  const selectedRef = useRef(selected);
+  const completionViewRef = useRef(completionView);
   const acceptedSlashRef = useRef(acceptedSlash);
   menuRef.current = menu;
-  selectedRef.current = selected;
+  completionViewRef.current = completionView;
   acceptedSlashRef.current = acceptedSlash;
   const menuKindRef = useRef(menu.kind);
   menuKindRef.current = menu.kind;
+  const selected = completionView.selected;
+
+  function applyCompletionViewport(
+    action: CompletionViewportAction,
+    source: CompletionMenu = menuRef.current,
+  ): void {
+    const next = reduceCompletionViewport(
+      completionViewRef.current,
+      action,
+      {
+        itemCount: source.kind === "none" ? 0 : source.items.length,
+        maxRows: props.maxSuggestions ?? 10,
+      },
+    );
+    completionViewRef.current = next;
+    setCompletionView(next);
+  }
+
+  useEffect(() => {
+    applyCompletionViewport({ type: "reconcile" });
+  }, [props.maxSuggestions]);
   const overlay = useOverlayState(services.overlay);
   const session = useSessionState(services.session);
   // Prefer live session selection; fall back to config so the border always
@@ -329,7 +358,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       }
       // Keep selection stable when the filtered list only shrinks/grows.
       if (prev.kind === next.kind && next.kind !== "none" && prev.kind !== "none") {
-        const sel = selectedRef.current;
+        const sel = completionViewRef.current.selected;
         const prevName =
           prev.kind === "slash"
             ? prev.items[sel]?.name
@@ -339,16 +368,15 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
             next.kind === "slash"
               ? next.items.findIndex((i) => i.name === prevName)
               : next.items.findIndex((i) => i.value === prevName);
-          const nextSel = idx >= 0 ? idx : 0;
-          selectedRef.current = nextSel;
-          setSelected(nextSel);
+          applyCompletionViewport(
+            { type: "reconcile", selected: idx >= 0 ? idx : 0 },
+            next,
+          );
         } else {
-          selectedRef.current = 0;
-          setSelected(0);
+          applyCompletionViewport({ type: "reconcile", selected: 0 }, next);
         }
       } else {
-        selectedRef.current = 0;
-        setSelected(0);
+        applyCompletionViewport({ type: "reset" }, next);
         // Opening a menu resets trackpad burst so ↑/↓ navigate options
         // instead of immediately scrolling the transcript.
         if (next.kind !== "none") {
@@ -368,10 +396,9 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
   }): void {
     const editor = editorRef.current;
     const current = menuRef.current;
-    const sel = opts?.index ?? selectedRef.current;
+    const sel = opts?.index ?? completionViewRef.current.selected;
     if (opts?.index !== undefined) {
-      selectedRef.current = opts.index;
-      setSelected(opts.index);
+      applyCompletionViewport({ type: "select", index: opts.index }, current);
     }
     if (!editor || current.kind === "none") return;
     const cursor = editor.cursorOffset;
@@ -434,8 +461,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
         editor.gotoBufferEnd();
       }
     }
-    selectedRef.current = 0;
-    setSelected(0);
+    applyCompletionViewport({ type: "reset" }, current);
     // `setText` can move native focus in OpenTUI. Keep the cursor live after
     // a Tab/Enter completion rather than leaving the user in a dead region.
     services.focus.focusRegion("composer");
@@ -475,8 +501,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     acceptedSlashRef.current = undefined;
     setMenu({ kind: "none" });
     setAcceptedSlash(undefined);
-    selectedRef.current = 0;
-    setSelected(0);
+    applyCompletionViewport({ type: "reset" }, { kind: "none" });
     services.focus.focusRegion("composer");
     editor.focus();
     syncContentRows();
@@ -488,11 +513,11 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     if (!editor) return;
     const current = menuRef.current;
     if (current.kind === "slash") {
-      runSlashCompletion(selectedRef.current);
+      runSlashCompletion(completionViewRef.current.selected);
       return;
     }
     if (current.kind === "mention") {
-      const item = current.items[selectedRef.current];
+      const item = current.items[completionViewRef.current.selected];
       if (item?.isDir) {
         acceptSuggestion({ attachDir: true });
         return;
@@ -598,21 +623,20 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     if (current.kind !== "none") {
       const itemCount = current.items.length;
       if (chord === "up" && itemCount > 0) {
-        const next = (selectedRef.current - 1 + itemCount) % itemCount;
-        selectedRef.current = next;
-        setSelected(next);
+        const next =
+          (completionViewRef.current.selected - 1 + itemCount) % itemCount;
+        applyCompletionViewport({ type: "select", index: next }, current);
         key.preventDefault();
         return;
       }
       if (chord === "down" && itemCount > 0) {
-        const next = (selectedRef.current + 1) % itemCount;
-        selectedRef.current = next;
-        setSelected(next);
+        const next = (completionViewRef.current.selected + 1) % itemCount;
+        applyCompletionViewport({ type: "select", index: next }, current);
         key.preventDefault();
         return;
       }
       if (chord === "enter" && current.kind === "slash") {
-        runSlashCompletion(selectedRef.current);
+        runSlashCompletion(completionViewRef.current.selected);
         key.preventDefault();
         return;
       }
@@ -626,7 +650,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       }
       if (chord === "tab" || chord === "enter") {
         if (current.kind === "mention") {
-          const item = current.items[selectedRef.current];
+          const item = current.items[completionViewRef.current.selected];
           if (item?.isDir) {
             // Tab drills into the folder; Enter attaches the whole folder.
             acceptSuggestion(
@@ -771,6 +795,7 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     acceptedSlashRef.current = undefined;
     setMenu({ kind: "none" });
     setAcceptedSlash(undefined);
+    applyCompletionViewport({ type: "reset" }, { kind: "none" });
   };
 
   const draftActions = useDraftActions({
@@ -792,10 +817,12 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
   });
   const clearDraftState = draftActions.clear;
 
-  function hoverCompletion(index: number): void {
-    selectedRef.current = index;
-    setSelected(index);
-    focusComposer();
+  function hoverCompletion(index: number | undefined): void {
+    applyCompletionViewport({ type: "hover", index });
+  }
+
+  function scrollCompletion(rows: number): void {
+    applyCompletionViewport({ type: "scroll", rows });
   }
 
   function activateCompletion(index: number): void {
@@ -821,11 +848,14 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
       <CompletionMenuView
         menu={menu}
         selected={selected}
+        hoveredIndex={completionView.hovered}
+        viewportOffset={completionView.offset}
         theme={theme}
         width={inputWidth}
         maxRows={props.maxSuggestions ?? 10}
         onHoverIndex={hoverCompletion}
         onActivateIndex={activateCompletion}
+        onScrollRows={scrollCompletion}
       />
       <PasteChipRow
         entries={pasteChips}
@@ -842,6 +872,11 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
         width={inputWidth}
         boxHeight={boxHeight}
         metaShown={metaShown}
+        selectedMcpServer={
+          props.selectedMcpServer
+            ? sanitizeDisplayText(props.selectedMcpServer).slice(0, 32)
+            : undefined
+        }
         chromeFg={chromeFg}
         keyBindings={textareaKeyBindings}
         onMouseDown={focusComposer}

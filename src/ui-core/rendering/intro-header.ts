@@ -86,7 +86,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
 
   const LEAD = 2;
   const OVERHEAD = 7;
-  const wmWidth = wordmarkWidth("CLAI");
+  const wmWidth = wordmarkWidth("clai");
 
   const available = Math.max(12, totalWidth - LEAD - OVERHEAD);
 
@@ -102,7 +102,7 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
       rawPermissions,
       variant,
       cwd,
-      wmLines: renderWordmark("CLAI", { indent: "" }).split("\n"),
+      wmLines: renderWordmark("clai", { indent: "" }).split("\n"),
     });
   }
 
@@ -110,9 +110,9 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const rightWidth = available - leftWidth;
 
   // Fill the pane: the six-row wordmark whenever the left cell can hold it.
-  const wmLines = renderWordmark("CLAI", {
+  const wmLines = renderWordmark("clai", {
     indent: "",
-    size: leftWidth >= wordmarkWidth("CLAI", "large") ? "large" : "compact",
+    size: leftWidth >= wordmarkWidth("clai", "large") ? "large" : "compact",
   }).split("\n");
 
   const CHIP_LABEL = Math.min(8, Math.max(4, rightWidth - 10));

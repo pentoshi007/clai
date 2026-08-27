@@ -112,4 +112,15 @@ describe("src/tui-v2 architecture boundary", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("seeds visible input modals from the shared initial value", () => {
+    const modal = readFileSync(
+      join(tuiV2Root, "components", "modal", "secret-modal.tsx"),
+      "utf8",
+    );
+    expect(modal).toContain('buffer.insert(request.initialValue ?? "", 0)');
+    expect(modal).toContain(
+      "revealed ? bufferRef.current.reveal() : bufferRef.current.masked()",
+    );
+  });
 });

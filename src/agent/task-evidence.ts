@@ -534,6 +534,16 @@ export function canMarkTaskDone(
     }
   }
 
+  if (pentest && cls === "exploit" && !evidence.sawRemoteActiveTestOk) {
+    return {
+      ok: false,
+      reason:
+        `Cannot mark [${taskId}] done: an exploit task needs successful active-test evidence ` +
+        `(a non-GET/mutating request, injection, sqlmap/hydra/nuclei, or a landed PoC) against the target. ` +
+        `Passive recon or local file work does not prove exploitation — run the active test and read its result first.`,
+    };
+  }
+
   return { ok: true };
 }
 
@@ -787,6 +797,7 @@ function requestedToolTimeoutMs(call: {
   if (call.name === "shell.exec" && isLongRunningTestOrBuildCommand(cmd)) {
     return 120_000;
   }
+  if (call.name.startsWith("mcp.")) return 60_000;
   return DEFAULT_TOOL_TIMEOUT_MS;
 }
 

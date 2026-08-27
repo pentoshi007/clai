@@ -53,6 +53,29 @@ describe("secret rows", () => {
     });
     expect(rows[2]).toContain("https://api.example.com");
   });
+
+  it("seeds a revealed input from the shared request initial value", () => {
+    const seeded = secretInitialState("{}");
+    expect(seeded.buffer.reveal()).toBe("{}");
+    expect(seeded.cursor).toBe(2);
+    const { rows } = render(seeded, {
+      title: "Add MCP server",
+      prompt: "one server JSON",
+      reveal: true,
+      initialValue: "{}",
+    });
+    expect(rows[2]).toContain("❯ {}");
+
+    const harness = createHarness();
+    void harness.overlay.openSecret({
+      title: "Add MCP server",
+      prompt: "one server JSON",
+      reveal: true,
+      initialValue: "{}",
+    });
+    expect(harness.panels.getSnapshot().secret.buffer.reveal()).toBe("{}");
+    expect(harness.panels.getSnapshot().secret.cursor).toBe(2);
+  });
 });
 
 describe("secret keys", () => {

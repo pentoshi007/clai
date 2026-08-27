@@ -447,6 +447,56 @@ describe("typed task evidence", () => {
       }).ok,
     ).toBe(true);
   });
+
+  it("blocks a pentest exploit task without active-test evidence", () => {
+    const title = "Exploit SQL injection on /login to dump users";
+    expect(classifyTaskTitle(title, { planKind: "pentest" })).toBe("exploit");
+
+    let led = openTaskLedger("t5");
+    led = recordTaskWorkSuccess(led, "t5", "http.fetch", {
+      remoteReconOk: true,
+    });
+    const blocked = canMarkTaskDone(led, "t5", {
+      taskTitle: title,
+      planKind: "pentest",
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.reason).toMatch(/active-test/i);
+  });
+
+  it("allows a pentest exploit task once an active test succeeded", () => {
+    let led = openTaskLedger("t5");
+    led = recordTaskWorkSuccess(led, "t5", "shell.exec", {
+      remoteActiveTestOk: true,
+    });
+    expect(
+      canMarkTaskDone(led, "t5", {
+        taskTitle: "Exploit SQL injection on /login to dump users",
+        planKind: "pentest",
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("does not block pentest recon or report tasks with the exploit rule", () => {
+    let recon = openTaskLedger("t6");
+    recon = recordTaskWorkSuccess(recon, "t6", "net.scan", {
+      remoteReconOk: true,
+    });
+    expect(
+      canMarkTaskDone(recon, "t6", {
+        taskTitle: "Scan and enumerate services on target",
+        planKind: "pentest",
+      }).ok,
+    ).toBe(true);
+
+    expect(
+      canMarkTaskDone(null, "t7", {
+        taskTitle: "Write findings report and residual risk",
+        planKind: "pentest",
+        remoteWorkVerified: true,
+      }).ok,
+    ).toBe(true);
+  });
 });
 
 describe("session state block", () => {

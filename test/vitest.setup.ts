@@ -13,6 +13,8 @@ const defaultRoot: Record<string, string> = {
   CLAI_LOG_DIR: "logs",
   CLAI_ARTIFACT_DIR: "artifacts",
   CLAI_JOBS_DIR: "jobs",
+  CLAI_MCP_HOME: "home",
+  CLAI_SESSION_WORKSPACE_DIR: "clai",
 };
 
 for (const [key, sub] of Object.entries(defaultRoot)) {

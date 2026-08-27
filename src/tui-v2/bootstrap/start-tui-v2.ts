@@ -150,6 +150,9 @@ export async function startTuiV2(
       },
       restoreConsole,
       async () => {
+        await services.mcp.closeAll().catch(() => undefined);
+      },
+      async () => {
         const result = await services.ports.interactiveSessions
           .closeAll("app-shutdown")
           .catch(() => undefined);

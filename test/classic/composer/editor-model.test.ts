@@ -232,6 +232,23 @@ describe("rendering", () => {
     expect(rendered.rows[0]).toBe("Ask anything...");
     expect(rendered.rows[1]).toBe("");
   });
+
+  it("keeps skill mention spans bold in the activity color", () => {
+    const state = at("@skills/docs explain this", 0);
+    const rendered = renderEditor({
+      state,
+      layout: layoutEditor(state, 40),
+      ink,
+      height: 1,
+      scrollTop: 0,
+      showCaret: false,
+      placeholder: undefined,
+      accentSpans: [{ start: 0, end: 13 }],
+    });
+    expect(rendered.rows[0]).toContain(
+      ink.style("@skills/docs ", { fg: "activity", bold: true }),
+    );
+  });
 });
 
 describe("chord map", () => {

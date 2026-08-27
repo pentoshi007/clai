@@ -533,12 +533,12 @@ const LOGO_SIZES: readonly WordmarkSize[] = ["large", "compact"];
 
 function wordmarkBlock(unicode: boolean, size: WordmarkSize): LogoBlock {
   return {
-    lines: renderWordmark("CLAI", {
+    lines: renderWordmark("clai", {
       indent: "",
       style: unicode ? "block" : "ascii",
       size,
     }).split("\n"),
-    width: wordmarkWidth("CLAI", size),
+    width: wordmarkWidth("clai", size),
   };
 }
 
@@ -549,11 +549,11 @@ function logoBlock(
   colors: Palette,
 ): LogoBlock {
   for (const size of LOGO_SIZES) {
-    if (wordmarkWidth("CLAI", size) <= available) {
+    if (wordmarkWidth("clai", size) <= available) {
       return wordmarkBlock(unicode, size);
     }
   }
-  const text = "C L A I";
+  const text = "c l a i";
   return { lines: [colors.brand(text)], width: renderColumns(text) };
 }
 

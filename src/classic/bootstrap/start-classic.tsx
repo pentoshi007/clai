@@ -135,6 +135,9 @@ export async function startClassic(
       },
       restoreConsole,
       async () => {
+        await services.mcp.closeAll().catch(() => undefined);
+      },
+      async () => {
         const result = await services.ports.interactiveSessions
           .closeAll("app-shutdown")
           .catch(() => undefined);

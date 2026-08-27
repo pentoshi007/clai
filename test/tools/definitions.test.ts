@@ -62,6 +62,22 @@ describe("tool definitions", () => {
     expect(handoff.askMode).toBeFalsy();
   });
 
+  it("plan tools expose outcome criteria without prescribing tool steps", () => {
+    const plan = TOOL_DEFINITIONS.find((d) => d.name === "plan.create")!;
+    const tasks = plan.parameters.properties.tasks as {
+      items?: { oneOf?: Array<Record<string, unknown>> };
+    };
+    const objectVariant = tasks.items?.oneOf?.find(
+      (variant) => variant.type === "object",
+    ) as { properties?: Record<string, unknown> } | undefined;
+    expect(objectVariant?.properties).toHaveProperty("acceptanceCriteria");
+    expect(objectVariant?.properties).toHaveProperty("dependencies");
+    expect(objectVariant?.properties).toHaveProperty("resourceLocks");
+
+    const add = TOOL_DEFINITIONS.find((d) => d.name === "task.add")!;
+    expect(add.parameters.properties).toHaveProperty("acceptanceCriteria");
+  });
+
   it("web.fetch responseMode enum matches runtime RESPONSE_MODES", () => {
     const fetch = TOOL_DEFINITIONS.find((d) => d.name === "web.fetch")!;
     const mode = fetch.parameters.properties.responseMode as {
@@ -81,6 +97,24 @@ describe("tool definitions", () => {
     const exec = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.exec")!;
     expect(start.parameters.properties.timeoutMs).toBeUndefined();
     expect(exec.parameters.properties.timeoutMs).toBeDefined();
+  });
+
+  it("distinguishes finite, unattended, and prompt-driven execution tools", () => {
+    const exec = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.exec")!;
+    const start = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.start")!;
+    const terminal = TOOL_DEFINITIONS.find(
+      (definition) => definition.name === "terminal.start",
+    )!;
+    const send = TOOL_DEFINITIONS.find((definition) => definition.name === "terminal.send")!;
+
+    expect(exec.description).toMatch(/finite shell command/i);
+    expect(exec.description).toMatch(/shell\.start for persistent servers/i);
+    expect(start.description).toMatch(/persistent server\/watcher\/listener/i);
+    expect(start.description).toMatch(/readiness probe/i);
+    expect(terminal.description).toMatch(/interactive process or REPL/i);
+    expect(terminal.description).toMatch(/need later input/i);
+    expect(terminal.description).toMatch(/shell\.start for unattended services/i);
+    expect(send.description).toMatch(/never resend/i);
   });
 
   it("compact set includes recon essentials (P2-2)", () => {

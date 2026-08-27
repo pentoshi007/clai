@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { McpRuntime } from "../mcp/runtime.js";
 import type {
   ChatMessage,
   ChatImage,
@@ -35,6 +36,7 @@ import {
   isTextOnlyModel,
   markTextOnlyModel,
   fromWireName,
+  type ToolCallingMode,
 } from "../llm/tool-protocol.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../ui-core/rendering/sanitize-display.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -510,11 +512,13 @@ export function shouldYieldForDeclaredResponderDependency(
   );
 }
 export interface AgentRunOptions {
+  mcp?: McpRuntime | undefined;
   provider?: ProviderId | undefined;
   model?: string | undefined;
   history?: ChatMessage[] | undefined;
   autoConfirm?: boolean | undefined;
   maxSteps?: number | undefined;
+  toolCalling?: ToolCallingMode | undefined;
   signal?: AbortSignal | undefined;
   images?: ChatImage[] | undefined;
   visionProven?: boolean | undefined;
@@ -856,6 +860,13 @@ export async function runAgentTurn(
         : {}),
     });
     const config = getConfig();
+    const mcpRuntime = options.mcp;
+    if (mcpRuntime && mcpRuntime.getState().selection.mode !== "off") {
+      await mcpRuntime.ensureReady();
+    }
+    const mcpToolDefinitions =
+      mcpRuntime?.toolDefinitions({ ...(agentMode === "ask" ? { askMode: true } : {}) }) ?? [];
+    const mcpToolNames = mcpToolDefinitions.map((definition) => definition.name);
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;
     const projectContext = await loadProjectContext();
@@ -876,7 +887,7 @@ export async function runAgentTurn(
     // the tool succeeds, the model must actually receive and inspect its bytes.
     // Offer it only with affirmative capability evidence for the active route.
     const routeToolNames = (routeProvider: ProviderId, routeModel: string): string[] =>
-      availableToolNames().filter((name) => {
+      [...availableToolNames(), ...mcpToolNames].filter((name) => {
         if (name === "image.ocr") return imageOcrEnabled;
         if (name === "image.view") {
           return modelSupportsVision(routeProvider, routeModel);
@@ -925,7 +936,11 @@ export async function runAgentTurn(
       p: ProviderId,
       m: string,
     ): { dialect: ReturnType<typeof resolveToolDialect>; native: boolean } => {
-      const dialect = resolveToolDialect(p, m, config.toolCalling);
+      const dialect = resolveToolDialect(
+        p,
+        m,
+        options.toolCalling ?? config.toolCalling,
+      );
       return { dialect, native: dialect !== "none" };
     };
     let { dialect: toolDialect, native: nativeToolsActive } = resolveNativeTools(
@@ -939,9 +954,10 @@ export async function runAgentTurn(
       routeModel: string = model,
     ): ToolDefinition[] | undefined => {
       if (!native) return undefined;
-      const base = compact
-        ? getCompactToolDefinitions()
-        : getToolDefinitions();
+      const base = [
+        ...(compact ? getCompactToolDefinitions() : getToolDefinitions()),
+        ...mcpToolDefinitions,
+      ];
       const allow = new Set([
         ...routeToolNames(routeProvider, routeModel),
         ...RUNNER_META_TOOL_NAMES,
@@ -1071,6 +1087,11 @@ export async function runAgentTurn(
     const systemSections: string[] = [
       renderRequestEnvironmentContext({ plan: activePlan }),
     ];
+    const mcpContext = mcpRuntime?.promptContext({
+      nativeTools: false,
+      ...(agentMode === "ask" ? { askMode: true } : {}),
+    });
+    if (mcpContext) systemSections.push(mcpContext);
     if (projectContext) {
       systemSections.push(
         `Project context from .clai/context.md:\n${projectContext}`,
@@ -1261,13 +1282,16 @@ export async function runAgentTurn(
               ? "mode"
               : content.includes("OUTCOME")
                 ? "outcome"
-                : content.includes("WORKFLOW") || content.includes("FOCUS")
+                : content.includes("WORKFLOW") ||
+                    content.includes("FOCUS") ||
+                    content.startsWith("WORK PROFILE")
                   ? "focus"
                   : "context",
         content,
         mandatory: content.startsWith(SKILLS_CATALOG_PREFIX)
           ? selectedSkillNames.length > 0
           : content.startsWith("ACTIVE PLAN") ||
+            content.startsWith("MCP TOOL CONTEXT") ||
             content.startsWith("ENGAGEMENT SCOPE") ||
             content.startsWith("REQUEST ENVIRONMENT") ||
             content.startsWith("Project context from .clai/context.md:") ||
@@ -1931,7 +1955,12 @@ export async function runAgentTurn(
     }> {
 
       const scratchDir = scratchDirFor(safeCwd());
-      let call = normalizeToolCall(rawCall);
+      const normalizedCall = normalizeToolCall(rawCall);
+      const canonicalMcpName = mcpRuntime?.canonicalizeToolName(normalizedCall.name);
+      let call =
+        canonicalMcpName && canonicalMcpName !== normalizedCall.name
+          ? { ...normalizedCall, name: canonicalMcpName }
+          : normalizedCall;
 
       const emitVisibleSyntheticReceipt = (
         result: ToolResult,
@@ -2348,7 +2377,8 @@ export async function runAgentTurn(
       }
 
       const scope = await loadScopeForSession(session.sessionId);
-      const decision = classifyToolCall(call, { scope });
+      const decision =
+        mcpRuntime?.classify(call.name) ?? classifyToolCall(call, { scope });
       await auditLog("tool.classified", {
         call,
         decision,
@@ -2380,7 +2410,10 @@ export async function runAgentTurn(
           call.name === "terminal.send" ||
           ((call.name === "shell.exec" || call.name === "shell.start") &&
             !isPlanModeAllowedShellCommand(cmd));
-        const allowed = isPlanModeAllowedTool(call.name) && !shellBlocked;
+        const allowed =
+          (isPlanModeAllowedTool(call.name) ||
+            mcpRuntime?.classify(call.name)?.level === "safe") &&
+          !shellBlocked;
         if (!allowed) {
           const reason =
             `plan mode — ${call.name} is blocked (gather-only). ` +
@@ -2908,7 +2941,10 @@ export async function runAgentTurn(
        * could freeze for minutes after "cancelling stalled tool".
        */
       const runToolWithForcedSettle = (): Promise<ToolResult> => {
-        const work = runToolCall(call, {
+        const work =
+          mcpRuntime?.getTool(call.name) !== undefined
+            ? mcpRuntime.callTool(call.name, call.args, { signal: toolAc.signal })
+            : runToolCall(call, {
           signal: toolAc.signal,
           requestSecret: options.requestSecret ?? stdioSecretRequester,
           onOutput: (chunk) => {
@@ -5840,6 +5876,7 @@ export async function runAgentTurn(
         );
 
         const isParallelSafe = (c: ToolCall): boolean => {
+          if (mcpRuntime?.isParallelSafe(c.name)) return true;
           if (
             c.name === "pentest.recon" ||
             c.name === "net.context" ||

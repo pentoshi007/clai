@@ -20,6 +20,7 @@ const dataEnvKeys = [
   "CLAI_ARTIFACT_DIR",
   "CLAI_JOBS_DIR",
   "CLAI_CONFIG_DIR",
+  "CLAI_SESSION_WORKSPACE_DIR",
 ] as const;
 
 const tmpEnvKeys = ["TMPDIR", "TMP", "TEMP"] as const;
@@ -28,7 +29,10 @@ let dataDir: string;
 let originalEnv: Partial<Record<(typeof dataEnvKeys)[number], string | undefined>>;
 let originalTmp: Partial<Record<(typeof tmpEnvKeys)[number], string | undefined>>;
 
-beforeEach(() => {
+let createCompositionRoot: typeof import("../src/ui-core/bootstrap/composition-root.js")["createCompositionRoot"];
+let createExitEpilogue: typeof import("../src/ui-core/bootstrap/exit-epilogue.js")["createExitEpilogue"];
+
+beforeEach(async () => {
   originalEnv = {};
   for (const key of dataEnvKeys) originalEnv[key] = process.env[key];
   originalTmp = {};
@@ -36,10 +40,17 @@ beforeEach(() => {
   dataDir = mkdtempSync(join(tmpdir(), "clai-exit-epilogue-"));
   for (const key of dataEnvKeys) process.env[key] = dataDir;
   process.env.CLAI_LOG_DIR = join(dataDir, "logs");
+  process.env.CLAI_SESSION_WORKSPACE_DIR = join(dataDir, "clai");
   // Session workspaces live under os.tmpdir(); keep them inside dataDir so this
   // test cleans up after itself instead of piling up in the shared temp root.
   for (const key of tmpEnvKeys) process.env[key] = dataDir;
   vi.resetModules();
+  const [composition, epilogue] = await Promise.all([
+    import("../src/ui-core/bootstrap/composition-root.js"),
+    import("../src/ui-core/bootstrap/exit-epilogue.js"),
+  ]);
+  createCompositionRoot = composition.createCompositionRoot;
+  createExitEpilogue = epilogue.createExitEpilogue;
 });
 
 afterEach(async () => {
@@ -117,12 +128,6 @@ const plain = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, "");
 
 describe("exit epilogue + session resume", () => {
   it("prints the logo, usage table, and a resume command that restores the session", async () => {
-    const { createCompositionRoot } = await import(
-      "../src/ui-core/bootstrap/composition-root.js"
-    );
-    const { createExitEpilogue } = await import(
-      "../src/ui-core/bootstrap/exit-epilogue.js"
-    );
 
     const services = createCompositionRoot({
       agent: scriptedAgent("the answer"),
@@ -216,9 +221,6 @@ describe("exit epilogue + session resume", () => {
   });
 
   it("resolves the newest session in this directory for --continue", async () => {
-    const { createCompositionRoot } = await import(
-      "../src/ui-core/bootstrap/composition-root.js"
-    );
     const { resolveResumeTarget } = await import(
       "../src/ui-core/bootstrap/session-resume.js"
     );
@@ -250,9 +252,6 @@ describe("exit epilogue + session resume", () => {
   });
 
   it("resolves a unique session id prefix and rejects an unknown one", async () => {
-    const { createCompositionRoot } = await import(
-      "../src/ui-core/bootstrap/composition-root.js"
-    );
     const { resolveResumeTarget } = await import(
       "../src/ui-core/bootstrap/session-resume.js"
     );
@@ -283,12 +282,6 @@ describe("exit epilogue + session resume", () => {
   });
 
   it("offers no resume command when history is disabled", async () => {
-    const { createCompositionRoot } = await import(
-      "../src/ui-core/bootstrap/composition-root.js"
-    );
-    const { createExitEpilogue } = await import(
-      "../src/ui-core/bootstrap/exit-epilogue.js"
-    );
 
     const services = createCompositionRoot({
       agent: scriptedAgent("private answer"),
@@ -312,12 +305,6 @@ describe("exit epilogue + session resume", () => {
   });
 
   it("captures the summary before teardown clears the session", async () => {
-    const { createCompositionRoot } = await import(
-      "../src/ui-core/bootstrap/composition-root.js"
-    );
-    const { createExitEpilogue } = await import(
-      "../src/ui-core/bootstrap/exit-epilogue.js"
-    );
 
     const services = createCompositionRoot({
       agent: scriptedAgent("answer"),

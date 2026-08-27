@@ -80,8 +80,9 @@ describe("exit summary", () => {
     const lines = renderExitSummaryLines(input({ title: "Add exit epilogue" }));
     const title = lines.find((line) => line.includes("Add exit epilogue"))!;
     const command = lines.find((line) => line.includes("clai --resume"))!;
-    expect(title).toMatch(/^ {2}[▄█▀]/);
     expect(command).toMatch(/^ {2}[▄█▀]/);
+    expect(title.startsWith("  ")).toBe(true);
+    expect(title).toMatch(/[▄█▀]/);
     expect(lines.indexOf(title)).toBeLessThan(lines.indexOf(command));
   });
 

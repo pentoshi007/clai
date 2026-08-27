@@ -115,10 +115,14 @@ describe("prompt assembly contract", () => {
     expect(p).toMatch(/ISO hour:/);
   });
 
-  it("compact agent prompt remains small and template-free", () => {
+  it("compact agent prompt remains small, template-free, and methodologically complete", () => {
     const p = renderCompactAgentSystemPrompt("shell.exec");
     expect(p.length).toBeLessThan(8_000);
     expect(p).not.toMatch(/\{\{[a-z_]+\}\}/);
+    expect(p).toContain("model the relevant system/contracts/surfaces");
+    expect(p).toContain("tested/untested status");
+    expect(p).toContain("not a canned sequence");
+    expect(p).toContain("reconcile every material criterion");
   });
 
   it("keeps mutable environment facts outside the stable constitution", () => {

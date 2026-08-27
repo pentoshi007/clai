@@ -1,3 +1,4 @@
+import type { McpRuntime } from "../mcp/runtime.js";
 import type {
   ChatMessage,
   ChatImage,
@@ -16,6 +17,7 @@ import {
 } from "../agent/runner.js";
 
 export interface AgentOptions {
+  mcp?: McpRuntime | undefined;
   provider?: ProviderId | undefined;
   model?: string | undefined;
   history?: ChatMessage[] | undefined;

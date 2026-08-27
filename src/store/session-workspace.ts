@@ -83,7 +83,8 @@ export function formatSessionFolderName(
 
 /** Parent of all session workspaces: `{tmpdir}/clai`. */
 export function getSessionWorkspaceParent(): string {
-  return join(tmpdir(), "clai");
+  const override = process.env.CLAI_SESSION_WORKSPACE_DIR?.trim();
+  return override ? resolve(override) : join(tmpdir(), "clai");
 }
 
 export function sessionWorkspaceRoot(folderName: string): string {

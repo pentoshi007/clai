@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { handlePlanTool } from "../src/agent/plan-tool.js";
+import {
+  handlePlanTool,
+  planContextMessage,
+} from "../src/agent/plan-tool.js";
 import { LoopGuard } from "../src/agent/loop-guard.js";
 import { createSessionPolicy } from "../src/agent/session-policy.js";
 import { clearAllPlans } from "../src/store/plan.js";
@@ -33,6 +36,70 @@ describe("plan.create robust arg normalization", () => {
       "Port scan",
       "HTTP fingerprint",
     ]);
+  });
+
+  it("preserves task outcomes, acceptance evidence, dependencies, and resource locks", async () => {
+    const result = await handlePlanTool(
+      {
+        name: "plan.create",
+        args: {
+          goal: "Harden request pipeline",
+          detail: "Trace contracts, implement, and verify regressions",
+          kind: "hardening",
+          tasks: [
+            {
+              id: "map",
+              title: "Map request contracts and failure modes",
+              acceptanceCriteria:
+                "Every touched caller, schema, trust boundary, and material error path is identified",
+              dependencies: [],
+              resourceLocks: ["request-pipeline"],
+            },
+            {
+              id: "implement",
+              title: "Implement the validated hardening changes",
+              successCriteria: [
+                "Required behavior is implemented",
+                "Existing contract invariants are preserved",
+              ],
+              dependencies: ["map"],
+              resourceLocks: ["request-pipeline"],
+            },
+          ],
+        },
+      },
+      createSessionPolicy("plan-acceptance-criteria"),
+      { loopGuard: new LoopGuard(), step: 1 },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.plan?.tasks[0]).toMatchObject({
+      acceptanceCriteria:
+        "Every touched caller, schema, trust boundary, and material error path is identified",
+      dependencies: [],
+      resourceLocks: ["request-pipeline"],
+    });
+    expect(result.plan?.tasks[1]).toMatchObject({
+      acceptanceCriteria:
+        "Required behavior is implemented; Existing contract invariants are preserved",
+      dependencies: ["t1"],
+      resourceLocks: ["request-pipeline"],
+    });
+
+    const context = planContextMessage(result.plan!, false);
+    expect(context).toContain(
+      "acceptance: Every touched caller, schema, trust boundary, and material error path is identified",
+    );
+    expect(context).toContain(
+      "acceptance: Required behavior is implemented; Existing contract invariants are preserved",
+    );
+
+    const approved = planContextMessage(result.plan!, true);
+    expect(approved).toContain("living outcome map rather than an inflexible script");
+    expect(approved).toContain("return the current task to pending");
+    expect(approved).toContain("Capture unrelated or newly required discoveries with task.add");
+    expect(approved).toContain("reconcile every requested acceptance criterion");
+    expect(approved).not.toContain("Do ONLY this task's work");
   });
 
   it("accepts tasks as a newline-separated string", async () => {

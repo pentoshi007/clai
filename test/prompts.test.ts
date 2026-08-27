@@ -10,6 +10,7 @@ import {
   _AGENT_TEMPLATE,
   currentDateTimeContext,
   renderRequestEnvironmentContext,
+  renderPentestMethodologyContext,
 } from "../src/prompts/index.js";
 
 describe("prompt rendering", () => {
@@ -68,6 +69,28 @@ describe("prompt rendering", () => {
     expect(prompt).toContain("summarize the concrete findings");
   });
 
+  it("applies an adaptive professional execution method to every task domain", () => {
+    const prompt = renderAgentSystemPrompt("shell.exec, fs.read, fs.edit");
+    expect(prompt).toContain("Professional execution method — applies to every domain");
+    expect(prompt).toContain("Frame the outcome");
+    expect(prompt).toContain("Model the system");
+    expect(prompt).toContain("Map material coverage");
+    expect(prompt).toContain("Tools and techniques are options, not a ritual sequence");
+    expect(prompt).toContain("Verify independently");
+    expect(prompt).toContain("Reconcile before stopping");
+    expect(prompt).toMatch(/production-grade[\s\S]*evidence-backed saturation/i);
+    expect(prompt).toMatch(/remaining uncertainty[\s\S]*explicitly disclosed/i);
+  });
+
+  it("gives ask mode an evidence-calibrated professional analysis method", () => {
+    const prompt = renderAskSystemPrompt();
+    expect(prompt).toContain("# PROFESSIONAL ANALYSIS");
+    expect(prompt).toContain("decision or question");
+    expect(prompt).toContain("observed fact from inference");
+    expect(prompt).toContain("material dimensions inside the requested boundary");
+    expect(prompt).toContain("decision-ready answer");
+  });
+
   it("formats date/time context with an hour-stable ISO stamp", () => {
     const when = new Date("2026-05-29T12:34:56.000Z");
     const text = currentDateTimeContext(when);
@@ -103,25 +126,34 @@ describe("prompt rendering", () => {
     expect(prompt).toMatch(/append the next phase.*instead of replacing completed work/is);
   });
 
-  it("agentModeDirective requires evidence and reserves tasks for substantial work", () => {
+  it("agentModeDirective requires adaptive evidence-driven execution and proportionate task tracking", () => {
     const d = agentModeDirective();
     expect(d).toMatch(/working memory, not permission gates/i);
-    expect(d).toMatch(/substantial multi-phase work, default to a small task list/i);
-    expect(d).toMatch(/easy-to-medium work[\s\S]*execute directly without tasks/i);
+    expect(d).toMatch(/substantial multi-phase work benefits from coordination/i);
+    expect(d).toMatch(/execute easy-to-medium work directly/i);
     expect(d).toMatch(/entire roadmap\/folder\/program/i);
+    expect(d).toMatch(/FRAME:[\s\S]*MODEL:[\s\S]*COVER:[\s\S]*DECIDE:/i);
+    expect(d).toMatch(/Methods and tools are options, not a fixed sequence/i);
     expect(d).toMatch(/Never mark done on hope/i);
-    expect(d).toMatch(/typecheck|automated checks/i);
-    expect(d).toMatch(/open the next task immediately/i);
+    expect(d).toMatch(/task\.add[\s\S]*preempt[\s\S]*pending/i);
+    expect(d).toMatch(/positive, negative, boundary, integration, and regression paths/i);
+    expect(d).toMatch(/automated checks|runtime\/integration proof/i);
+    expect(d).toMatch(/RECONCILE:[\s\S]*original request/i);
   });
 
-  it("planModeDirective is plan-as-deliverable with user-bounded scope", () => {
+  it("planModeDirective is decision-ready planning with coverage and branch conditions", () => {
     const d = planModeDirective();
     expect(d).toMatch(/NOT agent-mode task execution/i);
     expect(d).toMatch(/plan\.create/i);
     expect(d).toMatch(/Do not implement/i);
-    expect(d).toMatch(/1000%|comprehensive|architecture/i);
-    expect(d).toMatch(/whole-program\/all-phase requests require one plan/i);
+    expect(d).toMatch(/decision-critical unknowns/i);
+    expect(d).toMatch(/coverage map of material surfaces/i);
+    expect(d).toMatch(/whole-program\/all-phase requests/i);
     expect(d).toMatch(/phase-only requests must not expand beyond it/i);
+    expect(d).toMatch(/tasks as checkable outcomes/i);
+    expect(d).toMatch(/not as vague activity labels or hardcoded commands/i);
+    expect(d).toMatch(/acceptanceCriteria/i);
+    expect(d).toMatch(/branch conditions/i);
   });
 
   it("renderRequestEnvironmentContext includes NO PLAN EXISTS when plan is omitted", () => {
@@ -181,5 +213,39 @@ describe("phase 11 — prompt template ↔ markdown drift", () => {
         name === "system.ask.md" ? _ASK_TEMPLATE : _AGENT_TEMPLATE;
       expect(embedded.replace(/\r\n/g, "\n")).toBe(md);
     }
+  });
+});
+
+describe("renderPentestMethodologyContext — dynamic request context", () => {
+  it("renders the full methodology as a standalone request-context block", () => {
+    const full = renderPentestMethodologyContext();
+    expect(full).toContain("# PENTEST METHODOLOGY");
+    expect(full).toContain(
+      "Choose each next action by expected information or access gain",
+    );
+    expect(full).toContain("**Attack-surface ledger:**");
+    expect(full).toContain("candidate dimensions—not a compulsory sequence");
+    expect(full).toContain("REPORTING");
+    expect(full).not.toContain("# CROSS-OS AWARENESS");
+    expect(full).not.toMatch(/\{\{[a-z_]+\}\}/);
+  });
+
+  it("keeps the always-on core loop in the sliced form and drops technique detail", () => {
+    const sliced = renderPentestMethodologyContext({ full: false });
+    const full = renderPentestMethodologyContext({ full: true });
+    expect(sliced).toContain("# PENTEST METHODOLOGY");
+    expect(sliced).toContain(
+      "Continue while a realistic in-scope action can materially improve the result",
+    );
+    expect(sliced).toContain("**Attack-surface ledger:**");
+    expect(sliced).not.toContain("**TECH STACK FINGERPRINTING:**");
+    expect(sliced).not.toContain("candidate dimensions—not a compulsory sequence");
+    expect(sliced.length).toBeLessThan(full.length);
+  });
+
+  it("does not leak into the cached coding constitution", () => {
+    const coding = renderAgentSystemPrompt("shell.exec, fs.read");
+    expect(coding).not.toContain("**Attack-surface ledger:**");
+    expect(coding).not.toContain("# PENTEST METHODOLOGY");
   });
 });

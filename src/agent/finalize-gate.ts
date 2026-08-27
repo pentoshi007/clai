@@ -171,17 +171,6 @@ export function chooseFinalizeRecovery(
   ) {
     return recoveryForFailedProbe();
   }
-  if (
-    input.buildLike &&
-    !input.pentestLike &&
-    !input.pentestSession &&
-    input.sawFailedLocalHttpProbe &&
-    !input.sawLocalHttpProbe &&
-    budgetRemaining(recovery, "failedProbe") &&
-    cleaned.trim().length > 0
-  ) {
-    return recoveryForFailedProbe();
-  }
 
   if (
     (input.pentestLike || input.pentestSession) &&

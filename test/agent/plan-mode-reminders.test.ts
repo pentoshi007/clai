@@ -49,7 +49,7 @@ describe("plan-mode reminders", () => {
     ).toBe(false);
   });
 
-  it("appends a calm note onto tool output without rewriting the result", () => {
+  it("appends a coverage-calibration note without rewriting the result", () => {
     const body = "Tool http.fetch result (exit=0, ok=true):\nstatus 200";
     const { content, reminded } = maybeAppendPlanModeReminder(body, {
       isPlanMode: true,
@@ -63,19 +63,22 @@ describe("plan-mode reminders", () => {
     expect(reminded).toBe(true);
     expect(content.startsWith(body)).toBe(true);
     expect(content).toContain("[plan-mode reminder · step 15]");
-    expect(content).toMatch(/do NOT stop|do not stop/i);
-    expect(content).toMatch(/take as much time/i);
+    expect(content).toMatch(/not a stop order/i);
+    expect(content).toMatch(/decision|uncertainty/i);
+    expect(content).toMatch(/material coverage/i);
     expect(content).toMatch(/plan\.create/);
     expect(content).toMatch(/attack surface|juicy findings/i);
   });
 
-  it("reminder text is informational and anti-rush, not a hard stop", () => {
+  it("reminder text balances depth against diminishing-return research", () => {
     const text = planModeResearchReminder({ step: 25, kindHint: "pentest" });
     expect(text).toMatch(/step 25/);
-    expect(text).toMatch(/only a reminder/i);
-    expect(text).toMatch(/Continue/i);
+    expect(text).toMatch(/calibration note/i);
+    expect(text).toMatch(/unresolved uncertainty/i);
+    expect(text).toMatch(/avoid repeating low-yield work/i);
+    expect(text).toMatch(/unresolved or untested surfaces explicitly/i);
     expect(text.toLowerCase()).not.toMatch(
-      /you must stop|abort now|forbidden|stop researching now/,
+      /you must stop|abort now|forbidden|stop researching now|nothing material is left/,
     );
   });
 

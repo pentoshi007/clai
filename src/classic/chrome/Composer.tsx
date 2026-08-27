@@ -19,6 +19,7 @@ export interface ComposerProps {
   readonly scrollTop?: number | undefined;
   readonly onScrollTop?: ((top: number) => void) | undefined;
   readonly accentSpans?: readonly EditorSpan[] | undefined;
+  readonly selectedMcpServer?: string | undefined;
 }
 
 /**
@@ -26,12 +27,31 @@ export interface ComposerProps {
  * into the rule, flush right — the same placement the OpenTUI composer gives
  * its box title.
  */
-function topBorder(ink: InkTheme, frame: ComposerFrame): string {
+export function composerTopBorder(
+  ink: InkTheme,
+  frame: ComposerFrame,
+  selectedMcpServer?: string,
+): string {
   const glyphs = ink.glyphs;
   const inner = Math.max(0, frame.width - 2);
   const paint = (text: string): string => ink.fg(frame.borderColor, text);
   if (inner === 0) return paint(`${glyphs.boxTopLeft}${glyphs.boxTopRight}`);
-  // Keep at least one rule glyph on each side of the title.
+  const selected = selectedMcpServer
+    ? clipToWidth(` @mcp:${selectedMcpServer} `, Math.max(0, inner - 1), "")
+    : "";
+  if (selected !== "") {
+    const remaining = Math.max(0, inner - layoutWidth(selected));
+    const meta = clipToWidth(frame.meta, Math.max(0, remaining - 2), "");
+    const title = meta === "" ? "" : ` ${meta} `;
+    const rules = glyphs.rule.repeat(Math.max(0, remaining - layoutWidth(title)));
+    return (
+      paint(glyphs.boxTopLeft) +
+      ink.style(selected, { fg: "inputBorder", bold: true }) +
+      paint(rules) +
+      (title === "" ? "" : ink.fg("muted", title)) +
+      paint(glyphs.boxTopRight)
+    );
+  }
   const meta = clipToWidth(frame.meta, Math.max(0, inner - 4), "");
   if (meta === "") {
     return paint(
@@ -79,7 +99,7 @@ export function Composer(props: ComposerProps): ReactNode {
 
   return (
     <Box flexDirection="column" width={frame.width} flexShrink={0}>
-      <Text wrap="truncate">{topBorder(ink, frame)}</Text>
+      <Text wrap="truncate">{composerTopBorder(ink, frame, props.selectedMcpServer)}</Text>
       {rendered.rows.map((row, index) => {
         const clipped =
           (index === 0 && rendered.clippedAbove) ||

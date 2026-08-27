@@ -80,6 +80,8 @@ export interface PlanTask {
   title: string;
   state: TaskState;
   note?: string | undefined;
+  /** Evidence condition that must hold before this task can be considered complete. */
+  acceptanceCriteria?: string | undefined;
   /** Successful task-scoped evidence, persisted with the plan for resume safety. */
   evidence?: TaskEvidence | undefined;
   /** Model-supplied slugs (id/name) that resolve to this task via task.update. */
