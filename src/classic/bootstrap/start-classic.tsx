@@ -10,6 +10,7 @@ import {
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
+import { ERASE_TO_END } from "../../os/screen-sequences.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import {
   applyResumeResolution,
@@ -105,7 +106,8 @@ export async function startClassic(
     services,
     startedAt,
     enabled: capabilities.isTTY,
-    write: (text) => session.write(text),
+    columns: () => process.stdout.columns,
+    write: (text) => session.write(`${ERASE_TO_END}${text}`),
   });
   const pendingResume = options.resume
     ? await resolveResumeTarget(options.resume)

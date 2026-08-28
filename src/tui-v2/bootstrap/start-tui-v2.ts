@@ -7,7 +7,7 @@
  */
 
 import { createElement } from "react";
-import { createCliRenderer } from "@opentui/core";
+import { createCliRenderer, RendererControlState } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { createSystemClipboardPort } from "../../app/adapters/in-memory-clipboard-adapter.js";
 import type { Mode, ProviderId } from "../../types.js";
@@ -16,8 +16,12 @@ import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
 import { readCapabilitiesFromProcess } from "../../ui-core/bootstrap/capabilities.js";
 import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
-import { RendererLifecycle, type RendererHandle } from "../../ui-core/bootstrap/lifecycle.js";
+import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
+import {
+  ERASE_TO_END,
+  RESET_VISIBLE_SCREEN,
+} from "../../os/screen-sequences.js";
 import {
   applyResumeResolution,
   resolveResumeTarget,
@@ -33,6 +37,8 @@ import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
+import { createOpenTuiRendererHandle } from "./renderer-handle.js";
+import { installResizeRepaint } from "./resize-repaint.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -87,13 +93,16 @@ export async function startTuiV2(
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   attachCommandHandlers(services);
+  const geometry = { resized: false };
   const epilogue = createExitEpilogue({
     services,
     startedAt,
     enabled: Boolean(process.stdout.isTTY),
+    columns: () => process.stdout.columns,
     write: (text) => {
       try {
-        process.stdout.write(text);
+        const reset = geometry.resized ? RESET_VISIBLE_SCREEN : ERASE_TO_END;
+        process.stdout.write(`${reset}${text}`);
       } catch {
         /* the terminal went away; nothing to sign off to */
       }
@@ -104,13 +113,8 @@ export async function startTuiV2(
     : undefined;
   const root = createRoot(renderer);
 
-  let resolveDone: () => void = () => {};
-  const done = new Promise<void>((resolve) => {
-    resolveDone = resolve;
-  });
-
-  const handle: RendererHandle = {
-    start() {
+  const { handle, done } = createOpenTuiRendererHandle({
+    mount: () => {
       root.render(
         createElement(
           ServicesProvider,
@@ -118,23 +122,11 @@ export async function startTuiV2(
         ),
       );
     },
-    destroy() {
-      let unmountError: unknown;
-      try {
-        root.unmount();
-      } catch (error) {
-        unmountError = error;
-      }
-      try {
-        renderer.destroy();
-        disarmTerminalRescue();
-      } finally {
-        services.dispose();
-        resolveDone();
-      }
-      if (unmountError !== undefined) throw unmountError;
-    },
-  };
+    unmount: () => root.unmount(),
+    renderer,
+    disarmTerminalRescue,
+    disposeServices: () => services.dispose(),
+  });
 
   // Stray console output would land in cells the renderer never repaints and
   // stick there for the rest of the session. Route it to a log while the TUI
@@ -149,12 +141,24 @@ export async function startTuiV2(
     },
   });
 
+  const disposeResizeRepaint = installResizeRepaint({
+    renderer,
+    write: (text) => void process.stdout.write(text),
+    enabled: Boolean(process.stdout.isTTY),
+    isSuspended: () =>
+      renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
+    onApplied: () => {
+      geometry.resized = true;
+    },
+  });
+
   const lifecycle = new RendererLifecycle({
     handle,
     // Flush chat + visual transcript before the renderer is destroyed so an
     // aborted mid-run session still restores tools/code under /history.
     disposers: [
       () => disposeRuntimeBridge(),
+      disposeResizeRepaint,
       epilogue.capture,
       async () => {
         await services.session.persistNow().catch(() => undefined);

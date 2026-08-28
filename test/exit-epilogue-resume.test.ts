@@ -127,6 +127,54 @@ const capabilities = () =>
 const plain = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, "");
 
 describe("exit epilogue + session resume", () => {
+  it("renders the sign-off card for the live terminal width after a resize, not the launch width", async () => {
+    const services = createCompositionRoot({
+      agent: scriptedAgent("the answer"),
+      provider: "nvidia" as never,
+      model: "test-model",
+      capabilities: capabilities(),
+    });
+    try {
+      expect(services.capabilities.columns).toBe(100);
+
+      const shrunk: string[] = [];
+      createExitEpilogue({
+        services,
+        startedAt: Date.now() - 5_000,
+        columns: () => 62,
+        write: (text) => void shrunk.push(text),
+      }).run();
+
+      const widest = (text: string): number =>
+        Math.max(
+          ...plain(text)
+            .split("\n")
+            .map((line) => line.replace(/\s+$/, "").length),
+        );
+      expect(shrunk).toHaveLength(1);
+      expect(widest(shrunk[0]!)).toBeLessThanOrEqual(62);
+
+      const launch: string[] = [];
+      createExitEpilogue({
+        services,
+        startedAt: Date.now() - 5_000,
+        write: (text) => void launch.push(text),
+      }).run();
+      expect(widest(launch[0]!)).toBeGreaterThan(62);
+
+      const ignoredZero: string[] = [];
+      createExitEpilogue({
+        services,
+        startedAt: Date.now() - 5_000,
+        columns: () => 0,
+        write: (text) => void ignoredZero.push(text),
+      }).run();
+      expect(widest(ignoredZero[0]!)).toBe(widest(launch[0]!));
+    } finally {
+      services.dispose();
+    }
+  });
+
   it("prints the logo, usage table, and a resume command that restores the session", async () => {
 
     const services = createCompositionRoot({

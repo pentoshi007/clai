@@ -85,6 +85,7 @@ interface BunRuntimeLike {
 }
 
 const MODULE_SPECIFIER = "node-pty";
+const BUN_RESIZE_RETRY_MS = 60;
 let loadPromise: Promise<NodePtyModuleLike | undefined> | undefined;
 let loadFailureReason: string | undefined;
 
@@ -333,6 +334,8 @@ class BunPtyTransport extends BasePtyTransport {
   readonly pid: number;
   readonly processGroupId: number | undefined;
   readonly identity: string | undefined;
+  private resizeImmediate: ReturnType<typeof setImmediate> | undefined;
+  private resizeRetry: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly terminal: BunTerminalLike,
@@ -376,6 +379,32 @@ class BunPtyTransport extends BasePtyTransport {
 
   async resize(dimensions: TerminalDimensions): Promise<void> {
     this.terminal.resize(dimensions.columns, dimensions.rows);
+    this.scheduleResizeSignal();
+  }
+
+  private scheduleResizeSignal(): void {
+    if (this.processGroupId === undefined || this.disposed || this.outcome) return;
+    if (this.resizeImmediate === undefined) {
+      this.resizeImmediate = setImmediate(() => {
+        this.resizeImmediate = undefined;
+        this.signalResize();
+      });
+      this.resizeImmediate.unref?.();
+    }
+    if (this.resizeRetry !== undefined) clearTimeout(this.resizeRetry);
+    this.resizeRetry = setTimeout(() => {
+      this.resizeRetry = undefined;
+      this.signalResize();
+    }, BUN_RESIZE_RETRY_MS);
+    this.resizeRetry.unref?.();
+  }
+
+  private signalResize(): void {
+    const processGroupId = this.processGroupId;
+    if (processGroupId === undefined || this.disposed || this.outcome) return;
+    try {
+      process.kill(-processGroupId, "SIGWINCH");
+    } catch {}
   }
 
   pauseOutput(): void {}
@@ -392,6 +421,10 @@ class BunPtyTransport extends BasePtyTransport {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.resizeImmediate !== undefined) clearImmediate(this.resizeImmediate);
+    if (this.resizeRetry !== undefined) clearTimeout(this.resizeRetry);
+    this.resizeImmediate = undefined;
+    this.resizeRetry = undefined;
     this.settleOutputDrain();
     this.outputListeners.clear();
     this.exitListeners.clear();

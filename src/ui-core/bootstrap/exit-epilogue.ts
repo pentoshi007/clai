@@ -13,11 +13,17 @@ export interface ExitEpilogueOptions {
   readonly enabled?: boolean | undefined;
   readonly now?: (() => number) | undefined;
   readonly cwd?: (() => string) | undefined;
+  readonly columns?: (() => number | undefined) | undefined;
 }
 
 export interface ExitEpilogue {
   readonly capture: () => void;
   readonly run: () => void;
+}
+
+function liveColumns(options: ExitEpilogueOptions): number | undefined {
+  const columns = options.columns?.();
+  return typeof columns === "number" && columns > 0 ? columns : undefined;
 }
 
 export function buildExitSummaryInput(
@@ -35,7 +41,7 @@ export function buildExitSummaryInput(
     cwd: (options.cwd ?? safeCwd)(),
     durationMs: Math.max(0, now() - options.startedAt),
     resumable: services.session.canResumeFromHistory(),
-    width: capabilities.columns,
+    width: liveColumns(options) ?? capabilities.columns,
     color: !capabilities.noColor,
     unicode: capabilities.unicode,
   };

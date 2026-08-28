@@ -230,6 +230,8 @@ process.stdin.on("data", chunk => {
       send({type:"switch",sessionId:"switch-close-target",closeCurrent:true});
     } else if (command === "i") {
       status(false);
+    } else if (command === "d") {
+      process.stdout.write("query-size:" + process.stdout.columns + "x" + process.stdout.rows + "\r\n");
     } else if (command === "r") {
       status(false, ${JSON.stringify(rebindId)});
     } else if (command === "q") {
@@ -243,6 +245,11 @@ process.stdin.on("data", chunk => {
     }
   }
 });
+if (process.platform !== "win32") {
+  process.on("SIGWINCH", () => {
+    process.stdout.write("resize:" + process.stdout.columns + "x" + process.stdout.rows + "\r\n");
+  });
+}
 process.stdout.write("command-runtime-ready\r\n");
 `;
 
@@ -401,6 +408,57 @@ async function stopCommandRuntime(runtime: CommandRuntime): Promise<void> {
 }
 
 describe("session runtime host hardening", () => {
+  it("delivers live dimensions and preserves them across terminal reattachment", async () => {
+    if (process.platform === "win32") return;
+    const runtime = await startCommandRuntime();
+    if (!runtime) return;
+    const client = await openTestClient(runtime.metadata, "resize-client");
+    let replacement: Socket | undefined;
+    try {
+      sendFrame(client.control, {
+        type: "resize",
+        columns: 132,
+        rows: 47,
+      });
+      await waitFor(
+        async () => client.output().includes("resize:132x47") ? true : undefined,
+        8_000,
+      );
+
+      client.terminal.destroy();
+      const attached = await channel(
+        runtime.metadata.socketPath,
+        runtime.metadata.token,
+        "client-terminal",
+        client.id,
+      );
+      replacement = attached.socket;
+      let replacementOutput = attached.rest.toString("utf8");
+      replacement.on("error", () => undefined);
+      replacement.on("data", (chunk) => {
+        replacementOutput += chunk.toString("utf8");
+      });
+      replacement.resume();
+      replacement.write("d");
+      await waitFor(async () =>
+        replacementOutput.includes("query-size:") ? true : undefined,
+      );
+      const sizes = [
+        ...replacementOutput.matchAll(/query-size:(\d+x\d+)/g),
+      ];
+      expect(sizes.at(-1)?.[1]).toBe("132x47");
+
+      replacement.write("q");
+      await waitForRuntimeExit(runtime);
+    } finally {
+      replacement?.destroy();
+      client.dispose();
+      if (await readRuntimeMetadata(runtime.sessionId)) {
+        await stopCommandRuntime(runtime);
+      }
+    }
+  }, 18_000);
+
   it("rejects a wrong token and isolates old-terminal input after takeover", async () => {
     const runtime = await startCommandRuntime();
     if (!runtime) return;

@@ -46,7 +46,7 @@ const CLIENT_BACKPRESSURE_BYTES = 1024 * 1024;
 const METADATA_DEBOUNCE_MS = 50;
 const FINAL_OUTPUT_DRAIN_MS = 3_000;
 const FORCE_STOP_MS = 8_000;
-const ATTACH_RESET = Buffer.from("\u001b[?1049h\u001b[2J\u001b[H", "utf8");
+const ATTACH_RESET = Buffer.from("\u001b[?1049h\u001b[H\u001b[J", "utf8");
 
 function tokensEqual(candidate: string, expected: string): boolean {
   if (!/^[a-f0-9]{64}$/i.test(candidate) || !/^[a-f0-9]{64}$/i.test(expected)) {
@@ -415,10 +415,6 @@ export class SessionRuntimeHost {
     });
     socket.once("close", () => this.clientClosed(client, socket));
     socket.resume();
-    void this.resize({
-      columns: this.payload.columns,
-      rows: this.payload.rows,
-    });
   }
 
   private acceptChild(socket: Socket, rest: Buffer): void {

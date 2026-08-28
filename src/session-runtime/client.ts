@@ -30,6 +30,7 @@ import {
   sendFrame,
 } from "./protocol.js";
 import { readRuntimeMetadata } from "./store.js";
+import { ALT_SCREEN_OFF, AltScreenTracker } from "./alt-screen.js";
 import {
   RUNTIME_PROTOCOL_VERSION,
   type RuntimeAckFrame,
@@ -43,7 +44,11 @@ const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 const MIN_IDLE_TIMEOUT_MS = 60_000;
 const MAX_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
 const TERMINAL_RESTORE =
-  "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l\u001b[?1015l\u001b[?2004l\u001b[?25h\u001b[0m\u001b[?1049l";
+  "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l\u001b[?1015l\u001b[?2004l\u001b[?25h\u001b[0m";
+
+export function terminalRestoreSequence(altScreenActive: boolean): string {
+  return altScreenActive ? `${TERMINAL_RESTORE}${ALT_SCREEN_OFF}` : TERMINAL_RESTORE;
+}
 
 interface RuntimeTarget {
   readonly sessionId: string;
@@ -266,8 +271,9 @@ async function switchTarget(sessionId: string): Promise<RuntimeTarget> {
   return { sessionId: resolved.record.id, resumeId: resolved.record.id };
 }
 
-function writeOutput(bytes: Uint8Array): void {
-  process.stdout.write(bytes);
+function writeOutput(tracker: AltScreenTracker, bytes: Uint8Array): boolean {
+  tracker.observe(bytes);
+  return process.stdout.write(bytes);
 }
 
 function waitForTerminalEnd(socket: Socket, timeoutMs = 3_000): Promise<void> {
@@ -306,10 +312,13 @@ function waitForStdoutDrain(timeoutMs = 1_000): Promise<void> {
   });
 }
 
-function restoreTerminal(previousRaw: boolean | undefined): void {
+function restoreTerminal(
+  previousRaw: boolean | undefined,
+  altScreenActive: boolean,
+): void {
   const stdin = process.stdin;
   stdin.setRawMode?.(previousRaw ?? false);
-  process.stdout.write(TERMINAL_RESTORE);
+  process.stdout.write(terminalRestoreSequence(altScreenActive));
 }
 
 async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> {
@@ -332,6 +341,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
   }
   const control = controlConnection.socket;
   const terminal = terminalConnection.socket;
+  const altScreen = new AltScreenTracker();
   let settled = false;
   let exitPending = false;
   let previousRaw: boolean | undefined;
@@ -414,7 +424,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
     });
   };
   const onOutput = (bytes: Buffer): void => {
-    if (!process.stdout.write(bytes)) terminal.pause();
+    if (!writeOutput(altScreen, bytes)) terminal.pause();
   };
   const onStdoutDrain = (): void => {
     terminal.resume();
@@ -445,7 +455,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
   process.on("SIGHUP", onTerminate);
   process.on("SIGTERM", onTerminate);
   if (terminalConnection.first.rest.length > 0) {
-    writeOutput(terminalConnection.first.rest);
+    writeOutput(altScreen, terminalConnection.first.rest);
   }
   terminal.resume();
   sendResize();
@@ -466,7 +476,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
     control.destroy();
     terminal.destroy();
     stdin.pause();
-    restoreTerminal(previousRaw);
+    restoreTerminal(previousRaw, altScreen.isActive);
   }
 }
 
