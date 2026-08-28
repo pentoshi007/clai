@@ -168,6 +168,11 @@ export const slashCommands: SlashCommand[] = [
     description: "control permission level for tool confirmation prompts",
   },
   { command: "/update", description: "check for updates" },
+  {
+    command: "/minimise",
+    description: "detach this terminal while the session keeps running",
+  },
+  { command: "/minimize", description: "alias for /minimise" },
   { command: "/exit", description: "quit" },
   { command: "/quit", description: "alias for /exit" },
   { command: "/help", description: "list commands" },

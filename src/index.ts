@@ -46,6 +46,10 @@ import {
 import type { ResumeTarget } from "./ui-core/bootstrap/session-resume.js";
 import { resumeCommand } from "./ui-core/rendering/exit-summary.js";
 import { warnOnce } from "./ui/warn-once.js";
+import { tryRunDurableInteractive } from "./session-runtime/client.js";
+import { runRuntimeHostFromEnvironment } from "./session-runtime/host.js";
+import { runtimeChildSessionId } from "./session-runtime/launch.js";
+import { listLiveSessionRuntimes } from "./session-runtime/discovery.js";
 
 interface GlobalOptions {
   mode?: Mode | undefined;
@@ -83,6 +87,17 @@ function resolveProvider(value?: string): ProviderId | undefined {
   return value ? assertProvider(value) : undefined;
 }
 
+function interactiveChildArgs(options: GlobalOptions): string[] {
+  const args: string[] = [];
+  if (options.mode) args.push("--mode", options.mode);
+  if (options.provider) args.push("--provider", options.provider);
+  if (options.model) args.push("--model", options.model);
+  if (options.tui) args.push("--tui");
+  if (options.classic) args.push("--classic");
+  if (options.ui) args.push("--ui", options.ui);
+  return args;
+}
+
 async function startInteractive(
   options: GlobalOptions,
   resolved: {
@@ -93,7 +108,20 @@ async function startInteractive(
     resume?: ResumeTarget | undefined;
   },
 ): Promise<void> {
+  const durable = await tryRunDurableInteractive({
+    entryPath: CLAI_ENTRY,
+    childArgs: interactiveChildArgs(options),
+    noHistory: resolved.noHistory,
+    ...(resolved.resume ? { resume: resolved.resume } : {}),
+  });
+  if (durable) return;
+
   const ui = resolveUiChoice(options);
+  const childSessionId = runtimeChildSessionId();
+  const interactiveOptions = {
+    ...resolved,
+    ...(childSessionId ? { sessionId: childSessionId } : {}),
+  };
 
   if (ui === "noninteractive") {
     throw new Error("No prompt supplied; pass a prompt or pipe one on stdin.");
@@ -101,7 +129,7 @@ async function startInteractive(
 
   if (ui === "classic") {
     const { startClassic } = await import("./classic/bootstrap/start-classic.js");
-    await startClassic(resolved);
+    await startClassic(interactiveOptions);
     return;
   }
 
@@ -109,7 +137,7 @@ async function startInteractive(
   if (!gate.ok) {
     warnOnce(`TUI unavailable (${gate.reason}); using classic.`);
     const { startClassic } = await import("./classic/bootstrap/start-classic.js");
-    await startClassic(resolved);
+    await startClassic(interactiveOptions);
     return;
   }
 
@@ -117,18 +145,18 @@ async function startInteractive(
     if (reexecWithBunIfNeeded(CLAI_ENTRY)) return;
     warnOnce(openTuiRuntimeHint());
     const { startClassic } = await import("./classic/bootstrap/start-classic.js");
-    await startClassic(resolved);
+    await startClassic(interactiveOptions);
     return;
   }
 
   try {
     const { startTuiV2 } = await import("./tui-v2/bootstrap/start-tui-v2.js");
-    await startTuiV2(resolved);
+    await startTuiV2(interactiveOptions);
   } catch (error) {
     if (!isOpenTuiFfiError(error)) throw error;
     warnOnce("Failed to start OpenTUI renderer; using classic.");
     const { startClassic } = await import("./classic/bootstrap/start-classic.js");
-    await startClassic(resolved);
+    await startClassic(interactiveOptions);
   }
 }
 
@@ -203,6 +231,7 @@ function printError(error: unknown): void {
 }
 
 async function main(): Promise<void> {
+  if (await runRuntimeHostFromEnvironment()) return;
   const program = new Command();
 
   program
@@ -441,10 +470,34 @@ async function main(): Promise<void> {
         console.log(JSON.stringify(session, null, 2));
         return;
       }
-      const sessions = await listSessionSummaries();
-      for (const session of sessions) {
+      const [sessions, runtimes] = await Promise.all([
+        listSessionSummaries(),
+        listLiveSessionRuntimes().catch(() => []),
+      ]);
+      const runtimeById = new Map(
+        runtimes.map((runtime) => [runtime.sessionId, runtime]),
+      );
+      const savedIds = new Set(sessions.map((session) => session.id));
+      for (const runtime of runtimes.filter(
+        (candidate) => !savedIds.has(candidate.sessionId),
+      )) {
+        const state = runtime.busy
+          ? "agent running"
+          : runtime.attached
+            ? "live, attached"
+            : "live, detached";
         console.log(
-          `${session.updatedAt} ${session.name ?? session.id} (${session.messageCount} messages) ${session.cwd}`,
+          `${runtime.updatedAt} ${runtime.title ?? runtime.sessionId} (${state}) ${runtime.cwd}`,
+        );
+        console.log(`  ${resumeCommand(runtime.sessionId)}`);
+      }
+      for (const session of sessions) {
+        const runtime = runtimeById.get(session.id);
+        const live = runtime
+          ? ` [${runtime.busy ? "agent running" : runtime.attached ? "live, attached" : "live, detached"}]`
+          : "";
+        console.log(
+          `${session.updatedAt} ${session.name ?? session.id} (${session.messageCount} messages)${live} ${session.cwd}`,
         );
         console.log(`  ${resumeCommand(session.id)}`);
       }

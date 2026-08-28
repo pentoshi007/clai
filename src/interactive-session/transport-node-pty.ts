@@ -10,6 +10,7 @@ import {
   LaunchFailure,
   ptyControlBytes,
   type DeliveryResult,
+  type LaunchIdentity,
   type LaunchRequest,
   type LaunchResult,
   type PtyCapability,
@@ -413,17 +414,25 @@ export interface PtyStartOverrides {
   readonly shell?: string | null | undefined;
 }
 
-async function startNodePtyTransport(
-  request: LaunchRequest & { dimensions: TerminalDimensions },
+export interface PtyProcessLaunchRequest {
+  readonly file: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+  readonly env?: NodeJS.ProcessEnv | undefined;
+  readonly dimensions: TerminalDimensions;
+  readonly onLaunchIdentity?: ((identity: LaunchIdentity) => void) | undefined;
+}
+
+async function startNodePtyProcess(
+  request: PtyProcessLaunchRequest,
   module: NodePtyModuleLike,
-  shell: string,
 ): Promise<LaunchResult> {
   let pty: PtyProcessLike | undefined;
   let transport: NodePtyTransport | undefined;
   try {
     pty = module.spawn(
-      shell,
-      process.platform === "win32" ? ["/c", request.command] : ["-c", request.command],
+      request.file,
+      [...request.args],
       {
         cwd: request.cwd,
         env: stringEnv({ ...(request.env ?? process.env), TERM: "xterm-256color" }),
@@ -459,13 +468,13 @@ async function startNodePtyTransport(
   }
 }
 
-async function startBunPtyTransport(
-  request: LaunchRequest & { dimensions: TerminalDimensions },
+async function startBunPtyProcess(
+  request: PtyProcessLaunchRequest,
   runtime: BunRuntimeLike,
-  shell: string,
 ): Promise<LaunchResult> {
   let transport: BunPtyTransport | undefined;
   const pendingData: Uint8Array[] = [];
+  let pendingExit: { exitCode: number; signalCode: number | null } | undefined;
   let terminal: BunTerminalLike | undefined;
   let subprocess: BunSubprocessLike | undefined;
   try {
@@ -476,9 +485,13 @@ async function startBunPtyTransport(
         if (transport) transport.receive(data);
         else pendingData.push(new Uint8Array(data));
       },
+      exit: (_terminal, exitCode, signalCode) => {
+        if (transport) transport.exited(exitCode, signalCode);
+        else pendingExit = { exitCode, signalCode };
+      },
     });
     subprocess = runtime.spawn(
-      [shell, "-c", request.command],
+      [request.file, ...request.args],
       {
         cwd: request.cwd,
         env: stringEnv({ ...(request.env ?? process.env), TERM: "xterm-256color" }),
@@ -494,6 +507,9 @@ async function startBunPtyTransport(
       identity: transport.identity,
     });
     for (const data of pendingData) transport.receive(data);
+    if (pendingExit) {
+      transport.exited(pendingExit.exitCode, pendingExit.signalCode);
+    }
     void subprocess.exited.then(
       (exitCode) => transport?.exited(exitCode, null),
       () => transport?.exited(1, null),
@@ -518,6 +534,25 @@ async function startBunPtyTransport(
   }
 }
 
+export async function startPtyProcess(
+  request: PtyProcessLaunchRequest,
+  overrides: Pick<PtyStartOverrides, "module"> = {},
+): Promise<LaunchResult> {
+  if (overrides.module) {
+    return await startNodePtyProcess(request, overrides.module);
+  }
+  const runtime = bunRuntime();
+  if (runtime) return await startBunPtyProcess(request, runtime);
+  const module = await loadNodePty();
+  if (module) return await startNodePtyProcess(request, module);
+  throw new LaunchFailure(
+    "PTY_UNAVAILABLE",
+    loadFailureReason ?? "PTY capability is unavailable on this target.",
+    false,
+    false,
+  );
+}
+
 export async function startPtyTransport(
   request: LaunchRequest & { dimensions: TerminalDimensions },
   overrides: PtyStartOverrides = {},
@@ -531,17 +566,20 @@ export async function startPtyTransport(
       false,
     );
   }
-  if (overrides.module) {
-    return await startNodePtyTransport(request, overrides.module, shell);
-  }
-  const runtime = bunRuntime();
-  if (runtime) return await startBunPtyTransport(request, runtime, shell);
-  const module = await loadNodePty();
-  if (module) return await startNodePtyTransport(request, module, shell);
-  throw new LaunchFailure(
-    "PTY_UNAVAILABLE",
-    loadFailureReason ?? "PTY capability is unavailable on this target.",
-    false,
-    false,
+  return await startPtyProcess(
+    {
+      file: shell,
+      args:
+        process.platform === "win32"
+          ? ["/c", request.command]
+          : ["-c", request.command],
+      cwd: request.cwd,
+      dimensions: request.dimensions,
+      ...(request.env ? { env: request.env } : {}),
+      ...(request.onLaunchIdentity
+        ? { onLaunchIdentity: request.onLaunchIdentity }
+        : {}),
+    },
+    overrides.module ? { module: overrides.module } : {},
   );
 }

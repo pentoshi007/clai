@@ -2,8 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { asPlanId, asSessionId, asToolCallId } from "../../../src/app/events/app-event.js";
 import { EventSequencer } from "../../../src/app/events/sequencer.js";
 import { getConfig, updateConfig } from "../../../src/store/config.js";
+import { purgeSession, upsertSession } from "../../../src/store/history.js";
 import * as keys from "../../../src/store/keys.js";
-import { createCompositionRoot, type AppServices } from "../../../src/ui-core/bootstrap/composition-root.js";
+import {
+  createCompositionRoot,
+  type AppServices,
+  type CompositionOptions,
+} from "../../../src/ui-core/bootstrap/composition-root.js";
 import { attachCommandHandlers } from "../../../src/ui-core/commands/command-handlers.js";
 import { detectCapabilities } from "../../../src/ui-core/bootstrap/capabilities.js";
 import type { PersistencePort } from "../../../src/app/ports/persistence-port.js";
@@ -19,7 +24,7 @@ function fakePersistence(): PersistencePort {
   };
 }
 
-function buildServices(): AppServices {
+function buildServices(overrides: CompositionOptions = {}): AppServices {
   const services = createCompositionRoot({
     persistence: fakePersistence(),
     capabilities: detectCapabilities({
@@ -29,6 +34,7 @@ function buildServices(): AppServices {
       columns: 120,
       rows: 40,
     }),
+    ...overrides,
   });
   attachCommandHandlers(services);
   return services;
@@ -182,6 +188,35 @@ describe("command handlers (V2-072..075)", () => {
       services.overlay.selectPicker("__current__");
     }
     expect(services.overlay.getState().kind).toBe("none");
+  });
+
+  it("routes a live history switch through the durable client without replacing current state", async () => {
+    const targetId = `tui-switch-target-${Date.now()}`;
+    await upsertSession(targetId, [
+      { role: "user", content: "target prompt" },
+      { role: "assistant", content: "target answer" },
+    ]);
+    const requestSessionSwitch = vi.fn(() => true);
+    const services = buildServices({ requestSessionSwitch });
+    services.session.loadHistory([{ role: "user", content: "current work" }]);
+    const currentId = services.session.sessionId;
+    const currentState = services.session.getState();
+    const state = vi
+      .spyOn(services.session, "getState")
+      .mockImplementation(() => ({ ...currentState, running: true }));
+    try {
+      await services.commands.dispatch({ name: "history", args: "" });
+      await waitUntil(() => services.overlay.getState().kind === "picker");
+      services.overlay.selectPicker(targetId);
+      await vi.waitFor(() =>
+        expect(requestSessionSwitch).toHaveBeenCalledWith(targetId, false),
+      );
+      expect(services.session.sessionId).toBe(currentId);
+    } finally {
+      state.mockRestore();
+      services.dispose();
+      await purgeSession(targetId);
+    }
   });
 
   it("bare /plan enters plan mode with an existing plan; /plan view opens its pager", async () => {

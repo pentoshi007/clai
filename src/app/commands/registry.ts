@@ -12,6 +12,7 @@ const ALIAS_GROUPS: Record<string, readonly string[]> = {
   search: ["search-provider"],
   effort: ["reasoning"],
   think: ["thinking"],
+  minimise: ["minimize"],
   exit: ["quit"],
 };
 

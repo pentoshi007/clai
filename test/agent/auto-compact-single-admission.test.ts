@@ -223,4 +223,70 @@ describe("automatic compaction single-admission policy", () => {
       ),
     ).toBe(true);
   });
+
+  it("retains the active history and continues after an opaque compaction rejection", async () => {
+    const generic = Object.assign(
+      new Error(
+        "Bynara stream error: The model rejected this request. It may not support the input you sent (e.g. images on a text-only model) or a parameter is invalid.",
+      ),
+      { status: 400 },
+    );
+    let compactionDispatches = 0;
+    let turnDispatches = 0;
+    stream.mockImplementation(
+      (
+        req: {
+          purpose?: string;
+          messages?: Array<{ role: string; content: string }>;
+        },
+        onToken: (t: string) => void,
+      ) => {
+        if (req.purpose === "compaction") {
+          compactionDispatches += 1;
+          return Promise.reject(generic);
+        }
+        turnDispatches += 1;
+        onToken("continued answer");
+        return Promise.resolve({
+          text: "continued answer",
+          provider: "nvidia",
+          model: "test-model",
+          usage: {
+            promptTokens: 190_000,
+            completionTokens: 12,
+            totalTokens: 190_012,
+            exact: true,
+          },
+        });
+      },
+    );
+
+    const history = smallHistory();
+    history.splice(1, 1, {
+      role: "user",
+      content: "x ".repeat(330_000),
+    });
+    const original = structuredClone(history);
+    const events: AgentEvent[] = [];
+    const result = await runAgent("continue", {
+      session: makeSession("session-auto-single-admission"),
+      provider: "nvidia",
+      model: "test-model",
+      history,
+      maxSteps: 1,
+      contextLimitTokens: 300_000,
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(result).toContain("continued answer");
+    const compactionStarts = events.filter(
+      (event) => event.type === "compaction-start",
+    ).length;
+    expect(compactionStarts).toBeGreaterThan(0);
+    expect(compactionDispatches).toBe(compactionStarts * 2);
+    expect(turnDispatches).toBeGreaterThan(0);
+    expect(events.some((event) => event.type === "compaction-failed")).toBe(true);
+    expect(events.some((event) => event.type === "turn-end")).toBe(true);
+    expect(history).toEqual(original);
+  });
 });

@@ -88,6 +88,8 @@ export interface CompositionOptions {
   readonly pagerExport?: PagerExportPort | undefined;
   /** Signals the renderer to tear down and exit (Ctrl+D / second Ctrl+C). */
   readonly requestExit?: (() => void) | undefined;
+  readonly requestMinimise?: (() => boolean) | undefined;
+  readonly requestSessionSwitch?: ((sessionId: string, closeCurrent: boolean) => boolean) | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly mode?: Mode | undefined;
@@ -118,6 +120,8 @@ export interface AppServices {
   readonly cancel: CancelCoordinator;
   readonly pagerExport: PagerExportPort;
   readonly requestExit: () => void;
+  readonly requestMinimise: () => boolean;
+  readonly requestSessionSwitch: (sessionId: string, closeCurrent: boolean) => boolean;
   readonly capabilities: TerminalCapabilityReport;
   /** Bounded raw events when captureEvents is explicitly enabled. */
   readonly recordedEvents: readonly AnyAppEvent[];
@@ -302,6 +306,9 @@ export function createCompositionRoot(
     cancel,
     pagerExport,
     requestExit: options.requestExit ?? (() => {}),
+    requestMinimise: options.requestMinimise ?? (() => false),
+    requestSessionSwitch:
+      options.requestSessionSwitch ?? (() => false),
     capabilities,
     recordedEvents: recorded,
     dispose() {

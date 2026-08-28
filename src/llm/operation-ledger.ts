@@ -172,8 +172,13 @@ export class OperationLedger {
    * still records the budget as the terminal reason so telemetry is not lost.
    */
   settle(outcome: OperationTerminalOutcome): void {
-    this.terminal ??=
+    const terminal =
       outcome === "failed" && this.refusals > 0 ? "budget-exceeded" : outcome;
+    if (terminal === "completed" && this.terminal === "failed") {
+      this.terminal = "completed";
+      return;
+    }
+    this.terminal ??= terminal;
   }
 
   snapshot(): OperationUsageSnapshot {

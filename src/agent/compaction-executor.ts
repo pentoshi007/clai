@@ -41,6 +41,168 @@ const COMPACTION_ERROR_RETRY_DELAY_MS = 1_500;
  */
 const REPLAY_PLAN_SLACK_TOKENS = 4_096;
 
+const COMPACTION_THINKING = {
+  enabled: false,
+  effort: "low" as const,
+};
+
+function cloneTextOnlyMessage(message: ChatMessage): ChatMessage {
+  const clone = structuredClone(message);
+  delete clone.images;
+  return clone;
+}
+
+function cloneCompatibilityMessage(message: ChatMessage): ChatMessage {
+  const clone = cloneTextOnlyMessage(message);
+  delete clone.reasoningBlock;
+  delete clone.reasoningArtifacts;
+  return clone;
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object" || !("status" in error)) {
+    return undefined;
+  }
+  const status = Number((error as { status?: unknown }).status);
+  return Number.isFinite(status) ? status : undefined;
+}
+
+function errorText(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const body =
+    error && typeof error === "object" && "body" in error
+      ? String((error as { body?: unknown }).body ?? "")
+      : "";
+  return `${message}\n${body}`.trim();
+}
+
+function isRequestShapeRejection(error: unknown, signal?: AbortSignal): boolean {
+  if (streamAlreadyEmitted(error) || isAbortError(error, signal)) return false;
+  const status = errorStatus(error);
+  if (status !== 400 && status !== 422) return false;
+  const text = errorText(error);
+  return !/context length|maximum context|context window|prompt too long|too many tokens|model (?:is )?not found|unknown model|content policy|safety policy|moderation|unauthori[sz]ed|api key/i.test(
+    text,
+  );
+}
+
+const REJECTABLE_WIRE_FIELDS = [
+  "chat_template_kwargs",
+  "enable_thinking",
+  "reasoning_effort",
+  "reasoning_budget",
+  "reasoning_content",
+  "parallel_tool_calls",
+  "tool_choice",
+  "stream_options",
+  "max_completion_tokens",
+  "max_tokens",
+  "temperature",
+  "top_p",
+  "image_url",
+  "images",
+  "tools",
+  "thinking",
+  "reasoning",
+] as const;
+
+function rejectedWireField(error: unknown): string | undefined {
+  const text = errorText(error)
+    .toLowerCase()
+    .replace(
+      /\(e\.g\.\s*images? on a text-only model\)/g,
+      "",
+    );
+  const rejection =
+    "not support|unsupported|unknown|unrecognized|not allowed|does not accept|extra inputs are not permitted|invalid(?: request)?(?: argument| parameter| field| value)?";
+  for (const field of REJECTABLE_WIRE_FIELDS) {
+    const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (
+      new RegExp(`(?:${escaped}).{0,80}(?:${rejection})`, "i").test(text) ||
+      new RegExp(`(?:${rejection}).{0,80}(?:${escaped})`, "i").test(text)
+    ) {
+      return field;
+    }
+  }
+  return undefined;
+}
+
+interface CompatibilityRequest {
+  readonly request: CompletionRequest;
+  readonly removed: readonly string[];
+}
+
+function compactionCompatibilityRequest(
+  request: CompletionRequest,
+): CompatibilityRequest | undefined {
+  const removed: string[] = [];
+  if (request.thinking !== undefined || request.forceReasoningReplay) {
+    removed.push("reasoning controls");
+  }
+  if (
+    request.tools?.length ||
+    request.toolChoice !== undefined ||
+    request.parallelToolCalls !== undefined
+  ) {
+    removed.push("tool controls");
+  }
+  let removedArtifacts = false;
+  const messages = request.messages.map((message) => {
+    if (message.reasoningBlock || message.reasoningArtifacts?.length) {
+      removedArtifacts = true;
+    }
+    return cloneCompatibilityMessage(message);
+  });
+  if (removedArtifacts) removed.push("reasoning replay artifacts");
+  if (removed.length === 0) return undefined;
+
+  const {
+    thinking: _thinking,
+    forceReasoningReplay: _forceReasoningReplay,
+    tools: _tools,
+    toolChoice: _toolChoice,
+    parallelToolCalls: _parallelToolCalls,
+    ...rest
+  } = request;
+  return {
+    request: {
+      ...rest,
+      messages,
+    },
+    removed,
+  };
+}
+
+function requestRejectionError(input: {
+  readonly error: unknown;
+  readonly retried: boolean;
+  readonly removed?: readonly string[] | undefined;
+}): Error {
+  const field = rejectedWireField(input.error);
+  const upstream = errorText(input.error).replace(/\s+/g, " ").trim();
+  const cappedUpstream =
+    upstream.length > 600 ? `${upstream.slice(0, 600)}…` : upstream;
+  const retry = input.retried
+    ? ` after one compatibility retry${input.removed?.length ? ` without ${input.removed.join(", ")}` : ""}`
+    : "";
+  const diagnosis = field
+    ? `The provider identified \`${field}\` as the rejected field.`
+    : "No image payload was sent, and the provider did not identify which request field was invalid; any image example in its generic message is not evidence that this request contained an image.";
+  const wrapped = new Error(
+    `compaction failed: the provider rejected the text-only summary request${retry}. ${diagnosis} The original context was retained.${cappedUpstream ? ` Provider response: ${cappedUpstream}` : ""}`,
+    { cause: input.error },
+  );
+  const status = errorStatus(input.error);
+  if (status !== undefined) {
+    Object.defineProperty(wrapped, "status", {
+      configurable: true,
+      enumerable: true,
+      value: status,
+    });
+  }
+  return wrapped;
+}
+
 /**
  * A compaction failure worth one more admission. Retryable by default: the
  * only failures excluded are ones a retry cannot fix — aborts, partial streams
@@ -124,6 +286,7 @@ function comparableMessage(message: ChatMessage): string {
 function missingHistoryTail(
   requestMessages: readonly ChatMessage[],
   history: readonly ChatMessage[],
+  textOnly = true,
 ): ChatMessage[] {
   let requestIndex = 0;
   let matchedHistory = 0;
@@ -140,15 +303,17 @@ function missingHistoryTail(
     requestIndex = found + 1;
     matchedHistory += 1;
   }
-  return history.slice(matchedHistory).map((message) => structuredClone(message));
+  return history
+    .slice(matchedHistory)
+    .map((message) =>
+      textOnly ? cloneTextOnlyMessage(message) : structuredClone(message),
+    );
 }
 
 /**
- * The cache-preserving compaction request: the exact messages of the last
- * successful turn request, any history messages appended since, then the
- * compaction instruction as the final user turn. The previous prompt is a
- * strict prefix of this request, so APC providers serve it entirely from
- * cache and only the tail + instruction bill as fresh input.
+ * Cache-preserving compaction history: the last successful request's text and
+ * protocol timeline, any appended history, then the compaction instruction.
+ * Binary image payloads are deliberately omitted from this text operation.
  */
 export function buildCompactionReplayMessages(
   baseRequest: SuccessfulRequestSnapshot,
@@ -156,7 +321,7 @@ export function buildCompactionReplayMessages(
   userPrompt: string,
 ): ChatMessage[] {
   return [
-    ...baseRequest.messages.map((message) => structuredClone(message)),
+    ...baseRequest.messages.map(cloneTextOnlyMessage),
     ...missingHistoryTail(baseRequest.messages, history),
     { role: "user" as const, content: userPrompt },
   ];
@@ -203,12 +368,13 @@ export function planCompactionReplay(input: {
   }
   const continuationMessages: ChatMessage[] = [
     ...baseRequest.messages.map((message) => structuredClone(message)),
-    ...tail,
+    ...missingHistoryTail(baseRequest.messages, input.history, false),
   ];
-  const messages: ChatMessage[] = [
-    ...continuationMessages,
-    { role: "user" as const, content: input.prompt },
-  ];
+  const messages = buildCompactionReplayMessages(
+    baseRequest,
+    input.history,
+    input.prompt,
+  );
   const account = (
     candidateMessages: readonly ChatMessage[],
     compactionRequest: boolean,
@@ -260,7 +426,7 @@ export async function executeCompactionSummary(
     }
     return execution.sourceMessages
       ? [
-          ...execution.sourceMessages,
+          ...execution.sourceMessages.map(cloneTextOnlyMessage),
           { role: "user" as const, content: userPrompt },
         ]
       : [
@@ -296,16 +462,13 @@ export async function executeCompactionSummary(
         }
       : {
           temperature: 0.1,
-          // Disable reasoning for the compression pass. Use "low" (not "none"):
-          // for openai-style gateways (TokenRouter etc.) `effort:"none"` maps to
-          // the wire value `reasoning_effort:"none"`, which many models reject
-          // ("reasoning option not supported"). "low" with enabled:false maps to
-          // no reasoning knob on those gateways while still disabling default
-          // thinking on deepseek-style models via their own mapping.
-          thinking: { enabled: false, effort: "low" as const },
+          thinking: COMPACTION_THINKING,
           ...(execution.allowModelFallback ? { allowModelFallback: true } : {}),
           ...(execution.tools?.length
-            ? { tools: execution.tools, toolChoice: "none" as const }
+            ? {
+                tools: execution.tools.map((tool) => structuredClone(tool)),
+                toolChoice: "none" as const,
+              }
             : {}),
         }),
     ...(execution.signal ? { signal: execution.signal } : {}),
@@ -343,9 +506,6 @@ export async function executeCompactionSummary(
     attemptRequest: CompletionRequest,
     replace = false,
   ) => {
-    // A pinned single dispatch is what makes the one-admission contract real:
-    // without it the router can still rotate keys, fall back to another
-    // provider, or retry a capability downgrade, each resending this prompt.
     const routerOptions = {
       maxRetries: 0,
       singleDispatch: true,
@@ -393,9 +553,7 @@ export async function executeCompactionSummary(
     });
   };
 
-  // One automatic retry after a transient failure: the replayed prefix is
-  // cache-hot, so the second admission only re-bills the small fresh tail.
-  const runAttempt = async (
+  const runTransientAttempt = async (
     attemptRequest: CompletionRequest,
     replace = false,
   ) => {
@@ -410,6 +568,33 @@ export async function executeCompactionSummary(
       }
       await sleepBeforeRetry();
       return await runProviderAttempt(attemptRequest, replace);
+    }
+  };
+
+  const runAttempt = async (
+    attemptRequest: CompletionRequest,
+    replace = false,
+  ) => {
+    try {
+      return await runTransientAttempt(attemptRequest, replace);
+    } catch (error) {
+      if (!isRequestShapeRejection(error, execution.signal)) throw error;
+      const compatibility = compactionCompatibilityRequest(attemptRequest);
+      if (!compatibility) {
+        throw requestRejectionError({ error, retried: false });
+      }
+      try {
+        return await runTransientAttempt(compatibility.request);
+      } catch (retryError) {
+        if (!isRequestShapeRejection(retryError, execution.signal)) {
+          throw retryError;
+        }
+        throw requestRejectionError({
+          error: retryError,
+          retried: true,
+          removed: compatibility.removed,
+        });
+      }
     }
   };
 

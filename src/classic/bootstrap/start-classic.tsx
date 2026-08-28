@@ -27,12 +27,15 @@ import { createOsc52Renderer } from "./osc52-renderer.js";
 import { createClassicRenderer } from "./renderer-handle.js";
 import { createRendererSuspendPort, type InkMountControl } from "./suspend-port.js";
 import { createTerminalSession } from "./terminal-session.js";
+import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
+import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 
 export interface StartClassicOptions {
   readonly mode?: Mode | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly noHistory?: boolean | undefined;
+  readonly sessionId?: string | undefined;
   readonly resume?: ResumeTarget | undefined;
 }
 
@@ -46,6 +49,9 @@ export async function startClassic(
   const servicesRef: { current: AppServices | undefined } = { current: undefined };
   const wiringRef: { current: ClassicAppWiring | undefined } = { current: undefined };
   const lifecycleRef: { current: RendererLifecycle | undefined } = { current: undefined };
+  const runtimeBridge = createRuntimeChildBridge();
+  if (runtimeBridge) await runtimeBridge.connect();
+  let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   let instance: Instance | undefined;
 
   const control: InkMountControl = {
@@ -80,7 +86,11 @@ export async function startClassic(
     model: options.model,
     mode: options.mode,
     noHistory: options.noHistory,
+    sessionId: options.sessionId,
     capabilities,
+    requestMinimise: () => runtimeBridge?.minimise() ?? false,
+    requestSessionSwitch: (sessionId, closeCurrent) =>
+      runtimeBridge?.switchSession(sessionId, closeCurrent) ?? false,
     clipboard: createOsc52ClipboardPort({
       renderer: createOsc52Renderer({ session, supported: capabilities.osc52 }),
       fallback: createSystemClipboardPort(),
@@ -129,6 +139,7 @@ export async function startClassic(
   const lifecycle = new RendererLifecycle({
     handle,
     disposers: [
+      () => disposeRuntimeBridge(),
       epilogue.capture,
       async () => {
         await services.session.persistNow().catch(() => undefined);
@@ -175,6 +186,13 @@ export async function startClassic(
     },
   });
   lifecycleRef.current = lifecycle;
+  if (runtimeBridge) {
+    disposeRuntimeBridge = bindRuntimeChildBridge(
+      runtimeBridge,
+      services,
+      () => void lifecycle.shutdownAndExit(0),
+    );
+  }
 
   await lifecycle.start();
   await applyResumeResolution(services, pendingResume);

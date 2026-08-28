@@ -31,12 +31,15 @@ import { createPagerExportPort } from "./pager-export.js";
 import { patchOpenTuiTextContent } from "./patch-opentui-text.js";
 import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
+import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
+import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly noHistory?: boolean | undefined;
+  readonly sessionId?: string | undefined;
   readonly resume?: ResumeTarget | undefined;
 }
 
@@ -62,12 +65,19 @@ export async function startTuiV2(
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
     current: undefined,
   };
+  const runtimeBridge = createRuntimeChildBridge();
+  if (runtimeBridge) await runtimeBridge.connect();
+  let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   const services = createCompositionRoot({
     provider: options.provider,
     model: options.model,
     mode: options.mode,
     noHistory: options.noHistory,
+    sessionId: options.sessionId,
     capabilities,
+    requestMinimise: () => runtimeBridge?.minimise() ?? false,
+    requestSessionSwitch: (sessionId, closeCurrent) =>
+      runtimeBridge?.switchSession(sessionId, closeCurrent) ?? false,
     clipboard: createOsc52ClipboardPort({
       renderer,
       fallback: fallbackClipboard,
@@ -144,6 +154,7 @@ export async function startTuiV2(
     // Flush chat + visual transcript before the renderer is destroyed so an
     // aborted mid-run session still restores tools/code under /history.
     disposers: [
+      () => disposeRuntimeBridge(),
       epilogue.capture,
       async () => {
         await services.session.persistNow().catch(() => undefined);
@@ -196,6 +207,13 @@ export async function startTuiV2(
     },
   });
   lifecycleRef.current = lifecycle;
+  if (runtimeBridge) {
+    disposeRuntimeBridge = bindRuntimeChildBridge(
+      runtimeBridge,
+      services,
+      () => void lifecycle.shutdownAndExit(0),
+    );
+  }
 
   await lifecycle.start();
   await applyResumeResolution(services, pendingResume);

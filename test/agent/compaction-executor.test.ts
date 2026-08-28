@@ -52,6 +52,10 @@ function completion(text: string, finishReason = "stop") {
   };
 }
 
+function badRequest(message: string, body = message) {
+  return Object.assign(new Error(message), { status: 400, body });
+}
+
 beforeEach(() => {
   stream.mockReset();
   complete.mockReset();
@@ -188,6 +192,127 @@ describe("shared compaction executor", () => {
       content: "summarize this history",
     });
   });
+
+  it("keeps text compaction free of image payloads", async () => {
+    const sourceMessages = [
+      {
+        role: "user" as const,
+        content: "an attached screenshot was discussed",
+        images: [
+          {
+            mediaType: "image/png",
+            dataBase64: "c2VjcmV0LWltYWdlLWJ5dGVz",
+            path: "/tmp/screenshot.png",
+          },
+        ],
+      },
+      { role: "assistant" as const, content: "the screenshot showed an error" },
+    ];
+    const original = structuredClone(sourceMessages);
+    complete.mockResolvedValueOnce(completion("## Work\nDone.\n## Remaining\nMore."));
+
+    await executeCompactionSummary(
+      baseExecution({ sourceMessages, maxTokens: 12_288 }),
+    );
+
+    const sent = complete.mock.calls[0]![0] as {
+      messages: Array<{ images?: unknown[] }>;
+    };
+    expect(sent.messages.every((message) => message.images === undefined)).toBe(true);
+    expect(sourceMessages).toEqual(original);
+  });
+
+  it("changes the rejected request shape once for an opaque Bynara 400", async () => {
+    const generic =
+      "The model rejected this request. It may not support the input you sent (e.g. images on a text-only model) or a parameter is invalid.";
+    complete
+      .mockRejectedValueOnce(badRequest(`Bynara stream error: ${generic}`))
+      .mockResolvedValueOnce(completion("## Work\nRecovered.\n## Remaining\nContinue."));
+
+    const visible = await executeCompactionSummary(
+      baseExecution({
+        maxTokens: 12_288,
+        sourceMessages: [
+          {
+            role: "assistant",
+            content: "prior answer",
+            reasoningBlock: { text: "private reasoning" },
+          },
+          {
+            role: "user",
+            content: "look at this image",
+            images: [{ mediaType: "image/png", dataBase64: "aW1hZ2U=" }],
+          },
+        ],
+        tools: [
+          {
+            name: "fs.read",
+            wireName: "fs_read",
+            description: "read a file",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+      }),
+    );
+
+    expect(visible).toContain("Recovered.");
+    expect(complete).toHaveBeenCalledTimes(2);
+    const first = complete.mock.calls[0]![0] as Record<string, any>;
+    const second = complete.mock.calls[1]![0] as Record<string, any>;
+    expect(first.messages.every((message: any) => message.images === undefined)).toBe(true);
+    expect(first).toMatchObject({
+      maxTokens: 12_288,
+      thinking: { enabled: false, effort: "low" },
+      toolChoice: "none",
+    });
+    expect(first.tools).toHaveLength(1);
+    expect(second.messages.every((message: any) =>
+      message.images === undefined &&
+      message.reasoningBlock === undefined &&
+      message.reasoningArtifacts === undefined,
+    )).toBe(true);
+    expect(second.maxTokens).toBe(12_288);
+    expect(second.thinking).toBeUndefined();
+    expect(second.tools).toBeUndefined();
+    expect(second.toolChoice).toBeUndefined();
+    expect(second.temperature).toBe(0.1);
+    expect(second).not.toEqual(first);
+  });
+
+  it("reports opaque rejection without blaming images and allows a later compaction", async () => {
+    const generic =
+      "The model rejected this request. It may not support the input you sent (e.g. images on a text-only model) or a parameter is invalid.";
+    complete.mockRejectedValue(badRequest(`Bynara stream error: ${generic}`));
+
+    await expect(
+      executeCompactionSummary(baseExecution({ maxTokens: 12_288 })),
+    ).rejects.toThrow(
+      /No image payload was sent.*image example.*not evidence/i,
+    );
+    expect(complete).toHaveBeenCalledTimes(2);
+
+    complete.mockReset();
+    complete.mockResolvedValueOnce(
+      completion("## Work\nRecovered later.\n## Remaining\nContinue."),
+    );
+    await expect(
+      executeCompactionSummary(baseExecution({ maxTokens: 12_288 })),
+    ).resolves.toContain("Recovered later.");
+  });
+
+  it("names an explicitly rejected field after the compatibility retry", async () => {
+    complete
+      .mockRejectedValueOnce(badRequest("provider rejected the request body"))
+      .mockRejectedValueOnce(
+        badRequest(
+          "Extra inputs are not permitted: max_tokens is invalid",
+        ),
+      );
+
+    await expect(
+      executeCompactionSummary(baseExecution({ maxTokens: 12_288 })),
+    ).rejects.toThrow(/identified `max_tokens` as the rejected field/i);
+  });
 });
 
 describe("cache-preserving snapshot replay", () => {
@@ -216,7 +341,7 @@ describe("cache-preserving snapshot replay", () => {
     ],
   };
 
-  it("resends the captured request verbatim with only the tail and instruction appended", async () => {
+  it("replays the captured text timeline with cache-identical controls", async () => {
     complete.mockResolvedValueOnce(completion("## Work\nDone.\n## Remaining\nMore."));
 
     await executeCompactionSummary(
@@ -252,8 +377,6 @@ describe("cache-preserving snapshot replay", () => {
       role: "user",
       content: "summarize this history",
     });
-    // Sampling, reasoning, and tools mirror the captured request — nothing in
-    // the prefix identity changes.
     expect(sent.provider).toBe("nvidia");
     expect(sent.model).toBe("test-model");
     expect(sent.temperature).toBe(0.6);
@@ -344,7 +467,6 @@ describe("transient-error retry", () => {
   });
 
   it.each([
-    ["400 bad request", Object.assign(new Error("bad request"), { status: 400 })],
     ["401 auth failure", Object.assign(new Error("auth failed"), { status: 401 })],
     ["403 forbidden", Object.assign(new Error("forbidden"), { status: 403 })],
   ])("does not retry %s", async (_label, failure) => {

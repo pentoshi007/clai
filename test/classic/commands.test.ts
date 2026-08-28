@@ -6,6 +6,7 @@ import { slashCommands } from "../../src/app/commands/catalog.js";
 import { normalizeCommandName } from "../../src/app/commands/command.js";
 import { buildDefaultCommandRegistry } from "../../src/app/commands/registry.js";
 import { getConfig, updateConfig } from "../../src/store/config.js";
+import { purgeSession, upsertSession } from "../../src/store/history.js";
 import type { AppServices } from "../../src/ui-core/bootstrap/composition-root.js";
 import { createHarness, type Harness, type HarnessOptions } from "./app/harness.js";
 
@@ -232,6 +233,32 @@ describe("classic command parity (W12)", () => {
     }
   });
 
+  it("routes a history switch through the durable client while current work is running", async () => {
+    const targetId = `switch-target-${Date.now()}`;
+    await upsertSession(targetId, [
+      { role: "user", content: "target prompt" },
+      { role: "assistant", content: "target answer" },
+    ]);
+    const requestSessionSwitch = vi.fn(() => true);
+    const { services } = open({ requestSessionSwitch });
+    services.session.loadHistory([{ role: "user", content: "current work" }]);
+    const currentId = services.session.sessionId;
+    const currentState = services.session.getState();
+    const state = vi
+      .spyOn(services.session, "getState")
+      .mockImplementation(() => ({ ...currentState, running: true }));
+    await run(services, "history");
+    await vi.waitFor(() => expect(services.overlay.getState().kind).toBe("picker"));
+    const overlay = services.overlay.getState();
+    if (overlay.kind === "picker") overlay.onSelect(targetId);
+    await vi.waitFor(() =>
+      expect(requestSessionSwitch).toHaveBeenCalledWith(targetId, false),
+    );
+    expect(services.session.sessionId).toBe(currentId);
+    state.mockRestore();
+    await purgeSession(targetId);
+  });
+
   spec(["save"], "/save reports nothing to save, then persists once there is history", async () => {
     const { services } = open();
     await run(services, "save");
@@ -392,6 +419,14 @@ describe("classic command parity (W12)", () => {
     const { services } = open();
     await run(services, "update");
     await vi.waitFor(() => expect(notices(services).length).toBeGreaterThan(0));
+  });
+
+  spec(["minimise", "minimize"], "/minimise and /minimize request durable detach", async () => {
+    const requestMinimise = vi.fn(() => true);
+    const { services } = open({ requestMinimise });
+    expect(services.commands.resolve("minimize")).toBe("minimise");
+    await run(services, "minimize");
+    expect(requestMinimise).toHaveBeenCalledOnce();
   });
 
   spec(["exit", "quit"], "/exit and its /quit alias request a clean shutdown", async () => {

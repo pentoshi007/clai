@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
 import { installTransport, type FakeTransport } from "../conformance/fake-transport.js";
+import { textStreamResponse } from "../conformance/wire-fixtures.js";
 import { chatCompletion, keySlots, rateLimitedWithoutBackoff } from "../admission/admission-fixtures.js";
 
 let slotsByProvider: Partial<Record<ProviderId, ProviderKeySlot[]>> = {};
@@ -75,6 +76,20 @@ function installScript(...steps: Array<() => Response>): FakeTransport {
   });
 }
 
+function streamFrame(payload: unknown): string {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function streamedSummary(text: string): Response {
+  return textStreamResponse([
+    streamFrame({ choices: [{ index: 0, delta: { content: text } }] }),
+    streamFrame({
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+    }),
+    "data: [DONE]\n\n",
+  ]);
+}
+
 function makeSession(id: string) {
   return {
     sessionId: id,
@@ -113,6 +128,77 @@ describe("single-admission compaction executor", () => {
 
     expect(visible).toBe(USABLE_SUMMARY);
     expect(transport.generations).toHaveLength(1);
+    expect(ledger.terminalOutcome).toBe("completed");
+  });
+
+  it("retries Bynara's opaque 400 with a distinct text-only wire shape", async () => {
+    slotsByProvider = { bynara: keySlots(["bynara-test-key"]) };
+    const generic =
+      "The model rejected this request. It may not support the input you sent (e.g. images on a text-only model) or a parameter is invalid.";
+    const transport = installScript(
+      () =>
+        textStreamResponse([
+          streamFrame({ error: { type: "bad_request", message: generic } }),
+        ]),
+      () => streamedSummary(USABLE_SUMMARY),
+    );
+    const ledger = new OperationLedger(
+      singleAdmissionOperationPolicy("compaction", 2),
+    );
+    const priorMessages: ChatMessage[] = [
+      { role: "system", content: "stable system prompt" },
+      {
+        role: "user",
+        content: "the screenshot was already described in text",
+        images: [{ mediaType: "image/png", dataBase64: "bm90LW9uLXRoZS13aXJl" }],
+      },
+      { role: "assistant", content: "described result" },
+    ];
+
+    const visible = await executeCompactionSummary({
+      provider: "bynara",
+      model: "mimo-v2.5-free",
+      systemContent: "summarize",
+      prompt: "summarize the history",
+      maxTokens: 12_288,
+      stream: true,
+      qualityRetry: false,
+      operation: ledger,
+      baseRequest: {
+        provider: "bynara",
+        model: "mimo-v2.5-free",
+        messages: priorMessages,
+        thinking: { enabled: true, effort: "high" },
+        tools: [
+          {
+            name: "fs.read",
+            wireName: "fs_read",
+            description: "read a file",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+        toolChoice: "auto",
+        parallelToolCalls: true,
+      },
+      history: priorMessages,
+    });
+
+    expect(visible).toBe(USABLE_SUMMARY);
+    expect(transport.generations).toHaveLength(2);
+    const first = transport.generations[0]!.body as Record<string, unknown>;
+    const second = transport.generations[1]!.body as Record<string, unknown>;
+    expect(JSON.stringify(first)).not.toContain("image_url");
+    expect(JSON.stringify(first)).not.toContain("bm90LW9uLXRoZS13aXJl");
+    expect(first.tools).toBeDefined();
+    expect(first.tool_choice).toBe("auto");
+    expect(first.max_tokens).toBeGreaterThanOrEqual(12_288);
+    expect(JSON.stringify(second)).not.toContain("image_url");
+    expect(second.tools).toBeUndefined();
+    expect(second.tool_choice).toBeUndefined();
+    expect(second.parallel_tool_calls).toBeUndefined();
+    expect(second.max_tokens).toBe(12_288);
+    expect(second).not.toEqual(first);
+    expect(ledger.admissionsUsed).toBe(2);
     expect(ledger.terminalOutcome).toBe("completed");
   });
 
@@ -199,15 +285,37 @@ describe("single-admission compaction executor", () => {
       { role: "user", content: "second user turn" },
     ];
 
+    const tools = [
+      {
+        name: "fs.read",
+        wireName: "fs_read",
+        description: "read a file",
+        parameters: {
+          type: "object" as const,
+          properties: { path: { type: "string" } },
+        },
+      },
+    ];
+
     await executeCompactionSummary({
       provider: "nvidia",
       model: NVIDIA_MODEL,
       systemContent: "summarize",
       prompt: "summarize the entire conversation above this instruction",
-      maxTokens: 4096,
+      maxTokens: 12_288,
       stream: false,
       qualityRetry: false,
-      sourceMessages: priorMessages,
+      baseRequest: {
+        provider: "nvidia",
+        model: NVIDIA_MODEL,
+        messages: priorMessages,
+        temperature: 0.6,
+        thinking: { enabled: true, effort: "high" },
+        tools,
+        toolChoice: "auto",
+        parallelToolCalls: true,
+      },
+      history: priorMessages,
     });
 
     const recordedBody = transport.generations[0]!.body;
@@ -215,7 +323,7 @@ describe("single-admission compaction executor", () => {
       typeof recordedBody === "string"
         ? recordedBody
         : JSON.stringify(recordedBody);
-    const compactionBody = JSON.parse(compactionBodyText) as {
+    const compactionBody = JSON.parse(compactionBodyText) as Record<string, unknown> & {
       model: string;
       max_tokens: number;
       messages: Array<{ role: string; content: string }>;
@@ -223,10 +331,8 @@ describe("single-admission compaction executor", () => {
     expect(compactionBody.messages).toHaveLength(priorMessages.length + 1);
 
     const priorBodyText = JSON.stringify({
-      model: compactionBody.model,
-      messages: priorMessages,
-      stream: false,
-      max_tokens: compactionBody.max_tokens,
+      ...compactionBody,
+      messages: compactionBody.messages.slice(0, priorMessages.length),
     });
     const priorFingerprint = fingerprintFinalRequest(
       { provider: "nvidia", model: NVIDIA_MODEL },
@@ -252,6 +358,20 @@ describe("single-admission compaction executor", () => {
         historyPrefixAt(compactionFingerprint, items)?.sha256,
       );
     }
+    const section = (
+      fingerprint: typeof priorFingerprint,
+      name: "tools" | "settings",
+    ) => fingerprint.sections.find((candidate) => candidate.section === name);
+    expect(section(compactionFingerprint, "tools")?.sha256).toBe(
+      section(priorFingerprint, "tools")?.sha256,
+    );
+    expect(section(compactionFingerprint, "settings")?.sha256).toBe(
+      section(priorFingerprint, "settings")?.sha256,
+    );
+    expect(compactionBody.max_tokens).toBeGreaterThanOrEqual(12_288);
+    expect(compactionBody.temperature).toBe(0.6);
+    expect(compactionBody.tool_choice).toBe("auto");
+    expect(compactionBody.tools).toBeDefined();
     expect(priorFingerprint.body.sha256).not.toBe(
       compactionFingerprint.body.sha256,
     );

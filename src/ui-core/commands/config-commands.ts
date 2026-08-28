@@ -435,6 +435,16 @@ export function handleShortcuts(services: AppServices): void {
   );
 }
 
+export async function handleMinimise(services: AppServices): Promise<void> {
+  await services.session.persistNow().catch(() => undefined);
+  if (services.requestMinimise()) return;
+  notice(
+    services,
+    "warn",
+    "background detach is unavailable in this launch; keep this terminal open or restart clai normally",
+  );
+}
+
 export function handleExit(services: AppServices): void {
   services.requestExit();
 }

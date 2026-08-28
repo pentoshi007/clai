@@ -19,6 +19,7 @@ Two things make it practical for everyday use:
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
 - **Real building & debugging.** Scaffolds apps, edits code surgically, installs packages, runs builds/tests, starts dev servers as background jobs, and probes them before reporting success.
 - **Durable plans.** `plan.create` / `task.update` drive a live checklist that survives context compaction and reloads with `/history` — the agent works task-by-task and won't fake completion.
+- **Durable agent sessions.** Interactive sessions run behind an authenticated local PTY broker, so an agent keeps working after `/minimise`, an SSH disconnect, or switching to another history session; `clai --resume <id>` reattaches to the same live UI and output stream.
 - **Persistent interactive terminals.** Conversation-owned PTY or pipe sessions keep REPLs such as Python, Metasploit, Meterpreter, database consoles, and debuggers open across model turns. The agent can send follow-up input, read incremental output, resize, interrupt, and close them without losing state.
 - **Native + text tool calling.** Uses provider-native function calling where available, with a text-fence fallback (`toolCalling: auto|native|text`).
 - **MCP, explicitly controlled.** Discovers local stdio and remote HTTP/SSE servers from project and compatible inherited configs. MCP tools are off by default; `/mcp` inspects and adds servers, and picking one drops an editable `@mcp:<server>` token into your prompt — stack as many as you need, delete one with backspace, or switch the whole session on with `/mcp all`.
@@ -460,6 +461,25 @@ Tool cards show the command/input clearly, with a live elapsed timer next to the
 
 On exit, both interactive surfaces leave the alternate screen and print a sign-off card on the normal terminal: the wordmark beside a labelled block — session title, folder, elapsed time and message count, reasoning/cache token notes, and the command that reopens the session — followed by the same per-provider/model token table `/usage` shows. Resuming is `clai --resume <id>` (a unique id prefix is enough, and `-c/--continue` picks the newest session for the current directory). Sessions that were never persisted (`--no-history`, private mode, or nothing sent) say so instead of offering a resume command. The card is borderless and reflows down to very narrow terminals: the wordmark drops from six rows to four, then the block stacks beneath it, and labels give way before the resume command is ever shortened.
 
+### Background sessions, minimise, and SSH reattach
+
+Normal persistent interactive launches use a per-session local PTY broker. The UI and agent run inside that broker-owned terminal, while the shell process you interact with is a disposable client. This keeps the exact same live UI, pending confirmation, queue, tools, MCP connections, and terminal subprocesses alive when the client goes away.
+
+- `/minimise` (also `/minimize`) detaches immediately and returns the shell prompt without cancelling the current turn. It prints the session id and the exact `clai --resume <id>` command.
+- An SSH or terminal disconnect has the same detach behavior. SSH into the VM again as the same OS user and run `clai --resume <id>`; `clai -c` prefers the newest live session in the current directory.
+- `/history` marks running, attached, and detached sessions. Selecting another session attaches or starts its own runtime instead of loading over a running agent, so the outgoing agent continues independently.
+- One terminal controls a session at a time. Attaching from another terminal safely transfers control and releases the old terminal; this prevents duplicate keystrokes while still allowing cross-computer SSH takeover.
+- The broker stores only bounded terminal replay (2 MiB), uses an authenticated user-only Unix socket or Windows named pipe, and keeps runtime metadata/locks user-readable only. It never opens a TCP port.
+- A detached runtime stays alive while a turn, compaction, queued prompt, or responder job is active. Once truly idle and detached, it exits after 30 minutes by default; the saved session still resumes normally without keeping idle processes forever.
+- `--no-history`, private mode, non-TTY/one-shot runs, and systems without a usable PTY retain the existing direct foreground behavior. `/minimise` reports that background detach is unavailable instead of partially detaching.
+
+Optional controls:
+
+```sh
+CLAI_SESSION_RUNTIME_IDLE_MS=1800000  # detached idle lifetime (1 minute–24 hours)
+CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
+```
+
 ---
 
 ## Slash commands
@@ -483,6 +503,7 @@ On exit, both interactive surfaces leave the alternate screen and print a sign-o
 | `/cwd <path>` | Change working directory |
 | `/think` · `/thinking` | Show thinking from the last response |
 | `/privacy [...]` | Private mode · clear history/logs/artifacts |
+| `/minimise` · `/minimize` | Detach this terminal while the live session continues in the background |
 | `/update` · `/help` · `/shortcuts` · `/exit` | Housekeeping |
 
 ---
@@ -496,7 +517,7 @@ clai [prompt...]                       # interactive UI, or one-shot with a prom
   --show-thinking  --verbose  --quiet    # one-shot stream controls
   --tui  --classic
   --ui <tui|v2|opentui|classic|legacy|ink> # aliases; ignored with a prompt
-  --resume <sessionId>  -c/--continue    # reopen a saved session; ignored with a prompt
+  --resume <sessionId>  -c/--continue    # reattach live or reopen saved session; ignored with a prompt
 
 clai set <provider> [key]              # --from-env <VAR> | --stdin | --url <url> (repeatable) | --skip-ping
 clai unset <provider>                  # remove all keys for a provider (--url = endpoint URLs instead)

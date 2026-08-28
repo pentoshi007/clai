@@ -28,6 +28,7 @@ import {
   handleFreeOnly,
   handleHelp,
   handleJobs,
+  handleMinimise,
   handlePrivacy,
   handleScope,
   handleShortcuts,
@@ -79,7 +80,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("provider", (i) => handleProvider(services, i));
   c.setHandler("search", (i) => handleSearch(services, i));
   c.setHandler("effort", (i) => handleReasoning(services, i));
-  c.setHandler("history", (i) => void handleHistory(services, i));
+  c.setHandler("history", (i) => handleHistory(services, i));
   c.setHandler("permissions", (i) => handlePermissions(services, i));
   c.setHandler("output", (i) => handleOutput(services, i));
   c.setHandler("plan", (i) => handlePlan(services, i));
@@ -122,6 +123,7 @@ export function attachCommandHandlers(services: AppServices): void {
   c.setHandler("update", () => void handleUpdate(services));
   c.setHandler("help", () => handleHelp(services));
   c.setHandler("shortcuts", () => handleShortcuts(services));
+  c.setHandler("minimise", () => void handleMinimise(services));
   c.setHandler("exit", () => handleExit(services));
   c.setHandler("set", (i) => void handleSet(services, i));
   c.setHandler("unset", (i) => void handleUnset(services, i));
