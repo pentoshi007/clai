@@ -657,6 +657,103 @@ export function Pager(props: PagerProps): ReactNode {
     Math.max(8, Math.floor(chromeCols * 0.4)),
   );
 
+  // Scroll position only changes pager chrome. Keep the complete row array
+  // referentially stable so wheel/key events never repeat grapheme wrapping or
+  // reconcile every off-screen PagerLine; viewportCulling handles native paint.
+  const bodyRows = useMemo(
+    () =>
+      lines.flatMap((line, index) => {
+        const row = display.lines[index];
+        const isMd = display.mode === "markdown";
+
+        // Markdown lines are already width-wrapped by renderMarkdown; paint
+        // one StyledText row each (search falls back to plain segments).
+        if (isMd) {
+          return [
+            <PagerLine
+              key={`md-${index}-0`}
+              line={line}
+              index={index}
+              theme={theme}
+              matches={matches}
+              activeMatchIndex={matchIndex}
+              hasQuery={hasQuery}
+              highlightPath=""
+              carry={syntaxCarry}
+              styled={row?.styled}
+              markdownMode
+            />,
+          ];
+        }
+
+        // Diff gutters only in raw file-viewer mode — never eat compacted
+        // / help text that happens to contain " │ ".
+        const parsed = useDiffGutters ? parseDiffLine(line) : null;
+        if (parsed) {
+          // Soft-wrap code only; keep internal mark so parseDiffLine still
+          // knows add/del tone. PagerLine does not paint +/-.
+          const codeChunks = wrapPagerLine(
+            parsed.code,
+            Math.max(12, contentCols - (parsed.gutter.length + 3)),
+          );
+          return codeChunks.map((codeChunk, part) => {
+            const mark =
+              parsed.tone === "add"
+                ? "+"
+                : parsed.tone === "del"
+                  ? "−"
+                  : " ";
+            const g =
+              part === 0
+                ? parsed.gutter
+                : " ".repeat(parsed.gutter.length);
+            const rebuilt =
+              parsed.tone === "header"
+                ? `${g} │ ${codeChunk}`
+                : `${g} │ ${mark} ${codeChunk}`;
+            return (
+              <PagerLine
+                key={`${index}-${part}`}
+                line={rebuilt}
+                index={index}
+                theme={theme}
+                matches={matches}
+                activeMatchIndex={matchIndex}
+                hasQuery={hasQuery}
+                highlightPath={pathForHighlight}
+                carry={syntaxCarry}
+              />
+            );
+          });
+        }
+        return wrapPagerLine(line, contentCols).map((chunk, part) => (
+          <PagerLine
+            key={`${index}-${part}`}
+            line={chunk}
+            index={index}
+            theme={theme}
+            matches={matches}
+            activeMatchIndex={matchIndex}
+            hasQuery={hasQuery}
+            highlightPath={pathForHighlight}
+            carry={syntaxCarry}
+          />
+        ));
+      }),
+    [
+      contentCols,
+      display,
+      hasQuery,
+      lines,
+      matchIndex,
+      matches,
+      pathForHighlight,
+      syntaxCarry,
+      theme,
+      useDiffGutters,
+    ],
+  );
+
   // Clip long titles so the border doesn't wrap/overflow.
   const borderTitle =
     title.length > 72 ? ` ${title.slice(0, 69)}… ` : ` ${title} `;
@@ -775,84 +872,7 @@ export function Pager(props: PagerProps): ReactNode {
             style={{ height: 1, width: "100%", bg: theme.background }}
           />
         ) : null}
-        {lines.flatMap((line, index) => {
-          const row = display.lines[index];
-          const isMd = display.mode === "markdown";
-
-          // Markdown lines are already width-wrapped by renderMarkdown; paint
-          // one StyledText row each (search falls back to plain segments).
-          if (isMd) {
-            return [
-              <PagerLine
-                key={`md-${index}-0`}
-                line={line}
-                index={index}
-                theme={theme}
-                matches={matches}
-                activeMatchIndex={matchIndex}
-                hasQuery={hasQuery}
-                highlightPath=""
-                carry={syntaxCarry}
-                styled={row?.styled}
-                markdownMode
-              />,
-            ];
-          }
-
-          // Diff gutters only in raw file-viewer mode — never eat compacted
-          // / help text that happens to contain " │ ".
-          const parsed = useDiffGutters ? parseDiffLine(line) : null;
-          if (parsed) {
-            // Soft-wrap code only; keep internal mark so parseDiffLine still
-            // knows add/del tone. PagerLine does not paint +/-.
-            const codeChunks = wrapPagerLine(
-              parsed.code,
-              Math.max(12, contentCols - (parsed.gutter.length + 3)),
-            );
-            return codeChunks.map((codeChunk, part) => {
-              const mark =
-                parsed.tone === "add"
-                  ? "+"
-                  : parsed.tone === "del"
-                    ? "−"
-                    : " ";
-              const g =
-                part === 0
-                  ? parsed.gutter
-                  : " ".repeat(parsed.gutter.length);
-              const rebuilt =
-                parsed.tone === "header"
-                  ? `${g} │ ${codeChunk}`
-                  : `${g} │ ${mark} ${codeChunk}`;
-              return (
-                <PagerLine
-                  key={`${index}-${part}`}
-                  line={rebuilt}
-                  index={index}
-                  theme={theme}
-                  matches={matches}
-                  activeMatchIndex={matchIndex}
-                  hasQuery={hasQuery}
-                  highlightPath={pathForHighlight}
-                  carry={syntaxCarry}
-                />
-              );
-            });
-          }
-          return wrapPagerLine(line, contentCols).map((chunk, part) => (
-            <PagerLine
-              key={`${index}-${part}`}
-              line={chunk}
-              index={index}
-              theme={theme}
-              matches={matches}
-              activeMatchIndex={matchIndex}
-              hasQuery={hasQuery}
-              highlightPath={pathForHighlight}
-              carry={syntaxCarry}
-            />
-          ));
-        })}
+        {bodyRows}
         {!useDiffGutters ? (
           <text
             content=" "
