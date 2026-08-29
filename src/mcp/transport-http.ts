@@ -8,6 +8,8 @@ import {
   withTimeout,
   type McpTransport,
 } from "./transport.js";
+import { parseWwwAuthenticate } from "./auth/www-authenticate.js";
+import type { McpAuthChallenge, McpAuthProvider } from "./auth/types.js";
 import {
   MCP_PROTOCOL_VERSION,
   type JsonRpcNotification,
@@ -42,6 +44,31 @@ function redirectError(response: Response): McpTransportError | undefined {
   return new McpTransportError(
     "protocol",
     `MCP HTTP endpoint attempted a redirect (${status || "opaque"}) to "${location}". Refusing to follow it so credentials cannot cross origin; update the server url to the final endpoint.`,
+  );
+}
+
+async function rejectRedirect(response: Response): Promise<void> {
+  const error = redirectError(response);
+  if (!error) return;
+  if (response.body) await response.body.cancel().catch(() => undefined);
+  throw error;
+}
+
+function sseStreamError(server: string, status: number): McpTransportError {
+  return new McpTransportError(
+    "network",
+    status === 401
+      ? unauthorizedHint(server)
+      : `MCP SSE stream returned ${status}.`,
+  );
+}
+
+function ssePostError(server: string, status: number): McpTransportError {
+  return new McpTransportError(
+    "network",
+    status === 401
+      ? unauthorizedHint(server)
+      : `MCP SSE POST returned ${status}.`,
   );
 }
 
@@ -123,6 +150,14 @@ export interface HttpTransportOptions {
   readonly requestTimeoutMs?: number | undefined;
   readonly maxResponseBytes?: number | undefined;
   readonly fetchImpl?: typeof fetch | undefined;
+  readonly authProvider?: McpAuthProvider | undefined;
+}
+
+function unauthorizedHint(server: string): string {
+  return (
+    `MCP server ${server} returned 401 Unauthorized. ` +
+    "Choose its sign-in row in /mcp, run /mcp login <server>, or fix its auth config."
+  );
 }
 
 export class StreamableHttpTransport implements McpTransport {
@@ -158,11 +193,58 @@ export class StreamableHttpTransport implements McpTransport {
     return Promise.resolve();
   }
 
-  private mergedHeaders(accept: string): Record<string, string> {
+  private async resolveHeaders(accept: string): Promise<Record<string, string>> {
+    const base = baseHeaders(this.session, this.protocolVersion, accept);
+    const authHeaders = this.options.authProvider
+      ? await this.options.authProvider.headers()
+      : {};
     return {
-      ...baseHeaders(this.session, this.protocolVersion, accept),
+      ...base,
+      ...authHeaders,
       ...this.config.headers,
     };
+  }
+
+  private async sendOnce(
+    accept: string,
+    method: string,
+    body: string | undefined,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const headers = await this.resolveHeaders(accept);
+    const init: RequestInit = { method, headers, redirect: "manual", signal };
+    if (body !== undefined) init.body = body;
+    return this.fetchImpl(this.config.url, init);
+  }
+
+  private async retryOnUnauthorized(
+    response: Response,
+    resend: () => Promise<Response>,
+  ): Promise<Response> {
+    const provider = this.options.authProvider;
+    if (!provider) return response;
+    const challenge: McpAuthChallenge | undefined = parseWwwAuthenticate(
+      response.headers.get("www-authenticate"),
+    );
+    if (response.body) await response.body.cancel().catch(() => undefined);
+    const refreshed = await provider.onUnauthorized(challenge);
+    if (!refreshed) return response;
+    return resend();
+  }
+
+  private async failForStatus(response: Response): Promise<never> {
+    if (response.status === 401) {
+      const detail = await readBoundedText(response, this.maxBytes).catch(() => "");
+      throw new McpTransportError(
+        "network",
+        `${unauthorizedHint(this.config.url)}${detail ? ` Server said: ${detail.slice(0, 300)}` : ""}`,
+      );
+    }
+    const detail = await readBoundedText(response, this.maxBytes).catch(() => "");
+    throw new McpTransportError(
+      "network",
+      `MCP HTTP request returned ${response.status}${detail ? `: ${detail.slice(0, 400)}` : ""}.`,
+    );
   }
 
   async request(
@@ -174,21 +256,21 @@ export class StreamableHttpTransport implements McpTransport {
     const framed: JsonRpcRequest = { ...message, id };
     const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     const { signal, dispose } = withTimeout(options.signal, timeoutMs);
+    const accept = "application/json, text/event-stream";
+    const body = JSON.stringify(framed);
+    const resend = (): Promise<Response> => this.sendOnce(accept, "POST", body, signal);
     try {
-      const response = await this.fetchImpl(this.config.url, {
-        method: "POST",
-        headers: this.mergedHeaders("application/json, text/event-stream"),
-        body: JSON.stringify(framed),
-        signal,
-      });
+      let response = await resend();
       this.captureSession(response);
-      if (!response.ok) {
-        const detail = await readBoundedText(response, this.maxBytes).catch(() => "");
-        throw new McpTransportError(
-          "network",
-          `MCP HTTP request returned ${response.status}${detail ? `: ${detail.slice(0, 400)}` : ""}.`,
-        );
+      const redirect = redirectError(response);
+      if (redirect) throw redirect;
+      if (response.status === 401) {
+        response = await this.retryOnUnauthorized(response, resend);
+        this.captureSession(response);
+        const retryRedirect = redirectError(response);
+        if (retryRedirect) throw retryRedirect;
       }
+      if (!response.ok) await this.failForStatus(response);
       const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
       if (contentType.includes("text/event-stream")) {
         return await collectSseResponse(response, framed.id, this.maxBytes);
@@ -214,13 +296,15 @@ export class StreamableHttpTransport implements McpTransport {
     const timeoutMs = options.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     const { signal, dispose } = withTimeout(options.signal, timeoutMs);
     try {
-      const response = await this.fetchImpl(this.config.url, {
-        method: "POST",
-        headers: this.mergedHeaders("application/json, text/event-stream"),
-        body: JSON.stringify(message),
+      const response = await this.sendOnce(
+        "application/json, text/event-stream",
+        "POST",
+        JSON.stringify(message),
         signal,
-      });
+      );
       this.captureSession(response);
+      const redirect = redirectError(response);
+      if (redirect) throw redirect;
       if (response.body) await response.body.cancel().catch(() => undefined);
     } catch (error) {
       throw mapFetchError(error);
@@ -239,11 +323,13 @@ export class StreamableHttpTransport implements McpTransport {
     this.closed = true;
     if (!this.session) return;
     try {
-      const response = await this.fetchImpl(this.config.url, {
-        method: "DELETE",
-        headers: this.mergedHeaders("application/json"),
-      });
-      if (response.body) await response.body.cancel().catch(() => undefined);
+      const { signal, dispose } = withTimeout(undefined, DEFAULT_REQUEST_TIMEOUT_MS);
+      try {
+        const response = await this.sendOnce("application/json", "DELETE", undefined, signal);
+        if (response.body) await response.body.cancel().catch(() => undefined);
+      } finally {
+        dispose();
+      }
     } catch {
       void 0;
     }
@@ -308,27 +394,54 @@ export class LegacySseTransport implements McpTransport {
     return this.readyPromise;
   }
 
+  private async streamHeaders(accept: string): Promise<Record<string, string>> {
+    const base: Record<string, string> = { accept };
+    if (this.protocolVersion) base[PROTOCOL_HEADER] = this.protocolVersion;
+    const authHeaders = this.options.authProvider
+      ? await this.options.authProvider.headers()
+      : {};
+    return { ...base, ...authHeaders, ...this.config.headers };
+  }
+
+  private async openStream(): Promise<Response> {
+    const headers = await this.streamHeaders("text/event-stream");
+    return this.fetchImpl(this.config.url, {
+      method: "GET",
+      headers,
+      redirect: "manual",
+      signal: this.streamController.signal,
+    });
+  }
+
+  private async openAuthorizedStream(): Promise<Response> {
+    let response = await this.openStream();
+    await rejectRedirect(response);
+    const provider = this.options.authProvider;
+    if (response.status !== 401 || !provider) return response;
+    const challenge = parseWwwAuthenticate(
+      response.headers.get("www-authenticate"),
+    );
+    if (response.body) await response.body.cancel().catch(() => undefined);
+    const refreshed = await provider.onUnauthorized(challenge);
+    if (!refreshed) return response;
+    response = await this.openStream();
+    await rejectRedirect(response);
+    return response;
+  }
+
   private async pump(
     onReady: () => void,
     onFail: (error: McpTransportError) => void,
   ): Promise<void> {
     let response: Response;
     try {
-      response = await this.fetchImpl(this.config.url, {
-        method: "GET",
-        headers: {
-          accept: "text/event-stream",
-          ...(this.protocolVersion ? { [PROTOCOL_HEADER]: this.protocolVersion } : {}),
-          ...this.config.headers,
-        },
-        signal: this.streamController.signal,
-      });
+      response = await this.openAuthorizedStream();
     } catch (error) {
       onFail(mapFetchError(error));
       return;
     }
     if (!response.ok || !response.body) {
-      onFail(new McpTransportError("network", `MCP SSE stream returned ${response.status}.`));
+      onFail(sseStreamError(this.config.url, response.status));
       return;
     }
     const reader = response.body.getReader();
@@ -387,24 +500,58 @@ export class LegacySseTransport implements McpTransport {
     this.pending.clear();
   }
 
+  private async postHeaders(): Promise<Record<string, string>> {
+    const base: Record<string, string> = { "content-type": "application/json" };
+    if (this.protocolVersion) base[PROTOCOL_HEADER] = this.protocolVersion;
+    const authHeaders = this.options.authProvider
+      ? await this.options.authProvider.headers()
+      : {};
+    return { ...base, ...authHeaders, ...this.config.headers };
+  }
+
+  private async sendPost(
+    endpoint: string,
+    body: string,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const headers = await this.postHeaders();
+    return this.fetchImpl(endpoint, {
+      method: "POST",
+      headers,
+      body,
+      signal,
+      redirect: "manual",
+    });
+  }
+
+  private async retryPostUnauthorized(
+    response: Response,
+    resend: () => Promise<Response>,
+  ): Promise<Response> {
+    const provider = this.options.authProvider;
+    if (response.status !== 401 || !provider) return response;
+    const challenge = parseWwwAuthenticate(
+      response.headers.get("www-authenticate"),
+    );
+    if (response.body) await response.body.cancel().catch(() => undefined);
+    const refreshed = await provider.onUnauthorized(challenge);
+    if (!refreshed) return response;
+    const retried = await resend();
+    await rejectRedirect(retried);
+    return retried;
+  }
+
   private async postMessage(body: string, signal: AbortSignal): Promise<void> {
     if (!this.endpointUrl) {
       throw new McpTransportError("protocol", "MCP SSE endpoint was never announced.");
     }
-    const response = await this.fetchImpl(this.endpointUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(this.protocolVersion ? { [PROTOCOL_HEADER]: this.protocolVersion } : {}),
-        ...this.config.headers,
-      },
-      body,
-      signal,
-    });
+    const endpoint = this.endpointUrl;
+    const resend = (): Promise<Response> => this.sendPost(endpoint, body, signal);
+    let response = await resend();
+    await rejectRedirect(response);
+    response = await this.retryPostUnauthorized(response, resend);
     if (response.body) await response.body.cancel().catch(() => undefined);
-    if (!response.ok) {
-      throw new McpTransportError("network", `MCP SSE POST returned ${response.status}.`);
-    }
+    if (!response.ok) throw ssePostError(endpoint, response.status);
   }
 
   async request(

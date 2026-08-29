@@ -14,9 +14,16 @@ import {
   StreamableHttpTransport,
   type HttpTransportOptions,
 } from "./transport-http.js";
+import {
+  createAuthProvider,
+  type AuthProviderDeps,
+  type OAuthConsentInfo,
+} from "./auth/provider.js";
+import type { McpAuthProvider } from "./auth/types.js";
 import type {
   McpDiscoveryOptions,
   McpDiscoveryResult,
+  McpHttpConfig,
   McpInvalidServer,
   McpNormalizedResult,
   McpRequestOptions,
@@ -42,6 +49,12 @@ export interface McpManagerOptions {
   readonly requestTimeoutMs?: number | undefined;
   readonly transportFactory?: McpTransportFactory | undefined;
   readonly clientOptions?: McpClientOptions | undefined;
+  readonly openBrowser?: ((url: string) => Promise<void>) | undefined;
+  readonly requestOAuthConsent?: ((info: OAuthConsentInfo) => Promise<boolean>) | undefined;
+  readonly oauthInteractive?: boolean | undefined;
+  readonly authProviderFactory?:
+    | ((definition: McpServerDefinition) => McpAuthProvider | undefined)
+    | undefined;
 }
 
 interface ConnectionState {
@@ -73,6 +86,8 @@ async function runBounded<T>(
 
 export class McpManager {
   private readonly connections = new Map<string, ConnectionState>();
+  private readonly authProviders = new Map<string, McpAuthProvider>();
+  private readonly authSignatures = new Map<string, string>();
   private discovery: McpDiscoveryResult = {
     servers: [],
     shadowed: [],
@@ -92,14 +107,88 @@ export class McpManager {
   }
 
   private createTransport(definition: McpServerDefinition): McpTransport {
-    if (this.options.transportFactory) return this.options.transportFactory(definition);
     const config = definition.config;
     if (config.transport === "stdio") {
+      if (this.options.transportFactory) return this.options.transportFactory(definition);
       return new StdioTransport(config, { requestTimeoutMs: this.requestTimeoutMs });
     }
-    const httpOptions: HttpTransportOptions = { requestTimeoutMs: this.requestTimeoutMs };
+    const authProvider = this.buildAuthProvider(definition, config);
+    if (this.options.transportFactory) return this.options.transportFactory(definition);
+    const httpOptions: HttpTransportOptions = {
+      requestTimeoutMs: this.requestTimeoutMs,
+      ...(authProvider ? { authProvider } : {}),
+    };
     if (config.transport === "sse") return new LegacySseTransport(config, httpOptions);
     return new StreamableHttpTransport(config, httpOptions);
+  }
+
+  private buildAuthProvider(
+    definition: McpServerDefinition,
+    config: McpHttpConfig,
+  ): McpAuthProvider {
+    const reusable = this.authProviders.get(definition.name);
+    if (reusable && this.authSignatures.get(definition.name) === definition.signature) {
+      return reusable;
+    }
+    if (this.options.authProviderFactory) {
+      const custom = this.options.authProviderFactory(definition);
+      if (custom) {
+        this.rememberAuthProvider(definition, custom);
+        return custom;
+      }
+    }
+    const deps: AuthProviderDeps = {
+      serverUrl: config.url,
+      ...(this.options.openBrowser ? { openBrowser: this.options.openBrowser } : {}),
+      ...(this.options.requestOAuthConsent
+        ? { requestConsent: this.options.requestOAuthConsent }
+        : {}),
+      ...(this.options.oauthInteractive !== undefined
+        ? { interactive: this.options.oauthInteractive }
+        : {}),
+    };
+    const provider = createAuthProvider(config.auth ?? { kind: "oauth" }, deps);
+    this.rememberAuthProvider(definition, provider);
+    return provider;
+  }
+
+  private rememberAuthProvider(
+    definition: McpServerDefinition,
+    provider: McpAuthProvider,
+  ): void {
+    this.authProviders.set(definition.name, provider);
+    this.authSignatures.set(definition.name, definition.signature);
+  }
+
+  canLogin(serverName: string): boolean {
+    const definition = this.findDefinition(serverName);
+    if (!definition || definition.config.transport === "stdio") return false;
+    const auth = definition.config.auth;
+    return auth === undefined || auth.kind === "oauth";
+  }
+
+  resolveServerName(serverName: string): string | undefined {
+    return this.findDefinition(serverName)?.name;
+  }
+
+  private findDefinition(serverName: string): McpServerDefinition | undefined {
+    const direct =
+      this.discovery.servers.find((server) => server.name === serverName) ??
+      this.connections.get(serverName)?.definition;
+    if (direct) return direct;
+    const alias = this.discovery.shadowed.find(
+      (entry) => entry.name === serverName && entry.shadowedByName !== serverName,
+    );
+    if (!alias) return undefined;
+    return this.discovery.servers.find((server) => server.name === alias.shadowedByName);
+  }
+
+  liveSecrets(serverName: string): readonly string[] {
+    return this.authProviders.get(serverName)?.liveSecrets() ?? [];
+  }
+
+  private mergedSecrets(definition: McpServerDefinition): string[] {
+    return [...definition.secretValues, ...this.liveSecrets(definition.name)];
   }
 
   getDiscovery(): McpDiscoveryResult {
@@ -171,14 +260,13 @@ export class McpManager {
   }
 
   async reconnect(name: string): Promise<McpSnapshot> {
-    const definition =
-      this.discovery.servers.find((server) => server.name === name) ??
-      this.connections.get(name)?.definition;
+    const definition = this.findDefinition(name);
     if (!definition) return this.snapshot();
-    const existing = this.connections.get(name);
+    const resolved = definition.name;
+    const existing = this.connections.get(resolved);
     if (existing) await this.disposeConnection(existing);
     if (definition.disabled) {
-      this.connections.set(name, {
+      this.connections.set(resolved, {
         definition,
         client: undefined,
         status: "disabled",
@@ -189,7 +277,7 @@ export class McpManager {
       });
       return this.snapshot();
     }
-    this.connections.set(name, {
+    this.connections.set(resolved, {
       definition,
       client: undefined,
       status: "connecting",
@@ -244,12 +332,12 @@ export class McpManager {
       } catch (error) {
         state.status = "degraded";
         state.tools = [];
-        state.detail = describeError(error, definition.secretValues);
+        state.detail = describeError(error, this.mergedSecrets(definition));
       }
     } catch (error) {
       state.status = "error";
       state.tools = [];
-      state.detail = describeError(error, definition.secretValues);
+      state.detail = describeError(error, this.mergedSecrets(definition));
       if (client) await client.close().catch(() => undefined);
       state.client = undefined;
     }
@@ -370,6 +458,34 @@ export class McpManager {
       timeoutMs: this.requestTimeoutMs,
       ...options,
     });
+  }
+
+  async login(serverName: string): Promise<{ ok: boolean; detail: string }> {
+    const definition = this.findDefinition(serverName);
+    if (!definition) {
+      return { ok: false, detail: `Unknown MCP server "${serverName}".` };
+    }
+    const resolved = definition.name;
+    const config = definition.config;
+    if (config.transport === "stdio") {
+      return {
+        ok: false,
+        detail: `MCP server "${resolved}" is stdio and uses environment credentials, not OAuth login.`,
+      };
+    }
+    const provider =
+      this.authProviders.get(resolved) ?? this.buildAuthProvider(definition, config);
+    try {
+      const ok = await provider.onUnauthorized(undefined);
+      return ok
+        ? { ok: true, detail: `Authenticated MCP server ${resolved}.` }
+        : {
+            ok: false,
+            detail: `MCP server "${resolved}" does not use OAuth (or authorization was declined).`,
+          };
+    } catch (error) {
+      return { ok: false, detail: describeError(error, this.mergedSecrets(definition)) };
+    }
   }
 }
 

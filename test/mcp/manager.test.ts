@@ -159,6 +159,88 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+describe("shadowed alias resolution", () => {
+  const loginCalls: string[] = [];
+
+  function aliasManager(): McpManager {
+    writeFileSync(
+      join(workspace, ".clai", "mcp.json"),
+      JSON.stringify({
+        servers: { notion: { url: "https://mcp.notion.com/mcp" } },
+      }),
+    );
+    writeFileSync(
+      join(home, ".config", "Code", "User", "mcp.json"),
+      JSON.stringify({
+        servers: {
+          "makenotion/notion-mcp-server": { url: "https://mcp.notion.com/sse" },
+        },
+      }),
+    );
+    return new McpManager({
+      discovery: {
+        workspaceFolder: workspace,
+        homeDir: home,
+        env: { XDG_CONFIG_HOME: join(home, ".config") },
+        platform: "linux",
+      },
+      transportFactory: (definition) =>
+        new FakeTransport(definition.name, { tools: [] }),
+      authProviderFactory: (definition) => ({
+        kind: "oauth" as const,
+        headers: async () => ({}),
+        onUnauthorized: async () => {
+          loginCalls.push(definition.name);
+          return true;
+        },
+        liveSecrets: () => [],
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    loginCalls.length = 0;
+    rmSync(join(workspace, ".mcp.json"), { force: true });
+    rmSync(join(workspace, ".vscode"), { recursive: true, force: true });
+    mkdirSync(join(workspace, ".clai"), { recursive: true });
+    mkdirSync(join(home, ".config", "Code", "User"), { recursive: true });
+  });
+
+  it("resolves a shadowed alias to the live server for reconnect", async () => {
+    const manager = aliasManager();
+    await manager.refresh();
+
+    expect(manager.resolveServerName("makenotion/notion-mcp-server")).toBe("notion");
+    const snapshot = await manager.reconnect("makenotion/notion-mcp-server");
+    expect(snapshot.statuses.map((status) => status.name)).toEqual(["notion"]);
+    expect(snapshot.statuses[0]?.status).toBe("ready");
+    await manager.closeAll();
+  });
+
+  it("reports login and canLogin against the resolved server, not the alias", async () => {
+    const manager = aliasManager();
+    await manager.refresh();
+
+    expect(manager.canLogin("makenotion/notion-mcp-server")).toBe(true);
+    const result = await manager.login("makenotion/notion-mcp-server");
+    expect(result.ok).toBe(true);
+    expect(result.detail).toBe("Authenticated MCP server notion.");
+    expect(loginCalls).toEqual(["notion"]);
+    await manager.closeAll();
+  });
+
+  it("returns undefined for a name that is neither live nor a shadowed alias", async () => {
+    const manager = aliasManager();
+    await manager.refresh();
+
+    expect(manager.resolveServerName("nope")).toBeUndefined();
+    const result = await manager.login("nope");
+    expect(result.ok).toBe(false);
+    expect(result.detail).toContain('Unknown MCP server "nope"');
+    await manager.closeAll();
+  });
+});
+
 describe("manager snapshot and statuses", () => {
   it("produces ready, degraded, and disabled statuses with shadow and invalid tracking", async () => {
     const manager = makeManager();
@@ -192,6 +274,28 @@ describe("manager snapshot and statuses", () => {
     const snapshot = await manager.refresh();
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.isFrozen(snapshot.tools)).toBe(true);
+    await manager.closeAll();
+  });
+
+  it("treats URL-only servers as OAuth-capable unless auth is explicitly disabled", async () => {
+    writeFileSync(
+      join(workspace, ".mcp.json"),
+      JSON.stringify({
+        servers: {
+          automatic: { url: "https://mcp.example.com/mcp" },
+          disabled: {
+            url: "https://none.example.com/mcp",
+            auth: { kind: "none" },
+          },
+          local: { command: "local-server" },
+        },
+      }),
+    );
+    const manager = makeManager();
+    await manager.refresh();
+    expect(manager.canLogin("automatic")).toBe(true);
+    expect(manager.canLogin("disabled")).toBe(false);
+    expect(manager.canLogin("local")).toBe(false);
     await manager.closeAll();
   });
 });

@@ -14,7 +14,7 @@ import { useKeyboard, usePaste } from "@opentui/react";
 import { shouldStoreInPromptHistory } from "../../ui-core/composer/input-history.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { formatAttachmentReference } from "../../ui/mentions.js";
-import { getConfig } from "../../store/config.js";
+import { getConfig, getProviderModel } from "../../store/config.js";
 import { effectiveThinkingEffort } from "../../llm/capabilities.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../ui-core/rendering/theme.js";
@@ -154,15 +154,13 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
   // Prefer live session selection; fall back to config so the border always
   // shows provider · model · permissions (never empty of provider).
   const cfg = getConfig();
+  const activeProvider = session.provider ?? cfg.defaultProvider;
+  const activeModel = session.model ?? getProviderModel(activeProvider);
   const metaLabel = formatComposerMeta(
-    session.provider ?? cfg.defaultProvider,
-    session.model ?? cfg.defaultModel,
+    activeProvider,
+    activeModel,
     cfg.permissions ?? "default",
-    effectiveThinkingEffort(
-      session.provider ?? cfg.defaultProvider,
-      session.model ?? cfg.defaultModel,
-      cfg.thinking,
-    ),
+    effectiveThinkingEffort(activeProvider, activeModel, cfg.thinking),
   );
 
   const shouldOwnKeyboard =

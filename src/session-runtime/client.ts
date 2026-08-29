@@ -13,6 +13,7 @@ import {
   latestLiveRuntime,
   probeRuntime,
 } from "./discovery.js";
+import { enforceIdleRuntimeCap } from "./reaper.js";
 import {
   RUNTIME_CHILD_ENV,
   RUNTIME_DISABLE_ENV,
@@ -63,7 +64,7 @@ type AttachOutcome =
       readonly reason: "minimise" | "requested" | "taken-over" | "connection-lost";
       readonly sessionId: string;
     }
-  | { readonly kind: "switch"; readonly sessionId: string };
+  | { readonly kind: "switch"; readonly sessionId: string; readonly fresh: boolean };
 
 export interface DurableInteractiveOptions {
   readonly entryPath: string;
@@ -236,7 +237,10 @@ async function ensureRuntime(
   if (existing?.phase === "failed") {
     throw new Error(existing.error ?? "session runtime failed");
   }
-  return existing ?? (await startRuntimeHost(options, target));
+  if (existing) return existing;
+  const started = await startRuntimeHost(options, target);
+  void enforceIdleRuntimeCap(started.sessionId).catch(() => undefined);
+  return started;
 }
 
 async function initialTarget(
@@ -261,9 +265,13 @@ async function initialTarget(
   return { sessionId: mintSessionId(), resumeId: resume.id };
 }
 
-async function switchTarget(sessionId: string): Promise<RuntimeTarget> {
+async function switchTarget(
+  sessionId: string,
+  fresh: boolean,
+): Promise<RuntimeTarget> {
   const live = await findLiveRuntime(sessionId);
   if (live) return { sessionId: live.sessionId };
+  if (fresh) return { sessionId };
   const resolved = await resolveResumeTarget({ kind: "id", id: sessionId });
   if (!resolved.record) {
     throw new Error(resolved.error ?? `session ${sessionId} is unavailable`);
@@ -360,7 +368,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
     const frame = hostFrame(value);
     if (!frame || frame.type === "pong") return;
     if (frame.type === "switch") {
-      settle({ kind: "switch", sessionId: frame.sessionId });
+      settle({ kind: "switch", sessionId: frame.sessionId, fresh: frame.fresh === true });
       return;
     }
     if (frame.type === "detached") {
@@ -530,7 +538,7 @@ export async function tryRunDurableInteractive(
       const outcome = await attachRuntime(metadata);
       if (outcome.kind === "switch") {
         try {
-          target = await switchTarget(outcome.sessionId);
+          target = await switchTarget(outcome.sessionId, outcome.fresh);
         } catch (error) {
           const current = await findLiveRuntime(metadata.sessionId).catch(
             () => undefined,

@@ -8,7 +8,6 @@
     "src/agent/tool-call-parser.ts",
     "src/interactive-session/manager.ts",
     "src/llm/http.ts",
-    "src/llm/meta.ts",
     "src/llm/router.ts",
     "src/store/history.ts",
     "src/store/plan.ts",

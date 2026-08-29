@@ -13,8 +13,17 @@ import type { AppServices } from "../bootstrap/composition-root.js";
 import { composerActionPort } from "../composer/composer-action-port.js";
 
 const ADD_VALUE = "__mcp_add__";
+const NOTION_VALUE = "__mcp_notion__";
+const LOGIN_PREFIX = "__mcp_login__:";
 const ALL_VALUE = "__mcp_all__";
 const OFF_VALUE = "__mcp_off__";
+const NOTION_SERVER = "notion";
+const NOTION_FRAGMENT = JSON.stringify({
+  [NOTION_SERVER]: {
+    url: "https://mcp.notion.com/mcp",
+    auth: { kind: "oauth" },
+  },
+});
 
 function selectionText(services: AppServices): string {
   return mcpSelectionLabel(services.mcp.getState().selection);
@@ -37,6 +46,21 @@ function resolveServer(
     status.name.toLowerCase().includes(needle),
   );
   return partial.length === 1 ? partial[0] : undefined;
+}
+
+function resolveConfiguredServer(
+  services: AppServices,
+  query: string,
+): McpServerStatus | undefined {
+  const snapshot = services.mcp.getState().snapshot;
+  const direct = resolveServer(snapshot.statuses, query);
+  if (direct) return direct;
+  const needle = query.trim().toLowerCase();
+  const alias = snapshot.shadowed.find(
+    (entry) => entry.name.toLowerCase() === needle,
+  );
+  if (!alias) return undefined;
+  return snapshot.statuses.find((status) => status.name === alias.shadowedByName);
 }
 
 function selectServer(services: AppServices, status: McpServerStatus): void {
@@ -79,7 +103,10 @@ const ADD_TEMPLATE = `{
   }
 }`;
 
-async function addServer(services: AppServices, supplied = ""): Promise<void> {
+async function addServer(
+  services: AppServices,
+  supplied = "",
+): Promise<string | undefined> {
   const target = projectMcpConfigPath();
   const displayPath = displayMcpConfigPath(target);
   let draft = supplied.trim();
@@ -122,8 +149,51 @@ async function addServer(services: AppServices, supplied = ""): Promise<void> {
       status?.status === "ready" ? "info" : "warn",
       `${written.replaced ? "updated" : "added"} MCP server ${written.serverName} in ${written.displayPath}${status?.status === "ready" ? ` · use ${formatMcpToken(written.serverName)} in your prompt · ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}` : ` · ${status?.status ?? "not discovered"}${status?.detail ? ` · ${status.detail}` : ""}`}`,
     );
-    return;
+    return written.serverName;
   }
+  return undefined;
+}
+
+async function loginServer(
+  services: AppServices,
+  query: string,
+): Promise<boolean> {
+  const status = resolveConfiguredServer(services, query);
+  if (!status) {
+    services.session.notice(
+      "warn",
+      query
+        ? `no unique MCP server matching "${query}"`
+        : "usage: /mcp login <server>",
+    );
+    return false;
+  }
+  if (!services.mcp.canLogin(status.name)) {
+    services.session.notice(
+      "warn",
+      `MCP server ${status.name} is not configured for OAuth login`,
+    );
+    return false;
+  }
+  services.session.notice("info", `opening OAuth sign-in for MCP server ${status.name}…`);
+  const result = await services.mcp.agentLogin(status.name);
+  services.session.notice(result.ok ? "info" : "warn", result.output);
+  if (!result.ok) return false;
+  const next = services.mcp
+    .getState()
+    .snapshot.statuses.find((candidate) => candidate.name === status.name);
+  if (next?.status === "ready") selectServer(services, next);
+  return true;
+}
+
+async function addNotion(services: AppServices): Promise<void> {
+  const serverName = await addServer(services, NOTION_FRAGMENT);
+  if (!serverName) return;
+  const status = services.mcp
+    .getState()
+    .snapshot.statuses.find((candidate) => candidate.name === serverName);
+  if (status?.status === "ready") return;
+  await loginServer(services, serverName);
 }
 
 function pickerTitle(services: AppServices): string {
@@ -139,6 +209,46 @@ function pickerTitle(services: AppServices): string {
   return `MCP · ${target} · ${ready}/${statuses.length} live · ${state.activeToolCount} active tools${progress}`;
 }
 
+function canSignIn(
+  services: AppServices,
+  status: McpServerStatus,
+): boolean {
+  if (!services.mcp.canLogin(status.name)) return false;
+  return status.status === "error" || status.status === "degraded";
+}
+
+function serverPickerOptions(services: AppServices): PickerOption[] {
+  const state = services.mcp.getState();
+  return state.snapshot.statuses.map((status) => {
+    const signIn = canSignIn(services, status);
+    return {
+      value: signIn ? `${LOGIN_PREFIX}${status.name}` : status.name,
+      label: `${signIn ? "sign in" : status.status === "ready" ? "live" : status.status} · ${status.name}`,
+      description: signIn
+        ? `OAuth sign-in · ${statusDescription(status)}`
+        : statusDescription(status),
+      active:
+        state.selection.mode === "servers" &&
+        state.selection.serverNames.includes(status.name),
+    };
+  });
+}
+
+function notionPickerOptions(
+  statuses: readonly McpServerStatus[],
+): PickerOption[] {
+  if (statuses.some((status) => status.name.toLowerCase().includes("notion"))) {
+    return [];
+  }
+  return [
+    {
+      value: NOTION_VALUE,
+      label: "+ connect Notion",
+      description: "official hosted MCP · OAuth browser sign-in",
+    },
+  ];
+}
+
 function pickerOptions(services: AppServices): PickerOption[] {
   const state = services.mcp.getState();
   const target = displayMcpConfigPath(projectMcpConfigPath());
@@ -148,6 +258,7 @@ function pickerOptions(services: AppServices): PickerOption[] {
       label: "+ add MCP server",
       description: `paste one JSON server object · merge into ${target}`,
     },
+    ...notionPickerOptions(state.snapshot.statuses),
     {
       value: OFF_VALUE,
       label: "MCP tools off",
@@ -160,14 +271,7 @@ function pickerOptions(services: AppServices): PickerOption[] {
       description: "expose every ready MCP tool for this session",
       active: state.selection.mode === "all",
     },
-    ...state.snapshot.statuses.map((status) => ({
-      value: status.name,
-      label: `${status.status === "ready" ? "live" : status.status} · ${status.name}`,
-      description: statusDescription(status),
-      active:
-        state.selection.mode === "servers" &&
-        state.selection.serverNames.includes(status.name),
-    })),
+    ...serverPickerOptions(services),
   ];
 }
 
@@ -189,6 +293,14 @@ function openPicker(services: AppServices): void {
       services.overlay.close();
       if (value === ADD_VALUE) {
         void addServer(services);
+        return;
+      }
+      if (value === NOTION_VALUE) {
+        void addNotion(services);
+        return;
+      }
+      if (value.startsWith(LOGIN_PREFIX)) {
+        void loginServer(services, value.slice(LOGIN_PREFIX.length));
         return;
       }
       if (value === ALL_VALUE) {
@@ -253,8 +365,7 @@ async function reconnect(
   services: AppServices,
   query: string,
 ): Promise<void> {
-  const statuses = services.mcp.getState().snapshot.statuses;
-  const status = resolveServer(statuses, query);
+  const status = resolveConfiguredServer(services, query);
   if (!status) {
     services.session.notice(
       "warn",
@@ -280,6 +391,132 @@ async function reconnect(
   }
 }
 
+type McpSubcommandHandler = (
+  services: AppServices,
+  tail: string,
+) => void | Promise<void>;
+
+async function loginCommand(services: AppServices, tail: string): Promise<void> {
+  await loginServer(services, tail);
+}
+
+async function addCommand(services: AppServices, tail: string): Promise<void> {
+  if (tail.toLowerCase() === NOTION_SERVER) {
+    await addNotion(services);
+    return;
+  }
+  await addServer(services, tail);
+}
+
+function locationsCommand(services: AppServices): void {
+  services.overlay.openPager(
+    "MCP configuration locations",
+    locationLines(services).join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+}
+
+function allCommand(services: AppServices): void {
+  services.mcp.selectAll();
+  services.session.notice("info", "MCP selection · all live servers · session only");
+}
+
+function offCommand(services: AppServices): void {
+  services.mcp.selectOff();
+  services.session.notice("info", "MCP tools off for this session");
+}
+
+function listCommand(services: AppServices): void {
+  services.overlay.openPager(
+    "MCP catalog",
+    catalogText(services),
+    undefined,
+    undefined,
+    "plain",
+  );
+}
+
+function statusCommand(services: AppServices): void {
+  const state = services.mcp.getState();
+  services.overlay.openPager(
+    "MCP status",
+    [
+      ...locationLines(services),
+      "",
+      `Selection: ${selectionText(services)} · ${state.activeToolCount} active tools`,
+      "",
+      formatStatuses(state.snapshot.statuses),
+      ...(state.snapshot.invalid.length > 0
+        ? [
+            "",
+            "Invalid configurations:",
+            ...state.snapshot.invalid.map(
+              (entry) =>
+                `  ${entry.name} · ${entry.source.path} · ${entry.errors.join("; ")}`,
+            ),
+          ]
+        : []),
+    ].join("\n"),
+    undefined,
+    undefined,
+    "plain",
+  );
+}
+
+function toolsCommand(services: AppServices, tail: string): void {
+  const server = tail
+    ? resolveServer(services.mcp.getState().snapshot.statuses, tail)
+    : undefined;
+  if (tail && !server) {
+    services.session.notice("warn", `no unique MCP server matching "${tail}"`);
+    return;
+  }
+  services.overlay.openPager(
+    server ? `MCP tools · ${server.name}` : "MCP tools",
+    toolText(services, server?.name),
+    undefined,
+    undefined,
+    "plain",
+  );
+}
+
+async function refreshCommand(services: AppServices): Promise<void> {
+  services.session.notice("info", "refreshing MCP configurations and live tools…");
+  const state = await services.mcp.refresh({ force: true });
+  const ready = state.snapshot.statuses.filter(
+    (status) => status.status === "ready",
+  ).length;
+  services.session.notice(
+    state.error ? "warn" : "info",
+    `MCP refresh · ${ready}/${state.snapshot.statuses.length} live · ${state.activeToolCount} active tools${state.error ? ` · ${state.error}` : ""}`,
+  );
+}
+
+const MCP_SUBCOMMANDS = new Map<string, McpSubcommandHandler>([
+  ["login", loginCommand],
+  ["auth", loginCommand],
+  ["signin", loginCommand],
+  ["add", addCommand],
+  ["new", addCommand],
+  ["locations", locationsCommand],
+  ["location", locationsCommand],
+  ["paths", locationsCommand],
+  ["all", allCommand],
+  ["auto", allCommand],
+  ["on", allCommand],
+  ["off", offCommand],
+  ["none", offCommand],
+  ["list", listCommand],
+  ["catalog", listCommand],
+  ["status", statusCommand],
+  ["tools", toolsCommand],
+  ["refresh", refreshCommand],
+  ["reload", refreshCommand],
+  ["reconnect", reconnect],
+]);
+
 export async function handleMcp(
   services: AppServices,
   invocation: CommandInvocation,
@@ -296,93 +533,11 @@ export async function handleMcp(
     return;
   }
   await services.mcp.ensureReady();
-  if (command === "add" || command === "new") {
-    await addServer(services, tail);
+  const handler = MCP_SUBCOMMANDS.get(command);
+  if (handler) {
+    await handler(services, tail);
     return;
   }
-  if (command === "locations" || command === "location" || command === "paths") {
-    services.overlay.openPager(
-      "MCP configuration locations",
-      locationLines(services).join("\n"),
-      undefined,
-      undefined,
-      "plain",
-    );
-    return;
-  }
-  if (command === "all" || command === "auto" || command === "on") {
-    services.mcp.selectAll();
-    services.session.notice("info", "MCP selection · all live servers · session only");
-    return;
-  }
-  if (command === "off" || command === "none") {
-    services.mcp.selectOff();
-    services.session.notice("info", "MCP tools off for this session");
-    return;
-  }
-  if (command === "list" || command === "catalog") {
-    services.overlay.openPager("MCP catalog", catalogText(services), undefined, undefined, "plain");
-    return;
-  }
-  if (command === "status") {
-    const state = services.mcp.getState();
-    services.overlay.openPager(
-      "MCP status",
-      [
-        ...locationLines(services),
-        "",
-        `Selection: ${selectionText(services)} · ${state.activeToolCount} active tools`,
-        "",
-        formatStatuses(state.snapshot.statuses),
-        ...(state.snapshot.invalid.length > 0
-          ? [
-              "",
-              "Invalid configurations:",
-              ...state.snapshot.invalid.map(
-                (entry) =>
-                  `  ${entry.name} · ${entry.source.path} · ${entry.errors.join("; ")}`,
-              ),
-            ]
-          : []),
-      ].join("\n"),
-      undefined,
-      undefined,
-      "plain",
-    );
-    return;
-  }
-  if (command === "tools") {
-    const server = tail
-      ? resolveServer(services.mcp.getState().snapshot.statuses, tail)
-      : undefined;
-    if (tail && !server) {
-      services.session.notice("warn", `no unique MCP server matching "${tail}"`);
-      return;
-    }
-    services.overlay.openPager(
-      server ? `MCP tools · ${server.name}` : "MCP tools",
-      toolText(services, server?.name),
-      undefined,
-      undefined,
-      "plain",
-    );
-    return;
-  }
-  if (command === "refresh" || command === "reload") {
-    services.session.notice("info", "refreshing MCP configurations and live tools…");
-    const state = await services.mcp.refresh({ force: true });
-    const ready = state.snapshot.statuses.filter((status) => status.status === "ready").length;
-    services.session.notice(
-      state.error ? "warn" : "info",
-      `MCP refresh · ${ready}/${state.snapshot.statuses.length} live · ${state.activeToolCount} active tools${state.error ? ` · ${state.error}` : ""}`,
-    );
-    return;
-  }
-  if (command === "reconnect") {
-    await reconnect(services, tail);
-    return;
-  }
-
   const status = resolveServer(services.mcp.getState().snapshot.statuses, args);
   if (!status) {
     services.session.notice(

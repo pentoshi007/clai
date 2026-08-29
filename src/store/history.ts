@@ -19,6 +19,7 @@ import {
   isInternalChatMessage,
   type ChatImage,
   type ChatMessage,
+  type ProviderId,
   type ToolCall,
   type ToolResult,
 } from "../types.js";
@@ -137,6 +138,25 @@ export interface HistoryRecord {
   workspaceFolder?: string | undefined;
   /** 6-digit hex code that prefixes {@link workspaceFolder}. */
   workspaceCode?: string | undefined;
+  provider?: ProviderId | undefined;
+  model?: string | undefined;
+}
+
+export interface SessionModelSelection {
+  readonly provider?: ProviderId | undefined;
+  readonly model?: string | undefined;
+}
+
+function sessionModelFields(
+  selection?: SessionModelSelection | undefined,
+  fallback?: SessionModelSelection | undefined,
+): SessionModelSelection {
+  const provider = selection?.provider ?? fallback?.provider;
+  const model = selection?.model ?? fallback?.model;
+  return {
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+  };
 }
 
 /** Snapshot the active session workspace for history persistence. */
@@ -933,6 +953,7 @@ function serializeSessionPayload(record: HistoryRecord): string {
     transcript: record.transcript,
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
+    ...sessionModelFields(record),
     ...(record.workspaceFolder
       ? {
           workspaceFolder: record.workspaceFolder,
@@ -990,6 +1011,7 @@ export async function saveSession(
   revision?: number | undefined,
   writerGeneration?: string | undefined,
   previousTurn?: PreviousTurnSignal | null | undefined,
+  sessionModel?: SessionModelSelection | undefined,
 ): Promise<HistoryRecord> {
   // Auto-derive a readable name from the first real user message if none provided
   if (!name) {
@@ -1019,6 +1041,7 @@ export async function saveSession(
     transcript: scrubTranscript(transcript),
     ...(contextUsage ? { contextUsage } : {}),
     ...(previousTurn ? { previousTurn } : {}),
+    ...sessionModelFields(sessionModel),
     ...workspace,
   };
 
@@ -1047,6 +1070,7 @@ export async function upsertSession(
   revision?: number | undefined,
   writerGeneration?: string | undefined,
   previousTurn?: PreviousTurnSignal | null | undefined,
+  sessionModel?: SessionModelSelection | undefined,
 ): Promise<HistoryRecord> {
   const existing = await getSession(id);
   const requestedRevision =
@@ -1088,6 +1112,7 @@ export async function upsertSession(
       : previousTurn === undefined && existing?.previousTurn
         ? { previousTurn: existing.previousTurn }
         : {}),
+    ...sessionModelFields(sessionModel, existing),
     ...workspace,
   };
 
@@ -1274,10 +1299,20 @@ function rowToSession(row: unknown): HistoryRecord {
         transcript?: TranscriptItem[];
         contextUsage?: PersistedContextUsage;
         previousTurn?: PreviousTurnSignal;
+        provider?: ProviderId;
+        model?: string;
         workspaceFolder?: string;
         workspaceCode?: string;
       };
-  const messages = Array.isArray(parsed) ? parsed : parsed.messages ?? [];
+  type SessionPayload = Exclude<typeof parsed, ChatMessage[]>;
+  let payload: SessionPayload = {};
+  let messages: ChatMessage[];
+  if (Array.isArray(parsed)) {
+    messages = parsed;
+  } else {
+    payload = parsed;
+    messages = parsed.messages ?? [];
+  }
   return hydrateHistoryRecord({
     id: data.id,
     writerGeneration: data.writer_generation ?? undefined,
@@ -1290,11 +1325,13 @@ function rowToSession(row: unknown): HistoryRecord {
     updatedAt: data.updated_at,
     cwd: data.cwd,
     messages,
-    transcript: Array.isArray(parsed) ? undefined : parsed.transcript,
-    contextUsage: Array.isArray(parsed) ? undefined : parsed.contextUsage,
-    previousTurn: Array.isArray(parsed) ? undefined : parsed.previousTurn,
-    workspaceFolder: Array.isArray(parsed) ? undefined : parsed.workspaceFolder,
-    workspaceCode: Array.isArray(parsed) ? undefined : parsed.workspaceCode,
+    transcript: payload.transcript,
+    contextUsage: payload.contextUsage,
+    previousTurn: payload.previousTurn,
+    provider: payload.provider,
+    model: payload.model,
+    workspaceFolder: payload.workspaceFolder,
+    workspaceCode: payload.workspaceCode,
   });
 }
 
@@ -1798,6 +1835,7 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
       detail: `could not remove the session from the history database: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+
   invalidateSessionListCache();
   if (!deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite) {
     const existing = await getSession(id);
@@ -1805,6 +1843,15 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
     return { deleted: false, detail: "session not found" };
   }
   return { deleted: true, detail: `deleted ${id}` };
+}
+
+async function releasePurgedSessionModel(sessionId: string): Promise<void> {
+  try {
+    const { releaseSessionModel } = await import("./session-model.js");
+    await releaseSessionModel(sessionId);
+  } catch {
+    void 0;
+  }
 }
 
 export async function purgeSession(sessionId: string): Promise<{
@@ -1844,6 +1891,8 @@ export async function purgeSession(sessionId: string): Promise<{
   } catch {
     void 0;
   }
+
+  await releasePurgedSessionModel(id);
 
   let removedWorkspace = false;
   if (workspaceFolder) {

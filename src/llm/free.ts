@@ -1,6 +1,7 @@
 import type {
   CompletionRequest,
   CompletionResult,
+  ReasoningPreference,
 } from "../types.js";
 import {
   defaultModels,
@@ -19,6 +20,14 @@ import {
   ProviderError,
   type ReasoningStyle,
 } from "./http.js";
+import { META_STREAM_TERMINAL } from "./stream-terminal.js";
+import {
+  mapResponsesEffort,
+  responsesComplete,
+  responsesReasoningSummary,
+  responsesStream,
+  type ResponsesDialectConfig,
+} from "./responses-dialect.js";
 
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const KILO_BASE_URL = "https://api.kilo.ai/api/gateway";
@@ -150,6 +159,44 @@ function assertModelAllowed(model: string, apiKey: string): void {
   );
 }
 
+const RESPONSES_DIALECT_PATTERN = /muse-spark/i;
+
+function usesResponsesDialect(source: FreeSource, model: string): boolean {
+  return source.id === "free-1" && RESPONSES_DIALECT_PATTERN.test(model);
+}
+
+function zenResponsesHeaders(
+  auth: ProviderAuth,
+  accept: "application/json" | "text/event-stream",
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    accept,
+  };
+  return auth.apiKey
+    ? { ...headers, authorization: `Bearer ${auth.apiKey}` }
+    : headers;
+}
+
+function zenReasoningPayload(
+  reasoning: ReasoningPreference | undefined,
+): Record<string, unknown> | undefined {
+  if (!reasoning?.enabled) return undefined;
+  const effort = mapResponsesEffort(reasoning.effort ?? "medium");
+  return { effort, summary: responsesReasoningSummary(effort) };
+}
+
+const ZEN_RESPONSES_CONFIG: ResponsesDialectConfig = {
+  baseUrl: ZEN_BASE_URL,
+  providerId: "free",
+  displayName: "Free (opencode zen)",
+  artifactDialect: "meta-responses",
+  terminalPolicy: META_STREAM_TERMINAL,
+  buildHeaders: zenResponsesHeaders,
+  reasoningPayload: zenReasoningPayload,
+  bodyExtras: () => ({}),
+};
+
 interface ModelCache {
   models: string[];
   fetchedAt: number;
@@ -218,6 +265,15 @@ export const freeProvider: LlmProvider = {
     const requested = request.model ?? defaultModels.free;
     assertModelAllowed(requested, apiKey);
     const { source, model } = resolveFreeSource(requested);
+    if (usesResponsesDialect(source, model)) {
+      const result = await responsesComplete(
+        ZEN_RESPONSES_CONFIG,
+        request,
+        auth,
+        model,
+      );
+      return { ...result, model: requested };
+    }
     const payload = await openAiCompatibleComplete({
       provider: "Free",
       providerId: "free",
@@ -247,6 +303,16 @@ export const freeProvider: LlmProvider = {
     const requested = request.model ?? defaultModels.free;
     assertModelAllowed(requested, apiKey);
     const { source, model } = resolveFreeSource(requested);
+    if (usesResponsesDialect(source, model)) {
+      const result = await responsesStream(
+        ZEN_RESPONSES_CONFIG,
+        request,
+        auth,
+        onToken,
+        model,
+      );
+      return { ...result, model: requested };
+    }
     const budgets = streamIdleBudgets(Boolean(request.thinking?.enabled));
     const payload = await openAiCompatibleStream({
       provider: "Free",

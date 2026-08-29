@@ -20,10 +20,24 @@ export interface McpStdioConfig {
   readonly cwd?: string | undefined;
 }
 
+export type McpAuthConfig =
+  | { readonly kind: "none" }
+  | { readonly kind: "bearer"; readonly token: string }
+  | { readonly kind: "header"; readonly headers: Readonly<Record<string, string>> }
+  | {
+      readonly kind: "oauth";
+      readonly scopes?: readonly string[] | undefined;
+      readonly clientId?: string | undefined;
+      readonly clientSecret?: string | undefined;
+      readonly resource?: string | undefined;
+      readonly authorizationServer?: string | undefined;
+    };
+
 export interface McpHttpConfig {
   readonly transport: "http" | "sse";
   readonly url: string;
   readonly headers: Readonly<Record<string, string>>;
+  readonly auth?: McpAuthConfig | undefined;
 }
 
 export type McpServerConfig = McpStdioConfig | McpHttpConfig;
@@ -94,6 +108,7 @@ export interface McpShadowedServer {
   readonly name: string;
   readonly source: McpConfigSource;
   readonly shadowedBy: McpConfigSource;
+  readonly shadowedByName: string;
 }
 
 export interface McpInvalidServer {

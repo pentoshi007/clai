@@ -9,7 +9,7 @@ export interface ExitEpilogueOptions {
   readonly services: AppServices;
   readonly startedAt: number;
   /** Renderer-owned sink; ui-core never writes terminal bytes itself. */
-  readonly write: (text: string) => void;
+  readonly write: (text: string) => void | Promise<void>;
   readonly enabled?: boolean | undefined;
   readonly now?: (() => number) | undefined;
   readonly cwd?: (() => string) | undefined;
@@ -18,7 +18,7 @@ export interface ExitEpilogueOptions {
 
 export interface ExitEpilogue {
   readonly capture: () => void;
-  readonly run: () => void;
+  readonly run: () => void | Promise<void>;
 }
 
 function liveColumns(options: ExitEpilogueOptions): number | undefined {
@@ -63,7 +63,7 @@ export function createExitEpilogue(options: ExitEpilogueOptions): ExitEpilogue {
     run() {
       if (!enabled) return;
       snapshot ??= buildExitSummaryInput(options);
-      options.write(renderExitSummary(snapshot));
+      return options.write(renderExitSummary(snapshot));
     },
   };
 }

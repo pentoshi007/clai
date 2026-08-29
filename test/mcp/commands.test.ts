@@ -165,6 +165,8 @@ describe("/mcp shared command", () => {
       expect(overlay.request.title).toContain("0 active tools");
       expect(overlay.request.options.find((option) => option.value === "__mcp_add__")?.label)
         .toBe("+ add MCP server");
+      expect(overlay.request.options.find((option) => option.value === "__mcp_notion__"))
+        .toMatchObject({ label: "+ connect Notion" });
       expect(overlay.request.options.find((option) => option.value === "__mcp_off__"))
         .toMatchObject({ active: true });
       const docs = overlay.request.options.find((option) => option.value === "docs");
@@ -182,6 +184,73 @@ describe("/mcp shared command", () => {
     });
     expect(runtime.toolNames()).toEqual(["mcp.docs.search"]);
     release();
+    app.dispose();
+  });
+
+  it("shows one actionable row for a failed OAuth server", async () => {
+    await runtime.closeAll();
+    writeFileSync(
+      join(workspace, ".clai", "mcp.json"),
+      JSON.stringify({
+        servers: {
+          notion: {
+            url: "https://mcp.notion.com/mcp",
+            auth: { kind: "oauth" },
+          },
+        },
+      }),
+    );
+    const failingFactory: McpTransportFactory = () => ({
+      kind: "http",
+      start: () => Promise.resolve(),
+      request: () => Promise.reject(new Error("OAuth required")),
+      notify: () => Promise.resolve(),
+      close: () => Promise.resolve(),
+      sessionId: () => undefined,
+      setProtocolVersion: () => undefined,
+    });
+    runtime = new McpRuntime({
+      manager: new McpManager({
+        discovery: {
+          workspaceFolder: workspace,
+          homeDir: home,
+          env: { XDG_CONFIG_HOME: join(home, ".config") },
+          platform: "linux",
+        },
+        transportFactory: failingFactory,
+      }),
+    });
+    const login = vi.spyOn(runtime, "agentLogin").mockResolvedValue({
+      ok: true,
+      output: "Authenticated MCP server notion.",
+      exitCode: 0,
+    });
+    const app = services();
+
+    await app.commands.dispatch({ name: "mcp", args: "" });
+
+    const overlay = app.overlay.getState();
+    expect(overlay.kind).toBe("picker");
+    if (overlay.kind === "picker") {
+      expect(overlay.request.title).toContain("0/1 live");
+      expect(
+        overlay.request.options.find((option) => option.value === "__mcp_notion__"),
+      ).toBeUndefined();
+      const notionRows = overlay.request.options.filter((option) =>
+        option.label.toLowerCase().includes("notion"),
+      );
+      expect(notionRows).toHaveLength(1);
+      expect(notionRows[0]).toMatchObject({
+        value: "__mcp_login__:notion",
+        label: "sign in · notion",
+      });
+      expect(notionRows[0]?.description).toContain("OAuth sign-in · error");
+      expect(notionRows[0]?.description).toContain("OAuth required");
+      app.overlay.selectPicker("__mcp_login__:notion");
+    }
+    await vi.waitFor(() => {
+      expect(login).toHaveBeenCalledWith("notion");
+    });
     app.dispose();
   });
 
@@ -342,6 +411,53 @@ describe("/mcp shared command", () => {
     app.overlay.answerTextEditor(undefined);
     await vi.waitFor(() => {
       expect(app.overlay.getState().kind).toBe("none");
+    });
+    app.dispose();
+  });
+
+  it("dispatches /mcp login to the selected OAuth server", async () => {
+    writeFileSync(
+      join(workspace, ".clai", "mcp.json"),
+      JSON.stringify({
+        servers: {
+          remote: {
+            url: "https://mcp.example.com/mcp",
+            auth: { kind: "oauth" },
+          },
+        },
+      }),
+    );
+    await runtime.refresh({ force: true });
+    const login = vi.spyOn(runtime, "agentLogin").mockResolvedValue({
+      ok: true,
+      output: "Authenticated MCP server remote.",
+      exitCode: 0,
+    });
+    const app = services();
+
+    await app.commands.dispatch({ name: "mcp", args: "login remote" });
+
+    expect(login).toHaveBeenCalledWith("remote");
+    expect(runtime.getState().selection).toEqual({
+      mode: "servers",
+      serverNames: ["remote"],
+    });
+    app.dispose();
+  });
+
+  it("adds the official Notion endpoint with OAuth from the preset", async () => {
+    const app = services();
+
+    await app.commands.dispatch({ name: "mcp", args: "add notion" });
+
+    const config = JSON.parse(
+      readFileSync(join(workspace, ".clai", "mcp.json"), "utf8"),
+    ) as {
+      servers: Record<string, { url?: string; auth?: { kind?: string } }>;
+    };
+    expect(config.servers.notion).toEqual({
+      url: "https://mcp.notion.com/mcp",
+      auth: { kind: "oauth" },
     });
     app.dispose();
   });

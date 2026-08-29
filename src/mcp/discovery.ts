@@ -130,6 +130,44 @@ export function computeConfigSignature(
     .slice(0, 16);
 }
 
+function logicalRemotePath(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, "");
+  if (trimmed.length === 0) return pathname;
+  const separator = trimmed.lastIndexOf("/");
+  const endpoint = trimmed.slice(separator + 1).toLowerCase();
+  if (endpoint !== "mcp" && endpoint !== "sse") return pathname;
+  const parent = trimmed.slice(0, separator);
+  return `mcp-service:${parent.length > 0 ? parent : "/"}`;
+}
+
+function logicalServerIdentity(
+  config: McpServerConfig,
+  toolSelection: McpToolSelection,
+): string {
+  let identity: unknown = config;
+  if (config.transport !== "stdio") {
+    const url = new URL(config.url);
+    identity = {
+      transport: "remote",
+      endpoint: {
+        protocol: url.protocol,
+        username: url.username,
+        password: url.password,
+        host: url.host,
+        path: logicalRemotePath(url.pathname),
+        search: url.search,
+      },
+      headers: config.headers,
+      auth: config.auth ?? { kind: "oauth" },
+    };
+  }
+  const tools =
+    toolSelection === "all" ? "all" : [...toolSelection].sort();
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalize({ identity, tools })))
+    .digest("hex");
+}
+
 function rankFor(kind: McpConfigSourceKind): number {
   const index = MCP_SOURCE_PRECEDENCE.indexOf(kind);
   return index === -1 ? MCP_SOURCE_PRECEDENCE.length : index;
@@ -405,6 +443,7 @@ export function discoverMcpServers(
   const warnings: string[] = [];
 
   const claimedBy = new Map<string, McpConfigSource>();
+  const claimedIdentity = new Map<string, { source: McpConfigSource; name: string }>();
   const seenPaths = new Set<string>();
 
   for (const source of buildSources({ workspaceFolder, homeDir, platform, env })) {
@@ -431,7 +470,7 @@ export function discoverMcpServers(
     for (const [name, rawEntry] of Object.entries(rawServers)) {
       const winner = claimedBy.get(name);
       if (winner) {
-        shadowed.push({ name, source, shadowedBy: winner });
+        shadowed.push({ name, source, shadowedBy: winner, shadowedByName: name });
         continue;
       }
       const validation = validateServerEntry(name, rawEntry, context);
@@ -440,6 +479,21 @@ export function discoverMcpServers(
         continue;
       }
       claimedBy.set(name, source);
+      const identity = logicalServerIdentity(
+        validation.server.config,
+        validation.server.toolSelection,
+      );
+      const identityWinner = claimedIdentity.get(identity);
+      if (identityWinner) {
+        shadowed.push({
+          name,
+          source,
+          shadowedBy: identityWinner.source,
+          shadowedByName: identityWinner.name,
+        });
+        continue;
+      }
+      claimedIdentity.set(identity, { source, name });
       servers.push({
         name,
         config: validation.server.config,

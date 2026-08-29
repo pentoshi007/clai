@@ -47,6 +47,7 @@ export function registerWireName(canonical: string, wire?: string): void {
     throw new Error(`Tool wire name collision: ${w} maps to both ${existing} and ${canonical}`);
   }
   wireToCanonical.set(w, canonical);
+  if (!wireToCanonical.has(canonical)) wireToCanonical.set(canonical, canonical);
 }
 
 /** Register primary wire + snake_case alias when they differ. */
@@ -74,7 +75,7 @@ export function sanitizeToolName(raw: string): string {
   n = n.replace(/^(?:functions\.|tools\.|tool\.)/i, "");
   n = n.replace(/:\d+$/, "");
   // Drop trailing non-name junk after a clean dotted/underscored stem
-  n = n.replace(/[^A-Za-z0-9._-]+.*$/, "");
+  n = n.replace(/[^A-Za-z0-9._/-]+.*$/, "");
   // Role words models glue after tags (fs.writecommentary)
   n = n.replace(
     /(?:commentary|analysis|channel|tool_call|toolcall|final)$/i,
@@ -107,10 +108,41 @@ function longestRegisteredPrefix(cleaned: string): string | undefined {
   return best;
 }
 
+function normalizedWireCandidates(cleaned: string): string[] {
+  const underscored = cleaned.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_");
+  const dashless = underscored.replace(/-/g, "_");
+  return [cleaned, underscored, dashless, underscored.toLowerCase(), dashless.toLowerCase()];
+}
+
+function hashlessStem(wire: string): string {
+  return wire.replace(/_[0-9a-f]{8,}$/i, "").toLowerCase();
+}
+
+function uniqueStemMatch(candidates: readonly string[]): string | undefined {
+  const targets = new Set(candidates.map(hashlessStem));
+  let found: string | undefined;
+  for (const [wire, canonical] of wireToCanonical) {
+    if (!targets.has(hashlessStem(wire))) continue;
+    if (found !== undefined && found !== canonical) return undefined;
+    found = canonical;
+  }
+  return found;
+}
+
+function resolveRegistered(cleaned: string): string | undefined {
+  const candidates = normalizedWireCandidates(cleaned);
+  for (const candidate of candidates) {
+    const hit = wireToCanonical.get(candidate);
+    if (hit) return hit;
+  }
+  return uniqueStemMatch(candidates);
+}
+
 export function fromWireName(wire: string): string | undefined {
   const cleaned = sanitizeToolName(wire);
   if (!cleaned) return undefined;
-  if (wireToCanonical.has(cleaned)) return wireToCanonical.get(cleaned);
+  const registered = resolveRegistered(cleaned);
+  if (registered) return registered;
   // Polluted name that still starts with a registered wire form
   const prefix = longestRegisteredPrefix(cleaned);
   if (prefix) return wireToCanonical.get(prefix);

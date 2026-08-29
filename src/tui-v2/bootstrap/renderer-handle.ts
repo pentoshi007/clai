@@ -1,7 +1,7 @@
 import type { RendererHandle } from "../../ui-core/bootstrap/lifecycle.js";
 
 export interface OpenTuiRendererControl {
-  pause(): void;
+  suspend(): void;
   idle(): Promise<void>;
   destroy(): void;
 }
@@ -10,6 +10,7 @@ export interface OpenTuiRendererHandleParts {
   readonly mount: () => void;
   readonly unmount: () => void;
   readonly renderer: OpenTuiRendererControl;
+  readonly finalized: Promise<void>;
   readonly disarmTerminalRescue: () => void;
   readonly disposeServices: () => void;
 }
@@ -39,9 +40,10 @@ export function createOpenTuiRendererHandle(
         unmountError = error;
       }
       try {
-        parts.renderer.pause();
+        parts.renderer.suspend();
         await parts.renderer.idle();
         parts.renderer.destroy();
+        await parts.finalized;
         parts.disarmTerminalRescue();
       } finally {
         parts.disposeServices();

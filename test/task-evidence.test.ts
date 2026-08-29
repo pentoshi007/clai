@@ -316,7 +316,7 @@ describe("typed task evidence", () => {
     ).toBe("verify");
   });
 
-  it("blocks implement done without feature write for feature apps", () => {
+  it("allows implement done on real work without a boilerplate heuristic", () => {
     let led = openTaskLedger("t2");
     led = recordTaskWorkSuccess(led, "t2", "fs.write", { sourceWrite: true });
     const gate = canMarkTaskDone(led, "t2", {
@@ -324,8 +324,7 @@ describe("typed task evidence", () => {
       featureAppRequired: true,
       sessionFeatureSeen: false,
     });
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) expect(gate.reason).toMatch(/feature/i);
+    expect(gate.ok).toBe(true);
 
     led = recordTaskWorkSuccess(led, "t2", "fs.write", { featureWrite: true });
     expect(
@@ -336,13 +335,23 @@ describe("typed task evidence", () => {
     ).toBe(true);
   });
 
-  it("blocks verify done without server/probe when title requires it", () => {
+  it("still blocks any task with no successful work at all", () => {
+    const empty = openTaskLedger("t2");
+    const gate = canMarkTaskDone(empty, "t2", {
+      taskTitle: "Implement the requested product feature",
+      featureAppRequired: true,
+    });
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) expect(gate.reason).toMatch(/no successful tool result/i);
+  });
+
+  it("allows verify done on successful work without demanding a server probe", () => {
     let led = openTaskLedger("t4");
     led = recordTaskWorkSuccess(led, "t4", "fs.list");
     const gate = canMarkTaskDone(led, "t4", {
       taskTitle: "Start dev server, probe localhost, leave running",
     });
-    expect(gate.ok).toBe(false);
+    expect(gate.ok).toBe(true);
 
     led = recordTaskWorkSuccess(led, "t4", "shell.start", {
       devServerStart: true,
@@ -426,15 +435,14 @@ describe("typed task evidence", () => {
       }).ok,
     ).toBe(true);
 
-    // Must not demand shell.start for pentest probe tasks
+    // Classification must not drag coding gates onto pentest probe tasks
     let led2 = openTaskLedger("t2");
     led2 = recordTaskWorkSuccess(led2, "t2", "fs.list");
-    const blocked = canMarkTaskDone(led2, "t2", {
+    const local = canMarkTaskDone(led2, "t2", {
       taskTitle: "Probe HTTP endpoints on example.com",
       planKind: "pentest",
     });
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.reason).toMatch(/remote/i);
+    expect(local.ok).toBe(true);
   });
 
   it("allows report observation when remote work already verified", () => {
@@ -448,7 +456,7 @@ describe("typed task evidence", () => {
     ).toBe(true);
   });
 
-  it("blocks a pentest exploit task without active-test evidence", () => {
+  it("classifies an exploit task without gating its completion on active-test evidence", () => {
     const title = "Exploit SQL injection on /login to dump users";
     expect(classifyTaskTitle(title, { planKind: "pentest" })).toBe("exploit");
 
@@ -456,12 +464,11 @@ describe("typed task evidence", () => {
     led = recordTaskWorkSuccess(led, "t5", "http.fetch", {
       remoteReconOk: true,
     });
-    const blocked = canMarkTaskDone(led, "t5", {
+    const gate = canMarkTaskDone(led, "t5", {
       taskTitle: title,
       planKind: "pentest",
     });
-    expect(blocked.ok).toBe(false);
-    if (!blocked.ok) expect(blocked.reason).toMatch(/active-test/i);
+    expect(gate.ok).toBe(true);
   });
 
   it("allows a pentest exploit task once an active test succeeded", () => {

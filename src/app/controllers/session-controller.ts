@@ -57,6 +57,7 @@ import { mergeCancelAllResult } from "./cancel-all-result.js";
 import type { ConfirmationPort } from "../ports/confirm-port.js";
 import type { SecretPort } from "../ports/secret-port.js";
 import { TurnController, type TurnResult } from "./turn-controller.js";
+import { SessionLoopRecovery } from "./session-loop-recovery.js";
 import { CompositeDisposable, type Disposable } from "./disposable.js";
 import {
   hasPersistableHistory,
@@ -141,6 +142,7 @@ export class SessionController implements Disposable {
 
   private history: ChatMessage[] = [];
   private readonly prompts: SessionPromptQueue;
+  private readonly loopRecovery: SessionLoopRecovery;
   private readonly responder: SessionResponder | undefined;
   private provider: ProviderId | undefined;
   private model: string | undefined;
@@ -206,6 +208,10 @@ export class SessionController implements Disposable {
       notice: (text) => this.notice("info", text),
       runTurn: (prompt, options) => this.runTurn(prompt, options),
       lastTurnResult: () => this.lastTurnResult,
+    });
+    this.loopRecovery = new SessionLoopRecovery({
+      notice: (text) => this.notice("warn", text),
+      enqueue: (prompt, label) => this.prompts.enqueuePriority(prompt, label),
     });
     this.namer = new SessionNamer({
       complete:
@@ -461,9 +467,12 @@ export class SessionController implements Disposable {
       /** Per-session scratch/output folder (restored with history). */
       workspaceFolder?: string | undefined;
       workspaceCode?: string | undefined;
+      provider?: ProviderId | undefined;
+      model?: string | undefined;
     } = {},
   ): void {
     this.beginLifecycleGeneration();
+    this.applyRestoredModel(options.provider, options.model);
     // Deep-copy then heal broken assistant/tool pairs from aborted turns so
     // /history resume + "continue" never dies on invalid native tool protocol.
     const healed: ChatMessage[] = messages.map((m) => ({ ...m }));
@@ -512,6 +521,18 @@ export class SessionController implements Disposable {
     this.notifyState();
   }
 
+  private applyRestoredModel(
+    provider: ProviderId | undefined,
+    model: string | undefined,
+  ): void {
+    this.provider = provider;
+    this.model = model;
+    this.lastMainRequestSnapshot = undefined;
+    clearTextOnlyModels();
+    void prefetchProviderCatalog(this.provider);
+    publishRouteReasoningVocabulary(this.provider, this.model);
+  }
+
   notice(level: NoticeLevel, text: string): void {
     this.deps.emit(this.sequencer.build("notice", { level, text }, undefined));
   }
@@ -553,6 +574,10 @@ export class SessionController implements Disposable {
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
       // Fresh session identity → fresh isolated workspace.
       beginSessionWorkspace();
+      this.provider = undefined;
+      this.model = undefined;
+      this.lastMainRequestSnapshot = undefined;
+      publishRouteReasoningVocabulary(this.provider, this.model);
     }
     this.policy = createSessionPolicy(this.sessionIdValue);
     this.notifyState();
@@ -609,7 +634,7 @@ export class SessionController implements Disposable {
     const resumedRequest: SuccessfulRequestSnapshot | undefined =
       this.lastMainRequestSnapshot ??
       (provider !== undefined && requestTokensBefore !== undefined
-        ? { provider, model: this.model ?? cfg.defaultModel, messages: history }
+        ? { provider, model: this.model ?? getProviderModel(provider), messages: history }
         : undefined);
 
     try {
@@ -620,7 +645,7 @@ export class SessionController implements Disposable {
         signal: abortController.signal,
         purpose: options.purpose,
         provider,
-        model: this.model ?? cfg.defaultModel,
+        model: this.model ?? getProviderModel(provider ?? cfg.defaultProvider),
         ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
         ...(this.contextLimitTokens
           ? { contextLimitTokens: this.contextLimitTokens }
@@ -702,6 +727,8 @@ export class SessionController implements Disposable {
       name: name ?? this.sessionTitle,
       transcript: this.deps.getTranscriptSnapshot?.(),
       previousTurn: this.continuationCheckpoint() ?? null,
+      ...(this.provider ? { provider: this.provider } : {}),
+      ...(this.model ? { model: this.model } : {}),
       ...(contextUsage ? { contextUsage } : {}),
     });
     this.settlePersistedResponderResults();
@@ -791,7 +818,7 @@ export class SessionController implements Disposable {
   async submit(prompt: string, opts?: TurnDisplayOptions): Promise<TurnResult> {
     this.namer.noteUserPrompt(opts?.displayPrompt !== null);
     this.responder?.activate();
-    this.loopRecoveryAttempts.clear();
+    this.loopRecovery.clear();
     return this.prompts.submit(prompt, opts);
   }
 
@@ -865,7 +892,7 @@ export class SessionController implements Disposable {
     if (sameGeneration) {
       this.lastTurnResult = result;
       this.restoredPreviousTurn = undefined;
-      this.maybeScheduleLoopGuardRecovery(result);
+      this.loopRecovery.handle(result);
     }
     try {
       if (
@@ -883,48 +910,6 @@ export class SessionController implements Disposable {
     } finally {
       this.responder?.scheduleWake();
     }
-  }
-
-  private readonly loopRecoveryAttempts = new Map<string, number>();
-
-  private maybeScheduleLoopGuardRecovery(result: TurnResult): void {
-    if (result.status !== "completed") return;
-    const stop = result.outcome.loopGuardStop;
-    if (!stop) {
-      if (result.outcome.status === "succeeded") this.loopRecoveryAttempts.clear();
-      return;
-    }
-    const signature = stop.signature || stop.calls;
-    const attempts = this.loopRecoveryAttempts.get(signature) ?? 0;
-    if (attempts >= 1) {
-      this.notice(
-        "warn",
-        "Loop guard stopped the agent again after automatic recovery — leaving the turn stopped. Continue manually with a different approach.",
-      );
-      return;
-    }
-    this.loopRecoveryAttempts.set(signature, attempts + 1);
-    const observation = stop.observation?.trim()
-      ? stop.observation.trim()
-      : "(no captured output — the repeated calls were blocked before running again)";
-    const prompt = [
-      `[LOOP GUARD RECOVERY] Your previous turn was stopped automatically because you repeated the exact same action sequence (same tools, same arguments) across consecutive responses: ${stop.calls}.`,
-      "",
-      "Those calls already ran and their results are available — re-issuing them is a loop.",
-      "",
-      "Earlier output of the repeated calls:",
-      observation,
-      "",
-      "Continue efficiently from these results. Do NOT re-issue the same calls with the same arguments; use the output above or take a materially different action to finish the remaining work.",
-    ].join("\n");
-    this.notice(
-      "warn",
-      "Loop guard stopped a repeated action cycle — auto-recovering with the captured results.",
-    );
-    this.prompts.enqueuePriority(
-      prompt,
-      "↻ auto-recovery: loop guard stopped a repeated action cycle",
-    );
   }
 
   /**
@@ -952,7 +937,7 @@ export class SessionController implements Disposable {
     this.lastTurnResult = undefined;
     this.restoredPreviousTurn = undefined;
     this.lastMainRequestSnapshot = undefined;
-    this.loopRecoveryAttempts.clear();
+    this.loopRecovery.clear();
     if (this.turn.running) this.turn.abort();
     this.compactAbort?.abort();
     this.compactAbort = undefined;

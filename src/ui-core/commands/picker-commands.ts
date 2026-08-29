@@ -44,6 +44,7 @@ import {
   setThinking,
   updateConfig,
 } from "../../store/config.js";
+import { saveSessionModel } from "../../store/session-model.js";
 import {
   envValue,
   getProviderSecret,
@@ -61,7 +62,6 @@ import {
   type CustomProviderDef,
 } from "../../llm/custom-providers.js";
 import {
-  deleteSession,
   getSession,
   listSessionSummaries,
   purgeSession,
@@ -135,7 +135,7 @@ export async function handleModel(
     return;
   }
 
-  const currentModel = getProviderModel(provider);
+  const currentModel = state.model ?? getProviderModel(provider);
   const fetchingToastId = services.toast.info(`fetching ${provider} models…`, {
     key: "model-fetch",
     sticky: true,
@@ -254,6 +254,14 @@ async function collectAllModels(): Promise<{
   return { entries, providers: providers.length, liveProviders, failed };
 }
 
+function persistSessionModel(
+  services: AppServices,
+  provider: ProviderId,
+  model: string,
+): Promise<void> {
+  return saveSessionModel(services.session.sessionId, { provider, model });
+}
+
 async function switchToCatalogEntry(
   services: AppServices,
   entry: CatalogEntry,
@@ -261,12 +269,11 @@ async function switchToCatalogEntry(
   const state = services.session.getState();
   const current = state.provider ?? getConfig().defaultProvider;
   if (entry.provider !== current) {
-    setDefaultProvider(entry.provider);
     services.session.setProvider(entry.provider);
     clearActiveProjectRoot();
   }
   services.session.setModel(entry.model);
-  setProviderModel(entry.provider, entry.model);
+  await persistSessionModel(services, entry.provider, entry.model);
   services.session.notice(
     "info",
     `provider → ${entry.provider} · model → ${entry.model}`,
@@ -369,7 +376,7 @@ function applyModel(
       ? options[index - 1]!
       : model;
   services.session.setModel(next);
-  setProviderModel(provider, next);
+  void persistSessionModel(services, provider, next).catch(() => undefined);
   services.session.notice("info", `model → ${next}`);
 }
 
@@ -477,11 +484,10 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
   const isFreeModel = model.startsWith("free-1/") || model.startsWith("free-2/");
   if (isFreeModel && next !== "free") {
     model = defaultModels[next];
-    setProviderModel(next, model);
   }
-  setDefaultProvider(next);
   services.session.setProvider(next);
   services.session.setModel(model);
+  await persistSessionModel(services, next, model);
   services.overlay.close();
   services.session.notice("info", `provider → ${next} · model → ${model}`);
   const fetchingToastId = services.toast.info(`fetching ${next} models…`, {
@@ -1045,7 +1051,7 @@ export async function handleHistory(services: AppServices, invocation?: CommandI
         services.session.notice("warn", "detach or exit the live session before deleting it");
         return;
       }
-      const result = await deleteSession(finalId);
+      const result = await purgeSession(finalId);
       services.session.notice(
         result.deleted ? "info" : "warn",
         result.deleted ? `deleted ${finalId}` : result.detail,

@@ -93,9 +93,23 @@ export const RUNNER_META_TOOL_NAMES = new Set([
   ...RESPONDER_TOOL_NAMES,
 ]);
 
+export const MCP_AGENT_TOOL_NAMES = new Set([
+  "mcp.list",
+  "mcp.tools",
+  "mcp.enable",
+  "mcp.connect",
+  "mcp.login",
+]);
+
+export function mcpAgentToolNames(askMode: boolean): string[] {
+  const readOnly = ["mcp.list", "mcp.tools"];
+  return askMode ? readOnly : [...readOnly, "mcp.enable", "mcp.connect", "mcp.login"];
+}
+
 /** Meta tools with no registry handler (runner-owned + ask-mode handoff). */
 export const NON_REGISTRY_TOOL_NAMES = new Set([
   ...RUNNER_META_TOOL_NAMES,
+  ...MCP_AGENT_TOOL_NAMES,
   "agent.handoff",
   "loop.reset",
 ]);
@@ -1322,6 +1336,73 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {},
       additionalProperties: false,
     },
+  ),
+  def(
+    "mcp.list",
+    "List configured MCP servers, their live connection status, and the current per-session selection. Read-only. Use this to discover what MCP capability is available before enabling or calling a server.",
+    emptyObject,
+    { readOnly: true, askMode: true },
+  ),
+  def(
+    "mcp.tools",
+    "List the tools exposed by connected MCP servers, with each tool's dotted name and whether it is read-only. Optionally filter to one server. Read-only.",
+    {
+      type: "object",
+      properties: {
+        server: {
+          type: "string",
+          description: "Optional MCP server name to filter the tool list.",
+        },
+      },
+      additionalProperties: false,
+    },
+    { readOnly: true, askMode: true },
+  ),
+  def(
+    "mcp.enable",
+    "Enable MCP tools for this session so their tools become callable. Pass server (one name) or servers (several names) to select specific servers, \"all\" to enable every live server, or \"off\" to disable. Changes only this session's selection; it never edits configuration.",
+    {
+      type: "object",
+      properties: {
+        server: {
+          type: "string",
+          description: "One server name, or \"all\" / \"off\".",
+        },
+        servers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Several server names to enable together.",
+        },
+      },
+      additionalProperties: false,
+    },
+    { mutates: true },
+  ),
+  def(
+    "mcp.connect",
+    "Connect or reconnect one configured MCP server and report its resulting status. Use after editing configuration or when a server shows as error/degraded.",
+    {
+      type: "object",
+      properties: {
+        server: { type: "string", description: "MCP server name to (re)connect." },
+      },
+      required: ["server"],
+      additionalProperties: false,
+    },
+    { mutates: true },
+  ),
+  def(
+    "mcp.login",
+    "Run the OAuth sign-in flow for one MCP server that returned 401/requires authorization. Opens a browser for consent, stores the resulting token, and reconnects. Use when mcp.connect reports the server needs authentication.",
+    {
+      type: "object",
+      properties: {
+        server: { type: "string", description: "MCP server name to authenticate." },
+      },
+      required: ["server"],
+      additionalProperties: false,
+    },
+    { mutates: true },
   ),
   def(
     "terminal.start",

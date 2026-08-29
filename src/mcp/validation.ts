@@ -1,5 +1,10 @@
 import { substituteVariables, type McpSubstitutionContext } from "./substitution.js";
-import type { McpServerConfig, McpToolSelection, McpTransportKind } from "./types.js";
+import type {
+  McpAuthConfig,
+  McpServerConfig,
+  McpToolSelection,
+  McpTransportKind,
+} from "./types.js";
 
 export interface ValidatedServer {
   readonly config: McpServerConfig;
@@ -159,6 +164,15 @@ function resolveTransport(
   return undefined;
 }
 
+
+function httpConfig(
+  transport: "http" | "sse",
+  url: string,
+  headers: Record<string, string>,
+  auth: McpAuthConfig | undefined,
+): McpServerConfig {
+  return { transport, url, headers, ...(auth ? { auth } : {}) };
+}
 export function validateServerEntry(
   name: string,
   rawEntry: unknown,
@@ -210,8 +224,9 @@ export function validateServerEntry(
       errors.push(`url must be an http(s) URL, got "${url}"`);
     }
     const headers = validateStringMap(entry.headers, "headers", substitutor, errors, true);
+    const auth = parseAuthBlock(entry.auth, substitutor, errors);
     if (errors.length === 0) {
-      config = { transport, url, headers };
+      config = httpConfig(transport, url, headers, auth);
     }
   }
 
@@ -242,4 +257,136 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+const AUTH_KINDS = new Set(["none", "bearer", "header", "oauth"]);
+
+const AUTH_ALLOWED_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  none: new Set<string>(),
+  bearer: new Set(["token"]),
+  header: new Set(["headers"]),
+  oauth: new Set(["scopes", "clientId", "clientSecret", "resource", "authorizationServer"]),
+};
+
+function markedString(
+  value: unknown,
+  label: string,
+  substitutor: Substitutor,
+  errors: string[],
+): string | undefined {
+  const primitive = coercePrimitive(value);
+  if (primitive === undefined) {
+    errors.push(`${label} must be a string`);
+    return undefined;
+  }
+  const resolved = substitutor.apply(primitive);
+  if (resolved.length > 0) substitutor.secretValues.add(resolved);
+  return resolved;
+}
+
+function parseScopes(
+  value: unknown,
+  substitutor: Substitutor,
+  errors: string[],
+): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    return value
+      .split(/[,\s]+/)
+      .map((part) => substitutor.apply(part.trim()))
+      .filter((part) => part.length > 0);
+  }
+  if (!Array.isArray(value)) {
+    errors.push("auth.scopes must be a string or array of strings");
+    return undefined;
+  }
+  const scopes: string[] = [];
+  value.forEach((entry, index) => {
+    if (typeof entry !== "string") {
+      errors.push(`auth.scopes[${index}] must be a string`);
+      return;
+    }
+    const resolved = substitutor.apply(entry.trim());
+    if (resolved.length > 0) scopes.push(resolved);
+  });
+  return scopes;
+}
+
+function rejectForeignAuthFields(
+  kind: string,
+  entry: Record<string, unknown>,
+  errors: string[],
+): void {
+  const allowed = AUTH_ALLOWED_FIELDS[kind] ?? new Set<string>();
+  for (const key of Object.keys(entry)) {
+    if (key === "kind") continue;
+    if (!allowed.has(key)) {
+      errors.push(`auth kind "${kind}" does not accept field "${key}"`);
+    }
+  }
+}
+
+function buildOauthAuth(
+  entry: Record<string, unknown>,
+  substitutor: Substitutor,
+  errors: string[],
+): McpAuthConfig {
+  const scopes = parseScopes(entry.scopes, substitutor, errors);
+  const clientId =
+    entry.clientId !== undefined ? markedString(entry.clientId, "auth.clientId", substitutor, errors) : undefined;
+  const clientSecret =
+    entry.clientSecret !== undefined
+      ? markedString(entry.clientSecret, "auth.clientSecret", substitutor, errors)
+      : undefined;
+  const resource =
+    entry.resource !== undefined ? markedString(entry.resource, "auth.resource", substitutor, errors) : undefined;
+  const authorizationServer =
+    entry.authorizationServer !== undefined
+      ? markedString(entry.authorizationServer, "auth.authorizationServer", substitutor, errors)
+      : undefined;
+  return {
+    kind: "oauth",
+    ...(scopes !== undefined ? { scopes } : {}),
+    ...(clientId !== undefined ? { clientId } : {}),
+    ...(clientSecret !== undefined ? { clientSecret } : {}),
+    ...(resource !== undefined ? { resource } : {}),
+    ...(authorizationServer !== undefined ? { authorizationServer } : {}),
+  };
+}
+
+export function parseAuthBlock(
+  raw: unknown,
+  substitutor: Substitutor,
+  errors: string[],
+): McpAuthConfig | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    errors.push("auth must be an object");
+    return undefined;
+  }
+  const entry = raw as Record<string, unknown>;
+  const kind = typeof entry.kind === "string" ? entry.kind.trim().toLowerCase() : "";
+  if (!AUTH_KINDS.has(kind)) {
+    errors.push('auth.kind must be one of "none", "bearer", "header", "oauth"');
+    return undefined;
+  }
+  rejectForeignAuthFields(kind, entry, errors);
+  if (kind === "none") return { kind: "none" };
+  if (kind === "bearer") {
+    const token = markedString(entry.token, "auth.token", substitutor, errors);
+    if (token === undefined || token.length === 0) {
+      errors.push("auth.token is required for bearer auth");
+      return undefined;
+    }
+    return { kind: "bearer", token };
+  }
+  if (kind === "header") {
+    const headers = validateStringMap(entry.headers, "auth.headers", substitutor, errors, true);
+    if (Object.keys(headers).length === 0) {
+      errors.push("auth.headers must define at least one header for header auth");
+      return undefined;
+    }
+    return { kind: "header", headers };
+  }
+  return buildOauthAuth(entry, substitutor, errors);
 }

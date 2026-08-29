@@ -388,6 +388,17 @@ const visionPatterns: Record<ProviderId, RegExp[]> = {
     /vision/i,
     /vl$/i,
   ],
+  "merge-gateway": [
+    /gpt-4o/i,
+    /gpt-4\.1/i,
+    /gpt-5/i,
+    /claude-(?:opus|sonnet|haiku)/i,
+    /gemini-/i,
+    /llama-4/i,
+    /pixtral/i,
+    /vision/i,
+    /vl$/i,
+  ],
 };
 
 const visionCapabilityCache = new Map<
@@ -848,6 +859,7 @@ const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   fireworks: "accounts/fireworks/models/kimi-k2p6",
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
   orcarouter: "openai/gpt-4o-mini",
+  "merge-gateway": "openai/gpt-5.2",
 };
 
 
@@ -891,6 +903,7 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   fireworks: "openai",
   hetzner: "openai",
   orcarouter: "openai",
+  "merge-gateway": "openai",
   anthropic: "anthropic",
   "aws-mantle": "openai", // refined by model below
   gemini: "gemini",

@@ -188,6 +188,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   hetzner: "free-cloud",
   // Zero token markup, but billing is per token at provider list price.
   orcarouter: "paid-cloud",
+  "merge-gateway": "paid-cloud",
 };
 
 /**

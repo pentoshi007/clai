@@ -90,6 +90,14 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /kimi/i,
     /glm/i,
   ],
+  "merge-gateway": [
+    /o[134]/i,
+    /gpt-5/i,
+    /claude-(?:opus|sonnet)/i,
+    /gemini-2\.5|gemini-3/i,
+    /deepseek-reasoner/i,
+    /qwen3/i,
+  ],
 };
 
 export function endpointAcceptedEfforts(

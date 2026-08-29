@@ -113,8 +113,13 @@ export class RuntimeChildBridge {
     return this.send({ type: "minimise" });
   }
 
-  switchSession(sessionId: string, closeCurrent: boolean): boolean {
-    return this.send({ type: "switch", sessionId, closeCurrent });
+  switchSession(sessionId: string, closeCurrent: boolean, fresh = false): boolean {
+    return this.send({
+      type: "switch",
+      sessionId,
+      closeCurrent,
+      ...(fresh ? { fresh: true } : {}),
+    });
   }
 
   dispose(exitCode = 0): void {

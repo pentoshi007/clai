@@ -124,9 +124,9 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/mcp",
     usage:
-      "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|add [json]]",
+      "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|login <server>|add [json|notion]]",
     description:
-      "inspect MCP sources/tools, add to project .clai/mcp.json, and choose session-active tools (off by default)",
+      "inspect MCP sources/tools and .clai/mcp.json, connect Notion or another server, sign in with OAuth, and choose session-active tools (off by default)",
   },
   {
     command: "/compact",
@@ -358,6 +358,23 @@ export const knownModels: Record<string, string[]> = {
     "kimi/kimi-k2.6",
     "minimax/minimax-m2.7",
     "z-ai/glm-5.1",
+  ],
+  "merge-gateway": [
+    "openai/gpt-5.2",
+    "openai/gpt-5.2-mini",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openai/o4-mini",
+    "anthropic/claude-sonnet-4-6",
+    "anthropic/claude-opus-4-6",
+    "anthropic/claude-3-5-haiku-20241022",
+    "google/gemini-3.5-flash",
+    "google/gemini-2.0-flash",
+    "google/gemini-2.5-pro",
+    "deepseek/deepseek-chat",
+    "deepseek/deepseek-reasoner",
+    "meta/llama-3.3-70b-instruct",
+    "mistral/mistral-large-latest",
   ],
 };
 

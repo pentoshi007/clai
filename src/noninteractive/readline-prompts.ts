@@ -15,6 +15,7 @@ export interface PromptStream extends NodeJS.ReadableStream {
 export interface PromptIO {
   readonly input?: PromptStream | undefined;
   readonly output?: NodeJS.WritableStream | undefined;
+  readonly signal?: AbortSignal | undefined;
 }
 
 /** Message used when a confirmation is impossible on a non-TTY stdin. */
@@ -116,6 +117,18 @@ async function session<T>(
       resolve(undefined);
     }
   });
+  const signal = io?.signal;
+  const onAbort = (): void => {
+    ended = true;
+    if (deliver) {
+      const resolve = deliver;
+      deliver = undefined;
+      resolve(undefined);
+    }
+    rl.close();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
   const ask: Ask = async (text) => {
     const buffered = pending.shift();
     if (buffered !== undefined) return buffered;
@@ -138,6 +151,7 @@ async function session<T>(
   try {
     return await body(ask);
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     rl.close();
     if (wasRaw) restoreInteractiveStdin(io);
   }

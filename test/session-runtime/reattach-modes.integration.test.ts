@@ -1,0 +1,245 @@
+import { spawn } from "node:child_process";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Socket } from "node:net";
+import { describe, expect, it } from "vitest";
+import { probePtyCapability } from "../../src/interactive-session/transport-node-pty.js";
+import { findBunExecutable } from "../../src/os/bun-runtime.js";
+import { SessionRuntimeHost } from "../../src/session-runtime/host.js";
+import {
+  RUNTIME_HOST_ENV,
+  encodeRuntimeHostPayload,
+} from "../../src/session-runtime/launch.js";
+import {
+  JsonFrameChannel,
+  connectRuntimeSocket,
+  readFirstFrame,
+  sendFrame,
+} from "../../src/session-runtime/protocol.js";
+import { probeRuntime } from "../../src/session-runtime/discovery.js";
+import { readRuntimeMetadata } from "../../src/session-runtime/store.js";
+import {
+  RUNTIME_PROTOCOL_VERSION,
+  type RuntimeHostFrame,
+  type RuntimeMetadata,
+} from "../../src/session-runtime/types.js";
+
+const CHILD_SCRIPT = String.raw`
+const net = require("node:net");
+const socket = net.connect(process.env.CLAI_RUNTIME_SOCKET, () => {
+  socket.write(JSON.stringify({version:1,type:"auth",role:"child",token:process.env.CLAI_RUNTIME_TOKEN}) + "\n");
+});
+const send = frame => socket.write(JSON.stringify(frame) + "\n");
+const status = busy => send({type:"status",sessionId:process.env.CLAI_RUNTIME_SESSION_ID,cwd:process.cwd(),busy,title:"Reattach fixture"});
+let buffer = "";
+socket.on("data", chunk => {
+  buffer += chunk.toString("utf8");
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline < 0) break;
+    const line = buffer.slice(0, newline);
+    buffer = buffer.slice(newline + 1);
+    const frame = JSON.parse(line);
+    if (frame.type === "ack") status(true);
+    if (frame.type === "shutdown") process.exit(0);
+  }
+});
+if (process.stdin.setRawMode) process.stdin.setRawMode(true);
+process.stdin.resume();
+process.stdin.on("data", chunk => {
+  for (const command of chunk.toString("utf8").replace(/[\r\n]/g, "")) {
+    if (command === "p") {
+      process.stdout.write("Z".repeat(2300000));
+      process.stdout.write("OVERFLOW-DONE\r\n");
+    } else if (command === "q") {
+      send({type:"exiting",exitCode:0});
+      setTimeout(() => process.exit(0), 10);
+    }
+  }
+});
+process.stdout.write("\u001b[?1049h\u001b[?1000h\u001b[?1006h\u001b[?2004h");
+process.stdout.write("reattach-fixture-ready\r\n");
+`;
+
+async function waitFor<T>(read: () => Promise<T | undefined>, timeoutMs = 8000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (value !== undefined) return value;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("timed out");
+}
+
+interface Runtime {
+  readonly sessionId: string;
+  readonly metadata: RuntimeMetadata;
+  readonly running: Promise<void>;
+  readonly fixturePath: string;
+}
+
+async function startRuntime(): Promise<Runtime | undefined> {
+  const capability = await probePtyCapability();
+  const bun = findBunExecutable();
+  if (!capability.available && !bun) return undefined;
+  const sessionId = `reattach-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const fixturePath = join(
+    tmpdir(),
+    `clai-reattach-child-${process.pid}-${Math.random().toString(16).slice(2)}.cjs`,
+  );
+  await writeFile(fixturePath, CHILD_SCRIPT, { mode: 0o600 });
+  const payload = {
+    version: RUNTIME_PROTOCOL_VERSION,
+    sessionId,
+    cwd: process.cwd(),
+    launch: { file: process.execPath, args: [fixturePath] },
+    columns: 100,
+    rows: 30,
+    idleTimeoutMs: 60_000,
+  } as const;
+  let running: Promise<void>;
+  if (bun) {
+    const entry = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+    const child = spawn(bun, [entry], {
+      cwd: process.cwd(),
+      env: { ...process.env, [RUNTIME_HOST_ENV]: encodeRuntimeHostPayload(payload) },
+      stdio: "ignore",
+    });
+    running = new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`runtime host exited ${code ?? "by signal"}`));
+      });
+    });
+  } else {
+    running = new SessionRuntimeHost(payload).run();
+  }
+  const metadata = await waitFor(async () => {
+    const value = await readRuntimeMetadata(sessionId);
+    if (value?.phase === "failed") throw new Error(value.error ?? "runtime failed");
+    return value?.phase === "running" && (await probeRuntime(value)) ? value : undefined;
+  });
+  return { sessionId, metadata, running, fixturePath };
+}
+
+async function channel(
+  metadata: RuntimeMetadata,
+  role: "client-control" | "client-terminal",
+  clientId: string,
+): Promise<{ socket: Socket; rest: Buffer }> {
+  const socket = await connectRuntimeSocket(metadata.socketPath);
+  sendFrame(socket, {
+    version: RUNTIME_PROTOCOL_VERSION,
+    type: "auth",
+    role,
+    token: metadata.token,
+    clientId,
+  });
+  const first = await readFirstFrame(socket);
+  expect(first.value).toMatchObject({ type: "ack" });
+  socket.on("error", () => undefined);
+  return { socket, rest: first.rest };
+}
+
+interface Client {
+  readonly control: Socket;
+  terminal: Socket;
+  readonly frames: RuntimeHostFrame[];
+  output: string;
+  dispose(): void;
+}
+
+async function openClient(metadata: RuntimeMetadata, id: string): Promise<Client> {
+  const controlConn = await channel(metadata, "client-control", id);
+  const frames: RuntimeHostFrame[] = [];
+  const reader = new JsonFrameChannel(
+    controlConn.socket,
+    (value) => frames.push(value as RuntimeHostFrame),
+    () => undefined,
+    controlConn.rest,
+  );
+  const terminalConn = await channel(metadata, "client-terminal", id);
+  const client: Client = {
+    control: controlConn.socket,
+    terminal: terminalConn.socket,
+    frames,
+    output: terminalConn.rest.toString("utf8"),
+    dispose() {
+      reader.dispose();
+      controlConn.socket.destroy();
+      client.terminal.destroy();
+    },
+  };
+  terminalConn.socket.on("data", (chunk) => {
+    client.output += chunk.toString("utf8");
+  });
+  terminalConn.socket.resume();
+  return client;
+}
+
+async function reattachTerminal(
+  metadata: RuntimeMetadata,
+  client: Client,
+  id: string,
+): Promise<{ output: () => string }> {
+  client.terminal.destroy();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  const attached = await channel(metadata, "client-terminal", id);
+  let output = attached.rest.toString("utf8");
+  attached.socket.on("data", (chunk) => {
+    output += chunk.toString("utf8");
+  });
+  attached.socket.resume();
+  client.terminal = attached.socket;
+  return { output: () => output };
+}
+
+async function stopRuntime(runtime: Runtime, client: Client): Promise<void> {
+  client.terminal.write("q");
+  await Promise.race([
+    runtime.running,
+    new Promise<void>((_resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error("runtime did not exit")),
+        5_000,
+      );
+      timer.unref?.();
+    }),
+  ]);
+  client.dispose();
+  await rm(runtime.fixturePath, { force: true });
+}
+
+describe("terminal reattach mode restoration", () => {
+  it("restores mouse reporting on reattach after the replay buffer evicted the child's setup", async () => {
+    if (process.platform === "win32") return;
+    const runtime = await startRuntime();
+    if (!runtime) return;
+    const id = "mode-restore";
+    const client = await openClient(runtime.metadata, id);
+    try {
+      await waitFor(async () =>
+        client.output.includes("reattach-fixture-ready") ? true : undefined,
+      );
+      client.terminal.write("p");
+      await waitFor(
+        async () => (client.output.includes("OVERFLOW-DONE") ? true : undefined),
+        15_000,
+      );
+
+      const reattached = await reattachTerminal(runtime.metadata, client, id);
+      await waitFor(
+        async () =>
+          reattached.output().includes("\u001b[?1000h") ? true : undefined,
+        15_000,
+      );
+      expect(reattached.output()).toContain("\u001b[?1000h");
+      expect(reattached.output()).toContain("\u001b[?2004h");
+    } finally {
+      await stopRuntime(runtime, client);
+    }
+  }, 30_000);
+});

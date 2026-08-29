@@ -86,6 +86,17 @@ describe("readline y/n parsing", () => {
     await expect(askYesNo("Run it?", no)).resolves.toBe(false);
   });
 
+  it("closes an active prompt when one-shot cancellation aborts", async () => {
+    const io = makeIO();
+    const controller = new AbortController();
+    const pending = askYesNo("Run it?", {
+      ...io,
+      signal: controller.signal,
+    });
+    setImmediate(() => controller.abort());
+    await expect(pending).resolves.toBe(false);
+  });
+
   it("takes the default on empty input and re-asks on junk", async () => {
     const empty = makeIO();
     answer(empty, "");

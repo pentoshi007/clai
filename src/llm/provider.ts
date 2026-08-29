@@ -85,6 +85,10 @@ export const providerAliases: Record<string, ProviderId> = {
   orcarouter: "orcarouter",
   "orca-router": "orcarouter",
   orca: "orcarouter",
+  "merge-gateway": "merge-gateway",
+  mergegateway: "merge-gateway",
+  merge: "merge-gateway",
+  mg: "merge-gateway",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -110,6 +114,7 @@ export const defaultModels: Record<ProviderId, string> = {
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
   // OrcaRouter namespaces model ids by upstream vendor (openai/gpt-4o-mini).
   orcarouter: "openai/gpt-4o-mini",
+  "merge-gateway": "openai/gpt-5.2",
 };
 
 const retiredModelReplacements: Partial<Record<ProviderId, Record<string, string>>> = {
@@ -167,6 +172,7 @@ export const envVars: Record<ProviderId, string | undefined> = {
   fireworks: "FIREWORKS_API_KEY",
   hetzner: "HETZNER_API_KEY",
   orcarouter: "ORCAROUTER_API_KEY",
+  "merge-gateway": "MERGE_GATEWAY_API_KEY",
 };
 
 /** Resolve the env var for any provider, including user-defined custom ones. */
@@ -806,6 +812,68 @@ GOOD TO KNOW
 
 Docs: https://docs.orcarouter.ai
 API:  https://api.orcarouter.ai/v1 (OpenAI-compatible; /models, /chat/completions)`,
+  "merge-gateway": `Merge Gateway — one key for OpenAI, Anthropic, Google and
+more through a unified gateway
+
+WHAT IT IS
+  A gateway at https://api-gateway.merge.dev/v1 that fronts several upstream
+  vendors behind one key. It exposes two surfaces: its own Responses-style
+  API at /v1 and a drop-in OpenAI-compatible surface at /v1/openai. clai
+  uses the OpenAI-compatible surface, so streaming, native tool calling,
+  prompt caching, reasoning effort and key rotation all behave exactly like
+  every other OpenAI-compatible provider. Model ids are vendor-prefixed:
+    openai/gpt-5.2, openai/gpt-4o-mini, openai/o4-mini
+    anthropic/claude-sonnet-4-6, anthropic/claude-opus-4-6
+    google/gemini-3.5-flash, google/gemini-2.5-pro
+    deepseek/deepseek-reasoner, meta/llama-3.3-70b-instruct
+
+  Base URL   https://api-gateway.merge.dev/v1/openai
+  Auth       Authorization: Bearer <key>   (X-API-Key also sent)
+  Endpoints  /models · /chat/completions
+
+MODELS
+  Ids are namespaced by upstream vendor and case-sensitive. /model reads the
+  live list from /models (cached 1h) and hides ids that are not reachable
+  over Chat Completions, so embedding/image/tts entries stay out of the
+  picker. If the catalog cannot be fetched, a documented offline subset is
+  shown instead.
+
+REASONING
+  Top-level reasoning_effort (low/medium/high) is translated by the gateway
+  to each upstream's native reasoning shape. /think and /effort map onto it,
+  and thinking arrives as reasoning_content, folded into the usual thinking
+  block. clai only sends reasoning options to models that accept them, and
+  retries once without them if a model rejects them.
+
+COST
+  Billed per token by plan. The free tier has a budget: once exhausted the
+  gateway answers 402, which clai treats as a quota error and rotates to the
+  next key or provider. clai classes it paid-cloud, so /freeonly on keeps it
+  out of the fallback chain.
+
+SETUP
+  1. Create an API key at https://gateway.merge.dev (starts mg_…).
+  2. clai set merge-gateway mg_yourKey
+  3. clai use merge-gateway
+  4. /model openai/gpt-5.2           (or any id from /model)
+
+MANAGING KEYS IN clai
+  clai set merge-gateway <key>       add a key (up to 10, rotated on failure)
+  clai set merge-gateway <key2>      add another; the last that worked is sticky
+  clai keys                          masked keys + the active endpoint
+  clai unset merge-gateway           remove every stored key
+  /set merge-gateway                 TUI: multi-key editor
+  /info merge-gateway                this page
+
+GOOD TO KNOW
+  - Aliases: merge-gateway, mergegateway, merge, mg.
+  - Errors follow the documented gateway table — 400 bad request, 401 auth,
+    402 budget exhausted, 404 unknown model, 429 rate limit. Auth and quota
+    errors switch keys immediately; 429 backs off first.
+  - Env var: MERGE_GATEWAY_API_KEY (used when nothing is stored).
+
+Docs: https://gateway.merge.dev
+API:  https://api-gateway.merge.dev/v1/openai (OpenAI-compatible)`,
 };
 
 export function getProviderInfoText(provider: string): string {

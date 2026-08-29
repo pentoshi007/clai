@@ -5,6 +5,8 @@ import {
   type HistoryRecord,
 } from "../../store/history.js";
 import { safeCwd } from "../../os/cwd.js";
+import { getProviderModel } from "../../store/config.js";
+import { loadModelForSession } from "../../store/session-model.js";
 import {
   boundSessionVisualInput,
   hydrateSessionVisual,
@@ -116,10 +118,19 @@ export async function applySessionResume(
 ): Promise<ResumeOutcome> {
   clearActiveProjectRoot();
   services.plan.clear();
+  const fallback = await loadModelForSession(record.id);
+  const provider = record.provider ?? fallback.provider;
+  const model =
+    record.model ??
+    (record.provider && record.provider !== fallback.provider
+      ? getProviderModel(record.provider)
+      : fallback.model);
   services.session.loadHistory(record.messages, {
     sessionId: record.id,
     title: record.name,
     persistenceRevision: record.revision,
+    provider,
+    model,
     ...(record.previousTurn ? { previousTurn: record.previousTurn } : {}),
     ...(record.contextUsage ? { contextUsage: record.contextUsage } : {}),
     ...(record.workspaceFolder

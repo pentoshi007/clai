@@ -12,6 +12,13 @@ export function createCurrentPersistencePort(): PersistencePort {
         ? ([...options.transcript] as TranscriptItem[])
         : undefined;
       const contextUsage = options?.contextUsage;
+      const sessionModel =
+        options?.provider || options?.model
+          ? {
+              ...(options.provider ? { provider: options.provider } : {}),
+              ...(options.model ? { model: options.model } : {}),
+            }
+          : undefined;
       if (options?.sessionId) {
         await upsertSession(
           options.sessionId,
@@ -22,6 +29,7 @@ export function createCurrentPersistencePort(): PersistencePort {
           options.revision,
           options.writerGeneration,
           options.previousTurn,
+          sessionModel,
         );
         return;
       }
@@ -33,6 +41,7 @@ export function createCurrentPersistencePort(): PersistencePort {
         options?.revision,
         options?.writerGeneration,
         options?.previousTurn,
+        sessionModel,
       );
     },
     loadPlan: (sessionId) => loadPlan(sessionId),

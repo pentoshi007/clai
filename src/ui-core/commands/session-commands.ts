@@ -5,7 +5,8 @@
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { setDefaultMode, getConfig } from "../../store/config.js";
+import { setDefaultMode, getConfig, getProviderModel } from "../../store/config.js";
+import { seedSessionModel } from "../../store/session-model.js";
 import {
   clearAllHistory,
   getSession,
@@ -18,6 +19,7 @@ import {
 } from "../../store/session-workspace.js";
 import { safeCwd } from "../../os/cwd.js";
 import { clearActiveProjectRoot } from "../../agent/project-root.js";
+import { mintSessionId } from "../../app/controllers/session-persistence.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { Mode } from "../../types.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
@@ -75,6 +77,7 @@ export async function handleClear(services: AppServices): Promise<void> {
       "cleared this session in memory, but some of its saved copy could not be deleted",
     );
   }
+  await inheritLastUsedModel(services);
 }
 
 async function purgeCurrentSession(
@@ -105,20 +108,52 @@ async function purgeCurrentSession(
   return purged ? "purged" : "nothing-to-purge";
 }
 
-export async function handleNew(services: AppServices): Promise<void> {
-  const messages = services.session.messages;
-  if (!getConfig().privateMode && messages.some((m) => m.role === "user")) {
-    // Save messages + visual transcript so /history can restore the old chat.
-    await services.session.persistNow().catch(() => undefined);
-  }
+function sessionIsBusy(services: AppServices): boolean {
+  const state = services.session.getState();
+  return state.running || state.compacting;
+}
+
+function forkFreshSession(services: AppServices): boolean {
+  const freshId = mintSessionId();
+  if (!services.requestSessionSwitch(freshId, false, true)) return false;
+  flash(services, "Fresh session · previous kept running", {
+    key: "session",
+    level: "success",
+  });
+  return true;
+}
+
+async function inheritLastUsedModel(services: AppServices): Promise<void> {
+  const seeded = await seedSessionModel(services.session.sessionId, {
+    provider: undefined,
+    model: undefined,
+    inheritLastUsed: true,
+  }).catch(() => undefined);
+  if (!seeded?.provider) return;
+  services.session.setProvider(seeded.provider);
+  services.session.setModel(seeded.model ?? getProviderModel(seeded.provider));
+}
+
+async function resetToFreshSession(services: AppServices): Promise<void> {
   clearActiveProjectRoot();
   services.plan.clear();
   services.session.reset({ mintNewId: true });
   services.transcript.reset();
-  // New session id → no plan until the agent creates one.
   await services.plan.load(services.session.sessionId).catch(() => undefined);
   services.session.setPlanApproved(false);
   flash(services, "Fresh session", { key: "session", level: "success" });
+  await inheritLastUsedModel(services);
+}
+
+export async function handleNew(services: AppServices): Promise<void> {
+  const messages = services.session.messages;
+  if (!getConfig().privateMode && messages.some((m) => m.role === "user")) {
+    await services.session.persistNow().catch(() => undefined);
+  }
+  if (sessionIsBusy(services) && forkFreshSession(services)) {
+    return;
+  }
+  await resetToFreshSession(services);
 }
 
 

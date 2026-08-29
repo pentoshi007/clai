@@ -97,6 +97,7 @@ import { metaProvider } from "./meta.js";
 import { fireworksProvider } from "./fireworks.js";
 import { hetznerProvider } from "./hetzner.js";
 import { orcarouterProvider } from "./orcarouter.js";
+import { mergeGatewayProvider } from "./merge-gateway.js";
 import type { LlmProvider, ProviderAuth } from "./provider.js";
 import {
   OperationUsageRecorder,
@@ -581,6 +582,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   fireworks: fireworksProvider,
   hetzner: hetznerProvider,
   orcarouter: orcarouterProvider,
+  "merge-gateway": mergeGatewayProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -602,6 +604,7 @@ const fallbackOrder: ProviderId[] = [
   "fireworks",
   "hetzner",
   "orcarouter",
+  "merge-gateway",
 ];
 
 

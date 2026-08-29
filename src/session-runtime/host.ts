@@ -24,6 +24,8 @@ import {
   sendFrame,
 } from "./protocol.js";
 import { TerminalReplayBuffer } from "./replay-buffer.js";
+import { TerminalModeState } from "./terminal-modes.js";
+import { enforceIdleRuntimeCap } from "./reaper.js";
 import {
   createRuntimeToken,
   deleteRuntimeMetadata,
@@ -123,7 +125,8 @@ function childFrame(value: unknown): RuntimeChildFrame | undefined {
   if (
     frame.type === "switch" &&
     typeof frame.sessionId === "string" &&
-    typeof frame.closeCurrent === "boolean"
+    typeof frame.closeCurrent === "boolean" &&
+    (frame.fresh === undefined || typeof frame.fresh === "boolean")
   ) {
     return frame as RuntimeChildFrame;
   }
@@ -177,6 +180,7 @@ function closeServer(server: Server | undefined): Promise<void> {
 export class SessionRuntimeHost {
   private readonly token = createRuntimeToken();
   private readonly replay = new TerminalReplayBuffer();
+  private readonly terminalModes = new TerminalModeState();
   private readonly startedAt = new Date().toISOString();
   private sessionId: string;
   private cwd: string;
@@ -405,6 +409,8 @@ export class SessionRuntimeHost {
     this.queueMetadata();
     this.acknowledge(socket);
     this.writeToTerminal(socket, ATTACH_RESET);
+    const modes = this.terminalModes.restoreSequence();
+    if (modes.length > 0) this.writeToTerminal(socket, Buffer.from(modes, "utf8"));
     const replay = this.replay.snapshot();
     if (replay.length > 0) this.writeToTerminal(socket, replay);
     if (rest.length > 0) this.queueInput(rest);
@@ -466,7 +472,11 @@ export class SessionRuntimeHost {
     if (frame.type === "switch") {
       const target = frame.sessionId.trim();
       if (!target || target.length > 256) return;
-      this.sendToClient({ type: "switch", sessionId: target });
+      this.sendToClient({
+        type: "switch",
+        sessionId: target,
+        ...(frame.fresh ? { fresh: true } : {}),
+      });
       this.closeClientSockets();
       if (frame.closeCurrent) {
         setTimeout(() => this.requestGracefulStop(), 80).unref?.();
@@ -519,6 +529,7 @@ export class SessionRuntimeHost {
 
   private publishOutput(bytes: Uint8Array): void {
     this.replay.append(bytes);
+    this.terminalModes.observe(bytes);
     const terminal = this.client?.terminal;
     if (terminal) this.writeToTerminal(terminal, bytes);
   }
@@ -681,6 +692,12 @@ export class SessionRuntimeHost {
       this.payload.idleTimeoutMs,
     );
     this.idleTimer.unref?.();
+    void this.enforceIdleCap();
+  }
+
+  private async enforceIdleCap(): Promise<void> {
+    await this.writeMetadataNow().catch(() => undefined);
+    await enforceIdleRuntimeCap(this.sessionId).catch(() => undefined);
   }
 
   private cancelIdleTimer(): void {

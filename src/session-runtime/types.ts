@@ -96,6 +96,7 @@ export type RuntimeChildFrame =
       readonly type: "switch";
       readonly sessionId: string;
       readonly closeCurrent: boolean;
+      readonly fresh?: boolean | undefined;
     };
 
 export type RuntimeHostFrame =
@@ -109,6 +110,7 @@ export type RuntimeHostFrame =
   | {
       readonly type: "switch";
       readonly sessionId: string;
+      readonly fresh?: boolean | undefined;
     }
   | {
       readonly type: "exit";

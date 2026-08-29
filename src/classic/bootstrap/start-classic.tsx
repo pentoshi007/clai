@@ -10,7 +10,8 @@ import {
 import { installConsoleGuard } from "../../ui-core/bootstrap/console-guard.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
-import { NORMAL_SCREEN_RESET } from "../../os/screen-sequences.js";
+import { EXIT_SUMMARY_RESET } from "../../os/screen-sequences.js";
+import { writeTerminalAndWait } from "../../os/terminal-write.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import {
   applyResumeResolution,
@@ -30,11 +31,13 @@ import { createRendererSuspendPort, type InkMountControl } from "./suspend-port.
 import { createTerminalSession } from "./terminal-session.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
+import { seedSessionModel } from "../../store/session-model.js";
 
 export interface StartClassicOptions {
   readonly mode?: Mode | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
+  readonly modelExplicit?: boolean | undefined;
   readonly noHistory?: boolean | undefined;
   readonly sessionId?: string | undefined;
   readonly resume?: ResumeTarget | undefined;
@@ -82,16 +85,22 @@ export async function startClassic(
   };
 
   const suspendPort = createRendererSuspendPort({ control, session });
-  const services = createCompositionRoot({
+  const seeded = await seedSessionModel(options.sessionId, {
     provider: options.provider,
     model: options.model,
+    modelExplicit: options.modelExplicit === true,
+    inheritLastUsed: options.resume === undefined,
+  });
+  const services = createCompositionRoot({
+    provider: seeded.provider,
+    model: seeded.model,
     mode: options.mode,
     noHistory: options.noHistory,
     sessionId: options.sessionId,
     capabilities,
     requestMinimise: () => runtimeBridge?.minimise() ?? false,
-    requestSessionSwitch: (sessionId, closeCurrent) =>
-      runtimeBridge?.switchSession(sessionId, closeCurrent) ?? false,
+    requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
+      runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
     clipboard: createOsc52ClipboardPort({
       renderer: createOsc52Renderer({ session, supported: capabilities.osc52 }),
       fallback: createSystemClipboardPort(),
@@ -107,7 +116,7 @@ export async function startClassic(
     startedAt,
     enabled: capabilities.isTTY,
     columns: () => process.stdout.columns,
-    write: (text) => session.write(`${NORMAL_SCREEN_RESET}${text}`),
+    write: (text) => writeTerminalAndWait(`${EXIT_SUMMARY_RESET}${text}`),
   });
   const pendingResume = options.resume
     ? await resolveResumeTarget(options.resume)

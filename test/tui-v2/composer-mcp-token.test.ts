@@ -43,6 +43,40 @@ function children(node: ElementNode): ElementNode[] {
 }
 
 describe("OpenTUI composer MCP mentions", () => {
+  it("highlights a namespaced server name in full so it is not left as plain text", () => {
+    const name = "io.github.github/github-mcp-server";
+    const known = new Set([name, "notion"]);
+    const text = `${formatMcpToken(name)} list my repos`;
+    const found = findMcpMentions(text, known);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.name).toBe(name);
+    expect(text.slice(found[0]!.start, found[0]!.end)).toBe(formatMcpToken(name));
+  });
+
+  it("highlights namespaced and plain servers side by side", () => {
+    const namespaced = "io.github.github/github-mcp-server";
+    const known = new Set([namespaced, "notion"]);
+    const text = `try ${formatMcpToken(namespaced)} and ${formatMcpToken("notion")} now`;
+    const found = findMcpMentions(text, known);
+    expect(found.map((mention) => mention.name)).toEqual([namespaced, "notion"]);
+    for (const mention of found) {
+      expect(text.slice(mention.start, mention.end)).toBe(formatMcpToken(mention.name));
+    }
+  });
+
+  it("trims trailing punctuation after a namespaced server name", () => {
+    const name = "io.github.github/github-mcp-server";
+    const known = new Set([name]);
+    const text = `${formatMcpToken(name)}, then stop`;
+    const found = findMcpMentions(text, known);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.name).toBe(name);
+  });
+
+  it("still ignores a namespaced name that is not a live server", () => {
+    expect(findMcpMentions("@mcp:unknown/server nope", new Set(["notion"]))).toEqual([]);
+  });
+
   it("keeps MCP out of the input chrome so the token lives in the editable draft", () => {
     expect(
       children(render()).some((child) => child.props?.content?.startsWith("@mcp:")),

@@ -13,7 +13,7 @@ Two things make it practical for everyday use:
 
 ## Highlights
 
-- **Free-tier first.** 18 providers wired in, 6 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-2/kilo-auto/free`) so a fresh install runs at no cost with zero setup — no API key required.
+- **Free-tier first.** 19 providers wired in, 6 cloud free tiers + local Ollama. The default provider is the **keyless Free** gateway (`free-2/kilo-auto/free`) so a fresh install runs at no cost with zero setup — no API key required.
 - **Multi-key smart switching.** Up to 10 keys per provider with a *sticky* active key and circular rotation on rate-limit / auth / quota / transient / 5xx / empty-response errors. Disable any key or endpoint row to skip it without deleting it. Optional cross-provider fallback and a free-only filter.
 - **Bring your own endpoint.** Deploy Kimi K3 (or Qwen / DeepSeek / GLM / GPT-OSS / your own fine-tune) to a [Modal](#modal--run-kimi-k3-on-your-own-endpoint-on-30month-of-free-credit) endpoint and drive it from clai on **$30/month of free compute credit**. Modal, Lightning AI and TokenRouter each keep a list of up to 10 base URLs with a sticky active one, so several deployments live side by side and you switch with one command — same editor, same ★ active row as keys.
 - **Scope-based pentesting.** Opt-in engagement scope with authorized/excluded targets, allowed phases, rate and concurrency ceilings, redirect and DNS-rebinding escape detection, and out-of-scope flagging — designed for authorized pentests and bug-bounty programs.
@@ -205,6 +205,7 @@ This is the core of clai's design: assemble capacity from free tiers, then survi
 | Fireworks | `accounts/fireworks/models/kimi-k2p6` | Paid (per token) | `FIREWORKS_API_KEY` |
 | Hetzner | `Qwen/Qwen3.6-35B-A3B-FP8` | Free (experiment — no billing yet) | `HETZNER_API_KEY` |
 | OrcaRouter | `openai/gpt-4o-mini` | Paid (per token, zero markup) | `ORCAROUTER_API_KEY` |
+| Merge Gateway | `openai/gpt-5.2` | Paid (per token, free tier budget) | `MERGE_GATEWAY_API_KEY` |
 
 Several "paid" providers also expose limited free allowances — the tier label reflects what the default keys usually buy you. Flip `freeOnly` off to include paid providers in fallback.
 
@@ -313,6 +314,33 @@ clai use orcarouter                    # model defaults to openai/gpt-4o-mini
 
 Streaming, native tool calling, structured outputs (`response_format`), vision via `image_url` and prompt caching all work. Reasoning uses one unified `reasoning_effort` knob (low/medium/high, plus minimal/max on some models) that the gateway translates to each upstream's native shape — `/think` and `/effort` map onto it, and thinking arrives as `reasoning_content` in the usual thinking block. `/model` reads the live catalog (cached 1h), filtered to Chat-Completions-reachable models so image/video/tts ids stay out of the picker. Keys are multi-key with rotation like everywhere else; env var is `ORCAROUTER_API_KEY`.
 
+#### Merge Gateway (one key, many vendors, OpenAI-compatible)
+
+[Merge Gateway](https://gateway.merge.dev) fronts OpenAI, Anthropic, Google and other
+upstreams behind a single key. It exposes two surfaces: its own Responses-style API at
+`/v1` and a drop-in OpenAI-compatible surface at `/v1/openai`. clai drives the
+OpenAI-compatible surface, so streaming, native tool calling, prompt caching, reasoning
+effort, multi-key rotation and cross-provider fallback all behave exactly as they do for
+every other OpenAI-compatible provider.
+
+```sh
+clai set merge-gateway mg_your-key      # key: https://gateway.merge.dev (starts with mg_)
+clai use merge-gateway                  # model defaults to openai/gpt-5.2
+/model anthropic/claude-sonnet-4-6      # or any id from the live /models catalog
+```
+
+Model ids are vendor-prefixed (`openai/gpt-5.2`, `anthropic/claude-sonnet-4-6`,
+`google/gemini-3.5-flash`, `deepseek/deepseek-reasoner`). `/model` reads the live catalog
+(cached 1h) filtered to ids reachable over Chat Completions, so embedding, image and audio
+entries stay out of the picker; if the catalog cannot be fetched, a documented offline
+subset is shown. Reasoning uses one `reasoning_effort` knob (low/medium/high) that the
+gateway translates per upstream, and thinking arrives as `reasoning_content` in the usual
+`/think` block. Requests carry both `Authorization: Bearer` and `X-API-Key`, matching the
+two shapes the gateway accepts. The free tier has a budget: once exhausted the gateway
+answers `402`, which clai treats as a quota error and rotates to the next key or provider.
+Aliases: `merge-gateway`, `mergegateway`, `merge`, `mg`. Env var `MERGE_GATEWAY_API_KEY`.
+`/info merge-gateway` prints the full walkthrough.
+
 ### Manage keys
 
 ```sh
@@ -328,6 +356,7 @@ clai set tokenrouter sk-your-key       # TokenRouter
 clai set fireworks fw_your_key         # Fireworks
 clai set hetzner your-token            # Hetzner Inference (experiments.hetzner.com)
 clai set orcarouter sk-your-key        # OrcaRouter (orcarouter.ai/console)
+clai set merge-gateway mg_your-key     # Merge Gateway (gateway.merge.dev)
 clai set free <key>                    # optional: unlock premium models (free is keyless by default)
 clai unset modal --url                 # drop stored endpoint URLs, keep the keys
 clai keys                              # providers + masked keys (★ active) + endpoint URLs
@@ -477,6 +506,7 @@ Optional controls:
 
 ```sh
 CLAI_SESSION_RUNTIME_IDLE_MS=1800000  # detached idle lifetime (1 minute–24 hours)
+CLAI_SESSION_RUNTIME_MAX_IDLE=6       # idle-detached LRU cap (1–256; 0 disables)
 CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 ```
 
@@ -493,7 +523,7 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/effort [level]` · `/reasoning [level]` | Thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |
-| `/mcp [server\|all\|off\|list\|status\|tools\|locations\|refresh]` | Browse and select MCP servers; add/reconnect servers and inspect project/inherited configuration |
+| `/mcp [server\|all\|off\|list\|status\|tools\|locations\|refresh\|login <server>\|add notion]` | Browse/select MCP servers, sign in with OAuth, or connect official Notion MCP |
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
@@ -546,8 +576,9 @@ suppresses progress while retaining the final answer on stdout, and `--verbose` 
 output and diff hunks. `--no-history` disables persistence for that run.
 
 A completed, partially completed, blocked, or failed turn returns exit code `0`; an aborted
-turn returns `130`; an unhandled or loader error returns `1`. `--show-thinking` can also be
-enabled with `CLAI_SHOW_THINKING=1`.
+turn returns `130`; an unhandled or loader error returns `1`. While one-shot work is running,
+press `Esc` or `Ctrl+C` to abort it, including commands launched through `bun run dev`.
+`--show-thinking` can also be enabled with `CLAI_SHOW_THINKING=1`.
 
 ---
 
@@ -579,7 +610,7 @@ The native project file is `.clai/mcp.json`. It accepts JSON or JSONC and the co
 }
 ```
 
-A `command` entry uses stdio. A `url` entry uses Streamable HTTP by default; set `"type": "sse"` for a legacy SSE endpoint. `${workspaceFolder}`, `${env:NAME}` / `${env.NAME}`, and compatible `${input:name}` substitutions are resolved at discovery time, and resolved secret values are redacted from diagnostics.
+A `command` entry uses stdio. A `url` entry uses Streamable HTTP by default; set `"type": "sse"` for a legacy SSE endpoint. Remote HTTP/SSE entries with no `auth` block use OAuth discovery when the server requests authorization; set `"auth": {"kind": "none"}` to opt out explicitly for a public server. `${workspaceFolder}`, `${env:NAME}` / `${env.NAME}`, and compatible `${input:name}` substitutions are resolved at discovery time, and resolved secret values are redacted from diagnostics.
 
 The picker can add one server without hand-editing the file: choose **+ add MCP server** and a full multiline editor opens — visible caret, arrow-key and word/line navigation, mid-text edits, selection, and multi-line paste. `Enter` inserts a newline, `Ctrl+S` saves, `Esc` cancels. If the JSON does not validate, the editor reopens with your text intact and the parse error in the header, so a long paste is never retyped. You can also supply the fragment inline:
 
@@ -604,6 +635,8 @@ clai also inherits compatible configuration from `CLAI_MCP_CONFIG` (an OS-delimi
 /mcp locations               # project and inherited configuration paths
 /mcp refresh                 # rediscover configs and live tools
 /mcp reconnect docs          # restart one server connection
+/mcp login docs              # run OAuth browser sign-in, store the token, reconnect
+/mcp add notion              # add https://mcp.notion.com/mcp and sign in
 ```
 
 Static built-in tools always remain first; selected MCP definitions are appended in deterministic order as `mcp.<server>.<tool>`. A tool explicitly annotated read-only can run under the normal safe/parallel policy. Unmarked, mutating, or destructive MCP tools require the usual confirmation, and ask mode exposes only safe tools. Server descriptions and results are treated as untrusted data, secrets are redacted, response sizes and lifecycles are bounded, and HTTP credentials are never forwarded through redirects.
@@ -689,7 +722,7 @@ clai model <name>          # default model for the active provider
 /privacy clear-all         # wipe history, logs, and artifacts
 ```
 
-Config lives under your OS user config dir (e.g. `~/.config/clai/`). Keys are stored locally and shown only masked.
+Config lives under your OS user config dir (e.g. `~/.config/clai/`). Keys are stored locally and shown only masked. Inside an interactive console, `/provider`, `/model`, and `/models` change only that session and are restored with it; the explicit `clai use`, `clai provider`, and `clai model` CLI commands continue to set global defaults.
 
 ---
 
@@ -732,7 +765,7 @@ clai/
 ├─ src/
 │  ├─ index.ts          # CLI entry + subcommands
 │  ├─ agent/            # loop, plans, compaction, resume orientation, tool parsing
-│  ├─ llm/              # 18 providers, streaming, native tools, key rotation + fallback
+│  ├─ llm/              # 19 providers, streaming, native tools, key rotation + fallback
 │  ├─ mcp/              # discovery, validation, transports, lifecycle, and tool dispatch
 │  ├─ tools/            # fs, shell, net, http, web, pentest, batch, plan
 │  ├─ safety/           # risk classifier + engagement (scope) policy

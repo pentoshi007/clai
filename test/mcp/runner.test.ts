@@ -8,6 +8,7 @@ import type { CompletionRequest, CompletionResult } from "../../src/types.js";
 import type { ToolCallingMode } from "../../src/llm/tool-protocol.js";
 import { McpManager, type McpTransportFactory } from "../../src/mcp/manager.js";
 import { McpRuntime } from "../../src/mcp/runtime.js";
+import { MCP_AGENT_TOOL_NAMES } from "../../src/tools/definitions.js";
 import type { McpTransport } from "../../src/mcp/transport.js";
 import type {
   JsonRpcNotification,
@@ -242,7 +243,11 @@ describe("agent MCP integration", () => {
 
     expect(outcome.answer).toContain("no MCP needed");
     expect(ensureReady).not.toHaveBeenCalled();
-    expect(request?.tools?.some((tool) => tool.name.startsWith("mcp."))).toBe(false);
+    expect(
+      request?.tools?.some(
+        (tool) => tool.name.startsWith("mcp.") && !MCP_AGENT_TOOL_NAMES.has(tool.name),
+      ),
+    ).toBe(false);
     expect(
       request?.messages.some(
         (message) =>

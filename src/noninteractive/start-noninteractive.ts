@@ -14,6 +14,7 @@ import {
   releaseInteractiveStdin,
   type PromptStream,
 } from "./readline-prompts.js";
+import { installNoninteractiveCancellation } from "./cancellation.js";
 
 export interface NoninteractiveOptions {
   readonly prompt: string;
@@ -80,13 +81,14 @@ export async function startNoninteractive(
     verbosity: options.quiet ? "quiet" : options.verbose ? "verbose" : "normal",
     showThinking: options.showThinking ?? process.env.CLAI_SHOW_THINKING === "1",
   });
-  const confirm = createStdioConfirmPort({ input, output: err });
-  const requestSecret = createStdioSecretPort({ input, output: err });
-  const mcp = new McpRuntime();
   const controller = new AbortController();
   const forwardAbort = (): void => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) forwardAbort();
   else options.signal?.addEventListener("abort", forwardAbort, { once: true });
+  const promptIO = { input, output: err, signal: controller.signal };
+  const confirm = createStdioConfirmPort(promptIO);
+  const requestSecret = createStdioSecretPort(promptIO);
+  const mcp = new McpRuntime({ oauthInteractive: false });
   let turnRunning = false;
   const cancel = new CancelCoordinator({
     session: {
@@ -113,11 +115,10 @@ export async function startNoninteractive(
     jobs: { running: () => [], pendingNotifications: () => [] },
     interruptible: { hasWork: () => false, cancelAll: () => 0 },
   });
-  const abortFromProcess = (): void => {
-    cancel.abortForeground();
-  };
-  process.once("SIGINT", abortFromProcess);
-  process.once("SIGTERM", abortFromProcess);
+  const disposeCancellation = installNoninteractiveCancellation({
+    input,
+    abort: () => void cancel.cancelAll(),
+  });
   let outcome: TurnOutcome | undefined;
   let answer = "";
 
@@ -155,10 +156,10 @@ export async function startNoninteractive(
       exitCode: exitCodeForOutcome(outcome),
     };
   } finally {
+    turnRunning = false;
     options.signal?.removeEventListener("abort", forwardAbort);
+    disposeCancellation();
     releaseInteractiveStdin({ input });
-    process.off("SIGINT", abortFromProcess);
-    process.off("SIGTERM", abortFromProcess);
     const cleanup = await interactiveSessionManager
       .closeAll("app-shutdown")
       .catch(() => undefined);

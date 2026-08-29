@@ -19,8 +19,9 @@ import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import {
-  NORMAL_SCREEN_RESET,
+  EXIT_SUMMARY_RESET,
 } from "../../os/screen-sequences.js";
+import { writeTerminalAndWait, writeTerminalDirect } from "../../os/terminal-write.js";
 import {
   applyResumeResolution,
   resolveResumeTarget,
@@ -36,6 +37,7 @@ import { setAllowInteractiveStdinInherit } from "../../tools/shell.js";
 import { isSuppressedConsoleMessage } from "../../ui-core/bootstrap/console-suppress.js";
 import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js";
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
+import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import { installResizeRepaint } from "./resize-repaint.js";
 
@@ -43,6 +45,7 @@ export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
+  readonly modelExplicit?: boolean | undefined;
   readonly noHistory?: boolean | undefined;
   readonly sessionId?: string | undefined;
   readonly resume?: ResumeTarget | undefined;
@@ -58,11 +61,16 @@ export async function startTuiV2(
   const fallbackClipboard = createSystemClipboardPort();
   // We own Ctrl+C (abort then double-press exit). OpenTUI must not kill the
   // process on the first press, and SIGINT is handled cooperatively below.
+  let markRendererFinalized = (): void => undefined;
+  const rendererFinalized = new Promise<void>((resolve) => {
+    markRendererFinalized = resolve;
+  });
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
     useMouse: true,
     clearOnShutdown: true,
+    onDestroy: markRendererFinalized,
   });
   const disarmTerminalRescue = installTerminalRescue();
   // lifecycle is assigned before requestExit runs; use a holder so the
@@ -73,16 +81,22 @@ export async function startTuiV2(
   const runtimeBridge = createRuntimeChildBridge();
   if (runtimeBridge) await runtimeBridge.connect();
   let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
-  const services = createCompositionRoot({
+  const seeded = await seedSessionModel(options.sessionId, {
     provider: options.provider,
     model: options.model,
+    modelExplicit: options.modelExplicit === true,
+    inheritLastUsed: options.resume === undefined,
+  });
+  const services = createCompositionRoot({
+    provider: seeded.provider,
+    model: seeded.model,
     mode: options.mode,
     noHistory: options.noHistory,
     sessionId: options.sessionId,
     capabilities,
     requestMinimise: () => runtimeBridge?.minimise() ?? false,
-    requestSessionSwitch: (sessionId, closeCurrent) =>
-      runtimeBridge?.switchSession(sessionId, closeCurrent) ?? false,
+    requestSessionSwitch: (sessionId, closeCurrent, fresh) =>
+      runtimeBridge?.switchSession(sessionId, closeCurrent, fresh) ?? false,
     clipboard: createOsc52ClipboardPort({
       renderer,
       fallback: fallbackClipboard,
@@ -97,13 +111,7 @@ export async function startTuiV2(
     startedAt,
     enabled: Boolean(process.stdout.isTTY),
     columns: () => process.stdout.columns,
-    write: (text) => {
-      try {
-        process.stdout.write(`${NORMAL_SCREEN_RESET}${text}`);
-      } catch {
-        /* the terminal went away; nothing to sign off to */
-      }
-    },
+    write: (text) => writeTerminalAndWait(`${EXIT_SUMMARY_RESET}${text}`),
   });
   const pendingResume = options.resume
     ? await resolveResumeTarget(options.resume)
@@ -121,6 +129,7 @@ export async function startTuiV2(
     },
     unmount: () => root.unmount(),
     renderer,
+    finalized: rendererFinalized,
     disarmTerminalRescue,
     disposeServices: () => services.dispose(),
   });
@@ -140,7 +149,7 @@ export async function startTuiV2(
 
   const disposeResizeRepaint = installResizeRepaint({
     renderer,
-    write: (text) => void process.stdout.write(text),
+    write: (text) => writeTerminalDirect(text),
     enabled: Boolean(process.stdout.isTTY),
     isSuspended: () =>
       renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
@@ -216,4 +225,5 @@ export async function startTuiV2(
   await lifecycle.start();
   await applyResumeResolution(services, pendingResume);
   await done;
+  await lifecycle.shutdown();
 }

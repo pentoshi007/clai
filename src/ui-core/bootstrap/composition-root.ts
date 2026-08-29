@@ -39,6 +39,7 @@ import { isProviderFailureStatus } from "../../llm/key-rotation.js";
 import { InterruptibleController } from "../controllers/interruptible-controller.js";
 import { OverlayController } from "../controllers/overlay-controller.js";
 import { McpRuntime } from "../../mcp/runtime.js";
+import { openSystemBrowser } from "../../mcp/auth/loopback.js";
 import { getSkillIndex } from "../../skills/registry.js";
 import { safeCwd } from "../../os/cwd.js";
 import { TranscriptStore } from "../state/transcript-store.js";
@@ -89,7 +90,7 @@ export interface CompositionOptions {
   /** Signals the renderer to tear down and exit (Ctrl+D / second Ctrl+C). */
   readonly requestExit?: (() => void) | undefined;
   readonly requestMinimise?: (() => boolean) | undefined;
-  readonly requestSessionSwitch?: ((sessionId: string, closeCurrent: boolean) => boolean) | undefined;
+  readonly requestSessionSwitch?: ((sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean) | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly mode?: Mode | undefined;
@@ -121,7 +122,7 @@ export interface AppServices {
   readonly pagerExport: PagerExportPort;
   readonly requestExit: () => void;
   readonly requestMinimise: () => boolean;
-  readonly requestSessionSwitch: (sessionId: string, closeCurrent: boolean) => boolean;
+  readonly requestSessionSwitch: (sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean;
   readonly capabilities: TerminalCapabilityReport;
   /** Bounded raw events when captureEvents is explicitly enabled. */
   readonly recordedEvents: readonly AnyAppEvent[];
@@ -131,7 +132,9 @@ export interface AppServices {
 export function createCompositionRoot(
   options: CompositionOptions = {},
 ): AppServices {
-  const mcp = options.mcp ?? new McpRuntime();
+  const mcp =
+    options.mcp ??
+    new McpRuntime({ openBrowser: openSystemBrowser, oauthInteractive: true });
   const recorded: AnyAppEvent[] = [];
   const captureEvents = options.captureEvents === true;
   const transcript = new TranscriptStore();

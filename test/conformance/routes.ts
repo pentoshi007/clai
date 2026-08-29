@@ -122,6 +122,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "merge-gateway",
+    provider: "merge-gateway",
+    family: "chat_completions",
+    model: "openai/gpt-5.2",
+    auth: { apiKey: "mg_conformance_key" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "aws-mantle-compatible",
     provider: "aws-mantle",
     family: "chat_completions",

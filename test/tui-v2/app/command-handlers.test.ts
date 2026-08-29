@@ -92,12 +92,13 @@ describe("command handlers (V2-072..075)", () => {
     expect(getConfig().permissions).toBe("allow-all");
   });
 
-  it("/model <name> sets the model directly and persists it for the provider", async () => {
+  it("/model <name> sets the model for the session without writing global config", async () => {
     const services = buildServices();
     services.session.setProvider("nvidia");
+    const globalBefore = getConfig().providerModels.nvidia;
     await services.commands.dispatch({ name: "model", args: "meta/llama-3.3-70b-instruct" });
     expect(services.session.getState().model).toBe("meta/llama-3.3-70b-instruct");
-    expect(getConfig().providerModels.nvidia).toBe("meta/llama-3.3-70b-instruct");
+    expect(getConfig().providerModels.nvidia).toBe(globalBefore);
   });
 
   it("/model with no args opens a picker (static known list when API empty)", async () => {
@@ -112,12 +113,14 @@ describe("command handlers (V2-072..075)", () => {
     await waitUntil(() => services.overlay.getState().kind === "picker");
     const state = services.overlay.getState();
     expect(state.kind).toBe("picker");
+    let picked: string | undefined;
     if (state.kind === "picker") {
       expect(state.request.options.length).toBeGreaterThan(0);
       expect(state.request.title).not.toMatch(/· live$/);
-      services.overlay.selectPicker(state.request.options[0]!.value);
+      picked = state.request.options[0]!.value;
+      services.overlay.selectPicker(picked);
     }
-    expect(services.session.getState().model).toBe(getConfig().providerModels.nvidia);
+    expect(services.session.getState().model).toBe(picked);
     spy.mockRestore();
   });
 

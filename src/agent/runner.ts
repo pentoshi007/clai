@@ -108,6 +108,8 @@ import {
   getToolDefinitions,
   getCompactToolDefinitions,
   RUNNER_META_TOOL_NAMES,
+  MCP_AGENT_TOOL_NAMES,
+  mcpAgentToolNames,
 } from "../tools/definitions.js";
 import {
   elidedStubReuseMessage,
@@ -459,6 +461,38 @@ export {
   type SessionPolicy,
 } from "./session-policy.js";
 export { type ConfirmPort } from "./confirm-port.js";
+
+function mcpAgentToolTarget(args: Record<string, unknown>): string | readonly string[] | undefined {
+  if (Array.isArray(args.servers)) {
+    return args.servers.filter((entry): entry is string => typeof entry === "string");
+  }
+  if (typeof args.server === "string") return args.server;
+  return undefined;
+}
+
+async function runMcpAgentTool(
+  mcp: McpRuntime,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const args = call.args ?? {};
+  if (call.name === "mcp.list") return mcp.agentList();
+  if (call.name === "mcp.tools") {
+    return mcp.agentTools(typeof args.server === "string" ? args.server : undefined);
+  }
+  if (call.name === "mcp.enable") return mcp.agentEnable(mcpAgentToolTarget(args));
+  if (call.name === "mcp.connect") {
+    return mcp.agentConnect(typeof args.server === "string" ? args.server : "");
+  }
+  return mcp.agentLogin(typeof args.server === "string" ? args.server : "");
+}
+
+function mcpAgentOutput(call: ToolCall, result: ToolResult): string {
+  const text = result.output.trim();
+  if (text.length > 0) return text;
+  return result.ok
+    ? `${call.name} completed successfully with no textual output.`
+    : `${call.name} failed with no textual output (exit ${result.exitCode ?? 1}).`;
+}
 
 
 /**
@@ -901,7 +935,11 @@ export async function runAgentTurn(
     // the tool succeeds, the model must actually receive and inspect its bytes.
     // Offer it only with affirmative capability evidence for the active route.
     const routeToolNames = (routeProvider: ProviderId, routeModel: string): string[] =>
-      [...availableToolNames(), ...mcpToolNames].filter((name) => {
+      [
+        ...availableToolNames(),
+        ...mcpToolNames,
+        ...(mcpRuntime ? mcpAgentToolNames(agentMode === "ask") : []),
+      ].filter((name) => {
         if (name === "image.ocr") return imageOcrEnabled;
         if (name === "image.view") {
           return modelSupportsVision(routeProvider, routeModel);
@@ -1907,6 +1945,88 @@ export async function runAgentTurn(
      * cut off must stay an append (with its precondition) instead of becoming
      * a full overwrite.
      */
+    type SingleToolResult = {
+      ok: boolean;
+      call: ToolCall;
+      result: ToolResult;
+      contextOutput: string;
+      lastAnswer?: string | undefined;
+      aborted?: boolean | undefined;
+      suppressedRepeat?: boolean | undefined;
+      blockOrCancel?: boolean | undefined;
+    };
+
+    function showMcpAgentCall(toolEventId: string, call: ToolCall): void {
+      if (alreadyPrintedIds.has(toolEventId)) return;
+      writeToolCall(toolEventId, call);
+      alreadyPrintedIds.add(toolEventId);
+    }
+
+    function failMcpAgentCall(
+      toolEventId: string,
+      call: ToolCall,
+      reason: string,
+      cancelled = false,
+    ): SingleToolResult {
+      showMcpAgentCall(toolEventId, call);
+      const result = { ok: false, output: reason, exitCode: 1 };
+      const body = cancelled ? `cancelled: ${reason}` : reason;
+      writeToolOutput(toolEventId, `${body}\n`, { replace: true });
+      emitToolResult(toolEventId, result, reason);
+      return {
+        ok: false,
+        call,
+        result,
+        contextOutput: reason,
+        ...(cancelled ? { blockOrCancel: true } : {}),
+      };
+    }
+
+    async function executeMcpAgentCall(
+      runtime: McpRuntime,
+      call: ToolCall,
+      toolEventId: string,
+    ): Promise<SingleToolResult> {
+      const readOnly = call.name === "mcp.list" || call.name === "mcp.tools";
+      if (!readOnly && agentMode === "ask") {
+        return failMcpAgentCall(
+          toolEventId,
+          call,
+          `${call.name} is not available in ask mode because it changes MCP session state. Switch to agent mode.`,
+        );
+      }
+      if (!readOnly) {
+        const releasePrompt = await promptMutex.acquire();
+        let confirmed = true;
+        try {
+          confirmed = await confirmToolExecution(
+            call,
+            Boolean(options.autoConfirm),
+            session,
+            confirmPort,
+          );
+          restoreInteractiveStdin();
+        } finally {
+          releasePrompt();
+        }
+        if (!confirmed) {
+          return failMcpAgentCall(toolEventId, call, "Cancelled.", true);
+        }
+      }
+      showMcpAgentCall(toolEventId, call);
+      const result = await runMcpAgentTool(runtime, call);
+      const shown = mcpAgentOutput(call, result);
+      loopGuard.recordAttempt(step, call.name, call.args, result.ok, 0, shown);
+      writeToolOutput(toolEventId, `${shown}\n`, { replace: true });
+      emitToolResult(toolEventId, { ...result, output: shown }, shown);
+      return {
+        ok: result.ok,
+        call,
+        result: { ...result, output: shown },
+        contextOutput: shown,
+      };
+    }
+
     async function applySalvagedWrite(
       salvaged: SalvagedWrite,
     ): Promise<{
@@ -1953,20 +2073,28 @@ export async function runAgentTurn(
       };
     }
 
+    function invalidToolCall(
+      call: ToolCall,
+    ): { reason: string; result: ToolResult } | undefined {
+      if (call.args?.__nativeParseError) {
+        const raw = String(call.args._raw ?? "").slice(0, 200);
+        const reason =
+          "Tool call arguments were not valid JSON (truncated or malformed). " +
+          "Retry with smaller content, or use fs.writeMany / fs.append continuation. " +
+          (raw ? `Partial: ${raw}` : "");
+        return { reason, result: { ok: false, output: reason, exitCode: 1 } };
+      }
+      const elidedStub = findElidedStubArg(call.args);
+      if (!elidedStub) return undefined;
+      const reason = elidedStubReuseMessage(elidedStub.key);
+      return { reason, result: { ok: false, output: reason, exitCode: 1 } };
+    }
+
     async function executeSingleTool(
       rawCall: ToolCall,
       toolEventId: string,
       parentSignal: AbortSignal,
-    ): Promise<{
-      ok: boolean;
-      call: ToolCall;
-      result: ToolResult;
-      contextOutput: string;
-      lastAnswer?: string | undefined;
-      aborted?: boolean | undefined;
-      suppressedRepeat?: boolean | undefined;
-      blockOrCancel?: boolean | undefined;
-    }> {
+    ): Promise<SingleToolResult> {
 
       const scratchDir = scratchDirFor(safeCwd());
       const normalizedCall = normalizeToolCall(rawCall);
@@ -1998,23 +2126,15 @@ export async function runAgentTurn(
       let engagementGraph: EngagementGraph | undefined;
       let engagementRecord: EngagementActionRecord | undefined;
 
-      if (call.args?.__nativeParseError) {
-        const raw = String(call.args._raw ?? "").slice(0, 200);
-        const reason =
-          "Tool call arguments were not valid JSON (truncated or malformed). " +
-          "Retry with smaller content, or use fs.writeMany / fs.append continuation. " +
-          (raw ? `Partial: ${raw}` : "");
-        const result = { ok: false, output: reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, reason);
-        return { ok: false, call, result, contextOutput: reason };
-      }
-
-      const elidedStub = findElidedStubArg(call.args);
-      if (elidedStub) {
-        const reason = elidedStubReuseMessage(elidedStub.key);
-        const result = { ok: false, output: reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, reason);
-        return { ok: false, call, result, contextOutput: reason };
+      const invalid = invalidToolCall(call);
+      if (invalid) {
+        emitToolResult(toolEventId, invalid.result, invalid.reason);
+        return {
+          ok: false,
+          call,
+          result: invalid.result,
+          contextOutput: invalid.reason,
+        };
       }
 
       if (call.name === "image.ocr" && !imageOcrEnabled) {
@@ -2126,6 +2246,10 @@ export async function runAgentTurn(
         emitVisibleSyntheticReceipt(result, output);
         loopGuard.recordAttempt(step, call.name, call.args, true, 0, output);
         return { ok: true, call, result, contextOutput: output };
+      }
+
+      if (mcpRuntime && MCP_AGENT_TOOL_NAMES.has(call.name)) {
+        return executeMcpAgentCall(mcpRuntime, call, toolEventId);
       }
 
       if (RUNNER_META_TOOL_NAMES.has(call.name)) {

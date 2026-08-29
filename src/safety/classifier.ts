@@ -601,7 +601,9 @@ export function classifyToolCall(
   if (
     call.name === "fs.read" ||
     call.name === "fs.list" ||
-    call.name === "fs.search"
+    call.name === "fs.search" ||
+    call.name === "mcp.list" ||
+    call.name === "mcp.tools"
   ) {
     return { level: "safe", reason: "Read-only operation" };
   }
@@ -743,7 +745,12 @@ export function classifyToolCall(
     return { level: "safe", reason: "Read-only pentest recon" };
   }
 
-  if (call.name === "fs.write") {
+  if (
+    call.name === "fs.write" ||
+    call.name === "mcp.enable" ||
+    call.name === "mcp.connect" ||
+    call.name === "mcp.login"
+  ) {
     return {
       level: "confirm",
       reason: "Mutating operation requires confirmation",

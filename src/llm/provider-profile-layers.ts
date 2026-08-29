@@ -374,6 +374,27 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  "merge-gateway": {
+    evidence: providerDoc("merge-gateway-reasoning"),
+    capabilities: { tools: "supported", images: "unknown" },
+    reasoning: {
+      control: {
+        dialect: "openai-effort",
+        status: "supported",
+        evidence: providerDoc("merge-gateway-openai-route"),
+      },
+      acceptedEfforts: ["low", "medium", "high"],
+      outputShapes: ["reasoning-content"],
+      replayScope: "tool-turn",
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
   orcarouter: {
     evidence: providerDoc("orcarouter-reasoning"),
     capabilities: { tools: "supported", images: "unknown" },

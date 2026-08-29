@@ -104,6 +104,7 @@ async function startInteractive(
     mode: Mode;
     provider: ProviderId | undefined;
     model: string;
+    modelExplicit?: boolean | undefined;
     noHistory: boolean | undefined;
     resume?: ResumeTarget | undefined;
   },
@@ -183,6 +184,7 @@ async function oneShot(
       mode,
       provider,
       model,
+      modelExplicit: options.model !== undefined,
       noHistory: options.noHistory,
       ...(resume ? { resume } : {}),
     });

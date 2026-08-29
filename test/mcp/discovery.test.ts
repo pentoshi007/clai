@@ -92,6 +92,95 @@ describe("discovery precedence and shadowing", () => {
     expect(result.shadowed.filter((server) => server.name === "db")).toHaveLength(2);
   });
 
+  it("shadows equivalent endpoint aliases while retaining distinct configurations", () => {
+    writeJson(join(workspace, ".clai", "mcp.json"), {
+      servers: {
+        notion: {
+          url: "https://mcp.notion.com/mcp",
+          auth: { kind: "oauth" },
+        },
+        notionApiKey: {
+          url: "https://mcp.notion.com/mcp",
+          auth: { kind: "bearer", token: "different-account" },
+        },
+        notionSubset: {
+          url: "https://mcp.notion.com/mcp",
+          auth: { kind: "oauth" },
+          tools: ["search"],
+        },
+        notionHeaders: {
+          url: "https://mcp.notion.com/sse",
+          headers: { "x-workspace": "second" },
+        },
+        rootEndpoint: {
+          url: "https://mcp.notion.com/",
+        },
+      },
+    });
+    writeJson(join(home, ".config", "Code", "User", "mcp.json"), {
+      servers: {
+        "makenotion/notion-mcp-server": {
+          url: "https://mcp.notion.com/sse",
+          type: "sse",
+        },
+        distinctPath: {
+          url: "https://mcp.notion.com/workspace/sse",
+        },
+      },
+    });
+
+    const result = discoverMcpServers({
+      workspaceFolder: workspace,
+      homeDir: home,
+      env: baseEnv(),
+      platform: "linux",
+    });
+
+    expect(result.servers.map((server) => server.name).sort()).toEqual([
+      "distinctPath",
+      "notion",
+      "notionApiKey",
+      "notionHeaders",
+      "notionSubset",
+      "rootEndpoint",
+    ]);
+    expect(result.servers.find((server) => server.name === "notion")?.source.kind).toBe(
+      "clai-project",
+    );
+    expect(
+      result.shadowed.find(
+        (server) => server.name === "makenotion/notion-mcp-server",
+      ),
+    ).toMatchObject({
+      source: { kind: "vscode-user" },
+      shadowedBy: { kind: "clai-project" },
+      shadowedByName: "notion",
+    });
+  });
+
+  it("names the live server for same-name shadowing so reconnect can resolve it", () => {
+    writeJson(join(workspace, ".clai", "mcp.json"), {
+      servers: { docs: { url: "https://docs.example.com/mcp" } },
+    });
+    writeJson(join(home, ".config", "Code", "User", "mcp.json"), {
+      servers: { docs: { url: "https://other.example.com/mcp" } },
+    });
+
+    const result = discoverMcpServers({
+      workspaceFolder: workspace,
+      homeDir: home,
+      env: baseEnv(),
+      platform: "linux",
+    });
+
+    expect(result.servers.map((server) => server.name)).toEqual(["docs"]);
+    expect(result.shadowed).toHaveLength(1);
+    expect(result.shadowed[0]).toMatchObject({
+      name: "docs",
+      shadowedByName: "docs",
+    });
+  });
+
   it("loads CLAI_MCP_CONFIG path lists at explicit-override precedence", () => {
     const extA = join(root, "ext-a.json");
     const extB = join(root, "ext-b.json");

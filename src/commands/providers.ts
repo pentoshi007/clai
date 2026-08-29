@@ -98,6 +98,8 @@ function invalidFormatHint(provider: ProviderId): string {
     return "Meta Model API keys are alphanumeric (issued in your Meta Model API dashboard, MODEL_API_KEY)";
   if (provider === "orcarouter")
     return "OrcaRouter keys usually start with sk- (create one at https://www.orcarouter.ai/console)";
+  if (provider === "merge-gateway")
+    return "Merge Gateway keys start with mg_ (create one at https://gateway.merge.dev)";
   return "Ollama expects a URL such as http://localhost:11434";
 }
 

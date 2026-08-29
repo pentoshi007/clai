@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 import {
   RESIZE_REPAINT_SEQUENCE,
   installResizeRepaint,
+  type RepaintScheduler,
   type ResizeListener,
 } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
 import {
   ABANDONED_TERMINAL_RESET,
+  ERASE_TO_END,
+  EXIT_SUMMARY_RESET,
   LEAVE_ALT_SCREEN,
-  NORMAL_SCREEN_RESET,
   RESET_VISIBLE_SCREEN,
   TERMINAL_MODE_RESET,
 } from "../../../src/os/screen-sequences.js";
@@ -35,6 +37,33 @@ function fakeRenderer() {
   };
 }
 
+function manualScheduler(): {
+  schedule: RepaintScheduler;
+  flush: () => void;
+  pending: () => number;
+} {
+  let queued: (() => void) | undefined;
+  return {
+    schedule: (run) => {
+      queued = run;
+      return () => {
+        queued = undefined;
+      };
+    },
+    flush: () => {
+      const run = queued;
+      queued = undefined;
+      run?.();
+    },
+    pending: () => (queued ? 1 : 0),
+  };
+}
+
+const immediate: RepaintScheduler = (run) => {
+  run();
+  return () => {};
+};
+
 describe("OpenTUI resize repaint", () => {
   it("repaints with erase-to-end rather than erase-display, which terminals may push to scrollback", () => {
     expect(RESIZE_REPAINT_SEQUENCE).toBe("\u001b[H\u001b[J");
@@ -42,10 +71,38 @@ describe("OpenTUI resize repaint", () => {
     expect(RESIZE_REPAINT_SEQUENCE).not.toContain("3J");
   });
 
-  it("clears on every applied resize so shrink cannot leave stale wide rows", () => {
+  it("coalesces a resize burst into a single clear instead of one torn frame per event", () => {
     const renderer = fakeRenderer();
     const writes: string[] = [];
-    installResizeRepaint({ renderer, write: (text) => writes.push(text) });
+    const scheduler = manualScheduler();
+    installResizeRepaint({
+      renderer,
+      write: (text) => writes.push(text),
+      schedule: scheduler.schedule,
+    });
+
+    renderer.emitResize(62, 18);
+    renderer.emitResize(120, 40);
+    renderer.emitResize(90, 30);
+    expect(writes).toEqual([]);
+    expect(scheduler.pending()).toBe(1);
+
+    scheduler.flush();
+    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE]);
+
+    renderer.emitResize(100, 32);
+    scheduler.flush();
+    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE, RESIZE_REPAINT_SEQUENCE]);
+  });
+
+  it("clears on every settled resize so shrink cannot leave stale wide rows", () => {
+    const renderer = fakeRenderer();
+    const writes: string[] = [];
+    installResizeRepaint({
+      renderer,
+      write: (text) => writes.push(text),
+      schedule: immediate,
+    });
 
     renderer.emitResize(62, 18);
     renderer.emitResize(100, 32);
@@ -61,6 +118,7 @@ describe("OpenTUI resize repaint", () => {
       renderer,
       write: (text) => writes.push(text),
       isSuspended: () => suspended,
+      schedule: immediate,
     });
 
     renderer.emitResize(80, 24);
@@ -78,9 +136,29 @@ describe("OpenTUI resize repaint", () => {
       renderer,
       write: (text) => writes.push(text),
       isSuspended: () => true,
+      schedule: immediate,
     });
 
     renderer.emitResize(80, 24);
+    expect(writes).toEqual([]);
+  });
+
+  it("drops a scheduled clear when the renderer suspends before it flushes", () => {
+    const renderer = fakeRenderer();
+    const writes: string[] = [];
+    const scheduler = manualScheduler();
+    let suspended = false;
+    installResizeRepaint({
+      renderer,
+      write: (text) => writes.push(text),
+      isSuspended: () => suspended,
+      schedule: scheduler.schedule,
+    });
+
+    renderer.emitResize(80, 24);
+    suspended = true;
+    scheduler.flush();
+
     expect(writes).toEqual([]);
   });
 
@@ -90,6 +168,7 @@ describe("OpenTUI resize repaint", () => {
     const dispose = installResizeRepaint({
       renderer,
       write: (text) => writes.push(text),
+      schedule: immediate,
     });
 
     renderer.emitResize(70, 20);
@@ -98,6 +177,24 @@ describe("OpenTUI resize repaint", () => {
     renderer.emitResize(60, 18);
 
     expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE]);
+    expect(renderer.listenerCount()).toBe(0);
+  });
+
+  it("cancels a pending clear on dispose so it cannot land after the sign-off card", () => {
+    const renderer = fakeRenderer();
+    const writes: string[] = [];
+    const scheduler = manualScheduler();
+    const dispose = installResizeRepaint({
+      renderer,
+      write: (text) => writes.push(text),
+      schedule: scheduler.schedule,
+    });
+
+    renderer.emitResize(70, 20);
+    dispose();
+    scheduler.flush();
+
+    expect(writes).toEqual([]);
     expect(renderer.listenerCount()).toBe(0);
   });
 
@@ -128,30 +225,67 @@ describe("OpenTUI resize repaint", () => {
     expect(source).toContain("disposeResizeRepaint,");
   });
 
-  it("prints the sign-off card onto an unconditionally reset screen in both surfaces", () => {
+  it("writes repaint bytes past a hijacked stdout so OpenTUI cannot queue or drop them", () => {
+    const source = readFileSync(
+      join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
+      "utf8",
+    );
+    expect(source).toContain("write: (text) => writeTerminalDirect(text)");
+    expect(source).not.toContain("write: (text) => void process.stdout.write(text)");
+  });
+
+  it("keeps every exit sequence free of cursor movement so the card and the screen survive", () => {
+    const cursorMoving = [
+      "\u001b[r",
+      "\u001b[H",
+      "\u001b[f",
+      "\u001b[1;1H",
+      "\u001bc",
+      "\u001b[u",
+      "\u001b8",
+    ];
+    for (const sequence of [
+      TERMINAL_MODE_RESET,
+      EXIT_SUMMARY_RESET,
+      ABANDONED_TERMINAL_RESET,
+    ]) {
+      for (const move of cursorMoving) {
+        expect(sequence).not.toContain(move);
+      }
+    }
+    expect(EXIT_SUMMARY_RESET.endsWith(ERASE_TO_END)).toBe(true);
+    expect(ABANDONED_TERMINAL_RESET).not.toContain(ERASE_TO_END);
+  });
+
+  it("prints the sign-off card without erasing the screen the user had before clai", () => {
     expect(TERMINAL_MODE_RESET).not.toContain("1049");
     expect(TERMINAL_MODE_RESET).toContain("\u001b[?2026l");
     expect(TERMINAL_MODE_RESET).toContain("\u001b[?1003l");
     expect(TERMINAL_MODE_RESET).toContain("\u001b[?1006l");
     expect(TERMINAL_MODE_RESET).toContain("\u001b[?2004l");
     expect(TERMINAL_MODE_RESET).toContain("\u001b[?25h");
-    expect(TERMINAL_MODE_RESET).toContain("\u001b[r");
-    expect(NORMAL_SCREEN_RESET).toBe(`${TERMINAL_MODE_RESET}${RESET_VISIBLE_SCREEN}`);
-    expect(NORMAL_SCREEN_RESET).not.toContain("2J");
-    expect(NORMAL_SCREEN_RESET).not.toContain("3J");
+    expect(TERMINAL_MODE_RESET).not.toContain("\u001b[r");
     expect(ABANDONED_TERMINAL_RESET).toBe(`${TERMINAL_MODE_RESET}${LEAVE_ALT_SCREEN}`);
+    expect(EXIT_SUMMARY_RESET).toBe(`${TERMINAL_MODE_RESET}${ERASE_TO_END}`);
+    expect(EXIT_SUMMARY_RESET).not.toContain(LEAVE_ALT_SCREEN);
+    expect(EXIT_SUMMARY_RESET).not.toContain(RESET_VISIBLE_SCREEN);
+    expect(EXIT_SUMMARY_RESET).not.toContain("\u001b[H");
+    expect(EXIT_SUMMARY_RESET).not.toContain("2J");
+    expect(EXIT_SUMMARY_RESET).not.toContain("3J");
 
     const tui = readFileSync(
       join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
       "utf8",
     );
-    expect(tui).toContain("`${NORMAL_SCREEN_RESET}${text}`");
+    expect(tui).toContain("`${EXIT_SUMMARY_RESET}${text}`");
+    expect(tui).toContain("writeTerminalAndWait");
     expect(tui).not.toContain("geometry.resized");
 
     const classic = readFileSync(
       join(root, "src", "classic", "bootstrap", "start-classic.tsx"),
       "utf8",
     );
-    expect(classic).toContain("`${NORMAL_SCREEN_RESET}${text}`");
+    expect(classic).toContain("`${EXIT_SUMMARY_RESET}${text}`");
+    expect(classic).toContain("writeTerminalAndWait");
   });
 });

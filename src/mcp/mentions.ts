@@ -4,8 +4,8 @@ export interface McpMentionRange {
   readonly name: string;
 }
 
-const TOKEN_RE = /(^|[^\w:/\\.-])@mcp:([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
-const TRAILING_PUNCTUATION = /[._-]+$/;
+const TOKEN_RE = /(^|[^\w:/\\.-])@mcp:([A-Za-z0-9][A-Za-z0-9_./-]*)/g;
+const TRAILING_PUNCTUATION = /[._/-]+$/;
 
 export function formatMcpToken(name: string): string {
   return `@mcp:${name}`;
