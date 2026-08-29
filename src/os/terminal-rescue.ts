@@ -1,7 +1,8 @@
+import { ABANDONED_TERMINAL_RESET } from "./screen-sequences.js";
+
 export interface RescueWritable {
   write(chunk: string): unknown;
 }
-
 export interface RescueRawMode {
   readonly isTTY?: boolean | undefined;
   setRawMode?(mode: boolean): unknown;
@@ -19,9 +20,7 @@ export interface TerminalRescueOptions {
   readonly proc?: RescueProcess | undefined;
 }
 
-export const TERMINAL_RESET_SEQUENCE =
-  "\x1b[?1004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
-  "\x1b[?2004l\x1b[?25h\x1b[?1049l";
+export const TERMINAL_RESET_SEQUENCE = ABANDONED_TERMINAL_RESET;
 
 let activeDisarm: (() => void) | undefined;
 

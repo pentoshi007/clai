@@ -8,8 +8,11 @@ import {
   type ResizeListener,
 } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
 import {
-  ERASE_TO_END,
+  ABANDONED_TERMINAL_RESET,
+  LEAVE_ALT_SCREEN,
+  NORMAL_SCREEN_RESET,
   RESET_VISIBLE_SCREEN,
+  TERMINAL_MODE_RESET,
 } from "../../../src/os/screen-sequences.js";
 
 const root = join(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -50,25 +53,22 @@ describe("OpenTUI resize repaint", () => {
     expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE, RESIZE_REPAINT_SEQUENCE]);
   });
 
-  it("reports applied resizes so the epilogue can reset a polluted screen", () => {
+  it("clears regardless of suspension history once the renderer is active", () => {
     const renderer = fakeRenderer();
-    const geometry = { resized: false };
+    const writes: string[] = [];
     let suspended = true;
     installResizeRepaint({
       renderer,
-      write: () => {},
+      write: (text) => writes.push(text),
       isSuspended: () => suspended,
-      onApplied: () => {
-        geometry.resized = true;
-      },
     });
 
     renderer.emitResize(80, 24);
-    expect(geometry.resized).toBe(false);
+    expect(writes).toEqual([]);
 
     suspended = false;
     renderer.emitResize(80, 25);
-    expect(geometry.resized).toBe(true);
+    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE]);
   });
 
   it("never clears while the renderer is suspended, so a pager on the normal screen is safe", () => {
@@ -128,22 +128,30 @@ describe("OpenTUI resize repaint", () => {
     expect(source).toContain("disposeResizeRepaint,");
   });
 
-  it("prints the sign-off card onto cleared space, resetting the screen only after a resize", () => {
-    expect(ERASE_TO_END).toBe("\u001b[J");
-    expect(RESET_VISIBLE_SCREEN).toBe("\u001b[H\u001b[J");
-    expect(RESET_VISIBLE_SCREEN).not.toContain("2J");
+  it("prints the sign-off card onto an unconditionally reset screen in both surfaces", () => {
+    expect(TERMINAL_MODE_RESET).not.toContain("1049");
+    expect(TERMINAL_MODE_RESET).toContain("\u001b[?2026l");
+    expect(TERMINAL_MODE_RESET).toContain("\u001b[?1003l");
+    expect(TERMINAL_MODE_RESET).toContain("\u001b[?1006l");
+    expect(TERMINAL_MODE_RESET).toContain("\u001b[?2004l");
+    expect(TERMINAL_MODE_RESET).toContain("\u001b[?25h");
+    expect(TERMINAL_MODE_RESET).toContain("\u001b[r");
+    expect(NORMAL_SCREEN_RESET).toBe(`${TERMINAL_MODE_RESET}${RESET_VISIBLE_SCREEN}`);
+    expect(NORMAL_SCREEN_RESET).not.toContain("2J");
+    expect(NORMAL_SCREEN_RESET).not.toContain("3J");
+    expect(ABANDONED_TERMINAL_RESET).toBe(`${TERMINAL_MODE_RESET}${LEAVE_ALT_SCREEN}`);
 
     const tui = readFileSync(
       join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
       "utf8",
     );
-    expect(tui).toContain("geometry.resized ? RESET_VISIBLE_SCREEN : ERASE_TO_END");
-    expect(tui).toContain("`${reset}${text}`");
+    expect(tui).toContain("`${NORMAL_SCREEN_RESET}${text}`");
+    expect(tui).not.toContain("geometry.resized");
 
     const classic = readFileSync(
       join(root, "src", "classic", "bootstrap", "start-classic.tsx"),
       "utf8",
     );
-    expect(classic).toMatch(/\$\{ERASE_TO_END\}\$\{text\}/);
+    expect(classic).toContain("`${NORMAL_SCREEN_RESET}${text}`");
   });
 });

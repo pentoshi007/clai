@@ -30,6 +30,7 @@ import {
   sendFrame,
 } from "./protocol.js";
 import { readRuntimeMetadata } from "./store.js";
+import { TERMINAL_MODE_RESET } from "../os/screen-sequences.js";
 import { ALT_SCREEN_OFF, AltScreenTracker } from "./alt-screen.js";
 import {
   RUNTIME_PROTOCOL_VERSION,
@@ -43,8 +44,7 @@ const START_TIMEOUT_MS = 10_000;
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
 const MIN_IDLE_TIMEOUT_MS = 60_000;
 const MAX_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
-const TERMINAL_RESTORE =
-  "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l\u001b[?1015l\u001b[?2004l\u001b[?25h\u001b[0m";
+const TERMINAL_RESTORE = TERMINAL_MODE_RESET;
 
 export function terminalRestoreSequence(altScreenActive: boolean): string {
   return altScreenActive ? `${TERMINAL_RESTORE}${ALT_SCREEN_OFF}` : TERMINAL_RESTORE;

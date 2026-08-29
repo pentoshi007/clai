@@ -19,8 +19,7 @@ import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import {
-  ERASE_TO_END,
-  RESET_VISIBLE_SCREEN,
+  NORMAL_SCREEN_RESET,
 } from "../../os/screen-sequences.js";
 import {
   applyResumeResolution,
@@ -93,7 +92,6 @@ export async function startTuiV2(
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   attachCommandHandlers(services);
-  const geometry = { resized: false };
   const epilogue = createExitEpilogue({
     services,
     startedAt,
@@ -101,8 +99,7 @@ export async function startTuiV2(
     columns: () => process.stdout.columns,
     write: (text) => {
       try {
-        const reset = geometry.resized ? RESET_VISIBLE_SCREEN : ERASE_TO_END;
-        process.stdout.write(`${reset}${text}`);
+        process.stdout.write(`${NORMAL_SCREEN_RESET}${text}`);
       } catch {
         /* the terminal went away; nothing to sign off to */
       }
@@ -147,9 +144,6 @@ export async function startTuiV2(
     enabled: Boolean(process.stdout.isTTY),
     isSuspended: () =>
       renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
-    onApplied: () => {
-      geometry.resized = true;
-    },
   });
 
   const lifecycle = new RendererLifecycle({

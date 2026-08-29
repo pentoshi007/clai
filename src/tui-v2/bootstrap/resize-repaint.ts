@@ -14,7 +14,6 @@ export interface ResizeRepaintOptions {
   readonly write: (text: string) => void;
   readonly enabled?: boolean | undefined;
   readonly isSuspended?: (() => boolean) | undefined;
-  readonly onApplied?: (() => void) | undefined;
 }
 
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {
@@ -23,7 +22,6 @@ export function installResizeRepaint(options: ResizeRepaintOptions): () => void 
   const onResize: ResizeListener = () => {
     if (!active || options.isSuspended?.() === true) return;
     options.write(RESIZE_REPAINT_SEQUENCE);
-    options.onApplied?.();
   };
   options.renderer.on("resize", onResize);
   return () => {

@@ -1,4 +1,6 @@
-export const ALT_SCREEN_OFF = "\u001b[?1049l";
+import { LEAVE_ALT_SCREEN } from "../os/screen-sequences.js";
+
+export const ALT_SCREEN_OFF = LEAVE_ALT_SCREEN;
 
 const ALT_SCREEN_MODES = new Set(["47", "1047", "1049"]);
 const PRIVATE_MODE_PATTERN = /\u001b\[\?([0-9;]{1,64})([hl])/g;
