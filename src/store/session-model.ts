@@ -215,6 +215,7 @@ export interface SessionModelSeed {
   readonly model?: string | undefined;
   readonly modelExplicit?: boolean | undefined;
   readonly inheritLastUsed?: boolean | undefined;
+  readonly freeCatalogFallback?: boolean | undefined;
 }
 
 export async function seedSessionModel(
@@ -251,7 +252,7 @@ async function seedFreshSession(
     const model = fallback.modelExplicit ? fallback.model : inherited.model;
     return pairFor(inherited.provider, model);
   }
-  if (!fallback.inheritLastUsed || fallback.modelExplicit) {
+  if (!fallback.freeCatalogFallback || fallback.modelExplicit) {
     return { provider: fallback.provider, model: fallback.model };
   }
   return pairFor(FREE_PROVIDER, await resolveFreeDefaultModel());

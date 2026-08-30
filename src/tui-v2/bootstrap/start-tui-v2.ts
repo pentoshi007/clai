@@ -86,6 +86,7 @@ export async function startTuiV2(
     model: options.model,
     modelExplicit: options.modelExplicit === true,
     inheritLastUsed: options.resume === undefined,
+    freeCatalogFallback: options.resume === undefined,
   });
   const services = createCompositionRoot({
     provider: seeded.provider,

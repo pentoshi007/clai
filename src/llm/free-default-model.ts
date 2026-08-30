@@ -38,9 +38,16 @@ export function pickFreeModel(catalog: readonly string[]): string {
   );
 }
 
+let cachedPick: string | undefined;
+
+export function resetFreeDefaultModelCache(): void {
+  cachedPick = undefined;
+}
+
 export async function resolveFreeDefaultModel(
   deps: FreeDefaultModelDeps = {},
 ): Promise<string> {
+  if (cachedPick !== undefined && deps.listModels === undefined) return cachedPick;
   const list: () => Promise<string[]> =
     deps.listModels ??
     (() => freeProvider.listModels?.({ apiKey: undefined }) ?? Promise.resolve([]));
@@ -48,5 +55,7 @@ export async function resolveFreeDefaultModel(
     Promise.resolve().then(() => list()),
     deps.timeoutMs ?? CATALOG_TIMEOUT_MS,
   );
-  return pickFreeModel(catalog ?? []);
+  const picked = pickFreeModel(catalog ?? []);
+  if (deps.listModels === undefined) cachedPick = picked;
+  return picked;
 }

@@ -115,10 +115,20 @@ describe("a fresh session keeps the last used provider and model", () => {
     expect(state.model).toContain("fireworks");
   });
 
-  it("leaves the session unbound when no past session recorded a model", async () => {
-    const services = makeServices();
-    await handleNew(services);
-    const state = services.session.getState();
-    expect(state.provider === undefined || typeof state.provider === "string").toBe(true);
+  it("leaves the session unbound without any network call when no past session exists", async () => {
+    const realFetch = globalThis.fetch;
+    let fetches = 0;
+    globalThis.fetch = ((input: unknown, init?: unknown) => {
+      fetches += 1;
+      return (realFetch as (a: unknown, b?: unknown) => Promise<Response>)(input, init);
+    }) as typeof globalThis.fetch;
+    try {
+      const services = makeServices();
+      await handleNew(services);
+      expect(services.session.getState().provider).toBeUndefined();
+      expect(fetches).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

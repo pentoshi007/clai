@@ -276,12 +276,22 @@ describe("seedSessionModel", () => {
     expect(seeded).toEqual({ provider: "gemini", model: "mine" });
   });
 
-  it("uses a free catalog model when no past chat exists at all", async () => {
+  it("uses a free catalog model when a launch finds no past chat at all", async () => {
     const seeded = await seedSessionModel("sess-first-ever", {
       provider: undefined,
       model: "moonshotai/kimi-k3",
       inheritLastUsed: true,
+      freeCatalogFallback: true,
     });
     expect(seeded).toEqual({ provider: "free", model: FREE_CATALOG_MODEL });
+  });
+
+  it("never consults the free catalog unless the caller opts in", async () => {
+    const seeded = await seedSessionModel("sess-first-ever-2", {
+      provider: undefined,
+      model: undefined,
+      inheritLastUsed: true,
+    });
+    expect(seeded).toEqual({ provider: undefined, model: undefined });
   });
 });

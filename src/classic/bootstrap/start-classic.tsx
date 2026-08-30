@@ -90,6 +90,7 @@ export async function startClassic(
     model: options.model,
     modelExplicit: options.modelExplicit === true,
     inheritLastUsed: options.resume === undefined,
+    freeCatalogFallback: options.resume === undefined,
   });
   const services = createCompositionRoot({
     provider: seeded.provider,
