@@ -45,6 +45,15 @@ export function liveThinkingDisplay(
   return liveThinkingTail(stripped, limit);
 }
 
+export function liveThinkingFull(content: string): string {
+  if (!SURFACE_OPENERS.some((opener) => content.includes(opener))) {
+    return content;
+  }
+  const stripped = stripToolCallSurfaces(content);
+  if (!stripped.trim()) return "…";
+  return stripped;
+}
+
 export const LIVE_COMPACTION_HEAD_CHARS = 1_500;
 export const LIVE_COMPACTION_TAIL_CHARS = 2_500;
 

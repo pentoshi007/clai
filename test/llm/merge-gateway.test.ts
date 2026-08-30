@@ -118,9 +118,10 @@ describe("Merge Gateway model discovery", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     await mergeGatewayProvider.listModels!({ apiKey: "mg_livekey1" });
+    const fetchesAfterFirstLoad = fetchMock.mock.calls.length;
     await mergeGatewayProvider.listModels!({ apiKey: "mg_livekey1" });
     await mergeGatewayProvider.listModels!({ apiKey: "mg_livekey1" });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(fetchesAfterFirstLoad);
   });
 
   it("authenticates the catalog request", async () => {

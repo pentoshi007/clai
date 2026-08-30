@@ -19,6 +19,17 @@ export interface ResizeRepaintOptions {
   readonly enabled?: boolean | undefined;
   readonly isSuspended?: (() => boolean) | undefined;
   readonly schedule?: RepaintScheduler | undefined;
+  /**
+   * Forces the renderer to redraw every cell after the clear.
+   *
+   * OpenTUI emits `resize` and then calls `requestRender()` itself, so the
+   * coalesced clear lands *after* the renderer has already painted the new
+   * geometry. The clear wipes that frame, and the renderer will not redraw it
+   * because its diff still believes the screen matches its buffer — leaving only
+   * the components that repaint on their own (the composer) visible. Pairing the
+   * clear with a forced repaint makes the outcome independent of that ordering.
+   */
+  readonly requestRepaint?: (() => void) | undefined;
 }
 
 const defaultSchedule: RepaintScheduler = (run) => {
@@ -26,6 +37,34 @@ const defaultSchedule: RepaintScheduler = (run) => {
   timer.unref?.();
   return () => clearTimeout(timer);
 };
+
+export interface FullRepaintRenderer {
+  requestRender(): void;
+  readonly currentRenderBuffer?: { clear(): void } | undefined;
+}
+
+/**
+ * Invalidates the renderer's picture of the screen, then asks for a frame.
+ *
+ * OpenTUI's native renderer only emits the cells that differ from
+ * `currentRenderBuffer`, so `requestRender()` alone is a no-op after we clear the
+ * terminal behind its back. Zeroing that buffer first makes every cell differ,
+ * which is the same effect as the renderer's internal full-repaint flag (private,
+ * and only set on suspend/resume and screen-mode transitions). The buffer clear
+ * is best-effort: if the shape ever changes, the plain render request still runs.
+ */
+export function forceFullRepaint(renderer: FullRepaintRenderer): void {
+  try {
+    renderer.currentRenderBuffer?.clear();
+  } catch {
+    /* buffer already torn down — the render request below is still worth making */
+  }
+  try {
+    renderer.requestRender();
+  } catch {
+    /* renderer is going away; the next mount repaints from scratch */
+  }
+}
 
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {
   if (options.enabled === false) return () => {};
@@ -37,6 +76,7 @@ export function installResizeRepaint(options: ResizeRepaintOptions): () => void 
     cancelPending = undefined;
     if (!active || options.isSuspended?.() === true) return;
     options.write(RESIZE_REPAINT_SEQUENCE);
+    options.requestRepaint?.();
   };
   const onResize: ResizeListener = () => {
     if (!active || options.isSuspended?.() === true) return;

@@ -36,6 +36,7 @@ import { thinkingElapsedLabel } from "../../../ui-core/rendering/duration.js";
 import type { ThinkingItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
+  createLiveThinkingWrap,
   resolveThinkingFooter,
   resolveThinkingHeadingStyle,
   resolveThinkingPresentation,
@@ -90,9 +91,13 @@ export function ThinkingBlock(props: {
     () => sanitizeDisplayText(item.content).replace(/\r\n/g, "\n"),
     [item.content],
   );
+  const liveWrap = useMemo(() => createLiveThinkingWrap(bodyWidth), [bodyWidth]);
   const lines = useMemo(
-    () => wrapThinkingBody(content, bodyWidth, item.streaming),
-    [content, bodyWidth, item.streaming],
+    () =>
+      item.streaming
+        ? liveWrap(content)
+        : wrapThinkingBody(content, bodyWidth, false),
+    [content, bodyWidth, item.streaming, liveWrap],
   );
   const viewport = resolveThinkingViewport({
     lineCount: lines.length,

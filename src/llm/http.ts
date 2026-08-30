@@ -651,6 +651,36 @@ function artifactRaw(value: unknown): ReasoningArtifact["raw"] | undefined {
   return undefined;
 }
 
+/**
+ * Reads the reasoning text off an OpenAI-compatible `message`/`delta`.
+ *
+ * Most routes use `reasoning_content` (DeepSeek/vLLM style) or `reasoning`
+ * (OpenRouter style). Merge Gateway normalizes every upstream vendor onto a
+ * third field, `thinking` (+ `thinking_signature`), on both its
+ * chat.completion messages and its chat.completion.chunk deltas — verified live
+ * against api-gateway.merge.dev/v1/openai for qwen/qwen3.8-max,
+ * zai/glm-5.3-flash and deepseek/deepseek-v4-flash-0731. Without this branch the
+ * chain of thought arrives on the wire and is silently dropped, which looks
+ * exactly like a model that never reasoned.
+ *
+ * Only strings are accepted: Anthropic-shaped `thinking` request/response
+ * objects (`{type:"disabled"}`, content blocks) must not be treated as text.
+ */
+function openAiReasoningText(
+  channel:
+    | {
+        reasoning_content?: string | undefined;
+        reasoning?: string | undefined;
+        thinking?: unknown;
+      }
+    | undefined,
+): string | undefined {
+  const primary = channel?.reasoning_content ?? channel?.reasoning;
+  if (typeof primary === "string" && primary) return primary;
+  const thinking = channel?.thinking;
+  return typeof thinking === "string" && thinking ? thinking : undefined;
+}
+
 function compatibleReasoningArtifacts(input: {
   providerId: ProviderId;
   model: string;
@@ -1615,6 +1645,8 @@ export async function openAiCompatibleComplete(options: {
         reasoning_content?: string;
         reasoning?: string;
         reasoning_details?: unknown;
+        thinking?: unknown;
+        thinking_signature?: string | null;
         extra_content?: { google?: { thought_signature?: string } };
         tool_calls?: Array<{
           id?: string;
@@ -1660,7 +1692,7 @@ export async function openAiCompatibleComplete(options: {
           response.headers,
         )
       : parseOpenAiUsage(data.usage, options.usageAliases);
-  const reasoning = message?.reasoning_content ?? message?.reasoning;
+  const reasoning = openAiReasoningText(message);
   const detailsRaw = artifactRaw(message?.reasoning_details);
   const thoughtSignature = message?.extra_content?.google?.thought_signature;
   const reasoningArtifacts = compatibleReasoningArtifacts({
@@ -1929,6 +1961,8 @@ export async function openAiCompatibleStream(options: {
             reasoning_content?: string;
             reasoning?: string;
             reasoning_details?: unknown;
+            thinking?: unknown;
+            thinking_signature?: string | null;
             extra_content?: { google?: { thought_signature?: string } };
             tool_calls?: Array<{
               id?: string;
@@ -1958,7 +1992,7 @@ export async function openAiCompatibleStream(options: {
               response.headers,
             )
           : parseOpenAiUsage(data.usage, options.usageAliases);
-      const reasoning = message?.reasoning_content ?? message?.reasoning;
+      const reasoning = openAiReasoningText(message);
       const detailsRaw = artifactRaw(message?.reasoning_details);
       const thoughtSignature = message?.extra_content?.google?.thought_signature;
       const reasoningArtifacts = compatibleReasoningArtifacts({
@@ -2346,6 +2380,8 @@ export async function openAiCompatibleStream(options: {
               reasoning_content?: string;
               reasoning?: string;
               reasoning_details?: unknown;
+              thinking?: unknown;
+              thinking_signature?: string | null;
               extra_content?: { google?: { thought_signature?: string } };
               role?: string;
               tool_calls?: Array<{
@@ -2396,7 +2432,7 @@ export async function openAiCompatibleStream(options: {
           const finalUsageFrame = isFinalUsageFrame(parsed);
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
-          const reasoningToken = delta?.reasoning_content ?? delta?.reasoning;
+          const reasoningToken = openAiReasoningText(delta);
           const token = delta?.content;
           const detailRaw = artifactRaw(delta?.reasoning_details);
           const thoughtSignature = delta?.extra_content?.google?.thought_signature;

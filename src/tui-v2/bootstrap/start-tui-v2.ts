@@ -39,7 +39,7 @@ import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js"
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
-import { installResizeRepaint } from "./resize-repaint.js";
+import { forceFullRepaint, installResizeRepaint } from "./resize-repaint.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -154,6 +154,7 @@ export async function startTuiV2(
     enabled: Boolean(process.stdout.isTTY),
     isSuspended: () =>
       renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
+    requestRepaint: () => forceFullRepaint(renderer),
   });
 
   const lifecycle = new RendererLifecycle({

@@ -1,5 +1,5 @@
 import { wrapPagerLine } from "../../../ui-core/rendering/pager-chrome.js";
-import { liveThinkingDisplay } from "../../../ui-core/rendering/thinking-tail.js";
+import { liveThinkingFull } from "../../../ui-core/rendering/thinking-tail.js";
 
 export const THINKING_BODY_MAX_ROWS = 20;
 const MAX_BODY_CHARS = 20_000;
@@ -9,10 +9,10 @@ export function wrapThinkingBody(
   width: number,
   streaming: boolean,
 ): string[] {
+  if (streaming) return createLiveThinkingWrap(width)(content);
   const budget = Math.max(1, Math.floor(width));
-  const source = streaming
-    ? liveThinkingDisplay(content)
-    : content.length > MAX_BODY_CHARS
+  const source =
+    content.length > MAX_BODY_CHARS
       ? `${content.slice(0, MAX_BODY_CHARS)}\n…`
       : content;
   if (!source.trim()) return [];
@@ -21,6 +21,41 @@ export function wrapThinkingBody(
     for (const wrapped of wrapPagerLine(line, budget)) rows.push(wrapped);
   }
   return rows;
+}
+
+export function createLiveThinkingWrap(
+  width: number,
+): (content: string) => string[] {
+  const budget = Math.max(1, Math.floor(width));
+  const rows: string[] = [];
+  let source = "";
+  let tailLine = "";
+  const view = (): string[] => {
+    if (rows.length === 0 && !tailLine.trim()) return [];
+    const tailRows = tailLine ? wrapPagerLine(tailLine, budget) : [];
+    return [...rows, ...tailRows];
+  };
+  const wrapTail = (segment: string): void => {
+    const combined = tailLine + segment;
+    const lines = combined.split("\n");
+    tailLine = lines.pop() ?? "";
+    for (const line of lines) {
+      for (const wrapped of wrapPagerLine(line, budget)) rows.push(wrapped);
+    }
+  };
+  return (content: string): string[] => {
+    const display = liveThinkingFull(content);
+    if (display === source) return view();
+    if (display.startsWith(source)) {
+      wrapTail(display.slice(source.length));
+    } else {
+      rows.length = 0;
+      tailLine = "";
+      if (display.trim()) wrapTail(display);
+    }
+    source = display;
+    return view();
+  };
 }
 
 export interface ThinkingViewport {

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   RESIZE_REPAINT_SEQUENCE,
+  forceFullRepaint,
   installResizeRepaint,
   type RepaintScheduler,
   type ResizeListener,
@@ -93,6 +94,76 @@ describe("OpenTUI resize repaint", () => {
     renderer.emitResize(100, 32);
     scheduler.flush();
     expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE, RESIZE_REPAINT_SEQUENCE]);
+  });
+
+  it("forces a repaint after the clear, so growing the window cannot leave a blank frame", () => {
+    // OpenTUI paints the new geometry before the coalesced clear lands. Without a
+    // forced repaint the clear wipes that frame for good and only self-repainting
+    // components (the composer) stay visible.
+    const renderer = fakeRenderer();
+    const order: string[] = [];
+    const scheduler = manualScheduler();
+    installResizeRepaint({
+      renderer,
+      write: () => order.push("clear"),
+      requestRepaint: () => order.push("repaint"),
+      schedule: scheduler.schedule,
+    });
+
+    renderer.emitResize(120, 40);
+    expect(order).toEqual([]);
+    scheduler.flush();
+
+    expect(order).toEqual(["clear", "repaint"]);
+  });
+
+  it("does not repaint when the clear is skipped for a suspended renderer", () => {
+    const renderer = fakeRenderer();
+    const order: string[] = [];
+    installResizeRepaint({
+      renderer,
+      write: () => order.push("clear"),
+      requestRepaint: () => order.push("repaint"),
+      isSuspended: () => true,
+      schedule: immediate,
+    });
+
+    renderer.emitResize(120, 40);
+
+    expect(order).toEqual([]);
+  });
+
+  it("invalidates the renderer's screen buffer before requesting the frame", () => {
+    const calls: string[] = [];
+    forceFullRepaint({
+      currentRenderBuffer: { clear: () => calls.push("buffer-clear") },
+      requestRender: () => calls.push("request-render"),
+    });
+
+    expect(calls).toEqual(["buffer-clear", "request-render"]);
+  });
+
+  it("still requests a frame when the screen buffer is gone or throws", () => {
+    const calls: string[] = [];
+    forceFullRepaint({
+      currentRenderBuffer: {
+        clear: () => {
+          throw new Error("buffer destroyed");
+        },
+      },
+      requestRender: () => calls.push("request-render"),
+    });
+    forceFullRepaint({ requestRender: () => calls.push("request-render") });
+
+    expect(calls).toEqual(["request-render", "request-render"]);
+  });
+
+  it("is wired to the live renderer from the OpenTUI bootstrap", () => {
+    const source = readFileSync(
+      join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
+      "utf8",
+    );
+    expect(source).toContain("requestRepaint: () => forceFullRepaint(renderer)");
   });
 
   it("clears on every settled resize so shrink cannot leave stale wide rows", () => {

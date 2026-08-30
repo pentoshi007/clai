@@ -3,6 +3,7 @@ import {
   LIVE_THINKING_TAIL_CHARS,
   liveCompactionHeadTail,
   liveThinkingDisplay,
+  liveThinkingFull,
   liveThinkingTail,
 } from "../../../src/ui-core/rendering/thinking-tail.js";
 
@@ -64,5 +65,32 @@ describe("live thinking display (tool-surface hygiene)", () => {
     const display = liveThinkingDisplay(content);
     expect(display).not.toContain("DSML");
     expect(display).toContain("raycast math");
+  });
+});
+
+describe("live thinking full (OpenTUI untruncated stream)", () => {
+  it("passes plain reasoning through untouched", () => {
+    expect(liveThinkingFull("short reasoning")).toBe("short reasoning");
+  });
+
+  it("keeps long reasoning from the first character to the last", () => {
+    const content = `opening thought\n${"reasoning step\n".repeat(4_000)}final line`;
+    expect(liveThinkingFull(content)).toBe(content);
+  });
+
+  it("strips a drafting tool surface without dropping earlier prose", () => {
+    const content =
+      "Planning the layout first.\n" +
+      `<｜DSML｜tool_calls>\n<｜DSML｜invoke name="fs.write">`;
+    const display = liveThinkingFull(content);
+    expect(display).toContain("Planning the layout first.");
+    expect(display).not.toContain("DSML");
+    expect(display).not.toContain("fs.write");
+  });
+
+  it("paints only the ellipsis marker while inside a huge parameter body", () => {
+    const content =
+      `<｜DSML｜tool_calls>\n<｜DSML｜parameter name="content" string="true">${"code line\n".repeat(300)}`;
+    expect(liveThinkingFull(content)).toBe("…");
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createLiveThinkingWrap,
   resolveThinkingFooter,
   resolveThinkingHeadingStyle,
   resolveThinkingPresentation,
@@ -127,6 +128,58 @@ describe("thinking body rows", () => {
     const rows = wrapThinkingBody("x".repeat(60_000), 40, false);
     expect(rows.length).toBeLessThanOrEqual(20_000 / 40 + 2);
     expect(rows.at(-1)).toBe("…");
+  });
+
+  it("keeps streaming reasoning from the start instead of a tail window", () => {
+    const content = `opening thought\n${"reasoning step\n".repeat(500)}final line`;
+    const rows = wrapThinkingBody(content, 40, true);
+    expect(rows[0]).toBe("opening thought");
+    expect(rows.at(-1)).toBe("final line");
+    expect(rows.length).toBeGreaterThan(500);
+  });
+});
+
+describe("live thinking incremental wrap", () => {
+  it("wraps appended chunks identically to a one-shot wrap", () => {
+    const wrap = createLiveThinkingWrap(20);
+    const pieces = ["first line\nsec", "ond line\nthird", " line\nlast"];
+    let raw = "";
+    let rows: string[] = [];
+    for (const piece of pieces) {
+      raw += piece;
+      rows = wrap(raw);
+    }
+    expect(rows).toEqual(wrapThinkingBody(pieces.join(""), 20, true));
+  });
+
+  it("is idempotent for a repeated frame", () => {
+    const wrap = createLiveThinkingWrap(20);
+    const first = wrap("same frame\ncontent");
+    expect(wrap("same frame\ncontent")).toEqual(first);
+  });
+
+  it("rewraps when the stream rewrites earlier content", () => {
+    const wrap = createLiveThinkingWrap(20);
+    wrap("alpha\nbeta");
+    expect(wrap("alpha\ngamma")).toEqual(
+      wrapThinkingBody("alpha\ngamma", 20, true),
+    );
+  });
+
+  it("matches the one-shot result across a long chunk-by-chunk stream", () => {
+    const wrap = createLiveThinkingWrap(30);
+    const chunks = Array.from(
+      { length: 400 },
+      (_, i) => `step ${i} of the plan\n`,
+    );
+    let raw = "";
+    let rows: string[] = [];
+    for (const chunk of chunks) {
+      raw += chunk;
+      rows = wrap(raw);
+    }
+    expect(rows).toEqual(wrapThinkingBody(raw, 30, true));
+    expect(rows[0]).toContain("step 0");
   });
 });
 

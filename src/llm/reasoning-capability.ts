@@ -90,13 +90,31 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /kimi/i,
     /glm/i,
   ],
+  // Merge Gateway normalizes one `reasoning_effort` knob across its whole
+  // catalog and clamps it per route (it answers with a
+  // `reasoning_effort_adjusted` warning instead of failing). Verified live on
+  // /v1/openai/chat/completions: glm, minimax, kimi, grok-reasoning, gpt-oss,
+  // dola-seed, mimo, inkling, nova, deepseek-v4 and qwen3.x all return chain of
+  // thought; OpenAI/Anthropic/Gemini accept the knob but keep the text hidden.
   "merge-gateway": [
     /o[134]/i,
     /gpt-5/i,
-    /claude-(?:opus|sonnet)/i,
+    /gpt-oss/i,
+    /claude-(?:opus|sonnet|haiku)/i,
     /gemini-2\.5|gemini-3/i,
-    /deepseek-reasoner/i,
+    /deepseek-(?:r1|v[34]|reasoner)/i,
     /qwen3/i,
+    /glm-?[45]/i,
+    /kimi/i,
+    /minimax/i,
+    /mimo/i,
+    /nemotron/i,
+    /nova/i,
+    /dola-seed/i,
+    /inkling/i,
+    /magistral/i,
+    /thinking/i,
+    /grok-.*reasoning|grok-4\.[3-9]|grok-[5-9]/i,
   ],
 };
 
