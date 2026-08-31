@@ -51,6 +51,12 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/tools/jobs/helpers.ts": "src/tools/jobs.ts",
+  "src/tools/jobs/limits.ts": "src/tools/jobs.ts",
+  "src/tools/jobs/polling-policy.ts": "src/tools/jobs.ts",
+  "src/tools/jobs/process-identity.ts": "src/tools/jobs.ts",
+  "src/tools/jobs/redacted-writer.ts": "src/tools/jobs.ts",
+  "src/tools/jobs/types.ts": "src/tools/jobs.ts",
   "src/tools/shell/capture.ts": "src/tools/shell.ts",
   "src/tools/shell/exec-attempt.ts": "src/tools/shell.ts",
   "src/tools/shell/spawn-argv.ts": "src/tools/shell.ts",
