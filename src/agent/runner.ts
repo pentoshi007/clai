@@ -51,6 +51,7 @@ import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { decidePlanModeGate } from "./turn/plan-mode-gate.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
+import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -3072,200 +3073,46 @@ export async function runAgentTurn(
         getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
       });
 
-    async function maybeAutoCompact(
-      reason: string,
-      force = false,
-    ): Promise<void> {
-      const contextLimitTokens = currentContextLimitTokens();
-      const admission = await planCompactionAdmission(
-        {
-          messages,
-          provider,
-          model,
-          dialect: toolDialect,
-          keepRecent: AUTO_COMPACT_KEEP_RECENT,
-          contextLimitTokens,
-          estimateRequestTokens: estimateNextRequestTokens,
-          selectTools: () =>
-            selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
-          buildDurableEnvelope: buildTurnDurableEnvelope,
-          isSuppressed: (key) => compactionAttempts.isSuppressed(key),
-        },
-        force,
-      );
-      if (!admission.admitted) return;
-      const { beforeTokens, compactTrigger, durableEnvelope, attemptKey } =
-        admission;
-      const compactionId = `compact-${randomUUID().slice(0, 12)}`;
-      compactionExecutionState.activeId = compactionId;
-      // Admissions: the pinned dispatch plus the executor's bounded error
-      // retry. Still a hard cap — every admission re-sends the full prompt.
-      const compactionLedger = new OperationLedger(
-        singleAdmissionOperationPolicy("compaction", 3),
-      );
-      compactionExecutionState.activeLedger = compactionLedger;
-      compactionExecutionState.replaySnapshot =
-        selectCompactionReplaySnapshot({
-          snapshot: lastSuccessfulRequestSnapshot,
-          history: messages,
-          provider,
-          model,
-          contextLimitTokens,
-          durableEnvelope,
-        });
-      writeCompactionStarted(compactionId, beforeTokens);
-      try {
-        const result = await executeAutomaticCompaction({
-          messages,
-          summarize: summarizeForCompaction,
-          tools: selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
-          provider,
-          model,
-          contextLimitTokens,
-          keepRecent: AUTO_COMPACT_KEEP_RECENT,
-          forceDirectSinglePass: Boolean(
-            compactionExecutionState.replaySnapshot,
-          ),
-          durableEnvelope,
-        });
-        const summaryBody =
-          result.messages.find((m) => isCompactionMemoryMessage(m))?.content ??
-          "";
-        if (
-          !shouldApplyAutoCompact({
-            summarized: result.summarized,
-            summaryBody,
-            beforeTokens: result.beforeTokens,
-            afterTokens: result.afterTokens,
-            afterMessages: result.messages,
-          })
-        ) {
-          writeCompactionFailed(
-            compactionId,
-            "The generated summary was not accepted; the original context was retained.",
-            beforeTokens,
-          );
-          return;
-        }
-        // otherwise the oversized request is sent anyway and corrective
-        // compaction is suppressed as "already compacted".
-        const candidateTokens = estimateNextRequestTokens(result.messages);
-        if (!force && candidateTokens >= compactTrigger) {
-          const dominant = describeDominantContextBlock(result.messages);
-          compactionAttempts.recordFailure(attemptKey);
-          await auditLog("agent.compact.overflow", {
-            reason,
-            candidateTokens,
-            trigger: compactTrigger,
-            dominant,
-          });
-          writeNotice(
-            "warn",
-            `context is still ~${candidateTokens.toLocaleString()} tokens after compaction (limit ~${compactTrigger.toLocaleString()}) — largest block: ${dominant}`,
-          );
-          writeCompactionFailed(
-            compactionId,
-            `Summary remained over the context limit; largest block: ${dominant}.`,
-            beforeTokens,
-          );
-          return;
-        }
-        // Re-inject the live plan on a candidate copy first so the commit is
-        // validated against the complete next request, not the bare summary.
-        const livePlan = await loadPlan(session.sessionId).catch(
-          () => undefined,
-        );
-        const candidateMessages = prepareCompactionCandidateMessages({
-          messages: result.messages,
-          agentInstructionsBlock,
-          activeSkillsBlock,
-          livePlan,
-          planApproved: session.planApproved.value,
-        });
-        const finalFit = measureCompactionFinalFit({
-          provider,
-          model,
-          messages: candidateMessages,
-          contextLimitTokens,
-          selectTools: () =>
-            selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
-        });
-        if (finalFit?.accounting.overLimit) {
-          const dominant = describeDominantContextBlock(candidateMessages);
-          compactionAttempts.recordFailure(attemptKey);
-          await auditLog("agent.compact.overflow", {
-            reason,
-            candidateTokens: finalFit.accounting.requestTokens,
-            safeLimit: finalFit.accounting.limit.effectiveSafeTokens,
-            trigger: compactTrigger,
-            dominant,
-          });
-          writeNotice(
-            "warn",
-            `compacted request would still exceed the effective safe context limit (~${finalFit.accounting.requestTokens.toLocaleString()} > ~${(finalFit.accounting.limit.effectiveSafeTokens ?? 0).toLocaleString()} tokens) — largest block: ${dominant}; run /compact or trim large outputs`,
-          );
-          writeCompactionFailed(
-            compactionId,
-            `Compacted request would not fit the effective safe context limit; largest block: ${dominant}.`,
-            beforeTokens,
-          );
-          return;
-        }
-        messages.splice(0, messages.length, ...candidateMessages);
-        compactionAttempts.recordSuccess(attemptKey);
-        loopGuard.resetReadOnly();
-        // The snapshot predates the rewrite: replaying it would resurrect the
-        // pre-compaction history. The next successful request re-seeds it.
+    const maybeAutoCompact = createCompactionCoordinator({
+      messages,
+      provider: () => provider,
+      model: () => model,
+      dialect: () => toolDialect,
+      keepRecent: AUTO_COMPACT_KEEP_RECENT,
+      contextLimitTokens: currentContextLimitTokens,
+      estimateRequestTokens: estimateNextRequestTokens,
+      selectTools: () =>
+        selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+      buildDurableEnvelope: buildTurnDurableEnvelope,
+      attempts: {
+        isSuppressed: (key) => compactionAttempts.isSuppressed(key),
+        recordFailure: (key) => compactionAttempts.recordFailure(key),
+        recordSuccess: (key) => compactionAttempts.recordSuccess(key),
+      },
+      executionState: compactionExecutionState,
+      newCompactionId: () => `compact-${randomUUID().slice(0, 12)}`,
+      lastSuccessfulRequestSnapshot: () => lastSuccessfulRequestSnapshot,
+      clearSuccessfulRequestSnapshot: () => {
         lastSuccessfulRequestSnapshot = undefined;
-        // Re-inject live SESSION STATE after compaction (older flags survive).
-        refreshSessionState(livePlan);
-        lastCompactionMsgCount = messages.length;
-        // Final request count the model receives (may include re-injected plan).
-        const afterTokens = estimateNextRequestTokens(messages);
-        await auditLog("agent.compact", {
-          newLength: messages.length,
-          estimatedTokens: afterTokens,
-          reason,
-          strategy: result.strategy ?? "single",
-          compactionAdmissions: compactionLedger.snapshot().attempts.length,
-        });
-
-        const summaryText = compactionSummaryText(
-          messages.find((m) => isCompactionMemoryMessage(m))?.content ?? "",
-        );
-        // Report the final assembled request, including live plan and session
-        // state reinjection, so the card and the next provider request agree.
-        writeCompactionCompleted(compactionId, summaryText, beforeTokens, afterTokens);
-        writeNotice(
-          "info",
-          `context auto-compacted to fit the window (~${beforeTokens.toLocaleString()} → ~${afterTokens.toLocaleString()} tokens)${result.strategy === "emergency_prefix_slice" ? " — oldest slice only (lower confidence); run /compact for a full summary" : ""}`,
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        writeCompactionFailed(
-          compactionId,
-          compactionFailureMessage({
-            message,
-            policyLimited: isOperationPolicyError(error),
-          }),
-          beforeTokens,
-        );
-        if (
-          error instanceof Error &&
-          (error.name === "AbortError" || error.message.includes("aborted"))
-        ) {
-          throw error;
-        }
-        compactionAttempts.recordFailure(attemptKey);
-        await auditLog("agent.compact.failed", { reason: message });
-      } finally {
-        if (compactionExecutionState.activeId === compactionId) compactionExecutionState.activeId = undefined;
-        if (compactionExecutionState.activeLedger === compactionLedger) {
-          compactionExecutionState.activeLedger = undefined;
-        }
-        compactionExecutionState.replaySnapshot = undefined;
-      }
-    }
+      },
+      summarize: summarizeForCompaction,
+      loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
+      instructionsBlock: () => agentInstructionsBlock,
+      skillsBlock: () => activeSkillsBlock,
+      planApproved: () => session.planApproved.value,
+      resetReadOnlyGuard: () => loopGuard.resetReadOnly(),
+      refreshSessionState: (plan) => refreshSessionState(plan),
+      setLastCompactionMsgCount: (count) => {
+        lastCompactionMsgCount = count;
+      },
+      writeStarted: writeCompactionStarted,
+      writeFailed: writeCompactionFailed,
+      writeCompleted: writeCompactionCompleted,
+      notify: writeNotice,
+      audit: (event, payload) => {
+        void auditLog(event, payload);
+      },
+    });
 
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
 
