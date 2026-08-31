@@ -74,6 +74,7 @@ import {
   firstNativeToolCall,
   syncNativeToolCallCards,
 } from "./turn/loop/native-tool-calls.js";
+import { recoverMissingToolCall } from "./turn/loop/tool-call-recovery.js";
 import {
   evaluateLoopGuardBlock,
   evaluateToolGuards,
@@ -3259,206 +3260,28 @@ export async function runAgentTurn(
         }
         if (!call) {
           consecutiveModelOnlyRounds += 1;
-          if (bareArgsOnly) {
-            bareToolJsonRetries += 1;
-            if (bareToolJsonRetries <= 3) {
-              writeNotice(
-                "warn",
-                toolsAttached
-                  ? "tool call missing its name — asking the model to call a tool properly"
-                  : "tool call missing its name/fence — asking the model to re-emit a proper ```tool block",
-              );
-              commitAssistantRetry(assistantText.visible);
-              messages.push(
-                recoveryUserMessage(
-                  isPlanMode && !activePlan
-                    ? toolsAttached
-                      ? "Your previous message was a bare JSON args object with no tool name, so NOTHING ran. " +
-                      "In plan mode: call plan.create (or research tools) via the platform tool interface."
-                      : "Your previous message was a bare JSON args object with no tool name and no ```tool fence, so NOTHING ran. " +
-                      "In plan mode, call plan.create with a proper ```tool block when ready, e.g.:\n" +
-                      '```tool\n{"name":"plan.create","args":{"goal":"…","detail":"…","tasks":["…"],"kind":"coding"}}\n```'
-                    : toolsAttached
-                      ? "Your previous message was a bare JSON args object with no tool name, so NOTHING ran. " +
-                      toolNudge(true) +
-                      " Include the tool name and full args via the platform tool interface — do not use markdown fences."
-                      : "Your previous message was a bare JSON args object with no tool name and no ```tool fence, so NOTHING ran. " +
-                      "Reply with ONLY a fenced ```tool block of the form " +
-                      '`{"name": "<tool>", "args": { ... }}`. For example, to read a PDF:\n' +
-                      '```tool\n{"name":"pdf.read","args":{"path":"/abs/file.pdf"}}\n```\n' +
-                      "Choose the correct tool name for the task and include those args.",
-                ),
-              );
-              continue;
-            }
-            // Exhausted retries — fall through to the normal answer path.
-          }
-
-          if (
-            /<\|tool_call(?:s_section)?_begin\|>|<\|tool_call_argument_begin\|>|<[|｜]+DSML[|｜]+(?:tool_calls|invoke|parameter)\b|<[|｜]+tool[_▁](?:calls?[_▁]begin|sep)[|｜]+>/i.test(
-              assistantText.visible,
-            )
-          ) {
-            writeNotice(
-              "warn",
-              "tool call was malformed or cut off — asking the model to retry in JSON form",
-            );
-            commitAssistantRetry(assistantText.visible);
-            messages.push(
-              recoveryUserMessage(
-                toolsAttached
-                  ? "Your previous tool call was malformed or truncated. " +
-                  toolNudge(true) +
-                  " Pass valid JSON arguments via the platform tool interface — do not use fence or sentinel markers."
-                  : "Your previous tool call was malformed or truncated. " +
-                  "Reply with ONLY a fenced ```tool block containing valid JSON " +
-                  'of the form `{"name": "<tool>", "args": { ... }}`. ' +
-                  "Do not use <|tool_call_begin|> markers.",
-              ),
-            );
-            continue;
-          }
-
-          if (looksLikeTruncatedToolCall(assistantText.visible)) {
-            truncatedToolRetries += 1;
-
-
-            const salvaged = salvageTruncatedWrite(assistantText.visible);
-
-            if (salvaged && truncatedToolRetries <= 5) {
-              // Write the salvaged partial content through the normal
-              // authorization path (classifier + confirmation + receipt).
-              try {
-                const writeResult = await applySalvagedWrite(salvaged);
-                if (writeResult.ok) {
-                  const lineCount = salvaged.content.split("\n").length;
-                  writeNotice(
-                    "info",
-                    `tool call was truncated — salvaged ${lineCount} lines and wrote to ${salvaged.path}`,
-                  );
-                  commitAssistantRetry(
-                    stripThinking(assistantText.visible).visible,
-                  );
-                  const priorBytes = writeResult.bytesOnDisk;
-                  const salvagedToolName =
-                    salvaged.operation === "append" ? "fs.append" : "fs.write";
-                  messages.push({
-                    role: "user",
-                    content: toolsAttached
-                      ? `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
-                      `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the remaining content (prefer large chunks). Use the platform tool interface — no markdown fences.`
-                      : `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
-                      `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE with ONE large fs.append of the remaining content (prefer hundreds of lines per call — do NOT use tiny ~100-line chunks):\n` +
-                      '```tool\n{"name":"fs.append","args":{"path":' +
-                      JSON.stringify(salvaged.path) +
-                      ',"expectedPriorBytes":' +
-                      priorBytes +
-                      ',"content":"...ONLY the remaining content not already on disk..."}}\n```\n' +
-                      `expectedPriorBytes must match the receipt so append cannot double-write. ` +
-                      `Do NOT re-read the full file; do NOT re-send content already saved.`,
-                  });
-                  continue;
-                }
-              } catch {
-                // Salvage failed — fall through to standard retry
-              }
-            }
-
-            if (truncatedToolRetries <= 3) {
-              writeNotice(
-                "warn",
-                "tool call was cut off (output too long) — asking the model to retry safely",
-              );
-              commitAssistantRetry(
-                stripThinking(assistantText.visible).visible,
-              );
-              messages.push({
-                role: "user",
-                content: toolsAttached
-                  ? "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Prefer ONE complete fs.write when it fits. If the file is too large: (1) fs.write the first large section, " +
-                  "(2) fs.append the rest with expectedPriorBytes from the write receipt, (3) repeat with large chunks. " +
-                  "Keep reasoning SHORT and call the tool via the platform interface. Do NOT claim a file was written until a tool call succeeds."
-                  : "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Prefer ONE complete fs.write when it fits (~32k output tokens is a lot of file content if reasoning stays short). " +
-                  "If the file is too large for one call:\n" +
-                  "1. fs.write the first large section (as much as fits — hundreds+ of lines)\n" +
-                  "2. fs.append the rest with expectedPriorBytes from the write receipt\n" +
-                  "3. Repeat append only if still incomplete — large chunks, not ~100-line drips\n" +
-                  "Keep reasoning SHORT — emit the ```tool block early. Do NOT claim a file was written until a tool call succeeds.",
-              });
-              continue;
-            }
-            // Exhausted retries — fall through so we don't loop forever, but the
-            // user at least sees the (broken) output and the stop notice.
-          }
-
-          const hasFencedCallShape =
-            countToolFences(assistantText.visible) > 0 &&
-            /```tool\s*\n[\s\S]*?"(?:name|args)"\s*:/i.test(
-              assistantText.visible,
-            );
-          if (hasFencedCallShape) {
-            // Before treating as a generic malformed fence, check if this is
-            // actually a truncated write call that should be salvaged.
-            const salvaged = salvageTruncatedWrite(assistantText.visible);
-            if (salvaged) {
-              try {
-                const writeResult = await applySalvagedWrite(salvaged);
-                if (writeResult.ok) {
-                  const lineCount = salvaged.content.split("\n").length;
-                  writeNotice(
-                    "info",
-                    `malformed tool call salvaged — wrote ${lineCount} lines to ${salvaged.path}`,
-                  );
-                  commitAssistantRetry(
-                    stripThinking(assistantText.visible).visible,
-                  );
-                  messages.push({
-                    role: "user",
-                    content:
-                      `The system extracted and wrote ${lineCount} lines to ${salvaged.path} from your malformed tool call. ` +
-                      `The file content ends at: "${salvaged.lastLine}"\n\n` +
-                      `If the file is complete, proceed with the next step. ` +
-                      `If more content is needed, use one large fs.append with expectedPriorBytes from the write receipt (not tiny chunks).`,
-                  });
-                  continue;
-                }
-              } catch {
-                // Salvage failed — fall through to standard malformed retry
-              }
-            }
-
-            malformedFenceRetries += 1;
-            if (malformedFenceRetries <= 3) {
-              writeNotice(
-                "warn",
-                "tool block present but its JSON didn't parse — asking the model to re-emit valid JSON",
-              );
-              commitAssistantRetry(
-                stripThinking(assistantText.visible).visible,
-              );
-              messages.push({
-                role: "user",
-                content: toolsAttached
-                  ? "Your previous tool call JSON was INVALID, so NOTHING ran. " +
-                  "Common causes: unescaped newlines/quotes, unbalanced braces, or content too large. " +
-                  toolNudge(true) +
-                  " Prefer ONE complete fs.write when it fits; if cut off, continue with large fs.append + expectedPriorBytes. " +
-                  "Do NOT claim any file was written until a tool call actually succeeds."
-                  : "Your previous message contained a ```tool block, but its JSON was INVALID, so NOTHING ran. " +
-                  "Common causes: unescaped newlines or quotes inside a string value, an extra or missing `}` / `]`, or content too large for the output window. " +
-                  'Re-emit ONE valid ```tool block of the exact form {"name":"<tool>","args":{...}} with balanced braces. ' +
-                  "IMPORTANT: Prefer ONE complete fs.write when it fits. Keep reasoning SHORT. " +
-                  "Only if the output window cuts you off, continue with large fs.append chunks + expectedPriorBytes. " +
-                  "Do NOT claim any file was written until a tool call actually succeeds.",
-              });
-              continue;
-            }
-            // Exhausted retries — fall through to the normal path.
-          }
+          const recoveryLadderState = {
+            bareToolJsonRetries,
+            truncatedToolRetries,
+            malformedFenceRetries,
+          };
+          const recoveryDecision = await recoverMissingToolCall(
+            {
+              messages,
+              toolsAttached,
+              planModeWithoutPlan: isPlanMode && !activePlan,
+              notify: writeNotice,
+              commitAssistantRetry,
+              recoveryUserMessage,
+              applySalvagedWrite,
+            },
+            recoveryLadderState,
+            { visible: assistantText.visible, bareArgsOnly },
+          );
+          bareToolJsonRetries = recoveryLadderState.bareToolJsonRetries;
+          truncatedToolRetries = recoveryLadderState.truncatedToolRetries;
+          malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
+          if (recoveryDecision === "retry") continue;
 
           const displayCleaned = collapseRepeatedText(
             stripSentinelTokens(assistantText.visible),
