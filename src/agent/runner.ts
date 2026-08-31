@@ -90,6 +90,7 @@ import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
 import { executeToolGroups } from "./turn/loop/group-execution.js";
 import { settleUnrunCalls } from "./turn/loop/unrun-calls.js";
+import { buildStreamRequest } from "./turn/loop/stream-request.js";
 import {
   bindToolCalls,
   reconcileToolCallIds,
@@ -2231,31 +2232,20 @@ export async function runAgentTurn(
             );
           }
           completion = await streamWithProvider(
-            {
+            buildStreamRequest({
               provider,
               model,
-
+              messages,
               allowModelFallback,
               preferModelFallback,
-              messages,
-
-              // Sampling is provider/model policy (llm/sampling.ts).
-              // Sending a fixed 0.2 here overrode it for every model.
-
               maxTokens: stepMaxTokens,
               signal: options.signal,
-              thinking: retryWithoutThinking
-                ? { ...config.thinking, enabled: false, effort: "low" }
-                : config.thinking,
-              ...(toolsAttached
-                ? {
-                  tools: turnTools,
-                  toolChoice: "auto" as const,
-                  parallelToolCalls: true,
-                  onToolCallDelta: streamSession.onToolCallDelta,
-                }
-                : {}),
-            },
+              thinking: config.thinking,
+              retryWithoutThinking,
+              toolsAttached,
+              tools: turnTools,
+              onToolCallDelta: streamSession.onToolCallDelta,
+            }),
             streamSession.onToken,
             {
               onStatus: streamSession.onStatus,
