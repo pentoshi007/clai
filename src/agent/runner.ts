@@ -61,6 +61,10 @@ import {
   type StreamFailureState,
 } from "./turn/loop/stream-failure.js";
 import {
+  assembleRequest,
+  type RequestAssemblyState,
+} from "./turn/loop/request-assembly.js";
+import {
   decideResponderRead,
   parseResponderReadRequest,
 } from "./turn/responder-read-tool.js";
@@ -174,7 +178,6 @@ import {
   ensureUniqueToolCallIds,
   toolCallIdsInHistory,
   appendToolResult,
-  assertValidToolProtocol,
   fillMissingToolResults,
   repairToolProtocol,
 } from "./tool-history.js";
@@ -189,8 +192,6 @@ import {
   isCompactionMemoryMessage,
 } from "./context-manager.js";
 import {
-  buildContextBreakdown,
-  contextBreakdownAuditPayload,
   describeDominantContextBlock,
 } from "./context-breakdown.js";
 import { recordRequestTokenObservation } from "../llm/token-estimate-calibration.js";
@@ -199,13 +200,11 @@ import {
   RequestOverLimitError,
 } from "./request-accounting.js";
 import {
-  autoCompactTriggerTokens,
   freeTierGuardNotices,
   getReliabilityPolicy,
   MAX_OUTPUT_BUDGET_CONTINUATIONS,
   MAX_STEP_COMPLETION_TOKENS,
   outputBudgetWasExhausted,
-  resolveStepMaxTokens,
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
@@ -2783,118 +2782,42 @@ export async function runAgentTurn(
               };
             }
           }
-          const turnTools = selectToolDefs(
-            nativeToolsActive,
-            useCompactSystemPrompt,
-          );
-          toolsAttached = Boolean(turnTools?.length);
-          const contextBreakdown = buildContextBreakdown(
-            messages,
-            toolsAttached ? turnTools : undefined,
-          );
-          const estimatedInputTokens = estimateNextRequestTokens(messages);
-          // E4: advisory only — never blocks free-tier users.
-          if (!freeTierLargeContextWarned) {
-            const notices = freeTierGuardNotices({
-              provider,
-              estimatedInputTokens,
-              consecutiveFailures: freeTierConsecutiveFailures,
-            });
-            for (const notice of notices) {
-              if (notice.includes("Large context")) {
-                freeTierLargeContextWarned = true;
-              }
-              writeNotice("info", notice);
-            }
-          }
+          const assemblyState: RequestAssemblyState = {
+            freeTierLargeContextWarned,
+            freeTierConsecutiveFailures,
+            truncatedBudgetRounds,
+            continuationBudgetFloor,
+            retryWithoutThinking,
+          };
           const contextLimitTokens = currentContextLimitTokens();
-          const routeOutputTokenLimit = resolveBuiltInProfile({
-            provider,
-            model,
-          }).limits.outputTokens;
-          stepMaxTokens = resolveStepMaxTokens({
-            nativeToolsActive,
-            toolsAttached,
-            recoveryNudge: retryWithoutThinking,
-            truncationDepth: truncatedBudgetRounds,
-            thinkingEnabled:
-              Boolean(config.thinking?.enabled) && !retryWithoutThinking,
-            minimumTokens: continuationBudgetFloor,
-            ...(routeOutputTokenLimit !== undefined
-              ? { outputTokenLimit: routeOutputTokenLimit }
-              : {}),
-          });
-          await auditLog("agent.turn", {
-            provider,
-            model,
-            tool_protocol: toolsAttached ? "native" : "text",
-            dialect: toolDialect,
-            step,
-            // Metadata-only composition metrics (no prompt/tool text).
-            ...contextBreakdownAuditPayload(contextBreakdown),
-            compactTriggerTokens: autoCompactTriggerTokens(
-              getReliabilityPolicy(),
-              {
-                provider,
-                model,
-                ...(contextLimitTokens !== undefined
-                  ? { contextLimitTokens }
-                  : {}),
-              },
-            ),
-            maxTokensBudget: stepMaxTokens,
-            ...(routeOutputTokenLimit !== undefined
-              ? { outputTokenLimit: routeOutputTokenLimit }
-              : {}),
-          });
-          // Resume / mid-turn abort can leave orphan tool rows or a user
-          // "continue" before tool results. Heal first so multi-key retry and
-          // history reloads don't hard-fail on protocol asserts.
-          // Heal once per step if needed; silent (no toast) — placeholders are
-          // ok=true so the model doesn't thrash on fake exit=130 failures.
-          repairToolProtocol(messages);
-          assertValidToolProtocol(messages);
+          let estimatedInputTokens = 0;
           try {
-          // MR-007: the fit verdict is taken on the final assembled request —
-          // after protocol repair and every live-state reinjection — and a
-          // request that cannot fit the effective safe limit never dispatches.
-          const finalAccounting = accountAssembledRequest({
-            provider,
-            model,
-            messages,
-            stream: true,
-            ...(toolsAttached && turnTools?.length
-              ? { tools: turnTools, toolChoice: "auto" as const, parallelToolCalls: true }
-              : {}),
-            ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
-          }).accounting;
-          dispatchedRawRequestTokens = finalAccounting.rawRequestTokens;
-          // The chip reports the request that is actually about to be sent, from
-          // the same accounting the fit gate and the compaction card use, so the
-          // three can never disagree.
-          emit({
-            type: "context-estimate",
-            estimatedTokens: finalAccounting.requestTokens,
-            model,
-          });
-          if (finalAccounting.overLimit) {
-            await auditLog("agent.request.over-limit-blocked", {
+          const assembled = await assembleRequest(
+            {
+              messages,
               provider,
               model,
-              estimatedTokens: finalAccounting.requestTokens,
-              effectiveSafeTokens: finalAccounting.limit.effectiveSafeTokens,
-              limitSource: finalAccounting.limit.source,
-              reservedOutputTokens: finalAccounting.limit.reservedOutputTokens,
-              safetyMarginTokens: finalAccounting.limit.safetyMarginTokens,
-            });
-            writeNotice(
-              "warn",
-              `estimated request (~${finalAccounting.requestTokens.toLocaleString()} tokens) exceeds the model's safe context window (~${finalAccounting.limit.effectiveSafeTokens?.toLocaleString()} tokens) — run /compact, trim large outputs, or raise the session context limit`,
-            );
-            throw new RequestOverLimitError(
-              `estimated request (~${finalAccounting.requestTokens.toLocaleString()} tokens) exceeds the effective safe context limit (~${finalAccounting.limit.effectiveSafeTokens?.toLocaleString()} tokens); dispatch blocked`,
-            );
-          }
+              dialect: toolDialect,
+              nativeToolsActive,
+              thinking: config.thinking,
+              step,
+              contextLimitTokens,
+              estimateRequestTokens: estimateNextRequestTokens,
+              selectTools: () =>
+                selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+              notify: writeNotice,
+              emitContextEstimate: (estimatedTokens) =>
+                emit({ type: "context-estimate", estimatedTokens, model }),
+              audit: (event, payload) => auditLog(event, payload),
+            },
+            assemblyState,
+          );
+          freeTierLargeContextWarned = assemblyState.freeTierLargeContextWarned;
+          const turnTools = assembled.tools;
+          toolsAttached = assembled.toolsAttached;
+          estimatedInputTokens = assembled.estimatedInputTokens;
+          stepMaxTokens = assembled.stepMaxTokens;
+          dispatchedRawRequestTokens = assembled.rawRequestTokens;
           if (
             responderDelivery &&
             !jobManager.markDeliveryStarted(responderDelivery.id, session.sessionId)
