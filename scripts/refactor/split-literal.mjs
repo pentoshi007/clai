@@ -165,9 +165,19 @@ for (const segment of segments) {
   const annotation = elementType
     ? `: ${isArray ? `${elementType}[]` : elementType}`
     : "";
+  const rewriteDynamic = (body) =>
+    body.replace(
+      /import\((\s*)("|')(\.[^"']*)\2/g,
+      (match, space, quote, specifier) => {
+        const target = resolve(dirname(file), specifier);
+        let rewritten = relative(outDir, target).split(sep).join("/");
+        if (!rewritten.startsWith(".")) rewritten = `./${rewritten}`;
+        return `import(${space}${quote}${rewritten}${quote}`;
+      },
+    );
   const content = isArray
-    ? `export const ${constant}${annotation} = [\n  ${body},\n];\n`
-    : `export const ${constant}${annotation} = {\n  ${body},\n};\n`;
+    ? rewriteDynamic(`export const ${constant}${annotation} = [\n  ${body},\n];\n`)
+    : rewriteDynamic(`export const ${constant}${annotation} = {\n  ${body},\n};\n`);
   const target = `${outDir}/${name}.ts`;
   created.push({ target, content, constant });
   pieces.push({ spread: constant, target });
@@ -235,7 +245,7 @@ const backSpecifier = () => {
 
 const finalModules = created.map((entry) => {
   const needed = [...localHelpers].filter((name) =>
-    new RegExp(`(?<![.\\w$])${name}(?![\\w$])`).test(entry.content),
+    new RegExp(`(?<![\\w$])${name}(?![\\w$])`).test(entry.content),
   );
   const back =
     needed.length > 0

@@ -563,7 +563,7 @@ const move = ({ from, to, symbols, dry }) => {
     const cycle = findCycle(entry);
     if (cycle) {
       console.error(
-        `CYCLE: value import cycle introduced:\n  ${cycle.map((file) => relative(process.cwd(), file)).join("\n  → ")}`,
+        `CYCLE: evaluation-time import cycle introduced:\n  ${cycle.map((file) => relative(process.cwd(), file)).join("\n  → ")}`,
       );
       process.exitCode = 1;
       return;
@@ -587,24 +587,61 @@ const findCycle = (entry) => {
     }
     return undefined;
   };
+  /**
+   * Names a module reads while its own body is evaluating. Only these make a
+   * cycle dangerous: a reference inside a function body is resolved when the
+   * function is called, long after both modules finished initializing.
+   */
+  const evalTimeNames = (source) => {
+    const names = new Set();
+    const collect = (node) => {
+      if (
+        ts.isFunctionDeclaration(node) ||
+        ts.isFunctionExpression(node) ||
+        ts.isArrowFunction(node) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isGetAccessorDeclaration(node) ||
+        ts.isSetAccessorDeclaration(node) ||
+        ts.isConstructorDeclaration(node)
+      ) {
+        return;
+      }
+      if (ts.isIdentifier(node)) names.add(node.text);
+      node.forEachChild(collect);
+    };
+    for (const statement of source.statements) {
+      if (ts.isImportDeclaration(statement)) continue;
+      if (ts.isInterfaceDeclaration(statement)) continue;
+      if (ts.isTypeAliasDeclaration(statement)) continue;
+      collect(statement);
+    }
+    return names;
+  };
   const valueEdges = (file) => {
     if (seen.has(file)) return seen.get(file);
     const { source } = parse(file);
+    const evalNames = evalTimeNames(source);
     const edges = [];
     for (const statement of source.statements) {
-      if (ts.isImportDeclaration(statement)) {
-        if (statement.importClause?.isTypeOnly) continue;
-        const clause = statement.importClause;
-        if (
-          clause?.namedBindings &&
-          ts.isNamedImports(clause.namedBindings) &&
-          clause.namedBindings.elements.every((element) => element.isTypeOnly)
-        ) {
-          continue;
+      if (!ts.isImportDeclaration(statement)) continue;
+      if (statement.importClause?.isTypeOnly) continue;
+      const clause = statement.importClause;
+      const imported = [];
+      if (clause?.name) imported.push(clause.name.text);
+      if (clause?.namedBindings) {
+        if (ts.isNamespaceImport(clause.namedBindings)) {
+          imported.push(clause.namedBindings.name.text);
+        } else {
+          for (const element of clause.namedBindings.elements) {
+            if (!element.isTypeOnly) imported.push(element.name.text);
+          }
         }
-        const target = resolveFile(statement.moduleSpecifier.text, file);
-        if (target) edges.push(target);
       }
+      if (imported.length === 0) continue;
+      const target = resolveFile(statement.moduleSpecifier.text, file);
+      if (!target) continue;
+      if (!imported.some((name) => evalNames.has(name))) continue;
+      edges.push(target);
     }
     seen.set(file, edges);
     return edges;
