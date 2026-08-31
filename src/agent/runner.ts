@@ -66,6 +66,8 @@ import { buildSystemSections } from "./turn/system-sections.js";
 import { createToolRouting } from "./turn/tool-routing.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { runSingleTool } from "./turn/tool-execution/single-tool.js";
+import { resolveAnswerPath } from "./turn/loop/answer-path.js";
+import type { TurnLoopDeps } from "./turn/loop/deps.js";
 import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
@@ -1225,6 +1227,67 @@ export async function runAgentTurn(
         },
       });
 
+    const loopDeps: TurnLoopDeps = {
+      ...turnWriters,
+      loop,
+      counters,
+      toolState,
+      evidenceFlags,
+      recovery,
+      session,
+      options,
+      emit,
+      messages,
+      prompt,
+      outputState,
+      maxIterations,
+      isPlanMode,
+      activePlan,
+      buildLike,
+      buildLikeTurn,
+      pentestLike,
+      pentestLikeTurn,
+      pentestSession,
+      featureAppAsk,
+      informationalQuery,
+      idleOrSocialPrompt,
+      useCompactSystemPrompt,
+      thinking: config.thinking,
+      loopGuard,
+      mcpRuntime,
+      mcpLease,
+      outcomeState,
+      responderClaims,
+      responderWakeTurn,
+      responderWakeNotificationId,
+      wireOccurrences,
+      recoveryState,
+      toolResultHashes,
+      alreadyPrintedIds,
+      deferredPostToolMessages,
+      deferredResponderLedgerNotifications,
+      dialect: () => toolDialect,
+      setDialect: (dialect, native) => {
+        toolDialect = dialect;
+        nativeToolsActive = native;
+      },
+      nativeToolsActive: () => nativeToolsActive,
+      composeCurrentSystemPrompt,
+      currentContextLimitTokens,
+      estimateNextRequestTokens,
+      selectToolDefs,
+      maybeAutoCompact,
+      refreshResponderInbox,
+      refreshAgentInstructions,
+      refreshSessionState,
+      recoveryUserMessage,
+      applySalvagedWrite,
+      probeStateKey,
+      moveTurn,
+      finishTurn,
+      executeSingleTool,
+    };
+
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
 
       outputState.visibleCommitted = false;
@@ -1779,154 +1842,15 @@ export async function runAgentTurn(
           }
         }
         if (!call) {
-          counters.consecutiveModelOnlyRounds += 1;
-          const recoveryLadderState = {
-            bareToolJsonRetries: counters.bareToolJsonRetries,
-            truncatedToolRetries: counters.truncatedToolRetries,
-            malformedFenceRetries: counters.malformedFenceRetries,
-          };
-          const recoveryDecision = await recoverMissingToolCall(
-            {
-              messages,
-              toolsAttached,
-              planModeWithoutPlan: isPlanMode && !activePlan,
-              notify: writeNotice,
-              commitAssistantRetry,
-              recoveryUserMessage,
-              applySalvagedWrite,
-            },
-            recoveryLadderState,
-            { visible: assistantText.visible, bareArgsOnly },
-          );
-          counters.bareToolJsonRetries = recoveryLadderState.bareToolJsonRetries;
-          counters.truncatedToolRetries = recoveryLadderState.truncatedToolRetries;
-          counters.malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
-          if (recoveryDecision === "retry") continue;
-
-          const livePlanAtCompletion = await loadPlan(session.sessionId).catch(
-            () => undefined,
-          );
-          const assessment = assessCompletion({
-            visible: assistantText.visible,
-            canonicalVisible: canonicalAssistantVisible,
-            livePlan: livePlanAtCompletion,
-            activePlanStatus: activePlan?.status,
-            planApproved: session.planApproved.value,
-            informationalQuery,
-            idleOrSocialPrompt,
-            buildLikeTurn,
-            pentestLikeTurn,
+          const answer = await resolveAnswerPath(loopDeps, {
+            assistantText,
+            canonicalAssistantVisible,
+            bareArgsOnly,
+            toolsAttached,
+            commitAssistantRetry,
           });
-          const {
-            cleaned,
-            displayCleaned,
-            narratedAction,
-            narratedWebAction,
-            wantsAction,
-            planHasOpenWorkNow,
-            completedPlanDuringThisTurn,
-          } = assessment;
-
-          const modelOnly = handleModelOnlyRound(
-            {
-              messages,
-              provider: loop.provider,
-              model: loop.model,
-              toolsAttached,
-              notify: writeNotice,
-              commitAssistantRetry,
-              recoveryUserMessage,
-              writeAssistantMessage,
-              unreadResponderIds: () => responderClaims.ids(),
-            },
-            {
-              assistantVisible: assistantText.visible,
-              wantsAction,
-              consecutiveModelOnlyRounds: counters.consecutiveModelOnlyRounds,
-              plan: livePlanAtCompletion,
-            },
-          );
-          if (modelOnly.kind === "continue-round") continue;
-          if (modelOnly.kind === "stop") {
-            outcomeState.outcome.status = "partial";
-            await saveOutcomeState(outcomeState);
-            moveTurn("partial", "repeated model-only responses");
-            return finishTurn(
-              modelOnly.answer,
-              counters.productiveSteps,
-              "partial",
-              modelOnly.remainingCriteria,
-              modelOnly.reason,
-            );
-          }
-
-          const deferResponderReport = session.planApproved.value
-            ? shouldYieldForDeclaredResponderDependency(
-                livePlanAtCompletion,
-                jobManager.getRunningJobs(session.sessionId),
-                jobManager.getPendingNotifications(session.sessionId),
-                responderWakeNotificationId,
-              )
-            : false;
-          const finalizeRecovery = chooseFinalizeRecovery(
-            buildFinalizeGateInput({
-              assessment,
-              recovery,
-              evidenceFlags,
-              livePlan: livePlanAtCompletion,
-              toolsAttached,
-              productiveSteps: counters.productiveSteps,
-              planApproved: session.planApproved.value,
-              activePlanExists: Boolean(activePlan),
-              isPlanMode,
-              buildLikeTurn,
-              pentestLikeTurn,
-              buildLike,
-              pentestLike,
-              pentestSession,
-              informationalQuery,
-              idleOrSocialPrompt,
-              featureAppAsk,
-              projectRoot: getActiveProjectRoot(),
-              deferResponderReport,
-            }),
-          );
-          if (finalizeRecovery) {
-            consumeBudget(recovery, finalizeRecovery.budgetKey);
-            commitAssistantRetry(assistantText.visible);
-            messages.push(recoveryUserMessage(finalizeRecovery.message));
-            continue;
-          }
-          const finalOutcome = await resolveFinalOutcome(
-            {
-              outcomeState,
-              planApproved: session.planApproved.value,
-              loadPlan: () =>
-                loadPlan(session.sessionId).catch(() => undefined),
-              saveOutcomeState,
-            },
-            cleaned,
-          );
-          const outcomeStatus = finalOutcome.status;
-          const remainingCriteria = finalOutcome.remainingCriteria;
-          moveTurn("verifying", "evaluating current criterion-linked evidence");
-          moveTurn(outcomeStatus, `turn completed with ${outcomeStatus} evidence status`);
-          await auditLog("agent.final", {
-            provider: loop.provider,
-            model: loop.model,
-            steps: loop.step + 1,
-            outcomeStatus,
-            remainingCriteria,
-          });
-          loop.lastAnswer = cleaned;
-          return finishTurn(
-            loop.lastAnswer,
-            loop.step + 1,
-            outcomeStatus,
-            remainingCriteria,
-            finalOutcome.reason,
-            loop.interruptedVisible ? cleaned : displayCleaned,
-          );
+          if (answer.kind === "finished") return answer.outcome;
+          continue;
         }
 
         // A valid primary tool call exists for this fresh model turn. Show any
