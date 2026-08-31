@@ -42,6 +42,7 @@ import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildPromptSections } from "./turn/prompt-sections.js";
+import { buildSystemSections } from "./turn/system-sections.js";
 import {
   createMcpAgentCallFailure,
   createMcpAgentToolExecutor,
@@ -941,192 +942,34 @@ export async function runAgentTurn(
           ...(native ? { slimNative: reliability.slimNativePrompt } : {}),
         });
     };
-    const systemSections: string[] = [
-      renderRequestEnvironmentContext({ plan: activePlan }),
-    ];
-    const mcpContext = mcpRuntime?.promptContext({
-      nativeTools: false,
-      ...(agentMode === "ask" ? { askMode: true } : {}),
+    const { sections: systemSections, pentestSession } = await buildSystemSections({
+      prompt,
+      mode: agentMode,
+      plan: activePlan,
+      history: options.history,
+      previousTurn: options.previousTurn,
+      sessionId: session.sessionId,
+      projectContext,
+      destinationHint,
+      isPlanMode,
+      buildLikeTurn,
+      informationalQuery,
+      idleOrSocialPrompt,
+      narrowNmapOperation,
+      pentestLikeTurn,
+      skillsAvailable,
+      skillIndex,
+      selectedSkillNames,
+      inputTokenBudget,
+      getMcpContext: () =>
+        mcpRuntime?.promptContext({
+          nativeTools: false,
+          ...(agentMode === "ask" ? { askMode: true } : {}),
+        }),
+      getProjectRoot: getActiveProjectRoot,
+      getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
+      getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
     });
-    if (mcpContext) systemSections.push(mcpContext);
-    if (projectContext) {
-      systemSections.push(
-        `Project context from .clai/context.md:\n${projectContext}`,
-      );
-    }
-    const projectRoot = getActiveProjectRoot();
-    if (projectRoot) {
-      systemSections.push(
-        `ACTIVE PROJECT ROOT: ${projectRoot}\n` +
-        `All relative paths (./src/…, manifests, configs) resolve under this directory — NOT the agent process cwd. ` +
-        `Prefer absolute paths under this root. shell cwd for install / run / build must be this root ` +
-        `(or its parent when creating a NEW named subfolder with a scaffolder). ` +
-        `Never write user app source into the agent package tree.`,
-      );
-    } else if (destinationHint) {
-      systemSections.push(
-        `USER DESTINATION: create or continue work under "${destinationHint}" (parent folder). ` +
-        `Pick or detect a project subfolder; do not scaffold into the agent working tree unless the user asked for that.`,
-      );
-    }
-    // Stack-agnostic PWD / existing-project snapshot so weak models cannot
-    // skip explore and re-scaffold into non-empty dirs. This is live filesystem
-    // data and therefore must remain outside the cached constitution.
-    if (
-      buildLikeTurn &&
-      !informationalQuery &&
-      !idleOrSocialPrompt
-    ) {
-      const guessedName = guessProjectFolderName(
-        [prompt, activePlan?.goal, activePlan?.detail, activePlan?.tasks.map((t) => t.title).join(" ")]
-          .filter(Boolean)
-          .join("\n"),
-      );
-      const extraPaths: string[] = [];
-      if (destinationHint && guessedName) {
-        extraPaths.push(join(destinationHint, guessedName));
-      }
-      const fromText =
-        extractProjectRootFromPlan(activePlan) ??
-        extractProjectRootFromText(prompt);
-      if (fromText) extraPaths.push(fromText);
-      const orientInput: {
-        cwd: string;
-        destinationHint?: string;
-        candidateProject?: string;
-        extraPaths: string[];
-      } = {
-        cwd: safeCwd(),
-        extraPaths,
-      };
-      if (destinationHint) orientInput.destinationHint = destinationHint;
-      const candidate = getActiveProjectRoot() ?? fromText;
-      if (candidate) orientInput.candidateProject = candidate;
-      systemSections.push(buildWorkspaceOrientation(orientInput));
-    }
-    // The live plan is mutable state: it is injected once as a keyed request
-    // suffix (upsertPlanContextMessage) instead of being frozen into the stable
-    // system prefix, so the model never sees a stale and a fresh plan together.
-
-    // Soft mid-work recovery (any domain): re-attach to jobs / open tasks /
-    // last tools after interrupt or "continue" — not a hard gate.
-    if (!informationalQuery && !idleOrSocialPrompt) {
-      const continueBrief = buildContinueOrientation({
-        prompt,
-        history: options.history,
-        plan: activePlan,
-        runningJobs: jobManager.getRunningJobs(session.sessionId),
-        recentJobs: jobManager.getRecentJobs(12, session.sessionId),
-        informationalQuery,
-        idleOrSocial: idleOrSocialPrompt,
-        ...(options.previousTurn ? { previousTurn: options.previousTurn } : {}),
-      });
-      if (continueBrief) {
-        systemSections.push(continueBrief);
-      }
-    }
-
-    if (isPlanMode) {
-      systemSections.push(planModeDirective());
-    } else if (agentMode === "agent") {
-      systemSections.push(agentModeDirective());
-    }
-
-    // Build focus card: orientation + feature quality, not forced plan theater.
-    if (
-      buildLikeTurn &&
-      !informationalQuery &&
-      !idleOrSocialPrompt &&
-      !isPlanMode
-    ) {
-      systemSections.push(buildWorkflowDirective());
-    }
-    if (
-      isPlanMode &&
-      buildLikeTurn &&
-      !informationalQuery &&
-      !idleOrSocialPrompt
-    ) {
-      systemSections.push(buildWorkflowDirective());
-    }
-
-    // A bounded explicit nmap request is one operation, not an invitation to
-    // manufacture a full engagement plan or add unrelated recon steps.
-    if (
-      narrowNmapOperation &&
-      !informationalQuery &&
-      !idleOrSocialPrompt &&
-      !isPlanMode
-    ) {
-      systemSections.push(narrowNmapOperationDirective());
-    }
-
-    // Broader pentest / security engagements need a different shape than a coding
-    // build: recon first, then a plan built from real findings, then
-    // incremental task additions as new attack surface appears.
-    if (
-      pentestLikeTurn &&
-      !narrowNmapOperation &&
-      !activePlan &&
-      !informationalQuery &&
-      !idleOrSocialPrompt
-    ) {
-      systemSections.push(pentestWorkflowDirective());
-    }
-
-    // Any remote/security engagement (even with an existing or completed plan)
-    // must never fall into the coding "start localhost dev server" habit.
-    const pentestSession =
-      pentestLikeTurn ||
-      activePlan?.kind === "pentest" ||
-      (activePlan?.kind !== "coding" &&
-        Boolean(
-          activePlan?.goal &&
-          /pentest|vulnerab|recon|security assess|attack surface|red team/i.test(
-            activePlan.goal,
-          ),
-        ));
-    if (pentestSession && !idleOrSocialPrompt) {
-      systemSections.push(pentestNoLocalServerDirective());
-    }
-
-    {
-      const engScope = await loadScopeForSession(session.sessionId).catch(
-        () => undefined,
-      );
-      const scopeBlock = scopeContextMessage(engScope);
-      if (scopeBlock && (pentestSession || pentestLikeTurn) && !idleOrSocialPrompt) {
-        systemSections.push(scopeBlock);
-      }
-    }
-
-    // Soft task analysis for multi-step work (never a forced plan script).
-    {
-      const earlyAnalysis = analyzeTask(prompt);
-      if (
-        !idleOrSocialPrompt &&
-        !informationalQuery &&
-        !narrowNmapOperation &&
-        (earlyAnalysis.shouldPlan ||
-          earlyAnalysis.complexity === "complex" ||
-          buildLikeTurn ||
-          pentestLikeTurn)
-      ) {
-        systemSections.push(formatTaskAnalysisHint(earlyAnalysis));
-      }
-    }
-
-    if (skillsAvailable && !idleOrSocialPrompt) {
-      const catalog = renderSkillCatalog({
-        skills: skillIndex.skills,
-        prompt,
-        pinned: selectedSkillNames,
-        truncatedScan: skillIndex.truncated,
-        ...(inputTokenBudget ? { maxTokens: 260 } : {}),
-      });
-      if (catalog) systemSections.push(catalog);
-    }
-
     const promptSections = (): AgentPromptSection[] =>
       buildPromptSections({
         systemSections,
