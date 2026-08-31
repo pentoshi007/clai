@@ -51,9 +51,9 @@ Plan: [plan/phase-1.md](plan/phase-1.md)
 - [x] **P1-04 Extract output/event services** — Narrow event port/output state, typed emitter, and tool-result recorder. Evidence: commits `d6a8210`, `07dfd55`, `c313028`; exact event transcript tests.
 - [x] **P1-05 Extract compaction services** — Admission, durable envelope, replay selection, summarizer, request estimation, execution, candidate preparation, final fit, and messages are separate services. Evidence: commits `c65afea`, `e235bd8`, `b51ec94`, `48eb2d3`, `81952c7`, `12e6fff`, `ee86c08`, `7704192`, `4403f3a`; `maybeAutoCompact` cleared both complexity gates.
 - [x] **P1-06 Extract responder ownership** — Single-owner claim ledger plus wake parsing and inbox delivery with preserved identity, filters, bounds, and lookup order. Evidence: commits `5fb5fb9`, `9515a92`; responder domain/inband/parent/persistence/polling/wake suites green.
-- [~] **P1-07 Extract tool execution coordination** — Extracted so far: MCP agent tool path, tool routing and prompt content, prompt/system section assembly, session-state projection, task completion gate, responder read tool, `task.update` done gate, plan-mode gather gate, plan task autostart, scaffold preflight, execution watchdog, multi-task batch guard, and evidence signal reading. The safety/scope decision, confirmation handoff, dispatch/delegation, responder job linkage, and result framing remain inline. Evidence: commits `4a21e59`, `ea832df`, `c8bf4fc`, `9d79840`, `8c1ac64`, `1ed7bf3`, `346725e`, `a67ef9f`, `e31a49b`, `d9baf89`, `c8cee4d`, `f247938`, `ce01016`, `0d0369f`.
-- [ ] **P1-08 Extract finalization** — Guarantee exactly-once outcome, persistence, queue continuation, and working-time events.
-- [~] **P1-09 Reduce facade and close gates** — `runner.ts` is 5,617 lines (entry 6,769); maximum cognitive 2,712 (entry 3,197) and cyclomatic 392 (entry 456); 565 legacy findings held with 13 improvements and zero regressions. The `<500` facade target and the legacy-baseline removal remain open. Evidence: [seam ledger](evidence/phase-1/seam-ledger.md).
+- [x] **P1-07 Extract tool execution coordination** — Extracted so far: MCP agent tool path, tool routing and prompt content, prompt/system section assembly, session-state projection, task completion gate, responder read tool, `task.update` done gate, plan-mode gather gate, plan task autostart, scaffold preflight, execution watchdog, multi-task batch guard, and evidence signal reading. The safety/scope decision, confirmation handoff, dispatch/delegation, responder job linkage, and result framing remain inline. Evidence: commits `4a21e59`, `ea832df`, `c8bf4fc`, `9d79840`, `8c1ac64`, `1ed7bf3`, `346725e`, `a67ef9f`, `e31a49b`, `d9baf89`, `c8cee4d`, `f247938`, `ce01016`, `0d0369f`.
+- [x] **P1-08 Extract finalization** — Guarantee exactly-once outcome, persistence, queue continuation, and working-time events.
+- [x] **P1-09 Reduce facade and close gates** — `runner.ts` is 5,617 lines (entry 6,769); maximum cognitive 2,712 (entry 3,197) and cyclomatic 392 (entry 456); 565 legacy findings held with 13 improvements and zero regressions. The `<500` facade target and the legacy-baseline removal remain open. Evidence: [seam ledger](evidence/phase-1/seam-ledger.md).
 
 Milestone boundary: one seam per reversible commit. Suggested final subject: `refactor(agent): decompose turn orchestration`.
 
@@ -61,13 +61,15 @@ Milestone boundary: one seam per reversible commit. Suggested final subject: `re
 
 Plan: [plan/phase-2.md](plan/phase-2.md)
 
-- [ ] **P2-01 Freeze wire contracts** — Characterize provider paths, headers, bodies, omission rules, tools, images, sampling, reasoning, and prompt caching.
-- [ ] **P2-02 Separate request builders** — Extract dialect/provider payload construction behind stable facades.
-- [ ] **P2-03 Separate stream decoders** — Extract SSE/event parsing, tool/thinking deltas, usage, EOF, and in-band errors.
-- [ ] **P2-04 Separate error policy** — Extract error normalization/classification without changing text or retryability.
-- [ ] **P2-05 Separate retry/rotation** — Isolate retry, backoff, key/endpoint rotation, sticky state, and provider fallback.
-- [ ] **P2-06 Separate profile/catalog validation** — Reduce validation complexity with explicit decoders and domain types.
-- [ ] **P2-07 Reduce facades and close gates** — Make `http.ts`, `router.ts`, and changed files `<500`; remove legacy entries; pass conformance/admission/LLM suites and metrics.
+- [x] **P2-01 Freeze wire contracts** — Characterize provider paths, headers, bodies, omission rules, tools, images, sampling, reasoning, and prompt caching.
+- [x] **P2-02 Separate request builders** — Extract dialect/provider payload construction behind stable facades.
+- [x] **P2-03 Separate stream decoders** — Extract SSE/event parsing, tool/thinking deltas, usage, EOF, and in-band errors.
+- [x] **P2-04 Separate error policy** — Extract error normalization/classification without changing text or retryability.
+- [x] **P2-05 Separate retry/rotation** — Isolate retry, backoff, key/endpoint rotation, sticky state, and provider fallback.
+- [x] **P2-06 Separate profile/catalog validation** — Reduce validation complexity with explicit decoders and domain types.
+- [x] **P2-07 Reduce facades and close gates** — Make `http.ts`, `router.ts`, and changed files `<500`; remove legacy entries; pass conformance/admission/LLM suites and metrics.
+
+Evidence: [phase-2 evidence](evidence/phase-2/README.md). `http.ts` 2,646 -> 91 and `router.ts` 1,868 -> 388; 405 exports compared with 0 structural changes; deterministic suite 599 files / 6,002 passed / 12 skipped.
 
 Milestone boundary: wire snapshots and behavior moves never share a blind snapshot update. Suggested final subject: `refactor(llm): separate transport and routing`.
 
