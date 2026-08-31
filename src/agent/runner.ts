@@ -86,6 +86,11 @@ import { createToolRouting } from "./turn/tool-routing.js";
 import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { runToolGates } from "./turn/tool-execution/gates.js";
+import {
+  creditToolWork,
+  frameToolResult,
+  reportToolFailure,
+} from "./turn/tool-execution/result-framing.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
 import { executeToolGroups } from "./turn/loop/group-execution.js";
@@ -1872,48 +1877,42 @@ export async function runAgentTurn(
         }
       }
 
-      const output = result.output.trim();
-      // Always keep a full on-disk copy of tool output (any size) so the
-      // pager never depends on a truncated in-memory preview.
-      const savedOutputPath =
-        result.outputPath ??
-        (output ? await saveToolOutput(call, output) : undefined);
-      const resultWithArtifact: ToolResult = {
-        ...result,
-        outputPath: savedOutputPath,
-        truncated: result.truncated ?? Boolean(savedOutputPath),
-      };
-
-      if (savedOutputPath) {
-        const storedJob = jobManager.getJob(jobId);
-        if (storedJob) {
-          storedJob.artifactPath = savedOutputPath;
-        }
-      }
-
-      const contextOutput = formatToolContext(call, resultWithArtifact);
-      emitToolResult(
-        toolEventId,
-        resultWithArtifact,
-        contextOutput,
-        savedOutputPath,
-      );
-      options.onToolResult?.(call, resultWithArtifact);
-      await auditLog("tool.result", {
+      const framed = await frameToolResult(
+        {
+          step,
+          saveArtifact: (savedCall, savedOutput) =>
+            saveToolOutput(savedCall, savedOutput),
+          setJobArtifact: (artifactPath) => {
+            const storedJob = jobManager.getJob(jobId);
+            if (storedJob) storedJob.artifactPath = artifactPath;
+          },
+          formatContext: formatToolContext,
+          emitToolResult: (framedResult, contextText, artifactPath) =>
+            emitToolResult(
+              toolEventId,
+              framedResult,
+              contextText,
+              artifactPath,
+            ),
+          onToolResult: options.onToolResult,
+          audit: (event, payload) => auditLog(event, payload),
+          recordEngagementOutcome: async (artifactPath) => {
+            if (!engagementGraph || !engagementRecord) return;
+            await recordEngagementOutcome(engagementGraph, engagementRecord, {
+              call,
+              result,
+              artifactPath,
+            });
+          },
+          recordLedgerCall: (ledgerCall, ok, artifactPath) =>
+            workLedger.recordToolCall(ledgerCall, ok, artifactPath),
+        },
         call,
-        ok: result.ok,
-        exitCode: result.exitCode,
-        output: result.output.slice(0, 4_000),
-      });
-      if (engagementGraph && engagementRecord) {
-        await recordEngagementOutcome(engagementGraph, engagementRecord, {
-          call,
-          result,
-          artifactPath: savedOutputPath,
-        });
-      }
-
-      workLedger.recordToolCall(call, result.ok, savedOutputPath);
+        result,
+      );
+      const output = result.output.trim();
+      const savedOutputPath = framed.artifactPath;
+      const contextOutput = framed.contextOutput;
 
       const completedProbeState = probeStateKey(call);
       const accountingState = {
@@ -1956,41 +1955,34 @@ export async function runAgentTurn(
         completedProbeState ? { stateKey: completedProbeState } : undefined,
       );
 
-      // Evidence for verify-before-done: only successful real work counts.
+      const creditedPlan = await creditToolWork(
+        {
+          getLedger: () => toolState.taskWorkLedger,
+          setLedger: (ledger) => {
+            toolState.taskWorkLedger = ledger;
+          },
+          bankLooseWork: (receipt) => sessionLooseWork.push(receipt),
+          persistTaskEvidence,
+          loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
+          creditId: () => toolState.dispatchedTaskId,
+        },
+        call,
+        result,
+      );
       if (result.ok && isEvidenceWorkTool(call.name)) {
-        const liveAfter = await loadPlan(session.sessionId).catch(
-          () => undefined,
-        );
-        await creditSuccessfulWork(
-          {
-            getLedger: () => toolState.taskWorkLedger,
-            setLedger: (ledger) => {
-              toolState.taskWorkLedger = ledger;
-            },
-            bankLooseWork: (receipt) => sessionLooseWork.push(receipt),
-            persistTaskEvidence,
-          },
-          {
-            call,
-            signals: readTaskWorkSignals(call, result.output ?? ""),
-            creditId: toolState.dispatchedTaskId,
-            plan: liveAfter,
-          },
-        );
-        toolState.pendingSessionStatePlan = liveAfter ?? toolState.pendingSessionStatePlan;
+        toolState.pendingSessionStatePlan =
+          creditedPlan ?? toolState.pendingSessionStatePlan;
       }
 
-      if (!result.ok) {
-        const reflection = loopGuard.getFailureReflection();
-        if (reflection) {
-          deferredPostToolMessages.push({ role: "system", content: reflection });
-          const failCount = loopGuard.consecutiveFailureCount();
-          writeNotice(
-            "warn",
-            `${failCount} consecutive failures — model evaluating approach`,
-          );
-        }
-      }
+      reportToolFailure(
+        {
+          reflection: () => loopGuard.getFailureReflection(),
+          failureCount: () => loopGuard.consecutiveFailureCount(),
+          deferMessage: (message) => deferredPostToolMessages.push(message),
+          notify: writeNotice,
+        },
+        result.ok,
+      );
 
       if (output) {
         // Authoritative FULL body — replace any live stream so the pager
