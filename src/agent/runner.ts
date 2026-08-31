@@ -50,6 +50,7 @@ import { createTurnLoopState } from "./turn/loop/state.js";
 import { classifyTurnPrompt } from "./turn/setup/prompt-classification.js";
 import { setUpResponderWake } from "./turn/setup/responder-wake.js";
 import { composeTurnMessages } from "./turn/setup/turn-messages.js";
+import { buildMcpAgentToolPorts } from "./turn/setup/mcp-agent-ports.js";
 import { createTurnCounters } from "./turn/turn-counters.js";
 import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
@@ -166,8 +167,6 @@ import { getActiveProjectRoot } from "./project-root.js";
 import { scaffoldLooksMaterialized } from "./workspace-orient.js";
 import {
   stdioConfirmPort,
-  restoreInteractiveStdin,
-  confirmToolExecution,
   type ConfirmPort,
 } from "./confirm-port.js";
 import { createGovernorState } from "./evidence-governor.js";
@@ -830,36 +829,20 @@ export async function runAgentTurn(
      * cut off must stay an append (with its precondition) instead of becoming
      * a full overwrite.
      */
-    function showMcpAgentCall(toolEventId: string, call: ToolCall): void {
-      if (alreadyPrintedIds.has(toolEventId)) return;
-      writeToolCall(toolEventId, call);
-      alreadyPrintedIds.add(toolEventId);
-    }
-
-    const mcpAgentToolPorts = {
+    const mcpAgentToolPorts = buildMcpAgentToolPorts({
       askMode: agentMode === "ask",
-      showCall: showMcpAgentCall,
-      writeOutput: (toolEventId: string, chunk: string) =>
-        writeToolOutput(toolEventId, chunk, { replace: true }),
-      emitResult: emitToolResult,
-      confirm: async (call: ToolCall): Promise<boolean> => {
-        const releasePrompt = await promptMutex.acquire();
-        try {
-          const confirmed = await confirmToolExecution(
-            call,
-            Boolean(options.autoConfirm),
-            session,
-            confirmPort,
-          );
-          restoreInteractiveStdin();
-          return confirmed;
-        } finally {
-          releasePrompt();
-        }
-      },
-      recordAttempt: (call: ToolCall, ok: boolean, output: string) =>
-        loopGuard.recordAttempt(loop.step, call.name, call.args, ok, 0, output),
-    };
+      autoConfirm: Boolean(options.autoConfirm),
+      session,
+      confirmPort,
+      promptMutex,
+      loopGuard,
+      step: () => loop.step,
+      isPrinted: (eventId) => alreadyPrintedIds.has(eventId),
+      markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
+      writeToolCall,
+      writeToolOutput,
+      emitToolResult,
+    });
     const failMcpAgentCall = createMcpAgentCallFailure(mcpAgentToolPorts);
     const executeMcpAgentCall = createMcpAgentToolExecutor(mcpAgentToolPorts);
 
@@ -1004,44 +987,29 @@ export async function runAgentTurn(
       });
 
     const loopDeps: TurnLoopDeps = {
+      ...singleToolDeps,
+      options,
       ...turnWriters,
       loop,
       counters,
-      toolState,
       evidenceFlags,
       recovery,
-      session,
-      options,
-      emit,
-      messages,
-      prompt,
       outputState,
       maxIterations,
-      isPlanMode,
       activePlan,
       buildLike,
       buildLikeTurn,
       pentestLike,
       pentestLikeTurn,
-      pentestSession,
       featureAppAsk,
       informationalQuery,
       idleOrSocialPrompt,
       useCompactSystemPrompt,
       thinking: config.thinking,
-      loopGuard,
-      mcpRuntime,
       mcpLease,
-      outcomeState,
-      responderClaims,
-      responderWakeTurn,
-      responderWakeNotificationId,
       wireOccurrences,
       recoveryState,
       toolResultHashes,
-      alreadyPrintedIds,
-      deferredPostToolMessages,
-      deferredResponderLedgerNotifications,
       dialect: () => toolDialect,
       setDialect: (dialect, native) => {
         toolDialect = dialect;
@@ -1059,8 +1027,6 @@ export async function runAgentTurn(
       refreshSessionState,
       recoveryUserMessage,
       applySalvagedWrite,
-      probeStateKey,
-      moveTurn,
       finishTurn,
       executeSingleTool,
       nextToolEventId: () => `tool-${++nextToolEventId}`,
