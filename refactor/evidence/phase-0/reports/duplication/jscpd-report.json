@@ -1,0 +1,549 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 105,
+        "endLoc": {
+          "column": 30,
+          "line": 105,
+          "position": 3846
+        },
+        "name": "components/modal/keys-modal.tsx",
+        "start": 89,
+        "startLoc": {
+          "column": 41,
+          "line": 89,
+          "position": 3485
+        }
+      },
+      "format": "tsx",
+      "fragment": "  function applyTextToInputs(list: KeyRow[]): void {\n    for (const row of list) {\n      const el = inputRefs.current.get(row.id);\n      if (!el) continue;\n      try {\n        if (el.plainText !== row.text) {\n          el.setText(row.text);\n        }\n      } catch {\n        /* ignore */\n      }\n    }\n  }\n\n  useEffect(() => {\n    const id = requestAnimationFrame(() => {\n      applyTextToInputs(rows);",
+      "lines": 17,
+      "secondFile": {
+        "end": 71,
+        "endLoc": {
+          "column": 30,
+          "line": 71,
+          "position": 2339
+        },
+        "name": "components/modal/scope-modal.tsx",
+        "start": 54,
+        "startLoc": {
+          "column": 43,
+          "line": 54,
+          "position": 1910
+        }
+      },
+      "tokens": 84
+    },
+    {
+      "firstFile": {
+        "end": 265,
+        "endLoc": {
+          "column": 11,
+          "line": 265,
+          "position": 8644
+        },
+        "name": "components/modal/keys-modal.tsx",
+        "start": 240,
+        "startLoc": {
+          "column": 44,
+          "line": 240,
+          "position": 8071
+        }
+      },
+      "format": "tsx",
+      "fragment": "  const showActiveToggle = existingCount > 1;\n\n  return (\n    <box\n      border\n      borderStyle=\"rounded\"\n      style={{\n        flexDirection: \"column\",\n        width: docked ? \"100%\" : \"80%\",\n        borderColor: ACCENT,\n        backgroundColor: theme.statusBackground,\n        paddingLeft: 1,\n        paddingRight: 1,\n        paddingTop: 0,\n        paddingBottom: 0,\n      }}\n    >\n      <box style={{ flexDirection: \"row\", width: \"100%\" }}>\n        <text\n          style={{\n            fg: theme.background,\n            bg: ACCENT,\n            attributes: TextAttributes.BOLD,\n          }}\n        >\n          {` ${request.heading ?? \"KEYS\"} `}",
+      "lines": 26,
+      "secondFile": {
+        "end": 192,
+        "endLoc": {
+          "column": 11,
+          "line": 192,
+          "position": 5647
+        },
+        "name": "components/modal/scope-modal.tsx",
+        "start": 167,
+        "startLoc": {
+          "column": 45,
+          "line": 167,
+          "position": 5074
+        }
+      },
+      "tokens": 99
+    },
+    {
+      "firstFile": {
+        "end": 265,
+        "endLoc": {
+          "column": 11,
+          "line": 265,
+          "position": 8644
+        },
+        "name": "components/modal/keys-modal.tsx",
+        "start": 248,
+        "startLoc": {
+          "column": 38,
+          "line": 248,
+          "position": 8221
+        }
+      },
+      "format": "tsx",
+      "fragment": "        width: docked ? \"100%\" : \"80%\",\n        borderColor: ACCENT,\n        backgroundColor: theme.statusBackground,\n        paddingLeft: 1,\n        paddingRight: 1,\n        paddingTop: 0,\n        paddingBottom: 0,\n      }}\n    >\n      <box style={{ flexDirection: \"row\", width: \"100%\" }}>\n        <text\n          style={{\n            fg: theme.background,\n            bg: ACCENT,\n            attributes: TextAttributes.BOLD,\n          }}\n        >\n          {` ${request.heading ?? \"KEYS\"} `}",
+      "lines": 18,
+      "secondFile": {
+        "end": 177,
+        "endLoc": {
+          "column": 11,
+          "line": 177,
+          "position": 5401
+        },
+        "name": "components/modal/secret-modal.tsx",
+        "start": 160,
+        "startLoc": {
+          "column": 38,
+          "line": 160,
+          "position": 4978
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 372,
+        "endLoc": {
+          "column": 18,
+          "line": 372,
+          "position": 12462
+        },
+        "name": "components/modal/keys-modal.tsx",
+        "start": 355,
+        "startLoc": {
+          "column": 22,
+          "line": 355,
+          "position": 12029
+        }
+      },
+      "format": "tsx",
+      "fragment": "            bg: ACCENT,\n            attributes: TextAttributes.BOLD,\n          }}\n          onMouseDown={() => addRow()}\n        />\n        <text content=\" \" />\n        <text\n          content=\" Save \"\n          style={{\n            fg: theme.background,\n            bg: theme.success,\n            attributes: TextAttributes.BOLD,\n          }}\n          onMouseDown={() => submit()}\n        />\n        <text content=\" \" />\n        <text\n          content=\" Reset all \"",
+      "lines": 18,
+      "secondFile": {
+        "end": 275,
+        "endLoc": {
+          "column": 18,
+          "line": 275,
+          "position": 8242
+        },
+        "name": "components/modal/scope-modal.tsx",
+        "start": 258,
+        "startLoc": {
+          "column": 26,
+          "line": 258,
+          "position": 7809
+        }
+      },
+      "tokens": 84
+    },
+    {
+      "firstFile": {
+        "end": 164,
+        "endLoc": {
+          "column": 7,
+          "line": 164,
+          "position": 4832
+        },
+        "name": "components/transcript/file-diff-card.tsx",
+        "start": 151,
+        "startLoc": {
+          "column": 2,
+          "line": 151,
+          "position": 4348
+        }
+      },
+      "format": "tsx",
+      "fragment": "  } = props;\n  const open = useClickWithoutDrag(() => onOpen(change));\n  const mark =\n    change.kind === \"create\" ? \"+\" : change.kind === \"overwrite\" ? \"~\" : \"·\";\n  const markFg =\n    change.kind === \"create\"\n      ? theme.success\n      : change.kind === \"overwrite\"\n        ? theme.activity\n        : theme.toolOutput;\n\n  // Always green/red editor hunks — including pure-add .md create/append.\n  // Formatted markdown is available in the pager via `f`, not as the default.\n  const rows = presentFileChangePreview(change, { maxRows });",
+      "lines": 14,
+      "secondFile": {
+        "end": 209,
+        "endLoc": {
+          "column": 8,
+          "line": 209,
+          "position": 6117
+        },
+        "name": "components/transcript/file-diff-card.tsx",
+        "start": 199,
+        "startLoc": {
+          "column": 32,
+          "line": 199,
+          "position": 5789
+        }
+      },
+      "tokens": 66
+    },
+    {
+      "firstFile": {
+        "end": 109,
+        "endLoc": {
+          "column": 1,
+          "line": 109,
+          "position": 3245
+        },
+        "name": "composer/composer-image-paste.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "format": "typescript",
+      "fragment": "import { captureClipboardImage } from \"../../attachments/clipboard-image.js\";\nimport {\n  formatAttachmentReference,\n  stabilizeDroppedImagesInText,\n} from \"../../ui/mentions.js\";\nimport type { AppServices } from \"../../ui-core/bootstrap/composition-root.js\";\nimport { notify } from \"../../ui-core/notify.js\";\n\ninterface ComposerEditor {\n  readonly plainText: string;\n  readonly cursorOffset: number;\n  insertText(text: string): void;\n  focus(): void;\n}\n\ninterface EditorRef {\n  readonly current: ComposerEditor | null;\n}\n\ninterface PreventableEvent {\n  preventDefault(): void;\n}\n\ninterface ComposerImagePaste {\n  handleChord(\n    chord: string,\n    overlayKind: string,\n    key: PreventableEvent,\n  ): boolean;\n  handlePaste(text: string, event: PreventableEvent): boolean;\n  handleDroppedImages(text: string, event: PreventableEvent): boolean;\n}\n\nconst activePastes = new WeakSet<AppServices>();\n\nexport function createComposerImagePaste(\n  services: AppServices,\n  editorRef: EditorRef,\n  refresh: () => void,\n): ComposerImagePaste {\n  const pasteImage = (): void => {\n    if (activePastes.has(services)) return;\n    activePastes.add(services);\n    setImmediate(() => {\n      const result = captureClipboardImage();\n      activePastes.delete(services);\n      if (!result.ok) {\n        notify(services, result.reason, {\n          key: \"image-paste\",\n          level: \"warn\",\n          durationMs: 2600,\n        });\n        return;\n      }\n      const editor = editorRef.current;\n      if (!editor) return;\n      const before = editor.plainText[editor.cursorOffset - 1] ?? \"\";\n      const leadingSpace = before && !/\\s/.test(before) ? \" \" : \"\";\n      const reference = formatAttachmentReference(result.path);\n      editor.insertText(`${leadingSpace}${reference} `);\n      services.focus.focusRegion(\"composer\");\n      editor.focus();\n      notify(services, \"Image attached from clipboard\", {\n        key: \"image-paste\",\n        durationMs: 1600,\n      });\n      queueMicrotask(refresh);\n    });\n  };\n\n  return {\n    handleChord(chord, overlayKind, key) {\n      if (overlayKind !== \"none\" || chord !== \"ctrl+v\") return false;\n      key.preventDefault();\n      services.focus.focusRegion(\"composer\");\n      editorRef.current?.focus();\n      pasteImage();\n      return true;\n    },\n    handlePaste(text, event) {\n      if (text.trim()) return false;\n      event.preventDefault();\n      pasteImage();\n      return true;\n    },\n    handleDroppedImages(text, event) {\n      if (!text.trim()) return false;\n      const { text: rewritten, images } = stabilizeDroppedImagesInText(text);\n      if (images.length === 0) return false;\n      event.preventDefault();\n      const editor = editorRef.current;\n      if (!editor) return true;\n      const before = editor.plainText[editor.cursorOffset - 1] ?? \"\";\n      const leadingSpace = before && !/\\s/.test(before) ? \" \" : \"\";\n      editor.insertText(`${leadingSpace}${rewritten} `);\n      services.focus.focusRegion(\"composer\");\n      editor.focus();\n      notify(\n        services,\n        images.length > 1\n          ? `${images.length} images attached`\n          : \"Image attached\",\n        { key: \"image-paste\", durationMs: 1600 },\n      );\n      queueMicrotask(refresh);\n      return true;\n    },\n  };\n}",
+      "lines": 109,
+      "secondFile": {
+        "end": 109,
+        "endLoc": {
+          "column": 1,
+          "line": 109,
+          "position": 3245
+        },
+        "name": "composer/composer-image-paste.ts",
+        "start": 1,
+        "startLoc": {
+          "column": 0,
+          "line": 1,
+          "position": 0
+        }
+      },
+      "tokens": 613
+    },
+    {
+      "firstFile": {
+        "end": 165,
+        "endLoc": {
+          "column": 1,
+          "line": 165,
+          "position": 5121
+        },
+        "name": "composer/composer-wheel.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 0,
+          "line": 6,
+          "position": 164
+        }
+      },
+      "format": "typescript",
+      "fragment": "export function composerDraftOverflows(\n  contentLines: number,\n  visibleRows: number,\n): boolean {\n  return Math.max(1, contentLines) > Math.max(1, visibleRows);\n}\n\n/** Multi-line draft (newlines or soft-wrap) owns the wheel — never the chat. */\nexport function composerOwnsWheel(contentLines: number): boolean {\n  return Math.max(1, contentLines) > 1;\n}\n\n/** Next viewport Y for an overflowing draft; undefined if nothing to scroll. */\nexport function nextComposerScrollOffset(opts: {\n  readonly offsetY: number;\n  readonly viewportHeight: number;\n  readonly totalLines: number;\n  readonly direction: \"up\" | \"down\" | string;\n  readonly delta?: number | undefined;\n  readonly lineStep?: number | undefined;\n}): number | undefined {\n  const height = Math.max(1, opts.viewportHeight);\n  const total = Math.max(0, opts.totalLines);\n  const maxOffset = Math.max(0, total - height);\n  if (maxOffset <= 0) return undefined;\n  const step = Math.max(1, opts.delta ?? 1) * Math.max(1, opts.lineStep ?? 3);\n  const cur = Math.max(0, Math.min(maxOffset, opts.offsetY));\n  if (opts.direction === \"up\") return Math.max(0, cur - step);\n  if (opts.direction === \"down\") return Math.min(maxOffset, cur + step);\n  return undefined;\n}\n\n/** Minimal editor surface used for draft-internal wheel scroll. */\nexport interface ComposerWheelEditor {\n  readonly lineCount?: number;\n  readonly virtualLineCount?: number;\n  readonly plainText?: string;\n  readonly editorView: {\n    getViewport(): {\n      offsetY: number;\n      offsetX: number;\n      height: number;\n      width: number;\n    };\n    getTotalVirtualLineCount?: () => number;\n    setViewport(\n      x: number,\n      y: number,\n      width: number,\n      height: number,\n      moveCursor?: boolean,\n    ): void;\n  };\n  moveCursorUp(): unknown;\n  moveCursorDown(): unknown;\n}\n\n/** Best-effort visual line count from the live editor (React state can lag). */\nexport function measureComposerLines(\n  editor: ComposerWheelEditor | null | undefined,\n  contentLinesFallback: number,\n): number {\n  if (!editor) return Math.max(1, contentLinesFallback);\n  const fromView =\n    editor.editorView.getTotalVirtualLineCount?.() ??\n    editor.virtualLineCount ??\n    0;\n  const logical = editor.lineCount ?? 0;\n  const hardBreaks = editor.plainText\n    ? Math.max(1, editor.plainText.split(\"\\n\").length)\n    : 1;\n  return Math.max(1, contentLinesFallback, fromView, logical, hardBreaks);\n}\n\n/**\n * Scroll the draft when the composer owns the wheel.\n * Returns true when chat must NOT scroll (multi-line / overflow draft).\n */\nexport function tryScrollComposerDraft(\n  editor: ComposerWheelEditor,\n  opts: {\n    readonly contentLines: number;\n    readonly visibleRows: number;\n    readonly direction: \"up\" | \"down\" | string;\n    readonly delta?: number | undefined;\n  },\n): boolean {\n  const lines = measureComposerLines(editor, opts.contentLines);\n  if (!composerOwnsWheel(lines) && !composerDraftOverflows(lines, opts.visibleRows)) {\n    return false;\n  }\n\n  const steps = Math.max(1, opts.delta ?? 1) * 3;\n\n  if (composerDraftOverflows(lines, opts.visibleRows)) {\n    try {\n      const view = editor.editorView;\n      const vp = view.getViewport();\n      const total =\n        view.getTotalVirtualLineCount?.() ??\n        editor.virtualLineCount ??\n        lines;\n      const nextY = nextComposerScrollOffset({\n        offsetY: vp.offsetY,\n        viewportHeight: vp.height || opts.visibleRows,\n        totalLines: total,\n        direction: opts.direction,\n        delta: opts.delta,\n      });\n      if (nextY !== undefined && nextY !== vp.offsetY) {\n        view.setViewport(vp.offsetX, nextY, vp.width, vp.height, false);\n        return true;\n      }\n    } catch {\n      // Fall through to cursor-based scroll.\n    }\n  }\n\n  if (opts.direction === \"up\") {\n    for (let i = 0; i < steps; i++) editor.moveCursorUp();\n    return true;\n  }\n  if (opts.direction === \"down\") {\n    for (let i = 0; i < steps; i++) editor.moveCursorDown();\n    return true;\n  }\n  return true;\n}\n\n/** Wheel delta → transcript scroll steps (shared by composer + app). */\nexport function wheelChatDelta(\n  direction: \"up\" | \"down\" | string,\n  delta?: number,\n): number {\n  const step = Math.max(1, delta ?? 1) * 3;\n  if (direction === \"up\") return -step;\n  if (direction === \"down\") return step;\n  return 0;\n}\n\n/**\n * Resolve composer wheel: \"draft\" | \"chat\" | \"none\".\n * Unfocused composer never scrolls the draft (avoids dual scroll with chat).\n */\nexport function resolveComposerWheelTarget(opts: {\n  readonly composerFocused: boolean;\n  readonly editor: ComposerWheelEditor | null | undefined;\n  readonly contentLines: number;\n  readonly visibleRows: number;\n}): \"draft\" | \"chat\" {\n  if (!opts.composerFocused || !opts.editor) return \"chat\";\n  const lines = measureComposerLines(opts.editor, opts.contentLines);\n  if (\n    composerOwnsWheel(lines) ||\n    composerDraftOverflows(lines, opts.visibleRows)\n  ) {\n    return \"draft\";\n  }\n  return \"chat\";\n}",
+      "lines": 160,
+      "secondFile": {
+        "end": 165,
+        "endLoc": {
+          "column": 1,
+          "line": 165,
+          "position": 5121
+        },
+        "name": "composer/composer-wheel.ts",
+        "start": 6,
+        "startLoc": {
+          "column": 0,
+          "line": 6,
+          "position": 164
+        }
+      },
+      "tokens": 913
+    },
+    {
+      "firstFile": {
+        "end": 113,
+        "endLoc": {
+          "column": 1,
+          "line": 113,
+          "position": 3914
+        },
+        "name": "composer/textarea-keybindings.ts",
+        "start": 17,
+        "startLoc": {
+          "column": 0,
+          "line": 17,
+          "position": 662
+        }
+      },
+      "format": "typescript",
+      "fragment": "export type TextareaActionName =\n  | \"submit\"\n  | \"newline\"\n  | \"delete-to-line-start\"\n  | \"delete-to-line-end\"\n  | \"delete-line\"\n  | \"delete-word-backward\"\n  | \"delete-word-forward\"\n  | \"select-all\"\n  | \"select-word-backward\"\n  | \"select-word-forward\"\n  | \"select-line-home\"\n  | \"select-line-end\";\n\nexport interface TextareaKeyBindingLike {\n  readonly name: string;\n  readonly ctrl?: boolean;\n  readonly shift?: boolean;\n  readonly meta?: boolean;\n  readonly super?: boolean;\n  readonly action: TextareaActionName;\n}\n\nconst ENTER_NAMES = [\"return\", \"kpenter\"] as const;\n\nexport function buildComposerTextareaOverrides(): TextareaKeyBindingLike[] {\n  const overrides: TextareaKeyBindingLike[] = [];\n  for (const name of ENTER_NAMES) {\n    // Bare Enter → submit. Newline chords cover every OS/terminal that can\n    // report a modifier on Return (Shift, Alt/Option/meta, Ctrl).\n    overrides.push({ name, action: \"submit\" });\n    overrides.push({ name, shift: true, action: \"newline\" });\n    overrides.push({ name, meta: true, action: \"newline\" });\n    overrides.push({ name, ctrl: true, action: \"newline\" });\n  }\n\n  // ── Word kill: Option/Alt (+Backspace/Delete)\n  // On macOS terminals, Option almost always arrives as `meta`.\n  overrides.push({\n    name: \"backspace\",\n    meta: true,\n    action: \"delete-word-backward\",\n  });\n  overrides.push({\n    name: \"delete\",\n    meta: true,\n    action: \"delete-word-forward\",\n  });\n\n  // ── Full line kill: Cmd (super) and Ctrl (Windows / some terminals)\n  // OpenTUI default maps ctrl+backspace → word; override to whole line.\n  overrides.push({ name: \"backspace\", super: true, action: \"delete-line\" });\n  overrides.push({ name: \"delete\", super: true, action: \"delete-line\" });\n  overrides.push({ name: \"backspace\", ctrl: true, action: \"delete-line\" });\n  overrides.push({ name: \"delete\", ctrl: true, action: \"delete-line\" });\n\n  // readline Ctrl+U and many terminals' Cmd+Backspace → Ctrl+U encoding.\n  overrides.push({ name: \"u\", ctrl: true, action: \"delete-line\" });\n  // Ctrl+K keeps \"kill to end of line\" (readline) for power users.\n  overrides.push({ name: \"k\", ctrl: true, action: \"delete-to-line-end\" });\n\n  // ── Selection\n  // OpenTUI's defaults bind shift+arrow and shift+home/end, but never bind\n  // `select-all` or the word/line selection actions, so those were unreachable.\n  // Cmd+A is the platform-native select-all; Ctrl+Alt+A covers terminals that\n  // do not deliver super, without shadowing readline Ctrl+A (line-home).\n  overrides.push({ name: \"a\", super: true, action: \"select-all\" });\n  overrides.push({ name: \"a\", ctrl: true, meta: true, action: \"select-all\" });\n  // Option/Alt + Shift + arrow → extend by word (macOS/most terminals).\n  overrides.push({\n    name: \"left\",\n    meta: true,\n    shift: true,\n    action: \"select-word-backward\",\n  });\n  overrides.push({\n    name: \"right\",\n    meta: true,\n    shift: true,\n    action: \"select-word-forward\",\n  });\n  // Cmd + Shift + arrow → extend to the visual line edge.\n  overrides.push({\n    name: \"left\",\n    super: true,\n    shift: true,\n    action: \"select-line-home\",\n  });\n  overrides.push({\n    name: \"right\",\n    super: true,\n    shift: true,\n    action: \"select-line-end\",\n  });\n\n  return overrides;\n}",
+      "lines": 97,
+      "secondFile": {
+        "end": 113,
+        "endLoc": {
+          "column": 1,
+          "line": 113,
+          "position": 3914
+        },
+        "name": "composer/textarea-keybindings.ts",
+        "start": 17,
+        "startLoc": {
+          "column": 0,
+          "line": 17,
+          "position": 662
+        }
+      },
+      "tokens": 468
+    },
+    {
+      "firstFile": {
+        "end": 394,
+        "endLoc": {
+          "column": 9,
+          "line": 394,
+          "position": 13391
+        },
+        "name": "commands/key-commands.ts",
+        "start": 373,
+        "startLoc": {
+          "column": 37,
+          "line": 373,
+          "position": 12773
+        }
+      },
+      "format": "typescript",
+      "fragment": "  const multi = await getProviderKeys(id);\n  const stored =\n    multi.source === \"env\"\n      ? []\n      : multi.keys.map((key) => ({\n          id: key.id,\n          masked: maskSecret(key.value),\n          value: key.value,\n          disabled: key.disabled === true,\n        }));\n\n  const answer = await services.overlay.openKeysEditor({\n    provider: id,\n    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked, disabled: key.disabled })),\n    activeIndex: multi.source !== \"env\" ? multi.activeIndex : undefined,\n  });\n  if (!answer) {\n    notice(services, \"info\", \"cancelled\");\n    return;\n  }\n  if (answer.action === \"reset\") {\n    await unsetProviderSecret(id);",
+      "lines": 22,
+      "secondFile": {
+        "end": 470,
+        "endLoc": {
+          "column": 9,
+          "line": 470,
+          "position": 15688
+        },
+        "name": "commands/key-commands.ts",
+        "start": 450,
+        "startLoc": {
+          "column": 43,
+          "line": 450,
+          "position": 15071
+        }
+      },
+      "tokens": 154
+    },
+    {
+      "firstFile": {
+        "end": 429,
+        "endLoc": {
+          "column": 7,
+          "line": 429,
+          "position": 14479
+        },
+        "name": "commands/key-commands.ts",
+        "start": 414,
+        "startLoc": {
+          "column": 2,
+          "line": 414,
+          "position": 14005
+        }
+      },
+      "format": "typescript",
+      "fragment": "  }\n  if (resolved.length > MAX_PROVIDER_KEYS) {\n    notice(services, \"warn\", `at most ${MAX_PROVIDER_KEYS} API keys per provider`);\n    return;\n  }\n\n  let activeIndex = answer.activeIndex ?? 0;\n  if (answer.activeIndex === undefined && multi.source !== \"env\" && multi.keys.length > 0) {\n    const previous = multi.keys[multi.activeIndex]?.value;\n    if (previous) {\n      const found = resolved.indexOf(previous);\n      if (found >= 0) activeIndex = found;\n    }\n  }\n\n  await setProviderKeys(",
+      "lines": 16,
+      "secondFile": {
+        "end": 499,
+        "endLoc": {
+          "column": 7,
+          "line": 499,
+          "position": 16589
+        },
+        "name": "commands/key-commands.ts",
+        "start": 484,
+        "startLoc": {
+          "column": 2,
+          "line": 484,
+          "position": 16115
+        }
+      },
+      "tokens": 98
+    },
+    {
+      "firstFile": {
+        "end": 439,
+        "endLoc": {
+          "column": 1,
+          "line": 439,
+          "position": 14798
+        },
+        "name": "commands/key-commands.ts",
+        "start": 429,
+        "startLoc": {
+          "column": 23,
+          "line": 429,
+          "position": 14495
+        }
+      },
+      "format": "typescript",
+      "fragment": "  await setProviderKeys(\n    id,\n    resolved,\n    activeIndex,\n    detailed.filter((row) => row.disabled).map((row) => row.value),\n  );\n  const label = resolved.length === 1\n    ? maskSecret(resolved[0]!)\n    : `${resolved.length} keys · active: #${activeIndex + 1}`;\n  notice(services, \"info\", `saved ${id} · ${label}`);\n}",
+      "lines": 11,
+      "secondFile": {
+        "end": 509,
+        "endLoc": {
+          "column": 1,
+          "line": 509,
+          "position": 16914
+        },
+        "name": "commands/key-commands.ts",
+        "start": 499,
+        "startLoc": {
+          "column": 29,
+          "line": 499,
+          "position": 16611
+        }
+      },
+      "tokens": 75
+    },
+    {
+      "firstFile": {
+        "end": 17,
+        "endLoc": {
+          "column": 6,
+          "line": 17,
+          "position": 550
+        },
+        "name": "rendering/intro-header.ts",
+        "start": 7,
+        "startLoc": {
+          "column": 0,
+          "line": 7,
+          "position": 174
+        }
+      },
+      "format": "typescript",
+      "fragment": "function truncateMiddle(text: string, maxWidth: number): string {\n  if (maxWidth <= 0) return \"\";\n  if (text.length <= maxWidth) return text;\n  if (maxWidth <= 1) return \"…\";\n  const keep = maxWidth - 1;\n  const head = Math.ceil(keep * 0.6);\n  const tail = Math.floor(keep * 0.4);\n  return `${text.slice(0, head)}…${text.slice(Math.max(0, text.length - tail))}`;\n}\n\nexport interface IntroHeaderOptions {",
+      "lines": 11,
+      "secondFile": {
+        "end": 12,
+        "endLoc": {
+          "column": 6,
+          "line": 12,
+          "position": 459
+        },
+        "name": "rendering/text-format.ts",
+        "start": 2,
+        "startLoc": {
+          "column": 7,
+          "line": 2,
+          "position": 83
+        }
+      },
+      "tokens": 106
+    },
+    {
+      "firstFile": {
+        "end": 727,
+        "endLoc": {
+          "column": 7,
+          "line": 727,
+          "position": 21123
+        },
+        "name": "rendering/markdown.ts",
+        "start": 714,
+        "startLoc": {
+          "column": 44,
+          "line": 714,
+          "position": 20761
+        }
+      },
+      "format": "typescript",
+      "fragment": "    const prefixLength = indent.length + num.length + 2;\n    const renderedContent = renderInlineMarkdown(content);\n    const wrapped = wrapAnsiLine(\n      renderedContent,\n      Math.max(10, wrapWidth - prefixLength),\n    );\n    return wrapped.map((wl, idx) => {\n      if (idx === 0) return prefix + wl;\n      return \" \".repeat(prefixLength) + wl;\n    });\n  }\n\n  // Check if it's an unordered list\n  const unordered = line.match(/^(\\s*)[-*+]\\s+(.*)$/);",
+      "lines": 14,
+      "secondFile": {
+        "end": 745,
+        "endLoc": {
+          "column": 7,
+          "line": 745,
+          "position": 21727
+        },
+        "name": "rendering/markdown.ts",
+        "start": 732,
+        "startLoc": {
+          "column": 31,
+          "line": 732,
+          "position": 21353
+        }
+      },
+      "tokens": 71
+    },
+    {
+      "firstFile": {
+        "end": 82,
+        "endLoc": {
+          "column": 1,
+          "line": 82,
+          "position": 3285
+        },
+        "name": "rendering/pager-source.ts",
+        "start": 7,
+        "startLoc": {
+          "column": 0,
+          "line": 7,
+          "position": 304
+        }
+      },
+      "format": "typescript",
+      "fragment": "export function stripPagerLineGutters(body: string): string {\n  if (!body) return body;\n  return body\n    .split(\"\\n\")\n    .map((line) => {\n      // formatModalPlainText writes blank rows as a bare gutter (`     │`,\n      // no trailing space). Without this the pipe survives into format mode\n      // and paints as a stray vertical bar under the header.\n      if (/^[\\d ]{0,8} │\\s*$/.test(line)) return \"\";\n      // formatModalPlainText: `<lineno> │ [+/-/ ]body`\n      const withMark = /^(?:[\\d ]{0,8}) │ ([+\\-−] )?(.*)$/.exec(line);\n      if (withMark) {\n        // Diff marks stay only in raw view; format wants pure file text.\n        return withMark[2] ?? \"\";\n      }\n      return line;\n    })\n    .join(\"\\n\");\n}\n\n/**\n * Extract clean markdown source from an fs.read tool dump for formatted\n * preview (chat card + pager). Strips:\n *  - `# fs.read path=…` / `# hasMore=…` chrome headers/footers\n *  - `N: ` line-number prefixes the tool adds for model navigation\n *  - optional `Tool fs.read result (…):` wrappers\n */\nexport function extractFsReadFileBody(raw: string): string {\n  if (!raw) return \"\";\n  const lines = raw.replace(/\\r\\n/g, \"\\n\").split(\"\\n\");\n  const body: string[] = [];\n  for (const line of lines) {\n    // Tool / receipt chrome\n    if (/^(ok|failed)$/i.test(line.trim())) continue;\n    if (/^Tool\\s+\\S+\\s+result\\s*\\(/i.test(line)) continue;\n    if (/^full output saved to /i.test(line)) continue;\n    if (/^artifact: /i.test(line)) continue;\n    // fs.read meta headers (not markdown ATX titles)\n    if (/^#\\s*fs\\.read\\b/i.test(line)) continue;\n    if (/^#\\s*hasMore=/i.test(line)) continue;\n    if (/^#\\s*next:/i.test(line)) continue;\n    if (/^#\\s*file is empty\\b/i.test(line)) continue;\n    if (/^#\\s*requested lines\\b/i.test(line)) continue;\n    if (/^#\\s*path=/i.test(line)) continue;\n    // Numbered content: `12: ## Heading` → `## Heading`\n    const num = /^(\\d+):\\s?(.*)$/.exec(line);\n    if (num) {\n      body.push(num[2] ?? \"\");\n      continue;\n    }\n    body.push(line);\n  }\n  return body.join(\"\\n\").replace(/^\\n+/, \"\").replace(/\\n+$/, \"\");\n}\n\n/**\n * Conservative detector: only claim \"markdown\" when structure is clear.\n * Avoids mangling paths_with_underscores and shell output with * globs.\n */\nexport function looksLikeMarkdown(text: string): boolean {\n  if (!text || text.length < 8) return false;\n  let score = 0;\n  if (/^#{1,6}\\s+\\S/m.test(text)) score += 2;\n  if (/^```[\\w-]*\\s*$/m.test(text)) score += 2;\n  if (/^\\|.+\\|/m.test(text) && /^\\|?[\\s:|-]{3,}/m.test(text)) score += 2;\n  if (/^>\\s+\\S/m.test(text)) score += 1;\n  // Multiple bold spans or list items separated by blank lines\n  const bold = text.match(/\\*\\*[^*\\n]{1,80}\\*\\*/g);\n  if (bold && bold.length >= 2) score += 1;\n  if (/^[-*]\\s+\\S.+\\n\\n/m.test(text) || /^\\d+\\.\\s+\\S.+\\n\\n/m.test(text)) {\n    score += 1;\n  }\n  // Explicit horizontal rules common in our docs\n  if (/^---+\\s*$/m.test(text) || /^\\*\\*\\*+\\s*$/m.test(text)) score += 1;\n  return score >= 2;\n}",
+      "lines": 76,
+      "secondFile": {
+        "end": 87,
+        "endLoc": {
+          "column": 1,
+          "line": 87,
+          "position": 3432
+        },
+        "name": "rendering/pager-text.ts",
+        "start": 12,
+        "startLoc": {
+          "column": 0,
+          "line": 12,
+          "position": 451
+        }
+      },
+      "tokens": 472
+    }
+  ],
+  "statistics": {
+    "detectionDate": "2026-08-31T06:50:27.031Z",
+    "formats": {
+      "tsx": {
+        "clones": 5,
+        "duplicatedLines": 88,
+        "duplicatedTokens": 408,
+        "lines": 11602,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.7584899155318048,
+        "percentageTokens": 0.657661433315065,
+        "sources": 36,
+        "tokens": 62038
+      },
+      "typescript": {
+        "clones": 9,
+        "duplicatedLines": 507,
+        "duplicatedTokens": 2970,
+        "lines": 23438,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 2.1631538527178087,
+        "percentageTokens": 2.226703953336682,
+        "sources": 122,
+        "tokens": 133381
+      }
+    },
+    "total": {
+      "clones": 14,
+      "duplicatedLines": 595,
+      "duplicatedTokens": 3378,
+      "lines": 35040,
+      "newClones": 0,
+      "newDuplicatedLines": 0,
+      "percentage": 1.6980593607305936,
+      "percentageTokens": 1.7285934325730865,
+      "sources": 158,
+      "tokens": 195419
+    }
+  }
+}

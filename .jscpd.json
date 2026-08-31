@@ -1,0 +1,18 @@
+{
+  "threshold": 100,
+  "reporters": ["json", "consoleFull"],
+  "output": "refactor/evidence/phase-0/reports/duplication",
+  "minTokens": 60,
+  "minLines": 10,
+  "absolute": false,
+  "gitignore": true,
+  "format": ["typescript", "tsx"],
+  "ignore": [
+    "**/node_modules/**",
+    "dist/**",
+    "coverage/**",
+    "src/prompts/embedded.ts",
+    "src/version.generated.ts",
+    "test/**/__snapshots__/**"
+  ]
+}

@@ -1,0 +1,7161 @@
+{
+  "schemaVersion": 1,
+  "counts": {
+    "explicitAny": 40,
+    "unknownBoundary": 433,
+    "unknownNarrowing": 224,
+    "unknownInternal": 286,
+    "doubleAssertion": 28,
+    "broadCast": 5,
+    "suppression": 5
+  },
+  "findings": [
+    {
+      "file": "src/agent/compaction-attempt.ts",
+      "category": "unknownNarrowing",
+      "line": 21,
+      "column": 29,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/compaction-attempt.ts",
+      "category": "unknownBoundary",
+      "line": 29,
+      "column": 42,
+      "detail": "record"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownNarrowing",
+      "line": 62,
+      "column": 29,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownInternal",
+      "line": 66,
+      "column": 46,
+      "detail": "status"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownNarrowing",
+      "line": 70,
+      "column": 27,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownInternal",
+      "line": 74,
+      "column": 35,
+      "detail": "body"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownNarrowing",
+      "line": 79,
+      "column": 41,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownNarrowing",
+      "line": 109,
+      "column": 35,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownInternal",
+      "line": 177,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownNarrowing",
+      "line": 215,
+      "column": 44,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/compaction-executor.ts",
+      "category": "unknownNarrowing",
+      "line": 242,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 194,
+      "column": 59,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 227,
+      "column": 51,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 241,
+      "column": 28,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 255,
+      "column": 27,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 263,
+      "column": 46,
+      "detail": "record"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 270,
+      "column": 48,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 278,
+      "column": 59,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 285,
+      "column": 27,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 293,
+      "column": 46,
+      "detail": "record"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 299,
+      "column": 46,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 307,
+      "column": 27,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 315,
+      "column": 46,
+      "detail": "record"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 322,
+      "column": 48,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 330,
+      "column": 59,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 340,
+      "column": 28,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 482,
+      "column": 28,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 522,
+      "column": 28,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 564,
+      "column": 28,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 579,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 697,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 736,
+      "column": 58,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 794,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/loop-guard.ts",
+      "category": "unknownBoundary",
+      "line": 1014,
+      "column": 54,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownNarrowing",
+      "line": 21,
+      "column": 34,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownInternal",
+      "line": 21,
+      "column": 69,
+      "detail": "slimValue"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 36,
+      "column": 29,
+      "detail": "out"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 37,
+      "column": 62,
+      "detail": "slimValue"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 39,
+      "column": 32,
+      "detail": "slimValue"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 48,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 49,
+      "column": 19,
+      "detail": "slimToolArgs"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 52,
+      "column": 38,
+      "detail": "slimToolArgs"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownNarrowing",
+      "line": 58,
+      "column": 10,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 77,
+      "column": 29,
+      "detail": "findElidedStubArg"
+    },
+    {
+      "file": "src/agent/message-slim.ts",
+      "category": "unknownBoundary",
+      "line": 102,
+      "column": 40,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownNarrowing",
+      "line": 396,
+      "column": 41,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownInternal",
+      "line": 396,
+      "column": 61,
+      "detail": "canonicalOperationValue"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 403,
+      "column": 46,
+      "detail": "canonicalOperationValue"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 415,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 427,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 428,
+      "column": 19,
+      "detail": "normalizeOperationArgs"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 453,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 498,
+      "column": 27,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 546,
+      "column": 27,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 250,
+      "column": 49,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 254,
+      "column": 37,
+      "detail": "o"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 264,
+      "column": 51,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 276,
+      "column": 49,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownNarrowing",
+      "line": 282,
+      "column": 32,
+      "detail": "t"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 286,
+      "column": 35,
+      "detail": "o"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 327,
+      "column": 50,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 333,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 357,
+      "column": 39,
+      "detail": "o"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownBoundary",
+      "line": 374,
+      "column": 72,
+      "detail": "object"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownNarrowing",
+      "line": 375,
+      "column": 35,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/plan-tool.ts",
+      "category": "unknownNarrowing",
+      "line": 1264,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownBoundary",
+      "line": 465,
+      "column": 50,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownBoundary",
+      "line": 2038,
+      "column": 34,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownBoundary",
+      "line": 2198,
+      "column": 60,
+      "detail": "retryReason"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownBoundary",
+      "line": 2199,
+      "column": 62,
+      "detail": "retryReason"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownInternal",
+      "line": 2848,
+      "column": 43,
+      "detail": "path"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "doubleAssertion",
+      "line": 3072,
+      "column": 10,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownInternal",
+      "line": 3072,
+      "column": 24,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownNarrowing",
+      "line": 3147,
+      "column": 35,
+      "detail": "err"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "doubleAssertion",
+      "line": 3185,
+      "column": 14,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownInternal",
+      "line": 3185,
+      "column": 28,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "doubleAssertion",
+      "line": 3201,
+      "column": 12,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownInternal",
+      "line": 3201,
+      "column": 25,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "doubleAssertion",
+      "line": 4311,
+      "column": 10,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/agent/runner.ts",
+      "category": "unknownInternal",
+      "line": 4311,
+      "column": 23,
+      "detail": "runAgentTurn"
+    },
+    {
+      "file": "src/agent/scratch-write.ts",
+      "category": "unknownInternal",
+      "line": 29,
+      "column": 38,
+      "detail": "path"
+    },
+    {
+      "file": "src/agent/session-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 158,
+      "column": 37,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/stream-recovery.ts",
+      "category": "unknownNarrowing",
+      "line": 113,
+      "column": 29,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/stream-recovery.ts",
+      "category": "unknownInternal",
+      "line": 116,
+      "column": 36,
+      "detail": "status"
+    },
+    {
+      "file": "src/agent/stream-recovery.ts",
+      "category": "unknownNarrowing",
+      "line": 122,
+      "column": 27,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/stream-recovery.ts",
+      "category": "unknownNarrowing",
+      "line": 136,
+      "column": 46,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/stream-recovery.ts",
+      "category": "unknownInternal",
+      "line": 284,
+      "column": 11,
+      "detail": "error"
+    },
+    {
+      "file": "src/agent/task-evidence.ts",
+      "category": "unknownBoundary",
+      "line": 667,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/task-evidence.ts",
+      "category": "unknownBoundary",
+      "line": 729,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/task-evidence.ts",
+      "category": "unknownBoundary",
+      "line": 742,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/task-evidence.ts",
+      "category": "unknownInternal",
+      "line": 951,
+      "column": 63,
+      "detail": "path"
+    },
+    {
+      "file": "src/agent/task-evidence.ts",
+      "category": "unknownInternal",
+      "line": 1030,
+      "column": 34,
+      "detail": "content"
+    },
+    {
+      "file": "src/agent/task-plan.ts",
+      "category": "unknownNarrowing",
+      "line": 203,
+      "column": 44,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 116,
+      "column": 42,
+      "detail": "lenientJsonParse"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 189,
+      "column": 50,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 192,
+      "column": 19,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 199,
+      "column": 62,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 203,
+      "column": 46,
+      "detail": "anyParsed"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 234,
+      "column": 32,
+      "detail": "flat"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownNarrowing",
+      "line": 257,
+      "column": 28,
+      "detail": "value"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 257,
+      "column": 53,
+      "detail": "pickObject"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 259,
+      "column": 32,
+      "detail": "pickObject"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 346,
+      "column": 58,
+      "detail": "dsmlParameterValue"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 369,
+      "column": 32,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 428,
+      "column": 52,
+      "detail": "openSepValue"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 464,
+      "column": 36,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 545,
+      "column": 44,
+      "detail": "obj"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 630,
+      "column": 34,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "explicitAny",
+      "line": 640,
+      "column": 18,
+      "detail": "val"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 670,
+      "column": 38,
+      "detail": "parseXmlToolCall"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 688,
+      "column": 38,
+      "detail": "parseXmlToolCall"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 704,
+      "column": 32,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "explicitAny",
+      "line": 710,
+      "column": 23,
+      "detail": "paramValue"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 771,
+      "column": 66,
+      "detail": "parseXmlToolCall"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 779,
+      "column": 47,
+      "detail": "tryJson"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 782,
+      "column": 48,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 784,
+      "column": 39,
+      "detail": "tryJson"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 996,
+      "column": 23,
+      "detail": "obj"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 1052,
+      "column": 15,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 1061,
+      "column": 40,
+      "detail": "obj"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownBoundary",
+      "line": 1694,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 1761,
+      "column": 35,
+      "detail": "path"
+    },
+    {
+      "file": "src/agent/tool-call-parser.ts",
+      "category": "unknownInternal",
+      "line": 1783,
+      "column": 39,
+      "detail": "name"
+    },
+    {
+      "file": "src/app/controllers/cancel-coordinator.ts",
+      "category": "unknownBoundary",
+      "line": 36,
+      "column": 40,
+      "detail": "running"
+    },
+    {
+      "file": "src/app/controllers/cancel-coordinator.ts",
+      "category": "unknownBoundary",
+      "line": 37,
+      "column": 53,
+      "detail": "pendingNotifications"
+    },
+    {
+      "file": "src/app/controllers/disposable.ts",
+      "category": "unknownBoundary",
+      "line": 26,
+      "column": 19,
+      "detail": "errors"
+    },
+    {
+      "file": "src/app/controllers/session-context-limits.ts",
+      "category": "unknownNarrowing",
+      "line": 32,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/app/controllers/session-context-usage.ts",
+      "category": "unknownInternal",
+      "line": 298,
+      "column": 30,
+      "detail": "contextSnapshot"
+    },
+    {
+      "file": "src/app/controllers/session-controller.ts",
+      "category": "unknownInternal",
+      "line": 495,
+      "column": 47,
+      "detail": "routeUsage"
+    },
+    {
+      "file": "src/app/controllers/session-usage-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 79,
+      "column": 36,
+      "detail": "value"
+    },
+    {
+      "file": "src/app/controllers/session-usage-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 84,
+      "column": 44,
+      "detail": "value"
+    },
+    {
+      "file": "src/app/controllers/session-usage-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 109,
+      "column": 38,
+      "detail": "provider"
+    },
+    {
+      "file": "src/app/controllers/session-usage-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 134,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/app/controllers/session-usage-ledger.ts",
+      "category": "unknownBoundary",
+      "line": 134,
+      "column": 60,
+      "detail": "isRecord"
+    },
+    {
+      "file": "src/app/controllers/session-usage-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 323,
+      "column": 17,
+      "detail": "rows"
+    },
+    {
+      "file": "src/attachments/image-prepare.ts",
+      "category": "unknownBoundary",
+      "line": 442,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/classic/app/app-wiring.ts",
+      "category": "doubleAssertion",
+      "line": 104,
+      "column": 50,
+      "detail": "as unknown as ResizeSource"
+    },
+    {
+      "file": "src/classic/app/app-wiring.ts",
+      "category": "unknownInternal",
+      "line": 104,
+      "column": 68,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/classic/app/wiring-interactions.ts",
+      "category": "unknownNarrowing",
+      "line": 199,
+      "column": 22,
+      "detail": "error"
+    },
+    {
+      "file": "src/classic/app/wiring-types.ts",
+      "category": "unknownInternal",
+      "line": 24,
+      "column": 46,
+      "detail": "on"
+    },
+    {
+      "file": "src/classic/app/wiring-types.ts",
+      "category": "unknownInternal",
+      "line": 25,
+      "column": 47,
+      "detail": "off"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 19,
+      "column": 25,
+      "detail": "write"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 24,
+      "column": 31,
+      "detail": "setRawMode"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 25,
+      "column": 35,
+      "detail": "setEncoding"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 26,
+      "column": 14,
+      "detail": "resume"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 27,
+      "column": 13,
+      "detail": "pause"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 28,
+      "column": 66,
+      "detail": "on"
+    },
+    {
+      "file": "src/classic/bootstrap/terminal-session.ts",
+      "category": "unknownInternal",
+      "line": 29,
+      "column": 67,
+      "detail": "off"
+    },
+    {
+      "file": "src/classic/chrome/composer-controller.ts",
+      "category": "unknownInternal",
+      "line": 48,
+      "column": 40,
+      "detail": "applyMentionSelection"
+    },
+    {
+      "file": "src/classic/chrome/use-terminal-size.ts",
+      "category": "unknownInternal",
+      "line": 15,
+      "column": 46,
+      "detail": "on"
+    },
+    {
+      "file": "src/classic/chrome/use-terminal-size.ts",
+      "category": "unknownInternal",
+      "line": 16,
+      "column": 47,
+      "detail": "off"
+    },
+    {
+      "file": "src/classic/chrome/use-terminal-size.ts",
+      "category": "doubleAssertion",
+      "line": 30,
+      "column": 18,
+      "detail": "as unknown as SizeSource | undefined"
+    },
+    {
+      "file": "src/classic/chrome/use-terminal-size.ts",
+      "category": "unknownInternal",
+      "line": 30,
+      "column": 28,
+      "detail": "source"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "doubleAssertion",
+      "line": 374,
+      "column": 6,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "unknownInternal",
+      "line": 374,
+      "column": 15,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "doubleAssertion",
+      "line": 454,
+      "column": 6,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "unknownInternal",
+      "line": 454,
+      "column": 15,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "doubleAssertion",
+      "line": 510,
+      "column": 6,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "unknownInternal",
+      "line": 510,
+      "column": 15,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "unknownInternal",
+      "line": 630,
+      "column": 18,
+      "detail": "lastError"
+    },
+    {
+      "file": "src/commands/update-install.ts",
+      "category": "unknownNarrowing",
+      "line": 782,
+      "column": 25,
+      "detail": "data"
+    },
+    {
+      "file": "src/index.ts",
+      "category": "unknownNarrowing",
+      "line": 229,
+      "column": 28,
+      "detail": "error"
+    },
+    {
+      "file": "src/index.ts",
+      "category": "explicitAny",
+      "line": 339,
+      "column": 27,
+      "detail": "typedValue"
+    },
+    {
+      "file": "src/index.ts",
+      "category": "broadCast",
+      "line": 340,
+      "column": 39,
+      "detail": "as any"
+    },
+    {
+      "file": "src/index.ts",
+      "category": "explicitAny",
+      "line": 340,
+      "column": 50,
+      "detail": "currentType"
+    },
+    {
+      "file": "src/index.ts",
+      "category": "broadCast",
+      "line": 358,
+      "column": 24,
+      "detail": "as any"
+    },
+    {
+      "file": "src/index.ts",
+      "category": "explicitAny",
+      "line": 358,
+      "column": 39,
+      "detail": "any"
+    },
+    {
+      "file": "src/interactive-session/manager.ts",
+      "category": "unknownNarrowing",
+      "line": 475,
+      "column": 12,
+      "detail": "error"
+    },
+    {
+      "file": "src/interactive-session/runtime.ts",
+      "category": "unknownInternal",
+      "line": 17,
+      "column": 42,
+      "detail": "id"
+    },
+    {
+      "file": "src/interactive-session/runtime.ts",
+      "category": "unknownInternal",
+      "line": 184,
+      "column": 20,
+      "detail": "cause"
+    },
+    {
+      "file": "src/interactive-session/transport-node-pty.ts",
+      "category": "unknownInternal",
+      "line": 94,
+      "column": 64,
+      "detail": "Bun"
+    },
+    {
+      "file": "src/interactive-session/transport.ts",
+      "category": "unknownInternal",
+      "line": 29,
+      "column": 86,
+      "detail": "cause"
+    },
+    {
+      "file": "src/interactive-session/transport.ts",
+      "category": "unknownInternal",
+      "line": 30,
+      "column": 85,
+      "detail": "cause"
+    },
+    {
+      "file": "src/interactive-session/types.ts",
+      "category": "unknownNarrowing",
+      "line": 478,
+      "column": 10,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 43,
+      "column": 81,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 52,
+      "column": 29,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 74,
+      "column": 42,
+      "detail": "thinkingBlockFromArtifact"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 286,
+      "column": 20,
+      "detail": "anthropicToolBodyFields"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 298,
+      "column": 32,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownInternal",
+      "line": 309,
+      "column": 11,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 310,
+      "column": 18,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/adapters/anthropic-tools.ts",
+      "category": "unknownBoundary",
+      "line": 352,
+      "column": 38,
+      "detail": "args"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownNarrowing",
+      "line": 65,
+      "column": 39,
+      "detail": "schema"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownInternal",
+      "line": 65,
+      "column": 49,
+      "detail": "sanitizeGeminiSchema"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 70,
+      "column": 42,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 71,
+      "column": 29,
+      "detail": "out"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 80,
+      "column": 35,
+      "detail": "props"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 82,
+      "column": 33,
+      "detail": "sanitizeGeminiSchema"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 104,
+      "column": 30,
+      "detail": "parameters"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 113,
+      "column": 26,
+      "detail": "parameters"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 125,
+      "column": 20,
+      "detail": "geminiToolBodyFields"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 146,
+      "column": 86,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 151,
+      "column": 31,
+      "detail": "args"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 159,
+      "column": 34,
+      "detail": "response"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 197,
+      "column": 46,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/adapters/gemini-tools.ts",
+      "category": "unknownBoundary",
+      "line": 363,
+      "column": 33,
+      "detail": "args"
+    },
+    {
+      "file": "src/llm/adapters/ollama-tools.ts",
+      "category": "unknownBoundary",
+      "line": 19,
+      "column": 25,
+      "detail": "toOllamaToolMessages"
+    },
+    {
+      "file": "src/llm/adapters/ollama-tools.ts",
+      "category": "unknownBoundary",
+      "line": 66,
+      "column": 47,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/llm/adapters/openai-tools.ts",
+      "category": "unknownBoundary",
+      "line": 43,
+      "column": 25,
+      "detail": "content"
+    },
+    {
+      "file": "src/llm/adapters/openai-tools.ts",
+      "category": "unknownInternal",
+      "line": 45,
+      "column": 27,
+      "detail": "reasoning_details"
+    },
+    {
+      "file": "src/llm/adapters/openai-tools.ts",
+      "category": "unknownInternal",
+      "line": 71,
+      "column": 22,
+      "detail": "reasoningDetails"
+    },
+    {
+      "file": "src/llm/adapters/openai-tools.ts",
+      "category": "unknownBoundary",
+      "line": 112,
+      "column": 54,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/adapters/openai-tools.ts",
+      "category": "unknownBoundary",
+      "line": 191,
+      "column": 20,
+      "detail": "openAiToolBodyFields"
+    },
+    {
+      "file": "src/llm/agentrouter.ts",
+      "category": "unknownNarrowing",
+      "line": 66,
+      "column": 43,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/agentrouter.ts",
+      "category": "unknownInternal",
+      "line": 94,
+      "column": 18,
+      "detail": "lastError"
+    },
+    {
+      "file": "src/llm/agentrouter.ts",
+      "category": "unknownNarrowing",
+      "line": 120,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownBoundary",
+      "line": 102,
+      "column": 19,
+      "detail": "anthropicThinkingField"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownBoundary",
+      "line": 115,
+      "column": 28,
+      "detail": "thinking"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownBoundary",
+      "line": 135,
+      "column": 34,
+      "detail": "anthropicSystemBlocks"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownBoundary",
+      "line": 140,
+      "column": 38,
+      "detail": "blocks"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownInternal",
+      "line": 235,
+      "column": 20,
+      "detail": "ping"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownInternal",
+      "line": 260,
+      "column": 17,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownInternal",
+      "line": 263,
+      "column": 15,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownInternal",
+      "line": 317,
+      "column": 22,
+      "detail": "stream"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownInternal",
+      "line": 344,
+      "column": 19,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/anthropic.ts",
+      "category": "unknownInternal",
+      "line": 345,
+      "column": 31,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownBoundary",
+      "line": 102,
+      "column": 19,
+      "detail": "anthropicThinkingField"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownInternal",
+      "line": 145,
+      "column": 20,
+      "detail": "ping"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownInternal",
+      "line": 225,
+      "column": 17,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownInternal",
+      "line": 228,
+      "column": 15,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownInternal",
+      "line": 340,
+      "column": 22,
+      "detail": "stream"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownInternal",
+      "line": 368,
+      "column": 19,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/aws-mantle.ts",
+      "category": "unknownInternal",
+      "line": 369,
+      "column": 31,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 36,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 36,
+      "column": 51,
+      "detail": "asRecord"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 38,
+      "column": 32,
+      "detail": "asRecord"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 42,
+      "column": 28,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 51,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 57,
+      "column": 40,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 76,
+      "column": 44,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 100,
+      "column": 48,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 107,
+      "column": 56,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 126,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 144,
+      "column": 29,
+      "detail": "reasoning"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 153,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 203,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 219,
+      "column": 44,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 244,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 256,
+      "column": 42,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownNarrowing",
+      "line": 277,
+      "column": 52,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 277,
+      "column": 71,
+      "detail": "catalogEntriesFromPayload"
+    },
+    {
+      "file": "src/llm/catalog-facts.ts",
+      "category": "unknownBoundary",
+      "line": 282,
+      "column": 74,
+      "detail": "catalogEntriesFromPayload"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 152,
+      "column": 36,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 157,
+      "column": 44,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 162,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 330,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownBoundary",
+      "line": 330,
+      "column": 60,
+      "detail": "isRecord"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 334,
+      "column": 43,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 342,
+      "column": 47,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 346,
+      "column": 32,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 355,
+      "column": 35,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 367,
+      "column": 32,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 378,
+      "column": 36,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 403,
+      "column": 34,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/context-snapshot.ts",
+      "category": "unknownNarrowing",
+      "line": 420,
+      "column": 44,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/custom-provider-profile.ts",
+      "category": "unknownNarrowing",
+      "line": 213,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/custom-provider-profile.ts",
+      "category": "unknownBoundary",
+      "line": 213,
+      "column": 60,
+      "detail": "isRecord"
+    },
+    {
+      "file": "src/llm/custom-provider-profile.ts",
+      "category": "unknownNarrowing",
+      "line": 218,
+      "column": 10,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/custom-provider-profile.ts",
+      "category": "unknownNarrowing",
+      "line": 227,
+      "column": 10,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/custom-provider-profile.ts",
+      "category": "unknownNarrowing",
+      "line": 248,
+      "column": 8,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/custom-provider-profile.ts",
+      "category": "unknownBoundary",
+      "line": 426,
+      "column": 76,
+      "detail": "{ contextTokens, outputTokens }"
+    },
+    {
+      "file": "src/llm/effort-fallback.ts",
+      "category": "unknownNarrowing",
+      "line": 72,
+      "column": 46,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/effort-fallback.ts",
+      "category": "unknownInternal",
+      "line": 108,
+      "column": 18,
+      "detail": "lastError"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownNarrowing",
+      "line": 61,
+      "column": 34,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownBoundary",
+      "line": 61,
+      "column": 44,
+      "detail": "catalogEntries"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownInternal",
+      "line": 64,
+      "column": 16,
+      "detail": "data"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownInternal",
+      "line": 64,
+      "column": 34,
+      "detail": "models"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownNarrowing",
+      "line": 78,
+      "column": 27,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownInternal",
+      "line": 108,
+      "column": 35,
+      "detail": "id"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownInternal",
+      "line": 108,
+      "column": 53,
+      "detail": "isFree"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownBoundary",
+      "line": 183,
+      "column": 19,
+      "detail": "zenReasoningPayload"
+    },
+    {
+      "file": "src/llm/free.ts",
+      "category": "unknownInternal",
+      "line": 221,
+      "column": 33,
+      "detail": "data"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 127,
+      "column": 19,
+      "detail": "geminiThinkingConfig"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 215,
+      "column": 34,
+      "detail": "thinkingConfig"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 217,
+      "column": 19,
+      "detail": "clampGeminiThinkingBudget"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 246,
+      "column": 30,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownInternal",
+      "line": 311,
+      "column": 20,
+      "detail": "ping"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 337,
+      "column": 37,
+      "detail": "args"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownInternal",
+      "line": 344,
+      "column": 23,
+      "detail": "usageMetadata"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownInternal",
+      "line": 391,
+      "column": 22,
+      "detail": "stream"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 405,
+      "column": 31,
+      "detail": "args"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownInternal",
+      "line": 423,
+      "column": 27,
+      "detail": "usageMetadata"
+    },
+    {
+      "file": "src/llm/gemini.ts",
+      "category": "unknownBoundary",
+      "line": 433,
+      "column": 41,
+      "detail": "args"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 116,
+      "column": 11,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 117,
+      "column": 13,
+      "detail": "choices"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 122,
+      "column": 39,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 175,
+      "column": 43,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 181,
+      "column": 21,
+      "detail": "entries"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 207,
+      "column": 12,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 226,
+      "column": 55,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 227,
+      "column": 40,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 453,
+      "column": 26,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 645,
+      "column": 29,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 649,
+      "column": 45,
+      "detail": "artifactRaw"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 674,
+      "column": 20,
+      "detail": "thinking"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 853,
+      "column": 25,
+      "detail": "toOpenAiMessages"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 874,
+      "column": 38,
+      "detail": "toOpenAiMessages"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 937,
+      "column": 19,
+      "detail": "buildReasoningPayload"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 1166,
+      "column": 52,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 1212,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 1240,
+      "column": 56,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownNarrowing",
+      "line": 1260,
+      "column": 53,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 1436,
+      "column": 30,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 1548,
+      "column": 60,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 1554,
+      "column": 48,
+      "detail": "effort"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "broadCast",
+      "line": 1618,
+      "column": 77,
+      "detail": "as any"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "explicitAny",
+      "line": 1631,
+      "column": 10,
+      "detail": "openAiCompatibleComplete"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1647,
+      "column": 29,
+      "detail": "reasoning_details"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1648,
+      "column": 20,
+      "detail": "thinking"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1658,
+      "column": 13,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1691,
+      "column": 37,
+      "detail": "perf_metrics"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "broadCast",
+      "line": 1901,
+      "column": 77,
+      "detail": "as any"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "explicitAny",
+      "line": 1915,
+      "column": 10,
+      "detail": "openAiCompatibleStream"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1930,
+      "column": 22,
+      "detail": "openAiCompatibleStream"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1956,
+      "column": 17,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1963,
+      "column": 33,
+      "detail": "reasoning_details"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1964,
+      "column": 24,
+      "detail": "thinking"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 1991,
+      "column": 41,
+      "detail": "perf_metrics"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 2375,
+      "column": 19,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 2382,
+      "column": 35,
+      "detail": "reasoning_details"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 2383,
+      "column": 26,
+      "detail": "thinking"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownBoundary",
+      "line": 2393,
+      "column": 55,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 2427,
+      "column": 47,
+      "detail": "perf_metrics"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "broadCast",
+      "line": 2638,
+      "column": 53,
+      "detail": "as any"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "explicitAny",
+      "line": 2644,
+      "column": 8,
+      "detail": "response"
+    },
+    {
+      "file": "src/llm/http.ts",
+      "category": "unknownInternal",
+      "line": 2645,
+      "column": 18,
+      "detail": "openAiCompatiblePing"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 39,
+      "column": 29,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 46,
+      "column": 30,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 51,
+      "column": 39,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 60,
+      "column": 40,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 79,
+      "column": 50,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 84,
+      "column": 44,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 84,
+      "column": 70,
+      "detail": "e"
+    },
+    {
+      "file": "src/llm/key-rotation.ts",
+      "category": "unknownNarrowing",
+      "line": 99,
+      "column": 45,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 61,
+      "column": 8,
+      "detail": "id"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 62,
+      "column": 12,
+      "detail": "object"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 63,
+      "column": 30,
+      "detail": "supported_endpoint_types"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 64,
+      "column": 18,
+      "detail": "capabilities"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 73,
+      "column": 34,
+      "detail": "availability_status"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 74,
+      "column": 29,
+      "detail": "context_window"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 75,
+      "column": 32,
+      "detail": "max_output_tokens"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 77,
+      "column": 22,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 78,
+      "column": 35,
+      "detail": "supports_reasoning"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 80,
+      "column": 31,
+      "detail": "configurable"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 81,
+      "column": 36,
+      "detail": "disable_supported"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 82,
+      "column": 34,
+      "detail": "default_enabled"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 83,
+      "column": 32,
+      "detail": "effort_values"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 89,
+      "column": 20,
+      "detail": "model"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 91,
+      "column": 22,
+      "detail": "aliases"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownNarrowing",
+      "line": 94,
+      "column": 31,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 94,
+      "column": 41,
+      "detail": "entriesFrom"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 96,
+      "column": 41,
+      "detail": "data"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 96,
+      "column": 59,
+      "detail": "models"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownNarrowing",
+      "line": 114,
+      "column": 41,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 114,
+      "column": 51,
+      "detail": "chatModelsFromCatalog"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownNarrowing",
+      "line": 124,
+      "column": 27,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownNarrowing",
+      "line": 131,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 161,
+      "column": 19,
+      "detail": "reasoningFacts"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 196,
+      "column": 39,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 209,
+      "column": 63,
+      "detail": "nativeFacts"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 224,
+      "column": 41,
+      "detail": "model"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 237,
+      "column": 21,
+      "detail": "entries"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 238,
+      "column": 31,
+      "detail": "mergeNativeFactsIndex"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 239,
+      "column": 48,
+      "detail": "index"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 255,
+      "column": 24,
+      "detail": "chatModels"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 256,
+      "column": 42,
+      "detail": "factsIndex"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 257,
+      "column": 4,
+      "detail": "mergeCatalogEntries"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownInternal",
+      "line": 266,
+      "column": 49,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 309,
+      "column": 39,
+      "detail": "fetchNativeFacts"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 310,
+      "column": 18,
+      "detail": "entries"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 315,
+      "column": 14,
+      "detail": "data"
+    },
+    {
+      "file": "src/llm/merge-gateway.ts",
+      "category": "unknownBoundary",
+      "line": 335,
+      "column": 51,
+      "detail": "factsIndex"
+    },
+    {
+      "file": "src/llm/meta.ts",
+      "category": "unknownBoundary",
+      "line": 28,
+      "column": 19,
+      "detail": "metaReasoningPayload"
+    },
+    {
+      "file": "src/llm/meta.ts",
+      "category": "unknownInternal",
+      "line": 94,
+      "column": 20,
+      "detail": "ping"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownBoundary",
+      "line": 43,
+      "column": 19,
+      "detail": "ollamaOptions"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownBoundary",
+      "line": 69,
+      "column": 42,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownBoundary",
+      "line": 82,
+      "column": 30,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownInternal",
+      "line": 109,
+      "column": 20,
+      "detail": "ping"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownBoundary",
+      "line": 129,
+      "column": 49,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownInternal",
+      "line": 167,
+      "column": 22,
+      "detail": "stream"
+    },
+    {
+      "file": "src/llm/ollama.ts",
+      "category": "unknownBoundary",
+      "line": 192,
+      "column": 53,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/llm/operation-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 88,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/operation-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 199,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/operation-ledger.ts",
+      "category": "unknownNarrowing",
+      "line": 213,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/operation-ledger.ts",
+      "category": "unknownInternal",
+      "line": 218,
+      "column": 49,
+      "detail": "operationUsage"
+    },
+    {
+      "file": "src/llm/operation-ledger.ts",
+      "category": "unknownInternal",
+      "line": 220,
+      "column": 48,
+      "detail": "attempts"
+    },
+    {
+      "file": "src/llm/operation-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 150,
+      "column": 41,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/operation-usage.ts",
+      "category": "unknownInternal",
+      "line": 152,
+      "column": 37,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/operation-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 166,
+      "column": 37,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/operation-usage.ts",
+      "category": "unknownInternal",
+      "line": 168,
+      "column": 46,
+      "detail": "status"
+    },
+    {
+      "file": "src/llm/orcarouter.ts",
+      "category": "unknownInternal",
+      "line": 65,
+      "column": 8,
+      "detail": "id"
+    },
+    {
+      "file": "src/llm/orcarouter.ts",
+      "category": "unknownInternal",
+      "line": 66,
+      "column": 30,
+      "detail": "supported_endpoint_types"
+    },
+    {
+      "file": "src/llm/orcarouter.ts",
+      "category": "unknownNarrowing",
+      "line": 75,
+      "column": 41,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/orcarouter.ts",
+      "category": "unknownBoundary",
+      "line": 75,
+      "column": 51,
+      "detail": "chatModelsFromCatalog"
+    },
+    {
+      "file": "src/llm/orcarouter.ts",
+      "category": "unknownInternal",
+      "line": 76,
+      "column": 41,
+      "detail": "data"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownNarrowing",
+      "line": 33,
+      "column": 32,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownInternal",
+      "line": 33,
+      "column": 42,
+      "detail": "immutableClone"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 38,
+      "column": 32,
+      "detail": "copy"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 39,
+      "column": 71,
+      "detail": "immutableClone"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 47,
+      "column": 47,
+      "detail": "freezeRoute"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 156,
+      "column": 28,
+      "detail": "rawRecord"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 159,
+      "column": 39,
+      "detail": "rawRecord"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 189,
+      "column": 25,
+      "detail": "reasoningArtifactItems"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 193,
+      "column": 49,
+      "detail": "source"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 197,
+      "column": 54,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 199,
+      "column": 39,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 325,
+      "column": 37,
+      "detail": "items"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 402,
+      "column": 51,
+      "detail": "entry"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 418,
+      "column": 18,
+      "detail": "entries"
+    },
+    {
+      "file": "src/llm/reasoning-artifacts.ts",
+      "category": "unknownBoundary",
+      "line": 426,
+      "column": 44,
+      "detail": "record"
+    },
+    {
+      "file": "src/llm/reasoning-controls.ts",
+      "category": "unknownBoundary",
+      "line": 8,
+      "column": 54,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/llm/reasoning-controls.ts",
+      "category": "unknownBoundary",
+      "line": 223,
+      "column": 32,
+      "detail": "merged"
+    },
+    {
+      "file": "src/llm/reasoning-controls.ts",
+      "category": "unknownNarrowing",
+      "line": 234,
+      "column": 31,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/reasoning-controls.ts",
+      "category": "unknownBoundary",
+      "line": 234,
+      "column": 65,
+      "detail": "isPlainObject"
+    },
+    {
+      "file": "src/llm/reasoning-controls.ts",
+      "category": "unknownBoundary",
+      "line": 244,
+      "column": 34,
+      "detail": "filtered"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownNarrowing",
+      "line": 4,
+      "column": 29,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownNarrowing",
+      "line": 10,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownNarrowing",
+      "line": 19,
+      "column": 55,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownNarrowing",
+      "line": 25,
+      "column": 42,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownNarrowing",
+      "line": 31,
+      "column": 57,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownNarrowing",
+      "line": 40,
+      "column": 47,
+      "detail": "frame"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownInternal",
+      "line": 46,
+      "column": 32,
+      "detail": "type"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownInternal",
+      "line": 47,
+      "column": 32,
+      "detail": "code"
+    },
+    {
+      "file": "src/llm/reasoning-errors.ts",
+      "category": "unknownInternal",
+      "line": 48,
+      "column": 35,
+      "detail": "message"
+    },
+    {
+      "file": "src/llm/responses-complete.ts",
+      "category": "unknownInternal",
+      "line": 35,
+      "column": 24,
+      "detail": "output"
+    },
+    {
+      "file": "src/llm/responses-complete.ts",
+      "category": "unknownInternal",
+      "line": 35,
+      "column": 41,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-complete.ts",
+      "category": "unknownBoundary",
+      "line": 44,
+      "column": 65,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-complete.ts",
+      "category": "unknownBoundary",
+      "line": 48,
+      "column": 28,
+      "detail": "outputBudgetIncomplete"
+    },
+    {
+      "file": "src/llm/responses-config.ts",
+      "category": "unknownBoundary",
+      "line": 29,
+      "column": 21,
+      "detail": "reasoningPayload"
+    },
+    {
+      "file": "src/llm/responses-config.ts",
+      "category": "unknownBoundary",
+      "line": 30,
+      "column": 67,
+      "detail": "bodyExtras"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "unknownNarrowing",
+      "line": 28,
+      "column": 26,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "unknownBoundary",
+      "line": 52,
+      "column": 22,
+      "detail": "payload"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "doubleAssertion",
+      "line": 67,
+      "column": 65,
+      "detail": "as unknown as RequestInit"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "unknownInternal",
+      "line": 73,
+      "column": 10,
+      "detail": "postResponses"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "unknownInternal",
+      "line": 89,
+      "column": 23,
+      "detail": "output"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "unknownInternal",
+      "line": 89,
+      "column": 40,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-http.ts",
+      "category": "unknownInternal",
+      "line": 89,
+      "column": 70,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 28,
+      "column": 40,
+      "detail": "reasoningItems"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownNarrowing",
+      "line": 32,
+      "column": 42,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 34,
+      "column": 35,
+      "detail": "u"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 46,
+      "column": 65,
+      "detail": "inputDetails"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 47,
+      "column": 67,
+      "detail": "promptDetails"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 48,
+      "column": 67,
+      "detail": "outputDetails"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 50,
+      "column": 51,
+      "detail": "completionDetails"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownNarrowing",
+      "line": 75,
+      "column": 40,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 77,
+      "column": 38,
+      "detail": "obj"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 85,
+      "column": 35,
+      "detail": "extractReasoningSummary"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 87,
+      "column": 35,
+      "detail": "extractReasoningSummary"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 93,
+      "column": 59,
+      "detail": "parseStreamToolArgs"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 97,
+      "column": 39,
+      "detail": "parseStreamToolArgs"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 106,
+      "column": 23,
+      "detail": "obj"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 130,
+      "column": 23,
+      "detail": "obj"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 138,
+      "column": 41,
+      "detail": "b"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownInternal",
+      "line": 148,
+      "column": 12,
+      "detail": "output"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownInternal",
+      "line": 149,
+      "column": 11,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 156,
+      "column": 46,
+      "detail": "reasoningItems"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 161,
+      "column": 40,
+      "detail": "obj"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 197,
+      "column": 34,
+      "detail": "items"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 276,
+      "column": 19,
+      "detail": "reasoningResultFields"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 288,
+      "column": 63,
+      "detail": "data"
+    },
+    {
+      "file": "src/llm/responses-parse.ts",
+      "category": "unknownBoundary",
+      "line": 289,
+      "column": 61,
+      "detail": "details"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 26,
+      "column": 31,
+      "detail": "items"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 72,
+      "column": 31,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 73,
+      "column": 51,
+      "detail": "items"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 78,
+      "column": 64,
+      "detail": "systemInputItem"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 86,
+      "column": 62,
+      "detail": "toolInputItem"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 95,
+      "column": 32,
+      "detail": "blocks"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "doubleAssertion",
+      "line": 112,
+      "column": 17,
+      "detail": "as unknown as Record<string, unknown>"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownInternal",
+      "line": 118,
+      "column": 10,
+      "detail": "appendUserImageBlock"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 118,
+      "column": 36,
+      "detail": "appendUserImageBlock"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 125,
+      "column": 31,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 129,
+      "column": 38,
+      "detail": "blocks"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 152,
+      "column": 31,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 181,
+      "column": 31,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 204,
+      "column": 25,
+      "detail": "toResponsesInput"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 205,
+      "column": 37,
+      "detail": "input"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 222,
+      "column": 25,
+      "detail": "toResponsesTools"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 242,
+      "column": 24,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 243,
+      "column": 31,
+      "detail": "tools"
+    },
+    {
+      "file": "src/llm/responses-request.ts",
+      "category": "unknownBoundary",
+      "line": 276,
+      "column": 30,
+      "detail": "body"
+    },
+    {
+      "file": "src/llm/responses-stream-accumulator.ts",
+      "category": "unknownBoundary",
+      "line": 29,
+      "column": 49,
+      "detail": "reasoningItems"
+    },
+    {
+      "file": "src/llm/responses-stream-accumulator.ts",
+      "category": "unknownBoundary",
+      "line": 56,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-accumulator.ts",
+      "category": "unknownBoundary",
+      "line": 102,
+      "column": 24,
+      "detail": "resp"
+    },
+    {
+      "file": "src/llm/responses-stream-accumulator.ts",
+      "category": "unknownInternal",
+      "line": 107,
+      "column": 55,
+      "detail": "output"
+    },
+    {
+      "file": "src/llm/responses-stream-accumulator.ts",
+      "category": "unknownInternal",
+      "line": 107,
+      "column": 72,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-stream-accumulator.ts",
+      "category": "unknownBoundary",
+      "line": 134,
+      "column": 19,
+      "detail": "streamReasoningReplay"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 26,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 27,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 36,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 49,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 51,
+      "column": 46,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 69,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 97,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 122,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 124,
+      "column": 46,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 143,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 159,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 160,
+      "column": 24,
+      "detail": "item"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 174,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 193,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 239,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 267,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 281,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 284,
+      "column": 62,
+      "detail": "resp"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 295,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 297,
+      "column": 62,
+      "detail": "resp"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 298,
+      "column": 61,
+      "detail": "details"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownNarrowing",
+      "line": 311,
+      "column": 14,
+      "detail": "errorLike"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 317,
+      "column": 39,
+      "detail": "rawDetail"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 318,
+      "column": 39,
+      "detail": "rawDetail"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 331,
+      "column": 24,
+      "detail": "resp"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 335,
+      "column": 44,
+      "detail": "err"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 350,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 353,
+      "column": 64,
+      "detail": "resp"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 369,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 385,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 401,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 417,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 429,
+      "column": 64,
+      "detail": "resp"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 437,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 455,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 481,
+      "column": 26,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 558,
+      "column": 30,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/responses-stream-events.ts",
+      "category": "unknownBoundary",
+      "line": 560,
+      "column": 52,
+      "detail": "processStreamPayload"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownInternal",
+      "line": 51,
+      "column": 23,
+      "detail": "lastFetchError"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "doubleAssertion",
+      "line": 61,
+      "column": 71,
+      "detail": "as unknown as RequestInit"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownInternal",
+      "line": 67,
+      "column": 12,
+      "detail": "openResponsesStream"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownInternal",
+      "line": 147,
+      "column": 20,
+      "detail": "output"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownInternal",
+      "line": 147,
+      "column": 37,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownBoundary",
+      "line": 157,
+      "column": 65,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownBoundary",
+      "line": 161,
+      "column": 28,
+      "detail": "outputBudgetIncomplete"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownInternal",
+      "line": 193,
+      "column": 16,
+      "detail": "output"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownInternal",
+      "line": 194,
+      "column": 15,
+      "detail": "usage"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownBoundary",
+      "line": 200,
+      "column": 33,
+      "detail": "requestId"
+    },
+    {
+      "file": "src/llm/responses-stream.ts",
+      "category": "unknownBoundary",
+      "line": 201,
+      "column": 33,
+      "detail": "requestId"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 180,
+      "column": 42,
+      "detail": "recoveryError"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 180,
+      "column": 66,
+      "detail": "originalError"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownInternal",
+      "line": 180,
+      "column": 76,
+      "detail": "preservedFailure"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 213,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 217,
+      "column": 37,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 223,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 229,
+      "column": 47,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 234,
+      "column": 44,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 262,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 275,
+      "column": 38,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 282,
+      "column": 41,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 299,
+      "column": 34,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 318,
+      "column": 29,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 330,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 352,
+      "column": 54,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 368,
+      "column": 53,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 458,
+      "column": 40,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 465,
+      "column": 59,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownInternal",
+      "line": 474,
+      "column": 11,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 546,
+      "column": 44,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 559,
+      "column": 47,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 924,
+      "column": 38,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 946,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownInternal",
+      "line": 1334,
+      "column": 18,
+      "detail": "lastError"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownNarrowing",
+      "line": 1641,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/router.ts",
+      "category": "unknownInternal",
+      "line": 1643,
+      "column": 4,
+      "detail": "attachOperationUsageToError"
+    },
+    {
+      "file": "src/llm/stream-progress.ts",
+      "category": "unknownNarrowing",
+      "line": 32,
+      "column": 43,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/stream-progress.ts",
+      "category": "unknownBoundary",
+      "line": 34,
+      "column": 42,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/stream-progress.ts",
+      "category": "unknownNarrowing",
+      "line": 41,
+      "column": 45,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/stream-terminal.ts",
+      "category": "unknownNarrowing",
+      "line": 64,
+      "column": 10,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/token-estimate-calibration.ts",
+      "category": "unknownNarrowing",
+      "line": 59,
+      "column": 28,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 147,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownBoundary",
+      "line": 147,
+      "column": 60,
+      "detail": "isRecord"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 151,
+      "column": 27,
+      "detail": "value"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 156,
+      "column": 32,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownInternal",
+      "line": 158,
+      "column": 16,
+      "detail": "current"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 183,
+      "column": 8,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 309,
+      "column": 8,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 363,
+      "column": 13,
+      "detail": "rawUsage"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 364,
+      "column": 24,
+      "detail": "performanceMetrics"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 399,
+      "column": 42,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/token-usage.ts",
+      "category": "unknownNarrowing",
+      "line": 454,
+      "column": 39,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownBoundary",
+      "line": 212,
+      "column": 19,
+      "detail": "repairConcatenatedToolArguments"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownBoundary",
+      "line": 215,
+      "column": 32,
+      "detail": "merged"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownInternal",
+      "line": 217,
+      "column": 17,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownNarrowing",
+      "line": 234,
+      "column": 41,
+      "detail": "raw"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownBoundary",
+      "line": 234,
+      "column": 66,
+      "detail": "parseToolArguments"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownBoundary",
+      "line": 237,
+      "column": 34,
+      "detail": "parseToolArguments"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownInternal",
+      "line": 243,
+      "column": 39,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownBoundary",
+      "line": 245,
+      "column": 41,
+      "detail": "parseToolArguments"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownNarrowing",
+      "line": 290,
+      "column": 48,
+      "detail": "error"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownInternal",
+      "line": 339,
+      "column": 4,
+      "detail": "mapToolChoiceToOpenAi"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownInternal",
+      "line": 354,
+      "column": 4,
+      "detail": "mapToolChoiceToAnthropic"
+    },
+    {
+      "file": "src/llm/tool-protocol.ts",
+      "category": "unknownBoundary",
+      "line": 419,
+      "column": 69,
+      "detail": "arguments"
+    },
+    {
+      "file": "src/mcp/auth/metadata.ts",
+      "category": "unknownNarrowing",
+      "line": 15,
+      "column": 29,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/auth/metadata.ts",
+      "category": "unknownBoundary",
+      "line": 23,
+      "column": 27,
+      "detail": "fetchJson"
+    },
+    {
+      "file": "src/mcp/auth/metadata.ts",
+      "category": "unknownInternal",
+      "line": 41,
+      "column": 40,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/mcp/auth/metadata.ts",
+      "category": "unknownBoundary",
+      "line": 43,
+      "column": 35,
+      "detail": "fetchJson"
+    },
+    {
+      "file": "src/mcp/auth/metadata.ts",
+      "category": "unknownBoundary",
+      "line": 100,
+      "column": 26,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/auth/registration.ts",
+      "category": "unknownBoundary",
+      "line": 46,
+      "column": 22,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/auth/token-exchange.ts",
+      "category": "unknownBoundary",
+      "line": 67,
+      "column": 22,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/auth/token-store.ts",
+      "category": "explicitAny",
+      "line": 94,
+      "column": 26,
+      "detail": "writeError"
+    },
+    {
+      "file": "src/mcp/auth/token-store.ts",
+      "category": "explicitAny",
+      "line": 103,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 22,
+      "column": 51,
+      "detail": "capabilities"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 29,
+      "column": 55,
+      "detail": "serverCapabilities"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 44,
+      "column": 46,
+      "detail": "getCapabilities"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownNarrowing",
+      "line": 71,
+      "column": 35,
+      "detail": "result"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 75,
+      "column": 45,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 82,
+      "column": 50,
+      "detail": "capabilities"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 86,
+      "column": 36,
+      "detail": "capabilities"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 91,
+      "column": 56,
+      "detail": "info"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 114,
+      "column": 39,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/client.ts",
+      "category": "unknownBoundary",
+      "line": 133,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownBoundary",
+      "line": 10,
+      "column": 34,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownNarrowing",
+      "line": 31,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownNarrowing",
+      "line": 37,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownInternal",
+      "line": 47,
+      "column": 70,
+      "detail": "candidateEntries"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownInternal",
+      "line": 55,
+      "column": 42,
+      "detail": "entries"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownInternal",
+      "line": 71,
+      "column": 15,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownNarrowing",
+      "line": 145,
+      "column": 30,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/config-file.ts",
+      "category": "unknownInternal",
+      "line": 145,
+      "column": 40,
+      "detail": "canonicalize"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownInternal",
+      "line": 106,
+      "column": 43,
+      "detail": "parseJsonc"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownNarrowing",
+      "line": 110,
+      "column": 30,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownInternal",
+      "line": 110,
+      "column": 40,
+      "detail": "canonicalize"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 113,
+      "column": 31,
+      "detail": "out"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 114,
+      "column": 59,
+      "detail": "canonicalize"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 115,
+      "column": 56,
+      "detail": "canonicalize"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownInternal",
+      "line": 147,
+      "column": 17,
+      "detail": "identity"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownNarrowing",
+      "line": 319,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 319,
+      "column": 51,
+      "detail": "asObject"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 321,
+      "column": 32,
+      "detail": "asObject"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownNarrowing",
+      "line": 338,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 359,
+      "column": 42,
+      "detail": "root"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownNarrowing",
+      "line": 387,
+      "column": 9,
+      "detail": "json"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 390,
+      "column": 30,
+      "detail": "servers"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 393,
+      "column": 33,
+      "detail": "servers"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownBoundary",
+      "line": 394,
+      "column": 38,
+      "detail": "map"
+    },
+    {
+      "file": "src/mcp/discovery.ts",
+      "category": "unknownInternal",
+      "line": 455,
+      "column": 15,
+      "detail": "json"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownInternal",
+      "line": 17,
+      "column": 18,
+      "detail": "data"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownNarrowing",
+      "line": 29,
+      "column": 12,
+      "detail": "params"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownNarrowing",
+      "line": 38,
+      "column": 12,
+      "detail": "params"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownNarrowing",
+      "line": 53,
+      "column": 42,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownBoundary",
+      "line": 55,
+      "column": 42,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownNarrowing",
+      "line": 69,
+      "column": 41,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownBoundary",
+      "line": 71,
+      "column": 42,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownNarrowing",
+      "line": 75,
+      "column": 46,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownBoundary",
+      "line": 77,
+      "column": 42,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownInternal",
+      "line": 88,
+      "column": 15,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/mcp/jsonrpc.ts",
+      "category": "unknownInternal",
+      "line": 104,
+      "column": 59,
+      "detail": "resultOrThrow"
+    },
+    {
+      "file": "src/mcp/manager.ts",
+      "category": "unknownBoundary",
+      "line": 446,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/mcp/manager.ts",
+      "category": "unknownNarrowing",
+      "line": 492,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownNarrowing",
+      "line": 12,
+      "column": 31,
+      "detail": "schema"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 16,
+      "column": 31,
+      "detail": "coerceSchema"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 18,
+      "column": 45,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 21,
+      "column": 48,
+      "detail": "properties"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownNarrowing",
+      "line": 40,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 42,
+      "column": 42,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownNarrowing",
+      "line": 63,
+      "column": 44,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 65,
+      "column": 42,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 71,
+      "column": 34,
+      "detail": "inputSchema"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 77,
+      "column": 67,
+      "detail": "parseToolDescriptor"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 111,
+      "column": 46,
+      "detail": "content"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 115,
+      "column": 44,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 126,
+      "column": 49,
+      "detail": "content"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 130,
+      "column": 44,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 134,
+      "column": 44,
+      "detail": "res"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 150,
+      "column": 44,
+      "detail": "content"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 154,
+      "column": 44,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 158,
+      "column": 58,
+      "detail": "resource"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownNarrowing",
+      "line": 176,
+      "column": 42,
+      "detail": "raw"
+    },
+    {
+      "file": "src/mcp/results.ts",
+      "category": "unknownBoundary",
+      "line": 178,
+      "column": 70,
+      "detail": "record"
+    },
+    {
+      "file": "src/mcp/runtime.ts",
+      "category": "unknownNarrowing",
+      "line": 141,
+      "column": 27,
+      "detail": "error"
+    },
+    {
+      "file": "src/mcp/runtime.ts",
+      "category": "unknownBoundary",
+      "line": 575,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/mcp/transport-http.ts",
+      "category": "unknownNarrowing",
+      "line": 27,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/mcp/transport-stdio.ts",
+      "category": "unknownNarrowing",
+      "line": 320,
+      "column": 41,
+      "detail": "error"
+    },
+    {
+      "file": "src/mcp/transport.ts",
+      "category": "unknownNarrowing",
+      "line": 39,
+      "column": 37,
+      "detail": "error"
+    },
+    {
+      "file": "src/mcp/transport.ts",
+      "category": "unknownInternal",
+      "line": 42,
+      "column": 35,
+      "detail": "name"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownInternal",
+      "line": 141,
+      "column": 21,
+      "detail": "params"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownInternal",
+      "line": 147,
+      "column": 21,
+      "detail": "params"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownInternal",
+      "line": 153,
+      "column": 19,
+      "detail": "data"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownInternal",
+      "line": 159,
+      "column": 20,
+      "detail": "result"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownBoundary",
+      "line": 179,
+      "column": 50,
+      "detail": "capabilities"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownBoundary",
+      "line": 196,
+      "column": 50,
+      "detail": "inputSchema"
+    },
+    {
+      "file": "src/mcp/types.ts",
+      "category": "unknownInternal",
+      "line": 235,
+      "column": 17,
+      "detail": "raw"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 29,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 59,
+      "column": 34,
+      "detail": "raw"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 95,
+      "column": 8,
+      "detail": "raw"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownBoundary",
+      "line": 107,
+      "column": 67,
+      "detail": "validateStringMap"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 121,
+      "column": 8,
+      "detail": "raw"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownBoundary",
+      "line": 143,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 178,
+      "column": 13,
+      "detail": "rawEntry"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownBoundary",
+      "line": 186,
+      "column": 44,
+      "detail": "entry"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 272,
+      "column": 10,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 288,
+      "column": 10,
+      "detail": "value"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownBoundary",
+      "line": 317,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownBoundary",
+      "line": 330,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownNarrowing",
+      "line": 358,
+      "column": 8,
+      "detail": "raw"
+    },
+    {
+      "file": "src/mcp/validation.ts",
+      "category": "unknownBoundary",
+      "line": 367,
+      "column": 39,
+      "detail": "entry"
+    },
+    {
+      "file": "src/noninteractive/cancellation.ts",
+      "category": "unknownInternal",
+      "line": 4,
+      "column": 31,
+      "detail": "setRawMode"
+    },
+    {
+      "file": "src/noninteractive/cancellation.ts",
+      "category": "unknownInternal",
+      "line": 8,
+      "column": 58,
+      "detail": "on"
+    },
+    {
+      "file": "src/noninteractive/cancellation.ts",
+      "category": "unknownInternal",
+      "line": 9,
+      "column": 59,
+      "detail": "off"
+    },
+    {
+      "file": "src/noninteractive/readline-prompts.ts",
+      "category": "unknownInternal",
+      "line": 12,
+      "column": 31,
+      "detail": "setRawMode"
+    },
+    {
+      "file": "src/noninteractive/start-noninteractive.ts",
+      "category": "unknownNarrowing",
+      "line": 63,
+      "column": 42,
+      "detail": "_error"
+    },
+    {
+      "file": "src/os/bun-runtime.ts",
+      "category": "unknownInternal",
+      "line": 13,
+      "column": 40,
+      "detail": "Bun"
+    },
+    {
+      "file": "src/os/bun-runtime.ts",
+      "category": "unknownNarrowing",
+      "line": 227,
+      "column": 42,
+      "detail": "error"
+    },
+    {
+      "file": "src/os/permissions.ts",
+      "category": "explicitAny",
+      "line": 46,
+      "column": 44,
+      "detail": "err"
+    },
+    {
+      "file": "src/os/permissions.ts",
+      "category": "explicitAny",
+      "line": 81,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/os/permissions.ts",
+      "category": "explicitAny",
+      "line": 96,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "unknownInternal",
+      "line": 4,
+      "column": 25,
+      "detail": "write"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "unknownInternal",
+      "line": 8,
+      "column": 31,
+      "detail": "setRawMode"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "unknownInternal",
+      "line": 9,
+      "column": 13,
+      "detail": "pause"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "unknownInternal",
+      "line": 13,
+      "column": 57,
+      "detail": "on"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "unknownInternal",
+      "line": 14,
+      "column": 58,
+      "detail": "off"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "doubleAssertion",
+      "line": 32,
+      "column": 33,
+      "detail": "as unknown as RescueProcess"
+    },
+    {
+      "file": "src/os/terminal-rescue.ts",
+      "category": "unknownInternal",
+      "line": 32,
+      "column": 44,
+      "detail": "proc"
+    },
+    {
+      "file": "src/os/terminal-write.ts",
+      "category": "unknownInternal",
+      "line": 4,
+      "column": 67,
+      "detail": "write"
+    },
+    {
+      "file": "src/os/terminal-write.ts",
+      "category": "unknownInternal",
+      "line": 29,
+      "column": 32,
+      "detail": "fd"
+    },
+    {
+      "file": "src/safety/classifier.ts",
+      "category": "unknownBoundary",
+      "line": 54,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/safety/classifier.ts",
+      "category": "unknownInternal",
+      "line": 650,
+      "column": 35,
+      "detail": "name"
+    },
+    {
+      "file": "src/safety/classifier.ts",
+      "category": "unknownInternal",
+      "line": 668,
+      "column": 35,
+      "detail": "args"
+    },
+    {
+      "file": "src/safety/classifier.ts",
+      "category": "unknownInternal",
+      "line": 669,
+      "column": 28,
+      "detail": "args"
+    },
+    {
+      "file": "src/safety/classifier.ts",
+      "category": "unknownInternal",
+      "line": 670,
+      "column": 43,
+      "detail": "args"
+    },
+    {
+      "file": "src/safety/classifier.ts",
+      "category": "unknownBoundary",
+      "line": 671,
+      "column": 47,
+      "detail": "args"
+    },
+    {
+      "file": "src/session-runtime/child-bridge.ts",
+      "category": "unknownNarrowing",
+      "line": 20,
+      "column": 23,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/child-bridge.ts",
+      "category": "unknownNarrowing",
+      "line": 30,
+      "column": 27,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/child-bridge.ts",
+      "category": "unknownNarrowing",
+      "line": 172,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/client.ts",
+      "category": "unknownNarrowing",
+      "line": 97,
+      "column": 27,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/client.ts",
+      "category": "unknownNarrowing",
+      "line": 119,
+      "column": 23,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/client.ts",
+      "category": "unknownNarrowing",
+      "line": 367,
+      "column": 27,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/client.ts",
+      "category": "unknownNarrowing",
+      "line": 521,
+      "column": 40,
+      "detail": "error"
+    },
+    {
+      "file": "src/session-runtime/discovery.ts",
+      "category": "unknownNarrowing",
+      "line": 18,
+      "column": 23,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownNarrowing",
+      "line": 67,
+      "column": 27,
+      "detail": "error"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownNarrowing",
+      "line": 72,
+      "column": 27,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownNarrowing",
+      "line": 98,
+      "column": 29,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownNarrowing",
+      "line": 114,
+      "column": 28,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownBoundary",
+      "line": 210,
+      "column": 32,
+      "detail": "inputWrites"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownBoundary",
+      "line": 211,
+      "column": 33,
+      "detail": "statusWrites"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownNarrowing",
+      "line": 445,
+      "column": 58,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/host.ts",
+      "category": "unknownNarrowing",
+      "line": 461,
+      "column": 35,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/launch.ts",
+      "category": "unknownInternal",
+      "line": 11,
+      "column": 40,
+      "detail": "Bun"
+    },
+    {
+      "file": "src/session-runtime/protocol.ts",
+      "category": "unknownInternal",
+      "line": 6,
+      "column": 19,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/protocol.ts",
+      "category": "unknownNarrowing",
+      "line": 10,
+      "column": 50,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/protocol.ts",
+      "category": "unknownInternal",
+      "line": 56,
+      "column": 43,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/protocol.ts",
+      "category": "unknownNarrowing",
+      "line": 76,
+      "column": 39,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/protocol.ts",
+      "category": "unknownNarrowing",
+      "line": 87,
+      "column": 15,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/protocol.ts",
+      "category": "unknownInternal",
+      "line": 121,
+      "column": 42,
+      "detail": "drain"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownNarrowing",
+      "line": 24,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownNarrowing",
+      "line": 28,
+      "column": 35,
+      "detail": "value"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownInternal",
+      "line": 52,
+      "column": 56,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownInternal",
+      "line": 116,
+      "column": 22,
+      "detail": "pid"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownInternal",
+      "line": 116,
+      "column": 42,
+      "detail": "identity"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownInternal",
+      "line": 119,
+      "column": 40,
+      "detail": "pid"
+    },
+    {
+      "file": "src/session-runtime/store.ts",
+      "category": "unknownInternal",
+      "line": 119,
+      "column": 60,
+      "detail": "identity"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "explicitAny",
+      "line": 257,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "unknownBoundary",
+      "line": 338,
+      "column": 27,
+      "detail": "raw"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "unknownBoundary",
+      "line": 340,
+      "column": 74,
+      "detail": "migrateCompactionBudgetKeys"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "unknownNarrowing",
+      "line": 344,
+      "column": 25,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "unknownBoundary",
+      "line": 351,
+      "column": 30,
+      "detail": "next"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "explicitAny",
+      "line": 358,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "explicitAny",
+      "line": 459,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/config.ts",
+      "category": "unknownBoundary",
+      "line": 652,
+      "column": 7,
+      "detail": "raw"
+    },
+    {
+      "file": "src/store/history-index.ts",
+      "category": "unknownBoundary",
+      "line": 40,
+      "column": 31,
+      "detail": "images"
+    },
+    {
+      "file": "src/store/history-index.ts",
+      "category": "unknownBoundary",
+      "line": 41,
+      "column": 16,
+      "detail": "transcript"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownBoundary",
+      "line": 190,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownBoundary",
+      "line": 197,
+      "column": 18,
+      "detail": "params"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownInternal",
+      "line": 197,
+      "column": 30,
+      "detail": "run"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownBoundary",
+      "line": 198,
+      "column": 18,
+      "detail": "params"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownInternal",
+      "line": 198,
+      "column": 30,
+      "detail": "get"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownBoundary",
+      "line": 199,
+      "column": 18,
+      "detail": "params"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownBoundary",
+      "line": 199,
+      "column": 30,
+      "detail": "all"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 295,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 450,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 531,
+      "column": 21,
+      "detail": "error"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 568,
+      "column": 19,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 694,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 792,
+      "column": 23,
+      "detail": "error"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownBoundary",
+      "line": 1150,
+      "column": 34,
+      "detail": "doomed"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownNarrowing",
+      "line": 1284,
+      "column": 28,
+      "detail": "row"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownNarrowing",
+      "line": 1338,
+      "column": 28,
+      "detail": "row"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "explicitAny",
+      "line": 1462,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownInternal",
+      "line": 1671,
+      "column": 56,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownInternal",
+      "line": 1678,
+      "column": 39,
+      "detail": "id"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "doubleAssertion",
+      "line": 1825,
+      "column": 24,
+      "detail": "as unknown as { changes: number }"
+    },
+    {
+      "file": "src/store/history.ts",
+      "category": "unknownInternal",
+      "line": 1825,
+      "column": 34,
+      "detail": "changes"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownNarrowing",
+      "line": 76,
+      "column": 40,
+      "detail": "error"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownNarrowing",
+      "line": 86,
+      "column": 44,
+      "detail": "error"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "explicitAny",
+      "line": 144,
+      "column": 26,
+      "detail": "writeError"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "explicitAny",
+      "line": 161,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownNarrowing",
+      "line": 404,
+      "column": 30,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownBoundary",
+      "line": 406,
+      "column": 39,
+      "detail": "rec"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownInternal",
+      "line": 412,
+      "column": 27,
+      "detail": "id"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownInternal",
+      "line": 413,
+      "column": 30,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownInternal",
+      "line": 414,
+      "column": 34,
+      "detail": "createdAt"
+    },
+    {
+      "file": "src/store/keys.ts",
+      "category": "unknownInternal",
+      "line": 431,
+      "column": 21,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownNarrowing",
+      "line": 32,
+      "column": 56,
+      "detail": "payload"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "explicitAny",
+      "line": 41,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownNarrowing",
+      "line": 132,
+      "column": 36,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownInternal",
+      "line": 132,
+      "column": 46,
+      "detail": "diagnosticMetadata"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownBoundary",
+      "line": 135,
+      "column": 32,
+      "detail": "output"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownBoundary",
+      "line": 136,
+      "column": 69,
+      "detail": "diagnosticMetadata"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownInternal",
+      "line": 148,
+      "column": 64,
+      "detail": "payload"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownInternal",
+      "line": 154,
+      "column": 85,
+      "detail": "payload"
+    },
+    {
+      "file": "src/store/logs.ts",
+      "category": "unknownInternal",
+      "line": 155,
+      "column": 61,
+      "detail": "payload"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownInternal",
+      "line": 145,
+      "column": 39,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownInternal",
+      "line": 152,
+      "column": 42,
+      "detail": "tasks"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownBoundary",
+      "line": 168,
+      "column": 18,
+      "detail": "params"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownInternal",
+      "line": 168,
+      "column": 30,
+      "detail": "run"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownBoundary",
+      "line": 169,
+      "column": 18,
+      "detail": "params"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownInternal",
+      "line": 169,
+      "column": 30,
+      "detail": "get"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownBoundary",
+      "line": 170,
+      "column": 18,
+      "detail": "params"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownBoundary",
+      "line": 170,
+      "column": 30,
+      "detail": "all"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "explicitAny",
+      "line": 215,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "unknownBoundary",
+      "line": 411,
+      "column": 29,
+      "detail": "planWriteQueue"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "explicitAny",
+      "line": 451,
+      "column": 19,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "explicitAny",
+      "line": 669,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "explicitAny",
+      "line": 688,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/plan.ts",
+      "category": "explicitAny",
+      "line": 817,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "explicitAny",
+      "line": 59,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "explicitAny",
+      "line": 82,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "unknownNarrowing",
+      "line": 220,
+      "column": 31,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "unknownBoundary",
+      "line": 222,
+      "column": 39,
+      "detail": "raw"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "doubleAssertion",
+      "line": 229,
+      "column": 16,
+      "detail": "as unknown as EngagementScope"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "unknownInternal",
+      "line": 229,
+      "column": 23,
+      "detail": "sanitizeScope"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "unknownInternal",
+      "line": 241,
+      "column": 53,
+      "detail": "scope"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "explicitAny",
+      "line": 245,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/scope.ts",
+      "category": "explicitAny",
+      "line": 270,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "unknownNarrowing",
+      "line": 55,
+      "column": 32,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "unknownNarrowing",
+      "line": 62,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "unknownBoundary",
+      "line": 64,
+      "column": 39,
+      "detail": "raw"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "unknownInternal",
+      "line": 86,
+      "column": 55,
+      "detail": "binding"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "explicitAny",
+      "line": 91,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "explicitAny",
+      "line": 120,
+      "column": 17,
+      "detail": "err"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "unknownInternal",
+      "line": 163,
+      "column": 51,
+      "detail": "binding"
+    },
+    {
+      "file": "src/store/session-model.ts",
+      "category": "unknownInternal",
+      "line": 163,
+      "column": 72,
+      "detail": "updatedAt"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 30,
+      "column": 31,
+      "detail": "value"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownBoundary",
+      "line": 56,
+      "column": 45,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownInternal",
+      "line": 56,
+      "column": 56,
+      "detail": "pickOnFailRaw"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 87,
+      "column": 13,
+      "detail": "rulesRaw"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownBoundary",
+      "line": 104,
+      "column": 41,
+      "detail": "rec"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownBoundary",
+      "line": 153,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownBoundary",
+      "line": 172,
+      "column": 39,
+      "detail": "rec"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownBoundary",
+      "line": 314,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/tools/batch-fail-policy.ts",
+      "category": "unknownBoundary",
+      "line": 326,
+      "column": 25,
+      "detail": "entry"
+    },
+    {
+      "file": "src/tools/capabilities.ts",
+      "category": "unknownBoundary",
+      "line": 150,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/command-intent.ts",
+      "category": "unknownInternal",
+      "line": 326,
+      "column": 16,
+      "detail": "background"
+    },
+    {
+      "file": "src/tools/command-intent.ts",
+      "category": "unknownInternal",
+      "line": 327,
+      "column": 15,
+      "detail": "responder"
+    },
+    {
+      "file": "src/tools/definitions.ts",
+      "category": "unknownBoundary",
+      "line": 55,
+      "column": 34,
+      "detail": "timedParameters"
+    },
+    {
+      "file": "src/tools/definitions.ts",
+      "category": "unknownBoundary",
+      "line": 73,
+      "column": 36,
+      "detail": "emptyObject"
+    },
+    {
+      "file": "src/tools/dns-native.ts",
+      "category": "unknownNarrowing",
+      "line": 36,
+      "column": 24,
+      "detail": "value"
+    },
+    {
+      "file": "src/tools/dns-native.ts",
+      "category": "unknownBoundary",
+      "line": 58,
+      "column": 79,
+      "detail": "resolveViaSystem"
+    },
+    {
+      "file": "src/tools/external-tools.ts",
+      "category": "unknownBoundary",
+      "line": 22,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/fs.ts",
+      "category": "explicitAny",
+      "line": 791,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/fs.ts",
+      "category": "explicitAny",
+      "line": 913,
+      "column": 23,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/fs.ts",
+      "category": "unknownBoundary",
+      "line": 997,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/fs.ts",
+      "category": "explicitAny",
+      "line": 1402,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownNarrowing",
+      "line": 85,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownNarrowing",
+      "line": 107,
+      "column": 27,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownInternal",
+      "line": 113,
+      "column": 52,
+      "detail": "code"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownBoundary",
+      "line": 119,
+      "column": 41,
+      "detail": "rec"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownNarrowing",
+      "line": 133,
+      "column": 43,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownNarrowing",
+      "line": 146,
+      "column": 39,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownNarrowing",
+      "line": 311,
+      "column": 42,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownInternal",
+      "line": 448,
+      "column": 25,
+      "detail": "lastNetworkError"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownInternal",
+      "line": 646,
+      "column": 22,
+      "detail": "bodyReadError"
+    },
+    {
+      "file": "src/tools/http.ts",
+      "category": "unknownInternal",
+      "line": 824,
+      "column": 21,
+      "detail": "lastNetworkError"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 40,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 48,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 56,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 75,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 188,
+      "column": 41,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 223,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/instructions.ts",
+      "category": "unknownBoundary",
+      "line": 8,
+      "column": 43,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/instructions.ts",
+      "category": "unknownBoundary",
+      "line": 20,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/interactive-session-tools.ts",
+      "category": "unknownBoundary",
+      "line": 43,
+      "column": 45,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/interactive-session-tools.ts",
+      "category": "unknownBoundary",
+      "line": 51,
+      "column": 46,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/interactive-session-tools.ts",
+      "category": "unknownBoundary",
+      "line": 56,
+      "column": 46,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/interactive-session-tools.ts",
+      "category": "unknownBoundary",
+      "line": 61,
+      "column": 44,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/interactive-session-tools.ts",
+      "category": "unknownBoundary",
+      "line": 72,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/interactive-session-tools.ts",
+      "category": "unknownNarrowing",
+      "line": 231,
+      "column": 25,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/jobs.ts",
+      "category": "unknownBoundary",
+      "line": 27,
+      "column": 49,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/tools/jobs.ts",
+      "category": "unknownNarrowing",
+      "line": 1085,
+      "column": 24,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/pdf.ts",
+      "category": "unknownBoundary",
+      "line": 38,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/pdf.ts",
+      "category": "unknownBoundary",
+      "line": 46,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/pdf.ts",
+      "category": "unknownBoundary",
+      "line": 54,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/pdf.ts",
+      "category": "unknownBoundary",
+      "line": 309,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/pentest-workflows.ts",
+      "category": "doubleAssertion",
+      "line": 28,
+      "column": 4,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/pentest-workflows.ts",
+      "category": "unknownInternal",
+      "line": 28,
+      "column": 17,
+      "detail": "runBoundedRequests"
+    },
+    {
+      "file": "src/tools/reducers/types.ts",
+      "category": "unknownInternal",
+      "line": 8,
+      "column": 14,
+      "detail": "findings"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 112,
+      "column": 45,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 122,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 133,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 141,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 154,
+      "column": 45,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 163,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 245,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 281,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "doubleAssertion",
+      "line": 857,
+      "column": 8,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 857,
+      "column": 16,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 977,
+      "column": 53,
+      "detail": "candidate"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1209,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownNarrowing",
+      "line": 1217,
+      "column": 26,
+      "detail": "value"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1300,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1301,
+      "column": 19,
+      "detail": "unwrapGatewayToolArgs"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1306,
+      "column": 36,
+      "detail": "unwrapGatewayToolArgs"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1310,
+      "column": 48,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1312,
+      "column": 35,
+      "detail": "unwrapGatewayToolArgs"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1352,
+      "column": 35,
+      "detail": "shellArgs"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1371,
+      "column": 33,
+      "detail": "url"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1501,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownNarrowing",
+      "line": 1527,
+      "column": 33,
+      "detail": "value"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1545,
+      "column": 33,
+      "detail": "name"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1546,
+      "column": 33,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1547,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1553,
+      "column": 41,
+      "detail": "rec"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1555,
+      "column": 45,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "doubleAssertion",
+      "line": 1584,
+      "column": 5,
+      "detail": "as unknown as {\n      any?: (signals: AbortSignal[]) => AbortSignal;\n    }"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1584,
+      "column": 20,
+      "detail": "anyFn"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownBoundary",
+      "line": 1646,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "doubleAssertion",
+      "line": 1739,
+      "column": 4,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1739,
+      "column": 17,
+      "detail": "runToolBatch"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "doubleAssertion",
+      "line": 1777,
+      "column": 4,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1777,
+      "column": 17,
+      "detail": "runToolBatch"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "doubleAssertion",
+      "line": 1876,
+      "column": 10,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/registry.ts",
+      "category": "unknownInternal",
+      "line": 1876,
+      "column": 28,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/tools/skills.ts",
+      "category": "unknownBoundary",
+      "line": 16,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/skills.ts",
+      "category": "unknownBoundary",
+      "line": 35,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/skills.ts",
+      "category": "unknownBoundary",
+      "line": 72,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/tool-types.ts",
+      "category": "unknownBoundary",
+      "line": 30,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/validate.ts",
+      "category": "unknownNarrowing",
+      "line": 121,
+      "column": 43,
+      "detail": "raw"
+    },
+    {
+      "file": "src/tools/validate.ts",
+      "category": "unknownBoundary",
+      "line": 126,
+      "column": 39,
+      "detail": "input"
+    },
+    {
+      "file": "src/tools/web/capture.ts",
+      "category": "unknownNarrowing",
+      "line": 389,
+      "column": 40,
+      "detail": "raw"
+    },
+    {
+      "file": "src/tools/web/fetch-core.ts",
+      "category": "doubleAssertion",
+      "line": 196,
+      "column": 4,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/web/fetch-core.ts",
+      "category": "unknownInternal",
+      "line": 196,
+      "column": 21,
+      "detail": "webFetchCore"
+    },
+    {
+      "file": "src/tools/web/fetch-core.ts",
+      "category": "unknownNarrowing",
+      "line": 1604,
+      "column": 8,
+      "detail": "err"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownNarrowing",
+      "line": 221,
+      "column": 11,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownInternal",
+      "line": 224,
+      "column": 34,
+      "detail": "web"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownInternal",
+      "line": 226,
+      "column": 39,
+      "detail": "results"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownInternal",
+      "line": 233,
+      "column": 15,
+      "detail": "title"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownInternal",
+      "line": 234,
+      "column": 13,
+      "detail": "url"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownInternal",
+      "line": 235,
+      "column": 21,
+      "detail": "description"
+    },
+    {
+      "file": "src/tools/web/providers/brave.ts",
+      "category": "unknownInternal",
+      "line": 299,
+      "column": 17,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownBoundary",
+      "line": 187,
+      "column": 30,
+      "detail": "body"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 255,
+      "column": 16,
+      "detail": "highlights"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 256,
+      "column": 10,
+      "detail": "text"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 257,
+      "column": 13,
+      "detail": "summary"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownNarrowing",
+      "line": 278,
+      "column": 30,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 280,
+      "column": 42,
+      "detail": "results"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 287,
+      "column": 15,
+      "detail": "title"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 288,
+      "column": 13,
+      "detail": "url"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 289,
+      "column": 20,
+      "detail": "highlights"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 290,
+      "column": 14,
+      "detail": "text"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 291,
+      "column": 17,
+      "detail": "summary"
+    },
+    {
+      "file": "src/tools/web/providers/exa.ts",
+      "category": "unknownInternal",
+      "line": 347,
+      "column": 17,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/web/providers/tavily.ts",
+      "category": "unknownNarrowing",
+      "line": 247,
+      "column": 11,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/web/providers/tavily.ts",
+      "category": "unknownInternal",
+      "line": 250,
+      "column": 42,
+      "detail": "results"
+    },
+    {
+      "file": "src/tools/web/providers/tavily.ts",
+      "category": "unknownInternal",
+      "line": 257,
+      "column": 15,
+      "detail": "title"
+    },
+    {
+      "file": "src/tools/web/providers/tavily.ts",
+      "category": "unknownInternal",
+      "line": 258,
+      "column": 13,
+      "detail": "url"
+    },
+    {
+      "file": "src/tools/web/providers/tavily.ts",
+      "category": "unknownInternal",
+      "line": 259,
+      "column": 17,
+      "detail": "content"
+    },
+    {
+      "file": "src/tools/web/providers/tavily.ts",
+      "category": "unknownInternal",
+      "line": 322,
+      "column": 17,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/tools/web/search.ts",
+      "category": "doubleAssertion",
+      "line": 374,
+      "column": 4,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/web/search.ts",
+      "category": "unknownInternal",
+      "line": 374,
+      "column": 13,
+      "detail": "attemptProvider"
+    },
+    {
+      "file": "src/tools/web/search.ts",
+      "category": "unknownNarrowing",
+      "line": 673,
+      "column": 8,
+      "detail": "err"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "unknownNarrowing",
+      "line": 12,
+      "column": 30,
+      "detail": "value"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "unknownInternal",
+      "line": 17,
+      "column": 42,
+      "detail": "chunks"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "unknownNarrowing",
+      "line": 21,
+      "column": 51,
+      "detail": "value"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "doubleAssertion",
+      "line": 51,
+      "column": 17,
+      "detail": "as unknown as {\n    content: unknown;\n  }"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "unknownInternal",
+      "line": 51,
+      "column": 45,
+      "detail": "proto"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "unknownInternal",
+      "line": 52,
+      "column": 14,
+      "detail": "content"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
+      "category": "unknownNarrowing",
+      "line": 62,
+      "column": 16,
+      "detail": "value"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/renderer-handle.ts",
+      "category": "unknownInternal",
+      "line": 36,
+      "column": 25,
+      "detail": "unmountError"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/resize-repaint.ts",
+      "category": "unknownInternal",
+      "line": 10,
+      "column": 50,
+      "detail": "on"
+    },
+    {
+      "file": "src/tui-v2/bootstrap/resize-repaint.ts",
+      "category": "unknownInternal",
+      "line": 11,
+      "column": 51,
+      "detail": "off"
+    },
+    {
+      "file": "src/tui-v2/components/modal/keys-modal.tsx",
+      "category": "suppression",
+      "line": 114,
+      "column": 8,
+      "detail": "eslint-disable"
+    },
+    {
+      "file": "src/tui-v2/components/modal/scope-modal.tsx",
+      "category": "suppression",
+      "line": 82,
+      "column": 8,
+      "detail": "eslint-disable"
+    },
+    {
+      "file": "src/tui-v2/components/toast/toast-host.tsx",
+      "category": "doubleAssertion",
+      "line": 248,
+      "column": 6,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tui-v2/components/toast/toast-host.tsx",
+      "category": "unknownInternal",
+      "line": 248,
+      "column": 12,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/tui-v2/composer/composer-editor.tsx",
+      "category": "suppression",
+      "line": 209,
+      "column": 8,
+      "detail": "eslint-disable"
+    },
+    {
+      "file": "src/tui-v2/composer/composer-editor.tsx",
+      "category": "suppression",
+      "line": 781,
+      "column": 8,
+      "detail": "eslint-disable"
+    },
+    {
+      "file": "src/tui-v2/composer/composer-wheel.ts",
+      "category": "unknownInternal",
+      "line": 59,
+      "column": 19,
+      "detail": "moveCursorUp"
+    },
+    {
+      "file": "src/tui-v2/composer/composer-wheel.ts",
+      "category": "unknownInternal",
+      "line": 60,
+      "column": 21,
+      "detail": "moveCursorDown"
+    },
+    {
+      "file": "src/tui-v2/composer/disable-native-textarea-scroll.ts",
+      "category": "unknownNarrowing",
+      "line": 29,
+      "column": 11,
+      "detail": "this"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownBoundary",
+      "line": 47,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownBoundary",
+      "line": 80,
+      "column": 32,
+      "detail": "items"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownBoundary",
+      "line": 147,
+      "column": 29,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownBoundary",
+      "line": 148,
+      "column": 14,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownBoundary",
+      "line": 255,
+      "column": 30,
+      "detail": "properties"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownInternal",
+      "line": 438,
+      "column": 25,
+      "detail": "rawAssistantMessage"
+    },
+    {
+      "file": "src/types.ts",
+      "category": "unknownBoundary",
+      "line": 475,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/bootstrap/console-guard.ts",
+      "category": "unknownBoundary",
+      "line": 38,
+      "column": 32,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/bootstrap/console-guard.ts",
+      "category": "doubleAssertion",
+      "line": 62,
+      "column": 18,
+      "detail": "as unknown as Record<string, unknown>"
+    },
+    {
+      "file": "src/ui-core/bootstrap/console-guard.ts",
+      "category": "unknownInternal",
+      "line": 62,
+      "column": 29,
+      "detail": "target"
+    },
+    {
+      "file": "src/ui-core/bootstrap/console-guard.ts",
+      "category": "unknownBoundary",
+      "line": 62,
+      "column": 55,
+      "detail": "target"
+    },
+    {
+      "file": "src/ui-core/bootstrap/console-guard.ts",
+      "category": "unknownInternal",
+      "line": 63,
+      "column": 37,
+      "detail": "originals"
+    },
+    {
+      "file": "src/ui-core/bootstrap/console-guard.ts",
+      "category": "unknownBoundary",
+      "line": 82,
+      "column": 32,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownBoundary",
+      "line": 20,
+      "column": 41,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownInternal",
+      "line": 20,
+      "column": 62,
+      "detail": "on"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownBoundary",
+      "line": 21,
+      "column": 42,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownInternal",
+      "line": 21,
+      "column": 63,
+      "detail": "off"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownNarrowing",
+      "line": 33,
+      "column": 31,
+      "detail": "error"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownBoundary",
+      "line": 68,
+      "column": 19,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "doubleAssertion",
+      "line": 72,
+      "column": 37,
+      "detail": "as unknown as ProcessLike"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownInternal",
+      "line": 72,
+      "column": 48,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/ui-core/bootstrap/lifecycle.ts",
+      "category": "unknownBoundary",
+      "line": 195,
+      "column": 19,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/commands/config-commands.ts",
+      "category": "suppression",
+      "line": 350,
+      "column": 14,
+      "detail": "eslint-disable"
+    },
+    {
+      "file": "src/ui-core/composer/composer-wheel.ts",
+      "category": "unknownInternal",
+      "line": 59,
+      "column": 19,
+      "detail": "moveCursorUp"
+    },
+    {
+      "file": "src/ui-core/composer/composer-wheel.ts",
+      "category": "unknownInternal",
+      "line": 60,
+      "column": 21,
+      "detail": "moveCursorDown"
+    },
+    {
+      "file": "src/ui-core/controllers/selection-controller.ts",
+      "category": "unknownInternal",
+      "line": 57,
+      "column": 50,
+      "detail": "error"
+    },
+    {
+      "file": "src/ui-core/controllers/toast-controller.ts",
+      "category": "doubleAssertion",
+      "line": 159,
+      "column": 6,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/ui-core/controllers/toast-controller.ts",
+      "category": "unknownInternal",
+      "line": 159,
+      "column": 15,
+      "detail": "resetTimer"
+    },
+    {
+      "file": "src/ui-core/ports/pager-export-port.ts",
+      "category": "unknownNarrowing",
+      "line": 36,
+      "column": 25,
+      "detail": "error"
+    },
+    {
+      "file": "src/ui-core/rendering/open-tool-output.ts",
+      "category": "unknownInternal",
+      "line": 53,
+      "column": 44,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/ui-core/rendering/open-tool-output.ts",
+      "category": "unknownNarrowing",
+      "line": 76,
+      "column": 36,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/ui-core/rendering/open-tool-output.ts",
+      "category": "unknownInternal",
+      "line": 78,
+      "column": 37,
+      "detail": "results"
+    },
+    {
+      "file": "src/ui-core/rendering/open-tool-output.ts",
+      "category": "unknownBoundary",
+      "line": 83,
+      "column": 39,
+      "detail": "e"
+    },
+    {
+      "file": "src/ui-core/rendering/open-tool-output.ts",
+      "category": "unknownBoundary",
+      "line": 118,
+      "column": 54,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/ui-core/rendering/tool-presenter.ts",
+      "category": "unknownBoundary",
+      "line": 56,
+      "column": 54,
+      "detail": "parsed"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownInternal",
+      "line": 119,
+      "column": 52,
+      "detail": "fileChanges"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownInternal",
+      "line": 120,
+      "column": 48,
+      "detail": "timestamp"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownInternal",
+      "line": 121,
+      "column": 46,
+      "detail": "endedAt"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownInternal",
+      "line": 122,
+      "column": 47,
+      "detail": "durationMs"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownBoundary",
+      "line": 231,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownBoundary",
+      "line": 258,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownBoundary",
+      "line": 280,
+      "column": 45,
+      "detail": "rec"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownBoundary",
+      "line": 357,
+      "column": 42,
+      "detail": "args"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownBoundary",
+      "line": 364,
+      "column": 51,
+      "detail": "enrichToolsFromMessages"
+    },
+    {
+      "file": "src/ui-core/state/transcript-hydrate.ts",
+      "category": "unknownBoundary",
+      "line": 474,
+      "column": 60,
+      "detail": "callArgs"
+    }
+  ]
+}

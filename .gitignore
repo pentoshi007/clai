@@ -2,6 +2,8 @@ node_modules/
 dist/
 release/
 coverage/
+.stryker-tmp/
+refactor/evidence/phase-0/reports/mutation/
 .env
 .DS_Store
 .clai/

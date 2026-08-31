@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@6.33.0/schema.json",
+  "entry": [
+    "src/index.ts",
+    "bin/clai.mjs",
+    "bin/postinstall.mjs",
+    "scripts/*.mjs",
+    "scripts/*.ts",
+    "scripts/quality/*.mjs",
+    "test/**/*.test.ts",
+    "test/**/*.test.tsx"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,mjs}"],
+  "ignore": [
+    "src/prompts/embedded.ts",
+    "src/version.generated.ts"
+  ],
+  "ignoreDependencies": [
+    "@opentui/core-*",
+    "@napi-rs/keyring",
+    "node-pty",
+    "react-devtools-core"
+  ],
+  "vitest": {
+    "config": ["vitest.config.ts"]
+  }
+}
