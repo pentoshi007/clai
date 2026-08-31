@@ -39,6 +39,7 @@ import { finalizeTurn } from "./turn/finalizer.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
+import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -3112,56 +3113,18 @@ export async function runAgentTurn(
             messages.push(recoveryUserMessage(finalizeRecovery.message));
             continue;
           }
-          let outcomeStatus: TurnOutcomeStatus = "succeeded";
-          const remainingCriteria: string[] = [];
-          if (session.planApproved.value) {
-            const livePlan = await loadPlan(session.sessionId).catch(
-              () => undefined,
-            );
-            // Foreground work decides the turn outcome. Responder children run
-            // concurrently by design and are reported separately.
-            const unfinished = livePlan ? foregroundRemaining(livePlan) : [];
-            const failedTasks =
-              livePlan?.tasks.filter(
-                (task) => !task.responderOwned && task.state === "failed",
-              ) ?? [];
-            remainingCriteria.push(
-              ...unfinished.map((task) => `[${task.id}] ${task.title}`),
-              ...failedTasks.map((task) => `[${task.id}] retry failed task: ${task.title}`),
-            );
-            const openResponderChildren = livePlan
-              ? responderOpenTasks(livePlan)
-              : [];
-            if (openResponderChildren.length > 0) {
-              remainingCriteria.push(
-                ...openResponderChildren.map(
-                  (task) =>
-                    `[${task.id}] responder result awaiting analysis: ${task.title}`,
-                ),
-              );
-            }
-            if (failedTasks.length > 0) outcomeStatus = "failed";
-            else if (unfinished.length > 0) outcomeStatus = "partial";
-          }
-          recordAnswerEvidence(outcomeState, cleaned);
-          outcomeState.outcome.status = deriveOutcomeStatus(
-            outcomeState.outcome,
-            outcomeState.evidence,
+          const finalOutcome = await resolveFinalOutcome(
+            {
+              outcomeState,
+              planApproved: session.planApproved.value,
+              loadPlan: () =>
+                loadPlan(session.sessionId).catch(() => undefined),
+              saveOutcomeState,
+            },
+            cleaned,
           );
-          await saveOutcomeState(outcomeState);
-          const unsupportedCriteria = outcomeState.outcome.criteria.filter(
-            (criterion) =>
-              criterion.required &&
-              !validateCriterionEvidence(criterion, outcomeState.evidence).ok,
-          );
-          if (unsupportedCriteria.length > 0 && outcomeStatus === "succeeded") {
-            outcomeStatus = "partial";
-          }
-          remainingCriteria.push(
-            ...unsupportedCriteria
-              .map((criterion) => criterion.statement)
-              .filter((statement) => !remainingCriteria.includes(statement)),
-          );
+          const outcomeStatus = finalOutcome.status;
+          const remainingCriteria = finalOutcome.remainingCriteria;
           moveTurn("verifying", "evaluating current criterion-linked evidence");
           moveTurn(outcomeStatus, `turn completed with ${outcomeStatus} evidence status`);
           await auditLog("agent.final", {
@@ -3177,11 +3140,7 @@ export async function runAgentTurn(
             step + 1,
             outcomeStatus,
             remainingCriteria,
-            outcomeStatus === "failed"
-              ? "One or more required plan tasks failed."
-              : outcomeStatus === "partial"
-                ? "Required outcome criteria remain unsupported by current evidence."
-                : undefined,
+            finalOutcome.reason,
             interruptedVisible ? cleaned : displayCleaned,
           );
         }
