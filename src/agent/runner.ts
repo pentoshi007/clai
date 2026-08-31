@@ -48,6 +48,7 @@ import { createToolRouting } from "./turn/tool-routing.js";
 import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
+import { decidePlanModeGate } from "./turn/plan-mode-gate.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -1863,49 +1864,29 @@ export async function runAgentTurn(
       // Plan mode: gather freely while the draft awaits accept. Once the user
       // approves (planApproved), mutates must run even if mode still says "plan"
       // for a beat — otherwise implement loops forever on gather-only blocks.
-      if (
-        isPlanMode &&
-        !session.planApproved.value &&
-        !isScratchOnlyWrite(call, scratchDir)
-      ) {
-        const cmd =
-          call.name === "terminal.send"
-            ? typeof call.args.text === "string"
-              ? call.args.text
-              : ""
-            : typeof call.args.command === "string"
-              ? call.args.command
-              : "";
-        const shellBlocked =
-          call.name === "terminal.start" ||
-          call.name === "terminal.send" ||
-          ((call.name === "shell.exec" || call.name === "shell.start") &&
-            !isPlanModeAllowedShellCommand(cmd));
-        const allowed =
-          (isPlanModeAllowedTool(call.name) ||
-            mcpRuntime?.classify(call.name)?.level === "safe") &&
-          !shellBlocked;
-        if (!allowed) {
-          const reason =
-            `plan mode — ${call.name} is blocked (gather-only). ` +
-            `Use any recon/enum/scan/research tool; do not write project files or run active exploits. ` +
-            `Put exploit/implement steps in plan.create tasks for after accept. ` +
-            `Accept the plan (y/i or /implement) to switch to agent and execute.`;
-          writeNotice("warn", reason);
-          if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
-            alreadyPrintedIds.add(toolEventId);
-          }
-          const result = { ok: false, output: reason, exitCode: 1 };
-          emitToolResult(toolEventId, result, reason);
-          writeToolOutput(toolEventId, "failed\n");
-          return {
-            ok: false,
-            call,
-            result,
-            contextOutput: reason,
-          };
+      const planModeGate = decidePlanModeGate({
+        call,
+        isPlanMode,
+        planApproved: session.planApproved.value,
+        scratchDir,
+        mcpSafe: mcpRuntime?.classify(call.name)?.level === "safe",
+      });
+      if (planModeGate.blocked) {
+        const reason = planModeGate.reason;
+        writeNotice("warn", reason);
+        if (!alreadyPrintedIds.has(toolEventId)) {
+          writeToolCall(toolEventId, call);
+          alreadyPrintedIds.add(toolEventId);
         }
+        const result = { ok: false, output: reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, reason);
+        writeToolOutput(toolEventId, "failed\n");
+        return {
+          ok: false,
+          call,
+          result,
+          contextOutput: reason,
+        };
       }
 
       const isMutatingAction =
