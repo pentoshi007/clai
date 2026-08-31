@@ -22,7 +22,6 @@ import {
 } from "../llm/system-messages.js";
 import { operationUsageFromError } from "../llm/operation-ledger.js";
 import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
-import { modelContextWindow } from "../llm/token-usage.js";
 import { providerInputTokenBudget } from "../llm/context-windows.js";
 import { resolveBuiltInProfile } from "../llm/provider-profiles.js";
 import { streamAlreadyEmitted } from "../llm/stream-progress.js";
@@ -45,6 +44,7 @@ import {
 import { createCompactionRequestEstimator } from "./turn/compaction-request-estimator.js";
 import { createCompactionDurableEnvelopeBuilder } from "./turn/compaction-durable-envelope.js";
 import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selection.js";
+import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -140,7 +140,6 @@ import {
   reasoningArtifactsForPersistence,
 } from "../llm/reasoning-artifacts.js";
 import {
-  compactMessagesWithSummary,
   estimateTokens,
   estimateMessagesTokens,
   shouldApplyAutoCompact,
@@ -202,10 +201,7 @@ import {
 import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { isScratchOnlyWrite } from "./scratch-write.js";
 import { WorkLedger } from "./durable-envelope.js";
-import {
-  compactionSinglePassInputBudget,
-  normalizeCompactionSummary,
-} from "./compaction-summary.js";
+import { normalizeCompactionSummary } from "./compaction-summary.js";
 import {
   isOperationPolicyError,
   OperationLedger,
@@ -3803,33 +3799,19 @@ export async function runAgentTurn(
         });
       writeCompactionStarted(compactionId, beforeTokens);
       try {
-        const compactionTools = selectToolDefs(
-          nativeToolsActive,
-          useCompactSystemPrompt,
-        );
-        const compactionSchemaTokens = buildContextBreakdown(
-          [],
-          compactionTools,
-        ).estimatedTotalTokens;
-        const result = await compactMessagesWithSummary(
+        const result = await executeAutomaticCompaction({
           messages,
-          summarizeForCompaction,
-          {
-            budgetTokens: 0,
-            keepRecent: AUTO_COMPACT_KEEP_RECENT,
-            singleAdmission: true,
-            ...(compactionExecutionState.replaySnapshot
-              ? { forceDirectSinglePass: true }
-              : {}),
-            singlePassInputBudgetTokens: Math.max(
-              0,
-              compactionSinglePassInputBudget(
-                contextLimitTokens ?? modelContextWindow(model, provider),
-              ) - compactionSchemaTokens,
-            ),
-            ...(durableEnvelope ? { durableEnvelope } : {}),
-          },
-        );
+          summarize: summarizeForCompaction,
+          tools: selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+          provider,
+          model,
+          contextLimitTokens,
+          keepRecent: AUTO_COMPACT_KEEP_RECENT,
+          forceDirectSinglePass: Boolean(
+            compactionExecutionState.replaySnapshot,
+          ),
+          durableEnvelope,
+        });
         const summaryBody =
           result.messages.find((m) => isCompactionMemoryMessage(m))?.content ??
           "";
