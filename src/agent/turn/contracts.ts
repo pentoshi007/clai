@@ -1,5 +1,9 @@
 import type { AgentEvent } from "../events.js";
-import type { ToolCall, ToolResult } from "../../types.js";
+import type {
+  NativeToolCall,
+  ToolCall,
+  ToolResult,
+} from "../../types.js";
 
 export interface TurnEventPort {
   readonly emit: (event: AgentEvent) => void;
@@ -19,3 +23,11 @@ export type SingleToolResult = {
   suppressedRepeat?: boolean | undefined;
   blockOrCancel?: boolean | undefined;
 };
+
+export interface BoundCall {
+  index: number;
+  id: string;
+  call: ToolCall;
+  native: NativeToolCall;
+  wireId?: string | undefined;
+}

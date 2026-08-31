@@ -46,7 +46,6 @@ import {
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { creditSuccessfulWork } from "./turn/task-credit.js";
 import {
-  applyToolEvidenceSignals,
   createTurnEvidenceFlags,
 } from "./turn/evidence-flags.js";
 import { evaluateEngagementGate } from "./turn/tool-execution/engagement-gate.js";
@@ -86,10 +85,11 @@ import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.j
 import { createToolRouting } from "./turn/tool-routing.js";
 import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
-import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { runToolGates } from "./turn/tool-execution/gates.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
+import { executeToolGroups } from "./turn/loop/group-execution.js";
+import type { BoundCall } from "./turn/contracts.js";
 import {
   createRoundRecorder,
   type RecordedToolResult,
@@ -476,7 +476,6 @@ import {
   recordAnswerEvidence,
   recordFailedHypothesis,
   recordToolEvidence,
-  completedOperationObservationDigest,
   saveOutcomeState,
   validateCriterionEvidence,
   type OutcomeEnvelope,
@@ -2844,13 +2843,6 @@ export async function runAgentTurn(
         interruptedReasoning = "";
         lowYieldResumptions = 0;
 
-        type BoundCall = {
-          index: number;
-          id: string;
-          call: ToolCall;
-          native: NativeToolCall;
-          wireId?: string | undefined;
-        };
         let bound: BoundCall[] = [];
         if (nativeToolCalls.length) {
           bound = nativeToolCalls.map((tc, index) => {
@@ -3175,58 +3167,28 @@ export async function runAgentTurn(
           isParallelSafe,
           PARALLEL_LIMIT,
         );
-        for (const group of groups) {
-          if (round.aborted || round.awaitingPlanApproval) break;
-          if (group.length === 1) {
-            const call = group[0]!;
-            const bc = callToBound.get(call);
-            if (!bc) continue;
-            if (!callIds[bc.index]) {
-              callIds[bc.index] = `tool-${++nextToolEventId}`;
-            }
-            const id = callIds[bc.index]!;
-            const replayed = replayExecutedOccurrence(bc, id);
-            if (replayed) {
-              recordResult(bc, replayed);
-              continue;
-            }
-            const res = await executeSingleTool(
-              call,
-              id,
-              options.signal || new AbortController().signal,
-            );
-            recordResult(bc, res);
-            rememberExecutedOccurrence(bc, res);
-          } else {
-            // Concurrent group — BoundCall via Map; record in document order.
-            const groupBound: BoundCall[] = [];
-            const uiIds: string[] = [];
-            for (const c of group) {
-              const bc = callToBound.get(c);
-              if (!bc) continue;
-              if (!callIds[bc.index]) {
-                callIds[bc.index] = `tool-${++nextToolEventId}`;
+        await executeToolGroups(
+          {
+            round,
+            boundFor: (groupCall) => callToBound.get(groupCall),
+            eventIdFor: (bound) => {
+              if (!callIds[bound.index]) {
+                callIds[bound.index] = `tool-${++nextToolEventId}`;
               }
-              groupBound.push(bc);
-              uiIds.push(callIds[bc.index]!);
-            }
-            const results = await Promise.all(
-              groupBound.map((bc, k) => {
-                const replayed = replayExecutedOccurrence(bc, uiIds[k]!);
-                if (replayed) return replayed;
-                return executeSingleTool(
-                  bc.call,
-                  uiIds[k]!,
-                  options.signal || new AbortController().signal,
-                );
-              }),
-            );
-            for (let k = 0; k < results.length; k += 1) {
-              recordResult(groupBound[k]!, results[k]!);
-              rememberExecutedOccurrence(groupBound[k]!, results[k]!);
-            }
-          }
-        }
+              return callIds[bound.index]!;
+            },
+            replay: replayExecutedOccurrence,
+            execute: (groupCall, uiId) =>
+              executeSingleTool(
+                groupCall,
+                uiId,
+                options.signal || new AbortController().signal,
+              ),
+            record: recordResult,
+            remember: rememberExecutedOccurrence,
+          },
+          groups,
+        );
 
         // Cards still "running" get a terminal UI result; history always pairs.
         // Only abort / plan-gate / governor leave calls un-run now.
