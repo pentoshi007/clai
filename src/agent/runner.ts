@@ -41,6 +41,7 @@ import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { creditSuccessfulWork } from "./turn/task-credit.js";
+import { evaluateEngagementGate } from "./turn/tool-execution/engagement-gate.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import {
@@ -1696,51 +1697,24 @@ export async function runAgentTurn(
       // network-hop authorization; every action (one per named target) must pass
       // the scope check below before the tool runs.
       const engagementAction = engagementActions[0];
-      let engagementDecision:
-        | ReturnType<typeof evaluateEngagementAction>
-        | undefined;
-      for (const action of engagementActions) {
-        const decisionForAction = evaluateEngagementAction(scope, action);
-        if (!decisionForAction) continue;
-        if (action === engagementAction) engagementDecision = decisionForAction;
-        if (scope) {
-          engagementGraph = await openEngagement(scope);
-          engagementRecord = beginEngagementAction(engagementGraph, {
-            tool: call.name,
-            target: decisionForAction.normalizedTarget || action.target,
-            phase: decisionForAction.phase,
-            capability: decisionForAction.capability,
-            authorized: decisionForAction.allowed,
-            reason: decisionForAction.reason,
-          });
-          await saveEngagement(engagementGraph);
-        }
-        await auditLog("engagement.policy", {
-          ...(engagementGraph ? { engagementId: engagementGraph.id } : {}),
-          ...(engagementRecord ? { actionId: engagementRecord.id } : {}),
-          tool: call.name,
-          target: decisionForAction.normalizedTarget,
-          phase: decisionForAction.phase,
-          capability: decisionForAction.capability,
-          allowed: decisionForAction.allowed,
-          reason: decisionForAction.reason,
-        });
-        if (!decisionForAction.allowed) {
-          const target =
-            decisionForAction.normalizedTarget ||
-            action.target ||
-            scopeTarget ||
-            "requested target";
-          const reason = outOfScopeToolMessage({
-            target,
-            reason: decisionForAction.reason,
-            allowed: scope?.authorizedTargets,
-          });
-          writeToolBlocked(toolEventId, call.name, reason);
-          const result = { ok: false, output: reason, exitCode: 1 };
-          emitToolResult(toolEventId, result, reason);
-          return { ok: false, call, result, contextOutput: reason };
-        }
+      const engagementGate = await evaluateEngagementGate(
+        {
+          scope,
+          audit: (event, payload) => auditLog(event, payload),
+        },
+        call,
+        engagementActions,
+        scopeTarget,
+      );
+      const engagementDecision = engagementGate.decision;
+      engagementGraph = engagementGate.graph;
+      engagementRecord = engagementGate.record;
+      if (engagementGate.blockedReason) {
+        const reason = engagementGate.blockedReason;
+        writeToolBlocked(toolEventId, call.name, reason);
+        const result = { ok: false, output: reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, reason);
+        return { ok: false, call, result, contextOutput: reason };
       }
 
       const authorization = await authorizeToolExecution(
