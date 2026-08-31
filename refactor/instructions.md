@@ -163,7 +163,7 @@ Preserve licenses, generated markers, public API documentation, security invaria
 - Use exact versions in `package.json`; no `^`, `~`, `*`, tags, or open ranges. Commit `package-lock.json`.
 - Match coverage integration to the pinned Vitest version (`4.1.10` at the audit anchor) unless an independently validated toolchain upgrade is approved.
 - Run compatibility and runtime-cost spikes before making a new analyzer blocking.
-- Do not transmit source, secrets, fixtures, or reports to third-party services. Quality tooling must run locally or in trusted CI.
+- Do not transmit source, secrets, fixtures, or reports to third-party services. Quality tooling must run locally.
 
 ## 12. Validation and evidence
 

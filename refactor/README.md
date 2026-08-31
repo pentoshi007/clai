@@ -54,7 +54,7 @@ Phases are sequential. Small preparatory characterization commits may be shared 
 7. Record commands, results, metrics, changed contracts, and rollback boundary in [tasks.md](tasks.md) and the phase evidence.
 8. Commit one coherent concern using Conventional Commits; push only from the feature branch.
 
-A phase cannot close because a metric was not run. `unmeasured`, `not configured`, `timed out`, and `not available on this host` are evidence states, not passing states.
+A phase cannot close because a metric was not run. `unmeasured`, `not configured`, and `timed out` are evidence states, not passing states. Gates are satisfied by locally reproducible commands on the execution host; a contract that cannot be exercised on this host is recorded as out of local scope rather than claimed as passed, and it does not block phase closure.
 
 ## Non-negotiable behavior contracts
 

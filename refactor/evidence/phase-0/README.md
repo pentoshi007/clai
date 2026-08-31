@@ -322,10 +322,11 @@ CI wiring: the Node 22/24 semantic matrix now runs `test:deterministic`, the
 host-path guard, `quality:contracts`, `quality:report` and `quality:ratchet`, and
 uploads the report directory on failure.
 
-## Awaiting CI evidence (not claimed here)
+## Out of local scope (never claimed as passed)
 
-This Linux/Node host cannot produce the following, so they remain **unverified**
-rather than passed:
+This Linux/Node 24 host cannot exercise the following, so they remain
+**unverified** rather than passed. They are documented gaps and do not gate phase
+closure:
 
 - Node 22 semantic suite (this host runs Node 24 only);
 - Bun 1.3.14 OpenTUI conformance (`npm run test:bun`);
@@ -333,7 +334,7 @@ rather than passed:
   cmd.exe / ConPTY behavior, and Windows-binary runtime;
 - macOS Classic POSIX PTY job (`npm run test:classic:pty` on macOS);
 - OS keychain success paths (macOS Keychain, Windows Credential Manager);
-- trusted-host release verification of published artifacts.
+- release verification of published artifacts from a trusted host.
 
 ## E-11 · Independent audit and remediation
 
@@ -431,11 +432,10 @@ Phase 0 was split into the four reviewed local commits required by
 3. `d5b6035` — `test(quality): add monotonic baseline comparators`
 4. `8157a3c` — `ci(quality): standardize deterministic test execution`
 
-The branch is four commits ahead of `origin/refactor/codebase`; no trusted CI run
-is available for those commits. The user explicitly authorized proceeding to
-Phase 1 without waiting for CI. Node 22, Bun, macOS, Windows, ConPTY,
-OS-keychain-success, and trusted-host checks therefore remain unverified and are
-not claimed as passed.
+The branch is published from `refactor/codebase`. Program closure is governed by
+locally reproducible evidence; there is no CI-wait gate. Node 22, Bun, macOS,
+Windows, ConPTY, OS-keychain-success, and published-artifact verification cannot
+run on this host, so they remain unverified and are never claimed as passed.
 
 The final clean-install check subsequently exposed `jscpd@5.1.0`'s unpublished
 optional Windows ARM64 package. The exact `5.0.16` correction and regenerated

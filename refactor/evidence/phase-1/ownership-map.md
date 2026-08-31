@@ -164,4 +164,4 @@ The continuation overlap function is first because it depends only on two string
 - Canonical deterministic suite passed: 561 files, 5,758 tests, 12 skipped.
 - Phase 1 required characterization matrix passed: 50 files, 446 tests.
 - Build and release verification passed.
-- Trusted CI and unavailable platform checks are not claimed by this map.
+- Platform contracts that cannot run on this host are not claimed by this map.

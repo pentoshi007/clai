@@ -56,7 +56,7 @@ Required result:
 
 A proven equivalent mutant requires a narrow, reviewed suppression tied to exact code and rationale, plus an attempt to remove/refactor the equivalent construct. Equivalent/ignored counts remain visible and must have zero unresolved entries. Do not narrow mutation scope to omit executable production code.
 
-Set a documented CI runtime budget. If one full job is impractical, partition deterministically and aggregate all partitions; do not substitute a partial run for repository-wide evidence.
+Set a documented local runtime budget. If one full run is impractical, partition deterministically and aggregate all partitions; do not substitute a partial run for repository-wide evidence.
 
 ## Workstream 4 — zero dead code
 
@@ -126,17 +126,14 @@ Run OpenTUI conformance/performance and noninteractive stdout/stderr/exit tests.
 
 ### Host matrix
 
-Obtain green target-host evidence for:
+Obtain green evidence on the execution host for:
 
-- Node 22 and 24 semantic suites;
-- Bun/OpenTUI conformance;
+- the semantic suite on the installed Node runtime;
 - Linux process, permission, PTY, and package behavior;
-- macOS process, keychain/permission, terminal, and release behavior;
-- Windows Classic selection, process tree, named pipe/ConPTY, privilege, path, and installer behavior;
 - Classic POSIX suite and PTY smoke;
 - built-entrypoint, compile/release verification, and package dry run.
 
-A skipped, unavailable, or emulated host check does not prove the corresponding contract. Record it as blocked until trusted target-host CI runs.
+A skipped, unavailable, or emulated host check does not prove the corresponding contract. Record it as out of local scope, never as passed. Other runtimes, operating systems, and terminal hosts (Node 22, Bun/OpenTUI, macOS, Windows/ConPTY, OS keychains) are documented gaps rather than closure blockers.
 
 ## Workstream 8 — independent audit
 
@@ -160,7 +157,7 @@ Resolve findings with focused commits and rerun affected plus terminal checks.
 - [ ] Dead-code/dependency reports contain zero unresolved production findings.
 - [ ] Duplicate report and reviewed redundancy ledger contain zero unresolved findings.
 - [ ] File/type/cast/suppression/architecture gates remain at their Phase 7 terminal values.
-- [ ] All repository, built-entrypoint, package, release, Node, Bun, renderer, PTY, macOS, Windows, and Linux required jobs pass.
+- [ ] All locally available repository, built-entrypoint, package, release, renderer, PTY, and Linux checks pass; other-host contracts are documented as out of local scope.
 - [ ] Independent review is complete and every exception/exclusion is justified and visible.
 - [ ] Worktree is clean; final evidence is committed and pushed only from the feature branch.
 

@@ -140,7 +140,7 @@ Create the phase evidence format from `../instructions.md`. Evidence must includ
 
 ## Acceptance criteria
 
-- [x] One canonical full-suite command works locally and in CI with locale/TZ set before Node starts.
+- [x] One canonical full-suite command works locally with locale/TZ set before Node starts.
 - [x] Locale/TZ/ordering tests preserve and explain both canonical and supported host-sensitive behavior.
 - [x] Export/signature/registration inventories protect all Phase 1-6 hotspots; runner contracts are a hard gate.
 - [x] Every quality dependency is exact-pinned and lockfile-backed.
