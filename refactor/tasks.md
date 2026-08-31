@@ -160,7 +160,7 @@ Milestone boundary: one module and debt class at a time; no repository-wide mech
 
 Plan: [plan/phase-8.md](plan/phase-8.md)
 
-- [!] **P8-01 Reach 100% coverage** — Statements, branches, functions, and lines in the defined production scope, aggregating platform-specific evidence where required.
+- [~] **P8-01 Reach 100% coverage** — Statements, branches, functions, and lines in the defined production scope, aggregating platform-specific evidence where required.
 - [!] **P8-02 Reach CRAP `<25`** — Every measured function below the gate with final complexity/coverage reports.
 - [!] **P8-03 Kill all mutants** — Zero survived and zero no-coverage mutants; any proven equivalent exclusion is narrow, reviewed, and documented.
 - [!] **P8-04 Remove dead code/dependencies** — Zero unresolved production findings from the pinned analyzer and manual review.
@@ -170,7 +170,7 @@ Plan: [plan/phase-8.md](plan/phase-8.md)
 - [ ] **P8-08 Independent final review** — Audit behavior evidence, exclusions, reports, task completion, and rollback history.
 - [ ] **P8-09 Close and push program** — Commit final evidence, push the feature branch, and open review without bypassing protections.
 
-Evidence: [phase-8 evidence](evidence/phase-8/README.md). Locally green: typecheck, prompt sync, architecture (5), deterministic suite (599 files / 6,002 passed / 12 skipped), build, contracts, changed-code gate, ratchet (0 regressions), `git diff --check`. NOT met and reported as unmeasured rather than passing: coverage, CRAP, mutation, dead-code/duplication re-runs. Out of local scope: Node 22, Bun/OpenTUI, macOS, Windows/ConPTY, OS keychain, interactive PTY, trusted-host release verification.
+Evidence: [phase-8 evidence](evidence/phase-8/README.md). Locally green: typecheck, prompt sync, architecture (5), deterministic suite (599 files / 6,002 passed / 12 skipped), build, contracts, changed-code gate, ratchet (0 regressions), `git diff --check`. Coverage measured at 70.58% statements / 62.68% branches / 73.43% functions / 73.04% lines against a 100% gate. NOT met and reported as unmeasured rather than passing: CRAP, mutation, dead-code/duplication re-runs. Out of local scope: Node 22, Bun/OpenTUI, macOS, Windows/ConPTY, OS keychain, interactive PTY, trusted-host release verification.
 
 Milestone boundary: terminal gates require measured evidence from locally reproducible commands. A contract that cannot run on the execution host is documented as out of local scope and does not gate closure. Suggested final subject: `refactor(codebase): complete behavior-preserving modernization`.
 
