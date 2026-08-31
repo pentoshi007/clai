@@ -36,6 +36,7 @@ import type {
   TurnOutputState,
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
+import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -3407,112 +3408,54 @@ export async function runAgentTurn(
         const sequenceDecision = loopGuard.observeActionSequence(actionSequenceCalls);
 
         if (sequenceDecision.suppress) {
-          const reason = sequenceDecision.terminal
-            ? "The model repeated the same action sequence after it was already suppressed. No commands were run again."
-            : sequenceDecision.oscillation
-              ? "This exact action sequence already completed earlier this turn (the agent is oscillating back to finished work). No commands were run again; every one of these results is already in context — synthesize them and either advance to a genuinely new action or finish."
-              : "The same action sequence already ran in the previous model round. No commands were run again; reuse the existing results and choose a materially different next action or finish.";
-          writeNotice("warn", reason);
-          const suppressedResults = bound.map((b) => {
-            const duplicate = runIds.has(b.id);
-            const priorObservation = duplicate
-              ? loopGuard.getPriorObservation(b.call.name, b.call.args)
-              : undefined;
-            const resultReason = duplicate
-              ? reason +
-                (priorObservation
-                  ? `\n\nPrior successful result for ${b.call.name}:\n${priorObservation}`
-                  : "")
-              : deferReason;
-            const result: ToolResult = {
-              ok: duplicate,
-              output: resultReason,
-              exitCode: duplicate ? 0 : 130,
-              ...(duplicate ? { suppressedRepeat: true } : {}),
-            };
-            return { b, resultReason, result };
-          });
-          // Sequence suppression happens before the normal queued-card flush.
-          // Complete every card explicitly so streamed queued calls never turn
-          // into empty "done" rows when the repeated sequence is skipped.
-          for (const { b, resultReason, result } of suppressedResults) {
-            const queued = deferredToolCalls[b.index];
-            const eventId = queued?.eventId ?? `tool-${++nextToolEventId}`;
-            writeToolCall(eventId, b.call);
-            alreadyPrintedIds.add(eventId);
-            emit({ type: "tool-start", id: eventId });
-            const output = resultReason.endsWith("\n")
-              ? resultReason
-              : `${resultReason}\n`;
-            writeToolOutput(eventId, output);
-            emitToolResult(eventId, result, resultReason);
-          }
-          const suppressedCallList = suppressedResults
-            .map(({ b }) => `${b.call.name} ${formatToolArgs(b.call)}`)
-            .join("; ");
-          const deniedContent = (b: BoundCall, resultReason: string): string =>
-            `Tool ${b.call.name} result (exit=130, ok=false):\n` +
-            `NOT EXECUTED — suppressed repeat. ${resultReason}\n\n` +
-            `Suppressed call: ${b.call.name} ${formatToolArgs(b.call)}. ` +
-            "This exact call is blocked for the rest of the turn; its earlier result is already in context — use it, or choose a different action.";
-          if (historyNativeCalls.length) {
-            appendAssistantWithTools(
+          const suppression = suppressRepeatedActionSequence(
+            {
               messages,
-              beforeTool ?? "",
+              notify: writeNotice,
+              queuedEventId: (index) => deferredToolCalls[index]?.eventId,
+              allocateEventId: () => `tool-${++nextToolEventId}`,
+              writeToolCall,
+              markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
+              emitToolStart: (eventId) =>
+                emit({ type: "tool-start", id: eventId }),
+              writeToolOutput: (eventId, chunk) =>
+                writeToolOutput(eventId, chunk),
+              emitToolResult,
+              priorObservation: (priorCall) =>
+                loopGuard.getPriorObservation(priorCall.name, priorCall.args),
+              pushAssistantHistory: (text) =>
+                pushAssistantHistory(text, completion),
+              upsertActionCycleRecovery,
+              unreadResponderResults: () => responderClaims.size > 0,
+              currentSignature: () =>
+                loopGuard.currentActionSequenceSignature(),
+            },
+            {
+              verdict: sequenceDecision,
+              bound,
+              runIds,
+              deferReason,
+              beforeTool,
               historyNativeCalls,
-              completion.reasoningBlock ??
-                (assistantText.hasThinking && assistantText.thinkContent
-                  ? { text: assistantText.thinkContent }
-                  : undefined),
-              completion.reasoningArtifacts,
-            );
-            for (const { b, resultReason } of suppressedResults) {
-              appendToolResult(messages, b.id, deniedContent(b, resultReason), b.call.name, false);
-            }
-          } else {
-            const standardizedContent =
-              (beforeTool ? beforeTool.trim() + "\n\n" : "") +
-              bound
-                .map((b) => `\`\`\`tool\n${JSON.stringify(b.call)}\n\`\`\``)
-                .join("\n\n");
-            pushAssistantHistory(standardizedContent, completion);
-            for (const { b, resultReason } of suppressedResults) {
-              messages.push({ role: "tool", content: deniedContent(b, resultReason) });
-            }
-          }
-          if (sequenceDecision.terminal) {
-            const remainingCriteria = responderClaims.size > 0
-              ? ["Analyze and acknowledge the delivered Responder result without repeating completed foreground work."]
-              : ["Continue with a materially different action that can produce new evidence."];
+              completion,
+              assistantThinkContent: assistantText.thinkContent,
+              hasThinking: assistantText.hasThinking,
+            },
+          );
+          if (suppression.kind === "stop") {
             outcomeState.outcome.status = "partial";
             await saveOutcomeState(outcomeState);
             moveTurn("partial", "repeated identical action sequence");
-            const recoveryObservation = bound
-              .map((entry) => loopGuard.getPriorObservation(entry.call.name, entry.call.args))
-              .find((text) => typeof text === "string" && text.trim().length > 0);
             return finishTurn(
-              `Stopped an identical action cycle before it could execute again. Blocked this turn: ${suppressedCallList}. Their earlier results are in context — continue from those, do not re-issue the same calls.`,
+              suppression.answer,
               productiveSteps,
               "partial",
-              remainingCriteria,
-              "The model repeated an identical action sequence without a new premise or state change.",
+              suppression.remainingCriteria,
+              suppression.reason,
               undefined,
-              {
-                calls: suppressedCallList,
-                ...(recoveryObservation?.trim()
-                  ? { observation: recoveryObservation.trim().slice(0, 4000) }
-                  : {}),
-                signature: loopGuard.currentActionSequenceSignature() ?? suppressedCallList,
-              },
+              suppression.loopGuardStop,
             );
           }
-          upsertActionCycleRecovery(
-            reason +
-              ` The repeated calls were: ${suppressedCallList}.` +
-              (responderClaims.size > 0
-                ? " A delivered Responder result is still unread: analyze the available result, gather only genuinely necessary bounded evidence, then call job.read before returning to foreground work."
-                : " The original successful tool results remain in context. Reassess that evidence and either finish or select a materially different action; do not replay completed work."),
-          );
           continue;
         }
 
