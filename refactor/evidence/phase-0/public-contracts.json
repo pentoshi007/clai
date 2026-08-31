@@ -1111,7 +1111,7 @@
         {
           "name": "AggregateProviderError",
           "kind": "class",
-          "type": "typeof import(\"<repo>/src/llm/router\", { with: { \"resolution-mode\": \"import\" } }).AggregateProviderError"
+          "type": "typeof import(\"<repo>/src/llm/routing/failure-report\", { with: { \"resolution-mode\": \"import\" } }).AggregateProviderError"
         },
         {
           "name": "API_KEY_TOAST_KEY",

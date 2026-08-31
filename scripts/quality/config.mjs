@@ -51,6 +51,13 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/llm/routing/attempt-stream.ts": "src/llm/router.ts",
+  "src/llm/routing/attempt-complete.ts": "src/llm/router.ts",
+  "src/llm/routing/key-rotation.ts": "src/llm/router.ts",
+  "src/llm/routing/failure-report.ts": "src/llm/router.ts",
+  "src/llm/routing/error-classification.ts": "src/llm/router.ts",
+  "src/llm/routing/attempt-request.ts": "src/llm/router.ts",
+  "src/llm/routing/provider-selection.ts": "src/llm/router.ts",
   "src/llm/wire/model-catalog.ts": "src/llm/http.ts",
   "src/llm/wire/abort-race.ts": "src/llm/http.ts",
   "src/llm/wire/openai-stream.ts": "src/llm/http.ts",

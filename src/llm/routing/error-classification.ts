@@ -1,0 +1,197 @@
+import type {
+  CompletionRequest,
+  ProviderId,
+  ReasoningEffort,
+} from "../../types.js";
+import {
+  isReasoningUnsupported,
+  learnedRouteEfforts,
+} from "../capabilities.js";
+import { fallbackEffortsFor } from "../effort-fallback.js";
+import {
+  isReasoningUnsupportedError,
+  ProviderError,
+  STREAM_STALL_MARKER,
+} from "../http.js";
+import { resolveBuiltInProfile } from "../provider-profiles.js";
+import { EFFORT_SCALE, nearestAcceptedEffort } from "../reasoning-controls.js";
+import { mentionsReasoning } from "../reasoning-errors.js";
+import { streamAlreadyEmitted } from "../stream-progress.js";
+
+export const MAX_RETRIES = 6;
+
+// Wait at most this long overall per attempt (up to 2 minutes total wait budget).
+export const MAX_RETRY_WAIT_MS = 120_000;
+
+export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
+  return new Promise((resolve, reject) => {
+    let timer: NodeJS.Timeout;
+    let cleanup = (): void => {};
+    const abort = (): void => {
+      clearTimeout(timer);
+      cleanup();
+      reject(signal?.reason ?? new Error("Aborted"));
+    };
+    cleanup = (): void => {
+      signal?.removeEventListener("abort", abort);
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+export function isRateLimited(error: unknown): boolean {
+  return error instanceof ProviderError && error.status === 429;
+}
+
+export function isServerUnavailable(error: unknown): boolean {
+  if (!(error instanceof ProviderError)) return false;
+  const status = error.status ?? 0;
+  return status === 502 || status === 503 || status === 504;
+}
+
+function isServerError(error: unknown): boolean {
+  if (!(error instanceof ProviderError)) return false;
+  const status = error.status ?? 0;
+  return status >= 500 && status <= 504;
+}
+
+function isReasoningRelatedServerError(error: unknown): boolean {
+  if (!isServerError(error)) return false;
+  return mentionsReasoning(error);
+}
+
+export function shouldContinueEffortLadder(error: unknown): boolean {
+  return (
+    isReasoningUnsupportedError(error) || isReasoningRelatedServerError(error)
+  );
+}
+
+export function effortCandidatesFor(
+  providerId: ProviderId,
+  model: string,
+  requested: ReasoningEffort,
+): readonly ReasoningEffort[] {
+  const learned = learnedRouteEfforts(providerId, model);
+  if (learned?.length) {
+    const usable = learned.filter(
+      (effort) => effort !== requested && effort !== "none",
+    );
+    const corrected = nearestAcceptedEffort(requested, usable);
+    const scaledLearned = EFFORT_SCALE.find((effort) => effort === corrected);
+    return scaledLearned ? [scaledLearned] : [];
+  }
+  const declared = resolveBuiltInProfile({ provider: providerId, model })
+    .reasoning.acceptedEfforts;
+  if (declared.length === 0) return fallbackEffortsFor(requested);
+  const nearest = nearestAcceptedEffort(requested, declared);
+  if (nearest === undefined || nearest === requested) return [];
+  const scaled = EFFORT_SCALE.find((effort) => effort === nearest);
+  return scaled ? [scaled] : [];
+}
+
+export function shouldEnterEffortLadder(
+  error: unknown,
+  thinking: CompletionRequest["thinking"],
+  providerId: ProviderId,
+  model: string,
+  singleDispatch: boolean,
+): boolean {
+  if (isReasoningUnsupportedError(error)) return true;
+  if (singleDispatch) return false;
+  if (!thinking?.enabled) return false;
+  if (isReasoningUnsupported(providerId, model)) return false;
+  return isReasoningRelatedServerError(error);
+}
+
+export function isCacheOnlyColdError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const body = error instanceof ProviderError ? (error.body ?? "") : "";
+  return /cache_only_cold|cache-only admission/i.test(`${message} ${body}`);
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("socket connection was closed unexpectedly") ||
+    msg.includes("econnreset") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnrefused") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network error") ||
+    msg.includes("timeout") ||
+    msg.includes("unexpected end of file") ||
+    msg.includes("premature close")
+  );
+}
+
+export function isRetriableError(error: unknown): boolean {
+  if (streamAlreadyEmitted(error)) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  if (new RegExp(STREAM_STALL_MARKER, "i").test(message)) {
+    if (/for \d+s after it had already started/i.test(message)) return false;
+  }
+  if (
+    /stream stalled|request timed out before any response|stream transport timeout/i.test(
+      message,
+    )
+  ) {
+    return true;
+  }
+  if (isRateLimited(error)) return true;
+  if (error instanceof ProviderError) {
+    const status = error.status ?? 0;
+    if (status >= 500 && status <= 504) {
+      return true;
+    }
+  }
+  return isTransientNetworkError(error);
+}
+
+export function retryWaitMs(error: unknown, attempt: number): number {
+  if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
+    return Math.ceil(error.retryAfterSeconds * 1000);
+  }
+  // Exponential backoff: 2s, 6s, 18s, 54s, etc.
+  return Math.pow(3, attempt) * 2_000;
+}
+
+export function networkRetryWaitMs(attempt: number): number {
+  return Math.pow(2, attempt) * 1_000;
+}
+
+/**
+ * True when a stream/complete failure was a fully empty model completion — no
+ * visible text and no tool calls. Safe to retry with a nudge (common right
+ * after auto-compaction when the tail ends on re-injected system context).
+ */
+export function isEmptyCompletionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /completed without a visible answer|no visible answer|returned no content|no completion text|response was empty|empty response|returned no text/i.test(
+    message,
+  );
+}
+
+export function isModelNotFoundError(error: unknown): boolean {
+  const status =
+    error && typeof error === "object" && "status" in error
+      ? Number((error as { status?: number }).status)
+      : undefined;
+  if (status !== 404 && status !== 400) return false;
+  const body =
+    error && typeof error === "object" && "body" in error
+      ? String((error as { body?: string }).body ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error);
+  const hay = `${message}\n${body}`.toLowerCase();
+  if (status === 404) return true;
+  return /model[_ ]?not[_ ]?found|no such model|unknown model|model does not exist|invalid model|unavailable[- ]model/.test(
+    hay,
+  );
+}
