@@ -33,10 +33,18 @@ import {
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
 import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
-import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
+import type {
+  SingleToolResult,
+  TurnEventPort,
+  TurnOutputState,
+} from "./turn/contracts.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
+import {
+  createMcpAgentCallFailure,
+  createMcpAgentToolExecutor,
+} from "./turn/mcp-agent-tools.js";
 import {
   createResponderInboxRefresher,
   findResponderWakeNotification,
@@ -455,39 +463,6 @@ export {
   type SessionPolicy,
 } from "./session-policy.js";
 export { type ConfirmPort } from "./confirm-port.js";
-
-function mcpAgentToolTarget(args: Record<string, unknown>): string | readonly string[] | undefined {
-  if (Array.isArray(args.servers)) {
-    return args.servers.filter((entry): entry is string => typeof entry === "string");
-  }
-  if (typeof args.server === "string") return args.server;
-  return undefined;
-}
-
-async function runMcpAgentTool(
-  mcp: McpRuntime,
-  call: ToolCall,
-): Promise<ToolResult> {
-  const args = call.args ?? {};
-  if (call.name === "mcp.list") return mcp.agentList();
-  if (call.name === "mcp.tools") {
-    return mcp.agentTools(typeof args.server === "string" ? args.server : undefined);
-  }
-  if (call.name === "mcp.enable") return mcp.agentEnable(mcpAgentToolTarget(args));
-  if (call.name === "mcp.connect") {
-    return mcp.agentConnect(typeof args.server === "string" ? args.server : "");
-  }
-  return mcp.agentLogin(typeof args.server === "string" ? args.server : "");
-}
-
-function mcpAgentOutput(call: ToolCall, result: ToolResult): string {
-  const text = result.output.trim();
-  if (text.length > 0) return text;
-  return result.ok
-    ? `${call.name} completed successfully with no textual output.`
-    : `${call.name} failed with no textual output (exit ${result.exitCode ?? 1}).`;
-}
-
 
 /**
  * A foreground task waits for a responder child only when the plan
@@ -1731,87 +1706,38 @@ export async function runAgentTurn(
      * cut off must stay an append (with its precondition) instead of becoming
      * a full overwrite.
      */
-    type SingleToolResult = {
-      ok: boolean;
-      call: ToolCall;
-      result: ToolResult;
-      contextOutput: string;
-      lastAnswer?: string | undefined;
-      aborted?: boolean | undefined;
-      suppressedRepeat?: boolean | undefined;
-      blockOrCancel?: boolean | undefined;
-    };
-
     function showMcpAgentCall(toolEventId: string, call: ToolCall): void {
       if (alreadyPrintedIds.has(toolEventId)) return;
       writeToolCall(toolEventId, call);
       alreadyPrintedIds.add(toolEventId);
     }
 
-    function failMcpAgentCall(
-      toolEventId: string,
-      call: ToolCall,
-      reason: string,
-      cancelled = false,
-    ): SingleToolResult {
-      showMcpAgentCall(toolEventId, call);
-      const result = { ok: false, output: reason, exitCode: 1 };
-      const body = cancelled ? `cancelled: ${reason}` : reason;
-      writeToolOutput(toolEventId, `${body}\n`, { replace: true });
-      emitToolResult(toolEventId, result, reason);
-      return {
-        ok: false,
-        call,
-        result,
-        contextOutput: reason,
-        ...(cancelled ? { blockOrCancel: true } : {}),
-      };
-    }
-
-    async function executeMcpAgentCall(
-      runtime: McpRuntime,
-      call: ToolCall,
-      toolEventId: string,
-    ): Promise<SingleToolResult> {
-      const readOnly = call.name === "mcp.list" || call.name === "mcp.tools";
-      if (!readOnly && agentMode === "ask") {
-        return failMcpAgentCall(
-          toolEventId,
-          call,
-          `${call.name} is not available in ask mode because it changes MCP session state. Switch to agent mode.`,
-        );
-      }
-      if (!readOnly) {
+    const mcpAgentToolPorts = {
+      askMode: agentMode === "ask",
+      showCall: showMcpAgentCall,
+      writeOutput: (toolEventId: string, chunk: string) =>
+        writeToolOutput(toolEventId, chunk, { replace: true }),
+      emitResult: emitToolResult,
+      confirm: async (call: ToolCall): Promise<boolean> => {
         const releasePrompt = await promptMutex.acquire();
-        let confirmed = true;
         try {
-          confirmed = await confirmToolExecution(
+          const confirmed = await confirmToolExecution(
             call,
             Boolean(options.autoConfirm),
             session,
             confirmPort,
           );
           restoreInteractiveStdin();
+          return confirmed;
         } finally {
           releasePrompt();
         }
-        if (!confirmed) {
-          return failMcpAgentCall(toolEventId, call, "Cancelled.", true);
-        }
-      }
-      showMcpAgentCall(toolEventId, call);
-      const result = await runMcpAgentTool(runtime, call);
-      const shown = mcpAgentOutput(call, result);
-      loopGuard.recordAttempt(step, call.name, call.args, result.ok, 0, shown);
-      writeToolOutput(toolEventId, `${shown}\n`, { replace: true });
-      emitToolResult(toolEventId, { ...result, output: shown }, shown);
-      return {
-        ok: result.ok,
-        call,
-        result: { ...result, output: shown },
-        contextOutput: shown,
-      };
-    }
+      },
+      recordAttempt: (call: ToolCall, ok: boolean, output: string) =>
+        loopGuard.recordAttempt(step, call.name, call.args, ok, 0, output),
+    };
+    const failMcpAgentCall = createMcpAgentCallFailure(mcpAgentToolPorts);
+    const executeMcpAgentCall = createMcpAgentToolExecutor(mcpAgentToolPorts);
 
     async function applySalvagedWrite(
       salvaged: SalvagedWrite,
