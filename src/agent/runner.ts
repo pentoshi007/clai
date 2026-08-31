@@ -43,6 +43,7 @@ import {
   type CompactionExecutionState,
 } from "./turn/compaction-summarizer.js";
 import { createCompactionRequestEstimator } from "./turn/compaction-request-estimator.js";
+import { createCompactionDurableEnvelopeBuilder } from "./turn/compaction-durable-envelope.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -59,7 +60,6 @@ import {
   type ResponderNotification,
 } from "../tools/jobs.js";
 import {
-  isResponderResultLedgerMessage,
   responderContextMessage,
   upsertResponderContextMessage,
   upsertResponderResultLedger,
@@ -200,11 +200,7 @@ import {
 } from "./task-analyzer.js";
 import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { isScratchOnlyWrite } from "./scratch-write.js";
-import {
-  buildDurableEnvelope,
-  WorkLedger,
-  type EnvelopeJobState,
-} from "./durable-envelope.js";
+import { WorkLedger } from "./durable-envelope.js";
 import {
   buildDirectCompactionPrompt,
   compactionSinglePassInputBudget,
@@ -3747,54 +3743,21 @@ export async function runAgentTurn(
       },
     });
 
-    /**
-     * Canonical state that must survive compaction verbatim. Built from the
-     * plan store, outcome contract, responder ledger and mutation ledger — never
-     * from the narrative summary.
-     */
-    async function buildTurnDurableEnvelope(): Promise<string | undefined> {
-      const plan =
-        (await loadPlan(session.sessionId).catch(() => undefined)) ?? undefined;
-      const root = getActiveProjectRoot() ?? plan?.meta?.projectRoot;
-      const consumed: string[] = [];
-      for (const message of messages) {
-        if (!isResponderResultLedgerMessage(message)) continue;
-        for (const line of message.content.split("\n")) {
-          const match = /notification=(\S+)/.exec(line);
-          if (match?.[1]) consumed.push(match[1]);
-        }
-      }
-      const unread = jobManager
-        .getPendingNotifications(session.sessionId)
-        .map((notification) => notification.id);
-      const toEnvelopeJob = (job: BackgroundJob): EnvelopeJobState => ({
-        id: job.id,
-        status: job.status,
-        command: job.commandDisplay || job.command,
-        ...(job.taskId ? { taskId: job.taskId } : {}),
-        ...(job.stdoutArtifact ? { artifact: job.stdoutArtifact } : {}),
-      });
-      const liveJobs = jobManager
-        .getRunningJobs(session.sessionId)
-        .map(toEnvelopeJob);
-      const liveIds = new Set(liveJobs.map((job) => job.id));
-      const finishedJobs = jobManager
-        .getRecentJobs(12, session.sessionId)
-        .filter((job) => !liveIds.has(job.id))
-        .map(toEnvelopeJob);
-      return buildDurableEnvelope({
-        ...(plan ? { plan } : {}),
+    const buildTurnDurableEnvelope =
+      createCompactionDurableEnvelopeBuilder({
+        messages,
         outcome: outcomeState,
         ledger: workLedger,
-        ...(root ? { projectRoot: root } : {}),
-        ...(root
-          ? { packageManager: plan?.meta?.packageManager ?? detectPackageManager(root) }
-          : {}),
-        responder: { unread, consumed: [...new Set(consumed)] },
-        ...(liveJobs.length > 0 ? { liveJobs } : {}),
-        ...(finishedJobs.length > 0 ? { finishedJobs } : {}),
+        loadPlan: () => loadPlan(session.sessionId),
+        getProjectRoot: getActiveProjectRoot,
+        detectPackageManager,
+        getUnreadNotificationIds: () =>
+          jobManager
+            .getPendingNotifications(session.sessionId)
+            .map((notification) => notification.id),
+        getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
+        getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
       });
-    }
 
     async function maybeAutoCompact(
       reason: string,
