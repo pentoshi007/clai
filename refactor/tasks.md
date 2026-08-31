@@ -143,14 +143,16 @@ Milestone boundary: shared semantic model before renderer-specific cleanup. Sugg
 
 Plan: [plan/phase-7.md](plan/phase-7.md)
 
-- [ ] **P7-01 Close remaining file-size inventory** — Process every remaining ordinary production file `>=500` lines; keep all new/extracted files below the limit.
-- [ ] **P7-02 Close complexity inventory** — Bring every function-like unit below cyclomatic/cognitive 22 and Halstead difficulty 80.
+- [~] **P7-01 Close remaining file-size inventory** — Process every remaining ordinary production file `>=500` lines; keep all new/extracted files below the limit.
+- [~] **P7-02 Close complexity inventory** — Bring every function-like unit below cyclomatic/cognitive 22 and Halstead difficulty 80.
 - [ ] **P7-03 Remove explicit `any`** — Reach zero without replacing it with unchecked `unknown` or casts.
 - [ ] **P7-04 Close `unknown` classification** — Reach zero internal/unsafe/unjustified cases while retaining validated boundary `unknown`.
 - [ ] **P7-05 Remove unsafe casts and suppressions** — Eliminate double assertions, broad casts, and unresolved suppression markers.
-- [ ] **P7-06 Review comments manually** — Remove only stale, syntax-narrating, duplicate, or commented-out implementation; preserve rationale and contracts.
-- [ ] **P7-07 Empty architecture debt** — Remove all obsolete oversized and runtime-policy exception entries; never add replacements.
-- [ ] **P7-08 Pass repository structural gates** — Full suite/build plus zero line/type/complexity/comment-review backlog.
+- [x] **P7-06 Review comments manually** — Remove only stale, syntax-narrating, duplicate, or commented-out implementation; preserve rationale and contracts.
+- [~] **P7-07 Empty architecture debt** — Remove all obsolete oversized and runtime-policy exception entries; never add replacements.
+- [~] **P7-08 Pass repository structural gates** — Full suite/build plus zero line/type/complexity/comment-review backlog.
+
+Evidence: [phase-7 evidence](evidence/phase-7/README.md). Files >= 500 lines: 81 -> 47; Halstead findings 15 -> 11; architecture legacy entries 19 -> 3 by removal only; 5,889 comments removed with token-stream equivalence proof and 161 behavior-bearing comments kept. Open: explicit `any` still 40 (P7-03/P7-04/P7-05 not started, deliberately — no blind `unknown` casts), and 47 files remain over the limit because they are single classes, single functions or single React components that need dependency records rather than declaration moves.
 
 Milestone boundary: one module and debt class at a time; no repository-wide mechanical sweep. Suggested final subject: `refactor(codebase): close structural quality debt`.
 
@@ -158,15 +160,17 @@ Milestone boundary: one module and debt class at a time; no repository-wide mech
 
 Plan: [plan/phase-8.md](plan/phase-8.md)
 
-- [ ] **P8-01 Reach 100% coverage** — Statements, branches, functions, and lines in the defined production scope, aggregating platform-specific evidence where required.
-- [ ] **P8-02 Reach CRAP `<25`** — Every measured function below the gate with final complexity/coverage reports.
-- [ ] **P8-03 Kill all mutants** — Zero survived and zero no-coverage mutants; any proven equivalent exclusion is narrow, reviewed, and documented.
-- [ ] **P8-04 Remove dead code/dependencies** — Zero unresolved production findings from the pinned analyzer and manual review.
-- [ ] **P8-05 Remove duplicate/redundant code** — Zero reportable clones and zero unresolved reviewed redundancy findings without harmful abstraction.
-- [ ] **P8-06 Verify all terminal structural/type gates** — Reconfirm `<500`, complexity/Halstead, explicit-any, unknown-safety, cast, suppression, and architecture results.
-- [ ] **P8-07 Run the locally available matrix** — Repository suite, build, package, built-entrypoint, and release checks on the execution host. Contracts that require another OS, runtime, or terminal host are recorded as out of local scope, never claimed as passed.
+- [!] **P8-01 Reach 100% coverage** — Statements, branches, functions, and lines in the defined production scope, aggregating platform-specific evidence where required.
+- [!] **P8-02 Reach CRAP `<25`** — Every measured function below the gate with final complexity/coverage reports.
+- [!] **P8-03 Kill all mutants** — Zero survived and zero no-coverage mutants; any proven equivalent exclusion is narrow, reviewed, and documented.
+- [!] **P8-04 Remove dead code/dependencies** — Zero unresolved production findings from the pinned analyzer and manual review.
+- [!] **P8-05 Remove duplicate/redundant code** — Zero reportable clones and zero unresolved reviewed redundancy findings without harmful abstraction.
+- [!] **P8-06 Verify all terminal structural/type gates** — Reconfirm `<500`, complexity/Halstead, explicit-any, unknown-safety, cast, suppression, and architecture results.
+- [~] **P8-07 Run the locally available matrix** — Repository suite, build, package, built-entrypoint, and release checks on the execution host. Contracts that require another OS, runtime, or terminal host are recorded as out of local scope, never claimed as passed.
 - [ ] **P8-08 Independent final review** — Audit behavior evidence, exclusions, reports, task completion, and rollback history.
 - [ ] **P8-09 Close and push program** — Commit final evidence, push the feature branch, and open review without bypassing protections.
+
+Evidence: [phase-8 evidence](evidence/phase-8/README.md). Locally green: typecheck, prompt sync, architecture (5), deterministic suite (599 files / 6,002 passed / 12 skipped), build, contracts, changed-code gate, ratchet (0 regressions), `git diff --check`. NOT met and reported as unmeasured rather than passing: coverage, CRAP, mutation, dead-code/duplication re-runs. Out of local scope: Node 22, Bun/OpenTUI, macOS, Windows/ConPTY, OS keychain, interactive PTY, trusted-host release verification.
 
 Milestone boundary: terminal gates require measured evidence from locally reproducible commands. A contract that cannot run on the execution host is documented as out of local scope and does not gate closure. Suggested final subject: `refactor(codebase): complete behavior-preserving modernization`.
 
