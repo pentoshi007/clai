@@ -37,6 +37,7 @@ import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
 import { insertedText } from "./turn/inserted-text.js";
 import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
+import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -155,7 +156,6 @@ import {
 } from "./request-accounting.js";
 import {
   autoCompactTriggerTokens,
-  dedupeToolContextOutput,
   freeTierGuardNotices,
   getReliabilityPolicy,
   MAX_OUTPUT_BUDGET_CONTINUATIONS,
@@ -218,10 +218,6 @@ import {
   OperationLedger,
   singleAdmissionOperationPolicy,
 } from "../llm/operation-ledger.js";
-import {
-  maybeAppendPlanModeReminder,
-  PLAN_REMINDER_TOAST,
-} from "./plan-mode-reminders.js";
 import { LoopGuard } from "./loop-guard.js";
 import {
   appendInterruptedReasoning,
@@ -5946,6 +5942,14 @@ export async function runAgentTurn(
         const recordedNativeIds = new Set<string>();
         /** Plan-mode soft reminders already attached this turn (by step). */
         const planRemindedAt = new Set<number>();
+        const toolResultRecorder = createToolResultRecorder({
+          messages,
+          useNativeToolHistory: historyNativeCalls.length > 0,
+          deferredPostToolMessages,
+          seenHashes: toolResultHashes,
+          remindedAt: planRemindedAt,
+          writeNotice,
+        });
         /** True after a successful plan.create this turn (activePlan is turn-start snapshot). */
         let planCreatedThisTurn = Boolean(
           activePlan && activePlan.tasks.length > 0,
@@ -6005,24 +6009,15 @@ export async function runAgentTurn(
             planCreatedThisTurn = true;
           }
           if (!res.suppressedRepeat) productiveSteps += 1;
-          // E5: collapse identical large tool bodies within this turn to a pointer.
-          const deduped = dedupeToolContextOutput({
-            content: res.contextOutput,
-            toolName: res.call.name,
-            artifactPath: res.result.outputPath,
-            seenHashes: toolResultHashes,
-          });
-          const contextForHistory = deduped.content;
-          // Soft plan-mode note on tool payloads only (never a user message).
-          // Stop once a plan with tasks exists so we don't nag after plan.create.
-          let toolContent = `Tool ${res.call.name} result (exit=${res.result.exitCode ?? 0}, ok=${res.result.ok}):\n${contextForHistory}`;
-          const reminded = maybeAppendPlanModeReminder(toolContent, {
+          toolResultRecorder.record({
+            id: boundCall.id,
+            call: res.call,
+            result: res.result,
+            contextOutput: res.contextOutput,
             isPlanMode,
             planApproved: session.planApproved.value,
             hasDraftPlan: planCreatedThisTurn,
             productiveStep: productiveSteps,
-            alreadyRemindedAt: planRemindedAt,
-            step: productiveSteps,
             kindHint:
               activePlan?.kind === "pentest" || pentestLikeTurn
                 ? "pentest"
@@ -6030,44 +6025,6 @@ export async function runAgentTurn(
                   ? "coding"
                   : "general",
           });
-          toolContent = reminded.content;
-          if (reminded.reminded) {
-            planRemindedAt.add(productiveSteps);
-            // Chrome only — model already has the note on this tool result.
-            writeNotice("info", PLAN_REMINDER_TOAST);
-          }
-          if (historyNativeCalls.length) {
-            appendToolResult(
-              messages,
-              boundCall.id,
-              toolContent,
-              res.call.name,
-              res.result.ok,
-            );
-          } else {
-            messages.push({
-              role: "tool",
-              content: toolContent,
-            });
-          }
-          // image.view hands back real image bytes. Tool results are text-only
-          // on every provider wire, and images are only serialized on user
-          // turns, so the bytes ride a deferred internal user message that
-          // lands after the assistant→tool group is closed — inserting it here
-          // would orphan the remaining tool results.
-          if (res.result.images?.length) {
-            deferredPostToolMessages.push({
-              role: "user",
-              internal: true,
-              content:
-                `[${res.call.name}] The ${res.result.images.length === 1 ? "image" : `${res.result.images.length} images`} you asked to look at ` +
-                `${res.result.images.length === 1 ? "is" : "are"} attached to this message` +
-                `${res.result.images.length === 1 ? "" : ", in the order you requested them"}: ` +
-                `${res.result.images.map((image) => image.path ?? "(unnamed)").join(", ")}. ` +
-                "Judge them from the pixels and continue the task.",
-              images: res.result.images,
-            });
-          }
           // Reset retry counters — they track consecutive failures, not cumulative.
           truncatedToolRetries = 0;
           malformedFenceRetries = 0;
