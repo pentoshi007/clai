@@ -3,15 +3,12 @@
   "oversizedSourceFiles": [
     "src/agent/loop-guard.ts",
     "src/interactive-session/manager.ts",
-    "src/tools/jobs.ts",
-    "src/ui-core/commands/picker-commands.ts",
-    "src/ui-core/rendering/markdown.ts",
-    "src/ui-core/rendering/syntax-highlight.ts"
+    "src/tools/jobs.ts"
   ],
   "uiCoreRuntimePolicyImports": [
-    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/context-manager.ts",
-    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/plan-implement-compact.ts",
     "src/ui-core/commands/key-commands.ts -> src/llm/router.ts",
-    "src/ui-core/commands/picker-commands.ts -> src/llm/router.ts"
+    "src/ui-core/commands/picker-commands.ts -> src/llm/router.ts",
+    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/context-manager.ts",
+    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/plan-implement-compact.ts"
   ]
 }

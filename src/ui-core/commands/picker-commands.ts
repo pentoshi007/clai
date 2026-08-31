@@ -3,49 +3,58 @@
  * permissions/output/plan (V2-072, V2-080).
  */
 
-import { getProvider } from "../../llm/router.js";
-import {
-  effectiveThinkingEffort,
-  clearReasoningRejection,
-  displayReasoningEfforts,
-  modelReasoningEvidence,
-  routeReasoningIsMandatory,
-  modelReasoningIsMandatory,
-  modelSupportsThinking,
-} from "../../llm/capabilities.js";
-import { assertSearchProvider } from "../../tools/web/providers/provider.js";
-import { searchProviders } from "../../tools/web/providers/provider.js";
-import {
-  asExaSearchType,
-  exaSearchTypeDescriptions,
-  exaSearchTypes,
-  searchProviderIds,
-  type ExaSearchType,
-  type SearchProviderId,
-} from "../../tools/web/types.js";
-import { type ProviderId, type ReasoningEffort } from "../../types.js";
+import { getProvider, providerAuth } from "../../llm/router.js";
+import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
+import { assertProvider } from "../../llm/provider.js";
+import { providerIds, type ProviderId } from "../../types.js";
 import { getKnownModels } from "../../app/commands/catalog.js";
-import { getConfig, getExaSearchType, getProviderModel, setActiveSearchProvider, setExaSearchType, setThinking, updateConfig } from "../../store/config.js";
-import { getSearchProviderKey, setSecret } from "../../store/keys.js";
+import { clearActiveProjectRoot } from "../../agent/project-root.js";
+import { appendProviderEndpoint, getActiveProviderEndpoint, getCustomProviders, getConfig, getProviderModel } from "../../store/config.js";
+import { saveSessionModel } from "../../store/session-model.js";
+import { envValue, getProviderSecret, setProviderSecret } from "../../store/keys.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
-import { openToolOutputPager } from "../rendering/open-tool-output.js";
-import { applyModel, resolveModelsForProvider } from "./pickers/provider.js";
-export { handleModels } from "./pickers/models.js";
-export { handleProvider } from "./pickers/provider.js";
-export { resolveModelsForProvider };
+import { addCustomProviderFlow, removeCustomProviderFlow } from "./pickers/custom-provider.js";
+export { handleReasoning, handleSearch } from "./pickers/search-reasoning.js";
+export { handleOutput, handlePermissions, handlePlanPager } from "./pickers/output-pager.js";
 export { handleHistory } from "./pickers/history.js";
 
-const REASONING_DESCRIPTIONS: Record<string, string> = {
-  off: "disable reasoning",
-  minimal: "lowest latency",
-  low: "light reasoning",
-  medium: "balanced",
-  high: "deep reasoning",
-  xhigh: "maximum depth",
-  max: "highest supported depth (falls back if rejected)",
-};
+/**
+ * Live provider model catalogue (matches classic TUI `/model`).
+ * Prefers `provider.listModels`; falls back to the static known list.
+ */
+export async function resolveModelsForProvider(
+  provider: ProviderId,
+  currentModel?: string | undefined,
+): Promise<{ models: string[]; source: "live" | "known"; error?: string }> {
+  const providerImpl = getProvider(provider);
+  let models: string[] = [];
+  let error: string | undefined;
+
+  if (providerImpl.listModels) {
+    try {
+      const auth = await providerAuth(provider);
+      models = await providerImpl.listModels(auth);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  let source: "live" | "known" = "live";
+  if (models.length === 0) {
+    models = getKnownModels(provider);
+    source = "known";
+  }
+
+  if (currentModel && !models.includes(currentModel) && currentModel === getProviderModel(provider)) {
+    const isFreeModel = currentModel.startsWith("free-1/") || currentModel.startsWith("free-2/");
+    if (!(isFreeModel && provider !== "free")) {
+      models = [currentModel, ...models];
+    }
+  }
+  return error ? { models, source, error } : { models, source };
+}
 
 export async function handleModel(
   services: AppServices,
@@ -104,312 +113,422 @@ export async function handleModel(
   );
 }
 
-export function handleSearch(services: AppServices, invocation: CommandInvocation): void {
-  const args = invocation.args.trim();
-  if (args) {
-    const parts = args.split(/\s+/);
-    const providerArg = parts[0]!;
-    // `/search exa <type>` sets Exa's retrieval strategy directly.
-    if (providerArg.toLowerCase() === "exa" && parts.length > 1) {
-      const type = asExaSearchType(parts.slice(1).join(" "));
-      if (!type) {
-        services.session.notice(
-          "warn",
-          `unknown exa search type: ${parts.slice(1).join(" ")} · options: ${exaSearchTypes.join(", ")}`,
-        );
-        return;
+const CATALOG_SEPARATOR = "\u001f";
+
+interface CatalogEntry {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly live: boolean;
+}
+
+async function configuredProviderIds(): Promise<ProviderId[]> {
+  const custom = getCustomProviders().map((def) => def.id as ProviderId);
+  const candidates: ProviderId[] = [...providerIds, ...custom];
+  const configured = await Promise.all(
+    candidates.map(async (provider) => {
+      if (provider === "ollama" || provider === "free") return provider;
+      const hasKey =
+        Boolean(envValue(provider)) ||
+        Boolean((await getProviderSecret(provider)).value);
+      if (!hasKey) return undefined;
+      if (provider === "modal" && !getActiveProviderEndpoint("modal")) {
+        return undefined;
       }
-      void activateExaWithType(services, type);
-      return;
-    }
-    try {
-      void activateSearchProvider(services, assertSearchProvider(providerArg));
-    } catch {
-      services.session.notice("warn", `unknown search provider: ${providerArg}`);
-    }
-    return;
-  }
-  const active = getConfig().activeSearchProvider;
-  const exaType = getExaSearchType();
-  const options: PickerOption[] = searchProviderIds.map((id) => {
-    const adapter = searchProviders[id];
-    const keyNote = adapter?.needsApiKey
-      ? `${adapter.displayName} · API key required`
-      : `${adapter?.displayName ?? id} · keyless`;
-    return {
-      value: id,
-      label: id === active ? `${id} · active` : id,
-      description: id === "exa" ? `${keyNote} · type: ${exaType}` : keyNote,
-    };
-  });
-  services.overlay.openPicker({ title: "Search providers", options }, (value) => {
-    void activateSearchProvider(services, assertSearchProvider(value));
-  });
-}
-
-async function activateSearchProvider(services: AppServices, next: SearchProviderId): Promise<void> {
-  const adapter = searchProviders[next];
-  if (adapter?.needsApiKey) {
-    const current = await getSearchProviderKey(next);
-    if (!current.value) {
-      services.overlay.close();
-      const key = await services.overlay.openSecret({
-        title: `${next} search API key`,
-        prompt: `No API key is configured for ${adapter.displayName}. Enter it now to use this search provider.`,
-      });
-      if (!key) return;
-      await setSecret("search", next, key);
-    }
-  }
-  setActiveSearchProvider(next);
-  services.overlay.close();
-  services.session.notice("info", `search provider → ${next}`);
-  // Exa is the only provider with a tunable retrieval strategy — offer the
-  // type picker right after activation so users land on the right latency
-  // and depth without a second command.
-  if (next === "exa") openExaSearchTypePicker(services);
-}
-
-/** Open the picker that customises Exa's retrieval strategy (`type`). */
-function openExaSearchTypePicker(services: AppServices): void {
-  const current = getExaSearchType();
-  const options: PickerOption[] = exaSearchTypes.map((type) => ({
-    value: type,
-    label: type === current ? `${type} · active` : type,
-    description: exaSearchTypeDescriptions[type],
-    active: type === current,
-  }));
-  services.overlay.openPicker({ title: "Exa search type", options }, (value) => {
-    const type = asExaSearchType(value);
-    if (type) applyExaSearchType(services, type);
-    services.overlay.close();
-  });
-}
-
-/**
- * Persist the chosen Exa search type. When Exa is not already the active
- * search provider, selecting a type also activates Exa so the setting takes
- * effect on the next search.
- */
-async function activateExaWithType(
-  services: AppServices,
-  type: ExaSearchType,
-): Promise<void> {
-  if (getConfig().activeSearchProvider !== "exa") {
-    await activateSearchProvider(services, "exa");
-  }
-  applyExaSearchType(services, type);
-}
-
-function applyExaSearchType(services: AppServices, type: ExaSearchType): void {
-  setExaSearchType(type);
-  services.session.notice("info", `exa search type → ${type}`);
-}
-
-export function handleReasoning(services: AppServices, invocation: CommandInvocation): void {
-  if (invocation.args) {
-    applyReasoning(services, invocation.args.trim());
-    return;
-  }
-  const current = getConfig().thinking;
-  const provider = services.session.getState().provider ?? getConfig().defaultProvider;
-  const model = services.session.getState().model ?? "";
-  const options: PickerOption[] = reasoningOptionValues(provider, model).map((value) => ({
-    value,
-    label: value,
-    description: REASONING_DESCRIPTIONS[value] ?? "",
-    active: value === (effectiveThinkingEffort(provider, model, current) ?? "off"),
-  }));
-  services.overlay.openPicker(
-    { title: reasoningPickerTitle(provider, model), options },
-    (value) => {
-      applyReasoning(services, value);
-      services.overlay.close();
-    },
+      return provider;
+    }),
   );
+  return configured.filter((provider): provider is ProviderId => Boolean(provider));
 }
 
-function reasoningOptionValues(
+async function collectAllModels(): Promise<{
+  entries: CatalogEntry[];
+  providers: number;
+  liveProviders: number;
+  failed: ProviderId[];
+}> {
+  const providers = await configuredProviderIds();
+  const results = await Promise.all(
+    providers.map(async (provider) => {
+      try {
+        const resolved = await resolveModelsForProvider(provider);
+        return { provider, ...resolved };
+      } catch (error) {
+        return {
+          provider,
+          models: getKnownModels(provider),
+          source: "known" as const,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
+  );
+  const entries: CatalogEntry[] = [];
+  const failed: ProviderId[] = [];
+  let liveProviders = 0;
+  for (const result of results) {
+    if (result.error) failed.push(result.provider);
+    if (result.source === "live") liveProviders += 1;
+    const seen = new Set<string>();
+    for (const model of result.models) {
+      const id = model.trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      entries.push({
+        provider: result.provider,
+        model: id,
+        live: result.source === "live",
+      });
+    }
+  }
+  entries.sort(
+    (a, b) =>
+      a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model),
+  );
+  return { entries, providers: providers.length, liveProviders, failed };
+}
+
+function persistSessionModel(
+  services: AppServices,
   provider: ProviderId,
   model: string,
-): readonly string[] {
-  const scale = Object.keys(REASONING_DESCRIPTIONS).filter((value) => value !== "off");
-  const evidence = modelReasoningEvidence(provider, model);
-  if (
-    !modelSupportsThinking(provider, model) &&
-    evidence !== "unknown" &&
-    evidence !== "rejected"
-  ) {
-    return ["off"];
-  }
-  const accepted = displayReasoningEfforts(provider, model) ?? [];
-  const efforts =
-    accepted.length > 0 ? scale.filter((value) => accepted.includes(value)) : scale;
-  return modelReasoningIsMandatory(model) ||
-    routeReasoningIsMandatory(provider, model)
-    ? efforts
-    : ["off", ...efforts];
+): Promise<void> {
+  return saveSessionModel(services.session.sessionId, { provider, model });
 }
 
-function reasoningPickerTitle(provider: ProviderId, model: string): string {
-  const evidence = modelReasoningEvidence(provider, model);
-  const status =
-    modelReasoningIsMandatory(model) || routeReasoningIsMandatory(provider, model)
-      ? "always on"
-      : evidence === "rejected"
-        ? "previously rejected — picking a level retries it"
-        : modelSupportsThinking(provider, model)
-          ? "supported"
-          : "model may ignore it";
-  return `Reasoning · ${status} · via ${evidence}`;
-}
-
-function applyReasoning(services: AppServices, value: string): void {
-  const lower = value.toLowerCase();
-  if (/^(on|enable|true)$/.test(lower)) {
-    clearRouteReasoningRejection(services);
-    setThinking({ enabled: true });
-    services.session.notice("info", `thinking → ${getConfig().thinking.effort}`);
-    return;
+async function switchToCatalogEntry(
+  services: AppServices,
+  entry: CatalogEntry,
+): Promise<void> {
+  const state = services.session.getState();
+  const current = state.provider ?? getConfig().defaultProvider;
+  if (entry.provider !== current) {
+    services.session.setProvider(entry.provider);
+    clearActiveProjectRoot();
   }
-  if (["off", "none", "disable", "false"].includes(lower)) {
-    setThinking({ enabled: false });
-    services.session.notice("info", "thinking → off");
-    return;
-  }
-  if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(lower)) {
-    clearRouteReasoningRejection(services);
-    setThinking({ enabled: true, effort: lower as ReasoningEffort });
-    services.session.notice("info", `thinking → ${lower}`);
-    warnUnacceptedEffort(services, lower);
-    return;
-  }
-  services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
-}
-
-function clearRouteReasoningRejection(services: AppServices): void {
-  const provider = services.session.getState().provider ?? getConfig().defaultProvider;
-  const model = services.session.getState().model ?? "";
-  if (!model) return;
-  clearReasoningRejection(provider, model);
-}
-
-function warnUnacceptedEffort(services: AppServices, effort: string): void {
-  const provider = services.session.getState().provider ?? getConfig().defaultProvider;
-  const model = services.session.getState().model ?? "";
-  if (!model) return;
-  const accepted = displayReasoningEfforts(provider, model) ?? [];
-  if (accepted.length === 0 || accepted.includes(effort)) return;
+  services.session.setModel(entry.model);
+  await persistSessionModel(services, entry.provider, entry.model);
   services.session.notice(
-    "warn",
-    `${provider}/${model} advertises ${accepted.join(", ")} — ${effort} will be mapped to the nearest of those`,
+    "info",
+    `provider → ${entry.provider} · model → ${entry.model}`,
   );
 }
 
-export function handlePermissions(services: AppServices, invocation: CommandInvocation): void {
-  const apply = (value: "default" | "allow-all") => {
-    updateConfig({ permissions: value });
-    services.session.notice("info", `permissions → ${value}`);
-  };
-  if (invocation.args) {
-    const value = invocation.args.trim().toLowerCase();
-    if (value === "default" || value === "allow-all") apply(value);
-    return;
-  }
-  const current = getConfig().permissions ?? "default";
-  services.overlay.openPicker(
-    {
-      title: "Permissions",
-      options: [
-        {
-          value: "default",
-          label: "default",
-          description: "confirm risky tool calls",
-          active: current === "default",
-        },
-        {
-          value: "allow-all",
-          label: "allow-all",
-          description: "skip confirmation prompts",
-          active: current === "allow-all",
-        },
-      ],
-    },
-    (value) => {
-      apply(value as "default" | "allow-all");
-      services.overlay.close();
-    },
-  );
-}
-
-export async function handleOutput(
+export async function handleModels(
   services: AppServices,
   invocation: CommandInvocation,
 ): Promise<void> {
-  const state = services.transcript.getState();
-  const toolItems = [...state.byId.values()].filter((item) => item.kind === "tool");
-  if (toolItems.length === 0) {
-    services.session.notice("info", "no tool output yet");
-    return;
-  }
+  const fetching = services.toast.info("collecting models from all providers…", {
+    key: "models-fetch",
+    sticky: true,
+  });
+  const { entries, providers, liveProviders, failed } = await collectAllModels();
+  services.toast.dismiss(fetching);
 
-  const arg = invocation.args.trim().toLowerCase();
-  if (!arg) {
-    services.transcript.toggleOutputGlobal();
-    const on = services.transcript.getState().expandOutputGlobal;
-    services.toast.show(
-      on ? "Tool output expanded · ^O" : "Tool output collapsed · ^O",
-      { key: "output", durationMs: 1500 },
+  if (entries.length === 0) {
+    services.session.notice(
+      "warn",
+      "no models found — configure a provider key with /set first",
     );
     return;
   }
-  if (arg === "list" || arg === "ls") {
-    services.overlay.openPicker(
-      {
-        title: "Tool output",
-        options: toolItems.map((item) => ({
-          value: item.id,
-          label: item.name,
-          description: item.argsDisplay,
-        })),
-      },
-      (value) => {
-        services.overlay.close();
-        const item = toolItems.find((t) => t.id === value);
-        if (item) void openToolOutputPager(services, item);
-      },
-    );
-    return;
-  }
-  const target =
-    arg !== "last"
-      ? toolItems.find((t) => t.toolCallId === arg || t.id === arg)
-      : toolItems.at(-1);
-  if (target) await openToolOutputPager(services, target);
-  else services.session.notice("info", arg ? `no tool output: ${arg}` : "no tool output yet");
-}
 
-export function handlePlanPager(services: AppServices): void {
-  void (async () => {
-    let plan = services.plan.current();
-    if (!plan) {
-      plan = await services.plan
-        .load(services.session.sessionId)
-        .catch(() => undefined);
-    }
-    if (!plan) {
-      services.session.notice("info", "no active plan yet");
+  const filter = invocation.args.trim().toLowerCase();
+  if (filter) {
+    const normalized = filter.replace(/\s+/g, "/");
+    const matches = entries.filter((entry) => {
+      const combined = `${entry.provider}/${entry.model}`.toLowerCase();
+      return combined === normalized || combined.includes(normalized);
+    });
+    const exact = matches.find(
+      (entry) => `${entry.provider}/${entry.model}`.toLowerCase() === normalized,
+    );
+    if (exact) {
+      await switchToCatalogEntry(services, exact);
       return;
     }
-    const { formatPlanPagerDocument } = await import(
-      "../rendering/plan-view.js"
+    if (matches.length === 1) {
+      await switchToCatalogEntry(services, matches[0]!);
+      return;
+    }
+    if (matches.length === 0) {
+      services.session.notice("warn", `no model matches "${invocation.args.trim()}"`);
+      return;
+    }
+  }
+
+  const state = services.session.getState();
+  const activeProvider = state.provider ?? getConfig().defaultProvider;
+  if (failed.length > 0) {
+    services.session.notice(
+      "warn",
+      `could not refresh ${failed.join(", ")} · showing known models for those`,
     );
-    services.overlay.openPager(
-      `Plan · ${plan.goal}`,
-      formatPlanPagerDocument(plan),
-      undefined,
-      undefined,
-      "force",
+  }
+  services.session.notice(
+    "info",
+    `${entries.length} models · ${providers} provider${providers === 1 ? "" : "s"} configured · ${liveProviders} live`,
+  );
+
+  services.overlay.openPicker(
+    {
+      title: `All models · ${providers} providers`,
+      searchDescription: true,
+      twoLine: true,
+      options: entries.map((entry) => ({
+        value: `${entry.provider}${CATALOG_SEPARATOR}${entry.model}`,
+        label: `${entry.provider} / ${entry.model}`,
+        description: entry.live ? "live catalogue" : "known models",
+        active: entry.provider === activeProvider && entry.model === state.model,
+      })),
+    },
+    (value) => {
+      services.overlay.close();
+      const separator = value.indexOf(CATALOG_SEPARATOR);
+      if (separator <= 0) return;
+      const provider = value.slice(0, separator);
+      const model = value.slice(separator + 1);
+      const entry = entries.find(
+        (candidate) =>
+          candidate.provider === provider && candidate.model === model,
+      );
+      if (!entry) return;
+      void switchToCatalogEntry(services, entry);
+    },
+  );
+}
+
+function applyModel(
+  services: AppServices,
+  provider: ProviderId,
+  model: string,
+  options: readonly string[] = getKnownModels(provider),
+): void {
+  const index = Number.parseInt(model, 10);
+  const next =
+    Number.isInteger(index) && index >= 1 && index <= options.length
+      ? options[index - 1]!
+      : model;
+  services.session.setModel(next);
+  void persistSessionModel(services, provider, next).catch(() => undefined);
+  services.session.notice("info", `model → ${next}`);
+}
+
+/** Sentinel value returned by the /provider picker for "add a custom provider". */
+const ADD_CUSTOM_PROVIDER = "__add_custom_provider__";
+
+/** Sentinel for the "remove a custom provider" picker row. */
+const REMOVE_CUSTOM_PROVIDER = "__remove_custom_provider__";
+
+export function handleProvider(services: AppServices, invocation: CommandInvocation): void {
+  if (invocation.args) {
+    try {
+      void activateProvider(services, assertProvider(invocation.args.trim()));
+    } catch {
+      services.session.notice("warn", `unknown provider: ${invocation.args.trim()}`);
+    }
+    return;
+  }
+  void (async () => {
+    const current = services.session.getState().provider ?? getConfig().defaultProvider;
+    // Custom (user-defined) providers appear after the built-ins, plus
+    // dedicated rows at the top to launch the add / remove flows.
+    const { getCustomProviders } = await import("../../store/config.js");
+    const custom = getCustomProviders();
+    const options: PickerOption[] = [
+      {
+        value: ADD_CUSTOM_PROVIDER,
+        label: "+ Add custom provider",
+        description: "connect an OpenAI-compatible endpoint not listed above",
+      },
+      // Only offer removal when at least one custom provider exists.
+      ...(custom.length > 0
+        ? [
+            {
+              value: REMOVE_CUSTOM_PROVIDER,
+              label: "− Remove custom provider",
+              description: `${custom.length} custom provider${custom.length === 1 ? "" : "s"} · delete a definition + its keys`,
+            },
+          ]
+        : []),
+      ...providerIds.map((value) => ({
+        value,
+        label: value,
+        description: getProviderModel(value),
+        active: value === current,
+      })),
+      ...custom.map((def) => ({
+        value: def.id,
+        label: def.id,
+        description: getProviderModel(def.id as ProviderId),
+        active: def.id === current,
+      })),
+    ];
+    services.overlay.openPicker(
+      {
+        title: "Providers",
+        searchDescription: false,
+        options,
+      },
+      (value) => {
+        if (value === ADD_CUSTOM_PROVIDER) {
+          void addCustomProviderFlow(services);
+          return;
+        }
+        if (value === REMOVE_CUSTOM_PROVIDER) {
+          void removeCustomProviderFlow(services);
+          return;
+        }
+        void activateProvider(services, assertProvider(value));
+      },
     );
   })();
 }
+
+async function activateProvider(services: AppServices, next: ProviderId): Promise<void> {
+  // Modal needs two separate things, so it gets its own onboarding.
+  if (next === "modal") {
+    if (!(await ensureModalCredentials(services))) return;
+  } else {
+    const configured =
+      next === "ollama" || next === "free" || Boolean(envValue(next)) || Boolean((await getProviderSecret(next)).value);
+    if (!configured) {
+      services.overlay.close();
+      const key = await services.overlay.openSecret({
+        title: `${next} API key`,
+        prompt: `No API key is configured for ${next}. Enter it now to activate this provider.`,
+      });
+      const value = key?.trim();
+      if (!value) {
+        services.session.notice("info", `cancelled · provider unchanged`);
+        return;
+      }
+      // Silence here used to look like the picker had simply ignored the input.
+      if (!getProvider(next).validateKey(value)) {
+        services.session.notice(
+          "warn",
+          `invalid API key format for ${next} · provider unchanged`,
+        );
+        return;
+      }
+      await setProviderSecret(next, value);
+    }
+  }
+  let model = getProviderModel(next);
+  const isFreeModel = model.startsWith("free-1/") || model.startsWith("free-2/");
+  if (isFreeModel && next !== "free") {
+    model = defaultModels[next];
+  }
+  services.session.setProvider(next);
+  services.session.setModel(model);
+  await persistSessionModel(services, next, model);
+  services.overlay.close();
+  services.session.notice("info", `provider → ${next} · model → ${model}`);
+  const fetchingToastId = services.toast.info(`fetching ${next} models…`, {
+    key: "model-fetch",
+    sticky: true,
+  });
+  const { models, source, error } = await resolveModelsForProvider(next, model);
+  services.toast.dismiss(fetchingToastId);
+  if (error) {
+    services.session.notice(
+      "warn",
+      `could not refresh ${next} models: ${error} · showing known models`,
+    );
+  } else if (source === "known" && getProvider(next).listModels) {
+    services.session.notice(
+      "warn",
+      `${next} model list empty from API · showing known models`,
+    );
+  } else if (source === "live") {
+    services.session.notice("info", `${next} · ${models.length} models (live)`);
+  }
+  if (models.length === 0) {
+    services.session.notice(
+      "info",
+      `no models for ${next} — type /model <name> to set one manually`,
+    );
+    return;
+  }
+  services.overlay.openPicker(
+    {
+      title: `Models · ${next}${source === "live" ? " · live" : ""}`,
+      options: models.map((value) => ({
+        value,
+        label: value,
+        active: value === model,
+      })),
+    },
+    (value) => {
+      applyModel(services, next, value, models);
+      services.overlay.close();
+    },
+  );
+}
+
+/**
+ * Modal is the only provider that needs two things before it can serve a
+ * request: the workspace endpoint URL (config) and a proxy token pair
+ * (secret). Ask for whichever is missing, endpoint first — that is the value
+ * people reach for, and a URL typed into a token prompt used to fail
+ * `validateKey` and silently abandon the switch.
+ *
+ * Returns false when the user cancelled or entered something unusable, in
+ * which case the active provider is left alone.
+ */
+async function ensureModalCredentials(services: AppServices): Promise<boolean> {
+  const hasToken =
+    Boolean(envValue("modal")) || Boolean((await getProviderSecret("modal")).value);
+
+  if (!getActiveProviderEndpoint("modal")) {
+    services.overlay.close();
+    const answer = await services.overlay.openSecret({
+      title: hasToken ? "Modal endpoint URL" : "Modal endpoint URL (1 of 2)",
+      prompt:
+        "Paste your Modal endpoint URL, e.g. https://<workspace>--ep-<endpoint>.<region>.modal.direct",
+      reveal: true,
+    });
+    const url = answer?.trim();
+    if (!url) {
+      services.session.notice("info", "cancelled · provider unchanged");
+      return false;
+    }
+    const endpoint = normalizeEndpointUrl(url);
+    appendProviderEndpoint("modal", endpoint);
+    services.session.notice("info", `modal endpoint → ${endpoint}`);
+  }
+
+  if (!hasToken) {
+    services.overlay.close();
+    const answer = await services.overlay.openSecret({
+      title: "Modal proxy token (2 of 2)",
+      prompt:
+        "Enter the proxy token pair as <token-id>:<token-secret> — create one with: modal workspace proxy-tokens create",
+    });
+    const token = answer?.trim();
+    if (!token) {
+      services.session.notice("info", "cancelled · provider unchanged");
+      return false;
+    }
+    // Another URL means the user is still answering the previous question.
+    if (/^https?:\/\//i.test(token)) {
+      const endpoint = normalizeEndpointUrl(token);
+      appendProviderEndpoint("modal", endpoint);
+      services.session.notice(
+        "warn",
+        `saved that as the endpoint (${endpoint}) · modal still needs a wk-…:ws-… token pair — run /provider modal again`,
+      );
+      return false;
+    }
+    if (!getProvider("modal").validateKey(token)) {
+      services.session.notice(
+        "warn",
+        "expected a proxy token pair like wk-tokenId:ws-tokenSecret · provider unchanged",
+      );
+      return false;
+    }
+    await setProviderSecret("modal", token);
+  }
+
+  return true;
+}
+
