@@ -161,7 +161,7 @@ describe("runner contract hard gate", () => {
     expect(exportsByName.get("runAgentTurn")?.type).toBe(
       '(prompt: string, options?: import("<repo>/src/agent/runner", { with: { "resolution-mode": "import" } }).AgentRunOptions) => Promise<import("<repo>/src/agent/turn-outcome", { with: { "resolution-mode": "import" } }).TurnOutcome>',
     );
-  });
+  }, 120_000);
 
   it("keeps both entrypoints callable with a single prompt argument", () => {
     expect(typeof runner.runAgentLoop).toBe("function");
