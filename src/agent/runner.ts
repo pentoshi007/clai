@@ -89,6 +89,7 @@ import { runToolGates } from "./turn/tool-execution/gates.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
 import { executeToolGroups } from "./turn/loop/group-execution.js";
+import { settleUnrunCalls } from "./turn/loop/unrun-calls.js";
 import type { BoundCall } from "./turn/contracts.js";
 import {
   createRoundRecorder,
@@ -3190,44 +3191,22 @@ export async function runAgentTurn(
           groups,
         );
 
-        // Cards still "running" get a terminal UI result; history always pairs.
-        // Only abort / plan-gate / governor leave calls un-run now.
-        for (let i = 0; i < toRun.length; i += 1) {
-          const bc = toRun[i]!;
-          if (round.recordedNativeIds.has(bc.id)) continue;
-          if (!callIds[i]) {
-            callIds[i] = `tool-${++nextToolEventId}`;
-          }
-          const uiId = callIds[i]!;
-          const reason = round.aborted
-            ? "Cancelled — turn aborted before this call ran."
-            : round.awaitingPlanApproval
-              ? "Deferred — waiting for plan approval."
-              : "Cancelled — not executed.";
-          const result: ToolResult = {
-            ok: false,
-            output: reason,
-            exitCode: 130,
-          };
-          if (alreadyPrintedIds.has(uiId)) {
-            emitToolResult(uiId, result, reason);
-          }
-          if (historyNativeCalls.length) {
-            appendToolResult(
-              messages,
-              bc.id,
-              `Tool ${bc.call.name} result (exit=130, ok=false):\n${reason}`,
-              bc.call.name,
-              false,
-            );
-            round.recordedNativeIds.add(bc.id);
-          } else {
-            messages.push({
-              role: "tool",
-              content: `Tool ${bc.call.name} result (exit=130, ok=false):\n${reason}`,
-            });
-          }
-        }
+        settleUnrunCalls(
+          {
+            round,
+            messages,
+            useNativeHistory: historyNativeCalls.length > 0,
+            eventIdFor: (index) => {
+              if (!callIds[index]) {
+                callIds[index] = `tool-${++nextToolEventId}`;
+              }
+              return callIds[index]!;
+            },
+            wasPrinted: (uiId) => alreadyPrintedIds.has(uiId),
+            emitToolResult,
+          },
+          toRun,
+        );
 
         const closeoutState = { consecutiveSynthesizedRounds };
         const closeout = await closeOutRound(
