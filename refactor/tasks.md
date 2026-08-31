@@ -45,15 +45,15 @@ Milestone boundary: quality/test/configuration commits only, except separately a
 
 Plan: [plan/phase-1.md](plan/phase-1.md)
 
-- [ ] **P1-01 Characterize runner contracts** — Cover outputs/events, compaction, responders, tools, usage, cancellation, loop guards, evidence, and finalization.
-- [ ] **P1-02 Map captured state** — Produce a typed dependency/ownership map for `runAgentTurn` and `executeSingleTool`.
-- [ ] **P1-03 Extract pure utilities** — Move continuation overlap and existing pure helpers without logic edits.
-- [ ] **P1-04 Extract output/event services** — Make event and display dependencies explicit; preserve order and channels.
-- [ ] **P1-05 Extract compaction services** — Preserve thresholds, single-admission rules, summaries, retry, and usage.
-- [ ] **P1-06 Extract responder ownership** — Preserve claims, wake/poll behavior, persistence, and parent linkage.
-- [ ] **P1-07 Extract tool execution coordination** — Decompose dispatch/result recording while retaining tool/safety boundaries.
+- [x] **P1-01 Characterize runner contracts** — Facade exports/signatures, continuation, event transcripts, compaction, responders, tools, and recorder behavior are frozen by executable tests. Evidence: [seam ledger](evidence/phase-1/seam-ledger.md) rows 2-24; commits `a6bd464` onward; `quality:contracts` reports public contracts unchanged on every seam.
+- [x] **P1-02 Map captured state** — Typed dependency/ownership map for `runAgentTurn` and `executeSingleTool`. Evidence: [`evidence/phase-1/ownership-map.md`](evidence/phase-1/ownership-map.md), commit `ac273ff`.
+- [x] **P1-03 Extract pure utilities** — Continuation overlap and inserted-text moved with no logic edits. Evidence: commits `45dc780`, `1324b6d`; `trimExactContinuationOverlap` Halstead violation resolved.
+- [x] **P1-04 Extract output/event services** — Narrow event port/output state, typed emitter, and tool-result recorder. Evidence: commits `d6a8210`, `07dfd55`, `c313028`; exact event transcript tests.
+- [x] **P1-05 Extract compaction services** — Admission, durable envelope, replay selection, summarizer, request estimation, execution, candidate preparation, final fit, and messages are separate services. Evidence: commits `c65afea`, `e235bd8`, `b51ec94`, `48eb2d3`, `81952c7`, `12e6fff`, `ee86c08`, `7704192`, `4403f3a`; `maybeAutoCompact` cleared both complexity gates.
+- [x] **P1-06 Extract responder ownership** — Single-owner claim ledger plus wake parsing and inbox delivery with preserved identity, filters, bounds, and lookup order. Evidence: commits `5fb5fb9`, `9515a92`; responder domain/inband/parent/persistence/polling/wake suites green.
+- [~] **P1-07 Extract tool execution coordination** — MCP agent tool path, tool routing, prompt/system section assembly, session-state projection, and the task completion gate are extracted. `executeSingleTool` stage decomposition is still open. Evidence: commits `4a21e59`, `ea832df`, `c8bf4fc`, `9d79840`, `8c1ac64`, `1ed7bf3`.
 - [ ] **P1-08 Extract finalization** — Guarantee exactly-once outcome, persistence, queue continuation, and working-time events.
-- [ ] **P1-09 Reduce facade and close gates** — Keep `runAgentLoop`/`runAgentTurn` signatures stable; make `runner.ts` and extracted files `<500`; remove its legacy entry; pass Phase 1 metrics/tests.
+- [~] **P1-09 Reduce facade and close gates** — `runner.ts` is 5,995 lines (entry 6,769); maximum cognitive 2,828 (entry 3,197) and cyclomatic 408 (entry 456); 567 legacy findings held with zero regressions. The `<500` facade target and the legacy-baseline removal remain open.
 
 Milestone boundary: one seam per reversible commit. Suggested final subject: `refactor(agent): decompose turn orchestration`.
 
