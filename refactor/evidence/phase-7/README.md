@@ -67,7 +67,7 @@ Two real defects were caught during this work and fixed before the final run:
 * **Explicit `any` remains 40.** Untouched deliberately: the instructions forbid
   replacing `any` with `unknown` plus a cast, so each site needs a real decoder or
   domain type. That is behavior-adjacent work and was not attempted blind.
-* **47 files remain >= 500 lines.** The largest are single classes
+* **47 files remain over their limit** (44 at or above 500 lines, plus 3 files under `src/classic/` between 400 and 499 where the contributor guideline is 400). The largest are single classes
   (`JobManager` 1,946, `InteractiveSessionManager` 1,455, `LoopGuard` 1,081,
   `SessionController` 936, `SessionRuntimeHost` 847, `McpRuntime` 767) and single
   functions or React components (`openAiCompatibleStream` 882, `runTurnRounds`

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generatedBy": "scripts/quality/report.mjs",
   "measured": true,
-  "durationMs": 3614,
+  "durationMs": 3598,
   "limits": {
     "fileLines": 500,
     "classicFileLines": 400,

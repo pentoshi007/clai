@@ -16,7 +16,7 @@ modal-rotation, provider-pairing and fallback-gate suites — 89 files, 1,203 pa
 | Module | Entry | Now |
 |---|---:|---:|
 | `src/llm/http.ts` | 2,646 | 91 |
-| `src/llm/router.ts` | 1,868 | 388 |
+| `src/llm/router.ts` | 1,868 | 418 |
 | `src/llm/capabilities.ts` | 991 | 409 |
 | `src/llm/provider.ts` | 909 | 182 |
 | `src/llm/custom-provider-profile.ts` | 772 | 177 |

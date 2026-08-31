@@ -6,7 +6,7 @@ Branch `refactor/codebase`. Environment: Linux x64, Node 24, canonical locale/TZ
 
 | Module | Entry | Now |
 |---|---:|---:|
-| `src/store/history.ts` | 1,931 | 372 |
+| `src/store/history.ts` | 1,931 | 362 |
 | `src/store/plan.ts` | 1,187 | 267 |
 | `src/store/keys.ts` | 994 | 387 |
 | `src/store/config.ts` | 687 | 153 |

@@ -4,9 +4,9 @@
 |---|---|---|
 | 0 | [phase-0](phase-0/README.md) | Closed. Deterministic runner, pinned analyzers, baselines, ratchets. |
 | 1 | [phase-1](phase-1/completion-map.md), [seams](phase-1/seam-ledger.md) | Closed. `runner.ts` 6,769 -> 836. |
-| 2 | [phase-2](phase-2/README.md) | Closed. `http.ts` 2,646 -> 91, `router.ts` 1,868 -> 388. |
+| 2 | [phase-2](phase-2/README.md) | Closed. `http.ts` 2,646 -> 91, `router.ts` 1,868 -> 418. |
 | 3 | [phase-3](phase-3/README.md) | Closed with a recorded deferral (`JobManager`). |
-| 4 | [phase-4](phase-4/README.md) | Closed. `history.ts` 1,931 -> 372, `plan.ts` 1,187 -> 267. |
+| 4 | [phase-4](phase-4/README.md) | Closed. `history.ts` 1,931 -> 362, `plan.ts` 1,187 -> 242. |
 | 5 | [phase-5](phase-5/README.md) | Closed with recorded deferrals (two manager classes). |
 | 6 | [phase-6](phase-6/README.md) | Closed with recorded deferrals (three React components). |
 | 7 | [phase-7](phase-7/README.md) | Partial: sizes and comments closed; type debt open. |
@@ -18,7 +18,8 @@
 |---|---:|---:|
 | `src` physical lines | 162,417 | 152,900 |
 | Modules measured | 630 | 883 |
-| Files >= 500 lines | 81 | 47 |
+| Files over their line limit (500, or 400 under `src/classic/`) | 81 | 47 |
+| Files >= 500 lines, flat count | 78 | 44 |
 | Functions cognitive >= 22 | 322 | 319 |
 | Functions Halstead >= 80 | 15 | 11 |
 | Explicit `any` | 40 | 40 |

@@ -15,8 +15,8 @@ security — 53 files, 399 passed, exit 0.
 
 | Module | Entry | Now |
 |---|---:|---:|
-| `src/tools/definitions.ts` | 1,649 | 71 |
-| `src/tools/registry.ts` | 2,126 | 272 |
+| `src/tools/definitions.ts` | 1,649 | 67 |
+| `src/tools/registry.ts` | 2,126 | 246 |
 | `src/tools/fs.ts` | 1,471 | 337 |
 | `src/tools/shell.ts` | 1,042 | 285 |
 | `src/tools/jobs.ts` | 2,590 | 2,033 |
