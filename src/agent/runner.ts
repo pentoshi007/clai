@@ -46,6 +46,7 @@ import { createCompactionDurableEnvelopeBuilder } from "./turn/compaction-durabl
 import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selection.js";
 import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
 import { prepareCompactionCandidateMessages } from "./turn/compaction-candidate.js";
+import { measureCompactionFinalFit } from "./turn/compaction-final-fit.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -3867,43 +3868,34 @@ export async function runAgentTurn(
           livePlan,
           planApproved: session.planApproved.value,
         });
-        if (contextLimitTokens !== undefined) {
-          const finalFit = accountAssembledRequest({
-            provider,
-            model,
-            messages: candidateMessages,
-            stream: true,
-            ...(selectToolDefs(nativeToolsActive, useCompactSystemPrompt)?.length
-              ? {
-                  tools: selectToolDefs(
-                    nativeToolsActive,
-                    useCompactSystemPrompt,
-                  ),
-                }
-              : {}),
-            contextLimitTokens,
+        const finalFit = measureCompactionFinalFit({
+          provider,
+          model,
+          messages: candidateMessages,
+          contextLimitTokens,
+          selectTools: () =>
+            selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+        });
+        if (finalFit?.accounting.overLimit) {
+          const dominant = describeDominantContextBlock(candidateMessages);
+          compactionAttempts.recordFailure(attemptKey);
+          await auditLog("agent.compact.overflow", {
+            reason,
+            candidateTokens: finalFit.accounting.requestTokens,
+            safeLimit: finalFit.accounting.limit.effectiveSafeTokens,
+            trigger: compactTrigger,
+            dominant,
           });
-          if (finalFit.accounting.overLimit) {
-            const dominant = describeDominantContextBlock(candidateMessages);
-            compactionAttempts.recordFailure(attemptKey);
-            await auditLog("agent.compact.overflow", {
-              reason,
-              candidateTokens: finalFit.accounting.requestTokens,
-              safeLimit: finalFit.accounting.limit.effectiveSafeTokens,
-              trigger: compactTrigger,
-              dominant,
-            });
-            writeNotice(
-              "warn",
-              `compacted request would still exceed the effective safe context limit (~${finalFit.accounting.requestTokens.toLocaleString()} > ~${(finalFit.accounting.limit.effectiveSafeTokens ?? 0).toLocaleString()} tokens) — largest block: ${dominant}; run /compact or trim large outputs`,
-            );
-            writeCompactionFailed(
-              compactionId,
-              `Compacted request would not fit the effective safe context limit; largest block: ${dominant}.`,
-              beforeTokens,
-            );
-            return;
-          }
+          writeNotice(
+            "warn",
+            `compacted request would still exceed the effective safe context limit (~${finalFit.accounting.requestTokens.toLocaleString()} > ~${(finalFit.accounting.limit.effectiveSafeTokens ?? 0).toLocaleString()} tokens) — largest block: ${dominant}; run /compact or trim large outputs`,
+          );
+          writeCompactionFailed(
+            compactionId,
+            `Compacted request would not fit the effective safe context limit; largest block: ${dominant}.`,
+            beforeTokens,
+          );
+          return;
         }
         messages.splice(0, messages.length, ...candidateMessages);
         compactionAttempts.recordSuccess(attemptKey);
