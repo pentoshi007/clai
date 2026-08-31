@@ -76,6 +76,10 @@ import {
 } from "./turn/loop/native-tool-calls.js";
 import { recoverMissingToolCall } from "./turn/loop/tool-call-recovery.js";
 import {
+  accountCompletionUsage,
+  interpretCompletion,
+} from "./turn/loop/completion-interpretation.js";
+import {
   evaluateLoopGuardBlock,
   evaluateToolGuards,
   LOOP_RESET_OUTPUT,
@@ -2770,43 +2774,21 @@ export async function runAgentTurn(
         }
         provider = completion.provider;
         model = completion.model;
-        if (completion.usage) {
-          if (completion.usage.exact && completion.usage.promptTokens > 0) {
-            recordRequestTokenObservation({
-              provider: completion.provider,
-              model: completion.model,
-              estimatedRequestTokens: dispatchedRawRequestTokens,
-              actualPromptTokens: completion.usage.promptTokens,
-            });
-          }
-          const attempt = contextAttemptFromOperationUsage(
-            completion.operationUsage,
-          );
-          emit({
-            type: "token-usage",
-            usage: completion.usage,
-            model: completion.model,
-            provider: completion.provider,
-            ...(attempt.kind === "generation" ? { attempt } : {}),
-          });
-          // Cache telemetry: without read/create counts there is no way to tell
-          // whether the stable prefix is actually being reused.
-          const cacheRead = completion.usage.cachedPromptTokens ?? 0;
-          const cacheCreated = completion.usage.cacheCreationTokens ?? 0;
-          if (cacheRead > 0 || cacheCreated > 0) {
-            await auditLog("agent.prompt.cache", {
-              provider: completion.provider,
-              model: completion.model,
-              promptTokens: completion.usage.promptTokens,
-              cacheReadTokens: cacheRead,
-              cacheCreationTokens: cacheCreated,
-              hitRatio:
-                completion.usage.promptTokens > 0
-                  ? Number((cacheRead / completion.usage.promptTokens).toFixed(3))
-                  : 0,
-            });
-          }
-        }
+        await accountCompletionUsage(
+          {
+            dispatchedRawRequestTokens,
+            emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, attempt }) =>
+              emit({
+                type: "token-usage",
+                usage,
+                model: usageModel,
+                provider: usageProvider,
+                ...(attempt ? { attempt } : {}),
+              }),
+            audit: (event, payload) => auditLog(event, payload),
+          },
+          completion,
+        );
         streamSession.finishDeltaParser();
         // Sticky text-only may have flipped dialect during stream retry.
         ({ dialect: toolDialect, native: nativeToolsActive } =
@@ -2816,35 +2798,15 @@ export async function runAgentTurn(
         const usedNativeProtocol = Boolean(completion.toolCalls?.length) ||
           (toolsAttached && !isTextOnlyModel(provider, model));
 
-        const completionSplit = stripThinking(completion.text);
-        const completionThinkContent = [
-          streamSession.streamedReasoningText().trim() ||
-            (completion.reasoningBlock?.text ?? "").trim(),
-          completionSplit.thinkContent,
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-        if (completionThinkContent) rememberThinking(completionThinkContent);
-        const assistantTextResult = {
-          visible: completionSplit.visible,
-          hasThinking: completionThinkContent.length > 0,
-          thinkContent: completionThinkContent,
-        };
-        const continuedVisible = trimExactContinuationOverlap(
+        const interpreted = interpretCompletion({
+          completion,
+          streamedReasoningText: streamSession.streamedReasoningText(),
           interruptedVisible,
-          assistantTextResult.visible,
-        );
-        canonicalAssistantVisible = interruptedVisible + continuedVisible;
-        assistantText = {
-          ...assistantTextResult,
-          visible: continuedVisible,
-        };
-        const retryReasoning =
-          completion.reasoningArtifacts?.length || completion.reasoningBlock
-            ? completion
-            : assistantText.hasThinking
-              ? { reasoningBlock: { text: assistantText.thinkContent } }
-              : completion;
+        });
+        if (interpreted.thinkContent) rememberThinking(interpreted.thinkContent);
+        canonicalAssistantVisible = interpreted.canonicalVisible;
+        assistantText = interpreted.assistantText;
+        const retryReasoning = interpreted.retryReasoning;
         const commitAssistantRetry = (historyText: string): void => {
           const hasShownToolCall = deferredToolCalls.some((entry) => entry.shown);
           if (!hasShownToolCall) {
