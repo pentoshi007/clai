@@ -531,4 +531,3 @@ async function ensureModalCredentials(services: AppServices): Promise<boolean> {
 
   return true;
 }
-
