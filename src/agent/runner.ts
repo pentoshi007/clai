@@ -39,6 +39,10 @@ import { finalizeTurn } from "./turn/finalizer.js";
 import { assembleTurnMessages } from "./turn/message-assembly.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import { runMetaTool } from "./turn/tool-execution/meta-tools.js";
+import {
+  buildEngagementRunOptions,
+  createEphemeralToolJob,
+} from "./turn/tool-execution/run-setup.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { creditSuccessfulWork } from "./turn/task-credit.js";
 import {
@@ -1706,31 +1710,11 @@ export async function runAgentTurn(
         writeToolOutput(toolEventId, chunk);
       };
 
-      const jobId = randomUUID().slice(0, 8);
-      const emptyJobArtifact = () => ({
-        path: "",
-        chunks: [] as string[],
-        bytes: 0,
-        droppedBytes: 0,
-        redacted: false,
-        sha256: "",
-      });
-      const backgroundJob: BackgroundJob = {
-        id: jobId,
-        command: `${call.name} ${formatToolArgs(call)}`,
-        commandDisplay: `${call.name} ${formatToolArgs(call)}`,
-        cwd: safeCwd(),
-        status: "running",
-        startedAt: new Date().toISOString(),
-        artifactPath: "",
-        stdoutArtifact: "",
-        stderrArtifact: "",
-        artifacts: { stdout: emptyJobArtifact(), stderr: emptyJobArtifact() },
-        redactionProfile: "provider-secrets-v1",
-        ownerSessionId: session.sessionId,
-        // Tool-stall tracker only — must never show up in shell.jobs.
-        kind: "ephemeral",
-      };
+      const { id: jobId, job: backgroundJob } = createEphemeralToolJob(
+        call,
+        safeCwd(),
+        session.sessionId,
+      );
       jobManager.registerJob(jobId, backgroundJob, toolAc);
 
 
@@ -1744,34 +1728,14 @@ export async function runAgentTurn(
       });
       watchdog.resetStallTimer();
 
-      const engagementRunOptions =
-        engagementAction && scope
-            ? {
-              engagementAuthorization: {
-                target: engagementDecision?.normalizedTarget || engagementAction.target,
-                ...(scope.expiresAt ? { expiresAt: scope.expiresAt } : {}),
-              },
-              authorizeNetworkHop: async (url: string, resolvedAddresses: string[]) => {
-                const hop = actionFromUrl({
-                  url,
-                  method: engagementAction.method,
-                  phase: engagementAction.phase,
-                  capability: engagementAction.capability,
-                  resolvedAddresses,
-                });
-                const hopDecision = evaluateEngagementAction(scope, hop);
-                await auditLog("engagement.policy.hop", {
-                  ...(engagementGraph ? { engagementId: engagementGraph.id } : {}),
-                  ...(engagementRecord ? { actionId: engagementRecord.id } : {}),
-                  url,
-                  resolvedAddresses,
-                  allowed: hopDecision.allowed,
-                  reason: hopDecision.reason,
-                });
-                return { allowed: hopDecision.allowed, reason: hopDecision.reason };
-              },
-            }
-            : {};
+      const engagementRunOptions = buildEngagementRunOptions({
+        action: engagementAction,
+        scope,
+        normalizedTarget: engagementDecision?.normalizedTarget,
+        graph: engagementGraph,
+        record: engagementRecord,
+        audit: (event, payload) => auditLog(event, payload),
+      });
 
       const startToolWork = (): Promise<ToolResult> =>
           mcpRuntime !== undefined &&
