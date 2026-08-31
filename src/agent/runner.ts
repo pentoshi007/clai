@@ -111,7 +111,7 @@ import {
 } from "./turn/turn-counters.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
-import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
+import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
 import { linkResponderJobToPlan } from "./turn/responder-job-linkage.js";
 import { reconcileScaffoldOutcome } from "./turn/scaffold-outcome.js";
@@ -181,8 +181,6 @@ import {
   createCompactionSummarizer,
   type CompactionExecutionState,
 } from "./turn/compaction-summarizer.js";
-import { createCompactionRequestEstimator } from "./turn/compaction-request-estimator.js";
-import { createCompactionDurableEnvelopeBuilder } from "./turn/compaction-durable-envelope.js";
 import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selection.js";
 import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
 import { prepareCompactionCandidateMessages } from "./turn/compaction-candidate.js";
@@ -2026,83 +2024,55 @@ export async function runAgentTurn(
     // repeating this on every failure just adds noise.
     let freeTierAdvisoryShown = false;
 
-    const summarizeForCompaction = createCompactionSummarizer({
-      provider,
-      model,
-      signal: options.signal,
-      history: messages,
-      state: compactionExecutionState,
-      currentContextLimitTokens,
-      toolsForSourceMessages: () =>
-        selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
-      writeDelta: writeCompactionDelta,
-    });
-
-    const estimateNextRequestTokens = createCompactionRequestEstimator({
-      provider,
-      model,
-      selectTools: () => {
-        const { native } = resolveNativeTools(provider, model);
-        return selectToolDefs(native, useCompactSystemPrompt);
-      },
-    });
-
-    const buildTurnDurableEnvelope =
-      createCompactionDurableEnvelopeBuilder({
+    const { estimateNextRequestTokens, maybeAutoCompact } =
+      createCompactionServices({
         messages,
+        provider: () => provider,
+        model: () => model,
+        dialect: () => toolDialect,
+        signal: options.signal,
+        keepRecent: AUTO_COMPACT_KEEP_RECENT,
+        sessionId: session.sessionId,
         outcome: outcomeState,
         ledger: workLedger,
-        loadPlan: () => loadPlan(session.sessionId),
-        getProjectRoot: getActiveProjectRoot,
+        attempts: compactionAttempts,
+        executionState: compactionExecutionState,
+        contextLimitTokens: currentContextLimitTokens,
+        selectTools: () =>
+          selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+        selectToolsForResolvedDialect: () => {
+          const { native } = resolveNativeTools(provider, model);
+          return selectToolDefs(native, useCompactSystemPrompt);
+        },
+        loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
+        loadPlanStrict: () => loadPlan(session.sessionId),
+        projectRoot: getActiveProjectRoot,
         detectPackageManager,
-        getUnreadNotificationIds: () =>
-          jobManager
-            .getPendingNotifications(session.sessionId)
-            .map((notification) => notification.id),
-        getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
-        getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
+        pendingNotifications: () =>
+          jobManager.getPendingNotifications(session.sessionId),
+        runningJobs: () => jobManager.getRunningJobs(session.sessionId),
+        recentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
+        requestSnapshot: () => lastSuccessfulRequestSnapshot,
+        clearRequestSnapshot: () => {
+          lastSuccessfulRequestSnapshot = undefined;
+        },
+        instructionsBlock: () => agentInstructionsBlock,
+        skillsBlock: () => activeSkillsBlock,
+        planApproved: () => session.planApproved.value,
+        resetReadOnlyGuard: () => loopGuard.resetReadOnly(),
+        refreshSessionState: (plan) => refreshSessionState(plan),
+        setLastCompactionMsgCount: (count) => {
+          lastCompactionMsgCount = count;
+        },
+        writeDelta: writeCompactionDelta,
+        writeStarted: writeCompactionStarted,
+        writeFailed: writeCompactionFailed,
+        writeCompleted: writeCompactionCompleted,
+        notify: writeNotice,
+        audit: (event, payload) => {
+          void auditLog(event, payload);
+        },
       });
-
-    const maybeAutoCompact = createCompactionCoordinator({
-      messages,
-      provider: () => provider,
-      model: () => model,
-      dialect: () => toolDialect,
-      keepRecent: AUTO_COMPACT_KEEP_RECENT,
-      contextLimitTokens: currentContextLimitTokens,
-      estimateRequestTokens: estimateNextRequestTokens,
-      selectTools: () =>
-        selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
-      buildDurableEnvelope: buildTurnDurableEnvelope,
-      attempts: {
-        isSuppressed: (key) => compactionAttempts.isSuppressed(key),
-        recordFailure: (key) => compactionAttempts.recordFailure(key),
-        recordSuccess: (key) => compactionAttempts.recordSuccess(key),
-      },
-      executionState: compactionExecutionState,
-      newCompactionId: () => `compact-${randomUUID().slice(0, 12)}`,
-      lastSuccessfulRequestSnapshot: () => lastSuccessfulRequestSnapshot,
-      clearSuccessfulRequestSnapshot: () => {
-        lastSuccessfulRequestSnapshot = undefined;
-      },
-      summarize: summarizeForCompaction,
-      loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
-      instructionsBlock: () => agentInstructionsBlock,
-      skillsBlock: () => activeSkillsBlock,
-      planApproved: () => session.planApproved.value,
-      resetReadOnlyGuard: () => loopGuard.resetReadOnly(),
-      refreshSessionState: (plan) => refreshSessionState(plan),
-      setLastCompactionMsgCount: (count) => {
-        lastCompactionMsgCount = count;
-      },
-      writeStarted: writeCompactionStarted,
-      writeFailed: writeCompactionFailed,
-      writeCompleted: writeCompactionCompleted,
-      notify: writeNotice,
-      audit: (event, payload) => {
-        void auditLog(event, payload);
-      },
-    });
 
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
 
