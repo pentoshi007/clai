@@ -37,6 +37,7 @@ import type {
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
+import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -1511,58 +1512,18 @@ export async function runAgentTurn(
           }
 
           if (planResult.ok && call.name === "task.update") {
-            const stateRaw =
-              typeof call.args.state === "string" ? call.args.state : "";
-            const taskIdRaw =
-              typeof call.args.taskId === "string"
-                ? call.args.taskId
-                : typeof call.args.id === "string"
-                  ? call.args.id
-                  : "";
-            const resolved =
-              (planResult.plan
-                ? resolvePlanTaskId(planResult.plan, taskIdRaw)
-                : undefined) ?? taskIdRaw;
-            if (stateRaw === "in_progress" && resolved) {
-              // Keep accumulated evidence when recon already credited this task
-              // before an explicit in_progress (common on pentest plans).
-              // Also absorb turn-level preflight (tool.check before open).
-              const persisted = planResult.plan?.tasks.find(
-                (task) => task.id === resolved,
-              );
-              const baseLed =
-                taskWorkLedger?.taskId === resolved
-                  ? taskWorkLedger
-                  : ledgerFromTaskEvidence(resolved, persisted?.evidence);
-              const led =
-                absorbLooseWorkIntoLedger(
-                  baseLed,
-                  resolved,
-                  persisted?.title ?? "",
-                  sessionLooseWork,
-                  { planKind: planResult.plan?.kind },
-                ) ?? baseLed;
-              taskWorkLedger = led;
-              if (planResult.plan && led && led.successWorkCount > 0 && persisted) {
-                persisted.evidence = taskEvidenceFromLedger(led);
-                await persistTaskEvidence(persisted.id, persisted.evidence);
-              }
-            } else if (stateRaw === "done" && resolved) {
-              // Persist absorbed evidence before clearing the live ledger.
-              if (planResult.plan && taskWorkLedger?.taskId === resolved) {
-                const t = planResult.plan.tasks.find((x) => x.id === resolved);
-                if (t) {
-                  t.evidence = taskEvidenceFromLedger(taskWorkLedger);
-                  await persistTaskEvidence(t.id, t.evidence);
-                }
-              }
-              taskWorkLedger = null;
-            } else if (
-              (stateRaw === "failed" || stateRaw === "skipped") &&
-              taskWorkLedger?.taskId === resolved
-            ) {
-              taskWorkLedger = null;
-            }
+            await applyTaskUpdateLedgerTransition(
+              {
+                getLedger: () => taskWorkLedger,
+                setLedger: (ledger) => {
+                  taskWorkLedger = ledger;
+                },
+                looseWork: () => sessionLooseWork,
+                persistTaskEvidence,
+              },
+              call,
+              planResult.plan,
+            );
           }
 
           if (planResult.ok && planResult.plan) {
