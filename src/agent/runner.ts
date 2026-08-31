@@ -76,6 +76,10 @@ import {
 } from "./turn/loop/native-tool-calls.js";
 import { recoverMissingToolCall } from "./turn/loop/tool-call-recovery.js";
 import {
+  hasTruncatedNativeWrite,
+  salvageTruncatedNativeWrite,
+} from "./turn/loop/native-write-salvage.js";
+import {
   accountCompletionUsage,
   interpretCompletion,
 } from "./turn/loop/completion-interpretation.js";
@@ -2876,101 +2880,31 @@ export async function runAgentTurn(
 
 
         if (nativeToolCalls.length) {
-          // Only salvage when args failed to parse (truncated JSON). A clean
-          // parse with finish_reason=length is a complete tool call — execute it.
-          const writeTc = nativeToolCalls.find((tc) => {
-            const isWrite =
-              tc.name === "fs.write" ||
-              tc.name === "fs.append" ||
-              tc.name === "fs.writeMany";
-            return isWrite && Boolean(tc.args?._parseError);
-          });
-          if (writeTc) {
-            const raw =
-              writeTc.rawArguments ??
-              (typeof writeTc.args?._raw === "string"
-                ? String(writeTc.args._raw)
-                : undefined);
-            const salvaged = salvageTruncatedWriteFromNative(
-              writeTc.name,
-              raw,
+          truncatedToolRetries += hasTruncatedNativeWrite(nativeToolCalls) ? 1 : 0;
+          if (truncatedToolRetries <= 5) {
+            const salvagedNative = await salvageTruncatedNativeWrite(
+              {
+                messages,
+                toolsAttached,
+                notify: writeNotice,
+                applySalvagedWrite,
+              },
+              {
+                nativeToolCalls,
+                assistantVisible: assistantText.visible,
+                assistantThinkContent: assistantText.thinkContent,
+                hasThinking: assistantText.hasThinking,
+                completion,
+              },
             );
-            if (salvaged) {
-              truncatedToolRetries += 1;
-              if (truncatedToolRetries <= 5) {
-                try {
-                  const writeResult = await applySalvagedWrite(salvaged);
-                  if (writeResult.ok) {
-                    const lineCount = salvaged.content.split("\n").length;
-                    writeNotice(
-                      "info",
-                      `native tool call was truncated — salvaged ${lineCount} lines and wrote to ${salvaged.path}`,
-                    );
-                    // Pair assistant tool_calls with synthetic results so the
-                    // next turn is not orphaned, then nudge for append.
-                    const salvageHistoryCalls = ensureUniqueToolCallIds(
-                      nativeToolCalls,
-                      toolCallIdsInHistory(messages),
-                    );
-                    const salvagedCallIndex = nativeToolCalls.indexOf(writeTc);
-                    const salvagedCallId =
-                      salvageHistoryCalls[salvagedCallIndex]?.id ?? writeTc.id;
-                    appendAssistantWithTools(
-                      messages,
-                      assistantText.visible,
-                      salvageHistoryCalls,
-                      completion.reasoningBlock ??
-                        (assistantText.hasThinking && assistantText.thinkContent
-                          ? { text: assistantText.thinkContent }
-                          : undefined),
-                      completion.reasoningArtifacts,
-                    );
-                    for (const tc of salvageHistoryCalls) {
-                      appendToolResult(
-                        messages,
-                        tc.id,
-                        tc.id === salvagedCallId
-                          ? `Tool ${tc.name} result (exit=0, ok=true):\nSalvaged partial write: ${lineCount} lines to ${salvaged.path}`
-                          : `Tool ${tc.name} result (exit=1, ok=false):\nCancelled — sibling write was truncated and salvaged.`,
-                        tc.name,
-                        tc.id === salvagedCallId,
-                      );
-                    }
-                    const priorBytes = writeResult.bytesOnDisk;
-                    const salvagedToolName =
-                      salvaged.operation === "append"
-                        ? "fs.append"
-                        : "fs.write";
-                    const appendNudge = toolsAttached
-                      ? `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
-                      `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the remaining content not already on disk (prefer hundreds of lines per call). ` +
-                      `Do not re-read the full file; do not re-send content already saved. Use the platform tool interface — no markdown fences.`
-                      : `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
-                      `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE with ONE large fs.append of the remaining content:\n` +
-                      '```tool\n{"name":"fs.append","args":{"path":' +
-                      JSON.stringify(salvaged.path) +
-                      ',"expectedPriorBytes":' +
-                      priorBytes +
-                      ',"content":"...ONLY the remaining content not already on disk..."}}\n```';
-                    messages.push({
-                      role: "user",
-                      content: appendNudge,
-                    });
-                    nativeToolCalls = [];
-                    call = undefined;
-                    deferredToolCalls.length = 0;
-                    continue;
-                  }
-                } catch {
-                  // fall through to normal parse-error handling
-                }
-              }
+            if (salvagedNative) {
+              nativeToolCalls = [];
+              call = undefined;
+              deferredToolCalls.length = 0;
+              continue;
             }
           }
         }
-
 
         if (nativeToolCalls.length) {
           const unparseable = nativeToolCalls.filter((tc) =>
