@@ -41,6 +41,7 @@ import type {
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
+import { buildPromptSections } from "./turn/prompt-sections.js";
 import {
   createMcpAgentCallFailure,
   createMcpAgentToolExecutor,
@@ -194,7 +195,6 @@ import { skillMentionNames } from "../skills/mentions.js";
 import {
   renderActiveSkills,
   renderSkillCatalog,
-  SKILLS_CATALOG_PREFIX,
 } from "../skills/catalog.js";
 import type { LoadedSkill } from "../skills/types.js";
 import { loadScopeForSession, isScopeActive } from "../store/scope.js";
@@ -1127,68 +1127,13 @@ export async function runAgentTurn(
       if (catalog) systemSections.push(catalog);
     }
 
-    const promptSections = (): AgentPromptSection[] => {
-      const sections: AgentPromptSection[] = systemSections.map((content) => ({
-        kind: content.startsWith(SKILLS_CATALOG_PREFIX)
-          ? "context"
-          : content.startsWith("ACTIVE PLAN")
-          ? "plan"
-          : content.startsWith("ENGAGEMENT SCOPE")
-            ? "scope"
-            : content.includes("MODE")
-              ? "mode"
-              : content.includes("OUTCOME")
-                ? "outcome"
-                : content.includes("WORKFLOW") ||
-                    content.includes("FOCUS") ||
-                    content.startsWith("WORK PROFILE")
-                  ? "focus"
-                  : "context",
-        content,
-        mandatory: content.startsWith(SKILLS_CATALOG_PREFIX)
-          ? selectedSkillNames.length > 0
-          : content.startsWith("ACTIVE PLAN") ||
-            content.startsWith("MCP TOOL CONTEXT") ||
-            content.startsWith("ENGAGEMENT SCOPE") ||
-            content.startsWith("REQUEST ENVIRONMENT") ||
-            content.startsWith("Project context from .clai/context.md:") ||
-            content.startsWith("ACTIVE PROJECT ROOT:") ||
-            content.startsWith("USER DESTINATION:") ||
-            content.startsWith("WORKSPACE STATUS") ||
-            content.includes("MODE") ||
-            content.includes("OUTCOME"),
-      }));
-      const has = (kind: AgentPromptSection["kind"]): boolean =>
-        sections.some((section) => section.kind === kind);
-      if (!has("outcome")) {
-        sections.push({
-          kind: "outcome",
-          content: `OUTCOME CONTRACT\nGoal: ${prompt}\nDecide first what this request actually asks for: a question or doubt is satisfied by an accurate, grounded answer, while a directive to change something is satisfied only by the verified change. Success requires evidence that whichever of those the user asked for is delivered; otherwise return partial, blocked, failed, aborted, or paused_budget with remaining criteria.`,
-          mandatory: true,
-        });
-      }
-      if (!has("plan")) {
-        sections.push({
-          kind: "plan",
-          content:
-            "PLAN PROTOCOL\nThe live plan, when one exists, is appended to this request as a single ACTIVE PLAN message. Treat that message as the only authoritative plan state; never rely on plan details quoted in earlier turns.",
-          mandatory: true,
-        });
-      }
-      if (!has("scope")) {
-        sections.push({
-          kind: "scope",
-          content: "ENGAGEMENT SCOPE\nNo active remote-security scope applies to this turn.",
-          mandatory: true,
-        });
-      }
-      sections.push({
-        kind: "context",
-        content: `TASK STATE\nMode: ${agentMode}. Current request: ${prompt}`,
-        mandatory: true,
+    const promptSections = (): AgentPromptSection[] =>
+      buildPromptSections({
+        systemSections,
+        selectedSkillNames,
+        prompt,
+        mode: agentMode,
       });
-      return sections;
-    };
     const composeCurrentSystemPrompt = (native: boolean): string =>
       buildStableSystemContent(native);
     const requestContext = composeAgentSystemPrompt({
