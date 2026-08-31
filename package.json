@@ -65,6 +65,7 @@
     "test:bun": "bun run test:bun:v2 && bun run test:bun:parity",
     "release:verify": "tsx scripts/validate-release.ts",
     "quality:report": "node scripts/quality/report.mjs",
+    "quality:ratchet": "node scripts/quality/ratchet.mjs",
     "quality:contracts": "node scripts/quality/contract-inventory.mjs --check",
     "quality:coverage": "node scripts/run-tests.mjs --coverage",
     "quality:dead-code": "knip --reporter json --no-exit-code",
