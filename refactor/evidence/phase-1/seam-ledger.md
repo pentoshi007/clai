@@ -31,20 +31,42 @@ boundary that was validated before it was pushed.
 | 22 | `9d79840` | session state projection | `turn/session-state-projection.ts` |
 | 23 | `8c1ac64` | task completion gate | `turn/task-gate.ts` |
 | 24 | `1ed7bf3` | tool routing and prompt content | `turn/tool-routing.ts` |
+| 25 | `346725e` | responder read and task update gates | `turn/responder-read-tool.ts`, `turn/task-update-gate.ts` |
+| 26 | `a67ef9f` | responder read decomposition | `turn/responder-read-tool.ts` |
+| 27 | `e31a49b` | tool execution watchdog | `turn/tool-watchdog.ts` |
+| 28 | `d9baf89` | multi-task batch guard | `turn/task-batch-guard.ts` |
+| 29 | `c8cee4d` | tool evidence signal reading | `turn/tool-evidence-signals.ts` |
+| 30 | `f247938` | plan mode gather gate | `turn/plan-mode-gate.ts` |
+| 31 | `ce01016` | plan task autostart | `turn/task-autostart.ts` |
+| 32 | `0d0369f` | scaffold preflight decision | `turn/scaffold-preflight.ts` |
 
 ## Measured effect
 
 | Metric | Phase 1 entry | Current |
 |---|---:|---:|
-| `src/agent/runner.ts` physical lines | 6,769 | 5,995 |
-| maximum cognitive complexity | 3,197 | 2,828 |
-| maximum cyclomatic complexity | 456 | 408 |
-| held legacy findings | 572 | 567 |
+| `src/agent/runner.ts` physical lines | 6,769 | 5,617 |
+| maximum cognitive complexity | 3,197 | 2,712 |
+| maximum cyclomatic complexity | 456 | 392 |
+| held legacy findings | 572 | 565 |
 | ratchet regressions | 0 | 0 |
 
 Resolved legacy findings so far: `trimExactContinuationOverlap` Halstead,
-`maybeAutoCompact` cyclomatic and cognitive, `promptSections` cognitive, and one
-anonymous recorder callback's cognitive violation.
+`maybeAutoCompact` cyclomatic and cognitive, `promptSections` cognitive, one
+anonymous recorder callback's cognitive violation, and the `runToolWithForcedSettle`
+findings removed with the watchdog extraction.
+
+Two changed-code gate failures were fixed by restructuring, never by weakening a
+gate: `decideResponderRead` was split into `findMatch`/`wakeIdentityMatches`/
+`failureText` after measuring cyclomatic 28, and the watchdog was rebuilt from
+nested closures into module-level helpers with a settle-tracked `Promise.race`
+after measuring cognitive 57 plus a gated `unknown` parameter. One behavior
+difference was caught during the evidence-signal extraction and corrected before
+commit: a curl "soft success" probe must not reset `recovery.failedProbe`, so the
+signal type distinguishes `success` from `softSuccess`.
+
+A `prettier --write` run reformatted unrelated regions of `runner.ts` during the
+watchdog seam. That diff was reverted and the wiring re-applied without
+formatting, per the rule that a move may not carry a formatting sweep.
 
 ## Validation performed per seam
 
@@ -70,11 +92,12 @@ removed; `unknown` parameter replaced with a narrowed failure input).
 | Command | Exit | Result |
 |---|---:|---|
 | `npm run typecheck` | 0 | clean |
-| `npm run test:deterministic -- --reporter=dot` | 0 | 583 files, 5,863 passed, 12 skipped |
+| `npm run embed-prompts:check` | 0 | 2 prompts match their sources |
+| `npm run test:deterministic -- --reporter=dot` | 0 | 591 files, 5,929 passed, 12 skipped |
 | `npm run test:arch -- --reporter=dot` | 0 | 1 file, 5 tests |
 | `npm run quality:contracts` | 0 | public contracts unchanged |
 | `npm run quality:changed` | 0 | 0 failures |
-| `npm run quality:ratchet` | 0 | 567 held, 0 regressions |
+| `npm run quality:ratchet` | 0 | 565 held, 13 improvements, 0 regressions |
 | `npm run build` | 0 | dist emitted |
 | `git diff --check` | 0 | no whitespace errors |
 
@@ -84,9 +107,9 @@ threshold, so its entry legitimately remains.
 
 ## Remaining Phase 1 work
 
-1. Decompose `executeSingleTool` by orchestration stage (loop-guard prelude,
-   safety/scope decision, confirmation handoff, dispatch, execution supervision,
-   result recording).
+1. Finish `executeSingleTool`: the safety/scope decision, confirmation and
+   authorization handoff, dispatch and responder delegation, responder job plan
+   linkage, and the post-execution result framing remain inline.
 2. Decompose the iteration loop (request assembly, stream handling, recovery,
    continuation, evidence gates).
 3. Extract exactly-once finalization from `finishTurn`.
