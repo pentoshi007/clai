@@ -52,6 +52,7 @@ import { decidePlanModeGate } from "./turn/plan-mode-gate.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
+import { createTurnHistoryWriter } from "./turn/history-writer.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -1016,75 +1017,18 @@ export async function runAgentTurn(
     let refreshSessionState: (
       plan?: SessionPlan | null | undefined,
     ) => void = () => undefined;
-    /** Model-only nudge — never shown as a YOU bubble / WARN in the chat UI. */
-    const recoveryUserMessage = (content: string): ChatMessage => {
-      const message: ChatMessage = { role: "user", content, internal: true };
-      if (options.images && options.images.length > 0) {
-        // Some OpenAI-compatible gateways/models attend most strongly to the
-        // latest user turn. Keep the image attached on recovery nudges so a
-        // thinking-only retry does not degrade into OCR/tool guessing.
-        message.images = options.images;
-      }
-      return message;
-    };
-
-    const upsertActionCycleRecovery = (content: string): void => {
-      const prefix = "[ACTION CYCLE RECOVERY] ";
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const message = messages[index]!;
-        if (message.role === "user" && message.internal && message.content.startsWith(prefix)) {
-          messages.splice(index, 1);
-          break;
-        }
-      }
-      messages.push(recoveryUserMessage(prefix + content));
-    };
-
-    const recoveryProse = (content: string): string | undefined => {
-      const text = textBeforeToolCall(stripSentinelTokens(content)).trim();
-      if (
-        !text ||
-        /^```|^\{|<tool_call>|<\|tool_call(?:s_section)?_begin\|>/i.test(
-          text,
-        ) ||
-        /\n\s*\{[\s\S]*\}\s*$/.test(text)
-      ) {
-        return undefined;
-      }
-      return text;
-    };
-    const pushAssistantHistory = (
-      content: string,
-      reasoning?: Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock">,
-    ): void => {
-      const cleaned = sanitizeAssistantText(
-        hasReasoningMarker(content) ? stripThinking(content).visible : content,
-      );
-      if (!outputState.visibleCommitted) {
-        const prose = recoveryProse(cleaned);
-        if (prose) writeAssistantMessage(prose);
-      }
-      const persistedArtifacts = reasoningArtifactsForPersistence({
-        artifacts: reasoning?.reasoningArtifacts,
-        hasToolCalls: false,
-      });
-      const reasoningBlock = persistedArtifacts
-        ? legacyReasoningBlockFromArtifacts(persistedArtifacts)
-        : reasoning?.reasoningArtifacts
-          ? undefined
-          : reasoning?.reasoningBlock;
-      messages.push({
-        role: "assistant",
-        content: cleaned.trim()
-          ? cleaned
-          : "[No visible assistant response was produced.]",
-        ...(reasoningBlock?.text || reasoningBlock?.items?.length
-          ? { reasoningBlock }
-          : {}),
-        ...(persistedArtifacts ? { reasoningArtifacts: persistedArtifacts } : {}),
-      });
-    };
-
+    const {
+      recoveryUserMessage,
+      upsertActionCycleRecovery,
+      recoveryProse,
+      pushAssistantHistory,
+    } = createTurnHistoryWriter({
+      messages,
+      images: options.images,
+      sanitizeAssistantText,
+      visibleCommitted: () => outputState.visibleCommitted,
+      writeAssistantMessage,
+    });
 
     const loopGuard = new LoopGuard();
     // Uncalibrated estimate for the request currently in flight. Paired with the
