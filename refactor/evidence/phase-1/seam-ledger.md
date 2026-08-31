@@ -70,7 +70,7 @@ boundary that was validated before it was pushed.
 
 | Metric | Phase 1 entry | Current |
 |---|---:|---:|
-| `src/agent/runner.ts` physical lines | 6,769 | 3,271 |
+| `src/agent/runner.ts` physical lines | 6,769 | 978 |
 | maximum cognitive complexity | 3,197 | 2,712 |
 | maximum cyclomatic complexity | 456 | 392 |
 | held legacy findings | 572 | 564 |
@@ -127,7 +127,7 @@ removed; `unknown` parameter replaced with a narrowed failure input).
 | `npm run build` | 0 | dist emitted |
 | `git diff --check` | 0 | no whitespace errors |
 
-Modules now under `src/agent/turn/`: 47 source files plus their tests.
+Modules now under `src/agent/turn/`: 60+ source files plus their tests. The runner entry was removed from `test/architecture/legacy-baseline.json` in commit 6263dac.
 
 Public contract changes: **none**. `test/architecture/legacy-baseline.json` is
 unmodified; `src/agent/runner.ts` is still above the 1,000-line removal
