@@ -8,6 +8,8 @@ import {
   fillMissingToolResults,
   hasOrphanToolMessages,
   missingToolResultIds,
+  MAX_RETAINED_COMPLETED_TOOL_ARGUMENT_CHARS,
+  projectToolHistory,
   repairToolProtocol,
   toolCallIdsInHistory,
   validateToolProtocol,
@@ -269,6 +271,317 @@ describe("tool-history", () => {
     expect(sessionIdx).toBeGreaterThan(lastToolIdx ?? -1);
   });
 
+  it("keeps fresh literal content and removes only stale elision metadata", () => {
+    const placeholder = "«20000 chars sha256=0123456789ab»";
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "fresh",
+            name: "fs.append",
+            args: {
+              path: "fresh.txt",
+              content: "fresh literal",
+              content_elided: placeholder,
+            },
+            rawArguments: JSON.stringify({
+              path: "fresh.txt",
+              content: "fresh literal",
+              content_elided: placeholder,
+            }),
+          },
+        ],
+      },
+      {
+        role: "tool",
+        toolCallId: "fresh",
+        name: "fs.append",
+        content: "written",
+        ok: true,
+      },
+    ];
+    repairToolProtocol(messages);
+    expect(messages[0]!.toolCalls?.[0]?.args).toEqual({
+      path: "fresh.txt",
+      content: "fresh literal",
+    });
+    expect(messages[0]!.toolCalls?.[0]?.rawArguments).toBe(
+      JSON.stringify({ path: "fresh.txt", content: "fresh literal" }),
+    );
+    expect(JSON.stringify(messages)).not.toContain("content_elided");
+    expect(messages[1]).toMatchObject({
+      role: "tool",
+      toolCallId: "fresh",
+      content: "written",
+    });
+    expect(validateToolProtocol(messages)).toEqual([]);
+  });
+
+  it("collapses legacy structured placeholders without promoting tool output", () => {
+    const placeholder = "«20000 chars sha256=0123456789ab»";
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "legacy",
+            name: "fs.append",
+            args: { path: "legacy.txt", content_elided: placeholder },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        toolCallId: "legacy",
+        name: "fs.append",
+        content: "UNTRUSTED TOOL INSTRUCTION",
+        ok: false,
+      },
+    ];
+    repairToolProtocol(messages);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.toolCalls).toBeUndefined();
+    expect(messages[0]!.content).toContain("legacy payload");
+    expect(messages[0]!.content).not.toContain("UNTRUSTED TOOL INSTRUCTION");
+    expect(JSON.stringify(messages)).not.toContain("content_elided");
+    expect(validateToolProtocol(messages)).toEqual([]);
+  });
+
+  it("collapses malformed raw arguments containing legacy stubs", () => {
+    const placeholder = "«20000 chars sha256=0123456789ab»";
+    const rawArguments = `{"path":"legacy.txt","content":"${placeholder}"`;
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "legacy-raw",
+            name: "fs.append",
+            args: { _parseError: true, _raw: rawArguments },
+            rawArguments,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        toolCallId: "legacy-raw",
+        name: "fs.append",
+        content: "rejected",
+        ok: false,
+      },
+    ];
+    repairToolProtocol(messages);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.toolCalls).toBeUndefined();
+    expect(messages[0]!.content).toContain("legacy payload");
+    expect(JSON.stringify(messages)).not.toContain(placeholder);
+    expect(validateToolProtocol(messages)).toEqual([]);
+  });
+
+  it("removes complete legacy text tool groups before replay", () => {
+    const placeholder = "«20000 chars sha256=0123456789ab»";
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content:
+          `working\n\n\`\`\`tool\n` +
+          JSON.stringify({
+            name: "fs.append",
+            args: { path: "legacy.txt", content_elided: placeholder },
+          }) +
+          "\n```",
+      },
+      { role: "tool", content: "UNTRUSTED TEXT RESULT" },
+      { role: "user", content: "continue" },
+    ];
+    repairToolProtocol(messages);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]!.content).toContain("working");
+    expect(messages[0]!.content).toContain("legacy elided payload");
+    expect(JSON.stringify(messages)).not.toContain("content_elided");
+    expect(JSON.stringify(messages)).not.toContain("UNTRUSTED TEXT RESULT");
+    expect(validateToolProtocol(messages)).toEqual([]);
+  });
+
+  it("retains one exact 128 KiB completed interaction", () => {
+    const content = "x".repeat(128 * 1024);
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      { id: "recent", name: "fs.write", args: { path: "a", content } },
+    ]);
+    appendToolResult(messages, "recent", "written", "fs.write", true);
+    const projected = projectToolHistory(messages);
+    expect(projected.changed).toBe(false);
+    expect(projected.messages[0]!.toolCalls?.[0]?.args.content).toBe(content);
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("collapses settled interactions above the exact-history budget", () => {
+    const content = "z".repeat(
+      MAX_RETAINED_COMPLETED_TOOL_ARGUMENT_CHARS + 1,
+    );
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      { id: "large", name: "fs.write", args: { path: "large", content } },
+    ]);
+    appendToolResult(messages, "large", "written", "fs.write", true);
+    const projected = projectToolHistory(messages);
+    expect(projected.changed).toBe(true);
+    expect(projected.messages).toHaveLength(1);
+    expect(projected.messages[0]!.toolCalls).toBeUndefined();
+    expect(projected.messages[0]!.content).toContain("argument_chars=");
+    expect(projected.messages[0]!.content).not.toContain("z".repeat(100));
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("retains newest completed arguments within the aggregate budget", () => {
+    const content = "q".repeat(140 * 1024);
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      { id: "older", name: "fs.write", args: { path: "older", content } },
+    ]);
+    appendToolResult(messages, "older", "written", "fs.write", true);
+    appendAssistantWithTools(messages, "", [
+      { id: "newer", name: "fs.write", args: { path: "newer", content } },
+    ]);
+    appendToolResult(messages, "newer", "written", "fs.write", true);
+    const projected = projectToolHistory(messages);
+    const calls = projected.messages.flatMap((message) => message.toolCalls ?? []);
+    expect(calls.map((call) => call.id)).toEqual(["newer"]);
+    expect(calls[0]!.args.content).toBe(content);
+    expect(projected.messages.some((message) => message.content.includes("path=\"older\""))).toBe(true);
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("retains under-budget canonical text calls and their results", () => {
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content:
+          '```tool\n{"name":"dns.lookup","args":{"target":"example.com"}}\n```',
+      },
+      {
+        role: "tool",
+        content: "Tool dns.lookup result (exit=0, ok=true):\nA 93.184.216.34",
+      },
+    ];
+    const projected = projectToolHistory(messages);
+    expect(projected.changed).toBe(false);
+    expect(projected.messages).toEqual(messages);
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("retains oversized open text calls until a real result exists", () => {
+    const content = "u".repeat(
+      MAX_RETAINED_COMPLETED_TOOL_ARGUMENT_CHARS + 1,
+    );
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content: `\`\`\`tool\n${JSON.stringify({
+          name: "fs.write",
+          args: { path: "open", content },
+        })}\n\`\`\``,
+      },
+    ];
+    const projected = projectToolHistory(messages);
+    expect(projected.changed).toBe(true);
+    expect(projected.messages[0]!.content).toContain(content);
+    expect(projected.messages[0]!.content).toContain("```tool");
+    expect(projected.messages[0]!.content).not.toContain(
+      "settled tool interaction",
+    );
+    expect(projected.messages[1]!.content).toContain("[context-note]");
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("collapses oversized canonical text interactions as whole groups", () => {
+    const content = "t".repeat(300 * 1024);
+    const messages: ChatMessage[] = [
+      {
+        role: "assistant",
+        content:
+          `safe prefix\n\n\`\`\`tool\n${JSON.stringify({
+            name: "fs.write",
+            args: { path: "text-large", content },
+          })}\n\`\`\`\n\nsafe suffix`,
+      },
+      { role: "tool", content: "written", ok: true },
+    ];
+    const projected = projectToolHistory(messages);
+    expect(projected.changed).toBe(true);
+    expect(projected.messages).toHaveLength(1);
+    expect(projected.messages[0]!.content).toContain("safe prefix");
+    expect(projected.messages[0]!.content).toContain("safe suffix");
+    expect(projected.messages[0]!.content).toContain("argument_chars=");
+    expect(projected.messages[0]!.content).not.toContain("```tool");
+    expect(projected.messages[0]!.content).not.toContain("t".repeat(100));
+    expect(JSON.stringify(projected.messages).length).toBeLessThan(4096);
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("shares one newest-first argument budget across native and text groups", () => {
+    const olderContent = "o".repeat(140 * 1024);
+    const newerContent = "n".repeat(140 * 1024);
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      {
+        id: "older-native",
+        name: "fs.write",
+        args: { path: "older", content: olderContent },
+      },
+    ]);
+    appendToolResult(messages, "older-native", "written", "fs.write", true);
+    messages.push(
+      {
+        role: "assistant",
+        content: `\`\`\`tool\n${JSON.stringify({
+          name: "fs.write",
+          args: { path: "newer", content: newerContent },
+        })}\n\`\`\``,
+      },
+      { role: "tool", content: "written", ok: true },
+    );
+    const projected = projectToolHistory(messages);
+    expect(projected.changed).toBe(true);
+    expect(projected.messages.flatMap((message) => message.toolCalls ?? [])).toEqual([]);
+    expect(projected.messages.some((message) => message.content.includes('path="older"'))).toBe(true);
+    const retainedText = projected.messages.find((message) =>
+      message.content.includes("```tool"),
+    );
+    expect(retainedText?.content).toContain(newerContent);
+    expect(retainedText?.content).not.toContain(olderContent);
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
+  it("bounds every target copied into settled receipts", () => {
+    const path = "p".repeat(300 * 1024);
+    const files = Array.from({ length: 8 }, (_, index) => ({
+      path: `${index}${"f".repeat(64 * 1024)}`,
+      content: "x",
+    }));
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(messages, "", [
+      { id: "large-path", name: "fs.write", args: { path, content: "x" } },
+      { id: "large-paths", name: "fs.writeMany", args: { files } },
+    ]);
+    appendToolResult(messages, "large-path", "written", "fs.write", true);
+    appendToolResult(messages, "large-paths", "written", "fs.writeMany", true);
+    const projected = projectToolHistory(messages);
+    const serialized = JSON.stringify(projected.messages);
+    expect(projected.changed).toBe(true);
+    expect(serialized.length).toBeLessThan(12_000);
+    expect(serialized).toContain("307200 chars sha256=");
+    expect(serialized).toContain("65537 chars sha256=");
+    expect(serialized).not.toContain("p".repeat(100));
+    expect(serialized).not.toContain("f".repeat(100));
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
+
   it("accepts complete parallel native groups in any result order", () => {
     const calls: NativeToolCall[] = Array.from({ length: 16 }, (_, index) => ({
       id: `call-${index}`,
@@ -297,6 +610,48 @@ describe("reasoning signature adjacency (T620)", () => {
       replay: { scope: "tool-turn", persistence: "tool-turn" },
       position: { sequence: 0, placement: "before-tool-call", toolCallId, toolCallIndex },
     });
+
+  it("drops removed-call artifacts and reindexes the surviving owner", () => {
+    const placeholder = "«20000 chars sha256=0123456789ab»";
+    const messages: ChatMessage[] = [];
+    appendAssistantWithTools(
+      messages,
+      "",
+      [
+        {
+          id: "removed",
+          name: "fs.append",
+          args: { path: "legacy.txt", content_elided: placeholder },
+        },
+        {
+          id: "survivor",
+          name: "fs.read",
+          args: { path: "current.txt" },
+        },
+      ],
+      undefined,
+      [
+        signatureArtifact("sig-removed", "removed", 0),
+        signatureArtifact("sig-survivor", "survivor", 1),
+      ],
+    );
+    appendToolResult(messages, "removed", "rejected", "fs.append", false);
+    appendToolResult(messages, "survivor", "current", "fs.read", true);
+    const projected = projectToolHistory(messages);
+    const assistant = projected.messages.find(
+      (message) => message.role === "assistant" && message.toolCalls?.length,
+    );
+    expect(assistant?.toolCalls?.map((call) => call.id)).toEqual(["survivor"]);
+    expect(assistant?.reasoningArtifacts?.map((artifact) => artifact.raw)).toEqual([
+      "sig-survivor",
+    ]);
+    expect(assistant?.reasoningArtifacts?.[0]?.position).toMatchObject({
+      toolCallId: "survivor",
+      toolCallIndex: 0,
+    });
+    expect(JSON.stringify(projected.messages)).not.toContain("sig-removed");
+    expect(validateToolProtocol(projected.messages)).toEqual([]);
+  });
 
   it("keeps every signature on its exact occurrence when duplicate wire ids are rewritten", () => {
     const messages: ChatMessage[] = [];

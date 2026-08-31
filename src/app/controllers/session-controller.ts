@@ -10,7 +10,10 @@ import {
   estimateMessagesTokens,
   type CompactResult,
 } from "../../agent/context-manager.js";
-import { repairToolProtocol } from "../../agent/tool-history.js";
+import {
+  projectToolHistory,
+  repairToolProtocol,
+} from "../../agent/tool-history.js";
 import {
   formatContextChip,
   type ContextUsageSnapshot,
@@ -722,7 +725,8 @@ export class SessionController implements Disposable {
       contextSnapshot,
       this.usageLedger.persist(),
     );
-    await this.persistence.save(this.history, {
+    const persistedHistory = projectToolHistory(this.history).messages;
+    await this.persistence.save(persistedHistory, {
       sessionId: this.sessionIdValue,
       name: name ?? this.sessionTitle,
       transcript: this.deps.getTranscriptSnapshot?.(),

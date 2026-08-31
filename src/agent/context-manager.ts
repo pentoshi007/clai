@@ -8,6 +8,7 @@ import {
 import {
   expandKeepStartForToolPairs,
   hasOrphanToolMessages,
+  projectToolHistory,
 } from "./tool-history.js";
 import {
   buildCompactionChunkPrompt,
@@ -28,7 +29,6 @@ import {
   isResponderResultLedgerMessage,
   RESPONDER_RESULT_LEDGER_PREFIX,
 } from "./responder-context.js";
-import { slimToolArgs } from "./message-slim.js";
 import { AGENT_INSTRUCTIONS_PREFIX } from "../instructions/load.js";
 import { ACTIVE_SKILLS_PREFIX } from "../skills/catalog.js";
 import {
@@ -201,6 +201,7 @@ export function compactMessages(
   messages: ChatMessage[],
   options: CompactOptions = {},
 ): ChatMessage[] {
+  messages = projectToolHistory(messages).messages;
   const budget = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
   const keepRecent = Math.max(2, options.keepRecent ?? DEFAULT_KEEP_RECENT);
   if (messages.length <= keepRecent + 1) return messages;
@@ -285,6 +286,7 @@ export async function compactMessagesWithSummary(
   options: CompactOptions = {},
   sessionTranscript?: string | undefined,
 ): Promise<CompactResult> {
+  messages = projectToolHistory(messages).messages;
   const before = messages.length;
   const beforeTokens = estimateMessagesTokens(messages);
   const isForced = options.budgetTokens === 0;
@@ -773,14 +775,9 @@ function leanTailMessages(
           /<think/i.test(msg.content) || hasReasoningMarker(msg.content)
             ? stripThinking(msg.content).visible
             : msg.content;
-        const slimCalls = msg.toolCalls?.map((tc) => ({
-          ...tc,
-          args: slimToolArgs(tc.args ?? {}),
-        }));
         return {
           ...msg,
           content: preferTrimContent(visible, preferMax.assistant),
-          ...(slimCalls ? { toolCalls: slimCalls } : {}),
         };
       }
       if (msg.role === "user") {

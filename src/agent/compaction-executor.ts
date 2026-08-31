@@ -22,6 +22,7 @@ import {
   type RequestAccounting,
 } from "./request-accounting.js";
 import { isAbortError } from "./session-policy.js";
+import { projectToolHistory } from "./tool-history.js";
 
 const RETRY_SYSTEM_SUFFIX =
   "\nReturn only a complete continuation-memory summary. Do not include analysis, reasoning, or <think> tags.";
@@ -358,6 +359,16 @@ export function planCompactionReplay(input: {
   readonly stream?: boolean | undefined;
 }): CompactionReplayPlan | undefined {
   const baseRequest = input.baseRequest;
+  if (
+    projectToolHistory(baseRequest.messages).changed ||
+    projectToolHistory(input.history).changed ||
+    baseRequest.messages.some((message) =>
+      message.content.includes("[context-note]"),
+    ) ||
+    input.history.some((message) => message.content.includes("[context-note]"))
+  ) {
+    return undefined;
+  }
   const snapshotHead = baseRequest.messages[0];
   const historyHead = input.history[0];
   if (!snapshotHead || !historyHead) return undefined;
@@ -436,6 +447,17 @@ export async function executeCompactionSummary(
   };
 
   const baseRequest = execution.baseRequest;
+  if (
+    baseRequest &&
+    (projectToolHistory(baseRequest.messages).changed ||
+      baseRequest.messages.some((message) =>
+        message.content.includes("[context-note]"),
+      ))
+  ) {
+    throw new Error(
+      "compaction failed: captured request contains legacy or oversized completed tool history",
+    );
+  }
   const request: CompletionRequest = {
     provider: baseRequest?.provider ?? execution.provider,
     model: baseRequest?.model ?? execution.model,

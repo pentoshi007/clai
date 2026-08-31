@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage, CompletionRequest, ToolDefinition } from "../../src/types.js";
-import { appendAssistantWithTools, appendToolResult } from "../../src/agent/tool-history.js";
+import {
+  appendAssistantWithTools,
+  appendToolResult,
+  projectToolHistory,
+} from "../../src/agent/tool-history.js";
 import { anthropicProvider } from "../../src/llm/anthropic.js";
 import { geminiProvider } from "../../src/llm/gemini.js";
 import {
@@ -230,6 +234,138 @@ describe("T210 reasoning artifact capture", () => {
         thoughtSignature: "gemini-signature-b",
       },
     ]);
+  });
+
+  it("replays only the surviving artifact after an earlier call is removed", () => {
+    const placeholder = "«20000 chars sha256=0123456789ab»";
+    const calls = [
+      {
+        id: "removed",
+        name: "fs.append",
+        args: { path: "legacy.txt", content_elided: placeholder },
+      },
+      {
+        id: "survivor",
+        name: "fs.read",
+        args: { path: "current.txt" },
+      },
+    ];
+    const project = (
+      artifacts: readonly ReturnType<typeof createReasoningArtifact>[],
+    ): ChatMessage[] => {
+      const history: ChatMessage[] = [];
+      appendAssistantWithTools(history, "", calls, undefined, artifacts);
+      appendToolResult(history, "removed", "rejected", "fs.append", false);
+      appendToolResult(history, "survivor", "current", "fs.read", true);
+      return projectToolHistory(history).messages;
+    };
+
+    const geminiProvenance = createReasoningArtifactProvenance({
+      provider: "gemini",
+      model: "gemini-synthetic",
+      dialect: "gemini-generate-content",
+    });
+    const geminiHistory = project([
+      createReasoningArtifact({
+        kind: "thought-signature",
+        raw: "gemini-removed",
+        provenance: geminiProvenance,
+        replay: { scope: "tool-turn", persistence: "tool-turn" },
+        position: {
+          sequence: 0,
+          placement: "on-tool-call",
+          toolCallId: "removed",
+          toolCallIndex: 0,
+        },
+      }),
+      createReasoningArtifact({
+        kind: "thought-signature",
+        raw: "gemini-survivor",
+        provenance: geminiProvenance,
+        replay: { scope: "tool-turn", persistence: "tool-turn" },
+        position: {
+          sequence: 1,
+          placement: "on-tool-call",
+          toolCallId: "survivor",
+          toolCallIndex: 1,
+        },
+      }),
+    ]);
+    const geminiParts = toGeminiToolContents(geminiHistory, {
+      target: createReasoningArtifactReplayTarget({
+        provider: "gemini",
+        model: "gemini-synthetic",
+        dialect: "gemini-generate-content",
+      }),
+    })[0]!.parts as Array<{
+      thoughtSignature?: string;
+      functionCall?: { id?: string };
+    }>;
+    expect(
+      geminiParts
+        .filter((part) => part.functionCall)
+        .map((part) => ({
+          id: part.functionCall?.id,
+          signature: part.thoughtSignature,
+        })),
+    ).toEqual([{ id: "survivor", signature: "gemini-survivor" }]);
+
+    const anthropicProvenance = createReasoningArtifactProvenance({
+      provider: "anthropic",
+      model: "claude-synthetic",
+      dialect: "anthropic-messages",
+    });
+    const anthropicHistory = project([
+      createReasoningArtifact({
+        kind: "signed",
+        raw: {
+          type: "thinking",
+          thinking: "anthropic removed",
+          signature: "anthropic-removed",
+        },
+        provenance: anthropicProvenance,
+        replay: { scope: "tool-turn", persistence: "tool-turn" },
+        position: {
+          sequence: 0,
+          placement: "before-tool-call",
+          toolCallId: "removed",
+          toolCallIndex: 0,
+        },
+      }),
+      createReasoningArtifact({
+        kind: "signed",
+        raw: {
+          type: "thinking",
+          thinking: "anthropic survivor",
+          signature: "anthropic-survivor",
+        },
+        provenance: anthropicProvenance,
+        replay: { scope: "tool-turn", persistence: "tool-turn" },
+        position: {
+          sequence: 1,
+          placement: "before-tool-call",
+          toolCallId: "survivor",
+          toolCallIndex: 1,
+        },
+      }),
+    ]);
+    const anthropicBlocks = toAnthropicToolMessages(anthropicHistory, {
+      target: createReasoningArtifactReplayTarget({
+        provider: "anthropic",
+        model: "claude-synthetic",
+        dialect: "anthropic-messages",
+      }),
+    })[0]!.content as Array<Record<string, unknown>>;
+    expect(
+      anthropicBlocks
+        .filter((block) => block.type === "thinking")
+        .map((block) => block.thinking),
+    ).toEqual(["anthropic survivor"]);
+    expect(
+      anthropicBlocks
+        .filter((block) => block.type === "tool_use")
+        .map((block) => block.id),
+    ).toEqual(["survivor"]);
   });
 
   it("captures OpenRouter details and compatible Gemini signatures without reducing them to display text", async () => {

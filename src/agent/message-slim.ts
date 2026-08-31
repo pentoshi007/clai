@@ -7,6 +7,11 @@ const SLIM_MAX_DEPTH = 6;
 const BULK_ARG_KEYS = new Set(["content", "body"]);
 
 const ELIDED_STUB_PATTERN = /^«\d+ chars sha256=[0-9a-f]{12}(?:\s+—.*)?»$/s;
+const ELIDED_STUB_TEXT_PATTERN = /«\d+ chars sha256=[0-9a-f]{12}(?:\s+—[^»]*)?»/s;
+
+export function containsElidedStubText(text: string): boolean {
+  return ELIDED_STUB_TEXT_PATTERN.test(text);
+}
 
 function shortHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
@@ -67,6 +72,53 @@ export function slimToolArgs(
     return slimmed as Record<string, unknown>;
   }
   return {};
+}
+
+function stripSupersededElidedValue(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined || typeof value !== "object") {
+    return value;
+  }
+  if (depth >= SLIM_MAX_DEPTH) return value;
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((entry) => {
+      const normalized = stripSupersededElidedValue(entry, depth + 1);
+      if (normalized !== entry) changed = true;
+      return normalized;
+    });
+    return changed ? next : value;
+  }
+  const source = value as Record<string, unknown>;
+  let out: Record<string, unknown> | undefined;
+  for (const [key, childValue] of Object.entries(source)) {
+    if (
+      key.endsWith("_elided") &&
+      typeof childValue === "string" &&
+      ELIDED_STUB_PATTERN.test(childValue)
+    ) {
+      const literalKey = key.slice(0, -"_elided".length);
+      if (
+        Object.prototype.hasOwnProperty.call(source, literalKey) &&
+        !findElidedStubArg(source[literalKey], literalKey)
+      ) {
+        out ??= { ...source };
+        delete out[key];
+        continue;
+      }
+    }
+    const normalized = stripSupersededElidedValue(childValue, depth + 1);
+    if (normalized !== childValue) {
+      out ??= { ...source };
+      out[key] = normalized;
+    }
+  }
+  return out ?? value;
+}
+
+export function stripSupersededElidedArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  return stripSupersededElidedValue(args) as Record<string, unknown>;
 }
 
 export function findElidedStubArg(

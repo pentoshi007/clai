@@ -61,10 +61,7 @@ export function estimateMessageTokens(message: ChatMessage): number {
   // Native toolCalls often carry full fs.write bodies — must count them or
   // auto-compact never fires and RAM climbs with every scaffold write.
   if (message.toolCalls?.length) {
-    const toolChars = Math.min(
-      measureToolCallsChars(message.toolCalls),
-      2_000_000,
-    );
+    const toolChars = measureToolCallsChars(message.toolCalls);
     sum += Math.ceil(toolChars / 3.3);
   }
   sum += reasoningArtifactTokensForMessage(message);

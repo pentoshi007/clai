@@ -114,6 +114,7 @@ import {
 import {
   elidedStubReuseMessage,
   findElidedStubArg,
+  stripSupersededElidedArgs,
 } from "./message-slim.js";
 import {
   appendAssistantWithTools,
@@ -122,6 +123,7 @@ import {
   appendToolResult,
   assertValidToolProtocol,
   fillMissingToolResults,
+  projectToolHistory,
   repairToolProtocol,
 } from "./tool-history.js";
 import {
@@ -2093,6 +2095,17 @@ export async function runAgentTurn(
       return { reason, result: { ok: false, output: reason, exitCode: 1 } };
     }
 
+    const canonicalizeTurnCall = (rawCall: ToolCall): ToolCall => {
+      const normalized = normalizeToolCall(rawCall);
+      const canonicalMcpName = mcpRuntime?.canonicalizeToolName(normalized.name);
+      const named =
+        canonicalMcpName && canonicalMcpName !== normalized.name
+          ? { ...normalized, name: canonicalMcpName }
+          : normalized;
+      const args = stripSupersededElidedArgs(named.args);
+      return args === named.args ? named : { ...named, args };
+    };
+
     async function executeSingleTool(
       rawCall: ToolCall,
       toolEventId: string,
@@ -2100,12 +2113,7 @@ export async function runAgentTurn(
     ): Promise<SingleToolResult> {
 
       const scratchDir = scratchDirFor(safeCwd());
-      const normalizedCall = normalizeToolCall(rawCall);
-      const canonicalMcpName = mcpRuntime?.canonicalizeToolName(normalizedCall.name);
-      let call =
-        canonicalMcpName && canonicalMcpName !== normalizedCall.name
-          ? { ...normalizedCall, name: canonicalMcpName }
-          : normalizedCall;
+      let call = canonicalizeTurnCall(rawCall);
 
       const emitVisibleSyntheticReceipt = (
         result: ToolResult,
@@ -2131,12 +2139,21 @@ export async function runAgentTurn(
 
       const invalid = invalidToolCall(call);
       if (invalid) {
+        loopGuard.recordAttempt(
+          step,
+          call.name,
+          call.args,
+          false,
+          invalid.result.exitCode,
+          invalid.reason,
+        );
         emitToolResult(toolEventId, invalid.result, invalid.reason);
         return {
           ok: false,
           call,
           result: invalid.result,
           contextOutput: invalid.reason,
+          suppressedRepeat: true,
         };
       }
 
@@ -4007,6 +4024,9 @@ export async function runAgentTurn(
       reason: string,
       force = false,
     ): Promise<void> {
+      if (repairToolProtocol(messages) > 0) {
+        lastSuccessfulRequestSnapshot = undefined;
+      }
       const beforeTokens = estimateNextRequestTokens(messages);
       emit({
         type: "context-estimate",
@@ -4048,7 +4068,11 @@ export async function runAgentTurn(
       // single pass is forced (the raw estimate gate would otherwise reject a
       // request that fits fine); when it does not, compaction falls back to
       // the legacy transcript-rendered requests so it still succeeds.
-      const replaySnapshot = lastSuccessfulRequestSnapshot;
+      const replayCandidate = lastSuccessfulRequestSnapshot;
+      const replaySnapshot =
+        replayCandidate && !projectToolHistory(replayCandidate.messages).changed
+          ? replayCandidate
+          : undefined;
       const replayPlan = replaySnapshot
         ? planCompactionReplay({
             baseRequest: replaySnapshot,
@@ -4278,7 +4302,7 @@ export async function runAgentTurn(
 
       if (pendingCalls.length > 0) {
 
-        call = pendingCalls.shift()!;
+        call = canonicalizeTurnCall(pendingCalls.shift()!);
         assistantText = { visible: "", thinkContent: "", hasThinking: false };
         const batchStatus = `  ↳ continuing batch (${pendingCalls.length} more queued)\n`;
         writeStatus(batchStatus);
@@ -4524,7 +4548,7 @@ export async function runAgentTurn(
                 const parsedCalls = parseAllToolCalls(accumulatedText);
                 if (parsedCalls.length > streamedCallsCount) {
                   while (streamedCallsCount < parsedCalls.length) {
-                    const call = normalizeToolCall(
+                    const call = canonicalizeTurnCall(
                       parsedCalls[streamedCallsCount]!,
                     );
                     const eventId = `tool-${++nextToolEventId}`;
@@ -4893,14 +4917,27 @@ export async function runAgentTurn(
 
 
         // Native-first: prefer structured toolCalls from the provider.
-        let nativeToolCalls: NativeToolCall[] = completion.toolCalls ?? [];
+        let nativeToolCalls: NativeToolCall[] = (completion.toolCalls ?? []).map(
+          (toolCall) => {
+            if (toolCall.args?._parseError) return toolCall;
+            const canonical = canonicalizeTurnCall({
+              name: toolCall.name,
+              args: toolCall.args,
+            });
+            return {
+              ...toolCall,
+              name: canonical.name,
+              args: canonical.args,
+            };
+          },
+        );
         // Early UI cards: refresh args if stream deltas already opened cards;
         // otherwise create cards now (non-streaming / name-after-done providers).
         if (nativeToolCalls.length) {
           if (deferredToolCalls.length === 0) {
             for (let i = 0; i < nativeToolCalls.length; i += 1) {
               const tc = nativeToolCalls[i]!;
-              const normalized = normalizeToolCall({
+              const normalized = canonicalizeTurnCall({
                 name: tc.name,
                 args: tc.args,
               });
@@ -4916,7 +4953,7 @@ export async function runAgentTurn(
           } else {
             for (let i = 0; i < nativeToolCalls.length; i++) {
               const tc = nativeToolCalls[i]!;
-              const normalized = normalizeToolCall({
+              const normalized = canonicalizeTurnCall({
                 name: tc.name,
                 args: tc.args,
               });
@@ -4952,7 +4989,7 @@ export async function runAgentTurn(
                 _raw: first.args._raw,
               },
             }
-            : normalizeToolCall({ name: first.name, args: first.args });
+            : canonicalizeTurnCall({ name: first.name, args: first.args });
         } else {
           call = parseToolCall(assistantText.visible, {
             strict: getConfig().parserStrict,
@@ -4965,6 +5002,9 @@ export async function runAgentTurn(
               writeNotice("info", "recovered tool call from thinking content");
             }
           }
+        }
+        if (call && !call.args?.__nativeParseError) {
+          call = canonicalizeTurnCall(call);
         }
 
 
@@ -5436,16 +5476,15 @@ export async function runAgentTurn(
                     content: toolsAttached
                       ? `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
                       `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the remaining content (prefer large chunks). Use the platform tool interface — no markdown fences.`
+                      `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the next remaining chunk not already on disk. Keep the chunk under 24,000 characters and wait for its receipt before sending another. Use the platform tool interface — no markdown fences.`
                       : `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
                       `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE with ONE large fs.append of the remaining content (prefer hundreds of lines per call — do NOT use tiny ~100-line chunks):\n` +
+                      `CONTINUE with one fs.append chunk under 24,000 characters, then wait for its receipt before sending another:\n` +
                       '```tool\n{"name":"fs.append","args":{"path":' +
                       JSON.stringify(salvaged.path) +
                       ',"expectedPriorBytes":' +
                       priorBytes +
                       ',"content":"...ONLY the remaining content not already on disk..."}}\n```\n' +
-                      `expectedPriorBytes must match the receipt so append cannot double-write. ` +
                       `Do NOT re-read the full file; do NOT re-send content already saved.`,
                   });
                   continue;
@@ -5467,15 +5506,15 @@ export async function runAgentTurn(
                 role: "user",
                 content: toolsAttached
                   ? "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Prefer ONE complete fs.write when it fits. If the file is too large: (1) fs.write the first large section, " +
-                  "(2) fs.append the rest with expectedPriorBytes from the write receipt, (3) repeat with large chunks. " +
+                  "Prefer ONE complete fs.write when it fits. If the file is too large: (1) fs.write the first section under 24,000 characters, " +
+                  "(2) fs.append the rest with expectedPriorBytes from the write receipt, (3) repeat with chunks under 24,000 characters, waiting for each receipt. " +
                   "Keep reasoning SHORT and call the tool via the platform interface. Do NOT claim a file was written until a tool call succeeds."
                   : "Your previous tool call was cut off before it finished — the JSON was incomplete, so NOTHING ran. " +
-                  "Prefer ONE complete fs.write when it fits (~32k output tokens is a lot of file content if reasoning stays short). " +
+                  "Prefer ONE complete fs.write when it fits. " +
                   "If the file is too large for one call:\n" +
-                  "1. fs.write the first large section (as much as fits — hundreds+ of lines)\n" +
+                  "1. fs.write the first section under 24,000 characters\n" +
                   "2. fs.append the rest with expectedPriorBytes from the write receipt\n" +
-                  "3. Repeat append only if still incomplete — large chunks, not ~100-line drips\n" +
+                  "3. Keep every append under 24,000 characters and wait for each receipt\n" +
                   "Keep reasoning SHORT — emit the ```tool block early. Do NOT claim a file was written until a tool call succeeds.",
               });
               continue;
@@ -5511,7 +5550,7 @@ export async function runAgentTurn(
                       `The system extracted and wrote ${lineCount} lines to ${salvaged.path} from your malformed tool call. ` +
                       `The file content ends at: "${salvaged.lastLine}"\n\n` +
                       `If the file is complete, proceed with the next step. ` +
-                      `If more content is needed, use one large fs.append with expectedPriorBytes from the write receipt (not tiny chunks).`,
+                      `If more content is needed, use fs.append chunks under 24,000 characters with expectedPriorBytes from each receipt.`,
                   });
                   continue;
                 }
@@ -5535,13 +5574,13 @@ export async function runAgentTurn(
                   ? "Your previous tool call JSON was INVALID, so NOTHING ran. " +
                   "Common causes: unescaped newlines/quotes, unbalanced braces, or content too large. " +
                   toolNudge(true) +
-                  " Prefer ONE complete fs.write when it fits; if cut off, continue with large fs.append + expectedPriorBytes. " +
+                  " Prefer ONE complete fs.write when it fits; if cut off, continue with fs.append chunks under 24,000 characters plus expectedPriorBytes. " +
                   "Do NOT claim any file was written until a tool call actually succeeds."
                   : "Your previous message contained a ```tool block, but its JSON was INVALID, so NOTHING ran. " +
                   "Common causes: unescaped newlines or quotes inside a string value, an extra or missing `}` / `]`, or content too large for the output window. " +
                   'Re-emit ONE valid ```tool block of the exact form {"name":"<tool>","args":{...}} with balanced braces. ' +
                   "IMPORTANT: Prefer ONE complete fs.write when it fits. Keep reasoning SHORT. " +
-                  "Only if the output window cuts you off, continue with large fs.append chunks + expectedPriorBytes. " +
+                  "Only if the output window cuts you off, continue with fs.append chunks under 24,000 characters plus expectedPriorBytes. " +
                   "Do NOT claim any file was written until a tool call actually succeeds.",
               });
               continue;
@@ -5804,7 +5843,8 @@ export async function runAgentTurn(
         let bound: BoundCall[] = [];
         if (nativeToolCalls.length) {
           bound = nativeToolCalls.map((tc, index) => {
-            const call = tc.args?._parseError
+            const parseError = Boolean(tc.args?._parseError);
+            const call = parseError
               ? {
                 name: tc.name || "unknown",
                 args: {
@@ -5812,8 +5852,11 @@ export async function runAgentTurn(
                   _raw: tc.args._raw,
                 },
               }
-              : normalizeToolCall({ name: tc.name, args: tc.args });
-            return { index, id: tc.id, call, native: tc, wireId: tc.id };
+              : canonicalizeTurnCall({ name: tc.name, args: tc.args });
+            const native = parseError
+              ? tc
+              : { ...tc, name: call.name, args: call.args };
+            return { index, id: tc.id, call, native, wireId: tc.id };
           });
         } else {
           let parsed = parseAllToolCalls(
@@ -5821,7 +5864,7 @@ export async function runAgentTurn(
           );
           if (parsed.length === 0 && call) parsed = [call];
           bound = parsed.map((rawCall, index) => {
-            const call = normalizeToolCall(rawCall);
+            const call = canonicalizeTurnCall(rawCall);
             const id = syntheticToolCallId(index);
             return {
               index,

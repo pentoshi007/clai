@@ -5,6 +5,7 @@ import {
   measureToolCallsChars,
   slimToolArgs,
   slimValue,
+  stripSupersededElidedArgs,
   SLIM_ARG_ABSOLUTE_MAX_CHARS,
   SLIM_ARG_STRING_CHARS,
 } from "../../src/agent/message-slim.js";
@@ -58,6 +59,35 @@ describe("message-slim", () => {
     expect(findElidedStubArg({ command: "nmap -sS example.com" })).toBeUndefined();
     expect(findElidedStubArg(undefined)).toBeUndefined();
     expect(findElidedStubArg({ command: "prefix «522 chars sha256=acb3f2e19221» suffix" })).toBeUndefined();
+  });
+
+  it("removes stale nested metadata only when literal content exists", () => {
+    const placeholder = "«522 chars sha256=acb3f2e19221»";
+    const args = {
+      calls: [
+        {
+          name: "fs.writeMany",
+          args: {
+            files: [
+              {
+                path: "a",
+                content: "literal",
+                content_elided: placeholder,
+              },
+              { path: "b", content_elided: placeholder },
+            ],
+          },
+        },
+      ],
+    };
+    const normalized = stripSupersededElidedArgs(args);
+    const files = (
+      (normalized.calls as Array<{ args: { files: Record<string, unknown>[] } }>)[0]!
+        .args.files
+    );
+    expect(files[0]).toEqual({ path: "a", content: "literal" });
+    expect(files[1]).toEqual({ path: "b", content_elided: placeholder });
+    expect(stripSupersededElidedArgs(normalized)).toBe(normalized);
   });
 
   it("elidedStubReuseMessage names the offending argument", () => {
@@ -115,7 +145,7 @@ describe("message-slim", () => {
     expect(estimateMessagesTokens(msgs)).toBeGreaterThan(5_000);
   });
 
-  it("appendAssistantWithTools does not retain full write bodies", () => {
+  it("appendAssistantWithTools preserves exact write arguments", () => {
     const messages: ChatMessage[] = [];
     const huge = "z".repeat(20_000);
     appendAssistantWithTools(messages, "", [
@@ -126,9 +156,8 @@ describe("message-slim", () => {
       },
     ]);
     const storedArgs = messages[0]!.toolCalls?.[0]?.args ?? {};
-    expect(storedArgs.content).toBeUndefined();
-    expect(String(storedArgs.content_elided)).toMatch(/«20000 chars/);
-    expect(JSON.stringify(storedArgs)).not.toContain("z".repeat(100));
+    expect(storedArgs.content).toBe(huge);
+    expect(storedArgs.content_elided).toBeUndefined();
     expect(messages[0]!.toolCalls?.[0]?.rawArguments).toBeUndefined();
   });
 

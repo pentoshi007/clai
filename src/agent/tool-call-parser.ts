@@ -8,6 +8,7 @@
  */
 import type { ChatMessage, ToolCall } from "../types.js";
 import { isCompactionMemoryMessage } from "./context-manager.js";
+import { projectToolHistory } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { safeCwd } from "../os/cwd.js";
 
@@ -1558,7 +1559,7 @@ export function buildTurnHistory(
   ) {
     convo.push({ role: "assistant", content: answer });
   }
-  return convo;
+  return projectToolHistory(convo).messages;
 }
 
 /** Lines where repetition is meaningful syntax/content and must stay byte-exact. */
