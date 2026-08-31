@@ -41,6 +41,10 @@ import {
 } from "./turn/plan-persistence.js";
 import type { TurnOutcome } from "./turn-outcome.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
+import {
+  createProbeStateKey,
+  createTurnStateMachine,
+} from "./turn/setup/turn-state-machine.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
@@ -207,12 +211,6 @@ import { composeAgentSystemPrompt, type AgentPromptSection } from "./prompt-comp
 import {
   createGovernorState,
 } from "./evidence-governor.js";
-import {
-  createTurnState,
-  transitionTurn,
-  type TurnState,
-  type TurnStateSnapshot,
-} from "./turn-state.js";
 import {
   inferOutcomeKind,
   openOutcomeState,
@@ -727,36 +725,10 @@ export async function runAgentTurn(
     // provider's reported prompt size below so the estimator learns this route's
     // bias instead of permanently over-reporting it.
     const engagementPolicy = new EngagementPolicyEngine();
-    const probeStateKey = (call: ToolCall): string | undefined => {
-      const project = (job: ReturnType<typeof jobManager.getJob>) =>
-        job
-          ? [
-              job.id,
-              job.status,
-              job.exitCode ?? null,
-              job.signal ?? null,
-              job.stdoutArtifact,
-              job.artifacts.stdout.bytes,
-              job.artifacts.stdout.sha256,
-              job.stderrArtifact,
-              job.artifacts.stderr.bytes,
-              job.artifacts.stderr.sha256,
-            ]
-          : undefined;
-      if (call.name === "shell.tail" && typeof call.args.id === "string") {
-        const projected = project(jobManager.getJob(call.args.id));
-        return projected ? JSON.stringify(projected) : undefined;
-      }
-      if (call.name === "shell.jobs") {
-        return JSON.stringify(
-          jobManager
-            .getRecentJobs(100, session.sessionId)
-            .map((job) => project(job))
-            .filter(Boolean),
-        );
-      }
-      return undefined;
-    };
+    const probeStateKey = createProbeStateKey({
+      getJob: (id) => jobManager.getJob(id),
+      recentJobs: () => jobManager.getRecentJobs(100, session.sessionId),
+    });
 
     // Track consecutive thinking-only responses so we can nudge the model
     // to actually act instead of silently returning an empty answer.
@@ -902,29 +874,8 @@ export async function runAgentTurn(
     await saveOutcomeState(outcomeState);
     // Canonical mutation/artifact ledger feeding the durable compaction envelope.
     const workLedger = new WorkLedger();
-    let turnState: TurnStateSnapshot = createTurnState();
-    const moveTurn = (to: TurnState, reason?: string): void => {
-      if (turnState.state === to) return;
-      try {
-        turnState = transitionTurn(turnState, to, reason);
-      } catch {
-        // Recovery paths may skip an intermediate presentation state; route
-        // active work through verifying/exploring rather than forging state.
-        if (to === "succeeded" || to === "partial") {
-          if (turnState.state === "understanding") {
-            turnState = transitionTurn(
-              turnState,
-              "exploring",
-              "response prepared for verification",
-            );
-          }
-          if (turnState.state === "acting" || turnState.state === "exploring") {
-            turnState = transitionTurn(turnState, "verifying", reason);
-          }
-          turnState = transitionTurn(turnState, to, reason);
-        }
-      }
-    };
+    const turnStateMachine = createTurnStateMachine();
+    const moveTurn = turnStateMachine.move;
     const stepBudget = computeStepBudget({
       analysis,
       maxSteps,
@@ -1035,7 +986,7 @@ export async function runAgentTurn(
       deferredResponderLedgerNotifications,
       batchRemindCalls: () => loop.batchRemindCalls,
       batchReminderNote: () => loop.batchReminderNote,
-      turnState: () => turnState,
+      turnState: () => turnStateMachine.snapshot(),
       probeStateKey,
       moveTurn,
       persistTaskEvidence,
