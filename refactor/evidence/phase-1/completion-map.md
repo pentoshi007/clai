@@ -1,88 +1,100 @@
 # Phase 1 completion map — `src/agent/runner.ts`
 
-Current state: **5,223 physical lines**. Target: **< 500**. Public exports and
+State: **3,680 physical lines** (Phase 1 entry: 6,769). Public exports and the
 `runAgentLoop` / `runAgentTurn` / `shouldYieldForDeclaredResponderDependency`
-signatures must stay byte-identical; `quality:contracts` enforces this.
+signatures are unchanged and enforced by `quality:contracts`.
 
-## Structure at this point
+## What the file is now
 
-| Lines | Region | Disposition |
-|---:|---|---|
-| 1–458 | imports | shrinks automatically as bodies move |
-| 459–479 | compatibility re-exports | stays in the facade |
-| 480–525 | `shouldYieldForDeclaredResponderDependency` | move to `turn/responder-dependency.ts`, re-export |
-| 526–604 | `AgentRunOptions` and turn types | move to `turn/run-options.ts`, re-export |
-| 605–656 | `runAgentTurn` entry, mode/plan flags, event port | stays (facade composition) |
-| 657–1447 | turn setup: outcome state, `finishTurn`, orientation, instructions, skills, prompts, counters, persistence helpers, salvage | 8 modules below |
-| 1448–2834 | `executeSingleTool` | 6 modules below |
-| 2835–2875 | compaction coordinator wiring | stays (composition) |
-| 2876–5211 | iteration loop | 9 modules below |
-| 5212–5217 | turn cleanup | stays |
-| 5218+ | `runAgentLoop` | move to `turn/run-loop.ts`, re-export |
+| Lines | Region | Size |
+|---:|---|---:|
+| 1–520 | imports | ~520 |
+| 521–560 | compatibility re-exports and the delegating dependency predicate | 40 |
+| 561–660 | `AgentRunOptions`, turn types, `runAgentTurn` entry, event ports, finalizer wiring | 100 |
+| 661–1269 | turn setup: session, plan, orientation, prompts, counters, ports, services | 610 |
+| 1270–2229 | `executeSingleTool` | 960 |
+| 2230–2270 | compaction coordinator wiring | 40 |
+| 2271–3630 | iteration loop | 1,360 |
+| 3631–3680 | ceiling stop, error handling, `runAgentLoop` | 50 |
 
-## Remaining modules, in dependency-safe order
+Everything that could be extracted with a narrow per-service port interface has
+been extracted — 32 modules under `src/agent/turn/`. The three remaining regions
+are single functions whose bodies close over the turn's mutable state, so they
+cannot move without first making that state explicit.
 
-Each row is one commit: characterize what is not already covered, move
-mechanically, wire, then run the per-seam gate set. Estimates are the lines
-removed from the facade.
+## Remaining work: make turn state explicit, then move the three regions
 
-### Turn setup
+### Step 1 — `turn/tool-execution/context.ts`
 
-| # | Module | Content | ~Lines |
-|---:|---|---|---:|
-| 1 | `turn/finalizer.ts` | `finishTurn`: terminal outcome, render, `responderClaims.release()`, `turn-end` exactly once | 90 |
-| 2 | `turn/workspace-orientation.ts` | destination hint, project discovery, sticky root pinning | 120 |
-| 3 | `turn/instructions-and-skills.ts` | instruction scan, skill selection, active-skill block, refresh | 90 |
-| 4 | `turn/request-context.ts` | system prompt composition, request-context message, injected-block refresh | 110 |
-| 5 | `turn/turn-counters.ts` | recovery budgets, `saw*` evidence flags as one owned record, retry counters | 150 |
-| 6 | `turn/plan-persistence.ts` | `persistProjectRootOnPlan`, `persistTaskEvidence`, `rehydrateSessionFlagsFromPlan`, `refreshSessionState` | 140 |
-| 7 | `turn/salvaged-write.ts` | `applySalvagedWrite` through the normal tool path | 60 |
-| 8 | `turn/tool-call-inspection.ts` | `invalidToolCall`, `probeStateKey`, `promptMutex` | 70 |
+Define a `ToolExecutionContext` with **named, typed, readonly** members: the
+services (`jobManager`, `mcpRuntime`, `session`, `confirmPort`, `loopGuard`,
+`workLedger`, `engagementPolicy`, `promptMutex`), the emitters, the accessors
+(`provider()`, `model()`, `scratchDir()`), and a small `ToolExecutionMutations`
+object for the four values the stage writes back (`taskWorkLedger`,
+`pendingSessionStatePlan`, `narrowNmapDispatchCount`, retry-change flags).
+This is not a closure blob: every member is declared and typed, matching the
+`refactor/plan/phase-1.md` rule "narrow interfaces per extracted service".
 
-### `executeSingleTool`
+### Step 2 — split `executeSingleTool` (960 → facade call)
 
-| # | Module | Content | ~Lines |
-|---:|---|---|---:|
-| 9 | `turn/tool-execution/prelude.ts` | normalization, synthetic receipts, OCR/nmap/batch guards, loop-guard check, `loop.reset` | 220 |
-| 10 | `turn/tool-execution/meta-tools.ts` | remaining `RUNNER_META_TOOL_NAMES` path and plan-tool result application | 180 |
-| 11 | `turn/tool-execution/authorization.ts` | classification audit, scope/engagement decision, confirmation, authorization receipts | 260 |
-| 12 | `turn/tool-execution/dispatch.ts` | dispatch task, declared parent, responder delegation, turn-state move | 150 |
-| 13 | `turn/tool-execution/supervision.ts` | abort wiring, live output, ephemeral job registration, watchdog run, abort/error mapping | 190 |
-| 14 | `turn/tool-execution/result-framing.ts` | suppressed repeat, delegation settlement, artifact save, context format, audit, engagement checkpoints, governor/turn-state accounting | 380 |
+| Module | Content | ~Lines |
+|---|---|---:|
+| `turn/tool-execution/prelude.ts` | normalization, synthetic receipt, OCR/meta guards, loop-guard verdict, `loop.reset`, MCP agent dispatch | 300 |
+| `turn/tool-execution/meta-tools.ts` | responder read, `task.update` gate, plan-tool handling and emission | 250 |
+| `turn/tool-execution/execute.ts` | gates → authorization → dispatch → watchdog run → supervision | 300 |
+| `turn/tool-execution/record.ts` | suppressed repeat, artifact save, context format, audit, engagement, accounting, crediting, final return | 300 |
 
-### Iteration loop
+### Step 3 — `turn/loop/runtime.ts`
 
-| # | Module | Content | ~Lines |
-|---:|---|---|---:|
-| 15 | `turn/loop/request-assembly.ts` | context breakdown, budgets, protocol repair, final-fit accounting, audit | 260 |
-| 16 | `turn/loop/stream-dispatch.ts` | `streamWithProvider` invocation, heartbeat, delta parser wiring | 200 |
-| 17 | `turn/loop/stream-tokens.ts` | token consumption, streamed text tool cards, thinking transitions | 150 |
-| 18 | `turn/loop/stream-failure.ts` | recovery ladder: backoff, compaction, thinking-off, provider fallback | 240 |
-| 19 | `turn/loop/native-calls.ts` | native tool-call binding, argument repair, duplicate occurrence replay | 300 |
-| 20 | `turn/loop/text-calls.ts` | fence/bare-JSON recovery, truncation retries, salvage | 280 |
-| 21 | `turn/loop/round-execution.ts` | per-round tool execution, batch guard application, recorder invocation | 320 |
-| 22 | `turn/loop/continuation.ts` | must-continue, evidence gates, plan-approval pause, low-yield resumption | 300 |
-| 23 | `turn/loop/final-answer.ts` | final answer gating, rich stop summary, empty-response retries | 200 |
+Define `TurnRuntime`: the round-local mutable state that the loop owns
+(`step`, `productiveSteps`, `pendingCalls`, `lastAnswer`, `interruptedVisible`,
+`interruptedReasoning`, `lowYieldResumptions`, retry counters, `recovery`,
+`evidenceFlags`, `governorState`, `turnState`, `codingSession`,
+`consecutiveModelOnlyRounds`, `consecutiveSynthesizedRounds`). Each field is
+declared; the stage modules receive `(runtime, ports, input)`.
 
-Total accounted: ≈ 4,780 lines, leaving the facade near 440 lines once the
-imports that belong to moved code follow their bodies.
+### Step 4 — split the iteration loop (1,360 → facade call)
 
-## Rules that must hold for each of these commits
+| Module | Content | ~Lines |
+|---|---|---:|
+| `turn/loop/round-request.ts` | compaction hook, responder inbox refresh, system-prompt refresh, assembly, stream dispatch, failure recovery | 350 |
+| `turn/loop/round-parse.ts` | completion interpretation, native/text call binding, salvage, guards, recovery ladder | 350 |
+| `turn/loop/round-answer.ts` | completion assessment, model-only rounds, finalize recovery, final outcome | 300 |
+| `turn/loop/round-execute.ts` | binding, deferral, suppression, group execution, recording, closeout | 350 |
+
+### Step 5 — split turn setup (610 → facade call)
+
+| Module | Content | ~Lines |
+|---|---|---:|
+| `turn/setup/services.ts` | session policy, workspace, MCP, plan load, tool routing, prompt composition | 320 |
+| `turn/setup/state.ts` | counters, ledgers, ports, turn-state, outcome envelope, recorder wiring | 290 |
+
+### Step 6 — facade
+
+`runner.ts` keeps: imports for the composed modules, the compatibility
+re-exports, `AgentRunOptions`, the delegating dependency predicate, and a
+`runAgentTurn` that builds the context/runtime and calls the loop. Expected
+final size ≈ 300–400 lines, at which point the
+`test/architecture/legacy-baseline.json` entry is removed in the same commit.
+
+## Invariants that must hold for every one of those commits
 
 1. `quality:contracts` unchanged; no new export from `runner.ts`.
-2. New file `< 500` lines and every new function `< 22` cognitive, `< 22`
+2. New file `< 500` lines; every new function `< 22` cognitive, `< 22`
    cyclomatic, `< 80` Halstead difficulty.
 3. **Never nest more than one non-trivial closure inside a factory.** The
-   analyzer attributes nested function bodies to the enclosing function, which
-   is what produced the 57/28/25/24 cognitive failures already fixed this
-   session. Hoist helpers to module scope and pass `(ports, …)`.
-4. **No `unknown` in a parameter or `Record<string, unknown>` port type.** The
-   type-syntax gate classifies both as narrowing-required. Narrow at the runner
-   boundary, or import the predicate directly instead of injecting it.
+   analyzer attributes nested function bodies to the enclosing function; this
+   produced the 57/29/28/25/24 cognitive failures already fixed this session.
+   Hoist helpers to module scope and pass `(ports, …)`.
+4. **No `unknown` in a parameter, in `Record<string, unknown>` port types, or in
+   an `as { … unknown }` assertion.** Narrow at the runner boundary — pass
+   `kind`/`alreadyEmitted`/`attemptUsage` instead of the raw error, as
+   `turn/loop/stream-failure.ts` does.
 5. Never run a formatter over `runner.ts` in a move commit.
-6. Verify with `set -e -o pipefail`; a piped `npm run …` alone hides failures.
-7. Remove `src/agent/runner.ts` from `test/architecture/legacy-baseline.json`
-   in the same commit where it first reaches ≤ 1,000 lines.
+6. Verify with `set -e -o pipefail`; a bare piped `npm run …` hides failures.
+7. Emission order is a contract: keep `writeToolCall` → `markPrinted` →
+   `tool-start` → `writeToolOutput` → `emitToolResult` exactly as the runner
+   had it, and keep notices before/after their sibling writes unchanged.
 
 ## Per-seam gate set
 
