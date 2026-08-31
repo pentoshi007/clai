@@ -37,6 +37,10 @@ import type {
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
 import {
+  createWireOccurrenceLedger,
+  type ReplayedOccurrence,
+} from "./turn/loop/wire-occurrences.js";
+import {
   createPromptMutex,
   invalidToolCall,
   readSalvagedWriteReceipt,
@@ -1212,10 +1216,14 @@ export async function runAgentTurn(
     let stepMaxTokens = 0;
     let nextToolEventId = 0;
     const alreadyPrintedIds = new Set<string>();
-    const executedWireOccurrences = new Map<
-      string,
-      { call: ToolCall; result: ToolResult; contextOutput: string; ok: boolean }
-    >();
+    const wireOccurrences = createWireOccurrenceLedger({
+      isPrinted: (eventId) => alreadyPrintedIds.has(eventId),
+      writeToolCall,
+      markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
+      emitToolStart: (eventId) => emit({ type: "tool-start", id: eventId }),
+      writeToolOutput: (eventId, chunk) => writeToolOutput(eventId, chunk),
+      emitToolResult,
+    });
 
     const promptMutex = createPromptMutex();
 
@@ -3770,39 +3778,8 @@ export async function runAgentTurn(
         const replayExecutedOccurrence = (
           bc: BoundCall,
           uiId: string,
-        ):
-          | {
-              call: ToolCall;
-              result: ToolResult;
-              contextOutput: string;
-              ok: boolean;
-              suppressedRepeat: true;
-            }
-          | undefined => {
-          const prior = bc.wireId
-            ? executedWireOccurrences.get(bc.wireId)
-            : undefined;
-          if (!prior) return undefined;
-          const notice =
-            "This exact provider tool call already executed this turn. " +
-            "The earlier result is replayed below; the tool did not run again.";
-          const output = `${notice}\n\n${prior.contextOutput}`;
-          const result: ToolResult = { ...prior.result, output, suppressedRepeat: true };
-          if (!alreadyPrintedIds.has(uiId)) {
-            writeToolCall(uiId, bc.call);
-            alreadyPrintedIds.add(uiId);
-            emit({ type: "tool-start", id: uiId });
-          }
-          writeToolOutput(uiId, output.endsWith("\n") ? output : `${output}\n`);
-          emitToolResult(uiId, result, output);
-          return {
-            call: bc.call,
-            result,
-            contextOutput: output,
-            ok: prior.ok,
-            suppressedRepeat: true,
-          };
-        };
+        ): ReplayedOccurrence | undefined =>
+          wireOccurrences.replay(bc.wireId, bc.call, uiId);
         const rememberExecutedOccurrence = (
           bc: BoundCall,
           res: {
@@ -3813,16 +3790,7 @@ export async function runAgentTurn(
             aborted?: boolean | undefined;
             suppressedRepeat?: boolean | undefined;
           },
-        ): void => {
-          if (!bc.wireId || executedWireOccurrences.has(bc.wireId)) return;
-          if (!res.ok || res.aborted || res.suppressedRepeat) return;
-          executedWireOccurrences.set(bc.wireId, {
-            call: res.call,
-            result: res.result,
-            contextOutput: res.contextOutput,
-            ok: res.ok,
-          });
-        };
+        ): void => wireOccurrences.remember(bc.wireId, res);
 
         const groups = groupToolCallsForExecution(
           allCalls,
