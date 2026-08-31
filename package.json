@@ -50,6 +50,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "node scripts/sync-version.mjs",
     "test": "vitest run",
+    "pretest:deterministic": "node scripts/sync-version.mjs",
+    "test:deterministic": "node scripts/run-tests.mjs",
+    "pretest:host": "node scripts/sync-version.mjs",
+    "test:host": "node scripts/run-tests.mjs --host",
     "test:arch": "vitest run test/architecture",
     "test:conformance": "vitest run test/conformance",
     "test:admission": "vitest run test/admission",
@@ -60,6 +64,7 @@
     "test:bun:parity": "bun x vitest run test/tui-v2 test/god-mode-phase1.test.ts test/mentions.test.ts",
     "test:bun": "bun run test:bun:v2 && bun run test:bun:parity",
     "release:verify": "tsx scripts/validate-release.ts",
+    "quality:contracts": "node scripts/quality/contract-inventory.mjs --check",
     "doctor": "tsx src/index.ts doctor"
   },
   "dependencies": {
