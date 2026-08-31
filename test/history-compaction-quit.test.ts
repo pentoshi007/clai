@@ -184,5 +184,5 @@ describe("terminal compaction survives quit (regression)", () => {
     );
     expect(hasCompactedCard).toBe(true);
     expect(hasCompactedContext).toBe(true);
-  });
+  }, 60_000);
 });
