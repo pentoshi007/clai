@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   evaluateChangedQuality,
+  includeUntrackedChanges,
   parseAddedLines,
   parseNameStatus,
 } from "../../scripts/quality/changed.mjs";
@@ -47,6 +48,18 @@ describe("changed path parsing", () => {
       "+last",
     ].join("\n");
     expect([...parseAddedLines(diff)]).toEqual([2, 3, 12]);
+  });
+
+  it("includes untracked paths without duplicating tracked changes", () => {
+    expect(
+      includeUntrackedChanges(
+        [{ status: "M", path: "src/existing.ts" }],
+        "src/new.ts\0src/existing.ts\0",
+      ),
+    ).toEqual([
+      { status: "M", path: "src/existing.ts" },
+      { status: "A", path: "src/new.ts" },
+    ]);
   });
 });
 

@@ -47,22 +47,54 @@ export function compareBaselines(baseline, current) {
   const improvements = [];
   let held = 0;
 
-  const compareSets = (label, before, after) => {
-    const beforeSet = new Set(before);
-    const afterSet = new Set(after);
-    for (const entry of afterSet) {
-      if (!beforeSet.has(entry)) regressions.push(`new ${label}: ${entry}`);
-    }
-    for (const entry of beforeSet) {
-      if (!afterSet.has(entry)) improvements.push(`resolved ${label}: ${entry}`);
-      else held += 1;
+  const stableFunctionIdentity = (entry) => entry.replace(/@\d+$/, "");
+
+  const compareSets = (label, before, after, identity = (entry) => entry) => {
+    const grouped = (entries) => {
+      const groups = new Map();
+      for (const entry of entries) {
+        const key = identity(entry);
+        const group = groups.get(key) ?? [];
+        group.push(entry);
+        groups.set(key, group);
+      }
+      return groups;
+    };
+    const beforeGroups = grouped(before);
+    const afterGroups = grouped(after);
+    const keys = new Set([...beforeGroups.keys(), ...afterGroups.keys()]);
+    for (const key of keys) {
+      const previous = beforeGroups.get(key) ?? [];
+      const current = afterGroups.get(key) ?? [];
+      held += Math.min(previous.length, current.length);
+      for (const entry of current.slice(previous.length)) {
+        regressions.push(`new ${label}: ${entry}`);
+      }
+      for (const entry of previous.slice(current.length)) {
+        improvements.push(`resolved ${label}: ${entry}`);
+      }
     }
   };
 
   compareSets("file over line limit", baseline.filesOverLineLimit, current.filesOverLineLimit);
-  compareSets("cyclomatic violation", baseline.functionsOverCyclomatic, current.functionsOverCyclomatic);
-  compareSets("cognitive violation", baseline.functionsOverCognitive, current.functionsOverCognitive);
-  compareSets("Halstead violation", baseline.functionsOverHalstead, current.functionsOverHalstead);
+  compareSets(
+    "cyclomatic violation",
+    baseline.functionsOverCyclomatic,
+    current.functionsOverCyclomatic,
+    stableFunctionIdentity,
+  );
+  compareSets(
+    "cognitive violation",
+    baseline.functionsOverCognitive,
+    current.functionsOverCognitive,
+    stableFunctionIdentity,
+  );
+  compareSets(
+    "Halstead violation",
+    baseline.functionsOverHalstead,
+    current.functionsOverHalstead,
+    stableFunctionIdentity,
+  );
 
   for (const [metric, limit] of Object.entries(baseline.maxima)) {
     const now = current.maxima[metric];

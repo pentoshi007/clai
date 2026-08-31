@@ -148,6 +148,43 @@ describe("ratchet comparator — improvements and holds", () => {
     expect(result.regressions).toContain("new file over line limit: src/new/c.ts");
     expect(result.improvements.length).toBeGreaterThan(0);
   });
+
+  it("holds function violations when only source lines shift", () => {
+    const before = withOverrides({
+      functionsOverCyclomatic: ["src/a.ts#handle@10"],
+      functionsOverCognitive: ["src/a.ts#<anonymous>@20", "src/a.ts#<anonymous>@30"],
+    });
+    const after = withOverrides({
+      functionsOverCyclomatic: ["src/a.ts#handle@40"],
+      functionsOverCognitive: ["src/a.ts#<anonymous>@50", "src/a.ts#<anonymous>@60"],
+    });
+    const result = compareBaselines(before, after);
+    expect(result.regressions).toEqual([]);
+    expect(result.improvements).toEqual([]);
+    expect(result.held).toBe(3);
+  });
+
+  it("still detects added and resolved duplicate-name violations", () => {
+    const before = withOverrides({
+      functionsOverCyclomatic: ["src/a.ts#<anonymous>@10", "src/a.ts#<anonymous>@20"],
+    });
+    const added = withOverrides({
+      functionsOverCyclomatic: [
+        "src/a.ts#<anonymous>@30",
+        "src/a.ts#<anonymous>@40",
+        "src/a.ts#<anonymous>@50",
+      ],
+    });
+    const removed = withOverrides({
+      functionsOverCyclomatic: ["src/a.ts#<anonymous>@30"],
+    });
+    expect(compareBaselines(before, added).regressions).toEqual([
+      "new cyclomatic violation: src/a.ts#<anonymous>@50",
+    ]);
+    expect(compareBaselines(before, removed).improvements).toEqual([
+      "resolved cyclomatic violation: src/a.ts#<anonymous>@20",
+    ]);
+  });
 });
 
 describe("committed metrics baseline", () => {

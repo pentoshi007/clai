@@ -55,6 +55,17 @@ export function parseAddedLines(diff) {
   return lines;
 }
 
+export function includeUntrackedChanges(entries, output) {
+  const paths = output.split("\0").filter(Boolean);
+  const known = new Set(entries.map((entry) => entry.path));
+  return [
+    ...entries,
+    ...paths
+      .filter((path) => !known.has(path))
+      .map((path) => ({ status: "A", path })),
+  ];
+}
+
 function functionGroups(functions, file) {
   const groups = new Map();
   for (const fn of functions.filter((entry) => entry.file === file)) {
@@ -158,14 +169,21 @@ function gitOutput(args) {
 }
 
 function changedEntries(base) {
-  const entries = parseNameStatus(
+  const tracked = parseNameStatus(
     gitOutput(["diff", "--name-status", "-z", "--diff-filter=ACMR", base, "--", "src"]),
+  );
+  const entries = includeUntrackedChanges(
+    tracked,
+    gitOutput(["ls-files", "--others", "--exclude-standard", "-z", "--", "src"]),
   );
   return entries.map((entry) => ({
     ...entry,
-    addedLines: parseAddedLines(
-      gitOutput(["diff", "--unified=0", "--no-color", base, "--", entry.path]),
-    ),
+    addedLines:
+      entry.status === "A"
+        ? new Set()
+        : parseAddedLines(
+            gitOutput(["diff", "--unified=0", "--no-color", base, "--", entry.path]),
+          ),
   }));
 }
 
