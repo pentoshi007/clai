@@ -18,11 +18,23 @@ function slimLimitForKey(key: string | undefined): number {
     : SLIM_ARG_ABSOLUTE_MAX_CHARS;
 }
 
+function elidedNote(value: string): string {
+  const hash = shortHash(value);
+  return `«${value.length} chars sha256=${hash} — elided from history; never reuse this stub, regenerate the full value»`;
+}
+
+function isElidedBulkValue(key: string, value: unknown): value is string {
+  return (
+    BULK_ARG_KEYS.has(key) &&
+    typeof value === "string" &&
+    value.length >= SLIM_ARG_STRING_CHARS
+  );
+}
+
 export function slimValue(value: unknown, depth = 0, key?: string): unknown {
   if (typeof value === "string") {
     if (value.length < slimLimitForKey(key)) return value;
-    const hash = shortHash(value);
-    return `«${value.length} chars sha256=${hash} — elided from history; never reuse this stub, regenerate the full value»`;
+    return elidedNote(value);
   }
   if (value === null || value === undefined) return value;
   if (typeof value !== "object") return value;
@@ -35,11 +47,14 @@ export function slimValue(value: unknown, depth = 0, key?: string): unknown {
   }
   const out: Record<string, unknown> = {};
   for (const childKey of Object.keys(value as Record<string, unknown>).sort()) {
-    out[childKey] = slimValue(
-      (value as Record<string, unknown>)[childKey],
-      depth + 1,
-      childKey,
-    );
+    const childValue = (value as Record<string, unknown>)[childKey];
+    // Leave no placeholder in the key the model must fill: a stub sitting in
+    // "content" invites it to copy that back as the real payload.
+    if (isElidedBulkValue(childKey, childValue)) {
+      out[`${childKey}_elided`] = elidedNote(childValue);
+      continue;
+    }
+    out[childKey] = slimValue(childValue, depth + 1, childKey);
   }
   return out;
 }

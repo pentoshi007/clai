@@ -30,7 +30,12 @@ describe("message-slim", () => {
       path: "a.ts",
       content: "c".repeat(SLIM_ARG_STRING_CHARS + 50),
     });
-    expect(String(bulk.content)).toMatch(/«450 chars sha256=/);
+    // The stub must never occupy the key the model has to fill, or it copies it
+    // straight back as the payload and the write is rejected.
+    expect(bulk.content).toBeUndefined();
+    expect("content" in bulk).toBe(false);
+    expect(String(bulk.content_elided)).toMatch(/«450 chars sha256=/);
+    expect(bulk.path).toBe("a.ts");
 
     const command = "nmap " + "-sS ".repeat(200) + "example.com";
     const slimmed = slimToolArgs({ command });
@@ -68,10 +73,27 @@ describe("message-slim", () => {
       ],
     };
     const slimmed = slimToolArgs(args);
-    const files = slimmed.files as { path: string; content: string }[];
+    const files = slimmed.files as {
+      path: string;
+      content?: string;
+      content_elided?: string;
+    }[];
     expect(files[0]!.path).toBe("src/App.tsx");
-    expect(files[0]!.content).toMatch(/«5000 chars/);
+    expect(files[0]!.content).toBeUndefined();
+    expect(files[0]!.content_elided).toMatch(/«5000 chars/);
     expect(JSON.stringify(slimmed).length).toBeLessThan(500);
+  });
+
+  it("still catches a stub the model copies into a real argument", () => {
+    const slimmed = slimToolArgs({
+      path: "notes.md",
+      content: "x".repeat(SLIM_ARG_STRING_CHARS + 10),
+    });
+    const echoed = String(slimmed.content_elided);
+
+    expect(findElidedStubArg({ path: "notes.md", content: echoed })?.key).toBe(
+      "args.content",
+    );
   });
 
   it("counts toolCalls in estimateMessagesTokens", () => {
@@ -103,10 +125,10 @@ describe("message-slim", () => {
         args: { path: "Big.tsx", content: huge },
       },
     ]);
-    const stored = messages[0]!.toolCalls?.[0]?.args?.content;
-    expect(typeof stored).toBe("string");
-    expect(String(stored)).not.toContain("z".repeat(100));
-    expect(String(stored)).toMatch(/«20000 chars/);
+    const storedArgs = messages[0]!.toolCalls?.[0]?.args ?? {};
+    expect(storedArgs.content).toBeUndefined();
+    expect(String(storedArgs.content_elided)).toMatch(/«20000 chars/);
+    expect(JSON.stringify(storedArgs)).not.toContain("z".repeat(100));
     expect(messages[0]!.toolCalls?.[0]?.rawArguments).toBeUndefined();
   });
 

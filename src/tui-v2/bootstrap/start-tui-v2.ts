@@ -15,6 +15,10 @@ import { App } from "../app/App.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
 import {
+  readCachedThemeMode,
+  rememberThemeMode,
+} from "../../ui-core/bootstrap/theme-mode-cache.js";
+import {
   readCapabilitiesFromProcess,
   resolveOpenTuiCapabilities,
 } from "../../ui-core/bootstrap/capabilities.js";
@@ -82,7 +86,11 @@ export async function startTuiV2(
     clearOnShutdown: true,
     onDestroy: markRendererFinalized,
   });
-  const themeMode = await renderer.waitForThemeMode(300).catch(() => null);
+  const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
+  if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
+    rememberThemeMode(reportedThemeMode);
+  }
+  const themeMode = reportedThemeMode ?? readCachedThemeMode() ?? null;
   const nativeCapabilities = renderer.capabilities;
   const capabilities = resolveOpenTuiCapabilities(
     detectedCapabilities,
