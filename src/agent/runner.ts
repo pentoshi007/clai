@@ -56,6 +56,7 @@ import { createTurnHistoryWriter } from "./turn/history-writer.js";
 import { linkResponderJobToPlan } from "./turn/responder-job-linkage.js";
 import { reconcileScaffoldOutcome } from "./turn/scaffold-outcome.js";
 import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
+import { authorizeToolExecution } from "./turn/tool-execution/authorization.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -268,10 +269,7 @@ import {
 } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
 import { stat } from "node:fs/promises";
-import {
-  isOutsideWorkingDirectory,
-  resolveFsToolPath,
-} from "../tools/fs.js";
+import { resolveFsToolPath } from "../tools/fs.js";
 import {
   stripSentinelTokens,
   parseToolCall,
@@ -409,7 +407,6 @@ import {
   stdioConfirmPort,
   stdioSecretRequester,
   restoreInteractiveStdin,
-  ensurePentestAuthorization,
   confirmToolExecution,
   type ConfirmPort,
 } from "./confirm-port.js";
@@ -1947,119 +1944,24 @@ export async function runAgentTurn(
         }
       }
 
-      if (decision.level === "block") {
-        writeToolBlocked(toolEventId, call.name, decision.reason);
-        const message = `Blocked: ${call.name} — ${decision.reason}`;
-        const result = { ok: false, output: message, exitCode: 1 };
-
-        return {
-          ok: false,
+      const authorization = await authorizeToolExecution(
+        {
           call,
-          result,
-          contextOutput: `${message}\nThis tool call did not run. Continue the task using a safer allowed method; do not retry the same blocked command unchanged.`,
-        };
-      }
-
-      let authorized = true;
-      let pentestJustConfirmed = false;
-
-      const releasePrompt = await promptMutex.acquire();
-      try {
-        parentSignal.throwIfAborted();
-        const needsPentestAuth =
-          isPentestToolCall(call) &&
-          !getConfig().pentestAuthorized &&
-          !session.pentestAuthorized.value;
-        authorized = await ensurePentestAuthorization(
-          call,
-          Boolean(options.autoConfirm),
+          toolEventId,
+          parentSignal,
+          level: decision.level,
+          reason: decision.reason,
+        },
+        {
+          autoConfirm: Boolean(options.autoConfirm),
           session,
           confirmPort,
-        );
-        restoreInteractiveStdin();
-        if (!authorized) {
-          const lastAnswer = "Pentest authorization not confirmed.";
-          writeToolBlocked(toolEventId, call.name, lastAnswer);
-          const result = { ok: false, output: lastAnswer, exitCode: 1 };
-          return {
-            ok: false,
-            call,
-            result,
-            contextOutput: lastAnswer,
-            lastAnswer,
-            blockOrCancel: true,
-          };
-        }
-        if (needsPentestAuth) {
-          pentestJustConfirmed = true;
-        }
-
-        // fs.delete always confirms (every permission level). Out-of-cwd
-        // writes confirm under default permissions; allow-all auto-approves.
-        let forceConfirm = call.name === "fs.delete";
-        if (
-          call.name === "fs.write" ||
-          call.name === "fs.writeMany" ||
-          call.name === "fs.edit" ||
-          call.name === "fs.append" ||
-          call.name === "fs.replaceLines" ||
-          call.name === "fs.delete"
-        ) {
-          const paths: string[] = [];
-          if (typeof call.args.path === "string") paths.push(call.args.path);
-          if (Array.isArray(call.args.files)) {
-            for (const entry of call.args.files) {
-              if (
-                entry &&
-                typeof entry === "object" &&
-                typeof (entry as { path?: unknown }).path === "string"
-              ) {
-                paths.push((entry as { path: string }).path);
-              }
-            }
-          }
-          for (const p of paths) {
-            try {
-              if (isOutsideWorkingDirectory(resolveFsToolPath(p))) {
-                forceConfirm = true;
-                break;
-              }
-            } catch {
-              forceConfirm = true;
-              break;
-            }
-          }
-        }
-
-        if (
-          (decision.level === "confirm" || forceConfirm) &&
-          !pentestJustConfirmed
-        ) {
-          const ok = await confirmToolExecution(
-            call,
-            forceConfirm ? false : Boolean(options.autoConfirm),
-            session,
-            confirmPort,
-            forceConfirm ? { forceConfirm: true } : undefined,
-          );
-          restoreInteractiveStdin();
-          if (!ok) {
-            const lastAnswer = "Cancelled.";
-            writeToolBlocked(toolEventId, call.name, lastAnswer);
-            const result = { ok: false, output: lastAnswer, exitCode: 1 };
-            return {
-              ok: false,
-              call,
-              result,
-              contextOutput: lastAnswer,
-              lastAnswer,
-              blockOrCancel: true,
-            };
-          }
-        }
-      } finally {
-        releasePrompt();
-      }
+          acquirePrompt: () => promptMutex.acquire(),
+          writeToolBlocked,
+          emitToolResult,
+        },
+      );
+      if (authorization.kind === "stop") return authorization.result;
 
       parentSignal.throwIfAborted();
       const planAtDispatch = await loadPlan(session.sessionId).catch(
