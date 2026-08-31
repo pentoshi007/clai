@@ -36,6 +36,7 @@ import {
 import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
 import { insertedText } from "./turn/inserted-text.js";
 import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
+import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -656,136 +657,22 @@ export async function runAgentTurn(
   let interruptedVisible = "";
   let interruptedReasoning = "";
   let lowYieldResumptions = 0;
-  const writeStatus = (text: string): void => {
-    // Footer activity is single-line; collapse newlines and indents.
-    // Never surface /output path hints as activity (garbles the status bar).
-    let cleaned = text.replace(/\s+/g, " ").trim();
-    if (
-      /\/output\b|open full output|Ctrl\+O or|\.clai\/outputs/i.test(cleaned)
-    ) {
-      return;
-    }
-    // API key rotation / retry lines need more room than tool-name chips.
-    const keyLine =
-      /^(using |switching |⏳ |all .+ API keys)/i.test(cleaned);
-    const maxLen = keyLine ? 96 : 64;
-    if (cleaned.length > maxLen) {
-      if (keyLine) {
-        cleaned = cleaned.slice(0, maxLen - 1) + "…";
-      } else {
-        const short = cleaned.match(/^[\w./-]+/);
-        cleaned = short ? short[0]! : cleaned.slice(0, maxLen - 3) + "…";
-      }
-    }
-    emit({ type: "status", text: cleaned || "working" });
-  };
-  const writeNotice = (level: "info" | "warn", text: string): void => {
-    emit({ type: "notice", level, text });
-  };
-  const writeAssistantMessage = (text: string): void => {
-    // Never surface an empty message: the reducer drops it and a consumer
-    // would paint a stray blank row.
-    const clean = sanitizeAssistantText(text);
-    if (!clean.trim()) return;
-    outputState.visibleCommitted = true;
-    emit({ type: "assistant-message", text: clean });
-  };
-  const writeThinkingBlock = (content: string): void => {
-    emit({ type: "thinking-block", content });
-  };
-  const writeToolOutput = (
-    id: string,
-    chunk: string,
-    options?: { replace?: boolean },
-  ): void => {
-    emit({
-      type: "tool-output",
-      id,
-      chunk,
-      ...(options?.replace ? { replace: true } : {}),
-    });
-  };
-  const writeToolCall = (id: string, call: ToolCall): void => {
-    emit({
-      type: "tool-call",
-      id,
-      name: call.name,
-      argsDisplay: formatToolArgs(call),
-    });
-  };
-  const writePlanUpdate = (plan: SessionPlan): void => {
-    emit({ type: "plan-update", plan });
-  };
-  const writeToolBlocked = (id: string, name: string, reason: string): void => {
-    emit({ type: "tool-blocked", id, name, reason });
-  };
-  const writeAbort = (): void => {
-    emit({ type: "turn-aborted" });
-  };
-  const emitToolResult = (
-    id: string,
-    result: ToolResult,
-    summary: string,
-    artifactPath?: string,
-  ): void => {
-    const event: Extract<AgentEvent, { type: "tool-result" }> = {
-      type: "tool-result",
-      id,
-      ok: result.ok,
-      summary,
-    };
-    if (typeof result.exitCode === "number") {
-      event.exitCode = result.exitCode;
-    }
-    if (artifactPath) {
-      event.artifactPath = artifactPath;
-    }
-    if (result.fileChanges && result.fileChanges.length > 0) {
-      event.fileChanges = result.fileChanges;
-    }
-    emit(event);
-  };
-  const writeCompactionStarted = (
-    id: string,
-    beforeTokens: number,
-  ): void => {
-    emit({ type: "compaction-start", id, beforeTokens });
-  };
-  const writeCompactionDelta = (
-    id: string,
-    text: string,
-    replace = false,
-  ): void => {
-    if (!text && !replace) return;
-    emit({
-      type: "compaction-delta",
-      id,
-      text,
-      ...(replace ? { replace: true } : {}),
-    });
-  };
-  const writeCompactionCompleted = (
-    id: string,
-    summary: string,
-    beforeTokens: number,
-    afterTokens: number,
-  ): void => {
-    emit({
-      type: "compaction-completed",
-      id,
-      summary,
-      beforeTokens,
-      afterTokens,
-      contextScope: "assembled-request",
-    });
-  };
-  const writeCompactionFailed = (
-    id: string,
-    message: string,
-    retainedTokens: number,
-  ): void => {
-    emit({ type: "compaction-failed", id, message, retainedTokens });
-  };
+  const {
+    writeStatus,
+    writeNotice,
+    writeAssistantMessage,
+    writeThinkingBlock,
+    writeToolOutput,
+    writeToolCall,
+    writePlanUpdate,
+    writeToolBlocked,
+    writeAbort,
+    emitToolResult,
+    writeCompactionStarted,
+    writeCompactionDelta,
+    writeCompactionCompleted,
+    writeCompactionFailed,
+  } = createTurnEventEmitter(eventPort, outputState);
   // Points at the live message array so finishTurn can hand the full
   // conversation back to the caller. Assigned once `messages` is built below;
   // all later mutations are in-place so this reference stays current.
