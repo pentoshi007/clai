@@ -76,6 +76,12 @@ import {
 } from "./turn/loop/native-tool-calls.js";
 import { recoverMissingToolCall } from "./turn/loop/tool-call-recovery.js";
 import {
+  handleOutputBudgetExhaustion,
+  outputBudgetExhausted,
+  routeCompletionBudget,
+  type OutputBudgetState,
+} from "./turn/loop/output-budget.js";
+import {
   hasTruncatedNativeWrite,
   salvageTruncatedNativeWrite,
 } from "./turn/loop/native-write-salvage.js";
@@ -223,9 +229,7 @@ import { RequestOverLimitError } from "./request-accounting.js";
 import {
   freeTierGuardNotices,
   getReliabilityPolicy,
-  MAX_OUTPUT_BUDGET_CONTINUATIONS,
   MAX_STEP_COMPLETION_TOKENS,
-  outputBudgetWasExhausted,
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
@@ -2945,22 +2949,14 @@ export async function runAgentTurn(
         }
 
 
-        const completionTokens = completion.usage?.completionTokens ?? 0;
-        const completionRouteProfile = resolveBuiltInProfile({
+        const completionBudget = routeCompletionBudget({
           provider,
           model,
+          stepMaxTokens,
         });
-        const completionBudget =
-          completionRouteProfile.limits.outputTokens === undefined
-            ? stepMaxTokens
-            : Math.min(
-                stepMaxTokens,
-                completionRouteProfile.limits.outputTokens,
-              );
-        const hitOutputLimit = outputBudgetWasExhausted({
-          finishReason: completion.finishReason,
-          completionTokens,
-          requestedMaxTokens: completionBudget,
+        const hitOutputLimit = outputBudgetExhausted({
+          completion,
+          completionBudget,
         });
         const incompleteNativeStream =
           nativeToolCalls.length === 0 && streamedNativeCallNames.size > 0;
@@ -2969,70 +2965,47 @@ export async function runAgentTurn(
           countToolFences(assistantText.visible) > 0 ||
           looksLikeTruncatedToolCall(assistantText.visible);
         if (hitOutputLimit && !call && !outputLimitLooksLikeTool) {
-          if (
-            truncatedBudgetRounds < MAX_OUTPUT_BUDGET_CONTINUATIONS
-          ) {
-            truncatedBudgetRounds += 1;
-            const desiredContinuationBudget = Math.min(
-              MAX_STEP_COMPLETION_TOKENS,
-              Math.max(completionBudget, completionBudget * 2),
-            );
-            continuationBudgetFloor =
-              completionRouteProfile.limits.outputTokens === undefined
-                ? desiredContinuationBudget
-                : Math.min(
-                    desiredContinuationBudget,
-                    completionRouteProfile.limits.outputTokens,
-                  );
-            retryWithoutThinking =
-              completionRouteProfile.reasoning.generation !== "mandatory";
-            if (assistantText.hasThinking) {
-              interruptedReasoning = appendInterruptedReasoning(
-                interruptedReasoning,
-                assistantText.thinkContent,
-              );
-            }
-            const preservedBudgetReasoning = interruptedReasoning;
-            if (canonicalAssistantVisible.trim()) {
-              outputState.visibleCommitted = true;
-              pushAssistantHistory(assistantText.visible, retryReasoning);
-              interruptedVisible = canonicalAssistantVisible;
-              lowYieldResumptions = 0;
-            } else {
-              commitAssistantRetry(assistantText.visible);
-              interruptedReasoning = preservedBudgetReasoning;
-            }
-            writeNotice(
-              "warn",
-              retryWithoutThinking
-                ? "response used the whole output budget — preserving it and continuing once with optional reasoning disabled"
-                : "response used the whole output budget — preserving it and continuing once at the route limit",
-            );
-            messages.push(
-              recoveryUserMessage(
-                [
-                  canonicalAssistantVisible.trim()
-                    ? "Your previous response was cut off by the output token limit. Continue from the exact stopping point without repeating any prior text."
-                    : "Your previous response spent the output budget before producing a visible answer. Do not restart the analysis; use the preserved conclusions and answer now.",
-                  retryWithoutThinking
-                    ? "Optional reasoning is disabled for this continuation. Emit the next tool call or final answer directly and briefly."
-                    : "Finish the reasoning briefly, then emit the next tool call or final answer directly.",
-                  interruptedReasoningBrief(interruptedReasoning),
-                ]
-                  .filter((part): part is string => Boolean(part))
-                  .join("\n\n"),
-              ),
-            );
-            continue;
-          }
-          writeNotice(
-            "warn",
-            canonicalAssistantVisible.trim()
-              ? "response reached the output limit again after its bounded continuation — returning the preserved partial answer"
-              : "response reached the output limit again after its bounded continuation — stopping without restarting the reasoning",
+          const budgetState: OutputBudgetState = {
+            truncatedBudgetRounds,
+            continuationBudgetFloor,
+            retryWithoutThinking,
+            interruptedVisible,
+            interruptedReasoning,
+            lowYieldResumptions,
+            visibleCommitted: outputState.visibleCommitted,
+          };
+          const budgetDecision = handleOutputBudgetExhaustion(
+            {
+              messages,
+              provider,
+              model,
+              stepMaxTokens,
+              maxStepCompletionTokens: MAX_STEP_COMPLETION_TOKENS,
+              notify: writeNotice,
+              recoveryUserMessage,
+              pushAssistantHistory: (historyText) =>
+                pushAssistantHistory(historyText, retryReasoning),
+              commitAssistantRetry,
+            },
+            budgetState,
+            {
+              completion,
+              assistantVisible: assistantText.visible,
+              assistantThinkContent: assistantText.thinkContent,
+              hasThinking: assistantText.hasThinking,
+              canonicalVisible: canonicalAssistantVisible,
+            },
+            completionBudget,
           );
-          if (!canonicalAssistantVisible.trim()) {
-            commitAssistantRetry(assistantText.visible);
+          truncatedBudgetRounds = budgetState.truncatedBudgetRounds;
+          continuationBudgetFloor = budgetState.continuationBudgetFloor;
+          retryWithoutThinking = budgetState.retryWithoutThinking;
+          interruptedVisible = budgetState.interruptedVisible;
+          interruptedReasoning = budgetState.interruptedReasoning;
+          lowYieldResumptions = budgetState.lowYieldResumptions;
+          outputState.visibleCommitted = budgetState.visibleCommitted;
+          if (budgetDecision === "continue-round") continue;
+          if (budgetDecision === "stop-partial") {
             return finishTurn(
               "The model exhausted its output budget again after one preserved continuation. No visible answer was produced.",
               step + 1,
