@@ -35,6 +35,8 @@ import type {
   TurnEventPort,
   TurnOutputState,
 } from "./turn/contracts.js";
+import { finalizeTurn } from "./turn/finalizer.js";
+import type { TurnOutcome } from "./turn-outcome.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
@@ -638,42 +640,30 @@ export async function runAgentTurn(
     reason?: string,
     displayAnswer?: string,
     loopGuardStop?: LoopGuardStopInfo,
-  ): import("./turn-outcome.js").TurnOutcome => {
-    responderClaims.release();
-    const outcome = createTurnOutcome(
-      normalizeTurnOutcomeInput({
-        status,
+  ): TurnOutcome =>
+    finalizeTurn(
+      {
+        releaseResponderClaims: () => responderClaims.release(),
+        liveMessages: () => liveMessages,
+        diagnostics: () => !suppressOutcomeDiagnostics,
+        writeAssistantMessage,
+        emitEmptyAssistantMessage: () =>
+          emit({ type: "assistant-message", text: "" }),
+        emitTurnEnd: ({ outcome, finalAnswer, steps: endSteps }) =>
+          emit({ type: "turn-end", outcome, finalAnswer, steps: endSteps }),
+        onMessages: options.onMessages,
+        onOutcome: options.onOutcome,
+      },
+      {
         answer,
         steps,
+        status,
         remainingCriteria,
         reason,
-        ...(loopGuardStop ? { loopGuardStop } : {}),
-      }),
+        displayAnswer,
+        loopGuardStop,
+      },
     );
-    const renderOptions = {
-      diagnostics: !suppressOutcomeDiagnostics,
-    };
-    const rendered = renderTurnOutcome(outcome, renderOptions);
-    const displayRendered =
-      displayAnswer === undefined
-        ? rendered
-        : renderTurnOutcome({ ...outcome, answer: displayAnswer }, renderOptions);
-    if (displayRendered.trim()) {
-      writeAssistantMessage(displayRendered);
-    } else {
-      emit({ type: "assistant-message", text: "" });
-    }
-    if (options.onMessages) {
-      try {
-        options.onMessages(buildTurnHistory(liveMessages, displayRendered));
-      } catch {
-        // Persisting history must never break the turn.
-      }
-    }
-    options.onOutcome?.(outcome);
-    emit({ type: "turn-end", outcome, finalAnswer: rendered, steps });
-    return outcome;
-  };
 
   let mcpLease: McpTurnLease | undefined;
 
