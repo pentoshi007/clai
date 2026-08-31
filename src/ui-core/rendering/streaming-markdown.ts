@@ -107,8 +107,26 @@ function joinBlocks(
   return blank ? [...head, blank, ...tail] : [...head, ...tail];
 }
 
+const THEME_SIGNATURES = new WeakMap<
+  NonNullable<RenderMarkdownLinesOptions["theme"]>,
+  number
+>();
+let nextThemeSignature = 1;
+
+function themeSignature(
+  theme: RenderMarkdownLinesOptions["theme"],
+): number {
+  if (!theme) return 0;
+  const cached = THEME_SIGNATURES.get(theme);
+  if (cached !== undefined) return cached;
+  const signature = nextThemeSignature;
+  nextThemeSignature += 1;
+  THEME_SIGNATURES.set(theme, signature);
+  return signature;
+}
+
 function signatureOf(options: RenderMarkdownLinesOptions): string {
-  return `${options.width}|${options.stripOuterIndent ? 1 : 0}`;
+  return `${options.width}|${options.stripOuterIndent ? 1 : 0}|${options.colorMode ?? ""}|${themeSignature(options.theme)}`;
 }
 
 export interface StreamingMarkdownResult {

@@ -7,9 +7,11 @@
  * - Any render failure falls back to plain lines (never throws into the UI).
  */
 
+import type { ColorMode } from "../../app/ports/terminal-port.js";
 import { renderStyledMarkdownLines } from "./styled-markdown.js";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";
 import { looksLikeMarkdown } from "../../ui-core/rendering/pager-source.js";
+import type { Theme } from "../../ui-core/rendering/theme.js";
 
 export type PagerMarkdownMode = "auto" | "force" | "plain";
 
@@ -32,6 +34,8 @@ export interface PreparePagerDisplayOptions {
   readonly mode?: PagerMarkdownMode | undefined;
   /** Default body foreground when markdown renders (theme.foreground). */
   readonly defaultFg?: string | undefined;
+  readonly theme?: Theme | undefined;
+  readonly colorMode?: ColorMode | undefined;
 }
 
 function plainLines(body: string): PagerDisplayLine[] {
@@ -66,6 +70,8 @@ export function preparePagerDisplay(
       width,
       defaultFg: options.defaultFg,
       stripOuterIndent: true,
+      theme: options.theme,
+      colorMode: options.colorMode,
     });
     if (styled.length === 0) {
       return { mode: "plain", lines: plainLines(body) };

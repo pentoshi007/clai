@@ -108,3 +108,34 @@ describe("streaming markdown rendering (TUI-004)", () => {
     expect(plain(second.lines)).toEqual(plain(renderMarkdownLines(PROSE, narrow)));
   });
 });
+
+describe("streaming markdown appearance cache", () => {
+  it("invalidates stable rows when theme or color mode changes", async () => {
+    const { themeFor } = await import("../../../src/ui-core/rendering/theme.js");
+    const dark = themeFor("dark");
+    const light = themeFor("light");
+    const first = renderStreamingMarkdown({
+      text: PROSE,
+      streaming: true,
+      options: { ...OPTIONS, theme: dark, colorMode: "truecolor" },
+      cache: EMPTY_MARKDOWN_STREAM_CACHE,
+    });
+    const recolored = renderStreamingMarkdown({
+      text: PROSE,
+      streaming: true,
+      options: { ...OPTIONS, theme: light, colorMode: "truecolor" },
+      cache: first.cache,
+    });
+    const colorless = renderStreamingMarkdown({
+      text: PROSE,
+      streaming: true,
+      options: { ...OPTIONS, theme: dark, colorMode: "none" },
+      cache: first.cache,
+    });
+
+    expect(recolored.cache.signature).not.toBe(first.cache.signature);
+    expect(recolored.cache.stableLines).not.toBe(first.cache.stableLines);
+    expect(colorless.cache.signature).not.toBe(first.cache.signature);
+    expect(colorless.cache.stableLines).not.toBe(first.cache.stableLines);
+  });
+});

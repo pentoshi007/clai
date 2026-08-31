@@ -17,7 +17,11 @@ import {
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
-import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
+import {
+  chordFromKeyEvent,
+  consumeCancellationKeyRepeat,
+  isKeyEventRelease,
+} from "../../input/chord-from-opentui-key.js";
 import type { SecretRequestView } from "../../../ui-core/controllers/overlay-controller.js";
 import { SecretBuffer } from "../../../ui-core/composer/secret-buffer.js";
 
@@ -74,8 +78,9 @@ export function SecretModal(props: SecretModalProps): ReactNode {
   // A previous 1-cell hidden <input> lost focus after clicks and stopped
   // accepting keys; Esc only worked when that cell was focused.
   useKeyboard((key) => {
-    if (key.eventType === "release") return;
+    if (isKeyEventRelease(key)) return;
     const chord = chordFromKeyEvent(key);
+    if (consumeCancellationKeyRepeat(key, chord)) return;
 
     if (chord === "escape") {
       key.preventDefault();
@@ -86,9 +91,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       // Cancel the password UI immediately. App / SIGINT still own double-press quit.
       key.preventDefault();
       cancel();
-      if (services.session.getState().running) {
-        services.session.abort();
-      }
+      services.cancel.abortForeground();
       return;
     }
     if (chord === "enter") {
@@ -121,14 +124,14 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       return;
     }
 
-    // Prefer sequence; fall back to single-char name (some terminals omit sequence).
-    const seq =
-      typeof key.sequence === "string" && key.sequence.length > 0
-        ? key.sequence
-        : key.name.length === 1
-          ? key.name
-          : "";
-    if (!isPrintableSequence(seq)) return;
+    const reportedSequence =
+      typeof key.sequence === "string" ? key.sequence : "";
+    const seq = isPrintableSequence(reportedSequence)
+      ? reportedSequence
+      : key.name.length === 1 && isPrintableSequence(key.name)
+        ? key.name
+        : "";
+    if (!seq) return;
     key.preventDefault();
     const buf = bufferRef.current;
     buf.insert(seq, buf.length);

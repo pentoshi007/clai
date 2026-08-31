@@ -1578,6 +1578,9 @@ export async function runAgentTurn(
     // provider's reported prompt size below so the estimator learns this route's
     // bias instead of permanently over-reporting it.
     let dispatchedRawRequestTokens = 0;
+    let dispatchedRequestRoute:
+      | { provider: ProviderId; model: string }
+      | undefined;
     let consecutiveSynthesizedRounds = 0;
     const engagementPolicy = new EngagementPolicyEngine();
     const probeStateKey = (call: ToolCall): string | undefined => {
@@ -4005,6 +4008,11 @@ export async function runAgentTurn(
       force = false,
     ): Promise<void> {
       const beforeTokens = estimateNextRequestTokens(messages);
+      emit({
+        type: "context-estimate",
+        estimatedTokens: beforeTokens,
+        model,
+      });
       const contextLimitTokens = currentContextLimitTokens();
       const compactTrigger = autoCompactTriggerTokens(getReliabilityPolicy(), {
         provider,
@@ -4430,6 +4438,7 @@ export async function runAgentTurn(
             ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
           }).accounting;
           dispatchedRawRequestTokens = finalAccounting.rawRequestTokens;
+          dispatchedRequestRoute = { provider, model };
           // The chip reports the request that is actually about to be sent, from
           // the same accounting the fit gate and the compaction card use, so the
           // three can never disagree.
@@ -4777,7 +4786,14 @@ export async function runAgentTurn(
         provider = completion.provider;
         model = completion.model;
         if (completion.usage) {
-          if (completion.usage.exact && completion.usage.promptTokens > 0) {
+          const requestRouteMatched =
+            dispatchedRequestRoute?.provider === completion.provider &&
+            dispatchedRequestRoute.model === completion.model;
+          if (
+            completion.usage.exact &&
+            completion.usage.promptTokens > 0 &&
+            requestRouteMatched
+          ) {
             recordRequestTokenObservation({
               provider: completion.provider,
               model: completion.model,
@@ -5003,8 +5019,32 @@ export async function runAgentTurn(
                       toolCallIdsInHistory(messages),
                     );
                     const salvagedCallIndex = nativeToolCalls.indexOf(writeTc);
+                    const salvagedToolName =
+                      salvaged.operation === "append"
+                        ? "fs.append"
+                        : "fs.write";
+                    const salvagedHistoryArgs: Record<string, unknown> = {
+                      path: salvaged.path,
+                      content: salvaged.content,
+                      ...(salvaged.operation === "append"
+                        ? {
+                            position: "end",
+                            ...(typeof salvaged.expectedPriorBytes === "number"
+                              ? { expectedPriorBytes: salvaged.expectedPriorBytes }
+                              : {}),
+                          }
+                        : {}),
+                    };
                     const salvagedCallId =
                       salvageHistoryCalls[salvagedCallIndex]?.id ?? writeTc.id;
+                    if (salvagedCallIndex >= 0) {
+                      salvageHistoryCalls[salvagedCallIndex] = {
+                        id: salvagedCallId,
+                        name: salvagedToolName,
+                        args: salvagedHistoryArgs,
+                        rawArguments: JSON.stringify(salvagedHistoryArgs),
+                      };
+                    }
                     appendAssistantWithTools(
                       messages,
                       assistantText.visible,
@@ -5027,18 +5067,14 @@ export async function runAgentTurn(
                       );
                     }
                     const priorBytes = writeResult.bytesOnDisk;
-                    const salvagedToolName =
-                      salvaged.operation === "append"
-                        ? "fs.append"
-                        : "fs.write";
                     const appendNudge = toolsAttached
                       ? `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
                       `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the remaining content not already on disk (prefer hundreds of lines per call). ` +
+                      `CONTINUE by calling fs.append with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the next remaining chunk not already on disk. Keep each chunk under 24,000 characters and wait for its receipt before sending another. ` +
                       `Do not re-read the full file; do not re-send content already saved. Use the platform tool interface — no markdown fences.`
                       : `Your ${salvagedToolName} tool call was cut off at the token limit, but the system salvaged the partial content and wrote ${lineCount} lines (file is now ${priorBytes} bytes) to ${salvaged.path}. ` +
                       `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n` +
-                      `CONTINUE with ONE large fs.append of the remaining content:\n` +
+                      `CONTINUE with one fs.append chunk under 24,000 characters, then wait for its receipt before sending another:\n` +
                       '```tool\n{"name":"fs.append","args":{"path":' +
                       JSON.stringify(salvaged.path) +
                       ',"expectedPriorBytes":' +

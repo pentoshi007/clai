@@ -90,5 +90,60 @@ describe("fsAppend", () => {
     expect(result.ok).toBe(true);
     expect(readFileSync(file, "utf8")).toBe("abcd");
   });
+
+  it("refuses a stale expectation and reports the real size instead of rebasing", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "chain.txt");
+    writeFileSync(file, "abc");
+
+    expect((await fsAppend(file, "A", { expectedPriorBytes: 3 })).ok).toBe(true);
+
+    const stale = await fsAppend(file, "B", { expectedPriorBytes: 3 });
+    expect(stale.ok).toBe(false);
+    expect(stale.output).toContain("expected prior bytes=3");
+    expect(stale.output).toContain("actual=4");
+    expect(stale.output).toContain("expectedPriorBytes=4");
+    expect(readFileSync(file, "utf8")).toBe("abcA");
+  });
+
+  it("cannot duplicate a chunk when a distinct append is retried at its old base", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "retry.txt");
+    writeFileSync(file, "abc");
+
+    await fsAppend(file, "A", { expectedPriorBytes: 3 });
+    await fsAppend(file, "B", { expectedPriorBytes: 4 });
+    expect((await fsAppend(file, "B", { expectedPriorBytes: 4 })).ok).toBe(false);
+
+    expect(readFileSync(file, "utf8")).toBe("abcAB");
+  });
+
+  it("keeps two distinct appends that carry identical content", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "twin.txt");
+    writeFileSync(file, "abc");
+
+    expect((await fsAppend(file, "X", { expectedPriorBytes: 3 })).ok).toBe(true);
+    expect((await fsAppend(file, "X", { expectedPriorBytes: 4 })).ok).toBe(true);
+
+    expect(readFileSync(file, "utf8")).toBe("abcXX");
+  });
+
+  it("prepends without treating an existing identical prefix as already applied", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "prepend.txt");
+    writeFileSync(file, "Xbody");
+
+    const result = await fsAppend(file, "X", {
+      position: "start",
+      expectedPriorBytes: 5,
+    });
+    expect(result.ok).toBe(true);
+    expect(readFileSync(file, "utf8")).toBe("XXbody");
+  });
 });
 

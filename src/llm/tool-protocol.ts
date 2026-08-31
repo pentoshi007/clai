@@ -398,6 +398,7 @@ export interface OpenAiToolCallAccumulator {
   id?: string;
   name?: string;
   arguments: string;
+  argumentsMode?: "fragments" | "snapshots" | undefined;
 }
 
 export interface AccumulateToolCallDeltaResult {
@@ -407,6 +408,15 @@ export interface AccumulateToolCallDeltaResult {
   /** True when this delta first set a non-empty function name. */
   nameBecameKnown: boolean;
   argumentsBytes: number;
+}
+
+function completeObjectArguments(raw: string): boolean {
+  try {
+    const parsed = JSON.parse(raw);
+    return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed));
+  } catch {
+    return false;
+  }
 }
 
 /** Accumulate OpenAI-style streaming tool_calls deltas by index. */
@@ -444,13 +454,24 @@ export function accumulateOpenAiToolCallDelta(
   }
   if (typeof entry.function?.arguments === "string") {
     const fragment = entry.function.arguments;
-    // Some OpenAI-compatible gateways (observed on Bynara/Grok) resend the
-    // FULL arguments object in every delta instead of an incremental fragment.
-    // Blind concatenation produced `{"path":"x"}{"path":"x"}`, which no longer
-    // parses, so the tool never ran and the model retried forever.
-    const snapshotRepeat = fragment.length > 0 && acc.arguments === fragment;
-    if (!snapshotRepeat) {
-      acc.arguments += fragment;
+    if (fragment.length > 0) {
+      if (acc.arguments.length === 0) {
+        acc.arguments = fragment;
+      } else if (acc.argumentsMode === "snapshots") {
+        acc.arguments = fragment;
+      } else if (fragment === acc.arguments) {
+        acc.argumentsMode = "snapshots";
+      } else if (
+        fragment.startsWith(acc.arguments) ||
+        (acc.arguments.startsWith(fragment) && fragment.trimStart().startsWith("{")) ||
+        completeObjectArguments(fragment)
+      ) {
+        acc.arguments = fragment;
+        acc.argumentsMode = "snapshots";
+      } else {
+        acc.arguments += fragment;
+        acc.argumentsMode = "fragments";
+      }
     }
     if (acc.arguments.length > MAX_TOOL_ARG_BYTES) {
       throw new Error(

@@ -29,10 +29,12 @@ import {
 const CHILD_SCRIPT = String.raw`
 const net = require("node:net");
 const socket = net.connect(process.env.CLAI_RUNTIME_SOCKET, () => {
-  socket.write(JSON.stringify({version:1,type:"auth",role:"child",token:process.env.CLAI_RUNTIME_TOKEN}) + "\n");
+  socket.write(JSON.stringify({version:1,type:"auth",role:"child",token:process.env.CLAI_RUNTIME_TOKEN,supportsRepaint:true}) + "\n");
 });
 const send = frame => socket.write(JSON.stringify(frame) + "\n");
 const status = busy => send({type:"status",sessionId:process.env.CLAI_RUNTIME_SESSION_ID,cwd:process.cwd(),busy,title:"Reattach fixture"});
+let repaintEnabled = true;
+let clearThenDecline = false;
 let buffer = "";
 socket.on("data", chunk => {
   buffer += chunk.toString("utf8");
@@ -43,6 +45,17 @@ socket.on("data", chunk => {
     buffer = buffer.slice(newline + 1);
     const frame = JSON.parse(line);
     if (frame.type === "ack") status(true);
+    if (frame.type === "repaint") {
+      if (clearThenDecline) {
+        process.stdout.write("\u001b[H\u001b[J");
+        send({type:"repaint-result",requestId:frame.requestId,accepted:false});
+      } else {
+        if (repaintEnabled) {
+          process.stdout.write("\u001b[Hreattach-fixture-ready FULL-FRAME:" + process.stdout.columns + "x" + process.stdout.rows + "\r\n");
+        }
+        send({type:"repaint-result",requestId:frame.requestId,accepted:repaintEnabled});
+      }
+    }
     if (frame.type === "shutdown") process.exit(0);
   }
 });
@@ -53,6 +66,12 @@ process.stdin.on("data", chunk => {
     if (command === "p") {
       process.stdout.write("Z".repeat(2300000));
       process.stdout.write("OVERFLOW-DONE\r\n");
+    } else if (command === "s") {
+      repaintEnabled = false;
+      process.stdout.write("SUSPENDED-FALLBACK\r\n");
+    } else if (command === "f") {
+      clearThenDecline = true;
+      process.stdout.write("SCHEDULING-FAILURE-FALLBACK\r\n");
     } else if (command === "q") {
       send({type:"exiting",exitCode:0});
       setTimeout(() => process.exit(0), 10);
@@ -129,6 +148,7 @@ async function channel(
   metadata: RuntimeMetadata,
   role: "client-control" | "client-terminal",
   clientId: string,
+  dimensions?: { readonly columns: number; readonly rows: number } | undefined,
 ): Promise<{ socket: Socket; rest: Buffer }> {
   const socket = await connectRuntimeSocket(metadata.socketPath);
   sendFrame(socket, {
@@ -137,6 +157,7 @@ async function channel(
     role,
     token: metadata.token,
     clientId,
+    ...(role === "client-terminal" && dimensions ? dimensions : {}),
   });
   const first = await readFirstFrame(socket);
   expect(first.value).toMatchObject({ type: "ack" });
@@ -187,7 +208,12 @@ async function reattachTerminal(
 ): Promise<{ output: () => string }> {
   client.terminal.destroy();
   await new Promise((resolve) => setTimeout(resolve, 60));
-  const attached = await channel(metadata, "client-terminal", id);
+  const attached = await channel(
+    metadata,
+    "client-terminal",
+    id,
+    { columns: 100, rows: 30 },
+  );
   let output = attached.rest.toString("utf8");
   attached.socket.on("data", (chunk) => {
     output += chunk.toString("utf8");
@@ -214,7 +240,7 @@ async function stopRuntime(runtime: Runtime, client: Client): Promise<void> {
 }
 
 describe("terminal reattach mode restoration", () => {
-  it("restores mouse reporting on reattach after the replay buffer evicted the child's setup", async () => {
+  it("orders an authoritative same-size frame and falls back when repaint is declined", async () => {
     if (process.platform === "win32") return;
     const runtime = await startRuntime();
     if (!runtime) return;
@@ -233,11 +259,68 @@ describe("terminal reattach mode restoration", () => {
       const reattached = await reattachTerminal(runtime.metadata, client, id);
       await waitFor(
         async () =>
-          reattached.output().includes("\u001b[?1000h") ? true : undefined,
+          reattached.output().includes("FULL-FRAME:100x30") &&
+          reattached.output().includes("\u001b[?1000h")
+            ? true
+            : undefined,
         15_000,
       );
-      expect(reattached.output()).toContain("\u001b[?1000h");
-      expect(reattached.output()).toContain("\u001b[?2004h");
+      const authoritative = reattached.output();
+      const resetAt = authoritative.indexOf("\u001b[?1049h\u001b[H\u001b[J");
+      const modesAt = authoritative.indexOf("\u001b[?1000h");
+      const frameAt = authoritative.indexOf("FULL-FRAME:100x30");
+      expect(resetAt).toBeGreaterThanOrEqual(0);
+      expect(modesAt).toBeGreaterThan(resetAt);
+      expect(frameAt).toBeGreaterThan(modesAt);
+      expect(authoritative).toContain("\u001b[?2004h");
+      expect(authoritative).not.toContain("OVERFLOW-DONE");
+
+      client.terminal.write("s");
+      await waitFor(async () =>
+        reattached.output().includes("SUSPENDED-FALLBACK") ? true : undefined,
+      );
+      const fallback = await reattachTerminal(runtime.metadata, client, id);
+      await waitFor(async () =>
+        fallback.output().includes("SUSPENDED-FALLBACK") ? true : undefined,
+      );
+      const fallbackModesAt = fallback.output().indexOf("\u001b[?1000h");
+      const fallbackReplayAt = fallback.output().indexOf("SUSPENDED-FALLBACK");
+      expect(fallbackModesAt).toBeGreaterThanOrEqual(0);
+      expect(fallbackReplayAt).toBeGreaterThan(fallbackModesAt);
+    } finally {
+      await stopRuntime(runtime, client);
+    }
+  }, 30_000);
+
+  it("replays the prior screen when the child clears but cannot schedule a frame", async () => {
+    if (process.platform === "win32") return;
+    const runtime = await startRuntime();
+    if (!runtime) return;
+    const id = "scheduling-failure";
+    const client = await openClient(runtime.metadata, id);
+    try {
+      await waitFor(async () =>
+        client.output.includes("reattach-fixture-ready") ? true : undefined,
+      );
+
+      client.terminal.write("f");
+      await waitFor(async () =>
+        client.output.includes("SCHEDULING-FAILURE-FALLBACK") ? true : undefined,
+      );
+
+      const fallback = await reattachTerminal(runtime.metadata, client, id);
+      await waitFor(async () =>
+        fallback.output().includes("SCHEDULING-FAILURE-FALLBACK")
+          ? true
+          : undefined,
+        15_000,
+      );
+
+      const stream = fallback.output();
+      const replayAt = stream.lastIndexOf("SCHEDULING-FAILURE-FALLBACK");
+      const lastClearAt = stream.lastIndexOf("\u001b[H\u001b[J");
+      expect(replayAt).toBeGreaterThanOrEqual(0);
+      expect(replayAt).toBeGreaterThan(lastClearAt);
     } finally {
       await stopRuntime(runtime, client);
     }

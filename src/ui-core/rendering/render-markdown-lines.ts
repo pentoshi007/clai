@@ -1,3 +1,5 @@
+import type { ColorMode } from "../../app/ports/terminal-port.js";
+import type { Theme } from "./theme.js";
 import { renderMarkdown } from "./markdown.js";
 
 export type AnsiLine = string;
@@ -5,6 +7,8 @@ export type AnsiLine = string;
 export interface RenderMarkdownLinesOptions {
   readonly width: number;
   readonly stripOuterIndent?: boolean | undefined;
+  readonly theme?: Theme | undefined;
+  readonly colorMode?: ColorMode | undefined;
 }
 
 export function preprocessAssistantMarkdown(text: string): string {
@@ -23,7 +27,10 @@ export function renderMarkdownLines(
   if (!text) return [];
   const prepared = preprocessAssistantMarkdown(text);
   const width = Math.max(20, options.width);
-  const rendered = renderMarkdown(prepared, width).replace(/\n+$/, "");
+  const rendered = renderMarkdown(prepared, width, {
+    theme: options.theme,
+    colorMode: options.colorMode,
+  }).replace(/\n+$/, "");
   if (!rendered) return [];
 
   return rendered.split("\n").map((line) => {

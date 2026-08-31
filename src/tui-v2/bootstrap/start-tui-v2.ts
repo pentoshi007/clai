@@ -14,7 +14,10 @@ import type { Mode, ProviderId } from "../../types.js";
 import { App } from "../app/App.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
-import { readCapabilitiesFromProcess } from "../../ui-core/bootstrap/capabilities.js";
+import {
+  readCapabilitiesFromProcess,
+  resolveOpenTuiCapabilities,
+} from "../../ui-core/bootstrap/capabilities.js";
 import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
@@ -39,7 +42,11 @@ import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js"
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
-import { forceFullRepaint, installResizeRepaint } from "./resize-repaint.js";
+import {
+  forceFullRepaint,
+  installResizeRepaint,
+  repaintAttachedScreen,
+} from "./resize-repaint.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -57,7 +64,7 @@ export async function startTuiV2(
   patchOpenTuiTextContent();
   setAllowInteractiveStdinInherit(false);
   const startedAt = Date.now();
-  const capabilities = readCapabilitiesFromProcess();
+  const detectedCapabilities = readCapabilitiesFromProcess();
   const fallbackClipboard = createSystemClipboardPort();
   // We own Ctrl+C (abort then double-press exit). OpenTUI must not kill the
   // process on the first press, and SIGINT is handled cooperatively below.
@@ -68,17 +75,31 @@ export async function startTuiV2(
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
+    useKittyKeyboard: detectedCapabilities.kittyKeyboard
+      ? { disambiguate: true, events: true }
+      : null,
     useMouse: true,
     clearOnShutdown: true,
     onDestroy: markRendererFinalized,
   });
+  const themeMode = await renderer.waitForThemeMode(300).catch(() => null);
+  const nativeCapabilities = renderer.capabilities;
+  const capabilities = resolveOpenTuiCapabilities(
+    detectedCapabilities,
+    process.env,
+    {
+      themeMode,
+      rgb: nativeCapabilities?.rgb,
+      ansi256: nativeCapabilities?.ansi256,
+    },
+  );
   const disarmTerminalRescue = installTerminalRescue();
   // lifecycle is assigned before requestExit runs; use a holder so the
   // composition root can close over a stable callback.
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
     current: undefined,
   };
-  const runtimeBridge = createRuntimeChildBridge();
+  const runtimeBridge = createRuntimeChildBridge(true);
   if (runtimeBridge) await runtimeBridge.connect();
   let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   const seeded = await seedSessionModel(options.sessionId, {
@@ -117,6 +138,7 @@ export async function startTuiV2(
   const pendingResume = options.resume
     ? await resolveResumeTarget(options.resume)
     : undefined;
+  await applyResumeResolution(services, pendingResume);
   const root = createRoot(renderer);
 
   const { handle, done } = createOpenTuiRendererHandle({
@@ -216,16 +238,23 @@ export async function startTuiV2(
     },
   });
   lifecycleRef.current = lifecycle;
+
+  await lifecycle.start();
   if (runtimeBridge) {
     disposeRuntimeBridge = bindRuntimeChildBridge(
       runtimeBridge,
       services,
       () => void lifecycle.shutdownAndExit(0),
+      () =>
+        repaintAttachedScreen({
+          renderer,
+          write: (text) => writeTerminalDirect(text),
+          enabled: Boolean(process.stdout.isTTY),
+          isSuspended: () =>
+            renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
+        }),
     );
   }
-
-  await lifecycle.start();
-  await applyResumeResolution(services, pendingResume);
   await done;
   await lifecycle.shutdown();
 }

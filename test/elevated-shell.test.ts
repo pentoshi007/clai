@@ -289,3 +289,142 @@ describe("interactive stdin inherit policy", () => {
     expect(getAllowInteractiveStdinInherit()).toBe(false);
   });
 });
+
+describe("bare sudo stdin interception", () => {
+  it("prepares background sudo -S through the managed secret path", async () => {
+    let prompted = 0;
+    const prepared = await prepareElevatedBackgroundCommand(
+      "sudo -S whoami",
+      {
+        requestSecret: async () => {
+          prompted += 1;
+          return "pw";
+        },
+      },
+      {
+        isRoot: () => false,
+        available: async () => true,
+        runAuth: async () => ({ ok: true, output: "", exitCode: 0 }),
+      },
+    );
+
+    expect(prompted).toBe(1);
+    expect(prepared?.prepared).toBe(true);
+    if (prepared?.prepared) {
+      expect(prepared.spec).toMatchObject({
+        command: "sudo",
+        argv: ["-S", "-p", "", "sh", "-c", "sudo -S whoami"],
+        stdinText: "pw\n",
+      });
+    }
+  });
+
+  it("runs foreground sudo -S only after managed password capture", async () => {
+    const runs: Parameters<typeof spawnArgv>[0][] = [];
+    let prompted = 0;
+    const result = await tryRunElevatedWithoutTty(
+      "sudo -S whoami",
+      {
+        requestSecret: async () => {
+          prompted += 1;
+          return "pw";
+        },
+      },
+      {
+        isRoot: () => false,
+        available: async () => true,
+        run: async (args) => {
+          runs.push(args);
+          return { ok: true, output: "ok", exitCode: 0 };
+        },
+      },
+    );
+
+    expect(result?.ok).toBe(true);
+    expect(prompted).toBe(1);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({
+      command: "sudo",
+      argv: ["-S", "-p", "", "-v"],
+      stdinText: "pw\n",
+    });
+    expect(runs[1]).toMatchObject({
+      command: "sudo",
+      argv: ["-S", "-p", "", "sh", "-c", "sudo -S whoami"],
+      stdinText: "pw\n",
+      interactiveStdin: false,
+    });
+  });
+
+  const boundaryCommands = [
+    "echo ready & sudo -S whoami",
+    "(sudo -S whoami)",
+    "env sudo -S whoami",
+  ];
+
+  it.each(boundaryCommands)(
+    "prepares background managed capture for %s",
+    async (command) => {
+      let prompted = 0;
+      const prepared = await prepareElevatedBackgroundCommand(
+        command,
+        {
+          requestSecret: async () => {
+            prompted += 1;
+            return "pw";
+          },
+        },
+        {
+          isRoot: () => false,
+          available: async () => true,
+          runAuth: async () => ({ ok: true, output: "", exitCode: 0 }),
+        },
+      );
+
+      expect(prompted).toBe(1);
+      expect(prepared?.prepared).toBe(true);
+      if (prepared?.prepared) {
+        expect(prepared.spec).toMatchObject({
+          command: "sudo",
+          argv: ["-S", "-p", "", "sh", "-c", command],
+          stdinText: "pw\n",
+        });
+      }
+    },
+  );
+
+  it.each(boundaryCommands)(
+    "captures the password before running %s in the foreground",
+    async (command) => {
+      const runs: Parameters<typeof spawnArgv>[0][] = [];
+      let prompted = 0;
+      const result = await tryRunElevatedWithoutTty(
+        command,
+        {
+          requestSecret: async () => {
+            prompted += 1;
+            return "pw";
+          },
+        },
+        {
+          isRoot: () => false,
+          available: async () => true,
+          run: async (args) => {
+            runs.push(args);
+            return { ok: true, output: "ok", exitCode: 0 };
+          },
+        },
+      );
+
+      expect(result?.ok).toBe(true);
+      expect(prompted).toBe(1);
+      expect(runs).toHaveLength(2);
+      expect(runs[1]).toMatchObject({
+        command: "sudo",
+        argv: ["-S", "-p", "", "sh", "-c", command],
+        stdinText: "pw\n",
+        interactiveStdin: false,
+      });
+    },
+  );
+});

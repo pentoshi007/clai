@@ -6,10 +6,11 @@
  * dropped characters, wide glyphs never straddle the right border).
  */
 
-import chalk from "chalk";
+import chalk, { Chalk, type ChalkInstance } from "chalk";
+import type { ColorMode } from "../../app/ports/terminal-port.js";
 import { renderColumns } from "./text-width.js";
 import { detectThemeHint } from "../bootstrap/capabilities.js";
-import { themeFor } from "./theme.js";
+import { themeFor, type Theme } from "./theme.js";
 import {
   emptyCarry,
   highlightLineForPath,
@@ -33,45 +34,78 @@ const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
 });
 
+const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
+  none: 0,
+  "16": 1,
+  "256": 2,
+  truecolor: 3,
+};
+
+export interface CodeBlockAppearance {
+  readonly theme?: Theme | undefined;
+  readonly colorMode?: ColorMode | undefined;
+}
+
 type Paint = (text: string) => string;
 
 interface Palette {
+  readonly identity: string;
   readonly border: Paint;
   readonly label: Paint;
   readonly syntax: Readonly<Record<SyntaxKind, Paint>>;
 }
 
-/**
- * Colors resolve from the shared theme tokens — the same syntax palette the
- * diff cards use — against the terminal's light/dark hint, so a light terminal
- * is never handed dark-tuned code colors.
- */
-function buildPalette(): Palette {
-  const theme = themeFor(detectThemeHint(process.env));
+const PALETTE_CACHE = new WeakMap<Theme, Map<0 | 1 | 2 | 3, Palette>>();
+const THEME_IDENTITIES = new WeakMap<Theme, number>();
+let nextThemeIdentity = 1;
+
+function themeIdentity(theme: Theme): number {
+  const cached = THEME_IDENTITIES.get(theme);
+  if (cached !== undefined) return cached;
+  const identity = nextThemeIdentity;
+  nextThemeIdentity += 1;
+  THEME_IDENTITIES.set(theme, identity);
+  return identity;
+}
+
+function buildPalette(theme: Theme, level: 0 | 1 | 2 | 3): Palette {
+  const paint: ChalkInstance = new Chalk({ level });
   return {
-    border: chalk.hex(theme.diffGutter),
-    label: chalk.hex(theme.muted),
+    identity: `${themeIdentity(theme)}:${level}`,
+    border: paint.hex(theme.diffGutter),
+    label: paint.hex(theme.muted),
     syntax: {
-      plain: chalk.hex(theme.foreground),
-      keyword: chalk.hex(theme.synKeyword),
-      string: chalk.hex(theme.synString),
-      comment: chalk.hex(theme.synComment),
-      number: chalk.hex(theme.synNumber),
-      function: chalk.hex(theme.synFunction),
-      type: chalk.hex(theme.synType),
-      property: chalk.hex(theme.synProperty),
-      operator: chalk.hex(theme.synOperator),
-      punctuation: chalk.hex(theme.muted),
-      regex: chalk.hex(theme.synRegex),
+      plain: paint.hex(theme.foreground),
+      keyword: paint.hex(theme.synKeyword),
+      string: paint.hex(theme.synString),
+      comment: paint.hex(theme.synComment),
+      number: paint.hex(theme.synNumber),
+      function: paint.hex(theme.synFunction),
+      type: paint.hex(theme.synType),
+      property: paint.hex(theme.synProperty),
+      operator: paint.hex(theme.synOperator),
+      punctuation: paint.hex(theme.muted),
+      regex: paint.hex(theme.synRegex),
     },
   };
 }
 
-let resolvedPalette: Palette | undefined;
-
-function palette(): Palette {
-  resolvedPalette ??= buildPalette();
-  return resolvedPalette;
+function palette(appearance?: CodeBlockAppearance): Palette {
+  const theme = appearance?.theme ?? themeFor(detectThemeHint(process.env));
+  const level =
+    appearance?.colorMode === undefined
+      ? chalk.level
+      : CHALK_LEVEL[appearance.colorMode];
+  let byLevel = PALETTE_CACHE.get(theme);
+  if (!byLevel) {
+    byLevel = new Map();
+    PALETTE_CACHE.set(theme, byLevel);
+  }
+  const cached = byLevel.get(level);
+  if (cached) return cached;
+  const resolved = buildPalette(theme, level);
+  byLevel.set(level, resolved);
+  return resolved;
 }
 
 /** Fence info strings that are not already file extensions. */
@@ -252,8 +286,12 @@ function truncateLabel(label: string, maxWidth: number): string {
   return text;
 }
 
-export function codeBlockTop(label: string, width: number): string {
-  const { border, label: paintLabel } = palette();
+export function codeBlockTop(
+  label: string,
+  width: number,
+  appearance?: CodeBlockAppearance,
+): string {
+  const { border, label: paintLabel } = palette(appearance);
   const span = codeBlockWidth(width) - 2;
   const room = span - 4;
   const labelWidth = renderColumns(label);
@@ -271,16 +309,31 @@ export function codeBlockTop(label: string, width: number): string {
   );
 }
 
-export function codeBlockBottom(width: number): string {
-  return palette().border(`╰${rule(codeBlockWidth(width) - 2)}╯`);
+export function codeBlockBottom(
+  width: number,
+  appearance?: CodeBlockAppearance,
+): string {
+  return palette(appearance).border(`╰${rule(codeBlockWidth(width) - 2)}╯`);
 }
 
-/** Pad a painted body to the panel's inner width and add both borders. */
-export function codeBlockRow(body: string, bodyWidth: number, width: number): string {
-  const { border } = palette();
+function codeBlockRowWithPalette(
+  body: string,
+  bodyWidth: number,
+  width: number,
+  resolved: Palette,
+): string {
   const inner = codeBlockWidth(width) - CODE_BLOCK_CHROME;
   const pad = " ".repeat(Math.max(0, inner - bodyWidth));
-  return `${border("│")} ${body}${pad} ${border("│")}`;
+  return `${resolved.border("│")} ${body}${pad} ${resolved.border("│")}`;
+}
+
+export function codeBlockRow(
+  body: string,
+  bodyWidth: number,
+  width: number,
+  appearance?: CodeBlockAppearance,
+): string {
+  return codeBlockRowWithPalette(body, bodyWidth, width, palette(appearance));
 }
 
 interface Cell {
@@ -368,8 +421,11 @@ function sliceRows(cells: Cell[], firstBudget: number, restBudget: number): Cell
   return rows.length > 0 ? rows : [[]];
 }
 
-function paint(cells: readonly Cell[]): { text: string; width: number } {
-  const { syntax } = palette();
+function paintCells(
+  cells: readonly Cell[],
+  resolved: Palette,
+): { text: string; width: number } {
+  const { syntax } = resolved;
   let text = "";
   let width = 0;
   let run = "";
@@ -435,7 +491,9 @@ export function codeBlockRows(
   source: string,
   fence: CodeFenceState,
   width: number,
+  appearance?: CodeBlockAppearance,
 ): string[] {
+  const resolved = palette(appearance);
   const panel = codeBlockWidth(width);
   const inner = panel - CODE_BLOCK_CHROME;
   const line = expandTabs(source.replace(/\s+$/, ""));
@@ -449,11 +507,11 @@ export function codeBlockRows(
 
   const rows: string[] = [];
   for (let i = 0; i < fence.pendingBlanks; i += 1) {
-    rows.push(codeBlockRow("", 0, panel));
+    rows.push(codeBlockRowWithPalette("", 0, panel, resolved));
   }
   fence.pendingBlanks = 0;
 
-  const key = `${panel}\u0000${fence.langPath}\u0000${carryKey(fence.carry)}\u0000${line}`;
+  const key = `${resolved.identity}\u0000${panel}\u0000${fence.langPath}\u0000${carryKey(fence.carry)}\u0000${line}`;
   const cached = ROW_CACHE.get(key);
   if (cached) {
     restoreCarry(fence.carry, cached.carry);
@@ -474,9 +532,14 @@ export function codeBlockRows(
   const chunks = sliceRows(cells, inner, inner - indent);
 
   const content = chunks.map((chunk, i) => {
-    const { text, width: bodyWidth } = paint(chunk);
+    const { text, width: bodyWidth } = paintCells(chunk, resolved);
     const prefix = i === 0 ? "" : hang;
-    return codeBlockRow(prefix + text, prefix.length + bodyWidth, panel);
+    return codeBlockRowWithPalette(
+      prefix + text,
+      prefix.length + bodyWidth,
+      panel,
+      resolved,
+    );
   });
   cacheRows(key, content, fence.carry);
   rows.push(...content);

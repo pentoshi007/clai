@@ -53,7 +53,7 @@ export interface FullRepaintRenderer {
  * and only set on suspend/resume and screen-mode transitions). The buffer clear
  * is best-effort: if the shape ever changes, the plain render request still runs.
  */
-export function forceFullRepaint(renderer: FullRepaintRenderer): void {
+export function forceFullRepaint(renderer: FullRepaintRenderer): boolean {
   try {
     renderer.currentRenderBuffer?.clear();
   } catch {
@@ -61,9 +61,26 @@ export function forceFullRepaint(renderer: FullRepaintRenderer): void {
   }
   try {
     renderer.requestRender();
+    return true;
   } catch {
     /* renderer is going away; the next mount repaints from scratch */
+    return false;
   }
+}
+
+export interface AttachedScreenRepaintOptions {
+  readonly renderer: FullRepaintRenderer;
+  readonly write: (text: string) => void;
+  readonly enabled?: boolean | undefined;
+  readonly isSuspended?: (() => boolean) | undefined;
+}
+
+export function repaintAttachedScreen(
+  options: AttachedScreenRepaintOptions,
+): boolean {
+  if (options.enabled === false || options.isSuspended?.() === true) return false;
+  options.write(RESIZE_REPAINT_SEQUENCE);
+  return forceFullRepaint(options.renderer);
 }
 
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {

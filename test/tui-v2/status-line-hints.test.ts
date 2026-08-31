@@ -16,6 +16,8 @@ import {
 const DENSITIES: StatusDensity[] = ["xs", "sm", "md", "lg"];
 const STATUS_LINE = "src/tui-v2/components/status/status-line.tsx";
 const APP = "src/tui-v2/app/App.tsx";
+const START_TUI = "src/tui-v2/bootstrap/start-tui-v2.ts";
+const SECRET_MODAL = "src/tui-v2/components/modal/secret-modal.tsx";
 
 describe("status line hints and Esc semantics", () => {
   it("uses a compact cancel hint and a direct second-Esc instruction", () => {
@@ -141,5 +143,35 @@ describe("status line hints and Esc semantics", () => {
     expect(statusLine).toContain('content=" │ "');
     expect(statusLine).not.toContain('content="  "');
     expect(idleBranch).not.toContain('"esc: cancel"');
+  });
+});
+
+describe("OpenTUI cancellation wiring", () => {
+  it("aborts foreground work on first Escape and reserves cancelAll for the second", () => {
+    const app = readFileSync(APP, "utf8");
+    const start = app.indexOf("function handleEscapeCancellation");
+    const end = app.indexOf("function onAppWheel", start);
+    const handler = app.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    expect(handler).toContain("escapeCancellationAction");
+    expect(handler).toContain("services.cancel.abortForeground()");
+    expect(handler).toContain("services.cancel.cancelAll()");
+    expect(handler.indexOf('action === "dismiss"')).toBeLessThan(
+      handler.indexOf("services.cancel.abortForeground()"),
+    );
+  });
+
+  it("suppresses held cancellation keys and enables Kitty event reporting", () => {
+    const app = readFileSync(APP, "utf8");
+    const secret = readFileSync(SECRET_MODAL, "utf8");
+    const bootstrap = readFileSync(START_TUI, "utf8");
+
+    expect(app).toContain("consumeCancellationKeyRepeat(key, chord)");
+    expect(secret).toContain("consumeCancellationKeyRepeat(key, chord)");
+    expect(secret).toContain("isPrintableSequence(reportedSequence)");
+    expect(bootstrap).toContain("useKittyKeyboard: detectedCapabilities.kittyKeyboard");
+    expect(bootstrap).toContain("{ disambiguate: true, events: true }");
   });
 });

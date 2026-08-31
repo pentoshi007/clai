@@ -35,6 +35,12 @@ export interface TerminalCapabilityReport {
   readonly themeHint: ThemeHint;
 }
 
+export interface OpenTuiNativeAppearance {
+  readonly themeMode?: "dark" | "light" | null | undefined;
+  readonly rgb?: boolean | undefined;
+  readonly ansi256?: boolean | undefined;
+}
+
 export const DEFAULT_COLUMNS = 80;
 export const DEFAULT_ROWS = 24;
 
@@ -47,20 +53,30 @@ function truthy(value: string | undefined): boolean {
   return v !== "" && v !== "0" && v !== "false" && v !== "no";
 }
 
-function detectColorMode(
+function explicitColorMode(
   env: CapabilityEnv["env"],
-  isTTY: boolean,
-  platform?: string,
-): { colorMode: ColorMode; noColor: boolean } {
+): { colorMode: ColorMode; noColor: boolean } | undefined {
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") {
     return { colorMode: "none", noColor: true };
   }
   if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== "" && env.FORCE_COLOR !== "0") {
     const level = env.FORCE_COLOR;
-    if (level === "3" || level === "truecolor") return { colorMode: "truecolor", noColor: false };
+    if (level === "3" || level === "truecolor") {
+      return { colorMode: "truecolor", noColor: false };
+    }
     if (level === "2") return { colorMode: "256", noColor: false };
     return { colorMode: "16", noColor: false };
   }
+  return undefined;
+}
+
+function detectColorMode(
+  env: CapabilityEnv["env"],
+  isTTY: boolean,
+  platform?: string,
+): { colorMode: ColorMode; noColor: boolean } {
+  const explicit = explicitColorMode(env);
+  if (explicit) return explicit;
   if (!isTTY) return { colorMode: "none", noColor: false };
 
   const colorterm = (env.COLORTERM ?? "").toLowerCase();
@@ -100,9 +116,16 @@ function detectUnicode(env: CapabilityEnv["env"]): boolean {
   return /utf-?8/i.test(locale);
 }
 
-export function detectThemeHint(env: CapabilityEnv["env"]): ThemeHint {
+function explicitThemeHint(
+  env: CapabilityEnv["env"],
+): Exclude<ThemeHint, "unknown"> | undefined {
   const explicit = (env.CLAI_THEME ?? "").toLowerCase();
-  if (explicit === "dark" || explicit === "light") return explicit;
+  return explicit === "dark" || explicit === "light" ? explicit : undefined;
+}
+
+export function detectThemeHint(env: CapabilityEnv["env"]): ThemeHint {
+  const explicit = explicitThemeHint(env);
+  if (explicit) return explicit;
   const colorfgbg = env.COLORFGBG;
   if (colorfgbg) {
     const parts = colorfgbg.split(";");
@@ -137,6 +160,39 @@ export function detectCapabilities(
     osc52: isTTY,
     reducedMotion: truthy(env.CLAI_REDUCED_MOTION) || truthy(env.NO_MOTION),
     themeHint: detectThemeHint(env),
+  };
+}
+
+export function resolveOpenTuiCapabilities(
+  detected: TerminalCapabilityReport,
+  env: CapabilityEnv["env"],
+  native?: OpenTuiNativeAppearance,
+): TerminalCapabilityReport {
+  const explicitColor = explicitColorMode(env);
+  const nativeColorAvailable =
+    native?.rgb !== undefined || native?.ansi256 !== undefined;
+  const color =
+    explicitColor ??
+    (!detected.isTTY
+      ? { colorMode: "none" as const, noColor: false }
+      : {
+          colorMode: nativeColorAvailable
+            ? native?.rgb
+              ? "truecolor" as const
+              : native?.ansi256
+                ? "256" as const
+                : "16" as const
+            : "16" as const,
+          noColor: false,
+        });
+  const themeHint =
+    explicitThemeHint(env) ?? native?.themeMode ?? "dark";
+
+  return {
+    ...detected,
+    colorMode: color.colorMode,
+    noColor: color.noColor,
+    themeHint,
   };
 }
 

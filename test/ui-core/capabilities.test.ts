@@ -3,6 +3,7 @@ import {
   DEFAULT_COLUMNS,
   DEFAULT_ROWS,
   detectCapabilities,
+  resolveOpenTuiCapabilities,
   type CapabilityEnv,
 } from "../../src/ui-core/bootstrap/capabilities.js";
 
@@ -48,6 +49,99 @@ describe("detectCapabilities color mode", () => {
     const caps = detectCapabilities(makeEnv({ stdoutIsTTY: false }));
     expect(caps.colorMode).toBe("none");
     expect(caps.isTTY).toBe(false);
+  });
+});
+
+describe("resolveOpenTuiCapabilities", () => {
+  it("uses terminal-native appearance identically with normal and stripped environments", () => {
+    const normalEnv = {
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      COLORFGBG: "0;15",
+    };
+    const strippedEnv = { TERM: "xterm" };
+    const native = { themeMode: "light" as const, rgb: true, ansi256: true };
+    const normal = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env: normalEnv })),
+      normalEnv,
+      native,
+    );
+    const privileged = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env: strippedEnv })),
+      strippedEnv,
+      native,
+    );
+
+    expect({ themeHint: normal.themeHint, colorMode: normal.colorMode }).toEqual({
+      themeHint: "light",
+      colorMode: "truecolor",
+    });
+    expect({ themeHint: privileged.themeHint, colorMode: privileged.colorMode }).toEqual({
+      themeHint: normal.themeHint,
+      colorMode: normal.colorMode,
+    });
+  });
+
+  it("uses stable dark and 16-color fallbacks when native appearance is unavailable", () => {
+    const normalEnv = { COLORTERM: "truecolor", COLORFGBG: "0;15" };
+    const strippedEnv = {};
+    const normal = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env: normalEnv })),
+      normalEnv,
+    );
+    const privileged = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env: strippedEnv })),
+      strippedEnv,
+    );
+
+    expect({ themeHint: normal.themeHint, colorMode: normal.colorMode }).toEqual({
+      themeHint: "dark",
+      colorMode: "16",
+    });
+    expect({ themeHint: privileged.themeHint, colorMode: privileged.colorMode }).toEqual({
+      themeHint: normal.themeHint,
+      colorMode: normal.colorMode,
+    });
+  });
+
+  it("preserves explicit CLAI_THEME, NO_COLOR, and FORCE_COLOR overrides", () => {
+    const native = { themeMode: "light" as const, rgb: true, ansi256: true };
+    const themeEnv = { CLAI_THEME: "dark" };
+    const noColorEnv = { NO_COLOR: "1" };
+    const forceColorEnv = { FORCE_COLOR: "2" };
+
+    expect(
+      resolveOpenTuiCapabilities(
+        detectCapabilities(makeEnv({ env: themeEnv })),
+        themeEnv,
+        native,
+      ).themeHint,
+    ).toBe("dark");
+    expect(
+      resolveOpenTuiCapabilities(
+        detectCapabilities(makeEnv({ env: noColorEnv })),
+        noColorEnv,
+        native,
+      ),
+    ).toMatchObject({ colorMode: "none", noColor: true });
+    expect(
+      resolveOpenTuiCapabilities(
+        detectCapabilities(makeEnv({ env: forceColorEnv })),
+        forceColorEnv,
+        native,
+      ),
+    ).toMatchObject({ colorMode: "256", noColor: false });
+  });
+
+  it("does not enable native color for non-TTY streams", () => {
+    const detected = detectCapabilities(makeEnv({ stdoutIsTTY: false }));
+    expect(
+      resolveOpenTuiCapabilities(detected, {}, {
+        themeMode: "light",
+        rgb: true,
+        ansi256: true,
+      }).colorMode,
+    ).toBe("none");
   });
 });
 

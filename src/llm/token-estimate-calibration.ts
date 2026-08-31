@@ -23,7 +23,6 @@ import { getDataDir } from "../store/paths.js";
 /** Below this the fixed per-message overhead dominates and the ratio is noise. */
 const MIN_SAMPLE_TOKENS = 400;
 
-/** One observation can be an outlier (a truncated stream, a partial retry). */
 const MIN_TRUSTED_SAMPLES = 2;
 
 // A learned factor corrects estimator bias; it must never be able to convince
@@ -140,14 +139,14 @@ export function recordRequestTokenObservation(input: {
   persistCalibrations();
 }
 
-/** The learned factor for a route, once it has enough observations to trust. */
 export function requestTokenCalibration(
   provider: ProviderId | undefined,
   model: string | undefined,
 ): RequestTokenCalibration | undefined {
   loadCalibrations();
   const entry = calibrations.get(calibrationKey(provider, model));
-  if (!entry || entry.samples < MIN_TRUSTED_SAMPLES) return undefined;
+  if (!entry) return undefined;
+  if (entry.samples < MIN_TRUSTED_SAMPLES && entry.ratio >= 1) return undefined;
   return { ratio: entry.ratio, samples: entry.samples };
 }
 

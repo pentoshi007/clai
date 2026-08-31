@@ -1,5 +1,5 @@
 import { createReadStream, lstatSync, readlinkSync, realpathSync } from "node:fs";
-import { open, readdir, readFile, writeFile, appendFile, unlink, rm, rename, mkdir, stat, chmod } from "node:fs/promises";
+import { open, readdir, readFile, appendFile, unlink, rm, rename, mkdir, stat, chmod } from "node:fs/promises";
 import { join, dirname, basename, relative, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
@@ -30,11 +30,64 @@ import {
  *   any failure so a crash cannot leave a stray `.clai-*` file behind.
  */
 let atomicWriteCounter = 0;
+const fileMutationLanes = new Map<string, Promise<void>>();
+const RETRYABLE_FS_CODES = new Set(["EAGAIN", "EBUSY", "EMFILE", "ENFILE", "EPERM"]);
 
-export async function writeFileAtomic(
-  resolved: string,
+function mutationKey(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function mutationTarget(path: string): string {
+  return canonicalizeForContainment(path) ?? path;
+}
+
+async function withFileMutation<T>(
+  path: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = mutationKey(mutationTarget(path));
+  const previous = fileMutationLanes.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fileMutationLanes.set(key, current);
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (fileMutationLanes.get(key) === current) fileMutationLanes.delete(key);
+  }
+}
+
+function appendPreconditionFailure(
+  path: string,
+  expected: number,
+  actual: number,
+): ToolResult {
+  return {
+    ok: false,
+    output:
+      `fs.append integrity check failed for ${path}: expected prior bytes=${expected}, actual=${actual}. ` +
+      `The file already advanced past your expectation. Re-send only the content that is not on disk yet with expectedPriorBytes=${actual}.`,
+    exitCode: 1,
+  };
+}
+
+function retryableFsError(error: unknown): boolean {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  return RETRYABLE_FS_CODES.has(code);
+}
+
+async function writeFileAtomicAttempt(
+  path: string,
   contents: string,
 ): Promise<void> {
+  const resolved = mutationTarget(path);
   const priorMode = await stat(resolved)
     .then((st) => st.mode & 0o7777)
     .catch(() => undefined);
@@ -53,14 +106,27 @@ export async function writeFileAtomic(
     await handle.sync();
     await handle.close();
     handle = undefined;
-    if (priorMode !== undefined) {
-      await chmod(tempPath, priorMode);
-    }
+    if (priorMode !== undefined) await chmod(tempPath, priorMode);
     await rename(tempPath, resolved);
   } catch (error) {
     if (handle) await handle.close().catch(() => undefined);
     await unlink(tempPath).catch(() => undefined);
     throw error;
+  }
+}
+
+export async function writeFileAtomic(
+  resolved: string,
+  contents: string,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await writeFileAtomicAttempt(resolved, contents);
+      return;
+    } catch (error) {
+      if (attempt >= 3 || !retryableFsError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 15 * 2 ** attempt));
+    }
   }
 }
 
@@ -779,32 +845,30 @@ export async function fsWrite(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
-  // Create any missing parent directories so writing "src/index.js" into a
-  // fresh project just works — the agent should not have to chain a separate
-  // mkdir before every file write. This was the most common failure: ENOENT
-  // on a path whose parent dir did not exist yet.
-  let before = "";
-  let existed = false;
-  try {
-    before = await readFile(resolved, "utf8");
-    existed = true;
-  } catch (error: any) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, content, "utf8");
-  const change = buildFileChange({
-    path: resolved,
-    before,
-    after: content,
-    kind: existed ? "overwrite" : "create",
+  return withFileMutation(resolved, async () => {
+    let before = "";
+    let existed = false;
+    try {
+      before = await readFile(resolved, "utf8");
+      existed = true;
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await mkdir(dirname(resolved), { recursive: true });
+    await writeFileAtomic(resolved, content);
+    const change = buildFileChange({
+      path: resolved,
+      before,
+      after: content,
+      kind: existed ? "overwrite" : "create",
+    });
+    const verb = existed ? "Wrote" : "Created";
+    return {
+      ok: true,
+      output: describeWrite(resolved, content, verb),
+      fileChanges: [change],
+    };
   });
-  const verb = existed ? "Wrote" : "Created";
-  return {
-    ok: true,
-    output: describeWrite(resolved, content, verb),
-    fileChanges: [change],
-  };
 }
 
 /** Atomically replace an inclusive, 1-indexed line range in an existing file. */
@@ -819,35 +883,36 @@ export async function fsReplaceLines(
   if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
     return { ok: false, output: "fs.replaceLines requires integers with 1 <= startLine <= endLine", exitCode: 1 };
   }
-  const original = await readFile(resolved, "utf8");
-  const newline = original.includes("\r\n") ? "\r\n" : "\n";
-  const hadFinalNewline = original.endsWith("\n");
-  const lines = original.split(/\r?\n/);
-  if (hadFinalNewline) lines.pop();
-  if (endLine > lines.length) {
-    return { ok: false, output: `fs.replaceLines range ${startLine}-${endLine} exceeds ${lines.length} lines`, exitCode: 1 };
-  }
-  const replacement = content === "" ? [] : content.split(/\r?\n/);
-  if (replacement.at(-1) === "") replacement.pop();
-  lines.splice(startLine - 1, endLine - startLine + 1, ...replacement);
-  const next = lines.join(newline) + (hadFinalNewline ? newline : "");
-  await writeFileAtomic(resolved, next);
-  // X10: receipt with line count + hash so the model notices size changes.
-  const verb =
-    content === ""
-      ? `Deleted lines ${startLine}-${endLine} in`
-      : `Replaced lines ${startLine}-${endLine} in`;
-  const change = buildFileChange({
-    path: resolved,
-    before: original,
-    after: next,
-    kind: "edit",
+  return withFileMutation(resolved, async () => {
+    const original = await readFile(resolved, "utf8");
+    const newline = original.includes("\r\n") ? "\r\n" : "\n";
+    const hadFinalNewline = original.endsWith("\n");
+    const lines = original.split(/\r?\n/);
+    if (hadFinalNewline) lines.pop();
+    if (endLine > lines.length) {
+      return { ok: false, output: `fs.replaceLines range ${startLine}-${endLine} exceeds ${lines.length} lines`, exitCode: 1 };
+    }
+    const replacement = content === "" ? [] : content.split(/\r?\n/);
+    if (replacement.at(-1) === "") replacement.pop();
+    lines.splice(startLine - 1, endLine - startLine + 1, ...replacement);
+    const next = lines.join(newline) + (hadFinalNewline ? newline : "");
+    await writeFileAtomic(resolved, next);
+    const verb =
+      content === ""
+        ? `Deleted lines ${startLine}-${endLine} in`
+        : `Replaced lines ${startLine}-${endLine} in`;
+    const change = buildFileChange({
+      path: resolved,
+      before: original,
+      after: next,
+      kind: "edit",
+    });
+    return {
+      ok: true,
+      output: describeWrite(resolved, next, verb),
+      fileChanges: [change],
+    };
   });
-  return {
-    ok: true,
-    output: describeWrite(resolved, next, verb),
-    fileChanges: [change],
-  };
 }
 
 export interface FileWrite {
@@ -905,16 +970,19 @@ export async function fsWriteMany(
     }
     try {
       const resolved = ensureWriteAllowed(file.path, options.confirmed);
-      let before = "";
-      let existed = false;
-      try {
-        before = await readFile(resolved, "utf8");
-        existed = true;
-      } catch (error: any) {
-        if (error?.code !== "ENOENT") throw error;
-      }
-      await mkdir(dirname(resolved), { recursive: true });
-      await writeFile(resolved, file.content, "utf8");
+      const mutation = await withFileMutation(resolved, async () => {
+        let before = "";
+        let existed = false;
+        try {
+          before = await readFile(resolved, "utf8");
+          existed = true;
+        } catch (error: any) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+        await mkdir(dirname(resolved), { recursive: true });
+        await writeFileAtomic(resolved, file.content);
+        return { before, existed };
+      });
       const bytes = Buffer.byteLength(file.content, "utf8");
       const nLines =
         file.content.length === 0 ? 0 : file.content.split(/\r?\n/).length;
@@ -926,9 +994,9 @@ export async function fsWriteMany(
       changes.push(
         buildFileChange({
           path: resolved,
-          before,
+          before: mutation.before,
           after: file.content,
-          kind: existed ? "overwrite" : "create",
+          kind: mutation.existed ? "overwrite" : "create",
         }),
       );
     } catch (error) {
@@ -1183,6 +1251,7 @@ export async function fsEdit(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
+  return withFileMutation(resolved, async () => {
   const priorStat = await stat(resolved).catch(() => undefined);
   if (priorStat?.isFile() && priorStat.size > LARGE_MUTATION_BYTES) {
     return {
@@ -1284,6 +1353,7 @@ export async function fsEdit(
     output: `Replaced ${count} occurrence(s) in ${resolved}.\n${preview}`,
     fileChanges: [change],
   };
+  });
 }
 
 /**
@@ -1296,6 +1366,7 @@ export async function fsDelete(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
+  return withFileMutation(resolved, async () => {
   try {
     // Snapshot text content for diff UI when deleting a single small file.
     let before = "";
@@ -1338,6 +1409,7 @@ export async function fsDelete(
     const msg = error instanceof Error ? error.message : String(error);
     return { ok: false, output: `Delete failed: ${msg}`, exitCode: 1 };
   }
+  });
 }
 
 export async function fsAppend(
@@ -1346,16 +1418,12 @@ export async function fsAppend(
   options: {
     position?: "start" | "end" | undefined;
     confirmed?: boolean | undefined;
-    /**
-     * Optional integrity check: expected UTF-8 byte length of the file
-     * *before* this append. Prevents double-append / wrong-base corruption
-     * when continuing a truncated write.
-     */
     expectedPriorBytes?: number | undefined;
   } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
   const position = options.position ?? "end";
+  const expectedPriorBytes = options.expectedPriorBytes;
   if (position !== "start" && position !== "end") {
     return {
       ok: false,
@@ -1363,109 +1431,89 @@ export async function fsAppend(
       exitCode: 1,
     };
   }
-
-  let original = "";
-  // Large-file guard: reading + rewriting a 500 MB log to append a few lines
-  // holds 2x the file in heap. Above the threshold, append in place with
-  // `appendFile` and say the diff was skipped for size.
-  const priorStat = await stat(resolved).catch(() => undefined);
   if (
-    priorStat?.isFile() &&
-    priorStat.size > LARGE_MUTATION_BYTES &&
-    position === "end"
-  ) {
-    const priorBytesLarge = priorStat.size;
-    if (
-      typeof options.expectedPriorBytes === "number" &&
-      options.expectedPriorBytes !== priorBytesLarge
-    ) {
-      return {
-        ok: false,
-        output:
-          `fs.append integrity check failed for ${resolved}: expected prior bytes=${options.expectedPriorBytes}, actual=${priorBytesLarge}. ` +
-          `Do NOT append again until you reconcile (read the last ~20 lines or re-write).`,
-        exitCode: 1,
-      };
-    }
-    await appendFile(resolved, content, "utf8");
-    const afterStat = await stat(resolved).catch(() => undefined);
-    return {
-      ok: true,
-      output:
-        describeWrite(resolved, content, "Appended (end) to") +
-        `\n  prior_bytes=${priorBytesLarge} after_bytes=${afterStat?.size ?? priorBytesLarge + Buffer.byteLength(content, "utf8")}` +
-        `\n  note: file exceeds ${Math.round(LARGE_MUTATION_BYTES / (1024 * 1024))}MB — appended in place and skipped the diff/receipt hash of the whole file.`,
-    };
-  }
-  try {
-    original = await readFile(resolved, "utf8");
-  } catch (error: any) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-    if (
-      typeof options.expectedPriorBytes === "number" &&
-      options.expectedPriorBytes !== 0
-    ) {
-      return {
-        ok: false,
-        output:
-          `fs.append integrity check failed: expected prior bytes=${options.expectedPriorBytes} but file does not exist.`,
-        exitCode: 1,
-      };
-    }
-    // File does not exist: create missing parent directories and write content
-    await mkdir(dirname(resolved), { recursive: true });
-    await writeFile(resolved, content, "utf8");
-    const change = buildFileChange({
-      path: resolved,
-      before: "",
-      after: content,
-      kind: "create",
-    });
-    return {
-      ok: true,
-      output: describeWrite(resolved, content, "Created"),
-      fileChanges: [change],
-    };
-  }
-
-  const priorBytes = Buffer.byteLength(original, "utf8");
-  if (
-    typeof options.expectedPriorBytes === "number" &&
-    options.expectedPriorBytes !== priorBytes
+    expectedPriorBytes !== undefined &&
+    (!Number.isSafeInteger(expectedPriorBytes) || expectedPriorBytes < 0)
   ) {
     return {
       ok: false,
-      output:
-        `fs.append integrity check failed for ${resolved}: expected prior bytes=${options.expectedPriorBytes}, actual=${priorBytes}. ` +
-        `Do NOT append again until you reconcile (read the last ~20 lines or re-write).`,
+      output: "fs.append expectedPriorBytes must be a non-negative safe integer.",
       exitCode: 1,
     };
   }
 
-  let next = "";
-  if (position === "start") {
-    next = content + original;
-  } else {
-    next = original + content;
-  }
+  return withFileMutation(resolved, async () => {
+    const priorStat = await stat(resolved).catch(() => undefined);
+    if (
+      priorStat?.isFile() &&
+      priorStat.size > LARGE_MUTATION_BYTES &&
+      position === "end"
+    ) {
+      const priorBytes = priorStat.size;
+      if (expectedPriorBytes !== undefined && expectedPriorBytes !== priorBytes) {
+        return appendPreconditionFailure(resolved, expectedPriorBytes, priorBytes);
+      }
+      await appendFile(resolved, content, "utf8");
+      const afterBytes =
+        (await stat(resolved).catch(() => undefined))?.size ??
+        priorBytes + Buffer.byteLength(content, "utf8");
+      return {
+        ok: true,
+        output:
+          describeWrite(resolved, content, "Appended (end) to") +
+          `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}` +
+          `\n  note: file exceeds ${Math.round(LARGE_MUTATION_BYTES / (1024 * 1024))}MB — appended in place and skipped the diff/receipt hash of the whole file.`,
+      };
+    }
 
-  // Atomic, mode-preserving, race-safe replacement.
-  await writeFileAtomic(resolved, next);
+    let original = "";
+    try {
+      original = await readFile(resolved, "utf8");
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+      if (expectedPriorBytes !== undefined && expectedPriorBytes !== 0) {
+        return {
+          ok: false,
+          output:
+            `fs.append integrity check failed: expected prior bytes=${expectedPriorBytes} but file does not exist.`,
+          exitCode: 1,
+        };
+      }
+      await mkdir(dirname(resolved), { recursive: true });
+      await writeFileAtomic(resolved, content);
+      const change = buildFileChange({
+        path: resolved,
+        before: "",
+        after: content,
+        kind: "create",
+      });
+      return {
+        ok: true,
+        output: describeWrite(resolved, content, "Created"),
+        fileChanges: [change],
+      };
+    }
 
-  const st = await stat(resolved).catch(() => undefined);
-  const change = buildFileChange({
-    path: resolved,
-    before: original,
-    after: next,
-    kind: "append",
+    const priorBytes = Buffer.byteLength(original, "utf8");
+    if (expectedPriorBytes !== undefined && expectedPriorBytes !== priorBytes) {
+      return appendPreconditionFailure(resolved, expectedPriorBytes, priorBytes);
+    }
+
+    const next = position === "start" ? content + original : original + content;
+    await writeFileAtomic(resolved, next);
+    const afterBytes = Buffer.byteLength(next, "utf8");
+    const change = buildFileChange({
+      path: resolved,
+      before: original,
+      after: next,
+      kind: "append",
+    });
+    return {
+      ok: true,
+      output:
+        describeWrite(resolved, next, `Appended (${position}) to`) +
+        `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}`,
+      fileChanges: [change],
+    };
   });
-  return {
-    ok: true,
-    output:
-      describeWrite(resolved, next, `Appended (${position}) to`) +
-      `\n  prior_bytes=${priorBytes} after_bytes=${st?.size ?? Buffer.byteLength(next, "utf8")}`,
-    fileChanges: [change],
-  };
 }

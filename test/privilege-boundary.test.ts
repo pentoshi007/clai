@@ -25,3 +25,16 @@ describe("universal managed privilege boundary", () => {
     expect(JSON.stringify(result)).not.toContain(secret);
   });
 });
+
+describe("sudo stdin privilege boundary", () => {
+  it("does not let bare sudo -S bypass the managed password prompt", async () => {
+    const result = await runToolCall({
+      name: "shell.exec",
+      args: { command: "sudo -S whoami", background: "never" },
+    });
+
+    expect(result).toMatchObject({ ok: false, exitCode: 1 });
+    expect(result.output).toMatch(/secure password modal|run without elevation/);
+    expect(result.output).not.toMatch(/Password:/);
+  });
+});

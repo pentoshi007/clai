@@ -10,7 +10,10 @@ import {
   reasoningArtifactsForPersistence,
 } from "../llm/reasoning-artifacts.js";
 import { syntheticToolCallId } from "../llm/tool-protocol.js";
-import { slimToolArgs } from "./message-slim.js";
+import {
+  SLIM_ARG_ABSOLUTE_MAX_CHARS,
+  slimToolArgs,
+} from "./message-slim.js";
 import { isSessionStateMessage } from "./session-state.js";
 import {
   isActiveSkillsMessage,
@@ -147,7 +150,9 @@ export function slimNativeToolCallsForHistory(
     return {
       ...durable,
       args,
-      ...(args._parseError && tc.rawArguments
+      ...(args._parseError &&
+      tc.rawArguments &&
+      tc.rawArguments.length <= SLIM_ARG_ABSOLUTE_MAX_CHARS
         ? { rawArguments: tc.rawArguments }
         : {}),
     };

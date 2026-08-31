@@ -114,7 +114,9 @@ vi.mock("../../src/ui-core/rendering/pager-chrome.js", async (importOriginal) =>
 
 import { Pager } from "../../src/tui-v2/components/pager/pager.js";
 
-const services = {} as AppServices;
+const services = {
+  capabilities: { colorMode: "truecolor" },
+} as AppServices;
 const theme = themeFor("dark");
 
 describe("OpenTUI pager scroll performance", () => {

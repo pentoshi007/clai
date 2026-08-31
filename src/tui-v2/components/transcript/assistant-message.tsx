@@ -13,6 +13,7 @@
 import { useMemo, useRef, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
+import type { ColorMode } from "../../../app/ports/terminal-port.js";
 import type { AssistantItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
@@ -28,10 +29,11 @@ const BODY_INDENT = 2;
 export function AssistantMessage(props: {
   item: AssistantItem;
   theme: Theme;
+  colorMode: ColorMode;
   /** Chat-pane columns (plan split/overlay already subtracted). */
   contentWidth?: number | undefined;
 }): ReactNode {
-  const { item, theme, contentWidth } = props;
+  const { item, theme, colorMode, contentWidth } = props;
   const { width: termWidth } = useTerminalDimensions();
   // Prefer shell chat width so tables reflow beside the plan pane; fall back
   // to classic term−chrome when contentWidth is not threaded yet. The body
@@ -52,12 +54,14 @@ export function AssistantMessage(props: {
         width: wrapWidth,
         defaultFg: theme.response,
         stripOuterIndent: true,
+        theme,
+        colorMode,
       },
       cache: cacheRef.current,
     });
     cacheRef.current = rendered.cache;
     return rendered.lines;
-  }, [item.text, item.streaming, wrapWidth, theme.response]);
+  }, [item.text, item.streaming, wrapWidth, theme, colorMode]);
 
   // Hide fence-only / empty streaming rows so raw tool JSON never flashes as
   // a hollow "◆ Response …" before tool cards land.

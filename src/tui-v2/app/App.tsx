@@ -26,7 +26,15 @@ import { PlanView } from "../components/plan/plan-view.js";
 import { OverlayHost } from "../components/overlay/overlay-host.js";
 import { QueuePanel } from "../components/queue/queue-panel.js";
 import { ResponderPanel } from "../components/jobs/jobs-panel.js";
-import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
+import {
+  chordFromKeyEvent,
+  consumeCancellationKeyRepeat,
+  isKeyEventRelease,
+} from "../input/chord-from-opentui-key.js";
+import {
+  escapeCancellationAction,
+  preserveEscapeArmAfterTurn,
+} from "../input/escape-cancellation.js";
 import { usePlan } from "../../ui-core/react/use-plan.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
 import { useTranscriptState } from "../../ui-core/react/use-transcript-store.js";
@@ -49,17 +57,16 @@ import { notify, notifyWarn } from "../../ui-core/notify.js";
 import { setDefaultMode } from "../../store/config.js";
 import { maybeShowUpdateToast } from "../../ui-core/commands/startup-update.js";
 import { modeSwitchSummary, nextMode } from "../../ui-core/actions/mode-cycle.js";
+import {
+  appWidthBudget,
+  focusAfterPlanSuppression,
+} from "./layout-widths.js";
 
 const CTRL_C_QUIT_WINDOW_MS = 1500;
 const ESC_CANCEL_WINDOW_MS = 1500;
 /** Collapse App's global handler and the composer handler firing for one
  *  physical Esc into a single logical press. Well under a human double-tap. */
 const ESC_SAME_PRESS_MS = 80;
-
-/** Floating plan panel width — kept in sync with the overlay box style. */
-function planOverlayWidth(termWidth: number): number {
-  return Math.min(52, Math.max(34, Math.floor(termWidth * 0.4)));
-}
 
 export function App(): ReactNode {
   const { width, height } = useTerminalDimensions();
@@ -94,7 +101,13 @@ export function App(): ReactNode {
 
   useEffect(() => {
     return services.session.onTurnEnd((result) => {
-      clearEscapeCancellation();
+      if (
+        !preserveEscapeArmAfterTurn(
+          services.cancel.hasCancelableWork(),
+        )
+      ) {
+        clearEscapeCancellation();
+      }
       if (result.status === "completed") void promptPlanApprovalIfNeeded(services);
     });
   }, [services]);
@@ -143,15 +156,16 @@ export function App(): ReactNode {
   }, [plan]);
 
   // Reserve split/overlay space while the pane is mounted (incl. exit anim).
+  const terminalWidth = Number.isFinite(width)
+    ? Math.max(0, Math.floor(width))
+    : 0;
   const layout = computeLayout({
-    columns: width,
+    columns: terminalWidth,
     rows: height,
     planVisible: planPresent,
-    splitEnabled: layoutSupportsSplit(width),
+    splitEnabled: layoutSupportsSplit(terminalWidth),
   });
 
-  // Budget for multi-line input growth (Shift+Enter / wrap). Layout still
-  // prefers a single idle row; the editor expands within this cap.
   const composerMaxTextRows = maxComposerTextRows({
     terminalRows: height,
     statusHeight: layout.status.height,
@@ -162,37 +176,37 @@ export function App(): ReactNode {
   const session = useSessionState(services.session);
   const transcriptScrollRef = useRef<ScrollBoxRenderable>(null);
   const followKey = useTranscriptFollowKey(transcript, session.running);
-  const horizontalPadding = width >= 56 ? 2 : width >= 28 ? 1 : 0;
   const completionRows = Math.max(6, Math.min(12, Math.floor(height / 3)));
-
-  // Chat pane column budget (inside padded shell). Plan split and floating
-  // overlay both shrink this so the intro card + messages reflow cleanly
-  // instead of overflowing mid-border under Ctrl+H.
-  const contentInnerWidth = Math.max(10, width - horizontalPadding * 2);
-  // Breathing room between chat text and the plan/task pane border.
-  const planChatGap =
-    planPresent && layout.plan.placement === "split"
-      ? 2
-      : planPresent && layout.plan.placement === "overlay"
-        ? 2
-        : 0;
-  // Split width tracks progress so the pane grows/shrinks with the animation.
-  const splitPlanW =
+  const requestedSplitPlanWidth =
     planPresent && layout.plan.placement === "split"
       ? paneSlideWidth(panePresence.progress, layout.plan.width)
       : 0;
-  // Overlay keeps full horizontal reserve (motion is vertical slide from top).
-  const overlayPlanW =
-    planPresent && layout.plan.placement === "overlay"
-      ? planOverlayWidth(width) + planChatGap
-      : 0;
-  const chatContentWidth = Math.max(24, contentInnerWidth - splitPlanW - overlayPlanW);
+  const widthBudget = appWidthBudget({
+    terminalWidth,
+    planPresent,
+    planPlacement: layout.plan.placement,
+    requestedSplitPlanWidth,
+  });
+  const horizontalPadding = widthBudget.horizontalPadding;
+  const contentInnerWidth = widthBudget.contentInnerWidth;
+  const planChatGap = widthBudget.planChatGap;
+  const splitPlanW = widthBudget.splitPlanWidth;
+  const overlayPlanW = widthBudget.overlayReserveWidth;
+  const chatContentWidth = widthBudget.chatContentWidth;
+  const planRendered =
+    (layout.plan.placement === "split" && splitPlanW > 0) ||
+    (layout.plan.placement === "overlay" && widthBudget.showPlanOverlay);
+
+  useEffect(() => {
+    const fallback = focusAfterPlanSuppression(focusContext, planRendered);
+    if (fallback) services.focus.focusRegion(fallback);
+  }, [focusContext, planRendered, services.focus]);
 
   useKeyboard((key) => {
-    if (key.eventType === "release") return;
+    if (isKeyEventRelease(key)) return;
 
     const chord = chordFromKeyEvent(key);
-    if (chord === "escape" && key.eventType === "repeat") return;
+    if (consumeCancellationKeyRepeat(key, chord)) return;
 
     // Password / confirm overlays used to swallow ALL global keys (early return
     // when overlay !== none). Then Ctrl+C only aborted via SIGINT and left the
@@ -207,9 +221,7 @@ export function App(): ReactNode {
           const doublePress =
             lastCtrlC.current > 0 &&
             now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
-          if (services.session.getState().running) {
-            services.cancel.abortForeground();
-          }
+          services.cancel.abortForeground();
           if (doublePress) {
             services.requestExit();
             return;
@@ -224,8 +236,6 @@ export function App(): ReactNode {
           );
           return;
         }
-        // Esc: first press dismisses/arms; second press cancels the live
-        // turn, queued prompts, and every session-owned Responder job.
         handleEscapeCancellation(dismissed);
         return;
       }
@@ -401,10 +411,9 @@ export function App(): ReactNode {
         break;
       case "focus.next-region": {
         key.preventDefault();
-        const regions =
-          planPresent && layout.plan.placement !== "hidden"
-            ? (["composer", "transcript", "plan"] as const)
-            : (["composer", "transcript"] as const);
+        const regions = planRendered
+          ? (["composer", "transcript", "plan"] as const)
+          : (["composer", "transcript"] as const);
         services.focus.cycleRegion([...regions]);
         const next = services.focus.activeContext();
         notify(services, `Focus · ${next}`, {
@@ -420,10 +429,9 @@ export function App(): ReactNode {
 
   const planPaneWidth =
     layout.plan.placement === "split"
-      ? Math.max(splitPlanW, 1)
-      : planOverlayWidth(width);
-  const planPanel =
-    planPresent && layout.plan.placement !== "hidden" ? (
+      ? splitPlanW
+      : widthBudget.overlayPlanWidth;
+  const planPanel = planRendered ? (
       <PlanView
         theme={theme}
         plan={plan}
@@ -487,7 +495,22 @@ export function App(): ReactNode {
       now - lastEscape.current < ESC_CANCEL_WINDOW_MS;
     const hasCancelableWork = services.cancel.hasCancelableWork();
 
-    if (doublePress && hasCancelableWork) {
+    const action = escapeCancellationAction({
+      dismissed,
+      doublePress,
+      hasCancelableWork,
+    });
+
+    if (action === "dismiss") {
+      clearEscapeCancellation();
+      notify(services, "Closed · Esc", {
+        key: "escape-dismiss",
+        durationMs: 1000,
+      });
+      return;
+    }
+
+    if (action === "cancel-all") {
       clearEscapeCancellation();
       services.overlay.cancelBlockingPrompt();
       void services.cancel.cancelAll().then((outcome) => {
@@ -510,16 +533,29 @@ export function App(): ReactNode {
       return;
     }
 
-    if (hasCancelableWork) {
-      armEscapeCancellation(now);
-    } else if (dismissed) {
-      clearEscapeCancellation();
-      notify(services, "Closed · Esc", {
-        key: "escape-dismiss",
-        durationMs: 1000,
-      });
-    } else {
-      clearEscapeCancellation();
+    const outcome = services.cancel.abortForeground();
+    const remainingWork = services.cancel.hasCancelableWork();
+    if (remainingWork) armEscapeCancellation(now);
+    else clearEscapeCancellation();
+
+    if (outcome.turnAborted) {
+      notifyWarn(
+        services,
+        remainingWork
+          ? "Turn aborted · Esc again to cancel all"
+          : "Turn aborted · Esc",
+        { key: "escape-abort", durationMs: 2200 },
+      );
+      return;
+    }
+    if (outcome.interruptibleCancelled > 0) {
+      notifyWarn(
+        services,
+        remainingWork
+          ? "Operation cancelled · Esc again to cancel all"
+          : "Operation cancelled · Esc",
+        { key: "escape-abort", durationMs: 2200 },
+      );
     }
   }
 
@@ -640,7 +676,7 @@ export function App(): ReactNode {
   return (
     <box
       style={{
-        width,
+        width: terminalWidth,
         height,
         flexDirection: "column",
         backgroundColor: theme.background,
@@ -669,7 +705,7 @@ export function App(): ReactNode {
               // Explicit width so OpenTUI does not let the plan panel steal
               // columns from under a flex-grown intro card mid-frame.
               width: chatContentWidth,
-              flexGrow: layout.plan.placement === "split" || overlayPlanW > 0 ? 0 : 1,
+              flexGrow: splitPlanW > 0 || overlayPlanW > 0 ? 0 : 1,
               flexShrink: 1,
               backgroundColor: theme.background,
               // Keep transcript text off the plan border when the task pane is open.
@@ -680,11 +716,11 @@ export function App(): ReactNode {
               services={services}
               theme={theme}
               focused={focusContext === "transcript" && overlay.kind === "none"}
-              contentWidth={Math.max(20, chatContentWidth - planChatGap)}
+              contentWidth={widthBudget.transcriptContentWidth}
               scrollRef={transcriptScrollRef}
             />
           </box>
-          {layout.plan.placement === "split" && planPresent && splitPlanW > 0 ? (
+          {layout.plan.placement === "split" && planRendered ? (
             <box
               title=" Tasks "
               titleColor={theme.inputBorder}
@@ -793,7 +829,8 @@ export function App(): ReactNode {
         followKey={followKey}
       />
 
-      {layout.plan.placement === "overlay" && planPresent ? (
+      {layout.plan.placement === "overlay" &&
+      widthBudget.showPlanOverlay ? (
         <box
           title=" Tasks "
           titleColor={theme.inputBorder}
@@ -806,7 +843,7 @@ export function App(): ReactNode {
             // Sit flush with the right edge of the padded content column
             // so the plan pane aligns with where the input box ends.
             right: horizontalPadding,
-            width: planOverlayWidth(width),
+            width: widthBudget.overlayPlanWidth,
             height: overlayPaneHeight,
             // Same electric aqua as the composer input border.
             borderColor: theme.inputBorder,
@@ -821,14 +858,19 @@ export function App(): ReactNode {
       ) : null}
       {/* Full-bleed overlay host (pickers, Ctrl+P pager, prompt actions, …).
           Sibling of the padded column so open/close never reflows the intro. */}
-      <OverlayHost services={services} theme={theme} width={width} height={height} />
+      <OverlayHost
+        services={services}
+        theme={theme}
+        width={terminalWidth}
+        height={height}
+      />
 
       {/* Right-edge copy/status toasts — outside padded column so they never
           reflow chat; z-index above plan overlay, below blocking overlays. */}
       <ToastHost
         toast={services.toast}
         theme={theme}
-        termWidth={width}
+        termWidth={terminalWidth}
         termHeight={height}
       />
     </box>

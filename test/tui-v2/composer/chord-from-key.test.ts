@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { chordFromKeyEvent } from "../../../src/tui-v2/input/chord-from-opentui-key.js";
+import {
+  chordFromKeyEvent,
+  consumeCancellationKeyRepeat,
+  isKeyEventRelease,
+  isKeyEventRepeat,
+} from "../../../src/tui-v2/input/chord-from-opentui-key.js";
+import {
+  escapeCancellationAction,
+  preserveEscapeArmAfterTurn,
+} from "../../../src/tui-v2/input/escape-cancellation.js";
 
 describe("chordFromKeyEvent", () => {
   it("maps a plain letter key", () => {
@@ -52,5 +61,141 @@ describe("chordFromKeyEvent", () => {
   it("maps uppercase character names to shift chords", () => {
     expect(chordFromKeyEvent({ name: "X", ctrl: true })).toBe("ctrl+shift+x");
     expect(chordFromKeyEvent({ name: "X" })).toBe("shift+x");
+  });
+});
+
+describe("escape and event normalization", () => {
+  it("normalizes escape names and exact raw escape bytes", () => {
+    expect(chordFromKeyEvent({ name: "escape" })).toBe("escape");
+    expect(chordFromKeyEvent({ name: "esc" })).toBe("escape");
+    expect(chordFromKeyEvent({ name: "\x1b" })).toBe("escape");
+    expect(chordFromKeyEvent({ name: "unknown", sequence: "\x1b" })).toBe(
+      "escape",
+    );
+    expect(chordFromKeyEvent({ name: "unknown", raw: "\x1b" })).toBe(
+      "escape",
+    );
+  });
+
+  it("does not mistake Alt or CSI sequences for Escape", () => {
+    expect(
+      chordFromKeyEvent({ name: "x", meta: true, sequence: "\x1bx" }),
+    ).toBe("alt+x");
+    expect(
+      chordFromKeyEvent({ name: "up", sequence: "\x1b[A", raw: "\x1b[A" }),
+    ).toBe("up");
+  });
+
+  it("recognizes raw and Kitty release and repeat shapes", () => {
+    expect(
+      isKeyEventRelease({
+        name: "escape",
+        source: "kitty",
+        eventType: "release",
+      }),
+    ).toBe(true);
+    expect(
+      isKeyEventRepeat({
+        name: "escape",
+        source: "raw",
+        eventType: "repeat",
+      }),
+    ).toBe(true);
+    expect(
+      isKeyEventRepeat({
+        name: "escape",
+        source: "kitty",
+        eventType: "press",
+        repeated: true,
+      }),
+    ).toBe(true);
+    expect(
+      isKeyEventRepeat({ name: "escape", eventType: "press" }),
+    ).toBe(false);
+  });
+});
+
+describe("cancellation key repeats", () => {
+  it("consumes held cancellation keys and stops propagation", () => {
+    let prevented = 0;
+    let stopped = 0;
+    const consumed = consumeCancellationKeyRepeat(
+      {
+        name: "escape",
+        repeated: true,
+        preventDefault: () => {
+          prevented += 1;
+        },
+        stopPropagation: () => {
+          stopped += 1;
+        },
+      },
+      "escape",
+    );
+
+    expect(consumed).toBe(true);
+    expect(prevented).toBe(1);
+    expect(stopped).toBe(1);
+  });
+
+  it("leaves first presses and unrelated repeats untouched", () => {
+    let prevented = 0;
+    const key = {
+      name: "escape",
+      eventType: "press" as const,
+      preventDefault: () => {
+        prevented += 1;
+      },
+    };
+
+    expect(consumeCancellationKeyRepeat(key, "escape")).toBe(false);
+    expect(
+      consumeCancellationKeyRepeat(
+        { ...key, eventType: "repeat" as const },
+        "a",
+      ),
+    ).toBe(false);
+    expect(prevented).toBe(0);
+  });
+});
+
+describe("escape cancellation decisions", () => {
+  it("gives dismissal precedence over cancellation", () => {
+    expect(
+      escapeCancellationAction({
+        dismissed: true,
+        doublePress: true,
+        hasCancelableWork: true,
+      }),
+    ).toBe("dismiss");
+  });
+
+  it("uses cancel-all only for an armed second press with remaining work", () => {
+    expect(
+      escapeCancellationAction({
+        dismissed: false,
+        doublePress: true,
+        hasCancelableWork: true,
+      }),
+    ).toBe("cancel-all");
+    expect(
+      escapeCancellationAction({
+        dismissed: false,
+        doublePress: false,
+        hasCancelableWork: true,
+      }),
+    ).toBe("abort-foreground");
+    expect(
+      escapeCancellationAction({
+        dismissed: false,
+        doublePress: true,
+        hasCancelableWork: false,
+      }),
+    ).toBe("abort-foreground");
+  });
+
+  it("preserves the arm only while cancelable work remains", () => {
+    expect(preserveEscapeArmAfterTurn(true)).toBe(true);
+    expect(preserveEscapeArmAfterTurn(false)).toBe(false);
   });
 });

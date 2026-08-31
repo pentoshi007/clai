@@ -41,6 +41,7 @@ export function CompactedRow(props: {
   onToggle: () => void;
 }): ReactNode {
   const { item, theme, services, contentWidth } = props;
+  const colorMode = services.capabilities.colorMode;
   const { width: termWidth } = useTerminalDimensions();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -70,12 +71,14 @@ export function CompactedRow(props: {
         width: wrapWidth,
         defaultFg: theme.foreground,
         stripOuterIndent: true,
+        theme,
+        colorMode,
       },
       cache: cacheRef.current,
     });
     cacheRef.current = rendered.cache;
     return rendered.lines;
-  }, [visibleSummary, item.streaming, wrapWidth, theme.foreground]);
+  }, [visibleSummary, item.streaming, wrapWidth, theme, colorMode]);
 
   const showLiveGap = item.streaming === true && allLines.length > 10;
   const preview = item.streaming

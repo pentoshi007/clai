@@ -33,6 +33,14 @@ function hostFrame(value: unknown): RuntimeHostFrame | undefined {
   if (frame.type === "shutdown" || frame.type === "pong") {
     return frame as RuntimeHostFrame;
   }
+  if (
+    frame.type === "repaint" &&
+    typeof frame.requestId === "string" &&
+    frame.requestId.length > 0 &&
+    frame.requestId.length <= 128
+  ) {
+    return frame as RuntimeHostFrame;
+  }
   return undefined;
 }
 
@@ -50,12 +58,15 @@ export class RuntimeChildBridge {
   private latestStatus: RuntimeChildStatus | undefined;
   private lastSentStatusKey: string | undefined;
   private shutdown: (() => void) | undefined;
+  private repaint: (() => boolean) | undefined;
+  private readonly pendingRepaints = new Set<string>();
   private disposed = false;
   private connecting: Promise<boolean> | undefined;
 
   constructor(
     private readonly socketPath: string,
     private readonly token: string,
+    private readonly supportsRepaint = false,
   ) {}
 
   async connect(): Promise<boolean> {
@@ -69,6 +80,14 @@ export class RuntimeChildBridge {
 
   setShutdownHandler(handler: () => void): void {
     this.shutdown = handler;
+  }
+
+  setRepaintHandler(handler: (() => boolean) | undefined): void {
+    this.repaint = handler;
+    if (!handler || this.disposed || this.pendingRepaints.size === 0) return;
+    const pending = [...this.pendingRepaints];
+    this.pendingRepaints.clear();
+    for (const requestId of pending) this.answerRepaint(requestId);
   }
 
   report(status: RuntimeChildStatus): void {
@@ -126,6 +145,8 @@ export class RuntimeChildBridge {
     if (this.disposed) return;
     this.send({ type: "exiting", exitCode });
     this.disposed = true;
+    this.repaint = undefined;
+    this.pendingRepaints.clear();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.channel?.dispose();
     this.socket?.destroy();
@@ -143,6 +164,7 @@ export class RuntimeChildBridge {
         type: "auth",
         role: "child",
         token: this.token,
+        ...(this.supportsRepaint ? { supportsRepaint: true } : {}),
       });
       const first = await readFirstFrame(socket);
       if (!isAck(first.value)) throw new Error("runtime host rejected child channel");
@@ -171,7 +193,34 @@ export class RuntimeChildBridge {
 
   private receive(value: unknown): void {
     const frame = hostFrame(value);
-    if (frame?.type === "shutdown") this.shutdown?.();
+    if (frame?.type === "shutdown") {
+      this.shutdown?.();
+      return;
+    }
+    if (frame?.type !== "repaint" || this.disposed) return;
+    if (!this.repaint) {
+      if (this.pendingRepaints.size >= 8) {
+        const oldest = this.pendingRepaints.values().next().value;
+        if (oldest) this.pendingRepaints.delete(oldest);
+      }
+      this.pendingRepaints.add(frame.requestId);
+      return;
+    }
+    this.answerRepaint(frame.requestId);
+  }
+
+  private answerRepaint(requestId: string): void {
+    let accepted = false;
+    try {
+      accepted = this.repaint?.() === true;
+    } catch {
+      accepted = false;
+    }
+    this.send({
+      type: "repaint-result",
+      requestId,
+      accepted,
+    });
   }
 
   private send(frame: RuntimeChildFrame): boolean {
@@ -184,6 +233,7 @@ export class RuntimeChildBridge {
     this.channel = undefined;
     this.socket = undefined;
     this.lastSentStatusKey = undefined;
+    this.pendingRepaints.clear();
     this.scheduleReconnect();
   }
 
@@ -197,10 +247,12 @@ export class RuntimeChildBridge {
   }
 }
 
-export function createRuntimeChildBridge(): RuntimeChildBridge | undefined {
+export function createRuntimeChildBridge(
+  supportsRepaint = false,
+): RuntimeChildBridge | undefined {
   if (process.env[RUNTIME_CHILD_ENV] !== "1") return undefined;
   const socketPath = process.env[RUNTIME_SOCKET_ENV]?.trim();
   const token = process.env[RUNTIME_TOKEN_ENV]?.trim();
   if (!socketPath || !token || !/^[a-f0-9]{64}$/i.test(token)) return undefined;
-  return new RuntimeChildBridge(socketPath, token);
+  return new RuntimeChildBridge(socketPath, token, supportsRepaint);
 }
