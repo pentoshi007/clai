@@ -61,7 +61,7 @@ async function withFileMutation<T>(
   }
 }
 
-function appendPreconditionFailure(
+function appendShrankFailure(
   path: string,
   expected: number,
   actual: number,
@@ -69,10 +69,41 @@ function appendPreconditionFailure(
   return {
     ok: false,
     output:
-      `fs.append integrity check failed for ${path}: expected prior bytes=${expected}, actual=${actual}. ` +
-      `The file already advanced past your expectation. Re-send only the content that is not on disk yet with expectedPriorBytes=${actual}.`,
+      `fs.append integrity check failed: expected prior bytes=${expected} but the file is only ${actual}. ` +
+      `It was truncated or this is the wrong path — appending would silently drop the missing content. (${path})`,
     exitCode: 1,
   };
+}
+
+function appendAlreadyApplied(
+  original: string,
+  content: string,
+  position: "start" | "end",
+): boolean {
+  if (content.length === 0) return false;
+  return position === "start"
+    ? original.startsWith(content)
+    : original.endsWith(content);
+}
+
+async function fileTailEquals(
+  path: string,
+  size: number,
+  content: string,
+): Promise<boolean> {
+  const expected = Buffer.from(content, "utf8");
+  if (expected.length === 0 || size < expected.length) return false;
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, "r");
+    const buffer = Buffer.alloc(expected.length);
+    await handle.read(buffer, 0, expected.length, size - expected.length);
+    return buffer.equals(expected);
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
 }
 
 function retryableFsError(error: unknown): boolean {
@@ -1450,8 +1481,18 @@ export async function fsAppend(
       position === "end"
     ) {
       const priorBytes = priorStat.size;
-      if (expectedPriorBytes !== undefined && expectedPriorBytes !== priorBytes) {
-        return appendPreconditionFailure(resolved, expectedPriorBytes, priorBytes);
+      if (expectedPriorBytes !== undefined && expectedPriorBytes > priorBytes) {
+        return appendShrankFailure(resolved, expectedPriorBytes, priorBytes);
+      }
+      const stale =
+        expectedPriorBytes !== undefined && expectedPriorBytes < priorBytes;
+      if (stale && (await fileTailEquals(resolved, priorBytes, content))) {
+        return {
+          ok: true,
+          output:
+            describeWrite(resolved, content, "Append already applied to") +
+            `\n  prior_bytes=${priorBytes} expected_prior_bytes=${expectedPriorBytes}`,
+        };
       }
       await appendFile(resolved, content, "utf8");
       const afterBytes =
@@ -1462,6 +1503,7 @@ export async function fsAppend(
         output:
           describeWrite(resolved, content, "Appended (end) to") +
           `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}` +
+          (stale ? `\n  note: expectedPriorBytes=${expectedPriorBytes} was stale; appended at ${priorBytes}.` : "") +
           `\n  note: file exceeds ${Math.round(LARGE_MUTATION_BYTES / (1024 * 1024))}MB — appended in place and skipped the diff/receipt hash of the whole file.`,
       };
     }
@@ -1495,8 +1537,18 @@ export async function fsAppend(
     }
 
     const priorBytes = Buffer.byteLength(original, "utf8");
-    if (expectedPriorBytes !== undefined && expectedPriorBytes !== priorBytes) {
-      return appendPreconditionFailure(resolved, expectedPriorBytes, priorBytes);
+    if (expectedPriorBytes !== undefined && expectedPriorBytes > priorBytes) {
+      return appendShrankFailure(resolved, expectedPriorBytes, priorBytes);
+    }
+    const stale =
+      expectedPriorBytes !== undefined && expectedPriorBytes < priorBytes;
+    if (stale && appendAlreadyApplied(original, content, position)) {
+      return {
+        ok: true,
+        output:
+          describeWrite(resolved, original, "Append already applied to") +
+          `\n  prior_bytes=${priorBytes} expected_prior_bytes=${expectedPriorBytes}`,
+      };
     }
 
     const next = position === "start" ? content + original : original + content;
@@ -1512,7 +1564,10 @@ export async function fsAppend(
       ok: true,
       output:
         describeWrite(resolved, next, `Appended (${position}) to`) +
-        `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}`,
+        `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}` +
+        (stale
+          ? `\n  note: expectedPriorBytes=${expectedPriorBytes} was stale; appended at ${priorBytes}.`
+          : ""),
       fileChanges: [change],
     };
   });

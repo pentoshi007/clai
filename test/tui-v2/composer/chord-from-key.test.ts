@@ -170,6 +170,23 @@ describe("escape cancellation decisions", () => {
     ).toBe("dismiss");
   });
 
+  it("never cancels on a single Escape press", () => {
+    expect(
+      escapeCancellationAction({
+        dismissed: false,
+        doublePress: false,
+        hasCancelableWork: true,
+      }),
+    ).toBe("arm");
+    expect(
+      escapeCancellationAction({
+        dismissed: false,
+        doublePress: false,
+        hasCancelableWork: false,
+      }),
+    ).toBe("none");
+  });
+
   it("uses cancel-all only for an armed second press with remaining work", () => {
     expect(
       escapeCancellationAction({
@@ -181,17 +198,10 @@ describe("escape cancellation decisions", () => {
     expect(
       escapeCancellationAction({
         dismissed: false,
-        doublePress: false,
-        hasCancelableWork: true,
-      }),
-    ).toBe("abort-foreground");
-    expect(
-      escapeCancellationAction({
-        dismissed: false,
         doublePress: true,
         hasCancelableWork: false,
       }),
-    ).toBe("abort-foreground");
+    ).toBe("none");
   });
 
   it("preserves the arm only while cancelable work remains", () => {

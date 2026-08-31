@@ -68,6 +68,8 @@ function pathFromArgsDisplay(
 /** Max preview rows for the args/command line under a tool title. */
 const ARGS_PREVIEW_MAX_LINES = 3;
 
+const FAILURE_DETAIL_CHARS = 120;
+
 /**
  * Bound the args/command preview.
  *
@@ -135,8 +137,11 @@ export function presentTool(item: ToolItem): ToolPresentation {
     detail = item.reason;
   } else if (item.status === "failed" && item.summary) {
     const short = item.summary.split("\n")[0]?.trim();
-    if (short && short.length <= 120 && !/^Full output saved/i.test(short)) {
-      detail = short;
+    if (short && !/^Full output saved/i.test(short)) {
+      detail =
+        short.length <= FAILURE_DETAIL_CHARS
+          ? short
+          : `${short.slice(0, FAILURE_DETAIL_CHARS - 1).trimEnd()}…`;
     }
   }
   // Keep the badge short so "done (exit 0)" never overflows the card border.

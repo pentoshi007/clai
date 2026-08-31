@@ -18,9 +18,11 @@ export const ESCAPE_TIMEOUT_MS = 25;
 export const PASTE_TIMEOUT_MS = 250;
 export const PASTE_MAX_BYTES = 1_048_576;
 
-export const CTRL_C_QUIT_WINDOW_MS = 1500;
-export const ESC_CANCEL_WINDOW_MS = 1500;
-export const ESC_SAME_PRESS_MS = 80;
+export {
+  CTRL_C_QUIT_WINDOW_MS,
+  ESC_CANCEL_WINDOW_MS,
+  ESC_SAME_PRESS_MS,
+} from "../../ui-core/actions/cancel-timing.js";
 
 export const MOD_SHIFT = 1;
 export const MOD_ALT = 2;

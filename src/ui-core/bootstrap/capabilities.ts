@@ -163,30 +163,43 @@ export function detectCapabilities(
   };
 }
 
+const COLOR_DEPTH: Readonly<Record<ColorMode, number>> = {
+  none: 0,
+  "16": 1,
+  "256": 2,
+  truecolor: 3,
+};
+
+function nativeColorMode(
+  native: OpenTuiNativeAppearance | undefined,
+): ColorMode | undefined {
+  if (native?.rgb) return "truecolor";
+  if (native?.ansi256) return "256";
+  if (native?.rgb === false || native?.ansi256 === false) return "16";
+  return undefined;
+}
+
 export function resolveOpenTuiCapabilities(
   detected: TerminalCapabilityReport,
   env: CapabilityEnv["env"],
   native?: OpenTuiNativeAppearance,
 ): TerminalCapabilityReport {
   const explicitColor = explicitColorMode(env);
-  const nativeColorAvailable =
-    native?.rgb !== undefined || native?.ansi256 !== undefined;
+  const nativeMode = nativeColorMode(native);
+  const deepest =
+    nativeMode !== undefined &&
+    COLOR_DEPTH[nativeMode] > COLOR_DEPTH[detected.colorMode]
+      ? nativeMode
+      : detected.colorMode;
   const color =
     explicitColor ??
     (!detected.isTTY
       ? { colorMode: "none" as const, noColor: false }
-      : {
-          colorMode: nativeColorAvailable
-            ? native?.rgb
-              ? "truecolor" as const
-              : native?.ansi256
-                ? "256" as const
-                : "16" as const
-            : "16" as const,
-          noColor: false,
-        });
+      : { colorMode: deepest, noColor: false });
   const themeHint =
-    explicitThemeHint(env) ?? native?.themeMode ?? "dark";
+    explicitThemeHint(env) ??
+    native?.themeMode ??
+    (detected.themeHint === "unknown" ? "dark" : detected.themeHint);
 
   return {
     ...detected,

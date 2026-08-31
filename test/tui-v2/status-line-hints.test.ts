@@ -147,7 +147,7 @@ describe("status line hints and Esc semantics", () => {
 });
 
 describe("OpenTUI cancellation wiring", () => {
-  it("aborts foreground work on first Escape and reserves cancelAll for the second", () => {
+  it("arms on the first Escape and reserves cancellation for the second", () => {
     const app = readFileSync(APP, "utf8");
     const start = app.indexOf("function handleEscapeCancellation");
     const end = app.indexOf("function onAppWheel", start);
@@ -156,10 +156,13 @@ describe("OpenTUI cancellation wiring", () => {
     expect(start).toBeGreaterThanOrEqual(0);
     expect(end).toBeGreaterThan(start);
     expect(handler).toContain("escapeCancellationAction");
-    expect(handler).toContain("services.cancel.abortForeground()");
     expect(handler).toContain("services.cancel.cancelAll()");
+    expect(handler).toContain("armEscapeCancellation(now)");
+    expect(handler).not.toContain("services.cancel.abortForeground()");
+    expect(app).toContain('from "../../ui-core/actions/cancel-timing.js"');
+    expect(app).not.toMatch(/const ESC_CANCEL_WINDOW_MS\s*=/);
     expect(handler.indexOf('action === "dismiss"')).toBeLessThan(
-      handler.indexOf("services.cancel.abortForeground()"),
+      handler.indexOf("services.cancel.cancelAll()"),
     );
   });
 

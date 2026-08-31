@@ -82,26 +82,64 @@ describe("resolveOpenTuiCapabilities", () => {
     });
   });
 
-  it("uses stable dark and 16-color fallbacks when native appearance is unavailable", () => {
-    const normalEnv = { COLORTERM: "truecolor", COLORFGBG: "0;15" };
-    const strippedEnv = {};
-    const normal = resolveOpenTuiCapabilities(
-      detectCapabilities(makeEnv({ env: normalEnv })),
-      normalEnv,
-    );
-    const privileged = resolveOpenTuiCapabilities(
-      detectCapabilities(makeEnv({ env: strippedEnv })),
-      strippedEnv,
+  it("falls back to the detected depth instead of clamping to 16 colors", () => {
+    const env = { TERM: "xterm-256color", COLORTERM: "truecolor" };
+    const resolved = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env })),
+      env,
     );
 
-    expect({ themeHint: normal.themeHint, colorMode: normal.colorMode }).toEqual({
-      themeHint: "dark",
-      colorMode: "16",
-    });
-    expect({ themeHint: privileged.themeHint, colorMode: privileged.colorMode }).toEqual({
-      themeHint: normal.themeHint,
-      colorMode: normal.colorMode,
-    });
+    expect(resolved.colorMode).toBe("truecolor");
+    expect(resolved.themeHint).toBe("dark");
+  });
+
+  it("keeps the deepest provable depth when sudo strips COLORTERM", () => {
+    const userEnv = {
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      COLORFGBG: "15;0",
+    };
+    const sudoEnv = {
+      TERM: "xterm-256color",
+      SUDO_USER: "aniket",
+      SUDO_UID: "1000",
+      HOME: "/root",
+    };
+
+    const user = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env: userEnv })),
+      userEnv,
+    );
+    const privileged = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env: sudoEnv })),
+      sudoEnv,
+    );
+
+    expect(user.colorMode).toBe("truecolor");
+    expect(privileged.colorMode).toBe("256");
+    expect(privileged.themeHint).toBe(user.themeHint);
+  });
+
+  it("never downgrades below the depth the terminal advertises", () => {
+    const env = { TERM: "xterm-256color" };
+    const resolved = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env })),
+      env,
+      { rgb: false, ansi256: false, themeMode: null },
+    );
+
+    expect(resolved.colorMode).toBe("256");
+  });
+
+  it("keeps the detected theme when native appearance reports none", () => {
+    const env = { TERM: "xterm-256color", COLORFGBG: "0;15" };
+    const resolved = resolveOpenTuiCapabilities(
+      detectCapabilities(makeEnv({ env })),
+      env,
+      { rgb: true, ansi256: true, themeMode: null },
+    );
+
+    expect(resolved.themeHint).toBe("light");
   });
 
   it("preserves explicit CLAI_THEME, NO_COLOR, and FORCE_COLOR overrides", () => {

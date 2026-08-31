@@ -69,7 +69,7 @@ describe("fsAppend", () => {
     expect(result.output).toContain("Invalid position");
   });
 
-  it("rejects append when expectedPriorBytes does not match", async () => {
+  it("rejects append when the file shrank below expectedPriorBytes", async () => {
     const dir = makeTempDir("fsappend");
     dirs.push(dir);
     const file = join(dir, "test.txt");
@@ -78,6 +78,7 @@ describe("fsAppend", () => {
     const result = await fsAppend(file, "x", { expectedPriorBytes: 99 });
     expect(result.ok).toBe(false);
     expect(result.output).toContain("integrity check failed");
+    expect(readFileSync(file, "utf8")).toBe("abc");
   });
 
   it("appends when expectedPriorBytes matches", async () => {
@@ -91,7 +92,7 @@ describe("fsAppend", () => {
     expect(readFileSync(file, "utf8")).toBe("abcd");
   });
 
-  it("refuses a stale expectation and reports the real size instead of rebasing", async () => {
+  it("still appends when the file grew past a stale expectation", async () => {
     const dir = makeTempDir("fsappend");
     dirs.push(dir);
     const file = join(dir, "chain.txt");
@@ -100,14 +101,12 @@ describe("fsAppend", () => {
     expect((await fsAppend(file, "A", { expectedPriorBytes: 3 })).ok).toBe(true);
 
     const stale = await fsAppend(file, "B", { expectedPriorBytes: 3 });
-    expect(stale.ok).toBe(false);
-    expect(stale.output).toContain("expected prior bytes=3");
-    expect(stale.output).toContain("actual=4");
-    expect(stale.output).toContain("expectedPriorBytes=4");
-    expect(readFileSync(file, "utf8")).toBe("abcA");
+    expect(stale.ok).toBe(true);
+    expect(stale.output).toContain("was stale");
+    expect(readFileSync(file, "utf8")).toBe("abcAB");
   });
 
-  it("cannot duplicate a chunk when a distinct append is retried at its old base", async () => {
+  it("treats a replayed chunk at a stale base as already applied", async () => {
     const dir = makeTempDir("fsappend");
     dirs.push(dir);
     const file = join(dir, "retry.txt");
@@ -115,9 +114,51 @@ describe("fsAppend", () => {
 
     await fsAppend(file, "A", { expectedPriorBytes: 3 });
     await fsAppend(file, "B", { expectedPriorBytes: 4 });
-    expect((await fsAppend(file, "B", { expectedPriorBytes: 4 })).ok).toBe(false);
 
+    const replay = await fsAppend(file, "B", { expectedPriorBytes: 4 });
+    expect(replay.ok).toBe(true);
+    expect(replay.output).toContain("already applied");
     expect(readFileSync(file, "utf8")).toBe("abcAB");
+  });
+
+  it("appends a legitimate duplicate when the expectation is current", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "dup.txt");
+    writeFileSync(file, "abc");
+
+    expect((await fsAppend(file, "X", { expectedPriorBytes: 3 })).ok).toBe(true);
+    expect((await fsAppend(file, "X", { expectedPriorBytes: 4 })).ok).toBe(true);
+
+    expect(readFileSync(file, "utf8")).toBe("abcXX");
+  });
+
+  it("never blocks a chunk sequence that omits expectedPriorBytes", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "stream.txt");
+
+    for (const chunk of ["one\n", "two\n", "two\n", "three\n"]) {
+      expect((await fsAppend(file, chunk)).ok).toBe(true);
+    }
+
+    expect(readFileSync(file, "utf8")).toBe("one\ntwo\ntwo\nthree\n");
+  });
+
+  it("treats a replayed prepend at a stale base as already applied", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "head.txt");
+    writeFileSync(file, "body");
+
+    await fsAppend(file, "H", { position: "start", expectedPriorBytes: 4 });
+    const replay = await fsAppend(file, "H", {
+      position: "start",
+      expectedPriorBytes: 4,
+    });
+
+    expect(replay.ok).toBe(true);
+    expect(readFileSync(file, "utf8")).toBe("Hbody");
   });
 
   it("keeps two distinct appends that carry identical content", async () => {
@@ -130,6 +171,34 @@ describe("fsAppend", () => {
     expect((await fsAppend(file, "X", { expectedPriorBytes: 4 })).ok).toBe(true);
 
     expect(readFileSync(file, "utf8")).toBe("abcXX");
+  });
+
+  it("applies the same stale/replay rules on the large in-place path", async () => {
+    const dir = makeTempDir("fsappend");
+    dirs.push(dir);
+    const file = join(dir, "big.log");
+    const filler = "f".repeat(9 * 1024 * 1024);
+    writeFileSync(file, filler);
+    const base = filler.length;
+
+    expect((await fsAppend(file, "ONE", { expectedPriorBytes: base })).ok).toBe(
+      true,
+    );
+
+    const grew = await fsAppend(file, "TWO", { expectedPriorBytes: base });
+    expect(grew.ok).toBe(true);
+    expect(grew.output).toContain("was stale");
+
+    const replay = await fsAppend(file, "TWO", { expectedPriorBytes: base });
+    expect(replay.ok).toBe(true);
+    expect(replay.output).toContain("already applied");
+
+    const shrank = await fsAppend(file, "X", {
+      expectedPriorBytes: base * 2,
+    });
+    expect(shrank.ok).toBe(false);
+
+    expect(readFileSync(file, "utf8").slice(base)).toBe("ONETWO");
   });
 
   it("prepends without treating an existing identical prefix as already applied", async () => {

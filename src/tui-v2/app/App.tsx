@@ -53,6 +53,12 @@ import { composerActionPort } from "../../ui-core/composer/composer-action-port.
 import { useHasDraft } from "../../ui-core/react/use-has-draft.js";
 import { formatShortcutsReference } from "../../ui-core/actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../../ui-core/rendering/format-help.js";
+import { armedCancelHint } from "../../ui-core/rendering/status-segments.js";
+import {
+  CTRL_C_QUIT_WINDOW_MS,
+  ESC_CANCEL_WINDOW_MS,
+  ESC_SAME_PRESS_MS,
+} from "../../ui-core/actions/cancel-timing.js";
 import { notify, notifyWarn } from "../../ui-core/notify.js";
 import { setDefaultMode } from "../../store/config.js";
 import { maybeShowUpdateToast } from "../../ui-core/commands/startup-update.js";
@@ -62,11 +68,6 @@ import {
   focusAfterPlanSuppression,
 } from "./layout-widths.js";
 
-const CTRL_C_QUIT_WINDOW_MS = 1500;
-const ESC_CANCEL_WINDOW_MS = 1500;
-/** Collapse App's global handler and the composer handler firing for one
- *  physical Esc into a single logical press. Well under a human double-tap. */
-const ESC_SAME_PRESS_MS = 80;
 
 export function App(): ReactNode {
   const { width, height } = useTerminalDimensions();
@@ -533,30 +534,16 @@ export function App(): ReactNode {
       return;
     }
 
-    const outcome = services.cancel.abortForeground();
-    const remainingWork = services.cancel.hasCancelableWork();
-    if (remainingWork) armEscapeCancellation(now);
-    else clearEscapeCancellation();
-
-    if (outcome.turnAborted) {
-      notifyWarn(
-        services,
-        remainingWork
-          ? "Turn aborted · Esc again to cancel all"
-          : "Turn aborted · Esc",
-        { key: "escape-abort", durationMs: 2200 },
-      );
+    if (action === "arm") {
+      armEscapeCancellation(now);
+      notify(services, armedCancelHint(), {
+        key: "escape-arm",
+        durationMs: ESC_CANCEL_WINDOW_MS,
+      });
       return;
     }
-    if (outcome.interruptibleCancelled > 0) {
-      notifyWarn(
-        services,
-        remainingWork
-          ? "Operation cancelled · Esc again to cancel all"
-          : "Operation cancelled · Esc",
-        { key: "escape-abort", durationMs: 2200 },
-      );
-    }
+
+    clearEscapeCancellation();
   }
 
   /**

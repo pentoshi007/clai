@@ -290,3 +290,49 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
     expect(p.lines).toEqual(["hello"]);
   });
 });
+
+describe("failed file mutations surface why they failed", () => {
+  const path =
+    "/Users/aniketpandey/Desktop/project/AD-Attack-Detection-Lab-Recipebook.md";
+
+  function failedAppend(summary: string) {
+    return presentTool(
+      toolItem({
+        name: "fs.append",
+        status: "failed",
+        summary,
+        argsDisplay: path,
+      }),
+    );
+  }
+
+  it("keeps a long precondition mismatch readable instead of dropping it", () => {
+    const presented = failedAppend(
+      "fs.append integrity check failed: expected prior bytes=69713, actual=70120. " +
+        `Re-send only the missing content with expectedPriorBytes=70120. (${path})`,
+    );
+
+    expect(presented.name).toBe(
+      "Append failed · AD-Attack-Detection-Lab-Recipebook.md",
+    );
+    expect(presented.detail).toContain("expected prior bytes=69713");
+    expect(presented.detail).toContain("actual=70120");
+    expect(presented.detail!.length).toBeLessThanOrEqual(120);
+  });
+
+  it("keeps an elided-placeholder rejection readable", () => {
+    const presented = failedAppend(
+      'Tool call rejected: argument "args.content" is an elided history ' +
+        "placeholder («N chars sha256=…»), not a real value. Compressed history " +
+        "replaces long arguments with those stubs.",
+    );
+
+    expect(presented.detail).toContain("elided history placeholder");
+    expect(presented.detail!.endsWith("…")).toBe(true);
+  });
+
+  it("still omits artifact pointers", () => {
+    const presented = failedAppend("Full output saved to /tmp/x.txt");
+    expect(presented.detail).toBeUndefined();
+  });
+});
