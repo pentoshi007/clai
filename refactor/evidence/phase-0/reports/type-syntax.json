@@ -13,98 +13,98 @@
     {
       "file": "src/agent/compaction-attempt.ts",
       "category": "unknownNarrowing",
-      "line": 21,
+      "line": 16,
       "column": 29,
       "detail": "value"
     },
     {
       "file": "src/agent/compaction-attempt.ts",
       "category": "unknownBoundary",
-      "line": 29,
+      "line": 24,
       "column": 42,
       "detail": "record"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownNarrowing",
-      "line": 38,
+      "line": 33,
       "column": 29,
       "detail": "error"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownInternal",
-      "line": 42,
+      "line": 37,
       "column": 46,
       "detail": "status"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownNarrowing",
-      "line": 46,
+      "line": 41,
       "column": 27,
       "detail": "error"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownInternal",
-      "line": 50,
+      "line": 45,
       "column": 35,
       "detail": "body"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownNarrowing",
-      "line": 55,
+      "line": 50,
       "column": 41,
       "detail": "error"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownNarrowing",
-      "line": 85,
+      "line": 80,
       "column": 35,
       "detail": "error"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownInternal",
-      "line": 153,
+      "line": 148,
       "column": 19,
       "detail": "error"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownNarrowing",
-      "line": 191,
+      "line": 177,
       "column": 44,
       "detail": "error"
     },
     {
       "file": "src/agent/compaction/summary-execution.ts",
       "category": "unknownNarrowing",
-      "line": 218,
+      "line": 203,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/agent/evidence/tool-budgets.ts",
       "category": "unknownBoundary",
-      "line": 58,
+      "line": 47,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/agent/evidence/tool-budgets.ts",
       "category": "unknownBoundary",
-      "line": 120,
+      "line": 94,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/agent/evidence/tool-budgets.ts",
       "category": "unknownBoundary",
-      "line": 133,
+      "line": 101,
       "column": 24,
       "detail": "args"
     },
@@ -349,23 +349,30 @@
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownNarrowing",
-      "line": 396,
+      "line": 384,
       "column": 41,
       "detail": "value"
     },
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownInternal",
-      "line": 396,
+      "line": 384,
       "column": 61,
       "detail": "canonicalOperationValue"
     },
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownBoundary",
-      "line": 403,
+      "line": 391,
       "column": 46,
       "detail": "canonicalOperationValue"
+    },
+    {
+      "file": "src/agent/outcomes.ts",
+      "category": "unknownBoundary",
+      "line": 403,
+      "column": 24,
+      "detail": "args"
     },
     {
       "file": "src/agent/outcomes.ts",
@@ -377,252 +384,245 @@
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownBoundary",
-      "line": 427,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/agent/outcomes.ts",
-      "category": "unknownBoundary",
-      "line": 428,
+      "line": 416,
       "column": 19,
       "detail": "normalizeOperationArgs"
     },
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownBoundary",
-      "line": 453,
+      "line": 441,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownBoundary",
-      "line": 498,
+      "line": 486,
       "column": 27,
       "detail": "args"
     },
     {
       "file": "src/agent/outcomes.ts",
       "category": "unknownBoundary",
-      "line": 546,
+      "line": 534,
       "column": 27,
       "detail": "args"
     },
     {
       "file": "src/agent/parser/arg-formatting.ts",
       "category": "unknownBoundary",
-      "line": 6,
+      "line": 5,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/agent/parser/arg-formatting.ts",
       "category": "unknownInternal",
-      "line": 73,
+      "line": 72,
       "column": 35,
       "detail": "path"
     },
     {
       "file": "src/agent/parser/arg-formatting.ts",
       "category": "unknownInternal",
-      "line": 95,
+      "line": 93,
       "column": 39,
       "detail": "name"
     },
     {
       "file": "src/agent/parser/bare-recognition.ts",
       "category": "unknownBoundary",
-      "line": 16,
+      "line": 5,
       "column": 23,
       "detail": "obj"
     },
     {
       "file": "src/agent/parser/bare-recognition.ts",
       "category": "unknownInternal",
-      "line": 72,
+      "line": 45,
       "column": 15,
       "detail": "parsed"
     },
     {
       "file": "src/agent/parser/bare-recognition.ts",
       "category": "unknownBoundary",
-      "line": 81,
+      "line": 54,
       "column": 40,
       "detail": "obj"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownInternal",
-      "line": 89,
+      "line": 80,
       "column": 58,
       "detail": "dsmlParameterValue"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownBoundary",
-      "line": 112,
+      "line": 103,
       "column": 32,
       "detail": "args"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownInternal",
-      "line": 172,
+      "line": 163,
       "column": 52,
       "detail": "openSepValue"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownBoundary",
-      "line": 208,
+      "line": 199,
       "column": 36,
       "detail": "args"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownBoundary",
-      "line": 289,
+      "line": 263,
       "column": 44,
       "detail": "obj"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownBoundary",
-      "line": 325,
+      "line": 290,
       "column": 54,
       "detail": "tryJson"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownInternal",
-      "line": 328,
+      "line": 293,
       "column": 48,
       "detail": "parsed"
     },
     {
       "file": "src/agent/parser/vendor-protocols.ts",
       "category": "unknownBoundary",
-      "line": 330,
+      "line": 295,
       "column": 39,
       "detail": "tryJson"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownInternal",
-      "line": 105,
+      "line": 98,
       "column": 49,
       "detail": "lenientJsonParse"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownInternal",
-      "line": 178,
+      "line": 163,
       "column": 50,
       "detail": "arguments"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownInternal",
-      "line": 181,
+      "line": 166,
       "column": 19,
       "detail": "arguments"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 188,
+      "line": 171,
       "column": 62,
       "detail": "arguments"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 192,
+      "line": 175,
       "column": 46,
       "detail": "anyParsed"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 223,
+      "line": 195,
       "column": 32,
       "detail": "flat"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownNarrowing",
-      "line": 246,
+      "line": 216,
       "column": 28,
       "detail": "value"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 246,
+      "line": 216,
       "column": 53,
       "detail": "pickObject"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 248,
+      "line": 218,
       "column": 32,
       "detail": "pickObject"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 301,
+      "line": 260,
       "column": 34,
       "detail": "args"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "explicitAny",
-      "line": 311,
+      "line": 270,
       "column": 18,
       "detail": "val"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 341,
+      "line": 294,
       "column": 38,
       "detail": "parseXmlToolCall"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 359,
+      "line": 307,
       "column": 38,
       "detail": "parseXmlToolCall"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 375,
+      "line": 318,
       "column": 32,
       "detail": "args"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "explicitAny",
-      "line": 381,
+      "line": 324,
       "column": 23,
       "detail": "paramValue"
     },
     {
       "file": "src/agent/parser/xml-protocol.ts",
       "category": "unknownBoundary",
-      "line": 442,
+      "line": 377,
       "column": 66,
       "detail": "parseXmlToolCall"
     },
     {
       "file": "src/agent/plan-tool.ts",
       "category": "unknownBoundary",
-      "line": 186,
+      "line": 169,
       "column": 50,
       "detail": "args"
     },
@@ -636,70 +636,70 @@
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 38,
+      "line": 34,
       "column": 56,
       "detail": "args"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 42,
+      "line": 38,
       "column": 37,
       "detail": "o"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 52,
+      "line": 48,
       "column": 58,
       "detail": "args"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 64,
+      "line": 60,
       "column": 56,
       "detail": "args"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownNarrowing",
-      "line": 70,
+      "line": 66,
       "column": 39,
       "detail": "t"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 74,
+      "line": 70,
       "column": 35,
       "detail": "o"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 113,
+      "line": 108,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 137,
+      "line": 132,
       "column": 39,
       "detail": "o"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownBoundary",
-      "line": 154,
+      "line": 148,
       "column": 72,
       "detail": "object"
     },
     {
       "file": "src/agent/plan/normalization.ts",
       "category": "unknownNarrowing",
-      "line": 155,
+      "line": 149,
       "column": 35,
       "detail": "value"
     },
@@ -713,63 +713,63 @@
     {
       "file": "src/agent/session-policy.ts",
       "category": "unknownNarrowing",
-      "line": 158,
+      "line": 117,
       "column": 37,
       "detail": "error"
     },
     {
       "file": "src/agent/stream-recovery.ts",
       "category": "unknownNarrowing",
-      "line": 113,
+      "line": 78,
       "column": 29,
       "detail": "error"
     },
     {
       "file": "src/agent/stream-recovery.ts",
       "category": "unknownInternal",
-      "line": 116,
+      "line": 81,
       "column": 36,
       "detail": "status"
     },
     {
       "file": "src/agent/stream-recovery.ts",
       "category": "unknownNarrowing",
-      "line": 122,
+      "line": 87,
       "column": 27,
       "detail": "error"
     },
     {
       "file": "src/agent/stream-recovery.ts",
       "category": "unknownNarrowing",
-      "line": 136,
+      "line": 92,
       "column": 46,
       "detail": "error"
     },
     {
       "file": "src/agent/stream-recovery.ts",
       "category": "unknownInternal",
-      "line": 284,
+      "line": 226,
       "column": 11,
       "detail": "error"
     },
     {
       "file": "src/agent/task-evidence.ts",
       "category": "unknownInternal",
-      "line": 366,
+      "line": 330,
       "column": 63,
       "detail": "path"
     },
     {
       "file": "src/agent/task-evidence.ts",
       "category": "unknownInternal",
-      "line": 445,
+      "line": 405,
       "column": 34,
       "detail": "content"
     },
     {
       "file": "src/agent/task-plan.ts",
       "category": "unknownNarrowing",
-      "line": 203,
+      "line": 195,
       "column": 44,
       "detail": "value"
     },
@@ -867,14 +867,14 @@
     {
       "file": "src/app/controllers/session-context-usage.ts",
       "category": "unknownInternal",
-      "line": 298,
+      "line": 272,
       "column": 30,
       "detail": "contextSnapshot"
     },
     {
       "file": "src/app/controllers/session-controller.ts",
       "category": "unknownInternal",
-      "line": 495,
+      "line": 466,
       "column": 47,
       "detail": "routeUsage"
     },
@@ -1049,119 +1049,119 @@
     {
       "file": "src/commands/update/installers.ts",
       "category": "doubleAssertion",
-      "line": 202,
+      "line": 198,
       "column": 6,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "unknownInternal",
-      "line": 202,
+      "line": 198,
       "column": 15,
       "detail": "unknown"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "doubleAssertion",
-      "line": 282,
+      "line": 278,
       "column": 6,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "unknownInternal",
-      "line": 282,
+      "line": 278,
       "column": 15,
       "detail": "unknown"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "doubleAssertion",
-      "line": 338,
+      "line": 334,
       "column": 6,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "unknownInternal",
-      "line": 338,
+      "line": 334,
       "column": 15,
       "detail": "unknown"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "unknownInternal",
-      "line": 458,
+      "line": 452,
       "column": 18,
       "detail": "lastError"
     },
     {
       "file": "src/commands/update/installers.ts",
       "category": "unknownNarrowing",
-      "line": 610,
+      "line": 603,
       "column": 25,
       "detail": "data"
     },
     {
       "file": "src/index.ts",
       "category": "unknownNarrowing",
-      "line": 229,
+      "line": 228,
       "column": 28,
       "detail": "error"
     },
     {
       "file": "src/index.ts",
       "category": "explicitAny",
-      "line": 339,
+      "line": 338,
       "column": 27,
       "detail": "typedValue"
     },
     {
       "file": "src/index.ts",
       "category": "broadCast",
-      "line": 340,
+      "line": 339,
       "column": 39,
       "detail": "as any"
     },
     {
       "file": "src/index.ts",
       "category": "explicitAny",
-      "line": 340,
+      "line": 339,
       "column": 50,
       "detail": "currentType"
     },
     {
       "file": "src/index.ts",
       "category": "broadCast",
-      "line": 358,
+      "line": 357,
       "column": 24,
       "detail": "as any"
     },
     {
       "file": "src/index.ts",
       "category": "explicitAny",
-      "line": 358,
+      "line": 357,
       "column": 39,
       "detail": "any"
     },
     {
       "file": "src/interactive-session/manager.ts",
       "category": "unknownNarrowing",
-      "line": 475,
+      "line": 461,
       "column": 12,
       "detail": "error"
     },
     {
       "file": "src/interactive-session/runtime.ts",
       "category": "unknownInternal",
-      "line": 17,
+      "line": 8,
       "column": 42,
       "detail": "id"
     },
     {
       "file": "src/interactive-session/runtime.ts",
       "category": "unknownInternal",
-      "line": 184,
+      "line": 161,
       "column": 20,
       "detail": "cause"
     },
@@ -1175,70 +1175,70 @@
     {
       "file": "src/interactive-session/transport.ts",
       "category": "unknownInternal",
-      "line": 29,
+      "line": 21,
       "column": 86,
       "detail": "cause"
     },
     {
       "file": "src/interactive-session/transport.ts",
       "category": "unknownInternal",
-      "line": 30,
+      "line": 22,
       "column": 85,
       "detail": "cause"
     },
     {
       "file": "src/interactive-session/types.ts",
       "category": "unknownNarrowing",
-      "line": 478,
+      "line": 446,
       "column": 10,
       "detail": "value"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownBoundary",
-      "line": 45,
+      "line": 44,
       "column": 7,
       "detail": "unknown"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownBoundary",
-      "line": 55,
+      "line": 54,
       "column": 29,
       "detail": "input"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownBoundary",
-      "line": 77,
+      "line": 76,
       "column": 42,
       "detail": "thinkingBlockFromArtifact"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownBoundary",
-      "line": 294,
+      "line": 287,
       "column": 20,
       "detail": "anthropicToolBodyFields"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownBoundary",
-      "line": 306,
+      "line": 299,
       "column": 32,
       "detail": "raw"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownInternal",
-      "line": 317,
+      "line": 310,
       "column": 11,
       "detail": "input"
     },
     {
       "file": "src/llm/adapters/anthropic-tools.ts",
       "category": "unknownBoundary",
-      "line": 318,
+      "line": 311,
       "column": 18,
       "detail": "unknown"
     },
@@ -1252,294 +1252,294 @@
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownNarrowing",
-      "line": 65,
+      "line": 50,
       "column": 39,
       "detail": "schema"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownInternal",
-      "line": 65,
+      "line": 50,
       "column": 49,
       "detail": "sanitizeGeminiSchema"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 70,
+      "line": 55,
       "column": 42,
       "detail": "input"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 71,
+      "line": 56,
       "column": 29,
       "detail": "out"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 80,
+      "line": 62,
       "column": 35,
       "detail": "props"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 82,
+      "line": 64,
       "column": 33,
       "detail": "sanitizeGeminiSchema"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 104,
+      "line": 86,
       "column": 30,
       "detail": "parameters"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 113,
+      "line": 95,
       "column": 26,
       "detail": "parameters"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 125,
+      "line": 107,
       "column": 20,
       "detail": "geminiToolBodyFields"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 146,
+      "line": 128,
       "column": 86,
       "detail": "unknown"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 151,
+      "line": 133,
       "column": 31,
       "detail": "args"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 159,
+      "line": 141,
       "column": 34,
       "detail": "response"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 197,
+      "line": 179,
       "column": 46,
       "detail": "raw"
     },
     {
       "file": "src/llm/adapters/gemini-tools.ts",
       "category": "unknownBoundary",
-      "line": 363,
+      "line": 339,
       "column": 33,
       "detail": "args"
     },
     {
       "file": "src/llm/adapters/ollama-tools.ts",
       "category": "unknownBoundary",
-      "line": 19,
+      "line": 18,
       "column": 25,
       "detail": "toOllamaToolMessages"
     },
     {
       "file": "src/llm/adapters/ollama-tools.ts",
       "category": "unknownBoundary",
-      "line": 66,
+      "line": 61,
       "column": 47,
       "detail": "arguments"
     },
     {
       "file": "src/llm/adapters/openai-tools.ts",
       "category": "unknownBoundary",
-      "line": 43,
+      "line": 42,
       "column": 25,
       "detail": "content"
     },
     {
       "file": "src/llm/adapters/openai-tools.ts",
       "category": "unknownInternal",
-      "line": 45,
+      "line": 44,
       "column": 27,
       "detail": "reasoning_details"
     },
     {
       "file": "src/llm/adapters/openai-tools.ts",
       "category": "unknownInternal",
-      "line": 71,
+      "line": 70,
       "column": 22,
       "detail": "reasoningDetails"
     },
     {
       "file": "src/llm/adapters/openai-tools.ts",
       "category": "unknownBoundary",
-      "line": 112,
+      "line": 107,
       "column": 54,
       "detail": "unknown"
     },
     {
       "file": "src/llm/adapters/openai-tools.ts",
       "category": "unknownBoundary",
-      "line": 191,
+      "line": 186,
       "column": 20,
       "detail": "openAiToolBodyFields"
     },
     {
       "file": "src/llm/agentrouter.ts",
       "category": "unknownNarrowing",
-      "line": 66,
+      "line": 39,
       "column": 43,
       "detail": "error"
     },
     {
       "file": "src/llm/agentrouter.ts",
       "category": "unknownInternal",
-      "line": 94,
+      "line": 56,
       "column": 18,
       "detail": "lastError"
     },
     {
       "file": "src/llm/agentrouter.ts",
       "category": "unknownNarrowing",
-      "line": 120,
+      "line": 72,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownBoundary",
-      "line": 102,
+      "line": 94,
       "column": 19,
       "detail": "anthropicThinkingField"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownBoundary",
-      "line": 115,
+      "line": 106,
       "column": 28,
       "detail": "thinking"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownBoundary",
-      "line": 135,
+      "line": 118,
       "column": 34,
       "detail": "anthropicSystemBlocks"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownBoundary",
-      "line": 140,
+      "line": 123,
       "column": 38,
       "detail": "blocks"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownInternal",
-      "line": 235,
+      "line": 210,
       "column": 20,
       "detail": "ping"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownInternal",
-      "line": 260,
+      "line": 235,
       "column": 17,
       "detail": "input"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownInternal",
-      "line": 263,
+      "line": 238,
       "column": 15,
       "detail": "usage"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownInternal",
-      "line": 317,
+      "line": 292,
       "column": 22,
       "detail": "stream"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownInternal",
-      "line": 344,
+      "line": 319,
       "column": 19,
       "detail": "usage"
     },
     {
       "file": "src/llm/anthropic.ts",
       "category": "unknownInternal",
-      "line": 345,
+      "line": 320,
       "column": 31,
       "detail": "usage"
     },
     {
       "file": "src/llm/artifacts/legacy-blocks.ts",
       "category": "unknownBoundary",
-      "line": 115,
+      "line": 114,
       "column": 37,
       "detail": "items"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownBoundary",
-      "line": 102,
+      "line": 101,
       "column": 19,
       "detail": "anthropicThinkingField"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownInternal",
-      "line": 145,
+      "line": 144,
       "column": 20,
       "detail": "ping"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownInternal",
-      "line": 225,
+      "line": 223,
       "column": 17,
       "detail": "input"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownInternal",
-      "line": 228,
+      "line": 226,
       "column": 15,
       "detail": "usage"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownInternal",
-      "line": 340,
+      "line": 338,
       "column": 22,
       "detail": "stream"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownInternal",
-      "line": 368,
+      "line": 366,
       "column": 19,
       "detail": "usage"
     },
     {
       "file": "src/llm/aws-mantle.ts",
       "category": "unknownInternal",
-      "line": 369,
+      "line": 367,
       "column": 31,
       "detail": "usage"
     },
@@ -1679,105 +1679,105 @@
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 152,
+      "line": 140,
       "column": 36,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 157,
+      "line": 145,
       "column": 44,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 162,
+      "line": 150,
       "column": 33,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 330,
+      "line": 314,
       "column": 26,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownBoundary",
-      "line": 330,
+      "line": 314,
       "column": 60,
       "detail": "isRecord"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 334,
+      "line": 318,
       "column": 43,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 342,
+      "line": 326,
       "column": 47,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 346,
+      "line": 330,
       "column": 32,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 355,
+      "line": 339,
       "column": 35,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 367,
+      "line": 351,
       "column": 32,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 378,
+      "line": 362,
       "column": 36,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 403,
+      "line": 387,
       "column": 34,
       "detail": "value"
     },
     {
       "file": "src/llm/context-snapshot.ts",
       "category": "unknownNarrowing",
-      "line": 420,
+      "line": 403,
       "column": 44,
       "detail": "value"
     },
     {
       "file": "src/llm/effort-fallback.ts",
       "category": "unknownNarrowing",
-      "line": 72,
+      "line": 40,
       "column": 46,
       "detail": "error"
     },
     {
       "file": "src/llm/effort-fallback.ts",
       "category": "unknownInternal",
-      "line": 108,
+      "line": 70,
       "column": 18,
       "detail": "lastError"
     },
@@ -1854,392 +1854,392 @@
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownBoundary",
-      "line": 215,
+      "line": 199,
       "column": 34,
       "detail": "thinkingConfig"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownBoundary",
-      "line": 217,
+      "line": 201,
       "column": 19,
       "detail": "clampGeminiThinkingBudget"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownBoundary",
-      "line": 246,
+      "line": 230,
       "column": 30,
       "detail": "body"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownInternal",
-      "line": 311,
+      "line": 293,
       "column": 20,
       "detail": "ping"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownBoundary",
-      "line": 337,
+      "line": 319,
       "column": 37,
       "detail": "args"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownInternal",
-      "line": 344,
+      "line": 326,
       "column": 23,
       "detail": "usageMetadata"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownInternal",
-      "line": 391,
+      "line": 373,
       "column": 22,
       "detail": "stream"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownBoundary",
-      "line": 405,
+      "line": 387,
       "column": 31,
       "detail": "args"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownInternal",
-      "line": 423,
+      "line": 405,
       "column": 27,
       "detail": "usageMetadata"
     },
     {
       "file": "src/llm/gemini.ts",
       "category": "unknownBoundary",
-      "line": 433,
+      "line": 415,
       "column": 41,
       "detail": "args"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 39,
+      "line": 22,
       "column": 29,
       "detail": "error"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 46,
+      "line": 29,
       "column": 30,
       "detail": "error"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 51,
+      "line": 33,
       "column": 39,
       "detail": "error"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 60,
+      "line": 38,
       "column": 40,
       "detail": "error"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 79,
+      "line": 52,
       "column": 50,
       "detail": "error"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 84,
+      "line": 56,
       "column": 44,
       "detail": "error"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 84,
+      "line": 56,
       "column": 70,
       "detail": "e"
     },
     {
       "file": "src/llm/key-rotation.ts",
       "category": "unknownNarrowing",
-      "line": 99,
+      "line": 66,
       "column": 45,
       "detail": "error"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 61,
+      "line": 56,
       "column": 8,
       "detail": "id"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 62,
+      "line": 57,
       "column": 12,
       "detail": "object"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 63,
+      "line": 58,
       "column": 30,
       "detail": "supported_endpoint_types"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 64,
+      "line": 59,
       "column": 18,
       "detail": "capabilities"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 73,
+      "line": 63,
       "column": 34,
       "detail": "availability_status"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 74,
+      "line": 64,
       "column": 29,
       "detail": "context_window"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 75,
+      "line": 65,
       "column": 32,
       "detail": "max_output_tokens"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 77,
+      "line": 67,
       "column": 22,
       "detail": "input"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 78,
+      "line": 68,
       "column": 35,
       "detail": "supports_reasoning"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 80,
+      "line": 70,
       "column": 31,
       "detail": "configurable"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 81,
+      "line": 71,
       "column": 36,
       "detail": "disable_supported"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 82,
+      "line": 72,
       "column": 34,
       "detail": "default_enabled"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 83,
+      "line": 73,
       "column": 32,
       "detail": "effort_values"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 89,
+      "line": 79,
       "column": 20,
       "detail": "model"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 91,
+      "line": 81,
       "column": 22,
       "detail": "aliases"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownNarrowing",
-      "line": 94,
+      "line": 84,
       "column": 31,
       "detail": "payload"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 94,
+      "line": 84,
       "column": 41,
       "detail": "entriesFrom"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 96,
+      "line": 86,
       "column": 41,
       "detail": "data"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 96,
+      "line": 86,
       "column": 59,
       "detail": "models"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownNarrowing",
-      "line": 114,
+      "line": 104,
       "column": 41,
       "detail": "payload"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 114,
+      "line": 104,
       "column": 51,
       "detail": "chatModelsFromCatalog"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownNarrowing",
-      "line": 124,
+      "line": 114,
       "column": 27,
       "detail": "value"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownNarrowing",
-      "line": 131,
+      "line": 121,
       "column": 26,
       "detail": "value"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 161,
+      "line": 137,
       "column": 19,
       "detail": "reasoningFacts"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 196,
+      "line": 168,
       "column": 39,
       "detail": "unknown"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 209,
+      "line": 176,
       "column": 63,
       "detail": "nativeFacts"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 224,
+      "line": 191,
       "column": 41,
       "detail": "model"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 237,
+      "line": 196,
       "column": 21,
       "detail": "entries"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 238,
+      "line": 197,
       "column": 31,
       "detail": "mergeNativeFactsIndex"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 239,
+      "line": 198,
       "column": 48,
       "detail": "index"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 255,
+      "line": 213,
       "column": 24,
       "detail": "chatModels"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 256,
+      "line": 214,
       "column": 42,
       "detail": "factsIndex"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 257,
+      "line": 215,
       "column": 4,
       "detail": "mergeCatalogEntries"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownInternal",
-      "line": 266,
+      "line": 224,
       "column": 49,
       "detail": "unknown"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 309,
+      "line": 262,
       "column": 39,
       "detail": "fetchNativeFacts"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 310,
+      "line": 263,
       "column": 18,
       "detail": "entries"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 315,
+      "line": 268,
       "column": 14,
       "detail": "data"
     },
     {
       "file": "src/llm/merge-gateway.ts",
       "category": "unknownBoundary",
-      "line": 335,
+      "line": 286,
       "column": 51,
       "detail": "factsIndex"
     },
@@ -2260,49 +2260,49 @@
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownBoundary",
-      "line": 43,
+      "line": 36,
       "column": 19,
       "detail": "ollamaOptions"
     },
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownBoundary",
-      "line": 69,
+      "line": 62,
       "column": 42,
       "detail": "body"
     },
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownBoundary",
-      "line": 82,
+      "line": 75,
       "column": 30,
       "detail": "body"
     },
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownInternal",
-      "line": 109,
+      "line": 102,
       "column": 20,
       "detail": "ping"
     },
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownBoundary",
-      "line": 129,
+      "line": 122,
       "column": 49,
       "detail": "arguments"
     },
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownInternal",
-      "line": 167,
+      "line": 160,
       "column": 22,
       "detail": "stream"
     },
     {
       "file": "src/llm/ollama.ts",
       "category": "unknownBoundary",
-      "line": 192,
+      "line": 185,
       "column": 53,
       "detail": "arguments"
     },
@@ -2316,28 +2316,28 @@
     {
       "file": "src/llm/operation-ledger.ts",
       "category": "unknownNarrowing",
-      "line": 199,
+      "line": 193,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/operation-ledger.ts",
       "category": "unknownNarrowing",
-      "line": 213,
+      "line": 207,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/operation-ledger.ts",
       "category": "unknownInternal",
-      "line": 218,
+      "line": 212,
       "column": 49,
       "detail": "operationUsage"
     },
     {
       "file": "src/llm/operation-ledger.ts",
       "category": "unknownInternal",
-      "line": 220,
+      "line": 214,
       "column": 48,
       "detail": "attempts"
     },
@@ -2372,49 +2372,49 @@
     {
       "file": "src/llm/orcarouter.ts",
       "category": "unknownInternal",
-      "line": 65,
+      "line": 46,
       "column": 8,
       "detail": "id"
     },
     {
       "file": "src/llm/orcarouter.ts",
       "category": "unknownInternal",
-      "line": 66,
+      "line": 47,
       "column": 30,
       "detail": "supported_endpoint_types"
     },
     {
       "file": "src/llm/orcarouter.ts",
       "category": "unknownNarrowing",
-      "line": 75,
+      "line": 50,
       "column": 41,
       "detail": "payload"
     },
     {
       "file": "src/llm/orcarouter.ts",
       "category": "unknownBoundary",
-      "line": 75,
+      "line": 50,
       "column": 51,
       "detail": "chatModelsFromCatalog"
     },
     {
       "file": "src/llm/orcarouter.ts",
       "category": "unknownInternal",
-      "line": 76,
+      "line": 51,
       "column": 41,
       "detail": "data"
     },
     {
       "file": "src/llm/profile/spec-validation.ts",
       "category": "unknownNarrowing",
-      "line": 29,
+      "line": 25,
       "column": 52,
       "detail": "raw"
     },
     {
       "file": "src/llm/profile/spec-validation.ts",
       "category": "unknownBoundary",
-      "line": 226,
+      "line": 222,
       "column": 9,
       "detail": "{ contextTokens, outputTokens }"
     },
@@ -2449,98 +2449,98 @@
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownNarrowing",
-      "line": 40,
+      "line": 36,
       "column": 32,
       "detail": "value"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownInternal",
-      "line": 40,
+      "line": 36,
       "column": 42,
       "detail": "immutableClone"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 45,
+      "line": 41,
       "column": 32,
       "detail": "copy"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 47,
+      "line": 43,
       "column": 31,
       "detail": "immutableClone"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 56,
+      "line": 52,
       "column": 47,
       "detail": "freezeRoute"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 165,
+      "line": 148,
       "column": 28,
       "detail": "rawRecord"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 168,
+      "line": 151,
       "column": 39,
       "detail": "rawRecord"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 201,
+      "line": 182,
       "column": 25,
       "detail": "reasoningArtifactItems"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 205,
+      "line": 186,
       "column": 49,
       "detail": "source"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 209,
+      "line": 190,
       "column": 54,
       "detail": "unknown"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 211,
+      "line": 192,
       "column": 39,
       "detail": "unknown"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 299,
+      "line": 271,
       "column": 25,
       "detail": "entry"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 316,
+      "line": 288,
       "column": 18,
       "detail": "entries"
     },
     {
       "file": "src/llm/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 324,
+      "line": 296,
       "column": 44,
       "detail": "record"
     },
@@ -3422,168 +3422,168 @@
     {
       "file": "src/llm/router.ts",
       "category": "unknownNarrowing",
-      "line": 198,
+      "line": 187,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/router.ts",
       "category": "unknownInternal",
-      "line": 200,
+      "line": 189,
       "column": 4,
       "detail": "attachOperationUsageToError"
     },
     {
       "file": "src/llm/routing/attempt-request.ts",
       "category": "unknownNarrowing",
-      "line": 49,
+      "line": 45,
       "column": 18,
       "detail": "recoveryError"
     },
     {
       "file": "src/llm/routing/attempt-request.ts",
       "category": "unknownNarrowing",
-      "line": 50,
+      "line": 46,
       "column": 18,
       "detail": "originalError"
     },
     {
       "file": "src/llm/routing/attempt-request.ts",
       "category": "unknownInternal",
-      "line": 51,
+      "line": 47,
       "column": 4,
       "detail": "preservedFailure"
     },
     {
       "file": "src/llm/routing/attempt-request.ts",
       "category": "unknownNarrowing",
-      "line": 143,
+      "line": 139,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 47,
+      "line": 46,
       "column": 38,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 51,
+      "line": 50,
       "column": 44,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 57,
+      "line": 56,
       "column": 31,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 63,
+      "line": 62,
       "column": 47,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 68,
+      "line": 67,
       "column": 51,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 98,
+      "line": 97,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 111,
+      "line": 110,
       "column": 45,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 117,
+      "line": 116,
       "column": 41,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 134,
+      "line": 133,
       "column": 41,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 157,
+      "line": 156,
       "column": 36,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 174,
+      "line": 167,
       "column": 47,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/error-classification.ts",
       "category": "unknownNarrowing",
-      "line": 181,
+      "line": 174,
       "column": 45,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/failure-report.ts",
       "category": "unknownNarrowing",
-      "line": 18,
+      "line": 12,
       "column": 54,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/failure-report.ts",
       "category": "unknownNarrowing",
-      "line": 34,
+      "line": 24,
       "column": 53,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/failure-report.ts",
       "category": "unknownNarrowing",
-      "line": 152,
+      "line": 137,
       "column": 40,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/failure-report.ts",
       "category": "unknownNarrowing",
-      "line": 161,
+      "line": 146,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/failure-report.ts",
       "category": "unknownInternal",
-      "line": 171,
+      "line": 155,
       "column": 11,
       "detail": "error"
     },
     {
       "file": "src/llm/routing/failure-report.ts",
       "category": "unknownNarrowing",
-      "line": 248,
+      "line": 218,
       "column": 51,
       "detail": "error"
     },
@@ -3597,28 +3597,28 @@
     {
       "file": "src/llm/routing/key-rotation.ts",
       "category": "unknownInternal",
-      "line": 129,
+      "line": 119,
       "column": 18,
       "detail": "lastError"
     },
     {
       "file": "src/llm/stream-progress.ts",
       "category": "unknownNarrowing",
-      "line": 32,
+      "line": 18,
       "column": 43,
       "detail": "error"
     },
     {
       "file": "src/llm/stream-progress.ts",
       "category": "unknownBoundary",
-      "line": 34,
+      "line": 20,
       "column": 42,
       "detail": "value"
     },
     {
       "file": "src/llm/stream-progress.ts",
       "category": "unknownNarrowing",
-      "line": 41,
+      "line": 26,
       "column": 45,
       "detail": "error"
     },
@@ -3632,126 +3632,126 @@
     {
       "file": "src/llm/token-estimate-calibration.ts",
       "category": "unknownNarrowing",
-      "line": 59,
+      "line": 38,
       "column": 28,
       "detail": "value"
     },
     {
       "file": "src/llm/token-usage.ts",
       "category": "unknownNarrowing",
-      "line": 70,
+      "line": 38,
       "column": 33,
       "detail": "value"
     },
     {
       "file": "src/llm/token-usage.ts",
       "category": "unknownBoundary",
-      "line": 70,
+      "line": 38,
       "column": 67,
       "detail": "isRecord"
     },
     {
       "file": "src/llm/token-usage.ts",
       "category": "unknownNarrowing",
-      "line": 74,
+      "line": 42,
       "column": 34,
       "detail": "value"
     },
     {
       "file": "src/llm/token-usage.ts",
       "category": "unknownNarrowing",
-      "line": 80,
+      "line": 48,
       "column": 8,
       "detail": "raw"
     },
     {
       "file": "src/llm/token-usage.ts",
       "category": "unknownInternal",
-      "line": 84,
+      "line": 52,
       "column": 16,
       "detail": "current"
     },
     {
       "file": "src/llm/tool-protocol.ts",
       "category": "unknownNarrowing",
-      "line": 204,
+      "line": 176,
       "column": 48,
       "detail": "error"
     },
     {
       "file": "src/llm/tool-protocol.ts",
       "category": "unknownInternal",
-      "line": 251,
+      "line": 217,
       "column": 72,
       "detail": "mapToolChoiceToOpenAi"
     },
     {
       "file": "src/llm/tool-protocol.ts",
       "category": "unknownInternal",
-      "line": 266,
+      "line": 232,
       "column": 4,
       "detail": "mapToolChoiceToAnthropic"
     },
     {
       "file": "src/llm/tool-protocol.ts",
       "category": "unknownBoundary",
-      "line": 332,
+      "line": 295,
       "column": 69,
       "detail": "arguments"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownBoundary",
-      "line": 55,
+      "line": 41,
       "column": 19,
       "detail": "repairConcatenatedToolArguments"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownBoundary",
-      "line": 58,
+      "line": 44,
       "column": 32,
       "detail": "merged"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownInternal",
-      "line": 60,
+      "line": 46,
       "column": 17,
       "detail": "parsed"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownNarrowing",
-      "line": 77,
+      "line": 63,
       "column": 41,
       "detail": "raw"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownBoundary",
-      "line": 77,
+      "line": 63,
       "column": 66,
       "detail": "parseToolArguments"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownBoundary",
-      "line": 80,
+      "line": 66,
       "column": 34,
       "detail": "parseToolArguments"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownInternal",
-      "line": 86,
+      "line": 72,
       "column": 39,
       "detail": "parsed"
     },
     {
       "file": "src/llm/tool-wire/argument-repair.ts",
       "category": "unknownBoundary",
-      "line": 88,
+      "line": 74,
       "column": 41,
       "detail": "parseToolArguments"
     },
@@ -3765,35 +3765,35 @@
     {
       "file": "src/llm/usage/provider-parsers.ts",
       "category": "unknownNarrowing",
-      "line": 166,
+      "line": 161,
       "column": 8,
       "detail": "raw"
     },
     {
       "file": "src/llm/usage/provider-parsers.ts",
       "category": "unknownNarrowing",
-      "line": 233,
+      "line": 223,
       "column": 13,
       "detail": "rawUsage"
     },
     {
       "file": "src/llm/usage/provider-parsers.ts",
       "category": "unknownNarrowing",
-      "line": 234,
+      "line": 224,
       "column": 24,
       "detail": "performanceMetrics"
     },
     {
       "file": "src/llm/usage/provider-parsers.ts",
       "category": "unknownNarrowing",
-      "line": 272,
+      "line": 261,
       "column": 42,
       "detail": "raw"
     },
     {
       "file": "src/llm/usage/provider-parsers.ts",
       "category": "unknownNarrowing",
-      "line": 327,
+      "line": 309,
       "column": 39,
       "detail": "raw"
     },
@@ -3807,28 +3807,28 @@
     {
       "file": "src/llm/wire/capability-errors.ts",
       "category": "unknownNarrowing",
-      "line": 13,
+      "line": 5,
       "column": 52,
       "detail": "error"
     },
     {
       "file": "src/llm/wire/capability-errors.ts",
       "category": "unknownNarrowing",
-      "line": 59,
+      "line": 47,
       "column": 10,
       "detail": "error"
     },
     {
       "file": "src/llm/wire/capability-errors.ts",
       "category": "unknownNarrowing",
-      "line": 87,
+      "line": 75,
       "column": 56,
       "detail": "error"
     },
     {
       "file": "src/llm/wire/capability-errors.ts",
       "category": "unknownNarrowing",
-      "line": 107,
+      "line": 95,
       "column": 53,
       "detail": "error"
     },
@@ -3849,7 +3849,7 @@
     {
       "file": "src/llm/wire/chat-body.ts",
       "category": "unknownBoundary",
-      "line": 200,
+      "line": 172,
       "column": 30,
       "detail": "body"
     },
@@ -3877,182 +3877,182 @@
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "broadCast",
-      "line": 75,
+      "line": 71,
       "column": 77,
       "detail": "as any"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "explicitAny",
-      "line": 88,
+      "line": 84,
       "column": 10,
       "detail": "openAiCompatibleComplete"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "unknownInternal",
-      "line": 104,
+      "line": 100,
       "column": 29,
       "detail": "reasoning_details"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "unknownInternal",
-      "line": 105,
+      "line": 101,
       "column": 20,
       "detail": "thinking"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "unknownInternal",
-      "line": 115,
+      "line": 111,
       "column": 13,
       "detail": "usage"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "unknownInternal",
-      "line": 148,
+      "line": 139,
       "column": 37,
       "detail": "perf_metrics"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "broadCast",
-      "line": 205,
+      "line": 196,
       "column": 53,
       "detail": "as any"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "explicitAny",
-      "line": 211,
+      "line": 202,
       "column": 8,
       "detail": "response"
     },
     {
       "file": "src/llm/wire/openai-complete.ts",
       "category": "unknownInternal",
-      "line": 212,
+      "line": 203,
       "column": 18,
       "detail": "openAiCompatiblePing"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "broadCast",
-      "line": 216,
+      "line": 182,
       "column": 77,
       "detail": "as any"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "explicitAny",
-      "line": 230,
+      "line": 196,
       "column": 10,
       "detail": "openAiCompatibleStream"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 245,
+      "line": 211,
       "column": 22,
       "detail": "openAiCompatibleStream"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 271,
+      "line": 237,
       "column": 17,
       "detail": "usage"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 278,
+      "line": 244,
       "column": 33,
       "detail": "reasoning_details"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 279,
+      "line": 245,
       "column": 24,
       "detail": "thinking"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 306,
+      "line": 272,
       "column": 41,
       "detail": "perf_metrics"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 703,
+      "line": 638,
       "column": 19,
       "detail": "usage"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 710,
+      "line": 645,
       "column": 35,
       "detail": "reasoning_details"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 711,
+      "line": 646,
       "column": 26,
       "detail": "thinking"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownBoundary",
-      "line": 721,
+      "line": 656,
       "column": 55,
       "detail": "arguments"
     },
     {
       "file": "src/llm/wire/openai-stream.ts",
       "category": "unknownInternal",
-      "line": 755,
+      "line": 683,
       "column": 47,
       "detail": "perf_metrics"
     },
     {
       "file": "src/llm/wire/reasoning-artifacts.ts",
       "category": "unknownNarrowing",
-      "line": 54,
+      "line": 53,
       "column": 10,
       "detail": "value"
     },
     {
       "file": "src/llm/wire/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 59,
+      "line": 58,
       "column": 45,
       "detail": "artifactRaw"
     },
     {
       "file": "src/llm/wire/reasoning-artifacts.ts",
       "category": "unknownInternal",
-      "line": 84,
+      "line": 68,
       "column": 20,
       "detail": "thinking"
     },
     {
       "file": "src/llm/wire/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 214,
+      "line": 197,
       "column": 60,
       "detail": "body"
     },
     {
       "file": "src/llm/wire/reasoning-artifacts.ts",
       "category": "unknownBoundary",
-      "line": 220,
+      "line": 203,
       "column": 48,
       "detail": "effort"
     },
@@ -4066,14 +4066,14 @@
     {
       "file": "src/llm/wire/response-errors.ts",
       "category": "unknownBoundary",
-      "line": 57,
+      "line": 56,
       "column": 55,
       "detail": "body"
     },
     {
       "file": "src/llm/wire/response-errors.ts",
       "category": "unknownInternal",
-      "line": 58,
+      "line": 57,
       "column": 40,
       "detail": "error"
     },
@@ -4647,7 +4647,7 @@
     {
       "file": "src/mcp/runtime.ts",
       "category": "unknownBoundary",
-      "line": 575,
+      "line": 560,
       "column": 26,
       "detail": "args"
     },
@@ -4850,7 +4850,7 @@
     {
       "file": "src/noninteractive/readline-prompts.ts",
       "category": "unknownInternal",
-      "line": 12,
+      "line": 7,
       "column": 31,
       "detail": "setRawMode"
     },
@@ -4864,35 +4864,35 @@
     {
       "file": "src/os/bun-runtime.ts",
       "category": "unknownInternal",
-      "line": 13,
+      "line": 9,
       "column": 40,
       "detail": "Bun"
     },
     {
       "file": "src/os/bun-runtime.ts",
       "category": "unknownNarrowing",
-      "line": 227,
+      "line": 194,
       "column": 42,
       "detail": "error"
     },
     {
       "file": "src/os/permissions.ts",
       "category": "explicitAny",
-      "line": 46,
+      "line": 33,
       "column": 44,
       "detail": "err"
     },
     {
       "file": "src/os/permissions.ts",
       "category": "explicitAny",
-      "line": 81,
+      "line": 68,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/os/permissions.ts",
       "category": "explicitAny",
-      "line": 96,
+      "line": 83,
       "column": 17,
       "detail": "err"
     },
@@ -4962,42 +4962,42 @@
     {
       "file": "src/safety/tool-classification.ts",
       "category": "unknownBoundary",
-      "line": 26,
+      "line": 16,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/safety/tool-classification.ts",
       "category": "unknownInternal",
-      "line": 89,
+      "line": 71,
       "column": 35,
       "detail": "name"
     },
     {
       "file": "src/safety/tool-classification.ts",
       "category": "unknownInternal",
-      "line": 107,
+      "line": 87,
       "column": 35,
       "detail": "args"
     },
     {
       "file": "src/safety/tool-classification.ts",
       "category": "unknownInternal",
-      "line": 108,
+      "line": 88,
       "column": 28,
       "detail": "args"
     },
     {
       "file": "src/safety/tool-classification.ts",
       "category": "unknownInternal",
-      "line": 109,
+      "line": 89,
       "column": 43,
       "detail": "args"
     },
     {
       "file": "src/safety/tool-classification.ts",
       "category": "unknownBoundary",
-      "line": 110,
+      "line": 90,
       "column": 47,
       "detail": "args"
     },
@@ -5214,56 +5214,56 @@
     {
       "file": "src/store/config/endpoints.ts",
       "category": "explicitAny",
-      "line": 194,
+      "line": 149,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/config/endpoints.ts",
       "category": "unknownBoundary",
-      "line": 241,
+      "line": 194,
       "column": 27,
       "detail": "raw"
     },
     {
       "file": "src/store/config/endpoints.ts",
       "category": "unknownBoundary",
-      "line": 243,
+      "line": 196,
       "column": 74,
       "detail": "migrateCompactionBudgetKeys"
     },
     {
       "file": "src/store/config/endpoints.ts",
       "category": "unknownNarrowing",
-      "line": 247,
+      "line": 200,
       "column": 25,
       "detail": "value"
     },
     {
       "file": "src/store/config/endpoints.ts",
       "category": "unknownBoundary",
-      "line": 254,
+      "line": 207,
       "column": 30,
       "detail": "next"
     },
     {
       "file": "src/store/config/endpoints.ts",
       "category": "explicitAny",
-      "line": 261,
+      "line": 214,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/config/endpoints.ts",
       "category": "explicitAny",
-      "line": 328,
+      "line": 280,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/config/settings.ts",
       "category": "unknownBoundary",
-      "line": 47,
+      "line": 41,
       "column": 7,
       "detail": "raw"
     },
@@ -5284,217 +5284,217 @@
     {
       "file": "src/store/history.ts",
       "category": "unknownBoundary",
-      "line": 60,
+      "line": 57,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/store/history/jsonl-backend.ts",
       "category": "explicitAny",
-      "line": 36,
+      "line": 27,
       "column": 19,
       "detail": "err"
     },
     {
       "file": "src/store/history/jsonl-lock.ts",
       "category": "explicitAny",
-      "line": 35,
+      "line": 33,
       "column": 19,
       "detail": "error"
     },
     {
       "file": "src/store/history/jsonl-lock.ts",
       "category": "explicitAny",
-      "line": 116,
+      "line": 106,
       "column": 21,
       "detail": "error"
     },
     {
       "file": "src/store/history/lifecycle.ts",
       "category": "unknownInternal",
-      "line": 122,
+      "line": 115,
       "column": 56,
       "detail": "value"
     },
     {
       "file": "src/store/history/lifecycle.ts",
       "category": "unknownInternal",
-      "line": 129,
+      "line": 122,
       "column": 39,
       "detail": "id"
     },
     {
       "file": "src/store/history/lifecycle.ts",
       "category": "doubleAssertion",
-      "line": 276,
+      "line": 267,
       "column": 24,
       "detail": "as unknown as { changes: number }"
     },
     {
       "file": "src/store/history/lifecycle.ts",
       "category": "unknownInternal",
-      "line": 276,
+      "line": 267,
       "column": 34,
       "detail": "changes"
     },
     {
       "file": "src/store/history/recovery.ts",
       "category": "explicitAny",
-      "line": 193,
+      "line": 160,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/history/recovery.ts",
       "category": "explicitAny",
-      "line": 267,
+      "line": 231,
       "column": 23,
       "detail": "error"
     },
     {
       "file": "src/store/history/session-queries.ts",
       "category": "explicitAny",
-      "line": 104,
+      "line": 103,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 42,
+      "line": 41,
       "column": 18,
       "detail": "params"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownInternal",
-      "line": 42,
+      "line": 41,
       "column": 30,
       "detail": "run"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 43,
+      "line": 42,
       "column": 18,
       "detail": "params"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownInternal",
-      "line": 43,
+      "line": 42,
       "column": 30,
       "detail": "get"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 44,
+      "line": 43,
       "column": 18,
       "detail": "params"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 44,
+      "line": 43,
       "column": 30,
       "detail": "all"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "explicitAny",
-      "line": 125,
+      "line": 124,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 215,
+      "line": 209,
       "column": 34,
       "detail": "doomed"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownNarrowing",
-      "line": 226,
+      "line": 219,
       "column": 35,
       "detail": "row"
     },
     {
       "file": "src/store/history/sqlite-backend.ts",
       "category": "unknownNarrowing",
-      "line": 280,
+      "line": 273,
       "column": 35,
       "detail": "row"
     },
     {
       "file": "src/store/keys/search-providers.ts",
       "category": "unknownNarrowing",
-      "line": 54,
+      "line": 46,
       "column": 30,
       "detail": "value"
     },
     {
       "file": "src/store/keys/search-providers.ts",
       "category": "unknownBoundary",
-      "line": 56,
+      "line": 48,
       "column": 39,
       "detail": "rec"
     },
     {
       "file": "src/store/keys/search-providers.ts",
       "category": "unknownInternal",
-      "line": 62,
+      "line": 54,
       "column": 27,
       "detail": "id"
     },
     {
       "file": "src/store/keys/search-providers.ts",
       "category": "unknownInternal",
-      "line": 63,
+      "line": 55,
       "column": 30,
       "detail": "value"
     },
     {
       "file": "src/store/keys/search-providers.ts",
       "category": "unknownInternal",
-      "line": 64,
+      "line": 56,
       "column": 34,
       "detail": "createdAt"
     },
     {
       "file": "src/store/keys/search-providers.ts",
       "category": "unknownInternal",
-      "line": 81,
+      "line": 69,
       "column": 21,
       "detail": "parsed"
     },
     {
       "file": "src/store/keys/secret-store.ts",
       "category": "unknownNarrowing",
-      "line": 72,
+      "line": 57,
       "column": 47,
       "detail": "error"
     },
     {
       "file": "src/store/keys/secret-store.ts",
       "category": "unknownNarrowing",
-      "line": 82,
+      "line": 66,
       "column": 44,
       "detail": "error"
     },
     {
       "file": "src/store/keys/secret-store.ts",
       "category": "explicitAny",
-      "line": 139,
+      "line": 123,
       "column": 26,
       "detail": "writeError"
     },
     {
       "file": "src/store/keys/secret-store.ts",
       "category": "explicitAny",
-      "line": 156,
+      "line": 140,
       "column": 17,
       "detail": "err"
     },
@@ -5515,84 +5515,84 @@
     {
       "file": "src/store/logs.ts",
       "category": "unknownNarrowing",
-      "line": 132,
+      "line": 127,
       "column": 36,
       "detail": "value"
     },
     {
       "file": "src/store/logs.ts",
       "category": "unknownInternal",
-      "line": 132,
+      "line": 127,
       "column": 46,
       "detail": "diagnosticMetadata"
     },
     {
       "file": "src/store/logs.ts",
       "category": "unknownBoundary",
-      "line": 135,
+      "line": 130,
       "column": 32,
       "detail": "output"
     },
     {
       "file": "src/store/logs.ts",
       "category": "unknownBoundary",
-      "line": 136,
+      "line": 131,
       "column": 69,
       "detail": "diagnosticMetadata"
     },
     {
       "file": "src/store/logs.ts",
       "category": "unknownInternal",
-      "line": 148,
+      "line": 142,
       "column": 64,
       "detail": "payload"
     },
     {
       "file": "src/store/logs.ts",
       "category": "unknownInternal",
-      "line": 154,
+      "line": 148,
       "column": 85,
       "detail": "payload"
     },
     {
       "file": "src/store/logs.ts",
       "category": "unknownInternal",
-      "line": 155,
+      "line": 149,
       "column": 61,
       "detail": "payload"
     },
     {
       "file": "src/store/plan.ts",
       "category": "explicitAny",
-      "line": 95,
+      "line": 82,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/plan/jsonl-backend.ts",
       "category": "unknownBoundary",
-      "line": 26,
+      "line": 16,
       "column": 29,
       "detail": "planWriteQueue"
     },
     {
       "file": "src/store/plan/jsonl-backend.ts",
       "category": "explicitAny",
-      "line": 67,
+      "line": 52,
       "column": 19,
       "detail": "err"
     },
     {
       "file": "src/store/plan/jsonl-backend.ts",
       "category": "explicitAny",
-      "line": 110,
+      "line": 94,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/plan/jsonl-backend.ts",
       "category": "explicitAny",
-      "line": 129,
+      "line": 113,
       "column": 17,
       "detail": "err"
     },
@@ -5613,112 +5613,112 @@
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 100,
+      "line": 80,
       "column": 18,
       "detail": "params"
     },
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "unknownInternal",
-      "line": 100,
+      "line": 80,
       "column": 30,
       "detail": "run"
     },
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 101,
+      "line": 81,
       "column": 18,
       "detail": "params"
     },
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "unknownInternal",
-      "line": 101,
+      "line": 81,
       "column": 30,
       "detail": "get"
     },
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 102,
+      "line": 82,
       "column": 18,
       "detail": "params"
     },
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "unknownBoundary",
-      "line": 102,
+      "line": 82,
       "column": 30,
       "detail": "all"
     },
     {
       "file": "src/store/plan/sqlite-backend.ts",
       "category": "explicitAny",
-      "line": 150,
+      "line": 126,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/scope.ts",
       "category": "explicitAny",
-      "line": 59,
+      "line": 57,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/scope.ts",
       "category": "explicitAny",
-      "line": 82,
+      "line": 80,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/scope.ts",
       "category": "unknownNarrowing",
-      "line": 220,
+      "line": 210,
       "column": 31,
       "detail": "value"
     },
     {
       "file": "src/store/scope.ts",
       "category": "unknownBoundary",
-      "line": 222,
+      "line": 212,
       "column": 39,
       "detail": "raw"
     },
     {
       "file": "src/store/scope.ts",
       "category": "doubleAssertion",
-      "line": 229,
+      "line": 219,
       "column": 16,
       "detail": "as unknown as EngagementScope"
     },
     {
       "file": "src/store/scope.ts",
       "category": "unknownInternal",
-      "line": 229,
+      "line": 219,
       "column": 23,
       "detail": "sanitizeScope"
     },
     {
       "file": "src/store/scope.ts",
       "category": "unknownInternal",
-      "line": 241,
+      "line": 231,
       "column": 53,
       "detail": "scope"
     },
     {
       "file": "src/store/scope.ts",
       "category": "explicitAny",
-      "line": 245,
+      "line": 235,
       "column": 17,
       "detail": "err"
     },
     {
       "file": "src/store/scope.ts",
       "category": "explicitAny",
-      "line": 270,
+      "line": 260,
       "column": 17,
       "detail": "err"
     },
@@ -5781,63 +5781,63 @@
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownNarrowing",
-      "line": 30,
+      "line": 22,
       "column": 31,
       "detail": "value"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownBoundary",
-      "line": 56,
+      "line": 48,
       "column": 45,
       "detail": "args"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownInternal",
-      "line": 56,
+      "line": 48,
       "column": 56,
       "detail": "pickOnFailRaw"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownNarrowing",
-      "line": 87,
+      "line": 79,
       "column": 13,
       "detail": "rulesRaw"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownBoundary",
-      "line": 104,
+      "line": 96,
       "column": 41,
       "detail": "rec"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownBoundary",
-      "line": 153,
+      "line": 141,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownBoundary",
-      "line": 172,
+      "line": 160,
       "column": 39,
       "detail": "rec"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownBoundary",
-      "line": 314,
+      "line": 285,
       "column": 25,
       "detail": "entry"
     },
     {
       "file": "src/tools/batch-fail-policy.ts",
       "category": "unknownBoundary",
-      "line": 326,
+      "line": 294,
       "column": 25,
       "detail": "entry"
     },
@@ -5893,203 +5893,203 @@
     {
       "file": "src/tools/batch/batch-parsing.ts",
       "category": "doubleAssertion",
-      "line": 68,
+      "line": 67,
       "column": 5,
       "detail": "as unknown as {\n      any?: (signals: AbortSignal[]) => AbortSignal;\n    }"
     },
     {
       "file": "src/tools/batch/batch-parsing.ts",
       "category": "unknownInternal",
-      "line": 68,
+      "line": 67,
       "column": 20,
       "detail": "anyFn"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "unknownBoundary",
-      "line": 34,
+      "line": 29,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "doubleAssertion",
-      "line": 126,
+      "line": 109,
       "column": 4,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "unknownInternal",
-      "line": 126,
+      "line": 109,
       "column": 17,
       "detail": "runToolBatch"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "doubleAssertion",
-      "line": 164,
+      "line": 142,
       "column": 4,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "unknownInternal",
-      "line": 164,
+      "line": 142,
       "column": 17,
       "detail": "runToolBatch"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "doubleAssertion",
-      "line": 263,
+      "line": 235,
       "column": 10,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tools/batch/run-batch.ts",
       "category": "unknownInternal",
-      "line": 263,
+      "line": 235,
       "column": 28,
       "detail": "unknown"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownBoundary",
-      "line": 55,
+      "line": 40,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownNarrowing",
-      "line": 63,
+      "line": 48,
       "column": 26,
       "detail": "value"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownBoundary",
-      "line": 144,
+      "line": 117,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownBoundary",
-      "line": 145,
+      "line": 118,
       "column": 19,
       "detail": "unwrapGatewayToolArgs"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownBoundary",
-      "line": 150,
+      "line": 123,
       "column": 36,
       "detail": "unwrapGatewayToolArgs"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownInternal",
-      "line": 154,
+      "line": 127,
       "column": 48,
       "detail": "parsed"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownBoundary",
-      "line": 156,
+      "line": 129,
       "column": 35,
       "detail": "unwrapGatewayToolArgs"
     },
     {
       "file": "src/tools/call-normalization.ts",
       "category": "unknownBoundary",
-      "line": 198,
+      "line": 171,
       "column": 35,
       "detail": "shellArgs"
     },
     {
       "file": "src/tools/capabilities.ts",
       "category": "unknownBoundary",
-      "line": 150,
+      "line": 137,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/command-intent.ts",
       "category": "unknownInternal",
-      "line": 326,
+      "line": 264,
       "column": 16,
       "detail": "background"
     },
     {
       "file": "src/tools/command-intent.ts",
       "category": "unknownInternal",
-      "line": 327,
+      "line": 265,
       "column": 15,
       "detail": "responder"
     },
     {
       "file": "src/tools/definitions/define.ts",
       "category": "unknownBoundary",
-      "line": 51,
+      "line": 45,
       "column": 30,
       "detail": "timedParameters"
     },
     {
       "file": "src/tools/definitions/define.ts",
       "category": "unknownBoundary",
-      "line": 68,
+      "line": 61,
       "column": 36,
       "detail": "emptyObject"
     },
     {
       "file": "src/tools/dns-native.ts",
       "category": "unknownNarrowing",
-      "line": 36,
+      "line": 34,
       "column": 24,
       "detail": "value"
     },
     {
       "file": "src/tools/dns-native.ts",
       "category": "unknownBoundary",
-      "line": 58,
+      "line": 56,
       "column": 79,
       "detail": "resolveViaSystem"
     },
     {
       "file": "src/tools/external-tools.ts",
       "category": "unknownBoundary",
-      "line": 22,
+      "line": 14,
       "column": 26,
       "detail": "args"
     },
     {
       "file": "src/tools/fs.ts",
       "category": "explicitAny",
-      "line": 213,
+      "line": 166,
       "column": 19,
       "detail": "error"
     },
     {
       "file": "src/tools/fs/mutations.ts",
       "category": "explicitAny",
-      "line": 111,
+      "line": 95,
       "column": 23,
       "detail": "error"
     },
     {
       "file": "src/tools/fs/mutations.ts",
       "category": "explicitAny",
-      "line": 387,
+      "line": 348,
       "column": 19,
       "detail": "error"
     },
     {
       "file": "src/tools/fs/read.ts",
       "category": "unknownBoundary",
-      "line": 211,
+      "line": 196,
       "column": 19,
       "detail": "error"
     },
@@ -6103,182 +6103,182 @@
     {
       "file": "src/tools/handlers/args.ts",
       "category": "unknownBoundary",
-      "line": 17,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/args.ts",
-      "category": "unknownBoundary",
-      "line": 28,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/args.ts",
-      "category": "unknownBoundary",
-      "line": 36,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/args.ts",
-      "category": "unknownBoundary",
-      "line": 50,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/args.ts",
-      "category": "unknownBoundary",
-      "line": 61,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/args.ts",
-      "category": "unknownBoundary",
-      "line": 69,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/nmap-preparation.ts",
-      "category": "unknownBoundary",
-      "line": 56,
-      "column": 24,
-      "detail": "args"
-    },
-    {
-      "file": "src/tools/handlers/pentest.ts",
-      "category": "doubleAssertion",
-      "line": 115,
-      "column": 8,
-      "detail": "as unknown as { unref?: () => void }"
-    },
-    {
-      "file": "src/tools/handlers/pentest.ts",
-      "category": "unknownInternal",
-      "line": 115,
-      "column": 16,
-      "detail": "unknown"
-    },
-    {
-      "file": "src/tools/handlers/pentest.ts",
-      "category": "unknownBoundary",
-      "line": 249,
-      "column": 55,
-      "detail": "candidate"
-    },
-    {
-      "file": "src/tools/http/agents.ts",
-      "category": "unknownNarrowing",
-      "line": 77,
-      "column": 19,
-      "detail": "error"
-    },
-    {
-      "file": "src/tools/http/evidence-format.ts",
-      "category": "unknownInternal",
-      "line": 65,
-      "column": 21,
-      "detail": "lastNetworkError"
-    },
-    {
-      "file": "src/tools/http/fetch.ts",
-      "category": "unknownInternal",
-      "line": 242,
-      "column": 25,
-      "detail": "lastNetworkError"
-    },
-    {
-      "file": "src/tools/http/fetch.ts",
-      "category": "unknownInternal",
-      "line": 440,
-      "column": 22,
-      "detail": "bodyReadError"
-    },
-    {
-      "file": "src/tools/http/retry-policy.ts",
-      "category": "unknownNarrowing",
-      "line": 4,
-      "column": 27,
-      "detail": "error"
-    },
-    {
-      "file": "src/tools/http/retry-policy.ts",
-      "category": "unknownInternal",
-      "line": 10,
-      "column": 52,
-      "detail": "code"
-    },
-    {
-      "file": "src/tools/http/retry-policy.ts",
-      "category": "unknownBoundary",
       "line": 16,
-      "column": 41,
-      "detail": "rec"
-    },
-    {
-      "file": "src/tools/http/retry-policy.ts",
-      "category": "unknownNarrowing",
-      "line": 30,
-      "column": 43,
-      "detail": "error"
-    },
-    {
-      "file": "src/tools/http/retry-policy.ts",
-      "category": "unknownNarrowing",
-      "line": 43,
-      "column": 46,
-      "detail": "error"
-    },
-    {
-      "file": "src/tools/http/retry-policy.ts",
-      "category": "unknownNarrowing",
-      "line": 88,
-      "column": 49,
-      "detail": "error"
-    },
-    {
-      "file": "src/tools/image.ts",
-      "category": "unknownBoundary",
-      "line": 40,
       "column": 24,
       "detail": "args"
     },
     {
-      "file": "src/tools/image.ts",
+      "file": "src/tools/handlers/args.ts",
+      "category": "unknownBoundary",
+      "line": 27,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/handlers/args.ts",
+      "category": "unknownBoundary",
+      "line": 35,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/handlers/args.ts",
       "category": "unknownBoundary",
       "line": 48,
       "column": 24,
       "detail": "args"
     },
     {
+      "file": "src/tools/handlers/args.ts",
+      "category": "unknownBoundary",
+      "line": 59,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/handlers/args.ts",
+      "category": "unknownBoundary",
+      "line": 67,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/handlers/nmap-preparation.ts",
+      "category": "unknownBoundary",
+      "line": 55,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/handlers/pentest.ts",
+      "category": "doubleAssertion",
+      "line": 109,
+      "column": 8,
+      "detail": "as unknown as { unref?: () => void }"
+    },
+    {
+      "file": "src/tools/handlers/pentest.ts",
+      "category": "unknownInternal",
+      "line": 109,
+      "column": 16,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/tools/handlers/pentest.ts",
+      "category": "unknownBoundary",
+      "line": 237,
+      "column": 55,
+      "detail": "candidate"
+    },
+    {
+      "file": "src/tools/http/agents.ts",
+      "category": "unknownNarrowing",
+      "line": 76,
+      "column": 19,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http/evidence-format.ts",
+      "category": "unknownInternal",
+      "line": 58,
+      "column": 21,
+      "detail": "lastNetworkError"
+    },
+    {
+      "file": "src/tools/http/fetch.ts",
+      "category": "unknownInternal",
+      "line": 210,
+      "column": 25,
+      "detail": "lastNetworkError"
+    },
+    {
+      "file": "src/tools/http/fetch.ts",
+      "category": "unknownInternal",
+      "line": 399,
+      "column": 22,
+      "detail": "bodyReadError"
+    },
+    {
+      "file": "src/tools/http/retry-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 3,
+      "column": 27,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http/retry-policy.ts",
+      "category": "unknownInternal",
+      "line": 9,
+      "column": 52,
+      "detail": "code"
+    },
+    {
+      "file": "src/tools/http/retry-policy.ts",
+      "category": "unknownBoundary",
+      "line": 15,
+      "column": 41,
+      "detail": "rec"
+    },
+    {
+      "file": "src/tools/http/retry-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 28,
+      "column": 43,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http/retry-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 41,
+      "column": 46,
+      "detail": "error"
+    },
+    {
+      "file": "src/tools/http/retry-policy.ts",
+      "category": "unknownNarrowing",
+      "line": 78,
+      "column": 49,
+      "detail": "error"
+    },
+    {
       "file": "src/tools/image.ts",
       "category": "unknownBoundary",
-      "line": 56,
+      "line": 39,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/image.ts",
       "category": "unknownBoundary",
-      "line": 75,
+      "line": 47,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/image.ts",
       "category": "unknownBoundary",
-      "line": 188,
+      "line": 55,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 74,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/tools/image.ts",
+      "category": "unknownBoundary",
+      "line": 186,
       "column": 41,
       "detail": "args"
     },
     {
       "file": "src/tools/image.ts",
       "category": "unknownBoundary",
-      "line": 223,
+      "line": 207,
       "column": 24,
       "detail": "args"
     },
@@ -6299,49 +6299,49 @@
     {
       "file": "src/tools/interactive-session-tools.ts",
       "category": "unknownBoundary",
-      "line": 43,
+      "line": 36,
       "column": 45,
       "detail": "args"
     },
     {
       "file": "src/tools/interactive-session-tools.ts",
       "category": "unknownBoundary",
-      "line": 51,
+      "line": 44,
       "column": 46,
       "detail": "args"
     },
     {
       "file": "src/tools/interactive-session-tools.ts",
       "category": "unknownBoundary",
-      "line": 56,
+      "line": 49,
       "column": 46,
       "detail": "args"
     },
     {
       "file": "src/tools/interactive-session-tools.ts",
       "category": "unknownBoundary",
-      "line": 61,
+      "line": 54,
       "column": 44,
       "detail": "args"
     },
     {
       "file": "src/tools/interactive-session-tools.ts",
       "category": "unknownBoundary",
-      "line": 72,
+      "line": 64,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/interactive-session-tools.ts",
       "category": "unknownNarrowing",
-      "line": 231,
+      "line": 218,
       "column": 25,
       "detail": "error"
     },
     {
       "file": "src/tools/jobs.ts",
       "category": "unknownNarrowing",
-      "line": 529,
+      "line": 502,
       "column": 24,
       "detail": "error"
     },
@@ -6383,28 +6383,28 @@
     {
       "file": "src/tools/pentest-workflows.ts",
       "category": "doubleAssertion",
-      "line": 28,
+      "line": 26,
       "column": 4,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tools/pentest-workflows.ts",
       "category": "unknownInternal",
-      "line": 28,
+      "line": 26,
       "column": 17,
       "detail": "runBoundedRequests"
     },
     {
       "file": "src/tools/reducers/types.ts",
       "category": "unknownInternal",
-      "line": 8,
+      "line": 3,
       "column": 14,
       "detail": "findings"
     },
     {
       "file": "src/tools/registry.ts",
       "category": "unknownInternal",
-      "line": 137,
+      "line": 131,
       "column": 33,
       "detail": "url"
     },
@@ -6432,294 +6432,294 @@
     {
       "file": "src/tools/tool-types.ts",
       "category": "unknownBoundary",
-      "line": 30,
+      "line": 23,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/tools/validate.ts",
       "category": "unknownNarrowing",
-      "line": 121,
+      "line": 108,
       "column": 43,
       "detail": "raw"
     },
     {
       "file": "src/tools/validate.ts",
       "category": "unknownBoundary",
-      "line": 126,
+      "line": 113,
       "column": 39,
       "detail": "input"
     },
     {
       "file": "src/tools/web/capture.ts",
       "category": "unknownNarrowing",
-      "line": 389,
+      "line": 236,
       "column": 40,
       "detail": "raw"
     },
     {
       "file": "src/tools/web/fetch-core.ts",
       "category": "doubleAssertion",
-      "line": 104,
+      "line": 67,
       "column": 4,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tools/web/fetch-core.ts",
       "category": "unknownInternal",
-      "line": 104,
+      "line": 67,
       "column": 21,
       "detail": "webFetchCore"
     },
     {
       "file": "src/tools/web/issue-hop.ts",
       "category": "unknownNarrowing",
-      "line": 666,
+      "line": 537,
       "column": 8,
       "detail": "err"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownNarrowing",
-      "line": 221,
+      "line": 132,
       "column": 11,
       "detail": "parsed"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownInternal",
-      "line": 224,
+      "line": 135,
       "column": 34,
       "detail": "web"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownInternal",
-      "line": 226,
+      "line": 137,
       "column": 39,
       "detail": "results"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownInternal",
-      "line": 233,
+      "line": 144,
       "column": 15,
       "detail": "title"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownInternal",
-      "line": 234,
+      "line": 145,
       "column": 13,
       "detail": "url"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownInternal",
-      "line": 235,
+      "line": 146,
       "column": 21,
       "detail": "description"
     },
     {
       "file": "src/tools/web/providers/brave.ts",
       "category": "unknownInternal",
-      "line": 299,
+      "line": 190,
       "column": 17,
       "detail": "parsed"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownBoundary",
-      "line": 187,
+      "line": 115,
       "column": 30,
       "detail": "body"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 255,
+      "line": 172,
       "column": 16,
       "detail": "highlights"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 256,
+      "line": 173,
       "column": 10,
       "detail": "text"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 257,
+      "line": 174,
       "column": 13,
       "detail": "summary"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownNarrowing",
-      "line": 278,
+      "line": 189,
       "column": 30,
       "detail": "parsed"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 280,
+      "line": 191,
       "column": 42,
       "detail": "results"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 287,
+      "line": 198,
       "column": 15,
       "detail": "title"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 288,
+      "line": 199,
       "column": 13,
       "detail": "url"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 289,
+      "line": 200,
       "column": 20,
       "detail": "highlights"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 290,
+      "line": 201,
       "column": 14,
       "detail": "text"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 291,
+      "line": 202,
       "column": 17,
       "detail": "summary"
     },
     {
       "file": "src/tools/web/providers/exa.ts",
       "category": "unknownInternal",
-      "line": 347,
+      "line": 245,
       "column": 17,
       "detail": "parsed"
     },
     {
       "file": "src/tools/web/providers/tavily.ts",
       "category": "unknownNarrowing",
-      "line": 247,
+      "line": 146,
       "column": 11,
       "detail": "parsed"
     },
     {
       "file": "src/tools/web/providers/tavily.ts",
       "category": "unknownInternal",
-      "line": 250,
+      "line": 149,
       "column": 42,
       "detail": "results"
     },
     {
       "file": "src/tools/web/providers/tavily.ts",
       "category": "unknownInternal",
-      "line": 257,
+      "line": 156,
       "column": 15,
       "detail": "title"
     },
     {
       "file": "src/tools/web/providers/tavily.ts",
       "category": "unknownInternal",
-      "line": 258,
+      "line": 157,
       "column": 13,
       "detail": "url"
     },
     {
       "file": "src/tools/web/providers/tavily.ts",
       "category": "unknownInternal",
-      "line": 259,
+      "line": 158,
       "column": 17,
       "detail": "content"
     },
     {
       "file": "src/tools/web/providers/tavily.ts",
       "category": "unknownInternal",
-      "line": 322,
+      "line": 202,
       "column": 17,
       "detail": "parsed"
     },
     {
       "file": "src/tools/web/search-attempts.ts",
       "category": "doubleAssertion",
-      "line": 148,
+      "line": 142,
       "column": 4,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tools/web/search-attempts.ts",
       "category": "unknownInternal",
-      "line": 148,
+      "line": 142,
       "column": 13,
       "detail": "attemptProvider"
     },
     {
       "file": "src/tools/web/search-attempts.ts",
       "category": "unknownNarrowing",
-      "line": 378,
+      "line": 355,
       "column": 8,
       "detail": "err"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "unknownNarrowing",
-      "line": 12,
+      "line": 7,
       "column": 30,
       "detail": "value"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "unknownInternal",
-      "line": 17,
+      "line": 12,
       "column": 42,
       "detail": "chunks"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "unknownNarrowing",
-      "line": 21,
+      "line": 16,
       "column": 51,
       "detail": "value"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "doubleAssertion",
-      "line": 51,
+      "line": 46,
       "column": 17,
       "detail": "as unknown as {\n    content: unknown;\n  }"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "unknownInternal",
-      "line": 51,
+      "line": 46,
       "column": 45,
       "detail": "proto"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "unknownInternal",
-      "line": 52,
+      "line": 47,
       "column": 14,
       "detail": "content"
     },
     {
       "file": "src/tui-v2/bootstrap/patch-opentui-text.ts",
       "category": "unknownNarrowing",
-      "line": 62,
+      "line": 57,
       "column": 16,
       "detail": "value"
     },
@@ -6747,259 +6747,259 @@
     {
       "file": "src/tui-v2/components/modal/keys-modal.tsx",
       "category": "suppression",
-      "line": 114,
+      "line": 91,
       "column": 8,
       "detail": "eslint-disable"
     },
     {
       "file": "src/tui-v2/components/modal/scope-modal.tsx",
       "category": "suppression",
-      "line": 82,
+      "line": 71,
       "column": 8,
       "detail": "eslint-disable"
     },
     {
       "file": "src/tui-v2/components/toast/toast-host.tsx",
       "category": "doubleAssertion",
-      "line": 248,
+      "line": 224,
       "column": 6,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/tui-v2/components/toast/toast-host.tsx",
       "category": "unknownInternal",
-      "line": 248,
+      "line": 224,
       "column": 12,
       "detail": "unknown"
     },
     {
       "file": "src/tui-v2/composer/composer-editor.tsx",
       "category": "suppression",
-      "line": 209,
+      "line": 181,
       "column": 8,
       "detail": "eslint-disable"
     },
     {
       "file": "src/tui-v2/composer/composer-editor.tsx",
       "category": "suppression",
-      "line": 781,
+      "line": 705,
       "column": 8,
       "detail": "eslint-disable"
     },
     {
       "file": "src/tui-v2/composer/composer-wheel.ts",
       "category": "unknownInternal",
-      "line": 59,
+      "line": 52,
       "column": 19,
       "detail": "moveCursorUp"
     },
     {
       "file": "src/tui-v2/composer/composer-wheel.ts",
       "category": "unknownInternal",
-      "line": 60,
+      "line": 53,
       "column": 21,
       "detail": "moveCursorDown"
     },
     {
       "file": "src/tui-v2/composer/disable-native-textarea-scroll.ts",
       "category": "unknownNarrowing",
-      "line": 29,
+      "line": 17,
       "column": 11,
       "detail": "this"
     },
     {
       "file": "src/types.ts",
       "category": "unknownBoundary",
-      "line": 47,
+      "line": 42,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/types.ts",
       "category": "unknownBoundary",
-      "line": 80,
+      "line": 57,
       "column": 32,
       "detail": "items"
     },
     {
       "file": "src/types.ts",
       "category": "unknownBoundary",
-      "line": 147,
+      "line": 112,
       "column": 29,
       "detail": "unknown"
     },
     {
       "file": "src/types.ts",
       "category": "unknownBoundary",
-      "line": 148,
+      "line": 113,
       "column": 14,
       "detail": "unknown"
     },
     {
       "file": "src/types.ts",
       "category": "unknownBoundary",
-      "line": 255,
+      "line": 187,
       "column": 30,
       "detail": "properties"
     },
     {
       "file": "src/types.ts",
       "category": "unknownInternal",
-      "line": 438,
+      "line": 330,
       "column": 25,
       "detail": "rawAssistantMessage"
     },
     {
       "file": "src/types.ts",
       "category": "unknownBoundary",
-      "line": 475,
+      "line": 357,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/ui-core/bootstrap/console-guard.ts",
       "category": "unknownBoundary",
-      "line": 38,
+      "line": 23,
       "column": 32,
       "detail": "args"
     },
     {
       "file": "src/ui-core/bootstrap/console-guard.ts",
       "category": "doubleAssertion",
-      "line": 62,
+      "line": 47,
       "column": 18,
       "detail": "as unknown as Record<string, unknown>"
     },
     {
       "file": "src/ui-core/bootstrap/console-guard.ts",
       "category": "unknownInternal",
-      "line": 62,
+      "line": 47,
       "column": 29,
       "detail": "target"
     },
     {
       "file": "src/ui-core/bootstrap/console-guard.ts",
       "category": "unknownBoundary",
-      "line": 62,
+      "line": 47,
       "column": 55,
       "detail": "target"
     },
     {
       "file": "src/ui-core/bootstrap/console-guard.ts",
       "category": "unknownInternal",
-      "line": 63,
+      "line": 48,
       "column": 37,
       "detail": "originals"
     },
     {
       "file": "src/ui-core/bootstrap/console-guard.ts",
       "category": "unknownBoundary",
-      "line": 82,
+      "line": 67,
       "column": 32,
       "detail": "args"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownBoundary",
-      "line": 20,
+      "line": 8,
       "column": 41,
       "detail": "args"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownInternal",
-      "line": 20,
+      "line": 8,
       "column": 62,
       "detail": "on"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownBoundary",
-      "line": 21,
+      "line": 9,
       "column": 42,
       "detail": "args"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownInternal",
-      "line": 21,
+      "line": 9,
       "column": 63,
       "detail": "off"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownNarrowing",
-      "line": 33,
+      "line": 19,
       "column": 31,
       "detail": "error"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownBoundary",
-      "line": 68,
+      "line": 42,
       "column": 19,
       "detail": "args"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "doubleAssertion",
-      "line": 72,
+      "line": 46,
       "column": 37,
       "detail": "as unknown as ProcessLike"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownInternal",
-      "line": 72,
+      "line": 46,
       "column": 48,
       "detail": "unknown"
     },
     {
       "file": "src/ui-core/bootstrap/lifecycle.ts",
       "category": "unknownBoundary",
-      "line": 195,
+      "line": 149,
       "column": 19,
       "detail": "args"
     },
     {
       "file": "src/ui-core/commands/config-commands.ts",
       "category": "suppression",
-      "line": 350,
+      "line": 344,
       "column": 14,
       "detail": "eslint-disable"
     },
     {
       "file": "src/ui-core/composer/composer-wheel.ts",
       "category": "unknownInternal",
-      "line": 59,
+      "line": 52,
       "column": 19,
       "detail": "moveCursorUp"
     },
     {
       "file": "src/ui-core/composer/composer-wheel.ts",
       "category": "unknownInternal",
-      "line": 60,
+      "line": 53,
       "column": 21,
       "detail": "moveCursorDown"
     },
     {
       "file": "src/ui-core/controllers/selection-controller.ts",
       "category": "unknownInternal",
-      "line": 57,
+      "line": 49,
       "column": 50,
       "detail": "error"
     },
     {
       "file": "src/ui-core/controllers/toast-controller.ts",
       "category": "doubleAssertion",
-      "line": 159,
+      "line": 135,
       "column": 6,
       "detail": "as unknown as { unref?: () => void }"
     },
     {
       "file": "src/ui-core/controllers/toast-controller.ts",
       "category": "unknownInternal",
-      "line": 159,
+      "line": 135,
       "column": 15,
       "detail": "resetTimer"
     },
@@ -7013,112 +7013,112 @@
     {
       "file": "src/ui-core/rendering/open-tool-output.ts",
       "category": "unknownInternal",
-      "line": 53,
+      "line": 39,
       "column": 44,
       "detail": "parsed"
     },
     {
       "file": "src/ui-core/rendering/open-tool-output.ts",
       "category": "unknownNarrowing",
-      "line": 76,
+      "line": 61,
       "column": 36,
       "detail": "parsed"
     },
     {
       "file": "src/ui-core/rendering/open-tool-output.ts",
       "category": "unknownInternal",
-      "line": 78,
+      "line": 63,
       "column": 37,
       "detail": "results"
     },
     {
       "file": "src/ui-core/rendering/open-tool-output.ts",
       "category": "unknownBoundary",
-      "line": 83,
+      "line": 68,
       "column": 39,
       "detail": "e"
     },
     {
       "file": "src/ui-core/rendering/open-tool-output.ts",
       "category": "unknownBoundary",
-      "line": 118,
+      "line": 96,
       "column": 54,
       "detail": "parsed"
     },
     {
       "file": "src/ui-core/rendering/tool-presenter.ts",
       "category": "unknownBoundary",
-      "line": 56,
+      "line": 46,
       "column": 54,
       "detail": "parsed"
     },
     {
       "file": "src/ui-core/state/hydrate/classic-transcript.ts",
       "category": "unknownInternal",
-      "line": 94,
+      "line": 91,
       "column": 52,
       "detail": "fileChanges"
     },
     {
       "file": "src/ui-core/state/hydrate/classic-transcript.ts",
       "category": "unknownInternal",
-      "line": 95,
+      "line": 92,
       "column": 48,
       "detail": "timestamp"
     },
     {
       "file": "src/ui-core/state/hydrate/classic-transcript.ts",
       "category": "unknownInternal",
-      "line": 96,
+      "line": 93,
       "column": 46,
       "detail": "endedAt"
     },
     {
       "file": "src/ui-core/state/hydrate/classic-transcript.ts",
       "category": "unknownInternal",
-      "line": 97,
+      "line": 94,
       "column": 47,
       "detail": "durationMs"
     },
     {
       "file": "src/ui-core/state/hydrate/from-messages.ts",
       "category": "unknownBoundary",
-      "line": 20,
+      "line": 15,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/ui-core/state/hydrate/from-messages.ts",
       "category": "unknownBoundary",
-      "line": 47,
+      "line": 33,
       "column": 24,
       "detail": "args"
     },
     {
       "file": "src/ui-core/state/hydrate/from-messages.ts",
       "category": "unknownBoundary",
-      "line": 69,
+      "line": 55,
       "column": 45,
       "detail": "rec"
     },
     {
       "file": "src/ui-core/state/hydrate/from-messages.ts",
       "category": "unknownBoundary",
-      "line": 130,
+      "line": 110,
       "column": 42,
       "detail": "args"
     },
     {
       "file": "src/ui-core/state/hydrate/from-messages.ts",
       "category": "unknownBoundary",
-      "line": 137,
+      "line": 117,
       "column": 51,
       "detail": "enrichToolsFromMessages"
     },
     {
       "file": "src/ui-core/state/hydrate/from-messages.ts",
       "category": "unknownBoundary",
-      "line": 247,
+      "line": 214,
       "column": 60,
       "detail": "callArgs"
     }
