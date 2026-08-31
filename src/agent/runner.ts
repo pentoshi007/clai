@@ -43,6 +43,7 @@ import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
+import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.js";
 import {
   createMcpAgentCallFailure,
   createMcpAgentToolExecutor,
@@ -360,9 +361,7 @@ import {
 } from "./task-evidence.js";
 import {
   buildSessionStateBlock,
-  inferNextHint,
   upsertSessionStateMessage,
-  type SessionStateSnapshot,
 } from "./session-state.js";
 import {
   buildContinueOrientation,
@@ -1325,28 +1324,12 @@ export async function runAgentTurn(
       const pm =
         p?.meta?.packageManager ??
         (root ? detectPackageManager(root) : undefined);
-      const open = p?.tasks.find(
-        (task) => task.state === "in_progress" && !task.responderOwned,
-      );
-      const pending = p?.tasks
-        .filter((task) => task.state === "pending" && !task.responderOwned)
-        .map((t) => `[${t.id}] ${t.title}`);
-      const done = p?.tasks
-        .filter((t) => t.state === "done" || t.state === "skipped")
-        .map((t) => t.id);
-      const jobBits = runningJobs.slice(0, 4).map((j) => {
-        const cmd = (j.commandDisplay || j.command).replace(/\s+/g, " ").trim();
-        return `${j.id} ${j.status} ${cmd.slice(0, 40)}`;
-      });
-      const snap: SessionStateSnapshot = {
-        goal: p?.goal ?? prompt.slice(0, 160),
+      const snap = buildTurnSessionStateSnapshot({
+        plan: p,
+        prompt,
         projectRoot: root,
         packageManager: pm,
-        planStatus: p?.status,
-        planKind: p?.kind,
-        openTask: open ? `[${open.id}] ${open.title}` : undefined,
-        pendingTasks: pending,
-        doneTasks: done,
+        runningJobs,
         featureAppRequired: featureAppAsk,
         featureSeen: sawFeatureImplWrite,
         scaffoldOk: sawScaffoldOk,
@@ -1354,15 +1337,8 @@ export async function runAgentTurn(
         serverProbedOk: sawLocalHttpProbe,
         lastProbeFailed: sawFailedLocalHttpProbe,
         lastOkTool: taskWorkLedger?.lastOkTool,
-        backgroundJobs:
-          jobBits.length > 0
-            ? `${runningJobs.length} running: ${jobBits.join("; ")}`
-            : undefined,
-        engagementNote: pentestSession
-          ? "remote/security engagement — no local dev server as completion"
-          : undefined,
-      };
-      snap.nextHint = inferNextHint(snap);
+        pentestSession,
+      });
       upsertRequestContextMessage(messages, requestContextMessage);
       // One live plan copy, refreshed at the same protocol-safe points as
       // SESSION STATE so advancing tasks are never contradicted by a stale copy.
