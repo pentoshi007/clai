@@ -127,7 +127,8 @@ function appendUserInput(
   supportsVision: boolean,
 ): void {
   const blocks: Array<Record<string, unknown>> = [];
-  if (message.content) blocks.push({ type: "input_text", text: message.content });
+  if (message.content)
+    blocks.push({ type: "input_text", text: message.content });
   if (supportsVision && message.images && message.images.length > 0) {
     for (const img of message.images) appendUserImageBlock(blocks, img);
   }
@@ -232,7 +233,10 @@ function toResponsesTools(
 function responsesMaxOutputTokens(plan: RequestPlanV1): number {
   const reasoningOn = Boolean(plan.controls.reasoning?.enabled);
   const defaultMax = reasoningOn ? 8192 : 4096;
-  const requestedMax = Math.max(16, plan.controls.requestedMaxTokens ?? defaultMax);
+  const requestedMax = Math.max(
+    16,
+    plan.controls.requestedMaxTokens ?? defaultMax,
+  );
   return plan.policy.limits.outputTokens === undefined
     ? requestedMax
     : Math.min(requestedMax, plan.policy.limits.outputTokens);
@@ -266,10 +270,14 @@ export function buildResponsesBody(
     maxTokens: options.maxTokens,
   });
   const reasoning = config.reasoningPayload(plan.controls.reasoning);
-  const input = toResponsesInput([...plan.timeline.messages], plan.images.visionAccepted, {
-    target: plan.replay.target,
-    observe: options.reasoningArtifactReplayObserver,
-  });
+  const input = toResponsesInput(
+    [...plan.timeline.messages],
+    plan.images.visionAccepted,
+    {
+      target: plan.replay.target,
+      observe: options.reasoningArtifactReplayObserver,
+    },
+  );
   const tools = toResponsesTools(
     plan.tools.definitions.length ? [...plan.tools.definitions] : undefined,
   );

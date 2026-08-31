@@ -41,7 +41,8 @@ export async function responsesComplete(
     parsed.reasoningItemPositions,
   );
   const usage = withReasoningObservation(
-    parsed.usage ?? parseResponsesUsage((data as Record<string, unknown>).usage),
+    parsed.usage ??
+      parseResponsesUsage((data as Record<string, unknown>).usage),
     Boolean(parsed.reasoningSummary.trim()),
   );
   const outputBudgetIncomplete = isOutputBudgetIncomplete(

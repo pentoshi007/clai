@@ -23,7 +23,10 @@ export interface ResponsesDialectConfig {
   readonly displayName: string;
   readonly artifactDialect: ReasoningArtifactDialect;
   readonly terminalPolicy: StreamTerminalPolicy;
-  buildHeaders(auth: ProviderAuth, accept: ResponsesAccept): Record<string, string>;
+  buildHeaders(
+    auth: ProviderAuth,
+    accept: ResponsesAccept,
+  ): Record<string, string>;
   reasoningPayload(
     reasoning: ReasoningPreference | undefined,
   ): Record<string, unknown> | undefined;

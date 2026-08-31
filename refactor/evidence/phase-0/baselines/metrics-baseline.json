@@ -411,6 +411,7 @@
     "src/llm/routing/key-rotation.ts#runWithKeyRotation@88",
     "src/llm/tool-protocol.ts#accumulateOpenAiToolCallDelta@413",
     "src/llm/tool-protocol.ts#splitJsonObjectSegments@165",
+    "src/llm/tool-wire/argument-repair.ts#splitJsonObjectSegments@8",
     "src/llm/wire/chat-body.ts#emitChatCompletionsBody@135",
     "src/llm/wire/openai-complete.ts#openAiCompatibleComplete@30",
     "src/llm/wire/openai-stream.ts#openAiCompatibleStream@59",

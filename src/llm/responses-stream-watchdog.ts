@@ -43,7 +43,10 @@ export function createStreamIdleWatchdog(): StreamIdleWatchdog {
   };
   const armTransportTimer = (budgetMs: number): void => {
     if (transportTimer) clearTimeout(transportTimer);
-    transportTimer = setTimeout(() => fireStall("transport", budgetMs), budgetMs);
+    transportTimer = setTimeout(
+      () => fireStall("transport", budgetMs),
+      budgetMs,
+    );
   };
   const armOutputTimer = (): void => {
     if (outputTimer) clearTimeout(outputTimer);

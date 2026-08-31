@@ -97,7 +97,10 @@ function streamStallError(
   watchdog: StreamIdleWatchdog,
 ): ProviderError {
   const seconds = Math.round(watchdog.firedBudgetMs() / 1000);
-  if (watchdog.firedWatchdog() === "transport" || !watchdog.sawTransportActivity()) {
+  if (
+    watchdog.firedWatchdog() === "transport" ||
+    !watchdog.sawTransportActivity()
+  ) {
     if (!watchdog.sawTransportActivity()) {
       return new ProviderError(
         `${config.displayName} request timed out before any response (${seconds}s) — no data arrived on the connection.`,
@@ -117,7 +120,10 @@ function streamLoopStallError(
   watchdog: StreamIdleWatchdog,
 ): ProviderError {
   const seconds = Math.round(watchdog.firedBudgetMs() / 1000);
-  if (watchdog.firedWatchdog() === "transport" || !watchdog.sawTransportActivity()) {
+  if (
+    watchdog.firedWatchdog() === "transport" ||
+    !watchdog.sawTransportActivity()
+  ) {
     if (!watchdog.sawTransportActivity()) {
       return new ProviderError(
         `${config.displayName} request timed out before any response (${seconds}s) — no data arrived on the connection.`,
@@ -154,7 +160,8 @@ function jsonFallbackResult(
     parsed.reasoningItemPositions,
   );
   const usage = withReasoningObservation(
-    parsed.usage ?? parseResponsesUsage((data as Record<string, unknown>).usage),
+    parsed.usage ??
+      parseResponsesUsage((data as Record<string, unknown>).usage),
     Boolean(parsed.reasoningSummary.trim()),
   );
   const outputBudgetIncomplete = isOutputBudgetIncomplete(
@@ -170,7 +177,10 @@ function jsonFallbackResult(
   }
   emitStreamReasoningArtifacts(ctx.request.onStreamEvent, reasoningArtifacts);
   if (parsed.reasoningSummary) {
-    emitStreamReasoningDelta(ctx.request.onStreamEvent, parsed.reasoningSummary);
+    emitStreamReasoningDelta(
+      ctx.request.onStreamEvent,
+      parsed.reasoningSummary,
+    );
   }
   if (parsed.text) ctx.onToken(parsed.text);
   return assembleCompletionResult({
@@ -244,7 +254,10 @@ async function runResponsesStreamLoop(
   try {
     while (true) {
       throwIfStreamAborted(request, watchdog.controller);
-      const { done, value } = await readWithAbort(reader, watchdog.controller.signal);
+      const { done, value } = await readWithAbort(
+        reader,
+        watchdog.controller.signal,
+      );
       throwIfStreamAborted(request, watchdog.controller);
       if (done) break;
       if (value && value.byteLength > 0) watchdog.noteTransportActivity();
@@ -265,7 +278,10 @@ async function runResponsesStreamLoop(
     if (watchdog.fired()) throw streamLoopStallError(config, watchdog);
     throw error;
   } finally {
-    watchdog.controller.signal.removeEventListener("abort", cancelReaderOnAbort);
+    watchdog.controller.signal.removeEventListener(
+      "abort",
+      cancelReaderOnAbort,
+    );
     void reader.cancel().catch(() => undefined);
     tryReleaseReader(reader);
   }
@@ -276,7 +292,8 @@ function requireStreamTerminalProof(
   state: StreamAccumulator,
 ): void {
   let toolArgumentBytes = 0;
-  for (const s of state.toolCallState.values()) toolArgumentBytes += s.arguments.length;
+  for (const s of state.toolCallState.values())
+    toolArgumentBytes += s.arguments.length;
   requireTerminalProof({
     provider: config.displayName,
     policy: config.terminalPolicy,
@@ -329,7 +346,13 @@ export async function responsesStream(
         watchdog,
       );
     }
-    const ctx = buildStreamEventContext(config, model, request, watchdog, onToken);
+    const ctx = buildStreamEventContext(
+      config,
+      model,
+      request,
+      watchdog,
+      onToken,
+    );
     return await runResponsesStreamLoop(ctx, response);
   } finally {
     cleanup();

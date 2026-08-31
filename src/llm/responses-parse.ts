@@ -43,11 +43,14 @@ export function parseResponsesUsage(raw: unknown): TokenUsage | undefined {
   const totalTokens =
     (u.total_tokens as number | undefined) ??
     (u.totalTokens as number | undefined);
-  const inputDetails = u.input_tokens_details as Record<string, unknown> | undefined;
-  const promptDetails = u.prompt_tokens_details as Record<string, unknown> | undefined;
-  const outputDetails = u.output_tokens_details as Record<string, unknown> | undefined;
-  const completionDetails =
-    u.completion_tokens_details as Record<string, unknown> | undefined;
+  const inputDetails = u.input_tokens_details as
+    Record<string, unknown> | undefined;
+  const promptDetails = u.prompt_tokens_details as
+    Record<string, unknown> | undefined;
+  const outputDetails = u.output_tokens_details as
+    Record<string, unknown> | undefined;
+  const completionDetails = u.completion_tokens_details as
+    Record<string, unknown> | undefined;
   const cached = inputDetails?.cached_tokens ?? promptDetails?.cached_tokens;
   const cacheCreation =
     inputDetails?.cache_creation_tokens ??
@@ -155,7 +158,8 @@ export function parseResponsesOutput(data: {
   const toolCalls: NativeToolCall[] = [];
   const reasoningItems: Array<Record<string, unknown>> = [];
   const reasoningItemSequences: number[] = [];
-  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
+  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> =
+    [];
   for (const [sequence, item] of output.entries()) {
     if (!item || typeof item !== "object") continue;
     const obj = item as Record<string, unknown>;
@@ -230,8 +234,8 @@ export function collectDoneToolCalls(
   for (const [, state] of toolCallState) {
     if (!state.name) continue;
     const canonical = state.name
-      ? fromWireName(state.name) ?? state.name
-      : state.name ?? "";
+      ? (fromWireName(state.name) ?? state.name)
+      : (state.name ?? "");
     const raw = state.arguments;
     toolCalls.push({
       id: state.callId ?? state.id ?? `call_${toolCalls.length}`,
@@ -250,7 +254,7 @@ export function collectEofToolCalls(
   for (const [, state] of toolCallState) {
     if (!state.name && !state.arguments) continue;
     const name = state.name || "";
-    const canonical = name ? fromWireName(name) ?? name : "";
+    const canonical = name ? (fromWireName(name) ?? name) : "";
     if (!canonical) continue;
     const raw = state.arguments;
     toolCalls.push({
@@ -276,7 +280,10 @@ function reasoningResultFields(
 ): Record<string, unknown> {
   if (parsed.reasoningItems.length) {
     return {
-      reasoningBlock: { text: parsed.reasoningSummary, items: parsed.reasoningItems },
+      reasoningBlock: {
+        text: parsed.reasoningSummary,
+        items: parsed.reasoningItems,
+      },
     };
   }
   if (parsed.reasoningSummary) {
@@ -285,9 +292,14 @@ function reasoningResultFields(
   return {};
 }
 
-export function isOutputBudgetIncomplete(data: Record<string, unknown>): boolean {
-  const details = data.incomplete_details as Record<string, unknown> | undefined;
-  return data.status === "incomplete" && details?.reason === "max_output_tokens";
+export function isOutputBudgetIncomplete(
+  data: Record<string, unknown>,
+): boolean {
+  const details = data.incomplete_details as
+    Record<string, unknown> | undefined;
+  return (
+    data.status === "incomplete" && details?.reason === "max_output_tokens"
+  );
 }
 
 export interface CompletionAssembly {
@@ -299,9 +311,17 @@ export interface CompletionAssembly {
   outputBudgetIncomplete: boolean;
 }
 
-export function assembleCompletionResult(input: CompletionAssembly): CompletionResult {
-  const { config, model, parsed, usage, reasoningArtifacts, outputBudgetIncomplete } =
-    input;
+export function assembleCompletionResult(
+  input: CompletionAssembly,
+): CompletionResult {
+  const {
+    config,
+    model,
+    parsed,
+    usage,
+    reasoningArtifacts,
+    outputBudgetIncomplete,
+  } = input;
   return {
     text: parsed.text,
     provider: config.providerId,

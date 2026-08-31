@@ -559,6 +559,74 @@ const move = ({ from, to, symbols, dry }) => {
   console.log(
     `moved ${movingNames.size} declaration(s) → ${to}; ${from} now ${sourceText.split("\n").length} lines`,
   );
+  for (const entry of [to, from]) {
+    const cycle = findCycle(entry);
+    if (cycle) {
+      console.error(
+        `CYCLE: value import cycle introduced:\n  ${cycle.map((file) => relative(process.cwd(), file)).join("\n  → ")}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
+};
+
+/**
+ * Value-level import cycle detector. A cycle between modules that only exchange
+ * types is harmless, but a cycle where a moved `const` table is evaluated before
+ * its dependency is initialized silently produces undefined data at runtime, so
+ * a new cycle must fail the move loudly instead of reaching the test suite.
+ */
+const findCycle = (entry) => {
+  const seen = new Map();
+  const resolveFile = (specifier, fromFile) => {
+    if (!specifier.startsWith(".")) return undefined;
+    const base = resolve(dirname(fromFile), specifier).replace(/\.js$/, "");
+    for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`]) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return undefined;
+  };
+  const valueEdges = (file) => {
+    if (seen.has(file)) return seen.get(file);
+    const { source } = parse(file);
+    const edges = [];
+    for (const statement of source.statements) {
+      if (ts.isImportDeclaration(statement)) {
+        if (statement.importClause?.isTypeOnly) continue;
+        const clause = statement.importClause;
+        if (
+          clause?.namedBindings &&
+          ts.isNamedImports(clause.namedBindings) &&
+          clause.namedBindings.elements.every((element) => element.isTypeOnly)
+        ) {
+          continue;
+        }
+        const target = resolveFile(statement.moduleSpecifier.text, file);
+        if (target) edges.push(target);
+      }
+    }
+    seen.set(file, edges);
+    return edges;
+  };
+  const stack = [];
+  const visiting = new Set();
+  const done = new Set();
+  const walk = (file) => {
+    if (done.has(file)) return undefined;
+    if (visiting.has(file)) return [...stack.slice(stack.indexOf(file)), file];
+    visiting.add(file);
+    stack.push(file);
+    for (const next of valueEdges(file)) {
+      const cycle = walk(next);
+      if (cycle) return cycle;
+    }
+    stack.pop();
+    visiting.delete(file);
+    done.add(file);
+    return undefined;
+  };
+  return walk(entry);
 };
 
 const args = process.argv.slice(2);

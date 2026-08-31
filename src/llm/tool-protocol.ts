@@ -4,6 +4,9 @@ import type {
   ToolChoice,
   ToolDefinition,
 } from "../types.js";
+import { parseToolArguments } from "./tool-wire/argument-repair.js";
+export { repairConcatenatedToolArguments } from "./tool-wire/argument-repair.js";
+export { parseToolArguments };
 
 export type { NativeToolCall, ToolChoice, ToolDefinition };
 
@@ -44,10 +47,13 @@ export function registerWireName(canonical: string, wire?: string): void {
   const w = wire ?? toWireName(canonical);
   const existing = wireToCanonical.get(w);
   if (existing !== undefined && existing !== canonical) {
-    throw new Error(`Tool wire name collision: ${w} maps to both ${existing} and ${canonical}`);
+    throw new Error(
+      `Tool wire name collision: ${w} maps to both ${existing} and ${canonical}`,
+    );
   }
   wireToCanonical.set(w, canonical);
-  if (!wireToCanonical.has(canonical)) wireToCanonical.set(canonical, canonical);
+  if (!wireToCanonical.has(canonical))
+    wireToCanonical.set(canonical, canonical);
 }
 
 /** Register primary wire + snake_case alias when they differ. */
@@ -109,9 +115,17 @@ function longestRegisteredPrefix(cleaned: string): string | undefined {
 }
 
 function normalizedWireCandidates(cleaned: string): string[] {
-  const underscored = cleaned.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_");
+  const underscored = cleaned
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/_+/g, "_");
   const dashless = underscored.replace(/-/g, "_");
-  return [cleaned, underscored, dashless, underscored.toLowerCase(), dashless.toLowerCase()];
+  return [
+    cleaned,
+    underscored,
+    dashless,
+    underscored.toLowerCase(),
+    dashless.toLowerCase(),
+  ];
 }
 
 function hashlessStem(wire: string): string {
@@ -155,112 +169,12 @@ export function fromWireName(wire: string): string | undefined {
   return `${cleaned.slice(0, idx)}.${cleaned.slice(idx + 1).replace(/_/g, ".")}`;
 }
 
-/**
- * Split a string into top-level balanced `{…}` segments.
- *
- * Returns undefined unless the whole string is exactly two or more complete
- * objects separated only by whitespace. Truncated or otherwise malformed JSON
- * must stay malformed so write-salvage can still recover partial content.
- */
-function splitJsonObjectSegments(raw: string): string[] | undefined {
-  const segments: string[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
-  for (let index = 0; index < raw.length; index += 1) {
-    const char = raw[index]!;
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === '"') inString = false;
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      continue;
-    }
-    if (char === "{") {
-      if (depth === 0) start = index;
-      depth += 1;
-      continue;
-    }
-    if (char === "}") {
-      depth -= 1;
-      if (depth < 0) return undefined;
-      if (depth === 0 && start >= 0) {
-        segments.push(raw.slice(start, index + 1));
-        start = -1;
-      }
-      continue;
-    }
-    if (depth === 0 && !/\s/.test(char)) return undefined;
-  }
-  if (depth !== 0 || inString) return undefined;
-  return segments.length >= 2 ? segments : undefined;
-}
-
-/**
- * Recover arguments from a provider that repeats the whole arguments object in
- * consecutive streaming deltas, producing `{"path":"x"}{"path":"x"}`.
- * Observed on Bynara/Grok; concatenation made every such call unparseable and
- * the tool never ran. Later non-empty values win so a growing snapshot keeps
- * its final state.
- */
-export function repairConcatenatedToolArguments(
-  raw: string,
-): Record<string, unknown> | undefined {
-  const segments = splitJsonObjectSegments(raw.trim());
-  if (!segments) return undefined;
-  const merged: Record<string, unknown> = {};
-  for (const segment of segments) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(segment);
-    } catch {
-      return undefined;
-    }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return undefined;
-    }
-    for (const [key, value] of Object.entries(parsed)) {
-      const empty = value === undefined || value === null || value === "";
-      if (!empty || !(key in merged)) merged[key] = value;
-    }
-  }
-  return merged;
-}
-
-export function parseToolArguments(raw: unknown): Record<string, unknown> {
-  if (raw == null) return {};
-  if (typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  if (typeof raw === "string") {
-    const t = raw.trim();
-    if (!t) return {};
-    try {
-      const parsed = JSON.parse(t) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // fall through to repair
-    }
-    const repaired = repairConcatenatedToolArguments(t);
-    if (repaired) return repaired;
-    return { _parseError: true, _raw: t };
-  }
-  return {};
-}
-
 let syntheticToolCallSequence = 0;
 
 export function syntheticToolCallId(index: number): string {
   syntheticToolCallSequence += 1;
   return `call_${index}_${Date.now().toString(36)}_${syntheticToolCallSequence.toString(36)}`;
 }
-
 
 const TOOLS_PARAMETER_NAMES = new Set([
   "tools",
@@ -334,9 +248,7 @@ export function isToolsUnsupportedError(error: unknown): boolean {
   return false;
 }
 
-export function mapToolChoiceToOpenAi(
-  choice: ToolChoice | undefined,
-): unknown {
+export function mapToolChoiceToOpenAi(choice: ToolChoice | undefined): unknown {
   if (choice === undefined || choice === "auto") return "auto";
   if (choice === "none") return "none";
   if (choice === "required") return "required";
@@ -361,9 +273,10 @@ export function mapToolChoiceToAnthropic(
   return { type: "auto" };
 }
 
-export function mapToolChoiceToGemini(
-  choice: ToolChoice | undefined,
-): { mode: string; allowedFunctionNames?: string[] } {
+export function mapToolChoiceToGemini(choice: ToolChoice | undefined): {
+  mode: string;
+  allowedFunctionNames?: string[];
+} {
   if (choice === "none") return { mode: "NONE" };
   if (choice === "required") return { mode: "ANY" };
   if (typeof choice === "object" && choice.type === "function") {
@@ -428,7 +341,8 @@ export function accumulateOpenAiToolCallDelta(
   const hadName = Boolean(acc.name);
   if (entry.id) acc.id = entry.id;
   if (entry.function?.name) {
-    const nextName = sanitizeToolName(entry.function.name) || entry.function.name;
+    const nextName =
+      sanitizeToolName(entry.function.name) || entry.function.name;
     // X2: if this index already has a different clean name, do not clobber
     // args with a second tool's payload — keep the first name.
     if (

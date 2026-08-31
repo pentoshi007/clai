@@ -65,7 +65,8 @@ export function noteReasoningItem(
   const existingIndex = state.reasoningItemIndexes.get(key);
   if (existingIndex !== undefined) {
     state.reasoningItems[existingIndex] = { ...item };
-    if (sequence !== undefined) state.reasoningItemSequences[existingIndex] = sequence;
+    if (sequence !== undefined)
+      state.reasoningItemSequences[existingIndex] = sequence;
     if (toolCallIndex !== undefined) {
       state.reasoningItemToolCallIndices[existingIndex] = toolCallIndex;
     }
@@ -104,7 +105,9 @@ export function absorbResponseOutput(
   emitReasoningDelta: (text: string) => void,
 ): void {
   if (!Array.isArray(resp.output)) return;
-  const out = parseResponsesOutput(resp as { output?: unknown; usage?: unknown });
+  const out = parseResponsesOutput(
+    resp as { output?: unknown; usage?: unknown },
+  );
   for (const [index, item] of out.reasoningItems.entries()) {
     const position = out.reasoningItemPositions[index];
     noteReasoningItem(state, item, position?.sequence, position?.toolCallIndex);
@@ -114,7 +117,9 @@ export function absorbResponseOutput(
   }
   if (out.text && !state.visible.trim()) emitVisible(out.text);
   for (const tc of out.toolCalls) {
-    const exists = [...state.toolCallState.values()].some((s) => s.callId === tc.id);
+    const exists = [...state.toolCallState.values()].some(
+      (s) => s.callId === tc.id,
+    );
     if (!exists) {
       state.toolCallState.set(tc.id, {
         id: tc.id,
