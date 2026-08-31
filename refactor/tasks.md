@@ -94,12 +94,14 @@ Milestone boundary: never create parallel registries, job stores, or process own
 
 Plan: [plan/phase-4.md](plan/phase-4.md)
 
-- [ ] **P4-01 Freeze storage contracts** — Characterize paths, formats, migrations, transactions, recovery, permissions, ordering, retention, and redaction.
-- [ ] **P4-02 Split history codecs/backends** — Separate record codecs, JSONL/SQLite access, indexing, recovery, and scrub/retention.
-- [ ] **P4-03 Split plan persistence/domain mapping** — Preserve single-active, dependency, transaction, revision, and session linkage behavior.
-- [ ] **P4-04 Split config/key/scope storage** — Introduce narrow validated stores without changing precedence, masking, or file modes.
-- [ ] **P4-05 Centralize shared atomic primitives** — Reuse only proven identical path/permission/atomic-write behavior; avoid premature generic repositories.
-- [ ] **P4-06 Reduce facades and close gates** — Make scoped files `<500`, remove legacy entries, and pass store/history/plan/config/key/scope metrics and tests.
+- [x] **P4-01 Freeze storage contracts** — Characterize paths, formats, migrations, transactions, recovery, permissions, ordering, retention, and redaction.
+- [x] **P4-02 Split history codecs/backends** — Separate record codecs, JSONL/SQLite access, indexing, recovery, and scrub/retention.
+- [x] **P4-03 Split plan persistence/domain mapping** — Preserve single-active, dependency, transaction, revision, and session linkage behavior.
+- [x] **P4-04 Split config/key/scope storage** — Introduce narrow validated stores without changing precedence, masking, or file modes.
+- [x] **P4-05 Centralize shared atomic primitives** — Reuse only proven identical path/permission/atomic-write behavior; avoid premature generic repositories.
+- [x] **P4-06 Reduce facades and close gates** — Make scoped files `<500`, remove legacy entries, and pass store/history/plan/config/key/scope metrics and tests.
+
+Evidence: [phase-4 evidence](evidence/phase-4/README.md). history 1,931 -> 372, plan 1,187 -> 267, keys 994 -> 387, config 687 -> 153; every new store module under 400 lines; formats, locks and retention untouched.
 
 Milestone boundary: migrations or format changes require separately approved behavior work. Suggested final subject: `refactor(store): separate durable storage concerns`.
 

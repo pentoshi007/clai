@@ -6,8 +6,6 @@
     "src/agent/task-evidence.ts",
     "src/agent/tool-call-parser.ts",
     "src/interactive-session/manager.ts",
-    "src/store/history.ts",
-    "src/store/plan.ts",
     "src/tools/http.ts",
     "src/tools/jobs.ts",
     "src/tools/web/fetch-core.ts",
