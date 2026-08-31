@@ -44,6 +44,7 @@ import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
 import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.js";
+import { createToolRouting } from "./turn/tool-routing.js";
 import {
   evaluateTaskCompletionGate,
   planHasVerifiedRemoteWork,
@@ -75,7 +76,6 @@ import {
   compactionFailureMessage,
   compactionSummaryText,
 } from "./turn/compaction-messages.js";
-import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
   isTextOnlyModel,
@@ -94,8 +94,6 @@ import { upsertResponderResultLedger } from "./responder-context.js";
 import {
   agentModeDirective,
   planModeDirective,
-  renderAgentSystemPrompt,
-  renderCompactAgentSystemPrompt,
   renderRequestEnvironmentContext,
   scratchDirFor,
   toolNudge,
@@ -136,17 +134,13 @@ function safeEngagementActionsForToolCall(
   }
 }
 import {
-  availableToolNames,
   normalizeToolCall,
   runToolCall,
   BATCH_SAFE_TOOLS,
 } from "../tools/registry.js";
 import {
-  getToolDefinitions,
-  getCompactToolDefinitions,
   RUNNER_META_TOOL_NAMES,
   MCP_AGENT_TOOL_NAMES,
-  mcpAgentToolNames,
 } from "../tools/definitions.js";
 import {
   elidedStubReuseMessage,
@@ -740,24 +734,21 @@ export async function runAgentTurn(
     );
     const initialProvider = options.provider ?? config.defaultProvider;
     const initialModel = options.model ?? getProviderModel(initialProvider);
+    const toolRouting = createToolRouting({
+      mode: agentMode,
+      mcpPresent: Boolean(mcpRuntime),
+      mcpToolNames,
+      mcpToolDefinitions,
+      imageOcrEnabled,
+      skillsAvailable,
+      toolCalling: options.toolCalling ?? config.toolCalling,
+      useCompactSystemPrompt: () => useCompactSystemPrompt,
+    });
+    const routeToolNames = toolRouting.routeToolNames;
+    const resolveNativeTools = toolRouting.resolveNativeTools;
     // image.view is different from optimistic user-attachment handling: once
     // the tool succeeds, the model must actually receive and inspect its bytes.
     // Offer it only with affirmative capability evidence for the active route.
-    const routeToolNames = (routeProvider: ProviderId, routeModel: string): string[] =>
-      [
-        ...availableToolNames(),
-        ...mcpToolNames,
-        ...(mcpRuntime ? mcpAgentToolNames(agentMode === "ask") : []),
-      ].filter((name) => {
-        if (name === "image.ocr") return imageOcrEnabled;
-        if (name === "image.view") {
-          return modelSupportsVision(routeProvider, routeModel);
-        }
-        if (name === "skill.load" || name === "skill.list") {
-          return skillsAvailable;
-        }
-        return true;
-      });
     const toolNames = routeToolNames(initialProvider, initialModel);
     // Build / scaffold / continuation turns must NEVER be diverted into a
     // web.search for "current info". The /implement directive ("Execute it
@@ -793,38 +784,19 @@ export async function runAgentTurn(
     // provider's 413 as a context-window failure after the fact.
     const inputTokenBudget = providerInputTokenBudget(provider, model);
     const useCompactSystemPrompt = inputTokenBudget !== undefined;
-    const resolveNativeTools = (
-      p: ProviderId,
-      m: string,
-    ): { dialect: ReturnType<typeof resolveToolDialect>; native: boolean } => {
-      const dialect = resolveToolDialect(
-        p,
-        m,
-        options.toolCalling ?? config.toolCalling,
-      );
-      return { dialect, native: dialect !== "none" };
-    };
-    let { dialect: toolDialect, native: nativeToolsActive } = resolveNativeTools(
-      provider,
-      model,
-    );
     const selectToolDefs = (
       native: boolean,
       compact: boolean,
       routeProvider: ProviderId = provider,
       routeModel: string = model,
-    ): ToolDefinition[] | undefined => {
-      if (!native) return undefined;
-      const base = [
-        ...(compact ? getCompactToolDefinitions() : getToolDefinitions()),
-        ...mcpToolDefinitions,
-      ];
-      const allow = new Set([
-        ...routeToolNames(routeProvider, routeModel),
-        ...RUNNER_META_TOOL_NAMES,
-      ]);
-      return base.filter((d) => allow.has(d.name));
-    };
+    ): ToolDefinition[] | undefined =>
+      toolRouting.selectToolDefs(native, compact, routeProvider, routeModel);
+    const buildStableSystemContent = (native: boolean): string =>
+      toolRouting.buildStableSystemContent(native, provider, model);
+    let { dialect: toolDialect, native: nativeToolsActive } = resolveNativeTools(
+      provider,
+      model,
+    );
     let lastAnswer = "";
     const session: SessionPolicy = options.session ?? createSessionPolicy();
     // Defensive init: external/legacy callers may build a policy without the
@@ -932,19 +904,6 @@ export async function runAgentTurn(
     // only when this turn is actually a remote-security engagement.
     const pentestPromptTurn =
       pentestLikeTurn || activePlan?.kind === "pentest";
-    const buildStableSystemContent = (native: boolean): string => {
-      const reliability = getReliabilityPolicy();
-      const visionAvailable = modelSupportsVision(provider, model);
-      return (useCompactSystemPrompt
-        ? renderCompactAgentSystemPrompt
-        : renderAgentSystemPrompt)(routeToolNames(provider, model).join(", "), {
-          nativeTools: native,
-          stableEnvironment: true,
-          imageView: visionAvailable,
-          // E6: slim native constitution when API tool schemas are attached.
-          ...(native ? { slimNative: reliability.slimNativePrompt } : {}),
-        });
-    };
     const { sections: systemSections, pentestSession } = await buildSystemSections({
       prompt,
       mode: agentMode,
