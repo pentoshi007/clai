@@ -69,6 +69,7 @@ import {
   orientTurnWorkspace,
 } from "./turn/workspace-setup.js";
 import { readTaskWorkSignals } from "./turn/task-work-signals.js";
+import { superviseToolExecution } from "./turn/tool-execution/supervision.js";
 import {
   evaluateLoopGuardBlock,
   evaluateToolGuards,
@@ -2048,71 +2049,34 @@ export async function runAgentTurn(
           ...engagementRunOptions,
         });
 
-      try {
-        result = await watchdog.run(startToolWork);
-        // User Esc/Ctrl+C: force-settle may resolve with a cancel result
-        // instead of throwing — still end the turn as aborted.
-        const settled = watchdog.state();
-        if (
-          parentSignal.aborted &&
-          !settled.stalledByWatchdog &&
-          !settled.hardTimedOut
-        ) {
-          const result: ToolResult = {
-            ok: false,
-            output: "Cancelled by user.",
-            exitCode: 130,
-          };
-          emitToolResult(toolEventId, result, result.output);
-          return {
-            ok: false,
-            call,
-            result,
-            contextOutput: result.output,
-            aborted: true,
-          };
-        }
-        if (liveBytes > 0) {
-          writeToolOutput(toolEventId, "\n");
-        }
-        jobManager.updateJobStatus(
-          jobId,
-          result.ok ? "exited" : "failed",
-          result.exitCode,
-        );
-      } catch (toolError) {
-        jobManager.updateJobStatus(jobId, "failed", 1);
-        const watched = watchdog.state();
-        if (isAbortError(toolError, toolAc.signal) || watched.forceSettled) {
-          if (
-            parentSignal.aborted &&
-            !watched.stalledByWatchdog &&
-            !watched.hardTimedOut
-          ) {
-            const result: ToolResult = {
-              ok: false,
-              output: "Cancelled by user.",
-              exitCode: 130,
-            };
-            emitToolResult(toolEventId, result, result.output);
-            return {
-              ok: false,
-              call,
-              result,
-              contextOutput: result.output,
-              aborted: true,
-            };
-          }
-          result = watchdog.abortResult();
-        } else {
-          const errMsg =
-            toolError instanceof Error ? toolError.message : String(toolError);
-          result = { ok: false, output: `Tool error: ${errMsg}`, exitCode: 1 };
-        }
-      } finally {
-        watchdog.dispose();
-        engagementLease?.release();
-        parentSignal.removeEventListener("abort", onParentAbort);
+      const supervised = await superviseToolExecution(
+        {
+          watchdog,
+          parentSignal,
+          toolSignal: toolAc.signal,
+          isAbortError,
+          liveBytes: () => liveBytes,
+          writeToolOutput: (chunk) => writeToolOutput(toolEventId, chunk),
+          updateJobStatus: (status, exitCode) =>
+            jobManager.updateJobStatus(jobId, status, exitCode),
+          cleanup: () => {
+            watchdog.dispose();
+            engagementLease?.release();
+            parentSignal.removeEventListener("abort", onParentAbort);
+          },
+        },
+        startToolWork,
+      );
+      result = supervised.result;
+      if (supervised.kind === "cancelled") {
+        emitToolResult(toolEventId, result, result.output);
+        return {
+          ok: false,
+          call,
+          result,
+          contextOutput: result.output,
+          aborted: true,
+        };
       }
 
       if (result.suppressedRepeat) {
