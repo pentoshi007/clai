@@ -89,6 +89,7 @@ import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { runToolGates } from "./turn/tool-execution/gates.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
+import { createRoundState } from "./turn/loop/round-state.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
@@ -145,7 +146,6 @@ import {
 import {
   evaluateTaskCompletionGate,
   planHasVerifiedRemoteWork,
-  planHasVerifiedRuntime,
   resolveLedgerForTaskGate,
 } from "./turn/task-gate.js";
 import {
@@ -342,8 +342,6 @@ import {
   looksLikeBuildTask,
   looksLikeInformationalQuery,
   looksLikeIdleOrSocialPrompt,
-  looksLikeActionNarration,
-  looksLikeWebActionNarration,
   localHttpProbeIsFailure,
   localHttpProbeIsSuccess,
   buildWorkflowDirective,
@@ -3078,10 +3076,11 @@ export async function runAgentTurn(
         // Recon waves often emit 6–10 lookups; 4 forced a second sequential wave.
         const PARALLEL_LIMIT = 8;
 
-        let aborted = false;
-        let awaitingPlanApproval = false;
-        /** Native tool_call ids that already have a role:tool history entry. */
-        const recordedNativeIds = new Set<string>();
+        const round = createRoundState(
+          Boolean(activePlan && activePlan.tasks.length > 0),
+          allCalls.length,
+        );
+
         /** Plan-mode soft reminders already attached this turn (by step). */
         const planRemindedAt = new Set<number>();
         const toolResultRecorder = createToolResultRecorder({
@@ -3092,14 +3091,6 @@ export async function runAgentTurn(
           remindedAt: planRemindedAt,
           writeNotice,
         });
-        /** True after a successful plan.create this turn (activePlan is turn-start snapshot). */
-        let planCreatedThisTurn = Boolean(
-          activePlan && activePlan.tasks.length > 0,
-        );
-        let actionSequenceExecuted = 0;
-        let roundSuppressedCount = 0;
-        let actionSequenceEligible = allCalls.length > 0;
-        const actionSequenceOutcomes = new Map<string, string>();
 
         /**
          * Record a tool result into history. Failures / user declines are
@@ -3121,14 +3112,14 @@ export async function runAgentTurn(
           },
         ): void => {
           consecutiveModelOnlyRounds = 0;
-          recordedNativeIds.add(boundCall.id);
-          actionSequenceExecuted += 1;
-          if (res.suppressedRepeat) roundSuppressedCount += 1;
+          round.recordedNativeIds.add(boundCall.id);
+          round.actionSequenceExecuted += 1;
+          if (res.suppressedRepeat) round.roundSuppressedCount += 1;
           const sequenceObservation = res.suppressedRepeat
             ? loopGuard.getPriorObservation(res.call.name, res.call.args) ??
               res.contextOutput
             : res.result.output ?? res.contextOutput;
-          actionSequenceOutcomes.set(
+          round.actionSequenceOutcomes.set(
             boundCall.id,
             JSON.stringify({
               ok: res.ok,
@@ -3143,12 +3134,12 @@ export async function runAgentTurn(
           // returns the identical receipt. It must therefore keep the sequence
           // eligible, otherwise the tool-level suppression and the sequence
           // guard cancel each other out and the round can repeat forever.
-          actionSequenceEligible &&=
+          round.actionSequenceEligible &&=
             (res.ok || Boolean(res.suppressedRepeat)) &&
             !res.blockOrCancel &&
             !res.aborted;
           if (res.ok && res.call.name === "plan.create") {
-            planCreatedThisTurn = true;
+            round.planCreatedThisTurn = true;
           }
           if (!res.suppressedRepeat) productiveSteps += 1;
           toolResultRecorder.record({
@@ -3158,7 +3149,7 @@ export async function runAgentTurn(
             contextOutput: res.contextOutput,
             isPlanMode,
             planApproved: session.planApproved.value,
-            hasDraftPlan: planCreatedThisTurn,
+            hasDraftPlan: round.planCreatedThisTurn,
             productiveStep: productiveSteps,
             kindHint:
               activePlan?.kind === "pentest" || pentestLikeTurn
@@ -3186,7 +3177,7 @@ export async function runAgentTurn(
           if (res.call.name === "plan.create" && res.ok) {
             evidenceFlags.sawPlanCreateOk = true;
             if (isPlanMode) {
-              awaitingPlanApproval = true;
+              round.awaitingPlanApproval = true;
             } else {
               session.planApproved.value = true;
             }
@@ -3201,7 +3192,7 @@ export async function runAgentTurn(
           }
           // User Esc/Ctrl+C only — never cancel siblings because a delete failed
           // or a confirm was declined; the model must see every tool result.
-          if (res.aborted) aborted = true;
+          if (res.aborted) round.aborted = true;
         };
 
         // Multi-task sync guard: when one model message advances more than one
@@ -3248,7 +3239,7 @@ export async function runAgentTurn(
           PARALLEL_LIMIT,
         );
         for (const group of groups) {
-          if (aborted || awaitingPlanApproval) break;
+          if (round.aborted || round.awaitingPlanApproval) break;
           if (group.length === 1) {
             const call = group[0]!;
             const bc = callToBound.get(call);
@@ -3304,14 +3295,14 @@ export async function runAgentTurn(
         // Only abort / plan-gate / governor leave calls un-run now.
         for (let i = 0; i < toRun.length; i += 1) {
           const bc = toRun[i]!;
-          if (recordedNativeIds.has(bc.id)) continue;
+          if (round.recordedNativeIds.has(bc.id)) continue;
           if (!callIds[i]) {
             callIds[i] = `tool-${++nextToolEventId}`;
           }
           const uiId = callIds[i]!;
-          const reason = aborted
+          const reason = round.aborted
             ? "Cancelled — turn aborted before this call ran."
-            : awaitingPlanApproval
+            : round.awaitingPlanApproval
               ? "Deferred — waiting for plan approval."
               : "Cancelled — not executed.";
           const result: ToolResult = {
@@ -3330,7 +3321,7 @@ export async function runAgentTurn(
               bc.call.name,
               false,
             );
-            recordedNativeIds.add(bc.id);
+            round.recordedNativeIds.add(bc.id);
           } else {
             messages.push({
               role: "tool",
@@ -3343,7 +3334,7 @@ export async function runAgentTurn(
         const closeout = await closeOutRound(
           {
             messages,
-            recordedNativeIds,
+            recordedNativeIds: round.recordedNativeIds,
             historyNativeCalls,
             deferReason,
             priorObservation: (priorCall) =>
@@ -3369,14 +3360,14 @@ export async function runAgentTurn(
           {
             bound,
             runIds,
-            outcomes: actionSequenceOutcomes,
-            sequenceEligible: actionSequenceEligible,
-            executedCount: actionSequenceExecuted,
+            outcomes: round.actionSequenceOutcomes,
+            sequenceEligible: round.actionSequenceEligible,
+            executedCount: round.actionSequenceExecuted,
             plannedCount: allCalls.length,
             runCount: toRun.length,
-            suppressedCount: roundSuppressedCount,
-            aborted,
-            awaitingPlanApproval,
+            suppressedCount: round.roundSuppressedCount,
+            aborted: round.aborted,
+            awaitingPlanApproval: round.awaitingPlanApproval,
             instructionsChanged: evidenceFlags.instructionsChangedThisRound,
             pendingSessionStatePlan: toolState.pendingSessionStatePlan,
             responderWakeTurn,
@@ -3403,7 +3394,7 @@ export async function runAgentTurn(
           );
         }
 
-        if (awaitingPlanApproval) {
+        if (round.awaitingPlanApproval) {
           pendingCalls = [];
           outcomeState.outcome.status = "partial";
           await saveOutcomeState(outcomeState);
@@ -3416,7 +3407,7 @@ export async function runAgentTurn(
           );
         }
 
-        if (aborted) {
+        if (round.aborted) {
           lastAnswer = "";
           outcomeState.outcome.status = "aborted";
           await saveOutcomeState(outcomeState);
