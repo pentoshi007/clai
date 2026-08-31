@@ -1,8 +1,8 @@
 # Phase 0 — Baseline and quality foundation
 
-Status: **planned**
+Status: **complete** — evidence in [../evidence/phase-0/README.md](../evidence/phase-0/README.md)
 Depends on: validated planning milestone
-Blocks: every production refactor phase
+Blocks: nothing — Phase 1 may begin from this green anchor
 
 ## Objective
 
@@ -140,16 +140,16 @@ Create the phase evidence format from `../instructions.md`. Evidence must includ
 
 ## Acceptance criteria
 
-- [ ] One canonical full-suite command works locally and in CI with locale/TZ set before Node starts.
-- [ ] Locale/TZ/ordering tests preserve and explain both canonical and supported host-sensitive behavior.
-- [ ] Export/signature/registration inventories protect all Phase 1-6 hotspots; runner contracts are a hard gate.
-- [ ] Every quality dependency is exact-pinned and lockfile-backed.
-- [ ] Every requested metric has a reviewed definition and deterministic report, even if initially report-only.
-- [ ] New/regressed findings fail; legacy baselines can only hold or improve.
-- [ ] Raw `unknown` is classified rather than treated as an automatic defect.
-- [ ] Synthetic failing fixtures prove each comparator/gate.
-- [ ] No generated output was hand-edited and no production behavior was silently changed.
-- [ ] Phase validation is green and the evidence bundle is independently reviewed.
+- [x] One canonical full-suite command works locally and in CI with locale/TZ set before Node starts.
+- [x] Locale/TZ/ordering tests preserve and explain both canonical and supported host-sensitive behavior.
+- [x] Export/signature/registration inventories protect all Phase 1-6 hotspots; runner contracts are a hard gate.
+- [x] Every quality dependency is exact-pinned and lockfile-backed.
+- [x] Every requested metric has a reviewed definition and deterministic report, even if initially report-only.
+- [x] New/regressed findings fail; legacy baselines can only hold or improve.
+- [x] Raw `unknown` is classified rather than treated as an automatic defect.
+- [x] Synthetic failing fixtures prove each comparator/gate.
+- [x] No generated output was hand-edited and no production behavior was silently changed.
+- [x] Phase validation is green and the evidence bundle is independently reviewed.
 
 ## Validation
 
