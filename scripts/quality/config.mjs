@@ -51,6 +51,20 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/store/config/endpoints.ts": "src/store/config.ts",
+  "src/store/config/settings.ts": "src/store/config.ts",
+  "src/store/keys/search-providers.ts": "src/store/keys.ts",
+  "src/store/keys/secret-store.ts": "src/store/keys.ts",
+  "src/store/plan/jsonl-backend.ts": "src/store/plan.ts",
+  "src/store/plan/mutation.ts": "src/store/plan.ts",
+  "src/store/plan/sqlite-backend.ts": "src/store/plan.ts",
+  "src/store/plan/task-normalization.ts": "src/store/plan.ts",
+  "src/store/history/jsonl-backend.ts": "src/store/history.ts",
+  "src/store/history/jsonl-lock.ts": "src/store/history.ts",
+  "src/store/history/lifecycle.ts": "src/store/history.ts",
+  "src/store/history/recovery.ts": "src/store/history.ts",
+  "src/store/history/session-queries.ts": "src/store/history.ts",
+  "src/store/history/sqlite-backend.ts": "src/store/history.ts",
   "src/tools/jobs/helpers.ts": "src/tools/jobs.ts",
   "src/tools/jobs/limits.ts": "src/tools/jobs.ts",
   "src/tools/jobs/polling-policy.ts": "src/tools/jobs.ts",

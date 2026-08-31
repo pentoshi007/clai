@@ -362,13 +362,36 @@ const analyze = (file) => {
   }
 };
 
-const move = ({ from, to, symbols, dry }) => {
+const move = ({ from, to, symbols, dry, pullDeps, append }) => {
   const { text, source } = parse(from);
   const entries = topLevel(source, text);
   const wanted = new Set(symbols);
-  const moving = entries.filter((entry) =>
+  let moving = entries.filter((entry) =>
     entry.names.some((name) => wanted.has(name)),
   );
+  if (pullDeps) {
+    // Pull the transitive closure of source-local helpers the moved code needs.
+    // Leaving them behind would force the new module to import back from its
+    // source, which turns every extraction into an import cycle.
+    const byName = new Map();
+    for (const entry of entries) {
+      for (const name of entry.names) byName.set(name, entry);
+    }
+    const publicApi = new Set(pullDeps === "keep-exports" ? [] : []);
+    const included = new Set(moving);
+    const queue = [...moving];
+    while (queue.length > 0) {
+      const entry = queue.pop();
+      for (const name of referencedNames(entry.statement)) {
+        const owner = byName.get(name);
+        if (!owner || included.has(owner)) continue;
+        if (owner.exported && publicApi.has(name)) continue;
+        included.add(owner);
+        queue.push(owner);
+      }
+    }
+    moving = entries.filter((entry) => included.has(entry));
+  }
   const movingNames = new Set(moving.flatMap((entry) => entry.names));
   const missing = [...wanted].filter((name) => !movingNames.has(name));
   if (missing.length > 0) {
@@ -469,7 +492,37 @@ const move = ({ from, to, symbols, dry }) => {
       (match, space, quote, specifier) =>
         `import(${space}${quote}${specifierFor(from, to, specifier)}${quote}`,
     );
-  const newText = `${header.join("\n")}\n\n${bodies.map(rewriteInlineSpecifiers).join("\n\n")}\n`;
+  // A moved `let` that the source still assigns needs an explicit setter: an
+  // imported binding cannot be assigned. The generated setter keeps a single
+  // owner for the value instead of copying it into both modules.
+  const movedMutable = moving.filter(
+    (entry) =>
+      ts.isVariableStatement(entry.statement) &&
+      (entry.statement.declarationList.flags & ts.NodeFlags.Let) !== 0,
+  );
+  const setters = [];
+  for (const entry of movedMutable) {
+    for (const name of entry.names) {
+      const assignment = new RegExp(
+        `(?<![\\w$.])${name}\\s*(=[^=]|\\+\\+|--|\\+=|-=)`,
+      );
+      if (!assignment.test(remainingText)) continue;
+      const declaration = entry.statement.declarationList.declarations.find(
+        (item) => ts.isIdentifier(item.name) && item.name.text === name,
+      );
+      const typeText = declaration?.type?.getText();
+      const setter = `set${name[0].toUpperCase()}${name.slice(1)}`;
+      setters.push({ name, setter, typeText });
+    }
+  }
+
+  const setterSource = setters
+    .map(
+      ({ name, setter, typeText }) =>
+        `export function ${setter}(value${typeText ? `: ${typeText}` : ""}): void {\n  ${name} = value;\n}`,
+    )
+    .join("\n\n");
+  const newText = `${header.join("\n")}\n\n${bodies.map(rewriteInlineSpecifiers).join("\n\n")}${setterSource ? `\n\n${setterSource}` : ""}\n`;
 
   // Removals and visibility widenings are applied as one descending edit list;
   // interleaving two independently ordered passes would corrupt later offsets.
@@ -493,6 +546,37 @@ const move = ({ from, to, symbols, dry }) => {
       sourceText.slice(0, edit.start) + edit.text + sourceText.slice(edit.end);
   }
   const specifier = moduleSpecifierBetween(from, to);
+  for (const { name, setter } of setters) {
+    sourceText = sourceText.replace(
+      new RegExp(`(?<![\\w$.])${name}\\s*\\+\\+;`, "g"),
+      `${setter}(${name} + 1);`,
+    );
+    // Assignments are rewritten by scanning to the terminating `;` at depth zero
+    // so multi-line object and template values are captured whole.
+    const pattern = new RegExp(`(?<![\\w$.])${name}\\s*=\\s*`, "g");
+    let match;
+    const edits = [];
+    while ((match = pattern.exec(sourceText)) !== null) {
+      let cursor = match.index + match[0].length;
+      let depth = 0;
+      while (cursor < sourceText.length) {
+        const character = sourceText[cursor];
+        if ("([{`".includes(character)) depth += 1;
+        else if (")]}`".includes(character)) depth -= 1;
+        else if (character === ";" && depth <= 0) break;
+        cursor += 1;
+      }
+      if (cursor >= sourceText.length) continue;
+      edits.push({
+        start: match.index,
+        end: cursor + 1,
+        value: sourceText.slice(match.index + match[0].length, cursor).trim(),
+      });
+    }
+    for (const edit of edits.reverse()) {
+      sourceText = `${sourceText.slice(0, edit.start)}${setter}(${edit.value});${sourceText.slice(edit.end)}`;
+    }
+  }
   const stillUsed = new Set();
   const remaining = ts.createSourceFile(
     from,
@@ -517,6 +601,7 @@ const move = ({ from, to, symbols, dry }) => {
     .flatMap((entry) => entry.names)
     .sort();
   const bridge = [];
+  for (const { setter } of setters) stillUsed.add(setter);
   const importBack = [...stillUsed].sort();
   if (importBack.length > 0) {
     bridge.push(`import { ${importBack.join(", ")} } from "${specifier}";`);
@@ -553,8 +638,31 @@ const move = ({ from, to, symbols, dry }) => {
     return;
   }
   mkdirSync(dirname(to), { recursive: true });
-  if (existsSync(to)) throw new Error(`refusing to overwrite ${to}`);
-  writeFileSync(to, pruneImports(newText));
+  if (existsSync(to) && !append) throw new Error(`refusing to overwrite ${to}`);
+  if (existsSync(to)) {
+    const existing = readFileSync(to, "utf8");
+    const addedImports = header.filter((line) => !existing.includes(line));
+    const lastImportEnd = (() => {
+      const lines = existing.split("\n");
+      let index = 0;
+      for (let cursor = 0; cursor < lines.length; cursor += 1) {
+        if (/^\s*(import|export)\b.*from\s+"/.test(lines[cursor])) index = cursor + 1;
+      }
+      return index;
+    })();
+    const lines = existing.split("\n");
+    const merged = [
+      ...lines.slice(0, lastImportEnd),
+      ...addedImports,
+      ...lines.slice(lastImportEnd),
+      "",
+      ...bodies.map(rewriteInlineSpecifiers),
+      "",
+    ].join("\n");
+    writeFileSync(to, pruneImports(merged));
+  } else {
+    writeFileSync(to, pruneImports(newText));
+  }
   writeFileSync(from, sourceText);
   console.log(
     `moved ${movingNames.size} declaration(s) → ${to}; ${from} now ${sourceText.split("\n").length} lines`,
@@ -680,6 +788,8 @@ if (command === "analyze") {
     to: flag("to"),
     symbols: (flag("symbols") ?? "").split(",").filter(Boolean),
     dry: args.includes("--dry"),
+    pullDeps: args.includes("--pull-deps"),
+    append: args.includes("--append"),
   });
 } else {
   console.error(
