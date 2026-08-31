@@ -1,11 +1,8 @@
-import { join } from "node:path";
 import type { McpRuntime, McpTurnLease } from "../mcp/runtime.js";
 import { hasMcpMentionSyntax } from "../mcp/mentions.js";
-import { isCanonicalToolName } from "../mcp/names.js";
 import type {
   ChatMessage,
   ChatImage,
-  CompletionResult,
   Mode,
   NativeToolCall,
   ProviderId,
@@ -14,22 +11,17 @@ import type {
   ToolDefinition,
   ToolResult,
 } from "../types.js";
-import { completeWithProvider, streamWithProvider } from "../llm/router.js";
 import {
-  REQUEST_CONTEXT_PREFIX,
-  upsertRequestContextMessage,
-} from "../llm/system-messages.js";
+  streamWithProvider,
+} from "../llm/router.js";
 import { operationUsageFromError } from "../llm/operation-ledger.js";
-import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { providerInputTokenBudget } from "../llm/context-windows.js";
-import { resolveBuiltInProfile } from "../llm/provider-profiles.js";
 import { streamAlreadyEmitted } from "../llm/stream-progress.js";
 import {
   classifyStreamFailure,
   createStreamRecoveryState,
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
-import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
 import type {
   SingleToolResult,
   TurnEventPort,
@@ -38,18 +30,9 @@ import type {
 import { finalizeTurn } from "./turn/finalizer.js";
 import { assembleTurnMessages } from "./turn/message-assembly.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
-import { runMetaTool } from "./turn/tool-execution/meta-tools.js";
-import {
-  buildEngagementRunOptions,
-  createEphemeralToolJob,
-} from "./turn/tool-execution/run-setup.js";
-import { accountToolOutcome } from "./turn/outcome-accounting.js";
-import { creditSuccessfulWork } from "./turn/task-credit.js";
 import {
   createTurnEvidenceFlags,
 } from "./turn/evidence-flags.js";
-import { evaluateEngagementGate } from "./turn/tool-execution/engagement-gate.js";
-import { recordEngagementOutcome } from "./turn/tool-execution/engagement-checkpoint.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import { closeOutRound } from "./turn/loop/round-closeout.js";
@@ -64,7 +47,6 @@ import {
 } from "./turn/loop/wire-occurrences.js";
 import {
   createPromptMutex,
-  invalidToolCall,
   readSalvagedWriteReceipt,
   salvagedWriteCall,
   type SalvagedWriteReceipt,
@@ -81,16 +63,10 @@ import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
-import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.js";
 import { createToolRouting } from "./turn/tool-routing.js";
-import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
-import { runToolGates } from "./turn/tool-execution/gates.js";
-import {
-  creditToolWork,
-  frameToolResult,
-  reportToolFailure,
-} from "./turn/tool-execution/result-framing.js";
+import { runSingleTool } from "./turn/tool-execution/single-tool.js";
+import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
 import { executeToolGroups } from "./turn/loop/group-execution.js";
@@ -107,17 +83,10 @@ import {
 } from "./turn/loop/round-recorder.js";
 import {
   createTurnCounters,
-  resetToolRetryCounters,
 } from "./turn/turn-counters.js";
-import { autostartPlanTask } from "./turn/task-autostart.js";
-import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
-import { linkResponderJobToPlan } from "./turn/responder-job-linkage.js";
-import { reconcileScaffoldOutcome } from "./turn/scaffold-outcome.js";
 import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
-import { authorizeToolExecution } from "./turn/tool-execution/authorization.js";
-import { resolveToolDispatch } from "./turn/tool-execution/dispatch.js";
 import {
   recoverFromStreamFailure,
   type StreamFailureState,
@@ -131,8 +100,6 @@ import {
   loadTurnInstructions,
   orientTurnWorkspace,
 } from "./turn/workspace-setup.js";
-import { readTaskWorkSignals } from "./turn/task-work-signals.js";
-import { superviseToolExecution } from "./turn/tool-execution/supervision.js";
 import {
   firstNativeToolCall,
   syncNativeToolCallCards,
@@ -157,14 +124,7 @@ import {
   interpretCompletion,
 } from "./turn/loop/completion-interpretation.js";
 import {
-  evaluateLoopGuardBlock,
-  evaluateToolGuards,
-  LOOP_RESET_OUTPUT,
-  readRetryReason,
-} from "./turn/tool-execution/guards.js";
-import {
   evaluateTaskCompletionGate,
-  planHasVerifiedRemoteWork,
   resolveLedgerForTaskGate,
 } from "./turn/task-gate.js";
 import {
@@ -178,38 +138,21 @@ import {
   responderWakeMatchesRevision,
 } from "./turn/responder-inbox.js";
 import {
-  createCompactionSummarizer,
   type CompactionExecutionState,
 } from "./turn/compaction-summarizer.js";
-import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selection.js";
-import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
-import { prepareCompactionCandidateMessages } from "./turn/compaction-candidate.js";
-import { measureCompactionFinalFit } from "./turn/compaction-final-fit.js";
-import { planCompactionAdmission } from "./turn/compaction-admission.js";
 import {
-  compactionFailureMessage,
-  compactionSummaryText,
-} from "./turn/compaction-messages.js";
-import {
-  syntheticToolCallId,
   isTextOnlyModel,
   markTextOnlyModel,
   type ToolCallingMode,
 } from "../llm/tool-protocol.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../ui-core/rendering/sanitize-display.js";
-import { createHash, randomUUID } from "node:crypto";
 import {
   jobManager,
   type BackgroundJob,
   type ResponderNotification,
 } from "../tools/jobs.js";
-import { upsertResponderResultLedger } from "./responder-context.js";
 import {
-  agentModeDirective,
-  planModeDirective,
-  renderRequestEnvironmentContext,
   scratchDirFor,
-  toolNudge,
 } from "../prompts/index.js";
 import { getConfig, getProviderModel } from "../store/config.js";
 import {
@@ -218,8 +161,6 @@ import {
 } from "../store/session-workspace.js";
 import {
   classifyToolCall,
-  isPentestToolCall,
-  scopeHint,
   scopeTargetForToolCall,
 } from "../safety/classifier.js";
 
@@ -247,39 +188,13 @@ function safeEngagementActionsForToolCall(
   }
 }
 import {
-  normalizeToolCall,
-  runToolCall,
   BATCH_SAFE_TOOLS,
 } from "../tools/registry.js";
-import { MCP_AGENT_TOOL_NAMES } from "../tools/definitions.js";
-import {
-  elidedStubReuseMessage,
-  findElidedStubArg,
-} from "./message-slim.js";
 import {
   appendAssistantWithTools,
-  appendToolResult,
-  fillMissingToolResults,
-  repairToolProtocol,
 } from "./tool-history.js";
-import {
-  legacyReasoningBlockFromArtifacts,
-  reasoningArtifactsForPersistence,
-} from "../llm/reasoning-artifacts.js";
-import {
-  estimateTokens,
-  estimateMessagesTokens,
-  shouldApplyAutoCompact,
-  isCompactionMemoryMessage,
-} from "./context-manager.js";
-import {
-  describeDominantContextBlock,
-} from "./context-breakdown.js";
-import { recordRequestTokenObservation } from "../llm/token-estimate-calibration.js";
 import { RequestOverLimitError } from "./request-accounting.js";
 import {
-  freeTierGuardNotices,
-  getReliabilityPolicy,
   MAX_STEP_COMPLETION_TOKENS,
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
@@ -290,61 +205,35 @@ import {
 } from "./injected-blocks.js";
 import { getSkillIndex } from "../skills/registry.js";
 import {
-  renderSkillCatalog,
-} from "../skills/catalog.js";
-import { loadScopeForSession, isScopeActive } from "../store/scope.js";
+  loadScopeForSession,
+} from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
   rememberThinking,
-  stripThinking,
 } from "../ui/thinking.js";
-import { hasReasoningMarker } from "../llm/reasoning-marker.js";
 import { safeCwd } from "../os/cwd.js";
 import {
   analyzeTask,
-  formatTaskAnalysisHint,
   isNarrowExplicitNmapOperation,
 } from "./task-analyzer.js";
 import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { WorkLedger } from "./durable-envelope.js";
-import { normalizeCompactionSummary } from "./compaction-summary.js";
-import {
-  isOperationPolicyError,
-  OperationLedger,
-  singleAdmissionOperationPolicy,
-} from "../llm/operation-ledger.js";
 import { LoopGuard } from "./loop-guard.js";
-import {
-  appendInterruptedReasoning,
-  interruptedReasoningBrief,
-} from "./interrupted-reasoning.js";
 import {
   CompactionAttemptLedger,
 } from "./compaction-attempt.js";
 import {
   loadPlan,
-  savePlan,
   mutatePlan,
-  markTask,
-  type PlanTask,
-  readyPlanTasks,
-  foregroundRemaining,
-  responderOpenTasks,
   isPlanTerminal,
-  isPlanSuccessful,
   type SessionPlan,
   type TaskEvidence,
 } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
-import { stat } from "node:fs/promises";
-import { resolveFsToolPath } from "../tools/fs.js";
 import {
-  stripSentinelTokens,
   parseToolCall,
   recognizeBareToolJson,
   looksLikeTruncatedToolCall,
-  salvageTruncatedWrite,
-  salvageTruncatedWriteFromNative,
   type SalvagedWrite,
   countToolFences,
   groupToolCallsForExecution,
@@ -356,19 +245,11 @@ import {
   looksLikeBuildTask,
   looksLikeInformationalQuery,
   looksLikeIdleOrSocialPrompt,
-  localHttpProbeIsFailure,
-  localHttpProbeIsSuccess,
-  buildWorkflowDirective,
-  narrowNmapOperationDirective,
-  pentestWorkflowDirective,
-  pentestNoLocalServerDirective,
   looksLikePromptLeak,
 } from "./tool-call-parser.js";
 import {
   createSessionPolicy,
   isPreApprovalAllowedTool,
-  isPlanModeAllowedShellCommand,
-  isPlanModeAllowedTool,
   isPlanApprovedByStatus,
   planHasOpenWork,
   isAbortError,
@@ -376,88 +257,40 @@ import {
   type SessionPolicy,
 } from "./session-policy.js";
 import {
-  saveToolOutput,
-  formatToolContext,
-} from "./tool-output-formatting.js";
-import {
   codingSessionFromContext,
-  isProtocolPlaceholderOutput,
 } from "./progress-pause-policy.js";
 import {
   planContextMessage,
-  removePlanContextMessage,
   upsertPlanContextMessage,
-  handlePlanTool,
 } from "./plan-tool.js";
 import {
-  absorbLooseWorkIntoLedger,
-  applyDestinationCwd,
   canMarkTaskDone,
-  classifyTaskTitle,
-  isDevServerCall,
-  isEvidenceWorkTool,
-  isFeatureImplementationCall,
-  isPackageInstallCommand,
-  isPlanPreflightTool,
-  isPortListeningOutput,
-  isReadOnlyReconTool,
-  isReadOnlyVersionProbeCommand,
-  isRemoteActiveTestCall,
-  isRemoteReconToolCall,
-  isScaffoldCreateCommand,
-  isServerReadyOutput,
-  ledgerFromTaskEvidence,
-  recordTaskWorkSuccess,
-  taskEvidenceFromLedger,
-  TOOL_ABORT_GRACE_MS,
-  toolHardBudgetMs,
-  toolStallBudgetMs,
   type LooseWorkReceipt,
   userAskedForFeatureApp,
   type TaskWorkLedger,
-  type TaskWorkSignals,
 } from "./task-evidence.js";
 import {
-  buildSessionStateBlock,
-  upsertSessionStateMessage,
-} from "./session-state.js";
-import {
-  buildContinueOrientation,
   looksLikeContinueOrResumePrompt,
   type PreviousTurnSignal,
 } from "./continue-orient.js";
 import { detectPackageManager } from "./workspace-orient.js";
 import {
-  budgetRemaining,
   consumeBudget,
   createRecoveryBudgets,
 } from "./must-continue.js";
 import { chooseFinalizeRecovery } from "./finalize-gate.js";
-import { outOfScopeToolMessage, scopeContextMessage } from "./scope-context.js";
 import {
   EngagementPolicyEngine,
-  actionFromUrl,
   engagementActionsForToolCall,
-  evaluateEngagementAction,
-  type PolicyLease,
 } from "../safety/engagement-policy.js";
-import { patchPlanMeta } from "../store/plan.js";
 import {
-  extractProjectRootFromPlan,
-  extractProjectRootFromScaffold,
   getActiveProjectRoot,
-  setActiveProjectRootIfValid,
 } from "./project-root.js";
 import {
-  buildWorkspaceOrientation,
-  isScaffoldCancelledOutput,
   scaffoldLooksMaterialized,
-  scaffoldTargetConflictMessage,
-  resolveScaffoldTargetPath,
 } from "./workspace-orient.js";
 import {
   stdioConfirmPort,
-  stdioSecretRequester,
   restoreInteractiveStdin,
   confirmToolExecution,
   type ConfirmPort,
@@ -466,8 +299,6 @@ import { buildRichStopSummary } from "./stop-summary.js";
 import { composeAgentSystemPrompt, type AgentPromptSection } from "./prompt-composer.js";
 import {
   createGovernorState,
-  governProgress,
-  type GovernorState,
 } from "./evidence-governor.js";
 import {
   createTurnState,
@@ -476,27 +307,15 @@ import {
   type TurnStateSnapshot,
 } from "./turn-state.js";
 import {
-  deriveOutcomeStatus,
   inferOutcomeKind,
   openOutcomeState,
-  recordAnswerEvidence,
-  recordFailedHypothesis,
-  recordToolEvidence,
   saveOutcomeState,
-  validateCriterionEvidence,
   type OutcomeEnvelope,
 } from "./outcomes.js";
 import {
-  createTurnOutcome,
-  normalizeTurnOutcomeInput,
-  renderTurnOutcome,
   type LoopGuardStopInfo,
   type TurnOutcomeStatus,
 } from "./turn-outcome.js";
-import type {
-  EngagementActionRecord,
-  EngagementGraph,
-} from "../store/engagement.js";
 
 
 export * from "./tool-call-parser.js";
@@ -636,6 +455,7 @@ export async function runAgentTurn(
   let interruptedVisible = "";
   let interruptedReasoning = "";
   let lowYieldResumptions = 0;
+  const turnWriters = createTurnEventEmitter(eventPort, outputState);
   const {
     writeStatus,
     writeNotice,
@@ -651,7 +471,7 @@ export async function runAgentTurn(
     writeCompactionDelta,
     writeCompactionCompleted,
     writeCompactionFailed,
-  } = createTurnEventEmitter(eventPort, outputState);
+  } = turnWriters;
   // Points at the live message array so finishTurn can hand the full
   // conversation back to the caller. Assigned once `messages` is built below;
   // all later mutations are in-place so this reference stays current.
@@ -1268,730 +1088,58 @@ export async function runAgentTurn(
       return readSalvagedWriteReceipt(salvaged, executed);
     }
 
-    async function executeSingleTool(
-      rawCall: ToolCall,
+    const singleToolDeps: SingleToolDeps = {
+      ...turnWriters,
+      session,
+      emit,
+      options,
+      messages,
+      prompt,
+      provider: () => provider,
+      model: () => model,
+      step: () => step,
+      isPlanMode,
+      maxSteps,
+      pentestSession,
+      imageOcrEnabled,
+      narrowNmapOperation,
+      destinationHint,
+      scratchDir: scratchDirFor(safeCwd()),
+      loopGuard,
+      mcpRuntime,
+      workLedger,
+      confirmPort,
+      promptMutex,
+      engagementPolicy,
+      responderClaims,
+      outcomeState,
+      codingSession: () => codingSession,
+      toolState,
+      alreadyPrintedIds,
+      sessionLooseWork,
+      deferredPostToolMessages,
+      deferredResponderLedgerNotifications,
+      batchRemindCalls: () => batchRemindCalls,
+      batchReminderNote: () => batchReminderNote,
+      turnState: () => turnState,
+      probeStateKey,
+      moveTurn,
+      persistTaskEvidence,
+      persistProjectRootOnPlan,
+      completionGateForTask,
+      matchesWakeRevision,
+      executeMcpAgentCall,
+      responderWakeTurn,
+      responderWakeNotificationId,
+      responderWakeJobId,
+      responderWakeResultRevision,
+    };
+    const executeSingleTool = (
+      call: ToolCall,
       toolEventId: string,
       parentSignal: AbortSignal,
-    ): Promise<SingleToolResult> {
-
-      const scratchDir = scratchDirFor(safeCwd());
-      const normalizedCall = normalizeToolCall(rawCall);
-      const canonicalMcpName = mcpRuntime?.canonicalizeToolName(normalizedCall.name);
-      let call =
-        canonicalMcpName && canonicalMcpName !== normalizedCall.name
-          ? { ...normalizedCall, name: canonicalMcpName }
-          : normalizedCall;
-
-      const emitVisibleSyntheticReceipt = (
-        result: ToolResult,
-        summary: string,
-      ): void => {
-        if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(toolEventId, call);
-          alreadyPrintedIds.add(toolEventId);
-        }
-        emit({ type: "tool-start", id: toolEventId });
-        const output = result.output.endsWith("\n")
-          ? result.output
-          : `${result.output}\n`;
-        writeToolOutput(toolEventId, output);
-        emitToolResult(toolEventId, result, summary);
-      };
-
-      let engagementLease: PolicyLease | undefined;
-      let engagementGraph: EngagementGraph | undefined;
-      let engagementRecord: EngagementActionRecord | undefined;
-
-      const invalid = invalidToolCall(call);
-      if (invalid) {
-        emitToolResult(toolEventId, invalid.result, invalid.reason);
-        return {
-          ok: false,
-          call,
-          result: invalid.result,
-          contextOutput: invalid.reason,
-        };
-      }
-
-      if (call.name === "image.ocr" && !imageOcrEnabled) {
-        writeNotice(
-          "info",
-          "skipped OCR because the original image is attached to the vision model",
-        );
-        const recoveryText =
-          "The original image is attached to this message and you can inspect it directly. " +
-          "Do not call image.ocr or infer text from OCR. Answer the user's question from the actual image pixels now.";
-        const result = { ok: true, output: recoveryText };
-        return { ok: true, call, result, contextOutput: recoveryText };
-      }
-
-      const guard = evaluateToolGuards({
-        call,
-        narrowNmapOperation,
-        narrowNmapDispatched: toolState.narrowNmapDispatchCount,
-        heldBatchReminder:
-          call.name === "task.update" && batchRemindCalls.has(rawCall)
-            ? batchReminderNote
-            : undefined,
-      });
-      if (guard.kind === "reject") {
-        const result = { ok: false, output: guard.reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, guard.reason);
-        return { ok: false, call, result, contextOutput: guard.reason };
-      }
-      if (guard.kind === "hold") {
-        if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(toolEventId, call);
-          alreadyPrintedIds.add(toolEventId);
-        }
-        const result = { ok: false, output: guard.reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, guard.reason);
-        writeToolOutput(toolEventId, "held\n");
-        return { ok: false, call, result, contextOutput: guard.reason };
-      }
-      if (guard.kind === "proceed" && guard.consumesNarrowNmapScan) {
-        toolState.narrowNmapDispatchCount += 1;
-      }
-
-      const retryReason = readRetryReason(call.args);
-      const currentProbeState = probeStateKey(call);
-      const loopCheck = loopGuard.shouldBlock(call.name, call.args, {
-        dependenciesChanged: toolState.retryDependenciesChanged,
-        environmentChanged: toolState.retryEnvironmentChanged,
-        ...(currentProbeState ? { stateKey: currentProbeState } : {}),
-        ...(retryReason ? { retryReason } : {}),
-      });
-      const loopDecision = evaluateLoopGuardBlock(call, {
-        verdict: loopCheck,
-        priorObservation:
-          loopCheck.kind === "unchanged-success"
-            ? loopGuard.getPriorObservation(call.name, call.args)
-            : undefined,
-      });
-      if (loopDecision.kind === "reuse") {
-        const result: ToolResult = {
-          ok: true,
-          output: loopDecision.reason,
-          exitCode: 0,
-        };
-        emitVisibleSyntheticReceipt(result, loopDecision.reason);
-        return {
-          ok: true,
-          call,
-          result,
-          contextOutput: loopDecision.reason,
-          suppressedRepeat: true,
-        };
-      }
-      if (loopDecision.kind === "warn-reject") {
-        writeNotice("warn", loopDecision.reason);
-        const result = { ok: false, output: loopDecision.reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, loopDecision.reason);
-        return { ok: false, call, result, contextOutput: loopDecision.reason };
-      }
-
-      if (call.name === "loop.reset") {
-        loopGuard.resetAllSequenceCounts();
-        const output = LOOP_RESET_OUTPUT;
-        const result: ToolResult = { ok: true, output, exitCode: 0 };
-        emitVisibleSyntheticReceipt(result, output);
-        loopGuard.recordAttempt(step, call.name, call.args, true, 0, output);
-        return { ok: true, call, result, contextOutput: output };
-      }
-
-      if (mcpRuntime && MCP_AGENT_TOOL_NAMES.has(call.name)) {
-        return executeMcpAgentCall(mcpRuntime, call, toolEventId);
-      }
-
-      const metaOutcome = await runMetaTool(
-        {
-          step,
-          wake: {
-            wakeTurn: responderWakeTurn,
-            notificationId: responderWakeNotificationId,
-            jobId: responderWakeJobId,
-            resultRevision: responderWakeResultRevision,
-          },
-          pendingNotifications: () =>
-            jobManager.getPendingNotifications(session.sessionId),
-          matchesWakeRevision,
-          isClaimed: (id) => responderClaims.has(id),
-          markRead: (id) => jobManager.markRead(id, session.sessionId),
-          releaseClaim: (id) => responderClaims.delete(id),
-          queueResponderLedger: (notification) =>
-            deferredResponderLedgerNotifications.push(notification),
-          loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
-          completionGate: (livePlan, taskId) =>
-            completionGateForTask(livePlan, taskId),
-          handlePlanTool: (planCall) =>
-            handlePlanTool(planCall, session, {
-              loopGuard,
-              step,
-              autoApprove: !isPlanMode,
-            }),
-          recordAttempt: (attemptedCall, ok) =>
-            loopGuard.recordAttempt(
-              step,
-              attemptedCall.name,
-              attemptedCall.args,
-              ok,
-              0,
-            ),
-          showCall: (shownCall) => {
-            if (alreadyPrintedIds.has(toolEventId)) return;
-            writeToolCall(toolEventId, shownCall);
-            alreadyPrintedIds.add(toolEventId);
-          },
-          notify: writeNotice,
-          emitToolResult: (result, contextOutput) =>
-            emitToolResult(toolEventId, result, contextOutput),
-          writeToolOutput: (chunk) => writeToolOutput(toolEventId, chunk),
-          renderPlan: writePlanUpdate,
-          adoptProjectRoot: (plan) => {
-            const root = extractProjectRootFromPlan(plan);
-            if (root) setActiveProjectRootIfValid(root);
-          },
-          setPendingSessionStatePlan: (plan) => {
-            toolState.pendingSessionStatePlan = plan;
-          },
-          clearPlanContext: () => {
-            removePlanContextMessage(messages);
-            emit({ type: "plan-cleared", sessionId: session.sessionId });
-          },
-          getLedger: () => toolState.taskWorkLedger,
-          setLedger: (ledger) => {
-            toolState.taskWorkLedger = ledger;
-          },
-          looseWork: () => sessionLooseWork,
-          persistTaskEvidence,
-        },
-        call,
-      );
-      if (metaOutcome.kind === "handled") return metaOutcome.result;
-
-      const scope = await loadScopeForSession(session.sessionId);
-      const decision =
-        mcpRuntime?.classify(call.name) ?? classifyToolCall(call, { scope });
-      await auditLog("tool.classified", {
-        call,
-        decision,
-        scope: isScopeActive(scope) ? (scope.name ?? "(unnamed)") : "(none)",
-      });
-
-      const livePlanForPreGate = await loadPlan(session.sessionId).catch(
-        () => undefined,
-      );
-
-      const gateDecision = await runToolGates(
-        {
-          isPlanMode,
-          planApproved: () => session.planApproved.value,
-          scratchDir,
-          mcpSafe: (gatedCall) =>
-            mcpRuntime?.classify(gatedCall.name)?.level === "safe",
-          loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
-          notify: writeNotice,
-          showCall: (shownCall) => {
-            if (alreadyPrintedIds.has(toolEventId)) return;
-            writeToolCall(toolEventId, shownCall);
-            alreadyPrintedIds.add(toolEventId);
-          },
-          emitToolResult: (result, contextOutput) =>
-            emitToolResult(toolEventId, result, contextOutput),
-          writeToolOutput: (chunk) => writeToolOutput(toolEventId, chunk),
-        },
-        call,
-        decision.level,
-        livePlanForPreGate,
-      );
-      if (gateDecision.kind === "stop") return gateDecision.result;
-
-      if (session.planApproved.value) {
-        const livePlanForGate = await loadPlan(session.sessionId).catch(
-          () => undefined,
-        );
-        if (livePlanForGate) {
-          await autostartPlanTask(livePlanForGate, call, {
-            openTask: async (taskId) => {
-              await mutatePlan(session.sessionId, (draft) => {
-                const target = draft.tasks.find(
-                  (candidate) => candidate.id === taskId,
-                );
-                if (!target || target.state === "in_progress") return false;
-                target.state = "in_progress";
-                if (draft.status === "draft" || draft.status === "approved") {
-                  draft.status = "in_progress";
-                }
-                return true;
-              }).catch(() => undefined);
-            },
-            renderPlan: writePlanUpdate,
-            notify: (message) => writeNotice("info", message),
-            getLedger: () => toolState.taskWorkLedger,
-            setLedger: (ledger) => {
-              toolState.taskWorkLedger = ledger;
-            },
-          });
-        }
-      }
-
-      call = applyDestinationCwd(
-        call,
-        destinationHint ?? getActiveProjectRoot(),
-      );
-
-      const scaffoldPreflight = decideScaffoldPreflight(call);
-      if (scaffoldPreflight.skip) {
-        if (
-          scaffoldPreflight.adoptTarget &&
-          scaffoldPreflight.target &&
-          setActiveProjectRootIfValid(scaffoldPreflight.target, { force: true })
-        ) {
-          await persistProjectRootOnPlan(scaffoldPreflight.target);
-        }
-        const message = scaffoldPreflight.message;
-        writeNotice("info", message);
-        if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(toolEventId, call);
-          alreadyPrintedIds.add(toolEventId);
-        }
-        const result = { ok: true, output: message, exitCode: 0 };
-        emitToolResult(toolEventId, result, message);
-        writeToolOutput(toolEventId, "ok\n");
-        return {
-          ok: true,
-          call,
-          result,
-          contextOutput: message,
-        };
-      }
-
-      const scopeTarget = safeScopeTargetForToolCall(call);
-      const engagementActions =
-        pentestSession || isPentestToolCall(call) || Boolean(scope)
-          ? safeEngagementActionsForToolCall(call)
-          : [];
-      // The primary action carries the URL/port/path detail used for leases and
-      // network-hop authorization; every action (one per named target) must pass
-      // the scope check below before the tool runs.
-      const engagementAction = engagementActions[0];
-      const engagementGate = await evaluateEngagementGate(
-        {
-          scope,
-          audit: (event, payload) => auditLog(event, payload),
-        },
-        call,
-        engagementActions,
-        scopeTarget,
-      );
-      const engagementDecision = engagementGate.decision;
-      engagementGraph = engagementGate.graph;
-      engagementRecord = engagementGate.record;
-      if (engagementGate.blockedReason) {
-        const reason = engagementGate.blockedReason;
-        writeToolBlocked(toolEventId, call.name, reason);
-        const result = { ok: false, output: reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, reason);
-        return { ok: false, call, result, contextOutput: reason };
-      }
-
-      const authorization = await authorizeToolExecution(
-        {
-          call,
-          toolEventId,
-          parentSignal,
-          level: decision.level,
-          reason: decision.reason,
-        },
-        {
-          autoConfirm: Boolean(options.autoConfirm),
-          session,
-          confirmPort,
-          acquirePrompt: () => promptMutex.acquire(),
-          writeToolBlocked,
-          emitToolResult,
-        },
-      );
-      if (authorization.kind === "stop") return authorization.result;
-
-      parentSignal.throwIfAborted();
-      const planAtDispatch = await loadPlan(session.sessionId).catch(
-        () => undefined,
-      );
-      const dispatch = await resolveToolDispatch(
-        {
-          mutatePlan: (mutator) => mutatePlan(session.sessionId, mutator),
-          renderPlan: writePlanUpdate,
-          setPendingSessionStatePlan: (plan) => {
-            toolState.pendingSessionStatePlan = plan;
-          },
-          notify: writeNotice,
-          getLedger: () => toolState.taskWorkLedger,
-          setLedger: (ledger) => {
-            toolState.taskWorkLedger = ledger;
-          },
-        },
-        call,
-        planAtDispatch,
-      );
-      if (dispatch.kind === "reject") {
-        const result = { ok: false, output: dispatch.reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, dispatch.reason);
-        return { ok: false, call, result, contextOutput: dispatch.reason };
-      }
-      toolState.dispatchedTaskId = dispatch.dispatchedTaskId;
-      toolState.delegation = dispatch.delegation;
-
-      if (engagementAction) {
-        engagementLease = engagementPolicy.acquire(scope, engagementAction);
-        if (!engagementLease.decision.allowed) {
-          const target = engagementLease.decision.normalizedTarget || engagementAction.target;
-          const reason = outOfScopeToolMessage({
-            target,
-            reason: engagementLease.decision.reason,
-            allowed: scope?.authorizedTargets,
-          });
-          const result = { ok: false, output: reason, exitCode: 1 };
-          emitToolResult(toolEventId, result, reason);
-          return { ok: false, call, result, contextOutput: reason };
-        }
-      }
-      if (turnState.state === "understanding" || turnState.state === "exploring") {
-        moveTurn("acting", `executing ${call.name}`);
-      }
-      options.onToolStart?.(call);
-      // Card was "queued" since writeToolCall; flip to running only when work starts.
-      emit({ type: "tool-start", id: toolEventId });
-      writeStatus(call.name);
-
-      // Elevation uses the secure secret modal (TUI) or is refused — never
-      // a raw TTY "Password:" that freezes the UI. No misleading notice.
-
-      const toolAc = new AbortController();
-      const onParentAbort = () => toolAc.abort();
-      parentSignal.addEventListener("abort", onParentAbort);
-
-      let result: ToolResult;
-      let liveBytes = 0;
-      // Stream every live byte — never drop mid-run. After the tool finishes we
-      // still replace the spool with the authoritative full `result.output`.
-      const printLive = (chunk: string): void => {
-        if (
-          call.name === "fs.read" ||
-          call.name === "fs.list" ||
-          call.name === "fs.search"
-        )
-          return;
-        if (!chunk) return;
-        liveBytes += chunk.length;
-        const indented = chunk.replace(/\r/g, "").replace(/\n(?!$)/g, "\n  ");
-        const body = indented.startsWith("\n") ? indented : `  ${indented}`;
-        writeToolOutput(toolEventId, chunk);
-      };
-
-      const { id: jobId, job: backgroundJob } = createEphemeralToolJob(
-        call,
-        safeCwd(),
-        session.sessionId,
-      );
-      jobManager.registerJob(jobId, backgroundJob, toolAc);
-
-
-      const watchdog = createToolWatchdog({
-        toolName: call.name,
-        stallBudgetMs: toolStallBudgetMs(call),
-        hardBudgetMs: toolHardBudgetMs(call),
-        graceMs: TOOL_ABORT_GRACE_MS,
-        controller: toolAc,
-        notify: (message) => writeNotice("warn", message),
-      });
-      watchdog.resetStallTimer();
-
-      const engagementRunOptions = buildEngagementRunOptions({
-        action: engagementAction,
-        scope,
-        normalizedTarget: engagementDecision?.normalizedTarget,
-        graph: engagementGraph,
-        record: engagementRecord,
-        audit: (event, payload) => auditLog(event, payload),
-      });
-
-      const startToolWork = (): Promise<ToolResult> =>
-          mcpRuntime !== undefined &&
-          (mcpRuntime.getTool(call.name) !== undefined ||
-            isCanonicalToolName(call.name))
-            ? mcpRuntime.callTool(call.name, call.args, { signal: toolAc.signal })
-            : runToolCall(call, {
-          signal: toolAc.signal,
-          requestSecret: options.requestSecret ?? stdioSecretRequester,
-          onOutput: (chunk) => {
-            if (toolAc.signal.aborted) return;
-            watchdog.resetStallTimer();
-            printLive(chunk);
-          },
-          confirmed: true,
-          userPrompt: prompt,
-          // image.view needs the active route to check vision support and size
-          // images to the provider's per-image budget.
-          llmProvider: provider,
-          llmModel: model,
-          sessionId: session.sessionId,
-          ...(toolState.delegation?.taskId ? { taskId: toolState.delegation.taskId } : {}),
-          ...(toolState.delegation ? { delegationId: toolState.delegation.id } : {}),
-          ...(toolState.dispatchedTaskId ? { parentTaskId: toolState.dispatchedTaskId } : {}),
-          wakeOnCompletion: true,
-          monitor: {
-            toolName: call.name,
-            toolEventId,
-          },
-          ...engagementRunOptions,
-        });
-
-      const supervised = await superviseToolExecution(
-        {
-          watchdog,
-          parentSignal,
-          toolSignal: toolAc.signal,
-          isAbortError,
-          liveBytes: () => liveBytes,
-          writeToolOutput: (chunk) => writeToolOutput(toolEventId, chunk),
-          updateJobStatus: (status, exitCode) =>
-            jobManager.updateJobStatus(jobId, status, exitCode),
-          cleanup: () => {
-            watchdog.dispose();
-            engagementLease?.release();
-            parentSignal.removeEventListener("abort", onParentAbort);
-          },
-        },
-        startToolWork,
-      );
-      result = supervised.result;
-      if (supervised.kind === "cancelled") {
-        emitToolResult(toolEventId, result, result.output);
-        return {
-          ok: false,
-          call,
-          result,
-          contextOutput: result.output,
-          aborted: true,
-        };
-      }
-
-      if (result.suppressedRepeat) {
-        const contextOutput = result.output;
-        const output = result.output.endsWith("\n")
-          ? result.output
-          : `${result.output}\n`;
-        writeToolOutput(toolEventId, output, { replace: true });
-        emitToolResult(toolEventId, result, contextOutput);
-        options.onToolResult?.(call, result);
-        // Record it as an observation-free success so the per-call guard can
-        // stop an identical replay, while a real state change (new job status
-        // or bytes) still produces a fresh stateKey and is allowed through.
-        const suppressedProbeState = probeStateKey(call);
-        loopGuard.recordAttempt(
-          step,
-          call.name,
-          call.args,
-          true,
-          result.exitCode,
-          "",
-          suppressedProbeState ? { stateKey: suppressedProbeState } : undefined,
-        );
-        await auditLog("tool.result", {
-          call,
-          ok: result.ok,
-          exitCode: result.exitCode,
-          output: result.output.slice(0, 4_000),
-          suppressedRepeat: true,
-        });
-        return {
-          ok: result.ok,
-          call,
-          result,
-          contextOutput,
-          suppressedRepeat: true,
-        };
-      }
-
-      const scaffoldOutcome = reconcileScaffoldOutcome(call, result);
-      result = scaffoldOutcome.result;
-      if (scaffoldOutcome.adoptRoot) {
-        setActiveProjectRootIfValid(scaffoldOutcome.adoptRoot, { force: true });
-        await persistProjectRootOnPlan(scaffoldOutcome.adoptRoot);
-      }
-      if (scaffoldOutcome.notice) {
-        writeNotice("info", scaffoldOutcome.notice);
-      }
-
-      if (toolState.delegation?.taskId && !result.backgroundJob) {
-        // The toolState.delegation never became a durable job: settle its child instead of
-        // Leaving a permanently yellow subtask behind.
-        const delegationId = toolState.delegation.id;
-        const settledState = result.ok ? "skipped" : "failed";
-        const settlement = await mutatePlan(session.sessionId, (draft) => {
-          const child = draft.tasks.find(
-            (task) => task.delegationId === delegationId,
-          );
-          if (!child) return false;
-          child.state = settledState;
-          child.note = result.ok
-            ? `toolState.delegation=${delegationId} ran in the foreground; no durable job was created`
-            : `toolState.delegation=${delegationId} failed to launch`;
-          return true;
-        }).catch(() => undefined);
-        if (settlement?.ok && settlement.plan) {
-          toolState.pendingSessionStatePlan = settlement.plan;
-          writePlanUpdate(settlement.plan);
-        }
-        toolState.delegation = undefined;
-      }
-
-      if (result.backgroundJob) {
-        const durableJob = jobManager.getJob(result.backgroundJob.id);
-        if (durableJob?.responder) {
-          result = await linkResponderJobToPlan(
-            {
-              loadPlan: () =>
-                loadPlan(session.sessionId).catch(() => undefined),
-              mutatePlan: (mutator) => mutatePlan(session.sessionId, mutator),
-              linkJob: (jobIdToLink, patch) =>
-                jobManager.linkJob(jobIdToLink, patch),
-              renderPlan: writePlanUpdate,
-              setPendingSessionStatePlan: (plan) => {
-                toolState.pendingSessionStatePlan = plan;
-              },
-              notify: writeNotice,
-            },
-            {
-              job: durableJob,
-              call,
-              toolEventId,
-              delegationTaskId: toolState.delegation?.taskId,
-              dispatchedTaskId: toolState.dispatchedTaskId,
-            },
-            result,
-          );
-        }
-      }
-
-      const framed = await frameToolResult(
-        {
-          step,
-          saveArtifact: (savedCall, savedOutput) =>
-            saveToolOutput(savedCall, savedOutput),
-          setJobArtifact: (artifactPath) => {
-            const storedJob = jobManager.getJob(jobId);
-            if (storedJob) storedJob.artifactPath = artifactPath;
-          },
-          formatContext: formatToolContext,
-          emitToolResult: (framedResult, contextText, artifactPath) =>
-            emitToolResult(
-              toolEventId,
-              framedResult,
-              contextText,
-              artifactPath,
-            ),
-          onToolResult: options.onToolResult,
-          audit: (event, payload) => auditLog(event, payload),
-          recordEngagementOutcome: async (artifactPath) => {
-            if (!engagementGraph || !engagementRecord) return;
-            await recordEngagementOutcome(engagementGraph, engagementRecord, {
-              call,
-              result,
-              artifactPath,
-            });
-          },
-          recordLedgerCall: (ledgerCall, ok, artifactPath) =>
-            workLedger.recordToolCall(ledgerCall, ok, artifactPath),
-        },
-        call,
-        result,
-      );
-      const output = result.output.trim();
-      const savedOutputPath = framed.artifactPath;
-      const contextOutput = framed.contextOutput;
-
-      const completedProbeState = probeStateKey(call);
-      const accountingState = {
-        retryDependenciesChanged: toolState.retryDependenciesChanged,
-        retryEnvironmentChanged: toolState.retryEnvironmentChanged,
-        governorState: toolState.governorState,
-      };
-      accountToolOutcome(
-        {
-          outcomeState,
-          maxSteps,
-          codingSession,
-          attemptCount: (attemptedCall) =>
-            loopGuard.getAttemptCount(attemptedCall.name, attemptedCall.args),
-          moveTurn,
-          deferMessage: (message) => deferredPostToolMessages.push(message),
-        },
-        accountingState,
-        {
-          call,
-          result,
-          toolEventId,
-          artifactPath: savedOutputPath,
-          dispatchedTaskId: toolState.dispatchedTaskId,
-          probeStateKey: completedProbeState,
-        },
-      );
-      toolState.retryDependenciesChanged = accountingState.retryDependenciesChanged;
-      toolState.retryEnvironmentChanged = accountingState.retryEnvironmentChanged;
-      toolState.governorState = accountingState.governorState;
-      await saveOutcomeState(outcomeState);
-
-      loopGuard.recordAttempt(
-        step,
-        call.name,
-        call.args,
-        result.ok,
-        result.exitCode,
-        result.output,
-        completedProbeState ? { stateKey: completedProbeState } : undefined,
-      );
-
-      const creditedPlan = await creditToolWork(
-        {
-          getLedger: () => toolState.taskWorkLedger,
-          setLedger: (ledger) => {
-            toolState.taskWorkLedger = ledger;
-          },
-          bankLooseWork: (receipt) => sessionLooseWork.push(receipt),
-          persistTaskEvidence,
-          loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
-          creditId: () => toolState.dispatchedTaskId,
-        },
-        call,
-        result,
-      );
-      if (result.ok && isEvidenceWorkTool(call.name)) {
-        toolState.pendingSessionStatePlan =
-          creditedPlan ?? toolState.pendingSessionStatePlan;
-      }
-
-      reportToolFailure(
-        {
-          reflection: () => loopGuard.getFailureReflection(),
-          failureCount: () => loopGuard.consecutiveFailureCount(),
-          deferMessage: (message) => deferredPostToolMessages.push(message),
-          notify: writeNotice,
-        },
-        result.ok,
-      );
-
-      if (output) {
-        // Authoritative FULL body — replace any live stream so the pager
-        // never shows a truncated mid-run preview. Never cap for the UI.
-        const fullChunk = output.endsWith("\n") ? output : `${output}\n`;
-        writeToolOutput(toolEventId, fullChunk, { replace: true });
-      }
-
-      return { ok: result.ok, call, result, contextOutput };
-    }
-
+    ): Promise<SingleToolResult> =>
+      runSingleTool(singleToolDeps, call, toolEventId, parentSignal);
 
     // Align with /compact default: small recency + dense memory (not keepRecent=6 fat tails).
     const AUTO_COMPACT_KEEP_RECENT = 2;

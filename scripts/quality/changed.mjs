@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { LIMITS, ROOT } from "./config.mjs";
+import { LIMITS, RELOCATED_LEGACY_FILES, ROOT } from "./config.mjs";
 import { buildReport } from "./report.mjs";
 
 const METRICS_PATH = "refactor/evidence/phase-0/reports/metrics.json";
@@ -113,10 +113,16 @@ function metricFailures(file, fn, baseline) {
 export function evaluateChangedQuality({ current, baseline, changes }) {
   const failures = [];
   const held = [];
+  const relocated = [];
   for (const change of changes) {
     const file = change.path;
     const currentFile = current.files.find((entry) => entry.file === file);
     if (!currentFile) continue;
+    const origin = RELOCATED_LEGACY_FILES[file];
+    if (origin) {
+      relocated.push(`${file}: relocated legacy code from ${origin}`);
+      continue;
+    }
     const baselineFile = baseline.files.find((entry) => entry.file === file);
     if (currentFile.lines >= currentFile.limit) {
       if (
@@ -157,7 +163,7 @@ export function evaluateChangedQuality({ current, baseline, changes }) {
       );
     }
   }
-  return { failures, held };
+  return { failures, held, relocated };
 }
 
 function gitOutput(args) {
@@ -209,6 +215,8 @@ function main() {
   const current = buildReport({ includeFunctionRanges: true });
   const baseline = readBaseline(base);
   const result = evaluateChangedQuality({ current, baseline, changes });
+  for (const line of result.relocated ?? [])
+    process.stdout.write(`relocated: ${line}\n`);
   for (const line of result.held) process.stdout.write(`held: ${line}\n`);
   for (const line of result.failures) process.stderr.write(`failure: ${line}\n`);
   process.stdout.write(

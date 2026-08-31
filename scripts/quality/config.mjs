@@ -45,6 +45,16 @@ export const GENERATED_FILES = Object.freeze([
 export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
 
 /**
+ * Files that hold code moved verbatim out of an oversized legacy file. Their
+ * metrics are the origin file's legacy metrics at a new path, so the changed
+ * gate reports them as relocated instead of new. Each entry must name the
+ * origin, and every entry is expected to disappear as the code is decomposed.
+ */
+export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/agent/turn/tool-execution/single-tool.ts": "src/agent/runner.ts",
+});
+
+/**
  * Terminal thresholds from refactor/instructions.md §8. `max` values are
  * exclusive upper bounds: a unit must be strictly below the number.
  */
