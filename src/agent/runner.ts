@@ -49,6 +49,7 @@ import { evaluateEngagementGate } from "./turn/tool-execution/engagement-gate.js
 import { recordEngagementOutcome } from "./turn/tool-execution/engagement-checkpoint.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
+import { closeOutRound } from "./turn/loop/round-closeout.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -3558,107 +3559,68 @@ export async function runAgentTurn(
           }
         }
 
-        // Synthetic results for deferred/omitted ids still listed on assistant.
-        if (historyNativeCalls.length) {
-          for (const b of bound) {
-            if (runIds.has(b.id) || recordedNativeIds.has(b.id)) continue;
-            appendToolResult(
-              messages,
-              b.id,
-              `Tool ${b.call.name} result (exit=130, ok=false):\n${deferReason}`,
-              b.call.name,
-              false,
-            );
-            recordedNativeIds.add(b.id);
-          }
-          fillMissingToolResults(
+        const closeoutState = { consecutiveSynthesizedRounds };
+        const closeout = await closeOutRound(
+          {
             messages,
+            recordedNativeIds,
             historyNativeCalls,
-            "Cancelled — not executed this turn.",
-          );
-        }
-
-        const actionSequenceOutcome = createHash("sha256")
-          .update(
-            JSON.stringify(
-              bound.map((entry) => actionSequenceOutcomes.get(entry.id) ?? null),
+            deferReason,
+            priorObservation: (priorCall) =>
+              loopGuard.getPriorObservation(priorCall.name, priorCall.args),
+            completeActionSequence: (eligible, outcome) =>
+              loopGuard.completeActionSequence(
+                actionSequenceCalls,
+                eligible,
+                outcome,
+              ),
+            currentSignature: () => loopGuard.currentActionSequenceSignature(),
+            drainResponderLedger: () =>
+              deferredResponderLedgerNotifications.splice(0),
+            refreshInstructions: async () => {
+              evidenceFlags.instructionsChangedThisRound = false;
+              await refreshAgentInstructions();
+            },
+            refreshSessionState,
+            recoveryUserMessage,
+            drainDeferredMessages: () => deferredPostToolMessages.splice(0),
+          },
+          closeoutState,
+          {
+            bound,
+            runIds,
+            outcomes: actionSequenceOutcomes,
+            sequenceEligible: actionSequenceEligible,
+            executedCount: actionSequenceExecuted,
+            plannedCount: allCalls.length,
+            runCount: toRun.length,
+            suppressedCount: roundSuppressedCount,
+            aborted,
+            awaitingPlanApproval,
+            instructionsChanged: evidenceFlags.instructionsChangedThisRound,
+            pendingSessionStatePlan,
+            responderWakeTurn,
+            unreadResponderResults: responderClaims.size > 0,
+            calledResponderRead: allCalls.some(
+              (candidate) =>
+                candidate.name === "job.read" || candidate.name === "task.read",
             ),
-          )
-          .digest("hex")
-          .slice(0, 24);
-        loopGuard.completeActionSequence(
-          actionSequenceCalls,
-          actionSequenceEligible &&
-            toRun.length === bound.length &&
-            actionSequenceExecuted === allCalls.length &&
-            !aborted &&
-            !awaitingPlanApproval,
-          actionSequenceOutcome,
+          },
         );
-
-        consecutiveSynthesizedRounds =
-          !aborted && actionSequenceExecuted > 0 && roundSuppressedCount === actionSequenceExecuted
-            ? consecutiveSynthesizedRounds + 1
-            : 0;
-        if (consecutiveSynthesizedRounds >= 2) {
-          const repeatedList = bound
-            .map((b) => `${b.call.name} ${formatToolArgs(b.call)}`)
-            .join("; ");
+        consecutiveSynthesizedRounds = closeoutState.consecutiveSynthesizedRounds;
+        if (closeout.kind === "stop") {
           outcomeState.outcome.status = "partial";
           await saveOutcomeState(outcomeState);
           moveTurn("partial", "repeated identical action cycle");
-          const recoveryObservation = bound
-            .map((entry) => loopGuard.getPriorObservation(entry.call.name, entry.call.args))
-            .find((text) => typeof text === "string" && text.trim().length > 0);
           return finishTurn(
-            `Stopped an identical action cycle: consecutive rounds re-issued calls whose results are already in context (${repeatedList}). Continue from those results or take a materially different action.`,
+            closeout.answer,
             productiveSteps,
             "partial",
-            ["Continue with a materially different action that can produce new evidence."],
-            "Every call in consecutive rounds repeated already-answered work.",
+            closeout.remainingCriteria,
+            closeout.reason,
             undefined,
-            {
-              calls: repeatedList,
-              ...(recoveryObservation?.trim()
-                ? { observation: recoveryObservation.trim().slice(0, 4000) }
-                : {}),
-              signature: loopGuard.currentActionSequenceSignature() ?? repeatedList,
-            },
+            closeout.loopGuardStop,
           );
-        }
-
-        // Keep ledger system rows outside the native assistant→tool group so
-        // protocol repair preserves the real successful job.read body.
-        for (const notification of deferredResponderLedgerNotifications.splice(0)) {
-          upsertResponderResultLedger(messages, notification);
-        }
-
-        if (evidenceFlags.instructionsChangedThisRound) {
-          evidenceFlags.instructionsChangedThisRound = false;
-          await refreshAgentInstructions();
-        }
-
-        // SESSION STATE only after the assistant→tool group is closed.
-        // Mid-group upserts were the root cause of "No stored body" thrash.
-        refreshSessionState(pendingSessionStatePlan);
-
-        if (
-          responderWakeTurn &&
-          responderClaims.size > 0 &&
-          !allCalls.some(
-            (candidate) =>
-              candidate.name === "job.read" || candidate.name === "task.read",
-          )
-        ) {
-          messages.push(
-            recoveryUserMessage(
-              "The delivered Responder result is still unread. Decide from the evidence already available whether it is understood. If it is, call job.read now; if not, gather only the smallest bounded evidence needed. Do not resume or repeat unrelated foreground work before resolving this receipt.",
-            ),
-          );
-        }
-
-        if (deferredPostToolMessages.length > 0) {
-          messages.push(...deferredPostToolMessages.splice(0));
         }
 
         if (awaitingPlanApproval) {
