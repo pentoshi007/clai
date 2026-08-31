@@ -38,6 +38,10 @@ import { insertedText } from "./turn/inserted-text.js";
 import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
+import {
+  createCompactionSummarizer,
+  type CompactionExecutionState,
+} from "./turn/compaction-summarizer.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -141,7 +145,6 @@ import {
   COMPACTION_MEMORY_PREFIX,
   PLAN_IMPLEMENT_MEMORY_PREFIX,
   isCompactionMemoryMessage,
-  type CompactionSummaryStage,
 } from "./context-manager.js";
 import {
   buildContextBreakdown,
@@ -204,15 +207,10 @@ import {
 import {
   buildDirectCompactionPrompt,
   compactionSinglePassInputBudget,
-  COMPACTION_SYSTEM_PROMPT,
   COMPACTION_MAX_COMPLETION_TOKENS,
-  COMPACTION_MAP_MAX_COMPLETION_TOKENS,
   normalizeCompactionSummary,
 } from "./compaction-summary.js";
-import {
-  executeCompactionSummary,
-  planCompactionReplay,
-} from "./compaction-executor.js";
+import { planCompactionReplay } from "./compaction-executor.js";
 import {
   isOperationPolicyError,
   OperationLedger,
@@ -3700,8 +3698,7 @@ export async function runAgentTurn(
     const AUTO_COMPACT_KEEP_RECENT = 2;
     let lastCompactionMsgCount = 0;
     const compactionAttempts = new CompactionAttemptLedger();
-    let activeCompactionId: string | undefined;
-    let activeCompactionLedger: OperationLedger | undefined;
+    const compactionExecutionState: CompactionExecutionState = {};
     /**
      * The last successful main request exactly as dispatched. A compaction
      * that replays it (plus the messages appended since) keeps the entire
@@ -3715,7 +3712,6 @@ export async function runAgentTurn(
      * summarizeForCompaction. When undefined the legacy transcript-rendered
      * requests are used (no snapshot yet, or the replay would not fit).
      */
-    let compactionReplaySnapshot: SuccessfulRequestSnapshot | undefined;
     /** E5: identical tool bodies within this turn → pointer instead of re-append. */
     const toolResultHashes = new Map<
       string,
@@ -3729,58 +3725,17 @@ export async function runAgentTurn(
     // repeating this on every failure just adds noise.
     let freeTierAdvisoryShown = false;
 
-    const summarizeForCompaction = async (
-      summaryPrompt: string,
-      stage?: CompactionSummaryStage,
-    ): Promise<string> => {
-      const streamFinalSummary = stage?.phase !== "map";
-      const compactionId = streamFinalSummary ? activeCompactionId : undefined;
-      const maxTokens =
-        stage?.phase === "map"
-          ? COMPACTION_MAP_MAX_COMPLETION_TOKENS
-          : COMPACTION_MAX_COMPLETION_TOKENS;
-      const sourceMessages = stage?.sourceMessages;
-      const compactionTools = sourceMessages
-        ? selectToolDefs(nativeToolsActive, useCompactSystemPrompt)
-        : undefined;
-      // Cache-preserving replay: resend the last successful request verbatim
-      // (same provider, model, tools, sampling and reasoning settings) with
-      // only the new tail and the compaction instruction appended. Anything
-      // else — a different system prompt, dropped tool schemas, a re-rendered
-      // transcript — changes the first bytes of the prompt and throws away the
-      // whole cached prefix.
-      const replay = compactionReplaySnapshot;
-      return executeCompactionSummary({
-        provider,
-        model,
-        systemContent: COMPACTION_SYSTEM_PROMPT,
-        prompt: summaryPrompt,
-        maxTokens,
-        signal: options.signal,
-        ...(replay
-          ? {
-              baseRequest: replay,
-              history: messages,
-              ...(currentContextLimitTokens() !== undefined
-                ? { contextLimitTokens: currentContextLimitTokens() }
-                : {}),
-            }
-          : {
-              ...(sourceMessages ? { sourceMessages } : {}),
-              ...(compactionTools?.length ? { tools: compactionTools } : {}),
-            }),
-        ...(activeCompactionLedger
-          ? { operation: activeCompactionLedger }
-          : {}),
-        qualityRetry: false,
-        retryOnServerError: true,
-        stream: true,
-        onToken: compactionId
-          ? (text, replace) =>
-              writeCompactionDelta(compactionId, text, replace)
-          : undefined,
-      });
-    };
+    const summarizeForCompaction = createCompactionSummarizer({
+      provider,
+      model,
+      signal: options.signal,
+      history: messages,
+      state: compactionExecutionState,
+      currentContextLimitTokens,
+      toolsForSourceMessages: () =>
+        selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+      writeDelta: writeCompactionDelta,
+    });
 
     /**
      * Estimate the complete next model request through the one serialized-
@@ -3879,13 +3834,13 @@ export async function runAgentTurn(
       });
       if (!force && compactionAttempts.isSuppressed(attemptKey)) return;
       const compactionId = `compact-${randomUUID().slice(0, 12)}`;
-      activeCompactionId = compactionId;
+      compactionExecutionState.activeId = compactionId;
       // Admissions: the pinned dispatch plus the executor's bounded error
       // retry. Still a hard cap — every admission re-sends the full prompt.
       const compactionLedger = new OperationLedger(
         singleAdmissionOperationPolicy("compaction", 3),
       );
-      activeCompactionLedger = compactionLedger;
+      compactionExecutionState.activeLedger = compactionLedger;
       // Plan the cache-preserving replay up front: resend the last successful
       // request with the tail + instruction appended. When it fits, the direct
       // single pass is forced (the raw estimate gate would otherwise reject a
@@ -3906,7 +3861,7 @@ export async function runAgentTurn(
             stream: true,
           })
         : undefined;
-      compactionReplaySnapshot =
+      compactionExecutionState.replaySnapshot =
         replayPlan && !replayPlan.accounting.overLimit
           ? replaySnapshot
           : undefined;
@@ -3927,7 +3882,7 @@ export async function runAgentTurn(
             budgetTokens: 0,
             keepRecent: AUTO_COMPACT_KEEP_RECENT,
             singleAdmission: true,
-            ...(compactionReplaySnapshot
+            ...(compactionExecutionState.replaySnapshot
               ? { forceDirectSinglePass: true }
               : {}),
             singlePassInputBudgetTokens: Math.max(
@@ -4093,11 +4048,11 @@ export async function runAgentTurn(
         compactionAttempts.recordFailure(attemptKey);
         await auditLog("agent.compact.failed", { reason: message });
       } finally {
-        if (activeCompactionId === compactionId) activeCompactionId = undefined;
-        if (activeCompactionLedger === compactionLedger) {
-          activeCompactionLedger = undefined;
+        if (compactionExecutionState.activeId === compactionId) compactionExecutionState.activeId = undefined;
+        if (compactionExecutionState.activeLedger === compactionLedger) {
+          compactionExecutionState.activeLedger = undefined;
         }
-        compactionReplaySnapshot = undefined;
+        compactionExecutionState.replaySnapshot = undefined;
       }
     }
 
