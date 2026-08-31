@@ -18,27 +18,14 @@ export interface ShellExecArgs {
   timeoutMs?: number | undefined;
   signal?: AbortSignal | undefined;
   onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
-  /** Max bytes of output to retain in memory for the model (head+tail). */
   maxModelBytes?: number | undefined;
-  /** Max bytes streamed to the artifact file before the child is terminated. */
   maxCaptureBytes?: number | undefined;
-  /** Behavior when maxCaptureBytes is exceeded. Defaults to "terminate". */
   onLimit?: "terminate" | "continue" | undefined;
-  /** Where to save the raw artifact. When undefined, the active session temp dir (or ~/.clai/outputs) is used. */
   artifactPath?: string | undefined;
-  /** When true, do not allocate an artifact file (used by tests / dry runs). */
   noArtifact?: boolean | undefined;
-  /**
-   * Force the child to inherit the parent's stdin so interactive
-   * password prompts (sudo, ssh, gpg, doas) can read from the controlling
-   * TTY. Defaults to `auto`: enabled for commands {@link looksInteractiveStdin}
-   * detects when stdin is a TTY; disabled otherwise. Set explicitly to
-   * `true` to force-inherit, `false` to keep stdin closed.
-   */
   interactiveStdin?: boolean | "auto" | undefined;
 }
 
-/** Prefer the platform default shell, but tolerate minimal sandboxes that omit it. */
 export function resolveShell(): string | undefined {
   if (process.platform === "win32") return process.env.ComSpec ?? "cmd.exe";
   const candidates = ["/bin/sh", process.env.SHELL, "/bin/bash", "/bin/zsh"];
@@ -53,7 +40,6 @@ function withoutLaunchMetadata(result: ShellExecAttemptResult): ToolResult {
   return publicResult;
 }
 
-/** Disable/enable TTY stdin inheritance for password prompts. */
 export function setAllowInteractiveStdinInherit(allow: boolean): void {
   assignAllowInteractiveStdinInherit(allow);
 }
@@ -127,13 +113,6 @@ export function looksInteractiveStdin(command: string): boolean {
   return interactiveStdinKind(command) !== undefined;
 }
 
-/**
- * Run a foreground shell command. A launch-level ENOENT can be transient on
- * macOS even when /bin/sh and cwd both exist. Because the child never started,
- * one runtime-owned retry is safe and avoids teaching the model to mutate the
- * command repeatedly. Command failures after a successful spawn are never
- * retried here.
- */
 export async function shellExec(args: ShellExecArgs): Promise<ToolResult> {
   const first = await shellExecAttempt(args);
   const launch = first.launchFailure;

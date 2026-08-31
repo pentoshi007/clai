@@ -5,18 +5,8 @@ import { classifyHost } from "../tools/web/ssrf-guard.js";
 import type { ToolCall } from "../types.js";
 import { classifyInteractiveInput, ClassifyOptions, classifyShellCommand, RiskDecision } from "./shell-classification.js";
 
-/**
- * Plain executable name: letters, digits and the punctuation real binaries
- * use. Anything with a path separator, whitespace, or a shell metacharacter
- * is rejected outright — classification must never interpret model text.
- */
 const PLAIN_BINARY_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 
-/**
- * Side-effect-free PATH probe. No shell, no child process: `findExecutableSync`
- * only stats candidate paths, so a model-supplied `checkBinary` can never be
- * interpreted as a command during safety classification.
- */
 function isBinaryOnPath(binary: string): boolean {
   if (!PLAIN_BINARY_NAME_RE.test(binary)) return false;
   return Boolean(findExecutableSync(binary));
@@ -63,10 +53,6 @@ export function classifyToolCall(
   }
 
   if (call.name === "dns.lookup" || call.name === "whois.lookup") {
-    // Single-shot DNS / whois queries are passive lookups. They never
-    // touch the target's network stack, so we don't gate them behind
-    // pentest authorization or scope confirmation. The underlying
-    // spawnArgv call still validates the target via parseHost.
     return {
       level: "safe",
       reason: "Passive lookup against public registries",
@@ -74,10 +60,6 @@ export function classifyToolCall(
   }
 
   if (call.name === "tool.batch") {
-    // Inspect children: all-safe batches stay auto-run; any confirm-level
-    // child elevates the whole batch so shell/fs mutates cannot hide behind
-    // a "safe batch" label. Block-level children block the batch. Nested
-    // tool.batch / plan tools are rejected in the handler.
     const rawCalls = call.args?.calls;
     if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
       return { level: "safe", reason: "Empty or invalid batch (handler will reject)" };
@@ -90,13 +72,11 @@ export function classifyToolCall(
           ? String((entry as { name: string }).name).trim()
           : "";
       if (!childName) continue;
-      // Wire form (tool_check) → canonical (tool.check) for classification.
       const dotted = childName.includes(".")
         ? childName
         : childName.includes("_")
           ? childName.replace(/_/g, ".")
           : childName;
-      // Nested batches would recurse forever and are forbidden in the handler.
       if (dotted === "tool.batch") {
         return {
           level: "block",
@@ -197,10 +177,6 @@ export function classifyToolCall(
   }
 
   if (call.name === "pkg.install") {
-    // pkg.install already no-ops when the binary is on PATH — checking
-    // "is X installed" this way is a read, not a mutation. Probe the same
-    // way the tool itself will, so that check-then-skip never prompts; only
-    // an actual install (binary genuinely missing) requires confirmation.
     const tool = stringArg(call.args, "tool");
     const checkBinary = stringArg(call.args, "checkBinary");
     if (tool) {
@@ -225,7 +201,6 @@ export function classifyToolCall(
     };
   }
 
-  // New tools
 
   if (call.name === "net.context") {
     return { level: "safe", reason: "Read-only local network info" };
@@ -262,9 +237,6 @@ export function classifyToolCall(
   }
 
   if (call.name === "shell.start") {
-    // Starting a background program/service should be as frictionless as
-    // running it inline — classify by the command itself (a destructive or
-    // mutating background command still confirms).
     const command = stringArg(call.args, "command") ?? "";
     return classifyShellCommand(command, options);
   }
@@ -325,7 +297,6 @@ export function classifyToolCall(
         reason: `web.fetch refuses scheme ${parsed.protocol}`,
       };
     }
-    // Strip surrounding `[]` from IPv6 hostname literals before classifying.
     const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
     const blocked = classifyHost(hostname);
     if (blocked) {

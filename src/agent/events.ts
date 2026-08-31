@@ -7,7 +7,6 @@ export type AgentEvent =
   | {
       type: "turn-start";
       prompt: string;
-      /** Chat YOU bubble text; null/empty = hide system choreography from transcript. */
       displayPrompt?: string | null;
     }
   | { type: "status"; text: string }
@@ -17,9 +16,7 @@ export type AgentEvent =
   | { type: "assistant-message"; text: string }
   | { type: "notice"; level: "info" | "warn"; text: string }
   | { type: "tool-call"; id: string; name: string; argsDisplay: string }
-  /** Tool moved from queued → actually executing (cards stay in document order). */
   | { type: "tool-start"; id: string }
-  /** `replace: true` sets the full body (never append) so the UI never keeps a truncated live preview. */
   | { type: "tool-output"; id: string; chunk: string; replace?: boolean }
   | {
       type: "tool-result";
@@ -28,7 +25,6 @@ export type AgentEvent =
       exitCode?: number;
       summary: string;
       artifactPath?: string;
-      /** Cursor-style file diffs for fs.* mutation tools. */
       fileChanges?: import("../tools/file-diff.js").FileChange[] | undefined;
     }
   | { type: "tool-blocked"; id: string; name: string; reason: string }
@@ -62,9 +58,7 @@ export type AgentEvent =
       message: string;
       retainedTokens: number;
     }
-  /** Legacy one-shot compaction event retained for non-streaming integrations. */
   | { type: "compacted"; summary: string; beforeTokens: number; afterTokens: number }
-  /** Provider-reported token usage after a model completion. */
   | {
       type: "token-usage";
       usage: TokenUsage;
@@ -72,5 +66,4 @@ export type AgentEvent =
       provider?: ProviderId | undefined;
       attempt?: ContextAttemptReference | undefined;
     }
-  /** Authoritative assembled-request estimate (same measure as compaction). */
   | { type: "context-estimate"; estimatedTokens: number; model?: string | undefined };

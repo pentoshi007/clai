@@ -14,11 +14,9 @@ export type DnsRecordType =
   | "SRV"
   | "TXT";
 
-/** Cap system-resolver wait so sandboxed/slow DNS cannot stall recon. */
 const RESOLVER_TIMEOUT_MS = 8_000;
 const DOH_TIMEOUT_MS = 10_000;
 
-/** DNS-over-HTTPS type codes (RFC 1035 / IANA). */
 const DOH_TYPE: Record<DnsRecordType, number | string> = {
   A: 1,
   AAAA: 28,
@@ -86,10 +84,6 @@ async function resolveViaSystem(host: string, record: DnsRecordType): Promise<un
   }
 }
 
-/**
- * When ANY is unsupported (common on DoH / some resolvers), gather the
- * useful passive set in parallel so recon still gets a full surface map.
- */
 async function resolveAnyComposite(host: string): Promise<string[]> {
   const types: DnsRecordType[] = ["A", "AAAA", "MX", "NS", "TXT", "CNAME"];
   const lines: string[] = [];
@@ -105,7 +99,6 @@ async function resolveAnyComposite(host: string): Promise<string[]> {
           lines.push(`${type}\t${render(value)}`);
         }
       } catch {
-        // Missing type is normal (e.g. no AAAA).
       }
     }),
   );
@@ -113,7 +106,6 @@ async function resolveAnyComposite(host: string): Promise<string[]> {
 }
 
 async function resolveViaDoh(host: string, record: DnsRecordType): Promise<string[]> {
-  // Google DoH often rejects ANY — expand to composite for that type.
   if (record === "ANY") {
     const composite: string[] = [];
     const types: DnsRecordType[] = ["A", "AAAA", "MX", "NS", "TXT", "CNAME"];
@@ -123,7 +115,6 @@ async function resolveViaDoh(host: string, record: DnsRecordType): Promise<strin
           const rows = await resolveViaDoh(host, type);
           for (const row of rows) composite.push(`${type}\t${row}`);
         } catch {
-          // skip missing
         }
       }),
     );
@@ -149,11 +140,6 @@ async function resolveViaDoh(host: string, record: DnsRecordType): Promise<strin
   return (payload.Answer ?? []).map((answer) => answer.data ?? JSON.stringify(answer));
 }
 
-/**
- * DNS lookup with zero external binary dependency.
- * Order: Node system resolver → DNS-over-HTTPS (Google) → composite ANY.
- * dig/nslookup are enhancements only; they must never be required.
- */
 export async function nativeDnsLookup(
   host: string,
   record: DnsRecordType,
@@ -163,7 +149,6 @@ export async function nativeDnsLookup(
 
   try {
     if (record === "ANY") {
-      // Prefer full ANY when the resolver supports it.
       try {
         const values = await withTimeout(
           resolveViaSystem(host, "ANY"),
@@ -202,7 +187,6 @@ export async function nativeDnsLookup(
     systemError = error instanceof Error ? error.message : String(error);
   }
 
-  // Sandboxed / broken local resolver: HTTPS DoH still works when http.fetch does.
   try {
     const answers = await resolveViaDoh(host, record);
     return {

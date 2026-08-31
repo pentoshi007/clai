@@ -11,17 +11,12 @@ export async function loadProjectContext(): Promise<string | undefined> {
   const raw = await readFile(contextFile, "utf8");
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
-  // Cap at 16 KB so prompt-injection-style giant context files can't blow up
-  // the model context window. The user can still see the full file directly.
   let body = trimmed;
   let truncated = false;
   if (body.length > MAX_PROJECT_CONTEXT_BYTES) {
     body = body.slice(0, MAX_PROJECT_CONTEXT_BYTES);
     truncated = true;
   }
-  // Wrap with an explicit untrusted-data tag. The system prompt tells the
-  // model to ignore instructions inside this block — these are project notes,
-  // not commands.
   const note = truncated
     ? `\n... (project context truncated at ${MAX_PROJECT_CONTEXT_BYTES.toLocaleString()} bytes of ${trimmed.length.toLocaleString()})`
     : "";

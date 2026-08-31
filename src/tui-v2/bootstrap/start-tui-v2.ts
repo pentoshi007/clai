@@ -1,10 +1,3 @@
-/**
- * v2 renderer entry point (V2-030/031/034).
- *
- * Assembles the composition root, creates the OpenTUI renderer in the alternate
- * screen, mounts the shell, and hands ownership to `RendererLifecycle` so
- * signals/errors tear the renderer down before the process exits.
- */
 
 import { createElement } from "react";
 import { createCliRenderer, RendererControlState } from "@opentui/core";
@@ -59,8 +52,6 @@ export async function startTuiV2(
   const startedAt = Date.now();
   const capabilities = readCapabilitiesFromProcess();
   const fallbackClipboard = createSystemClipboardPort();
-  // We own Ctrl+C (abort then double-press exit). OpenTUI must not kill the
-  // process on the first press, and SIGINT is handled cooperatively below.
   let markRendererFinalized = (): void => undefined;
   const rendererFinalized = new Promise<void>((resolve) => {
     markRendererFinalized = resolve;
@@ -73,8 +64,6 @@ export async function startTuiV2(
     onDestroy: markRendererFinalized,
   });
   const disarmTerminalRescue = installTerminalRescue();
-  // lifecycle is assigned before requestExit runs; use a holder so the
-  // composition root can close over a stable callback.
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
     current: undefined,
   };
@@ -135,9 +124,6 @@ export async function startTuiV2(
     disposeServices: () => services.dispose(),
   });
 
-  // Stray console output would land in cells the renderer never repaints and
-  // stick there for the rest of the session. Route it to a log while the TUI
-  // owns the screen; restored during teardown so errors print normally again.
   const restoreConsole = installConsoleGuard({
     logDir: getLogsDirRoot(),
     onCapture: (level, message) => {
@@ -159,8 +145,6 @@ export async function startTuiV2(
 
   const lifecycle = new RendererLifecycle({
     handle,
-    // Flush chat + visual transcript before the renderer is destroyed so an
-    // aborted mid-run session still restores tools/code under /history.
     disposers: [
       () => disposeRuntimeBridge(),
       disposeResizeRepaint,
@@ -184,13 +168,7 @@ export async function startTuiV2(
       },
     ],
     epilogue: epilogue.run,
-    // Ctrl+C / SIGINT: first signal aborts a live turn (or arms quit via the
-    // App handler path when the key event arrives). A second SIGINT within
-    // the window still exits so kill -INT remains usable without the TUI.
     onSigint: () => {
-      // Backup path when the key event is not delivered (raw SIGINT). Always
-      // dismiss a stuck password/confirm overlay first — abort alone used to
-      // leave the sudo modal open and block a clean exit.
       const dismissed = services.overlay.cancelBlockingPrompt();
       if (services.session.getState().running) {
         services.session.abort();

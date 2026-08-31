@@ -106,7 +106,6 @@ export function legacyReasoningArtifacts(
   return artifacts;
 }
 
-/** Projects canonical artifacts back onto the existing legacy replay surface. */
 export function legacyReasoningBlockFromArtifacts(
   artifacts: readonly ReasoningArtifact[],
 ): ReasoningBlock | undefined {

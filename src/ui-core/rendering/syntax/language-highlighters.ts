@@ -3,10 +3,8 @@ import { HighlightCarry, SyntaxSpan, highlightClike, isIdentCont, isIdentStart, 
 export { highlightClike, push };
 export type { HighlightCarry, SyntaxKind, SyntaxSpan } from "./clike.js";
 
-/** Generic: strings, line/block comments, numbers — any unmapped extension. */
 export function highlightGeneric(line: string, carry: HighlightCarry): SyntaxSpan[] {
   const t = line.trimStart();
-  // Prefer # line comments for shell-like / config files when whole-line-ish
   if (t.startsWith("#") && !/^#[0-9a-fA-F]{3,8}\b/.test(t)) {
     return [{ kind: "comment", text: line }];
   }
@@ -21,12 +19,10 @@ export function highlightLineCommentLang(
   opts: { caseInsensitiveKeywords?: boolean } = {},
 ): SyntaxSpan[] {
   const caseIns = opts.caseInsensitiveKeywords === true;
-  // Reuse clike but with custom line comment by pre-check
   const t = line.trimStart();
   if (t.startsWith(commentChar) && commentChar !== "//") {
     return [{ kind: "comment", text: line }];
   }
-  // map # comments: temporarily convert? better custom loop
   if (commentChar === "#") {
     return highlightHashCommentLang(line, keys, caseIns);
   }
@@ -124,15 +120,12 @@ export function highlightPython(line: string, carry: HighlightCarry): SyntaxSpan
         push(spans, "comment", line.slice(i));
         return spans;
       }
-      // fall through one char via rest of hash highlighter
       const rest = highlightHashCommentLang(line.slice(i), KW.py);
-      // only take until we'd re-enter — simpler: process char by char for non-triple
       const sub = rest[0];
       if (!sub) {
         i += 1;
         continue;
       }
-      // process rest of line with hash highlighter but need to stop at triple
       const piece = line.slice(i);
       const triple = piece.search(/"""|'''/);
       if (triple < 0) {
@@ -148,9 +141,7 @@ export function highlightPython(line: string, carry: HighlightCarry): SyntaxSpan
 }
 
 export function highlightPhp(line: string, carry: HighlightCarry): SyntaxSpan[] {
-  // PHP uses // /* # and $variables
   const spans = highlightClike(line, KW.php, carry, { regex: false });
-  // color $ident as property
   const out: SyntaxSpan[] = [];
   for (const s of spans) {
     if (s.kind !== "plain") {
@@ -177,7 +168,6 @@ export function highlightPhp(line: string, carry: HighlightCarry): SyntaxSpan[] 
 }
 
 export function highlightLua(line: string, carry: HighlightCarry): SyntaxSpan[] {
-  // -- line comments, --[[ block ]]
   if (carry.inBlockComment) {
     const end = line.indexOf("]]");
     if (end < 0) return [{ kind: "comment", text: line }];
@@ -190,7 +180,6 @@ export function highlightLua(line: string, carry: HighlightCarry): SyntaxSpan[] 
     const start = line.indexOf("--[[");
     const spans: SyntaxSpan[] = [];
     if (start > 0) spans.push(...highlightHashCommentLang(line.slice(0, start), KW.lua));
-    // abuse hash with -- 
     const end = line.indexOf("]]", start + 4);
     if (end < 0) {
       carry.inBlockComment = true;
@@ -201,7 +190,6 @@ export function highlightLua(line: string, carry: HighlightCarry): SyntaxSpan[] 
     if (end + 2 < line.length) spans.push(...highlightLua(line.slice(end + 2), carry));
     return spans;
   }
-  // line --
   const idx = line.indexOf("--");
   if (idx >= 0) {
     const before = line.slice(0, idx);
@@ -225,7 +213,6 @@ export function highlightHaskell(line: string, carry: HighlightCarry): SyntaxSpa
     const start = line.indexOf("{-");
     const spans: SyntaxSpan[] = [];
     if (start > 0) {
-      // -- style via custom
       const before = line.slice(0, start);
       spans.push(...highlightHaskellLine(before));
     }
@@ -246,7 +233,6 @@ function highlightHaskellLine(line: string): SyntaxSpan[] {
   const idx = line.indexOf("--");
   if (idx >= 0) {
     const spans = idx > 0 ? highlightHashCommentLang(line.slice(0, idx), KW.haskell) : [];
-    // wrong comment char — use plain keyword pass
     spans.push({ kind: "comment", text: line.slice(idx) });
     return spans;
   }
@@ -277,7 +263,6 @@ export function highlightLisp(line: string): SyntaxSpan[] {
       let j = i + 1;
       while (j < n && /[^\s()\[\]";]/.test(line[j]!)) j += 1;
       const word = line.slice(i, j);
-      // first symbol after ( is function-ish
       const prev = spans[spans.length - 1]?.text;
       if (prev === "(") push(spans, "function", word);
       else if (word.startsWith(":")) push(spans, "property", word);
@@ -322,7 +307,6 @@ export function highlightMarkdown(line: string): SyntaxSpan[] {
     }
     return spans;
   }
-  // inline `code` and **bold** lightly
   const spans: SyntaxSpan[] = [];
   let i = 0;
   const n = line.length;
@@ -491,7 +475,6 @@ export function highlightYaml(line: string): SyntaxSpan[] {
     push(spans, "punctuation", "-");
     push(spans, "plain", " ");
     spans.push(...highlightYaml(trimmed.slice(2)));
-    // fix indent double — simpler:
     return [
       ...(indent ? [{ kind: "plain" as const, text: line.slice(0, indent) }] : []),
       { kind: "punctuation", text: "-" },

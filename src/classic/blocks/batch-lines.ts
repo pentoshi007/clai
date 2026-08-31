@@ -13,7 +13,6 @@ import { wrapAnsiLine } from "../render/wrap.js";
 import { clipRow, joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
 import { outputToggleLabel, toolHeaderLines } from "./tool-lines.js";
 
-/** Sub-rows kept when the batch card is collapsed. */
 export const BATCH_COLLAPSED_ROWS = 8;
 const SUB_INDENT = 2;
 const SUB_BODY_INDENT = 4;

@@ -19,24 +19,9 @@ import {
   toWireName,
   type ToolChoice,
 } from "../tool-protocol.js";
-// Side-effect: register wire name map before fromWireName use.
 import "../../tools/definitions.js";
 import { normalizeSystemMessages } from "../system-messages.js";
 
-/**
- * Gemini's function-calling `Schema` type only understands a specific subset
- * of JSON Schema (see https://ai.google.dev/api/caching#Schema): type,
- * format, title, description, nullable, enum, maxItems, minItems, properties,
- * required, minProperties, maxProperties, minLength, maxLength, pattern,
- * example, anyOf, propertyOrdering, default, items, minimum, maximum.
- *
- * Anything else — most commonly `additionalProperties` (rejected at ANY
- * nesting depth, not just the top level) and `oneOf` (Gemini only supports
- * `anyOf`) — makes the whole request fail with HTTP 400
- * ("Unknown name ... Cannot find field"). This walks the schema recursively
- * so nested array/object parameters (fs.writeMany, tool.batch, plan.create, …)
- * never leak unsupported keywords into the wire payload.
- */
 const GEMINI_SCHEMA_KEYS = new Set([
   "type",
   "format",
@@ -69,9 +54,6 @@ function sanitizeGeminiSchema(schema: unknown): unknown {
   if (!schema || typeof schema !== "object") return schema;
   const input = schema as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  // Gemini only supports `anyOf`, not `oneOf`/`allOf` — fold oneOf into anyOf
-  // (loses the "exactly one" constraint, but the model still gets valid
-  // alternatives instead of a hard-rejected request).
   const anyOfSource = input.anyOf ?? input.oneOf;
   for (const [key, value] of Object.entries(input)) {
     if (key === "oneOf") continue;
@@ -250,12 +232,6 @@ function assistantReasoningParts(
   };
 }
 
-/**
- * Convert dialect-neutral history to Gemini contents with functionCall /
- * functionResponse parts. The first system message is owned by
- * `systemInstruction`; later system messages become marked user turns in place
- *.
- */
 export function toGeminiToolContents(
   messages: ChatMessage[],
   replay?: GeminiReasoningReplayOptions,

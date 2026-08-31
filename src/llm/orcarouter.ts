@@ -14,26 +14,8 @@ import {
   toCompletionResult,
 } from "./http.js";
 
-/**
- * OrcaRouter — an OpenAI-compatible multi-provider gateway
- * (https://api.orcarouter.ai/v1) that routes OpenAI, Anthropic, Google
- * Gemini, DeepSeek, xAI Grok, Qwen, Kimi, MiniMax, Z.ai GLM and more behind
- * one bearer key at provider cost price. Model ids are provider-prefixed
- * (`openai/gpt-4o-mini`, `anthropic/claude-sonnet-4.6`, …).
- *
- * Chat Completions with SSE streaming, native tool calling, structured
- * outputs (`response_format`), vision via `image_url` and a unified
- * top-level `reasoning_effort` knob that the gateway translates to each
- * upstream's native reasoning shape. Reasoning output arrives as
- * `reasoning_content`, which the shared OpenAI helper folds into the
- * thinking block.
- */
 const baseUrl = "https://api.orcarouter.ai/v1";
 
-/**
- * Offline fallback catalog (documented chat models) used when `/models` is
- * unreachable. The live catalog is authoritative when it can be fetched.
- */
 export const orcarouterFallbackModels = [
   "orcarouter/auto",
   "openai/gpt-4o-mini",
@@ -57,7 +39,6 @@ export const orcarouterFallbackModels = [
   "z-ai/glm-5.1",
 ];
 
-/** Non-chat modalities that still advertise an `openai` endpoint type. */
 const NON_CHAT_MODEL =
   /image|imagen|dall-e|tts|whisper|embed|video|imagine|dreamina|seedance|kling|moderation/i;
 
@@ -66,12 +47,6 @@ interface OrcaModelEntry {
   supported_endpoint_types?: unknown;
 }
 
-/**
- * Keep only models reachable over Chat Completions. OrcaRouter's catalog
- * flags each entry with `supported_endpoint_types`; anything that does not
- * list `openai` (plus image/video/tts/embedding ids that do) would 404 on
- * `/chat/completions` and pollutes the `/model` picker.
- */
 function chatModelsFromCatalog(payload: unknown): unknown[] {
   const container = payload as { data?: unknown } | undefined;
   const entries = Array.isArray(payload)
@@ -94,7 +69,7 @@ function chatModelsFromCatalog(payload: unknown): unknown[] {
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const orcarouterProvider: LlmProvider = {
   id: "orcarouter",

@@ -1,6 +1,5 @@
 import net from "node:net";
 
-/** Flatten error + nested cause(s) for TLS code matching. */
 function errorText(error: unknown, depth = 0): string {
   if (depth > 4 || error == null) return "";
   if (typeof error === "string") return error;
@@ -26,7 +25,6 @@ function errorText(error: unknown, depth = 0): string {
   return String(error);
 }
 
-/** True when the error is a TLS hostname/cert mismatch (common for https://IP). */
 export function isTlsCertNameError(error: unknown): boolean {
   const text = errorText(error);
   return (
@@ -47,7 +45,6 @@ export function formatTlsNetworkError(error: unknown, url: string): string {
   try {
     host = new URL(url).hostname;
   } catch {
-    /* keep raw */
   }
   const byIp = net.isIP(host.replace(/^\[|\]$/g, "")) !== 0;
   return (
@@ -64,17 +61,10 @@ export function formatTlsNetworkError(error: unknown, url: string): string {
   );
 }
 
-/** Capture budget for decoded response-body bytes (artifact + evidence build). */
 const DEFAULT_MAX_BYTES = 128 * 1024;
 
-/** Hard memory ceiling for one response capture; raise maxBytes up to this cap. */
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
 
-/**
- * Default retries for remote evidence: 0 so intentional 5xx/probe responses are
- * not silently rewritten. Callers may pass retries; owned loopback still soft-
- * retries connection refused.
- */
 export const DEFAULT_RETRIES = 0;
 
 export const RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -123,13 +113,12 @@ export async function drainResponse(response: Response): Promise<void> {
   try {
     await response.body?.cancel();
   } catch {
-    // Best effort only; redirect/retry can proceed after a socket-close race.
   }
 }
 
 export function isBinaryContentType(contentType: string): boolean {
   const ct = contentType.toLowerCase().trim();
-  if (ct.includes("image/svg+xml")) return false; // SVGs are xml text
+  if (ct.includes("image/svg+xml")) return false;
   if (
     ct.startsWith("image/") ||
     ct.startsWith("video/") ||
@@ -164,7 +153,6 @@ export function isBinaryContent(body: Buffer): boolean {
   let nonPrintableCount = 0;
   for (const byte of sample) {
     if (byte === 0) return true;
-    // Control bytes other than tab (9), lf (10), cr (13).
     if (byte < 32 && byte !== 9 && byte !== 10 && byte !== 13) {
       nonPrintableCount += 1;
       if (nonPrintableCount > 5) return true;

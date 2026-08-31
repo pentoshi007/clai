@@ -1,8 +1,5 @@
 import type { ToolCall } from "../types.js";
 
-// Soft, model-driven guards that keep task.update in lockstep with real work.
-// These never hard-fail a turn: they surface one clear reminder and let the
-// model confirm by re-issuing the identical call(s). No regex/state gates.
 
 export type TaskUpdateState =
   | "pending"
@@ -30,16 +27,10 @@ export interface DependencyReminderInput {
   readonly blockers: readonly { readonly id: string; readonly title: string }[];
 }
 
-// States that represent forward progress and therefore must stay in sync with
-// verified work. The canonical handoff — closing one task (done) while opening
-// the next (in_progress) — is healthy sync and stays allowed. What the reminder
-// catches is the risky "fire-and-forget" pattern: completing several tasks at
-// once, or opening several at once, without verifying each in turn.
 const ADVANCING_STATES: ReadonlySet<string> = new Set(["done", "in_progress"]);
 
 const MAX_LISTED_TASKS = 12;
 
-/** Read the taskId/state pair a task.update call is asserting (raw, unresolved). */
 export function readTaskUpdateArgs(
   call: ToolCall,
 ): { taskId: string; state: string } | undefined {
@@ -56,7 +47,6 @@ export function readTaskUpdateArgs(
   return { taskId, state };
 }
 
-/** Distinct task ids advanced to done/in_progress across the given intents. */
 export function distinctAdvancingTaskIds(
   intents: readonly TaskUpdateIntent[],
 ): string[] {
@@ -67,7 +57,6 @@ export function distinctAdvancingTaskIds(
   return [...ids];
 }
 
-/** Distinct task ids per advancing state in one message. */
 export function advancingStateCounts(
   intents: readonly TaskUpdateIntent[],
 ): { done: number; inProgress: number } {
@@ -80,12 +69,6 @@ export function advancingStateCounts(
   return { done: done.size, inProgress: inProgress.size };
 }
 
-/**
- * True only when a single message advances too many tasks to be a healthy
- * lockstep handoff. Closing one task and opening the next (≤1 done AND ≤1
- * in_progress) is allowed; completing several at once, or opening several at
- * once, is what we hold for verification.
- */
 export function isSimultaneousTaskAdvance(
   intents: readonly TaskUpdateIntent[],
 ): boolean {
@@ -93,7 +76,6 @@ export function isSimultaneousTaskAdvance(
   return done > 1 || inProgress > 1;
 }
 
-/** Stable signature for a set of intents so an identical re-issue confirms it. */
 export function batchUpdateSignature(
   intents: readonly TaskUpdateIntent[],
 ): string {
@@ -103,7 +85,6 @@ export function batchUpdateSignature(
   return `batch:${parts.join("|")}`;
 }
 
-/** Stable signature for opening a single task before its dependencies land. */
 export function dependencySignature(
   taskId: string,
   state: string,
@@ -117,10 +98,6 @@ function formatTaskLine(descriptor: BatchTaskDescriptor, index: number): string 
   return `  ${index + 1}. [${descriptor.taskId}] ${title} → ${descriptor.targetState}`;
 }
 
-/**
- * Model-facing reminder for a simultaneous multi-task update. Instructs the
- * model to confirm by re-issuing the identical calls, or to sync one by one.
- */
 export function buildMultiUpdateReminder(
   descriptors: readonly BatchTaskDescriptor[],
 ): string {
@@ -139,7 +116,6 @@ export function buildMultiUpdateReminder(
   );
 }
 
-// Model-facing warning when a task is deliberately opened before prerequisites finish.
 export function buildDependencyReminder(input: DependencyReminderInput): string {
   const title = input.title.trim() || "(untitled task)";
   const blockers = input.blockers
@@ -153,7 +129,6 @@ export function buildDependencyReminder(input: DependencyReminderInput): string 
   );
 }
 
-/** Distinct task ids a message tries to open (`in_progress`) at once. */
 export function openingTaskIds(
   intents: readonly TaskUpdateIntent[],
 ): string[] {
@@ -164,12 +139,6 @@ export function openingTaskIds(
   return [...ids];
 }
 
-/**
- * Model-facing rejection for opening several tasks in one message. Unlike the
- * batch-completion hold this is not confirmable: `count(active foreground
- * tasks) <= 1` is a persistence invariant, so a confirmed multi-open would only
- * be demoted again on commit.
- */
 export function buildMultiOpenRejection(
   descriptors: readonly BatchTaskDescriptor[],
 ): string {
@@ -187,17 +156,14 @@ export function buildMultiOpenRejection(
   );
 }
 
-/** Short, identifiable toast for a rejected multi-open. */
 export function multiOpenToast(count: number): string {
   return `${count} tasks opened at once · rejected, one active task only`;
 }
 
-/** Short, identifiable toast for a batched multi-task update. */
 export function multiUpdateToast(count: number): string {
   return `${count} task updates batched · verify & sync one by one`;
 }
 
-/** Short, identifiable toast for opening a task before its dependencies. */
 export function dependencyToast(taskId: string): string {
   return `[${taskId}] opened with prerequisites still pending`;
 }

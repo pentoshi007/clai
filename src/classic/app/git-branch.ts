@@ -37,7 +37,6 @@ export async function readBranchFromGitDir(
         }
         if (DETACHED_HEAD.test(head)) return "HEAD";
       } catch {
-        // .git found but HEAD unreadable — let the caller fall back.
       }
       return undefined;
     }

@@ -14,7 +14,6 @@ export { isMetaPlanTool } from "./evidence/task-classification.js";
 export { classifyTaskTitle, isEvidenceWorkTool, isPentestPlanKind, looksLikeInstallTaskTitle, looksLikeScaffoldTaskTitle, toolFitsTaskClass };
 export type { TaskClass, TaskWorkSignals } from "./evidence/task-classification.js";
 
-/** Rehydrate the live task ledger from durable plan evidence after a resume. */
 export function ledgerFromTaskEvidence(
   taskId: string,
   evidence?: TaskEvidence | undefined,
@@ -26,7 +25,6 @@ export function ledgerFromTaskEvidence(
   };
 }
 
-/** Store only serializable evidence on the plan; the task id is already its key. */
 export function taskEvidenceFromLedger(
   ledger: TaskWorkLedger,
 ): TaskEvidence {
@@ -34,16 +32,11 @@ export function taskEvidenceFromLedger(
   return evidence;
 }
 
-/** Successful work observed this turn without a credited open task. */
 export interface LooseWorkReceipt {
   readonly toolName: string;
   readonly signals?: TaskWorkSignals | undefined;
 }
 
-/**
- * Fold turn-level loose successes into a task ledger so preflight work
- * (tool.check / fs.list before in_progress) can satisfy explore/check tasks.
- */
 export function absorbLooseWorkIntoLedger(
   ledger: TaskWorkLedger | null,
   taskId: string,
@@ -99,7 +92,6 @@ export function openTaskLedger(taskId: string): TaskWorkLedger {
   return { taskId, successWorkCount: 0 };
 }
 
-/** Local app runtime is proven by any strong independent signal. */
 export function hasLocalRuntimeProof(
   evidence?: Pick<
     TaskEvidence,
@@ -126,7 +118,6 @@ export function hasRemoteWorkProof(
   return Boolean(evidence?.sawRemoteReconOk || evidence?.sawRemoteActiveTestOk);
 }
 
-/** Dev-server job log shows ready + local URL. */
 export function isServerReadyOutput(output: string): boolean {
   if (!output) return false;
   const hasUrl =
@@ -139,19 +130,16 @@ export function isServerReadyOutput(output: string): boolean {
   return hasUrl || hasReady;
 }
 
-/** lsof/ss (or similar) shows a process LISTENing on a local port. */
 export function isPortListeningOutput(command: string, output: string): boolean {
   if (!output || !/\bLISTEN(?:ING)?\b/i.test(output)) return false;
   const cmd = command.toLowerCase();
   if (/\b(lsof|ss\b|netstat)\b/.test(cmd)) return true;
-  // Output-only: node/… LISTEN with a localhost/port line
   return (
     /\b(?:localhost|127\.0\.0\.1|\[::1\]|\*:)\S*\d+/i.test(output) ||
     /\bTCP\b.+\bLISTEN/i.test(output)
   );
 }
 
-/** True when a tool call is remote recon (not local app tooling). */
 export function isRemoteReconToolCall(call: ToolCall): boolean {
   if (
     call.name === "dns.lookup" ||
@@ -165,7 +153,6 @@ export function isRemoteReconToolCall(call: ToolCall): boolean {
   }
   if (call.name === "http.fetch" || call.name === "web.fetch") {
     const url = typeof call.args.url === "string" ? call.args.url : "";
-    // Localhost is coding probe, not remote recon
     if (/^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(url)) {
       return false;
     }
@@ -180,7 +167,6 @@ export function isRemoteReconToolCall(call: ToolCall): boolean {
   return false;
 }
 
-/** Active/offensive test (not passive recon). */
 export function isRemoteActiveTestCall(call: ToolCall): boolean {
   if (call.name === "http.fetch") {
     const method = String(call.args.method ?? "GET").toUpperCase();
@@ -201,7 +187,6 @@ export function isRemoteActiveTestCall(call: ToolCall): boolean {
   return false;
 }
 
-/** Inspect tools allowed without opening a plan task. */
 export function isPlanPreflightTool(name: string): boolean {
   return (
     name === "tool.check" ||
@@ -213,7 +198,6 @@ export function isPlanPreflightTool(name: string): boolean {
   );
 }
 
-/** Read-only recon tools that may run without an in_progress task on pentest plans. */
 export function isReadOnlyReconTool(name: string): boolean {
   return (
     isPlanPreflightTool(name) ||
@@ -229,11 +213,6 @@ export function isReadOnlyReconTool(name: string): boolean {
   );
 }
 
-/**
- * Tools whose failure must NOT cancel later siblings in the same model turn.
- * Plan bookkeeping failures (task.update done-gate, etc.) and independent
- * recon lookups should never wipe a whole batch of http.fetch / dns calls.
- */
 export function isBatchSoftFailTool(name: string): boolean {
   if (
     name === "plan.create" ||
@@ -255,7 +234,6 @@ export function isBatchSoftFailTool(name: string): boolean {
   return false;
 }
 
-/** Tools allowed on a coding build turn before plan.create exists. */
 export function isBuildPrePlanAllowedTool(name: string): boolean {
   return (
     name === "plan.create" ||
@@ -267,13 +245,11 @@ export function isBuildPrePlanAllowedTool(name: string): boolean {
   );
 }
 
-/** Grace period after abort before force-settling a hung tool promise. */
 export const TOOL_ABORT_GRACE_MS = 2_500;
 
-/** Harmless version/which probes models use instead of tool.check before planning. */
 export function isReadOnlyVersionProbeCommand(cmd: string): boolean {
   const c = cmd.trim();
-  if (!c || /[;&|`]/.test(c)) return false; // no chains
+  if (!c || /[;&|`]/.test(c)) return false;
   return (
     /^(?:node|nodejs|npm|npx|pnpm|yarn|bun|deno|python3?|pip3?|go|rustc|cargo|ruby|php|java|dotnet|flutter|swift)\s+(?:-v|--version|version)\s*$/i.test(
       c,
@@ -281,10 +257,6 @@ export function isReadOnlyVersionProbeCommand(cmd: string): boolean {
   );
 }
 
-/**
- * Multi-step coding builds must plan before mutate (scaffold/write/install).
- * Trivial one-liners and non-build prompts skip this.
- */
 export function codingBuildRequiresPlan(
   prompt: string,
   opts?: { informational?: boolean; idle?: boolean; pentest?: boolean },
@@ -292,7 +264,6 @@ export function codingBuildRequiresPlan(
   if (opts?.informational || opts?.idle || opts?.pentest) return false;
   const p = prompt.trim();
   if (!p) return false;
-  // Explicit single-file micro edits can skip the plan
   if (
     p.length < 100 &&
     /\b(fix|typo|rename|bump|tweak)\b/i.test(p) &&
@@ -300,20 +271,15 @@ export function codingBuildRequiresPlan(
   ) {
     return false;
   }
-  return true; // caller already checked looksLikeBuildTask
+  return true;
 }
 
-/**
- * User asked for a product feature app (todo, blog, …), not "just scaffold framework X".
- * Stack-agnostic: detects intent, not a particular framework.
- */
 export function userAskedForFeatureApp(prompt: string): boolean {
   const p = prompt.trim().toLowerCase();
   if (!p) return false;
   if (/\b(just|only)\s+(scaffold|init|initialize|boilerplate|starter|template)\b/.test(p)) {
     return false;
   }
-  // Named product feature + app/project shape
   if (
     /\b(todo|to-?do|blog|dashboard|chat|kanban|notes?|crm|shop|store|cart|auth|login|signup|crud|calendar|inbox|quiz|portfolio|gallery|tracker|inventory|booking|counter|timer|weather)\b/.test(
       p,
@@ -322,7 +288,6 @@ export function userAskedForFeatureApp(prompt: string): boolean {
   ) {
     return true;
   }
-  // "build a full … with X feature"
   if (
     /\b(?:with|including|that\s+has|that\s+supports)\b[\s\S]{0,40}\b(todo|auth|crud|login|dashboard|blog)\b/.test(
       p,
@@ -333,7 +298,6 @@ export function userAskedForFeatureApp(prompt: string): boolean {
   return false;
 }
 
-/** Paths that look like application source (not lockfiles / build output). */
 export function isAppSourcePath(path: string): boolean {
   const p = path.replace(/\\/g, "/");
   if (
@@ -371,7 +335,6 @@ export function extractWritePathsFromCall(call: ToolCall): string[] {
   return paths;
 }
 
-/** Default framework starter / marketing copy — not the product feature. */
 export function looksLikeStarterBoilerplate(content: string): boolean {
   const c = content.slice(0, 8_000);
   return (
@@ -390,11 +353,9 @@ export function looksLikeStarterBoilerplate(content: string): boolean {
   );
 }
 
-/** Content that looks like real product UI/logic for common feature apps. */
 export function looksLikeFeatureProductCode(content: string): boolean {
   const c = content.slice(0, 12_000);
   if (looksLikeStarterBoilerplate(c)) return false;
-  // Interactive product signals (todo/crud/auth/etc.)
   if (
     /\b(?:useState|useReducer|createContext|signal\(|createSignal|ref\()\b/.test(
       c,
@@ -412,7 +373,6 @@ export function looksLikeFeatureProductCode(content: string): boolean {
   ) {
     return true;
   }
-  // API/backend feature
   if (
     /\b(?:app\.(?:get|post|put|patch|delete)|router\.(?:get|post)|@(?:Get|Post|Put|Delete)|def\s+\w+\(.*request)/i.test(
       c,
@@ -451,23 +411,16 @@ function extractWriteContentsFromCall(call: ToolCall): string[] {
   return out;
 }
 
-/**
- * True when a successful tool call implements product feature code (not only scaffold).
- * Starter boilerplate alone does not count.
- */
 export function isFeatureImplementationCall(call: ToolCall): boolean {
   const paths = extractWritePathsFromCall(call);
   const contents = extractWriteContentsFromCall(call);
   if (contents.some(looksLikeFeatureProductCode)) return true;
-  // Content present but only starter → not feature
   if (
     contents.length > 0 &&
     contents.every((c) => looksLikeStarterBoilerplate(c) || c.trim().length < 40)
   ) {
     return false;
   }
-  // Path-only signal: source write without inspectable content still counts
-  // (e.g. truncated args) but not lockfiles/config alone.
   if (paths.some(isAppSourcePath) && contents.length === 0) return true;
   if (
     paths.some(isAppSourcePath) &&
@@ -475,7 +428,6 @@ export function isFeatureImplementationCall(call: ToolCall): boolean {
   ) {
     return true;
   }
-  // Hand-written multi-file setup with non-starter content
   if (
     call.name === "fs.writeMany" &&
     paths.length >= 2 &&
@@ -486,9 +438,6 @@ export function isFeatureImplementationCall(call: ToolCall): boolean {
   return false;
 }
 
-/**
- * User said work belongs on the Desktop (or similar). Returns absolute path.
- */
 export function resolveUserDestinationHint(
   prompt: string,
   home = homedir(),
@@ -496,13 +445,11 @@ export function resolveUserDestinationHint(
   const p = prompt.trim();
   if (!p) return undefined;
 
-  // Explicit absolute /Users/.../Desktop/... already in the prompt — prefer that root
   const absDesktop = p.match(
     /((?:\/Users\/[^/\s]+|~)\/Desktop(?:\/[\w.-]+)?)/i,
   );
   if (absDesktop?.[1]) {
     const raw = absDesktop[1].replace(/^~(?=\/|$)/, home);
-    // If they named a subfolder in the path, use parent Desktop for cwd default
     if (/\/Desktop$/i.test(raw) || /\/Desktop\//i.test(raw)) {
       const desk = raw.match(/^(.*?\/Desktop)/i);
       return desk?.[1] ?? raw;
@@ -521,9 +468,6 @@ export function resolveUserDestinationHint(
   return undefined;
 }
 
-/**
- * Default shell cwd when the model omitted it but a project root / Desktop hint exists.
- */
 export function applyDestinationCwd(
   call: ToolCall,
   destinationHint: string | undefined,
@@ -531,12 +475,10 @@ export function applyDestinationCwd(
   if (call.name !== "shell.exec" && call.name !== "shell.start") return call;
   if (typeof call.args.cwd === "string" && call.args.cwd.trim()) return call;
   const cmd = commandOf(call);
-  // Prefer sticky project root (todo-app) over bare Desktop for install/dev.
   const cwd = getActiveProjectRoot() ?? destinationHint;
   if (!cwd) return call;
 
   const looksCreate = isScaffoldCreateCommand(cmd);
-  // create into named subfolder: cwd should be parent of project if sticky root is the project
   if (looksCreate) {
     const nameMatch = cmd.match(
       /(?:create-vite(?:@\S+)?|create-next-app(?:@\S+)?|cargo\s+new|rails\s+new|poetry\s+new|flutter\s+create|mix\s+new|django-admin\s+startproject)\s+([A-Za-z0-9._-]+)/i,
@@ -552,7 +494,6 @@ export function applyDestinationCwd(
         args: { ...call.args, cwd: useParent && parent ? parent : cwd },
       };
     }
-    // Prefer destination parent (Desktop) for create when sticky root is already a project
     return { ...call, args: { ...call.args, cwd: destinationHint ?? cwd } };
   }
 

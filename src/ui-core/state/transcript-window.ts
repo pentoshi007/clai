@@ -93,14 +93,6 @@ export function resolveTranscriptScrollIntent(
   };
 }
 
-/**
- * Whether a queued bottom-pin may run this frame.
- *
- * Automatic pins (content growth) must not yank the viewport while a pointer
- * gesture is in flight, but an explicit End / Ctrl+D is a direct command and
- * outranks it — including when a press was released outside the transcript and
- * left the gesture flag set.
- */
 export function shouldPinTranscriptBottom(input: {
   readonly following: boolean;
   readonly pointerGestureActive: boolean;

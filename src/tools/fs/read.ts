@@ -13,15 +13,10 @@ import {
 } from "./read-window.js";
 import { open, readdir, stat } from "node:fs/promises";
 
-// Full-file soft caps. Normal source files fit; logs/dumps/minified bundles
-// auto-page with a head window + next-offset instructions instead of dumping
-// megabytes into context. Hard byte ceiling still applies for raw full reads.
 const DEFAULT_READ_MAX_BYTES = 8 * 1024 * 1024;
 
-/** Soft auto-head when full read would blow the budget (bytes). */
 const SOFT_FULL_READ_BYTES = 256 * 1024;
 
-/** Soft auto-head when file has more than this many lines. */
 const SOFT_FULL_READ_LINES = 2000;
 
 const DEFAULT_LIST_MAX_ENTRIES = 500;
@@ -33,9 +28,7 @@ async function sampleLooksBinary(resolved: string): Promise<boolean> {
     const { bytesRead } = await handle.read(buf, 0, BINARY_SAMPLE_BYTES, 0);
     if (bytesRead === 0) return false;
     const sample = buf.subarray(0, bytesRead);
-    // NUL in the first chunk → almost certainly binary.
     if (sample.includes(0)) return true;
-    // High ratio of non-text control bytes (excluding tab/lf/cr).
     let control = 0;
     for (let i = 0; i < sample.length; i += 1) {
       const c = sample[i]!;
@@ -54,7 +47,6 @@ export async function fsRead(
   const resolved = resolveReadPath(path);
   ensureReadAllowed(resolved, path, options.confirmed);
 
-  // Directory → list contents (models often fs.read a folder by mistake).
   let fileBytes = 0;
   try {
     const st = await stat(resolved);
@@ -95,12 +87,10 @@ export async function fsRead(
     };
   }
 
-  // 1) Pattern mode
   if (typeof options.pattern === "string") {
     return readByPattern(resolved, options, fileBytes);
   }
 
-  // 2) Explicit line window
   const wantsWindow =
     typeof options.offset === "number" ||
     typeof options.limit === "number" ||
@@ -112,7 +102,6 @@ export async function fsRead(
     return readLineWindow(resolved, win.start, win.limit, fileBytes, win.note);
   }
 
-  // 3) Auto-head for large files (soft byte/line budget)
   const maxBytes = options.maxBytes ?? DEFAULT_READ_MAX_BYTES;
   if (fileBytes > SOFT_FULL_READ_BYTES) {
     const result = await readLineWindow(
@@ -126,7 +115,6 @@ export async function fsRead(
     return { ...result, truncated: true };
   }
 
-  // Full read with hard byte cap (stream into string up to maxBytes).
   const handle = await open(resolved, "r");
   try {
     const st = await handle.stat();
@@ -134,11 +122,8 @@ export async function fsRead(
     const buffer = Buffer.alloc(cap);
     const { bytesRead } = await handle.read(buffer, 0, cap, 0);
     const text = buffer.subarray(0, bytesRead).toString("utf8");
-    // Soft line cap even when under byte soft limit (huge single-line minified
-    // is handled by bytes; many-line small files by counting).
     const lineCount = text.length === 0 ? 0 : text.split(/\r?\n/).length;
     if (lineCount > SOFT_FULL_READ_LINES && st.size <= maxBytes) {
-      // Re-read as window instead of dumping 2k+ lines.
       return readLineWindow(
         resolved,
         1,
@@ -210,8 +195,6 @@ export async function fsList(
     };
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
-    // Missing path is a valid existence observation for scaffold/preflight —
-    // not a hard tool failure that blocks task.done or loop-guard retries.
     if (err?.code === "ENOENT" || err?.code === "ENOTDIR") {
       return {
         ok: true,

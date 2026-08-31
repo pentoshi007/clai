@@ -22,11 +22,6 @@ export interface PanelWheelMove {
   readonly effects: readonly PanelEffect[];
 }
 
-/**
- * Trackpad / mouse-wheel scrolling. Replays the panel's own cursor-motion
- * keys so wrapping, centering, and follow rules stay identical to arrows —
- * one controller repaint per gesture, not one per synthetic key.
- */
 export function panelWheelMove(
   snapshot: PanelSnapshot,
   deps: PanelWheelDeps,

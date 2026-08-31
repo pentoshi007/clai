@@ -1,10 +1,3 @@
-/**
- * Bounded, metadata-only diagnostics.
- *
- * Every field is an explicit scalar. Raw session ids, commands, cwd, environment
- * values, input, output, native error text, confirmation previews, and artifact
- * content are structurally excluded — they are never accepted as arguments.
- */
 
 import { createHmac, randomBytes } from "node:crypto";
 import { auditLog } from "../store/logs.js";
@@ -37,7 +30,6 @@ export interface TelemetryEvent {
   readonly queueDepth?: number | undefined;
   readonly retryCount?: number | undefined;
   readonly terminationReason?: TerminationReason | undefined;
-  /** Recorded when Start failed after allocating a process or terminal. */
   readonly cleanupVerified?: boolean | undefined;
 }
 

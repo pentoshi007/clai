@@ -1,7 +1,3 @@
-/**
- * Picker-backed slash commands: model/provider/search/reasoning/history/
- * permissions/output/plan (V2-072, V2-080).
- */
 
 import { getProvider, providerAuth } from "../../llm/router.js";
 import { defaultModels, normalizeEndpointUrl } from "../../llm/provider.js";
@@ -20,10 +16,6 @@ export { handleReasoning, handleSearch } from "./pickers/search-reasoning.js";
 export { handleOutput, handlePermissions, handlePlanPager } from "./pickers/output-pager.js";
 export { handleHistory } from "./pickers/history.js";
 
-/**
- * Live provider model catalogue (matches classic TUI `/model`).
- * Prefers `provider.listModels`; falls back to the static known list.
- */
 export async function resolveModelsForProvider(
   provider: ProviderId,
   currentModel?: string | undefined,
@@ -313,10 +305,8 @@ function applyModel(
   services.session.notice("info", `model → ${next}`);
 }
 
-/** Sentinel value returned by the /provider picker for "add a custom provider". */
 const ADD_CUSTOM_PROVIDER = "__add_custom_provider__";
 
-/** Sentinel for the "remove a custom provider" picker row. */
 const REMOVE_CUSTOM_PROVIDER = "__remove_custom_provider__";
 
 export function handleProvider(services: AppServices, invocation: CommandInvocation): void {
@@ -330,8 +320,6 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
   }
   void (async () => {
     const current = services.session.getState().provider ?? getConfig().defaultProvider;
-    // Custom (user-defined) providers appear after the built-ins, plus
-    // dedicated rows at the top to launch the add / remove flows.
     const { getCustomProviders } = await import("../../store/config.js");
     const custom = getCustomProviders();
     const options: PickerOption[] = [
@@ -340,7 +328,6 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
         label: "+ Add custom provider",
         description: "connect an OpenAI-compatible endpoint not listed above",
       },
-      // Only offer removal when at least one custom provider exists.
       ...(custom.length > 0
         ? [
             {
@@ -385,7 +372,6 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
 }
 
 async function activateProvider(services: AppServices, next: ProviderId): Promise<void> {
-  // Modal needs two separate things, so it gets its own onboarding.
   if (next === "modal") {
     if (!(await ensureModalCredentials(services))) return;
   } else {
@@ -402,7 +388,6 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
         services.session.notice("info", `cancelled · provider unchanged`);
         return;
       }
-      // Silence here used to look like the picker had simply ignored the input.
       if (!getProvider(next).validateKey(value)) {
         services.session.notice(
           "warn",
@@ -465,16 +450,6 @@ async function activateProvider(services: AppServices, next: ProviderId): Promis
   );
 }
 
-/**
- * Modal is the only provider that needs two things before it can serve a
- * request: the workspace endpoint URL (config) and a proxy token pair
- * (secret). Ask for whichever is missing, endpoint first — that is the value
- * people reach for, and a URL typed into a token prompt used to fail
- * `validateKey` and silently abandon the switch.
- *
- * Returns false when the user cancelled or entered something unusable, in
- * which case the active provider is left alone.
- */
 async function ensureModalCredentials(services: AppServices): Promise<boolean> {
   const hasToken =
     Boolean(envValue("modal")) || Boolean((await getProviderSecret("modal")).value);
@@ -509,7 +484,6 @@ async function ensureModalCredentials(services: AppServices): Promise<boolean> {
       services.session.notice("info", "cancelled · provider unchanged");
       return false;
     }
-    // Another URL means the user is still answering the previous question.
     if (/^https?:\/\//i.test(token)) {
       const endpoint = normalizeEndpointUrl(token);
       appendProviderEndpoint("modal", endpoint);

@@ -93,9 +93,7 @@ export interface SessionState {
   readonly queued: readonly string[];
   readonly responder: ResponderRuntimeState;
   readonly title: string | undefined;
-  /** Canonical versioned context measurement for runtime consumers. */
   readonly contextSnapshot: ContextSnapshotV1 | undefined;
-  /** Six-field legacy projection retained for existing renderers. */
   readonly contextUsage: ContextUsageSnapshot | undefined;
   readonly contextChip: string | undefined;
 }
@@ -119,7 +117,6 @@ export interface SessionControllerDeps {
   readonly mintTurnId?: (() => TurnId) | undefined;
   
   readonly getTranscriptSnapshot?: (() => ClassicTranscriptItem[] | undefined) | undefined;
-  /** When true, never persist sessions or generate AI titles (CLI --no-history). */
   readonly noHistory?: boolean | undefined;
   readonly notifyResponderDelivery?: ((summary: string) => void) | undefined;
   readonly titleCompleter?: ((messages: ChatMessage[]) => Promise<string>) | undefined;
@@ -149,24 +146,18 @@ export class SessionController implements Disposable {
   private mode: Mode;
   private compactingFlag = false;
   private readonly activeCompactions = new Set<string>();
-  private compactAbort: AbortController | undefined; // cancels in-flight /compact
-  /** Display name written into history.db. */
+  private compactAbort: AbortController | undefined;
   private sessionTitle: string | undefined;
   private readonly namer: SessionNamer;
   private lastMainRequestSnapshot: SuccessfulRequestSnapshot | undefined;
-  /** Throttle mid-turn history autosaves so abort/crash still keep tools on disk. */
   private lastAutosaveAt = 0;
   private autosaveInFlight = false;
-  /** Orders autosave, terminal, compaction, title, switch, and shutdown writes. */
   private readonly persistence: SessionPersistenceQueue;
   private static readonly AUTOSAVE_MIN_MS = 15_000;
-  /** Last known versioned context measurement for the session. */
   private contextSnapshot: ContextSnapshotV1 | undefined;
-  /** Avoid applying the same manual compaction in both commit and event paths. */
   private lastContextCompactionId: string | undefined;
   private readonly contextLimits = new SessionContextLimits();
   private readonly usageLedger = new SessionUsageLedger();
-  /** Bumped by reset/history load/dispose so late callbacks can be ignored. */
   private lifecycleGeneration = 0;
   private lastTurnResult: TurnResult | undefined;
   private restoredPreviousTurn: PreviousTurnSignal | undefined;
@@ -183,7 +174,6 @@ export class SessionController implements Disposable {
     this.mode = deps.mode ?? "agent";
     this.policy = createSessionPolicy(this.sessionIdValue);
     void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
-    // Isolate scratch + tool outputs for this session immediately.
     beginSessionWorkspace();
     void prefetchProviderCatalog(this.provider);
     publishRouteReasoningVocabulary(this.provider, this.model);
@@ -256,7 +246,6 @@ export class SessionController implements Disposable {
     }
   }
 
-  /** Current per-session scratch/output workspace (always bound while live). */
   get workspace(): SessionWorkspace | undefined {
     return getActiveSessionWorkspace();
   }
@@ -326,7 +315,6 @@ export class SessionController implements Disposable {
     );
   }
 
-  /** Next-request occupancy, only when a request-scoped measurement exists. */
   private requestScopedContextTokens(): number | undefined {
     const snapshot = this.contextSnapshot;
     if (!snapshot || snapshot.contextTokens <= 0) return undefined;
@@ -409,7 +397,6 @@ export class SessionController implements Disposable {
     return this.history;
   }
 
-  /** Subscribe to transient UI state such as running/queue status. */
   subscribe(listener: SessionStateListener): () => void {
     this.stateListeners.add(listener);
     return () => this.stateListeners.delete(listener);
@@ -435,7 +422,6 @@ export class SessionController implements Disposable {
     this.model = model;
     this.lastMainRequestSnapshot = undefined;
     this.setContextSnapshot(this.resolveContextSnapshot());
-    // Allow native tools again after /model switch (sticky text-only is process-global).
     clearTextOnlyModels();
     publishRouteReasoningVocabulary(this.provider, model);
     this.notifyState();
@@ -446,25 +432,14 @@ export class SessionController implements Disposable {
     this.notifyState();
   }
 
-  /**
-   * Replace model history (and optionally rebind the session id so later
-   * autosaves update the resumed history row).
-   */
   loadHistory(
     messages: readonly ChatMessage[],
     options: {
       sessionId?: string;
       title?: string | undefined;
-      /**
-       * Restored from history so the footer matches the live session count.
-       * Accepts partial snapshots (contextLimit optional).
-       */
       contextUsage?: ContextUsageSnapshot | PartialUsageSnapshot | undefined;
-      /** Loaded durable revision; resume advances to a fresh writer generation. */
       persistenceRevision?: number | undefined;
-      /** Last turn outcome or interrupted in-flight checkpoint from history. */
       previousTurn?: PreviousTurnSignal | undefined;
-      /** Per-session scratch/output folder (restored with history). */
       workspaceFolder?: string | undefined;
       workspaceCode?: string | undefined;
       provider?: ProviderId | undefined;
@@ -473,8 +448,6 @@ export class SessionController implements Disposable {
   ): void {
     this.beginLifecycleGeneration();
     this.applyRestoredModel(options.provider, options.model);
-    // Deep-copy then heal broken assistant/tool pairs from aborted turns so
-    // /history resume + "continue" never dies on invalid native tool protocol.
     const healed: ChatMessage[] = messages.map((m) => ({ ...m }));
     repairToolProtocol(healed);
     this.history = healed;
@@ -483,8 +456,6 @@ export class SessionController implements Disposable {
     this.spool.clear();
     this.sessionTitle = options.title;
     this.namer.restore(options.title);
-    // Prefer the exact snapshot saved during the live turn; only estimate when
-    // older sessions have no usage payload (would otherwise drop 39k → ~11k).
     this.lastContextCompactionId = undefined;
     const restored = restoredContextSnapshot(
       this.usageTarget,
@@ -511,8 +482,6 @@ export class SessionController implements Disposable {
       this.persistence.rebind(options.persistenceRevision);
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     }
-    // Rebind (or mint) the per-session workspace so scratch + outputs
-    // continue under the same folder when resuming history.
     beginSessionWorkspace({
       folderName: options.workspaceFolder,
       code: options.workspaceCode,
@@ -549,11 +518,6 @@ export class SessionController implements Disposable {
     return [...this.policy.allow];
   }
 
-  /**
-   * Clear conversation state. When `mintNewId` is true (for `/new`/`/clean`),
-   * remint the session id so subsequent autosave does not overwrite the prior
-   * history row.
-   */
   reset(options: { mintNewId?: boolean } = {}): void {
     this.beginLifecycleGeneration();
     this.sequencer.rebind(this.sessionIdValue);
@@ -572,7 +536,6 @@ export class SessionController implements Disposable {
       this.sequencer.rebind(this.sessionIdValue);
       this.persistence.newSession();
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
-      // Fresh session identity → fresh isolated workspace.
       beginSessionWorkspace();
       this.provider = undefined;
       this.model = undefined;
@@ -583,7 +546,6 @@ export class SessionController implements Disposable {
     this.notifyState();
   }
 
-  /** Roll back history after a rejected plan-implement compaction. */
   restoreMessages(
     messages: readonly ChatMessage[],
     contextSnapshot?: ContextSnapshotV1 | ContextUsageSnapshot | undefined,
@@ -610,7 +572,6 @@ export class SessionController implements Disposable {
     signal?: AbortSignal,
     options: {
       purpose?: "default" | "plan-implement" | undefined;
-      /** Default true: emit compacted event + persist. */
       persist?: boolean | undefined;
     } = {},
   ): Promise<CompactResult> {
@@ -793,14 +754,13 @@ export class SessionController implements Disposable {
   abort(reason?: string): void {
     this.responder?.deactivate();
     this.turn.abort(reason);
-    this.compactAbort?.abort(); // also cancel in-flight /compact (outside a turn)
+    this.compactAbort?.abort();
   }
 
   async continueQueue(): Promise<void> {
     await this.prompts.continue();
   }
 
-  /** In-memory plan-approval flag consumed by the agent gate (CORE-005). */
   setPlanApproved(value: boolean): void {
     this.policy.planApproved.value = value;
   }
@@ -809,7 +769,6 @@ export class SessionController implements Disposable {
     return this.policy.planApproved.value;
   }
 
-  /** Fires after every turn settles (completed/aborted/error), including drain. */
   onTurnEnd(listener: TurnEndListener): () => void {
     this.turnEndListeners.add(listener);
     return () => this.turnEndListeners.delete(listener);
@@ -868,11 +827,9 @@ export class SessionController implements Disposable {
       requestSecret: this.deps.requestSecret,
       session: this.policy,
       onMessages: (messages) => {
-        // A later reset/load owns the session; ignore late callbacks.
         if (turnGeneration !== this.lifecycleGeneration) return;
         this.history = pathBackedMessages(messages);
         this.notifyState();
-        // Periodic durable snapshot so Esc/kill mid-run does not wipe tools.
         this.scheduleAutosave();
       },
       onSuccessfulRequest: (snapshot) => {
@@ -912,10 +869,6 @@ export class SessionController implements Disposable {
     }
   }
 
-  /**
-   * Best-effort mid-turn autosave (throttled). Called from onMessages so a
-   * long agent run still lands tools/messages on disk before abort/crash.
-   */
   private scheduleAutosave(): void {
     if (this.deps.noHistory || getConfig().privateMode) return;
     if (!hasPersistableHistory(this.history)) return;
@@ -931,7 +884,6 @@ export class SessionController implements Disposable {
       });
   }
 
-  /** Fence the previous lifecycle: running turn, compaction and title. */
   private beginLifecycleGeneration(): void {
     this.lifecycleGeneration += 1;
     this.lastTurnResult = undefined;

@@ -12,7 +12,6 @@ export function requireString(
   return value;
 }
 
-/** Like requireString but allows empty string (e.g. replaceLines delete). */
 export function requireStringAllowEmpty(
   args: Record<string, unknown>,
   key: string,
@@ -38,7 +37,6 @@ export function optionalNumber(
 ): number | undefined {
   const value = args[key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  // Handle string numbers (e.g. "300000" from JSON) and coerce to number
   if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;

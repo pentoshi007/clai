@@ -1,11 +1,3 @@
-/**
- * Masked secret editor state (INPUT-009, V2-046).
- *
- * The raw value never surfaces through the normal getters, string coercion,
- * or JSON serialization used everywhere else in the app (transcript,
- * history, logs) — only `reveal()` returns it, so a secret can only leave
- * this buffer through the one call site that explicitly asks for it.
- */
 
 const MASK_CHAR = "•";
 

@@ -26,12 +26,10 @@ export { validateCustomProviderProfile } from "./profile/spec-validation.js";
 
 export type CustomAuthType = "bearer" | "custom-headers" | "none-keyless";
 
-/** Serializable wire subset a custom route may declare. */
 export interface CustomProviderProfileSpec {
   readonly authType?: CustomAuthType | undefined;
   readonly keyEnv?: string | undefined;
   readonly baseUrlEnv?: string | undefined;
-  /** Values may be literals or `${ENV_NAME}` references. */
   readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly tools?: ProfileTriState | undefined;
   readonly images?: ProfileTriState | undefined;
@@ -98,11 +96,6 @@ function isDirectDeepSeekRoute(baseUrl: string, model: string): boolean {
   );
 }
 
-/**
- * Conservative unknown unless declared; a custom endpoint that verifiably is
- * the direct DeepSeek API earns the documented V4 builtin layer as route
- * evidence below user declarations.
- */
 export function resolveCustomProviderProfile(input: {
   id: string;
   model: string;
@@ -147,10 +140,6 @@ export function customProviderProfileFor(input: {
   });
 }
 
-/**
- * Serializer style for the compatible path. Undeclared routes omit optional
- * reasoning controls entirely (send narrowly, parse broadly).
- */
 export function customReasoningStyle(
   profile: CustomProviderProfileSpec | undefined,
 ): ReasoningStyle {
@@ -158,7 +147,6 @@ export function customReasoningStyle(
   return dialect === "openai-effort" ? "openai" : "none";
 }
 
-/** Resolves `${ENV_NAME}` header references before dispatch; throws locally. */
 export function resolveCustomHeaders(
   headers: Readonly<Record<string, string>> | undefined,
 ): Record<string, string> | undefined {

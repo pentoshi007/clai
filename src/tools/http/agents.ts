@@ -4,7 +4,6 @@ import { lookup } from "node:dns/promises";
 import net from "node:net";
 import { Agent } from "undici";
 
-/** Shared undici agent that skips cert verification (authorized pentest only). */
 let insecureTlsAgent: Agent | undefined;
 
 export function getInsecureTlsAgent(): Agent {

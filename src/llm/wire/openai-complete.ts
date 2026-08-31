@@ -29,7 +29,6 @@ import { readJson } from "./response-errors.js";
 
 export async function openAiCompatibleComplete(options: {
   provider: string;
-  /** Canonical provider id used for capability lookups. */
   providerId: ProviderId;
   baseUrl: string;
   apiKey: string;
@@ -44,11 +43,8 @@ export async function openAiCompatibleComplete(options: {
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
-  /** Optional response-usage aliases for one configured compatible route. */
   usageAliases?: CompatibleUsageAliases | undefined;
-  /** Explicit route policy; without one, final-turn artifacts are not retained. */
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
-  /** Metadata-only replay decisions; raw artifact payloads are never exposed. */
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
   forceReasoningReplay?: boolean | undefined;
 }): Promise<OpenAiCompatibleResult> {
@@ -136,11 +132,6 @@ export async function openAiCompatibleComplete(options: {
       `${options.provider} returned no completion text (model=${options.model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
     );
   }
-  // If the API returns reasoning separately, prepend it inside <think>
-  // tags so the existing thinking parser can pick it up uniformly.
-  // Fireworks exposes cache metrics in headers for complete calls and can also
-  // include them in perf_metrics. Other compatible routes use their standard
-  // usage object plus any explicitly configured aliases.
   const usage =
     options.providerId === "fireworks"
       ? parseFireworksUsage(

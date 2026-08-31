@@ -10,10 +10,6 @@ export function safeCwd(): string {
   }
 }
 
-/**
- * True when the real working directory is currently unreadable (deleted or
- * permission-revoked). Callers can surface a one-time warning to the user.
- */
 export function cwdIsBroken(): boolean {
   try {
     process.cwd();
@@ -43,14 +39,12 @@ export function recoverCwd(): string {
       recovered = true;
       return dir;
     } catch {
-      // try the next candidate
     }
   }
   
   return homedir() || "/";
 }
 
-/** Whether recoverCwd() has relocated the process during this run. */
 export function didRecoverCwd(): boolean {
   return recovered;
 }

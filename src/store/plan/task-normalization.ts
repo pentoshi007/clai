@@ -1,17 +1,5 @@
 import { PlanTask, SessionPlan } from "./sqlite-backend.js";
 
-/**
- * Heal dependency edges without inventing scheduling.
- *
- * Only genuinely broken edges are removed: self-references, ids that no longer
- * exist, and edges that would close a cycle. Valid forward references are kept
- * so an authored DAG keeps its parallelism. `dependencies: []` is an explicit
- * statement of independence and is never replaced; only a legacy row with no
- * dependency field at all falls back to the previous foreground task, and a
- * responder child never becomes a blocker.
- *
- * Returns true when any task's dependencies changed.
- */
 export function normalizeTaskDependencies(tasks: PlanTask[]): boolean {
   let changed = false;
   const known = new Set(tasks.map((task) => task.id));
@@ -60,24 +48,14 @@ export function normalizeTaskDependencies(tasks: PlanTask[]): boolean {
   return changed;
 }
 
-/** Plan header goal: keep it a short title, never a full paragraph. */
 const PLAN_GOAL_MAX_CHARS = 80;
 
-/** Hard ceiling — beyond this even a clause-boundary cut still applies. */
 const PLAN_GOAL_HARD_CHARS = 140;
 
-/**
- * Collapse whitespace and shorten an overlong plan goal to a title.
- * Models sometimes echo the user's full multi-clause request as the goal.
- * Prefer cutting at a natural boundary (sentence end, then comma/paren/dash)
- * so the result still reads as a sensible phrase — never a mid-word or
- * mid-clause fragment with a dangling ellipsis.
- */
 export function shortenPlanGoal(raw: string): string {
   const goal = raw.replace(/\s+/g, " ").trim();
   if (!goal || goal.length <= PLAN_GOAL_MAX_CHARS) return goal;
 
-  // 1) First full sentence, if it's already a reasonable title length.
   const firstSentence = goal.match(/^.+?[.!?](?:\s|$)/);
   if (firstSentence) {
     const candidate = firstSentence[0].trim();
@@ -86,9 +64,6 @@ export function shortenPlanGoal(raw: string): string {
     }
   }
 
-  // 2) Cut at the last clause boundary (, ; : ( — –) at or before the max
-  // length, so we keep as much of the meaningful phrase as fits — not the
-  // first comma we see (which can land after just 2-3 words).
   const window = goal.slice(0, PLAN_GOAL_MAX_CHARS);
   const boundaryRe = /[,;:]|\s[-–—(]/g;
   let lastBoundaryEnd = -1;
@@ -101,8 +76,6 @@ export function shortenPlanGoal(raw: string): string {
     if (candidate.length >= 24) return candidate;
   }
 
-  // 3) No good boundary within range — leave it as-is rather than risk a
-  // mangled, meaningless fragment. Only hard-cut if truly excessive.
   if (goal.length <= PLAN_GOAL_HARD_CHARS) return goal;
   let cut = goal.slice(0, PLAN_GOAL_HARD_CHARS);
   const lastSpace = cut.lastIndexOf(" ");
@@ -165,19 +138,6 @@ export function appendPlanTask(
   return task;
 }
 
-/**
- * Apply a foreground-authored plan snapshot onto fresh state.
- *
- * Whole-plan writes (plan.create, revisions, task.add reordering) are authored
- * against a loaded copy. Replacing the stored plan with that copy dropped
- * anything an asynchronous writer changed in the meantime. This applies the
- * snapshot's foreground intent while treating responder children as owned by
- * process settlement:
- *
- * - responder-owned rows keep their stored state/note/job linkage;
- * - responder children created concurrently are retained;
- * - stored evidence is kept when the snapshot has none for that task.
- */
 export function applyForegroundSnapshot(
   draft: SessionPlan,
   snapshot: SessionPlan,
@@ -200,8 +160,6 @@ export function applyForegroundSnapshot(
   const kept = new Set(next.map((task) => task.id));
   for (const task of draft.tasks) {
     if (kept.has(task.id)) continue;
-    // Only responder children may appear from a concurrent writer; a foreground
-    // task missing from the snapshot was intentionally removed by the author.
     if (!task.responderOwned) continue;
     const parentIndex = task.parentTaskId
       ? next.findIndex((candidate) => candidate.id === task.parentTaskId)

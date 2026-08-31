@@ -145,7 +145,7 @@ export function keywordSetFor(pathOrExt: string, family: LangFamily): Set<string
     if (ext === "java") return KW.java;
     if (ext === "kt" || ext === "kts") return KW.kotlin;
     if (ext === "swift") return KW.swift;
-    if (ext === "dart") return KW.js; // close enough
+    if (ext === "dart") return KW.js;
     return KW.c;
   }
   return new Set();

@@ -5,7 +5,6 @@ export interface ScrollbarGeometry {
   readonly track: readonly boolean[];
 }
 
-/** One boolean per viewport row: true where the thumb occupies the track. */
 export function scrollbarGeometry(
   trackRows: number,
   totalRows: number,

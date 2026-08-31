@@ -16,14 +16,8 @@ import {
 } from "node:fs/promises";
 import { dirname } from "node:path";
 
-/**
- * Threshold above which whole-file mutation is refused or replaced by an
- * in-place strategy. Reading and rewriting a very large file holds 2x its size
- * in heap in a process that also carries transcript state.
- */
 const LARGE_MUTATION_BYTES = 8 * 1024 * 1024;
 
-/** Compact integrity footer so the model trusts a write without re-reading. */
 export function describeWrite(
   path: string,
   content: string,
@@ -55,16 +49,6 @@ export function describeWrite(
 
 const WRITE_MANY_MAX_FILES = 50;
 
-/**
- * Write several files in a single tool call. This is the workhorse for
- * scaffolding a project: a React app, an Express server, etc. all need a
- * handful of files, and forcing one fs.write per file burns through the
- * agent's step budget (the most common reason a scaffold never finished).
- *
- * Each entry is validated and written independently — a bad path does not
- * abort the whole batch. Parent directories are created automatically, just
- * like fs.write.
- */
 export async function fsWriteMany(
   files: FileWrite[],
   options: { confirmed?: boolean | undefined } = {},
@@ -137,8 +121,6 @@ export async function fsWriteMany(
     }
   }
 
-  // Clean multi-line receipt: one path per line (UI lists basenames; pager
-  // still has full paths). Avoid repeating the same dump twice in the spool.
   const lines: string[] = [];
   if (written.length > 0) {
     lines.push(`Wrote ${written.length} file(s):`);
@@ -156,10 +138,6 @@ export async function fsWriteMany(
   };
 }
 
-/**
- * Atomic search-and-replace edit. Reads the file, validates the match
- * count, performs replacement, and writes back.
- */
 export async function fsEdit(
   path: string,
   oldText: string,
@@ -184,7 +162,6 @@ export async function fsEdit(
   let targetOldText = oldText;
   let targetNewText = newText;
 
-  // Count occurrences (exact match first)
   let count = 0;
   let searchPos = 0;
   while (true) {
@@ -194,7 +171,6 @@ export async function fsEdit(
     searchPos = idx + targetOldText.length;
   }
 
-  // Fallback: match CRLF / LF line ending differences or trailing whitespace
   if (count === 0) {
     const hasCRLF = content.includes("\r\n");
     const candidateOld = hasCRLF
@@ -254,7 +230,6 @@ export async function fsEdit(
 
   const updated = content.replaceAll(targetOldText, targetNewText);
 
-  // Atomic, mode-preserving, race-safe replacement.
   await writeFileAtomic(resolved, updated);
 
   const change = buildFileChange({
@@ -271,10 +246,6 @@ export async function fsEdit(
   };
 }
 
-/**
- * Delete a file or directory. Requires the path to be inside the
- * write sandbox and not a secret path.
- */
 export async function fsDelete(
   path: string,
   recursive?: boolean | undefined,
@@ -282,7 +253,6 @@ export async function fsDelete(
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
   try {
-    // Snapshot text content for diff UI when deleting a single small file.
     let before = "";
     let canDiff = false;
     if (!recursive) {
@@ -293,7 +263,6 @@ export async function fsDelete(
           canDiff = true;
         }
       } catch {
-        /* ignore — delete may still succeed or fail below */
       }
     }
     if (recursive) {
@@ -331,11 +300,6 @@ export async function fsAppend(
   options: {
     position?: "start" | "end" | undefined;
     confirmed?: boolean | undefined;
-    /**
-     * Optional integrity check: expected UTF-8 byte length of the file
-     * *before* this append. Prevents double-append / wrong-base corruption
-     * when continuing a truncated write.
-     */
     expectedPriorBytes?: number | undefined;
   } = {},
 ): Promise<ToolResult> {
@@ -350,9 +314,6 @@ export async function fsAppend(
   }
 
   let original = "";
-  // Large-file guard: reading + rewriting a 500 MB log to append a few lines
-  // holds 2x the file in heap. Above the threshold, append in place with
-  // `appendFile` and say the diff was skipped for size.
   const priorStat = await stat(resolved).catch(() => undefined);
   if (
     priorStat?.isFile() &&
@@ -398,7 +359,6 @@ export async function fsAppend(
         exitCode: 1,
       };
     }
-    // File does not exist: create missing parent directories and write content
     await mkdir(dirname(resolved), { recursive: true });
     await writeFile(resolved, content, "utf8");
     const change = buildFileChange({
@@ -435,7 +395,6 @@ export async function fsAppend(
     next = original + content;
   }
 
-  // Atomic, mode-preserving, race-safe replacement.
   await writeFileAtomic(resolved, next);
 
   const st = await stat(resolved).catch(() => undefined);

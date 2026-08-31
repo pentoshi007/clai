@@ -9,12 +9,6 @@ import {
 import { markStreamEmittedBytes } from "../stream-progress.js";
 import { isCacheOnlyColdError } from "./error-classification.js";
 
-/**
- * Append the raw response body a provider returned when it is not already part
- * of `text`. Several paths (SSE error frames, non-OpenAI providers) keep the
- * body on the error without embedding it in the message, and users need the
- * full error received from the request to diagnose failures.
- */
 function appendFullProviderBody(text: string, error: unknown): string {
   if (!(error instanceof ProviderError)) return text;
   const body = (error.body ?? "").trim();
@@ -27,15 +21,8 @@ function appendFullProviderBody(text: string, error: unknown): string {
   return `${text}\nFull response from provider: ${capped}`;
 }
 
-/**
- * User-facing classification of provider failures (auth, capacity, disconnect,
- * empty admission, context limit). Used by the fallback table and tests.
- */
 export function formatProviderFailureForUser(error: unknown): string {
   if (error instanceof ProviderError) {
-    // Keep the provider's own message in the transcript. The classification
-    // below is useful guidance, but hiding an upstream 429/body detail makes
-    // it needlessly hard to tell OpenAI and Gemini failures apart.
     const exactError = error.message.replace(/\s+/g, " ").trim();
     const withExactError = (guidance: string): string =>
       exactError
@@ -144,8 +131,6 @@ export function formatProviderFailureForUser(error: unknown): string {
     }
     return message;
   })();
-  // Statuses without a dedicated branch above (e.g. 400, or stream errors
-  // with no HTTP status) still deserve the full response body.
   return appendFullProviderBody(generic, error);
 }
 
@@ -167,15 +152,9 @@ export function failureMessageFor(
 export interface ProviderFailure {
   provider: ProviderId;
   message: string;
-  /** Original error so structured status/retry-after survive aggregation. */
   error?: unknown;
 }
 
-/**
- * Aggregate failure that keeps the most actionable `status` /
- * `retryAfterSeconds` instead of forcing every consumer to regex the message
- * (Phase 2.2). `classifyStreamFailure` already prefers `errorStatus(error)`.
- */
 export class AggregateProviderError extends ProviderError {
   constructor(
     message: string,
@@ -188,7 +167,6 @@ export class AggregateProviderError extends ProviderError {
   }
 }
 
-/** 413 (context) > 429 (rate limit) > 5xx > any other status. */
 function mostActionableFailure(
   failures: ProviderFailure[],
 ): ProviderError | undefined {
@@ -230,9 +208,6 @@ function escapeTableCell(value: string): string {
 
 export function formatFailures(failures: ProviderFailure[]): string {
   if (failures.length === 0) return "";
-  // Keep the first visible error self-contained. Some terminal renderers
-  // truncate multiline notices, which previously left users with only
-  // “No provider could stream the request.” and hid the useful provider body.
   return ` — ${failures
     .map(
       (failure) => `${failure.provider}: ${escapeTableCell(failure.message)}`,
@@ -240,11 +215,6 @@ export function formatFailures(failures: ProviderFailure[]): string {
     .join("; ")}`;
 }
 
-/**
- * After all keys for a provider are exhausted, decide whether to try the next
- * *provider* in the fallback chain. Auth/rate-limit stop cross-provider when
- * only one key existed historically; with multi-key we already rotated keys.
- */
 export function shouldStopProviderFallback(error: unknown): boolean {
   if (error instanceof ProviderError) {
     return [401, 403, 404, 422, 429].includes(error.status ?? 0);

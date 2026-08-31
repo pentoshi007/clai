@@ -6,12 +6,6 @@ import type { ToolCall } from "../types.js";
 import { NON_REGISTRY_TOOL_NAMES } from "./definitions.js";
 import { toolRegistry } from "./registry.js";
 
-/**
- * Keys that mean "this is a file/content payload, not a command line". When a
- * hallucinated call carries one of these, we refuse to synthesize shell text
- * from it: concatenating file content into a command line is how metacharacters
- * in model output become executed shell.
- */
 const CONTENT_SHAPED_ARG_KEYS = new Set([
   "content",
   "contents",
@@ -31,7 +25,6 @@ const CONTENT_SHAPED_ARG_KEYS = new Set([
   "input",
 ]);
 
-/** Explicit command-bearing fields, in precedence order. */
 const COMMAND_ARG_KEYS = [
   "command",
   "cmd",
@@ -42,14 +35,6 @@ const COMMAND_ARG_KEYS = [
   "arguments",
 ] as const;
 
-/**
- * Build a shell command string from a bare-command tool call. Models often
- * emit the binary as the tool name (`sed`, `awk`, `git`, …) and put the rest
- * into an explicit `command`/`cmd`/`argv`/`args` field. Only those explicit
- * fields are honored: array forms are shell-quoted per element, and calls that
- * look like a file-write shape (content/body/text/patch/...) are rejected so
- * an unknown-tool error is surfaced instead of executing model text.
- */
 function buildShellCommandFromCall(
   name: string,
   args: Record<string, unknown>,
@@ -82,9 +67,6 @@ function buildShellCommandFromCall(
   }
 
   if (rest === undefined) {
-    // No explicit command field. A name-only call with no other arguments is
-    // still runnable (`whoami`); anything else is an unknown tool, not a
-    // command to be assembled out of arbitrary model values.
     const meaningful = keys.filter(
       (key) => !["cwd", "timeoutMs", "iOwnThis", "own"].includes(key),
     );
@@ -94,7 +76,6 @@ function buildShellCommandFromCall(
 
   const trimmedRest = rest.trim();
   if (!trimmedRest) return trimmedName || undefined;
-  // Avoid a doubled binary when `rest` already begins with the tool name.
   const firstToken = trimmedRest.split(/\s+/)[0];
   if (!trimmedName.includes(" ") && firstToken === trimmedName) {
     return trimmedRest;
@@ -102,14 +83,6 @@ function buildShellCommandFromCall(
   return `${trimmedName} ${trimmedRest}`.trim();
 }
 
-/**
- * Normalize a tool call before dispatch. If the name is not a registered
- * tool but looks like a bare shell command (no `namespace.` dot — clai tools
- * are all namespaced, e.g. `fs.read`, `web.search`), rewrite it into a
- * `shell.exec` call instead of dead-ending on "Unknown tool: sed". The
- * rewritten call still flows through the normal shell safety classifier, so
- * dangerous commands are gated exactly as a hand-written shell.exec would be.
- */
 const CLASSIC_TOOL_ALIASES: Record<string, string> = {
   bash: "shell.exec",
   read: "fs.read",

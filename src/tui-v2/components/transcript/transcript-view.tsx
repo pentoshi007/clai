@@ -1,13 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Chat pane: virtualized, auto-following transcript (V2-050, 056, 057).
- *
- * Auto-follow uses OpenTUI ScrollBox `stickyScroll` + `stickyStart="bottom"`
- * so new rows and growing stream text pin the viewport to the latest content.
- * Manual scroll-up suspends follow (library `_hasManualScroll`); scrolling back
- * to the bottom or a new user prompt re-engages. We still call pinToBottom on
- * content changes as a belt-and-suspenders for layout races.
- */
 import {
   useCallback,
   useEffect,
@@ -64,12 +55,10 @@ export interface TranscriptViewProps {
   readonly contentWidth?: number | undefined;
   readonly scrollRef?: React.RefObject<ScrollBoxRenderable | null>;
 }
-/** Hide OpenTUI's native scrollbar chrome. */
 const HIDDEN_SCROLLBARS = {
   visible: false,
   showArrows: false,
 } as const;
-/** Max scrollTop for a ScrollBox (not scrollHeight — that overshoots). */
 function maxScrollTop(sb: ScrollBoxRenderable): number {
   const vh = sb.viewport?.height ?? 0;
   return Math.max(0, sb.scrollHeight - vh);
@@ -79,7 +68,6 @@ function isNearBottom(sb: ScrollBoxRenderable, slack = 0): boolean {
   if (max <= 0) return true;
   return sb.scrollTop >= max - slack;
 }
-/** Classic status badges: ▲ lines above · ▼ lines below the viewport. */
 function publishScrollRemainder(sb: ScrollBoxRenderable | null): void {
   if (!sb) {
     publishTranscriptScrollMetrics(EMPTY_SCROLL_METRICS);
@@ -161,17 +149,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const scrollRef = (externalScrollRef ?? internalScrollRef) as React.RefObject<ScrollBoxRenderable | null>;
   const closeOverlay = useRef<(() => void) | undefined>(undefined);
   const lastTailId = useRef(items.at(-1)?.id);
-  /**
-   * Product-level follow flag (force re-pin). OpenTUI sticky scroll is the
-   * primary follower; this tracks intentional scroll-away.
-   */
   const followBottom = useRef(true);
-  /**
-   * Render mirror of `followBottom`. The ref is mutated synchronously by
-   * scroll handlers, but `stickyScroll` is read during render, so re-engaging
-   * follow (End / Ctrl+D) must also re-render or native sticky stays off and
-   * the viewport never settles at a growing bottom.
-   */
   const [followSticky, setFollowSticky] = useState(true);
   const wasRunning = useRef(false);
   const dragPointer = useRef<{ x: number; y: number } | undefined>(undefined);
@@ -189,7 +167,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const followKey = useTranscriptFollowKey(state, session.running);
 
   const [searchOpen, setSearchOpen] = useState(false);
-  /** Sticky query kept after Enter so n/N + highlights work (pager model). */
   const [query, setQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(-1);
   const matches = useMemo(() => findMatches(state, query), [state, query]);
@@ -319,8 +296,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     if (event.button !== 0) return;
     if (event.defaultPrevented) return;
     stopDragRefresh();
-    // A press anywhere outside a thinking card releases its wheel focus.
-    // Presses inside a card body arrive defaultPrevented and return above.
     services.transcript.blurThinking();
     pointerGestureActive.current = true;
     copySemanticOnRelease.current = false;
@@ -349,7 +324,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     scrollRef.current?.stopAutoScroll();
   }
 
-  /** Scroll to the true bottom after layout settles (double-rAF). */
   function pinToBottom(options?: { forced?: boolean }): void {
     const forced = options?.forced === true;
     const go = (): void => {
@@ -471,7 +445,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     setFollowing(true);
   }, [sessionFingerprint, items.length]);
 
-  // New agent turn: always re-engage follow so the live stream is visible.
   useEffect(() => {
     const running = session.running || Boolean(state.runningStatus);
     if (running && !wasRunning.current) {
@@ -506,7 +479,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     }
   }, [followKey, items]);
 
-  // Keep the intro card at the top when the transcript is empty.
   useEffect(() => {
     if (items.length > 0) return;
     const sb = scrollRef.current;
@@ -514,8 +486,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     followBottom.current = true;
   }, [items.length, introWidth]);
 
-  // Force-hide scrollbars after mount (constructor options alone can be
-  // overridden by OpenTUI's auto-visibility when content overflows).
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
@@ -541,13 +511,10 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     publishScrollRemainder(sb);
   }
 
-  // App + composer forward every free wheel event here so trackpad never
-  // lands on the focused textarea and walks prompt history instead.
   useEffect(() => {
     return registerTranscriptScrollPort(scrollMainBy);
   }, [items.length, mountWindow.start, mountWindow.end]);
 
-  // g / G absolute jumps (also reachable from App when transcript is focused).
   useEffect(() => {
     return registerTranscriptJumpHandlers(
       () => {
@@ -569,8 +536,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     );
   }, [items.length, mountWindow.start, mountWindow.end]);
 
-  // Publish ▲/▼ remaining-line metrics for the status strip under the input.
-  // Poll lightly: OpenTUI ScrollBox has no scroll-event subscription.
   useEffect(() => {
     const tick = (): void => {
       publishScrollRemainder(scrollRef.current);
@@ -583,8 +548,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     };
   }, [followKey, items.length, introWidth]);
 
-  // Selection drag often ends over the composer; App forwards pointer coords
-  // here so edge-autoscroll continues when selecting downward past the pane.
   useEffect(() => {
     const unregister = registerTranscriptAutoScroll({
       update(x, y) {
@@ -605,17 +568,12 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   }, []);
 
   function jumpToBottom(): void {
-    // An explicit jump ends any pointer gesture: a press released outside the
-    // transcript never delivers mouse-up here, and a stale flag would
-    // otherwise swallow every later End / Ctrl+D.
     pointerGestureActive.current = false;
     setFollowing(true, { forced: true });
   }
 
   function openSearch(): void {
-    // Allow re-opening the filter to edit the sticky query.
     if (searchOpen) return;
-    // Another overlay (pager/picker) owns focus — do not stack.
     if (services.focus.hasOverlay() && services.focus.activeContext() !== "transcript-search") {
       return;
     }
@@ -623,7 +581,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       try {
         closeOverlay.current = services.focus.pushOverlay("transcript-search");
       } catch {
-        // Overlay already open — still show the bar if we own search.
         return;
       }
     }
@@ -631,7 +588,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     setFollowing(false);
   }
 
-  /** Drop filter input + sticky query + highlights. */
   function clearSearch(): void {
     setSearchOpen(false);
     setQuery("");
@@ -640,7 +596,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     closeOverlay.current = undefined;
   }
 
-  /** Close only the filter input; keep sticky query for n/N + highlights. */
   function leaveFilterKeepQuery(): void {
     setSearchOpen(false);
     closeOverlay.current?.();
@@ -679,18 +634,15 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   function submitSearch(): void {
     const needle = query.trim();
     if (!needle) {
-      // Empty submit just closes the filter.
       clearSearch();
       return;
     }
     if (matches.length === 0) {
       notify(services, "No matches", { key: "find", level: "warn", durationMs: 1400 });
-      // Keep filter open so the user can edit the term.
       return;
     }
     const index = nextMatchIndex(matches, matchIndex);
     jumpToMatch(index);
-    // Pager model: leave sticky find strip + n/N, hide the input.
     leaveFilterKeepQuery();
     notify(services, `Find · ${index + 1}/${matches.length}`, {
       key: "find",
@@ -756,17 +708,14 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
     if (services.focus.inputCaptured) return;
     const chord = chordFromKeyEvent(key);
 
-    // ── Filter input open: Esc closes everything; other keys go to <input>.
     if (searchOpen) {
       if (chord === "escape") {
         key.preventDefault();
         clearSearch();
       }
-      // Enter is handled by SearchBar onSubmit → submitSearch.
       return;
     }
 
-    // ── Sticky find (query kept, bar closed): n/N + Esc + ^R to re-edit.
     if (searchActive) {
       if (chord === "escape") {
         key.preventDefault();
@@ -796,9 +745,6 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       return;
     }
 
-    // `c` copies the focused thinking card, then releases it so the chat
-    // scrolls normally again. Ignored when no card is focused, so the chord
-    // stays free everywhere else.
     if (
       services.focus.activeContext() === "transcript" &&
       services.router.resolve(chord, "transcript") === "transcript.copy-thinking" &&
@@ -831,20 +777,16 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       return;
     }
 
-    // Selection chords first: Esc only lands here when there is a selection to
-    // clear, so the global cancel ladder still sees every other Esc.
     if (selection.handleKey(key, chord)) return;
     if (chord === "escape" && renderer.hasSelection) {
       key.preventDefault();
       try {
         renderer.clearSelection();
       } catch {
-        /* renderer already torn down */
       }
       return;
     }
 
-    // Arrow / page scroll when transcript owns focus.
     if (services.focus.activeContext() === "transcript") {
       const sb = scrollRef.current;
       if (!sb) return;
@@ -904,11 +846,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
       ) : null}
       <scrollbox
         ref={scrollRef}
-        // Keep the scrollbox focusable for wheel even when the composer has
-        // keyboard focus; selection/mouse-down still routes region focus.
         focused={focused}
-        // Native auto-follow: when content grows and the user is (or returns)
-        // at the bottom, stay pinned to the latest agent output.
         stickyScroll={followSticky}
         stickyStart={items.length > 0 ? "bottom" : "top"}
         viewportCulling
@@ -920,7 +858,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
         style={{ flexGrow: 1, width: "100%" }}
         onMouseScroll={onWheelScroll}
       >
-        {/* Persistent intro/model card — first scroll child, same as legacy TUI. */}
+        {}
         <IntroCard services={services} theme={theme} width={introWidth} />
         {mountWindow.olderCount > 0 ? (
           <box

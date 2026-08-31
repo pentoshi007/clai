@@ -69,13 +69,11 @@ export async function runDoctor(): Promise<void> {
   console.log(
     chalk.dim('  OpenTUI: clai (Bun/native runtime)  ·  classic Ink UI: clai --classic'),
   );
-  // node-pty is optional; classic Ink UI remains usable with basic pipes.
   let nodePtyOk = false;
   try {
     await import('node-pty');
     nodePtyOk = true;
   } catch {
-    // not available
   }
   console.log(
     `node-pty: ${

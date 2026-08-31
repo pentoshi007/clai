@@ -22,24 +22,12 @@ export function launchErrorOutput(
   );
 }
 
-/**
- * When false, children never inherit process.stdin (no TTY password prompts).
- * OpenTUI sets this false at startup — inheriting stdin freezes the TUI
- * (Esc/Ctrl+C/clicks die; raw "Password:" leaks under the composer).
- * Defaults to false for every frontend: privileged commands must use the
- * managed SecretPort path and may never take over process.stdin.
- */
 export function assignAllowInteractiveStdinInherit(value: boolean): void {
   allowInteractiveStdinInherit = value;
 }
 
 export let allowInteractiveStdinInherit = false;
 
-/**
- * Model-facing replacement for binary command output. Reporting the size and
- * the artifact path is useful evidence; feeding decoded binary to the model is
- * not, and it wrecks byte accounting downstream.
- */
 export function binarySuppressionNotice(
   bytes: number,
   artifactPath: string | undefined,

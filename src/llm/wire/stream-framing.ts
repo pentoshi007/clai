@@ -62,21 +62,12 @@ export function streamIdleBudgets(reasoningEnabled: boolean): {
   };
 }
 
-/**
- * Marker appended to the message of a stall that happened on a **live**
- * connection (bytes/keepalives were still arriving, or output had already
- * started and simply stopped). Such a stall is not a transport failure, so the
- * recovery layer must not classify it as `network` and retry the identical
- * request against the identical route.
- */
 export const STREAM_STALL_MARKER = "no model output";
 
 export interface StreamLineReaderOptions {
   signal?: AbortSignal | undefined;
   idleTimeoutMs?: number | undefined;
   maxBytes?: number | undefined;
-  /** If provided, called after every read so callers can reset their own
-   *  watchdogs (eg the OpenAI-compatible streamer's existing one). */
   onActivity?: (() => void) | undefined;
   outputIdleTimeoutMs?: number | undefined;
   outputProgress?: (() => number) | undefined;
@@ -139,9 +130,6 @@ export async function* readStreamLines(
   const onCallerAbort = (): void =>
     idleController.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
-  // A caller abort must surface as an abort error, not as a clean
-  // end-of-stream — otherwise the partial text is returned as a successful
-  // completion and enters history as the model's final answer.
   const callerAbortError = (): Error =>
     (options.signal?.reason as Error | undefined) ??
     new DOMException("The operation was aborted.", "AbortError");
@@ -149,7 +137,6 @@ export async function* readStreamLines(
     clearIdleTimers();
     throw callerAbortError();
   }
-  // If the idle watchdog already fired, bail before starting the loop.
   if (idleController.signal.aborted) {
     clearIdleTimers();
     return;
@@ -211,28 +198,13 @@ export async function* readStreamLines(
     try {
       reader.releaseLock();
     } catch {
-      // already released
     }
   }
 }
 
-/**
- * Reassembles SSE `data:` frames.
- *
- * Per the SSE spec a single event's payload may be split across several `data:`
- * lines that the client must concatenate before parsing; each fragment was
- * previously parsed on its own, failed `JSON.parse`, and was dropped as a
- * malformed keepalive — losing content without a trace.
- *
- * A payload is released as soon as it is syntactically complete, so
- * single-line frames behave exactly as before. A blank line (frame terminator)
- * discards an incomplete remainder, and a runaway fragment is dropped rather
- * than corrupting later frames.
- */
 export function createSseFrameAssembler(options?: {
   maxBufferedBytes?: number;
 }): {
-  /** Returns a complete payload, or undefined while still buffering. */
   pushLine: (line: string) => string | undefined;
 } {
   const maxBufferedBytes = options?.maxBufferedBytes ?? 1_000_000;
@@ -250,7 +222,6 @@ export function createSseFrameAssembler(options?: {
     pushLine(line: string): string | undefined {
       const trimmed = line.trim();
       if (trimmed === "") {
-        // End of event: an incomplete remainder was malformed.
         buffered = "";
         return undefined;
       }

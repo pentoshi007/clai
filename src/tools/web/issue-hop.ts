@@ -11,23 +11,16 @@ import type { ClientRequest, IncomingHttpHeaders, IncomingMessage, RequestOption
 import type { Socket } from "node:net";
 import type { TLSSocket } from "node:tls";
 
-/** Signature of `node:dns/promises.lookup`. */
 export type DnsLookupFn = typeof defaultDnsLookup;
 
-/** Signature of `node:http.request` (the overload accepting URL + options). */
 export type HttpRequestFn = (
   url: string | URL,
   options: RequestOptions,
   callback?: (res: IncomingMessage) => void,
 ) => ClientRequest;
 
-/** Signature of `node:https.request` (same shape as {@link HttpRequestFn}). */
 export type HttpsRequestFn = HttpRequestFn;
 
-/**
- * Content-Type prefixes that always trigger the `binary-content` error
- * kind, regardless of `responseMode` (Requirements 2.9 + 2.30).
- */
 const BINARY_CONTENT_TYPE_PATTERNS: readonly RegExp[] = [
   /^image\//i,
   /^application\/octet-stream/i,
@@ -35,26 +28,14 @@ const BINARY_CONTENT_TYPE_PATTERNS: readonly RegExp[] = [
   /^video\//i,
 ];
 
-/**
- * Content-Type prefixes that trigger HTML-to-readable-text conversion
- * in `responseMode="readable"` (Requirement 2.4). All other text
- * Content-Types pass through unchanged in that mode (Requirement 2.5).
- */
 const HTML_CONTENT_TYPE_PATTERN = /^(text\/html|application\/xhtml\+xml)/i;
 
-/** Default User-Agent sent on outbound `web.fetch` requests. */
 const DEFAULT_USER_AGENT = "clai-web-fetch/1.0";
 
-/** Statuses that carry a `Location` header and trigger a redirect hop. */
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([
   301, 302, 303, 307, 308,
 ]);
 
-/**
- * Argument bundle with every optional field resolved to a concrete
- * default per `types.ts`. Downstream code reads only this shape so the
- * defaults are not re-derived in multiple places.
- */
 export interface NormalisedArgs {
   url: string;
   maxBytes: number;
@@ -68,7 +49,6 @@ export interface NormalisedArgs {
   redactSensitive: boolean;
 }
 
-/** Internal context threaded through the request loop. */
 export interface RequestLoopContext {
   args: NormalisedArgs;
   capture: Capture;
@@ -89,7 +69,6 @@ interface IssueHopArgs {
   hop: number;
 }
 
-/** Outcome of one HTTP/HTTPS hop. */
 type HopOutcome =
   | {
       kind: "redirect";
@@ -110,25 +89,6 @@ type HopOutcome =
       error: WebFetchError;
     };
 
-/**
- * Issue a single GET request to `parsed.href` while pinning the TCP
- * connection to `resolvedIp` via a custom `lookup` callback.
- *
- * The function handles every shape the response can take:
- *   - 3xx with a `Location` header → returns `{kind: "redirect"}`
- *   - 3xx without a `Location`     → treated as a terminal 3xx
- *   - binary content type          → returns a `binary-content` error
- *   - 4xx / 5xx                    → reads up to
- *     {@link HTTP_ERROR_BODY_PREVIEW_BYTES} bytes for the preview and
- *     returns an `http-error` error (Requirement 6.4)
- *   - 2xx                          → reads body up to `args.maxBytes`
- *     and returns `{kind: "terminal"}`
- *
- * Timing for `tcpMs`, `tlsMs`, and `ttfbMs` is recorded on the
- * shared {@link Capture} and corresponds to the *current* hop. The
- * builder always reflects the *last* hop's measurements (per its
- * documented per-hop semantics).
- */
 export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
   const { ctx, currentUrl, parsed, resolvedIp, resolvedFamily } = input;
   const isHttps = parsed.protocol === "https:";
@@ -139,17 +99,12 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
     method: "GET",
     signal: ctx.controller.signal,
     headers: {
-      // Identify ourselves and ask the server for prose-friendly bodies.
       "user-agent": DEFAULT_USER_AGENT,
       accept: "*/*",
       "accept-encoding": "identity",
-      // Honor the URL's hostname for SNI and the Host header even though
-      // the socket is connecting to `resolvedIp`.
       host: parsed.host,
     },
-    // Pinned-IP lookup. Returns `resolvedIp` synchronously so the
     // request's socket connects to the exact address the SSRF guard
-    // already classified.
     lookup: pinnedLookup(resolvedIp, resolvedFamily),
   };
 
@@ -181,17 +136,12 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
       if (socketObserved) return;
       socketObserved = true;
 
-      // `lookup` event fires once DNS has been resolved (our pinned
-      // lookup fires it synchronously). We do not record `dnsMs` here
-      // because we already measured it around `dnsLookupFn`.
       socket.once("connect", () => {
         connectAt = ctx.now();
         const tcpMs = connectAt - dnsEndedAt;
         ctx.capture.markTcpConnected(tcpMs);
       });
       if (isHttps) {
-        // `secureConnect` is emitted by `tls.TLSSocket` once the
-        // handshake completes.
         (socket as TLSSocket).once("secureConnect", () => {
           secureAt = ctx.now();
           if (connectAt !== undefined) {
@@ -203,7 +153,6 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
     });
 
     req.on("error", (err: Error) => {
-      // AbortController-driven aborts surface as `AbortError`.
       if (ctx.controller.signal.aborted) {
         finish({
           kind: "error",
@@ -229,9 +178,6 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
       const headers = res.headers;
       ctx.capture.markResponse(status, headers, ttfbMs);
 
-      // Capture every Set-Cookie header value (parsed individually)
-      // for the cookies array. Node returns a string[] for `set-cookie`
-      // when there are multiple lines.
       const setCookieValues = collectSetCookieValues(headers);
       for (const value of setCookieValues) {
         ctx.capture.addSetCookieHeader(value);
@@ -239,20 +185,15 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
 
       const contentType = headerString(headers["content-type"]);
 
-      // Redirect handling (Requirement 2.11/2.14).
       if (status >= 300 && status < 400 && REDIRECT_STATUSES.has(status)) {
         const location = headerString(headers["location"]);
         if (typeof location === "string" && location.length > 0) {
-          // Drain the response body to free the socket.
           res.resume();
           finish({ kind: "redirect", status, location });
           return;
         }
-        // 3xx without Location: fall through and treat as terminal.
       }
 
-      // Binary content rejection (Requirements 2.9 + 2.30) before we
-      // read any body bytes — including in `responseMode="raw"`.
       if (
         typeof contentType === "string" &&
         BINARY_CONTENT_TYPE_PATTERNS.some((re) => re.test(contentType))
@@ -270,8 +211,6 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
         return;
       }
 
-      // HTTP error (Requirement 6.4). Headers-only callers do not need a
-      // body preview; body/full callers receive up to 4 KiB.
       if (status >= 400 && status < 600) {
         if (ctx.args.responsePart === "headers") {
           res.destroy();
@@ -340,9 +279,6 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
         return;
       }
 
-      // Successful (2xx or non-Location 3xx) terminal hop. Headers-only
-      // requests can stop immediately instead of buffering a body they will
-      // discard in the adapter.
       if (ctx.args.responsePart === "headers") {
         res.destroy();
         finish({
@@ -390,11 +326,6 @@ export async function issueHop(input: IssueHopArgs): Promise<HopOutcome> {
       );
     });
 
-    // Mark "request sent" right before flushing the headers. For a GET
-    // with no body, `req.end()` returns immediately after writing the
-    // header block to the socket buffer, so the synchronous timestamp
-    // is the closest non-platform-specific approximation of "the
-    // moment we sent the request."
     requestSentAt = ctx.now();
     req.end();
   });
@@ -437,12 +368,6 @@ function pinnedLookup(resolvedIp: string, family: 4 | 6) {
   };
 }
 
-/**
- * Collect every `Set-Cookie` line from {@link IncomingHttpHeaders}.
- * Node returns a `string[]` when the header was sent multiple times,
- * which is the common case for cookie-setting endpoints; we normalise
- * the single-string form to a one-element array.
- */
 function collectSetCookieValues(headers: IncomingHttpHeaders): string[] {
   const value = headers["set-cookie"];
   if (Array.isArray(value)) return value.filter((v) => typeof v === "string");
@@ -450,26 +375,12 @@ function collectSetCookieValues(headers: IncomingHttpHeaders): string[] {
   return [];
 }
 
-/**
- * Pick a single string out of an `IncomingHttpHeaders` value that
- * Node may give us as `string | string[] | undefined`. Returns
- * `undefined` if the header was not sent.
- */
 function headerString(value: string | string[] | undefined): string | undefined {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.join(", ");
   return undefined;
 }
 
-/**
- * Read up to `maxBytes` from `res`, aborting the underlying request via
- * `controller` once the cap is hit so the socket is freed instead of
- * draining the whole response.
- *
- * Returns the collected `Buffer`, the byte count, and a `truncated`
- * flag. Listener cleanup is handled in `finally` so no event emitter
- * leaks if the caller's body classifier subsequently throws.
- */
 function contentEncodingHeader(res: IncomingMessage): string | undefined {
   const raw = res.headers["content-encoding"];
   if (Array.isArray(raw)) return raw.join(", ");
@@ -516,7 +427,6 @@ function readRawBody(
         try {
           res.destroy();
         } catch {
-          // ignore — we're abandoning the socket deliberately
         }
         settled = true;
         resolve({
@@ -534,7 +444,6 @@ function readRawBody(
         try {
           res.destroy();
         } catch {
-          // ignore
         }
         settled = true;
         resolve({
@@ -578,26 +487,6 @@ function readRawBody(
   });
 }
 
-/**
- * Decode the response body bytes into the string surfaced by
- * {@link WebFetchOutcome.body}.
- *
- * Decision matrix:
- *   - `mode = "raw"`            → decode using the declared Content-Type
- *                                  charset (or HTML meta / UTF-8 fallback),
- *                                  up to `maxBytes`.
- *   - `mode = "readable"` AND
- *     content-type is HTML/XHTML → run {@link toReadableText} so chrome
- *                                  and non-rendering content are
- *                                  stripped (Requirements 2.4, 2.28).
- *   - `mode = "readable"` AND
- *     non-HTML text             → UTF-8 (replace) up to `maxBytes`
- *                                  (Requirement 2.5).
- *
- * The `body` arg has already been truncated to `maxBytes` by
- * {@link readBody}, so HTML conversion only ever runs on bytes that
- * are already capped (Property 7).
- */
 function classifyAndDecodeBody(input: {
   mode: ResponseMode;
   contentType: string | undefined;
@@ -619,13 +508,6 @@ function classifyAndDecodeBody(input: {
   return decoded;
 }
 
-/**
- * Render the body preview included in `http-error` outcomes
- * (Requirement 6.4). The preview honors the response charset and is capped at
- * {@link HTTP_ERROR_BODY_PREVIEW_BYTES}; when the underlying body was
- * truncated we append the standard truncation marker so the agent can tell it
- * did not see the full response.
- */
 function renderBodyPreview(
   body: Buffer,
   truncated: boolean,
@@ -637,11 +519,6 @@ function renderBodyPreview(
   return `${text}${TRUNCATION_MARKER}`;
 }
 
-/**
- * Build the `timeout` error from the design's error matrix:
- * "web.fetch: timeout after Ns (last url=…)" carrying the elapsed
- * wall-clock for callers that want to log it (Requirement 2.10).
- */
 export function timeoutError(
   lastUrl: string,
   t0: number,
@@ -655,12 +532,6 @@ export function timeoutError(
   };
 }
 
-/**
- * Build the generic `network` error used for DNS / connect / TLS
- * failures (Requirement 6.3 indirectly via the design's error matrix).
- * The optional `prefix` lets callers tag a more specific category
- * (e.g. "DNS resolution failed") in front of the underlying message.
- */
 export function networkError(
   lastUrl: string,
   err: unknown,

@@ -14,7 +14,6 @@ function dbFilePath(): string {
   return join(historyDirPath(), "history.db");
 }
 
-/** Sessions pruned by retention land here — never hard-deleted on autosave. */
 export function archiveFilePath(): string {
   return join(historyDirPath(), "history-archive.jsonl");
 }
@@ -139,8 +138,6 @@ export async function appendRecordsToFile(
   await mkdir(historyDirPath(), { recursive: true });
   await fixOwner(historyDirPath());
   const chunk = `${records.map((r) => JSON.stringify(r)).join("\n")}\n`;
-  // Append is best-effort durable; archive growth is unbounded by design so
-  // retention never permanently loses a conversation.
   await appendFile(path, chunk, { mode: 0o600 });
   await fixOwner(path).catch(() => undefined);
 }
@@ -161,7 +158,6 @@ function serializeSessionPayload(record: HistoryRecord): string {
   });
 }
 
-/** SQLite mirror write with atomic generation/revision rejection. */
 export function upsertSqlite(db: DatabaseLike, record: HistoryRecord): void {
   const summary = historySummary(record);
   db.prepare(
@@ -204,8 +200,6 @@ export function upsertSqlite(db: DatabaseLike, record: HistoryRecord): void {
 export async function enforceSqliteRetention(db: DatabaseLike): Promise<void> {
   const limit = getConfig().historyRetentionLimit;
   if (!limit || limit <= 0) return;
-  // Archive rows about to be deleted, then delete — never hard-drop without
-  // a JSONL archive copy.
   try {
     const doomed = db
       .prepare(
@@ -216,7 +210,6 @@ export async function enforceSqliteRetention(db: DatabaseLike): Promise<void> {
     const records = doomed.map(rowToSession);
     if (records.length > 0) await appendRecordsToFile(archiveFilePath(), records);
   } catch {
-    /* archive best-effort */
   }
   db.exec(
     `DELETE FROM sessions WHERE id NOT IN (SELECT id FROM sessions ORDER BY updated_at DESC LIMIT ${Math.floor(limit)});`,

@@ -4,14 +4,9 @@ import type { BackgroundJob, JobStatus } from "../jobs.js";
 export interface ResponderPollingPolicyInput {
   call: ToolCall;
   targetJob?: BackgroundJob | undefined;
-  /** Jobs in the exact shell.jobs display window, in display order. */
   recentJobs?: readonly BackgroundJob[] | undefined;
 }
 
-/**
- * Responder-owned jobs are push-delivered and must not be polled. Normal jobs
- * remain pollable, including mixed sessions with a visible terminal normal job.
- */
 const LIVE_JOB_STATUSES = new Set<JobStatus>([
   "starting",
   "running",
@@ -21,9 +16,6 @@ const LIVE_JOB_STATUSES = new Set<JobStatus>([
 export function responderPollingPolicy(
   input: ResponderPollingPolicyInput,
 ): { blocked: boolean; reason?: string | undefined } {
-  // Only a still-running Responder job can be polled in a loop. Once it is
-  // terminal its output is fixed, so reading it is a normal bounded read and
-  // blocking it would remove the only way to inspect the full result.
   if (
     input.call.name === "shell.tail" &&
     input.targetJob?.responder &&

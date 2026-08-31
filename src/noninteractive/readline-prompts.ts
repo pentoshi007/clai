@@ -1,8 +1,3 @@
-/**
- * Terminal prompts on `node:readline/promises` — the replacement for
- * `@inquirer/prompts` (06-ONESHOT.md §4). Streams are injectable so every
- * prompt is testable without a real TTY, and EOF resolves instead of hanging.
- */
 
 import { createInterface } from "node:readline/promises";
 
@@ -18,7 +13,6 @@ export interface PromptIO {
   readonly signal?: AbortSignal | undefined;
 }
 
-/** Message used when a confirmation is impossible on a non-TTY stdin. */
 export const CONFIRMATION_REQUIRED_MESSAGE =
   "confirmation required; re-run with -y or --permissions allow-all";
 
@@ -37,12 +31,6 @@ export function isInteractiveStdin(io?: PromptIO): boolean {
   return Boolean(resolveInput(io).isTTY);
 }
 
-/**
- * Re-assert raw mode AND resume stdin after a readline prompt. readline pauses
- * stdin and switches it to cooked mode when it closes; leaving it paused means
- * no `keypress`/`data` events reach the REPL's ESC/Ctrl+C abort handler, so a
- * tool launched right after a confirmation could no longer be aborted.
- */
 export function restoreInteractiveStdin(io?: PromptIO): void {
   const input = resolveInput(io);
   if (!input.isTTY || typeof input.setRawMode !== "function") return;
@@ -50,7 +38,6 @@ export function restoreInteractiveStdin(io?: PromptIO): void {
     if (!input.isRaw) input.setRawMode(true);
     input.resume();
   } catch {
-    /* ignore */
   }
 }
 
@@ -65,14 +52,8 @@ export function releaseInteractiveStdin(io?: PromptIO): void {
   } catch {}
 }
 
-/** Reads one line, or `undefined` once the stream ends (EOF / closed pipe). */
 type Ask = (text: string) => Promise<string | undefined>;
 
-/**
- * Run `body` against a single readline interface. One interface per prompt
- * session matters: a fresh interface would drop input already buffered by the
- * previous one, so retries must reuse this `ask`.
- */
 async function session<T>(
   io: PromptIO | undefined,
   echo: boolean,
@@ -86,7 +67,6 @@ async function session<T>(
     try {
       input.setRawMode(false);
     } catch {
-      /* ignore */
     }
   }
   const rl = createInterface({
@@ -94,9 +74,6 @@ async function session<T>(
     output,
     terminal: Boolean(input.isTTY),
   });
-  // Queue the lines ourselves: lines that arrive between two questions (a
-  // retry, or a fast pipe) would otherwise be emitted with no listener
-  // attached and silently lost, leaving the next question waiting forever.
   const pending: string[] = [];
   let deliver: ((line: string | undefined) => void) | undefined;
   rl.on("line", (line) => {
@@ -165,7 +142,6 @@ export async function askLine(
   return answer?.trim();
 }
 
-/** Read a value without displaying it; echo is suppressed only on a TTY. */
 export async function askSecret(
   prompt: string,
   io?: PromptIO,
@@ -181,10 +157,6 @@ export function parseYesNo(answer: string): boolean | undefined {
   return undefined;
 }
 
-/**
- * y/n question. Empty input takes `defaultValue`; unparseable input re-asks.
- * EOF answers "no" rather than hanging.
- */
 export async function askYesNo(
   prompt: string,
   options?: PromptIO & { readonly defaultValue?: boolean },
@@ -210,10 +182,6 @@ export interface PromptChoice<T> {
   readonly value: T;
 }
 
-/**
- * Numbered picker. Empty input takes the default choice; EOF or an invalid
- * selection after three tries resolves `undefined` so callers can cancel.
- */
 export async function askChoice<T>(
   prompt: string,
   choices: readonly PromptChoice<T>[],

@@ -17,14 +17,11 @@ import {
   unsetSearchProviderSecret,
 } from "../store/keys.js";
 import type { SearchProviderId } from "../tools/web/types.js";
-// Importing the providers ensures their module-level registration in
-// `searchProviders` runs before any helper accesses the registry.
 import "../tools/web/providers/duckduckgo.js";
 import "../tools/web/providers/brave.js";
 import "../tools/web/providers/tavily.js";
 import "../tools/web/providers/exa.js";
 
-/** Read a secret from stdin without echoing. */
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -114,7 +111,6 @@ export async function unsetSearchProviderKey(
   );
 }
 
-/** Set the active search provider used by `web.search`. */
 export async function useSearchProvider(providerValue: string): Promise<void> {
   const provider = assertSearchProvider(providerValue);
   setActiveSearchProvider(provider);

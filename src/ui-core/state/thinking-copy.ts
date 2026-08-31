@@ -1,11 +1,3 @@
-/**
- * Copy the reasoning of the focused thinking card (`c` in the transcript).
- *
- * Renderer-neutral so both surfaces can share it and so the outcome is
- * testable without a clipboard or a live renderer. The card's body is a paged
- * window, so this deliberately copies the item's whole content rather than
- * whatever rows happen to be on screen.
- */
 
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
 import type { TranscriptState } from "./transcript-types.js";

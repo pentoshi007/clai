@@ -84,14 +84,6 @@ function anthropicThinkingBudget(
   }
 }
 
-/**
- * Claude Opus 4.7+ and later generations (Sonnet 5, Opus 4.8, …) removed
- * manual extended thinking (`thinking: {type:"enabled", budget_tokens}`) —
- * it now returns HTTP 400. Those models require adaptive thinking
- * (`thinking: {type:"adaptive"}` + `effort`) instead. Earlier models
- * (3-7, 4, 4-5, 4-6) still use the legacy budget_tokens form.
- * https://docs.anthropic.com/en/docs/about-claude/models/extended-thinking-models
- */
 function requiresAdaptiveThinking(model: string): boolean {
   return /claude-(?:opus|sonnet|haiku)-(?:4-[7-9]|4-\d\d|5(?:-|$))/i.test(model);
 }
@@ -109,7 +101,6 @@ function anthropicThinkingField(
   return { type: "enabled", budget_tokens: budget };
 }
 
-/** Output cap that always clears the requested thinking budget. */
 export function anthropicMaxTokens(
   requested: number | undefined,
   thinking: Record<string, unknown> | undefined,
@@ -119,16 +110,8 @@ export function anthropicMaxTokens(
   return Math.max(requested ?? 8_192, budget + 1_024);
 }
 
-// Minimum prompt length worth a cache breakpoint. Below Anthropic's own cache
-// floor the marker only adds cache-write cost.
 const CACHE_BREAKPOINT_MIN_CHARS = 4_000;
 
-/**
- * Mark the end of the stable system prefix as a cache breakpoint. Anthropic's
- * cache render order is tools → system → messages, so this single breakpoint
- * caches both unchanged native tool schemas and the constitution. Mutable
- * request/workspace/plan state is carried only in later messages.
- */
 export function anthropicSystemBlocks(
   system: string | undefined,
   requestContexts: readonly string[] = [],
@@ -188,15 +171,7 @@ export function buildAnthropicBody(request: CompletionRequest, stream: boolean):
     model,
     system,
     messages,
-    // A 1024 default sits below `anthropicThinkingBudget` (up to 8192), which
-    // Anthropic rejects outright, and is far below every Claude output cap.
     max_tokens: anthropicMaxTokens(plan.controls.requestedMaxTokens, thinking),
-    // Anthropic requires temperature to stay at its default (1) whenever
-    // thinking is enabled — sending our 0.2 default returns HTTP 400
-    // ("temperature may only be set to 1 when thinking is enabled").
-    // Omit the field in that case rather than pin it to 1 explicitly, since
-    // some non-thinking-capable models on the same body path (e.g. Haiku
-    // 3.5) still support a real temperature.
     ...(thinking
       ? {}
       : {
@@ -360,8 +335,6 @@ export const anthropicProvider: LlmProvider = {
             stop_reason?: string;
           };
         };
-        // Anthropic reports mid-stream overloads as an `error` event.
-        // It used to be dropped, so a truncated answer looked complete.
         if (parsed.type === "error") {
           throw new ProviderError(
             `Anthropic stream error: ${parsed.error?.message ?? parsed.error?.type ?? "unknown"}`,
@@ -370,7 +343,6 @@ export const anthropicProvider: LlmProvider = {
           );
         }
         if (parsed.type === "message_stop") sawMessageStop = true;
-        // message_start carries input tokens; message_delta carries output.
         if (parsed.type === "message_start" && parsed.message?.usage) {
           streamUsage = parseAnthropicUsage(parsed.message.usage) ?? streamUsage;
         }
@@ -421,8 +393,6 @@ export const anthropicProvider: LlmProvider = {
           }
         }
       } catch (frameError) {
-        // Only a malformed JSON frame is ignorable; real errors (provider error
-        // Frames, tool-argument size guard) must propagate.
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }

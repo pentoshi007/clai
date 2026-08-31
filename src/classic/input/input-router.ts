@@ -77,8 +77,6 @@ export class InputRouter {
     }
 
     if (OVERLAY_CONTEXTS.has(context)) {
-      // An overlay (pager, picker, jobs, search…) owns the screen region;
-      // ctrl+c there means "get me out", never "abort the turn".
       if (chord === "ctrl+c") {
         this.deps.closeOverlay();
         this.deps.ladder.escape(true);

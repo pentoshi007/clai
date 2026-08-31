@@ -1,11 +1,3 @@
-/**
- * Pure line builders for the non-interactive surface (06-ONESHOT §2/§3).
- *
- * One exported function per `AgentEvent` kind, each returning `readonly
- * string[]`. No streams, no clocks, no process reads — every row is derived
- * from the event plus the injected `StreamContext`, and every glyph, colour and
- * body preview comes from the same `ui-core` presenters the Ink feed uses.
- */
 
 import type { AgentEvent } from "../agent/events.js";
 import { isFileMutationTool } from "../tools/file-diff.js";
@@ -29,7 +21,6 @@ export interface StreamContextInput {
   readonly showThinking: boolean;
 }
 
-/** Collapsed tool-output preview rows, and the `--verbose` ceiling. */
 export const COLLAPSED_BODY_ROWS = 3;
 export const VERBOSE_BODY_ROWS = 40;
 
@@ -63,7 +54,6 @@ export function buildTurnStartLines(
   );
 }
 
-/** Status text drives the spinner at `normal`; `--verbose` also logs each one. */
 export function buildStatusLines(
   ctx: StreamContext,
   event: Extract<AgentEvent, { type: "status" }>,
@@ -74,7 +64,6 @@ export function buildStatusLines(
   return [row(ctx, styled(ctx, meta(ctx, [ctx.glyphs.separator, text]), { fg: "muted" }))];
 }
 
-/** Streaming fragments are aggregated by their terminal event; nothing to print. */
 export function buildThinkingDeltaLines(): readonly string[] {
   return [];
 }
@@ -105,7 +94,6 @@ export function buildAssistantMessageLines(
   return renderAnswerLines(ctx, event.text);
 }
 
-/** Shared by `assistant-message` and the `finish()` outcome write. */
 export function renderAnswerLines(ctx: StreamContext, text: string): readonly string[] {
   const source = sanitizeDisplayText(text);
   if (source.trim() === "") return [];
@@ -155,7 +143,6 @@ export function buildToolCallLines(
   return [row(ctx, left)];
 }
 
-/** Queued → executing is a spinner label change, not a transcript row. */
 export function buildToolStartLines(): readonly string[] {
   return [];
 }
@@ -214,7 +201,6 @@ export function buildConfirmRequestLines(
   return [row(ctx, `${glyph} ${styled(ctx, meta(ctx, [event.kind, text]), { fg: "activity" })}`)];
 }
 
-/** The outcome is written by `finish()`; `turn-end` itself prints nothing. */
 export function buildTurnEndLines(): readonly string[] {
   return [];
 }
@@ -260,7 +246,6 @@ export function buildCompactionStartLines(
   return compactionRow(ctx, "compacting context", label, "cyan");
 }
 
-/** Compaction bodies never stream to the transcript (§3 rule 8). */
 export function buildCompactionDeltaLines(): readonly string[] {
   return [];
 }

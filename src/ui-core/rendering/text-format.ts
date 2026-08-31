@@ -1,4 +1,3 @@
-/** Truncate long text in the middle, keeping the start and end visible. */
 export function truncateMiddle(text: string, maxWidth: number): string {
   if (maxWidth <= 0) return "";
   if (text.length <= maxWidth) return text;
@@ -55,7 +54,6 @@ export function wrapPlainString(
   return lines;
 }
 
-/** Compact "time ago" label for history rows, e.g. "3m", "5h", "2d". */
 export function relativeTime(iso: string): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return "";
@@ -74,7 +72,6 @@ export function relativeTime(iso: string): string {
   return `${Math.floor(mon / 12)}y ago`;
 }
 
-/** Last path segment of a cwd, for a short location hint in history rows. */
 export function shortCwd(cwd: string): string {
   const trimmed = cwd.replace(/[\\/]+$/, "");
   const base = trimmed.split(/[\\/]/).pop() ?? trimmed;

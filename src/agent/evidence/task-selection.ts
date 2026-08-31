@@ -9,24 +9,14 @@ export interface TaskWorkLedger extends TaskEvidence {
 
 export interface CanMarkTaskDoneOpts {
   taskTitle?: string | undefined;
-  /** User asked for a product feature app (todo/blog/…). */
   featureAppRequired?: boolean | undefined;
-  /** Session-level flag: feature write observed any time this turn. */
   sessionFeatureSeen?: boolean | undefined;
-  /** A real project root was discovered, so a scaffold checkpoint is already satisfied. */
   existingProject?: boolean | undefined;
-  /** An earlier plan task already proved the local server is ready and running. */
   runtimeVerified?: boolean | undefined;
-  /** Plan kind: coding | pentest | general — selects domain gates. */
   planKind?: string | undefined;
-  /** Any plan task already has successful remote recon/active test evidence. */
   remoteWorkVerified?: boolean | undefined;
 }
 
-/**
- * Leave/keep-running observational tasks may inherit already-proven runtime.
- * "for user to test" must NOT block inheritance (prior brittle exclusion of "test").
- */
 export function isRuntimeObservationTask(title: string): boolean {
   const t = title.toLowerCase();
   const leaveKeep =
@@ -34,25 +24,20 @@ export function isRuntimeObservationTask(title: string): boolean {
       t,
     );
   if (!leaveKeep) return false;
-  // Primary action is still start/launch/probe → not pure observation
   if (
     /\b(?:start|launch|run)\s+(?:the\s+)?(?:dev\s*)?server\b/.test(t) ||
     /\b(?:probe|curl)\s+(?:localhost|http)\b/.test(t)
   ) {
-    // Combined "start … leave running" is verify work, not pure observation
     if (/\b(start|run|launch)\b/.test(t) && /\b(dev\s*server|npm\s+run\s+dev|shell\.start)\b/.test(t)) {
       return false;
     }
   }
-  // Titles that are ONLY leave/keep running (optionally "for user to test")
   if (
     /\bleave\s+(?:it\s+)?running\b|\bkeep\s+(?:it\s+)?running\b|\bfor\s+(?:the\s+)?user\s+to\s+test\b/.test(
       t,
     )
   ) {
-    // If title is primarily leave-running without requiring a fresh start as the main verb first
     if (!/^(?:start|run|launch)\b/.test(t.trim())) return true;
-    // "Leave server running for user to test" — leave is the head intent
     if (/^leave\b|^keep\b/.test(t.trim())) return true;
   }
   return (
@@ -61,7 +46,6 @@ export function isRuntimeObservationTask(title: string): boolean {
   );
 }
 
-/** Report / residual documentation that can inherit prior remote evidence. */
 export function isRemoteObservationTask(title: string): boolean {
   const t = title.toLowerCase();
   if (/\b(report|write.?up|summar|document|residual|findings?\s+summary)\b/.test(t)) {
@@ -77,11 +61,6 @@ export function isRemoteObservationTask(title: string): boolean {
   return false;
 }
 
-/**
- * Typed evidence gate: base rule is ≥1 successful work tool; implement/install/verify
- * (and pentest recon) require stronger signals when classified. Existing project and
- * already-proven runtime/remote facts satisfy corresponding observational tasks.
- */
 export function canMarkTaskDone(
   ledger: TaskWorkLedger | null,
   taskId: string,
@@ -130,22 +109,16 @@ export function commandOf(call: ToolCall): string {
   return typeof call.args.command === "string" ? call.args.command : "";
 }
 
-/**
- * True only for actually running a long-lived dev server — not create-vite /
- * npm create which merely contain the word "vite".
- */
 export function isDevServerCall(call: ToolCall): boolean {
   const cmd = commandOf(call);
   if (isScaffoldCreateCommand(cmd)) return false;
 
   if (call.name === "shell.start") {
-    // Explicit background job is usually a server; still exclude create-*.
     if (!cmd) return true;
     return (
       /\bnpm\s+run\s+dev\b|\byarn\s+dev\b|\bpnpm\s+(run\s+)?dev\b|\bbun\s+(run\s+)?dev\b|\bnext\s+dev\b|\bnuxt\s+dev\b|\bcargo\s+watch\b|\bflask\s+run\b|\buvicorn\b|\bgunicorn\b|\brails\s+s(?:erver)?\b|\bdjango(-admin)?\s+runserver\b|\bdotnet\s+run\b|\bgo\s+run\b/i.test(
         cmd,
       ) ||
-      // bare `vite` / `vite --host` as the process — not `create vite`
       /(?:^|[;&|]\s*)vite(?:\s|$)/i.test(cmd) ||
       /\b(python3?\s+-m\s+http\.server|php\s+-S)\b/i.test(cmd)
     );
@@ -175,10 +148,6 @@ export function isPackageInstallCommand(cmd: string): boolean {
   );
 }
 
-/**
- * Choose which pending plan task should own this tool call (auto-start).
- * Prevents npm install from being attributed to "localStorage" / style tasks.
- */
 export function pickPendingTaskForToolCall<T extends { id: string; title: string }>(
   pending: T[],
   call: ToolCall,
@@ -188,13 +157,11 @@ export function pickPendingTaskForToolCall<T extends { id: string; title: string
   const cmd = commandOf(call);
 
   const score = (title: string): number => {
-    // Heuristics rank likely ownership only. They must never make a pending
-    // task ineligible or authorize/block the underlying tool call.
     let s = 1;
     if (isPackageInstallCommand(cmd)) {
       if (looksLikeInstallTaskTitle(title)) s += 20;
       else if (looksLikeScaffoldTaskTitle(title)) s += 10;
-      else s -= 5; // prefer not to attach install to feature tasks
+      else s -= 5;
     }
     if (isDevServerCall(call) || isLocalHttpProbe(call)) {
       if (

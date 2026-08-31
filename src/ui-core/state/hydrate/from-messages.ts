@@ -10,11 +10,6 @@ import { EMPTY_TRANSCRIPT_STATE } from "../transcript-types.js";
 import type { AssistantItem, ToolItem, ToolStatus, TranscriptItem, UserItem } from "../transcript-types.js";
 import { HydrateResult } from "./classic-transcript.js";
 
-/**
- * Format tool args for a compact card label when restoring from model history.
- * Prefer the same human labels live turns use (path / "N file(s)") — never dump
- * full content JSON into the card header (that is what made history look broken).
- */
 function argsDisplayFromToolCall(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -33,15 +28,6 @@ function argsDisplayFromToolCall(
   }
 }
 
-/**
- * Rebuild structured file diffs from tool-call args so /history shows the same
- * green/red hunks as the live session. Live turns attach `fileChanges` on
- * tool-result; message-only history (or a re-save after a thin hydrate) often
- * drops that payload while still keeping path/content in `toolCalls[].args`.
- *
- * Not a cwd issue — absolute paths in the snapshot still render; missing
- * `fileChanges` is what forces the ugly receipt + JSON args UI.
- */
 export function fileChangesFromToolArgs(
   name: string,
   args: Record<string, unknown> | undefined,
@@ -88,8 +74,6 @@ export function fileChangesFromToolArgs(
       const newText = String(
         args.newText ?? args.new ?? args.content ?? "",
       );
-      // Snippet-level before/after still yields a useful green/red card when
-      // the full pre-image is not in history.
       return [
         buildFileChange({
           path,
@@ -117,10 +101,6 @@ export function fileChangesFromToolArgs(
   return undefined;
 }
 
-/**
- * Copy reconstructed fileChanges (and clean argsDisplay) onto classic tools
- * that lost their payload after a message-only re-save.
- */
 export function enrichToolsFromMessages(
   classic: HydrateResult,
   messages: readonly ChatMessage[],
@@ -170,22 +150,12 @@ export function enrichToolsFromMessages(
   };
 }
 
-/**
- * Fallback when a history row only has model messages (no visual transcript),
- * or when the visual transcript is thinner than the model history (e.g. abort
- * stub saved after tools ran in-memory but never as transcript items).
- *
- * Reconstructs user / assistant bubbles and tool cards from native
- * `toolCalls` + `role: "tool"` pairs so /history still shows commands and
- * outputs when possible.
- */
 export function hydrateFromMessages(messages: readonly ChatMessage[]): HydrateResult {
   const order: string[] = [];
   const byId = new Map<string, TranscriptItem>();
   const toolOutputs = new Map<ToolCallId, string>();
   let sequence = 0;
 
-  // Index tool results by toolCallId for pairing with assistant toolCalls.
   const toolResultsById = new Map<string, ChatMessage>();
   for (const message of messages) {
     if (message.role === "tool" && message.toolCallId) {
@@ -197,7 +167,6 @@ export function hydrateFromMessages(messages: readonly ChatMessage[]): HydrateRe
     if (message.role === "system" || message.role === "tool") continue;
 
     if (message.role === "user") {
-      // Recovery / governor nudges stay model-only — never a YOU bubble.
       if (isInternalChatMessage(message)) continue;
       sequence += 1;
       const id = `hist-user-${sequence}`;
@@ -214,7 +183,6 @@ export function hydrateFromMessages(messages: readonly ChatMessage[]): HydrateRe
       continue;
     }
 
-    // assistant
     if (message.content.trim()) {
       sequence += 1;
       const id = `hist-asst-${sequence}`;
@@ -242,7 +210,6 @@ export function hydrateFromMessages(messages: readonly ChatMessage[]): HydrateRe
       const ok = result?.ok !== false;
       const toolName = call.name || result?.name || "tool";
       const status: ToolStatus = result ? (ok ? "ok" : "failed") : "ok";
-      // Successful plan/task bookkeeping belongs in the Tasks pane only.
       if (shouldHideQuietMetaToolInChat(toolName, status)) continue;
       const callArgs = (call.args ?? {}) as Record<string, unknown>;
       const fileChanges = fileChangesFromToolArgs(toolName, callArgs);
@@ -273,7 +240,6 @@ export function hydrateFromMessages(messages: readonly ChatMessage[]): HydrateRe
       ...EMPTY_TRANSCRIPT_STATE,
       order,
       byId,
-      // See hydrateFromClassicTranscript — do not block the live sequencer.
       lastSequence: 0,
     },
     toolOutputs,

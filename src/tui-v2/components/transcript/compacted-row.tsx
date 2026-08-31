@@ -1,8 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Compacted-context card — compact summary strip; full memory opens in the
- * pager modal (same as tool OUTPUT), not an in-chat mega-expand.
- */
 
 import {
   Fragment,
@@ -34,9 +30,7 @@ export function CompactedRow(props: {
   item: CompactedItem;
   theme: Theme;
   services: AppServices;
-  /** Chat-pane columns (plan split/overlay already subtracted). */
   contentWidth?: number | undefined;
-  /** Kept for Ctrl+O parity — still opens the pager, does not dump in-chat. */
   expanded: boolean;
   onToggle: () => void;
 }): ReactNode {

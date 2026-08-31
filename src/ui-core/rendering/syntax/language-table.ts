@@ -1,11 +1,11 @@
 
 
 export type LangFamily =
-  | "clike" // C/C++/C#/Java/Kotlin/Swift/ObjC/… // and /* */ comments
-  | "js" // JS/TS family (also regex literals)
+  | "clike"
+  | "js"
   | "css"
   | "json"
-  | "html" // HTML/XML/SVG/Vue/Svelte markup
+  | "html"
   | "md"
   | "sh"
   | "py"
@@ -15,19 +15,17 @@ export type LangFamily =
   | "lua"
   | "perl"
   | "r"
-  | "haskell" // -- comments
-  | "lisp" // ; comments
-  | "erlang" // % comments
-  | "fortran" // ! comments
+  | "haskell"
+  | "lisp"
+  | "erlang"
+  | "fortran"
   | "yaml"
   | "toml"
   | "ini"
   | "diff"
   | "generic";
 
-/** extension (no dot) → family */
 const EXT_FAMILY: Record<string, LangFamily> = {
-  // JS / TS
   js: "js",
   mjs: "js",
   cjs: "js",
@@ -39,7 +37,6 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   vue: "html",
   svelte: "html",
   astro: "html",
-  // web
   css: "css",
   scss: "css",
   sass: "css",
@@ -56,7 +53,6 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   jsp: "html",
   asp: "html",
   aspx: "html",
-  // data
   json: "json",
   jsonc: "json",
   json5: "json",
@@ -70,13 +66,11 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   conf: "ini",
   env: "ini",
   properties: "ini",
-  // docs
   md: "md",
   mdx: "md",
   markdown: "md",
   rst: "md",
   txt: "generic",
-  // shell
   sh: "sh",
   bash: "sh",
   zsh: "sh",
@@ -88,24 +82,19 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   psm1: "sh",
   bat: "sh",
   cmd: "sh",
-  // python
   py: "py",
   pyw: "py",
   pyi: "py",
   pyx: "py",
   pxd: "py",
   ipynb: "json",
-  // ruby
   rb: "ruby",
   rake: "ruby",
   gemspec: "ruby",
-  // php
   php: "php",
   phtml: "php",
-  // go / rust
   go: "clike",
   rs: "clike",
-  // C family
   c: "clike",
   h: "clike",
   cc: "clike",
@@ -126,7 +115,6 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   gradle: "clike",
   swift: "clike",
   dart: "clike",
-  // JVM etc
   clj: "lisp",
   cljs: "lisp",
   cljc: "lisp",
@@ -136,7 +124,6 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   scm: "lisp",
   ss: "lisp",
   racket: "lisp",
-  // functional
   hs: "haskell",
   lhs: "haskell",
   elm: "haskell",
@@ -147,24 +134,21 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   fsx: "clike",
   erl: "erlang",
   hrl: "erlang",
-  ex: "ruby", // Elixir ~ Ruby-ish # comments
+  ex: "ruby",
   exs: "ruby",
-  // scripting
   pl: "perl",
   pm: "perl",
   t: "perl",
   lua: "lua",
   r: "r",
   R: "r",
-  jl: "py", // Julia: # comments like python-ish
-  // systems
+  jl: "py",
   zig: "clike",
-  nim: "py", // # comments
+  nim: "py",
   v: "clike",
   d: "clike",
   pas: "clike",
   pp: "clike",
-  // data / query
   sql: "sql",
   mysql: "sql",
   pgsql: "sql",
@@ -173,7 +157,6 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   graphql: "js",
   gql: "js",
   prisma: "js",
-  // config / devops
   dockerfile: "sh",
   tf: "clike",
   hcl: "clike",
@@ -181,10 +164,8 @@ const EXT_FAMILY: Record<string, LangFamily> = {
   makefile: "sh",
   mk: "sh",
   cmake: "sh",
-  // diff
   diff: "diff",
   patch: "diff",
-  // others often in repos
   proto: "clike",
   thrift: "clike",
   avdl: "clike",
@@ -268,18 +249,14 @@ const BASENAME_FAMILY: Record<string, LangFamily> = {
 export function languageFromPath(path: string): LangFamily {
   const base = (path.split(/[/\\]/).pop() ?? path).toLowerCase();
   if (BASENAME_FAMILY[base]) return BASENAME_FAMILY[base]!;
-  // multi-dot basenames
   for (const [name, fam] of Object.entries(BASENAME_FAMILY)) {
     if (base === name || base.endsWith(name)) return fam;
   }
   const dot = base.lastIndexOf(".");
   if (dot < 0) {
-    // shebang-less scripts / Makefile already handled
     return "generic";
   }
-  // handle .d.ts, .test.ts etc — use last extension
   const ext = base.slice(dot + 1);
-  // double extensions like .d.ts
   if (base.endsWith(".d.ts") || base.endsWith(".d.mts") || base.endsWith(".d.cts")) {
     return "js";
   }
@@ -289,7 +266,6 @@ export function languageFromPath(path: string): LangFamily {
   return EXT_FAMILY[ext] ?? "generic";
 }
 
-/** List of extensions we explicitly map (for tests / docs). */
 export function supportedExtensions(): string[] {
   return Object.keys(EXT_FAMILY).sort();
 }

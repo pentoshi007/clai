@@ -8,21 +8,13 @@ export async function fsSearch(
   path = safeCwd(),
   options: {
     confirmed?: boolean | undefined;
-    /** Max matching lines to return (default 50, hard cap 200). */
     maxMatches?: number | undefined;
-    /** Max hits per file (default 20). */
     maxPerFile?: number | undefined;
-    /** Glob filter passed to ripgrep -g (e.g. "*.ts"). */
     glob?: string | undefined;
-    /** Case-insensitive search (-i). */
     caseInsensitive?: boolean | undefined;
-    /** Treat the pattern as a literal string (-F). */
     fixedString?: boolean | undefined;
-    /** Lines of context around each hit (-C). */
     context?: number | undefined;
-    /** Report matching file names only (-l). */
     filesOnly?: boolean | undefined;
-    /** Include hidden files/directories (--hidden). */
     hidden?: boolean | undefined;
     timeoutMs?: number | undefined;
   } = {},
@@ -50,15 +42,12 @@ export async function fsSearch(
     };
   }
 
-  // Prefer content hits (path:line:text) so the model can jump to fs.read
-  // with offset around interesting lines — not just file names.
   try {
     const rgArgs = [
       "--line-number",
       "--no-heading",
       "--color",
       "never",
-      // Cap hits per file so one noisy log cannot fill the budget alone.
       "--max-count",
       String(maxPerFile),
       "--max-filesize",
@@ -73,14 +62,12 @@ export async function fsSearch(
     if (options.filesOnly) rgArgs.push("-l");
     if (context > 0) rgArgs.push("-C", String(context));
     if (options.glob) rgArgs.push("-g", options.glob);
-    // `--` keeps a pattern that starts with `-` from being parsed as a flag.
     rgArgs.push("--", pattern, resolved);
     const result = await execa("rg", rgArgs, {
       reject: false,
       all: true,
       timeout: timeoutMs,
     });
-    // rg exit 1 = no matches (still ok for the model); 2 = error
     if (result.exitCode === 0 || result.exitCode === 1) {
       const body = (result.all ?? "").trim();
       if (!body) {
@@ -104,9 +91,7 @@ export async function fsSearch(
         truncated,
       };
     }
-    // Fall through to grep on rg hard failure.
   } catch {
-    // rg missing — try grep
   }
 
   try {

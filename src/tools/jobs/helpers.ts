@@ -37,16 +37,11 @@ export function launchFollowUp(id: string, responder: boolean): string {
         "Do not launch a duplicate.";
 }
 
-/**
- * Number of trailing bytes in `buf` that form an incomplete multi-byte UTF-8
- * sequence (a lead byte whose continuation bytes were cut off by the read
- * boundary). Returns 0 if the buffer already ends on a complete character.
- */
 export function trailingIncompleteBytes(buf: Buffer): number {
   const len = buf.length;
   for (let back = 1; back <= 3 && back <= len; back++) {
     const byte = buf[len - back]!;
-    if ((byte & 0xc0) === 0x80) continue; // continuation byte, keep walking back
+    if ((byte & 0xc0) === 0x80) continue;
     let expectedLen = 1;
     if ((byte & 0xe0) === 0xc0) expectedLen = 2;
     else if ((byte & 0xf0) === 0xe0) expectedLen = 3;
@@ -56,19 +51,12 @@ export function trailingIncompleteBytes(buf: Buffer): number {
   return 0;
 }
 
-/**
- * Heuristic for legacy registry rows that were actually agent tool-stall
- * trackers (commandDisplay = "fs.list /path", "shell.jobs {}", …), not real
- * shell.start / auto-backgrounded processes.
- */
 export function looksLikeEphemeralToolTrack(job: BackgroundJob): boolean {
   if (job.kind === "ephemeral") return true;
   const cmd = (job.commandDisplay || job.command || "").trim();
-  // Real OS commands rarely look like "tool.name …" dotted tool registry names.
   if (/^(fs|shell|tool|web|http|net|pdf|image|pkg|dns|whois|plan|task|pentest|sysinfo)\.[a-zA-Z]+(\s|$)/.test(cmd)) {
     return true;
   }
-  // Empty artifact paths = never a real background process capture.
   if (!job.stdoutArtifact && !job.artifactPath && !job.pid) return true;
   return false;
 }

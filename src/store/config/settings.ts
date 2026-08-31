@@ -29,17 +29,11 @@ export function setProviderModel(
 export function getProviderModel(provider: ProviderId): string {
   const configured = getConfig().providerModels[provider];
   if (configured) return sanitizeProviderModel(provider, configured);
-  // Custom providers carry their own default model; built-ins use defaultModels.
   const customDef = findCustomProviderDefSync(provider);
   if (customDef) return customDef.defaultModel;
   return defaultModels[provider];
 }
 
-/**
- * True when the user (or a migration) actually persisted this key. Defaults are
- * resolved by Conf, so a resolved value alone cannot prove intent — the raw file
- * is the only honest source for migration decisions.
- */
 export function hasExplicitConfigKey(key: keyof ClaiConfig): boolean {
   try {
     const raw = JSON.parse(readFileSync(store.path, "utf8")) as Record<

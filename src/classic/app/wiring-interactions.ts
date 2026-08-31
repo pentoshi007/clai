@@ -366,8 +366,6 @@ export function revealItem(host: WiringHost, itemId: string): void {
   if (itemId === "intro") return;
   const item = host.services.transcript.getState().byId.get(itemId);
   if (!item) return;
-  // In classic, enter expands the block inline instead of opening the pager.
-  // Keep pager only for unexpandable kinds if needed.
   if (item.kind === "thinking" || item.kind === "tool" || item.kind === "compacted") {
     const fallback =
       item.kind === "thinking"

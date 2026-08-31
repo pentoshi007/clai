@@ -1,7 +1,3 @@
-/**
- * OpenTUI requires Bun's native FFI. Node/tsx cannot initialize the renderer.
- * Prefer re-exec under Bun when available; otherwise fall back with a clear hint.
- */
 
 import { spawnSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync } from "node:fs";
@@ -13,7 +9,6 @@ export function isBunRuntime(): boolean {
   return typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
 }
 
-/** Resolve `bun` on PATH or local clai/bun bin dirs (cross-platform). */
 export function findBunExecutable(): string | undefined {
   const binName = process.platform === "win32" ? "bun.exe" : "bun";
   const fromEnv = process.env.BUN_INSTALL
@@ -22,8 +17,6 @@ export function findBunExecutable(): string | undefined {
   const claiBin = join(homedir(), ".clai", "bin", binName);
   const bunHomeBin = join(homedir(), ".bun", "bin", binName);
 
-  // Windows-specific: Bun's official installer puts bun.exe in LOCALAPPDATA\bun
-  // or APPDATA\bun\bin depending on the installer variant.
   const localAppData = process.env.LOCALAPPDATA
     ? join(process.env.LOCALAPPDATA, "bun", binName)
     : undefined;
@@ -50,16 +43,11 @@ export function findBunExecutable(): string | undefined {
       accessSync(path, checkMode);
       return path;
     } catch {
-      // try next
     }
   }
   return undefined;
 }
 
-/**
- * Verify a Bun binary works by running `bun --version`.
- * Returns the version string on success, undefined on failure.
- */
 function verifyBun(bunPath: string): string | undefined {
   try {
     const result = spawnSync(bunPath, ["--version"], {
@@ -71,12 +59,10 @@ function verifyBun(bunPath: string): string | undefined {
       return result.stdout.trim();
     }
   } catch {
-    // verification failed
   }
   return undefined;
 }
 
-/** Automatically install Bun into ~/.clai/bin if missing (cross-platform). */
 export function autoInstallBun(): string | undefined {
   if (process.env.CLAI_NO_BUN_AUTO_INSTALL === "1") return undefined;
   const targetDir = join(homedir(), ".clai");
@@ -95,7 +81,6 @@ export function autoInstallBun(): string | undefined {
 
   try {
     if (process.platform === "win32") {
-      // Try PowerShell first (official Bun installer)
       const psResult = spawnSync(
         "powershell",
         [
@@ -109,7 +94,6 @@ export function autoInstallBun(): string | undefined {
       );
 
       if (psResult.status !== 0 && psResult.status !== null) {
-        // PowerShell failed — try npm as fallback
         console.log("  [clai] PowerShell install failed, trying npm...");
         const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
         spawnSync(npmCmd, ["install", "-g", "bun"], {
@@ -134,24 +118,20 @@ export function autoInstallBun(): string | undefined {
       }
     }
 
-    // Check the target location first, then fall back to findBunExecutable
     const bunPath = existsSync(targetBin) ? targetBin : findBunExecutable();
     if (bunPath) {
       if (process.platform !== "win32" && bunPath === targetBin) {
         try {
           chmodSync(targetBin, 0o755);
         } catch {
-          // ignore
         }
       }
-      // Verify the binary actually works
       const version = verifyBun(bunPath);
       if (version) {
         console.log(`  [clai] ✓ Bun ${version} installed successfully`);
         installed = true;
         return bunPath;
       }
-      // Binary exists but doesn't run correctly
       console.log("  [clai] ⚠ Bun binary found but could not verify. Trying anyway...");
       installed = true;
       return bunPath;
@@ -178,15 +158,6 @@ export function openTuiRuntimeHint(): string {
   ].join("\n");
 }
 
-/**
- * If we are not already under Bun, re-launch this process with Bun using the
- * given entry module (usually `import.meta.url` of index.ts) + original CLI
- * args, then exit with the child status. Returns false when re-exec is not
- * possible (caller should fall back / print the hint).
- *
- * Pass `entryPath` explicitly — under `tsx`/`npx`, `process.argv[1]` is the
- * loader, not clai's entry.
- */
 export function reexecWithBunIfNeeded(entryPath: string): boolean {
   if (isBunRuntime()) return false;
   if (process.env.CLAI_NO_BUN_REEXEC === "1") return false;
@@ -199,11 +170,7 @@ export function reexecWithBunIfNeeded(entryPath: string): boolean {
   if (!bun) return false;
   if (!entryPath) return false;
 
-  // Keep user flags (after the entry). Drop node/tsx/bun loader path noise.
-  // process.argv: [node, loader?, entry?, ...flags] — simplest reliable form
-  // is to re-run only the entry + flags that look like CLI options/args.
   const userArgs = process.argv.slice(2).filter((a) => {
-    // Drop accidental duplicate of the entry path if present.
     if (a === entryPath) return false;
     if (a.endsWith("src/index.ts") || a.endsWith("dist/index.js")) return false;
     return true;

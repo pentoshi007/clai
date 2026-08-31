@@ -21,7 +21,6 @@ export interface FeedSnapshot {
   readonly context: BlockContext;
   readonly blocks: readonly FeedBlock[];
   readonly window: TranscriptWindow;
-  /** Shell width + generation the window geometry was computed for. */
   readonly columns: number;
   readonly generation: number;
 }
@@ -71,16 +70,10 @@ export interface UseFeedInput {
   readonly liveBudgetRows: number;
   readonly now: number;
   readonly generation: number;
-  /** Rows hidden below the viewport; `0` pins the window to the newest row. */
   readonly liveOffset: number;
   readonly intro: IntroBlockInput | undefined;
 }
 
-/**
- * Projects transcript state onto one virtualized scroll page: the intro card
- * is the first block and the whole page renders through a line-exact window
- * anchored `liveOffset` rows above the bottom — the OpenTUI scrollbox model.
- */
 export function useFeed(input: UseFeedInput): FeedSnapshot {
   const state = input.state;
   const ink = useInkTheme(input.services);

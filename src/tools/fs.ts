@@ -23,16 +23,6 @@ export { fsList, fsRead } from "./fs/read.js";
 export { fsAppend, fsDelete, fsEdit, fsWriteMany } from "./fs/mutations.js";
 export { fsSearch } from "./fs/search.js";
 
-/**
- * Atomically replace a file's contents while preserving its permissions.
- *
- * - The temp name is unique per process/attempt, so two concurrent edits of the
- *   same target can never share a staging file and clobber each other.
- * - The original mode is re-applied to the replacement, so an executable script
- *   stays 0755 and a private key/config stays 0600 after an edit.
- * - Data is flushed (fsync) before the rename, and the temp file is removed on
- *   any failure so a crash cannot leave a stray `.clai-*` file behind.
- */
 let atomicWriteCounter = 0;
 
 export async function writeFileAtomic(
@@ -76,11 +66,6 @@ function expandHome(path: string): string {
   return path;
 }
 
-/**
- * Decide whether a path falls inside configured sandbox roots / cwd / home.
- * Used for UX (outside-cwd confirm) and optional sandboxReads opt-in.
- * Writes are not hard-blocked by sandbox — outside cwd always prompts instead.
- */
 export function pathInsideSandbox(
   resolvedPath: string,
   mode: "read" | "write",
@@ -101,7 +86,6 @@ export function pathInsideSandbox(
   });
 }
 
-/** True when target is under root (or equal). */
 function isUnderRoot(root: string, target: string): boolean {
   const rel = relative(resolve(root), resolve(target));
   return (
@@ -109,12 +93,6 @@ function isUnderRoot(root: string, target: string): boolean {
   );
 }
 
-/**
- * Canonicalize an existing target or its nearest existing ancestor. This
- * resolves directory and leaf symlinks even when the final file does not yet
- * exist, so lexical `project/link/file` paths cannot escape a trusted root.
- * Returning undefined is conservative: callers must require confirmation.
- */
 function canonicalizeForContainment(path: string): string | undefined {
   let cursor = resolve(path);
   let suffix: string[] = [];
@@ -142,13 +120,6 @@ function canonicalizeForContainment(path: string): string | undefined {
   }
 }
 
-/**
- * True when a write sits outside the working directory and active project
- * root, but not system temp / scratch (agent scratch lives under tmpdir and
- * must not spam confirmations). Default permissions confirm such writes;
- * allow-all auto-approves them. Deletes are handled separately and always
- * confirm.
- */
 export function isOutsideWorkingDirectory(resolvedPath: string): boolean {
   const target = canonicalizeForContainment(resolvedPath);
   if (!target) return true;
@@ -158,18 +129,12 @@ export function isOutsideWorkingDirectory(resolvedPath: string): boolean {
   const canonicalProject = projectRoot
     ? canonicalizeForContainment(projectRoot)
     : undefined;
-  // A scaffolded/discovered project can intentionally live outside the CLAI
-  // process cwd (for example ~/Desktop/bloging-app). Once that root is pinned,
-  // writes inside it are part of the active user-approved workspace and should
-  // honor allow-all instead of prompting for every file. Siblings and deletes
-  // remain protected by the runner's normal confirmation rules.
   if (canonicalProject && isUnderRoot(canonicalProject, target)) return false;
   const canonicalTmp = canonicalizeForContainment(tmpdir());
   if (canonicalTmp && isUnderRoot(canonicalTmp, target)) return false;
   return true;
 }
 
-/** Resolve a tool path for permission checks (tilde + project root). */
 export function resolveFsToolPath(path: string): string {
   return resolvePath(path);
 }
@@ -177,21 +142,13 @@ export function resolveFsToolPath(path: string): string {
 export interface FsReadOptions {
   maxBytes?: number | undefined;
   confirmed?: boolean | undefined;
-  /** 1-indexed first line to return (inclusive). */
   offset?: number | undefined;
-  /** Max number of lines to return from `offset`. */
   limit?: number | undefined;
-  /** Alias for `offset` (1-indexed inclusive). */
   startLine?: number | undefined;
-  /** Inclusive end line; implies a line window when set. */
   endLine?: number | undefined;
-  /** Regex source (no surrounding slashes). Return matching windows with context. */
   pattern?: string | undefined;
-  /** Lines of context each side of a pattern match (default 2, max 20). */
   context?: number | undefined;
-  /** Max pattern matches to return (default 20, hard max 100). */
   maxMatches?: number | undefined;
-  /** Case-insensitive pattern match. */
   caseInsensitive?: boolean | undefined;
 }
 
@@ -201,10 +158,6 @@ export async function fsWrite(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
-  // Create any missing parent directories so writing "src/index.js" into a
-  // fresh project just works — the agent should not have to chain a separate
-  // mkdir before every file write. This was the most common failure: ENOENT
-  // on a path whose parent dir did not exist yet.
   let before = "";
   let existed = false;
   try {
@@ -229,7 +182,6 @@ export async function fsWrite(
   };
 }
 
-/** Atomically replace an inclusive, 1-indexed line range in an existing file. */
 export async function fsReplaceLines(
   path: string,
   startLine: number,
@@ -268,7 +220,6 @@ export async function fsReplaceLines(
   lines.splice(startLine - 1, endLine - startLine + 1, ...replacement);
   const next = lines.join(newline) + (hadFinalNewline ? newline : "");
   await writeFileAtomic(resolved, next);
-  // X10: receipt with line count + hash so the model notices size changes.
   const verb =
     content === ""
       ? `Deleted lines ${startLine}-${endLine} in`

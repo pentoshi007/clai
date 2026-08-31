@@ -10,7 +10,6 @@ const USER_EVIDENCE: ProfileEvidence = {
   confidence: "exact",
 };
 
-/** Maps a validated spec onto the user-config evidence layer. */
 export function customProfileLayer(
   spec: CustomProviderProfileSpec | undefined,
 ): ProviderProfileLayer | undefined {

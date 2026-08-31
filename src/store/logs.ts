@@ -53,7 +53,6 @@ export async function clearAuditLogs(): Promise<{ removed: number }> {
       await rm(join(logsDir, entry), { force: true });
       removed += 1;
     } catch {
-      // best-effort: keep going
     }
   }
   return { removed };
@@ -86,7 +85,6 @@ async function forEachArtifactEntry(
 export async function clearArtifacts(): Promise<{ removed: number }> {
   let removed = 0;
 
-  // 1) Global ~/.clai/outputs (or CLAI_ARTIFACT_DIR override)
   const globalDir = getGlobalArtifactDir();
   if (existsSync(globalDir)) {
     const entries = await readdir(globalDir).catch(() => []);
@@ -95,12 +93,10 @@ export async function clearArtifacts(): Promise<{ removed: number }> {
         await rm(join(globalDir, entry), { force: true, recursive: true });
         removed += 1;
       } catch {
-        // best-effort
       }
     });
   }
 
-  // 2) Per-session tool outputs under {tmpdir}/clai/*/temp
   const sessionsParent = getSessionWorkspaceParent();
   if (existsSync(sessionsParent)) {
     const sessionFolders = await readdir(sessionsParent).catch(() => []);
@@ -112,7 +108,6 @@ export async function clearArtifacts(): Promise<{ removed: number }> {
           await rm(join(tempDir, entry), { force: true, recursive: true });
           removed += 1;
         } catch {
-          // best-effort
         }
       }
     });
@@ -139,7 +134,6 @@ function diagnosticMetadata(value: unknown): unknown {
   return output;
 }
 
-/** Export local, metadata-only diagnostics. User prompts, project code, commands, and tool output are excluded by default. */
 export async function exportDiagnostics(destination: string): Promise<{ path: string; events: number }> {
   const entries = (await readdir(logsDir).catch(() => []))
     .filter((name) => name.startsWith("clai-") && name.includes(".log"))
@@ -157,7 +151,7 @@ export async function exportDiagnostics(destination: string): Promise<{ path: st
         if (typeof parsed.event === "string") row.event = parsed.event;
         if (parsed.payload !== undefined) row.payload = diagnosticMetadata(parsed.payload);
         events.push(row);
-      } catch { /* Ignore partial/corrupt log lines. */ }
+      } catch { }
     }
   }
   const report = redactSecrets(JSON.stringify({

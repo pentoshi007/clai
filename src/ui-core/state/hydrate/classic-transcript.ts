@@ -7,7 +7,6 @@ import type { AssistantItem, CompactedItem, ThinkingItem, ToolItem, ToolStatus, 
 
 export interface HydrateResult {
   readonly state: TranscriptState;
-  /** Tool outputs to seed into OutputSpool (classic embeds output on the item). */
   readonly toolOutputs: ReadonlyMap<ToolCallId, string>;
 }
 
@@ -24,7 +23,6 @@ function mapToolStatus(status: string | undefined): ToolStatus {
   return "ok";
 }
 
-/** Convert a classic (or mixed) saved transcript into the v2 normalized state. */
 export function hydrateFromClassicTranscript(
   items: readonly ClassicTranscriptItem[],
 ): HydrateResult {
@@ -87,7 +85,6 @@ export function hydrateFromClassicTranscript(
         const status = mapToolStatus(raw.status);
         const name = raw.name ?? "tool";
         const chatStatus = status === "running" ? "ok" : status;
-        // Successful plan/task meta tools are Tasks-pane only (not chat).
         if (shouldHideQuietMetaToolInChat(name, chatStatus)) break;
         const output = typeof raw.output === "string" ? raw.output : "";
         if (output) toolOutputs.set(toolCallId, output);
@@ -123,8 +120,6 @@ export function hydrateFromClassicTranscript(
         break;
       }
       case "notice":
-        // Ephemeral UI chrome only — never rehydrate into the conversation
-        // (would inflate item counts and reappear after every /history).
         break;
       case "compacted": {
         const startedAt =
@@ -170,7 +165,6 @@ export function hydrateFromClassicTranscript(
         break;
       }
       case "plan":
-        // Plans restore via plan store / Ctrl+H — skip visual plan rows.
         break;
       default:
         break;
@@ -186,10 +180,6 @@ export function hydrateFromClassicTranscript(
       ...EMPTY_TRANSCRIPT_STATE,
       order,
       byId,
-      // Historical item.sequence is display metadata only. lastSequence must
-      // stay 0 so the live EventSequencer (rebound to 0 on loadHistory) can
-      // apply turn-started and the rest of the next turn — otherwise every
-      // event with seq <= N is dropped and the new user prompt never appears.
       lastSequence: 0,
     },
     toolOutputs,

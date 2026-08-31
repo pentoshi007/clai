@@ -1,10 +1,3 @@
-/**
- * Cursor-aware slash and file-mention completion (INPUT-008, V2-044/045).
- *
- * Slash commands are recognized through the command token and its trailing
- * whitespace on the first line. File mentions reuse the existing
- * renderer-independent detector (`src/ui/mentions.ts`).
- */
 
 import { getMentionQuery, findFileSuggestions, type FileSuggestion } from "../../ui/mentions.js";
 import type { CommandRegistry } from "../../app/commands/registry.js";
@@ -87,7 +80,6 @@ export function activateSlashCompletion(
   };
 }
 
-/** True when a native cursor/input event would render the identical menu. */
 export function sameCompletionMenu(a: CompletionMenu, b: CompletionMenu): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "none" || b.kind === "none") return true;
@@ -108,7 +100,6 @@ export function sameCompletionMenu(a: CompletionMenu, b: CompletionMenu): boolea
   return false;
 }
 
-/** Slash takes priority since a mention cannot start a line with "/". */
 export function resolveCompletionMenu(
   registry: CommandRegistry,
   value: string,
@@ -118,9 +109,6 @@ export function resolveCompletionMenu(
   const slashToken = detectSlashToken(value, cursorOffset);
   if (slashToken) {
     const items = registry.suggestions(slashToken.token);
-    // Always surface the slash menu while the token is active — including a
-    // bare `/` (full catalogue) — so the user never loses command discovery
-    // after a focus glitch or an @-mention session.
     if (items.length > 0 || slashToken.token === "/") {
       return {
         kind: "slash",
@@ -129,7 +117,7 @@ export function resolveCompletionMenu(
         items:
           items.length > 0
             ? items
-            : registry.suggestions(""), // full catalogue fallback
+            : registry.suggestions(""),
       };
     }
   }

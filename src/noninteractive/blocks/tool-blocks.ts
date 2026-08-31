@@ -18,19 +18,15 @@ import { cleanToolOutputLines } from "../../ui-core/rendering/tool-presenter.js"
 export type StreamVerbosity = "quiet" | "normal" | "verbose";
 
 export interface StreamContext {
-  /** Content columns available to a row: `columns - 2`. */
   readonly width: number;
   readonly ink: InkTheme;
   readonly glyphs: Glyphs;
   readonly verbosity: StreamVerbosity;
   readonly showThinking: boolean;
-  /** ASCII surfaces spell status out as `[tool]` rather than paint a glyph. */
   readonly plainPrefixes: boolean;
-  /** Collapsed body rows; `--verbose` raises the cap (§3 rule 5). */
   readonly bodyRows: number;
 }
 
-/** Plan and batch sub-rows kept before a `… +N more` trailer. */
 const SECTION_ROWS = 8;
 
 export const BODY_INDENT = 4;
@@ -59,7 +55,6 @@ export function styled(ctx: StreamContext, text: string, style: TextStyle): stri
   return ctx.ink.style(text, style);
 }
 
-/** `● name` on a glyph surface, `[tool] name` on an ASCII one. */
 export function marker(ctx: StreamContext, glyph: string, label: string, token: ThemeToken): string {
   return ctx.plainPrefixes
     ? styled(ctx, `[${label}]`, { fg: token })
@@ -97,7 +92,6 @@ function exitSuffix(ctx: StreamContext, exitCode: number | undefined): string | 
 }
 
 export interface ToolResultExtras {
-  /** Wall time for the call, injected by the renderer's clock. */
   readonly elapsed?: string | undefined;
 }
 
@@ -170,10 +164,6 @@ function diffRowLine(ctx: StreamContext, line: PresentedDiffRow): string {
   return row(ctx, sealStyle(`${head}${text}`));
 }
 
-/**
- * File-diff card for a mutation tool: title row plus `+N −M`, hunks only under
- * `--verbose` (§3 rule 6).
- */
 export function buildToolDiffLines(
   ctx: StreamContext,
   event: Extract<AgentEvent, { type: "tool-result" }>,
@@ -243,7 +233,6 @@ function batchSectionsFor(body: string): BatchSection[] {
   return parsed.length > 0 ? parsed : buildBatchCardsFromSpool(body);
 }
 
-/** `tool.batch` body: one row per nested tool, plus the shared summary line. */
 export function buildBatchLines(ctx: StreamContext, body: string): readonly string[] {
   if (quiet(ctx)) return [];
   const sections = batchSectionsFor(body);

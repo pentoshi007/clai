@@ -1,12 +1,3 @@
-/**
- * Append-only transcript renderer for the non-interactive surface
- * (06-ONESHOT §2/§3).
- *
- * stdout carries the assistant answer and nothing else; every status, notice,
- * thinking row, tool card, diff, compaction row and spinner frame goes to
- * stderr. No cursor movement or erase sequence is ever written to stdout, so a
- * redirected run stays a correct transcript.
- */
 
 import type { AgentEvent } from "../agent/events.js";
 import type { TurnOutcome } from "../agent/turn-outcome.js";
@@ -160,7 +151,6 @@ export class StreamRenderer {
     }
   }
 
-  /** Writes the rendered outcome to stdout exactly once and stops the spinner. */
   finish(outcome: TurnOutcome): void {
     if (this.finished) return;
     this.finished = true;

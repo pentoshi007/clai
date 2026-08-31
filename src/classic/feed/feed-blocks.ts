@@ -45,7 +45,6 @@ export interface FeedBlock {
   readonly sequence: number;
 }
 
-/** Hard ceiling on a single block; beyond it the pager owns the content. */
 export const MAX_BLOCK_ROWS = 400;
 
 export const INTRO_ITEM_ID = "intro";
@@ -53,10 +52,8 @@ export const INTRO_ITEM_ID = "intro";
 export interface FeedViewInput {
   readonly columns: number;
   readonly ink: InkTheme;
-  /** Injected so every builder stays deterministic under test. */
   readonly now: number;
   readonly spool?: SpoolReader | undefined;
-  /** Bumped by `/clear`, `/new`, `/clean` so `<Static>` keys never collide. */
   readonly generation: number;
   readonly intro?: IntroBlockInput | undefined;
   readonly markdownCaches?: ReadonlyMap<string, MarkdownStreamCache> | undefined;
@@ -140,11 +137,6 @@ function linesFor(
   }
 }
 
-/**
- * Pure projection of transcript state onto exact-height renderable blocks.
- * Same inputs always yield identical output — no clock, no randomness, no
- * process reads.
- */
 export function buildFeedBlocks(
   state: TranscriptState,
   view: FeedViewInput,

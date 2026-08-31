@@ -62,7 +62,6 @@ export function parseBatchCalls(value: unknown): BatchCallSpec[] {
   });
 }
 
-/** Combine parent abort + policy abort into one signal for children. */
 export function mergeAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
   const anyFn = (
     AbortSignal as unknown as {

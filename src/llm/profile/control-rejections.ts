@@ -75,7 +75,6 @@ const REASONING_CONTROL_FIELDS = new Set(
   Object.values(CONTROL_FIELD_BY_DIALECT).filter(Boolean),
 );
 
-// a rejected control downgrades only the control facet; parsing stays permissive
 export function applyObservedControlRejections(
   profile: ProviderProfile,
   now?: number | undefined,

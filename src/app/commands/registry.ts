@@ -69,7 +69,6 @@ export class CommandRegistry {
     this.handlers.set(name, handler);
   }
 
-  /** Prefix match over canonical names and aliases (for completion menus). */
   suggestions(prefix: string): CommandDefinition[] {
     const needle = normalizeCommandName(prefix);
     const matches: CommandDefinition[] = [];
@@ -89,7 +88,6 @@ export class CommandRegistry {
     }));
   }
 
-  /** Parse a raw `/name args` line into a resolved invocation, or undefined. */
   parse(
     line: string,
     context: CommandContext = "global",
@@ -99,14 +97,11 @@ export class CommandRegistry {
     const boundary = rest.search(/\s/);
     const rawName = boundary === -1 ? rest : rest.slice(0, boundary);
     const args = boundary === -1 ? "" : rest.slice(boundary + 1).trim();
-    // Absolute paths (/Users/..., /tmp/foo) are prompts, not commands.
     if (!rawName || rawName.includes("/") || rawName.includes("\\")) {
       return undefined;
     }
     const exact = this.resolve(rawName);
     if (exact) return { name: exact, args, context };
-    // Unique prefix match so a broken completion menu still dispatches
-    // "/mod" → /model, "/imp" → /implement, etc.
     if (rawName.length === 0) return undefined;
     const matches = this.suggestions(rawName);
     if (matches.length === 1) {
@@ -136,7 +131,6 @@ export class CommandRegistry {
     return /^[a-z][a-z0-9-]*$/i.test(firstToken);
   }
 
-  /** Resolve + run the registered handler. Returns false if unknown/unhandled. */
   async dispatch(invocation: {
     name: string;
     args?: string | undefined;
@@ -165,7 +159,7 @@ export function buildDefaultCommandRegistry(): CommandRegistry {
 
   for (const command of slashCommands) {
     const name = normalizeCommandName(command.command);
-    if (aliasNames.has(name)) continue; // attached to its canonical below
+    if (aliasNames.has(name)) continue;
     const aliases = ALIAS_GROUPS[name];
     registry.register({
       name,

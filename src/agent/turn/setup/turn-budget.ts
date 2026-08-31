@@ -58,8 +58,6 @@ export const openTurnBudget = async (input: {
   });
   return {
     analysis,
-    // Iteration count is only an emergency protection for recovery/model loops;
-    // normal continuation is governed by evidence and resource deltas.
     maxIterations: Math.max(210, computeMaxIterations(stepBudget)),
     outcomeState,
   };

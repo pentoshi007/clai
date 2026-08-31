@@ -7,7 +7,6 @@ export interface RedirectHop {
   method: string;
   url: string;
   location: string;
-  /** Runtime-normalized response headers; repeated Set-Cookie stays separate. */
   headers: Array<readonly [string, string]>;
 }
 
@@ -19,11 +18,6 @@ function multiHeader(headers: Headers, name: string): string[] {
   return out;
 }
 
-/**
- * Snapshot every response header exposed by the Fetch runtime. Header names
- * and most repeat values are normalized by Fetch; Set-Cookie is recovered as
- * separate lines when Node/undici exposes getSetCookie().
- */
 export function snapshotHeaders(headers: Headers): Array<readonly [string, string]> {
   const out: Array<readonly [string, string]> = [];
   headers.forEach((value, key) => {
@@ -37,7 +31,6 @@ export function snapshotHeaders(headers: Headers): Array<readonly [string, strin
   return out;
 }
 
-/** Headers always kept in evidence (security / fingerprint / cookies). */
 const PRIORITY_HEADER_RE =
   /^(set-cookie|server|x-powered-by|x-aspnet|x-generator|x-frame-options|x-content-type-options|x-xss-protection|content-security-policy|content-type|location|www-authenticate|access-control-|strict-transport|referrer-policy|permissions-policy|cross-origin-|cache-control|via|cf-ray|x-request-id|x-amz-|x-served|link|allow|retry-after)$/i;
 
@@ -148,8 +141,6 @@ export function formatHttpEvidence(input: {
     );
   }
 
-  // Fetch normalizes names and most repeated values. Preserve every exposed
-  // field, with individual Set-Cookie lines, and be explicit about the limit.
   const allHeaders = snapshotHeaders(input.headers);
   const priority: string[] = [];
   const rest: string[] = [];
@@ -178,8 +169,6 @@ export function formatHttpEvidence(input: {
       );
     } else {
       const isHtml = input.contentType.toLowerCase().includes("html");
-      // Raw is the forensic default and preserves source comments, tags,
-      // attributes, values, whitespace, and malformed markup after decoding.
       const bodyText =
         isHtml && input.responseMode === "readable"
           ? toReadableText(input.body, input.finalUrl) || input.body
@@ -215,7 +204,6 @@ export function formatHttpEvidence(input: {
   return lines.join("\n");
 }
 
-/** Header-derived stack hints only — never invent products. */
 function deriveTechHints(
   headers: Headers,
   body: string,
@@ -240,7 +228,6 @@ function deriveTechHints(
     if (names.length) bits.push(`cookies=${names.join(",")}`);
   }
   if (contentType) bits.push(`content-type=${contentType.split(";")[0]?.trim()}`);
-  // Light path markers from body (safe, non-invented).
   const sample = body.slice(0, 8_000);
   if (/\/_next\//i.test(sample) || /__NEXT_DATA__/i.test(sample)) {
     bits.push("marker=next.js");

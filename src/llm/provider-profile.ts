@@ -65,7 +65,6 @@ export interface SamplingPolicySpec {
   readonly defaults: Readonly<Record<string, number>>;
 }
 
-/** Matrix 02§Required conceptual split: the generation fact is independent of controls. */
 export type ReasoningGeneration =
   "none" | "optional" | "default-on" | "mandatory" | "unknown";
 
@@ -116,7 +115,6 @@ export interface ReasoningControlSpec {
   readonly evidence: ProfileEvidence;
 }
 
-/** Route-level replay contract; the first four map onto artifact replay scope. */
 export type ProfileReplayScope =
   | "none"
   | "tool-turn"

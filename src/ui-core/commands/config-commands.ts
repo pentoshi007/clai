@@ -1,6 +1,3 @@
-/**
- * Config/toggles/scope/privacy/help/exit/update (V2-080).
- */
 
 import { getConfig, updateConfig } from "../../store/config.js";
 import { installUpdate } from "../../commands/update.js";
@@ -83,7 +80,6 @@ export async function handleScope(
   const [sub = "", ...parts] = trimmed.split(/\s+/).filter(Boolean);
   const sessionId = services.session.sessionId;
 
-  // Bare `/scope` or `/scope edit` → multi-input modal.
   const openEditor =
     !sub ||
     sub === "edit" ||
@@ -139,7 +135,6 @@ export async function handleScope(
         initialTargets: initial,
       });
       if (result === undefined) {
-        // Cancelled or another overlay was open.
         return;
       }
       if (result.length === 0) {
@@ -147,7 +142,6 @@ export async function handleScope(
         notice(services, "info", "engagement scope cleared for this session · scoping disabled");
         return;
       }
-      // Full replace (not merge) so removed rows stay gone.
       const scope = await replaceSessionScopeTargets(sessionId, result, {
         name: current?.name,
         createdAt: current?.createdAt,
@@ -397,7 +391,6 @@ export async function handleUpdate(services: AppServices): Promise<void> {
     }
     updateConfig({ lastUpdateCheck: Date.now() });
     settle("success", `updated to v${target} · restarting…`);
-    // Let the success toast paint before the renderer tears down.
     setTimeout(() => services.requestExit(), 1200);
   } catch (error) {
     if (controller.signal.aborted) {

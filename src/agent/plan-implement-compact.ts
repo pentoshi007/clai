@@ -1,10 +1,3 @@
-/**
- * Accept-by-default gate for plan-implement research compaction.
- *
- * Prefer keeping a good free-form model summary. Reject only clear structural
- * failures (empty summary, orphan tool pairs, catastrophic stub) — never on
- * missing headings, missing hostnames, or token-% taste checks.
- */
 
 import type { ChatMessage } from "../types.js";
 import { hasOrphanToolMessages } from "./tool-history.js";
@@ -13,24 +6,17 @@ import {
   PLAN_IMPLEMENT_MEMORY_PREFIX,
 } from "./context-manager.js";
 
-/** Summary body shorter than this after a large history is treated as a stub. */
 export const CATASTROPHIC_SUMMARY_MIN_CHARS = 120;
 
 const MEMORY_PREFIXES = [
   PLAN_IMPLEMENT_MEMORY_PREFIX,
   COMPACTION_MEMORY_PREFIX,
 ] as const;
-/**
- * Only apply catastrophic-stub check when pre-compact history was at least
- * this many estimated tokens (small sessions may legitimately shrink a lot).
- */
 export const CATASTROPHIC_BEFORE_TOKENS_MIN = 8_000;
-/** After-tokens ratio below this vs large before + tiny body → reject. */
 export const CATASTROPHIC_AFTER_RATIO = 0.05;
 
 export interface AcceptPlanImplementCompactionInput {
   readonly summarized: boolean;
-  /** Memory body without the COMPACTION_MEMORY_PREFIX header (or full text). */
   readonly summaryBody: string;
   readonly beforeTokens: number;
   readonly afterTokens: number;
@@ -51,10 +37,6 @@ function summaryBodyText(raw: string): string {
   return t;
 }
 
-/**
- * Accept unless a clear structural failure is proven.
- * Does not inspect plan.goal keywords or markdown section headings.
- */
 export function acceptPlanImplementCompaction(
   input: AcceptPlanImplementCompactionInput,
 ): AcceptPlanImplementCompactionResult {
@@ -74,8 +56,6 @@ export function acceptPlanImplementCompaction(
     };
   }
 
-  // Catastrophic stub: huge history collapsed to almost nothing + tiny body.
-  // Normal dense free-form summaries are hundreds+ chars — never reject those.
   const before = Math.max(0, input.beforeTokens);
   const after = Math.max(0, input.afterTokens);
   if (
@@ -92,7 +72,6 @@ export function acceptPlanImplementCompaction(
   return { accept: true };
 }
 
-/** Extract summary body from compacted messages for the accept gate. */
 export function extractCompactionSummaryBody(
   messages: readonly ChatMessage[],
 ): string {
@@ -106,5 +85,4 @@ export function extractCompactionSummaryBody(
   return "";
 }
 
-/** Skip compact when history is already small (no toast). */
 export const PLAN_IMPLEMENT_COMPACT_MIN_TOKENS = 6_000;

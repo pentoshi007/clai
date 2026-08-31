@@ -211,12 +211,6 @@ export async function tryStreamOnce(
         );
       }
     }
-    // Model rejected a reasoning/thinking knob (e.g. chat_template_kwargs on a
-    // NIM chat template that does not accept it). A parameter rejection is a
-    // request-time 4xx, so no tokens have streamed yet — retries are clean.
-    // Walk down the effort ladder first (max → xhigh → high → medium → low) so
-    // a model that merely rejects the highest requested depth keeps reasoning;
-    // only strip reasoning entirely once every candidate has been rejected.
     if (
       emittedBytes === 0 &&
       isMissingReasoningContentError(error) &&

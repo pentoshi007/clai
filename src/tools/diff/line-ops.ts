@@ -5,9 +5,7 @@ export type DiffOp = "context" | "add" | "del";
 export interface DiffLine {
   readonly op: DiffOp;
   readonly text: string;
-  /** 1-based line in the old file; undefined for pure adds */
   readonly oldLine?: number | undefined;
-  /** 1-based line in the new file; undefined for pure dels */
   readonly newLine?: number | undefined;
 }
 
@@ -18,25 +16,17 @@ export interface DiffHunk {
 }
 
 export interface DeletedSegment {
-  /** 1-based line in the new file after which these deletions sit (0 = before first) */
   readonly atNewLine: number;
   readonly oldStart: number;
   readonly lines: readonly string[];
 }
 
-/** Max lines on either side before falling back to whole-file replace. */
 export const DIFF_MAX_LINES = 20_000;
 
-/** Max diff body lines in chat preview. */
 export const PREVIEW_MAX_DIFF_LINES = 40;
 
-/** Context lines around each change for chat. */
 export const PREVIEW_CONTEXT = 1;
 
-/**
- * Myers O(ND) line diff → list of ops over the full file (no hunk grouping).
- * Falls back to whole-file replace when sizes exceed caps.
- */
 export function computeLineOps(
   oldLines: readonly string[],
   newLines: readonly string[],
@@ -161,21 +151,15 @@ export function wholeFileReplace(
   return out;
 }
 
-/**
- * Group full-file ops into unified hunks with `context` lines of surrounding
- * unchanged content. Adjacent change regions within `context*2` merge.
- */
 export function groupHunks(
   ops: readonly DiffLine[],
   context = PREVIEW_CONTEXT,
 ): DiffHunk[] {
   if (ops.length === 0) return [];
 
-  // Mark change indices
   const isChange = ops.map((o) => o.op !== "context");
   if (!isChange.some(Boolean)) return [];
 
-  // Expand change islands by context
   const include = new Array<boolean>(ops.length).fill(false);
   for (let i = 0; i < ops.length; i += 1) {
     if (!isChange[i]) continue;
@@ -204,7 +188,6 @@ export function groupHunks(
   return hunks;
 }
 
-/** Cap total preview lines across hunks; drop tail hunks with a sentinel. */
 export function capPreviewHunks(
   hunks: readonly DiffHunk[],
   maxLines = PREVIEW_MAX_DIFF_LINES,
@@ -258,7 +241,6 @@ export function collectAddedNewLines(ops: readonly DiffLine[]): number[] {
 export function collectDeletedAt(ops: readonly DiffLine[]): DeletedSegment[] {
   const segments: DeletedSegment[] = [];
   let i = 0;
-  // Track the last seen new-line number so deletions attach after it.
   let lastNew = 0;
   while (i < ops.length) {
     const op = ops[i]!;
@@ -267,7 +249,6 @@ export function collectDeletedAt(ops: readonly DiffLine[]): DeletedSegment[] {
       i += 1;
       continue;
     }
-    // del run
     const lines: string[] = [];
     const oldStart = op.oldLine ?? 1;
     while (i < ops.length && ops[i]!.op === "del") {

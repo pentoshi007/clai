@@ -2,14 +2,6 @@ import type { ChatMessage, ProviderId, ReasoningEffort } from "../../types.js";
 import { modelAcceptsImages } from "../capabilities.js";
 import { isMissingReasoningContentError } from "../reasoning-errors.js";
 
-/**
- * Detects provider errors that mean the model rejected one of our
- * reasoning/thinking knobs (chat_template_kwargs, enable_thinking,
- * clear_thinking, reasoning_effort, reasoning_budget, thinking). NVIDIA NIM and
- * other OpenAI-compatible gateways return a 400/422 for chat templates that do
- * not accept these fields. When this matches, the router strips the reasoning
- * payload and retries so an unsupported option never fails the whole request.
- */
 export function isReasoningUnsupportedError(error: unknown): boolean {
   if (isMissingReasoningContentError(error)) return false;
   const status =
@@ -24,17 +16,13 @@ export function isReasoningUnsupportedError(error: unknown): boolean {
   const hay = `${message}\n${body}`.toLowerCase();
 
   const mentionsReasoningKnob =
-    // `\breasoning\b` catches bodies like "Unrecognized request argument
-    // supplied: reasoning" so a bare reasoning-field rejection also degrades.
     /chat_template_kwargs|enable_thinking|clear_thinking|reasoning_effort|reasoning_budget|reasoning_content|\breasoning\b|\bthinking\b/.test(
       hay,
     );
   if (!mentionsReasoningKnob) return false;
 
-  // A 4xx that names a reasoning field is a parameter rejection — strip it.
   if (status === 400 || status === 422) return true;
 
-  // Any status: explicit "not supported / unknown / invalid parameter" wording.
   return /not support|unsupported|unknown|unrecognized|not a valid|not allowed|unexpected keyword|does not accept|extra fields not permitted|additional propert|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field)/.test(
     hay,
   );

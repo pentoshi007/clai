@@ -18,10 +18,6 @@ import { isOperationPolicyError } from "../operation-ledger.js";
 import { runGenerationAttempt } from "../operation-usage.js";
 import { isModelNotFoundError } from "./error-classification.js";
 
-/**
- * A budget/policy error raised while recovering from a real failure describes
- * the guard, not the cause. Surface the failure the caller actually needs.
- */
 export function successfulRequestSnapshot(
   provider: ProviderId,
   model: string,

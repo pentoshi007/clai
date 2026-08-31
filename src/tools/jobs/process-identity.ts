@@ -8,14 +8,10 @@ export function processAlive(pid: number | undefined): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    // EPERM means the process EXISTS but we lack permission to signal it
-    // (common for detached jobs in another process group) — that is alive, not
-    // gone. Only ESRCH ("no such process") proves it is truly dead.
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 
-/** Identity is invariant for a pid's lifetime, so it caches safely. */
 const PROCESS_IDENTITY_TTL_MS = 15_000;
 
 const PROCESS_IDENTITY_CACHE_MAX = 512;
@@ -40,9 +36,6 @@ function readLinuxProcessStart(pid: number): string | undefined {
 
 function readPsProcessStart(pid: number): string | undefined {
   try {
-    // Start time only: the command line is deliberately excluded — `sh -c "cmd"`
-    // execs into `cmd`, mutating `ps command=` mid-run, which made a live job
-    // fail its OWN identity check.
     return execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
       encoding: "utf8",
       timeout: 2_000,

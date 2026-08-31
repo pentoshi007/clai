@@ -98,11 +98,6 @@ export function historyIndexLiveBytes(
   return entries.reduce((total, entry) => total + entry.length, 0);
 }
 
-/**
- * Append one record and refresh the (small) index instead of rewriting every
- * session. Older lines for the same id stay on disk until compaction; the
- * index keeps only the newest offset per id, matching rebuild semantics.
- */
 export async function appendIndexedHistoryRecord<T extends HistoryRecordShape>(
   jsonlPath: string,
   indexPath: string,
@@ -244,11 +239,6 @@ export async function scanHistoryJsonl<T extends HistoryRecordShape>(
   const handle = await open(jsonlPath, "r").catch(() => undefined);
   if (!handle) return { malformed: false };
   const chunk = Buffer.allocUnsafe(64 * 1024);
-  // See the matching reader in history.ts: accumulate un-terminated
-  // fragments as a buffer list and only concatenate once a line's newline is
-  // found, instead of re-concatenating the growing carry on every chunk read.
-  // That kept a single oversized record's line-assembly cost quadratic in the
-  // record's length rather than linear in total bytes scanned.
   let carryChunks: Buffer[] = [];
   let carryLen = 0;
   let fileOffset = 0;

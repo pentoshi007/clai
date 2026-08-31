@@ -43,13 +43,6 @@ export function preprocessJson(raw: string): string {
   return result;
 }
 
-/**
- * Last-resort lenient repair for tool-call JSON that strict JSON.parse
- * rejected. Models frequently emit "almost JSON": smart/curly quotes from a
- * copy-paste, Python-style True/False/None literals, or an object that is
- * wholly single-quoted. We only apply these transforms when a strict parse
- * has already failed, so well-formed JSON is never touched.
- */
 function repairMixedQuotes(text: string): string {
   let inString: false | "double" | "single" = false;
   let escaped = false;
@@ -104,19 +97,14 @@ function repairMixedQuotes(text: string): string {
 
 export function lenientJsonParse(text: string): unknown | undefined {
   const candidates: string[] = [];
-  // 1. Normalize unicode/smart quotes to ASCII quotes.
   const deSmart = text
     .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
     .replace(/[\u2018\u2019\u201A\u2032]/g, "'");
   candidates.push(deSmart);
-  // 2. Python/JS literals → JSON literals (outside of double-quoted strings).
   candidates.push(replaceOutsideStrings(deSmart));
-  // 3. Mixed quotes repair (convert '...' strings to "..." strings)
   const mixedRepaired = repairMixedQuotes(deSmart);
   candidates.push(mixedRepaired);
   candidates.push(replaceOutsideStrings(mixedRepaired));
-  // 4. Single-quoted object → double-quoted (only when there are no double
-  //    quotes already, so we don't corrupt strings that contain apostrophes).
   if (!deSmart.includes('"') && deSmart.includes("'")) {
     candidates.push(deSmart.replace(/'/g, '"'));
   }
@@ -124,14 +112,11 @@ export function lenientJsonParse(text: string): unknown | undefined {
     try {
       return JSON.parse(preprocessJson(candidate).trim());
     } catch {
-      // try the next repair
     }
   }
   return undefined;
 }
 
-/** Replace bare Python/JS literals (True/False/None/NaN) with JSON equivalents,
- *  skipping anything inside a double-quoted string. */
 function replaceOutsideStrings(text: string): string {
   let inString = false;
   let escaped = false;
@@ -164,7 +149,7 @@ function replaceOutsideStrings(text: string): string {
             ? "false"
             : word === "NaN"
               ? "0"
-              : "null"; // None / undefined
+              : "null";
       i += word.length;
       continue;
     }
@@ -181,8 +166,6 @@ export function tryParseCall(raw: string): ToolCall | undefined {
       arguments?: unknown;
     };
   } catch {
-    // Strict parse failed — try lenient repairs before giving up so a model
-    // that emits smart quotes / single quotes / Python literals still works.
     const repaired = lenientJsonParse(raw.trim());
     if (repaired && typeof repaired === "object" && !Array.isArray(repaired)) {
       parsed = repaired as Partial<ToolCall> & { arguments?: unknown };
@@ -190,7 +173,6 @@ export function tryParseCall(raw: string): ToolCall | undefined {
   }
   if (!parsed) return undefined;
   const anyParsed = parsed as Record<string, unknown>;
-  // Accept name under several keys models commonly use.
   const nameRaw =
     typeof parsed.name === "string"
       ? parsed.name
@@ -198,10 +180,7 @@ export function tryParseCall(raw: string): ToolCall | undefined {
         ? (anyParsed.tool_name as string)
         : undefined;
   if (typeof nameRaw === "string" && nameRaw.length > 0) {
-    // Strip a leading "functions." namespace some models add.
     const name = nameRaw.replace(/^functions\./, "");
-    // Many OpenAI/Hermes/Qwen-trained models emit {"name","arguments"}
-    // (or "parameters"/"input") instead of {"name","args"} — accept any.
     const argsSrc =
       pickObject(parsed.args) ??
       pickObject(parsed.arguments) ??
@@ -210,16 +189,9 @@ export function tryParseCall(raw: string): ToolCall | undefined {
     if (argsSrc) {
       return { name, args: argsSrc };
     }
-    // Allow an empty args object explicitly written as {} or null (common for
-    // sysinfo), but do NOT invent args for objects that merely happen to
-    // contain a "name" key (e.g. {"name":"shell.exec"} with no command).
     if (parsed.args === null || parsed.arguments === null) {
       return { name, args: {} };
     }
-    // Flattened form: the args are emitted as SIBLINGS of `name` rather than
-    // nested (e.g. {"name":"web.fetch","url":"…","responseMode":"raw"}). Treat
-    // the non-reserved keys as args, but only when at least one is a known
-    // tool-arg key so plain data objects carrying a `name` are not misread.
     const flat: Record<string, unknown> = {};
     for (const key of Object.keys(anyParsed)) {
       if (!FLATTENED_RESERVED_KEYS.has(key)) flat[key] = anyParsed[key];
@@ -232,8 +204,6 @@ export function tryParseCall(raw: string): ToolCall | undefined {
   return undefined;
 }
 
-// Keys that name the tool or wrap its arguments — excluded when recovering a
-// flattened tool call whose args sit alongside `name`.
 const FLATTENED_RESERVED_KEYS = new Set([
   "name",
   "tool_name",
@@ -249,17 +219,8 @@ function pickObject(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-// Recognized XML-ish tool-call wrappers some models emit (with or without a
-// matching close tag). Used so we can recover a call even when the model
-// forgot the closing tag, while plain prose never matches.
 const XML_BLOCK_OPENERS = /<tool_call>|<function_calls>|<invoke>|<ant:invoke>/i;
 
-/**
- * Scan `text` starting at the index of the first `{`, returning the balanced
- * JSON substring (respecting strings) or undefined if braces never balance.
- * Lets us recover a tool-call JSON object the model emitted without a closing
- * wrapper tag, where a non-greedy regex would stop at the first inner brace.
- */
 export function extractBalancedJson(text: string): string | undefined {
   const start = text.indexOf("{");
   if (start < 0) return undefined;
@@ -291,8 +252,6 @@ export function extractBalancedJson(text: string): string | undefined {
 }
 
 export function parseXmlToolCall(text: string): ToolCall | undefined {
-  // Pattern 1d (GLM arg_key / arg_value format):
-  // <tool_call>tool.name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>
   const glmMatch = text.match(/<tool_call>\s*([\w.-]+)\s*([\s\S]*?)(?:<\/tool_call>|$)/i);
   if (glmMatch && glmMatch[1] !== undefined && glmMatch[2] !== undefined) {
     const toolName = glmMatch[1];
@@ -312,7 +271,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
         try {
           val = JSON.parse(preprocessJson(rawValTrimmed));
         } catch {
-          // Keep as string
         }
         args[keyTrimmed] = val;
         hasArgs = true;
@@ -325,11 +283,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
     }
   }
 
-  // Pattern 1 (name + args/arguments/parameters JSON):
-  //  <tool_call>
-  // <name>tool.name</name>
-  // <args>{...}</args>   (or <arguments> / <parameters>)
-  //  <tool_call>
   const xmlNameArgs = text.match(
     /<tool_call>[\s\S]*?<name>\s*([\w.]+?)\s*<\/name>\s*<(?:args|arguments|parameters)>\s*(\{[\s\S]*?\})\s*<\/(?:args|arguments|parameters)>[\s\S]*?<\/tool_call>/i,
   );
@@ -343,11 +296,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
     } catch {}
   }
 
-  // Pattern 1b (MiMo alternative):
-  //  <tool_call>
-  // <tool_name>tool.name</tool_name>
-  // <parameters>{...}</parameters>   (or <arguments> / <args>)
-  //  <tool_call>
   const xmlToolNameParams = text.match(
     /<tool_call>[\s\S]*?<tool_name>\s*([\w.]+?)\s*<\/tool_name>\s*<(?:parameters|arguments|args)>\s*(\{[\s\S]*?\})\s*<\/(?:parameters|arguments|args)>[\s\S]*?<\/tool_call>/i,
   );
@@ -361,11 +309,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
     } catch {}
   }
 
-  // Pattern 1c (MiMo function/parameter format), with or WITHOUT a
-  // surrounding <tool_call> wrapper (some models emit the bare function block):
-  // <function=tool.name>
-  // <parameter=name>value</parameter>
-  // </function>
   const xmlFunctionBlock = text.match(
     /<function=([\w.]+?)>([\s\S]*?)<\/function>/i,
   );
@@ -389,9 +332,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
     return { name, args };
   }
 
-  // Pattern 2: JSON object inside a recognized wrapper (closed). The wrapper
-  // may be the tool_call sentinel, <function_calls>, or <invoke>/<ant:invoke>.
-  // Backtracking off the closing tag handles nested {} in the args.
   const wrappers = [
     "<tool_call>",
     "<function_calls>",
@@ -420,9 +360,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
     }
   }
 
-  // Pattern 3: a recognized opener is present but there is no matching close
-  // (model forgot it, or the stream was cut). Use a balanced brace scan from
-  // the first `{` after the opener so nested args survive, then try to parse.
   const openerMatch = XML_BLOCK_OPENERS.exec(text);
   if (openerMatch) {
     const after = text.slice(openerMatch.index + openerMatch[0].length);
@@ -431,8 +368,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
       const call = tryParseCall(json);
       if (call) return call;
     }
-    // Also try the <name>...</name><arguments>{...}</arguments> tag shape
-    // without a closing wrapper (Hermes/Qwen often omit it).
     const tagShape = after.match(
       /<name>\s*([\w.]+?)\s*<\/name>\s*<(?:args|arguments|parameters)>\s*(\{[\s\S]*?\})\s*<\/(?:args|arguments|parameters)>/i,
     );
@@ -447,9 +382,6 @@ export function parseXmlToolCall(text: string): ToolCall | undefined {
   return undefined;
 }
 
-// Argument keys that the built-in tools accept. Used to recognize when a
-// model emitted a bare args object (e.g. {"path":"file.pdf"}) — intending a
-// tool call but forgetting the {"name","args"} wrapper and the ```tool fence.
 export const TOOL_ARG_KEYS = new Set([
   "command",
   "path",
@@ -495,9 +427,6 @@ export const TOOL_ARG_KEYS = new Set([
   "id",
   "cancel_on_fail",
   "cancelOnFail",
-  // Extra optional keys that commonly ride along with a bare args object so
-  // it is still recognized (and its tool inferred) instead of leaking to the
-  // screen — e.g. shell.exec with {"command":"…","timeoutMs":300000}.
   "timeoutMs",
   "flags",
   "iOwnThis",

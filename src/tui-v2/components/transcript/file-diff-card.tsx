@@ -1,8 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * File-diff UI for tool cards: collapse chips, code rows, single-file and
- * writeMany previews. Kept separate so tool-card.tsx stays under the line budget.
- */
 
 import { useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
@@ -18,15 +14,9 @@ import {
 import type { FileChange } from "../../../tools/file-diff.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 
-/** Default preview rows for a single-file edit card. */
 const SINGLE_FILE_PREVIEW_ROWS = 40;
-/** Cap per file in writeMany so multi-file scaffolds stay scannable. */
 const WRITE_MANY_PREVIEW_ROWS = 8;
 
-/**
- * Hover chip for collapse / collapse-all. Stops propagation so parent
- * header click does NOT open the file modal.
- */
 export function DiffActionButton(props: {
   label: string;
   theme: Theme;
@@ -71,7 +61,6 @@ export function DiffActionButton(props: {
   );
 }
 
-/** One compact row: solid gutter · full-width code tint · height 1. */
 function DiffCodeRow(props: {
   gutter: string;
   spans: readonly {
@@ -93,8 +82,6 @@ function DiffCodeRow(props: {
         width: "100%",
         height: 1,
         flexShrink: 0,
-        // Opaque row: context lines are shorter than the card, and an unpainted
-        // tail keeps glyphs from whatever previously held that screen line.
         backgroundColor: bg ?? theme.statusBackground,
       }}
     >
@@ -159,8 +146,6 @@ function FileDiffHunks(props: {
         ? theme.activity
         : theme.toolOutput;
 
-  // Always green/red editor hunks — including pure-add .md create/append.
-  // Formatted markdown is available in the pager via `f`, not as the default.
   const rows = presentFileChangePreview(change, { maxRows });
   return (
     <box
@@ -190,7 +175,6 @@ function FileDiffHunks(props: {
   );
 }
 
-/** Collapsed writeMany path row (one file). */
 function WriteManyCollapsedRow(props: {
   change: FileChange;
   theme: Theme;
@@ -226,7 +210,6 @@ export function FileDiffBody(props: {
   theme: Theme;
   diffExpanded: boolean;
   onOpen: (change: FileChange) => void;
-  /** writeMany: multi-file path headers + compact per-file hunks when expanded. */
   multiFilePreview?: boolean;
 }): ReactNode {
   const {

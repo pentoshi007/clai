@@ -1,18 +1,3 @@
-/**
- * Parse and present tool.batch output as nested sub-tool sections
- * (classic TUI parity).
- *
- * Batch runners emit labeled sections (streamed as each child finishes, and
- * again as the final body):
- *   ── #1 dns.lookup [ok exit=0]
- *   …
- *   ── #2 web.fetch [fail exit=1]
- *   …
- *
- * Live progress also includes `[batch] …` ticks. While the parent is still
- * running we merge settled sections with running placeholders so nested cards
- * appear expanded from the first start — same shape as single tool cards.
- */
 
 import { cleanToolOutputLines, presentOutput } from "./tool-presenter.js";
 
@@ -21,7 +6,6 @@ export type BatchSectionStatus = "ok" | "fail" | "cancelled" | "running";
 export interface BatchSection {
   readonly index: number;
   readonly name: string;
-  /** True only when status is ok (back-compat for callers). */
   readonly ok: boolean;
   readonly status: BatchSectionStatus;
   readonly exitCode: number | undefined;
@@ -31,19 +15,13 @@ export interface BatchSection {
 const HEADER_RE =
   /^──\s+#(\d+)\s+([\w.]+)\s+\[(ok|fail|cancelled|running)(?:\s+exit=(\d+))?\]/;
 
-/** Progress ticks are never part of a sub-tool body. */
 function isBatchProgressLine(line: string): boolean {
   return /^\[batch\]/i.test(line.trim());
 }
 
-/**
- * Split a completed tool.batch output into per-sub-tool sections.
- * Returns [] when the body is not in the labeled batch format.
- * If the same index appears twice (live re-stream), the last header wins.
- */
 export function parseBatchSections(output: string): BatchSection[] {
   const ordered: BatchSection[] = [];
-  const byIndex = new Map<number, number>(); // index → position in ordered
+  const byIndex = new Map<number, number>();
   let current: {
     index: number;
     name: string;
@@ -72,7 +50,6 @@ export function parseBatchSections(output: string): BatchSection[] {
 
   for (const line of output.replace(/\r/g, "").split("\n")) {
     if (isBatchProgressLine(line)) {
-      // Progress ticks never belong in a section body.
       continue;
     }
     const m = HEADER_RE.exec(line);
@@ -92,8 +69,6 @@ export function parseBatchSections(output: string): BatchSection[] {
     }
   }
   flush();
-  // Drop pure running placeholders from final parse when a settled sibling
-  // replaced them — callers that need live stubs use buildBatchCardsFromSpool.
   return ordered.filter((s) => s.status !== "running" || s.body.length > 0);
 }
 
@@ -106,7 +81,6 @@ export interface BatchSectionPresentation {
   readonly hasBody: boolean;
 }
 
-/** Present one nested sub-tool for the card (collapsed head/tail or full). */
 export function presentBatchSection(
   section: BatchSection,
   expanded: boolean,
@@ -148,7 +122,6 @@ export function presentBatchSection(
   };
 }
 
-/** Human summary line under the parent batch header. */
 export function batchSummaryLine(sections: readonly BatchSection[]): string {
   if (sections.length === 0) return "";
   const running = sections.filter((s) => s.status === "running").length;
@@ -173,7 +146,6 @@ export function batchSummaryLine(sections: readonly BatchSection[]): string {
   return `${parts.join(", ")} / ${sections.length} sub-tool(s)`;
 }
 
-/** True when this tool item should use nested batch UI. */
 export function isBatchToolName(name: string): boolean {
   return name === "tool.batch";
 }
@@ -183,10 +155,6 @@ export interface BatchLiveLine {
   readonly tone: "info" | "ok" | "fail" | "running";
 }
 
-/**
- * Parse live `[batch] …` progress ticks (kept for tests / summary).
- * Prefer {@link buildBatchCardsFromSpool} for the live nested-card UI.
- */
 export function parseBatchLiveProgress(raw: string): {
   readonly lines: readonly BatchLiveLine[];
   readonly summary: string;
@@ -230,15 +198,10 @@ interface TickState {
   exitCode: number | undefined;
 }
 
-/**
- * Merge streamed `── #N` sections with `[batch]` start/running ticks into an
- * ordered list of nested cards for live (and final) batch UI.
- */
 export function buildBatchCardsFromSpool(raw: string): BatchSection[] {
   const settled = parseBatchSections(raw);
   const byIndex = new Map<number, BatchSection>();
   for (const s of settled) {
-    // Prefer settled over running if both exist.
     if (s.status !== "running" || !byIndex.has(s.index)) {
       byIndex.set(s.index, s);
     }
@@ -298,14 +261,11 @@ export function buildBatchCardsFromSpool(raw: string): BatchSection[] {
     }
   }
 
-  // Fill running (or tick-only settled) stubs for indices not yet sectioned.
   for (const [idx, st] of tickState) {
     const existing = byIndex.get(idx);
     if (existing && existing.status !== "running") continue;
     if (existing && st.status === "running") continue;
-    // Prefer full section body when we already have one.
     if (existing && existing.body.trim().length > 0 && st.status !== "running") {
-      // Section may lack exit; prefer section.
       continue;
     }
     if (st.status === "running" || !existing) {
@@ -323,10 +283,6 @@ export function buildBatchCardsFromSpool(raw: string): BatchSection[] {
   return [...byIndex.values()].sort((a, b) => a.index - b.index);
 }
 
-/**
- * Rebuild a single section as a labeled block for the pager (matches
- * runner formatting so the full-batch view stays familiar).
- */
 export function formatBatchSectionForPager(section: BatchSection): string {
   const status = section.status ?? (section.ok ? "ok" : "fail");
   const exit =
@@ -336,18 +292,15 @@ export function formatBatchSectionForPager(section: BatchSection): string {
   return body ? `${head}\n${body}` : head;
 }
 
-/** Full batch body for the parent pager — prefer original spool order. */
 export function formatBatchForPager(
   sections: readonly BatchSection[],
   raw: string,
 ): string {
   if (sections.length === 0) return raw;
-  // Prefer the raw spool so nothing is lost; fall back to reassembly.
   if (raw.trim().length > 0) return raw;
   return sections.map(formatBatchSectionForPager).join("\n\n");
 }
 
-/** Preview helper used by tests — clean lines without expand sampling. */
 export function cleanBatchBodyLines(body: string): string[] {
   return cleanToolOutputLines(body);
 }

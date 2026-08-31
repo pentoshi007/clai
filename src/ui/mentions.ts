@@ -25,21 +25,6 @@ export type { Attachment, AttachmentKind, ExpandMentionsOptions, MentionExpansio
 export { findFileSuggestions } from "./mentions/file-suggestions.js";
 export type { FileSuggestion } from "./mentions/file-suggestions.js";
 
-/**
- * @-mention + drag-and-drop file support for the REPL prompt.
- *
- * Two jobs:
- *  1. Autocomplete: while the user types `@partial/path`, suggest matching
- *     files/dirs from the working directory (like Claude Code / opencode).
- *  2. Expansion: when a prompt is submitted, turn `@path` mentions and any
- *     drag-and-dropped file paths into real context — inlining text files
- *     and noting binary files (images/pdfs) by path so the agent can act on
- *     them with its tools.
- *
- * All filesystem access here is best-effort and synchronous for the
- * autocomplete path so it can run inside the keypress handler; expansion
- * is async-friendly but kept sync-read for simplicity (local files only).
- */
 
 const IMAGE_MEDIA_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -69,42 +54,23 @@ export function formatAttachmentReference(
   return pathToFileURL(absolute).href;
 }
 
-/**
- * Given the current input line and cursor index, return the partial @-mention
- * the user is typing, or null if the cursor is not inside one.
- *
- * A mention token starts with "@" that is at line start or preceded by
- * whitespace, and runs (without whitespace) up to the cursor.
- */
 export function getMentionQuery(
   line: string,
   cursor: number,
 ): { query: string; start: number } | null {
   const upto = line.slice(0, cursor);
-  // Find the last "@" before the cursor.
   const at = upto.lastIndexOf("@");
   if (at === -1) return null;
-  // Must be at start or preceded by whitespace.
   if (at > 0 && !/\s/.test(line[at - 1] ?? "")) return null;
   const token = upto.slice(at + 1);
-  // No whitespace inside an in-progress mention (we autocomplete a single path).
   if (/\s/.test(token)) return null;
   return { query: token, start: at };
 }
 
-/**
- * Resolve an absolute path tolerantly. Returns the on-disk path when it
- * exists exactly, OR — when it doesn't — scans the parent directory for a
- * single file whose name matches after normalizing Unicode whitespace and
- * NFC/NFD form. This is essential on macOS, where screenshot filenames use
- * a NARROW NO-BREAK SPACE (U+202F) before "AM/PM" and NFD normalization,
- * so a path typed/dragged with a regular space fails existsSync outright.
- */
 function resolveExistingFile(abs: string): string | undefined {
   try {
     if (existsSync(abs) && statSync(abs).isFile()) return abs;
   } catch {
-    /* fall through to fuzzy match */
   }
   const dir = dirname(abs);
   const wantedRaw = basename(abs);
@@ -122,16 +88,12 @@ function resolveExistingFile(abs: string): string | undefined {
       try {
         if (statSync(candidate).isFile()) return candidate;
       } catch {
-        /* ignore */
       }
     }
   }
   return undefined;
 }
 
-/** Normalize a filename for tolerant comparison: collapse all Unicode space
- *  variants (NBSP, narrow NBSP, thin space, etc.) to a regular space and
- *  unify Unicode normalization form. */
 function canonicalizeName(name: string): string {
   return name
     .normalize("NFC")
@@ -139,15 +101,10 @@ function canonicalizeName(name: string): string {
 }
 
 interface ScannedPath {
-  /** Exact substring of the input line (for in-place rewrite). */
   raw: string;
-  /** Absolute on-disk path the substring resolved to. */
   resolved: string;
 }
 
-/** End offsets (exclusive) of each whitespace-delimited word in `rest`,
- *  treating a backslash-escaped space ("\ ") as part of the word so
- *  drag-dropped paths with escaped spaces stay intact. */
 function wordEndOffsets(rest: string): number[] {
   const ends: number[] = [];
   let i = 0;
@@ -168,10 +125,6 @@ function wordEndOffsets(rest: string): number[] {
   return ends;
 }
 
-/** Shared core for submit-time path extraction and drop-time stabilization.
- *  For each place a path could start, take the LONGEST word-boundary prefix
- *  that resolves to a real file (tolerant of Unicode whitespace variants) and
- *  return both the raw span and the resolved absolute path. */
 function scanExistingPaths(line: string, baseDir: string): ScannedPath[] {
   const results: ScannedPath[] = [];
   const seen = new Set<string>();
@@ -192,7 +145,7 @@ function scanExistingPaths(line: string, baseDir: string): ScannedPath[] {
           seen.add(resolved);
           results.push({ raw: rawSpan, resolved });
         }
-        break; // longest match for this start wins
+        break;
       }
     }
   }
@@ -206,7 +159,6 @@ export function extractExistingPathsFs(
   return scanExistingPaths(line, baseDir).map((match) => match.resolved);
 }
 
-/** Non-path residual budget: a paste dominated by prose is not a file drop. */
 const MAX_DROP_RESIDUAL = 512;
 
 export function stabilizeDroppedFilesInText(
@@ -256,12 +208,6 @@ export function stabilizeDroppedImagesInText(
   return { text: rewritten, images };
 }
 
-/**
- * Return the absolute paths of every image attachment referenced in a prompt
- * (via @-mention or drag-drop), regardless of whether the active model
- * supports vision. Used to build an OCR text layer that grounds the model
- * even when a provider silently ignores attached image bytes.
- */
 export function imageAttachmentPaths(
   line: string,
   baseDir: string = safeCwd(),

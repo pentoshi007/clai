@@ -13,12 +13,6 @@ export interface TuiEnv {
 export const MIN_COLS = 60;
 export const MIN_ROWS = 14;
 
-/**
- * Decide whether the full-screen TUI can run in the current terminal.
- * Pure and env-injected so it can be unit-tested without a real TTY.
- * Requires both stdio ends to be TTYs and a minimum window size; otherwise
- * the caller falls back to the classic REPL.
- */
 export function evaluateTui(env: TuiEnv): TuiCapability {
   if (!env.stdoutIsTTY || !env.stdinIsTTY) {
     return { ok: false, reason: "not a TTY" };
@@ -32,9 +26,6 @@ export function evaluateTui(env: TuiEnv): TuiCapability {
 }
 
 export function canUseTui(): TuiCapability {
-  // OpenTUI's native Zig FFI renderer doesn't ship Windows binaries yet.
-  // Skip the TUI entirely on Windows — avoids the Bun install + re-exec cycle
-  // that always ends in an FFI load failure anyway.
   if (process.platform === "win32") {
     return { ok: false, reason: "Windows (OpenTUI not yet supported)" };
   }

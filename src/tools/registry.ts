@@ -123,12 +123,6 @@ export function unknownToolErrorMessage(name: string): string {
   return `Unknown tool: ${name}.${hint} Tool names are dotted namespace.action pairs (task.update, not task_update). Available tools: ${known.join(", ")}${extra}`;
 }
 
-/**
- * Pull the result URLs out of a web.search success output. The output is a
- * one-line summary followed by a JSON `{ results: [{url, ...}] }` block; we
- * parse from the first brace. Falls back to a regex scan if JSON parsing
- * fails so a slightly different shape still yields fetchable URLs.
- */
 export function extractResultUrls(output: string): string[] {
   const brace = output.indexOf("{");
   if (brace >= 0) {
@@ -141,7 +135,6 @@ export function extractResultUrls(output: string): string[] {
         .filter((u) => u.startsWith("http://") || u.startsWith("https://"));
       if (urls.length > 0) return urls;
     } catch {
-      // fall through to regex
     }
   }
   const matches = output.match(/https?:\/\/[^\s"]+/g);
@@ -207,13 +200,6 @@ export async function runToolCall(
   );
 }
 
-/**
- * Tools that may run **in parallel** inside `tool.batch` without racing
- * mutates. Anything outside this set is still allowed in a batch but is
- * forced serial (and may require confirmation — see {@link runToolBatch}).
- *
- * Kept for tests and call-sites that want the parallel-safe set.
- */
 export const BATCH_SAFE_TOOLS = new Set([
   "fs.read",
   "fs.list",
@@ -239,18 +225,8 @@ export const BATCH_SAFE_TOOLS = new Set([
   "skill.load",
 ]);
 
-/**
- * Tools that must never ride inside tool.batch (session bookkeeping /
- * recursive batch / mode handoff). Everything else registered is allowed.
- */
 
-/** Default batch ceiling; the model may override it with timeoutMs. */
-/** Progress heartbeats keep the outer tool stall watchdog alive. */
 
-/**
- * Normalize a batch child tool name: wire forms (`tool_check`, `fs_read`)
- * and dotted names both resolve to the registry canonical name.
- */
 export function normalizeBatchToolName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return trimmed;
@@ -261,8 +237,6 @@ export function normalizeBatchToolName(raw: string): string {
   const mapped = fromWireName(trimmed);
   if (mapped && (toolRegistry[mapped] || NON_REGISTRY_TOOL_NAMES.has(mapped)))
     return mapped;
-  // Underscore-all form that fromWireName may still leave as-is if unregistered
-  // mid-name (tool_check → tool.check via first underscore heuristic).
   if (!trimmed.includes(".") && trimmed.includes("_")) {
     const dotted = trimmed.replace(/_/g, ".");
     if (toolRegistry[dotted] || NON_REGISTRY_TOOL_NAMES.has(dotted))

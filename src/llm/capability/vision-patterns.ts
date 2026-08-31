@@ -47,7 +47,6 @@ export const universalVisionPatterns: RegExp[] = [
 export const visionPatterns: Record<ProviderId, RegExp[]> = {
   free: [],
   gemini: [
-    // All current Gemini models are natively multimodal.
     /gemini-/i,
   ],
   openrouter: [
@@ -67,7 +66,6 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
   ],
   openai: [/gpt-4o/i, /gpt-4\.1/i, /gpt-5/i, /o[34]/i, /gpt-4-turbo/i],
   anthropic: [
-    // Claude 3+ (opus/sonnet/haiku) are all vision-capable.
     /claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i,
     /claude-3(?:-|\.|$)/i,
   ],
@@ -123,12 +121,8 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /qwen3\.5-(?:plus|flash)/i,
     /qwen-vl/i,
   ],
-  // Catalog endpoints are text-only apart from the explicitly multimodal repos.
   modal: [/-vl\b/i, /-vl-/i],
-  // Per TokenRouter's model table: Kimi, Qwen and MiniMax M3 take images;
-  // DeepSeek, GLM and GPT-OSS are text-only there.
   tokenrouter: [/kimi/i, /qwen3p\d/i, /minimax-m3/i],
-  // Matches the input_modalities reported by lightning.ai/api/v1/models.
   lightning: [
     /gpt-4o/i,
     /gpt-4\.1/i,
@@ -151,8 +145,6 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /glm-4.*v/i,
   ],
   hetzner: [/qwen/i, /vision/i, /vl/i],
-  // Vision-capable ids per OrcaRouter's capability table: gpt-4o family,
-  // gemini-2.5/3.x, grok-4, plus the routed Claude/Qwen-VL/Kimi families.
   orcarouter: [
     /gpt-4o/i,
     /gpt-4\.1/i,

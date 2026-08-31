@@ -8,11 +8,6 @@ import { jobManager } from "../tools/jobs.js";
 import type { SessionPolicy } from "./session-policy.js";
 import type { ChatMessage } from "../types.js";
 
-/**
- * Build a rich summary when the agent stops (user declined to continue or
- * maxIterations ceiling hit). Includes plan state, jobs, key findings, and
- * clear resume instructions so a later "continue" can pick up exactly here.
- */
 export async function buildRichStopSummary(
   messages: ChatMessage[],
   session: SessionPolicy,
@@ -66,7 +61,6 @@ export async function buildRichStopSummary(
     }
   }
 
-  // Prefer session-scoped durable jobs only (never ephemeral tool-track rows).
   const running = jobManager.getRunningJobs(session.sessionId);
   const recent = jobManager.getRecentJobs(8, session.sessionId);
   if (running.length > 0 || recent.length > 0) {
@@ -88,13 +82,11 @@ export async function buildRichStopSummary(
     );
   }
 
-  // Key findings from tool results (last 20 tool messages)
   const toolMsgs = messages.filter((m) => m.role === "tool").slice(-20);
   if (toolMsgs.length > 0) {
     parts.push("\n## Key Findings So Far");
     for (const msg of toolMsgs) {
       const firstLine = msg.content.split("\n")[0] ?? "";
-      // Extract tool name from the structured format "Tool <name> result ..."
       const toolMatch = firstLine.match(/^Tool (\S+) result/);
       if (toolMatch) {
         parts.push(`- ${toolMatch[1]}: ${firstLine.slice(0, 150)}`);

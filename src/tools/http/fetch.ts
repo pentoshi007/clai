@@ -22,15 +22,9 @@ const ALLOWED_METHODS = new Set([
   "OPTIONS",
 ]);
 
-/** Browser-like default UA — less fingerprint noise than clai-http-fetch/*. */
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (compatible; clai/1.0; +https://github.com/pentoshi007/clai) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-/**
- * Upper bound for policy DNS only — must cover slow / corporate resolvers
- * without hanging forever. Literal IPs skip lookup entirely. The outer
- * request abort (15s) still bounds the whole hop.
- */
 const DNS_LOOKUP_TIMEOUT_MS = 10_000;
 
 async function resolveHosts(host: string): Promise<string[]> {
@@ -48,15 +42,12 @@ async function resolveHosts(host: string): Promise<string[]> {
     ]);
     return Array.from(new Set(results.map((result) => result.address)));
   } catch {
-    // NXDOMAIN, timeout, or resolver failure — treat as unresolved (not blocked
-    // by IP class alone; authorizeHop still sees the empty list).
     return [];
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
 }
 
-/** True for loopback hostnames / IPs (local dev servers). */
 export function isLoopbackHost(hostname: string): boolean {
   const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (
@@ -70,16 +61,10 @@ export function isLoopbackHost(hostname: string): boolean {
   ) {
     return true;
   }
-  // 127.0.0.0/8
   if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
   return false;
 }
 
-/**
- * Vite/macOS often listens on only one of IPv4/IPv6. Browser "localhost"
- * works dual-stack; a single-address probe can false-fail. Return ordered
- * candidates: original host first, then the other loopback form(s).
- */
 export function loopbackUrlCandidates(url: string): string[] {
   let parsed: URL;
   try {
@@ -94,16 +79,13 @@ export function loopbackUrlCandidates(url: string): string[] {
   const push = (hostname: string): void => {
     try {
       const u = new URL(parsed.toString());
-      // WHATWG URL: assign bare IPv6 without brackets.
       u.hostname = hostname === "[::1]" ? "::1" : hostname;
       const s = u.toString();
       if (!out.includes(s)) out.push(s);
     } catch {
-      /* skip invalid candidate */
     }
   };
 
-  // Prefer the caller's host first (browser-compatible localhost).
   push(host === "[::1]" ? "::1" : host);
   if (host === "localhost" || host === "localhost.localdomain") {
     push("127.0.0.1");
@@ -125,9 +107,7 @@ interface FetchOptions extends OutputSelection {
   maxBytes?: number | undefined;
   iOwnThis?: boolean | undefined;
   retries?: number | undefined;
-  /** Request timeout in ms (clamped 1s–30min). Default 40s. */
   timeoutMs?: number | undefined;
-  /** HTML body formatting; raw is the forensic default. */
   responseMode?: "readable" | "raw" | undefined;
   responsePart?: ResponsePart | undefined;
   /**
@@ -135,11 +115,6 @@ interface FetchOptions extends OutputSelection {
    * default so an in-scope endpoint cannot leak supplied auth to another host.
    */
   forwardSensitiveHeaders?: boolean | undefined;
-  /**
-   * Skip TLS certificate verification (hostname mismatch / self-signed).
-   * For authorized pentest against https://IP or lab certs only. Evidence
-   * will note that verification was disabled.
-   */
   insecureTls?: boolean | undefined;
   signal?: AbortSignal | undefined;
   authorizeHop?: ((url: string, resolvedAddresses: string[]) => Promise<{ allowed: boolean; reason: string }> | { allowed: boolean; reason: string }) | undefined;
@@ -179,8 +154,6 @@ export async function httpFetch(
   const authorizedAddresses = new Map<string, string[]>();
 
   // SSRF and engagement-policy checks run for the initial destination and
-  // every redirect hop. Owned loopback (local app verify) skips engagement
-  // hop checks — a leftover pentest scope must not block http://localhost:5173.
   const authorizeDestination = async (destination: URL): Promise<string | undefined> => {
     const hostname = destination.hostname.replace(/^\[|\]$/g, "");
     const resolvedAddresses = await resolveHosts(hostname);
@@ -190,7 +163,6 @@ export async function httpFetch(
     if (blocked && !options.iOwnThis) {
       return `Refusing to fetch private/loopback/metadata address ${hostname}. Pass iOwnThis=true to override.`;
     }
-    // Owned local-dev probes are never subject to remote engagement scope.
     if (options.iOwnThis && destLoopback) {
       return undefined;
     }
@@ -226,11 +198,7 @@ export async function httpFetch(
   if (options.body !== undefined && method !== "GET" && method !== "HEAD") {
     init.body = options.body;
   }
-  // The insecure dispatcher is selected per hop below because redirects may
-  // change scheme. A single shared dispatcher keeps authorized lab probes
-  // cheap without weakening unrelated requests.
 
-  // Local dev: try localhost / 127.0.0.1 / ::1 until one accepts (Vite dual-stack).
   const urlCandidates =
     ownedLoopback && (method === "GET" || method === "HEAD")
       ? loopbackUrlCandidates(url)
@@ -240,14 +208,11 @@ export async function httpFetch(
   const pinnedAgents: Agent[] = [];
   let attempts = 0;
   let lastNetworkError: unknown;
-  // The active URL may advance through redirects within this attempt.
   let usedUrl = url;
   let finalMethod = method;
   let redirectHops: RedirectHop[] = [];
   let responseCleanup: (() => void) | undefined;
   const timeoutMs = clampTimeoutMs(options.timeoutMs);
-  // Status retries only when caller opts in (default 0). Loopback keeps soft
-  // connection-refused retries below regardless of status-retry budget.
   const statusRetryLimit =
     method === "GET" || method === "HEAD"
       ? clampRetries(options.retries ?? DEFAULT_RETRIES)
@@ -311,8 +276,6 @@ export async function httpFetch(
               pinnedAgents.push(dispatcher);
               hopInit.dispatcher = dispatcher;
             } else if (insecureTls && hopUrl.protocol === "https:") {
-              // Owned loopback keeps the shared dispatcher so localhost can
-              // retain its IPv4/IPv6 fallback behavior.
               hopInit.dispatcher = getInsecureTlsAgent();
             } else {
               delete hopInit.dispatcher;
@@ -346,9 +309,6 @@ export async function httpFetch(
               requestHeaders.delete("cookie");
             }
 
-            // Match widely deployed user-agent redirect semantics while
-            // preserving methods for 307/308. This avoids replaying a POST
-            // body onto a 303 destination and records the actual method used.
             if (
               requestMethod !== "HEAD" &&
               (response.status === 303 ||
@@ -392,14 +352,13 @@ export async function httpFetch(
           if (options.signal?.aborted) {
             throw new Error(errMsg);
           }
-          // Connection refused on loopback → try next address or retry.
           if (ownedLoopback && isConnectionRefusedError(error)) {
             if (localAttempts <= connRetryLimit) {
               await sleep(Math.min(400 * localAttempts, 1500));
               continue;
             }
             if (ci + 1 < urlCandidates.length) {
-              break; // next candidate
+              break;
             }
             throw new Error(errMsg);
           }
@@ -441,16 +400,13 @@ export async function httpFetch(
   try {
     const reader = response.body?.getReader();
     if (reader && options.responsePart === "headers") {
-      // Headers-only callers do not need to buffer or decode the body.
       try {
         await reader.cancel();
       } catch {
-        // The response metadata is still valid if cancellation races socket close.
       } finally {
         try {
           reader.releaseLock();
         } catch {
-          // already released
         }
       }
     } else if (reader) {
@@ -465,7 +421,6 @@ export async function httpFetch(
             try {
               await reader.cancel();
             } catch {
-              // ignore — we're abandoning the body deliberately
             }
             break;
           }
@@ -479,7 +434,6 @@ export async function httpFetch(
             try {
               await reader.cancel();
             } catch {
-              // ignore — we're abandoning the body deliberately
             }
             break;
           }
@@ -488,7 +442,6 @@ export async function httpFetch(
         try {
           reader.releaseLock();
         } catch {
-          // already released
         }
       }
     }

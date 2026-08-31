@@ -57,7 +57,6 @@ export function Chrome(props: {
   readonly layout: ChromeLayout;
   readonly columns: number;
   readonly content?: ChromeContent | undefined;
-  /** Rendered instead of the placeholder rows for that section. */
   readonly liveTail?: ReactNode | undefined;
   readonly slots?: ChromeSlots | undefined;
 }): ReactNode {

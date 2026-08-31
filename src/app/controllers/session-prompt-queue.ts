@@ -17,7 +17,6 @@ interface SessionPromptQueueDeps {
     prompt: string,
     options?: TurnDisplayOptions,
   ) => Promise<TurnResult>;
-  /** Structured result of the last settled turn, whoever started it. */
   readonly lastTurnResult?: (() => TurnResult | undefined) | undefined;
 }
 

@@ -23,10 +23,6 @@ export interface NetworkContextResult {
   warnings?: string[] | undefined;
 }
 
-/**
- * Convert a dotted-quad IPv4 netmask (e.g. "255.255.255.0") to CIDR prefix
- * length (e.g. 24). Returns undefined if the mask is not valid.
- */
 export function netmaskToCidr(netmask: string): number | undefined {
   const parts = netmask.split(".");
   if (parts.length !== 4) return undefined;
@@ -77,7 +73,6 @@ function detectGateway(): string | undefined {
       return trimmed || undefined;
     }
   } catch {
-    // gateway detection failed — non-fatal
   }
   return undefined;
 }
@@ -116,7 +111,6 @@ export async function getNetworkContext(): Promise<ToolResult> {
     }
   }
 
-  // Filter to active private IPv4 interfaces
   const candidates = all.filter(
     (iface) =>
       iface.family === "IPv4" &&
@@ -127,7 +121,6 @@ export async function getNetworkContext(): Promise<ToolResult> {
   let selected: NetworkInterfaceInfo | undefined;
 
   if (gateway && candidates.length > 0) {
-    // Find the interface whose subnet contains the gateway
     for (const candidate of candidates) {
       const prefix = candidate.netmask
         ? netmaskToCidr(candidate.netmask)
@@ -141,7 +134,6 @@ export async function getNetworkContext(): Promise<ToolResult> {
         break;
       }
     }
-    // If no subnet match, just take the first candidate
     if (!selected && candidates.length > 0) {
       selected = { ...candidates[0]!, gateway };
     }

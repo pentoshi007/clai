@@ -39,13 +39,9 @@ export const requestRound = async (
   let completion: CompletionResult | undefined;
   let toolsAttached = false;
   try {
-    // Re-resolve dialect each step so /model or sticky fallback apply.
     const resolved = deps.resolveNativeTools(deps.loop.provider, deps.loop.model);
     deps.setDialect(resolved.dialect, resolved.native);
     if (deps.messages[0]?.role === "system") {
-      // Recompose only when content actually changes (hour-stable env clock
-      // keeps the constitution prefix identical across steps, which helps
-      // provider prompt caching and avoids needless object churn).
       const nextSystem = deps.composeCurrentSystemPrompt(deps.nativeToolsActive());
       if (deps.messages[0].content !== nextSystem) {
         deps.messages[0] = {
@@ -125,18 +121,12 @@ export const requestRound = async (
       },
     );
     deps.loop.freeTierConsecutiveFailures = 0;
-    // Stream succeeded → the failure episode is over. Reset the recovery
-    // budget and the one-shot fallback flag so a later, unrelated failure
-    // starts fresh (and we never give up while making progress).
     resetStreamRecoveryState(deps.recoveryState);
     deps.loop.allowModelFallback = false;
     deps.loop.preferModelFallback = false;
     deps.loop.lowYieldResumptions = 0;
     } catch (streamError) {
-      // User cancelled (double-Esc) — never try to recover, just stop.
       if (deps.options.signal?.aborted) throw streamError;
-      // A blocked over-limit request is a policy stop, not a route
-      // failure — retrying it would just re-bill the same doomed prefix.
       if (streamError instanceof RequestOverLimitError) throw streamError;
 
       const failedOperationUsage = operationUsageFromError(streamError);

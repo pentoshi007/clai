@@ -1,11 +1,3 @@
-/**
- * Normalized transcript entities (V2-050).
- *
- * Items are keyed by a stable domain id — never an array index — so a
- * component can subscribe by id and the ScrollBox can give every row a
- * stable renderable id (ARCHITECTURE "Every dynamic row has a stable domain
- * id"). `order` is the append order; `byId` is the normalized lookup.
- */
 
 import type { ToolCallId, TurnId } from "../../app/events/app-event.js";
 import type { FileChange } from "../../tools/file-diff.js";
@@ -51,11 +43,8 @@ export interface ToolItem extends ItemBase {
   readonly artifactPath: string | undefined;
   readonly reason: string | undefined;
   readonly outputBytes: number;
-  /** Wall-clock of `tool-started`; absent while queued or hydrated. */
   readonly startedAt?: number | undefined;
-  /** Wall-clock of `tool-result` / `tool-blocked`; absent while open or hydrated. */
   readonly endedAt?: number | undefined;
-  /** Structured file diffs for fs.edit / write / append / delete / … */
   readonly fileChanges: readonly FileChange[] | undefined;
 }
 
@@ -115,31 +104,17 @@ export type TranscriptItem =
 export interface TranscriptState {
   readonly order: readonly string[];
   readonly byId: ReadonlyMap<string, TranscriptItem>;
-  /** Open streaming item id per kind, cleared once the final event lands. */
   readonly pendingAssistantId: string | undefined;
   readonly pendingThinkingId: string | undefined;
   readonly lastSequence: number;
-  /** "step N" text from the most recent `status` event while a turn runs. */
   readonly runningStatus: string | undefined;
   readonly activeTurnStartedAt?: number | undefined;
   readonly expandThinkingGlobal: boolean;
   readonly expandOutputGlobal: boolean;
-  /**
-   * File-diff cards (fs.edit / write / …): when true, show full DIFF hunks;
-   * when false, collapse to verb + relative path only (unless overridden).
-   */
   readonly expandFileDiffsGlobal: boolean;
-  /** Per-item expand/collapse override; absent means "inherit the global". */
   readonly itemOverrides: ReadonlyMap<string, boolean>;
-  /** Per-tool-card file-diff expand override (key = tool item id). */
   readonly fileDiffOverrides: ReadonlyMap<string, boolean>;
-  /**
-   * Thinking card that currently owns the pointer wheel, set by clicking it.
-   * A focused card scrolls its own body at both extremes instead of handing
-   * the wheel back to the transcript. Ctrl+T never focuses a card.
-   */
   readonly focusedThinkingId: string | undefined;
-  /** Incremental strip state for the open assistant stream (bounded tail). */
   readonly assistantStripStreams: ReadonlyMap<string, StripStream>;
 }
 
@@ -159,19 +134,16 @@ export const EMPTY_TRANSCRIPT_STATE: TranscriptState = {
   assistantStripStreams: new Map(),
 };
 
-/** CHAT-005/006/007: a per-item override always wins over the global toggle. */
 export function isItemExpanded(state: TranscriptState, item: TranscriptItem): boolean {
   const override = state.itemOverrides.get(item.id);
   if (override !== undefined) return override;
   if (item.kind === "thinking") return state.expandThinkingGlobal;
-  // Compacted memory cards share Ctrl+O with tool OUTPUT (classic parity).
   if (item.kind === "tool" || item.kind === "compacted") {
     return state.expandOutputGlobal;
   }
   return true;
 }
 
-/** Whether a tool card should show its file-diff hunks (vs collapsed title row). */
 export function isFileDiffExpanded(state: TranscriptState, toolItemId: string): boolean {
   const override = state.fileDiffOverrides.get(toolItemId);
   if (override !== undefined) return override;
@@ -187,15 +159,10 @@ export function transcriptItems(state: TranscriptState): TranscriptItem[] {
   return items;
 }
 
-/**
- * UI chrome only — INFO/WARN banners ("session resumed", "Ctrl+C again to exit").
- * Never model context, never history persistence, never conversation item counts.
- */
 export function isUiOnlyTranscriptItem(item: TranscriptItem): boolean {
   return item.kind === "notice" || item.kind === "turn-summary";
 }
 
-/** Count conversation rows excluding ephemeral UI notices. */
 export function conversationItemCount(state: TranscriptState): number {
   let n = 0;
   for (const id of state.order) {
@@ -205,7 +172,6 @@ export function conversationItemCount(state: TranscriptState): number {
   return n;
 }
 
-/** Plain text a search/export pass should scan for a given item. */
 export function itemSearchText(item: TranscriptItem): string {
   switch (item.kind) {
     case "user":

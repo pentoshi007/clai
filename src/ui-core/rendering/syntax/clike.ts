@@ -20,7 +20,6 @@ export interface SyntaxSpan {
 
 export interface HighlightCarry {
   inBlockComment: boolean;
-  /** For languages with nested or multi-line strings (python triple-quote). */
   inTripleString: boolean;
   tripleQuote?: string | undefined;
 }
@@ -46,7 +45,7 @@ export function isIdentCont(ch: string): boolean {
 interface ClikeOpts {
   regex?: boolean;
   hashNumber?: boolean;
-  lineComment?: string; // default //
+  lineComment?: string;
   caseInsensitiveKeywords?: boolean;
 }
 
@@ -77,12 +76,10 @@ export function highlightClike(
     const ch = line[i]!;
     const next = line[i + 1];
 
-    // line comment
     if (line.startsWith(lineComment, i)) {
       push(spans, "comment", line.slice(i));
       return spans;
     }
-    // block comment
     if (ch === "/" && next === "*") {
       const end = line.indexOf("*/", i + 2);
       if (end < 0) {
@@ -95,13 +92,11 @@ export function highlightClike(
       continue;
     }
 
-    // strings
     if (ch === '"' || ch === "'" || ch === "`") {
       i = readString(line, i, ch, spans);
       continue;
     }
 
-    // regex
     if (opts.regex && ch === "/" && next && next !== "/" && next !== "*") {
       const prev = spans.length ? spans[spans.length - 1]!.text.trimEnd().slice(-1) : "";
       if (!prev || /[=(:,[\!&|?{;]/.test(prev)) {
@@ -114,7 +109,6 @@ export function highlightClike(
       }
     }
 
-    // #hex colors in css
     if (opts.hashNumber && ch === "#" && next && /[0-9a-fA-F]/.test(next)) {
       let j = i + 1;
       while (j < n && /[0-9a-fA-F]/.test(line[j]!)) j += 1;
@@ -123,7 +117,6 @@ export function highlightClike(
       continue;
     }
 
-    // numbers
     if (/\d/.test(ch) || (ch === "." && next && /\d/.test(next))) {
       let j = i;
       while (j < n && /[\d._xXa-fA-FeEpP+-]/.test(line[j]!)) j += 1;
@@ -132,7 +125,6 @@ export function highlightClike(
       continue;
     }
 
-    // identifiers
     if (isIdentStart(ch)) {
       let j = i + 1;
       while (j < n && isIdentCont(line[j]!)) j += 1;
@@ -190,7 +182,6 @@ export function readString(
       j += 1;
       break;
     }
-    // template ${ } — keep as string for simplicity
     j += 1;
   }
   push(spans, "string", line.slice(start, j));

@@ -29,13 +29,10 @@ export type { HistoryRecord, PersistedContextUsage } from "./history/recovery.js
 
 export type { HistorySummary } from "./history-index.js";
 
-/** Snapshot the active session workspace for history persistence. */
 function workspaceFieldsFromActive(existing?: HistoryRecord): {
   workspaceFolder?: string | undefined;
   workspaceCode?: string | undefined;
 } {
-  // Prefer the already-persisted folder so rebinding mid-session never
-  // renames a live workspace out from under open artifact paths.
   if (existing?.workspaceFolder) {
     return {
       workspaceFolder: existing.workspaceFolder,
@@ -136,7 +133,6 @@ function isSettledItem(item: TranscriptItem): boolean {
 
 function scrubTranscript(items?: TranscriptItem[] | undefined): TranscriptItem[] | undefined {
   if (!items) return undefined;
-  // Drop UI chrome notices — they must never bloat saved history item counts.
   const durable = items.filter((item) => item.kind !== "notice");
   return durable.map((item) => {
     const reusable = isSettledItem(item);
@@ -180,7 +176,6 @@ function scrubTranscriptItem(item: TranscriptItem): TranscriptItem {
         done: true,
       };
     default: {
-      // notice already filtered; keep exhaustiveness for future kinds
       return item;
     }
   }
@@ -196,7 +191,6 @@ export async function saveSession(
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
 ): Promise<HistoryRecord> {
-  // Auto-derive a readable name from the first real user message if none provided
   if (!name) {
     const firstUser = messages.find(
       (m) => m.role === "user" && !isInternalChatMessage(m),
@@ -228,8 +222,6 @@ export async function saveSession(
     ...workspace,
   };
 
-  // Private mode: never persist chat content. Caller still gets a record
-  // back (so /save echoes a usable id) but nothing hits disk.
   if (getConfig().privateMode) return record;
 
   invalidateSessionListCache();
@@ -354,8 +346,6 @@ export async function saveToolCall(
 }
 
 export function getHistoryPath(): string {
-  // Prefer JSONL as the durable path users can inspect/backup; SQLite is
-  // optional acceleration when better-sqlite3 is installed.
   return jsonlFilePath();
 }
 

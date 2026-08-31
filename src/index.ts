@@ -3,7 +3,6 @@ import chalk from "chalk";
 import { fileURLToPath } from "node:url";
 import type { Mode, ProviderId } from "./types.js";
 
-/** Absolute path to this module — used to re-exec under Bun for OpenTUI. */
 const CLAI_ENTRY = fileURLToPath(import.meta.url);
 import { resolveTurnInput } from "./attachments/service.js";
 import { startNoninteractive } from "./noninteractive/start-noninteractive.js";
@@ -766,27 +765,21 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  // Ensure errors are always visible, even on Windows where stdout may
-  // buffer and the process exits before flushing.
   try {
     printError(error);
   } catch {
-    // stderr write itself failed; last-resort diagnostic.
-    try { process.stderr.write(`clai fatal: ${error}\n`); } catch { /* truly hopeless */ }
+    try { process.stderr.write(`clai fatal: ${error}\n`); } catch { }
   }
   if (!process.exitCode) {
     process.exitCode = 1;
   }
 });
 
-// On Windows cmd.exe, Node/Bun can exit before stderr is flushed.
-// Handle uncaught exceptions at the process level so the binary never
-// "hangs then exits silently" — it always prints *something*.
 process.on('uncaughtException', (err) => {
-  try { console.error(`clai: uncaught error: ${err?.message ?? err}`); } catch { /* */ }
+  try { console.error(`clai: uncaught error: ${err?.message ?? err}`); } catch { }
   process.exitCode = 1;
 });
 process.on('unhandledRejection', (reason) => {
-  try { console.error(`clai: unhandled rejection: ${reason}`); } catch { /* */ }
+  try { console.error(`clai: unhandled rejection: ${reason}`); } catch { }
   process.exitCode = 1;
 });

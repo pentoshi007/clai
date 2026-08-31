@@ -1,11 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Blue multi-line paste chip above the composer.
- *
- * Idle: "10 lines pasted" in cyan/blue.
- * Hover: popover above with first two lines, "…N more", and expand hint.
- * Double-click: expand the placeholder into full text in the editor.
- */
 
 import { useRef, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";

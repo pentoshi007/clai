@@ -35,14 +35,8 @@ function getHome(): string {
   return process.env.HOME || process.env.USERPROFILE || homedir();
 }
 
-/** Cap on how many hits we surface — enough to choose from, not a flood. */
 const MAX_HITS = 60;
 
-/**
- * Run a capture command without inheriting any std stream. Returns stdout on
- * success; on non-zero exit (e.g. `find` hitting permission-denied dirs) we
- * still recover whatever stdout was produced. Never throws.
- */
 async function runCapture(
   command: string,
   argv: string[],
@@ -63,7 +57,6 @@ async function runCapture(
   }
 }
 
-// --- Known roots per OS ---
 
 function knownRoots(): string[] {
   const home = getHome();
@@ -117,10 +110,7 @@ function knownRoots(): string[] {
   ];
 }
 
-// --- Aliases ---
 
-// Maps a human keyword (or full query) to the real filenames it usually means.
-// Keys are matched case-insensitively against the whole query AND each token.
 const NAME_ALIASES: Record<string, string[]> = {
   common: ["common.txt"],
   "common.txt": ["common.txt"],
@@ -168,12 +158,9 @@ const NAME_ALIASES: Record<string, string[]> = {
   lfi: ["LFI-Jhaddix.txt"],
 };
 
-// Extensions that identify wordlist-ish files. Substring globs are restricted
-// to these so a broad `find /` doesn't drown us in unrelated files.
 const WL_EXTS = ["txt", "lst", "dic", "words", "wordlist", "list", "gz"];
 const WL_FILE_RE = /\.(txt|lst|dic|words|wordlist|list|gz)$/i;
 
-// Words that carry no signal as a filename keyword.
 const STOPWORDS = new Set([
   "wordlist", "wordlists", "list", "lists", "the", "a", "an", "and", "or",
   "for", "of", "to", "in", "on", "find", "search", "locate", "please", "get",
@@ -183,13 +170,9 @@ const STOPWORDS = new Set([
 ]);
 
 interface SearchPlan {
-  /** Precise: exact filenames + alias expansions. */
   names: string[];
-  /** Extension-restricted case-insensitive substring globs (`*kw*.txt`). */
   globs: string[];
-  /** Broad case-insensitive substring globs (`*kw*`) — wordlist roots only. */
   broad: string[];
-  /** Extracted keyword tokens, for locate + diagnostics. */
   keywords: string[];
 }
 
@@ -210,12 +193,9 @@ function buildSearchPlan(query: string): SearchPlan {
   const globs = new Set<string>();
   const broad = new Set<string>();
 
-  // Exact literal query when it is already filename-shaped (e.g. "common.txt").
   if (looksLikeFilename(lower)) names.add(lower);
-  // Whole-query alias (e.g. "raft-medium", "directory-small").
   for (const a of NAME_ALIASES[lower] ?? []) names.add(a);
 
-  // Keyword extraction with graceful fallback so we never end up with nothing.
   const rawTokens = tokenize(query);
   let keywords = rawTokens.filter((t) => t.length >= 3 && !STOPWORDS.has(t));
   if (keywords.length === 0) keywords = rawTokens.filter((t) => t.length >= 3);
@@ -228,7 +208,6 @@ function buildSearchPlan(query: string): SearchPlan {
     broad.add(`*${kw}*`);
   }
 
-  // Absolute last resort: search for the raw query verbatim.
   if (names.size === 0 && globs.size === 0) names.add(query);
 
   return {
@@ -239,7 +218,6 @@ function buildSearchPlan(query: string): SearchPlan {
   };
 }
 
-// --- Search helpers ---
 
 function parseLines(raw: string): string[] {
   return raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -249,18 +227,14 @@ function dedupe(items: string[]): string[] {
   return [...new Set(items.filter(Boolean))];
 }
 
-// POSIX `find` name expression from a list of literal names / globs. Uses
-// -iname throughout so matching is always case-insensitive.
 function buildFindNameExpr(patterns: string[]): string[] {
   return patterns.flatMap((p, i) => (i === 0 ? ["-iname", p] : ["-o", "-iname", p]));
 }
 
-// PowerShell array literal of quoted patterns for -like matching.
 function psPatternArray(patterns: string[]): string {
   return patterns.map((p) => `'${p.replace(/'/g, "''")}'`).join(",");
 }
 
-// Quiet directory search: capped depth, timeout, stderr never inherited.
 async function searchRoot(
   root: string,
   patterns: string[],
@@ -288,8 +262,6 @@ async function searchRoot(
   );
 }
 
-// Query the locate/mlocate DB — fast, no root needed. POSIX only. Matches on
-// keywords/names as substrings, then keeps only wordlist-ish files.
 async function searchLocate(plan: SearchPlan): Promise<string[]> {
   if (IS_WIN) return [];
   const terms = dedupe([...plan.names, ...plan.keywords]);
@@ -308,8 +280,6 @@ async function searchLocate(plan: SearchPlan): Promise<string[]> {
   return hits;
 }
 
-// Full filesystem search. POSIX: find /, Windows: all drive letters. Uses only
-// precise names + extension-restricted globs to keep the result set relevant.
 async function searchFullFilesystem(patterns: string[]): Promise<string[]> {
   if (patterns.length === 0) return [];
   if (IS_WIN) {
@@ -359,7 +329,6 @@ async function searchSudo(patterns: string[]): Promise<string[]> {
   return parseLines(await runCapture("sudo", ["-n", "find", ...findArgs], 15_000));
 }
 
-// --- Result builder ---
 
 function safeFileSize(path: string): number {
   try {
@@ -415,7 +384,6 @@ function found(hits: string[], source: string, query: string): ToolResult {
   };
 }
 
-// --- Main ---
 
 export interface WordlistFindArgs {
   query: string;
@@ -434,11 +402,9 @@ export async function wordlistFind(args: WordlistFindArgs): Promise<ToolResult> 
 
   const plan = buildSearchPlan(query);
   const precisePatterns = dedupe([...plan.names, ...plan.globs]);
-  // Inside wordlist-dedicated roots we can afford broad substring globs too.
   const rootPatterns = dedupe([...plan.names, ...plan.globs, ...plan.broad]);
   const roots = knownRoots();
 
-  // Pass 1: well-known install locations (shallow, fast, broad matching ok).
   for (const root of roots) {
     const hits = rankHits(await searchRoot(root, rootPatterns, 6), query);
     if (hits.length > 0) return found(hits, "Found in a known wordlist location", query);
@@ -456,7 +422,6 @@ export async function wordlistFind(args: WordlistFindArgs): Promise<ToolResult> 
     };
   }
 
-  // Pass 2: broader user directories (precise + extension globs only).
   const home = getHome();
   const broaderRoots = [
     join(home, "Downloads"), join(home, "Desktop"),
@@ -473,11 +438,9 @@ export async function wordlistFind(args: WordlistFindArgs): Promise<ToolResult> 
     if (hits.length > 0) return found(hits, "Found in user directory", query);
   }
 
-  // Pass 3: locate database (fast indexed search, POSIX only).
   const locateHits = rankHits(await searchLocate(plan), query);
   if (locateHits.length > 0) return found(locateHits, "Found via locate database", query);
 
-  // Pass 4: full filesystem search (find / or all Windows drives).
   const fsHits = rankHits(await searchFullFilesystem(precisePatterns), query);
   if (fsHits.length > 0) return found(fsHits, "Found via full filesystem search", query);
 

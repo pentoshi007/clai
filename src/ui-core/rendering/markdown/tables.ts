@@ -3,14 +3,10 @@ import chalk from "chalk";
 import { visibleWidth, wrapAnsiLine } from "../markdown.js";
 export { visibleWidth, wrapAnsiLine };
 
-// Walk inline markdown tokens and convert them to ANSI styles. Designed to
-// handle one logical line at a time (so it can run after a newline arrives
-// in the token stream).
 export function renderInlineMarkdown(text: string): string {
   let out = "";
   let i = 0;
   while (i < text.length) {
-    // ``code`` (longer fences first to avoid eating the inner ticks)
     if (text.startsWith("``", i)) {
       const end = text.indexOf("``", i + 2);
       if (end > i + 2) {
@@ -20,7 +16,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // `code`
     if (text[i] === "`") {
       const end = text.indexOf("`", i + 1);
       if (end > i + 1) {
@@ -30,7 +25,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // ***bold-italic***
     if (text.startsWith("***", i)) {
       const end = text.indexOf("***", i + 3);
       if (end > i + 3) {
@@ -40,7 +34,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // **bold**
     if (text.startsWith("**", i)) {
       const end = text.indexOf("**", i + 2);
       if (end > i + 2) {
@@ -50,7 +43,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // __bold__
     if (text.startsWith("__", i)) {
       const end = text.indexOf("__", i + 2);
       if (end > i + 2) {
@@ -60,8 +52,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // *italic* — only when surrounded by non-word boundaries to avoid
-    // chewing through `*` characters in code or maths.
     if (text[i] === "*" && text[i + 1] !== "*") {
       const end = text.indexOf("*", i + 1);
       if (end > i + 1 && text[end + 1] !== "*") {
@@ -78,7 +68,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // _italic_ (skip if it looks like part of a snake_case word)
     if (text[i] === "_") {
       const prev = text[i - 1];
       const isWordBoundary = !prev || /[\s\W]/.test(prev);
@@ -102,7 +91,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // ~~strike~~
     if (text.startsWith("~~", i)) {
       const end = text.indexOf("~~", i + 2);
       if (end > i + 2) {
@@ -114,7 +102,6 @@ export function renderInlineMarkdown(text: string): string {
       }
     }
 
-    // [label](url)
     if (text[i] === "[") {
       const close = text.indexOf("]", i + 1);
       if (close > i && text[close + 1] === "(") {
@@ -139,19 +126,16 @@ export const BR_RE_GLOBAL = /<br\s*\/?>/gi;
 
 type ColumnAlign = "left" | "center" | "right";
 
-/** A `| cell | cell |` style row (must open and close with a pipe). */
 export function isTableRowLine(line: string): boolean {
   return /^\s*\|.*\|\s*$/.test(line);
 }
 
-/** A `| --- | :--: |` style alignment/separator row. */
 export function isTableSeparatorLine(line: string): boolean {
   const t = line.trim();
   if (!t.includes("|") || !t.includes("-")) return false;
   return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(t);
 }
 
-/** Split a table row into trimmed cells, honoring escaped `\|`. */
 function splitTableCells(line: string): string[] {
   const body = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   const cells: string[] = [];
@@ -174,7 +158,6 @@ function splitTableCells(line: string): string[] {
   return cells.map((c) => c.trim());
 }
 
-/** Derive per-column alignment from the `:---:` markers in the separator. */
 function parseColumnAligns(separator: string, columns: number): ColumnAlign[] {
   const cells = splitTableCells(separator);
   const aligns: ColumnAlign[] = [];
@@ -209,15 +192,6 @@ function padCell(
   return rendered + " ".repeat(slack);
 }
 
-/**
- * Render a contiguous markdown table (header row, separator row, then
- * zero or more body rows) into aligned, box-drawn terminal lines.
- *
- * Columns are sized to their content, shrunk to fit `availWidth` when
- * necessary (widest column first, never below one visible column), and
- * `<br>` markers split a cell into stacked lines so multi-line cells
- * stay inside their column instead of bleeding across the row.
- */
 export function renderTableBlock(rawLines: string[], availWidth: number): string[] {
   const separatorIndex = rawLines.findIndex(isTableSeparatorLine);
   const headerLines =
@@ -266,7 +240,6 @@ export function renderTableBlock(rawLines: string[], availWidth: number): string
   const headerRows = headerCellRows.map(buildRow);
   const bodyRows = bodyCellRows.map(buildRow);
 
-  // Natural column widths (floor of 1 so empty columns still render).
   const colWidths = new Array<number>(columns).fill(1);
   for (const row of [...headerRows, ...bodyRows]) {
     for (let c = 0; c < columns; c++) {
@@ -276,11 +249,6 @@ export function renderTableBlock(rawLines: string[], availWidth: number): string
     }
   }
 
-  // Shrink to fit: each column costs width + 2 padding spaces, plus one
-  // vertical border per column and a leading border (3*columns + 1). Reserve
-  // one extra column of margin so an exact-fit table can't be clipped by the
-  // TUI's own width-aware truncation (e.g. small rounding differences
-  // between this module's width math and the terminal renderer's).
   const budget = Math.max(columns, availWidth - (3 * columns + 1) - 1);
   let total = colWidths.reduce((a, b) => a + b, 0);
   while (total > budget) {
@@ -297,8 +265,6 @@ export function renderTableBlock(rawLines: string[], availWidth: number): string
     const out: CellLine[] = [];
     for (const line of cell) {
       for (const piece of wrapAnsiLine(line.rendered, width)) {
-        // Drop any trailing spaces a wrap left behind so the cell's
-        // right border stays aligned (padCell re-adds exact padding).
         const trimmed = piece.replace(/ +$/, "");
         out.push({ rendered: trimmed, width: visibleWidth(trimmed) });
       }

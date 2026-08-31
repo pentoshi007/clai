@@ -16,11 +16,9 @@ import type { TextStyle, ThemeToken } from "../render/ink-theme.js";
 import { clipRow, joinMeta, SUFFIX_MIN_COLUMNS, type BlockContext } from "./block-context.js";
 import { outputToggleLabel, toolGlyph } from "./tool-lines.js";
 
-/** Preview caps already defined by the OpenTUI diff card; reused verbatim. */
 export const SINGLE_FILE_PREVIEW_ROWS = 40;
 export const WRITE_MANY_PREVIEW_ROWS = 8;
 const GUTTER_WIDTH = 4;
-/** `gutter(4) + space + marker + two spaces`. */
 export const DIFF_CODE_COLUMN = GUTTER_WIDTH + 4;
 
 const STATUS_TOKEN: Record<ToolItem["status"], ThemeToken> = {
@@ -31,7 +29,6 @@ const STATUS_TOKEN: Record<ToolItem["status"], ThemeToken> = {
   blocked: "activity",
 };
 
-/** The wash is dropped at 16 colours and none; the marker column carries the state. */
 function washOk(ctx: BlockContext): boolean {
   return ctx.ink.colorMode === "truecolor" || ctx.ink.colorMode === "256";
 }
@@ -71,7 +68,6 @@ export function diffTitleLine(
   return alignEnds(`${glyph} ${title}`, suffix, ctx.width, ctx.glyphs.ellipsis);
 }
 
-/** Below 68 columns the +N/−N counters move to their own row. */
 export function diffStatsRow(ctx: BlockContext, change: FileChange): string | undefined {
   if (ctx.width + 2 >= SUFFIX_MIN_COLUMNS) return undefined;
   return clipRow(ctx, `  ${diffStatsSuffix(ctx, change)}`);

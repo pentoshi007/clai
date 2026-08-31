@@ -35,9 +35,7 @@ export interface InstallMethod {
 export interface PlatformTarget {
   readonly platform: "darwin" | "linux" | "windows";
   readonly arch: "arm64" | "x64";
-  /** Release asset name without extension, e.g. clai-bun-darwin-arm64. */
   readonly asset: string;
-  /** Filename as published, with .exe appended on Windows. */
   readonly file: string;
 }
 
@@ -109,7 +107,6 @@ export interface UpdateInstallResult {
   readonly ok: boolean;
   readonly method: InstallMethodType;
   readonly message: string;
-  /** True when the new build only takes effect after the process restarts. */
   readonly needsRestart: boolean;
 }
 
@@ -120,7 +117,6 @@ export interface PerformUpdateOptions {
   readonly repo?: string;
   readonly execPath?: string;
   readonly log?: (line: string) => void;
-  /** inherit: let the child write to the terminal (CLI). pipe: capture + log (TUI). */
   readonly stdio?: "inherit" | "pipe";
   readonly onProgress?: ((progress: UpdateProgress) => void) | undefined;
   readonly signal?: AbortSignal | undefined;
@@ -381,8 +377,6 @@ async function replaceExecutable(
       return;
     }
   }
-  // Windows cannot rename a running .exe: stage the new binary and defer the
-  // swap to a detached helper that runs once this process exits.
   const newPath = `${execPath}.update`;
   const batPath = `${execPath}.update.cmd`;
   const exe = basename(execPath);
@@ -505,7 +499,6 @@ export async function installDirectBinary(
       try {
         chmodSync(tmp, 0o755);
       } catch {
-        // ignore
       }
     }
     await replaceExecutable(

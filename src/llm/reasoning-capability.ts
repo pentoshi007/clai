@@ -1,8 +1,6 @@
 import type { ProviderId } from "../types.js";
 import { FAMILYLESS_ENDPOINT_LAYERS } from "./provider-profile-layers.js";
 
-// Patterns of model names that support an explicit reasoning/thinking
-// toggle. The match is case-insensitive substring or regex.
 export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   free: [/deepseek/i, /kimi/i, /minimax/i, /mimo/i, /nemotron/i],
   gemini: [/gemini-2\.5/i, /gemini-3/i, /gemini-3\.5/i],
@@ -40,9 +38,6 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
   bynara: [/kimi/i, /deepseek/i, /agnes/i, /stepfun/i],
   "qwen-cloud": [/qwen3/i, /qwen2/i],
-  // Modal Endpoints serve the open-weight catalog (Kimi, Qwen, DeepSeek, GLM,
-  // Gemma, GPT-OSS, Nemotron); the thinking families among them are matched by
-  // their repo id, which is also the model name on the wire.
   modal: [
     /kimi/i,
     /qwen3/i,
@@ -52,8 +47,6 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /nemotron/i,
     /gemma-?[34]/i,
   ],
-  // Lightning AI proxies vendor models under namespaced ids (openai/gpt-5,
-  // anthropic/claude-opus-4-8, google/gemini-3.5-flash, lightning-ai/...).
   lightning: [
     /gpt-5/i,
     /o[134](?:-mini)?\b/i,
@@ -65,7 +58,6 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /gpt-oss/i,
     /nemotron/i,
   ],
-  // TokenRouter documents reasoning support for every model it serves.
   tokenrouter: [
     /kimi/i,
     /deepseek/i,
@@ -77,8 +69,6 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   meta: [/muse-spark/i],
   fireworks: [/kimi/i, /deepseek/i, /qwen3/i, /glm-?5/i, /gpt-oss/i, /nemotron/i, /minimax/i, /mimo/i],
   hetzner: [/qwen3/i, /qwen/i],
-  // OrcaRouter exposes one unified reasoning_effort knob across every routed
-  // upstream; match the reasoning families its catalog publishes.
   orcarouter: [
     /o[134]/i,
     /gpt-5/i,
@@ -90,12 +80,6 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /kimi/i,
     /glm/i,
   ],
-  // Merge Gateway normalizes one `reasoning_effort` knob across its whole
-  // catalog and clamps it per route (it answers with a
-  // `reasoning_effort_adjusted` warning instead of failing). Verified live on
-  // /v1/openai/chat/completions: glm, minimax, kimi, grok-reasoning, gpt-oss,
-  // dola-seed, mimo, inkling, nova, deepseek-v4 and qwen3.x all return chain of
-  // thought; OpenAI/Anthropic/Gemini accept the knob but keep the text hidden.
   "merge-gateway": [
     /o[134]/i,
     /gpt-5/i,

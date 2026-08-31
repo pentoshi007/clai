@@ -2,10 +2,6 @@ import type { Reducer, ReducerOutput } from "./types.js";
 
 const DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 
-/**
- * Reducer for subfinder / amass / sublist3r output. Dedup, normalize,
- * sort. The user can still pull the raw list from the artifact.
- */
 export const subdomainsReducer: Reducer = (raw): ReducerOutput => {
   const set = new Set<string>();
   for (const line of raw.split(/\r?\n/)) {

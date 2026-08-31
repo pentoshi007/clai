@@ -1,11 +1,6 @@
 import type { CloseOwnerResult } from "../ports/interactive-sessions-port.js";
 import type { ToolResult } from "../../types.js";
 
-/**
- * Merge background-job cancellation with interactive-session owner cancellation
- * into one user-facing result. Neither cleanup short-circuits the other: a job
- * failure must not leave an interactive child running, and vice versa.
- */
 export function mergeCancelAllResult(
   jobs: ToolResult | undefined,
   interactive: CloseOwnerResult | undefined,

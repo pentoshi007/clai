@@ -1,4 +1,3 @@
-/** Pure line-oriented search for the pager (PICK-003, V2-074). */
 
 export interface PagerMatch {
   readonly line: number;
@@ -23,29 +22,21 @@ export function findPagerMatches(lines: readonly string[], query: string): Pager
   return matches;
 }
 
-/** Wraps forward; returns -1 when there are no matches to navigate. */
 export function nextPagerMatch(matches: readonly PagerMatch[], current: number): number {
   if (matches.length === 0) return -1;
   return (current + 1 + matches.length) % matches.length;
 }
 
-/** Wraps backward; returns -1 when there are no matches to navigate. */
 export function prevPagerMatch(matches: readonly PagerMatch[], current: number): number {
   if (matches.length === 0) return -1;
   return (current - 1 + matches.length) % matches.length;
 }
 
-/** One painted run inside a pager body line. */
 export interface PagerLineSegment {
   readonly text: string;
-  /** Inactive hit vs the currently selected hit (Enter/n/N). */
   readonly kind: "plain" | "match" | "active";
 }
 
-/**
- * Split a body line into plain/match/active segments for reverse-video paint.
- * Overlapping ranges are not expected (non-overlapping indexOf walk).
- */
 export function segmentPagerLine(
   line: string,
   lineIndex: number,
@@ -72,7 +63,7 @@ export function segmentPagerLine(
   for (const hit of onLine) {
     const start = Math.max(0, Math.min(line.length, hit.column));
     const end = Math.max(start, Math.min(line.length, hit.column + hit.length));
-    if (start < cursor) continue; // skip overlap
+    if (start < cursor) continue;
     if (start > cursor) {
       segments.push({ text: line.slice(cursor, start), kind: "plain" });
     }

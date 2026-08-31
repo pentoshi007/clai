@@ -72,16 +72,12 @@ export const defaultModels: Record<ProviderId, string> = {
   ollama: "llama3.1:8b",
   bynara: "mimo-v2.5-free",
   "qwen-cloud": "qwen3.7-plus",
-  // Modal Endpoints serve one model per endpoint, named by its source repo id.
   modal: "moonshotai/Kimi-K3",
-  // Lightning AI namespaces model ids by vendor.
   lightning: "openai/gpt-5",
-  // TokenRouter namespaces model ids by vendor (moonshotai/kimi-k3).
   tokenrouter: "moonshotai/kimi-k3",
   meta: "muse-spark-1.2",
   fireworks: "accounts/fireworks/models/kimi-k2p6",
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
-  // OrcaRouter namespaces model ids by upstream vendor (openai/gpt-4o-mini).
   orcarouter: "openai/gpt-4o-mini",
   "merge-gateway": "openai/gpt-5.2",
 };
@@ -94,17 +90,13 @@ export const retiredModelReplacements: Partial<
     "gemini-2.0-flash-lite": "gemini-3.1-flash-lite",
   },
   nvidia: {
-    // Older default; redirect existing configs to the new openai/gpt-oss-20b
-    // default so retired Nemotron entries don't surface 404s.
     "nvidia/llama-3.3-nemotron-super-49b-v1": defaultModels.nvidia,
   },
   openai: {
-    // gpt-4o models have been superseded by the gpt-5.x lineup.
     "gpt-4o-mini": "gpt-5.4-mini",
     "gpt-4o": "gpt-5.4",
   },
   tokenrouter: {
-    // The gateway retired short ids; models are now namespaced by vendor.
     "kimi-k2p6": "moonshotai/kimi-k2.6",
     "kimi-k2p5": "moonshotai/kimi-k2.5",
     "kimi-k2p7-code": "moonshotai/kimi-k2.7-code",
@@ -133,9 +125,6 @@ export const envVars: Record<ProviderId, string | undefined> = {
   ollama: "OLLAMA_HOST",
   bynara: "BYNARA_API_KEY",
   "qwen-cloud": "DASHSCOPE_API_KEY",
-  // Modal needs a *pair* of proxy-token env vars plus an endpoint URL; the
-  // second half (MODAL_PROXY_TOKEN_SECRET) and MODAL_BASE_URL are resolved in
-  // store/keys.ts and store/config.ts respectively.
   modal: "MODAL_PROXY_TOKEN_ID",
   lightning: "LIGHTNING_API_KEY",
   tokenrouter: "TOKENROUTER_API_KEY",

@@ -20,7 +20,6 @@ export const nucleiReducer: Reducer = (raw): ReducerOutput => {
     try {
       hits.push(JSON.parse(trimmed) as NucleiHit);
     } catch {
-      // skip malformed lines
     }
   }
   if (hits.length === 0) {

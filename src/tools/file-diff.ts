@@ -1,7 +1,3 @@
-/**
- * Pure line-diff engine for file mutation tools (fs.edit / write / append / …).
- * Produces Cursor/Claude-style hunks with configurable context and size caps.
- */
 
 import { basename } from "node:path";
 import { DIFF_MAX_LINES, DeletedSegment, DiffHunk, DiffOp, PREVIEW_CONTEXT, PREVIEW_MAX_DIFF_LINES, capPreviewHunks, collectAddedNewLines, collectDeletedAt, computeLineOps, countOps, groupHunks, wholeFileReplace } from "./diff/line-ops.js";
@@ -27,40 +23,21 @@ export interface FileChange {
   readonly basename: string;
   readonly kind: FileChangeKind;
   readonly stats: FileChangeStats;
-  /** Chat preview hunks (context=1, capped). */
   readonly previewHunks: readonly DiffHunk[];
-  /**
-   * Full after-content for the modal. Omitted when too large (use snapshotPath)
-   * or for deletes (after is empty).
-   */
   readonly afterText?: string | undefined;
-  /** New-file line numbers that are pure additions. */
   readonly addedNewLines: readonly number[];
-  /** Deleted segments for full-file modal rendering. */
   readonly deletedAt: readonly DeletedSegment[];
-  /** Optional on-disk JSON snapshot for large files. */
   readonly snapshotPath?: string | undefined;
-  /** True when content was treated as binary / non-diffable. */
   readonly binary?: boolean | undefined;
-  /** True when diff was collapsed due to size caps. */
   readonly truncated?: boolean | undefined;
 }
 
-/** Max UTF-8 bytes on either side for full LCS. */
 export const DIFF_MAX_BYTES = 1_000_000;
-/**
- * Max afterText kept inline on FileChange (else snapshot only).
- * Kept modest so transcript tool cards from writeMany scaffolds do not pin
- * multi‑MB file bodies in the TUI process for the whole session.
- */
 export const INLINE_AFTER_MAX_BYTES = 48_000;
 
 export function splitLines(text: string): string[] {
   if (text.length === 0) return [];
   const lines = text.split(/\r?\n/);
-  // Trailing newline produces a final empty entry — keep content lines only
-  // when the file ends with newline (standard diff behavior keeps the empty
-  // last element only if there is content after the last newline).
   if (text.endsWith("\n") || text.endsWith("\r\n")) {
     if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   }
@@ -68,7 +45,6 @@ export function splitLines(text: string): string[] {
 }
 
 export function looksBinary(text: string): boolean {
-  // NUL in the first 8KB is a strong binary signal.
   const sample = text.slice(0, 8_192);
   return sample.includes("\0");
 }
@@ -80,13 +56,9 @@ export interface BuildFileChangeOptions {
   readonly kind: FileChangeKind;
   readonly context?: number | undefined;
   readonly previewMaxLines?: number | undefined;
-  /** When set, afterText is omitted from the in-memory object. */
   readonly snapshotPath?: string | undefined;
 }
 
-/**
- * Build a UI-ready FileChange from before/after text.
- */
 export function buildFileChange(opts: BuildFileChangeOptions): FileChange {
   const path = opts.path;
   const base = basename(path);
@@ -140,9 +112,6 @@ export function buildFileChange(opts: BuildFileChangeOptions): FileChange {
   const keepInline =
     !opts.snapshotPath && afterBytes <= INLINE_AFTER_MAX_BYTES;
 
-  // Full line-number maps / deleted bodies are only needed for the full-file
-  // modal. Cap them so chat cards from large creates/overwrites cannot pin
-  // tens of thousands of line strings in the process heap.
   const MAX_ADDED_LINE_MAP = 2_000;
   const MAX_DELETED_BODY_CHARS = 32_000;
   let addedNewLines = collectAddedNewLines(ops);
@@ -178,7 +147,6 @@ export function buildFileChange(opts: BuildFileChangeOptions): FileChange {
   };
 }
 
-/** Infer kind from before/after when the caller only knows the tool. */
 export function inferChangeKind(
   before: string | undefined,
   after: string,
@@ -194,10 +162,6 @@ export function inferChangeKind(
   return "edit";
 }
 
-/**
- * Render preview hunks as plain text (for spool / export / classic REPL).
- * Uses unified +/- prefixes; no ANSI.
- */
 export function formatUnifiedPreview(
   change: FileChange,
   options: { maxLines?: number } = {},
@@ -230,15 +194,10 @@ export function formatUnifiedPreview(
   return lines.join("\n");
 }
 
-/**
- * Full modal body lines: after-file order with deleted segments injected.
- * Each entry carries a display line number (new-file) and op for coloring.
- */
 export interface ModalDiffLine {
   readonly lineNo: number | undefined;
   readonly text: string;
   readonly op: DiffOp;
-  /** For dels, old line number when known */
   readonly oldLineNo?: number | undefined;
 }
 
@@ -265,7 +224,6 @@ export function buildModalLines(change: FileChange): ModalDiffLine[] {
 
   const out: ModalDiffLine[] = [];
 
-  // Deletions before first new line
   for (const seg of delByAt.get(0) ?? []) {
     seg.lines.forEach((text, idx) => {
       out.push({
@@ -297,11 +255,8 @@ export function buildModalLines(change: FileChange): ModalDiffLine[] {
     }
   }
 
-  // Pure delete (empty after): show all deleted lines
   if (afterLines.length === 0 && change.deletedAt.length > 0) {
-    // already handled via atNewLine 0; if empty deletedAt but kind delete, rebuild
   } else if (afterLines.length === 0 && change.kind === "delete" && change.stats.removed > 0) {
-    // fallback: nothing in after, deletedAt may have been built from ops
   }
 
   if (out.length === 0 && change.kind === "delete") {
@@ -317,7 +272,6 @@ export function buildModalLines(change: FileChange): ModalDiffLine[] {
   return out;
 }
 
-/** Human verb for status titles. */
 export function changeVerb(
   kind: FileChangeKind,
   status: "running" | "ok" | "failed",
@@ -350,7 +304,6 @@ export function changeVerb(
         return "Editing";
     }
   }
-  // ok
   switch (kind) {
     case "create":
       return "Created";
@@ -365,7 +318,6 @@ export function changeVerb(
   }
 }
 
-/** Map tool name + optional kind to a display title basename. */
 export function fileToolTitle(
   toolName: string,
   status: "queued" | "running" | "ok" | "failed" | "blocked",
@@ -380,11 +332,6 @@ export function fileToolTitle(
   const fullPath = path && path.includes("/") ? path : undefined;
 
   if (toolName === "fs.writeMany") {
-    // pathOrDisplay may be "3 file(s): a, b" from formatToolArgs, a count, or
-    // (legacy) raw JSON — never dump JSON into the title.
-    // Prefer structured fileChanges count from the caller when present;
-    // do not claim "Wrote 6 files" from args alone when the write failed
-    // or fileChanges is empty (ghost second card).
     const countMatch = /^(\d+)\s*file/i.exec(path);
     const count = countMatch ? Number(countMatch[1]) : 0;
     const label =
@@ -402,7 +349,6 @@ export function fileToolTitle(
         pathLine: undefined,
       };
     }
-    // Success without a countable label → generic title (empty fileChanges).
     if (count === 0 && (path === "files" || !path)) {
       return { title: "Wrote files", pathLine: undefined };
     }

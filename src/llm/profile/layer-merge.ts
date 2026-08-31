@@ -28,7 +28,6 @@ export function unknownProfile(route: ProviderProfileRoute): ProviderProfile {
       },
       acceptedEfforts: [],
       disable: "unknown",
-      // unknown routes parse broadly while sending no optional control
       outputShapes: PARSED_OUTPUT_SHAPES,
       replayScope: "none",
       finalTurnPreservation: "unknown",

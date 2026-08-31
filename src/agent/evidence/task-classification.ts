@@ -1,6 +1,5 @@
 
 
-/** Successful non-meta work under the open plan task (typed evidence for done). */
 export type TaskClass =
   | "explore"
   | "scaffold"
@@ -12,7 +11,6 @@ export type TaskClass =
   | "report"
   | "generic";
 
-/** Optional signals recorded from a successful tool call. */
 export interface TaskWorkSignals {
   sourceWrite?: boolean;
   featureWrite?: boolean;
@@ -37,7 +35,6 @@ export function isMetaPlanTool(name: string): boolean {
   );
 }
 
-/** Tools that count as real work/verify evidence for the open task. */
 export function isEvidenceWorkTool(name: string): boolean {
   return !isMetaPlanTool(name);
 }
@@ -53,7 +50,6 @@ export function classifyTaskTitle(
   const t = title.toLowerCase();
   const pentest = isPentestPlanKind(opts?.planKind);
 
-  // Pentest plans: never map security work onto coding verify/implement gates.
   if (pentest) {
     if (/\b(report|write.?up|finding|summar|document|residual)\b/.test(t)) {
       return "report";
@@ -92,7 +88,6 @@ export function classifyTaskTitle(
     /\b(implement|integrate|feature|rewrite|component|todo|persist|localstorage|styling|styles?|ui|page)\b/.test(
       t,
     ) ||
-    // endpoint/route only count as implement for product apps, not bare "API routes" recon phrasing
     (/\b(endpoint|route)\b/.test(t) &&
       /\b(implement|build|add|create|feature|component|ui|page)\b/.test(t))
   ) {
@@ -113,7 +108,6 @@ export function classifyTaskTitle(
     /\b(explore|inspect|list|read|survey|map)\b/.test(t) ||
     /\bcheck\b.+\b(exists?|empty|directory|folder|path)\b/.test(t) ||
     /\b(exists?|empty)\b.+\b(directory|folder|path|project)\b/.test(t) ||
-    // "Check Node.js and npm availability", "verify tools present", etc.
     /\bcheck\b.+\b(node|npm|pnpm|yarn|bun|python|availability|available|installed|present|toolchain|tools?)\b/.test(
       t,
     ) ||
@@ -127,10 +121,6 @@ export function classifyTaskTitle(
   return "generic";
 }
 
-/**
- * Whether a successful tool can satisfy a task of the given class.
- * Used to retroactively credit preflight work (tool.check before in_progress).
- */
 export function toolFitsTaskClass(
   toolName: string,
   taskTitle: string,
@@ -151,7 +141,7 @@ export function toolFitsTaskClass(
         toolName === "fs.read" ||
         toolName === "fs.search" ||
         toolName === "net.context" ||
-        toolName === "shell.exec" // version probes, which/where
+        toolName === "shell.exec"
       );
     case "scaffold":
       return (

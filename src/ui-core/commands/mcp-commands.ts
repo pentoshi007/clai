@@ -128,7 +128,6 @@ async function addServer(
         "warn",
         `MCP config not changed · ${written.displayPath} · ${written.error}`,
       );
-      // Reopen with the text intact so a long paste is never retyped.
       const retry = await services.overlay.openTextEditor({
         title: "Add MCP server · fix and retry",
         prompt: `${written.error}`,
@@ -275,11 +274,6 @@ function pickerOptions(services: AppServices): PickerOption[] {
   ];
 }
 
-/**
- * Opens immediately from the current snapshot: a remote server can take up to
- * the 30s connect timeout, and blocking the picker on that looked like a hang.
- * Rows and title are replaced in place once discovery settles.
- */
 function openPicker(services: AppServices): void {
   services.overlay.openPicker(
     {

@@ -5,7 +5,6 @@ import type { InkTheme, ThemeToken } from "../render/ink-theme.js";
 import { MAX_TOAST_ROWS } from "./row-budget.js";
 import { wrapAnsiLine } from "../render/wrap.js";
 
-/** Solid plate per level — opentui toast-host parity (amber for info/warn). */
 const PLATE: Readonly<Record<ToastLevel, ThemeToken>> = {
   success: "successBg",
   warn: "mode",
@@ -64,10 +63,6 @@ function levelGlyph(ink: InkTheme, level: ToastLevel): string {
   }
 }
 
-/**
- * One centered pill per toast — wraps big messages instead of truncating with …
- * Each toast may occupy 1-2 rows; total rows are capped by allocatedRows (and MAX_TOAST_ROWS).
- */
 export function toastRows(input: ToastViewInput): readonly string[] {
   const { ink } = input;
   const width = Math.max(1, Math.floor(input.columns));
@@ -76,7 +71,6 @@ export function toastRows(input: ToastViewInput): readonly string[] {
   const budget = Math.max(0, Math.min(Math.floor(input.allocatedRows), MAX_TOAST_ROWS));
   if (budget === 0 || input.toasts.length === 0) return [];
 
-  // Newest first, but respect budget in *rows* not just toast count (big toasts wrap).
   const reversed = [...input.toasts].reverse();
   const hiddenCountForLast = (visibleCount: number): number => {
     const hidden = input.toasts.length - visibleCount;
@@ -91,14 +85,11 @@ export function toastRows(input: ToastViewInput): readonly string[] {
     usedToasts += 1;
     const hidden = hiddenCountForLast(usedToasts);
     const overflow = hidden > 0 && usedToasts === Math.min(budget, reversed.length) ? ` (+${hidden})` : "";
-    // Show overflow only on the oldest visible toast's last line
     const rawBody = `${levelGlyph(ink, toast.level)}  ${toast.message.replace(/\s+/g, " ").trim()}${usedToasts === Math.min(input.toasts.length, budget) && hidden > 0 ? ` (+${hidden})` : ""}`;
-    // Wrap instead of clip — up to 2 lines per toast to avoid eating whole screen
     const wrapped = wrapAnsiLine(rawBody, inner);
     const lines = wrapped.length === 0 ? [""] : wrapped;
     const clippedLines = lines.length > 2 ? [...lines.slice(0, 1), clipToWidth(lines.slice(1).join(" "), inner, ink.glyphs.ellipsis)] : lines;
     const displayLines = clippedLines.slice(0, Math.max(1, budget - rows.length));
-    // If this toast would exceed budget, truncate its last line with ellipsis
     const effectiveLines =
       rows.length + displayLines.length > budget
         ? displayLines.slice(0, budget - rows.length)

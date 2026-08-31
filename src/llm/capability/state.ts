@@ -15,9 +15,6 @@ import {
   setNegativeControlDialect,
 } from "../route-dialect-registry.js";
 
-// Session-sticky set of provider/model routes that rejected our
-// reasoning/thinking options at runtime. Populated by the router when a
-// provider returns a parameter-rejection error for a reasoning knob.
 export const reasoningUnsupportedModels = new Set<string>();
 
 export const reasoningKey = (provider: ProviderId, model: string): string =>

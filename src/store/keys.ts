@@ -26,15 +26,10 @@ export function searchProviderEnvVar(id: SearchProviderId): string | undefined {
   return searchProviderEnvVars[id];
 }
 
-// Low-level namespaced secret API
 
-// Provider-facing helpers (multi-key envelope)
 
 export function envValue(provider: ProviderId): string | undefined {
   // Modal is the one provider whose credential is a *pair*: the proxy token id
-  // and secret travel as separate headers. They are stored (and surfaced here)
-  // as one `id:secret` string so key storage, masking and rotation stay
-  // single-secret everywhere else. A half-set environment counts as unset.
   if (provider === 'modal') {
     const id = process.env.MODAL_PROXY_TOKEN_ID?.trim();
     const secret = process.env.MODAL_PROXY_TOKEN_SECRET?.trim();
@@ -127,10 +122,6 @@ export async function getProviderSecret(provider: ProviderId): Promise<{ value?:
   return { source: multi.source };
 }
 
-/**
- * Replace the full key list for a provider (Keys editor Save).
- * Empty list clears storage (same as unset).
- */
 export async function setProviderKeys(
   provider: ProviderId,
   values: readonly string[],
@@ -141,7 +132,6 @@ export async function setProviderKeys(
     return 'fallback';
   }
   const cleaned = values.map((v) => v.trim()).filter(Boolean);
-  // Dedupe exact values while preserving order.
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const v of cleaned) {
@@ -175,10 +165,6 @@ export async function setProviderKeys(
   return setSecret('llm', provider, payload);
 }
 
-/**
- * Append one API key (CLI `/set provider key`). Dedupes exact matches.
- * Creates a multi-key envelope, migrating a legacy single string if needed.
- */
 export async function appendProviderKey(
   provider: ProviderId,
   secret: string,
@@ -191,13 +177,11 @@ export async function appendProviderKey(
     throw new Error('empty API key');
   }
   const current = await getProviderKeys(provider);
-  // Env-only is not "stored" — writing creates stored keys and overrides env.
   const base =
     current.source === 'env'
       ? []
       : current.keys.map((k) => ({ ...k }));
   if (base.some((k) => k.value === trimmed)) {
-    // Already present — keep list, optionally move active to that index.
     const idx = base.findIndex((k) => k.value === trimmed);
     const payload = serializeProviderKeysPayload(base, idx >= 0 ? idx : current.activeIndex);
     return setSecret('llm', provider, payload);
@@ -213,10 +197,6 @@ export async function appendProviderKey(
   return setSecret('llm', provider, payload);
 }
 
-/**
- * Compat: append a key (multi-key era). Prefer `appendProviderKey` or
- * `setProviderKeys` at new call sites.
- */
 export async function setProviderSecret(provider: ProviderId, secret: string): Promise<'keychain' | 'fallback'> {
   return appendProviderKey(provider, secret);
 }
@@ -225,10 +205,6 @@ export async function unsetProviderSecret(provider: ProviderId): Promise<void> {
   await unsetSecret('llm', provider);
 }
 
-/**
- * Remember which key last succeeded so the next request starts there.
- * No-op for env-only / ollama / missing storage.
- */
 export async function markProviderKeySuccess(
   provider: ProviderId,
   index: number,
@@ -240,7 +216,6 @@ export async function markProviderKeySuccess(
   if (parsed.keys.length === 0) return;
   const next = clampActiveIndex(index, parsed.keys.length);
   if (next === parsed.activeIndex && stored.value.trim().startsWith('{')) {
-    // Already sticky on this index and in envelope form.
     return;
   }
   const payload = serializeProviderKeysPayload(parsed.keys, next);
@@ -292,11 +267,6 @@ export async function probeKeychain(): Promise<KeychainStatus> {
   }
 }
 
-/**
- * One-line endpoint summary for providers with a user-supplied base URL.
- * Modal has no default, so a missing URL is a problem worth naming; Lightning
- * falls back to its shared gateway.
- */
 function endpointNote(provider: ProviderId): string | undefined {
   const { urls, activeIndex, disabledUrls } = getProviderEndpoints(provider);
   const active = getActiveProviderEndpoint(provider);
@@ -325,8 +295,6 @@ function endpointNote(provider: ProviderId): string | undefined {
 
 export async function listProviderStatuses(activeProvider: ProviderId): Promise<ProviderStatus[]> {
   const statuses: ProviderStatus[] = [];
-  // Custom (user-defined) provider ids are appended after the built-ins so
-  // `/keys` and the `/provider` picker show them alongside the built-ins.
   const { getCustomProviders } = await import('./config.js');
   const customIds = getCustomProviders().map((d) => d.id as ProviderId);
   const allIds: ProviderId[] = [...providerIds, ...customIds];
@@ -381,7 +349,4 @@ export async function listProviderStatuses(activeProvider: ProviderId): Promise<
   return statuses;
 }
 
-// Re-export the mask helper so search-provider listings (and any other
-// consumer that already imports from `./store/keys.js`) use the same
-// masking rule as `clai keys` for LLM entries (Requirement 3.6).
 export { maskSecret };

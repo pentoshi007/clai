@@ -55,11 +55,6 @@ const pathAllowed = (path: string, scope: EngagementScope): boolean => {
   });
 };
 
-/**
- * Local coding verify (curl/http.fetch to the machine's own loopback) must
- * never be gated by a leftover remote pentest engagement scope.
- * Read-only methods only — POST/PUT/etc. on loopback still go through policy.
- */
 export function isLocalDevProbeAction(action: EngagementAction): boolean {
   const host = normalizeScopeTarget(action.target) || action.target;
   if (!isLoopbackScopeTarget(host)) return false;
@@ -80,10 +75,6 @@ export function evaluateEngagementAction(
     capability: action.capability,
     phase: action.phase,
   });
-  // Always allow local-dev GET/HEAD/OPTIONS to loopback — coding sessions
-  // often have an unrelated remote scope still configured from a prior pentest.
-  // Exception: if DNS resolution escaped loopback (rebinding), fall through
-  // to normal scope checks on resolvedAddresses.
   if (isLocalDevProbeAction(action)) {
     const resolved = action.resolvedAddresses ?? [];
     const escaped = resolved.some((addr) => !isLoopbackScopeTarget(addr));
@@ -97,8 +88,6 @@ export function evaluateEngagementAction(
       };
     }
   }
-  // Empty / missing scope = scoping disabled (opt-in via /scope). Only a
-  // non-empty authorizedTargets list restricts net.scan / active recon.
   if (!scope || !scope.authorizedTargets?.length) {
     return {
       allowed: true,
@@ -108,7 +97,6 @@ export function evaluateEngagementAction(
       phase: action.phase,
     };
   }
-  // Scope with targets but outside its time window stays closed.
   if (!isScopeActiveAt(scope, now)) {
     return deny("engagement scope is outside its time window");
   }
@@ -151,7 +139,6 @@ export interface PolicyLease {
   release: () => void;
 }
 
-/** In-memory token bucket/concurrency enforcement; inject clock for deterministic tests. */
 export class EngagementPolicyEngine {
   private tokens = 0;
   private lastRefill = 0;
@@ -206,9 +193,6 @@ export function actionFromUrl(input: {
   redirectChain?: string[] | undefined;
   resolvedAddresses?: string[] | undefined;
 }): EngagementAction {
-  // The url may be a model-supplied argument or a token scraped out of a shell
-  // command (e.g. a ripgrep regex containing "https://a|/b"). Never let a
-  // malformed value throw a raw "cannot be parsed as a URL" and abort the turn.
   const parsed = safeParseUrl(input.url);
   const target = parsed?.hostname ?? hostnameFromLoose(input.url) ?? input.url;
   return {
@@ -224,7 +208,6 @@ export function actionFromUrl(input: {
   };
 }
 
-/** Parse a URL without ever throwing; returns undefined on malformed input. */
 function safeParseUrl(raw: string): URL | undefined {
   try {
     return new URL(raw);
@@ -233,11 +216,6 @@ function safeParseUrl(raw: string): URL | undefined {
   }
 }
 
-/**
- * Best-effort hostname from a loose URL-like token that `new URL()` rejects
- * (e.g. an authority containing regex metacharacters). Returns the first
- * host-looking label after the scheme, or undefined.
- */
 function hostnameFromLoose(raw: string): string | undefined {
   const match = /https?:\/\/([a-z0-9.-]+)/i.exec(raw);
   return match?.[1]?.toLowerCase();
@@ -373,8 +351,6 @@ export function engagementActionForToolCall(call: ToolCall): EngagementAction | 
   if (call.name === "http.fetch") {
     const url = typeof call.args.url === "string" ? call.args.url : "";
     if (!url) return undefined;
-    // Loopback GET/HEAD is local app verify — skip engagement action entirely
-    // so leftover remote scopes never block coding live-checks.
     try {
       const host = new URL(url).hostname;
       const method = typeof call.args.method === "string" ? call.args.method : "GET";
@@ -385,7 +361,6 @@ export function engagementActionForToolCall(call: ToolCall): EngagementAction | 
         return undefined;
       }
     } catch {
-      /* fall through to normal action */
     }
     return actionFromUrl({
       url,
@@ -468,13 +443,6 @@ export function engagementActionForToolCall(call: ToolCall): EngagementAction | 
   };
 }
 
-/**
- * Every engagement action implied by one tool call — one per distinct network
- * destination. A shell command can name several targets
- * (`nmap in-scope.example.com out-of-scope.example.org`); authorizing only the
- * last one would let the first be scanned unchecked, so callers must evaluate
- * ALL returned actions and deny on the first failure.
- */
 export function engagementActionsForToolCall(
   call: ToolCall,
 ): EngagementAction[] {

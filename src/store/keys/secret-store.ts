@@ -7,13 +7,8 @@ import { basename, dirname, join } from "node:path";
 
 export const serviceName = 'clai';
 
-// `@napi-rs/keyring` ships prebuilt napi binaries (no node-gyp / prebuild-install)
-// and exposes a keytar-compatible API at the `/keytar` subpath. We dynamically
-// import it so the CLI keeps working when the optional native binding is
 // missing on a platform — falling back to a *restricted-permission plaintext*
-// JSON file (mode 0600) at ~/.clai/keys.json. Despite older docs, this fallback
 // is NOT encrypted; it is plaintext that the OS protects with file permissions.
-// The agent is also blocked from reading that path (see safety/patterns.ts).
 const keychainModuleName = '@napi-rs/keyring/keytar.js';
 
 export const keysFile = join(homedir(), '.clai', 'keys.json');
@@ -24,14 +19,8 @@ type KeytarLike = {
   deletePassword(service: string, account: string): Promise<boolean>;
 };
 
-/**
- * Logical namespace for a stored secret. Search-provider keys live in the
- * same keyring service as LLM keys but under separate accounts so the two
- * keyspaces never collide.
- */
 export type SecretNamespace = 'llm' | 'search';
 
-/** Where a resolved secret value originated. Mirrors `ProviderStatus.source`. */
 export type SecretSource = ProviderStatus['source'];
 
 /**
@@ -46,11 +35,7 @@ let cachedKeytar: KeytarLike | undefined;
 
 let keytarLoadAttempted = false;
 
-// On many Linux servers and most Windows non-interactive sessions the
-// napi-rs keyring binary loads cleanly but the underlying OS keystore
 // (libsecret/DBus on Linux, Windows Credential Manager) is unreachable.
-// In that case the first call fails — we record it and stop trying
-// for the rest of the process so every read/write/delete falls back
 // to the restricted-permission plaintext JSON file silently.
 export let keychainRuntimeUnavailable = false;
 
@@ -72,7 +57,6 @@ export async function loadKeytar(): Promise<KeytarLike | undefined> {
 export function isMissingKeychainError(error: unknown): boolean {
   // Best-effort detection so transient errors (eg locked keychain prompt
   // dismissed) don't permanently disable the keychain. Anything that
-  // looks like a missing-platform-service signature gets latched off.
   const message = error instanceof Error ? error.message : String(error);
   return /(no such (?:bus|service)|secret service|libsecret|dbus|keyring|gnome-keyring|kwallet|credential|keychain|security framework|access denied|not (?:available|implemented))/i.test(
     message,
@@ -194,17 +178,9 @@ export async function getSecret(
   }
 
   if (fallbackValue) {
-    // Found in the durable fallback file — return it directly WITHOUT
     // touching the OS keychain. Writing to the keychain on every read
-    // triggers a native authorization prompt on macOS (the calling
     // process is not in the keychain item's access-control list), which
-    // made every LLM request AND every `/keys` listing re-prompt the
-    // user for a password — even after clicking "Always Allow", because
-    // each write re-asked. The fallback file (mode 0600) is the source
     // of truth; the keychain is written only when a key is explicitly
-    // set via setSecret, never on read.
-    //
-    // Migrate legacy bare-id key to namespaced format in fallback file.
     if (isLegacyFallback) {
       delete fallback[id];
       fallback[account] = fallbackValue;
@@ -228,9 +204,6 @@ export async function getSecret(
     return { value: keychainResult.value, source: 'keychain' };
   }
 
-  // Lazy migration of pre-namespaced LLM entries. Older clai versions
-  // wrote `setPassword(serviceName, providerId, ...)` with no `llm:`
-  // prefix; pick those up once and copy them into the new account name.
   if (namespace === 'llm') {
     const legacy = await withKeytar((keytar) =>
       keytar.getPassword(serviceName, id),
@@ -244,7 +217,6 @@ export async function getSecret(
           keytar.deletePassword(serviceName, id),
         );
       }
-      // Heal: write the discovered key back to the fallback file.
       const fb = await readFallback();
       if (!(account in fb)) {
         fb[account] = legacy.value;
@@ -265,12 +237,10 @@ export async function setSecret(
   const account = secretAccount(namespace, id);
 
   // Always write to the plaintext fallback file so keys survive keychain
-  // backend changes (e.g. switching from npm/Node to brew/Bun, or moving
-  // between machines). The fallback file (mode 0600) is the durable store;
   // the OS keychain is an opportunistic layer on top.
   const fallback = await readFallback();
   fallback[account] = value;
-  if (namespace === 'llm') delete fallback[id]; // clean up legacy bare-id
+  if (namespace === 'llm') delete fallback[id];
   await writeFallback(fallback);
 
   // Also write to OS keychain if available (best-effort).
@@ -287,7 +257,6 @@ export async function setSecret(
 
   // If we land in the plaintext fallback only, make sure a pre-existing
   // keychain entry (which may still be readable) does not shadow the
-  // value the user just set.
   await withKeytar((keytar) => keytar.deletePassword(serviceName, account));
   if (namespace === 'llm') {
     await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
@@ -309,8 +278,6 @@ export async function unsetSecret(
 
   await withKeytar((keytar) => keytar.deletePassword(serviceName, account));
   if (namespace === 'llm') {
-    // Sweep the legacy bare-id entry too so partially migrated installs
-    // get a clean unset.
     await withKeytar((keytar) => keytar.deletePassword(serviceName, id));
   }
 

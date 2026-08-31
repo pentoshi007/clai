@@ -22,11 +22,6 @@ interface BatchOutcome {
   exitCode?: number | undefined;
   error?: string | undefined;
   suppressedRepeat?: boolean | undefined;
-  /**
-   * Images a child wants the model to look at (image.view). Without this the
-   * aggregate result would drop the bytes while still telling the model an
-   * image was attached.
-   */
   images?: ChatImage[] | undefined;
 }
 
@@ -49,9 +44,6 @@ export async function runToolBatch(
     knownIds,
   );
 
-  // Re-classify each child: block always refused; confirm allowed only when
-  // the parent turn already confirmed (options.confirmed) so shell/fs mutates
-  // cannot sneak past the safety gate as a "safe" batch wrapper.
   const scope = await loadScopeForSession(options?.sessionId).catch(
     () => undefined,
   );
@@ -73,7 +65,6 @@ export async function runToolBatch(
       }
       needsSerial = true;
     }
-    // Non-parallel-safe tools always serialize to avoid racing writes/shells.
     if (
       !BATCH_SAFE_TOOLS.has(spec.name) &&
       !isExternalToolParallelSafe(spec.name)
@@ -90,20 +81,12 @@ export async function runToolBatch(
       BATCH_MAX_CONCURRENCY,
     ),
   );
-  // Parallel only when every child is read-only/safe-parallel. Mixed or
-  // mutating batches run one-at-a-time in order.
-  // Selective/fail-fast policies also force serial so cancel decisions apply
-  // before dependents start (deterministic for models).
   if (failMode.kind !== "continue") {
     needsSerial = true;
   }
   const concurrency = needsSerial ? 1 : requestedConcurrency;
 
-  // Local abort that fires on parent cancel OR the batch hard timeout.
-  // Children receive this signal so a hung http.fetch/dns cannot pin the UI
-  // on "● tool.batch running" forever.
   const batchAc = new AbortController();
-  // Policy cancel (on_fail) — separate from user Esc / hard timeout.
   const policyAc = new AbortController();
   const onParentAbort = (): void => {
     if (!batchAc.signal.aborted) batchAc.abort();
@@ -128,17 +111,12 @@ export async function runToolBatch(
   let finished = 0;
   const failedIds = new Set<string>();
   const cancelledIds = new Set<string>();
-  /** id → human reason for policy cancel */
   const cancelReasons = new Map<string, string>();
   let policyCancelCount = 0;
 
   const tick = (line: string): void => {
-    // Heartbeats also reset the runner's 60s "stalled tool" watchdog, which
-    // previously aborted silent batches mid-flight and left no tool-result.
     options?.onOutput?.(line.endsWith("\n") ? line : `${line}\n`, "stdout");
   };
-  /** Stream a finished child as a nested `── #N` section so the live UI can
-   * expand sub-cards with real output (not just "ok" status ticks). */
   const streamSection = (outcome: BatchOutcome): void => {
     const status = outcome.status;
     const head = `── #${outcome.index + 1} ${outcome.name} [${status}${
@@ -176,11 +154,9 @@ export async function runToolBatch(
     let newly = 0;
     for (const id of targets) {
       if (cancelledIds.has(id)) continue;
-      // Never mark the just-failed id as cancelled (it has a real outcome).
       if (failedIds.has(id)) continue;
       const idx = calls.findIndex((c) => c.id === id);
       if (idx < 0) continue;
-      // Already finished with a result — leave it.
       if (outcomes[idx]) continue;
       cancelledIds.add(id);
       cancelReasons.set(id, reason);
@@ -200,7 +176,6 @@ export async function runToolBatch(
 
   try {
     await runWithLimit(calls, concurrency, async (spec, index) => {
-      // Policy-cancelled before start (or mid-batch after sibling fail).
       if (cancelledIds.has(spec.id) && !outcomes[index]) {
         outcomes[index] = {
           index,
@@ -234,7 +209,6 @@ export async function runToolBatch(
         return;
       }
 
-      // Re-check cancel after waiting in the worker queue.
       if (cancelledIds.has(spec.id)) {
         outcomes[index] = {
           index,
@@ -255,8 +229,6 @@ export async function runToolBatch(
 
       tick(`[batch] #${index + 1} ${spec.name} starting`);
       try {
-        // Lightweight child heartbeats so silent tools (whois) never trip the
-        // outer 60s stall watchdog while still running under the batch.
         const childHeartbeat = setInterval(() => {
           tick(`[batch] #${index + 1} ${spec.name} still running…`);
         }, BATCH_HEARTBEAT_MS);
@@ -265,10 +237,6 @@ export async function runToolBatch(
         try {
           result = await runToolCall(
             { name: spec.name, args: spec.args },
-            // Do not fan full child stdout into the parent spool (parallel
-            // interleaving). Settled section bodies are streamed below so the
-            // live UI can show expanded nested cards immediately.
-            // Forward confirmed so approved mutates inside a batch still run.
             {
               signal: childSignal,
               ...(options?.confirmed !== undefined
@@ -307,8 +275,6 @@ export async function runToolBatch(
           clearInterval(childHeartbeat);
         }
 
-        // If we were policy-aborted mid-flight and the child looks aborted,
-        // surface as cancelled rather than a generic fail when we intended cancel.
         if (
           cancelledIds.has(spec.id) ||
           (policyAc.signal.aborted &&
@@ -368,7 +334,6 @@ export async function runToolBatch(
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        // Policy abort while starting/running → cancelled if we marked it.
         if (cancelledIds.has(spec.id) || policyAc.signal.aborted) {
           outcomes[index] = {
             index,
@@ -410,10 +375,7 @@ export async function runToolBatch(
     }
   }
 
-  // Fill any holes left by a mid-batch abort/timeout/policy cancel so we
-  // always emit a complete sectioned body and a tool-result.
   const parentAborted = Boolean(options?.signal?.aborted);
-  // Hard timeout aborts batchAc; policy cancel only aborts policyAc.
   const hardTimedOut = batchAc.signal.aborted && !parentAborted;
 
   for (let i = 0; i < calls.length; i += 1) {
@@ -491,18 +453,10 @@ export async function runToolBatch(
         output;
     }
   }
-  // `ok` is the signal the runner, loop-guard, and task-evidence layers use, so
-  // it reports the truth: a batch whose children failed is NOT a success. The
-  // original intent (a failed child must not cancel sibling top-level tools) is
-  // preserved by `partial`, which tells the runner this was a partial result
-  // rather than an aborted or hard-failed call.
   const anyOk = finalOutcomes.some((outcome) => outcome.ok);
   const allSuppressed =
     finalOutcomes.length > 0 &&
     finalOutcomes.every((outcome) => outcome.suppressedRepeat);
-  // Children run in index order in the sectioned body, so keep the same order
-  // here: the model is told "attached in this order" and must be able to match
-  // each image back to the section that requested it.
   const batchImages = finalOutcomes.flatMap((outcome) => outcome.images ?? []);
   return {
     ok: allOk,

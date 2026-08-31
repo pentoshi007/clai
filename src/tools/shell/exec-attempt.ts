@@ -26,7 +26,6 @@ import type { WriteStream } from "node:fs";
 import { stat } from "node:fs/promises";
 
 export interface ShellExecAttemptResult extends ToolResult {
-  /** Internal-only metadata used to safely retry a command that never started. */
   launchFailure?:
     | {
         code?: string | undefined;
@@ -130,12 +129,10 @@ export async function shellExecAttempt(
       const text = decoded.text;
       bytesRead += decoded.bytes;
       linesRead += text.split("\n").length - 1;
-      // Stream raw bytes to the artifact file (cheap; no concat).
       if (artifact && !captureLimitHit) {
         if (bytesRead <= maxCaptureBytes) {
           artifact.stream.write(text);
         } else {
-          // Write only the prefix that fits under the cap, then close.
           const overflow = bytesRead - maxCaptureBytes;
           const allowed = text.length - overflow;
           if (allowed > 0) artifact.stream.write(text.slice(0, allowed));
@@ -143,7 +140,6 @@ export async function shellExecAttempt(
           artifact.stream.end();
         }
       }
-      // Maintain head + ring-tail model summary.
       if (head.length < halfModel) {
         const room = halfModel - head.length;
         head += text.slice(0, room);
@@ -151,12 +147,9 @@ export async function shellExecAttempt(
       } else {
         tail.push(text);
       }
-      // Track bytes we dropped from the in-memory ring buffer for stats.
       const inMemory = head.length + tail.size();
       bytesDropped = Math.max(0, bytesRead - inMemory);
-      // Live preview is still sent through onOutput so the UI can dim it.
       args.onOutput?.(text, stream);
-      // Optional capture-limit termination.
       if (captureLimitHit && onLimit === "terminate") {
         terminate("cap");
       }
@@ -164,14 +157,11 @@ export async function shellExecAttempt(
 
     const killChild = (signal: NodeJS.Signals): void => {
       if (!child.pid) return;
-      // `detached` was disabled when we inherited stdin so the child shares our
-      // process group — signal it directly. Otherwise take down the whole tree.
       const useGroup = detached && !usingInteractiveStdin;
       if (!useGroup && process.platform !== "win32") {
         try {
           child.kill(signal);
         } catch {
-          // Process may have already exited.
         }
         return;
       }
@@ -184,7 +174,6 @@ export async function shellExecAttempt(
     const terminate = (reason: "abort" | "timeout" | "cap"): void => {
       if (reason === "abort") {
         if (aborted) {
-          // Second abort attempt — the child ignored SIGTERM; force-kill.
           killChild("SIGKILL");
           return;
         }
@@ -192,8 +181,6 @@ export async function shellExecAttempt(
       }
       if (reason === "timeout") timedOut = true;
       killChild("SIGTERM");
-      // Escalate to SIGKILL quickly — some tools (eg ffuf) catch SIGTERM
-      // and take several seconds to shut down.
       forceKill = setTimeout(() => killChild("SIGKILL"), 500);
     };
 
@@ -238,7 +225,6 @@ export async function shellExecAttempt(
       if (bytesRead === 0) {
         combined = "";
       } else if (inMemory >= bytesRead) {
-        // Everything fit in memory; concat head+tail back into one string.
         combined = (head + tail.toString()).trimEnd();
       } else {
         const omittedBytes = bytesRead - inMemory;
@@ -247,19 +233,14 @@ export async function shellExecAttempt(
       }
 
       // Always redact before exposing the bounded text to callers.
-      // Binary output (a stray `cat /bin/ls`, a downloaded tarball) is
-      // replaced with a hash + marker instead of lossy mojibake.
       const output = decoder.isBinary
         ? binarySuppressionNotice(bytesRead, artifact?.path)
         : redactSecrets(combined);
 
       // Redact the on-disk artifact too so `/output last` and any later
-      // reader (model, user, audit) sees the same scrubbed bytes.
       const finalize = (result: ToolResult): void => {
         if (artifact) {
           // Wait for the artifact write stream to flush, then redact in
-          // place, then resolve. Awaiting matters: tests and downstream
-          // readers must never see the unredacted bytes, even briefly.
           const onFlushed = (): void => {
             void redactArtifactInPlace(artifact.path).then(() =>
               resolve(result),

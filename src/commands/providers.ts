@@ -31,7 +31,6 @@ import type { ProviderId } from "../types.js";
 export interface SetKeyOptions {
   fromEnv?: string | undefined;
   stdin?: boolean | undefined;
-  /** Repeatable for endpoint providers: `--url a --url b` stores both. */
   url?: string | string[] | undefined;
   skipPing?: boolean | undefined;
 }
@@ -41,7 +40,6 @@ function urlList(url: SetKeyOptions["url"]): string[] {
   return (Array.isArray(url) ? url : [url]).map((u) => u.trim()).filter(Boolean);
 }
 
-/** Append (or re-activate) one endpoint URL and report what changed. */
 function addEndpoint(provider: ProviderId, raw: string): void {
   const url = normalizeEndpointUrl(raw);
   const { endpoints, added } = appendProviderEndpoint(provider, url);
@@ -127,8 +125,6 @@ export async function setProviderKey(
   const providerImpl = getProvider(provider);
 
   // For endpoint providers `--url` is configuration, not a credential, and it
-  // is repeatable — each URL is appended and the last one becomes active.
-  // Re-passing a known URL just makes that one active.
   const urls = urlList(options.url);
   if (providerUsesEndpoints(provider) && urls.length > 0) {
     for (const url of urls) addEndpoint(provider, url);
@@ -156,8 +152,6 @@ export async function setProviderKey(
 
   secret = secret.trim();
 
-  // `clai set modal https://…` (and `/set modal https://…`) is unambiguous: a
-  // URL can only be an endpoint, never an API key or a token pair.
   if (providerUsesEndpoints(provider) && /^https?:\/\//i.test(secret)) {
     addEndpoint(provider, secret);
     return;
@@ -170,14 +164,9 @@ export async function setProviderKey(
     );
   }
 
-  // A Modal token cannot be verified until we know which endpoint to call, so
-  // store it and tell the user what is still missing instead of failing.
   const modalEndpointMissing =
     provider === "modal" && !getActiveProviderEndpoint("modal");
 
-  // Validate against the provider BEFORE persisting: a dead key used to stay in
-  // the rotation circle and cost an extra failed request plus a switch toast on
-  // every later turn.
   if (!options.skipPing && !modalEndpointMissing) {
     try {
       await pingProvider(provider, secret);
@@ -245,7 +234,6 @@ export async function unsetProviderKey(
   }
   const provider = assertProvider(providerValue);
   // `--url` targets the endpoint list instead of the credentials, so a bad URL
-  // can be dropped without also throwing away working keys.
   if (options.url) {
     if (!providerUsesEndpoints(provider)) {
       console.log(`${provider} has no endpoint URLs`);
@@ -293,8 +281,6 @@ export async function printProviderKeys(): Promise<void> {
     console.log(
       `  ${mark} ${s.provider.padEnd(13)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
     );
-    // A key is not enough for endpoint providers — show where it points, and
-    // list every stored endpoint with the active one starred.
     if (s.provider !== "ollama" && s.provider !== "free" && s.note) {
       console.log(chalk.dim(`      endpoint: ${s.note}`));
     }
@@ -326,12 +312,6 @@ export async function printProviderKeys(): Promise<void> {
   await printSearchProviderKeys();
 }
 
-/**
- * Modal needs two values, so first-run setup asks for both: the endpoint URL
- * (plain input — it is not a secret and masking a long URL only hides typos)
- * and then the proxy token pair. Returns false when anything is still missing,
- * so callers can leave the active provider alone.
- */
 async function promptModalSetup(): Promise<boolean> {
   if (!getActiveProviderEndpoint("modal")) {
     if (!process.stdin.isTTY) return false;
@@ -347,8 +327,6 @@ async function promptModalSetup(): Promise<boolean> {
   const entered = await promptForSecret("modal");
   if (!entered) return false;
   await setProviderKey("modal", entered, { skipPing: false });
-  // A URL pasted at the token prompt is stored as the endpoint instead, so
-  // re-check rather than assuming a pair landed in storage.
   return Boolean((await getProviderSecret("modal")).value);
 }
 
@@ -456,7 +434,6 @@ export async function setKeyPicker(
       ),
     );
   }
-  // Prompt for another key (append)
   await setProviderKey(selected, undefined, {});
 }
 

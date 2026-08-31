@@ -1,8 +1,3 @@
-/**
- * OpenTUI crashes when React sets <text content={null|undefined}>:
- * setStyledText(null) → text.chunks throws. Coerce nullish / invalid values
- * to a single space so transient unmount/update races never take down the TUI.
- */
 
 import { TextRenderable, stringToStyledText, StyledText } from "@opentui/core";
 import { sanitizeDisplayText } from "../../ui-core/rendering/sanitize-display.js";

@@ -5,10 +5,6 @@ import { stripToolCallSurfaces } from "../../rendering/strip-tool-surfaces.js";
 import { appendItem, moveItemBefore, removeItem, updateItem } from "../transcript-struct.js";
 import type { AssistantItem, ThinkingItem, TranscriptItem, TranscriptState } from "../transcript-types.js";
 
-/**
- * Drop or clean streaming assistant text that is (or was) only tool-fence
- * surfaces so raw ```tool JSON never sticks on screen once tool cards land.
- */
 export function discardPendingToolFenceStream(state: TranscriptState): TranscriptState {
   if (!state.pendingAssistantId) return state;
   const pending = state.byId.get(state.pendingAssistantId);
@@ -31,10 +27,6 @@ export function discardPendingToolFenceStream(state: TranscriptState): Transcrip
   }));
 }
 
-/**
- * True when the open assistant row has no visible text yet, so inserting an
- * item before it cannot move anything the user has already seen.
- */
 function isEmptyAssistantPlaceholder(
   state: TranscriptState,
   assistantId: string,
@@ -220,8 +212,6 @@ export function appendDelta(
   };
   if (kind === "assistant") {
     const pushed = pushStripChunk(EMPTY_STRIP_STREAM, text);
-    // Fence-only start of a stream: hold an empty pending row so later prose
-    // can still attach; tool-call events will discard empty fences.
     const item: TranscriptItem = {
       ...base,
       kind: "assistant",
@@ -322,8 +312,6 @@ export function finalizeMessage(
             ...(reasoningId !== undefined ? { reasoningId } : {}),
           };
     next = appendItem(next, item);
-    // Same rule as streaming deltas: only hoist above an assistant row that has
-    // not painted any text yet.
     if (
       kind === "thinking" &&
       next.pendingAssistantId &&
@@ -338,7 +326,6 @@ export function finalizeMessage(
   };
 }
 
-/** Close open thinking so tool cards never sit under a still-streaming block. */
 export function closePendingThinking(
   state: TranscriptState,
   endedAt: number,

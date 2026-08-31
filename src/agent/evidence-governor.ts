@@ -11,9 +11,7 @@ export interface GovernorState {
 }
 
 export interface GovernorPolicy {
-  /** Normal operating envelope. Crossing it prompts reflection, not success or an automatic stop. */
   readonly resourceEnvelope: number;
-  /** Absolute resource limit. Reaching it pauses the turn. */
   readonly emergencyCeiling: number;
   readonly reflectionAfterNoDelta: number;
   readonly pauseAfterNoDelta: number;
@@ -23,7 +21,6 @@ export interface GovernorPolicy {
 export interface ProgressMetrics {
   readonly evidenceDelta?: number;
   readonly hypothesisDelta?: number;
-  /** Normalized score from 0 (novel) to 1 (identical repetition). */
   readonly repetitionScore?: number;
   readonly resourceCost?: number;
   readonly policy?: GovernorPolicy;

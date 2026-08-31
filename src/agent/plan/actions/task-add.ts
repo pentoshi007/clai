@@ -148,8 +148,6 @@ export async function handleTaskAdd(
         modelNote: `task.add failed: ${validation.reason}.`,
       };
     }
-    // Apply the authored foreground layout onto fresh state so a
-    // concurrent responder settlement is preserved.
     await mutatePlan(plan.sessionId, (draft) => {
       applyForegroundSnapshot(draft, plan);
       return true;

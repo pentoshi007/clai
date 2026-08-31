@@ -40,10 +40,6 @@ export async function handlePlanCreate(
           'Example: {"name":"plan.create","args":{"goal":"Assess example.com","detail":"…","tasks":["DNS enum","Port scan","HTTP fingerprint"],"kind":"pentest"}}',
       };
     }
-    // Reject a low-quality "everything in one step" plan. A single task that
-    // itself enumerates many files/actions (commas, "and", slashes) is a sign
-    // the model lumped the whole build into one checkbox — split it so the
-    // user gets a real, trackable checklist and the executor works step by step.
     if (isLumpedSingleTask(taskTitles)) {
       return {
         handled: true,
@@ -60,7 +56,6 @@ export async function handlePlanCreate(
 
     const existingPlan = await loadPlan(session.sessionId).catch(() => undefined);
 
-    // X12: do not open a second full plan just to run an existing app.
     if (
       existingPlan &&
       (existingPlan.status === "completed" ||
@@ -179,9 +174,6 @@ export async function handlePlanCreate(
         ? existingPlan
         : undefined;
 
-    // Preserve authored task count/order. Build, install, and verification
-    // evidence may span tasks; the runtime must not inject regex-derived
-    // checkpoints that change IDs or make progress diverge from the plan.
     const normalizedTitles = revisablePlan
       ? taskTitles
       : normalizeCodingPlanTasks(kind, goal, detail, taskTitles);
@@ -205,7 +197,6 @@ export async function handlePlanCreate(
       kind,
       meta,
     });
-    // Attach model-supplied slug aliases so task.update can resolve them (X3).
     for (let i = 0; i < plan.tasks.length; i++) {
       const aliases = taskEntries[i]?.aliases ?? [];
       if (aliases.length) plan.tasks[i]!.aliases = aliases;
@@ -254,8 +245,6 @@ export async function handlePlanCreate(
         return task;
       });
 
-      // Free ids for unmatched tasks only. Matched tasks keep prior ids;
-      // new createPlan ids must not collide (e.g. t3 new step vs remapped Verify→t3).
       const taken = new Set(
         [...matchedIndices].map((i) => mappedNewTasks[i]!.id),
       );
@@ -270,17 +259,12 @@ export async function handlePlanCreate(
         taken.add(task.id);
       }
 
-      // Draft (awaiting accept): plan.create is an authoritative rewrite.
-      // Keeping unmatched old pending tasks made "suggest changes" leave
-      // obsolete steps (e.g. Prisma/JWT) beside the revised frontend list.
       const isDraftRewrite =
         revisablePlan.status === "draft" && !session.planApproved.value;
 
       if (isDraftRewrite) {
         plan.tasks = mappedNewTasks.filter((t) => !isBareTaskIdTitle(t.title));
       } else {
-        // Post-approval / mid-execution: preserve finished work not re-listed;
-        // drop unmatched pending; soft-skip unmatched in_progress.
         const oldTasksToKeep = revisablePlan.tasks
           .filter(
             (oldTask) =>
@@ -305,7 +289,6 @@ export async function handlePlanCreate(
                 note: oldTask.note ?? "superseded by plan revision",
               };
             }
-            // Unmatched pending → obsolete after rewrite; drop.
             return null;
           })
           .filter((t): t is NonNullable<typeof t> => Boolean(t));
@@ -315,9 +298,6 @@ export async function handlePlanCreate(
         );
       }
 
-      // Map input-facing references (positional t1.., aliases, titles) → final ids.
-      // Positional keys must win over identity: a remapped task may keep id "t3"
-      // while input "t3" still means "third item in this plan.create call".
       const finalIdByInputReference = new Map<string, string>();
       for (let index = 0; index < mappedNewTasks.length; index += 1) {
         const task = mappedNewTasks[index]!;
@@ -334,8 +314,6 @@ export async function handlePlanCreate(
       for (let index = 0; index < mappedNewTasks.length; index += 1) {
         const task = mappedNewTasks[index]!;
         const entry = taskEntries[index];
-        // Default chain: depend on the previous task in THIS create call by
-        // its final id (not positional tN, which collides after id remap).
         const references = entry?.dependenciesSpecified
           ? entry.dependencies
           : index > 0
@@ -355,7 +333,6 @@ export async function handlePlanCreate(
         ];
       }
 
-      // X7: keep approval when only additive pending work remains.
       const priorFinished = revisablePlan.tasks.filter(
         (t) =>
           t.state === "done" || t.state === "skipped" || t.state === "failed",
@@ -397,13 +374,10 @@ export async function handlePlanCreate(
       }
     }
 
-    // After id remaps, re-derive a sane sequential DAG from list order so
-    // remapped ids never leave edges like t2 → t9 (forward / circular mess).
     normalizeTaskDependencies(plan.tasks);
 
     const dag = validateSessionPlan(plan);
     if (!dag.ok) {
-      // Last resort: pure linear chain by list order, then re-validate.
       for (let i = 0; i < plan.tasks.length; i++) {
         plan.tasks[i]!.dependencies = i > 0 ? [plan.tasks[i - 1]!.id] : [];
       }
@@ -430,9 +404,6 @@ export async function handlePlanCreate(
       session.planApproved.value = false;
     }
 
-    // A revision is a foreground snapshot; responder children keep
-    // their process-authoritative state. A brand-new plan has nothing stored
-    // yet, so fall back to a plain create.
     const revised = await mutatePlan(plan.sessionId, (draft) => {
       applyForegroundSnapshot(draft, plan);
       return true;

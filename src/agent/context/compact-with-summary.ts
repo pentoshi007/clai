@@ -11,16 +11,10 @@ import { estimateMessagesTokens, estimateTextTokens as estimateTokens } from "..
 import { isResponderResultLedgerMessage, RESPONDER_RESULT_LEDGER_PREFIX } from "../responder-context.js";
 import { expandKeepStartForToolPairs, hasOrphanToolMessages } from "../tool-history.js";
 
-/** Prefer landing at or under this; still accept if content needs more room. */
 export const POST_COMPACT_SOFT_UPPER_BAND_TOKENS = 20_000;
 
 type TailPreferMax = { tool: number; assistant: number; user: number };
 
-/**
- * Progressive soft-trim tiers for the kept tail. Start generous; only step
- * tighter if estimate is still above the soft upper band. Never blanks a
- * message or removes tool pairs.
- */
 const TAIL_SOFT_TIERS: readonly TailPreferMax[] = [
   { tool: 6_000, assistant: 8_000, user: 8_000 },
   { tool: 4_000, assistant: 5_000, user: 6_000 },
@@ -28,34 +22,12 @@ const TAIL_SOFT_TIERS: readonly TailPreferMax[] = [
 ];
 
 export interface CompactOptions {
-  /** Soft budget (tokens). When estimated tokens exceed this, compact. */
   budgetTokens?: number | undefined;
-  /** Keep this many trailing messages (system + user/assistant pairs). */
   keepRecent?: number | undefined;
   singlePassInputBudgetTokens?: number | undefined;
-  /**
-   * Bias summarizer prompt (e.g. plan-implement preserves recon evidence).
-   * Does not change accept/reject heuristics.
-   */
   purpose?: "default" | "plan-implement" | undefined;
-  // Deterministic canonical state (files, evidence, criteria, plan, responder
-  // ledger) built by the caller from durable stores. Fed to the summarizer as
-  // authoritative state and re-injected verbatim after compaction.
   durableEnvelope?: string | undefined;
-  /**
-   * At most one summarizer dispatch: forbids automatic map/reduce. When the
-   * full settled range does not fit one pass, summarize the oldest complete
-   * message-aligned slice (emergency_prefix_slice) and retain the untouched
-   * middle/recent tail.
-   */
   singleAdmission?: boolean | undefined;
-  /**
-   * Choose the direct single pass whenever source messages exist, skipping the
-   * estimate gate. Callers set this only after pre-flighting that the exact
-   * assembled request fits (e.g. a cache-preserving snapshot replay planned
-   * with `planCompactionReplay`) — the raw estimate gate is deliberately
-   * conservative and would otherwise reject requests that fit fine.
-   */
   forceDirectSinglePass?: boolean | undefined;
 }
 
@@ -75,24 +47,11 @@ export interface CompactResult {
   strategy?: CompactionStrategy | undefined;
 }
 
-/** Default keepRecent for mechanical compact; LLM auto path uses 2 via runner. */
 export const DEFAULT_KEEP_RECENT = 2;
 
-/**
- * Content prefixes that mark a `role:"system"` message as compacted session
- * memory (vs. the main system prompt or transient injected guidance). Exported
- * so history-persistence can KEEP this memory when it drops other system
- * messages — otherwise a resumed session that compacted mid-run would lose all
- * summarized context.
- */
 export const COMPACTION_MEMORY_PREFIX =
   "Session memory from compacted earlier turns:";
 
-/**
- * Plan-mode research handoff memory (pre-implement compact). Distinct so the
- * agent does not treat plan-mode gather-only history as permanent gates.
- * Explicitly ties this context to the plan/tasks the implementer is seeing.
- */
 const LEGACY_PLAN_IMPLEMENT_MEMORY_PREFIX =
   "Session memory from PLAN MODE research that was used to build the comprehensive detailed plan and tasks you are seeing now (handoff to agent implement — gather-only phase is over; execute approved tasks):";
 
@@ -112,7 +71,6 @@ export function isCompactionMemoryMessage(message: ChatMessage): boolean {
   );
 }
 
-/** Prefix used when writing a compacted memory system message. */
 export function compactionMemoryPrefixForPurpose(
   purpose?: "default" | "plan-implement" | undefined,
 ): string {
@@ -128,14 +86,6 @@ export interface CompactionSummaryStage {
   readonly sourceMessages?: readonly ChatMessage[] | undefined;
 }
 
-/**
- * Compact older turns into a model-written memory while retaining recent
- * messages verbatim. The model summary is the ONLY compaction path: if the
- * model fails to produce a summary we DO NOT fall back to a mechanical dump
- * of the transcript (that historically produced an enormous, low-quality
- * "memory" of tens of thousands of lines). Instead we throw, so the caller
- * can report the failure and the original messages stay untouched.
- */
 export async function compactMessagesWithSummary(
   messages: ChatMessage[],
   summarize: (
@@ -159,8 +109,6 @@ export async function compactMessagesWithSummary(
   tailStart = expandKeepStartForToolPairs(messages, tailStart);
   let older = messages.slice(start, tailStart);
 
-  // If forced and the older slice would be empty, try keeping fewer recent
-  // messages (minimum 1) so we have something to compact (e.g. the first user prompt).
   if (older.length === 0 && isForced && messages.length >= start + 2) {
     keepRecent = 1;
     tailStart = messages.length - 1;
@@ -169,7 +117,6 @@ export async function compactMessagesWithSummary(
   }
 
   if (older.length === 0 && !sessionTranscript?.trim()) {
-    // Genuinely nothing to compact yet — return a no-op result.
     return {
       messages: [...messages],
       before,
@@ -191,10 +138,6 @@ export async function compactMessagesWithSummary(
     content.includes("\nACTIVE PLAN") ||
     content.includes("SESSION STATE / WORKING MEMORY");
 
-  // Stale ACTIVE PLAN / SESSION STATE / SCOPE snapshots are re-injected fresh
-  // after compaction and their current form is captured in durableState below.
-  // Feeding old copies into the summarizer only bloats input and invites the
-  // model to restate the plan — drop them from the transcript.
   const visual = sessionTranscript?.trim()
     ? redactSecrets(sessionTranscript.trim())
     : "";
@@ -236,7 +179,6 @@ export async function compactMessagesWithSummary(
         !isReinjectedSystem(m.content),
     )
     .map((m) => {
-      // Large system prompts: extract only durable subsections when present.
       if (m.content.length > 4_000) {
         const chunks: string[] = [];
         for (const marker of [
@@ -499,9 +441,6 @@ export async function compactMessagesWithSummary(
     ? { role: "system", content: options.durableEnvelope.trim() }
     : undefined;
 
-  // Prefer ~16–20k: start with a generous lean tail, then progressively
-  // soft-trim oversized dumps only while still over the soft upper band.
-  // Never drop messages or tool pairs. If still high after last tier, accept.
   let compacted = buildLeanCompact(
     compactHead,
     memoryMsg,
@@ -522,7 +461,6 @@ export async function compactMessagesWithSummary(
     );
   }
 
-  // Structural safety only — never reject because afterTokens > soft band.
   if (hasOrphanToolMessages(compacted)) {
     throw new Error(
       "compaction failed: would produce orphan tool messages — keeping full history",
@@ -575,11 +513,10 @@ function isStaleDurableSystem(content: string): boolean {
   );
 }
 
-/** Soft head+tail prefer — only when a single message is huge waste. */
 function preferTrimContent(text: string, preferMax: number): string {
   if (text.length <= preferMax) return text;
   const half = Math.floor((preferMax - 48) / 2);
-  if (half < 120) return text; // don't mangle medium messages
+  if (half < 120) return text;
   return `${text.slice(0, half)}\n…(trimmed oversized dump in compact tail; full may be on disk)…\n${text.slice(-half)}`;
 }
 
@@ -589,11 +526,9 @@ function leanTailMessages(
 ): ChatMessage[] {
   return tail
     .filter((msg) => {
-      // Fresh plan/session are re-injected after compact — drop stale copies.
       if (msg.role === "system" && isStaleDurableSystem(msg.content)) {
         return false;
       }
-      // Drop prior compaction memory from the tail (new memory is the prefix).
       if (isCompactionMemoryMessage(msg)) return false;
       return true;
     })

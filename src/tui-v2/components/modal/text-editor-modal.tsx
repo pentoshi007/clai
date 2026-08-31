@@ -1,10 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Multiline text editor overlay (long structured input such as MCP server
- * JSON). Uses the native textarea so the caret, arrow navigation, selection,
- * word/line kills and mid-text edits behave exactly like the composer —
- * Enter inserts a newline here and Ctrl+S saves.
- */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {

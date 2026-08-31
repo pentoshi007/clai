@@ -76,13 +76,6 @@ async function* readHistoryJsonlLines(
 ): AsyncGenerator<Buffer, void, void> {
   const handle = await open(path, "r");
   const chunk = Buffer.allocUnsafe(HISTORY_FILTER_CHUNK_BYTES);
-  // Accumulate un-terminated fragments as a list of buffers rather than
-  // repeatedly concatenating into a growing `carry`. A single JSONL record
-  // (a large transcript/messages blob) can span many chunks; concatenating
-  // on every chunk read copied the whole accumulated line again each time,
-  // making the reader O(line length squared) for one oversized record. Only
-  // materializing the line once — when its terminating newline is finally
-  // seen — keeps this linear in total bytes read.
   let carryChunks: Buffer[] = [];
   let carryLen = 0;
   try {
@@ -227,8 +220,6 @@ async function removeSessionFromActiveHistory(
     );
   }
   if (!entries.some((entry) => entry.id === sessionId)) return false;
-  // The index already proved the id is present, so skip the redundant
-  // whole-file existence pre-scan and go straight to the rewrite pass.
   const removed = await removeSessionFromHistoryFile(path, sessionId, {
     knownToExist: true,
   });

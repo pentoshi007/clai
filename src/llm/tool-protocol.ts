@@ -14,18 +14,12 @@ export type ToolDialect = "openai" | "anthropic" | "gemini" | "ollama" | "none";
 
 export type ToolCallingMode = "auto" | "native" | "text";
 
-/** Max argument JSON size while streaming (~32 MB). */
 export const MAX_TOOL_ARG_BYTES = 32 * 1024 * 1024;
 
-/** Primary wire form: dots → underscores, keep camelCase (fs.writeMany → fs_writeMany). */
 export function toWireName(canonical: string): string {
   return canonical.replace(/\./g, "_");
 }
 
-/**
- * Full snake_case wire form models sometimes emit
- * (fs.writeMany → fs_write_many). Used as a reverse alias only.
- */
 export function toSnakeWireName(canonical: string): string {
   return canonical
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -33,10 +27,6 @@ export function toSnakeWireName(canonical: string): string {
     .toLowerCase();
 }
 
-/**
- * Reverse wire → canonical for known tools. Unknown wires return undefined
- * so the runner can surface a clear error.
- */
 const wireToCanonical = new Map<string, string>();
 
 export function registeredCanonicalForWire(wire: string): string | undefined {
@@ -56,7 +46,6 @@ export function registerWireName(canonical: string, wire?: string): void {
     wireToCanonical.set(canonical, canonical);
 }
 
-/** Register primary wire + snake_case alias when they differ. */
 export function registerWireNamesFor(canonical: string): string {
   const wire = toWireName(canonical);
   registerWireName(canonical, wire);
@@ -67,22 +56,14 @@ export function registerWireNamesFor(canonical: string): string {
   return wire;
 }
 
-/**
- * Strip model channel / commentary / XML junk from tool names
- * (e.g. `fs.write<|channel|>commentary` → `fs.write`).
- */
 export function sanitizeToolName(raw: string): string {
   let n = raw.trim();
   if (!n) return n;
-  // GPT-OSS / channel style: <|channel|>, <|tool_call_begin|>, …
   n = n.replace(/<\|[^|]*\|>/g, "");
-  // XML-ish tags
   n = n.replace(/<\/?[A-Za-z][^>]*>/g, "");
   n = n.replace(/^(?:functions\.|tools\.|tool\.)/i, "");
   n = n.replace(/:\d+$/, "");
-  // Drop trailing non-name junk after a clean dotted/underscored stem
   n = n.replace(/[^A-Za-z0-9._/-]+.*$/, "");
-  // Role words models glue after tags (fs.writecommentary)
   n = n.replace(
     /(?:commentary|analysis|channel|tool_call|toolcall|final)$/i,
     "",
@@ -92,14 +73,9 @@ export function sanitizeToolName(raw: string): string {
   return n;
 }
 
-/**
- * Longest registered wire/canonical prefix match for polluted names.
- * e.g. `fs_write_channel_commentary` → `fs_write` if registered.
- */
 function longestRegisteredPrefix(cleaned: string): string | undefined {
   if (!cleaned) return undefined;
   if (wireToCanonical.has(cleaned)) return cleaned;
-  // Try stripping trailing segments after _ or .
   let best: string | undefined;
   for (const [wire] of wireToCanonical) {
     if (
@@ -157,12 +133,9 @@ export function fromWireName(wire: string): string | undefined {
   if (!cleaned) return undefined;
   const registered = resolveRegistered(cleaned);
   if (registered) return registered;
-  // Polluted name that still starts with a registered wire form
   const prefix = longestRegisteredPrefix(cleaned);
   if (prefix) return wireToCanonical.get(prefix);
-  // Also try original if sanitize changed nothing useful
   if (wireToCanonical.has(wire)) return wireToCanonical.get(wire);
-  // Fallback: underscore → first-dot heuristic for unregistered names.
   if (cleaned.includes(".")) return cleaned;
   const idx = cleaned.indexOf("_");
   if (idx <= 0) return undefined;
@@ -186,7 +159,6 @@ const TOOLS_PARAMETER_NAMES = new Set([
   "functioncall",
 ]);
 
-/** Parameter name a gateway blamed, when it says so explicitly. */
 function offendingParameterName(hay: string): string | undefined {
   const patterns = [
     /unrecognized (?:request )?(?:argument|parameter|field)(?:s)? supplied:?\s*['"`]?([a-z0-9_.]+)/,
@@ -213,13 +185,9 @@ export function isToolsUnsupportedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const hay = `${message}\n${body}`.toLowerCase();
 
-  // When the gateway names the offending parameter, only a tools parameter may
-  // downgrade the protocol. Rejecting e.g. `parallel_tool_calls` or `reasoning`
-  // says nothing about native tool support.
   const offending = offendingParameterName(hay);
   if (offending && !TOOLS_PARAMETER_NAMES.has(offending)) return false;
 
-  // Explicit capability rejections (any HTTP status).
   if (
     /tools?\s+(is|are)\s+not\s+supported|does not support tools|function calling is not enabled|tool[_ ]?use is not supported|tools? not supported|tool calling is not supported|does not support function|function[_ ]?call(ing)? (is )?(not supported|disabled|unavailable)|unknown (request )?parameter ['"]?tools?|['"]tools?['"] is not (a )?valid|tool_choice.*(not supported|unknown|disabled)/i.test(
       hay,
@@ -228,8 +196,6 @@ export function isToolsUnsupportedError(error: unknown): boolean {
     return true;
   }
 
-  // 400 bodies that mention tools — only when they clearly mean unsupported.
-  // Do NOT treat schema/arg validation as unsupported (no bare /tool/i).
   if (
     status === 400 &&
     /\btools?\b|\btool_choice\b|\bfunction[_ ]?call/i.test(hay)
@@ -288,7 +254,6 @@ export function mapToolChoiceToGemini(choice: ToolChoice | undefined): {
   return { mode: "AUTO" };
 }
 
-/** Session-sticky models forced to text protocol after tools-unsupported. */
 const textOnlyModels = new Set<string>();
 
 export function textOnlyKey(provider: ProviderId, model: string): string {
@@ -317,12 +282,10 @@ export interface AccumulateToolCallDeltaResult {
   index: number;
   id?: string | undefined;
   name?: string | undefined;
-  /** True when this delta first set a non-empty function name. */
   nameBecameKnown: boolean;
   argumentsBytes: number;
 }
 
-/** Accumulate OpenAI-style streaming tool_calls deltas by index. */
 export function accumulateOpenAiToolCallDelta(
   state: Map<number, OpenAiToolCallAccumulator>,
   entry: {
@@ -343,25 +306,18 @@ export function accumulateOpenAiToolCallDelta(
   if (entry.function?.name) {
     const nextName =
       sanitizeToolName(entry.function.name) || entry.function.name;
-    // X2: if this index already has a different clean name, do not clobber
-    // args with a second tool's payload — keep the first name.
     if (
       acc.name &&
       nextName &&
       acc.name !== nextName &&
       sanitizeToolName(acc.name) !== sanitizeToolName(nextName)
     ) {
-      // Ignore subsequent name flips on the same index (stream corruption).
     } else {
       acc.name = nextName;
     }
   }
   if (typeof entry.function?.arguments === "string") {
     const fragment = entry.function.arguments;
-    // Some OpenAI-compatible gateways (observed on Bynara/Grok) resend the
-    // FULL arguments object in every delta instead of an incremental fragment.
-    // Blind concatenation produced `{"path":"x"}{"path":"x"}`, which no longer
-    // parses, so the tool never ran and the model retried forever.
     const snapshotRepeat = fragment.length > 0 && acc.arguments === fragment;
     if (!snapshotRepeat) {
       acc.arguments += fragment;

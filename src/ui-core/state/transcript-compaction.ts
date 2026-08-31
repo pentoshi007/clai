@@ -1,13 +1,3 @@
-/**
- * Classic-parity source material for /compact (and auto-compact).
- *
- * Builds a structured plain-text record of the visual transcript so the
- * summarizer sees user prompts, tools (with outputs), assistant answers, and
- * prior compacted memory — not a sparse semantic export that drops tool bodies.
- *
- * When a prior `compacted` card exists, only that card and everything after it
- * are included (the memory already covers earlier turns).
- */
 
 import type { ToolCallId } from "../../app/events/app-event.js";
 import {
@@ -22,11 +12,6 @@ function compactField(value: string): string {
 
 export type ToolOutputLookup = (toolCallId: ToolCallId) => string;
 
-/**
- * Serialize the live v2 transcript for the compaction summarizer.
- * Prefer this over raw semantic export so tool outputs and prior memory land
- * in the summary prompt.
- */
 export function serializeTranscriptForCompaction(
   state: TranscriptState,
   toolOutput?: ToolOutputLookup,
@@ -54,7 +39,6 @@ function serializeItem(
         ? `ASSISTANT RESPONSE:\n${compactField(item.text)}`
         : undefined;
     case "thinking":
-      // Skip reasoning — inflates the summary without continuation value.
       return undefined;
     case "tool": {
       const output = toolOutput?.(item.toolCallId) ?? "";
@@ -70,7 +54,6 @@ function serializeItem(
         .join("\n");
     }
     case "notice":
-      // Skip ephemeral UI notices (session resumed, etc.) — not model context.
       return undefined;
     case "compacted":
       return `COMPACTED CONTEXT:\n${compactField(item.summary)}`;
@@ -83,10 +66,6 @@ function serializeItem(
   }
 }
 
-/**
- * Merge visual session material with older model-history turns so /compact
- * after /history (+ optional new prompts) always sees the full picture.
- */
 export function mergeCompactionSourceMaterial(
   sessionTranscript: string | undefined,
   olderModelTurns: string,

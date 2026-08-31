@@ -31,7 +31,6 @@ function nextUniqueToolCallId(index: number, seen: Set<string>): string {
   return id;
 }
 
-/** All non-empty native tool-call ids already reserved by a transcript. */
 export function toolCallIdsInHistory(
   messages: readonly ChatMessage[],
 ): Set<string> {
@@ -46,12 +45,6 @@ export function toolCallIdsInHistory(
   return ids;
 }
 
-/**
- * Ensure every tool call has a unique non-empty id before history append.
- * `reservedIds` closes the provider-reuse case: some gateways reuse ids across
- * separate assistant turns even though the wire protocol requires transcript-
- * wide uniqueness.
- */
 export function ensureUniqueToolCallIds(
   calls: readonly NativeToolCall[],
   reservedIds: ReadonlySet<string> = new Set<string>(),
@@ -69,11 +62,6 @@ export function ensureUniqueToolCallIds(
   });
 }
 
-/**
- * Chronologically rebind later duplicate/empty call ids and only the tool rows
- * belonging to that assistant group. This makes already-persisted poisoned
- * histories resumable without dropping successful tool bodies.
- */
 function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
   const reserved = new Set<string>();
   let bindings = new Map<string, Array<{ id: string; name: string }>>();
@@ -134,10 +122,6 @@ function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
   return repairs;
 }
 
-/**
- * History copy of toolCalls: slim large write payloads so RAM and API
- * re-sends do not retain full file bodies (tools already ran from live args).
- */
 export function slimNativeToolCallsForHistory(
   toolCalls: readonly NativeToolCall[],
 ): NativeToolCall[] {
@@ -154,16 +138,10 @@ export function slimNativeToolCallsForHistory(
   });
 }
 
-/** Append assistant turn that requested tools (must precede tool results). */
 export function appendAssistantWithTools(
   messages: ChatMessage[],
   text: string,
   toolCalls: NativeToolCall[],
-  /**
-   * Signed reasoning that must be replayed with this turn. Anthropic
-   * rejects a tool_use turn whose thinking block is missing once extended
-   * thinking is on; other dialects ignore the field.
-   */
   reasoningBlock?: ReasoningBlock | undefined,
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined,
 ): void {
@@ -192,7 +170,6 @@ export function appendAssistantWithTools(
   });
 }
 
-/** Append a single tool result linked by tool_call_id. */
 export function appendToolResult(
   messages: ChatMessage[],
   toolCallId: string,
@@ -209,10 +186,6 @@ export function appendToolResult(
   });
 }
 
-/**
- * Whether the message list would orphan a tool result (result without a
- * preceding assistant toolCalls entry that owns the id).
- */
 export function hasOrphanToolMessages(messages: ChatMessage[]): boolean {
   const openIds = new Set<string>();
   for (const msg of messages) {
@@ -227,7 +200,6 @@ export function hasOrphanToolMessages(messages: ChatMessage[]): boolean {
   return false;
 }
 
-/** Ids on the last assistant toolCalls message that lack a following tool result. */
 export function missingToolResultIds(messages: ChatMessage[]): string[] {
   let lastAssistant: ChatMessage | undefined;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -240,21 +212,15 @@ export function missingToolResultIds(messages: ChatMessage[]): string[] {
   if (!lastAssistant?.toolCalls?.length) return [];
 
   const needed = new Set(lastAssistant.toolCalls.map((tc) => tc.id));
-  // Only scan results after that assistant message.
   const start = messages.lastIndexOf(lastAssistant);
   for (let i = start + 1; i < messages.length; i += 1) {
     const m = messages[i]!;
     if (m.role === "tool" && m.toolCallId) needed.delete(m.toolCallId);
-    // Stop at next non-tool (next turn).
     if (m.role !== "tool") break;
   }
   return [...needed];
 }
 
-/**
- * Append synthetic failed tool results for any assistant toolCalls ids that
- * still lack a role:tool reply (deferred, cancelled, sliced, abort).
- */
 export function fillMissingToolResults(
   messages: ChatMessage[],
   toolCalls: NativeToolCall[],
@@ -262,7 +228,6 @@ export function fillMissingToolResults(
 ): number {
   if (!toolCalls.length) return 0;
   const have = new Set<string>();
-  // Collect existing tool results after the last matching assistant.
   let start = -1;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
@@ -297,10 +262,6 @@ export function fillMissingToolResults(
   return filled;
 }
 
-/**
- * True when every id on every assistant toolCalls has a matching tool result
- * later in the list (no missing pairs). Used by tests and diagnostics.
- */
 export function allToolCallsHaveResults(messages: ChatMessage[]): boolean {
   const pending = new Set<string>();
   for (const msg of messages) {
@@ -314,10 +275,6 @@ export function allToolCallsHaveResults(messages: ChatMessage[]): boolean {
   return pending.size === 0;
 }
 
-/**
- * When compacting, never leave role:tool without its assistant toolCalls.
- * Expand a keep-window start so tool pairs stay intact.
- */
 export function expandKeepStartForToolPairs(
   messages: ChatMessage[],
   keepStart: number,
@@ -326,15 +283,12 @@ export function expandKeepStartForToolPairs(
   while (start > 0 && messages[start]?.role === "tool") {
     start -= 1;
   }
-  // If we landed mid-assistant-with-tools, include that assistant.
   if (
     start > 0 &&
     messages[start]?.role === "assistant" &&
     messages[start]!.toolCalls?.length
   ) {
-    // already includes assistant
   } else if (start > 0) {
-    // If first kept message is tool, walk back to assistant
     while (
       start > 0 &&
       messages[start - 1]?.role !== "system" &&
@@ -356,11 +310,6 @@ export function expandKeepStartForToolPairs(
   return Math.max(0, start);
 }
 
-/**
- * Validate native assistant/tool groups immediately before provider dispatch.
- * Every tool result must belong to the currently open assistant group, ids are
- * unique, and no non-tool message may begin until the whole group is closed.
- */
 export function validateToolProtocol(messages: readonly ChatMessage[]): string[] {
   const issues: string[] = [];
   const seenIds = new Set<string>();
@@ -404,21 +353,8 @@ export function assertValidToolProtocol(messages: readonly ChatMessage[]): void 
   if (issues.length > 0) throw new Error(`invalid native tool protocol: ${issues.join("; ")}`);
 }
 
-/**
- * Marker prefix for history-repair tool bodies. Detected by
- * {@link isProtocolPlaceholderOutput} so governors do not treat these as live work.
- * Keep stable; change wording below freely.
- */
 export const PROTOCOL_PLACEHOLDER_MARKER = "[context-note]";
 
-/**
- * Neutral pairing placeholder when a tool result is missing from history.
- *
- * Must stay boring: no "synthetic", "closure", "interrupted", "after resume",
- * "exit=130", "history-repair", or "tools are broken" — those phrases make
- * models invent "platform artifact" stories and re-run tools that already
- * succeeded in the live transcript.
- */
 export function formatProtocolPlaceholder(name: string, id: string): string {
   return (
     `${PROTOCOL_PLACEHOLDER_MARKER} No stored body for ${name} (${id}) in earlier context. ` +
@@ -427,17 +363,6 @@ export function formatProtocolPlaceholder(name: string, id: string): string {
   );
 }
 
-/**
- * Heal broken assistant/tool pairing so a resume ("continue") never dies on
- * `invalid native tool protocol` after a mid-turn abort, partial stream, or
- * corrupted history reload.
- *
- * - Missing tool results for open assistant toolCalls → quiet ok placeholders
- * - Orphan tool results (no open call id) → dropped
- * - Non-tool message while results pending → close the group first
- *
- * Mutates `messages` in place when repairs are needed. Returns repair count.
- */
 export function repairToolProtocol(messages: ChatMessage[]): number {
   if (messages.length === 0) return 0;
   const idRepairs = rewriteConflictingToolCallIds(messages);
@@ -445,12 +370,7 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
 
   const out: ChatMessage[] = [];
   let repairs = idRepairs;
-  /** Open tool call ids → name (best-effort). */
   let pending = new Map<string, string | undefined>();
-  /**
-   * Benign system rows (SESSION STATE) that landed mid tool-group. Park them
-   * and re-append after the group closes so real tool bodies are not dropped.
-   */
   let parkedBenignSystem: ChatMessage[] = [];
 
   const flushParkedBenign = (): void => {
@@ -496,7 +416,6 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
     if (message.role === "tool") {
       const id = message.toolCallId ?? "";
       if (!id || !pending.has(id)) {
-        // Orphan result — drop so providers don't reject the history.
         repairs += 1;
         continue;
       }
@@ -506,8 +425,6 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
       continue;
     }
 
-    // SESSION STATE (and similar) must never close an open tool group —
-    // that path replaced live tool bodies with "No stored body" placeholders.
     if (
       pending.size > 0 &&
       message.role === "system" &&
@@ -515,11 +432,10 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
       isBenignTrailingSystemBlock(message.content)
     ) {
       parkedBenignSystem.push(message);
-      repairs += 1; // reordered relative to the broken history
+      repairs += 1;
       continue;
     }
 
-    // user / system / plain assistant — must not interrupt an open tool group.
     if (pending.size > 0) {
       flushPending(
         "Interrupted — conversation continued before tool results arrived (repaired).",
@@ -537,16 +453,13 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
   }
 
   if (repairs === 0 && out.length === messages.length) {
-    // Structure same length but still invalid (e.g. duplicate ids) — fall through rebuild.
     if (validateToolProtocol(out).length === 0) return 0;
   }
 
   messages.length = 0;
   messages.push(...out);
-  // Second pass: if still broken (duplicate ids), strip toolCalls from broken assistants.
   const still = validateToolProtocol(messages);
   if (still.length > 0) {
-    // Last resort: drop toolCalls arrays that never got clean results, keep text.
     const cleaned: ChatMessage[] = [];
     let open: Set<string> | undefined;
     for (const m of messages) {
@@ -567,8 +480,6 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
         continue;
       }
       if (open && open.size > 0) {
-        // Convert incomplete assistant to plain text by clearing remaining opens via flush already done;
-        // if still open, strip the assistant's toolCalls and drop dangling.
         const lastAsst = [...cleaned].reverse().find((x) => x.role === "assistant");
         if (lastAsst && lastAsst.toolCalls?.length) {
           const satisfied = new Set(

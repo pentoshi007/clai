@@ -1,8 +1,3 @@
-/**
- * Human-readable keyboard shortcut reference for /shortcuts.
- * Emits markdown so the pager can render headings, tables, and code chips.
- * Built from defaultKeymap so the list cannot drift from real bindings.
- */
 
 import type { ActionContext, ActionId } from "./action-id.js";
 import { defaultKeymap, type KeyBinding } from "./keymap.js";
@@ -116,7 +111,6 @@ const ACTION_LABELS: Partial<Record<ActionId, string>> = {
   "jobs.close": "Close jobs panel",
 };
 
-/** Pretty-print a normalized chord for humans. */
 export function humanizeChord(chord: string): string {
   return chord
     .split("+")
@@ -206,9 +200,6 @@ const COMPOSER_TEXTAREA_NOTES: readonly { chord: string; label: string }[] = [
   },
 ];
 
-/**
- * Markdown document for the keyboard shortcuts pager.
- */
 export function formatShortcutsReference(
   bindings: readonly KeyBinding[] = defaultKeymap,
 ): string {

@@ -1,10 +1,3 @@
-/**
- * Resume helpers: classic/history TranscriptItem + ChatMessage → v2 store shape.
- *
- * History records may carry a full TUI transcript (classic clai) or only the
- * model messages array (older / partial saves). We hydrate both so /history
- * restores prompts, tools, and assistant text — not just a notice.
- */
 
 import { type ChatMessage } from "../../types.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../../app/ports/transcript-item.js";
@@ -17,7 +10,6 @@ export { hydrateFromMessages };
 export { hydrateFromClassicTranscript };
 export type { HydrateResult } from "./hydrate/classic-transcript.js";
 
-/** Count tool rows that still carry structured file diffs. */
 function countFileChangeTools(state: TranscriptState): number {
   let n = 0;
   for (const id of state.order) {
@@ -33,10 +25,6 @@ function countFileChangeTools(state: TranscriptState): number {
   return n;
 }
 
-/**
- * True when the visual transcript is missing the bulk of tool work that still
- * exists in model messages (common after abort-before-save of the UI snapshot).
- */
 export function transcriptLooksIncomplete(
   transcriptLen: number,
   messages: readonly ChatMessage[],
@@ -48,19 +36,9 @@ export function transcriptLooksIncomplete(
   );
   const toolWork = Math.max(toolMsgCount, toolCallCount);
   if (toolWork === 0) return false;
-  // Transcript has fewer tool rows than tool results in messages.
-  // Callers may also treat a very short transcript vs many messages as incomplete.
   return transcriptLen < toolWork + 1;
 }
 
-/**
- * Prefer the richer of classic visual transcript vs message-derived hydrate
- * so /history does not drop tools when only one representation survived.
- *
- * Classic is enriched with `fileChanges` rebuilt from message tool args when
- * a prior message-only re-save wiped the structured diffs (common after
- * resume).
- */
 
 export interface BoundedSessionVisualInput {
   readonly transcript: ClassicTranscriptItem[] | undefined;
@@ -181,8 +159,6 @@ export function boundSessionVisualInput(
   };
 }
 
-// Prefer the richer bounded representation. Classic wins ties to preserve
-// thinking and structured file diffs.
 export function hydrateSessionVisual(
   transcript: readonly ClassicTranscriptItem[] | undefined,
   messages: readonly ChatMessage[],
@@ -204,13 +180,10 @@ export function hydrateSessionVisual(
   const classicFc = countFileChangeTools(fromClassic.state);
   const messageFc = countFileChangeTools(fromMessages.state);
 
-  // Prefer the side that still has structured file diffs for write/edit cards.
   if (classicFc > messageFc) return fromClassic;
   if (messageFc > classicFc && messageToolCount >= classicToolCount) {
     return fromMessages;
   }
-  // Prefer the snapshot with more tool cards (real work); break ties with
-  // more total items, then classic (preserves thinking/notices + diffs).
   if (messageToolCount > classicToolCount + 2) return fromMessages;
   if (fromMessages.state.order.length > fromClassic.state.order.length * 1.5) {
     return fromMessages;
@@ -218,10 +191,6 @@ export function hydrateSessionVisual(
   return fromClassic;
 }
 
-/**
- * Snapshot the live v2 transcript into the classic shape for history.db so
- * /history can restore tools + prompts next time (parity with classic clai).
- */
 export function serializeForHistory(
   state: TranscriptState,
   toolOutput: (toolCallId: ToolCallId) => string,
@@ -283,9 +252,6 @@ export function serializeForHistory(
         break;
       }
       case "notice":
-        // Do not persist INFO/WARN banners to history.db — they are not
-        // conversation, must not enter model context, and must not count
-        // toward "N items" on resume.
         break;
       case "turn-summary":
         out.push({
@@ -318,7 +284,6 @@ export function serializeForHistory(
   return out;
 }
 
-/** Strip the model framing prefix for display in the compacted card. */
 export function displayCompactSummary(summary: string): string {
   const prefixes = [
     "Session memory from compacted earlier turns:\n\n",

@@ -24,7 +24,6 @@ export function handleSearch(services: AppServices, invocation: CommandInvocatio
   if (args) {
     const parts = args.split(/\s+/);
     const providerArg = parts[0]!;
-    // `/search exa <type>` sets Exa's retrieval strategy directly.
     if (providerArg.toLowerCase() === "exa" && parts.length > 1) {
       const type = asExaSearchType(parts.slice(1).join(" "));
       if (!type) {
@@ -79,13 +78,9 @@ async function activateSearchProvider(services: AppServices, next: SearchProvide
   setActiveSearchProvider(next);
   services.overlay.close();
   services.session.notice("info", `search provider → ${next}`);
-  // Exa is the only provider with a tunable retrieval strategy — offer the
-  // type picker right after activation so users land on the right latency
-  // and depth without a second command.
   if (next === "exa") openExaSearchTypePicker(services);
 }
 
-/** Open the picker that customises Exa's retrieval strategy (`type`). */
 function openExaSearchTypePicker(services: AppServices): void {
   const current = getExaSearchType();
   const options: PickerOption[] = exaSearchTypes.map((type) => ({
@@ -101,11 +96,6 @@ function openExaSearchTypePicker(services: AppServices): void {
   });
 }
 
-/**
- * Persist the chosen Exa search type. When Exa is not already the active
- * search provider, selecting a type also activates Exa so the setting takes
- * effect on the next search.
- */
 async function activateExaWithType(
   services: AppServices,
   type: ExaSearchType,

@@ -20,7 +20,6 @@ import { throwSessionError, type SessionOperation } from "./types.js";
 export const REDACTION_MARKER = "[redacted]";
 const MARKER_BYTES = new Uint8Array(Buffer.from(REDACTION_MARKER, "utf8"));
 
-/** Bytes of an incomplete trailing multi-byte UTF-8 sequence, else 0. */
 export function trailingIncompleteUtf8Bytes(bytes: Uint8Array): number {
   const len = bytes.length;
   for (let back = 1; back <= 3 && back <= len; back += 1) {
@@ -40,7 +39,6 @@ export interface Utf8Run {
   readonly bytes: Uint8Array;
 }
 
-/** Split a byte range into maximal valid-UTF-8 runs and invalid byte runs. */
 export function splitUtf8Runs(bytes: Uint8Array): Utf8Run[] {
   const runs: Utf8Run[] = [];
   let index = 0;
@@ -76,8 +74,6 @@ function utf8SequenceWidth(bytes: Uint8Array, index: number): number {
   for (let offset = 1; offset < width; offset += 1) {
     if ((bytes[index + offset]! & 0xc0) !== 0x80) return 0;
   }
-  // Reject overlong encodings, surrogates, and out-of-range code points so a
-  // "valid" run always round-trips through UTF-8 without substitution.
   const second = bytes[index + 1]!;
   if (width === 2 && byte < 0xc2) return 0;
   if (width === 3 && byte === 0xe0 && second < 0xa0) return 0;
@@ -123,11 +119,6 @@ export class StreamingSecretRedactor {
     return this.redactedAny;
   }
 
-  /**
-   * Register an exact sensitive value. Values longer than the configured overlap
-   * bound are rejected before delivery because they could not be matched across
-   * chunk splits without unbounded retention.
-   */
   registerExactSecret(value: string, operation: SessionOperation = "send"): void {
     if (value.length === 0) return;
     const bytes = new Uint8Array(Buffer.from(value, "utf8"));
@@ -144,7 +135,6 @@ export class StreamingSecretRedactor {
     this.secrets.push(bytes);
   }
 
-  /** Longest tail of `bytes` that is a proper prefix of any registered secret. */
   private viablePrefixTail(bytes: Uint8Array): number {
     let longest = 0;
     for (const secret of this.secrets) {
@@ -160,10 +150,6 @@ export class StreamingSecretRedactor {
     return Math.min(longest, this.overlapBytes);
   }
 
-  /**
-   * Tail that is either a partial secret-pattern prefix or an in-progress token
-   * that a pattern could still consume.
-   */
   private viablePatternTail(bytes: Uint8Array): number {
     const window = bytes.subarray(Math.max(0, bytes.length - this.overlapBytes));
     const text = Buffer.from(window).toString("latin1");
@@ -183,7 +169,6 @@ export class StreamingSecretRedactor {
     return Math.min(longest, this.overlapBytes);
   }
 
-  /** Feed raw bytes; returns the safe bytes now eligible for cursor assignment. */
   push(raw: Uint8Array): Uint8Array {
     if (this.closed) throw new Error("Cannot push into a closed redactor");
     this.pending = concat(this.pending, raw);
@@ -201,7 +186,6 @@ export class StreamingSecretRedactor {
     return this.transform(region);
   }
 
-  /** Flush retained overlap through both lanes. Idempotent. */
   close(): Uint8Array {
     if (this.closed) return new Uint8Array(0);
     this.closed = true;
@@ -215,8 +199,6 @@ export class StreamingSecretRedactor {
     const parts: Uint8Array[] = [];
     for (const run of splitUtf8Runs(byteLane)) {
       if (!run.valid) {
-        // Binary bytes are preserved verbatim so encoded output and artifacts
-        // stay faithful; the byte lane already removed known secrets.
         parts.push(run.bytes);
         continue;
       }

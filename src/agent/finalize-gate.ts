@@ -1,7 +1,3 @@
-/**
- * Pure finalize-time gate: pick the recovery nudge that must replace a final
- * answer, or nothing when the turn may finalize. No I/O, no budget mutation.
- */
 import {
   budgetRemaining,
   looksLikeShallowPentestReport,
@@ -19,7 +15,6 @@ import {
   looksLikePlanNarration,
 } from "./tool-call-parser.js";
 
-/** Task fields the gate reads. */
 export interface FinalizeGatePlanTask {
   id: string;
   title: string;
@@ -27,14 +22,12 @@ export interface FinalizeGatePlanTask {
   responderOwned?: boolean | undefined;
 }
 
-/** Plain-data snapshot of the live plan, resolved once by the caller. */
 export interface FinalizeGatePlan {
   kind: string;
   hasVerifiedRuntime: boolean;
   tasks: readonly FinalizeGatePlanTask[];
 }
 
-/** Everything the finalize cascade reads, as data. */
 export interface FinalizeGateInput {
   cleaned: string;
   recovery: RecoveryBudgets;

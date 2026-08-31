@@ -42,12 +42,6 @@ export interface TurnControllerDeps {
   readonly mintTurnId?: (() => TurnId) | undefined;
 }
 
-/**
- * Forwards visible response deltas immediately so the transcript genuinely
- * streams. The transcript reducer already combines adjacent deltas into one
- * row; buffering them here made providers such as Gemini appear blank until
- * the request had finished.
- */
 class DeltaCoalescer {
   private pendingToolOutput:
     | {

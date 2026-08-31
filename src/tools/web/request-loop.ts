@@ -7,16 +7,11 @@ export { timeoutError } from "./issue-hop.js";
 export { networkError };
 export type { DnsLookupFn, HttpRequestFn, HttpsRequestFn, NormalisedArgs } from "./issue-hop.js";
 
-/**
- * Best-effort extraction of the scheme prefix for a URL string that may
- * not parse cleanly. Used only inside `blocked-scheme` error messages.
- */
 export function schemeOf(raw: string): string {
   const m = raw.match(/^([a-z][a-z0-9+.\-]*):/i);
   return m && typeof m[1] === "string" ? `${m[1]}:` : raw;
 }
 
-/** Result of {@link runRequestLoop}. */
 type RequestLoopResult =
   | {
       ok: true;
@@ -56,14 +51,7 @@ export async function runRequestLoop(
 ): Promise<RequestLoopResult> {
   let currentUrl = ctx.args.url;
 
-  // We allow up to (1 initial + MAX_REDIRECT_HOPS redirects) requests:
-  // hop indices 0..MAX_REDIRECT_HOPS inclusive. A redirect produced on
-  // the final allowed iteration triggers the `redirect-limit` error
-  // because following it would exceed the cap (Requirement 2.14,
-  // Property 6).
   for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-    // Re-validate at every hop. Requirement 2.11 + design "Pipeline
-    // steps in detail" §8: each hop independently runs validation +
     // SSRF + DNS.
     if (!isAllowedScheme(currentUrl)) {
       return {
@@ -96,7 +84,6 @@ export async function runRequestLoop(
     ctx.capture.setHopContext(hostname);
 
     // SSRF pre-check on the hostname literal so e.g. https://127.0.0.1
-    // fails before any DNS work is done.
     const hostClass = classifyHost(hostname);
     if (hostClass !== null) {
       return {
@@ -110,11 +97,7 @@ export async function runRequestLoop(
       };
     }
 
-    // DNS resolve + pin IP for the actual TCP connect. Requirement 2.8
     // / 2.11: the SSRF check is run against the resolved IP, and the
-    // socket is then connected to that exact IP via a custom `lookup`
-    // callback so DNS rebinding can not swap the address out from
-    // under us between resolve and connect.
     const dnsStart = ctx.now();
     let resolvedIp: string;
     let resolvedFamily: 4 | 6;
@@ -145,7 +128,6 @@ export async function runRequestLoop(
       };
     }
 
-    // Issue the pinned-IP request and consume the response.
     const hopResult = await issueHop({
       ctx,
       currentUrl,
@@ -156,14 +138,11 @@ export async function runRequestLoop(
     });
 
     if (hopResult.kind === "redirect") {
-      // Append the *current* hop to the chain and follow.
       ctx.capture.addRedirectHop(
         currentUrl,
         hopResult.status,
         hopResult.location,
       );
-      // Resolve next URL: handle relative Locations against the
-      // *current* hop's URL.
       let nextUrl: string;
       try {
         nextUrl = new URL(hopResult.location, parsed).toString();
@@ -195,9 +174,6 @@ export async function runRequestLoop(
       continue;
     }
 
-    // Terminal hop (2xx/4xx/5xx or transport failure). Append the
-    // final hop to the redirect chain so callers see the complete
-    // path, then return.
     if (hopResult.kind === "terminal") {
       ctx.capture.addRedirectHop(currentUrl, hopResult.status);
       return {
@@ -213,7 +189,6 @@ export async function runRequestLoop(
       };
     }
 
-    // hopResult.kind === "error"
     return {
       ok: false,
       lastUrl: currentUrl,
@@ -221,8 +196,6 @@ export async function runRequestLoop(
     };
   }
 
-  // Should be unreachable — the loop body either returns or sets
-  // currentUrl and continues. A defensive fallback keeps TS happy.
   return {
     ok: false,
     lastUrl: currentUrl,

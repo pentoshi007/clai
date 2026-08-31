@@ -1,10 +1,3 @@
-/**
- * Managed-pipe transport. Used directly for `terminalMode: "pipe"` and as the
- * single fallback for `"preferred"` when PTY capability is unavailable.
- *
- * This module never imports or probes PTY code, and it does not touch the spawn
- * options used by `shell.ts` or `jobs.ts`.
- */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { augmentedPathEnv } from "../os/command.js";
@@ -56,7 +49,6 @@ class PipeTransport implements SessionTransport {
     child.stderr?.on("data", (chunk: Buffer) => this.emitOutput("stderr", chunk));
     child.stdout?.pause();
     child.stderr?.pause();
-    // A broken input pipe after the child exits is an expected race, not a crash.
     child.stdin?.on("error", () => undefined);
     child.on("exit", (code, signal) => {
       this.exited = true;
@@ -102,8 +94,6 @@ class PipeTransport implements SessionTransport {
       };
       try {
         stdin.write(Buffer.from(bytes), (error) => {
-          // The callback fires after the bytes leave our buffer. A late error
-          // cannot prove whether the child observed them, so it is `unknown`.
           if (error) settle({ status: "unknown", deliveredBytes: bytes.length, cause: error });
           else settle({ status: "delivered", deliveredBytes: bytes.length });
         });
@@ -120,8 +110,6 @@ class PipeTransport implements SessionTransport {
     }
     if (mapped.kind === "bytes") return await this.write(mapped.bytes);
     if (mapped.kind === "close-input") return await this.closeInput();
-    // Interrupt/suspend target the whole tree so a shell wrapper cannot swallow
-    // the signal while the real workload keeps running.
     const outcome = terminateProcessTree(this.pid, {
       signal: mapped.signal,
       ...(this.processGroupId !== undefined ? { processGroupId: this.processGroupId } : {}),
@@ -200,14 +188,12 @@ class PipeTransport implements SessionTransport {
       this.child.stdout?.destroy();
       this.child.stderr?.destroy();
     } catch {
-      // Streams may already be torn down by the exit path.
     }
     this.child.removeAllListeners();
     processIdentityTracker.forget(this.child.pid);
   }
 }
 
-/** Wait for the OS to confirm (or refuse) the spawn before reporting a launch. */
 function waitForSpawn(child: ChildProcess): Promise<NodeJS.ErrnoException | undefined> {
   return new Promise((resolve) => {
     const onSpawn = (): void => {

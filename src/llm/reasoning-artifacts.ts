@@ -19,19 +19,15 @@ export {
 } from "./artifacts/replay-selection.js";
 export { legacyReasoningBlockFromArtifacts };
 
-/** Input accepted by the canonical artifact factory before it is frozen. */
 export interface CreateReasoningArtifactInput {
   readonly kind: ReasoningArtifactKind;
-  /** Raw provider payload; never use this for display or telemetry. */
   readonly raw: ReasoningArtifact["raw"];
-  /** Display-only projection, intentionally separate from the raw payload. */
   readonly displaySummary?: string | undefined;
   readonly provenance: ReasoningArtifactProvenance;
   readonly replay: ReasoningArtifact["replay"];
   readonly position?: ReasoningArtifact["position"] | undefined;
 }
 
-/** Metadata needed at a serializer boundary to decide whether replay is safe. */
 export interface ReasoningArtifactReplayContext {
   readonly hasToolCalls?: boolean | undefined;
   readonly forceScope?: boolean | undefined;
@@ -63,8 +59,6 @@ function rawByteLength(raw: ReasoningArtifact["raw"]): number {
 }
 
 function estimateRawTokens(byteLength: number): number {
-  // Match the repository-wide conservative mixed text/JSON estimate without
-  // importing the agent layer into the LLM artifact model.
   return Math.ceil(byteLength / 3.3);
 }
 
@@ -78,16 +72,10 @@ function endpointHash(endpoint: string): string {
     url.hash = "";
     normalized = url.toString().replace(/\/$/, "");
   } catch {
-    // A malformed custom endpoint remains comparable by hash, but its raw
-    // value is never retained in the artifact or emitted as telemetry.
   }
   return `sha256:${createHash("sha256").update(normalized).digest("hex")}`;
 }
 
-/**
- * Builds privacy-safe route provenance. Endpoint identity is a one-way hash so
- * persisted artifacts and replay diagnostics never retain custom URL/query data.
- */
 export function createReasoningArtifactProvenance(input: {
   provider: ReasoningArtifactProvenance["provider"];
   model?: string | undefined;
@@ -104,7 +92,6 @@ export function createReasoningArtifactProvenance(input: {
   });
 }
 
-/** Creates a safe serialization target without retaining the endpoint itself. */
 export function createReasoningArtifactReplayTarget(input: {
   provider: ReasoningArtifactReplayTarget["provider"];
   model: string;
@@ -119,10 +106,6 @@ export function createReasoningArtifactReplayTarget(input: {
   });
 }
 
-/**
- * Clones and freezes raw provider state before attaching byte/token accounting.
- * The factory is the only supported way to create artifacts from provider data.
- */
 export function createReasoningArtifact(
   input: CreateReasoningArtifactInput,
 ): ReasoningArtifact {
@@ -180,7 +163,6 @@ export function reasoningArtifactText(
   return typeof text === "string" ? text : undefined;
 }
 
-/** Returns the opaque signature only for signed/thought-signature artifacts. */
 export function reasoningArtifactSignature(
   artifact: ReasoningArtifact,
 ): string | undefined {
@@ -195,7 +177,6 @@ export function reasoningArtifactSignature(
   return typeof signature === "string" ? signature : undefined;
 }
 
-/** Preserves encrypted items exactly as opaque JSON records for Meta replay. */
 export function reasoningArtifactItems(
   artifact: ReasoningArtifact,
 ): Array<Record<string, unknown>> {
@@ -226,10 +207,6 @@ function normalizeArtifact(artifact: ReasoningArtifact): ReasoningArtifact {
   });
 }
 
-/**
- * Returns canonical artifacts for a message. Legacy fields are converted only
- * when canonical data is absent, preventing duplicate replay after migration.
- */
 export function reasoningArtifactsForMessage(
   message: ChatMessage,
 ): readonly ReasoningArtifact[] {
@@ -263,10 +240,6 @@ function applyThoughtSignatures(
   return changed ? calls : [...toolCalls];
 }
 
-/**
- * Hydrates persisted legacy data into canonical artifacts while retaining the
- * original fields for older consumers and provider adapters.
- */
 export function canonicalizeChatMessageReasoningArtifacts(
   message: ChatMessage,
 ): ChatMessage {
@@ -283,7 +256,6 @@ export function canonicalizeChatMessageReasoningArtifacts(
   };
 }
 
-/** Canonical artifact accounting for a message, including un-migrated history. */
 export function reasoningArtifactTokensForMessage(
   message: ChatMessage,
 ): number {
@@ -351,7 +323,6 @@ export interface SignedThinkingArtifactInput {
   readonly toolCallIndex?: number | undefined;
 }
 
-/** Builds signed Anthropic-family artifacts without deriving replay state from display text. */
 export function createSignedThinkingArtifacts(input: {
   blocks: readonly SignedThinkingArtifactInput[];
   provenance: ReasoningArtifactProvenance;
@@ -378,11 +349,6 @@ export function createSignedThinkingArtifacts(input: {
   });
 }
 
-/**
- * Rebinds artifact positions only after duplicate and empty tool-call ids have
- * been repaired. Raw artifact bytes stay immutable; only the history position
- * receives the durable call id.
- */
 export function rebindReasoningArtifactsToToolCalls(input: {
   artifacts: readonly ReasoningArtifact[] | undefined;
   toolCalls: readonly NativeToolCall[];
@@ -418,7 +384,6 @@ export function rebindReasoningArtifactsToToolCalls(input: {
   });
 }
 
-/** Retain active tool artifacts unconditionally; retain final turns only by policy. */
 export function reasoningArtifactsForPersistence(input: {
   artifacts: readonly ReasoningArtifact[] | undefined;
   hasToolCalls: boolean;

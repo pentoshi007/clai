@@ -83,11 +83,6 @@ function closePending(state: TranscriptState, endedAt: number): TranscriptState 
   return next;
 }
 
-/**
- * Close the open assistant row without removing it. Empty/fence-only rows are
- * already dropped by `discardPendingToolFenceStream`, so anything still open
- * here carries real prose that must stay where it was painted.
- */
 function closePendingAssistant(state: TranscriptState): TranscriptState {
   if (!state.pendingAssistantId) return state;
   const next = clearStripStream(
@@ -135,7 +130,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
   const withSeq = withSequence(state, event.sequence);
   switch (event.type) {
     case "turn-started": {
-      // Backend-only directives (implement/revision) pass displayPrompt=null.
       const display =
         event.payload.displayPrompt !== undefined
           ? event.payload.displayPrompt
@@ -167,7 +161,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
 
     case "assistant-message": {
       const closed = closePendingThinking(withSeq, event.timestamp);
-      // Never finalize a Response card that is only tool-call fences.
       const text = stripToolCallSurfaces(event.payload.text).trim();
       if (!text || isToolFenceOnlyText(event.payload.text)) {
         if (closed.pendingAssistantId) {
@@ -221,8 +214,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     }
 
     case "notice":
-      // Chrome feedback only — composition-root surfaces these as toasts.
-      // Never append INFO/WARN rows into the chat (inflates history item counts).
       return withSeq;
 
     case "tool-call": {
@@ -248,7 +239,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         }
       }
       const item: ToolItem = {
-        // Occurrence id stays unique even if the agent reuses tool-1 next turn.
         id: `tool-${event.id}`,
         sequence: event.sequence,
         turnId: event.turnId,
@@ -267,7 +257,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       };
       return {
         ...appendItem(cleaned, item),
-        // Don't set activity to this name yet — card is only queued.
         runningStatus: "preparing tools",
       };
     }
@@ -288,8 +277,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
         ...updateToolItem(started, event.payload.toolCallId, (item) => ({
           ...item,
           status: item.status === "queued" ? "running" : item.status,
-          // Record the real start wall-clock so the elapsed timer begins only
-          // when the command actually runs — not when it was queued.
           ...(item.status === "queued" ? { startedAt: event.timestamp } : {}),
         })),
         runningStatus: startedName ?? started.runningStatus,
@@ -491,7 +478,6 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "confirm-requested":
     case "token-usage":
     case "context-estimate":
-      // SessionController records usage; transcript does not need a card.
       return withSeq;
 
     default: {

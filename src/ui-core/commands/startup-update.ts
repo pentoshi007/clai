@@ -3,12 +3,6 @@ import { UPDATE_CHECK_INTERVAL_MS } from "../../commands/update.js";
 import { notify } from "../notify.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 
-/**
- * Startup update notice for the v2 shell. Shows a single toast when a newer
- * release exists, honoring the 4h check interval and offline/disabled flags so
- * it never spams on every launch. `isCancelled` lets the caller skip surfacing
- * the toast if the shell is already tearing down.
- */
 export async function maybeShowUpdateToast(
   services: AppServices,
   isCancelled: () => boolean = () => false,

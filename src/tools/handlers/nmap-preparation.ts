@@ -51,7 +51,6 @@ export async function prepareDurableNmapJob(
   };
 }
 
-/** nmap argv for pentest.recon — ports configurable (default top-100). */
 export function buildPentestReconNmapArgv(
   args: Record<string, unknown>,
   host: string,
@@ -62,7 +61,6 @@ export function buildPentestReconNmapArgv(
     typeof args.ports === "string" && args.ports.trim()
       ? args.ports.trim()
       : undefined;
-  // "top-1000" / "top ports 1000" style specs map to --top-ports, not -p.
   const topPortsSpec = portsRaw
     ? /^top[\s_-]*(?:ports?[\s_-]*)?(\d{1,5})$/i.exec(portsRaw)
     : null;

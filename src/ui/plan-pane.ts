@@ -30,10 +30,6 @@ function renderTaskLine(task: PlanTask, index: number): string {
   return `  ${box} ${num} ${title}${job}${note}`;
 }
 
-/**
- * Compact inline checklist shown after the plan is created and as tasks are
- * marked done. Always safe to print (no width assumptions).
- */
 export function renderPlanChecklist(plan: SessionPlan): string {
   const done = plan.tasks.filter((t) => t.state === "done").length;
   const total = plan.tasks.length;
@@ -46,10 +42,6 @@ export function renderPlanChecklist(plan: SessionPlan): string {
   return lines.join("\n");
 }
 
-/**
- * Full plan body for the Ctrl+P pager / `/plan` command. Includes the goal,
- * the comprehensive detail, and the checklist with states.
- */
 export function renderPlanDocument(plan: SessionPlan): string {
   const done = plan.tasks.filter((t) => t.state === "done").length;
   const total = plan.tasks.length;
@@ -81,16 +73,9 @@ export function renderPlanDocument(plan: SessionPlan): string {
   return lines.join("\n");
 }
 
-/**
- * Right-aligned side pane for wide terminals (Claude-Code style). Returns
- * undefined when the terminal is too narrow; callers fall back to the inline
- * checklist. The pane is a self-contained block the caller prints; we do not
- * try to anchor it to the right column across redraws (that fights the
- * streaming output), instead we render a clearly delimited panel.
- */
 export function renderPlanSidePane(plan: SessionPlan, columns: number): string | undefined {
   const PANE_WIDTH = 34;
-  if (columns < PANE_WIDTH + 24) return undefined; // not enough room
+  if (columns < PANE_WIDTH + 24) return undefined;
   const done = plan.tasks.filter((t) => t.state === "done").length;
   const total = plan.tasks.length;
   const inner = PANE_WIDTH - 2;

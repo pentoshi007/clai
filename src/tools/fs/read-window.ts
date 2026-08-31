@@ -3,10 +3,8 @@ import type { FsReadOptions } from "../fs.js";
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 
-/** Default lines for auto-head / default line-window limit. */
 export const DEFAULT_LINE_WINDOW = 200;
 
-/** Pattern scan hard stop (bytes streamed). */
 const PATTERN_SCAN_MAX_BYTES = 32 * 1024 * 1024;
 
 const DEFAULT_PATTERN_MAX_MATCHES = 20;
@@ -17,7 +15,6 @@ const DEFAULT_PATTERN_CONTEXT = 2;
 
 const HARD_PATTERN_CONTEXT = 20;
 
-/** Stream file lines without loading the whole file into memory. */
 async function* iterateFileLines(
   resolved: string,
 ): AsyncGenerator<string, void, undefined> {
@@ -33,12 +30,6 @@ async function* iterateFileLines(
   }
 }
 
-/**
- * Normalize pattern strings models commonly emit:
- *  - `/foo/i` or `/foo/gim` → body + flags
- *  - bare `foo` → source as-is
- * Never throws; invalid regex returns a clear error the model can fix.
- */
 function compileReadPattern(
   source: string,
   caseInsensitive?: boolean,
@@ -53,12 +44,10 @@ function compileReadPattern(
   }
 
   let flags = caseInsensitive ? "i" : "";
-  // Accept /pattern/flags form that models often copy from editors.
   const slashForm = trimmed.match(/^\/([\s\S]+)\/([gimsuy]*)$/);
   if (slashForm) {
     trimmed = slashForm[1]!;
     const fromSlash = slashForm[2] ?? "";
-    // Drop global — we scan line-by-line; g would make lastIndex sticky bugs.
     flags = [
       ...new Set(`${flags}${fromSlash}`.replace(/g/g, "").split("")),
     ].join("");
@@ -114,7 +103,6 @@ export function resolveLineWindow(
   } else if (typeof options.offset === "number") {
     start = options.offset;
   } else if (hasEnd) {
-    // endLine alone: treat as lines 1..endLine
     start = 1;
   }
 
@@ -122,7 +110,6 @@ export function resolveLineWindow(
     return { ok: false, error: "fs.read startLine/offset must be a number" };
   }
   start = Math.floor(start);
-  // Models often send 0-based offsets; lines are 1-indexed — coerce gently.
   if (start === 0) {
     start = 1;
     note = note
@@ -165,7 +152,6 @@ export function resolveLineWindow(
   if (limit < 1) {
     return { ok: false, error: "fs.read limit must be a positive integer" };
   }
-  // Hard cap per call so a bad limit cannot dump millions of lines.
   limit = Math.min(limit, 5000);
   return note ? { ok: true, start, limit, note } : { ok: true, start, limit };
 }
@@ -189,9 +175,6 @@ export async function readLineWindow(
     if (collected.length < limit) {
       collected.push(`${lineNo}: ${line}`);
     } else {
-      // Keep counting remaining lines for accurate "of N" footer when cheap.
-      // For huge files we still stream once; stop counting past a soft ceiling
-      // after the window is full so we don't burn CPU on multi-GB logs.
       if (lineNo >= start + limit + 200_000) {
         reachedEnd = false;
         break;
@@ -252,7 +235,6 @@ export async function readByPattern(
     Math.max(1, Math.floor(options.maxMatches ?? DEFAULT_PATTERN_MAX_MATCHES)),
   );
 
-  // Optional range filter when offset/startLine/endLine also provided.
   let rangeStart = 1;
   let rangeEnd = Number.POSITIVE_INFINITY;
   if (
@@ -267,14 +249,12 @@ export async function readByPattern(
     rangeEnd = win.start + win.limit - 1;
   }
 
-  // Ring buffer of recent lines for leading context.
   const ring: string[] = [];
   const matchBlocks: string[] = [];
   let matches = 0;
   let lineNo = 0;
   let bytesSeen = 0;
   let truncatedScan = false;
-  /** Lines still needed as trailing context after a match. */
   let pendingAfter = 0;
   let currentBlock: string[] = [];
 
@@ -292,7 +272,6 @@ export async function readByPattern(
       break;
     }
 
-    // Maintain ring for context-before (only lines we might need).
     ring.push(line);
     if (ring.length > context + 1) ring.shift();
 
@@ -303,20 +282,14 @@ export async function readByPattern(
       currentBlock.push(`${lineNo}: ${line}`);
       pendingAfter -= 1;
       if (pendingAfter === 0) flushBlock();
-      // After draining trailing context for the last shown match, keep
-      // scanning only long enough to learn whether more matches exist.
       if (matches >= maxMatches && pendingAfter === 0) {
-        // fall through to isMatch checks below on later lines
       }
       continue;
     }
 
     if (isMatch && matches < maxMatches) {
-      // If we were still emitting after-context, close previous block first
-      // only when this match is outside that window; otherwise merge.
       if (pendingAfter === 0 && currentBlock.length > 0) flushBlock();
       if (pendingAfter === 0) {
-        // Leading context from ring (exclude current line, last is current).
         const before = ring.slice(0, Math.max(0, ring.length - 1));
         const startCtx = before.slice(Math.max(0, before.length - context));
         const ctxStartLine = lineNo - startCtx.length;
@@ -328,12 +301,10 @@ export async function readByPattern(
       matches += 1;
       pendingAfter = context;
       if (pendingAfter === 0) flushBlock();
-      // Do not break yet: keep scanning so hasMore can detect further hits.
       continue;
     }
 
     if (isMatch && matches >= maxMatches) {
-      // One more hit beyond the display cap → hasMore.
       matches += 1;
       break;
     }

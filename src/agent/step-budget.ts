@@ -8,10 +8,6 @@ export interface StepBudgetInput {
   hasHistory: boolean;
 }
 
-/**
- * Productive tool-step budget for a turn. Multi-step builds/pentests get the
- * full ceiling; short follow-ups with history stay at least standard-sized.
- */
 export function computeStepBudget(input: StepBudgetInput): number {
   const { analysis, maxSteps, buildLike, pentestLike, hasHistory } = input;
   let budget =

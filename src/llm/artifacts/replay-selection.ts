@@ -7,10 +7,6 @@ import type {
 import { decision } from "../reasoning-artifacts.js";
 import type { ReasoningArtifactReplayContext } from "../reasoning-artifacts.js";
 
-/**
- * Conservative compatibility predicate used at final serialization only. It
- * never mutates stored history and never returns raw payloads in its decision.
- */
 export function reasoningArtifactReplayDecision(
   artifact: ReasoningArtifact,
   target: ReasoningArtifactReplayTarget,
@@ -52,11 +48,6 @@ export function reasoningArtifactReplayDecision(
   return decision(artifact, target, "replayed");
 }
 
-/**
- * Filters only the wire projection. Omitted artifacts remain unchanged in the
- * message/persistence timeline, while callers can emit the metadata-only
- * decisions to their operation telemetry.
- */
 export function selectReasoningArtifactsForReplay(input: {
   artifacts: readonly ReasoningArtifact[] | undefined;
   target: ReasoningArtifactReplayTarget;

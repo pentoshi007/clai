@@ -133,7 +133,6 @@ export class OperationLedger {
     return this.semanticOutput;
   }
 
-  /** True once this ledger refused a dispatch the caller tried to make. */
   get admissionRefused(): boolean {
     return this.refusals > 0;
   }
@@ -166,11 +165,6 @@ export class OperationLedger {
     this.admissions = 0;
   }
 
-  /**
-   * Callers surface the failure that caused the operation to stop, which is the
-   * provider error rather than the guard that refused the retry. The ledger
-   * still records the budget as the terminal reason so telemetry is not lost.
-   */
   settle(outcome: OperationTerminalOutcome): void {
     const terminal =
       outcome === "failed" && this.refusals > 0 ? "budget-exceeded" : outcome;

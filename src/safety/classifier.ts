@@ -10,10 +10,8 @@ export type { ClassifyOptions, InteractiveInputPolicyContext, RiskDecision } fro
 
 export function isPrivateIpv4(value: string): boolean {
   const candidate = value.split("/")[0] ?? value;
-  // Handle hostnames — if it's not an IP, treat it as non-private (domain)
   if (net.isIP(candidate) === 0) return false;
   if (net.isIP(candidate) === 6) {
-    // IPv6 link-local (fe80::), loopback (::1), ULA (fc00::/7)
     const lower = candidate.toLowerCase();
     return (
       lower === "::1" ||
@@ -41,23 +39,16 @@ function commandContainsNetworkScanner(command: string): boolean {
 const PRIVATE_TLD_RE =
   /\.(?:local|internal|lan|home|corp|intranet|test|localdomain)$/i;
 const URL_HOSTNAME_RE = /\bhttps?:\/\/([^\/\s:?#]+)/gi;
-// A bareword domain anchored at a whitespace boundary on the left so we
-// don't pick up file paths like `wordlists/common.txt`. The right side
-// stays at \b so trailing punctuation doesn't trip us up.
 const BARE_HOSTNAME_RE =
   /(?:^|[\s'"=(,])((?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63})\b/g;
 
 function extractHostnameTokens(command: string): string[] {
   const tokens: string[] = [];
-  // First pull host parts out of any URL so https://example.com/FUZZ contributes "example.com"
   let match: RegExpExecArray | null;
   URL_HOSTNAME_RE.lastIndex = 0;
   while ((match = URL_HOSTNAME_RE.exec(command)) !== null) {
     if (match[1]) tokens.push(match[1].replace(/\[|\]/g, "").split(":")[0]!);
   }
-  // Then capture bare-hostname tokens (eg `nmap example.com`). The leading
-  // boundary stops us picking up `path/to/common.txt` (which would
-  // otherwise look like a domain because of the `.txt` suffix).
   BARE_HOSTNAME_RE.lastIndex = 0;
   while ((match = BARE_HOSTNAME_RE.exec(command)) !== null) {
     if (match[1]) tokens.push(match[1]);
@@ -113,11 +104,8 @@ function isPublicHostname(host: string): boolean {
   if (!lower.includes(".")) return false;
   if (lower === "localhost" || lower === "localhost.localdomain") return false;
   if (PRIVATE_TLD_RE.test(lower)) return false;
-  // Reject things that look like filenames (common.txt, package.json, etc.)
-  // even when they syntactically resemble a domain.
   const tld = lower.split(".").pop() ?? "";
   if (FILEY_TLDS.has(tld)) return false;
-  // Must contain at least one alphabetic TLD-like segment to count as a domain
   return /\.[a-z]{2,63}$/i.test(lower);
 }
 
@@ -151,12 +139,6 @@ export function isPentestToolCall(call: ToolCall): boolean {
   );
 }
 
-/**
- * Extract the apparent target from a shell command that contains a scanner.
- * Used to decide whether the target is covered by the active engagement
- * scope. Falls back to the trailing token of the command if no obvious
- * target argument is found.
- */
 function extractScanTarget(
   command: string,
   includeFirstToken = false,

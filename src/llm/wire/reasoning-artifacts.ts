@@ -40,7 +40,6 @@ export function compatibleArtifactPolicyFor(
     : DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY;
 }
 
-/** Result of OpenAI-compatible complete/stream (text + optional native tools). */
 export interface OpenAiCompatibleResult {
   text: string;
   toolCalls?: NativeToolCall[] | undefined;
@@ -61,21 +60,6 @@ export function artifactRaw(
   return undefined;
 }
 
-/**
- * Reads the reasoning text off an OpenAI-compatible `message`/`delta`.
- *
- * Most routes use `reasoning_content` (DeepSeek/vLLM style) or `reasoning`
- * (OpenRouter style). Merge Gateway normalizes every upstream vendor onto a
- * third field, `thinking` (+ `thinking_signature`), on both its
- * chat.completion messages and its chat.completion.chunk deltas — verified live
- * against api-gateway.merge.dev/v1/openai for qwen/qwen3.8-max,
- * zai/glm-5.3-flash and deepseek/deepseek-v4-flash-0731. Without this branch the
- * chain of thought arrives on the wire and is silently dropped, which looks
- * exactly like a model that never reasoned.
- *
- * Only strings are accepted: Anthropic-shaped `thinking` request/response
- * objects (`{type:"disabled"}`, content blocks) must not be treated as text.
- */
 export function openAiReasoningText(
   channel:
     | {
@@ -182,7 +166,6 @@ export function compatibleReasoningArtifacts(input: {
   return artifacts.length ? artifacts : undefined;
 }
 
-/** Map shared OpenAI-compatible payload → CompletionResult (includes usage). */
 export function toCompletionResult(
   provider: ProviderId,
   model: string,

@@ -73,8 +73,6 @@ export function buildReasoningPayload(
   const enabled = Boolean(reasoning?.enabled);
   const effort = reasoning?.effort ?? "medium";
 
-  // Map expanded effort levels to the classic low/medium/high subset for
-  // providers that only understand the smaller set.
   const clampEffort = (e: string): "low" | "medium" | "high" => {
     if (e === "none" || e === "minimal" || e === "low") return "low";
     if (e === "max" || e === "xhigh" || e === "high") return "high";
@@ -95,9 +93,6 @@ export function buildReasoningPayload(
       if (!enabled) {
         return effort === "none" ? { reasoning_effort: "none" } : {};
       }
-      // `reasoning_effort` is the Chat Completions knob. The nested
-      // `reasoning` object belongs to the Responses API; strict gateways reject
-      // unknown top-level fields with a hard 400.
       return { reasoning_effort: clampEffort(effort) };
     }
     case "bynara": {
@@ -132,15 +127,8 @@ export function buildReasoningPayload(
       return {};
     }
     case "agentrouter": {
-      // AgentRouter proxies three families, each with a *different* reasoning
-      // contract (verified live against agentrouter.org/v1, 2026-07). We send
-      // only the standard top-level knob each one honours — no redundant
-      // `reasoning` object (none of the routed models read it).
       const m = (model ?? "").toLowerCase();
       const clamped = clampEffort(effort);
-      // OpenAI gpt-5.x / o-series: top-level `reasoning_effort`, and it uniquely
-      // supports "minimal". These models can't be fully disabled, so "off"
-      // degrades to the cheapest "minimal" rather than the medium default.
       if (/(?:^|\/)gpt-5|(?:^|\/)o[134](?:\b|-)/.test(m)) {
         if (!enabled) return { reasoning_effort: "minimal" };
         const gptEffort =
@@ -148,25 +136,17 @@ export function buildReasoningPayload(
             ? "minimal"
             : effort === "xhigh" || effort === "max"
               ? "high"
-              : effort; // minimal | low | medium | high
+              : effort;
         return { reasoning_effort: gptEffort };
       }
-      // Zhipu GLM thinks by DEFAULT; `reasoning_effort` only modulates depth and
-      // cannot turn it off. The one knob that actually disables it on this
-      // gateway is `thinking.type=disabled` — so "off" must send that.
       if (/glm/.test(m)) {
         if (!enabled) return { thinking: { type: "disabled" } };
         return { reasoning_effort: clamped };
       }
-      // Anthropic Claude: `reasoning_effort` enables extended thinking (the
-      // gateway maps it to a thinking budget). Thinking is OFF by default, so
-      // "off" simply omits the knob. `buildChatBody` floors max_tokens above the
-      // budget so enabling it never trips the gateway's budget precondition.
       if (/claude/.test(m)) {
         if (!enabled) return {};
         return { reasoning_effort: clamped };
       }
-      // Unknown model routed by AgentRouter → plain OpenAI-compatible behavior.
       if (!enabled) return {};
       return { reasoning_effort: clamped };
     }
@@ -196,10 +176,6 @@ export function buildReasoningPayload(
       };
     }
     case "stepfun":
-      // Step 3.5/3.7 Flash enables a <think> block by default on compatible
-      // hosts. Omitting an OpenAI reasoning field does not turn that default
-      // off, so compaction would still buy hidden reasoning tokens. vLLM's
-      // StepFun template honours this explicit per-request switch.
       return { chat_template_kwargs: { enable_thinking: enabled } };
     case "nvidia": {
       const kind = classifyNvidiaModel(model ?? "");
@@ -211,8 +187,6 @@ export function buildReasoningPayload(
             },
           };
         case "deepseek-v4":
-          // NVIDIA's DeepSeek V4 API accepts none/high/max. Map expanded
-          // effort levels: none/minimal/low → none; medium/high/xhigh → high.
           return {
             chat_template_kwargs: {
               thinking: enabled,
@@ -230,8 +204,6 @@ export function buildReasoningPayload(
             },
           };
         case "nemotron-3": {
-          // Nemotron-3 supports both `enable_thinking` and an optional
-          // `reasoning_budget` cap. Map expanded effort to budget values.
           if (!enabled) {
             return {
               chat_template_kwargs: { enable_thinking: false },
@@ -246,23 +218,16 @@ export function buildReasoningPayload(
           };
         }
         case "glm-thinking":
-          // GLM-5 / 4.5 expects `clear_thinking:false` alongside
-          // `enable_thinking:true` per the NIM docs example.
           return {
             chat_template_kwargs: enabled
               ? { enable_thinking: true, clear_thinking: false }
               : { enable_thinking: false },
           };
         case "enable-thinking":
-          // Gemma 3/4 only documents `enable_thinking`; do not add
-          // `clear_thinking` here since the chat template doesn't accept it.
           return {
             chat_template_kwargs: { enable_thinking: enabled },
           };
         case "effort-only":
-          // NVIDIA GPT-OSS accepts only low/medium/high, so a retry cannot
-          // fully disable it. Keep it at the lowest supported effort instead
-          // of omitting the field and reverting to NVIDIA's medium default.
           if (!enabled && /gpt-oss/i.test(model ?? "")) {
             return { reasoning_effort: "low" };
           }

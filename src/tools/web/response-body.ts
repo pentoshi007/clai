@@ -65,16 +65,6 @@ interface ErrorOutcomeInput {
   redactSensitive?: boolean | undefined;
 }
 
-/**
- * Compose an `ok=false` {@link WebFetchOutcome}.
- *
- * The metadata envelope is always populated. Pipeline stages that ran
- * before the failure surface their captured values (e.g. `resolvedIp`
- * after a successful DNS lookup but a `blocked-address` IP); stages
- * that did not run carry default zero/empty values. This keeps the
- * audit-log payload built downstream uniform regardless of where the
- * failure surfaced.
- */
 export function errorOutcome(input: ErrorOutcomeInput): WebFetchOutcome {
   const totalMs = input.now() - input.t0;
   const captured =
@@ -193,11 +183,6 @@ function assembleMetadata(input: {
   return meta;
 }
 
-/**
- * Build a minimal {@link WebFetchMetadata} envelope for failures that
- * surfaced before any transport-level capture happened (argument
- * validation, blocked scheme on the entry URL, etc.).
- */
 function assembleEmptyMetadata(input: {
   args: NormalisedArgs;
   requestedUrl: string;
@@ -233,7 +218,6 @@ function assembleEmptyMetadata(input: {
   return meta;
 }
 
-/** Best-effort hostname extraction; returns "" for malformed URLs. */
 function tryHostname(url: string): string {
   try {
     return new URL(url).hostname;

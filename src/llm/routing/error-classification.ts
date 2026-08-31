@@ -20,7 +20,6 @@ import { streamAlreadyEmitted } from "../stream-progress.js";
 
 export const MAX_RETRIES = 6;
 
-// Wait at most this long overall per attempt (up to 2 minutes total wait budget).
 export const MAX_RETRY_WAIT_MS = 120_000;
 
 export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -158,7 +157,6 @@ export function retryWaitMs(error: unknown, attempt: number): number {
   if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
     return Math.ceil(error.retryAfterSeconds * 1000);
   }
-  // Exponential backoff: 2s, 6s, 18s, 54s, etc.
   return Math.pow(3, attempt) * 2_000;
 }
 
@@ -166,11 +164,6 @@ export function networkRetryWaitMs(attempt: number): number {
   return Math.pow(2, attempt) * 1_000;
 }
 
-/**
- * True when a stream/complete failure was a fully empty model completion — no
- * visible text and no tool calls. Safe to retry with a nudge (common right
- * after auto-compaction when the tail ends on re-injected system context).
- */
 export function isEmptyCompletionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /completed without a visible answer|no visible answer|returned no content|no completion text|response was empty|empty response|returned no text/i.test(

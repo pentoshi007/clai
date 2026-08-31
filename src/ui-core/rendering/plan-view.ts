@@ -1,6 +1,3 @@
-/**
- * Pure display helpers for the plan pane + Ctrl+P pager body (PLAN-001, V2-070).
- */
 
 import type {
   PlanStatus,
@@ -13,7 +10,6 @@ import { foregroundActiveTask, planProgress } from "../../store/plan.js";
 export interface PlanProgressView {
   readonly done: number;
   readonly total: number;
-  /** Single compact label, e.g. "8/8 complete" — no bar, no duplication. */
   readonly label: string;
 }
 
@@ -41,10 +37,6 @@ export const STATUS_LABEL: Record<PlanStatus, string> = {
   abandoned: "abandoned",
 };
 
-/**
- * Theme keys used for plan/task pane text. Keep these high-contrast on the
- * pane background (statusBackground) — avoid washed slate for body text.
- */
 export type PlanColorToken =
   | "muted"
   | "foreground"
@@ -73,14 +65,6 @@ export function planStatusColor(status: PlanStatus): PlanColorToken {
   }
 }
 
-/**
- * Task row colors (tasks pane):
- * - pending  → solid foreground (not light gray wash)
- * - active   → yellow activity (already good)
- * - done     → bright success green
- * - failed   → red
- * - skipped  → muted secondary
- */
 export function taskStateColor(state: TaskState): PlanColorToken {
   switch (state) {
     case "done":
@@ -104,10 +88,6 @@ export function progressView(plan: SessionPlan): PlanProgressView {
   return { done, total, label: `${done}/${total} tasks` };
 }
 
-/**
- * Compact progress bar for the tasks pane header.
- * Example (width=8, 3/8): `███░░░░░`
- */
 export function progressBar(done: number, total: number, width: number): string {
   const w = Math.max(4, Math.min(24, Math.floor(width)));
   if (total <= 0) return "░".repeat(w);
@@ -115,7 +95,6 @@ export function progressBar(done: number, total: number, width: number): string 
   return `${"█".repeat(filled)}${"░".repeat(w - filled)}`;
 }
 
-/** Short uppercase chip label for plan status (TASKS header). */
 export function planStatusChip(status: PlanStatus): string {
   switch (status) {
     case "draft":
@@ -135,7 +114,6 @@ export function planStatusChip(status: PlanStatus): string {
   }
 }
 
-/** Short chip label for a task state. */
 export function taskStateChip(state: TaskState): string {
   switch (state) {
     case "in_progress":
@@ -156,16 +134,10 @@ export function taskLabel(task: PlanTask): string {
   return `${TASK_GLYPH[task.state]} ${task.id}  ${task.title}`;
 }
 
-/**
- * The row the pane highlights and scrolls to. Responder children are concurrent
- * background work, so they never take the active plate away from the foreground
- * task the model is actually on.
- */
 export function activeTaskId(plan: SessionPlan): string | undefined {
   return foregroundActiveTask(plan)?.id;
 }
 
-/** Stable display order with each responder subtree immediately after its parent. */
 export function orderPlanTasksForDisplay(tasks: readonly PlanTask[]): PlanTask[] {
   const knownIds = new Set(tasks.map((task) => task.id));
   const children = new Map<string, PlanTask[]>();
@@ -196,14 +168,12 @@ export function orderPlanTasksForDisplay(tasks: readonly PlanTask[]): PlanTask[]
   return ordered;
 }
 
-/** Responder ownership stays visible while terminal state colors remain truthful. */
 export function taskRowColor(task: PlanTask): PlanColorToken {
   if (!task.responderOwned) return taskStateColor(task.state);
   if (task.state === "pending" || task.state === "in_progress") return "cyan";
   return taskStateColor(task.state);
 }
 
-/** Background glyphs so responder rows differ from foreground ones at a glance. */
 const RESPONDER_GLYPH: Record<TaskState, string> = {
   pending: "◌",
   in_progress: "⟳",
@@ -225,13 +195,11 @@ const RESPONDER_PHASE: Record<TaskState, string> = {
   skipped: "DROPPED",
 };
 
-/** Short chip that explains why a row is not foreground work, plus its phase. */
 export function taskOwnerChip(task: PlanTask): string | undefined {
   if (!task.responderOwned) return undefined;
   return `RESPONDER · ${RESPONDER_PHASE[task.state] ?? "BACKGROUND"}`;
 }
 
-/** Soft-wrap without ellipsis — full text, never truncated. */
 export function wrapPlanText(text: string, width: number): string[] {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean) return [""];
@@ -249,15 +217,10 @@ export function wrapPlanText(text: string, width: number): string[] {
   return lines;
 }
 
-/**
- * Strip redundant `t1:` / `t1 -` prefixes when the model baked the task id
- * into the title (keeps the pager readable).
- */
 export function cleanTaskTitle(task: PlanTask): string {
   let title = task.title.replace(/\s+/g, " ").trim();
   const id = task.id.trim();
   if (!id) return title;
-  // t1: … | t1 - … | t1. … | [t1] …
   const re = new RegExp(
     `^\\[?${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]?\\s*[:.\\-)–—]\\s*`,
     "i",
@@ -266,10 +229,6 @@ export function cleanTaskTitle(task: PlanTask): string {
   return title || task.title.trim();
 }
 
-/**
- * Full plan body for the OpenTUI pager (Ctrl+P / /plan).
- * Markdown so the pager renders headings, tables, and lists cleanly.
- */
 export function formatPlanPagerDocument(plan: SessionPlan): string {
   const { done, total } = planProgress(plan);
   const goal = plan.goal.trim() || "Untitled plan";
@@ -290,7 +249,6 @@ export function formatPlanPagerDocument(plan: SessionPlan): string {
   if (detail) {
     lines.push("## Approach");
     lines.push("");
-    // Preserve author markdown when present; otherwise indent as body.
     const looksMd =
       /^#{1,6}\s/m.test(detail) ||
       /^[-*]\s/m.test(detail) ||

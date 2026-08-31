@@ -17,15 +17,12 @@ export function jsonlIndexFilePath(): string {
   return join(historyDirPath(), "history.index.json");
 }
 
-/** Rolling pre-write snapshots of the active history file. */
 export function backupDirPath(): string {
   return join(historyDirPath(), "history-backups");
 }
 
-/** Max rolling backups kept under history-backups/. */
 const MAX_HISTORY_BACKUPS = 12;
 
-/** Persisted token/context footer snapshot (survives /history resume). */
 export interface PersistedContextUsage {
   contextTokens: number;
   contextLimit?: number | undefined;
@@ -33,7 +30,6 @@ export interface PersistedContextUsage {
   sessionPromptTokens?: number | undefined;
   sessionCompletionTokens?: number | undefined;
   exact: boolean;
-  /** Additive canonical snapshot; old records retain the six legacy fields. */
   contextSnapshot?: import("../../llm/context-snapshot.js").ContextSnapshotV1 | undefined;
   routeUsage?:
     | readonly import("../../app/controllers/session-usage-ledger.js").PersistedRouteUsage[]
@@ -42,37 +38,17 @@ export interface PersistedContextUsage {
 
 export interface HistoryRecord {
   id: string;
-  /** Unique writer generation, compared before the per-writer revision. */
   writerGeneration?: string | undefined;
-  /**
-   * Monotonic whole-snapshot revision within one writer generation. Unlike
-   * updatedAt, this records capture order rather than I/O completion order.
-   */
   revision?: number | undefined;
   name?: string | undefined;
   createdAt: string;
   updatedAt: string;
   cwd: string;
   messages: ChatMessage[];
-  /**
-   * Optional TUI display transcript. Older records only have `messages`;
-   * they still restore as user/assistant summaries.
-   */
   transcript?: TranscriptItem[] | undefined;
-  /**
-   * Last known context fill (prefer exact API usage). Without this, resume
-   * falls back to a cheap estimate that under-counts vs live turns.
-   */
   contextUsage?: PersistedContextUsage | undefined;
-  /** Last settled outcome, or an interrupted in-flight turn, for restart recovery. */
   previousTurn?: PreviousTurnSignal | undefined;
-  /**
-   * Session workspace folder name under `{tmpdir}/clai/`
-   * (e.g. `a3f9c1-18-07-2026-14-24-23`). Bound on resume so scratch +
-   * tool outputs stay isolated per history session.
-   */
   workspaceFolder?: string | undefined;
-  /** 6-digit hex code that prefixes {@link workspaceFolder}. */
   workspaceCode?: string | undefined;
   provider?: ProviderId | undefined;
   model?: string | undefined;
@@ -101,7 +77,6 @@ export function hydrateHistoryRecord(record: HistoryRecord): HistoryRecord {
   };
 }
 
-/** Shared one-time orphan/archive recovery; writes await it, UI listings may not. */
 let recoveryPromise: Promise<void> | undefined;
 
 function updatedAtMs(record: HistoryRecord): number {
@@ -127,10 +102,6 @@ export function historyWriterGeneration(
     : undefined;
 }
 
-/**
- * Compare snapshots by writer generation, then capture revision. Legacy rows
- * without a generation retain revision/timestamp fallback for compatibility.
- */
 export function compareHistoryFreshness(
   left: HistoryRecord,
   right: HistoryRecord,
@@ -150,7 +121,6 @@ export function compareHistoryFreshness(
   return updatedAtMs(left) - updatedAtMs(right);
 }
 
-/** Keep the newest captured version of each session id. */
 export function dedupeHistoryById(
   records: readonly HistoryRecord[],
 ): HistoryRecord[] {
@@ -158,8 +128,6 @@ export function dedupeHistoryById(
   for (const record of records) {
     if (!record?.id) continue;
     const prev = byId.get(record.id);
-    // Preserve the first source on an exact tie. JSONL is passed first during
-    // cross-backend merge and is the durable canonical copy.
     if (!prev || compareHistoryFreshness(record, prev) > 0) {
       byId.set(record.id, record);
     }
@@ -173,7 +141,6 @@ export function sortHistoryByUpdatedDesc(
   return [...records].sort((a, b) => updatedAtMs(b) - updatedAtMs(a));
 }
 
-/** Read and parse all valid JSONL records from any path. */
 export async function readJsonlRecordsFrom(path: string): Promise<HistoryRecord[]> {
   if (!(await safeExists(path))) return [];
   try {
@@ -205,7 +172,6 @@ export async function backupActiveHistory(): Promise<void> {
     const dest = join(backupDirPath(), `history-${stamp}.jsonl`);
     await copyFile(jsonlFilePath(), dest);
     await fixOwner(dest).catch(() => undefined);
-    // Keep only the newest N backups.
     const names = (await readdir(backupDirPath()))
       .filter((n) => n.startsWith("history-") && n.endsWith(".jsonl"))
       .sort()
@@ -214,11 +180,9 @@ export async function backupActiveHistory(): Promise<void> {
       await rm(join(backupDirPath(), old), { force: true }).catch(() => undefined);
     }
   } catch {
-    // Backup is best-effort; never block the autosave path.
   }
 }
 
-// Restore backups only for a missing/corrupt active file, then merge orphan write temps.
 export async function recoverOrphanedHistory(): Promise<{
   recovered: number;
   sources: string[];
@@ -285,7 +249,6 @@ export async function recoverOrphanedHistory(): Promise<{
           break;
         }
       } catch {
-        // No usable backup directory.
       }
     }
 
@@ -307,7 +270,6 @@ export async function recoverOrphanedHistory(): Promise<{
         tempSources.push(name);
       }
     } catch {
-      // History directory may not exist yet.
     }
 
     const activeById = new Map(active.map((record) => [record.id, record]));
@@ -350,8 +312,6 @@ export function startHistoryRecovery(): Promise<void> {
         () => undefined,
       )
       .finally(() => {
-        // A background recovery may have merged archive/temp records after a
-        // picker list was published; force the next /history to refresh.
         invalidateSessionListCache();
       });
   }

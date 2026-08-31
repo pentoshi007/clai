@@ -1,10 +1,3 @@
-/**
- * Renderer-facing OSC 52 clipboard adapter (V2-064).
- *
- * The native renderer performs OSC encoding and terminal writes. This adapter
- * only chooses a bounded, capability-checked path and otherwise delegates to
- * the supplied non-terminal clipboard port.
- */
 
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
 
@@ -33,7 +26,6 @@ export interface Osc52ClipboardOptions {
   readonly renderer: Osc52RendererPort;
   readonly fallback: ClipboardPort;
   readonly enabled: boolean;
-  /** Bound terminal payload size; oversized text remains available via fallback. */
   readonly maxBytes?: number;
 }
 

@@ -3,8 +3,6 @@ import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
-// Directories we never want to surface in autocomplete or recurse into —
-// they're huge and almost never what the user means to attach.
 const NOISE_DIRS = new Set([
   "node_modules",
   ".git",
@@ -25,9 +23,7 @@ const NOISE_DIRS = new Set([
 ]);
 
 export interface FileSuggestion {
-  /** The text to insert after the leading "@" (e.g. "src/App.tsx" or "src/"). */
   value: string;
-  /** Display label. */
   label: string;
   isDir: boolean;
 }
@@ -39,12 +35,6 @@ export function expandHome(p: string): string {
   return p;
 }
 
-/**
- * Synchronously list file/dir suggestions for an in-progress @-mention.
- * `query` is the text after "@" (may include a directory portion like
- * "src/comp"). Suggestions are returned relative to `baseDir` unless the
- * query is absolute or home-anchored.
- */
 export function findFileSuggestions(
   query: string,
   baseDir: string = safeCwd(),
@@ -53,7 +43,6 @@ export function findFileSuggestions(
   const anchored = query.startsWith("/") || query.startsWith("~");
   const expanded = expandHome(query);
 
-  // Split into "directory part" + "name prefix".
   let dirPart: string;
   let prefix: string;
   if (query.endsWith("/")) {
@@ -62,7 +51,6 @@ export function findFileSuggestions(
   } else {
     dirPart = dirname(expanded);
     prefix = basename(expanded);
-    // dirname(".") or dirname("foo") => "." — keep relative root.
     if (dirPart === "." && !expanded.includes("/")) dirPart = "";
   }
 
@@ -82,8 +70,6 @@ export function findFileSuggestions(
   const lowerPrefix = prefix.toLowerCase();
   const matched: FileSuggestion[] = [];
 
-  // When browsing inside a path (`@src/` or `@src/comp`), offer `../` so the
-  // user can walk back up without backspacing the whole token.
   if (dirPart !== "" && (prefix === "" || "..".startsWith(lowerPrefix))) {
     const parentRaw = dirPart.replace(/\/+$/, "");
     const parentDir = dirname(parentRaw);
@@ -102,7 +88,7 @@ export function findFileSuggestions(
 
   for (const name of entries) {
     if (prefix === "" && NOISE_DIRS.has(name)) continue;
-    if (prefix === "" && name.startsWith(".")) continue; // hide dotfiles unless typed
+    if (prefix === "" && name.startsWith(".")) continue;
     if (!name.toLowerCase().startsWith(lowerPrefix)) continue;
 
     let isDir = false;
@@ -112,8 +98,6 @@ export function findFileSuggestions(
       continue;
     }
 
-    // Reconstruct the value to insert after "@" (preserve the dir portion the
-    // user already typed).
     const joined =
       dirPart === "" ? name : `${dirPart.replace(/\/$/, "")}/${name}`;
     const value = isDir ? `${joined}/` : joined;
@@ -125,7 +109,6 @@ export function findFileSuggestions(
   }
 
   matched.sort((a, b) => {
-    // Keep "../" first when present, then other dirs, then files.
     if (a.label === "../") return -1;
     if (b.label === "../") return 1;
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;

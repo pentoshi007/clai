@@ -1,10 +1,3 @@
-/**
- * Open full tool output in the pager modal (scroll + search + Esc/q).
- * Prefers the on-disk artifact, then the unbounded spool. Never re-truncates.
- *
- * Bodies that are pure JSON get pretty-printed so web.search dumps aren't
- * one messy minified blob.
- */
 
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -28,17 +21,10 @@ interface SearchHit {
   readonly snippet?: string | undefined;
 }
 
-/**
- * Prefer a human-readable hit list for web.search-style payloads.
- * Falls back to pretty JSON, then the raw text.
- */
 export function formatToolPagerBody(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return raw;
 
-  // Optional one-line summary above a JSON block:
-  //   duckduckgo: 5 results
-  //   { "results": [ ... ] }
   let prefix = "";
   let jsonText = trimmed;
   const firstBrace = trimmed.search(/[{\[]/);
@@ -65,7 +51,6 @@ export function formatToolPagerBody(raw: string): string {
       });
       return `${head}\n\n${blocks.join("\n\n")}`;
     }
-    // Generic JSON — pretty-print only.
     const pretty = JSON.stringify(parsed, null, 2);
     return prefix ? `${prefix}\n\n${pretty}` : pretty;
   } catch {
@@ -91,13 +76,6 @@ function extractSearchHits(parsed: unknown): SearchHit[] | undefined {
   return hits.length > 0 ? hits : undefined;
 }
 
-/**
- * Human path/command label for pager titles and headers.
- * Never dump raw tool-arg JSON (history rows often store that).
- *
- * @param maxLen Cap for short titles only. Omit for full body headers so the
- *   pager shows the complete command (card already has it untruncated).
- */
 export function cleanArgsLabel(
   name: string,
   argsDisplay: string | undefined,
@@ -126,9 +104,7 @@ export function cleanArgsLabel(
     }
     if (Array.isArray(parsed.files)) return clip(`${parsed.files.length} file(s)`);
   } catch {
-    /* fall through */
   }
-  // Truncated JSON (common in history) — pull a path-looking substring.
   const pathHit = raw.match(/"path"\s*:\s*"((?:\\.|[^"\\])*)"/);
   if (pathHit?.[1]) {
     try {
@@ -141,7 +117,6 @@ export function cleanArgsLabel(
   return clip(raw);
 }
 
-/** Absolute path for on-disk open (fs.read / similar) when recoverable. */
 export function pathFromArgsDisplay(argsDisplay: string | undefined): string | undefined {
   const label = cleanArgsLabel("fs.read", argsDisplay);
   if (!label || label.includes("\0") || /[\r\n]/.test(label) || label.includes("://")) {
@@ -156,12 +131,10 @@ export function pathFromArgsDisplay(argsDisplay: string | undefined): string | u
   return resolve(label);
 }
 
-/** Short, stable title: `web.search · output` (args live in the body header). */
 export function toolPagerTitle(
   name: string,
   argsDisplay: string | undefined,
 ): string {
-  // Border title only — full command/path is in the pager body header.
   const label = cleanArgsLabel(name, argsDisplay, { maxLen: 48 });
   if (!label) return `${name} · output`;
   return `${name} · ${label}`;
@@ -197,19 +170,9 @@ async function pageTextBody(
 }
 
 export interface OpenToolOutputOptions {
-  /**
-   * When set, use this body instead of spool/artifact (e.g. one tool.batch
-   * sub-section). Title still comes from `item`.
-   */
   readonly bodyOverride?: string;
-  /** Override the pager title (defaults to toolPagerTitle). */
   readonly titleOverride?: string;
-  /** Skip artifact lookup even if item.artifactPath is set. */
   readonly skipArtifact?: boolean;
-  /**
-   * Open a single file-change snapshot (full file + green/red markers).
-   * Prefer this over the raw tool receipt when the tool card has fileChanges.
-   */
   readonly fileChange?: FileChange;
 }
 
@@ -259,7 +222,6 @@ export async function openToolOutputPager(
   options: OpenToolOutputOptions = {},
 ): Promise<void> {
   try {
-    // Prefer structured file-diff modal when available.
     const fileChange =
       options.fileChange ??
       (item.fileChanges && item.fileChanges.length === 1
@@ -301,7 +263,6 @@ export async function openToolOutputPager(
       return;
     }
 
-    // Multi-file: concatenate all snapshots when opening the parent card.
     if (
       item.fileChanges &&
       item.fileChanges.length > 1 &&
@@ -354,9 +315,6 @@ export async function openToolOutputPager(
     } else {
       body = services.session.spool.tail(asToolCallId(item.toolCallId));
 
-      // fs.read (and similar) often return a line-range slice to the model.
-      // When the user opens the card, prefer the full on-disk file so the pager
-      // is not stuck on "[lines 55-66 of 168] … call fs.read with offset=…".
       if (
         (item.name === "fs.read" || item.name === "fs.cat") &&
         options.bodyOverride === undefined
@@ -377,7 +335,6 @@ export async function openToolOutputPager(
               openedSourceFile = true;
             }
           } catch {
-            /* keep spool body */
           }
         }
       }
@@ -391,7 +348,6 @@ export async function openToolOutputPager(
           const info = await stat(item.artifactPath);
           if (info.isFile() && info.size >= Buffer.byteLength(body, "utf8")) {
             if (info.size <= INLINE_ARTIFACT_MAX_BYTES) {
-              // Full body up front — no artificial first-page truncation.
               body = await readFile(item.artifactPath, "utf8");
             } else {
               artifactSource = createArtifactPagerSource(item.artifactPath);
@@ -415,7 +371,6 @@ export async function openToolOutputPager(
 
     if (!artifactSource) body = formatToolPagerBody(body);
 
-    // Full command/path header in the body (never ellipsize — title is short).
     let header = "";
     if (options.bodyOverride === undefined) {
       const label = cleanArgsLabel(item.name, item.argsDisplay);
@@ -445,8 +400,6 @@ export async function openToolOutputPager(
 
     const title =
       options.titleOverride ?? toolPagerTitle(item.name, item.argsDisplay);
-    // When paging an artifact, pass body alone as fallback; pager swaps to pages.
-    // Include header only for in-memory full bodies so path context stays visible.
     const pagerBody = artifactSource
       ? body || "(no output)"
       : `${header}${body || "(no output)"}${note}`;
@@ -456,8 +409,6 @@ export async function openToolOutputPager(
       path: highlightPath ?? pathFromArgsDisplay(item.argsDisplay),
       body: body,
     });
-    // Formatted md reads: pure file markdown (no `N: ` gutters / # fs.read chrome).
-    // Prefer on-disk file when available; otherwise strip the spool dump.
     let finalBody =
       mdMode === "force"
         ? openedSourceFile

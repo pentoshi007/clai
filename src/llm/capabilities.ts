@@ -63,7 +63,6 @@ export {
   resetReasoningKnowledge,
 } from "./capability/state.js";
 
-/** Mark a model as having rejected reasoning options so we stop sending them. */
 export function markReasoningUnsupported(
   provider: ProviderId,
   model: string,
@@ -84,7 +83,6 @@ export function registerRouteControlDialect(
   setRouteControlDialect(reasoningKey(provider, model), dialect);
 }
 
-/** Whether a model was observed to reject reasoning options this session. */
 export function isReasoningUnsupported(
   provider: ProviderId,
   model: string,
@@ -443,11 +441,6 @@ export function clearLearnedRouteCapabilities(): void {
 
 export { learnedRouteRejectedFields };
 
-/**
- * Whether the given provider/model can accept image input. When true, the
- * agent attaches real image bytes to the user message; when false, it falls
- * back to a text note and OCR/inspection tools.
- */
 export type VisionSupport = "yes" | "no" | "unknown";
 
 export type VisionEvidence = "observed" | "pattern" | "none";

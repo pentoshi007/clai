@@ -76,8 +76,6 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       return job;
     }
     let timeoutMs = requestedTimeoutMs;
-    // Handle seconds vs milliseconds confusion for long-running commands
-    // If model sends 300 thinking 300s, but code expects ms, convert small values to ms
     if (
       timeoutMs !== undefined &&
       timeoutMs > 0 &&
@@ -95,8 +93,6 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
           ? 120_000
           : undefined);
 
-    // Password tools must never steal the TTY in OpenTUI (freezes Esc/clicks).
-    // Prefer secure modal + sudo -S; otherwise refuse interactive elevation.
     if (looksInteractiveStdin(command)) {
       const elevated = await tryRunElevatedWithoutTty(command, {
         cwd: optionalString(args, "cwd"),
@@ -125,7 +121,6 @@ export const toolRegistry_SHELL_1: Record<string, ToolHandler> = {
       timeoutMs,
       signal: options?.signal,
       onOutput: options?.onOutput,
-      // Explicit: never inherit unless classic REPL policy allows it.
       interactiveStdin: getAllowInteractiveStdinInherit() ? "auto" : false,
     });
   },

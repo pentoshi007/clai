@@ -23,7 +23,6 @@ import {
 export interface ImageToolRunOptions {
   signal?: AbortSignal | undefined;
   onOutput?: ((chunk: string, stream: "stdout" | "stderr") => void) | undefined;
-  /** Active route — decides vision support and the per-image size budget. */
   llmProvider?: ProviderId | undefined;
   llmModel?: string | undefined;
 }
@@ -182,7 +181,6 @@ export async function imageOcr(
   return { ok: true, output: `${header}\n\n${result.text}` };
 }
 
-/** Hard ceiling on one image.view call, independent of the provider budget. */
 const MAX_VIEW_IMAGES = 4;
 
 function viewPaths(args: Record<string, unknown>): string[] | string {
@@ -205,20 +203,6 @@ function viewPaths(args: Record<string, unknown>): string[] | string {
   return paths;
 }
 
-/**
- * Put real image bytes in front of a vision-capable model.
- *
- * The agent could previously only reach an image through `image.ocr`, so a
- * model that had just captured a screenshot to verify its own work had no way
- * to actually look at it — it got a Tesseract transcript of whatever text
- * happened to be legible, which is useless for "does this render correctly"
- * and actively misleading for photos, 3D scenes and charts.
- *
- * Tool results are text-only on every provider wire, so this tool returns the
- * prepared bytes on {@link ToolResult.images} and the agent replays them as a
- * follow-up user turn — the same path a user attachment takes, which every
- * multimodal adapter (OpenAI, Anthropic, Gemini, Ollama) already serializes.
- */
 export async function imageView(
   args: Record<string, unknown>,
   options: ImageToolRunOptions = {},
@@ -230,10 +214,6 @@ export async function imageView(
 
   const provider = options.llmProvider;
   const model = options.llmModel ?? "";
-  // Tool exposure and execution both require affirmative capability evidence.
-  // Unknown routes are not safe to accept here: the returned bytes would be
-  // replayed only after the tool result, where a text-only fallback could no
-  // longer make the inspection claim true.
   if (!provider || !model || !modelSupportsVision(provider, model)) {
     return {
       ok: false,
@@ -267,8 +247,6 @@ export async function imageView(
     }
     let bytes: Buffer;
     try {
-      // Open once, then stat and read through the same descriptor. This closes
-      // the path-replacement/symlink race between preparation and ingestion.
       const handle = await open(prepared.path, "r");
       try {
         const current = await handle.stat();

@@ -1,24 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-/**
- * While OpenTUI owns the screen it repaints only its own framebuffer region.
- * Anything printed straight to the tty lands in cells the renderer never
- * repaints, so the fragment sticks there for the rest of the session — that is
- * the stray column of leftover text along the right edge.
- *
- * Core modules still reach for `console.*` on rare paths (a permission error, a
- * provider capability warning, a plan dump), and any of them can fire mid-turn.
- * This guard routes those calls to a log file instead of the terminal.
- *
- * Only `console.*` is intercepted, never the std stream writers themselves: the
- * renderer emits frames straight through the stream, so patching that would
- * blank the UI.
- */
 
 export interface ConsoleGuardOptions {
   readonly logDir: string;
-  /** Receives every captured message, for optional in-app surfacing. */
   readonly onCapture?: ((level: string, message: string) => void) | undefined;
 }
 

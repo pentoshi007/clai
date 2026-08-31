@@ -228,10 +228,6 @@ function wireOnlyFingerprint(
   );
 }
 
-/**
- * Captures hashes and byte counts from the exact JSON string passed to fetch.
- * The returned value has no request body, header, URL, or decoded JSON values.
- */
 export function fingerprintFinalRequest(
   input: Pick<GenerationAttemptInput, "provider" | "model">,
   body: BodyInit | null | undefined,

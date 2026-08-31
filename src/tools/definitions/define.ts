@@ -1,12 +1,6 @@
 import { registerWireNamesFor } from "../../llm/tool-protocol.js";
 import type { ToolDefinition } from "../../types.js";
 
-/**
- * Tools whose handler actually honors `timeoutMs`. The property used to be
- * injected into every schema, which cost ~45 tokens per tool on every request
- * and told the model it could bound operations (fs.read, pdf.read, plan.*) that
- * silently ignored it.
- */
 const TIMED_TOOLS = new Set([
   "shell.exec",
   "http.fetch",
@@ -52,7 +46,6 @@ export function def(
           },
         },
       };
-  // Primary wire keeps camelCase (fs_writeMany); also register snake alias.
   const wireName = registerWireNamesFor(name);
   return {
     name,

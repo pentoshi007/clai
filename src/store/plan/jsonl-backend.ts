@@ -13,23 +13,11 @@ export const jsonlFile =
     ? join(tmpdir(), `clai-plans-${process.env.VITEST_WORKER_ID}.jsonl`)
     : join(planDir, "plans.jsonl"));
 
-/**
- * Every plan write is serialized in-process.
- *
- * The JSONL backend rewrites the whole file (read → modify → write) and the
- * SQLite backend used an unconditional UPSERT, so two concurrent writers (a
- * foreground task transition and an asynchronous responder settlement) could
- * each save their own `v+1` derived from the same base version. The later write
- * silently reverted the earlier one — reopening completed parents or re-yellowing
- * settled children.
- */
 let planWriteQueue: Promise<unknown> = Promise.resolve();
 
 let planWriteDepth = 0;
 
 export function enqueuePlanWrite<T>(task: () => Promise<T>): Promise<T> {
-  // Re-entrancy: a queued mutation may load a plan that heals itself through
-  // savePlan. Waiting on the queue from inside the queue would deadlock.
   if (planWriteDepth > 0) return task();
   const tracked = async (): Promise<T> => {
     planWriteDepth += 1;
@@ -40,7 +28,6 @@ export function enqueuePlanWrite<T>(task: () => Promise<T>): Promise<T> {
     }
   };
   const run = planWriteQueue.then(tracked, tracked);
-  // Keep the chain alive regardless of individual failures.
   planWriteQueue = run.then(
     () => undefined,
     () => undefined,
@@ -52,13 +39,11 @@ const jsonlLockDir = `${jsonlFile}.lock`;
 
 const JSONL_LOCK_STALE_MS = 10_000;
 
-/** Cross-process advisory lock for the JSONL fallback (atomic mkdir). */
 export async function withJsonlLock<T>(task: () => Promise<T>): Promise<T> {
   const deadline = Date.now() + 5_000;
   try {
     await mkdir(dirname(jsonlFile), { recursive: true });
   } catch {
-    // Directory creation is retried by appendJsonl.
   }
   for (;;) {
     try {
@@ -66,7 +51,6 @@ export async function withJsonlLock<T>(task: () => Promise<T>): Promise<T> {
       break;
     } catch (err: any) {
       if (err?.code !== "EEXIST") throw err;
-      // Break a stale lock left behind by a crashed process.
       try {
         const info = await stat(jsonlLockDir);
         if (Date.now() - info.mtimeMs > JSONL_LOCK_STALE_MS) {

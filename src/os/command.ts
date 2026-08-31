@@ -3,11 +3,6 @@ import { access as accessAsync } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { platform } from "node:os";
 
-/**
- * Standard system bin dirs — always searched even when process.env.PATH is
- * empty or stripped (common for some packaged/GUI-launched runtimes). Without
- * these, tool.check reports "curl not found" while /usr/bin/curl exists.
- */
 const FALLBACK_PATH_DIRS_UNIX = [
   "/opt/homebrew/bin",
   "/usr/local/bin",
@@ -24,7 +19,6 @@ const FALLBACK_PATH_DIRS_WIN = [
   process.env.WINDIR ? join(process.env.WINDIR, "System32") : "",
 ].filter(Boolean);
 
-/** PATH-like string with system dirs appended (never drops existing entries). */
 export function augmentedPathEnv(base?: string): string {
   const sep = delimiter;
   const existing = (base ?? process.env.PATH ?? "").split(sep).filter(Boolean);
@@ -67,10 +61,6 @@ function buildCandidates(command: string): string[] {
   return candidates;
 }
 
-/**
- * Locate an executable without invoking a shell or `which`.
- * Works when `/bin/sh` is missing and when PATH is incomplete.
- */
 export async function findExecutable(
   command: string,
 ): Promise<string | undefined> {
@@ -81,7 +71,6 @@ export async function findExecutable(
       await accessAsync(candidate, mode);
       return candidate;
     } catch {
-      // try next
     }
   }
   return undefined;
@@ -91,7 +80,6 @@ export async function commandAvailable(command: string): Promise<boolean> {
   return Boolean(await findExecutable(command));
 }
 
-/** Sync variant for version probes. */
 export function findExecutableSync(command: string): string | undefined {
   if (!command || command.includes("\0")) return undefined;
   const mode = platform() === "win32" ? constants.F_OK : constants.X_OK;
@@ -100,7 +88,6 @@ export function findExecutableSync(command: string): string | undefined {
       accessSync(candidate, mode);
       return candidate;
     } catch {
-      // try next
     }
   }
   return undefined;

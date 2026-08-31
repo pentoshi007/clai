@@ -1,4 +1,3 @@
-/** Structural mirror of `TaskState` in the plan store; kept here to avoid a cycle. */
 export type TaskState =
   | "pending"
   | "in_progress"
@@ -6,11 +5,6 @@ export type TaskState =
   | "failed"
   | "skipped";
 
-// The set of task-state transitions an ordinary update may perform.
-// `done` and `skipped` are terminal: regressing them re-executes finished work
-// and re-blocks dependents. Reopening after a failure is an explicit retry.
-// A plan revision (task.add / plan.revise) supersedes a task instead of
-// rewinding it, so revisions bypass this table by design.
 
 export type TaskTransitionDenialCode =
   | "terminal"
@@ -38,16 +32,10 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
   "skipped",
 ]);
 
-/** True when no ordinary `task.update` may move the task any further. */
 export function isTerminalTaskState(state: TaskState): boolean {
   return TERMINAL_STATES.has(state);
 }
 
-/**
- * Decide whether `task.update` may move a task from `from` to `to`.
- * Re-asserting the current state is always allowed so idempotent retries and
- * note-only updates keep working.
- */
 export function evaluateTaskTransition(
   from: TaskState,
   to: TaskState,

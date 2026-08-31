@@ -34,16 +34,13 @@ export interface InkTheme {
   readonly unicode: boolean;
   readonly italicOk: boolean;
   readonly glyphs: Glyphs;
-  /** Hex for an Ink `color`/`borderColor` prop, or undefined at `none`. */
   inkColor(token: ThemeToken): string | undefined;
   style(text: string, style: TextStyle): string;
   fg(token: ThemeToken, text: string): string;
-  /** Raw hex, for colours that come from a shared presenter (syntax spans). */
   hex(color: string, text: string): string;
   bold(text: string): string;
   dim(text: string): string;
   inverse(text: string): string;
-  /** Plate: solid background with white bold label. */
   plate(token: ThemeToken, text: string): string;
 }
 
@@ -51,7 +48,6 @@ export interface InkThemeInput {
   readonly themeHint: ThemeHint;
   readonly colorMode: ColorMode;
   readonly unicode: boolean;
-  /** Legacy conhost renders italic as inverse; suppress it there. */
   readonly italic?: boolean | undefined;
 }
 
@@ -94,12 +90,6 @@ export function createInkTheme(input: InkThemeInput): InkTheme {
 }
 
 
-/**
- * Shared `ui-core` renderers (markdown, code blocks, the intro card) colour
- * through the ambient chalk singleton, whose level is detected from the host
- * process. Classic pins it to the negotiated `colorMode` for the duration of a
- * render so a frame never depends on whether stdout happened to be a TTY.
- */
 export function withColorMode<T>(mode: ColorMode, render: () => T): T {
   const level = CHALK_LEVEL[mode];
   const previous = chalk.level;

@@ -28,13 +28,7 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
         : undefined;
     const url = requireString(args, "url");
     const method = (optionalString(args, "method") ?? "GET").toUpperCase();
-    // Local app verify: loopback GET/HEAD is the owner's own process — auto-own
-    // so models are not stuck without iOwnThis. Mutating methods and non-loopback
-    // private/metadata addresses still require explicit ownership.
     let iOwnThis = args.iOwnThis === true || args.own === true;
-    // Keep the caller's host (localhost). httpFetch dual-stacks 127.0.0.1/::1
-    // on connection failure — rewriting to 127.0.0.1 alone broke Vite on
-    // IPv6-only macOS binds while the browser still worked.
     if (!iOwnThis && (method === "GET" || method === "HEAD")) {
       try {
         const parsed = new URL(url);
@@ -50,7 +44,6 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
           iOwnThis = true;
         }
       } catch {
-        /* invalid URL handled inside httpFetch */
       }
     }
     const insecureTls =
@@ -80,8 +73,6 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
         optionalBoolean(args, "forwardSensitiveHeaders") ?? false,
       insecureTls,
       signal: options?.signal,
-      // Never attach engagement hop checks for owned loopback — leftover
-      // pentest scope must not fail local app verify.
       authorizeHop: iOwnThis ? undefined : options?.authorizeNetworkHop,
     });
   },
@@ -90,8 +81,6 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
     const maxResults = optionalNumber(args, "maxResults");
     const selectedTimeoutMs =
       optionalNumber(args, "timeoutMs") ?? SEARCH_TIMEOUT_MS;
-    // Search providers, fallback attempts, and optional fetchTop page reads
-    // share one wall-clock deadline rather than each resetting the budget.
     const deadline = Date.now() + selectedTimeoutMs;
     const remainingMs = (): number => Math.max(0, deadline - Date.now());
     const result = await webSearch(
@@ -105,11 +94,6 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
       },
     );
 
-    // "Search and read" — like a human (or Claude) following the most
-    // relevant links. When fetchTop is set, fetch the readable content of the
-    // top N result pages and append it so the agent gets real page text in a
-    // SINGLE call instead of only snippets. Capped to 3 pages to stay fast and
-    // keep context lean.
     const fetchTop = optionalNumber(args, "fetchTop");
     const want = fetchTop ? Math.max(0, Math.min(3, Math.floor(fetchTop))) : 0;
     if (!result.ok || want === 0) return result;
@@ -123,9 +107,6 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
       };
     }
 
-    // Heartbeats reset the runner's stall watchdog (web.search emits no
-    // stdout of its own). Honor turn cancel between pages so Esc/Ctrl+C
-    // does not wait for every fetchTop page to time out.
     if (options?.signal?.aborted) {
       return {
         ...result,
@@ -162,9 +143,6 @@ export const toolRegistry_WEB: Record<string, ToolHandler> = {
             },
             { ...(options?.signal ? { signal: options.signal } : {}) },
           );
-          // Never truncate page bodies for the tool result — the UI pager and
-          // artifacts must keep the full text. Model context is still budgeted
-          // separately in formatToolContext / context compaction.
           const text = page.output.trim();
           return `── PAGE: ${url} ${page.ok ? "" : "(fetch failed)"}\n${text}`;
         } catch (error) {

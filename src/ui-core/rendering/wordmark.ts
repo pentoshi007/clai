@@ -1,15 +1,5 @@
 import chalk from "chalk";
 
-/**
- * Glyphs are drawn on a square pixel grid and printed two pixel rows per
- * terminal row with half blocks. A terminal cell is about twice as tall as it
- * is wide, so this is what makes a vertical stem and a horizontal bar read as
- * the same weight; one cell per pixel would print bars twice as thick as stems.
- *
- * Two sizes share the design: `compact` (two-pixel strokes, four rows) for
- * inline use, and `large` (three-pixel strokes, six rows) for the intro card,
- * which has a pane to fill.
- */
 const COMPACT_I: readonly string[] = [
   "##",
   "##",
@@ -107,10 +97,8 @@ const LARGE_GLYPHS: Record<string, readonly string[]> = {
   i: LARGE_I,
 };
 
-/** `block` uses half blocks; `ascii` samples every second pixel row. */
 export type WordmarkStyle = "block" | "ascii";
 
-/** `compact` is four rows tall, `large` is six. */
 export type WordmarkSize = "compact" | "large";
 
 export interface WordmarkOptions {
@@ -133,14 +121,8 @@ const SPECS: Record<WordmarkSize, Spec> = {
 
 const ON = "#";
 
-/** First stop of the wordmark ramp. */
 export const WORDMARK_TOP_HEX = "#12D9B0";
 
-/**
- * An analogous cool ramp — teal through the brand aqua into a soft cyan.
- * Applied left to right so every cell holds a single hue, which is what lets
- * half blocks carry a gradient at all.
- */
 const RAMP: readonly string[] = [
   WORDMARK_TOP_HEX,
   "#1FE4DA",
@@ -156,7 +138,6 @@ function glyphsOf(word: string, spec: Spec): readonly string[][] {
   ]);
 }
 
-/** Width (in columns, uncolored) of the rendered wordmark for a given word. */
 export function wordmarkWidth(word: string, size: WordmarkSize = "compact"): number {
   const spec = SPECS[size];
   const glyphs = glyphsOf(word, spec);
@@ -241,10 +222,6 @@ function paintRow(row: string, width: number): string {
   return out;
 }
 
-/**
- * Render `word` as a gradient pixel wordmark, one string per row, joined with
- * newlines. Each line is prefixed by `indent`.
- */
 export function renderWordmark(
   word: string,
   options: WordmarkOptions = {},

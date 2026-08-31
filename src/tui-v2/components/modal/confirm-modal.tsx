@@ -1,10 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Confirmation surface (CORE-002, PICK-002, V2-073).
- *
- * Docked above the composer by default — compact action bar, not a full-screen
- * black modal. Keys: y/n (or r for reset, i/d/p/s for plan).
- */
 
 import type { ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
@@ -19,9 +13,7 @@ export interface ConfirmModalProps {
   readonly theme: Theme;
   readonly request: ConfirmRequest;
   readonly onViewPlan?: (() => void) | undefined;
-  /** Preview file contents for delete confirms (`v`). */
   readonly onViewFile?: (() => void) | undefined;
-  /** Compact strip above the input (preferred). */
   readonly docked?: boolean | undefined;
 }
 
@@ -45,7 +37,6 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
       else if (chord === "escape") services.overlay.answerConfirm(false);
       else return;
     } else if (request.kind === "plan") {
-      // Only explicit decision keys — free-text suggestions use `s` then composer.
       if (chord === "y" || chord === "i" || chord === "enter") {
         services.overlay.answerPlanConfirm("implement");
       } else if (chord === "n" || chord === "d") {
@@ -55,7 +46,6 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
       } else if (chord === "p") {
         onViewPlan?.();
       } else if (chord === "escape") {
-        // Dismiss only — leave draft plan pending (do not discard)
         services.overlay.answerPlanConfirm("dismiss");
       } else {
         return;
@@ -66,7 +56,6 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
       } else if (chord === "n" || chord === "escape") {
         services.overlay.answerConfirm(false);
       } else if (chord === "v" && request.viewPath) {
-        // Preview only — leave confirm open under the pager.
         onViewFile?.();
       } else return;
     }
@@ -93,7 +82,6 @@ export function ConfirmModal(props: ConfirmModalProps): ReactNode {
             ? "y approve  ·  n deny  ·  v view file  ·  esc cancel"
             : "y approve  ·  n deny  ·  esc cancel";
 
-  // Soft-wrap long tool prompts for the dock width.
   const promptLines = wrapPrompt(request.prompt, docked ? 88 : 72);
 
   return (

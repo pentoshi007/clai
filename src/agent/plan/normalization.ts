@@ -1,7 +1,6 @@
 import { isBareTaskIdTitle } from "../../store/plan.js";
 import type { SessionPlan } from "../../store/plan.js";
 
-/** Titles match for plan merge (exact or mutual long substring). */
 export function titlesMatchForPlan(a: string, b: string): boolean {
   const t1 = a.trim().toLowerCase();
   const t2 = b.trim().toLowerCase();
@@ -11,13 +10,11 @@ export function titlesMatchForPlan(a: string, b: string): boolean {
   );
 }
 
-/** Goal is only "run/start the existing app" — do not open a new plan. */
 export function looksLikeRunOnlyGoal(goal: string, detail: string): boolean {
   const blob = `${goal} ${detail}`.toLowerCase();
   if (!/\b(run|start|launch|serve|dev\s*server|npm\s+run\s+dev)\b/.test(blob)) {
     return false;
   }
-  // Exclude fresh scaffold goals
   if (/\b(scaffold|create|build|implement|add feature|from scratch|new app)\b/.test(blob)) {
     return false;
   }
@@ -34,7 +31,6 @@ export function nextTaskId(existingIds: string[]): string {
   return `t${max + 1}`;
 }
 
-/** Coerce model-sloppy plan.create fields into clean titles. */
 export function normalizePlanGoal(args: Record<string, unknown>): string {
   const raw = args.goal ?? args.objective ?? args.title ?? args.name;
   if (typeof raw === "string") return raw.trim();
@@ -108,7 +104,6 @@ export interface NormalizedPlanTask {
   acceptanceCriteria?: string | undefined;
 }
 
-/** Full entries including model-supplied id/name aliases (X3). */
 export function normalizePlanTaskEntries(
   args: Record<string, unknown>,
 ): NormalizedPlanTask[] {
@@ -140,7 +135,6 @@ export function normalizePlanTaskEntries(
             aliases.push(String(o[k]).trim());
           }
         }
-        // `name` is often the title; only alias if it differs.
         if (
           typeof o.name === "string" &&
           o.name.trim() &&
@@ -185,7 +179,6 @@ export function normalizePlanTaskEntries(
     .filter((x): x is NormalizedPlanTask => Boolean(x));
 }
 
-/** Resolve model taskId (t1 or slug) to the canonical plan task id. */
 export function resolvePlanTaskId(
   plan: SessionPlan,
   taskId: string,

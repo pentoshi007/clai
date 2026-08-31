@@ -4,7 +4,6 @@ import {
 } from "../../interactive-session/manager.js";
 import type { InteractiveSessionsPort } from "../ports/interactive-sessions-port.js";
 
-/** Backs `InteractiveSessionsPort` with the process-wide session manager. */
 export function createCurrentInteractiveSessionsPort(
   manager: InteractiveSessionManager = interactiveSessionManager,
 ): InteractiveSessionsPort {

@@ -100,7 +100,6 @@ function mergeById<T extends { id: string }>(
 const terminalProgress = (status: string): number =>
   status === "running" || status === "planned" ? 0 : 1;
 
-/** Preserve sibling parallel action updates while merging whole-graph snapshots. */
 function mergeEngagementGraphs(
   existing: EngagementGraph | undefined,
   incoming: EngagementGraph,
@@ -149,7 +148,6 @@ const normalizedScopeIdentity = (scope: EngagementScope): string => JSON.stringi
   createdAt: scope.createdAt ?? "",
 });
 
-/** Stable across process restarts and conversation compaction for the same authorization. */
 export function engagementIdForScope(scope: EngagementScope): string {
   return createHash("sha256").update(normalizedScopeIdentity(scope)).digest("hex").slice(0, 32);
 }
@@ -188,7 +186,6 @@ export function saveEngagement(graph: EngagementGraph): Promise<void> {
         const parsed = JSON.parse(await readFile(path, "utf8")) as EngagementGraph;
         if (parsed.schemaVersion === 1) existing = parsed;
       } catch {
-        // First save or corrupt prior state: the incoming valid graph replaces it.
       }
       const merged = mergeEngagementGraphs(existing, graph);
       merged.updatedAt = new Date().toISOString();

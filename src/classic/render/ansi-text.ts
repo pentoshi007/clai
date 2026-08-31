@@ -17,7 +17,6 @@ interface Token {
   readonly value: string;
 }
 
-/** Split into escape sequences and printable runs, in order. */
 export function tokenize(text: string): Token[] {
   if (!ESCAPE_START.test(text)) {
     return text.length > 0 ? [{ kind: "text", value: text }] : [];
@@ -54,7 +53,6 @@ export function tokenize(text: string): Token[] {
   return tokens;
 }
 
-/** True when the string opens a styling sequence it does not reset. */
 export function hasOpenStyle(text: string): boolean {
   let foreground = false;
   let background = false;
@@ -110,15 +108,10 @@ export function hasOpenStyle(text: string): boolean {
   return foreground || background || bold || dim || italic || underline || inverse || hidden || strike;
 }
 
-/** Guarantee no frame row leaks styling into the next row. */
 export function sealStyle(text: string): string {
   return hasOpenStyle(text) ? `${text}${RESET}` : text;
 }
 
-/**
- * Clip to `max` layout columns, keeping every escape sequence intact and
- * appending `suffix` (unstyled) when content was dropped.
- */
 export function clipToWidth(text: string, max: number, suffix = ""): string {
   if (max <= 0) return "";
   if (layoutWidth(text) <= max) return sealStyle(text);
@@ -151,10 +144,6 @@ export function padToWidth(text: string, width: number): string {
   return deficit > 0 ? `${text}${" ".repeat(deficit)}` : text;
 }
 
-/**
- * Middle-ellipsis for PLAIN text (no ANSI): keeps ~60% of the budget at the
- * head and ~40% at the tail so both ends of a path stay recognizable.
- */
 export function middleClipPlain(text: string, max: number, ellipsis = "…"): string {
   if (max <= 0) return "";
   if (layoutWidth(text) <= max) return text;
@@ -180,10 +169,6 @@ export function padStartToWidth(text: string, width: number): string {
   return deficit > 0 ? `${" ".repeat(deficit)}${text}` : text;
 }
 
-/**
- * Place `right` flush to `width`, dropping it entirely when it cannot fit with
- * at least one separating column. The left side is clipped, never the right.
- */
 export function alignEnds(
   left: string,
   right: string,
@@ -203,10 +188,6 @@ export function plainText(text: string): string {
   return stripAnsi(text);
 }
 
-/**
- * Drop trailing blanks that sit outside every styling run. Padding that belongs
- * to a background wash ends before its reset sequence and is therefore kept.
- */
 export function trimTrailingSpaces(text: string): string {
   const lastEscape = text.lastIndexOf("\x1b");
   if (lastEscape === -1) return text.replace(/[ \t]+$/, "");

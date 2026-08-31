@@ -1,15 +1,6 @@
 import type { ToolCall } from "../../types.js";
 import { extractBalancedJson, lenientJsonParse, preprocessJson, tryParseCall } from "./xml-protocol.js";
 
-// Kimi K2 / Moonshot models on NVIDIA NIM emit tool calls using a
-// sentinel-token format that looks like:
-//   <|tool_calls_section_begin|>
-//     <|tool_call_begin|>functions.shell.exec:0<|tool_call_argument_begin|>
-//     {"command":"ls"}
-//     <|tool_call_end|>
-//   <|tool_calls_section_end|>
-// The `functions.` prefix is optional, the trailing `:N` index is optional,
-// and the surrounding section markers may be absent on truncated streams.
 export const KIMI_TOOL_CALL_RE =
   /<\|tool_call_begin\|>\s*(?:functions\.)?([A-Za-z][\w.]*?)(?::\d+)?\s*<\|tool_call_argument_begin\|>\s*(\{[\s\S]*?\})\s*<\|tool_call_end\|>/i;
 
@@ -231,26 +222,9 @@ export function parseOpenSepToolCall(text: string): ToolCall | undefined {
   return parseAllOpenSepToolCalls(text)[0]?.call;
 }
 
-/**
- * GLM / Tencent / some OpenAI-compat gateways emit:
- *   <tool_calls:6124c78e>
- *   <tool_call:6124c78e>web.search
- *   {"query":"…"}
- *   </tool_call:6124c78e>
- *   </tool_calls:6124c78e>
- * Closing tags and the outer wrapper are optional on truncated streams.
- * Name may sit on the same line as the opener or the next line; args are a
- * balanced JSON object (bare args, not necessarily {"name","args"} wrapper).
- */
 const ID_TOOL_CALL_RE =
   /<tool_call:([A-Za-z0-9_-]+)>\s*([\w.-]+)\s*/gi;
 
-/**
- * Boundaries that end one id-tagged block. Argument JSON must be found before
- * the first of these, so a block whose own JSON is missing or truncated can
- * Never adopt the arguments of a LATER block: a `fs.delete` opener
- * must not pair with the next call's `{"path":...}`.
- */
 const ID_BLOCK_BOUNDARY_RES: RegExp[] = [
   /<\/tool_call\b/i,
   /<\/tool_calls\b/i,
@@ -287,23 +261,14 @@ export function parseIdTaggedToolCall(text: string): ToolCall | undefined {
     const parsed = tryJson(json);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const obj = parsed as Record<string, unknown>;
-      // Full {"name","args"} form inside the block.
       if (typeof obj.name === "string" && obj.args && typeof obj.args === "object") {
         return tryParseCall(json);
       }
-      // Bare args object: {"query":"…"}
       return { name, args: obj };
     }
     return undefined;
   }
-  // An unbalanced/undecodable `{` inside this block means the arguments are
-  // truncated. Never fall through to an empty-args call — that would run a
-  // mutating tool with a different meaning than the model intended.
   if (block.body.includes("{")) return undefined;
-  // Still-open block: the argument JSON (or the rest of the tool name) has not
-  // streamed in yet. Reporting an empty-args call here is what froze live tool
-  // cards with a blank input, and a half-arrived name would be assembled into
-  // a shell command. Only a closed block is a real zero-argument call.
   if (!block.terminated) return undefined;
   return { name, args: {} };
 }
@@ -330,7 +295,6 @@ export function tryJson(raw: string): Record<string, unknown> | undefined {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    // ignore
   }
   return undefined;
 }

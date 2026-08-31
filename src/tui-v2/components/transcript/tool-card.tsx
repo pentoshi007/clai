@@ -1,21 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Tool card: flat single-border pane (classic parity — no 3D depth / outer plate).
- *
- * Click (body or footer) opens the full-output pager modal — unless the card is
- * already expanded in place via Ctrl+O. Ctrl+O expands every card to show the
- * full cleaned body; click does not toggle expand (classic: keyboard expands,
- * click opens the unbounded viewer).
- *
- * tool.batch: parent card nests one mini-card per sub-tool **while live and
- * after completion**. As each child settles, its full section body streams in
- * so nested cards look like normal expanded tool output (not a compact
- * "x ok, y ok" status list). Click the parent for the full batch; click a
- * sub-card for that call only. Ctrl+O expands sub-bodies in place.
- *
- * File diffs: compact single-height rows; chevron collapses hunks to a one-line
- * title (verb + relative path). Collapse-all applies to every file-diff card.
- */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
@@ -50,7 +33,6 @@ import { shouldDefaultFormattedView } from "../../../ui-core/rendering/pager-vie
 import { extractFsReadFileBody } from "../../../ui-core/rendering/pager-source.js";
 import { selectableRowStyle } from "./selectable-line.js";
 
-/** Border / status accent: green ok · yellow running · red failed. */
 const STATUS_COLOR: Record<ToolItem["status"], keyof Theme> = {
   queued: "muted",
   running: "activity",
@@ -78,15 +60,12 @@ function OutputLines(props: {
   gutterFg: string;
 }): ReactNode {
   const { lines, theme, gutterFg } = props;
-  // Sky cyan body — readable on dark tool cards (theme.toolOutput).
   const bodyFg = theme.toolOutput;
   return (
     <>
       {lines.map((line, i) => {
         const isGap = line.startsWith("···");
         return (
-          // Full-width row so drag-select does not require pixel-perfect aim,
-          // opaque so a short line repaints the cells to its right.
           <text
             key={i}
             selectable
@@ -128,7 +107,6 @@ function BatchSubCard(props: {
           : theme.diffDel;
   const statusFg = borderFg;
 
-  // Click (no drag) opens pager; drag-select copies output lines.
   const click = useClickWithoutDrag(() => {
     if (parentExpanded) return;
     onOpen(section);
@@ -155,7 +133,6 @@ function BatchSubCard(props: {
         marginTop: 1,
         marginBottom: 0,
         borderColor: borderFg,
-        // Match parent face — no second elevated plate.
         backgroundColor: theme.statusBackground,
         paddingLeft: 1,
         paddingRight: 1,
@@ -209,10 +186,8 @@ export function ToolCard(props: {
   expanded: boolean;
   services: AppServices;
   onToggle: () => void;
-  /** Collapse/expand every tool OUTPUT card (collapse all / expand all). */
   onCollapseAllOutput?: () => void;
   onExpandAllOutput?: () => void;
-  /** File-diff hunks visible (vs one-line collapsed title). */
   fileDiffExpanded?: boolean;
   onToggleFileDiff?: () => void;
   onCollapseAllFileDiffs?: () => void;
@@ -246,24 +221,17 @@ export function ToolCard(props: {
   const fileChanges = item.fileChanges;
   const fileChangeStats = fileChangeLineStats(fileChanges);
   const isWriteMany = item.name === "fs.writeMany";
-  // File mutations never show the spool receipt ("Tool fs.write result…") —
-  // that is what made history cards look broken when fileChanges was missing.
   const isMutation = isFileMutationTool(item.name);
 
   const isBatchName = isBatchToolName(item.name);
-  // Live + finished: merge streamed `── #N` sections with running placeholders
-  // so nested cards appear as soon as the first child starts (expanded form).
   const batchSections =
     isBatchName && tail ? buildBatchCardsFromSpool(tail) : [];
   const isBatch = isBatchName && batchSections.length > 0;
   const isBatchLive = isBatchName && item.status === "running";
-  // Nested batch bodies prefer expanded presentation so live output matches
-  // single-tool cards (Ctrl+O still toggles global expand for huge dumps).
   const batchExpanded = expanded || isBatchLive;
 
   const { width: termWidth } = useTerminalDimensions();
   const readPath = pathFromArgsDisplay(item.argsDisplay);
-  // fs.read of markdown: prefer formatted preview (same policy as pager).
   const formatMdRead =
     !isBatch &&
     !isBatchLive &&
@@ -277,7 +245,6 @@ export function ToolCard(props: {
     });
   const mdPreview = useMemo(() => {
     if (!formatMdRead || !tail.trim()) return null;
-    // Spool is tool chrome + `N: ` line numbers — strip to real markdown first.
     const clean = extractFsReadFileBody(tail);
     if (!clean.trim()) return null;
     const budget = expanded ? 60 : 10;
@@ -288,7 +255,6 @@ export function ToolCard(props: {
     }).slice(0, budget);
   }, [formatMdRead, tail, expanded, termWidth, theme.toolOutput]);
 
-  // write/edit/writeMany: structured body only — never receipt dumps.
   const { lines, hiddenAboveCount, truncatedNotice } =
     isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead
       ? {
@@ -299,9 +265,7 @@ export function ToolCard(props: {
       : presentOutput(tail, spoolState, expanded, item.name);
 
   const statusFg = theme[STATUS_COLOR[item.status]];
-  // Card boundary: green success · yellow running · red failure · muted queued.
   const highlight = statusFg;
-  // Status chips: dark solid plates (bright colors stay on title/border only).
   const statusBadgeBg =
     item.status === "ok"
       ? theme.successBg
@@ -323,9 +287,6 @@ export function ToolCard(props: {
     item.outputBytes > 0 ||
     Boolean(item.artifactPath);
 
-  // shell.exec-style OUTPUT cards get collapse / collapse-all chips (parity
-  // with file-diff cards). Shown only when there is genuinely collapsible
-  // body — expanded, or collapsed with more lines hidden.
   const canToggleOutput =
     !isFileDiff &&
     !isBatch &&
@@ -335,13 +296,11 @@ export function ToolCard(props: {
       hiddenAboveCount > 0 ||
       (formatMdRead && (mdPreview?.length ?? 0) > 0));
 
-  /** Open unbounded pager for the whole tool (or full batch / file diff). */
   const openFull = (): void => {
     if (expanded) return;
     if (item.status === "running" && !hasBody) return;
     void openToolOutputPager(services, item);
   };
-  // Click without drag opens pager; drag-select includes output text.
   const openFullClick = useClickWithoutDrag(openFull);
 
   const openFileChange = (change: FileChange): void => {
@@ -367,11 +326,9 @@ export function ToolCard(props: {
     );
   };
 
-  // Footer: shorter for file diffs (title already carries the path).
   let footerHint: string | undefined;
   if (isWriteMany && item.status !== "running") {
     const n = fileChanges?.length ?? 0;
-    // Hide the ghost "0 files" footer on empty/failed multi-writes.
     footerHint =
       n > 0
         ? fileDiffExpanded
@@ -421,7 +378,6 @@ export function ToolCard(props: {
         width: "100%",
         marginBottom: 1,
         borderColor: highlight,
-        // Flat face only — no layered header/well plate outside the border.
         backgroundColor: theme.statusBackground,
         paddingLeft: 1,
         paddingRight: 1,
@@ -429,8 +385,7 @@ export function ToolCard(props: {
         paddingBottom: 0,
       }}
     >
-      {/* Header: title (shrinks) + short status badge (never overflows border).
-          height:1 + no padding so no air gap before command/args line. */}
+      {}
       <box
         style={{
           flexDirection: "row",
@@ -561,7 +516,7 @@ export function ToolCard(props: {
           <text selectable style={{ fg: theme.muted }}>
             {argsLabel}:{" "}
           </text>
-          {/* Input/command — composer aqua; OUTPUT body uses toolOutput sky. */}
+          {}
           <text selectable style={{ fg: theme.inputBorder }}>
             {argsDisplay}
           </text>
@@ -578,7 +533,7 @@ export function ToolCard(props: {
         <text selectable style={{ fg: summaryFg, attributes: TextAttributes.DIM }}>{summary}</text>
       ) : null}
 
-      {/* Nested sub-tools for tool.batch — live and finished (expanded form). */}
+      {}
       {isBatch
         ? batchSections.map((section) => (
             <BatchSubCard
@@ -592,7 +547,7 @@ export function ToolCard(props: {
           ))
         : null}
 
-      {/* writeMany + single-file mutations: green/red hunk previews (not name-only lists). */}
+      {}
       {!isBatch && !isBatchLive && isFileDiff && fileChanges && fileChanges[0]?.kind !== "delete" ? (
         <box
           style={{
@@ -619,7 +574,7 @@ export function ToolCard(props: {
         </box>
       ) : null}
 
-      {/* Normal (non-batch) output body — click opens pager; drag selects. */}
+      {}
       {!isBatch &&
       !isBatchLive &&
       !isFileDiff &&
@@ -665,7 +620,7 @@ export function ToolCard(props: {
         </box>
       ) : null}
 
-      {/* Skip the saved-path line for file mutations — path is already in the title. */}
+      {}
       {item.artifactPath && !isFileDiff && !isMutation ? (
         <box
           style={{

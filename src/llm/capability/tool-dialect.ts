@@ -3,7 +3,6 @@ import type { ProviderId } from "../../types.js";
 import { isTextOnlyModel } from "../tool-protocol.js";
 import type { ToolCallingMode, ToolDialect } from "../tool-protocol.js";
 
-/** Default wire dialect for each provider. */
 const providerToolDialect: Record<ProviderId, ToolDialect> = {
   free: "openai",
   openai: "openai",
@@ -21,12 +20,11 @@ const providerToolDialect: Record<ProviderId, ToolDialect> = {
   orcarouter: "openai",
   "merge-gateway": "openai",
   anthropic: "anthropic",
-  "aws-mantle": "openai", // refined by model below
+  "aws-mantle": "openai",
   gemini: "gemini",
   ollama: "ollama",
 };
 
-/** Known non-tool / embedding / tiny models (light denylist). */
 const nativeToolsDenylist: RegExp[] = [
   /embed/i,
   /embedding/i,
@@ -37,7 +35,6 @@ const nativeToolsDenylist: RegExp[] = [
   /text-embedding/i,
 ];
 
-/** Ollama families known to support tools. */
 const ollamaToolFamilies: RegExp[] = [
   /llama3\.1/i,
   /llama3\.2/i,
@@ -58,7 +55,6 @@ function isAwsMantleAnthropicModel(model: string): boolean {
   return /(?:^|[./-])(?:anthropic|claude)(?:[./-]|$)/i.test(model);
 }
 
-/** Tool capability a custom provider declared in its validated profile. */
 function customToolCapability(
   provider: ProviderId,
 ): "supported" | "unsupported" | "unknown" {
@@ -84,15 +80,11 @@ export function resolveToolDialect(
 
   if (provider === "ollama") {
     if (mode === "native") return "ollama";
-    // native-preferred: only attach for known tool-capable families
     if (ollamaToolFamilies.some((re) => re.test(model))) return "ollama";
     return "none";
   }
 
   if (providerToolDialect[provider] === undefined) {
-    // Custom routes serialize native tools only when declared supported;
-    // unknown stays conservative so an undeclared server never receives
-    // optional tool fields it may reject.
     return customToolCapability(provider) === "supported" ? "openai" : "none";
   }
 

@@ -1,11 +1,3 @@
-/**
- * Owner-scoped registry for interactive sessions.
- *
- * Records carry no command, input, environment value, prompt, or output — only
- * opaque identity, state, cursors, and outcome metadata. Interactive records are
- * intentionally separate from `JobManager` records: the two domains have
- * different ownership, policy, and cleanup contracts.
- */
 
 import { randomUUID } from "node:crypto";
 import { MAX_LIST_SUMMARIES } from "./config.js";
@@ -21,7 +13,6 @@ import {
 } from "./types.js";
 
 const SESSION_ID_PREFIX = "its_";
-/** Terminal summaries retained per owner; live records are never evicted. */
 const MAX_TERMINAL_RECORDS_PER_OWNER = MAX_LIST_SUMMARIES;
 
 const ALLOWED_TRANSITIONS: Record<SessionState, readonly SessionState[]> = {
@@ -40,15 +31,10 @@ export function canTransition(from: SessionState, to: SessionState): boolean {
 export class SessionRegistry {
   private readonly records = new Map<string, InteractiveSessionRecord>();
   private readonly byOwner = new Map<string, Set<string>>();
-  /** Process-lifetime issued ids: never reused, even after removal. */
   private readonly issuedIds = new Set<string>();
   private readonly ownerLocks = new Map<string, AsyncMutex>();
   private readonly fencedOwners = new Set<string>();
 
-  /**
-   * Serialize id issuance and live-slot reservation for one owner so two
-   * concurrent starts cannot both pass the live limit.
-   */
   withOwnerLock<T>(ownerId: string, fn: () => Promise<T> | T): Promise<T> {
     let lock = this.ownerLocks.get(ownerId);
     if (!lock) {
@@ -86,16 +72,11 @@ export class SessionRegistry {
     owned.add(record.id);
   }
 
-  /**
-   * Owner mismatch is indistinguishable from a missing id: callers must not be
-   * able to use this lookup as an existence oracle for another conversation.
-   */
   get(ownerId: string, id: string): InteractiveSessionRecord | undefined {
     const record = this.records.get(id);
     return record && record.ownerId === ownerId ? record : undefined;
   }
 
-  /** Unscoped access for cleanup/lifecycle paths that already own the record. */
   getUnscoped(id: string): InteractiveSessionRecord | undefined {
     return this.records.get(id);
   }
@@ -119,7 +100,6 @@ export class SessionRegistry {
     return [...this.byOwner.keys()];
   }
 
-  /** Live first, then descending start time, capped for model consumption. */
   list(ownerId: string): SessionSummary[] {
     const records = [...(this.byOwner.get(ownerId) ?? [])]
       .map((id) => this.records.get(id))
@@ -133,10 +113,6 @@ export class SessionRegistry {
     return records.slice(0, MAX_LIST_SUMMARIES).map(toSummary);
   }
 
-  /**
-   * Compare-and-transition. Returns false when the transition is not allowed,
-   * which is how a late exit observation loses to a committed terminal state.
-   */
   transition(
     record: InteractiveSessionRecord,
     to: SessionState,
@@ -148,7 +124,6 @@ export class SessionRegistry {
     } = {},
   ): boolean {
     if (!canTransition(record.state, to)) {
-      // A terminal record may still be enriched with late outcome metadata.
       if (isTerminalState(record.state)) this.enrich(record, patch);
       return false;
     }
@@ -167,7 +142,6 @@ export class SessionRegistry {
     return true;
   }
 
-  /** Add outcome facts without replacing a chosen terminal state. */
   enrich(
     record: InteractiveSessionRecord,
     patch: {
@@ -183,7 +157,6 @@ export class SessionRegistry {
     }
   }
 
-  /** Fence an owner before its id is rebound so no new operation can enter. */
   fenceOwner(ownerId: string): void {
     this.fencedOwners.add(ownerId);
   }

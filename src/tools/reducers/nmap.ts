@@ -21,11 +21,6 @@ const STATUS_LINE_RE = /^Host is\s+(.+?)(?:\s+\(.*\))?\.?$/i;
 const OS_LINE_RE = /^(?:OS details|Running):\s+(.+)$/i;
 const SUMMARY_RE = /Nmap done:.+/i;
 
-/**
- * Parse plain "nmap -sV" text output into structured findings. We avoid
- * forcing -oX here so the agent can still pass any flags it wants — but if
- * the output looks like XML we just include it verbatim.
- */
 export const nmapReducer: Reducer = (raw): ReducerOutput => {
   if (raw.trim().startsWith("<?xml")) {
     return { summary: raw.slice(0, 8_000) };

@@ -5,12 +5,6 @@ export { CompactionOverLimitError, executeCompactionSummary, isCompactionOverLim
 export { buildCompactionReplayMessages };
 export type { CompactionSummaryExecution } from "./compaction/summary-execution.js";
 
-/**
- * Extra headroom the replay planner adds on top of the standard safety margin.
- * The planner sizes the request with a representative instruction prompt; the
- * real prompt additionally embeds durable-state snippets extracted while the
- * summary runs, so the plan must leave room for them.
- */
 const REPLAY_PLAN_SLACK_TOKENS = 4_096;
 
 export interface CompactionReplayPlan {
@@ -19,22 +13,6 @@ export interface CompactionReplayPlan {
   readonly continuationAccounting: RequestAccounting;
 }
 
-/**
- * Pre-flight the snapshot-replay request without dispatching it. Returns
- * undefined when the snapshot is not a usable prefix base for the live
- * history; otherwise the replay messages and their serialized-request
- * accounting, so the caller can pick the cache-preserving strategy only when
- * the request actually fits (`!plan.accounting.overLimit`). The accounting
- * reserves the summary completion budget and adds planner slack for the
- * durable-state detail the final instruction prompt gains later.
- *
- * Replay compatibility: identical heads are the common case (the snapshot was
- * captured from this session's live message array). History restored from
- * disk drops the composed system head, so a headless history is accepted when
- * its messages still match into the snapshot's body. Anything else means the
- * snapshot belongs to a different lineage (provider/model switch, rewound or
- * replaced history) and replaying it would resurrect dropped messages.
- */
 export function planCompactionReplay(input: {
   readonly baseRequest: SuccessfulRequestSnapshot;
   readonly history: readonly ChatMessage[];

@@ -40,16 +40,6 @@ import type { StreamTerminalPolicy } from "./stream-terminal.js";
 import { providerWireApi, resolveBuiltInProfile } from "./provider-profiles.js";
 import { customProviderProfileFor } from "./custom-provider-profile.js";
 
-/**
- * Canonical request plan (doc 03 §"Canonical request plan", doc 06 §3).
- *
- * One immutable, renderer-neutral object describes what a logical generation
- * will send: route, timeline with stable/mutable boundaries, tools, replay
- * decisions for every artifact, controls, images, route policy, budget, and a
- * privacy-safe cache-prefix fingerprint. Provider serializers emit their wire
- * bodies from a compiled plan; nothing dispatches from ad hoc message arrays
- * past this boundary.
- */
 
 export const REQUEST_PLAN_VERSION = 1 as const;
 export const REQUEST_PLAN_COMPILER_VERSION = 1 as const;
@@ -58,9 +48,7 @@ export type RequestPlanSectionKind = "instructions" | "history" | "live";
 
 export interface RequestPlanBoundary {
   readonly kind: RequestPlanSectionKind;
-  /** Inclusive index into `timeline.messages`. */
   readonly messageStart: number;
-  /** Exclusive index into `timeline.messages`. */
   readonly messageEnd: number;
   readonly messageCount: number;
 }
@@ -136,7 +124,6 @@ export interface RequestPlanV1 {
   readonly timeline: {
     readonly messages: readonly ChatMessage[];
     readonly sections: readonly RequestPlanBoundary[];
-    /** Every message excluded from the cacheable prefix, in timeline order. */
     readonly mutableMessageIndexes: readonly number[];
   };
   readonly tools: {
@@ -167,7 +154,6 @@ export interface CompileRequestPlanInput {
   readonly model: string;
   readonly messages: readonly ChatMessage[];
   readonly stream: boolean;
-  /** Raw endpoint string; only its normalized hash is retained. */
   readonly endpoint?: string | undefined;
   readonly reasoning?: ReasoningPreference | undefined;
   readonly tools?: readonly ToolDefinition[] | undefined;
@@ -190,8 +176,6 @@ const REPLAY_DIALECT_BY_WIRE: Record<
 
 const PLAN_HASH_DOMAIN = "clai.request-plan.v1\0";
 
-// Repository-wide conservative mixed text/JSON ratio; matches the artifact
-// accounting estimator so plan sections compose with other token estimates.
 function estimateTokens(byteLength: number): number {
   return Math.ceil(byteLength / 3.3);
 }
@@ -210,7 +194,6 @@ function hashParts(
   return { sha256: hash.digest("hex"), byteLength };
 }
 
-/** Leading system/developer run; the stable instruction prefix. */
 function instructionsEnd(messages: readonly ChatMessage[]): number {
   let index = 0;
   while (index < messages.length && messages[index]!.role === "system") {
@@ -219,11 +202,6 @@ function instructionsEnd(messages: readonly ChatMessage[]): number {
   return index;
 }
 
-/**
- * The mutable suffix starts at the last user message: everything after it is
- * the in-flight turn (live request state, open tool exchange, current input)
- * and may still change before dispatch.
- */
 function liveStart(messages: readonly ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index]!.role === "user") return index;
@@ -276,10 +254,6 @@ function cacheSection(
   });
 }
 
-/**
- * Deterministically compile one immutable plan. Compilation is pure: the same
- * inputs always produce a deep-equal plan with identical section hashes.
- */
 const warnedSamplingOmissions = new Set<string>();
 
 function warnSamplingFieldNotModifiable(

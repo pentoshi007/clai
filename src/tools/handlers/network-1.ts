@@ -28,9 +28,6 @@ export const toolRegistry_NETWORK_1: Record<string, ToolHandler> = {
   async "net.scan"(args, options) {
     const host = parseHost(requireString(args, "target"));
     const portsRaw = optionalString(args, "ports");
-    // Accept natural "top ports" intents (top-1000, top1000, top-ports 1000,
-    // "top 1000") as a topPorts profile instead of rejecting them as an
-    // invalid literal port spec.
     const topPortsMatch = portsRaw
       ? /^top[\s_-]*(?:ports?[\s_-]*)?(\d{1,5})$/i.exec(portsRaw.trim())
       : null;
@@ -43,7 +40,6 @@ export const toolRegistry_NETWORK_1: Record<string, ToolHandler> = {
     }
 
     const legacyFlags = optionalString(args, "flags");
-    // ports and topPorts conflict on the nmap CLI — ports takes priority
     const cleanedProfile =
       ports && profile?.topPorts
         ? { ...profile, topPorts: undefined }

@@ -1,8 +1,3 @@
-/**
- * Interactive-session configuration: documented defaults, validated ranges, and
- * a runtime kill switch. Every value is validated before a slot is reserved or a
- * process is launched so an out-of-range setting can never produce a live child.
- */
 
 import {
   throwSessionError,
@@ -24,12 +19,9 @@ export interface InteractiveSessionConfig {
   artifactCaptureBytes: number;
   artifactChunkBytes: number;
   persistenceQueueBytes: number;
-  /** Undefined disables the timeout. */
   idleTimeoutMs: number | undefined;
   lifetimeTimeoutMs: number | undefined;
-  /** Behavior when artifact capture reaches its limit. */
   onOutputLimit: "terminate" | "continue";
-  /** Max bytes retained for cross-chunk secret matching. */
   redactionOverlapBytes: number;
 }
 
@@ -60,7 +52,6 @@ export type RangedConfigField = keyof typeof INTERACTIVE_SESSION_RANGES;
 
 export const DIMENSION_RANGE: Range = { min: 2, max: 1_000 };
 export const DEFAULT_DIMENSIONS: TerminalDimensions = { columns: 80, rows: 24 };
-/** Hard cap for a blocking read wait, independent of send deadlines. */
 export const MAX_READ_WAIT_MS = 30_000;
 export const MAX_LIST_SUMMARIES = 50;
 
@@ -84,7 +75,6 @@ export const INTERACTIVE_SESSION_DEFAULTS: InteractiveSessionConfig = {
   redactionOverlapBytes: 4_096,
 };
 
-/** Env kill switch. Disables only the seven interactive tools. */
 export const KILL_SWITCH_ENV = "CLAI_DISABLE_INTERACTIVE_SESSIONS";
 
 function envDisabled(): boolean {
@@ -125,10 +115,6 @@ function checkRange(
 
 export type InteractiveSessionOverrides = Partial<InteractiveSessionConfig>;
 
-/**
- * Resolve the effective configuration. Throws `INVALID_CONFIGURATION` for any
- * out-of-range value so callers fail before allocating resources.
- */
 export function resolveInteractiveSessionConfig(
   overrides: InteractiveSessionOverrides = {},
   operation: SessionOperation = "start",
@@ -161,7 +147,6 @@ export function isInteractiveSessionsEnabled(
   return config.enabled;
 }
 
-/** Per-operation timeout override, validated against the same bounds. */
 export function resolveDeadline(
   field: "startDeadlineMs" | "sendDeadlineMs" | "closeDeadlineMs",
   override: number | undefined,
@@ -191,7 +176,6 @@ export function resolveOptionalTimeout(
   return checkRange(field, override, operation);
 }
 
-/** Validate requested dimensions before any lookup or process mutation. */
 export function resolveDimensions(
   columns: number | undefined,
   rows: number | undefined,

@@ -1,7 +1,3 @@
-/**
- * Compact SESSION STATE / WORKING MEMORY block for the model.
- * Survives as an updatable system message; re-injected after compaction.
- */
 
 export const SESSION_STATE_PREFIX = "SESSION STATE / WORKING MEMORY";
 
@@ -11,11 +7,8 @@ export interface SessionStateSnapshot {
   packageManager?: string | undefined;
   planStatus?: string | undefined;
   planKind?: string | undefined;
-  /** e.g. t3 in_progress "implement todo" */
   openTask?: string | undefined;
-  /** short list of pending task ids/titles */
   pendingTasks?: string[] | undefined;
-  /** short list of done task ids */
   doneTasks?: string[] | undefined;
   featureAppRequired?: boolean | undefined;
   featureSeen?: boolean | undefined;
@@ -25,13 +18,10 @@ export interface SessionStateSnapshot {
   lastProbeFailed?: boolean | undefined;
   lastOkTool?: string | undefined;
   nextHint?: string | undefined;
-  /** pentest residual one-liner */
   engagementNote?: string | undefined;
-  /** e.g. "2 running: abc123 ffuf…, def456 npm…" */
   backgroundJobs?: string | undefined;
 }
 
-/** Build a short, high-signal state block (aim < 400 tokens). */
 export function buildSessionStateBlock(s: SessionStateSnapshot): string {
   const lines: string[] = [SESSION_STATE_PREFIX];
   if (s.goal) lines.push(`goal: ${oneLine(s.goal, 160)}`);
@@ -75,7 +65,6 @@ function oneLine(s: string, max: number): string {
   return t.length <= max ? t : t.slice(0, max - 1) + "…";
 }
 
-/** Infer a short next-action hint from flags (no LLM). */
 export function inferNextHint(s: SessionStateSnapshot): string | undefined {
   if (s.featureAppRequired && !s.featureSeen) {
     return "Implement the product feature (replace starter boilerplate); do not start the server yet.";
@@ -83,7 +72,6 @@ export function inferNextHint(s: SessionStateSnapshot): string | undefined {
   if (s.lastProbeFailed) {
     return "Fix the app error (fs.edit/write), then re-probe localhost — diagnosis alone is incomplete.";
   }
-  // Leave-running / verify open with server already proven → close out, don't restart
   if (
     s.serverStarted &&
     s.openTask &&
@@ -109,37 +97,10 @@ export function inferNextHint(s: SessionStateSnapshot): string | undefined {
   return undefined;
 }
 
-/**
- * True when a system message is SESSION STATE / WORKING MEMORY.
- * Used so tool-protocol repair never treats these as interrupting an open
- * assistant/tool group (that used to drop live tool bodies and inject
- * "No stored body" placeholders).
- */
 export function isSessionStateMessage(content: string): boolean {
   return content.startsWith(SESSION_STATE_PREFIX);
 }
 
-/**
- * Upsert SESSION STATE as a **trailing** system message (suffix of history).
- *
- * Why trailing (not after messages[0]):
- * Provider prompt caches key off a stable *prefix*. The old layout put
- * SESSION STATE at index 1 and rewrote it every successful tool
- * (`last_ok_tool`, open task, …). That single early mutation invalidated
- * the entire conversation prefix — matching the Bynara pattern of
- * ~10–11k cache (constitution only) with 45–70k fresh input.
- *
- * Trailing placement keeps system + user + prior turns byte-stable so
- * only the new suffix (latest tools + this block) is uncached.
- *
- * CRITICAL: call this only after the current assistant tool-call group has
- * all role:tool results recorded. Inserting SESSION STATE between
- * assistant.toolCalls and its results breaks native tool protocol: repair
- * then injects "No stored body" placeholders and drops the real bodies —
- * models thrash re-running tools that already succeeded in the UI.
- *
- * Mutates the messages array in place.
- */
 export function upsertSessionStateMessage(
   messages: Array<{ role: string; content: string }>,
   block: string,
@@ -148,7 +109,6 @@ export function upsertSessionStateMessage(
     ? block
     : `${SESSION_STATE_PREFIX}\n${block}`;
 
-  // Drop every prior SESSION STATE copy (legacy early inserts included).
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i]!;
     if (
@@ -160,7 +120,5 @@ export function upsertSessionStateMessage(
     }
   }
 
-  // Always append: updates change only the request suffix.
-  // Never splice into the middle of an open assistant→tool group.
   messages.push({ role: "system", content });
 }

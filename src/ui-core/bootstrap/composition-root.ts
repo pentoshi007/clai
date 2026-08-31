@@ -1,12 +1,3 @@
-/**
- * Dependency-injection root (V2-031).
- *
- * Constructs the ports, controllers, and command registry once at bootstrap
- * and returns them as an explicit service bundle — no service locator, no
- * hidden singletons. Every dependency is overridable so the shell can be
- * assembled with fakes in tests. This module is renderer-independent: it wires
- * the application layer and input controllers but imports no `@opentui`/React.
- */
 
 import type { Mode, ProviderId } from "../../types.js";
 import type { AnyAppEvent } from "../../app/events/app-event.js";
@@ -84,17 +75,14 @@ export interface CompositionOptions {
   readonly emit?: ((event: AnyAppEvent) => void) | undefined;
   readonly captureEvents?: boolean | undefined;
   readonly capabilities?: TerminalCapabilityReport | undefined;
-  /** SEL-006: auto-copy a non-empty mouse selection on release. Default true. */
   readonly copyOnRelease?: boolean | undefined;
   readonly pagerExport?: PagerExportPort | undefined;
-  /** Signals the renderer to tear down and exit (Ctrl+D / second Ctrl+C). */
   readonly requestExit?: (() => void) | undefined;
   readonly requestMinimise?: (() => boolean) | undefined;
   readonly requestSessionSwitch?: ((sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean) | undefined;
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
   readonly mode?: Mode | undefined;
-  /** Skip session persistence + AI titles (CLI --no-history). */
   readonly noHistory?: boolean | undefined;
   readonly sessionId?: string | undefined;
   readonly idFactory?: IdFactory | undefined;
@@ -108,15 +96,11 @@ export interface AppServices {
   readonly session: SessionController;
   readonly focus: FocusController;
   readonly router: ActionRouter;
-  /** Single owner for pane-scoped semantic selection and copy requests. */
   readonly selection: SelectionController;
-  /** Ephemeral right-edge toasts (copy confirmation, short status). */
   readonly toast: ToastController;
   readonly transcript: TranscriptStore;
   readonly plan: PlanController;
-  /** Single owner for the one blocking overlay (picker/confirm/secret/pager/jobs). */
   readonly overlay: OverlayController;
-  /** Cancellable non-session operations (e.g. /update download + install). */
   readonly interruptible: InterruptibleController;
   readonly cancel: CancelCoordinator;
   readonly pagerExport: PagerExportPort;
@@ -124,7 +108,6 @@ export interface AppServices {
   readonly requestMinimise: () => boolean;
   readonly requestSessionSwitch: (sessionId: string, closeCurrent: boolean, fresh?: boolean) => boolean;
   readonly capabilities: TerminalCapabilityReport;
-  /** Bounded raw events when captureEvents is explicitly enabled. */
   readonly recordedEvents: readonly AnyAppEvent[];
   dispose(): void;
 }
@@ -141,10 +124,6 @@ export function createCompositionRoot(
   const persistence = options.persistence ?? createCurrentPersistencePort();
   const plan = new PlanController(persistence);
   const externalEmit = options.emit;
-  // The transcript store and plan controller observe every event
-  // unconditionally; the recorder/external sink split below is unrelated to
-  // that (it is only about where raw AppEvents surface for tests/consumers).
-  // Late-bound: session is constructed below; usage recording closes over it.
   let sessionRef: SessionController | undefined;
   const focus = new FocusController();
   const overlay = new OverlayController(focus);
@@ -192,12 +171,9 @@ export function createCompositionRoot(
     if (event.type === "context-estimate" && sessionRef) {
       sessionRef.noteContextEstimate(event.payload.estimatedTokens);
     }
-    // session.notice / agent notices → toast only (not chat items).
     if (event.type === "notice") {
       const level = event.payload.level === "warn" ? "warn" : "info";
       const text = event.payload.text;
-      // Multi-API-key rotation: only *switch* / exhausted toasts (never "using"
-      // every step). Same replace-key so chips never stack.
       const apiKeyRotation =
         /^switching /i.test(text.trim()) || /API keys failed/i.test(text);
       const providerFailure =
@@ -230,8 +206,6 @@ export function createCompositionRoot(
     confirm: options.confirm ?? createOverlayConfirmPort(overlay),
     requestSecret: options.requestSecret ?? createOverlaySecretPort(overlay),
   };
-  // Auto-copy-on-release disabled — it fought touch/focus/history.
-  // Explicit copy remains via Ctrl+Shift+C (selection.copy).
   const selection = new SelectionController(ports.clipboard, {
     copyOnRelease: options.copyOnRelease ?? false,
   });

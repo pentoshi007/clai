@@ -63,15 +63,6 @@ export function toOpenAiMessages(
   ) as Array<Record<string, unknown>>;
 }
 
-/**
- * legacy Chat Completions sampling knobs: `max_tokens` must be
- * `max_completion_tokens`, and `temperature`/`top_p` must be omitted or left
- * at their default (non-default values return HTTP 400 "Unsupported
- * parameter"). Matched by model name (not provider) since OpenAI-compatible
- * gateways that pass these model IDs through to the real OpenAI API hit the
- * same restriction.
- * https://help.openai.com/en/articles/5072518 (Chat Completions section).
- */
 export function isOpenAiReasoningModel(model: string): boolean {
   const m = model.toLowerCase();
   return (
@@ -83,17 +74,11 @@ export function isOpenAiReasoningModel(model: string): boolean {
 
 export interface ChatCompletionsBodyOptions {
   model: string;
-  /**
-   * Canonical provider id. When given, the capability table is consulted so the
-   * wire payload and the UI cannot disagree about whether the model has a
-   * reasoning knob at all.
-   */
   providerId?: ProviderId | undefined;
   messages: ChatMessage[];
   maxTokens?: number | undefined;
   temperature?: number | undefined;
   stream: boolean;
-  /** Set false only after a compatible endpoint rejects `stream_options`. */
   includeStreamUsage?: boolean | undefined;
   reasoning?: ReasoningPreference | undefined;
   reasoningStyle?: ReasoningStyle | undefined;
@@ -133,9 +118,6 @@ function outputBudgetWithReasoning(
 }
 
 function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
-  // Skip reasoning knobs entirely for models observed to reject them this
-  // session (see isReasoningUnsupportedError). This is how thinking degrades
-  // gracefully: the request still runs, just without the unsupported option.
   const capabilityDeniesThinking =
     options.control === undefined &&
     options.providerId !== undefined &&
@@ -159,11 +141,8 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
         );
 
   const reasoningOn = Boolean(options.reasoning?.enabled);
-  // Kimchi exposes this model as `minimax-m3`; NVIDIA uses the longer
-  // `minimaxai/minimax-m3` ID. Both need the larger default output budget.
   const isMinimaxM3 = /minimax-m3/i.test(options.model);
   const defaultMaxTokens = isMinimaxM3 ? 8_192 : reasoningOn ? 8_192 : 4_096;
-  // One declarative sampling policy; explicit caller value wins.
   const sampling = options.resolvedSampling ?? {
     ...resolveSampling({
       model: options.model,
@@ -175,13 +154,6 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   const emitTemperature =
     sampling.temperature !== undefined &&
     (options.resolvedSampling !== undefined || !reasoningModel);
-  // Claude extended thinking via AgentRouter maps reasoning_effort to an
-  // Anthropic `thinking.budget_tokens`, and the gateway (Bedrock) rejects the
-  // request with HTTP 400 unless `max_tokens > budget_tokens`. Some upstream
-  // nodes enforce this intermittently, so whenever Claude reasoning is enabled
-  // we guarantee a ceiling that clears the largest effort budget (32000 was
-  // verified live to succeed while staying within Opus's output cap). This is a
-  // ceiling, not a forced length — Claude still stops at its natural stop.
   const claudeThinking =
     reasoningOn &&
     options.reasoningStyle === "agentrouter" &&
@@ -228,9 +200,6 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     ...(reasoningModel
       ? { max_completion_tokens: effectiveMaxTokens }
       : { max_tokens: effectiveMaxTokens }),
-    // gpt-5.x / o1 / o3 / o4 only accept the default temperature (1) and
-    // reject any explicit value — omit the field entirely rather than send
-    // our 0.2 default and get a 400.
     ...(emitTemperature ? { temperature: sampling.temperature } : {}),
     ...reasoning,
     ...openAiToolBodyFields({
@@ -242,8 +211,6 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   if (emitTemperature && sampling.topP !== undefined) {
     body.top_p = sampling.topP;
   }
-  // OpenAI + many OpenAI-compatible gateways attach usage on the final SSE
-  // chunk when this is set (non-stream responses always include usage).
   if (options.stream && options.includeStreamUsage !== false) {
     body.stream_options = { include_usage: true };
   }
@@ -254,11 +221,6 @@ export function buildChatBody(options: ChatCompletionsBodyOptions): string {
   return emitChatCompletionsBody(options);
 }
 
-/**
- * Serializes a compiled canonical plan onto the Chat Completions wire. Wire
- * dialect knobs that the plan intentionally does not model (gateway reasoning
- * style, stream-usage flag, replay observer) stay serializer-side extras.
- */
 export function chatCompletionsBodyFromPlan(
   plan: RequestPlanV1,
   extras: {

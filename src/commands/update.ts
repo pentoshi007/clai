@@ -32,25 +32,22 @@ function resolvePackageVersion(): string {
         const pkg = JSON.parse(
           readFileSync(join(dir, "package.json"), "utf8"),
         ) as { name?: string; version?: string };
-        // Only accept our own package.json, not a dependency's.
         if (pkg.version && (!pkg.name || pkg.name === "@pentoshi/clai")) {
           return pkg.version;
         }
       } catch {
-        // not here — walk up
       }
       const parent = dirname(dir);
       if (parent === dir) break;
       dir = parent;
     }
   } catch {
-    // compiled binary — no package.json nearby
   }
   return GENERATED_VERSION;
 }
 
 const CURRENT_VERSION = resolvePackageVersion();
-export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = UPDATE_CHECK_INTERVAL_MS;
 
 interface GitHubRelease {
@@ -78,7 +75,6 @@ export function getCurrentVersion(): string {
   return CURRENT_VERSION;
 }
 
-/** Fetch the latest release from GitHub (5s timeout, swallows errors) */
 async function fetchLatestReleaseFromGitHub(): Promise<GitHubRelease | null> {
   try {
     const controller = new AbortController();
@@ -131,14 +127,12 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
   return release ?? fetchLatestReleaseFromMirror();
 }
 
-/** Latest published version without the leading `v`, or undefined if unknown. */
 export async function fetchLatestVersion(): Promise<string | undefined> {
   const release = await fetchLatestRelease();
   const tag = release?.tag_name?.replace(/^v/, "").trim();
   return tag ? tag : undefined;
 }
 
-/** Why an update check cannot run right now, if it cannot. */
 export function updateCheckDisabledReason(): string | undefined {
   if (process.env.CLAI_OFFLINE === "1") return "offline mode";
   if (process.env.CLAI_NO_UPDATE_CHECK === "1") return "update checks disabled";
@@ -154,7 +148,6 @@ function isUpdateCheckDisabled(): boolean {
   return Boolean(getConfig().offline);
 }
 
-/** Non-blocking startup check — prints a notice if a new version exists */
 export function checkForUpdateSilent(): void {
   if (isUpdateCheckDisabled()) return;
   const config = getConfig();
@@ -179,7 +172,6 @@ export function checkForUpdateSilent(): void {
     .catch(() => {});
 }
 
-/** Resolve how this installation was put on the machine (npm/bun/brew/…). */
 export async function detectInstallMethodOrDev(): Promise<InstallMethod> {
   try {
     return detectInstallMethod(await resolveInstallEnv());
@@ -188,7 +180,6 @@ export async function detectInstallMethodOrDev(): Promise<InstallMethod> {
   }
 }
 
-/** Download and install the given version using the detected method. */
 export async function installUpdate(
   version: string,
   log?: (line: string) => void,
@@ -215,7 +206,6 @@ export async function installUpdate(
   };
 }
 
-/** Interactive `clai update` command — performs the upgrade in-process. */
 export async function runUpdate(): Promise<void> {
   console.log(chalk.dim("  Checking for updates..."));
   const release = await fetchLatestRelease();

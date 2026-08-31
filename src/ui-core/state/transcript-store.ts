@@ -1,12 +1,3 @@
-/**
- * Observable wrapper around the pure transcript reducer (V2-050).
- *
- * The only side effect this store performs is notifying subscribers; state
- * transitions themselves stay in `applyAppEvent` so they remain replayable
- * and unit-testable without a subscriber. Components read state through
- * `getState`/`subscribe` (a `useSyncExternalStore` source), never by reaching
- * into reducer internals.
- */
 
 import type { AnyAppEvent } from "../../app/events/app-event.js";
 import type { TranscriptItem as ClassicTranscriptItem } from "../../app/ports/transcript-item.js";
@@ -80,7 +71,6 @@ export class TranscriptStore {
     if (pendingChanged || changed) this.flushNotify();
   }
 
-  /** CHAT-006: Ctrl+T toggles every thinking block's default visibility. */
   toggleThinkingGlobal(): void {
     const state = this.getState();
     const thinkingItems = state.order
@@ -95,13 +85,10 @@ export class TranscriptStore {
       ...state,
       expandThinkingGlobal,
       itemOverrides,
-      // Ctrl+T is a bulk visibility toggle, never a focus gesture: expanded
-      // cards stay unfocused so the wheel keeps scrolling the transcript.
       focusedThinkingId: undefined,
     });
   }
 
-  /** Click a thinking card: toggle it and focus it only while it is open. */
   toggleThinkingItem(id: string, fallback: boolean): void {
     const state = this.getState();
     const overrides = new Map(state.itemOverrides);
@@ -114,21 +101,18 @@ export class TranscriptStore {
     });
   }
 
-  /** Give one thinking card the pointer wheel (clicking its body). */
   focusThinking(id: string): void {
     const state = this.getState();
     if (state.focusedThinkingId === id) return;
     this.setState({ ...state, focusedThinkingId: id });
   }
 
-  /** Release wheel ownership back to the transcript. */
   blurThinking(): void {
     const state = this.getState();
     if (state.focusedThinkingId === undefined) return;
     this.setState({ ...state, focusedThinkingId: undefined });
   }
 
-  /** CHAT-005/007: Ctrl+O toggles tool OUTPUT + compacted memory cards. */
   toggleOutputGlobal(): void {
     const state = this.getState();
     this.setState({
@@ -137,9 +121,6 @@ export class TranscriptStore {
     });
   }
 
-  /** Expand/collapse every tool OUTPUT card at once (collapse all / expand
-   *  all chips). Clears only tool/compacted per-item overrides so thinking
-   *  overrides survive. */
   setOutputGlobal(expanded: boolean): void {
     const state = this.getState();
     const overrides = new Map(state.itemOverrides);
@@ -156,7 +137,6 @@ export class TranscriptStore {
     });
   }
 
-  /** Expand/collapse every file-diff card in chat (hunks vs title-only). */
   setFileDiffsGlobal(expanded: boolean): void {
     const state = this.getState();
     this.setState({
@@ -171,7 +151,6 @@ export class TranscriptStore {
     this.setFileDiffsGlobal(!state.expandFileDiffsGlobal);
   }
 
-  /** Expand/collapse one tool's file-diff body. */
   toggleFileDiffOverride(toolItemId: string, fallback: boolean): void {
     const state = this.getState();
     const overrides = new Map(state.fileDiffOverrides);
@@ -180,7 +159,6 @@ export class TranscriptStore {
     this.setState({ ...state, fileDiffOverrides: overrides });
   }
 
-  /** Expand/collapse one item, overriding whichever global toggle applies. */
   toggleItemOverride(id: string, fallback: boolean): void {
     const state = this.getState();
     const overrides = new Map(state.itemOverrides);
@@ -201,12 +179,6 @@ export class TranscriptStore {
     this.setState(EMPTY_TRANSCRIPT_STATE);
   }
 
-  /**
-   * Replace the entire visual transcript (used by /history resume).
-   * Preserves global expand toggles so user prefs survive a session switch.
-   * `rebaseSequence: false` keeps the live sequence clock (in-session restores
-   * must never rewind it, or the next sequencer event arrives as a gap).
-   */
   hydrate(
     next: TranscriptState,
     options?:

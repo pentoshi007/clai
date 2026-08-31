@@ -1,12 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Transcript search chrome (CHAT/V2-057).
- *
- * Two modes:
- * 1. Filter open — focused input, type a term, Enter jumps + leaves sticky find.
- * 2. Sticky find (bar closed, query kept) — rendered as a status strip so
- *    n/N / Esc are obvious (same model as the pager).
- */
 
 import type { ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
@@ -19,7 +11,6 @@ export interface SearchBarProps {
   readonly activeOrdinal: number;
   readonly onQueryChange: (value: string) => void;
   readonly onSubmit: () => void;
-  /** When true, show the focused input. When false, show sticky find strip. */
   readonly editing: boolean;
 }
 
@@ -30,12 +21,10 @@ function matchLabel(
 ): string {
   if (!query.trim()) return "";
   if (matchCount <= 0) return "no matches";
-  // Before first Enter, only show total; after, show current/total.
   if (activeOrdinal <= 0) return `${matchCount} match${matchCount === 1 ? "" : "es"}`;
   return `${activeOrdinal}/${matchCount}`;
 }
 
-/** Focused filter input while typing a search term. */
 export function SearchBar(props: SearchBarProps): ReactNode {
   const {
     theme,
@@ -49,7 +38,6 @@ export function SearchBar(props: SearchBarProps): ReactNode {
   const status = matchLabel(query, matchCount, activeOrdinal);
 
   if (!editing) {
-    // Sticky find strip after Enter — n/N navigate, Esc clears.
     return (
       <box
         style={{

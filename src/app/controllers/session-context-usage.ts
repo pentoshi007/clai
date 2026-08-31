@@ -1,7 +1,3 @@
-// Context snapshot projection for the session footer.
-//
-// ContextSnapshotV1 is the runtime source of truth. ContextUsageSnapshot is a
-// deliberately narrow legacy projection for existing renderers and history.
 import { estimateMessagesTokens } from "../../agent/context-manager.js";
 import {
   contextLimitFromSessionOverride,
@@ -23,15 +19,12 @@ import type { ChatMessage, ProviderId, TokenUsage } from "../../types.js";
 export interface ContextUsageTarget {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
-  /** Explicit provider/model window for this session, if the user set one. */
   readonly contextLimitTokens?: number | undefined;
 }
 
 export type ContextClock = () => number;
 const systemNow: ContextClock = () => Date.now();
 
-// The footer denominator is the explicit model window, never a guessed window
-// or compaction trigger. Zero means no session override was set.
 export function contextUsageLimit(target: ContextUsageTarget): number {
   const limit = target.contextLimitTokens;
   return typeof limit === "number" && Number.isFinite(limit) && limit > 0
@@ -100,22 +93,11 @@ function historyEstimateSnapshot(
   });
 }
 
-/**
- * Scopes that describe the occupancy of a real model request. Both the
- * pre-dispatch assembled estimate and the provider's post-dispatch count
- * measure the same thing, so either may be presented as the current fill.
- */
 const REQUEST_SCOPES: ReadonlySet<ContextSnapshotScope> = new Set([
   "provider-request",
   "assembled-request",
 ]);
 
-/**
- * Keep the most recent request-scoped measurement. The message-history estimate
- * omits the system prefix and tool schemas, so substituting it for a live
- * measurement made the displayed number oscillate between two different scopes
- * every step; it is now only a cold-start fallback.
- */
 export function resolveContextSnapshot(
   target: ContextUsageTarget,
   history: readonly ChatMessage[],
@@ -131,7 +113,6 @@ export function resolveContextSnapshot(
   return historyEstimateSnapshot(target, current, history, now);
 }
 
-/** Fold provider usage into one canonical provider-request observation. */
 export function recordContextUsageSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -149,9 +130,6 @@ export function recordContextUsageSnapshot(
   const cache = reportedCache(usage);
   const reasoning = reportedReasoning(usage);
   return createContextSnapshot({
-    // A completion-only report cannot refresh current context occupancy. Keep
-    // the prior number only as an explicitly unknown observation so the next
-    // estimate replaces it instead of presenting stale provider exactness.
     contextTokens: promptMeasured
       ? usage.promptTokens
       : (current?.contextTokens ?? 0),
@@ -173,7 +151,6 @@ export function recordContextUsageSnapshot(
   });
 }
 
-/** After compaction, exact provider fill is stale and the new scope is explicit. */
 export function compactedContextSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -223,8 +200,6 @@ export interface ContextProjection {
   readonly contextChip: string | undefined;
 }
 
-// The estimate walks the whole transcript, so the projection is memoized
-// against the inputs that can change it instead of recomputed per render.
 export function createContextProjector(
   formatChip: (snapshot: ContextUsageSnapshot) => string,
 ): (
@@ -287,7 +262,6 @@ export function createContextProjector(
   };
 }
 
-/** Legacy persisted shape, optionally carrying the additive V1 object. */
 export interface PartialUsageSnapshot {
   readonly contextTokens: number;
   readonly contextLimit?: number | undefined;
@@ -298,7 +272,6 @@ export interface PartialUsageSnapshot {
   readonly contextSnapshot?: unknown;
 }
 
-/** Restore V1 when available, otherwise migrate the unversioned legacy shape. */
 export function restoredContextSnapshot(
   target: ContextUsageTarget,
   usage:
@@ -316,8 +289,6 @@ export function restoredContextSnapshot(
   }
   const persisted = (usage as PartialUsageSnapshot).contextSnapshot;
   if (isContextSnapshotV1(persisted) && persisted.contextTokens > 0) {
-    // A saved denominator might have been an old auto-compact trigger. The
-    // live session override remains the only display limit after restore.
     return withContextSnapshotLimit(persisted, limitFor(target));
   }
   if (usage.contextTokens <= 0) return undefined;
@@ -335,7 +306,6 @@ export function restoredContextSnapshot(
   );
 }
 
-// Compatibility exports retained for old callers and legacy-focused tests.
 export function resolveContextUsageSnapshot(
   target: ContextUsageTarget,
   history: readonly ChatMessage[],

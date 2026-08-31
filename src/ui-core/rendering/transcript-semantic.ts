@@ -1,11 +1,3 @@
-/**
- * Semantic, source-order text extraction for transcript selection and export.
- *
- * This deliberately operates on normalized items rather than terminal cells:
- * Markdown wrapping, syntax color, and viewport culling cannot alter copied
- * content. Optional tool output is injected by the caller so spool ownership
- * remains outside transcript state.
- */
 
 import {
   isItemExpanded,
@@ -32,7 +24,6 @@ export function extractTranscriptSemanticDocument(
   const blocks = [] as Array<{ id: string; text: string }>;
 
   for (const item of transcriptItems(state)) {
-    // INFO/WARN banners are UI chrome only — never selection/export/model context.
     if (item.kind === "notice") continue;
     if (item.kind === "thinking" && !includeThinking(state, item.id, thinking)) continue;
     blocks.push({ id: item.id, text: semanticTextForItem(item, options.toolOutput) });
@@ -74,8 +65,6 @@ function semanticTextForItem(
     case "tool": {
       const { statusLabel, name, argsDisplay, detail } = presentTool(item);
       const headline = argsDisplay ? `${name} ${argsDisplay}` : name;
-      // UI cards hide full model-context summaries; export still includes
-      // summary text, then any live spool the caller injects.
       return [
         `Tool: ${headline} — ${statusLabel}`,
         item.status === "blocked" ? detail : item.summary,
@@ -86,8 +75,6 @@ function semanticTextForItem(
         .join("\n");
     }
     case "notice":
-      // Unreachable via extractTranscriptSemanticDocument (skipped), but keep
-      // the switch exhaustive without leaking UI chrome into exports.
       return "";
     case "compacted":
       return `[compacted context: ~${item.beforeTokens} -> ~${item.afterTokens} tokens]\n${item.summary}`;

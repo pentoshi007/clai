@@ -5,18 +5,8 @@ import { HighlightCarry, SyntaxSpan, highlightClike, highlightDiff, highlightGen
 export type { HighlightCarry, SyntaxKind, SyntaxSpan } from "./syntax/language-highlighters.js";
 export { supportedExtensions } from "./syntax/language-table.js";
 export { languageFromPath };
-export type { LangFamily } from "./syntax/language-table.js";/**
- * Lightweight terminal syntax highlighter for file-diff cards / pager.
- *
- * Goal: work for **any** common source language without shiki/tree-sitter.
- * Strategy:
- *  - Map hundreds of extensions → language families
- *  - Per-family keyword sets + comment/string rules
- *  - Unknown extensions still get a **generic** highlighter (strings, comments,
- *    numbers, punctuation) so every file type gets useful coloring
- */
+export type { LangFamily } from "./syntax/language-table.js";
 
-// unknown: strings + comments + numbers
 
 /** @deprecated alias kept for call sites */
 export type LangId = LangFamily;
@@ -25,18 +15,13 @@ export function emptyCarry(): HighlightCarry {
   return { inBlockComment: false, inTripleString: false };
 }
 
-// ─── Keyword sets ───────────────────────────────────────────────────────────
 
 /** @deprecated use languageFromPath */
 export function languageFromPathLegacy(path: string): LangId {
   return languageFromPath(path);
 }
 
-// ─── Core helpers ───────────────────────────────────────────────────────────
 
-/**
- * Highlight one line for any path/language. Unknown types use generic rules.
- */
 export function highlightLine(
   line: string,
   langOrPath: LangFamily | string,
@@ -135,7 +120,6 @@ export function highlightLineForPath(
   carry: HighlightCarry = emptyCarry(),
 ): SyntaxSpan[] {
   const family = languageFromPath(path);
-  // re-resolve keywords with extension for clike
   if (family === "clike") {
     return highlightClike(line, keywordSetFor(path, "clike"), carry, { regex: false });
   }
@@ -174,6 +158,3 @@ export function clipSpans(spans: readonly SyntaxSpan[], maxChars: number): Synta
   }
   return out;
 }
-
-// ─── Highlighters ───────────────────────────────────────────────────────────
-

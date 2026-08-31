@@ -1,11 +1,3 @@
-/**
- * Session transport contracts plus the single centralized table that maps text
- * submission and named controls onto transport/platform byte sequences.
- *
- * A launch is confirmed only after the OS acknowledges spawn. Host stdin is
- * never inherited: agent-controlled sessions must not be able to take the
- * user's controlling terminal.
- */
 
 import type { TreeSignalOutcome } from "../os/process-tree.js";
 import type { Unsubscribe } from "./runtime.js";
@@ -33,7 +25,6 @@ export interface SessionTransport {
   readonly kind: SessionTransportKind;
   readonly pid: number;
   readonly processGroupId?: number | undefined;
-  /** Hashed start-time evidence captured at launch confirmation. */
   readonly identity: string | undefined;
   write(bytes: Uint8Array): Promise<DeliveryResult>;
   control(action: ControlInput): Promise<DeliveryResult>;
@@ -44,7 +35,6 @@ export interface SessionTransport {
   requestTreeTermination(kind: "graceful" | "forceful"): Promise<TreeSignalOutcome>;
   onOutput(listener: (event: TransportOutput) => void): Unsubscribe;
   onExit(listener: (outcome: ProcessOutcome) => void): Unsubscribe;
-  /** Settles after transport output sources can emit no additional bytes. */
   waitForOutputDrain?(): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -69,7 +59,6 @@ export interface LaunchResult {
 export interface PtyCapability {
   readonly available: boolean;
   readonly platform: NodeJS.Platform;
-  /** Non-secret diagnostic for why PTY is unavailable on this target. */
   readonly reason?: string | undefined;
 }
 
@@ -81,10 +70,6 @@ export interface SessionTransportFactory {
   ): Promise<LaunchResult>;
 }
 
-/**
- * A transient pre-spawn failure proves no process side effect occurred, so the
- * manager may retry the launch exactly once.
- */
 export class LaunchFailure extends Error {
   constructor(
     readonly code: string,
@@ -97,9 +82,7 @@ export class LaunchFailure extends Error {
   }
 }
 
-// --- Text and control mappings ------------------------------------------
 
-/** PTY line discipline expects CR; a pipe expects LF. */
 export function enterSequence(kind: SessionTransportKind): Uint8Array {
   return Buffer.from(kind === "pty" ? "\r" : "\n", "utf8");
 }
@@ -121,11 +104,6 @@ const ARROWS: Record<"up" | "down" | "left" | "right", string> = {
   left: "\u001b[D",
 };
 
-/**
- * Byte payload for a named control on a PTY. `undefined` means the control has
- * no byte form on that platform and must be reported as unsupported or handled
- * out of band (signals on a pipe).
- */
 export function ptyControlBytes(
   action: ControlInput,
   platform: NodeJS.Platform = process.platform,
@@ -134,7 +112,6 @@ export function ptyControlBytes(
     case "interrupt":
       return Buffer.from([0x03]);
     case "eof":
-      // Windows consoles terminate input with Ctrl+Z followed by Enter.
       return platform === "win32"
         ? Buffer.from([0x1a, 0x0d])
         : Buffer.from([0x04]);
@@ -156,11 +133,6 @@ export function ptyControlBytes(
   }
 }
 
-/**
- * Pipe controls: `interrupt`/`suspend` are process signals because there is no
- * line discipline, `eof` half-closes stdin, and the rest are the same bytes a
- * terminal would have delivered.
- */
 export type PipeControlAction =
   | { readonly kind: "signal"; readonly signal: NodeJS.Signals }
   | { readonly kind: "bytes"; readonly bytes: Uint8Array }

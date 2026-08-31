@@ -1,47 +1,21 @@
-/**
- * Token / context usage helpers.
- *
- * Prefer provider-reported counts (OpenAI `usage`, Anthropic `usage`, Gemini
- * `usageMetadata`, Ollama eval counts). Fall back to the same estimator used
- * by auto-compact when a provider omits usage.
- */
 
 import type { ProviderId } from "../types.js";
 import { estimateMessagesTokens } from "../agent/context-manager.js";
 import type { ChatMessage } from "../types.js";
 
-/** Authoritative or estimated token counts for one completion. */
 export interface TokenUsage {
-  /** Input / prompt / context tokens for this request. */
   readonly promptTokens: number;
-  /**
-   * Present only when the provider omitted an input measurement while still
-   * reporting another counter. Absence preserves the historic API contract:
-   * a supplied promptTokens value is known, including an explicit zero.
-   */
   readonly promptTokensKnown?: false | undefined;
-  /** Output / completion tokens for this response. */
   readonly completionTokens: number;
-  /** Total when provided; otherwise prompt + completion. */
   readonly totalTokens: number;
-  /** true when values came from the provider API (exact). */
   readonly exact: boolean;
-  /** Prompt tokens served from a provider cache, when reported. */
   readonly cachedPromptTokens?: number | undefined;
-  /** Prompt tokens written into the provider cache, when reported. */
   readonly cacheCreationTokens?: number | undefined;
-  /** Prompt tokens that were explicitly not served from the provider cache. */
   readonly uncachedPromptTokens?: number | undefined;
-  /** Reasoning tokens included in completion usage, when reported. */
   readonly reasoningTokens?: number | undefined;
   readonly reasoningObserved?: true | undefined;
 }
 
-/**
- * Optional response-field paths for a user-configured OpenAI-compatible route.
- * Paths are relative to that route's `usage` object. They are telemetry input
- * only: they never affect request construction or cache eligibility.
- */
 export interface CompatibleUsageAliases {
   readonly promptTokens?: string | undefined;
   readonly completionTokens?: string | undefined;
@@ -53,17 +27,11 @@ export interface CompatibleUsageAliases {
 }
 
 export interface ContextUsageSnapshot {
-  /** Tokens currently filling the context window (last prompt or estimate). */
   readonly contextTokens: number;
-  /** Explicit session model-window limit, or 0 when no override is set. */
   readonly contextLimit: number;
-  /** Last completion output tokens (0 if unknown). */
   readonly lastCompletionTokens: number;
-  /** Session cumulative prompt tokens (API only when exact). */
   readonly sessionPromptTokens: number;
-  /** Session cumulative completion tokens. */
   readonly sessionCompletionTokens: number;
-  /** Whether contextTokens is provider-exact. */
   readonly exact: boolean;
 }
 
@@ -117,7 +85,6 @@ export function firstDefined<T>(
   return values.find((value): value is T => value !== undefined);
 }
 
-/** Normalize sparse provider payloads into TokenUsage. */
 export function normalizeTokenUsage(input: {
   promptTokens?: number | undefined;
   completionTokens?: number | undefined;
@@ -166,7 +133,6 @@ export function withReasoningObservation(
   return { ...usage, reasoningObserved: true };
 }
 
-/** Estimated usage from message list (not billing-accurate). */
 export function estimateUsageFromMessages(
   messages: readonly ChatMessage[],
 ): TokenUsage {
@@ -194,7 +160,6 @@ export {
   providerContextOverrideTokens,
 } from "./context-windows.js";
 
-/** Compact integer: 128450 → "128,450"; large → "128.5k" when compact. */
 export function formatTokenCount(n: number, compact = false): string {
   const v = Math.max(0, Math.floor(n));
   if (!compact) return v.toLocaleString("en-US");
@@ -208,11 +173,6 @@ export function formatTokenCount(n: number, compact = false): string {
   return `${m >= 10 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, "")}M`;
 }
 
-/**
- * Footer chip: current session context fill (not cumulative session billing).
- * An optional denominator is an explicit session model window, never a guessed
- * model limit or auto-compaction trigger.
- */
 export function formatContextChip(
   snapshot: ContextUsageSnapshot,
   opts?: { compact?: boolean },
@@ -232,7 +192,6 @@ export function formatContextChip(
     : `ctx ${approx}${used}/${budget} ${percent}%`;
 }
 
-/** Merge a new usage into session totals; prefer latest known prompt as context fill. */
 export function applyUsageToSnapshot(
   prev: ContextUsageSnapshot | undefined,
   usage: TokenUsage,
@@ -271,8 +230,6 @@ export function snapshotFromEstimate(
     lastCompletionTokens: prev?.lastCompletionTokens ?? 0,
     sessionPromptTokens: prev?.sessionPromptTokens ?? 0,
     sessionCompletionTokens: prev?.sessionCompletionTokens ?? 0,
-    // Keep exact:true if we previously had API context and messages unchanged
-    // is hard to know — always false for pure estimate refresh.
     exact: false,
   };
 }

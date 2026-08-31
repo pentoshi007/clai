@@ -55,7 +55,6 @@ export {
 export { isEmptyCompletionError } from "./routing/error-classification.js";
 export { effortCandidatesFor };
 
-/** Toast replace-key so key rotation never stacks notifications. */
 export const API_KEY_TOAST_KEY = "api-key-rotation";
 
 export type ProviderKeyEventHandler = (event: ProviderKeyEvent) => void;
@@ -64,21 +63,12 @@ export interface StreamWithProviderOptions {
   readonly onStatus?: ((message: string) => void) | undefined;
   readonly onKeyEvent?: ProviderKeyEventHandler | undefined;
   readonly onStreamEvent?: ProviderStreamEventSink | undefined;
-  /** Additive per-admission accounting for this logical operation. */
   readonly attemptUsage?: OperationUsageRecorder | undefined;
   readonly operation?: OperationLedger | undefined;
   readonly adoptFallback?: boolean | undefined;
-  /** Receives the immutable terminal snapshot on success or failure. */
   readonly onOperationUsage?:
     ((snapshot: OperationUsageSnapshot) => void) | undefined;
-  /** Cap retries for this request (default MAX_RETRIES). Use 0-1 for compaction. */
   readonly maxRetries?: number | undefined;
-  /**
-   * Pin the route and emit exactly one physical generation request: no provider
-   * fallback, no key or endpoint rotation, no capability-adaptation retry. Used
-   * by operations whose prompt is too expensive to send twice (compaction) and
-   * by auxiliary requests that must not multiply.
-   */
   readonly singleDispatch?: boolean | undefined;
   readonly onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
@@ -184,7 +174,6 @@ async function completeWithProviderOperation(
           failures,
         );
       }
-      // Continue to next provider in chain when fallback is enabled (e.g. 413).
     }
   }
 
@@ -366,8 +355,6 @@ async function streamWithProviderOperation(
       if (
         isKeyCircleStopError(error) ||
         shouldStopProviderFallback(error) ||
-        // Partial output already reached the transcript; another
-        // provider would duplicate it.
         streamAlreadyEmitted(error)
       ) {
         throw aggregateProviderError(
@@ -376,7 +363,6 @@ async function streamWithProviderOperation(
           streamEmittedBytes(error),
         );
       }
-      // Continue to next provider when fallback is enabled (e.g. 413).
     }
   }
 

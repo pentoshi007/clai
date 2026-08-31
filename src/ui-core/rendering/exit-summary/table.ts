@@ -155,11 +155,6 @@ function labelHeader(width: number, compact: boolean): string {
   return truncateEnd(header, width);
 }
 
-/**
- * Sizes the label column to its content instead of stretching it across the
- * terminal, and only drops the provider prefix once the full `provider / model`
- * form no longer fits.
- */
 function fitColumns(
   rows: readonly TableRow[],
   desired: { readonly full: number; readonly model: number },
@@ -236,11 +231,6 @@ function metricSegments(
   });
 }
 
-/**
- * The usage table, rendered without vertical borders: a dim header, a rule, the
- * routes, a rule, then the emphasized totals. Rules span the columns only, so
- * the table never stretches to the terminal edge.
- */
 export function tableLines(
   report: SessionUsageReport,
   available: number,

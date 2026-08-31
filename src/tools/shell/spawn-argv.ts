@@ -32,22 +32,10 @@ export interface SpawnArgvArgs {
   onLimit?: "terminate" | "continue" | undefined;
   artifactPath?: string | undefined;
   noArtifact?: boolean | undefined;
-  /** Sensitive stdin payload written directly to the child and never logged. */
   stdinText?: string | undefined;
-  /** See {@link ShellExecArgs.interactiveStdin}. */
   interactiveStdin?: boolean | "auto" | undefined;
 }
 
-/**
- * Run a child process with `shell: false`, passing argv directly. Use this
- * for any tool that builds command lines from model-provided strings (eg
- * `net.scan`, `pentest.recon`, `pkg.install`). Sharing argv with the OS
- * shell would let a malicious target turn into "; rm -rf /" — `shell: false`
- * + argv prevents that even if the model is adversarial.
- *
- * The capture pipeline (head + ring-tail + artifact + cap-and-kill + stats)
- * is identical to shellExec.
- */
 export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
   if (args.signal?.aborted) {
     return { ok: false, output: "Command aborted.", exitCode: 130 };
@@ -74,10 +62,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
 
   return new Promise((resolve) => {
     const detached = process.platform !== "win32";
-    // For spawnArgv we know the exact program; build an `argv0`-style
-    // command preview that {@link looksInteractiveStdin} can inspect so
-    // `pkg.install` (which invokes `sudo apt …` on Linux) lights up the
-    // password-prompt path.
     const previewCommand = `${args.command} ${args.argv.join(" ")}`;
     const stdio =
       args.stdinText !== undefined
@@ -144,7 +128,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
         try {
           child.kill(signal);
         } catch {
-          // already exited
         }
         return;
       }
@@ -176,9 +159,6 @@ export async function spawnArgv(args: SpawnArgvArgs): Promise<ToolResult> {
       if (aborted || args.signal?.aborted) {
         resolve({ ok: false, output: "Command aborted.", exitCode: 130 });
       } else {
-        // Resolve a structured result instead of rejecting: every caller
-        // (pkg.install, pentest.recon, pdf/image OCR) should see an actionable
-        // "binary not found" ToolResult rather than a raw spawn ENOENT throw.
         const err = error as NodeJS.ErrnoException;
         const notFound = err.code === "ENOENT";
         resolve({

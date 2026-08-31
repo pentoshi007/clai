@@ -1,17 +1,3 @@
-/**
- * Robust recovery for provider stream/complete failures.
- *
- * Goal: the agent should try *working approaches* before it gives up on a
- * turn. A single flaky free-tier model (empty admissions, connection glitches,
- * capacity 5xx, rate limits) must not kill the turn on the first error. Instead
- * we classify the failure and pick a bounded, escalating strategy — back off,
- * compact the context, drop thinking, or let the router fall back to another
- * provider/model — and only surrender in the worst case (every approach for
- * that failure class exhausted, or the overall recovery budget spent).
- *
- * These helpers are pure so the escalation ladder and the "give up only in the
- * worst case" guarantee are unit-testable without a live provider.
- */
 
 import { ProviderError, STREAM_STALL_MARKER } from "../llm/http.js";
 import { isEmptyCompletionError } from "../llm/router.js";
@@ -22,15 +8,7 @@ export type StreamFailureKind =
   | "context-overflow"
   | "rate-limit"
   | "server"
-  /** Transport died: the socket dropped or never delivered a byte. */
   | "network"
-  /**
-   * The connection stayed healthy but the model stopped producing output —
-   * almost always a runtime buffering one very large `tool_calls` argument
-   * string. Distinct from `network` because the request was accepted and the
-   * work was done: retrying the identical request on the identical route
-   * replays the whole generation and stalls again the same way.
-   */
   | "stall"
   | "auth"
   | "not-found"
@@ -43,7 +21,6 @@ export interface StreamRecoveryState {
   network: number;
   stall: number;
   context: number;
-  /** auth / not-found / unknown share one "structural" bucket. */
   structural: number;
   progressed: number;
   total: number;
@@ -58,9 +35,7 @@ export interface StreamRecoveryLimits {
   readonly maxContext: number;
   readonly maxStructural: number;
   readonly maxProgressed: number;
-  /** Hard cap across every failure class so a turn can never loop forever. */
   readonly maxTotal: number;
-  /** Upper bound on any single backoff so the total wait budget stays sane. */
   readonly maxDelayMs: number;
 }
 
@@ -69,8 +44,6 @@ export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxRateLimit: 3,
   maxServer: 3,
   maxNetwork: 3,
-  // A stall costs a full generation per attempt, so the budget is tight and
-  // each attempt changes something (smaller writes, then another route).
   maxStall: 2,
   maxContext: 2,
   maxStructural: 1,
@@ -80,22 +53,14 @@ export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
 };
 
 export interface StreamRecoveryPlan {
-  /** retry = try again with the strategy below; give-up = rethrow (worst case). */
   readonly action: "retry" | "give-up";
   readonly kind: StreamFailureKind;
-  /** Backoff before the retry (0 = immediate). */
   readonly delayMs: number;
-  /** Force a compaction pass before retrying (context pressure / empty tail). */
   readonly forceCompact: boolean;
-  /** Retry with thinking disabled (thinking-only / reasoning-heavy stalls). */
   readonly disableThinking: boolean;
-  /** Let the router fall back to another provider/model on the retry. */
   readonly allowModelFallback: boolean;
-  /** Try alternates before replaying the selected route (stall recovery only). */
   readonly preferModelFallback?: boolean | undefined;
-  /** Optional trailing user nudge (empty-admission recovery). */
   readonly nudge?: string | undefined;
-  /** Human-facing one-liner; only set on the FIRST retry of a class (low noise). */
   readonly notice?: string | undefined;
 }
 
@@ -124,15 +89,6 @@ function errorText(error: unknown): string {
     .toLowerCase();
 }
 
-/**
- * Map a raw stream/complete failure to a recovery class.
- *
- * Works on both raw {@link ProviderError}s and the router's wrapped
- * "No provider could stream the request. — <provider>: <body>" strings, so it
- * behaves the same whether the failure bubbles from a single provider or the
- * whole fallback chain. When several providers failed for different reasons the
- * most *actionable* class wins (compact > back off > nudge).
- */
 export function classifyStreamFailure(error: unknown): StreamFailureKind {
   const status = errorStatus(error);
   const msg = errorText(error);
@@ -141,7 +97,6 @@ export function classifyStreamFailure(error: unknown): StreamFailureKind {
     return "aborted";
   }
 
-  // Context pressure is always safe to act on (compaction), so it wins first.
   if (
     status === 413 ||
     /\b413\b|input limit|context length|context window|maximum context|too large|reduce the length|exceeded the provider input|prompt is too long|token limit/.test(
@@ -169,9 +124,6 @@ export function classifyStreamFailure(error: unknown): StreamFailureKind {
     return "server";
   }
 
-  // A stall on a live connection must be checked BEFORE the network patterns:
-  // its message also contains "stream stalled", but the transport was fine and
-  // the fix is different (shrink the tool call / change route, not just retry).
   if (new RegExp(STREAM_STALL_MARKER, "i").test(msg)) return "stall";
 
   if (
@@ -182,7 +134,6 @@ export function classifyStreamFailure(error: unknown): StreamFailureKind {
     return "network";
   }
 
-  // Empty admission (no visible text, no tool calls). Cheap to retry / nudge.
   if (isEmptyCompletionError(error)) return "empty";
 
   if (
@@ -232,7 +183,6 @@ export function resetStreamRecoveryState(state: StreamRecoveryState): void {
   state.total = 0;
 }
 
-/** Record that one recovery attempt for `kind` was taken. Mutates `state`. */
 export function recordRecoveryAttempt(
   state: StreamRecoveryState,
   kind: StreamFailureKind,
@@ -272,14 +222,6 @@ function pick(delays: readonly number[], attempt: number, max: number): number {
   return Math.min(delays[attempt] ?? delays[delays.length - 1] ?? 0, max);
 }
 
-/**
- * Decide the next recovery action for a stream failure.
- *
- * `state` holds the attempts already made for each class *this failure episode*
- * (reset on any successful stream). The planner never mutates it — the caller
- * records the attempt via {@link recordRecoveryAttempt} once it commits to the
- * retry — so the plan stays a pure function of (error, state, limits).
- */
 export function planStreamRecovery(input: {
   error?: unknown;
   kind?: StreamFailureKind;
@@ -303,7 +245,6 @@ export function planStreamRecovery(input: {
     allowModelFallback: false,
   };
 
-  // User cancelled, or we have spent the whole recovery budget: stop now.
   if (kind === "aborted") return giveUp;
   if (state.total >= limits.maxTotal) return giveUp;
   if (progressed && state.progressed >= limits.maxProgressed) return giveUp;
@@ -318,7 +259,6 @@ export function planStreamRecovery(input: {
         action: "retry",
         kind,
         delayMs: pick([500, 1000, 1500, 2000], n, cap),
-        // Escalate: nudge → drop thinking → compact + try another provider.
         disableThinking: n >= 1,
         forceCompact: n >= 2,
         allowModelFallback: n >= 2,
@@ -371,7 +311,6 @@ export function planStreamRecovery(input: {
         delayMs: pick([2_000, 5_000, 10_000], n, cap),
         forceCompact: false,
         disableThinking: false,
-        // If the same route keeps dropping, let the router try another one.
         allowModelFallback: n >= 1,
         notice: n === 0 ? "connection dropped — retrying" : undefined,
       };
@@ -382,14 +321,9 @@ export function planStreamRecovery(input: {
       return {
         action: "retry",
         kind,
-        // The transport is healthy, so there is nothing to wait out. Retry
-        // promptly and spend the budget on changing the request instead.
         delayMs: pick([1_000, 3_000], n, cap),
         forceCompact: false,
-        // Thinking multiplies the silent window before a tool call appears.
         disableThinking: n >= 1,
-        // The same route will buffer the same way. Prefer a configured
-        // alternate first, but keep the selected route as the final fallback.
         allowModelFallback: true,
         preferModelFallback: true,
         nudge: STALL_NUDGE,
@@ -418,8 +352,6 @@ export function planStreamRecovery(input: {
     case "auth":
     case "not-found":
     default: {
-      // Retrying the same provider/model will not help; give the router one
-      // shot at alternate providers/models, then surrender.
       const n = attempt(state.structural, limits.maxStructural);
       if (n >= limits.maxStructural) return giveUp;
       const notice =

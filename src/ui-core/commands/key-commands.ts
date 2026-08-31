@@ -10,14 +10,15 @@ import {
   normalizeEndpointUrl,
 } from "../../llm/provider.js";
 import { appendProviderEndpoint, getConfig, getProviderEndpoints, providerUsesEndpoints, setProviderEndpoints, updateConfig } from "../../store/config.js";
-import { appendSearchProviderKey, getProviderKeys, getSearchProviderKeys, listProviderStatuses, unsetProviderSecret, unsetSearchProviderSecret } from "../../store/keys.js";
+import { appendSearchProviderKey, getProviderKeys, getSearchProviderKeys, listProviderStatuses, unsetProviderSecret, unsetSearchProviderSecret, setProviderKeys } from "../../store/keys.js";
 import { searchProviderIds, type SearchProviderId } from "../../tools/web/types.js";
 import type { ProviderId } from "../../types.js";
 import { formatKeyStatus, type SearchKeyStatus } from "../rendering/format-keys.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
-import { notice, openEndpointsEditor, openLlmKeysEditor, openSearchKeysEditor } from "./keys/editors.js";
+import {notice, openEndpointsEditor, openSearchKeysEditor, resolveEditorRowsDetailed} from "./keys/editors.js";
+import { MAX_PROVIDER_KEYS } from "../../llm/key-rotation.js";
 
 const SEARCH_IDS = new Set(["brave", "tavily", "duckduckgo", "exa"]);
 
@@ -148,8 +149,6 @@ async function openSetPicker(services: AppServices): Promise<void> {
         label: `${status.provider} ${keyLabel}${status.active ? " (active)" : ""}`,
         description: status.model,
       };
-      // Endpoint providers get a second row so the URL list is reachable
-      // directly instead of only via the key editor.
       if (!status.endpoints) return [row];
       const urlCount = status.endpoints.length;
       return [
@@ -281,9 +280,6 @@ async function appendLlmKey(
     notice(services, "info", `saved ollama host → ${keyVal.trim()}`);
     return;
   }
-  // `/set modal https://…` is unambiguous: a URL can only be an endpoint,
-  // never an API key or a `<token-id>:<token-secret>` pair. Appended and made
-  // active, exactly like the CLI's `--url`.
   if (providerUsesEndpoints(id) && /^https?:\/\//i.test(keyVal.trim())) {
     const endpoint = normalizeEndpointUrl(keyVal.trim());
     try {
@@ -388,4 +384,95 @@ async function unsetLlmKey(services: AppServices, id: ProviderId): Promise<void>
     "info",
     storedCount > 1 ? `unset all ${storedCount} keys for ${id}` : `unset ${id}`,
   );
+}
+
+export async function openLlmKeysEditor(
+  services: AppServices,
+  id: ProviderId,
+): Promise<void> {
+  if (id === "ollama") {
+    const host = await services.overlay.openSecret({
+      title: "Ollama host URL",
+      prompt: "Enter host URL for Ollama:",
+      reveal: true,
+    });
+    if (!host) {
+      notice(services, "info", "cancelled");
+      return;
+    }
+    updateConfig({ ollamaHost: host.trim() });
+    notice(services, "info", `saved ollama host → ${host.trim()}`);
+    return;
+  }
+
+  if (providerUsesEndpoints(id)) {
+    await openEndpointsEditor(services, id);
+  }
+
+  const multi = await getProviderKeys(id);
+  const stored =
+    multi.source === "env"
+      ? []
+      : multi.keys.map((key) => ({
+          id: key.id,
+          masked: maskSecret(key.value),
+          value: key.value,
+          disabled: key.disabled === true,
+        }));
+
+  const answer = await services.overlay.openKeysEditor({
+    provider: id,
+    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked, disabled: key.disabled })),
+    activeIndex: multi.source !== "env" ? multi.activeIndex : undefined,
+  });
+  if (!answer) {
+    notice(services, "info", "cancelled");
+    return;
+  }
+  if (answer.action === "reset") {
+    await unsetProviderSecret(id);
+    notice(services, "info", `unset all keys for ${id}`);
+    return;
+  }
+
+  const byId = new Map(stored.map((key) => [key.id, key.value]));
+  const detailed = resolveEditorRowsDetailed(answer.rows, byId);
+  const resolved = detailed.map((row) => row.value);
+  if (resolved.length === 0) {
+    await unsetProviderSecret(id);
+    notice(services, "info", `unset all keys for ${id}`);
+    return;
+  }
+
+  const impl = getProvider(id);
+  for (const key of resolved) {
+    if (!impl.validateKey(key)) {
+      notice(services, "warn", `invalid API key format for ${id}`);
+      return;
+    }
+  }
+  if (resolved.length > MAX_PROVIDER_KEYS) {
+    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} API keys per provider`);
+    return;
+  }
+
+  let activeIndex = answer.activeIndex ?? 0;
+  if (answer.activeIndex === undefined && multi.source !== "env" && multi.keys.length > 0) {
+    const previous = multi.keys[multi.activeIndex]?.value;
+    if (previous) {
+      const found = resolved.indexOf(previous);
+      if (found >= 0) activeIndex = found;
+    }
+  }
+
+  await setProviderKeys(
+    id,
+    resolved,
+    activeIndex,
+    detailed.filter((row) => row.disabled).map((row) => row.value),
+  );
+  const label = resolved.length === 1
+    ? maskSecret(resolved[0]!)
+    : `${resolved.length} keys · active: #${activeIndex + 1}`;
+  notice(services, "info", `saved ${id} · ${label}`);
 }

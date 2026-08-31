@@ -7,15 +7,8 @@ import { backupActiveHistory, compareHistoryFreshness, dedupeHistoryById, ensure
 import { appendRecordsToFile, archiveFilePath } from "./sqlite-backend.js";
 import { mkdir } from "node:fs/promises";
 
-/**
- * Serializes every JSONL mutation through a single promise chain so concurrent
- * autosaves never interleave a read with another writer's truncating write.
- * Without this, a reader could observe a half-written (or momentarily empty)
- * file and then persist back only its own record, wiping every other session.
- */
 let jsonlWriteChain: Promise<void> = Promise.resolve();
 
-/** Queue a locked JSONL section; the chain survives individual failures. */
 export function queueJsonlWrite<T>(
   operation: () => Promise<T>,
   fallback: () => T,
@@ -29,8 +22,6 @@ export function queueJsonlWrite<T>(
         return await operation();
       } finally {
         await releaseLock();
-        // A list may have been loaded after the pre-write invalidation but
-        // before the atomic rename completed. Never leave that snapshot cached.
         invalidateSessionListCache();
       }
     } catch (err: any) {
@@ -54,11 +45,6 @@ function mutateJsonl(
   }, () => undefined);
 }
 
-/**
- * Apply retention by *recency* (not file order). Pruned sessions are returned
- * separately so callers can archive them — never silently destroy history.
- * limit <= 0 means unlimited (keep everything).
- */
 export function partitionByRetention(
   records: readonly HistoryRecord[],
   limit: number,
@@ -73,7 +59,6 @@ export function partitionByRetention(
   };
 }
 
-/** Session count without parsing the whole file when the index is valid. */
 async function countJsonlSessions(): Promise<number> {
   const entries = await readValidatedHistoryIndex(
     jsonlFilePath(),
@@ -83,10 +68,6 @@ async function countJsonlSessions(): Promise<number> {
   return (await readJsonlRecordsFrom(jsonlFilePath())).length;
 }
 
-/**
- * Apply retention (archive pruned sessions) and write the active file
- * atomically. Never hard-deletes pruned chats — they go to history-archive.jsonl.
- */
 async function writeJsonlAtomic(
   records: HistoryRecord[],
   knownExistingCount?: number,
@@ -99,11 +80,9 @@ async function writeJsonlAtomic(
   const { kept, pruned } = partitionByRetention(records, limit);
 
   if (pruned.length > 0) {
-    // Durable archive before the active file shrinks.
     await appendRecordsToFile(archiveFilePath(), pruned);
   }
 
-  // If we would shrink (or replace) the on-disk set, snapshot first.
   if (await safeExists(jsonlFilePath())) {
     const existingCount =
       knownExistingCount ?? (await countJsonlSessions());
@@ -112,12 +91,9 @@ async function writeJsonlAtomic(
     }
   }
 
-  // Refuse to write an empty file over a non-empty one unless the caller
-  // intentionally has zero records (e.g. clear after archiving).
   if (kept.length === 0 && (await safeExists(jsonlFilePath()))) {
     const existing = await readJsonlRecordsFrom(jsonlFilePath());
     if (existing.length > 0 && records.length > 0) {
-      // Something went wrong in partitioning — keep the safer set.
       const safe = sortHistoryByUpdatedDesc(dedupeHistoryById(existing));
       safe.reverse();
       await writeIndexedJsonl(
@@ -133,7 +109,6 @@ async function writeJsonlAtomic(
     }
   }
 
-  // File order: oldest → newest (matches classic append style).
   const ordered = sortHistoryByUpdatedDesc(kept);
   ordered.reverse();
   await writeIndexedJsonl(jsonlFilePath(), jsonlIndexFilePath(), ordered);
@@ -143,10 +118,8 @@ async function writeJsonlAtomic(
   ]);
 }
 
-/** Below this size a full rewrite is cheap enough to skip compaction. */
 const HISTORY_COMPACT_MIN_BYTES = 1_000_000;
 
-/** Compact once dead (superseded) lines dominate the active file. */
 const HISTORY_COMPACT_LIVE_RATIO = 0.6;
 
 function summaryFreshness(summary: HistorySummary): HistoryRecord {

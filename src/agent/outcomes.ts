@@ -56,7 +56,6 @@ export interface CompletedOperation {
   tool: string;
   summary: string;
   observation: string;
-  /** Missing on legacy entries means a successful completed observation. */
   ok?: boolean | undefined;
   exitCode?: number | undefined;
   observationDigest?: string | undefined;
@@ -76,11 +75,6 @@ export interface OutcomeEnvelope {
 
 const fileFor = (sessionId: string): string => join(getDataDir(), "outcomes", `${encodeURIComponent(sessionId)}.json`);
 
-/**
- * Serialize snapshots for one session without serializing tool execution.
- * A queue is necessary in addition to unique temp files: otherwise an older
- * snapshot can win the final rename after a newer parallel completion.
- */
 const outcomeSaveQueues = new Map<string, Promise<void>>();
 
 function mergeOutcomeEnvelopes(
@@ -267,22 +261,17 @@ export function saveOutcomeState(envelope: OutcomeEnvelope): Promise<void> {
     const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
     await mkdir(dir, { recursive: true });
     try {
-      // Merge the latest durable state with this caller's snapshot. Parallel
-      // tool calls can hold independent clones, so queueing alone would still
-      // make the last whole-file snapshot erase sibling receipts.
       let existing: OutcomeEnvelope | undefined;
       try {
         const parsed = JSON.parse(await readFile(path, "utf8")) as OutcomeEnvelope;
         if (parsed.schemaVersion === 1) existing = parsed;
       } catch {
-        // First save or corrupt prior state: write the incoming valid envelope.
       }
       const merged = mergeOutcomeEnvelopes(existing, envelope);
       const serialized = `${JSON.stringify(merged, null, 2)}\n`;
       await writeFile(temp, serialized, { mode: 0o600 });
       await rename(temp, path);
     } finally {
-      // rename removes the temp on success; unlink is only for failed writes.
       await unlink(temp).catch(() => undefined);
     }
   });
@@ -299,7 +288,6 @@ export async function loadOutcomeState(sessionId: string): Promise<OutcomeEnvelo
   try {
     const parsed = JSON.parse(await readFile(fileFor(sessionId), "utf8")) as Partial<OutcomeEnvelope>;
     if (parsed.schemaVersion !== 1 || !parsed.outcome || !Array.isArray(parsed.evidence)) return undefined;
-    // Conservative migration: old completion labels never become evidenced success.
     const outcome = { ...parsed.outcome };
     if (outcome.status === "succeeded" && deriveOutcomeStatus(outcome, parsed.evidence) !== "succeeded") outcome.status = "partial";
     return {

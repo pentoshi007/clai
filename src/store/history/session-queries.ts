@@ -5,7 +5,6 @@ import { historyDirPath } from "./jsonl-lock.js";
 import { cachedSessionList, dedupeHistoryById, ensureHistoryRecovered, HistoryRecord, hydrateHistoryRecord, jsonlFilePath, jsonlIndexFilePath, readJsonlRecordsFrom, sessionListGeneration, setCachedSessionList, sortHistoryByUpdatedDesc, startHistoryRecovery } from "./recovery.js";
 import { archiveFilePath, loadDatabase, rowToSession, rowToSummary } from "./sqlite-backend.js";
 
-/** Keep repeated /history opens fast while bounding cross-process staleness. */
 const SESSION_LIST_CACHE_TTL_MS = 1_000;
 
 function sortSummaries(summaries: readonly HistorySummary[]): HistorySummary[] {
@@ -171,7 +170,6 @@ export async function getSession(
         .get(sessionId);
       if (row) return rowToSession(row);
     } catch {
-      // Fall through to streaming JSONL lookup.
     }
   }
 

@@ -10,11 +10,6 @@ import { isAbortError } from "../session-policy.js";
 const RETRY_SYSTEM_SUFFIX =
   "\nReturn only a complete continuation-memory summary. Do not include analysis, reasoning, or <think> tags.";
 
-/**
- * Pause between a failed compaction admission and its retry: the failure is
- * almost always transient upstream capacity (5xx, 429, a 200 whose stream
- * errored), and an instant replay just re-hits the same hot route.
- */
 const COMPACTION_ERROR_RETRY_DELAY_MS = 1_500;
 
 const COMPACTION_THINKING = {
@@ -179,15 +174,6 @@ function requestRejectionError(input: {
   return wrapped;
 }
 
-/**
- * A compaction failure worth one more admission. Retryable by default: the
- * only failures excluded are ones a retry cannot fix — aborts, partial streams
- * (re-sending would double-print the summary card), fit-check rejections (the
- * request is deterministically too large), and definitive request errors (4xx
- * other than 408/429). Everything else is treated as transient: 5xx, 429/408,
- * network resets, idle timeouts, and gateway responses that returned HTTP 200
- * but failed upstream mid-stream.
- */
 function isCompactionRetryableError(error: unknown, signal?: AbortSignal): boolean {
   if (streamAlreadyEmitted(error)) return false;
   if (isAbortError(error, signal)) return false;
@@ -202,7 +188,6 @@ function isCompactionRetryableError(error: unknown, signal?: AbortSignal): boole
   return true;
 }
 
-/** The assembled snapshot-replay request cannot fit the effective safe limit. */
 export class CompactionOverLimitError extends Error {
   constructor(
     message: string,
@@ -235,7 +220,6 @@ export interface CompactionSummaryExecution {
   readonly allowModelFallback?: boolean | undefined;
   readonly stream: boolean;
   readonly retryOnServerError?: boolean | undefined;
-  /** Backoff before the error retry; defaults to COMPACTION_ERROR_RETRY_DELAY_MS. */
   readonly retryDelayMs?: number | undefined;
   readonly qualityRetry?: boolean | undefined;
   readonly operation?: OperationLedger | undefined;
@@ -286,11 +270,6 @@ export function missingHistoryTail(
     );
 }
 
-/**
- * Cache-preserving compaction history: the last successful request's text and
- * protocol timeline, any appended history, then the compaction instruction.
- * Binary image payloads are deliberately omitted from this text operation.
- */
 export function buildCompactionReplayMessages(
   baseRequest: SuccessfulRequestSnapshot,
   history: readonly ChatMessage[],

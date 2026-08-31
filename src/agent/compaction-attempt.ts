@@ -1,11 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ChatMessage } from "../types.js";
 
-// Failed compaction must not be retried on every iteration: the transcript has
-// not changed, so the same provider call would fail the same way while burning
-// cost, latency and rate limit. An attempt is identified by everything that can
-// change its outcome; a repeat is only allowed after a cooldown or a real state
-// change.
 export const COMPACTION_RETRY_COOLDOWN_MS = 60_000;
 
 export interface CompactionAttemptKeyInput {
@@ -53,7 +48,6 @@ export function compactionAttemptKey(input: CompactionAttemptKeyInput): string {
     .slice(0, 32);
 }
 
-// Tracks attempts that failed so an unchanged retry is suppressed.
 export class CompactionAttemptLedger {
   private readonly failures = new Map<string, number>();
 
@@ -62,7 +56,6 @@ export class CompactionAttemptLedger {
     private readonly now: () => number = Date.now,
   ) {}
 
-  // True when this exact attempt failed recently and must not be repeated.
   isSuppressed(key: string): boolean {
     const failedAt = this.failures.get(key);
     if (failedAt === undefined) return false;

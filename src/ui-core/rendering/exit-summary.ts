@@ -142,7 +142,6 @@ interface InfoRow {
   readonly paint: Paint;
 }
 
-/** The widest value that must survive untouched: the command you copy. */
 function hardValueWidth(input: ExitSummaryInput, glyphs: Glyphs): number {
   const value = input.resumable
     ? resumeCommand(input.sessionId)
@@ -150,7 +149,6 @@ function hardValueWidth(input: ExitSummaryInput, glyphs: Glyphs): number {
   return labelColumn() + LABEL_GAP + renderColumns(value);
 }
 
-/** A dim label column beside its value, the way `/usage` and `clai keys` read. */
 function infoLines(
   input: ExitSummaryInput,
   colors: Palette,
@@ -231,7 +229,6 @@ function wordmarkBlock(unicode: boolean, size: WordmarkSize): LogoBlock {
   };
 }
 
-/** The largest wordmark that still leaves the session lines their room. */
 function logoBlock(
   unicode: boolean,
   available: number,
@@ -246,7 +243,6 @@ function logoBlock(
   return { lines: [colors.brand(text)], width: renderColumns(text) };
 }
 
-/** Logo on the left, session lines on the right, vertically centered. */
 function sideBySide(
   logo: LogoBlock,
   info: readonly InfoLine[],
@@ -279,10 +275,6 @@ function stacked(logo: LogoBlock, info: readonly InfoLine[]): string[] {
   ];
 }
 
-/**
- * Prefer the two-column banner, and within it the largest wordmark that leaves
- * the resume command whole; stack when nothing fits beside it.
- */
 function bannerLines(
   input: ExitSummaryInput,
   colors: Palette,

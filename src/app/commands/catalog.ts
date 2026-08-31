@@ -6,7 +6,6 @@ export interface SlashCommand {
   description: string;
 }
 
-/** Shared command catalogue used by both the classic REPL and the Ink TUI. */
 export const slashCommands: SlashCommand[] = [
   { command: "/ask", description: "switch to ask mode" },
   { command: "/agent", description: "switch to agent mode" },
@@ -182,8 +181,6 @@ export const slashCommands: SlashCommand[] = [
   },
 ];
 
-// Well-known models per provider (refreshed May 2026)
-/** Curated model choices used by both frontends. */
 export const knownModels: Record<string, string[]> = {
   gemini: [
     "gemini-3.5-flash",
@@ -258,12 +255,10 @@ export const knownModels: Record<string, string[]> = {
   ],
   "aws-mantle": [],
   bynara: [
-    // Free tier models
     "mimo-v2.5-free",
     "mimo-v2.5-pro-free",
     "mistral-large",
     "mistral-medium-3-5",
-    // Pay-as-you-go / subscription models (from https://router.bynara.id/pricing)
     "mimo-v2.5",
     "mimo-v2.5-pro",
     "mimo-v2.5-hermes",
@@ -299,12 +294,7 @@ export const knownModels: Record<string, string[]> = {
     "qwen3.5-plus",
     "qwen3.5-flash",
   ],
-  // A Modal endpoint serves exactly the model it was deployed with, named by
-  // its source repo id, so the live `/models` list is authoritative. These are
-  // only the documented examples used when the endpoint can't be reached.
   modal: ["moonshotai/Kimi-K3", "Qwen/Qwen3.5-4B"],
-  // Lightning AI Model APIs; ids are vendor-namespaced. The live catalog at
-  // lightning.ai/api/v1/models is authoritative — this is the offline subset.
   lightning: [
     "openai/gpt-5",
     "openai/gpt-5-mini",
@@ -335,8 +325,6 @@ export const knownModels: Record<string, string[]> = {
     "lightning-ai/nemotron-3-ultra-550b-a55b",
     "lightning-ai/nemotron-3-nano-omni-30b-a3b-reasoning",
   ],
-  // OrcaRouter routes eleven upstreams under vendor-prefixed ids; the live
-  // catalog at api.orcarouter.ai/v1/models is authoritative — offline subset.
   orcarouter: [
     "orcarouter/auto",
     "openai/gpt-4o-mini",
@@ -382,12 +370,6 @@ export function getKnownModels(provider: string): string[] {
   return [...(knownModels[provider] ?? [])];
 }
 
-/**
- * Given a model string, return the provider that owns it in `knownModels`.
- * Returns undefined if the model is not found in any provider's list.
- * Used to auto-switch the provider when the user picks a model that belongs
- * to a different provider (e.g. `minimaxai/minimax-m3` is an NVIDIA model).
- */
 export function inferProviderForModel(model: string): string | undefined {
   const lower = model.toLowerCase();
   for (const [provider, models] of Object.entries(knownModels)) {
@@ -398,7 +380,6 @@ export function inferProviderForModel(model: string): string | undefined {
   return undefined;
 }
 
-/** Set of known slash-command names (without the leading "/"). */
 const knownSlashNames = new Set(
   slashCommands.map((c) => c.command.slice(1).toLowerCase()),
 );
@@ -406,10 +387,7 @@ const knownSlashNames = new Set(
 
 export function looksLikeSlashCommand(line: string): boolean {
   if (!line.startsWith("/") || line.length < 2) return false;
-  // First whitespace-delimited token, minus the leading slash.
   const firstToken = line.slice(1).split(/\s/)[0] ?? "";
-  // A path-like first token (contains another "/" or a backslash escape, or
-  // looks like a filename with an extension) is never a command.
   if (firstToken.includes("/") || firstToken.includes("\\")) return false;
   const name = firstToken.toLowerCase();
   

@@ -1,8 +1,3 @@
-// Incremental markdown for streaming assistant rows.
-// Re-parsing and re-wrapping the whole message on every frame is O(n) per frame
-// and O(n^2) per reply. Completed blocks are rendered once, cached, and only the
-// streaming tail is re-rendered. Finalized rows always use a single one-shot
-// render so goldens stay exact.
 
 import {
   isCodeFenceClose,
@@ -14,8 +9,6 @@ import {
   type RenderMarkdownLinesOptions,
 } from "./render-markdown-lines.js";
 
-// A tail block that could still be re-numbered or re-aligned by the block above
-// it (lists, tables, quotes, indented code) is never split from that block.
 const BLOCK_CONTINUATION = /^(?:[ \t]*(?:[-*+][ \t]|\d+[.)][ \t]|\||>)|[ \t]{4,}\S)/;
 
 const MIN_STABLE_CHARS = 512;
@@ -37,7 +30,6 @@ export interface MarkdownSplit {
   readonly tail: string;
 }
 
-// Split at the latest blank line that is a true block boundary.
 export function stableMarkdownSplit(
   text: string,
   minStableChars = MIN_STABLE_CHARS,
@@ -82,8 +74,6 @@ function isBlankLine(line: AnsiLine): boolean {
   return line.replace(SGR, "").trim().length === 0;
 }
 
-// Every render pass trims its own trailing blanks differently, so cached blocks
-// are stored without them and seams get exactly one blank row back.
 function trimTrailingBlanks(lines: readonly AnsiLine[]): {
   lines: readonly AnsiLine[];
   blank: AnsiLine | undefined;
@@ -116,7 +106,6 @@ export interface StreamingMarkdownResult {
   readonly cache: MarkdownStreamCache;
 }
 
-// `streaming: false` forces the exact one-shot render used by the goldens.
 export function renderStreamingMarkdown(input: {
   readonly text: string;
   readonly streaming: boolean;

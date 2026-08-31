@@ -18,19 +18,12 @@ interface FfufJson {
 const LINE_RE =
   /^([^\s]+)\s+\[Status:\s*(\d+),\s*Size:\s*(\d+),\s*Words:\s*(\d+),\s*Lines:\s*(\d+).*\]/;
 
-/** Prefer real hits; 404/not-found is noise when other statuses exist. */
 function isInterestingStatus(status: number | undefined): boolean {
   if (status === undefined) return true;
   if (status === 404 || status === 429) return false;
-  // 2xx, 3xx, auth walls, server errors, etc.
   return true;
 }
 
-/**
- * Structured summary of ffuf hits. Prefer interesting statuses when the run
- * already mixed signal + 404 noise. Best practice remains filtering at the
- * command (`-mc`, `-fc`, `-fs`, quiet) so the artifact is clean too.
- */
 export const ffufReducer: Reducer = (raw): ReducerOutput => {
   const results: FfufResult[] = [];
   const jsonStart = raw.indexOf("{");
@@ -41,7 +34,6 @@ export const ffufReducer: Reducer = (raw): ReducerOutput => {
         for (const r of parsed.results) results.push(r);
       }
     } catch {
-      // fall through to text parsing
     }
   }
   if (results.length === 0) {

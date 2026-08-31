@@ -60,10 +60,7 @@ export function toolElapsedLabel(
   now: number,
 ): string | undefined {
   if (!shouldShowToolElapsed(item.name)) return undefined;
-  // A queued command has not started running yet — no elapsed clock.
   if (item.status === "blocked" || item.status === "queued") return undefined;
-  // Count from the real start wall-clock when known (live `tool-started`);
-  // hydrated history has no `startedAt`, so fall back to `timestamp`.
   const start = item.startedAt ?? item.timestamp;
   const span =
     item.status === "running"

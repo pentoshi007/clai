@@ -1,14 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Chrome under the composer — responsive density so chips never pile over
- * the token count / scroll badges on the right.
- *
- * Density (by content width):
- *  - xs  (<48):  badge · tokens · ▲▼
- *  - sm  (<68):  badge · ^H · tokens · ▲▼  (+ spinner/activity when running)
- *  - md  (<96):  badge · core keys · ^H · tokens · ▲▼
- *  - lg  (≥96):  full shortcut row
- */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -66,21 +56,14 @@ export interface StatusLineProps {
   readonly onTogglePlan?: (() => void) | undefined;
   readonly onJumpTop?: (() => void) | undefined;
   readonly onJumpBottom?: (() => void) | undefined;
-  /** Copy the draft to the clipboard, then clear it (Ctrl+X). */
   readonly onCutDraft?: (() => void) | undefined;
-  /** Clear the draft without copying (Ctrl+Q). */
   readonly onClearDraft?: (() => void) | undefined;
-  /** Open the slash-command list (same source as typing "/" in the composer). */
   readonly onOpenCommands?: (() => void) | undefined;
-  /** Draft is non-empty — gates the ^X / ^Q hints. */
   readonly hasDraft?: boolean | undefined;
   readonly onCycleMode?: (() => void) | undefined;
-  /** Whether the first Esc has armed cancellation for 1.5 seconds. */
   readonly cancelArmed?: boolean | undefined;
-  /** Arm/confirm cancellation — the same controller path Esc uses. */
   readonly onRequestCancel?: (() => void) | undefined;
   readonly onContextLimitEditingStart?: (() => void) | undefined;
-  /** Restore keyboard focus to the composer (e.g. after inline context-limit editing). */
   readonly onFocusComposer?: (() => void) | undefined;
 }
 
@@ -521,7 +504,7 @@ export function StatusLine(props: StatusLineProps): ReactNode {
           </>
         ) : null}
 
-        {/* Shift+Tab mode cycle hint (click to cycle ask → agent → plan) */}
+        {}
         {density !== "xs" ? (
           <>
             {sep(theme)}
@@ -621,7 +604,7 @@ export function StatusLine(props: StatusLineProps): ReactNode {
         ) : null}
       </box>
 
-      {/* Right rail: cwd · branch · tokens · ▲▼ */}
+      {}
       <box
         style={{
           flexDirection: "row",

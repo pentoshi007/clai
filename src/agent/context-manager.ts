@@ -21,44 +21,16 @@ export type { CompactOptions, CompactResult, CompactionStrategy, CompactionSumma
 
 export { estimateImageTokens, estimateMessagesTokens, estimateTokens };
 
-/**
- * Token estimation lives in `request-accounting.ts` — the one serialized-
- * request accounting service. The exports above keep this module's historic
- * public surface; nothing here owns a chars-per-token ratio anymore.
- */
 
-/**
- * Agent-loop auto-compact threshold (estimated tokens). Shared with `/context`
- * so the reported % of budget matches when auto-compaction fires.
- *
- * 180k: provider/model-neutral default. A session-specific model window can
- * opt into a 70%-of-window trigger.
- */
 export const AUTO_COMPACT_TOKEN_BUDGET = 180_000;
 
-/**
- * Soft post-compact band we *prefer* (includes system prompt ~8k).
- * Achieved by dense memory + progressive soft-trim of oversized dumps only.
- * Never a reject gate, never drops messages/tool pairs to hit the number.
- */
 export const POST_COMPACT_SOFT_GUIDANCE_TOKENS = 16_000;
 
-/** Auto-compact: reject empty/near-empty memory after large history (amnesia). */
 export const AUTO_COMPACT_STUB_MIN_CHARS = 120;
 export const AUTO_COMPACT_STUB_BEFORE_TOKENS = 20_000;
 
 const DEFAULT_BUDGET_TOKENS = 32_000;
 
-/**
- * Replace older messages with a single condensed "memory" message while
- * preserving the system prompt and the most recent N messages.
- *
- * We do not call the LLM here — that's a future enhancement. The current
- * compaction is mechanical: keep the system prompt; replace the prefix of
- * older turns with a bullet list of the assistant's last lines and the
- * tool calls that produced output. This is conservative and reversible
- * (the artifact files still hold the raw outputs).
- */
 function assistantVisibleOnly(message: ChatMessage): ChatMessage {
   if (message.role !== "assistant") return message;
   if (
@@ -83,8 +55,6 @@ export function compactMessages(
   if (messages.length <= keepRecent + 1) return messages;
   if (estimateMessagesTokens(messages) <= budget) return messages;
 
-  // Keep the real system prompt, but never pin prior compaction memory as
-  // the head: re-compaction must summarize/replace that stale memory.
   const head: ChatMessage[] = [];
   let start = 0;
   if (
@@ -138,10 +108,6 @@ export function compactMessages(
   return [...head, memo, ...preservedLedger, ...tail];
 }
 
-/**
- * Whether an auto-compact result is safe to apply.
- * Only structural / quality gates — never "afterTokens must be under N".
- */
 export function shouldApplyAutoCompact(input: {
   summarized: boolean;
   summaryBody: string;
@@ -150,12 +116,10 @@ export function shouldApplyAutoCompact(input: {
   afterMessages: readonly ChatMessage[];
 }): boolean {
   if (!input.summarized) return false;
-  // Must actually shrink (otherwise pointless and can thrash).
   if (input.afterTokens >= input.beforeTokens) return false;
   if (hasOrphanToolMessages([...input.afterMessages])) return false;
   const body = input.summaryBody.trim();
   if (!body) return false;
-  // Amnesia stub only — not a target-size check.
   if (
     input.beforeTokens >= AUTO_COMPACT_STUB_BEFORE_TOKENS &&
     body.length < AUTO_COMPACT_STUB_MIN_CHARS

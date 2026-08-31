@@ -13,19 +13,6 @@ export { appendPlanTask, applyForegroundSnapshot, nextPlanTaskId, normalizeTaskD
 export { shortenPlanGoal };
 export type { PlanMeta, PlanStatus, PlanTask, SessionPlan, TaskEvidence, TaskState } from "./plan/sqlite-backend.js";
 
-/**
- * Session-scoped plan + task persistence.
- *
- * A plan is a comprehensive, human-readable description of HOW the agent
- * intends to accomplish a multi-step goal (coding OR pentesting), paired
- * with an ordered checklist of tasks. The agent has the plan in context for
- * the whole session, marks tasks done as it completes them, and the user can
- * view it in a pager (Ctrl+P) or approve execution with /implement.
- *
- * Storage mirrors history.ts: SQLite when better-sqlite3 is available,
- * otherwise an always-present JSONL log. Plans are keyed by a session id so
- * each REPL session keeps its own plan, and resuming a session reloads it.
- */
 
 function newTaskId(index: number): string {
   return `t${index + 1}`;
@@ -103,19 +90,16 @@ export async function clearAllPlans(): Promise<void> {
     try {
       db.exec("DELETE FROM plans;");
     } catch {
-      /* ignore */
     }
   }
   if (await safeExists(jsonlFile)) {
     try {
       await rm(jsonlFile, { force: true });
     } catch {
-      /* ignore */
     }
   }
 }
 
-// Task mutations
 
 const fromDomainStatus = (state: VersionedPlanStep["status"]): TaskState =>
   state === "running" ? "in_progress" : state;
@@ -169,10 +153,6 @@ export function readyPlanTasks(plan: SessionPlan): PlanTask[] {
   );
 }
 
-/**
- * Apply a task transition. Rejects transitions the  table forbids so no
- * caller can rewind terminal work; use a plan revision to supersede a task.
- */
 export function markTask(
   plan: SessionPlan,
   taskId: string,
@@ -189,7 +169,6 @@ export function markTask(
   return true;
 }
 
-/** Mark the first not-yet-finished foreground task as the given state. */
 export function markNextTask(plan: SessionPlan, state: TaskState): PlanTask | undefined {
   const task = plan.tasks.find(
     (candidate) =>
@@ -203,19 +182,16 @@ export function markNextTask(plan: SessionPlan, state: TaskState): PlanTask | un
   return task;
 }
 
-/** Tasks the model owns. Responder children advance from process lifecycle. */
 export function foregroundTasks(plan: SessionPlan): PlanTask[] {
   return plan.tasks.filter((task) => !task.responderOwned);
 }
 
-/** Foreground work that is neither settled nor skipped, in plan order. */
 export function foregroundRemaining(plan: SessionPlan): PlanTask[] {
   return foregroundTasks(plan).filter(
     (task) => task.state === "pending" || task.state === "in_progress",
   );
 }
 
-/** The single active foreground task, or the next one to resume. */
 export function foregroundActiveTask(plan: SessionPlan): PlanTask | undefined {
   const remaining = foregroundRemaining(plan);
   return (
@@ -223,7 +199,6 @@ export function foregroundActiveTask(plan: SessionPlan): PlanTask | undefined {
   );
 }
 
-/** Responder children that are still running or awaiting analysis. */
 export function responderOpenTasks(plan: SessionPlan): PlanTask[] {
   return plan.tasks.filter(
     (task) =>

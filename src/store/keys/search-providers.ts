@@ -2,10 +2,6 @@ import type { SearchProviderId } from "../../tools/web/types.js";
 import type { ProviderStatus } from "../../types.js";
 import { getSecret, SecretSource, setSecret, unsetSecret } from "./secret-store.js";
 
-/**
- * Env-var name used for a search provider's API key, per Requirement 3.3.
- * Returns `undefined` for keyless providers (DuckDuckGo).
- */
 export const searchProviderEnvVars: Record<SearchProviderId, string | undefined> = {
   brave: 'BRAVE_SEARCH_API_KEY',
   tavily: 'TAVILY_API_KEY',
@@ -13,7 +9,6 @@ export const searchProviderEnvVars: Record<SearchProviderId, string | undefined>
   exa: 'EXA_API_KEY',
 };
 
-/** One stored API key slot for an LLM provider. */
 export interface ProviderKeySlot {
   readonly id: string;
   readonly value: string;
@@ -21,15 +16,12 @@ export interface ProviderKeySlot {
   readonly disabled?: boolean | undefined;
 }
 
-/** Resolved multi-key view for a provider (storage or env). */
 export interface ProviderKeysResult {
   readonly keys: ProviderKeySlot[];
-  /** Sticky index used as the next rotation start (clamped). */
   readonly activeIndex: number;
   readonly source: ProviderStatus['source'];
 }
 
-/** On-disk multi-key payload stored as JSON under `llm:<provider>`. */
 interface ProviderKeysEnvelopeV1 {
   v: 1;
   keys: Array<{ id: string; value: string; createdAt: number; disabled?: boolean }>;
@@ -65,10 +57,6 @@ function isEnvelopeV1(value: unknown): value is ProviderKeysEnvelopeV1 {
   );
 }
 
-/**
- * Parse a stored secret string into slots. Legacy plain API keys become a
- * single-slot list. Invalid JSON that looks like a key is treated as legacy.
- */
 export function parseProviderKeysPayload(
   raw: string | undefined,
 ): { keys: ProviderKeySlot[]; activeIndex: number } {
@@ -95,7 +83,6 @@ export function parseProviderKeysPayload(
         };
       }
     } catch {
-      // Fall through to legacy single-string treatment.
     }
   }
   return {
@@ -125,14 +112,6 @@ export function serializeProviderKeysPayload(
   return JSON.stringify(envelope);
 }
 
-/**
- * Resolve every API key for a keyed search provider.
- *
- * This intentionally mirrors LLM key semantics: stored multi/single keys
- * win over an ambient environment variable, and an environment value is only
- * a synthetic single-key fallback when nothing has been stored. DuckDuckGo
- * is keyless and therefore never exposes stored key slots.
- */
 export async function getSearchProviderKeys(
   id: SearchProviderId,
 ): Promise<ProviderKeysResult> {
@@ -165,7 +144,6 @@ export async function getSearchProviderKeys(
   return { keys: [], activeIndex: 0, source: 'missing' };
 }
 
-/** Resolve the sticky active key for compatibility with single-key callers. */
 export async function getSearchProviderKey(
   id: SearchProviderId,
 ): Promise<{ value?: string; source: SecretSource }> {
@@ -175,7 +153,6 @@ export async function getSearchProviderKey(
   return { value: multi.keys[index]!.value, source: multi.source };
 }
 
-/** Replace all stored keys for a search provider (the shared keys editor). */
 export async function setSearchProviderKeys(
   id: SearchProviderId,
   values: readonly string[],
@@ -216,7 +193,6 @@ export async function setSearchProviderKeys(
   return setSecret('search', id, serializeProviderKeysPayload(slots, activeIndex));
 }
 
-/** Append a search API key, preserving the existing sticky active key. */
 export async function appendSearchProviderKey(
   id: SearchProviderId,
   secret: string,
@@ -226,7 +202,6 @@ export async function appendSearchProviderKey(
   if (!trimmed) throw new Error('empty API key');
 
   const current = await getSearchProviderKeys(id);
-  // Like LLM providers, saving any explicit key replaces env-only resolution.
   const base = current.source === 'env' ? [] : current.keys.map((key) => ({ ...key }));
   if (base.some((key) => key.value === trimmed)) {
     const index = base.findIndex((key) => key.value === trimmed);
@@ -272,7 +247,6 @@ export async function setSearchProviderKeyDisabled(
   return true;
 }
 
-/** Persist the key that last completed a search successfully as the sticky key. */
 export async function markSearchProviderKeySuccess(
   id: SearchProviderId,
   index: number,

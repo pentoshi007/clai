@@ -1,16 +1,11 @@
 
 
-/** One-shot scaffolders — must NEVER be treated as "start the dev server". Stack-agnostic. */
 export function isScaffoldCreateCommand(cmd: string): boolean {
   return /\b(?:npm\s+create|npm\s+init|yarn\s+create|pnpm\s+create|bun\s+create|npx\s+(?:--yes\s+)?create-[\w-]+|create-vite|create-next-app|create-react-app|cargo\s+new|cargo\s+init|go\s+mod\s+init|poetry\s+new|django-admin\s+startproject|rails\s+new|composer\s+create-project|mix\s+new|flutter\s+create|dotnet\s+new)\b/i.test(
     cmd,
   );
 }
 
-/**
- * Commands that legitimately sit quiet for minutes (npm install, create-next-app).
- * Must not be killed by the short "no output" stall watchdog.
- */
 export function isLongQuietInstallOrScaffoldCommand(cmd: string): boolean {
   if (!cmd.trim()) return false;
   if (isScaffoldCreateCommand(cmd)) return true;
@@ -27,11 +22,6 @@ export function isLongQuietInstallOrScaffoldCommand(cmd: string): boolean {
   );
 }
 
-/**
- * Commands that are long-running but produce output (tests, builds, lint).
- * These need a longer hard timeout than the 40s default, but should still
- * be killed by the stall watchdog if they go quiet.
- */
 export function isLongRunningTestOrBuildCommand(cmd: string): boolean {
   if (!cmd.trim()) return false;
   return (
@@ -46,7 +36,6 @@ export function isLongRunningTestOrBuildCommand(cmd: string): boolean {
   );
 }
 
-/** Default wall-clock budget for every tool unless the model overrides it. */
 export const DEFAULT_TOOL_TIMEOUT_MS = 40_000;
 
 const MIN_TOOL_TIMEOUT_MS = 1_000;
@@ -66,20 +55,10 @@ function requestedToolTimeoutMs(call: {
     if (Number.isFinite(parsed)) requested = parsed;
   }
   if (requested !== undefined) {
-    // Heuristic: if value is small (< 1000) and looks like seconds (e.g. 300 for 300s),
-    // treat it as seconds and convert to ms. This handles models that confuse units.
-    // Values >= 1000 are treated as ms (e.g. 300000 for 300s).
-    // We only apply this for values that would otherwise be clamped to 1s but
-    // the command is long-running - otherwise respect the ms value.
     let ms = Math.floor(requested);
-    // If value is between 1 and 1000, it could be seconds (e.g. 300 = 300s) or ms (300ms)
-    // For long-running commands, treat small values as seconds to avoid 0.3s timeout for 300s intent
     const cmd = typeof call.args.command === "string" ? call.args.command : "";
     const isLongRunning = isLongRunningTestOrBuildCommand(cmd) || isLongQuietInstallOrScaffoldCommand(cmd);
     if (isLongRunning && ms > 0 && ms < 1000) {
-      // Likely seconds - convert to ms (e.g. 300 -> 300000ms = 300s)
-      // But if it's 60, that would be 60s = 60000ms, which is reasonable
-      // If it's 300, that would be 300s = 300000ms
       ms = ms * 1000;
     }
     return Math.max(
@@ -110,11 +89,6 @@ function requestedToolTimeoutMs(call: {
 
 const OUTER_STALL_SETTLE_MARGIN_MS = 2_500;
 
-/**
- * Silence cancellation leaves a short margin for a tool's own timeout handler
- * to return its richer result. The hard wall-clock watchdog still enforces the
- * exact model-selected deadline.
- */
 export function toolStallBudgetMs(call: {
   name: string;
   args: Record<string, unknown>;
@@ -122,12 +96,6 @@ export function toolStallBudgetMs(call: {
   return requestedToolTimeoutMs(call) + OUTER_STALL_SETTLE_MARGIN_MS;
 }
 
-/**
- * Hard wall-clock watchdog for every tool call. Local implementations enforce
- * the selected deadline; this outer fallback waits through the same short
- * settlement margin so their timeout/abort handlers can return a rich result
- * before the runner force-settles an ignored AbortSignal.
- */
 export function toolHardBudgetMs(call: {
   name: string;
   args: Record<string, unknown>;

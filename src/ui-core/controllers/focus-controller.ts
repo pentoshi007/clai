@@ -1,12 +1,3 @@
-/**
- * Focus + overlay ownership (V2-033, groundwork for V2-076).
- *
- * Single owner for where keyboard input is routed. The base focus is one of
- * the visible regions; a blocking overlay (picker/modal/secret/search) takes
- * precedence while open. Only one blocking overlay may be active at a time so
- * nested actions cannot stack; opening a second is rejected rather than
- * silently shadowing the first.
- */
 
 import type { ActionContext } from "../actions/action-id.js";
 
@@ -58,7 +49,6 @@ export class FocusController {
     if (!this.overlay) this.notify();
   }
 
-  /** Move focus to the next visible region, skipping overlays. */
   cycleRegion(visible: readonly FocusRegion[] = this.regionOrder): FocusRegion {
     const order = visible.length > 0 ? visible : this.regionOrder;
     const idx = order.indexOf(this.currentRegion);
@@ -67,7 +57,6 @@ export class FocusController {
     return next;
   }
 
-  /** Open a blocking overlay; returns a disposer that closes it. */
   pushOverlay(context: OverlayContext): () => void {
     if (this.overlay) {
       throw new Error(

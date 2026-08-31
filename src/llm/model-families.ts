@@ -1,8 +1,3 @@
-/**
- * Model-family classification shared by request serialization and route
- * profiles. Pure string classification with no runtime dependencies so both
- * the HTTP layer and the profile layer can consume it without cycles.
- */
 
 import type {
   FinalTurnPreservation,
@@ -242,14 +237,14 @@ export function modelFamilyId(model: string): string | undefined {
 }
 
 export type NvidiaReasoningKind =
-  | "kimi-thinking" // Kimi K2.6 — reasoning is on by default; `thinking:false` disables it
-  | "deepseek-v4" // DeepSeek V4 — `thinking` plus V4's none/high reasoning effort
-  | "thinking" // DeepSeek-R1/V3, older Nemotron — `chat_template_kwargs.thinking`
-  | "nemotron-3" // Nemotron-3 — `enable_thinking` + reasoning_budget
-  | "glm-thinking" // GLM-5/4.5 — `enable_thinking` + `clear_thinking:false`
-  | "enable-thinking" // Gemma 3/4 — `chat_template_kwargs.enable_thinking`
-  | "effort-only" // gpt-oss, qwen3, mistral 3+ — top-level `reasoning_effort`
-  | "none"; // Llama, MiniMax m2.x, Step, Sarvam — no thinking knob
+  | "kimi-thinking"
+  | "deepseek-v4"
+  | "thinking"
+  | "nemotron-3"
+  | "glm-thinking"
+  | "enable-thinking"
+  | "effort-only"
+  | "none";
 
 const NVIDIA_KIND_BY_FAMILY: Readonly<Record<string, NvidiaReasoningKind>> = {
   "kimi-k2.7-code": "kimi-thinking",

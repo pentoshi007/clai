@@ -38,7 +38,6 @@ function updatePlanStatus(plan: SessionPlan): void {
 }
 
 export interface ResponderSettlementOptions {
-  /** Authoritative result revision this settlement carries. */
   readonly resultRevision?: number | undefined;
 }
 
@@ -54,9 +53,6 @@ export async function settleResponderJob(
   const resultRevision = options?.resultRevision ?? 1;
   let outcome: Exclude<ResponderSettlementResult, "applied"> | undefined;
 
-  // Settlement is an idempotent reducer applied under a
-  // version compare-and-set, so a concurrent foreground save can no longer
-  // revert a settled child back to yellow.
   let result: Awaited<ReturnType<typeof mutatePlan>>;
   try {
     result = await mutatePlan(job.ownerSessionId, (draft) => {

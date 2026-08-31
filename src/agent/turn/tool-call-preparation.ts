@@ -85,7 +85,6 @@ export const readSalvagedWriteReceipt = async (
       const stats = await stat(resolveFsToolPath(salvaged.path));
       bytesOnDisk = stats.size;
     } catch {
-      // Keep the content-length estimate when the file cannot be stat'ed.
     }
   }
   return {

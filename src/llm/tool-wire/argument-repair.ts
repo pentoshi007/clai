@@ -1,10 +1,3 @@
-/**
- * Split a string into top-level balanced `{…}` segments.
- *
- * Returns undefined unless the whole string is exactly two or more complete
- * objects separated only by whitespace. Truncated or otherwise malformed JSON
- * must stay malformed so write-salvage can still recover partial content.
- */
 function splitJsonObjectSegments(raw: string): string[] | undefined {
   const segments: string[] = [];
   let depth = 0;
@@ -43,13 +36,6 @@ function splitJsonObjectSegments(raw: string): string[] | undefined {
   return segments.length >= 2 ? segments : undefined;
 }
 
-/**
- * Recover arguments from a provider that repeats the whole arguments object in
- * consecutive streaming deltas, producing `{"path":"x"}{"path":"x"}`.
- * Observed on Bynara/Grok; concatenation made every such call unparseable and
- * the tool never ran. Later non-empty values win so a growing snapshot keeps
- * its final state.
- */
 export function repairConcatenatedToolArguments(
   raw: string,
 ): Record<string, unknown> | undefined {
@@ -88,7 +74,6 @@ export function parseToolArguments(raw: unknown): Record<string, unknown> {
         return parsed as Record<string, unknown>;
       }
     } catch {
-      // fall through to repair
     }
     const repaired = repairConcatenatedToolArguments(t);
     if (repaired) return repaired;

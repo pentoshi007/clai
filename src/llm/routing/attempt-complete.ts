@@ -69,8 +69,6 @@ export async function tryCompleteOnce(
     }
     return result;
   } catch (error) {
-    // A pinned single-dispatch operation records the capability verdict for the
-    // next operation but never spends a second physical request on it.
     if (activeRequest.tools?.length && isToolsUnsupportedError(error)) {
       markTextOnlyModel(providerId, model);
       if (singleDispatch) throw error;

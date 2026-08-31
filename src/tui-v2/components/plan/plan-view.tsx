@@ -1,11 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Plan / tasks side pane — modern CLAI chrome.
- *
- * Matches project theme: statusBackground panel, cyan/magenta accents,
- * chip badges (like mode / YOU chrome), progress bar, card-like task rows
- * with a left state rail. Full wrap — never ellipsize titles/notes.
- */
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core";
@@ -39,7 +32,6 @@ function tokenFg(theme: Theme, token: PlanColorToken): string {
   return theme[token];
 }
 
-/** Compact filled chip (mode-badge style). */
 function Chip(props: {
   label: string;
   fg: string;
@@ -61,7 +53,6 @@ function Chip(props: {
   );
 }
 
-/** Soft action chip (Implement / Discard). */
 function ActionChip(props: {
   label: string;
   fg: string;
@@ -196,7 +187,7 @@ export function PlanView(props: PlanViewProps): ReactNode {
       onMouseScroll={trapWheel}
       onMouseDown={() => services.focus.focusRegion("plan")}
     >
-      {/* ── Header: goal + status chip + progress ── */}
+      {}
       <box
         style={{
           flexDirection: "column",
@@ -215,8 +206,6 @@ export function PlanView(props: PlanViewProps): ReactNode {
             style={{
               fg: theme.foreground,
               height: 1,
-              // Bold every wrapped line of the goal — a title's formatting
-              // shouldn't change mid-sentence just because it wrapped.
               attributes: TextAttributes.BOLD,
             }}
           />
@@ -224,7 +213,7 @@ export function PlanView(props: PlanViewProps): ReactNode {
 
         <text content=" " style={{ height: 1 }} />
 
-        {/* Status chip + kind */}
+        {}
         <box
           style={{
             flexDirection: "row",
@@ -247,7 +236,7 @@ export function PlanView(props: PlanViewProps): ReactNode {
           />
         </box>
 
-        {/* Progress bar + fraction */}
+        {}
         <box
           style={{
             flexDirection: "row",
@@ -307,14 +296,14 @@ export function PlanView(props: PlanViewProps): ReactNode {
           </box>
         ) : null}
 
-        {/* Soft aqua rule — matches project chrome */}
+        {}
         <text
           content={"─".repeat(Math.max(8, innerW))}
           style={{ fg: theme.border, height: 1, marginTop: 1 }}
         />
       </box>
 
-      {/* ── Task list ── */}
+      {}
       <scrollbox
         ref={scrollRef}
         stickyScroll={false}
@@ -350,11 +339,6 @@ export function PlanView(props: PlanViewProps): ReactNode {
   );
 }
 
-/**
- * Task row: content-sized section, bg-only separation (no per-row borders).
- * Full-height solid status rail (same width for green/yellow/red — never thin │).
- * Title + note vertically centered in the row.
- */
 function TaskRow(props: {
   task: PlanTask;
   theme: Theme;
@@ -370,8 +354,6 @@ function TaskRow(props: {
       ? theme.foreground
       : stateColor;
   const glyph = taskGlyph(task);
-  // Stripe every other row; active/in_progress get a stronger plate.
-  // Distinctions are background only — no row borders.
   const bg =
     active || (state === "in_progress" && !task.responderOwned)
       ? theme.rowA
@@ -382,7 +364,6 @@ function TaskRow(props: {
   const title =
     `${task.parentTaskId ? "↳ " : ""}` +
     `${ownerChip ? `[${ownerChip}] ` : ""}${cleanTaskTitle(task)}`;
-  // Budget leaves room for rail (1) + padding + glyph.
   const titleBudget = Math.max(8, width - 5);
   const titleLines = wrapPlanText(title, titleBudget);
   const jobLabel = task.jobId
@@ -413,12 +394,11 @@ function TaskRow(props: {
           flexDirection: "row",
           width: "100%",
           flexShrink: 0,
-          // Content-sized height (title/note lines only).
           alignItems: "stretch",
           backgroundColor: bg,
         }}
       >
-        {/* Full-height status rail for THIS row only (equal width green/yellow). */}
+        {}
         <box
           style={{
             width: 1,
@@ -477,7 +457,7 @@ function TaskRow(props: {
           ))}
         </box>
       </box>
-      {/* Pane-colored gap so status rails do not merge into one continuous line. */}
+      {}
       <text
         content=" "
         style={{ bg: theme.statusBackground, height: 1, width: "100%" }}

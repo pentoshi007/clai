@@ -1,7 +1,3 @@
-/**
- * Bridge so chrome outside the composer (status chips) can act on the draft
- * without holding a React ref to the textarea.
- */
 
 type Handler = () => void;
 type DraftListener = (hasDraft: boolean) => void;
@@ -27,7 +23,6 @@ function register(
 }
 
 export const composerActionPort = {
-  /** Register the active composer's clear implementation. Returns unregister. */
   registerClear(handler: Handler): () => void {
     return register(
       handler,
@@ -37,11 +32,9 @@ export const composerActionPort = {
       () => clearHandler,
     );
   },
-  /** Clear the composer draft if a handler is registered. */
   clear(): void {
     clearHandler?.();
   },
-  /** Register copy-then-clear (Ctrl+Shift+X). Returns unregister. */
   registerCut(handler: Handler): () => void {
     return register(
       handler,
@@ -51,11 +44,9 @@ export const composerActionPort = {
       () => cutHandler,
     );
   },
-  /** Copy the draft to the clipboard, then clear it. */
   cut(): void {
     cutHandler?.();
   },
-  /** Register "show the slash-command list inside the composer". */
   registerOpenCommands(handler: Handler): () => void {
     return register(
       handler,
@@ -79,7 +70,6 @@ export const composerActionPort = {
     insertHandler(text);
     return true;
   },
-  /** Publish draft emptiness so status chrome can gate draft-only hints. */
   setHasDraft(next: boolean): void {
     if (next === hasDraft) return;
     hasDraft = next;

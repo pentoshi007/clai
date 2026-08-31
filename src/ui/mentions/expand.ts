@@ -118,28 +118,18 @@ export type AttachmentKind =
   | "missing";
 
 export interface Attachment {
-  /** Raw token as it appeared in the prompt (e.g. "@src/App.tsx"). */
   raw: string;
-  /** Absolute resolved path. */
   path: string;
   kind: AttachmentKind;
-  /** Inlined text contents (text kind only). */
   content?: string;
   truncated?: boolean;
-  /** Human-readable note (binary/missing/directory). */
   note?: string;
-  /**
-   * Image kind only: the bytes decode to a model-supported image within the
-   * size cap. Callers must not switch models for a rejected image.
-   */
   sendable?: boolean;
 }
 
 export interface MentionExpansion {
-  /** The original prompt text, unchanged (mentions stay readable in history). */
   text: string;
   attachments: Attachment[];
-  /** Context block to append to the model message, or "" if no attachments. */
   contextBlock: string;
 }
 
@@ -193,13 +183,6 @@ export function classifyPath(absPath: string): AttachmentKind {
   return "binary";
 }
 
-/**
- * Extract candidate file tokens from a submitted line:
- *  - explicit "@path" mentions (preceded by start/whitespace), and
- *  - explicit file:// references created for dropped files.
- *
- * Returns the raw token strings (including any leading "@") in order.
- */
 export function extractMentionTokens(line: string): string[] {
   const tokens: string[] = [];
   const mentionRe = /(^|\s)@(\S+)/g;
@@ -227,9 +210,6 @@ export function tokenToPath(token: string, baseDir: string): string {
   return isAbsolute(path) ? path : resolve(baseDir, path);
 }
 
-/**
- * Resolve explicit references in a submitted prompt into attachment metadata.
- */
 export function expandMentions(
   line: string,
   baseDir: string = safeCwd(),

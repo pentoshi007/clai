@@ -17,7 +17,6 @@ import {
   toWireName,
   type ToolChoice,
 } from "../tool-protocol.js";
-// Side-effect: register wire name map before fromWireName use.
 import "../../tools/definitions.js";
 import { normalizeSystemMessages } from "../system-messages.js";
 export { parseAnthropicToolUseBlocks } from "./anthropic-wire-blocks.js";
@@ -166,12 +165,6 @@ function assistantThinkingArtifacts(
     });
 }
 
-/**
- * Convert dialect-neutral history to Anthropic Messages API messages.
- * The first system message is owned by the top-level `system` field; later
- * System messages become marked user turns in place. Consecutive
- * tool results collapse into one user turn.
- */
 export function toAnthropicToolMessages(
   messages: ChatMessage[],
   replay?: AnthropicReasoningReplayOptions,
@@ -330,9 +323,7 @@ export interface AnthropicStreamBlock {
 export interface AnthropicToolStreamState {
   text: string;
   thinking: string;
-  /** Anthropic `signature_delta` for the thinking block. */
   thinkingSignature: string;
-  /** block index → partial content block */
   blocks: Map<number, AnthropicStreamBlock>;
 }
 

@@ -5,7 +5,6 @@ function parseRetryAfterHeader(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number.parseFloat(value);
   if (Number.isFinite(seconds) && seconds >= 0) return seconds;
-  // HTTP-date form: "Wed, 21 Oct 2015 07:28:00 GMT"
   const date = Date.parse(value);
   if (Number.isFinite(date)) {
     const diff = (date - Date.now()) / 1000;
@@ -77,7 +76,6 @@ export async function readJson<T>(
           "";
       }
       if (msg) {
-        // Detect NVIDIA DEGRADED function errors and enrich the message.
         if (/DEGRADED/i.test(msg)) {
           detail = ` — ${msg} (model is temporarily unavailable on this provider; try a different model with \`/model\`)`;
         } else {
@@ -86,13 +84,7 @@ export async function readJson<T>(
       }
       extractedMessage = msg;
     } catch {
-      // Non-JSON body — the raw text is surfaced via the full-response rule
-      // below, so nothing is lost here.
     }
-    // Show the full error received from the request: the extracted
-    // `error.message` alone routinely hides the actionable part of a gateway
-    // error (upstream detail, codes, validation fields). Append the complete
-    // body whenever it carries anything beyond that extracted message.
     const bodyText = text.slice(0, MAX_ERROR_BODY_CHARS);
     if (bodyAddsInformation(bodyText, extractedMessage)) {
       const shown = collapseWhitespace(bodyText);
@@ -120,24 +112,16 @@ export async function readJson<T>(
   return JSON.parse(text) as T;
 }
 
-/** Hard cap on a JSON response body so a misbehaving provider can't OOM us. */
 const MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024;
 
-/** How much of a provider error body we retain on the ProviderError. */
 export const MAX_ERROR_BODY_CHARS = 8_000;
 
-/** How much of that body is embedded in the user-visible error message. */
 export const MAX_ERROR_BODY_IN_MESSAGE_CHARS = 2_000;
 
 export function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/**
- * True when the raw response body carries information beyond the message we
- * already extracted from it (extra JSON fields, non-JSON payloads, …). Pure
- * `{"error":{"message": …}}` envelopes are redundant and stay compact.
- */
 export function bodyAddsInformation(
   bodyText: string,
   extracted: string,
@@ -146,7 +130,6 @@ export function bodyAddsInformation(
   if (!collapsed) return false;
   if (!extracted) return true;
   const normalizedExtracted = collapseWhitespace(extracted);
-  // The user-facing text already carries the entire body verbatim.
   if (normalizedExtracted.includes(collapsed)) return false;
   if (!collapsed.includes(normalizedExtracted)) return true;
   const rest = collapsed
@@ -196,7 +179,6 @@ async function readBodyCapped(
         try {
           await reader.cancel();
         } catch {
-          // ignore — we're abandoning the body deliberately
         }
         break;
       }
@@ -209,7 +191,6 @@ async function readBodyCapped(
     try {
       reader.releaseLock();
     } catch {
-      // already released
     }
   }
   return collected;

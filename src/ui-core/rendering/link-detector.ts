@@ -1,10 +1,3 @@
-/**
- * Pure URL/file-path span detector (SEL/CHAT "clickable links/file paths").
- *
- * Renderer-independent so components decorate text without each one
- * reimplementing the regexes, and so the detection rules are unit-testable
- * without mounting a terminal.
- */
 
 export type LinkKind = "url" | "path";
 
@@ -16,8 +9,6 @@ export interface LinkSpan {
 }
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
-// Heuristic: a `~/`, `./`, `../`, or absolute `/` prefix, path segments, and a
-// final segment with an extension; optional `:line[:col]` for editor jumps.
 const PATH_RE = /(?:~\/|\.{1,2}\/|\/)[\w.\-/]*[\w-]+\.\w+(?::\d+(?::\d+)?)?/g;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]'"]+$/;
 
@@ -29,7 +20,6 @@ function overlaps(spans: readonly LinkSpan[], start: number, end: number): boole
   return spans.some((s) => start < s.end && end > s.start);
 }
 
-/** Detects URLs first, then file paths in the remaining, non-overlapping text. */
 export function detectLinks(text: string): LinkSpan[] {
   const spans: LinkSpan[] = [];
 

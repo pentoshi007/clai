@@ -27,33 +27,21 @@ function deserializeTasksPayload(raw: string): {
       };
     }
   } catch {
-    /* ignore */
   }
   return { tasks: [], version: 1 };
 }
 
-/** True when a title is only a bare checklist id (t1, t2, …), not real work. */
 export function isBareTaskIdTitle(title: string): boolean {
   return /^t\d+$/i.test(title.trim());
 }
 
-/**
- * Drop phantom tasks whose title is just `t1`/`t2`/… (models sometimes
- * interleave bare ids with real titles). Keeps real task ids stable so
- * in-flight task.update calls still resolve.
- */
 export function stripBareTaskIdTasks(tasks: PlanTask[]): PlanTask[] {
   return tasks.filter((t) => t.title.trim() && !isBareTaskIdTitle(t.title));
 }
 
-/**
- * Persist unconditionally (no version check). Used for whole-plan replacement
- * (creation, approval of a freshly built plan, migrations). Concurrent
- * transitions must use {@link mutatePlan} instead.
- */
 export async function savePlan(plan: SessionPlan): Promise<void> {
   plan.updatedAt = new Date().toISOString();
-  if (getConfig().privateMode) return; // never persist in private mode
+  if (getConfig().privateMode) return;
   await enqueuePlanWrite(async () => {
     const db = await loadDatabase();
     if (db) {
@@ -87,9 +75,7 @@ function writePlanRowSqlite(db: DatabaseLike, plan: SessionPlan): void {
 
 export interface PlanMutationResult {
   ok: boolean;
-  /** Persisted plan after the reducer ran. */
   plan?: SessionPlan | undefined;
-  /** Why the mutation did not apply. */
   reason?:
     | "missing-plan"
     | "version-conflict"
@@ -98,30 +84,17 @@ export interface PlanMutationResult {
     | "persist-failed"
     | "private-mode"
     | undefined;
-  /** Invariant repairs applied while committing. */
   repairs?: string[] | undefined;
 }
 
 const PLAN_MUTATION_RETRIES = 5;
 
-/**
- * The authoritative plan mutation boundary.
- *
- * Loads the plan fresh, runs `reducer` on it, enforces domain invariants, then
- * persists with a version compare-and-set. On a CAS conflict the reducer is
- * re-run against the newer state (reducers must therefore be idempotent and
- * expressed as "apply this transition", not "write this snapshot").
- *
- * Return `false` from the reducer to abort without writing.
- */
 export async function mutatePlan(
   sessionId: string,
   reducer: (draft: SessionPlan) => boolean | void,
   opts?: { expectedVersion?: number | undefined; retries?: number | undefined },
 ): Promise<PlanMutationResult> {
   if (getConfig().privateMode) {
-    // Nothing is persisted in private mode; apply to a transient copy so
-    // callers still see a consistent in-memory result.
     const plan = await loadPlan(sessionId);
     if (!plan) return { ok: false, reason: "missing-plan" };
     if (reducer(plan) === false) return { ok: false, reason: "no-change" };
@@ -164,7 +137,7 @@ export async function mutatePlan(
             ...(repairs.length ? { repairs } : {}),
           };
         }
-        continue; // another writer won; re-run the reducer on fresh state
+        continue;
       }
       const committed = await withJsonlLock(async () => {
         const stored = (await readAllJsonl()).find(
@@ -196,12 +169,6 @@ function clonePlan(plan: SessionPlan): SessionPlan {
   };
 }
 
-/** Upgrade legacy persisted plans without changing task ids or states. */
-/**
- * Fill in dependencies for legacy rows that never stored the field. The previous
- * foreground task is the default; a responder child is display-linked to its
- * parent and must never become a blocker.
- */
 function normalizeLegacyDependencies(tasks: readonly PlanTask[]): PlanTask[] {
   return tasks.map((task, index) => {
     const previousForeground = tasks
@@ -230,7 +197,6 @@ function normalizePersistedPlan(plan: SessionPlan): SessionPlan {
   };
 }
 
-/** Heal plans that stored bare `t1`/`t2` strings as task titles. */
 function healBareIdTasks(plan: SessionPlan): {
   plan: SessionPlan;
   healed: boolean;
@@ -262,7 +228,6 @@ export async function loadPlan(sessionId: string): Promise<SessionPlan | undefin
       | undefined;
     if (!row) return undefined;
     const { tasks, meta, version } = deserializeTasksPayload(row.tasks_json);
-    // The column is authoritative once present (CAS writes maintain it).
     const rowVersion =
       typeof row.version === "number" && row.version >= 1
         ? Math.max(row.version, version)
@@ -287,7 +252,6 @@ export async function loadPlan(sessionId: string): Promise<SessionPlan | undefin
     const { plan: healed, healed: dirty } = healBareIdTasks(normalized);
     const repairs = enforcePlanInvariants(healed);
     if (dirty || needsNormalization || repairs.length > 0) {
-      // Persist upgrades so resumed SQLite and JSONL plans share dependency semantics.
       await savePlan(healed);
     }
     return healed;
@@ -337,22 +301,12 @@ export function validateSessionPlan(plan: SessionPlan): { ok: true } | { ok: fal
   return validatePlanDag(toVersionedTaskPlan(plan));
 }
 
-/** Foreground (non-responder) tasks that are currently `in_progress`. */
 export function activeForegroundTasks(plan: SessionPlan): PlanTask[] {
   return plan.tasks.filter(
     (task) => !task.responderOwned && task.state === "in_progress",
   );
 }
 
-/**
- * `count(foreground tasks in_progress) <= 1` is a domain invariant,
- * not a prompt convention. Applied on every {@link mutatePlan} commit and on
- * load. The earliest dependency-valid active task is kept; later ones are
- * demoted to `pending` with a repair note (evidence is preserved).
- *
- * A parent/child display relationship never implies a dependency, so responder
- * children may run concurrently and are ignored here.
- */
 export function enforcePlanInvariants(plan: SessionPlan): string[] {
   const repairs: string[] = [...repairOrphanParents(plan)];
   const active = activeForegroundTasks(plan);
@@ -378,11 +332,6 @@ export function enforcePlanInvariants(plan: SessionPlan): string[] {
   return repairs;
 }
 
-/**
- * Never leave a child pointing at a task that no longer exists. A revision that
- * removes a parent with live children keeps the ownership audit in the note and
- * detaches the display link instead of silently orphaning the row.
- */
 function repairOrphanParents(plan: SessionPlan): string[] {
   const repairs: string[] = [];
   const known = new Set(plan.tasks.map((task) => task.id));

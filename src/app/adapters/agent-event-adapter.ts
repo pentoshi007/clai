@@ -32,7 +32,6 @@ export class AgentEventAdapter {
     private readonly getAbortReason?: () => string | undefined,
   ) {}
 
-  /** Bind subsequent events to a turn; pass undefined for session-level events. */
   setTurn(turnId: TurnId | undefined): void {
     if (this.turnId !== turnId) {
       this.bufferedMetaTools.clear();
@@ -178,9 +177,6 @@ export class AgentEventAdapter {
         const toolCallId = this.toolCallId(event.id);
         const buffered = this.bufferedMetaTools.get(toolCallId);
         if (buffered) {
-          // Drop entirely when the card is chat-hidden for this outcome
-          // (task.update always; plan.create only on success). Otherwise flush
-          // the buffered call so its failure card and result render together.
           const status = event.ok ? "ok" : "failed";
           if (event.ok || shouldHideQuietMetaToolInChat(buffered.name, status)) {
             this.bufferedMetaTools.delete(toolCallId);

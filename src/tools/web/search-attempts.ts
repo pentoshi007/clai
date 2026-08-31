@@ -124,11 +124,6 @@ export async function attemptProviderWithKeyRotation(opts: {
   return lastOutcome ?? buildTimeoutOutcome(provider.id, opts.timeoutMs);
 }
 
-/**
- * Dispatch a single search request against one provider, arming the
- * per-attempt timeout and propagating any caller-supplied `AbortSignal`.
- * Never throws — every failure mode is mapped to `WebSearchOutcome`.
- */
 async function attemptProvider(
   provider: SearchProvider,
   apiKey: string | undefined,
@@ -144,7 +139,6 @@ async function attemptProvider(
     else callerSignal.addEventListener("abort", onCallerAbort);
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  // Do not pin the event loop on the timeout.
   (timer as unknown as { unref?: () => void }).unref?.();
 
   let raw: RawProviderResponse;
@@ -164,7 +158,6 @@ async function attemptProvider(
     if (callerSignal) callerSignal.removeEventListener("abort", onCallerAbort);
   }
 
-  // Map provider HTTP status to a categorical WebSearchErrorKind.
   const httpError = classifyHttpStatus(provider.id, raw);
   if (httpError) {
     return {
@@ -175,7 +168,6 @@ async function attemptProvider(
     };
   }
 
-  // 2xx with parseError surfaces as a `parse` failure (Requirement 6.5).
   if (raw.parseError) {
     return {
       ok: false,
@@ -189,8 +181,6 @@ async function attemptProvider(
     };
   }
 
-  // Filter and validate hits per Requirement 7.3, soft-boost high-trust
-  // hosts, then truncate so official sources surface earlier when present.
   const filtered: SearchResult[] = [];
   for (const hit of raw.hits) {
     const normalised = normaliseHit(hit);
@@ -209,7 +199,6 @@ async function attemptProvider(
   };
 }
 
-/** Soft boost for official / major-wire hosts (stable sort key only). */
 function trustHostScore(url: string): number {
   try {
     const host = new URL(url).hostname.toLowerCase();
@@ -253,7 +242,6 @@ function trustHostScore(url: string): number {
       return 1;
     }
   } catch {
-    // ignore invalid URLs
   }
   return 0;
 }
@@ -290,11 +278,6 @@ function normaliseHit(
   };
 }
 
-/**
- * Map provider HTTP status codes to a {@link WebSearchErrorKind} per the
- * design's error matrix. Returns `undefined` when the status is in the
- * 2xx range so the caller can move on to body classification.
- */
 function classifyHttpStatus(
   id: SearchProviderId,
   raw: RawProviderResponse,
@@ -302,12 +285,6 @@ function classifyHttpStatus(
   const provider = searchProviders[id];
   const displayName = provider?.displayName ?? id;
   const { status } = raw;
-  // Only a plain 200 carries a real results page. Other 2xx codes —
-  // notably the HTTP 202 anti-bot challenge that DuckDuckGo's
-  // html/lite endpoints now return — are NOT results pages. Treating
-  // them as success made the handler parse zero hits and report the
-  // misleading literal "No results found.", which in turn made the
-  // agent loop. Surface them as an actionable error instead.
   if (status === 200) return undefined;
   if (status > 200 && status < 300) {
     return {

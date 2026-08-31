@@ -6,11 +6,6 @@ import type { CustomProviderDef } from "../llm/custom-providers.js";
 
 export type ProviderCategory = "local" | "free-cloud" | "paid-cloud";
 
-/**
- * Providers whose base URL is user-supplied. `modal` requires one (endpoints
- * are per-workspace); `lightning` treats it as an override of the shared
- * gateway, e.g. to point at a private Lightning Inference deployment.
- */
 export const endpointProviders: readonly ProviderId[] = [
   "modal",
   "lightning",
@@ -19,16 +14,9 @@ export const endpointProviders: readonly ProviderId[] = [
 
 export function providerUsesEndpoints(provider: ProviderId): boolean {
   if (endpointProviders.includes(provider)) return true;
-  // Custom providers always carry a user-supplied base URL.
   return isCustomProviderIdSync(provider);
 }
 
-/**
- * Best-effort classification for the built-in providers. Some "free-cloud"
- * providers have paid tiers too — the label reflects what the default keys
- * usually buy you. Users who set up paid OpenAI/Anthropic keys can flip
- * freeOnly off to opt back into them.
- */
 export const providerCategory: Record<ProviderId, ProviderCategory> = {
   free: "free-cloud",
   gemini: "free-cloud",
@@ -41,34 +29,20 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   "aws-mantle": "paid-cloud",
   bynara: "free-cloud",
   "qwen-cloud": "paid-cloud",
-  // Usage-based compute billing. The Starter plan's $30/month credit makes it
-  // free in practice for light use, but it still spends real money, so
-  // `freeOnly` must keep it out of the fallback chain.
   modal: "paid-cloud",
-  // Per-token billing after the introductory free-token grant, so keep it out
-  // of `freeOnly` runs.
   lightning: "paid-cloud",
-  // Prepaid balance, billed per token.
   tokenrouter: "paid-cloud",
   meta: "paid-cloud",
   fireworks: "paid-cloud",
   hetzner: "free-cloud",
-  // Zero token markup, but billing is per token at provider list price.
   orcarouter: "paid-cloud",
   "merge-gateway": "paid-cloud",
 };
 
-/**
- * Resolve the category for any provider id (built-in or custom). Custom
- * providers default to "paid-cloud" so `/freeonly` keeps them out of the
- * fallback chain unless the user explicitly switched to one.
- */
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {
   return providerCategory[provider] ?? "paid-cloud";
 }
 
-// Inject the custom-provider id resolver so `normalizeProvider`/`assertProvider`
-// recognise user-defined provider ids. Done once, after the store is live.
 import { setCustomDefaultModelResolver, setCustomProviderInfoResolver, setCustomProviderResolver, setEnvVarResolver } from "../llm/provider.js";
 import { setCustomProfileSpecResolver } from "../llm/custom-profile-resolver.js";
 import { ClaiConfig, findCustomProviderDefSync, getConfig, store, updateConfig } from "./config/endpoints.js";
@@ -106,21 +80,17 @@ streaming, native tool calling, reasoning_effort). Use /model to pick from
 the live catalogue fetched from ${def.baseUrl}/models.`;
 });
 
-// --- Custom provider definitions (user-defined, runtime registry) --------------
 
-/** All custom provider defs stored in config. */
 export function getCustomProviders(): CustomProviderDef[] {
   const list = getConfig().customProviders ?? [];
   return list.map((d) => ({ ...d }));
 }
 
-/** True when `id` matches a user-defined custom provider (sync, reads config). */
 export function isCustomProviderIdSync(id: string | ProviderId): boolean {
   const list = getConfig().customProviders ?? [];
   return list.some((d) => d.id === id);
 }
 
-/** Persist a new custom provider definition. Throws on duplicate id. */
 export function addCustomProvider(def: CustomProviderDef): CustomProviderDef {
   const current = getConfig().customProviders ?? [];
   if (current.some((d) => d.id === def.id)) {
@@ -130,7 +100,6 @@ export function addCustomProvider(def: CustomProviderDef): CustomProviderDef {
   return def;
 }
 
-/** Remove a custom provider definition (does not touch its stored keys). */
 export function removeCustomProvider(id: string): boolean {
   const current = getConfig().customProviders ?? [];
   const next = current.filter((d) => d.id !== id);

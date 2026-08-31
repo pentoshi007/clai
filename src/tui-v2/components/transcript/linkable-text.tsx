@@ -1,15 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Renders plain text with detected URLs/paths as real hyperlinks (P1
- * "clickable links/file paths"; V2-055). `<a href>` emits the terminal's
- * native OSC 8 hyperlink, so the host terminal's own click/modifier
- * convention applies — there is no custom open-URL port to build here.
- *
- * Only absolute (`/...`) and home-relative (`~/...`) paths resolve to a
- * `file://` href; a bare relative path (`./foo.ts`) has no reliable base
- * directory at this layer, so it gets the accent color without a href rather
- * than risking a link to the wrong file.
- */
 
 import { homedir } from "node:os";
 import type { ReactNode } from "react";
@@ -29,12 +18,7 @@ export function LinkableText(props: {
   text: string;
   theme: Theme;
   fg?: string;
-  /** Default true; set false on clickable chrome (YOU bubble). */
   selectable?: boolean;
-  /**
-   * OpenTUI wrap. Use `"none"` when the caller already soft-wrapped to a
-   * column budget (user prompts beside the tasks pane).
-   */
   wrapMode?: "none" | "char" | "word" | undefined;
 }): ReactNode {
   const { text, theme, fg, selectable = true, wrapMode } = props;

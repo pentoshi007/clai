@@ -18,8 +18,6 @@ export function getToolDefinitions(filter?: {
     defs = defs.filter((d) => allow.has(d.name));
   }
   if (filter?.compact) {
-    // Core set for low-TPM models + recon/network essentials (no net.scan
-    // mutator — that still needs the full set / confirm UX).
     const core = new Set([
       "fs.read",
       "fs.write",
@@ -73,10 +71,6 @@ export function getCompactToolDefinitions(): ToolDefinition[] {
   return getToolDefinitions({ compact: true });
 }
 
-/**
- * Every registry key must have a definition; every definition must have a
- * handler unless it is a plan meta-tool.
- */
 export function assertDefinitionRegistryConsistency(
   registryKeys: string[],
 ): void {

@@ -363,9 +363,6 @@ export const runSingleTool = async (
     deps.pentestSession || isPentestToolCall(call) || Boolean(scope)
       ? safeEngagementActionsForToolCall(call)
       : [];
-  // The primary action carries the URL/port/path detail used for leases and
-  // network-hop authorization; every action (one per named target) must pass
-  // the scope check below before the tool runs.
   const engagementAction = engagementActions[0];
   const engagementGate = await evaluateEngagementGate(
     {
@@ -452,12 +449,9 @@ export const runSingleTool = async (
     deps.moveTurn("acting", `executing ${call.name}`);
   }
   deps.options.onToolStart?.(call);
-  // Card was "queued" since writeToolCall; flip to running only when work starts.
   deps.emit({ type: "tool-start", id: toolEventId });
   deps.writeStatus(call.name);
 
-  // Elevation uses the secure secret modal (TUI) or is refused — never
-  // a raw TTY "Password:" that freezes the UI. No misleading notice.
 
   const toolAc = new AbortController();
   const onParentAbort = () => toolAc.abort();
@@ -465,8 +459,6 @@ export const runSingleTool = async (
 
   let result: ToolResult;
   let liveBytes = 0;
-  // Stream every live byte — never drop mid-run. After the tool finishes we
-  // still replace the spool with the authoritative full `result.output`.
   const printLive = (chunk: string): void => {
     if (
       call.name === "fs.read" ||
@@ -523,8 +515,6 @@ export const runSingleTool = async (
       },
       confirmed: true,
       userPrompt: deps.prompt,
-      // image.view needs the active route to check vision support and size
-      // images to the provider's per-image budget.
       llmProvider: deps.provider(),
       llmModel: deps.model(),
       sessionId: deps.session.sessionId,
@@ -577,9 +567,6 @@ export const runSingleTool = async (
     deps.writeToolOutput(toolEventId, output, { replace: true });
     deps.emitToolResult(toolEventId, result, contextOutput);
     deps.options.onToolResult?.(call, result);
-    // Record it as an observation-free success so the per-call guard can
-    // stop an identical replay, while a real state change (new job status
-    // or bytes) still produces a fresh stateKey and is allowed through.
     const suppressedProbeState = deps.probeStateKey(call);
     deps.loopGuard.recordAttempt(
       deps.step(),
@@ -617,8 +604,6 @@ export const runSingleTool = async (
   }
 
   if (deps.toolState.delegation?.taskId && !result.backgroundJob) {
-    // The toolState.delegation never became a durable job: settle its child instead of
-    // Leaving a permanently yellow subtask behind.
     const delegationId = deps.toolState.delegation.id;
     const settledState = result.ok ? "skipped" : "failed";
     const settlement = await mutatePlan(deps.session.sessionId, (draft) => {
@@ -775,8 +760,6 @@ export const runSingleTool = async (
   );
 
   if (output) {
-    // Authoritative FULL body — replace any live stream so the pager
-    // never shows a truncated mid-run preview. Never cap for the UI.
     const fullChunk = output.endsWith("\n") ? output : `${output}\n`;
     deps.writeToolOutput(toolEventId, fullChunk, { replace: true });
   }

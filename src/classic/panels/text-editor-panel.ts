@@ -32,7 +32,6 @@ export function textEditorInitialState(
   return { editor: { text, cursor: text.length }, top: 0 };
 }
 
-/** Pasted bytes keep newlines and tabs-as-spaces; escapes are stripped. */
 export function sanitizeEditorInput(text: string): string {
   return stripAnsi(text).replace(/\r\n?/g, "\n").replace(/\t/g, "  ");
 }

@@ -1,7 +1,6 @@
 import { safeCwd } from "../../os/cwd.js";
 import type { ToolCall } from "../../types.js";
 
-/** Compact line window for fs.read card headers, e.g. "11–20" or "1–10". */
 export function formatFsReadLineRange(
   args: Record<string, unknown> | undefined,
 ): string | undefined {
@@ -86,7 +85,6 @@ export function formatToolArgs(call: ToolCall): string {
   if (call.name === "pkg.install") return String(call.args.tool ?? "");
   if (call.name === "fs.list") return String(call.args.path ?? safeCwd());
   if (call.name === "tool.batch") {
-    // Compact summary — never dump the full nested JSON into the card header.
     const raw = call.args.calls;
     const list = Array.isArray(raw) ? raw : [];
     const names = list

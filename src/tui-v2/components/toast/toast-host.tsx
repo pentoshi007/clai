@@ -1,11 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Notification toasts — top-center, slide in / hold / slide out.
- *
- * Solid message-chip style (no border): intro "AGENT MODE" plate (`theme.mode`)
- * with white bold text. Long messages wrap within the terminal; never spill
- * past the screen edge.
- */
 
 import { useEffect, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
@@ -29,16 +22,12 @@ export interface ToastHostProps {
   readonly termHeight: number;
 }
 
-/** Vertical gap between stacked toasts at rest. */
 const TOAST_STACK_GAP = 1;
 
-/** Animation repaint interval (~30 fps). */
 const TICK_MS = 33;
 
-/** Horizontal padding columns each side of the body text. */
 const H_PAD = 2;
 
-/** Cap wrap lines so a pathological message cannot cover the whole TUI. */
 const MAX_BODY_LINES = 6;
 
 function levelGlyph(level: ToastLevel): string {
@@ -54,11 +43,6 @@ function levelGlyph(level: ToastLevel): string {
   }
 }
 
-/**
- * Solid chip plate per level. Success is a green plate (Responder delivered a
- * completion to the model, copy confirmations, mode switches); error is red;
- * info/warn keep the amber mode plate. White body text stays crisp on all.
- */
 function levelPlate(level: ToastLevel, theme: Theme): string {
   switch (level) {
     case "success":
@@ -70,10 +54,6 @@ function levelPlate(level: ToastLevel, theme: Theme): string {
   }
 }
 
-/**
- * Word-wrap toast body to `innerWidth` columns (no side pads).
- * First line includes the level glyph; later lines are indented to match.
- */
 export function wrapToastBody(
   level: ToastLevel,
   message: string,
@@ -96,13 +76,11 @@ export function wrapToastBody(
   for (const word of words) {
     const lead = isFirst ? prefix : indent;
     if (lines.length === 0 && isFirst) {
-      // seed first line
       if (prefix.length + word.length <= w) {
         line = prefix + word;
         isFirst = false;
         continue;
       }
-      // word alone longer than width — hard break
       const chunk = word.slice(0, Math.max(1, w - prefix.length));
       push(prefix + chunk);
       let rest = word.slice(chunk.length);
@@ -145,7 +123,6 @@ export function wrapToastBody(
     if (lines[lines.length - 1] !== line) push(line);
   }
 
-  // Soft-cap: if still more content, mark last line with ellipsis.
   if (lines.length >= MAX_BODY_LINES) {
     const last = lines[MAX_BODY_LINES - 1] ?? "";
     lines.length = MAX_BODY_LINES;
@@ -160,7 +137,6 @@ export function wrapToastBody(
   return lines.map((l) => (l.length > w ? l.slice(0, w) : l));
 }
 
-/** Pad each body line to full chip width with H_PAD on both sides. */
 export function padToastLines(bodyLines: string[], chipWidth: number): string[] {
   const inner = Math.max(1, chipWidth - H_PAD * 2);
   return bodyLines.map((line) => {
@@ -188,7 +164,7 @@ function ToastPill(props: {
     ? TextAttributes.BOLD | TextAttributes.DIM
     : TextAttributes.BOLD;
   const blank = " ".repeat(Math.max(1, width));
-  const height = 2 + bodyLines.length; // pad + body + pad
+  const height = 2 + bodyLines.length;
 
   return (
     <box
@@ -251,11 +227,9 @@ export function ToastHost(props: ToastHostProps): ReactNode {
 
   if (items.length === 0) return null;
 
-  // Cap width so multi-line wrap stays on-screen (leave side margins).
   const maxWidth = Math.max(20, Math.min(termWidth - 4, Math.floor(termWidth * 0.85)));
   const ordered = [...items].reverse();
 
-  // Estimate stack room with min height; actual stack may use more for wraps.
   const maxStack = Math.max(
     1,
     Math.min(3, Math.floor((termHeight - 4) / (TOAST_BOX_HEIGHT + TOAST_STACK_GAP))),
@@ -269,13 +243,11 @@ export function ToastHost(props: ToastHostProps): ReactNode {
         const innerW = Math.max(8, maxWidth - H_PAD * 2);
         const wrapped = wrapToastBody(item.level, item.message, innerW);
         const padded = padToastLines(wrapped, maxWidth);
-        // Prefer natural width for short messages; never exceed maxWidth.
         const natural = Math.max(
           ...padded.map((l) => l.length),
           16,
         );
         const toastWidth = Math.min(maxWidth, natural);
-        // Re-pad to final width if we shrank for short text.
         const bodyLines =
           toastWidth === maxWidth
             ? padded

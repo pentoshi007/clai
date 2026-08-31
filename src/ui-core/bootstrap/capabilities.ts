@@ -1,10 +1,3 @@
-/**
- * Renderer-independent terminal capability detection (V2-030).
- *
- * Pure function of an injected environment snapshot so capability decisions are
- * unit-testable without a live TTY. The renderer adapter feeds this the real
- * `process.env`/stdio at bootstrap; nothing here writes terminal bytes.
- */
 
 import type { ColorMode } from "../../app/ports/terminal-port.js";
 
@@ -25,7 +18,6 @@ export interface TerminalCapabilityReport {
   readonly rows: number;
   readonly colorMode: ColorMode;
   readonly noColor: boolean;
-  /** Kitty/CSI-u keyboard protocol; lets Shift+Enter differ from Enter. */
   readonly kittyKeyboard: boolean;
   readonly canDistinguishShiftEnter: boolean;
   readonly mouse: boolean;
@@ -96,7 +88,7 @@ function detectKittyKeyboard(env: CapabilityEnv["env"]): boolean {
 
 function detectUnicode(env: CapabilityEnv["env"]): boolean {
   const locale = `${env.LC_ALL ?? ""}${env.LC_CTYPE ?? ""}${env.LANG ?? ""}`;
-  if (locale === "") return true; // assume modern terminal when unset
+  if (locale === "") return true;
   return /utf-?8/i.test(locale);
 }
 

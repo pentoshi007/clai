@@ -1,20 +1,3 @@
-/**
- * Bridges a terminal key event into our normalized chord vocabulary (V2-040).
- *
- * Renderer-independent by design: it takes a plain object shaped like
- * OpenTUI's `KeyEvent` rather than importing `@opentui/core`, so the mapping
- * is unit-testable and the renderer adapter (`composer-editor.tsx`) supplies
- * the real event. Two decisions are protocol-specific and documented here
- * rather than left implicit:
- *
- *  - OpenTUI reports Option/Alt as `option` and/or `meta` depending on the
- *    terminal; both map to our "alt" modifier. `super` (Cmd/Win) maps to our
- *    "meta" modifier, since nothing in the default keymap uses it otherwise.
- *  - Ctrl+J commonly arrives as a bare linefeed byte (`name: "linefeed"`,
- *    no modifier flags) rather than `{name: "j", ctrl: true}`. It is
- *    normalized to the "ctrl+j" chord so the global jobs binding matches
- *    regardless of which form the terminal sends.
- */
 
 import { normalizeChord, type KeyEventLike } from "../../ui-core/actions/chord.js";
 

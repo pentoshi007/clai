@@ -58,8 +58,6 @@ export const runTurnRounds = async (
   for (let iteration = 0; iteration < deps.maxIterations; iteration += 1) {
 
     deps.outputState.visibleCommitted = false;
-    // `step` is the productive-step index (used for display + audit). It only
-    // advances when the previous iteration actually executed a tool.
     deps.loop.step = deps.counters.productiveSteps;
     deps.options.signal?.throwIfAborted();
 
@@ -82,10 +80,6 @@ export const runTurnRounds = async (
     } else {
 
       await deps.maybeAutoCompact("auto-token-budget");
-      // Safe boundary: no assistant tool-call group is open here. Refresh the
-      // durable Responder inbox immediately before every provider request so
-      // completions arriving mid-turn are visible without corrupting native
-      // tool protocol or forcing a separate busy-wait loop.
       const responderDelivery = deps.refreshResponderInbox();
 
       const streamLabel =
@@ -122,9 +116,6 @@ export const runTurnRounds = async (
       const completion = requested.completion;
       toolsAttached = requested.toolsAttached;
       if (responderDelivery) {
-        // The result text is now part of this turn, so consumption is durable.
-        // A stream that aborted or threw above never reaches this point and the
-        // receipt stays deliverable.
         if (!jobManager.markDelivered(responderDelivery.id, deps.session.sessionId)) {
           jobManager.releaseResponderNotificationClaim(responderDelivery.id);
         }
@@ -147,14 +138,11 @@ export const runTurnRounds = async (
         completion,
       );
       streamSession.finishDeltaParser();
-      // Sticky text-only may have flipped dialect during stream retry.
       const restickied = deps.resolveNativeTools(
         deps.loop.provider,
         deps.loop.model,
       );
       deps.setDialect(restickied.dialect, restickied.native);
-      // toolsAttached may have been true for the request; if sticky
-      // fallback dropped tools, treat as text mode for this turn's parse.
       const usedNativeProtocol = Boolean(completion.toolCalls?.length) ||
         (toolsAttached && !isTextOnlyModel(deps.loop.provider, deps.loop.model));
 
@@ -192,10 +180,7 @@ export const runTurnRounds = async (
       };
 
 
-      // Native-first: prefer structured toolCalls from the provider.
       let nativeToolCalls: NativeToolCall[] = completion.toolCalls ?? [];
-      // Early UI cards: refresh args if stream deltas already opened cards;
-      // otherwise create cards now (non-streaming / name-after-done providers).
       syncNativeToolCallCards(
         {
           deferredToolCalls,
@@ -410,7 +395,6 @@ export const runTurnRounds = async (
         if (emptyDecision === "continue-round") continue;
         return deps.finishTurn("Model returned an empty response after retries.", deps.loop.step + 1);
       } else {
-        // Reset the counter on any successful visible output or recovered call.
         deps.loop.emptyVisibleRetries = 0;
         deps.loop.truncatedBudgetRounds = 0;
         deps.loop.continuationBudgetFloor = 0;
@@ -434,7 +418,6 @@ export const runTurnRounds = async (
           bareArgsOnly = true;
         }
       }
-      // Also check thinking content for bare JSON calls.
       if (!call && assistantText.hasThinking) {
         const bareThink = recognizeBareToolJson(assistantText.thinkContent);
         if (bareThink?.call) {
@@ -460,8 +443,6 @@ export const runTurnRounds = async (
         continue;
       }
 
-      // A valid primary tool call exists for this fresh model turn. Show any
-      // prose / thinking that preceded it, record the assistant message ONCE.
       const toolDisplayText = deps.loop.interruptedVisible
         ? canonicalAssistantVisible
         : assistantText.visible;
@@ -498,9 +479,6 @@ export const runTurnRounds = async (
         deps.messages.push({ role: "system", content: deferral.systemMessage });
       }
 
-      // Preserve model/document order. In particular, never move a later
-      // in_progress transition ahead of the preceding work or done receipt;
-      // doing so inverts dependency order and desynchronizes the task pane.
 
       const reconciled = reconcileToolCallIds(bound, toRun, deps.messages);
       const historyNativeCalls = reconciled.historyNativeCalls;
@@ -516,7 +494,6 @@ export const runTurnRounds = async (
           ...(stateKey ? { stateKey } : {}),
         };
       });
-      /** Stable call→Bound map (object identity; no indexOf for result ids). */
       const callToBound = new Map<ToolCall, BoundCall>(
         toRun.map((b) => [b.call, b]),
       );
@@ -582,8 +559,6 @@ export const runTurnRounds = async (
         );
       }
 
-      // Notice BEFORE tool cards so the transcript reads:
-      // thinking → response → "N tool calls…" → tool cards (not tools then info).
       if (allCalls.length > 1) {
         deps.writeNotice(
           "info",
@@ -592,9 +567,6 @@ export const runTurnRounds = async (
       }
 
 
-      // Cards streamed from partial text can predate their arguments. The
-      // executed call is authoritative, so refresh a stale card in place
-      // (same event id → the reducer updates the queued row, no new card).
       const flushableDeferred = activeDeferredToolCalls.slice(
         0,
         allCalls.length,
@@ -662,7 +634,6 @@ export const runTurnRounds = async (
           return false;
         }
       };
-      // Recon waves often emit 6–10 lookups; 4 forced a second sequential wave.
       const PARALLEL_LIMIT = 8;
 
       const round = createRoundState(
@@ -670,7 +641,6 @@ export const runTurnRounds = async (
         allCalls.length,
       );
 
-      /** Plan-mode soft reminders already attached this turn (by step). */
       const planRemindedAt = new Set<number>();
       const toolResultRecorder = createToolResultRecorder({
         messages: deps.messages,
@@ -681,12 +651,6 @@ export const runTurnRounds = async (
         writeNotice: deps.writeNotice,
       });
 
-      /**
-       * Record a tool result into history. Failures / user declines are
-       * always returned to the model — we never cancel later siblings or
-       * force-end the turn as "blocked" because one tool failed. Only an
-       * explicit user abort stops remaining calls.
-       */
       const record = createRoundRecorder({
         round,
         counters: deps.counters,
@@ -717,10 +681,6 @@ export const runTurnRounds = async (
         res: RecordedToolResult,
       ): void => record(boundCall.id, res);
 
-      // Multi-task sync guard: when one model message advances more than one
-      // distinct task at once, hold the whole set behind a single reminder.
-      // The model confirms by re-issuing the identical batch; a single-task
-      // (or non-advancing) message clears any pending confirmation.
       {
         const livePlanForBatch = await loadPlan(deps.session.sessionId).catch(
           () => undefined,
@@ -885,8 +845,6 @@ export const runTurnRounds = async (
         deps.writeAbort();
         return deps.finishTurn(deps.loop.lastAnswer, deps.counters.productiveSteps, "aborted");
       }
-      // Confirm declines / tool failures already have role:tool results —
-      // continue the agent loop so the model can adapt (do not force "blocked").
 
       await deps.maybeAutoCompact("post-tool-token-budget");
 
@@ -894,15 +852,12 @@ export const runTurnRounds = async (
         try {
           deps.options.onMessages(buildTurnHistory(deps.liveMessages(), deps.loop.lastAnswer));
         } catch {
-          // ignore
         }
       }
     }
   }
 
 
-  // Hard iteration ceiling (hundreds of steps) — rare. Mid-turn governor
-  // pauses already confirm for non-coding; coding never hard-pauses there.
   const richSummary = await buildRichStopSummary(
     deps.messages,
     deps.session,

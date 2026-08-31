@@ -24,7 +24,6 @@ export const httpxReducer: Reducer = (raw): ReducerOutput => {
     try {
       rows.push(JSON.parse(trimmed) as HttpxRow);
     } catch {
-      // skip malformed lines
     }
   }
   if (rows.length === 0) {

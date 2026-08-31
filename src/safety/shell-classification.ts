@@ -22,15 +22,9 @@ function resolveForSecretCheck(path: string): string {
   return resolve(expandTilde(path));
 }
 
-// Absolute roots whose contents are part of the OS / shared system. A
-// redirect that writes into one of these is worth a confirmation; a redirect
-// into the project dir, a relative path, or a temp dir is ordinary output
-// capture. Paths are normalized to forward slashes before matching so the
-// same patterns work on macOS, Linux, and Windows.
 const SENSITIVE_WRITE_ROOTS_UNIX =
   /^\/(?:etc|usr|bin|sbin|var|lib|lib64|boot|dev|sys|proc|root|opt|System|Library|Applications)(?:\/|$)/i;
 
-// Windows system locations: <drive>:/Windows, /Program Files, /ProgramData.
 const SENSITIVE_WRITE_ROOTS_WIN =
   /^[A-Za-z]:\/(?:Windows|Program Files(?: \(x86\))?|ProgramData)(?:\/|$)/i;
 
@@ -53,12 +47,6 @@ function pathIsSensitiveWriteTarget(raw: string): boolean {
   return false;
 }
 
-/**
- * Flags used by the approved scanners to write results to a file. A scanner is
- * only "read-only" with respect to the local filesystem when its output flags
- * do not point at a sensitive location, so these are inspected explicitly
- * instead of being covered by shell-redirect parsing.
- */
 const SCANNER_OUTPUT_FLAG_RE =
   /^(?:-o[ANXGSJ]?|-oJ|--output|--output-file|--out|-of|--report|--json-export|--csv-export|--markdown-export|--sarif-export|--log|--save|--report-file)$/i;
 
@@ -86,14 +74,6 @@ function scannerWritesSensitiveFile(command: string): boolean {
   return false;
 }
 
-/**
- * Inspect the redirection targets in a command and report whether any writes
- * into a sensitive system directory or a home dotfile. Discards / fd-dups are
- * already stripped by {@link commandWritesOrEscalates}; here we just look at
- * the resolved target paths so ordinary `> out.json` style captures stay
- * frictionless while `> /etc/hosts`, `> C:\Windows\...`, or `> ~/.bashrc`
- * ask first. Works across macOS, Linux, and Windows.
- */
 function redirectTargetIsSensitive(command: string): boolean {
   const withoutDup = command.replace(/\d*>&\d+|&>&\d+/g, " ");
   const re = /(?:&?>>?)\s*('[^']*'|"[^"]*"|[^\s;|&<>()]+)/g;
@@ -105,10 +85,6 @@ function redirectTargetIsSensitive(command: string): boolean {
   return false;
 }
 
-/**
- * Split a command line into [base, subcommand] respecting quotes minimally.
- * We only need the first two whitespace-delimited tokens.
- */
 function baseAndSub(command: string): {
   base: string;
   sub: string | undefined;
@@ -128,7 +104,6 @@ function isSafeSubcommand(base: string, sub: string | undefined): boolean {
   if (!sub) return false;
   const allow = subcommandSafeMap[base];
   if (!allow) return false;
-  // Strip leading `--` so `--list` and `list` both work.
   return allow.has(sub) || allow.has(sub.replace(/^--/, ""));
 }
 
@@ -136,12 +111,6 @@ export interface ClassifyOptions {
   scope?: EngagementScope | undefined;
 }
 
-/**
- * Classify a raw shell command line into safe / confirm / block. Shared by
- * shell.exec and shell.start so starting a service/server is as frictionless
- * as running it inline, while genuinely mutating/destructive commands still
- * gate behind a confirmation.
- */
 export function classifyShellCommand(
   command: string,
   options: ClassifyOptions = {},
@@ -159,19 +128,13 @@ export function classifyShellCommand(
         "Command pipes remote content into a shell or sends local data to a network sink — confirm that this is intended and authorized",
     };
   }
-  // A bare version/help probe (node --version, npm -v, go version, docker
-  // --help, even nmap --version) is read-only — auto-run it.
   if (isVersionOrHelpProbe(command)) {
     return { level: "safe", reason: "Version/help probe is read-only" };
   }
-  // Mutation checks run BEFORE any exemption (including the scanner
-  // exemption) so risk is monotonic: adding a scanner name, another segment,
-  // or a redirect can never lower a command's risk level.
   const { base, sub } = baseAndSub(command);
   const readOnlyBase = isReadOnlyBase(base);
   const safeSub = isSafeSubcommand(base, sub);
 
-  // Confirm for in-place / state-mutating ARGUMENTS.
   if (commandHasMutatingArg(command)) {
     return {
       level: "confirm",
@@ -179,20 +142,12 @@ export function classifyShellCommand(
         "Command argument mutates state or escapes into another shell (sed -i, awk system(), find -exec/-delete, git config --global, npm config set, docker/kubectl mutators)",
     };
   }
-  // A plain output redirection (`curl ... > out.json`, `python x.py > log`)
-  // is benign output capture — the same kind of write fs.write does without a
-  // prompt — so it auto-runs. We only confirm when the redirect target is a
-  // SENSITIVE location (a system directory or a home dotfile), where an
-  // accidental clobber would be hard to undo. Discards (2>/dev/null) and
-  // fd-dups (2>&1) were already excluded by commandWritesOrEscalates.
   if (commandWritesOrEscalates(command) && redirectTargetIsSensitive(command)) {
     return {
       level: "confirm",
       reason: "Command redirects output into a system or sensitive path",
     };
   }
-  // Confirm for a base whose job is to install / delete / modify / move / copy
-  // (mv, cp, rm, chmod, package managers, build tools …; sees through sudo).
   if (commandIsMutating(command)) {
     return {
       level: "confirm",
@@ -207,12 +162,6 @@ export function classifyShellCommand(
         "Command changes host network configuration (ip/nmcli/route/arp mutation) and requires confirmation",
     };
   }
-  // Scanner/recon commands are read-only from the local filesystem point of
-  // view. They may touch the network, but they should not trigger the generic
-  // y/n prompt; engagement authorization is handled as session policy instead.
-  // The exemption only applies when EVERY executable segment is a scanner or
-  // an already-read-only command, so a scanner word cannot whitelist a
-  // compound mutating command.
   if (commandIsScannerOnly(command)) {
     if (scannerWritesSensitiveFile(command)) {
       return {
@@ -228,9 +177,6 @@ export function classifyShellCommand(
   if (safeSub) {
     return { level: "safe", reason: `Read-only ${base} subcommand` };
   }
-  // Benign read/inspect/run/service-start command — auto-runs. Destructive,
-  // secret-touching, and exfiltration cases were blocked above; mutating
-  // cases were confirmed.
   return { level: "safe", reason: "Non-mutating command" };
 }
 

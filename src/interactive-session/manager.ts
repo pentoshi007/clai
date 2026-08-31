@@ -1,12 +1,3 @@
-/**
- * Interactive session manager: the single owner of persistent interactive
- * process lifecycle.
- *
- * Ownership is conversation-scoped. Every operation requires an owner id, and a
- * lookup for another owner is indistinguishable from a missing session so the
- * manager cannot be used as an existence oracle. Direct user-terminal handoff is
- * outside this contract by design.
- */
 
 import { safeCwd } from "../os/cwd.js";
 import { processAlive, processGroupAlive } from "../os/process-tree.js";
@@ -149,7 +140,6 @@ export class InteractiveSessionManager {
     return this.baseConfig;
   }
 
-  /** Reconcile crashed-session records. Must run before tools are enabled. */
   reconcileOrphans(): ReconciliationEntry[] {
     return this.journal.reconcile();
   }
@@ -161,7 +151,6 @@ export class InteractiveSessionManager {
       : { available: false, reason: capability.reason };
   }
 
-  // --- Start ------------------------------------------------------------
 
   async start(request: StartRequest & ManagerRequestExtras): Promise<StartResult> {
     this.assertOwner(request.ownerId, "start");
@@ -279,8 +268,6 @@ export class InteractiveSessionManager {
         inputClosed: false,
       };
       this.registry.insert(record);
-      // Live record written before launch so a crash between here and spawn
-      // confirmation still leaves reconcilable evidence.
       this.journal.upsert({
         id,
         ownerHash: hashOwner(request.ownerId),
@@ -402,7 +389,6 @@ export class InteractiveSessionManager {
           void this.finalize(record.id, reason);
         },
       });
-      // Subscribe before reporting launch confirmation so no output is lost.
       runtime.track(
         transport.onOutput((event) => {
           output.ingest(event.stream, event.bytes, event.observedAt);
@@ -491,8 +477,6 @@ export class InteractiveSessionManager {
         sessionId,
         message: error.message,
         state: "failed",
-        // Only a proven pre-spawn transient failure could be safely retried, and
-        // that retry has already been consumed if it was available.
         retryable: error.transient && !error.spawnConfirmed && !retried,
       });
     }
@@ -602,7 +586,6 @@ export class InteractiveSessionManager {
     }
   }
 
-  // --- Send -------------------------------------------------------------
 
   async send(request: SendRequest & ManagerRequestExtras): Promise<SendResult> {
     const startedAt = this.clock.now();
@@ -717,11 +700,6 @@ export class InteractiveSessionManager {
     return pageOutcome.ok ? undefined : pageOutcome.error;
   }
 
-  /**
-   * Acceptance is all-or-nothing under the mutation lock: either the whole action
-   * is reserved within the backpressure bound, or no sequence or queue state
-   * changes at all.
-   */
   private accept(
     runtime: SessionRuntime,
     input: SessionInput,
@@ -830,10 +808,6 @@ export class InteractiveSessionManager {
     });
   }
 
-  /**
-   * Quiet detection starts at delivery completion: only output observed after
-   * this point resets the quiet timer, while the absolute deadline never extends.
-   */
   private gather(
     runtime: SessionRuntime,
     quietMs: number,
@@ -872,7 +846,6 @@ export class InteractiveSessionManager {
     });
   }
 
-  // --- Read -------------------------------------------------------------
 
   async read(request: ReadRequest): Promise<ReadResult> {
     const startedAt = Date.now();
@@ -958,7 +931,6 @@ export class InteractiveSessionManager {
     });
   }
 
-  // --- Status, List, Resize --------------------------------------------
 
   status(request: { ownerId: string; id: string }): StatusResult {
     this.assertOwner(request.ownerId, "status");
@@ -975,7 +947,6 @@ export class InteractiveSessionManager {
   async resize(request: ResizeRequest): Promise<ResizeResult> {
     const startedAt = Date.now();
     this.assertOwner(request.ownerId, "resize");
-    // Dimensions are validated before any lookup or mutation.
     const dimensions = resolveDimensions(request.columns, request.rows, "resize");
     const runtime = this.requireRuntime(request.ownerId, request.id, "resize");
     if (runtime.transport.kind !== "pty" || !runtime.transport.resize) {
@@ -1019,7 +990,6 @@ export class InteractiveSessionManager {
     };
   }
 
-  // --- Close and owner lifecycle ---------------------------------------
 
   async close(request: CloseRequest): Promise<CloseResult> {
     const startedAt = Date.now();
@@ -1046,15 +1016,10 @@ export class InteractiveSessionManager {
     return result;
   }
 
-  /** Owner cancellation: closes every live session owned by a conversation. */
   async cancelOwner(ownerId: string): Promise<CloseOwnerResult> {
     return await this.closeOwnerSessions(ownerId, "cancelled");
   }
 
-  /**
-   * Fence an owner synchronously, then start one tracked close. Callers rebinding
-   * a conversation id must fence before the old id becomes unreachable.
-   */
   beginCloseOwner(
     ownerId: string,
     reason: TerminationReason = "conversation-teardown",
@@ -1069,7 +1034,6 @@ export class InteractiveSessionManager {
     return promise;
   }
 
-  /** Await any teardown already started for an owner. */
   async awaitOwnerClose(ownerId: string): Promise<void> {
     await this.ownerCloses.get(ownerId);
   }
@@ -1147,8 +1111,6 @@ export class InteractiveSessionManager {
   ): Promise<CloseResult> {
     const runtime = this.runtimes.get(record.id);
     if (!runtime) {
-      // Already finalized (or never launched): return the recorded terminal
-      // result without signalling a process.
       return {
         operation: "close",
         sessionId: record.id,
@@ -1168,7 +1130,6 @@ export class InteractiveSessionManager {
     await this.finalizeRecord(record, reason, this.baseConfig.closeDeadlineMs);
   }
 
-  // --- Policy -----------------------------------------------------------
 
   private async authorizeCommand(
     command: string,
@@ -1265,7 +1226,6 @@ export class InteractiveSessionManager {
     return engagement.state;
   }
 
-  // --- Helpers ----------------------------------------------------------
 
   private registerPendingStart(
     ownerId: string,
@@ -1428,7 +1388,6 @@ export class InteractiveSessionManager {
   }
 }
 
-/** Strict validation of the dependent input fields before acceptance. */
 export function validateInput(
   input: SessionInput | undefined,
   operation: SessionOperation,
@@ -1488,7 +1447,6 @@ export function validateInput(
   });
 }
 
-/** Process-wide manager, mirroring the existing process-wide job manager. */
 export const interactiveSessionManager = new InteractiveSessionManager();
 try {
   interactiveSessionManager.reconcileOrphans();

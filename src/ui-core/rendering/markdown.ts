@@ -16,10 +16,6 @@ import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdow
 import { renderColumns } from "./text-width.js";
 export { renderInlineMarkdown };
 
-// Lightweight terminal markdown renderer that styles **bold**, *italic*,
-// `code`, links, headings, lists, blockquotes, hrules, and ```fenced```
-// code blocks. Designed to work both for one-shot strings and for
-// token-streaming inputs (line-buffered).
 
 function repeat(char: string, count: number): string {
   return char.repeat(Math.max(0, count));
@@ -27,7 +23,6 @@ function repeat(char: string, count: number): string {
 
 interface BlockState {
   inFence: boolean;
-  /** Code panel width follows the wrap budget so long code stays inside it. */
   fenceWidth?: number;
   fence?: CodeFenceState | undefined;
 }
@@ -50,12 +45,6 @@ function closeFencePanel(state: BlockState): string {
   return codeBlockBottom(panelWidth(state));
 }
 
-/**
- * Render a complete fence as a content-sized panel. Used by the one-shot
- * renderer (chat + pager), which can see the whole block before it paints.
- * An unterminated fence still gets a footer so a streaming reply reads as a
- * finished box.
- */
 function renderCodeBlock(
   open: { marker: string; info: string },
   bodyLines: readonly string[],
@@ -72,7 +61,6 @@ function renderCodeBlock(
   return out;
 }
 
-/** Fence lines and code bodies as complete panel rows (may be empty). */
 function fencePanelRows(line: string, state: BlockState): string[] | undefined {
   if (state.inFence && state.fence) {
     if (isCodeFenceClose(line, state.fence.marker)) {
@@ -86,7 +74,6 @@ function fencePanelRows(line: string, state: BlockState): string[] | undefined {
 }
 
 function renderBlockLine(line: string, state: BlockState): string {
-  // Headings
   const heading = line.match(/^(#{1,6})\s+(.*)$/);
   if (heading) {
     const level = heading[1]!.length;
@@ -96,17 +83,14 @@ function renderBlockLine(line: string, state: BlockState): string {
     return chalk.bold(renderInlineMarkdown(body));
   }
 
-  // Horizontal rule
   if (/^\s*[-*_]{3,}\s*$/.test(line)) {
     return chalk.dim(repeat("─", 60));
   }
 
-  // Markdown table separator: | --- | --- |
   if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
     return chalk.dim(repeat("─", Math.max(20, line.length)));
   }
 
-  // Markdown table row: | cell | cell |
   if (/^\s*\|.*\|\s*$/.test(line)) {
     const cells = line
       .replace(/^\s*\|/, "")
@@ -116,14 +100,12 @@ function renderBlockLine(line: string, state: BlockState): string {
     return chalk.dim("│ ") + cells.join(chalk.dim(" │ ")) + chalk.dim(" │");
   }
 
-  // Blockquote
   if (line.startsWith("> ")) {
     return (
       chalk.dim("│ ") + chalk.dim.italic(renderInlineMarkdown(line.slice(2)))
     );
   }
 
-  // GitHub-style task list: - [ ] todo  /  - [x] done
   const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
   if (task) {
     const checked = /[xX]/.test(task[2]!);
@@ -132,13 +114,11 @@ function renderBlockLine(line: string, state: BlockState): string {
     return `${task[1]}${box} ${checked ? chalk.dim(body) : body}`;
   }
 
-  // Ordered list
   const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
   if (ordered) {
     return `${ordered[1]}${chalk.cyan(`${ordered[2]}.`)} ${renderInlineMarkdown(ordered[3]!)}`;
   }
 
-  // Unordered list
   const unordered = line.match(/^(\s*)[-*+]\s+(.*)$/);
   if (unordered) {
     return `${unordered[1]}${chalk.cyan("•")} ${renderInlineMarkdown(unordered[2]!)}`;
@@ -147,7 +127,6 @@ function renderBlockLine(line: string, state: BlockState): string {
   return renderInlineMarkdown(line);
 }
 
-/** Left margin for all rendered output so text doesn't go edge-to-edge. */
 const OUTPUT_INDENT = "  ";
 
 export function indentAndWrapText(text: string, indent = "  "): string {
@@ -168,27 +147,22 @@ function wrapMarkdownLine(
   wrapWidth: number,
   state: BlockState,
 ): string[] {
-  // Keep panel chrome + code within wrapWidth (never truncate with …).
   state.fenceWidth = wrapWidth;
   const fenceRows = fencePanelRows(line, state);
   if (fenceRows) return fenceRows;
 
-  // If it's a horizontal rule, don't wrap it
   if (/^\s*[-*_]{3,}\s*$/.test(line)) {
     return [renderBlockLine(line, state)];
   }
 
-  // Check if it's a blockquote
   if (line.startsWith("> ")) {
     const content = line.slice(2);
     const prefix = chalk.dim("│ ");
     const renderedContent = renderInlineMarkdown(content);
-    // Wrap the content at wrapWidth - 2 (since prefix is 2 chars)
     const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - 2));
     return wrapped.map((wl) => prefix + chalk.dim.italic(wl));
   }
 
-  // Check if it's a task list
   const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
   if (task) {
     const indent = task[1] ?? "";
@@ -211,7 +185,6 @@ function wrapMarkdownLine(
     });
   }
 
-  // Check if it's an ordered list
   const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
   if (ordered) {
     const indent = ordered[1] ?? "";
@@ -230,7 +203,6 @@ function wrapMarkdownLine(
     });
   }
 
-  // Check if it's an unordered list
   const unordered = line.match(/^(\s*)[-*+]\s+(.*)$/);
   if (unordered) {
     const indent = unordered[1] ?? "";
@@ -248,13 +220,10 @@ function wrapMarkdownLine(
     });
   }
 
-  // Otherwise, treat as a normal paragraph/line
   const rendered = renderBlockLine(line, state);
   return wrapAnsiLine(rendered, wrapWidth);
 }
 
-// Markdown tables
-// `<br>` (and `<br/>`, `<br />`) inside cells become stacked lines.
 const BR_RE = /<br\s*\/?>/i;
 
 export function renderMarkdown(text: string, width?: number): string {
@@ -271,9 +240,6 @@ export function renderMarkdown(text: string, width?: number): string {
   while (i < lines.length) {
     const line = lines[i]!;
 
-    // Fenced code is consumed as a whole block so the panel can be sized to
-    // its widest line instead of stretching a one-liner across the pane.
-    // Also keeps table/`<br>` heuristics away from code bodies entirely.
     const fenceOpen = matchCodeFenceOpen(line);
     if (fenceOpen) {
       let j = i + 1;
@@ -289,7 +255,6 @@ export function renderMarkdown(text: string, width?: number): string {
       continue;
     }
 
-    // A table is a row line immediately followed by a separator line.
     if (
       !state.inFence &&
       isTableRowLine(line) &&
@@ -313,7 +278,6 @@ export function renderMarkdown(text: string, width?: number): string {
       continue;
     }
 
-    // Expand `<br>` into real line breaks outside fences/tables.
     const pieces =
       !state.inFence && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
     for (const piece of pieces) {
@@ -324,17 +288,12 @@ export function renderMarkdown(text: string, width?: number): string {
     i++;
   }
 
-  // A fence still open at the end means the reply is mid-stream or the model
-  // never closed it — footer it so the panel always reads as a finished box.
   if (state.inFence) {
     resultLines.push(`${OUTPUT_INDENT}${closeFencePanel(state)}`);
   }
   return resultLines.join("\n");
 }
 
-// Streaming variant: buffers tokens and emits ANSI-rendered output
-// whenever a complete line arrives. Fenced code blocks stream as a bordered,
-// syntax-highlighted panel.
 export function createMarkdownStreamWriter(write: (chunk: string) => void): {
   push(token: string): void;
   finish(): void;
@@ -342,8 +301,6 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
   const state: BlockState = { inFence: false };
   let buffer = "";
   let outputEndsWithNewline = true;
-  // Table rows are buffered until the block ends so columns can be
-  // sized across every row before anything is emitted.
   let tableBuffer: string[] = [];
 
   const cols = process.stdout.columns || 80;
@@ -419,7 +376,6 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
       }
       flushTable();
       if (state.inFence) {
-        // Close the panel without inserting a blank row after completed lines.
         const separator = outputEndsWithNewline ? "" : "\n";
         emit(`${separator}${OUTPUT_INDENT}${closeFencePanel(state)}`);
       }
@@ -427,22 +383,15 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
   };
 }
 
-// Visible column width of a string, accounting for ANSI escapes (stripped)
-// AND wide characters (emoji, CJK) that occupy 2 terminal columns each but
-// only 1 JS string index. Using `.length` here under-counts glyphs like
-// ✅/⚠️/❓, which desynced column math and let table borders drift and get
-// clipped by the TUI's width-aware truncation.
 export function visibleWidth(str: string): number {
   return renderColumns(str);
 }
 type Token = { type: "space" | "ansi" | "char"; value: string; width: number };
-/** Active SGR style that must reopen on soft-wrap continuation lines. */
 interface SgrCarry {
   bold: boolean;
   dim: boolean;
   italic: boolean;
   underline: boolean;
-  /** Full CSI sequence for foreground (e.g. `\x1b[36m` or `\x1b[38;2;…m`). */
   fg?: string | undefined;
   bg?: string | undefined;
 }
@@ -474,7 +423,6 @@ function sgrHasStyle(state: SgrCarry): boolean {
       state.bg,
   );
 }
-/** Apply one CSI … m sequence into a mutable style carry. */
 function applySgrSequence(state: SgrCarry, sequence: string): void {
   if (!sequence.startsWith("\x1b[") || !sequence.endsWith("m")) return;
   const body = sequence.slice(2, -1);
@@ -541,7 +489,6 @@ function applySgrSequence(state: SgrCarry, sequence: string): void {
       i += 1;
       continue;
     }
-    // 256-color / truecolor FG
     if (code === 38) {
       const mode = parts[i + 1];
       if (mode === 5 && parts[i + 2] !== undefined) {
@@ -562,7 +509,6 @@ function applySgrSequence(state: SgrCarry, sequence: string): void {
       i += 1;
       continue;
     }
-    // 256-color / truecolor BG
     if (code === 48) {
       const mode = parts[i + 1];
       if (mode === 5 && parts[i + 2] !== undefined) {
@@ -596,7 +542,6 @@ function applySgrSequence(state: SgrCarry, sequence: string): void {
     i += 1;
   }
 }
-/** Walk text and update style state for every SGR sequence found. */
 function applySgrInText(state: SgrCarry, text: string): void {
   let i = 0;
   while (i < text.length) {
@@ -627,12 +572,10 @@ function splitWord(
       currentSegmentText += token.value;
       applySgrSequence(style, token.value);
     } else {
-      // type === "char" (may be a wide glyph worth 2 columns)
       if (
         currentSegmentVisibleLength > 0 &&
         currentSegmentVisibleLength + token.width > maxWidth
       ) {
-        // Close open styles on this segment; next segment reopens them.
         const open = sgrOpen(style);
         const closed = sgrHasStyle(style)
           ? `${currentSegmentText}\x1b[0m`
@@ -656,11 +599,6 @@ function splitWord(
   }
   return segments;
 }
-/**
- * Soft-wrap a line that may contain ANSI SGR styles.
- * Continuation lines re-open any style still active at the break so cyan/bold
- * etc. never fall back to the default body color mid-phrase.
- */
 export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   const visibleLength = visibleWidth(line);
   if (visibleLength <= maxWidth) return [line];
@@ -685,9 +623,6 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
       tokens.push({ type: "space", value: val, width: val.length });
       i = j;
     } else {
-      // Advance by a full Unicode code point (not a UTF-16 code unit) so a
-      // surrogate-pair emoji is never split in half, then measure its real
-      // terminal column width (many emoji/symbols render as 2 columns).
       const codePoint = line.codePointAt(i)!;
       const charLength = codePoint > 0xffff ? 2 : 1;
       const val = line.slice(i, i + charLength);
@@ -738,7 +673,6 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
   const flushLine = (): void => {
     const trimmed = currentLineText.replace(/\s+$/, "");
     if (!trimmed && lines.length === 0) return;
-    // Close open styles so the next physical row starts clean, then reopen.
     const closed =
       sgrHasStyle(lineStyle) && !trimmed.endsWith("\x1b[0m")
         ? `${trimmed}\x1b[0m`
@@ -757,7 +691,6 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
     }
 
     if (currentLineVisibleLength === 0) {
-      // Re-open styles active after the previous wrap break.
       const reopen = sgrOpen(lineStyle);
       currentLineText = reopen + word.text;
       currentLineVisibleLength = word.visibleLength;
@@ -768,7 +701,6 @@ export function wrapAnsiLine(line: string, maxWidth: number): string[] {
       applySgrInText(lineStyle, word.text);
     } else {
       flushLine();
-      // lineStyle still holds the style at end of previous line — reopen it.
       const reopen = sgrOpen(lineStyle);
       currentLineText = reopen + word.text;
       currentLineVisibleLength = word.visibleLength;

@@ -66,8 +66,6 @@ export function makeKeyEmitter(
 ): EmitKey {
   return (event) => {
     onKeyEvent?.(event);
-    // Quiet sticky start: never status-spam "using …" on every model step.
-    // Surface only retries (composer countdown), switches (toast + status), exhausted.
     if (event.type === "using") return;
     const line = formatKeyEventStatus(event);
     if (
@@ -80,11 +78,6 @@ export function makeKeyEmitter(
   };
 }
 
-/**
- * Run complete/stream against all keys for one provider with circular rotation.
- * Returns result on success; throws ProviderError-like aggregate on hard stop;
- * returns `{ exhausted: true, lastError }` when the key circle is done.
- */
 export async function runWithKeyRotation<T>(opts: {
   providerId: ProviderId;
   provider: LlmProvider;
@@ -111,7 +104,6 @@ export async function runWithKeyRotation<T>(opts: {
   const fullPlan = buildKeyAttemptPlan(slots.length, multi.activeIndex).filter(
     (index) => !slots[index]!.disabled,
   );
-  // A pinned operation uses the sticky key only: rotating would send the same
   // large prompt again under a different credential.
   const plan = singleDispatch ? fullPlan.slice(0, 1) : fullPlan;
   if (plan.length === 0) {
@@ -121,16 +113,11 @@ export async function runWithKeyRotation<T>(opts: {
   }
   const enabledCount = plan.length;
   const multiKey = enabledCount > 1;
-  // Single key: time-increasing retries (MAX_RETRIES+1 attempts).
-  // Multi key: 2 attempts per key (initial + one retry), then next key.
   const maxPerKey = singleDispatch
     ? 1
     : attemptsPerKey(enabledCount, (opts.maxRetries ?? MAX_RETRIES) + 1);
   let lastError: unknown;
 
-  // Endpoint failover: a provider can carry several base URLs (e.g. Modal
-  // workspaces). On an auth/quota error the active endpoint may simply be the
-  // wrong workspace for the key, so rotate the endpoint too before giving up.
   const storedEndpoints =
     providerUsesEndpoints(providerId) && !singleDispatch
       ? getProviderEndpoints(providerId)
@@ -157,8 +144,6 @@ export async function runWithKeyRotation<T>(opts: {
     const auth = authForAttempt(slot.value);
     const tail = maskSecretTail(slot.value);
 
-    // Announce only when rotating after a failure — never re-toast the sticky
-    // key on every agent step ("using [2/4]" spam).
     if (planIdx > 0) {
       emitKey({
         type: "switch",
@@ -201,7 +186,6 @@ export async function runWithKeyRotation<T>(opts: {
             singleDispatch,
           );
         }
-        // Sticky success only for stored multi-key (not env-only synthetic).
         if (multi.source !== "env" && multi.source !== "local") {
           void markProviderKeySuccess(providerId, keyIndex).catch(() => {});
         }
@@ -226,21 +210,15 @@ export async function runWithKeyRotation<T>(opts: {
         const previousError = lastError;
         lastError = error;
 
-        // An admission guard that fires while recovering from a real failure
-        // hides that failure. Report the cause the user can act on.
         if (isOperationPolicyError(error) && previousError !== undefined) {
           throw previousError;
         }
 
-        // 404/422: other keys for the same model will not help.
         if (isKeyCircleStopError(error)) {
           throw error;
         }
 
-        // Auth / quota (402 credits): never sleep on the same key — switch now.
         if (isImmediateKeySwitchError(error)) {
-          // A workspace-mismatched endpoint (e.g. Modal "different workspace")
-          // will fail for every key, so rotate the endpoint before the key.
           if (endpointCount > 1 && endpointOffset + 1 < endpointCount) {
             endpointOffset += 1;
             emitKey({
@@ -253,16 +231,13 @@ export async function runWithKeyRotation<T>(opts: {
             break;
           }
           if (multiKey) {
-            // Always advance (or exit plan after last key) so every key is tried.
             break;
           }
-          // Single key — surface immediately (no pointless multi-second backoff).
           throw error;
         }
 
         const rotatable = isKeyRotatableError(error, isRetriableError);
         if (!rotatable) {
-          // e.g. 413 — bubble so outer provider fallback can try another provider.
           throw error;
         }
 
@@ -273,8 +248,6 @@ export async function runWithKeyRotation<T>(opts: {
               ? retryWaitMs(error, attempt)
               : networkRetryWaitMs(attempt);
           if (wait > MAX_RETRY_WAIT_MS) {
-            // Don't burn the whole multi-key circle on one impossible wait —
-            // move to the next key when multi; single-key still exhausts.
             if (multiKey) break;
             throw error;
           }
@@ -290,16 +263,10 @@ export async function runWithKeyRotation<T>(opts: {
           await sleep(wait, request.signal);
           continue;
         }
-        // Exhausted attempts for this key → next in circle (if any).
         break;
       }
     }
 
-    // Endpoint providers pair each key with a workspace URL (a Modal token
-    // only works on its own workspace's endpoint). Advancing the key without
-    // advancing the endpoint guarantees a workspace-mismatch 401, so move to
-    // the next endpoint first and let the next key pair with it. Auth/quota
-    // errors keep their dedicated endpoint-rotation path above.
     if (
       planIdx >= 0 &&
       endpointCount > 1 &&
@@ -317,7 +284,6 @@ export async function runWithKeyRotation<T>(opts: {
     }
   }
 
-  // Single-key rate-limit exhaustion: preserve historical UX string.
   if (!multiKey && lastError && isRateLimited(lastError)) {
     opts.onStatus?.(
       `⏳ ${providerId} rate limited; staying on selected provider.`,

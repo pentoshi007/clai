@@ -2,10 +2,6 @@ import { chownSync, statSync } from "node:fs";
 import { chown, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
-/**
- * If running as root (via sudo), restore ownership of a file or directory
- * to the original user (SUDO_UID/SUDO_GID).
- */
 export function fixOwnerSync(path: string): void {
   if (process.platform === "win32") return;
   if (process.getuid && process.getuid() === 0 && process.env.SUDO_UID) {
@@ -15,15 +11,11 @@ export function fixOwnerSync(path: string): void {
       try {
         chownSync(path, uid, gid);
       } catch {
-        // best-effort
       }
     }
   }
 }
 
-/**
- * Async version of restore ownership.
- */
 export async function fixOwner(path: string): Promise<void> {
   if (process.platform === "win32") return;
   if (process.getuid && process.getuid() === 0 && process.env.SUDO_UID) {
@@ -33,16 +25,11 @@ export async function fixOwner(path: string): Promise<void> {
       try {
         await chown(path, uid, gid);
       } catch {
-        // best-effort
       }
     }
   }
 }
 
-/**
- * Formats and prints a helpful error message for EACCES (permission denied)
- * errors on clai's configuration/storage paths and exits the process.
- */
 export function handlePermissionError(err: any): never {
   if (err && err.code === "EACCES") {
     const configPath = err.path || "your configuration directory";

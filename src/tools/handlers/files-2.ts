@@ -32,7 +32,6 @@ export const toolRegistry_FILES_2: Record<string, ToolHandler> = {
     );
   },
   async "fs.replaceLines"(args, options) {
-    // Empty content / delete:true removes the line range (X6).
     let content: string;
     if (args.delete === true) {
       content = "";

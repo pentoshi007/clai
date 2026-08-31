@@ -39,8 +39,6 @@ export function formatKeyStatus(llm: ProviderStatus[], search: SearchKeyStatus[]
     llmRows.push(
       `  ${mark} ${s.provider.padEnd(13)} ${source} ${String(keySummary).padEnd(13)} ${s.model}${tag}`,
     );
-    // Endpoint providers need a base URL alongside the key, so a key on its own
-    // is not enough to make a request — show where it points.
     if (s.provider !== "ollama" && s.provider !== "free" && s.note) {
       llmRows.push(`      endpoint: ${s.note}`);
     }

@@ -18,29 +18,13 @@ export type JobMonitorMetadata = Record<string, unknown>;
 export interface JobLinkMetadata {
   taskId?: string | undefined;
   parentTaskId?: string | undefined;
-  /**
-   * Stable delegation identity minted before launch. It is the
-   * reconciliation key between a job and its responder child task, so a fast
-   * exit or a failed link cannot orphan the child.
-   */
   delegationId?: string | undefined;
   wakeOnCompletion?: boolean | undefined;
   monitor?: JobMonitorMetadata | undefined;
-  /** Runtime listening lease that authorized this responder delegation. */
   responderLeaseId?: string | undefined;
-  /**
-   * Opt-in delegation to the Responder: fire-and-continue, plan subtask +
-   * auto-wake on completion, and inclusion in the Responder inbox/UI. When
-   * false/absent the job is a plain background job the agent polls itself
-   * (shell.jobs/shell.tail) exactly as before Responder existed.
-   */
   responder?: boolean | undefined;
 }
 
-/**
- * durable  — shell.start / auto-backgrounded servers (listed by shell.jobs, persisted)
- * ephemeral — per-tool stall tracking in the agent runner (never listed, never persisted)
- */
 export type JobKind = "durable" | "ephemeral";
 
 export interface BackgroundJob extends JobLinkMetadata {
@@ -63,11 +47,9 @@ export interface BackgroundJob extends JobLinkMetadata {
   artifacts: { stdout: JobArtifactReceipt; stderr: JobArtifactReceipt };
   redactionProfile: string;
   ownerSessionId: string;
-  /** Default durable for registry records; ephemeral for tool-stall tracking. */
   kind?: JobKind | undefined;
   name?: string | undefined;
   authorization?: { target: string; expiresAt?: string | undefined } | undefined;
-  /** Accepted when reading legacy registries but never armed or restored. */
   timeoutAt?: string | undefined;
 }
 
@@ -104,20 +86,15 @@ export interface ResponderNotification {
   responder: boolean;
   monitor?: JobMonitorMetadata | undefined;
   responderLeaseId?: string | undefined;
-  /** A delivery attempt began; not durable consumption. Cleared claims may retry. */
   deliveryStartedAt?: string | undefined;
   deliveredAt?: string | undefined;
   readAt?: string | undefined;
   analyzedAt?: string | undefined;
   acknowledgedAt?: string | undefined;
-  /** User discarded this receipt (cancel/new session); never model analysis. */
   discardedAt?: string | undefined;
   discardReason?: "session-cancelled" | undefined;
-  /** Monotonic revision of the authoritative result this receipt carries. */
   resultRevision?: number | undefined;
-  /** Content hash of the authoritative result, used to detect a correction. */
   resultHash?: string | undefined;
-  /** Bounded audit trail of revisions this receipt superseded. */
   supersededRevisions?: readonly SupersededResultRevision[] | undefined;
   archivedAt?: string | undefined;
   settledAt?: string | undefined;
@@ -146,7 +123,6 @@ export interface ConsumedResponderResult {
   acknowledgedAt: string;
 }
 
-/** Durable projection marker for a terminal result whose plan child is unsettled. */
 export interface PendingSettlement {
   jobId: string;
   resultRevision: number;
@@ -159,12 +135,10 @@ export interface PendingSettlement {
 
 export type PersistedRegistry = PersistedRegistryV1 | PersistedRegistryV2;
 
-/** Safe detached process form. stdinText is written once, then stdin is closed. */
 export interface BackgroundSpawnSpec {
   command: string;
   argv: string[];
   stdinText?: string | undefined;
-  /** Non-secret display text persisted in the registry and artifacts. */
   display?: string | undefined;
 }
 
@@ -174,7 +148,6 @@ export interface StartJobOptions extends JobLinkMetadata {
   ownerSessionId?: string | undefined;
   profile?: string | undefined;
   estimatedSeconds?: number | undefined;
-  /** Legacy compatibility input. Durable jobs no longer have generic deadlines. */
   timeoutMs?: number | undefined;
   authorization?: { target: string; expiresAt?: string | undefined } | undefined;
 }

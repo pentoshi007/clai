@@ -3,22 +3,11 @@ import { isAllowedScheme } from "./ssrf-guard.js";
 import { DEFAULT_INCLUDE_HEADERS, DEFAULT_INCLUDE_REDIRECT_CHAIN, DEFAULT_INCLUDE_TIMING, DEFAULT_MAX_BYTES, DEFAULT_REDACT_SENSITIVE, DEFAULT_RESPONSE_MODE, FETCH_TIMEOUT_MS, MAX_FETCH_TIMEOUT_MS, MAX_MAX_BYTES, MIN_FETCH_TIMEOUT_MS, MIN_MAX_BYTES, RESPONSE_MODES } from "./types.js";
 import type { ResponseMode, ResponsePart, WebFetchArgs, WebFetchError } from "./types.js";
 
-/** Result of {@link validateArgs}: either a normalised arg bundle or an error. */
 type ValidationResult =
   | { ok: true; value: NormalisedArgs }
   | { ok: false; error: WebFetchError };
 
-/**
- * Synchronously validate {@link WebFetchArgs} against Requirements 2.1,
- * 2.2, 2.12, 2.13, 2.33, 2.34, 5.4, and 7.1–7.3.
- *
- * Returns the normalised arg bundle on success. On the first violation
- * encountered, returns a `validation` error whose message names the
- * offending argument and the rule that was broken.
- */
 export function validateArgs(args: WebFetchArgs): ValidationResult {
-  // url: required string, parses as absolute URL with http(s) scheme,
-  // no whitespace, no ASCII control chars (Requirements 2.1, 2.12, 7.1, 7.3).
   if (typeof args.url !== "string" || args.url.length === 0) {
     return validationError("url is required and must be a non-empty string");
   }
@@ -43,7 +32,6 @@ export function validateArgs(args: WebFetchArgs): ValidationResult {
     };
   }
 
-  // maxBytes: optional integer in [MIN_MAX_BYTES, MAX_MAX_BYTES] (2.2, 2.13).
   let maxBytes = DEFAULT_MAX_BYTES;
   if (args.maxBytes !== undefined) {
     if (
@@ -74,7 +62,6 @@ export function validateArgs(args: WebFetchArgs): ValidationResult {
     timeoutMs = args.timeoutMs;
   }
 
-  // includeHeaders: optional boolean (Requirement 2.34).
   if (args.includeHeaders !== undefined && typeof args.includeHeaders !== "boolean") {
     return validationError("includeHeaders must be a boolean");
   }
@@ -83,20 +70,16 @@ export function validateArgs(args: WebFetchArgs): ValidationResult {
       ? true
       : args.includeHeaders ?? DEFAULT_INCLUDE_HEADERS;
 
-  // includeTls: optional boolean. Default is false so general browsing stays
-  // lean; callers can opt in when diagnostics matter.
   if (args.includeTls !== undefined && typeof args.includeTls !== "boolean") {
     return validationError("includeTls must be a boolean");
   }
   const includeTls = args.includeTls ?? false;
 
-  // includeTiming: optional boolean (Requirement 2.34).
   if (args.includeTiming !== undefined && typeof args.includeTiming !== "boolean") {
     return validationError("includeTiming must be a boolean");
   }
   const includeTiming = args.includeTiming ?? DEFAULT_INCLUDE_TIMING;
 
-  // includeRedirectChain: optional boolean (Requirement 2.34).
   if (
     args.includeRedirectChain !== undefined &&
     typeof args.includeRedirectChain !== "boolean"
@@ -106,7 +89,6 @@ export function validateArgs(args: WebFetchArgs): ValidationResult {
   const includeRedirectChain =
     args.includeRedirectChain ?? DEFAULT_INCLUDE_REDIRECT_CHAIN;
 
-  // responseMode: optional, must be "readable" or "raw" (Requirement 2.33).
   if (args.responseMode !== undefined) {
     if (
       typeof args.responseMode !== "string" ||

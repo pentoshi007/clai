@@ -72,11 +72,6 @@ const fallbackOrder: ProviderId[] = [
   "merge-gateway",
 ];
 
-/**
- * Built-in provider ids in fallback preference order. Custom (user-defined)
- * provider ids are appended after the built-ins so they participate in the
- * cross-provider fallback chain when enabled, in config declaration order.
- */
 function allFallbackIds(): ProviderId[] {
   const custom = getCustomProviders().map((d) => d.id as ProviderId);
   return [...fallbackOrder, ...custom];
@@ -86,9 +81,6 @@ export async function requestedRealKeyCount(
   provider: ProviderId,
 ): Promise<number> {
   // Ollama's "key" is a local host URL, and `free` has no credential at all —
-  // both are keyless/local slots, not a single real API key. Counting them
-  // here would disable fallback for the two providers that most need it when
-  // the local server or free tier is unavailable.
   if (provider === "ollama" || provider === "free") return 0;
   const multi = await getProviderKeys(provider);
   return multi.keys.filter((key) => key.value && !key.disabled).length;
@@ -110,10 +102,6 @@ export function buildFallbackChain(
       )
     : order;
   const alternates = filtered.filter((provider) => provider !== requested);
-  // A live-connection stall has already spent one full generation on the
-  // selected route. Retrying it first creates the duplicate partial bubbles in
-  // the reported failure. Try configured alternates first for that recovery
-  // attempt, but retain the user's selected provider as the final fallback.
   return preferAlternates
     ? [...alternates, requested]
     : [requested, ...alternates];
@@ -122,13 +110,8 @@ export function buildFallbackChain(
 export function getProvider(provider: ProviderId): LlmProvider {
   const builtin = providers[provider];
   if (builtin) return builtin;
-  // Custom (user-defined) providers are not in the static map; resolve them
-  // from the runtime registry. Returns undefined for an unknown id.
   const custom = getCustomProviderSync(provider as string);
   if (custom) return custom;
-  // Unknown id: return the first built-in so callers that don't pre-validate
-  // get a usable object rather than `undefined`. Callers that need to assert
-  // existence use `assertProvider` (which now accepts custom ids too).
   return providers.nvidia;
 }
 
@@ -139,8 +122,6 @@ export async function providerAuth(
   if (provider === "ollama") {
     return { baseUrl: secret.value };
   }
-  // Endpoint providers carry both: the stored secret plus the active endpoint
-  // URL from config (Modal requires one; Lightning treats it as an override).
   if (providerUsesEndpoints(provider)) {
     const baseUrl = getActiveProviderEndpoint(provider);
     return { apiKey: secret.value, ...(baseUrl ? { baseUrl } : {}) };

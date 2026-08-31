@@ -66,7 +66,6 @@ export const finalizeTurn = (
     try {
       ports.onMessages(buildTurnHistory(ports.liveMessages(), displayRendered));
     } catch {
-      // Persisting history must never break the turn.
     }
   }
   ports.onOutcome?.(outcome);

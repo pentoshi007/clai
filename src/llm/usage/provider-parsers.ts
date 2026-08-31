@@ -157,11 +157,6 @@ function mergeProviderUsage(
   });
 }
 
-/**
- * Parse OpenAI-compatible `usage` object (stream final chunk or complete body).
- * Handles standard counters, documented DeepSeek cache hit/miss fields, and
- * optional configured aliases for a user-defined compatible endpoint.
- */
 export function parseOpenAiUsage(
   raw: unknown,
   aliases?: CompatibleUsageAliases | undefined,
@@ -224,11 +219,6 @@ function headerCounter(
   return nonNegInt(Number(value));
 }
 
-/**
- * Fireworks emits normal compatible usage plus optional performance metrics.
- * The latter are available in response headers for complete calls and in the
- * final body frame when `perf_metrics_in_response` is requested for streams.
- */
 export function parseFireworksUsage(
   rawUsage: unknown,
   performanceMetrics?: unknown,
@@ -268,7 +258,6 @@ export function parseFireworksUsage(
   );
 }
 
-/** Anthropic message usage: input_tokens / output_tokens. */
 export function parseAnthropicUsage(raw: unknown): TokenUsage | undefined {
   if (!isRecord(raw)) return undefined;
   const input = nonNegInt(raw.input_tokens);
@@ -286,12 +275,6 @@ export function parseAnthropicUsage(raw: unknown): TokenUsage | undefined {
   });
 }
 
-/**
- * Merge Anthropic streaming usage without losing cache telemetry.
- * `message_start` carries input/cache counts while `message_delta` normally
- * carries only output tokens; replacing the former with the latter made real
- * cache hits appear as zero in the UI and audit log.
- */
 export function mergeAnthropicStreamUsage(
   previous: TokenUsage | undefined,
   current: TokenUsage,
@@ -323,7 +306,6 @@ export function mergeAnthropicStreamUsage(
   })!;
 }
 
-/** Gemini usageMetadata. */
 export function parseGeminiUsage(raw: unknown): TokenUsage | undefined {
   if (!isRecord(raw)) return undefined;
   return normalizeTokenUsage({
@@ -343,7 +325,6 @@ export function parseGeminiUsage(raw: unknown): TokenUsage | undefined {
   });
 }
 
-/** Ollama generate/chat counts. */
 export function parseOllamaUsage(raw: {
   prompt_eval_count?: number | undefined;
   eval_count?: number | undefined;

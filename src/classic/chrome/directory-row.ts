@@ -4,13 +4,6 @@ import { layoutWidth } from "../render/measure.js";
 import type { InkTheme } from "../render/ink-theme.js";
 import { relativizeHome, STATUS_INSET_COLUMNS } from "./status-rows.js";
 
-/**
- * Working-directory line rendered directly above the composer box, flush to
- * the composer's inner bounds: the home-shortened path in muted plus the git
- * branch grouped together on the left. The path shrinks with a middle
- * ellipsis first so the branch never falls off the edge; the builder's
- * budget is the same inset content column the status row uses.
- */
 export function directoryRow(input: {
   readonly ink: InkTheme;
   readonly columns: number;

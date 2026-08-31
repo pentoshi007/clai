@@ -16,8 +16,6 @@ export const createTurnStateMachine = (): TurnStateMachine => {
       state = transitionTurn(state, to, reason);
       return;
     } catch {
-      // Recovery paths may skip an intermediate presentation state; route
-      // active work through verifying/exploring rather than forging state.
     }
     if (to !== "succeeded" && to !== "partial") return;
     if (state.state === "understanding") {

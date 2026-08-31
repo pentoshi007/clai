@@ -1,6 +1,5 @@
 
 
-/** Lines where repetition is meaningful syntax/content and must stay byte-exact. */
 function isRepetitionSensitiveMarkdownLine(line: string): boolean {
   if (/^(?: {4}|\t)/.test(line)) return true;
   if (line.includes("`")) return true;
@@ -18,8 +17,6 @@ function collapseRepeatedProse(text: string): string {
   return text.replace(
     /(.{3,80}?)\1{6,}/gs,
     (match: string, unit: string) => {
-      // Punctuation runs are commonly Markdown separators/rules even when a
-      // caller gives us an incomplete fragment without its surrounding line.
       if (!/[\p{L}\p{N}]/u.test(unit)) return match;
       return `${unit.repeat(3)} …[repeated ~${Math.round(
         match.length / Math.max(1, unit.length),
@@ -28,18 +25,6 @@ function collapseRepeatedProse(text: string): string {
   );
 }
 
-/**
- * Collapse pathological repetition before a message is stored in history.
- * Some models degenerate into emitting the same short phrase hundreds of
- * times ("We need to wait.We need to wait.…"), which otherwise bloats the
- * context window and wastes tokens on every subsequent turn. We keep a few
- * copies and note the collapse so the meaning is preserved without the bulk.
- *
- * Markdown tables, rules, lists, links, and code must remain exact: this runs
- * before Markdown parsing, so changing one delimiter makes the renderer fall
- * back to raw pipes. Plain prose spans can still include repeated newlines and
- * therefore retain the original protection against multi-line degeneration.
- */
 export function collapseRepeatedText(text: string): string {
   if (!text || text.length < 1500) return text;
   try {

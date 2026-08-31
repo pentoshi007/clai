@@ -19,7 +19,6 @@ import { handleTaskAdd } from "./actions/task-add.js";
 export { looksLikeRunOnlyGoal, normalizePlanTaskEntries, resolvePlanTaskId, slugifyTaskId, titlesMatchForPlan };
 export type { NormalizedPlanTask } from "./normalization.js";
 
-/** Preserve the model/user-authored checklist exactly for fresh coding plans. */
 export function normalizeCodingPlanTasks(
   _kind: string,
   _goal: string,
@@ -29,7 +28,6 @@ export function normalizeCodingPlanTasks(
   return [...tasks];
 }
 
-/** Render the portable inline form; the Ink TUI owns its responsive sidebar. */
 export function renderPlanForTerminal(plan: SessionPlan): string {
   return renderPlanChecklist(plan);
 }
@@ -39,21 +37,12 @@ export interface PlanToolResult {
   ok: boolean;
   plan?: SessionPlan | undefined;
   cleared?: boolean | undefined;
-  /** What to print to the user's terminal. */
   display: string;
-  /** What to feed back to the model as the tool result. */
   modelNote: string;
-  /** Soft reminder (held, not applied) — skip loop-guard accounting. */
   reminder?: boolean | undefined;
-  /** Short identifiable toast to surface when this result is a reminder. */
   toast?: string | undefined;
 }
 
-/**
- * Handle plan.create / task.update inline. These are session-scoped and
- * persisted via the plan store so the user can view the plan (Ctrl+P) and
- * the agent keeps it in context across the whole session.
- */
 export async function handlePlanTool(
   call: ToolCall,
   session: SessionPolicy,
@@ -62,7 +51,6 @@ export async function handlePlanTool(
   const autoApprove = Boolean(ctx.autoApprove);
   void ctx.loopGuard;
   void ctx.step;
-  // Defensive init for the sync-guard holders (legacy/hand-built policies).
   if (!session.pendingDependency) session.pendingDependency = { value: undefined };
   if (!session.pendingTaskBatch) session.pendingTaskBatch = { value: undefined };
   if (call.name === "plan.create") {
@@ -73,7 +61,6 @@ export async function handlePlanTool(
     return handlePlanClear(call, session, autoApprove);
   }
 
-  // task.add / task.update
   const plan = await loadPlan(session.sessionId).catch(() => undefined);
   if (!plan) {
     return {
@@ -120,7 +107,6 @@ export async function handlePlanTool(
       modelNote: `task.update failed: state must be one of ${validStates.join(", ")}.`,
     };
   }
-  // X3: accept t1..tn or model slug aliases / title slugs.
   const taskId = resolvePlanTaskId(plan, taskIdRaw) ?? taskIdRaw;
   const taskTarget = plan.tasks.find((task) => task.id === taskId);
   if (taskTarget?.responderOwned) {
@@ -221,8 +207,6 @@ export async function handlePlanTool(
         };
       }
     }
-    // A retry is a new execution attempt. Previous receipts proved only the
-    // failed attempt and must not close the task before recovery work succeeds.
     if (retryingFailedTask && target) target.evidence = undefined;
   }
   if (stateRaw === "done") {
@@ -240,8 +224,6 @@ export async function handlePlanTool(
       };
     }
     if (target && target.state !== "in_progress") {
-      // Soft-auto: pending + dependency-ready → open then complete in one call.
-      // Models often skip the ritual in_progress step after work already landed.
       if (target.state === "pending" && incompleteDependencies.length === 0) {
         const opened = markTask(plan, taskId, "in_progress", note);
         if (!opened) {
@@ -254,7 +236,6 @@ export async function handlePlanTool(
             modelNote: `task.update failed: could not auto-open pending [${taskId}].`,
           };
         }
-        // Fall through to mark done below (state is now in_progress).
       } else if (target.state === "failed") {
         return {
           handled: true,
@@ -332,8 +313,6 @@ export async function handlePlanTool(
   const terminal = isPlanTerminal(plan);
   const successful = isPlanSuccessful(plan);
   if (terminal) plan.status = successful ? "completed" : "abandoned";
-  // Persist the transition (not the whole snapshot) so a concurrent
-  // responder settlement or evidence patch survives.
   const committedStates = new Map(
     plan.tasks.map((task) => [
       task.id,
@@ -344,7 +323,6 @@ export async function handlePlanTool(
     for (const task of draft.tasks) {
       const desired = committedStates.get(task.id);
       if (!desired) continue;
-      // Responder children are owned by process settlement, never by task.update.
       if (task.responderOwned) continue;
       task.state = desired.state;
       if (desired.note !== undefined) task.note = desired.note;

@@ -58,7 +58,6 @@ import {
 
 export async function openAiCompatibleStream(options: {
   provider: string;
-  /** Canonical provider id used for capability lookups. */
   providerId: ProviderId;
   baseUrl: string;
   apiKey: string;
@@ -76,16 +75,11 @@ export async function openAiCompatibleStream(options: {
   parallelToolCalls?: boolean | undefined;
   onStreamEvent?: ProviderStreamEventSink | undefined;
   streamTerminal?: StreamTerminalPolicy | undefined;
-  /** Omit usage stream options for strict OpenAI-compatible gateways. */
   includeStreamUsage?: boolean | undefined;
-  /** Optional response-usage aliases for one configured compatible route. */
   usageAliases?: CompatibleUsageAliases | undefined;
-  /** Explicit route policy; without one, final-turn artifacts are not retained. */
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
-  /** Metadata-only replay decisions; raw artifact payloads are never exposed. */
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
   forceReasoningReplay?: boolean | undefined;
-  /** Early native tool-call name/args progress (P2-3). */
   onToolCallDelta?:
     | ((delta: {
         index: number;
@@ -94,22 +88,11 @@ export async function openAiCompatibleStream(options: {
         argumentsBytes?: number;
       }) => void)
     | undefined;
-  /** Abort a stream that delivers no bytes for this long (mid-stream). */
   idleTimeoutMs?: number | undefined;
 
   initialIdleTimeoutMs?: number | undefined;
-  /**
-   * Abort a stream that delivers bytes but no model output for this long.
-   * Bounds a keepalive-only stream. Defaults to 1.5x the largest byte budget so
-   * it always outlasts the transport watchdog.
-   */
   outputIdleTimeoutMs?: number | undefined;
 }): Promise<OpenAiCompatibleResult> {
-  // Combine the caller's abort signal with an idle watchdog so a stuck
-  // connection can't wedge the REPL forever. Thinking models get a much
-  // longer first-byte budget and a longer mid-stream silence budget —
-  // the old 30s default aborted healthy Bynara/OpenRouter streams that
-  // were still "thinking" without tokens.
   const reasoningOn = Boolean(options.reasoning?.enabled);
   const idleTimeoutMs =
     options.idleTimeoutMs ??
@@ -119,13 +102,6 @@ export async function openAiCompatibleStream(options: {
   const initialIdleTimeoutMs =
     options.initialIdleTimeoutMs ??
     (reasoningOn ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS : idleTimeoutMs);
-  // "No bytes" and "no output" are different failures and need separate
-  // budgets. The transport watchdog is re-armed by every read, so an SSE
-  // keepalive comment, a `delta:{}` heartbeat, a role-only opening delta, or a
-  // multi-line frame still being assembled all count as proof that the
-  // connection is healthy. The output watchdog is re-armed only by real model
-  // progress, so a stream that keepalives forever without ever producing
-  // anything still fails instead of hanging.
   const outputIdleTimeoutMs =
     options.outputIdleTimeoutMs ??
     Math.round(Math.max(idleTimeoutMs, initialIdleTimeoutMs) * 1.5);
@@ -134,22 +110,13 @@ export async function openAiCompatibleStream(options: {
   let outputTimer: NodeJS.Timeout | undefined;
   let idleFired = false;
   let firedWatchdog: "transport" | "output" | undefined;
-  /** Budget of whichever watchdog fired, for the error message. */
   let firedBudgetMs = initialIdleTimeoutMs;
-  /**
-   * Any bytes at all read off the socket, whether or not the frame carried
-   * model output. Separates "the route never answered" (retry the request) from
-   * "the model was working and went quiet" (a retry replays all of that work).
-   */
   let sawTransportActivity = false;
-  /** Model-visible progress: content, reasoning, tool-call delta, or usage. */
   let sawStreamProgress = false;
   const fireStall = (
     watchdog: "transport" | "output",
     budgetMs: number,
   ): void => {
-    // The two timers can expire in the same event-loop turn. Preserve the first
-    // cause so a transport outage is never relabeled by the output watchdog.
     if (idleFired) return;
     idleFired = true;
     firedWatchdog = watchdog;
@@ -163,7 +130,6 @@ export async function openAiCompatibleStream(options: {
       budgetMs,
     );
   };
-  /** Bytes arrived — the connection is alive; re-arm the mid-stream budget. */
   const noteTransportActivity = (): void => {
     sawTransportActivity = true;
     armTransportTimer(idleTimeoutMs);
@@ -516,21 +482,6 @@ export async function openAiCompatibleStream(options: {
     emitStreamReasoningDelta(options.onStreamEvent, note);
   };
 
-  /**
-   * Reasoning-echo suppression.
-   *
-   * Some gateways/models stream the chain of thought on `reasoning_content` and
-   * then replay it verbatim at the start of `content` before the real answer
-   * (observed with MiniMax M3 and GLM). Untagged, that replay is
-   * indistinguishable from an answer, so it was rendered as the response — the
-   * user saw the model's reasoning as its reply even with thinking off.
-   *
-   * While the leading `content` still matches reasoning we already received, it
-   * is kept inside the `<think>` region: never a visible answer, still visible
-   * under Ctrl+T, and stripped from history. Only the first
-   * ECHO_CONFIRM_CHARS are held back before deciding, so a normal answer is
-   * emitted with no perceptible delay.
-   */
   const ECHO_CONFIRM_CHARS = 64;
   let echoState: "idle" | "buffering" | "echoing" | "done" = "idle";
   let echoBuffer = "";
@@ -542,16 +493,10 @@ export async function openAiCompatibleStream(options: {
     full += text;
     options.onToken(text);
   };
-  /**
-   * Route replayed text back into the reasoning region. Deliberately does NOT
-   * extend `reasoningSeen`: that string is the comparison baseline, and growing
-   * it with the replay would let the echo match itself past the real reasoning.
-   */
   const emitReasoningEcho = (text: string): void => {
     if (!text) return;
     emitStreamReasoningDelta(options.onStreamEvent, text);
   };
-  /** Release a still-undecided hold-back as the answer (stream ended early). */
   const flushEchoBuffer = (): void => {
     if (!echoBuffer) return;
     const held = echoBuffer;
@@ -566,8 +511,6 @@ export async function openAiCompatibleStream(options: {
       return;
     }
     if (echoState === "idle") {
-      // A replay is only plausible once a meaningful amount of reasoning came
-      // through the separate channel.
       if (reasoningSeen.length < ECHO_CONFIRM_CHARS) {
         echoState = "done";
         emitVisible(token);
@@ -590,7 +533,6 @@ export async function openAiCompatibleStream(options: {
       flushEchoBuffer();
       return;
     }
-    // Confirmed replay: consume the matching run, then hand over the answer.
     let matched = 0;
     while (
       matched < token.length &&
@@ -636,9 +578,6 @@ export async function openAiCompatibleStream(options: {
         throw new Error("Stream aborted");
       }
       if (done) break;
-      // Bytes off the wire re-arm the watchdog before anything is parsed.
-      // Keepalives and empty deltas are proof of a live connection, so they
-      // must not be allowed to age out a stream that is merely quiet.
       if (value && value.byteLength > 0) noteTransportActivity();
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
@@ -664,10 +603,6 @@ export async function openAiCompatibleStream(options: {
             reasoningArtifacts,
           );
           if (!visible.trim() && toolCalls.length === 0) {
-            // Thinking models (Kimi/Moonshot via Mantle, etc.) often emit only
-            // reasoning, sometimes with tool sentinels inside <think>. Returning
-            // the full text lets the agent runner recover tool calls from
-            // thinkContent instead of failing the whole stream as an error.
             if (reasoningSeen.trim()) {
               return {
                 text: full,
@@ -725,17 +660,10 @@ export async function openAiCompatibleStream(options: {
           }>;
         };
         try {
-          // Only JSON.parse is allowed to fail silently here. The
-          // delta handlers below (tool-arg size guard, UI callbacks) used to be
-          // inside this try and had their errors swallowed as "keepalives".
           parsed = JSON.parse(payload) as typeof parsed;
         } catch {
-          // Malformed keepalive / comment line.
           continue;
         }
-        // Gateways report mid-stream failures as an error frame; that
-        // used to be dropped, so an upstream overload looked like a complete
-        // (but truncated) answer.
         if (parsed.error) {
           const detail =
             typeof parsed.error === "string"
@@ -890,8 +818,6 @@ export async function openAiCompatibleStream(options: {
     const reasoningArtifacts = finalReasoningArtifacts(toolCalls);
     emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
     if (!visible.trim() && toolCalls.length === 0) {
-      // See [DONE] branch — hand thinking-only streams to the runner so it can
-      // salvage sentinel tool blocks (or nudge) instead of hard-failing.
       if (reasoningSeen.trim()) {
         return {
           text: full,
@@ -924,15 +850,8 @@ export async function openAiCompatibleStream(options: {
   } catch (error) {
     if (idleFired) {
       const seconds = Math.round(firedBudgetMs / 1000);
-      // Preserve the actual watchdog source. Any byte proves the route admitted
-      // the request, but a later byte-silence timeout is still a transport
-      // failure; only the output watchdog denotes a live keepalive-only/model
-      // stall and receives STREAM_STALL_MARKER.
       if (firedWatchdog === "transport" || !sawTransportActivity) {
         if (!sawTransportActivity) {
-          // Keep the established wording: both the router's transparent-retry
-          // check and classifyStreamFailure key off this phrase to treat a route
-          // that never answered as a retriable transport failure.
           throw new ProviderError(
             `${options.provider} request timed out before any response (${seconds}s) — no data arrived on the connection.`,
           );
@@ -953,15 +872,11 @@ export async function openAiCompatibleStream(options: {
     }
     throw error;
   } finally {
-    // The success paths used to return without releasing the body, so
-    // the socket stayed locked until GC — dozens of leaked connections per
-    // long agent turn.
     cleanup();
     void reader.cancel().catch(() => undefined);
     try {
       reader.releaseLock();
     } catch {
-      // already released
     }
   }
 }

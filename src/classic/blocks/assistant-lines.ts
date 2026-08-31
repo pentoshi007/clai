@@ -15,7 +15,6 @@ export interface AssistantLinesResult {
   readonly cache: MarkdownStreamCache;
 }
 
-/** Gutter columns consumed by `◆ ` plus the reserved right column. */
 export const ASSISTANT_CHROME_COLS = 2;
 
 export function buildAssistantLines(

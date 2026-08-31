@@ -1,7 +1,3 @@
-/**
- * Convert chalk/SGR ANSI strings into OpenTUI `StyledText` so legacy-colored
- * output (intro card, badges) can render with real fg/bg in OpenTUI.
- */
 
 import { RGBA, StyledText, TextAttributes } from "@opentui/core";
 import type { TextChunk } from "@opentui/core";
@@ -9,7 +5,6 @@ import type { TextChunk } from "@opentui/core";
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
 
-/** Basic 16-color ANSI → RGB (approximate xterm defaults). */
 const BASIC_FG: Record<number, [number, number, number]> = {
   30: [0, 0, 0],
   31: [205, 49, 49],
@@ -53,10 +48,6 @@ function rgb(r: number, g: number, b: number): RGBA {
 }
 
 export interface AnsiToStyledOptions {
-  /**
-   * Applied to text that has no explicit SGR foreground (so assistant
-   * bodies can default to green while chalk bold/cyan/code still wins).
-   */
   readonly defaultFg?: string | RGBA | undefined;
 }
 
@@ -72,10 +63,6 @@ function resolveColor(input: string | RGBA | undefined): RGBA | undefined {
   return input;
 }
 
-/**
- * Parse a string that may contain CSI SGR sequences into StyledText.
- * Unsupported sequences are ignored; plain text is preserved.
- */
 export function ansiToStyledText(
   input: string,
   options: AnsiToStyledOptions = {},
@@ -198,7 +185,6 @@ function applySgr(parts: number[], sink: SgrSink): void {
       i++;
       continue;
     }
-    // 38;2;r;g;b or 38;5;n
     if (code === 38 || code === 48) {
       const isFg = code === 38;
       const mode = parts[i + 1];

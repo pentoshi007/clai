@@ -26,11 +26,9 @@ import {
 
 /** Durable sink for canonical redacted bytes. */
 export interface OutputSink {
-  /** Returns false when the sink is applying backpressure. */
   append(bytes: Uint8Array): boolean;
   waitForDrain(): Promise<void>;
   reference(): ArtifactReference;
-  /** True once the configured capture limit demands session termination. */
   readonly limitReached: boolean;
   readonly failed: boolean;
 }
@@ -40,10 +38,8 @@ export interface OutputStoreOptions {
   readonly pageBytes: number;
   readonly redactionOverlapBytes: number;
   readonly sink: OutputSink;
-  /** Invoked when the sink asks for, then releases, transport backpressure. */
   readonly onPause?: (() => void) | undefined;
   readonly onResume?: (() => void) | undefined;
-  /** Raised when persistence fails or the capture limit demands termination. */
   readonly onPersistenceStop?: ((reason: "output-limit" | "persist-failed") => void) | undefined;
 }
 
@@ -80,7 +76,6 @@ export class OutputStore {
     return this.latest;
   }
 
-  /** Monotonic generation used as the quiet-detection baseline. */
   get generation(): number {
     return this.notifier.current;
   }
@@ -158,7 +153,6 @@ export class OutputStore {
         this.omittedBytes += size;
         continue;
       }
-      // Partially evict the oldest chunk; later cursors are never renumbered.
       const drop = overflow;
       this.events[0] = {
         ...oldest,
@@ -183,7 +177,6 @@ export class OutputStore {
       return;
     }
     if (writable || this.paused) return;
-    // Bound memory while the filesystem catches up rather than queueing output.
     this.paused = true;
     this.options.onPause?.();
     void sink.waitForDrain().then(() => {
@@ -192,7 +185,6 @@ export class OutputStore {
     });
   }
 
-  /** Build a contiguous page starting at `cursor`. */
   page(options: PageOptions): PageOutcome {
     const limit = Math.max(1, options.maxBytes ?? this.options.pageBytes);
     const requested = options.cursor;
@@ -242,7 +234,6 @@ export class OutputStore {
       if (slice.length === 0) continue;
       const truncated = offset + slice.length < event.bytes.length;
       if (truncated && options.view === "plain") {
-        // Never end a plain page inside a multi-byte code point.
         const incomplete = trailingIncompleteUtf8Bytes(slice);
         if (incomplete > 0 && slice.length > incomplete) {
           slice = slice.subarray(0, slice.length - incomplete);

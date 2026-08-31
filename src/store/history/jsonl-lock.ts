@@ -2,7 +2,6 @@ import { getHistoryDir } from "../paths.js";
 import { mkdir, open, readFile, rm, stat, utimes } from "node:fs/promises";
 import { join } from "node:path";
 
-/** Live paths so CLAI_DATA_DIR / CLAI_HISTORY_DIR always apply (and tests work). */
 export function historyDirPath(): string {
   return getHistoryDir();
 }
@@ -19,7 +18,6 @@ const JSONL_LOCK_STALE_MS = 60_000;
 
 const JSONL_LOCK_RETRIES = 200;
 
-/** Serialize stale-lock reclamation and recheck the owner while holding it. */
 async function reapStaleJsonlLock(): Promise<void> {
   let reaper: Awaited<ReturnType<typeof open>>;
   const reaperToken = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -60,8 +58,6 @@ async function reapStaleJsonlLock(): Promise<void> {
     if (!lockStat || Date.now() - lockStat.mtimeMs <= JSONL_LOCK_STALE_MS) {
       return;
     }
-    // The live owner refreshes mtime periodically. A stale marker—including
-    // an empty marker left between open/write—is therefore safe to reclaim.
     const confirmed = await readFile(jsonlLockFilePath(), "utf8").catch(
       () => undefined,
     );
@@ -79,12 +75,6 @@ async function reapStaleJsonlLock(): Promise<void> {
   }
 }
 
-/**
- * Cross-process lock around JSONL read/modify/rename. Atomic rename protects
- * readers, but without this lock two clai processes can both read the same
- * base file and then each replace it, dropping whichever session they did not
- * observe. The lock is transient and stale crash leftovers self-heal.
- */
 export async function acquireJsonlWriteLock(): Promise<() => Promise<void>> {
   await mkdir(historyDirPath(), { recursive: true });
   for (let attempt = 0; attempt < JSONL_LOCK_RETRIES; attempt += 1) {

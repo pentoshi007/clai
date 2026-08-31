@@ -18,10 +18,8 @@ import {
   type BlockContext,
 } from "./block-context.js";
 
-/** Collapsed body rows (04-UI-SPEC §3.5). */
 export const TOOL_COLLAPSED_BODY_ROWS = 3;
 export const TOOL_EXPANDED_BODY_ROWS = 40;
-/** Body rows kept while the tool is still open and clipped by the live tail. */
 export const TOOL_LIVE_BODY_ROWS = 8;
 const BODY_INDENT = 4;
 
@@ -58,10 +56,6 @@ export function toolElapsed(ctx: BlockContext, item: ToolItem): string | undefin
   return label === "" ? undefined : label;
 }
 
-/**
- * Right-aligned status suffix; dropped only on very narrow screens (<44 cols).
- * `statusLabel` already carries the non-zero exit code, so nothing is appended.
- */
 export function toolSuffix(
   ctx: BlockContext,
   item: ToolItem,
@@ -78,8 +72,6 @@ export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
   const name = ctx.ink.style(presented.name, { fg: "cyan", bold: true });
   const head = `${glyph} ${name}`;
   const suffix = toolSuffix(ctx, item, presented.statusLabel);
-  // Always keep args on the next line — never inline as shell.exec(input) — so
-  // head + suffix stay on one line and (input) is indented below.
   if (suffix.length === 0) {
     const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
     if (argsLines.length === 0) return [clipToWidth(head, ctx.width, ctx.glyphs.ellipsis)];
@@ -88,8 +80,6 @@ export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
     return [clipToWidth(head, ctx.width, ctx.glyphs.ellipsis), ...rows.map((r) => trimTrailingSpaces(`  ${r}`))];
   }
   const suffixWidth = layoutWidth(suffix);
-  // Suffix (done/running + timing) should sit just after head on the same line,
-  // more left / closer to tool name, not flush-right at the far edge.
   const gap = "  ";
   const headBudget = Math.max(8, ctx.width - suffixWidth - layoutWidth(gap) - 1);
   const clippedHead = layoutWidth(head) > headBudget ? clipToWidth(head, headBudget, ctx.glyphs.ellipsis) : head;
@@ -106,7 +96,6 @@ export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
 }
 
 export interface ToolBodyOptions {
-  /** Hard cap on rendered body rows; the live tail passes a smaller number. */
   readonly maxRows?: number | undefined;
 }
 

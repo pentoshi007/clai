@@ -3,7 +3,6 @@ import { wrapUserPrompt } from "../../ui-core/rendering/user-message-wrap.js";
 import type { UserItem } from "../../ui-core/state/transcript-types.js";
 import { clipRow, type BlockContext } from "./block-context.js";
 
-/** Rows kept before a live user prompt collapses (04-UI-SPEC §3.2). */
 export const USER_COLLAPSE_ROWS = 6;
 const USER_KEPT_ROWS = 5;
 const PLATE = " YOU ";

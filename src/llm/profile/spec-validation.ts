@@ -22,10 +22,6 @@ import {
   TRI_STATES,
 } from "./spec-vocabulary.js";
 
-/**
- * Local, actionable validation. Nothing here performs a network call; the goal
- * is that an invalid declaration fails before any request is dispatched.
- */
 export function validateCustomProviderProfile(raw: unknown): {
   spec?: CustomProviderProfileSpec;
   errors: string[];

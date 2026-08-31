@@ -1,13 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Scrollable pager for long content — full tool output, plan detail (PICK-003,
- * V2-074).
- *
- * Clean chrome: one border title, one meta/help row, body, one footer.
- * Ctrl+R search: substring matches paint reverse-video; Enter jumps to the
- * next hit and keeps the query so n/N / highlight stay active after the
- * filter bar closes.
- */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
@@ -50,16 +41,10 @@ export interface PagerProps {
   readonly title: string;
   readonly body: string;
   readonly source?: ArtifactPagerSource | undefined;
-  /** When set, syntax-highlight diff bodies using this path's language. */
   readonly highlightPath?: string | undefined;
-  /**
-   * Initial markdown mode. Help/shortcuts/plan pass `force` (start formatted).
-   * Tool dumps default `auto` (start raw; press `f` for formatted, `r` for raw).
-   */
   readonly markdown?: PagerMarkdownMode | undefined;
 }
 
-/** User-toggleable body view in the pager. */
 type PagerViewMode = "formatted" | "raw";
 
 const HIDDEN_SCROLLBARS = {
@@ -67,7 +52,6 @@ const HIDDEN_SCROLLBARS = {
   showArrows: false,
 } as const;
 
-/** Progressive help lines — always one row; never wrap into the line-count. */
 const PAGER_HELP_FULL =
   "↑↓:scroll  ·  pg↑↓:page  ·  ^r:search  ·  n/N:next  ·  f:format  ·  r:raw  ·  c:copy  ·  s:scrollback  ·  e:editor  ·  q/esc:close";
 const PAGER_HELP_MED =
@@ -97,19 +81,13 @@ export function Pager(props: PagerProps): ReactNode {
   const [displayBody, setDisplayBody] = useState(body);
   const [artifactPage, setArtifactPage] = useState<ArtifactPage | undefined>(undefined);
   const [pageBusy, setPageBusy] = useState(false);
-  // Help/plan start formatted; everything else starts raw — user presses f/r.
   const [viewMode, setViewMode] = useState<PagerViewMode>(() =>
     markdown === "force" ? "formatted" : "raw",
   );
-  // Conservative width: 96% box sits inside app chrome; overestimate caused
-  // "11 lines" to paint past the rounded border after search.
   const pagerOuterCols = Math.max(40, Math.floor(termWidth * 0.96));
   const contentCols = Math.max(24, pagerOuterCols - 10);
-  // Meta/footer rows (with their padding) — exact column budget for padChromeRow.
   const chromeCols = Math.max(20, contentCols - 4);
 
-  // f → strip line-number gutters / fs.read `N: ` + force markdown.
-  // r → always the original body (never the post-markdown plain extract).
   const display = useMemo(() => {
     if (viewMode === "formatted") {
       const stripped = stripPagerLineGutters(displayBody);
@@ -136,14 +114,10 @@ export function Pager(props: PagerProps): ReactNode {
     () => display.lines.map((l) => l.plain),
     [display.lines],
   );
-  // Syntax gutters only for raw file/diff viewers — never for markdown format.
   const pathForHighlight =
     viewMode === "raw" && highlightPath ? highlightPath : title;
   const useDiffGutters =
     viewMode === "raw" && Boolean(highlightPath) && display.mode === "plain";
-  // Search haystack:
-  // - markdown: full plain lines (never strip "│" as a diff gutter)
-  // - raw file-diff: code only so gutters are not matched
   const searchLines = useMemo(() => {
     if (display.mode === "markdown" || !useDiffGutters) return lines;
     return lines.map((line) => {
@@ -164,7 +138,6 @@ export function Pager(props: PagerProps): ReactNode {
   const [exportError, setExportError] = useState<string | undefined>(undefined);
   const [statusFlash, setStatusFlash] = useState<string | undefined>(undefined);
   const hasQuery = query.trim().length > 0;
-  // Stable carry for syntax across the visible line list (recreated when body changes).
   const syntaxCarry = useMemo(() => emptyCarry(), [displayBody, pathForHighlight]);
 
   useEffect(() => {
@@ -175,8 +148,6 @@ export function Pager(props: PagerProps): ReactNode {
     }
     let active = true;
     setPageBusy(true);
-    // A followable source opens on its last page so the newest output is
-    // on screen immediately, exactly like `tail -f`.
     const first = canFollow && source.readTail ? source.readTail() : source.readPage(0);
     void first.then((page) => {
       if (!active) return;
@@ -195,9 +166,6 @@ export function Pager(props: PagerProps): ReactNode {
     return () => { active = false; };
   }, [body, source, canFollow]);
 
-  // Follow mode. Driven purely by the source's change notifications (already
-  // coalesced upstream), so there is no polling timer and at most one bounded
-  // page read per notification. Stops itself when the producer finishes.
   useEffect(() => {
     if (!source?.watch || !following) return;
     let active = true;
@@ -231,8 +199,6 @@ export function Pager(props: PagerProps): ReactNode {
     };
   }, [source, following]);
 
-  // Leaving follow mode automatically once the job is finished keeps the
-  // footer honest instead of advertising a feed that can no longer move.
   useEffect(() => {
     if (!following || !source?.isGrowing) return;
     if (!source.isGrowing()) setFollowing(false);
@@ -276,7 +242,6 @@ export function Pager(props: PagerProps): ReactNode {
     setTimeout(() => setStatusFlash((cur) => (cur === message ? undefined : cur)), ms);
   }
 
-  // Force-hide both bars — the grey horizontal track was the ugly bottom band.
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb) return;
@@ -284,7 +249,6 @@ export function Pager(props: PagerProps): ReactNode {
     sb.horizontalScrollBar.visible = false;
   }, [lines.length]);
 
-  // Drop an out-of-range active index when the query shrinks the hit list.
   useEffect(() => {
     if (!hasQuery || matches.length === 0) {
       setMatchIndex(-1);
@@ -312,9 +276,6 @@ export function Pager(props: PagerProps): ReactNode {
     if (!sb) return;
     const max = Math.max(0, sb.scrollHeight - sb.viewport.height);
     const next = Math.max(0, Math.min(max, sb.scrollTop + delta));
-    // Scrolling away from the end means the user wants to read history, so
-    // stop yanking the viewport back to the newest bytes. Returning to the
-    // bottom resumes following.
     if (following && delta < 0 && next < max) setFollowing(false);
     sb.scrollTo(next);
     refreshScrollHint();
@@ -328,7 +289,6 @@ export function Pager(props: PagerProps): ReactNode {
     setMatchIndex(index);
     const match = matchList[index];
     if (match) {
-      // Defer until after paint so the active line exists in the scroll tree.
       queueMicrotask(() => {
         scrollRef.current?.scrollChildIntoView(`pager-line-${match.line}`);
         refreshScrollHint();
@@ -336,7 +296,6 @@ export function Pager(props: PagerProps): ReactNode {
     }
   }
 
-  /** Enter / submit: next hit from the *current* query (avoids stale closure). */
   async function submitSearch(): Promise<void> {
     if (source && query.trim()) {
       setPageBusy(true);
@@ -414,16 +373,13 @@ export function Pager(props: PagerProps): ReactNode {
     if (searchOpen) {
       if (chord === "escape") {
         key.preventDefault();
-        // Abort filter: drop query + highlights.
         clearSearch();
       }
-      // Let the <input> consume other keys (including Enter → onSubmit).
       return;
     }
 
     const action = services.router.resolve(chord, "pager");
     if (!action) {
-      // Esc with an active query clears highlight without closing the pager.
       if (chord === "escape" && hasQuery) {
         key.preventDefault();
         clearSearch();
@@ -462,7 +418,6 @@ export function Pager(props: PagerProps): ReactNode {
         scrollByRows(Math.max(1, Math.floor((sb?.viewport.height ?? 10) / 2)));
         break;
       case "pager.top":
-        // g — absolute start (first artifact page + scroll top).
         if (source && artifactPage?.offset) {
           void loadArtifactPage(0, "top");
         } else {
@@ -471,7 +426,6 @@ export function Pager(props: PagerProps): ReactNode {
         refreshScrollHint();
         break;
       case "pager.bottom":
-        // G — absolute end (last artifact page + scroll bottom).
         if (source && artifactPage && artifactPage.pageNumber < artifactPage.pageCount) {
           void loadArtifactPage(
             Math.max(0, artifactPage.totalBytes - source.pageBytes),
@@ -547,7 +501,6 @@ export function Pager(props: PagerProps): ReactNode {
         });
         break;
       case "pager.close":
-        // First Esc clears an active search highlight; second closes the pager.
         if (hasQuery) {
           clearSearch();
         } else {
@@ -579,8 +532,6 @@ export function Pager(props: PagerProps): ReactNode {
     ? `${lines.length} lines · page ${artifactPage.pageNumber}/${artifactPage.pageCount}${pageBusy ? " · loading" : ""}`
     : `${lines.length} lines · ${scrollLabel}`;
 
-  // While a find is active, prefer find status over the long help line so the
-  // right-side line count always has room.
   const metaLeft = hasQuery
     ? fitOneLine(
         [
@@ -657,17 +608,12 @@ export function Pager(props: PagerProps): ReactNode {
     Math.max(8, Math.floor(chromeCols * 0.4)),
   );
 
-  // Scroll position only changes pager chrome. Keep the complete row array
-  // referentially stable so wheel/key events never repeat grapheme wrapping or
-  // reconcile every off-screen PagerLine; viewportCulling handles native paint.
   const bodyRows = useMemo(
     () =>
       lines.flatMap((line, index) => {
         const row = display.lines[index];
         const isMd = display.mode === "markdown";
 
-        // Markdown lines are already width-wrapped by renderMarkdown; paint
-        // one StyledText row each (search falls back to plain segments).
         if (isMd) {
           return [
             <PagerLine
@@ -686,12 +632,8 @@ export function Pager(props: PagerProps): ReactNode {
           ];
         }
 
-        // Diff gutters only in raw file-viewer mode — never eat compacted
-        // / help text that happens to contain " │ ".
         const parsed = useDiffGutters ? parseDiffLine(line) : null;
         if (parsed) {
-          // Soft-wrap code only; keep internal mark so parseDiffLine still
-          // knows add/del tone. PagerLine does not paint +/-.
           const codeChunks = wrapPagerLine(
             parsed.code,
             Math.max(12, contentCols - (parsed.gutter.length + 3)),
@@ -754,7 +696,6 @@ export function Pager(props: PagerProps): ReactNode {
     ],
   );
 
-  // Clip long titles so the border doesn't wrap/overflow.
   const borderTitle =
     title.length > 72 ? ` ${title.slice(0, 69)}… ` : ` ${title} `;
 
@@ -767,7 +708,6 @@ export function Pager(props: PagerProps): ReactNode {
       titleColor={theme.cyan}
       style={{
         flexDirection: "column",
-        // Larger than before — fills most of the terminal.
         width: "96%",
         height: "92%",
         borderColor: theme.border,
@@ -778,7 +718,7 @@ export function Pager(props: PagerProps): ReactNode {
         paddingBottom: 0,
       }}
     >
-      {/* Single fixed-width meta row — never flex-overflow past the border. */}
+      {}
       <box
         style={{
           flexDirection: "row",
@@ -817,7 +757,6 @@ export function Pager(props: PagerProps): ReactNode {
               value={query}
               onInput={(value) => {
                 setQuery(value);
-                // Reset so Enter always lands on the first hit for a new query.
                 setMatchIndex(-1);
               }}
               onSubmit={submitSearch}
@@ -859,14 +798,11 @@ export function Pager(props: PagerProps): ReactNode {
           marginBottom: 0,
           paddingLeft: 1,
           paddingRight: 1,
-          // File-diff modals stay dense; format / plain keep a little air.
           paddingTop: useDiffGutters ? 0 : 1,
         }}
         onMouseScroll={() => refreshScrollHint()}
       >
         {!useDiffGutters ? (
-          // Full-width opaque spacer — a one-cell row leaves the rest of the
-          // line unpainted, so scrolled-away glyphs survive at the edge.
           <text
             content=" "
             style={{ height: 1, width: "100%", bg: theme.background }}
@@ -881,7 +817,7 @@ export function Pager(props: PagerProps): ReactNode {
         ) : null}
       </scrollbox>
 
-      {/* Fixed-width footer row (same padChromeRow budget as meta). */}
+      {}
       <box
         style={{
           flexDirection: "row",

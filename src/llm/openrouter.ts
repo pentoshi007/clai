@@ -21,7 +21,7 @@ const headers = {
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const openrouterProvider: LlmProvider = {
   id: "openrouter",

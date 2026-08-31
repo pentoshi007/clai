@@ -15,7 +15,6 @@ export function ScrollbarGutter(props: {
     ? scrollbarGeometry(props.rows, props.window.totalRows, props.window.offset)
     : [];
 
-  // OpentUI parity: auto-hide when idle, show for 1s after scroll (like TranscriptScrollbar)
   const [isScrolling, setIsScrolling] = useState(false);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const prevOffsetRef = useRef(props.window.offset);

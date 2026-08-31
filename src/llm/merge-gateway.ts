@@ -39,14 +39,9 @@ export const mergeGatewayFallbackModels = [
 const NON_CHAT_MODEL =
   /embed|image|imagen|dall-e|tts|whisper|video|moderation|rerank|transcribe/i;
 
-// The native catalog is cursor paginated and caps `limit` at 500; one page
-// covers the whole catalog today (276 entries) and the cursor loop below keeps
-// that from silently truncating as it grows.
 const NATIVE_CATALOG_PAGE_LIMIT = 500;
 const NATIVE_CATALOG_MAX_PAGES = 10;
 
-// Effort names ordered cheapest → most expensive, so a model's advertised set is
-// presented in a stable order rather than the vendor's arbitrary one.
 const EFFORT_ORDER = [
   "none",
   "minimal",
@@ -64,11 +59,6 @@ interface MergeModelEntry {
   capabilities?: unknown;
 }
 
-/**
- * One upstream host for a model. Merge fans a single model id out across several
- * vendors (glm-5.3-flash runs on zai, particle and baseten) and picks one per
- * request, so capabilities have to be reconciled across all of them.
- */
 interface MergeVendorEntry {
   readonly availability_status?: unknown;
   readonly context_window?: unknown;
@@ -134,11 +124,6 @@ function positive(value: unknown): number | undefined {
     : undefined;
 }
 
-/**
- * The hosts Merge may actually route to. Unavailable vendors are dropped; if that
- * leaves nothing, every declared vendor is used so a temporarily degraded model
- * keeps its capabilities instead of silently losing reasoning support.
- */
 function routableVendors(entry: MergeNativeEntry): MergeVendorEntry[] {
   const vendors = Object.values(entry.vendors ?? {});
   const available = vendors.filter(
@@ -147,15 +132,6 @@ function routableVendors(entry: MergeNativeEntry): MergeVendorEntry[] {
   return available.length > 0 ? available : vendors;
 }
 
-/**
- * Reconciles reasoning capability across every vendor that can serve the model.
- *
- * Efforts are unioned: Merge answers an effort the resolved route cannot honour
- * with a `reasoning_effort_adjusted` warning and the next best level rather than
- * an error (verified live), so offering a superset costs nothing while offering a
- * subset would hide real capability. Disabling, by contrast, is only claimed when
- * every route allows it.
- */
 function reasoningFacts(
   vendors: readonly MergeVendorEntry[],
 ): Record<string, unknown> | false {
@@ -174,13 +150,10 @@ function reasoningFacts(
   return {
     default_enabled: reasoning.some((entry) => entry.default_enabled === true),
     mandatory: reasoning.every((entry) => entry.disable_supported !== true),
-    // An empty list means on/off only (no effort ladder); omitting the key lets
-    // the endpoint profile supply its own vocabulary instead of publishing none.
     ...(ordered.length > 0 ? { supported_efforts: ordered } : {}),
   };
 }
 
-/** Modalities every routable vendor accepts, so a route swap cannot reject an image. */
 function sharedInputModalities(vendors: readonly MergeVendorEntry[]): string[] {
   const perVendor = vendors.map((vendor) => stringSet(vendor.capabilities?.input));
   if (perVendor.length === 0) return [];
@@ -190,7 +163,6 @@ function sharedInputModalities(vendors: readonly MergeVendorEntry[]): string[] {
   );
 }
 
-/** Smallest limit any routable vendor imposes — the only value safe for every route. */
 function sharedLimit(
   vendors: readonly MergeVendorEntry[],
   read: (vendor: MergeVendorEntry) => unknown,
@@ -201,11 +173,6 @@ function sharedLimit(
   return values.length > 0 ? Math.min(...values) : undefined;
 }
 
-/**
- * Rewrites one native entry into the generic catalog shape `parseCatalogFacts`
- * understands, so Merge's published metadata drives reasoning support, the effort
- * list, vision and token limits instead of clai's name-pattern guesses.
- */
 function nativeFacts(entry: MergeNativeEntry): Record<string, unknown> {
   const vendors = routableVendors(entry);
   const context = sharedLimit(vendors, (vendor) => vendor.context_window);
@@ -225,14 +192,6 @@ function aliasIds(entry: MergeNativeEntry): string[] {
     .filter((id): id is string => typeof id === "string" && id.trim().length > 0);
 }
 
-/**
- * Indexes native metadata by every id it can be requested under.
- *
- * The OpenAI-compatible route lists OpenAI models unprefixed (`gpt-5.2`) while
- * the native catalog namespaces them (`openai/gpt-5.2`), and Merge publishes
- * floating aliases (`deepseek/deepseek-v4-flash-latest`). All of them resolve to
- * the same upstream, so all of them get the same facts.
- */
 export function mergeNativeFactsIndex(
   entries: readonly unknown[],
 ): Map<string, Record<string, unknown>> {
@@ -250,7 +209,6 @@ export function mergeNativeFactsIndex(
   return index;
 }
 
-/** Pairs each callable chat id with its published facts, or nothing extra when unknown. */
 export function mergeCatalogEntries(
   chatModels: readonly unknown[],
   factsIndex: Map<string, Record<string, unknown>>,
@@ -298,11 +256,6 @@ async function getJson<T>(
   return readJson<T>(response);
 }
 
-/**
- * Reads the native catalog, which is the only endpoint that publishes per-model
- * reasoning metadata. `/v1/openai/models` returns bare ids, which is why clai
- * previously had to guess reasoning support from model-name patterns.
- */
 async function fetchNativeFacts(
   apiKey: string,
   signal?: AbortSignal,
@@ -330,8 +283,6 @@ async function fetchCatalog(apiKey: string, signal?: AbortSignal): Promise<strin
     signal,
   );
   const chatModels = chatModelsFromCatalog(data);
-  // Facts are a best-effort enrichment: if the native catalog is unavailable the
-  // ids still register, and capability detection degrades to the name patterns.
   let factsIndex = new Map<string, Record<string, unknown>>();
   try {
     factsIndex = await fetchNativeFacts(apiKey, signal);

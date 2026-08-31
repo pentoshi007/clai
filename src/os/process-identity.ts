@@ -1,12 +1,3 @@
-/**
- * Cross-platform process identity: hashed evidence that a pid still refers to
- * the process we launched, so a recycled pid can never be signalled by cleanup
- * or startup reconciliation.
- *
- * Evidence is a process start time only. The command line is deliberately
- * excluded because `sh -c "cmd"` execs into `cmd`, mutating `ps command=`
- * mid-run and making a live process fail its own identity check.
- */
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -15,10 +6,8 @@ import { processAlive } from "./process-tree.js";
 
 export type ProcessIdentityComparison = "match" | "mismatch" | "gone" | "unknown";
 
-/** Raw start-time evidence provider. Injected so platforms and tests differ. */
 export interface ProcessIdentityProvider {
   readonly platform: NodeJS.Platform | "test";
-  /** Raw, unhashed evidence, or undefined when it cannot be read. */
   capture(pid: number): string | undefined;
 }
 
@@ -36,8 +25,6 @@ function readLinuxProcessStart(pid: number): string | undefined {
     const commEnd = raw.lastIndexOf(")");
     if (commEnd < 0) return undefined;
     const fields = raw.slice(commEnd + 2).trim().split(/\s+/);
-    // Evidence format is intentionally identical to the pre-extraction job
-    // manager so persisted registry identities keep comparing equal.
     const startTime = fields[19];
     return startTime && startTime.length > 0 ? startTime : undefined;
   } catch {
@@ -75,7 +62,6 @@ function readWindowsProcessStart(pid: number): string | undefined {
       ).trim();
       if (raw.length > 0) return raw;
     } catch {
-      // Try the next shell; an unavailable query yields `unknown`, not a match.
     }
   }
   return undefined;
@@ -99,7 +85,6 @@ export class ProcessIdentityTracker {
     private readonly alive: (pid: number | undefined) => boolean = processAlive,
   ) {}
 
-  /** Hashed identity for a pid, or undefined when evidence is unavailable. */
   capture(pid: number | undefined, options: { refresh?: boolean } = {}): string | undefined {
     if (!pid || pid <= 0) return undefined;
     const now = this.now();
@@ -114,10 +99,6 @@ export class ProcessIdentityTracker {
     return value;
   }
 
-  /**
-   * Compare a recorded identity against the live process. `unknown` never
-   * authorizes signalling: evidence was unreadable, so ownership is unproven.
-   */
   compare(
     pid: number | undefined,
     expected: string | undefined,
@@ -142,14 +123,8 @@ export class ProcessIdentityTracker {
   }
 }
 
-/** Shared tracker used by the job manager and interactive sessions. */
 export const processIdentityTracker = new ProcessIdentityTracker();
 
-/**
- * Legacy-compatible helper. Windows returns undefined here because the job
- * manager's existing liveness contract treats an absent identity as "unproven"
- * and must keep behaving exactly as before this extraction.
- */
 export function processIdentity(
   pid: number | undefined,
   options: { refresh?: boolean } = {},

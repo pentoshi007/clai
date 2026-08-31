@@ -1,7 +1,3 @@
-/**
- * Completion-time recovery decisions: when a tool-free (or incomplete)
- * final answer must be rejected and the agent forced to act.
- */
 
 export interface RecoveryBudgets {
   actionIntent: number;
@@ -33,9 +29,7 @@ export type RecoveryKind =
 
 export interface RecoveryAction {
   kind: RecoveryKind;
-  /** User/model-facing instruction to append. */
   message: string;
-  /** Short terminal notice. */
   notice: string;
   budgetKey: keyof RecoveryBudgets;
 }
@@ -150,7 +144,6 @@ export function recoveryForNarration(
   };
 }
 
-/** Plan mode only — agent mode must not force plan.create. */
 export function recoveryForMissingPlan(nativeTools: boolean): RecoveryAction {
   return {
     kind: "force_plan",
@@ -192,7 +185,6 @@ export function recoveryForFailedProbe(): RecoveryAction {
   };
 }
 
-/** True when a final pentest write-up looks like skim recon without real coverage. */
 export function looksLikeShallowPentestReport(
   text: string,
   opts: { productiveSteps: number; sawActiveTest: boolean },

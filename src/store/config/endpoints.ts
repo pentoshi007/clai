@@ -10,29 +10,23 @@ import Conf from "conf";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-/** Endpoint URLs for one provider plus the sticky active choice. */
 export interface ProviderEndpoints {
   urls: string[];
   activeIndex: number;
   disabledUrls?: string[] | undefined;
 }
 
-/** Same ceiling as API keys, so both editors behave identically. */
 export const MAX_PROVIDER_ENDPOINTS = 10;
 
-/** Environment override, checked before the stored list. */
 const endpointEnvVars: Partial<Record<ProviderId, string>> = {
   modal: "MODAL_BASE_URL",
   lightning: "LIGHTNING_BASE_URL",
   tokenrouter: "TOKENROUTER_BASE_URL",
 };
 
-/** Resolve the env var for a provider (custom providers use their own envVar). */
 function providerEndpointEnvVar(provider: ProviderId): string | undefined {
   if (endpointEnvVars[provider]) return endpointEnvVars[provider];
   const def = findCustomProviderDefSync(provider);
-  // The endpoint environment is a separate field; an API-key env var must
-  // never be interpreted as a URL override (MR-028).
   return def?.baseUrlEnv ?? def?.profile?.baseUrlEnv;
 }
 
@@ -64,76 +58,39 @@ export interface ClaiConfig {
    * configs written before multi-endpoint support keep working.
    */
   modalBaseUrl: string;
-  /**
-   * Endpoint URLs per provider, with a sticky active index — the same shape as
-   * multi-key storage. Used by providers whose base URL belongs to the user
-   * (Modal, one URL per deployed endpoint) or is overridable (Lightning AI,
-   * whose default is the shared gateway).
-   */
   providerEndpoints: Partial<Record<ProviderId, ProviderEndpoints>>;
   telemetry: boolean;
   lastUpdateCheck: number;
   thinking: ReasoningPreference;
-  /** When true, exclude paid-cloud providers from the fallback chain. */
   freeOnly: boolean;
-  /** When true, try other configured providers after the selected provider fails. */
   providerFallback: boolean;
-  /** When true, suppress non-essential outbound calls (update check). */
   offline: boolean;
-  /** When true, the agent only accepts ```tool / XML / Kimi sentinel tool calls. */
   parserStrict: boolean;
-  /** When true, suppress writing chat history (in-memory only). */
   privateMode: boolean;
-  /** Max number of session records kept in JSONL history (0 = unlimited). */
   historyRetentionLimit: number;
-  /** When true, fs.read/list/search must stay within sandboxRoots ∪ {cwd, $HOME}. */
   sandboxReads: boolean;
-  /** Active search provider used by the web.search tool. */
   activeSearchProvider: SearchProviderId;
-  /** Exa retrieval strategy (`type`) applied when Exa is the active provider. */
   exaSearchType: ExaSearchType;
   /** When true, bypass the OS keychain and always use plaintext file storage. */
   disableKeychain: boolean;
-  /** Permissions mode for auto-confirming tool calls ("default" or "allow-all"). */
   permissions?: "default" | "allow-all";
   learnedVisionCapabilities: Record<string, LearnedVisionEntry>;
   learnedRouteCapabilities?: Record<string, LearnedRouteEntry>;
-  /**
-   * Tool calling protocol:
-   * - auto (default): native when dialect supports it, text fallback otherwise
-   * - native: prefer native; still text-fallback on tools-unsupported
-   * - text: force legacy fenced tool protocol
-   */
   toolCalling?: "auto" | "native" | "text";
 
-  // --- Reliability experiments (audit E1–E6); defaults are safe/on ---
 
-  /** E1: auto-compact at softCompactTokenBudget before the hard 100k ceiling. */
   softEarlyCompact?: boolean;
   /** @deprecated Legacy soft trigger; migrated to autoCompactRequestTokens. */
   softCompactTokenBudget?: number;
-  /** Total estimated request tokens that trigger auto-compaction. */
   autoCompactRequestTokens?: number;
-  /** E2: max chars of fs.read/list/search body kept in model context (full on disk). */
   fsPassthroughCapChars?: number;
-  /** E3: lower maxTokens on tool steps vs legacy 32k fixed. */
   adaptiveMaxTokens?: boolean;
-  /** E4: advisory notices for free-cloud + large context / repeated failures. */
   freeTierContextGuard?: boolean;
-  /** E4: token estimate that triggers a free-tier large-context notice. */
   freeTierWarnTokens?: number;
-  /** E4: consecutive free-tier failures before a stronger switch-model notice. */
   freeTierFailThreshold?: number;
-  /** E5: collapse identical tool result bodies within a turn to a pointer. */
   toolResultDedup?: boolean;
-  /** E6: omit long fence-protocol tool encyclopedia when native tools are active. */
   slimNativePrompt?: boolean;
-  /**
-   * Durable per-route model-window overrides, keyed `provider:model`. Set via
-   * the footer ctx-limit chip; survives history navigation and restarts.
-   */
   contextLimitTokens?: Record<string, number>;
-  /** User-defined OpenAI-compatible providers (added via /provider picker). */
   customProviders?: CustomProviderDef[];
 }
 
@@ -156,8 +113,6 @@ const defaults: ClaiConfig = {
   offline: false,
   parserStrict: false,
   privateMode: false,
-  // 0 = unlimited. A low cap used to hard-delete older chats on every
-  // autosave (slice-and-rewrite), which wiped classic clai history.
   historyRetentionLimit: 0,
   sandboxReads: false,
   activeSearchProvider: "duckduckgo",
@@ -198,7 +153,6 @@ export const store = (() => {
 
 let cachedConfig: { key: string; value: ClaiConfig } | undefined;
 
-/** Cheap identity of the on-disk config so external edits invalidate the cache. */
 function configFileKey(): string | undefined {
   try {
     const info = statSync(store.path);
@@ -212,7 +166,6 @@ function invalidateConfigCache(): void {
   cachedConfig = undefined;
 }
 
-/** Fresh mutable view over the cached snapshot; callers may edit their copy. */
 function cloneConfig(config: ClaiConfig): ClaiConfig {
   const providerEndpoints: Partial<Record<ProviderId, ProviderEndpoints>> = {};
   for (const [provider, value] of Object.entries(config.providerEndpoints ?? {}) as Array<
@@ -311,7 +264,6 @@ function readConfigFromStore(): ClaiConfig {
   };
 }
 
-/** Resolve a custom definition by id (sync). */
 export function findCustomProviderDefSync(
   id: string | ProviderId,
 ): CustomProviderDef | undefined {
@@ -332,11 +284,6 @@ export function updateConfig(patch: Partial<ClaiConfig>): ClaiConfig {
   return getConfig();
 }
 
-/**
- * Every stored endpoint URL for a provider plus the sticky active index.
- * A pre-multi-endpoint `modalBaseUrl` is folded in as the single entry so old
- * configs keep working without a migration step.
- */
 export function getProviderEndpoints(provider: ProviderId): ProviderEndpoints {
   const config = getConfig();
   const stored = config.providerEndpoints?.[provider];
@@ -345,8 +292,6 @@ export function getProviderEndpoints(provider: ProviderId): ProviderEndpoints {
     const legacy = config.modalBaseUrl?.trim();
     if (legacy) urls.push(legacy);
   }
-  // Custom providers seed their endpoint list from the stored base URL so the
-  // editor / `clai keys` shows it even before the user adds more via --url.
   if (urls.length === 0) {
     const customDef = findCustomProviderDefSync(provider);
     if (customDef?.baseUrl) urls.push(customDef.baseUrl);
@@ -365,7 +310,6 @@ export function getProviderEndpoints(provider: ProviderId): ProviderEndpoints {
   };
 }
 
-/** Replace the whole list (endpoint editor Save). Empty list clears it. */
 export function setProviderEndpoints(
   provider: ProviderId,
   urls: readonly string[],
@@ -393,17 +337,11 @@ export function setProviderEndpoints(
   };
   const providerEndpoints = { ...getConfig().providerEndpoints, [provider]: next };
   const patch: Partial<ClaiConfig> = { providerEndpoints };
-  // Retire the legacy single field once the list owns the value, so the two
-  // cannot drift apart.
   if (provider === "modal") patch.modalBaseUrl = "";
   updateConfig(patch);
   return next;
 }
 
-/**
- * Add one endpoint and make it active. Re-adding a known URL just activates it,
- * which doubles as the CLI's way to switch endpoints.
- */
 export function appendProviderEndpoint(
   provider: ProviderId,
   url: string,
@@ -458,12 +396,6 @@ export function setProviderEndpointDisabled(
   );
 }
 
-/**
- * The base URL a request should use. The provider's env override wins so a
- * shell can retarget clai without rewriting config; otherwise the sticky active
- * entry. Returns "" when nothing is configured — providers that require one
- * turn that into an actionable error, and Lightning falls back to its gateway.
- */
 export function getActiveProviderEndpoint(provider: ProviderId): string {
   const envVar = providerEndpointEnvVar(provider);
   const fromEnv = envVar ? process.env[envVar]?.trim() : undefined;

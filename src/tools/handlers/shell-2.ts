@@ -21,13 +21,8 @@ import {
 export const toolRegistry_SHELL_2: Record<string, ToolHandler> = {
   async "pkg.install"(args, options) {
     const tool = assertSafePackageName(requireString(args, "tool"));
-    // Skip the install entirely if the tool is already on PATH. The executable
-    // a package provides isn't always its package name (ripgrep→rg,
-    // dnsutils→dig), so check the known binary alias too. This makes the
-    // model's "check-then-install" intent cheap and idempotent.
     const checkArg = optionalString(args, "checkBinary");
     const binary = checkArg ?? packageBinaryName(tool);
-    // dig/whois are never required — built-in dns.lookup / whois.lookup cover them.
     const nativeCovered = new Set([
       "dig",
       "whois",
@@ -59,8 +54,6 @@ export const toolRegistry_SHELL_2: Record<string, ToolHandler> = {
     const pkgmgr = await detectPackageManager();
     const spec = pkgmgr.installArgv(tool);
     if (!spec) {
-      // Unknown manager: fall back to an instructional message instead of
-      // executing a malformed shell string.
       return { ok: false, output: pkgmgr.installCommand(tool), exitCode: 1 };
     }
     return spawnArgv({

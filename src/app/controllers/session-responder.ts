@@ -214,10 +214,6 @@ export class SessionResponder {
       leaseId !== this.leaseId ||
       sessionId !== this.deps.sessionId()
     ) {
-      // An attempt that did not complete is not consumption: the receipt stays
-      // durable and deliverable. The runtime claim is only released when the
-      // attempt never started, so an aborted analysis cannot spin on redelivery;
-      // a lease release or restart makes it claimable again.
       if (!notification.deliveryStartedAt) {
         this.deps.jobs.releaseResponderNotificationClaim?.(notification.id);
       }

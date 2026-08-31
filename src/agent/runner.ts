@@ -82,12 +82,6 @@ import {
 } from "../store/session-workspace.js";
 import { scopeTargetForToolCall } from "../safety/classifier.js";
 
-/**
- * Scope/engagement classification runs on every tool call and parses
- * model-supplied arguments (URLs, hosts, commands). A malformed argument must
- * never throw out of classification and abort the whole turn — degrade to
- * "no target / no action" so the normal permission path still applies.
- */
 function safeScopeTargetForToolCall(call: ToolCall): string | undefined {
   try {
     return scopeTargetForToolCall(call);
@@ -169,16 +163,6 @@ export {
 } from "./session-policy.js";
 export { type ConfirmPort } from "./confirm-port.js";
 
-/**
- * A foreground task waits for a responder child only when the plan
- * Declares that dependency. Report titles carry no scheduling meaning: any
- * Dependency-ready foreground work is executed while children keep running, and
- * Their results arrive as addenda.
- *
- * A declared dependency blocks only while the child is genuinely live (running
- * Job or an undelivered/unanalyzed receipt), so an orphaned child can never
- * Stall the turn forever.
- */
 export function shouldYieldForDeclaredResponderDependency(
   plan: SessionPlan | undefined,
   runningJobs: readonly BackgroundJob[],
@@ -207,21 +191,9 @@ export interface AgentRunOptions {
   onToolStart?: ((call: ToolCall) => void) | undefined;
   onToolResult?: ((call: ToolCall, result: ToolResult) => void) | undefined;
   onEvent?: ((event: AgentEvent) => void) | undefined;
-  /**
-   * Called when a turn ends with the FULL conversation for the turn — the user
-   * message, every assistant tool-call, every tool result, and the final
-   * answer (system prompts excluded). Callers persist this so a resumed
-   * session gives the model back what it actually did (commands, outputs,
-   * results), not just its prose answers.
-   */
   onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
-  /**
-   * The session's last successful main request from an earlier turn. Seeds the
-   * local snapshot so a first-iteration auto-compaction can still replay the
-   * exact cached prefix instead of re-rendering the transcript.
-   */
   previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
   onOutcome?:
     ((outcome: import("./turn-outcome.js").TurnOutcome) => void) | undefined;
@@ -233,16 +205,9 @@ export interface AgentRunOptions {
       }) => Promise<string | undefined>)
     | undefined;
   session?: SessionPolicy | undefined;
-  /** REPL mode: agent executes; plan is planning-only. */
   mode?: Mode | undefined;
-  /**
-   * Transcript YOU bubble. `null` hides implement/revision choreography from
-   * chat; model still receives `prompt`. Omit to show `prompt`.
-   */
   displayPrompt?: string | null | undefined;
-  /** How the previous turn ended, so recovery is decided from state. */
   previousTurn?: PreviousTurnSignal | undefined;
-  /** User-declared model window for this provider/model/session. */
   contextLimitTokens?: number | undefined;
   getContextLimitTokens?: (
     provider: ProviderId | undefined,
@@ -250,10 +215,6 @@ export interface AgentRunOptions {
   ) => number | undefined;
 }
 
-/**
- * Cancellable backoff. Resolves after `ms`, or rejects immediately if the
- * signal aborts (double-Esc) so recovery waits never trap a cancelled turn.
- */
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   if (signal?.aborted) {
@@ -288,12 +249,6 @@ export async function runAgentTurn(
   };
   const emit = eventPort.emit;
   const outputState: TurnOutputState = { visibleCommitted: false };
-  // Whether the CURRENT model iteration has already committed its visible
-  // prose to the transcript with an `assistant-message` event. The recovery
-  // paths preserve streamed prose before retrying (so it isn't wiped by the
-  // next tool-call/turn event); this flag stops them from re-committing prose
-  // the normal tool path already surfaced, which would render it twice. Reset
-  // at the top of every loop iteration.
   const turnWriters = createTurnEventEmitter(eventPort, outputState);
   const {
     writeStatus,
@@ -311,14 +266,8 @@ export async function runAgentTurn(
     writeCompactionCompleted,
     writeCompactionFailed,
   } = turnWriters;
-  // Points at the live message array so finishTurn can hand the full
-  // conversation back to the caller. Assigned once `messages` is built below;
-  // all later mutations are in-place so this reference stays current.
   let liveMessages: ChatMessage[] = [];
   let suppressOutcomeDiagnostics = false;
-  // No session filter: the ledger is created in the outer turn scope, before the
-  // session policy exists, and every id it holds is already known to belong to
-  // this turn (notification ids are globally unique).
   const responderClaims = new ResponderClaimLedger({
     getPendingNotifications: () => jobManager.getPendingNotifications(),
     releaseClaim: (notificationId) =>
@@ -400,9 +349,6 @@ export async function runAgentTurn(
     });
     const routeToolNames = toolRouting.routeToolNames;
     const resolveNativeTools = toolRouting.resolveNativeTools;
-    // image.view is different from optimistic user-attachment handling: once
-    // the tool succeeds, the model must actually receive and inspect its bytes.
-    // Offer it only with affirmative capability evidence for the active route.
     const toolNames = routeToolNames(initialProvider, initialModel);
     const classification = classifyTurnPrompt(prompt, options.history);
     const {
@@ -418,10 +364,6 @@ export async function runAgentTurn(
       options.getContextLimitTokens
         ? options.getContextLimitTokens(loop.provider, loop.model)
         : options.contextLimitTokens;
-    // Some free-tier routes have a per-request/per-minute input budget below
-    // the normal agent prompt alone. Select a purpose-built compact
-    // instruction set before the request is made, rather than treating the
-    // provider's 413 as a context-window failure after the fact.
     const inputTokenBudget = providerInputTokenBudget(
       loop.provider,
       loop.model,
@@ -439,22 +381,14 @@ export async function runAgentTurn(
     let { dialect: toolDialect, native: nativeToolsActive } =
       resolveNativeTools(loop.provider, loop.model);
     const session: SessionPolicy = options.session ?? createSessionPolicy();
-    // Defensive init: external/legacy callers may build a policy without the
-    // newer sync-guard holders. Never dereference an undefined holder.
     if (!session.pendingTaskBatch)
       session.pendingTaskBatch = { value: undefined };
     if (!session.pendingDependency)
       session.pendingDependency = { value: undefined };
-    // One-shot CLI / tests that never entered TUI/REPL still need an isolated
-    // scratch+output workspace. No-op when a session already bound one.
     if (!getActiveSessionWorkspace()) {
       beginSessionWorkspace();
     }
 
-    // Active plan context
-    // If this session already has a plan, inject it so the model keeps it in
-    // context. When the user has approved it (via /implement) we instruct the
-    // agent to execute task by task; otherwise the agent should refine/wait.
     const counters = createTurnCounters();
     const activePlan = await loadPlan(session.sessionId).catch(() => undefined);
     const toolState = createToolExecutionState(
@@ -462,13 +396,6 @@ export async function runAgentTurn(
       createGovernorState(),
     );
     if (activePlan && isPlanApprovedByStatus(activePlan.status)) {
-      // session.planApproved is in-memory only (never persisted), so a
-      // resumed session (via /history) or a fresh SessionPolicy after
-      // context compaction always starts it back at false — even when the
-      // plan's OWN durable status shows it was already approved/executed/
-      // completed via /implement. Re-derive the flag from the plan's status
-      // on every load so resuming a session never re-blocks tool calls
-      // behind a stale "awaiting approval" gate for a plan that already ran.
       session.planApproved.value = true;
     }
     suppressOutcomeDiagnostics ||= !session.planApproved.value;
@@ -492,12 +419,6 @@ export async function runAgentTurn(
       agentInstructionsBlock = await turnInstructions.refresh();
     };
 
-    // Only long-lived instructions belong in the provider-cached system prefix.
-    // Request, project, workspace, recovery, scope, and plan state are appended
-    // later as system-marked turns so a changing byte cannot invalidate the
-    // constitution (and, on Anthropic, the native tool schemas before it).
-    // The red-team methodology block is ~940 tokens on every request. Attach it
-    // only when this turn is actually a remote-security engagement.
     const pentestPromptTurn = pentestLikeTurn || activePlan?.kind === "pentest";
     const { sections: systemSections, pentestSession } =
       await buildSystemSections({
@@ -581,7 +502,6 @@ export async function runAgentTurn(
       claimNextNotification: (leaseId) =>
         jobManager.claimNextResponderNotification(session.sessionId, leaseId),
     });
-    /** Assigned after session flags exist — see below. */
     let refreshSessionState: (
       plan?: SessionPlan | null | undefined,
     ) => void = () => undefined;
@@ -599,42 +519,21 @@ export async function runAgentTurn(
     });
 
     const loopGuard = new LoopGuard();
-    // Uncalibrated estimate for the request currently in flight. Paired with the
-    // provider's reported prompt size below so the estimator learns this route's
-    // bias instead of permanently over-reporting it.
     const engagementPolicy = new EngagementPolicyEngine();
     const probeStateKey = createProbeStateKey({
       getJob: (id) => jobManager.getJob(id),
       recentJobs: () => jobManager.getRecentJobs(100, session.sessionId),
     });
 
-    // Track consecutive thinking-only responses so we can nudge the model
-    // to actually act instead of silently returning an empty answer.
 
-    // Robust stream-failure recovery. When a provider stream/complete fails we
-    // try working approaches (backoff, compaction, thinking-off, provider
-    // fallback) before surrendering the turn — see ./stream-recovery. Both are
-    // reset on any successful stream so each failure episode gets a fresh
-    // budget and we only give up in the worst case.
     const recoveryState = createStreamRecoveryState();
 
-    // Track tool calls truncated by the token limit so we can ask the model
-    // to retry in smaller pieces instead of leaking broken JSON as an answer.
 
-    /** Consecutive model rounds whose native tool arguments were unusable. */
 
-    // Track a ```tool fence that is present but whose JSON could not be parsed
-    // (e.g. malformed extra/missing braces that are NOT simple truncation). We
-    // retry instead of leaking the raw block as the final answer.
 
     const recovery = createRecoveryBudgets();
     const evidenceFlags = createTurnEvidenceFlags();
     const featureAppAsk = userAskedForFeatureApp(prompt);
-    /**
-     * Successful real tools this turn that may not yet be credited to a task
-     * (preflight tool.check before in_progress, or work before plan existed).
-     * Absorbed into the task ledger when opening or marking done.
-     */
     const sessionLooseWork: LooseWorkReceipt[] = [];
 
     rehydrateEvidenceFlagsFromPlan(evidenceFlags, activePlan);
@@ -671,21 +570,9 @@ export async function runAgentTurn(
     });
     refreshSessionState(activePlan);
 
-    // Multi-task sync guard state (recomputed per model message before execution).
 
     const deferredPostToolMessages: ChatMessage[] = [];
-    /**
-     * Successful job.read receipts update the durable ledger only after the
-     * assistant→tool group closes. Inserting the ledger system row inside
-     * executeSingleTool would split native tool protocol and cause repair to
-     * replace the real acknowledgement body with a "No stored body" stub.
-     */
     const deferredResponderLedgerNotifications: ResponderNotification[] = [];
-    /**
-     * Latest plan seen during tool execution. SESSION STATE is refreshed once
-     * after the full tool batch is recorded — never mid-group (see
-     * executeSingleTool / recordResult).
-     */
 
     const hasHistory = (options.history?.length ?? 0) > 0;
     const buildLike = buildLikeTurn;
@@ -708,12 +595,10 @@ export async function runAgentTurn(
     const outcomeState = budget.outcomeState;
     const analysis = budget.analysis;
     const maxIterations = budget.maxIterations;
-    // Canonical mutation/artifact ledger feeding the durable compaction envelope.
     const workLedger = new WorkLedger();
     const turnStateMachine = createTurnStateMachine();
     const moveTurn = turnStateMachine.move;
 
-    /** Successful file mutation this turn — kills false "error diagnosed but not fixed". */
     let nextToolEventId = 0;
     const alreadyPrintedIds = new Set<string>();
     const wireOccurrences = createWireOccurrenceLedger({
@@ -727,14 +612,6 @@ export async function runAgentTurn(
 
     const promptMutex = createPromptMutex();
 
-    /**
-     * Apply a salvaged partial write through the NORMAL tool path so the
-     * classifier, scope/engagement gates, confirmation prompt, and receipts
-     * all apply exactly as they would for a model-emitted call. Salvage must
-     * never mutate a file with `confirmed: true`, and an `fs.append` that was
-     * cut off must stay an append (with its precondition) instead of becoming
-     * a full overwrite.
-     */
     const mcpAgentToolPorts = buildMcpAgentToolPorts({
       askMode: agentMode === "ask",
       autoConfirm: Boolean(options.autoConfirm),
@@ -816,31 +693,14 @@ export async function runAgentTurn(
     ): Promise<SingleToolResult> =>
       runSingleTool(singleToolDeps, call, toolEventId, parentSignal);
 
-    // Align with /compact default: small recency + dense memory (not keepRecent=6 fat tails).
     const AUTO_COMPACT_KEEP_RECENT = 2;
     let lastCompactionMsgCount = 0;
     const compactionAttempts = new CompactionAttemptLedger();
     const compactionExecutionState: CompactionExecutionState = {};
-    /**
-     * The last successful main request exactly as dispatched. A compaction
-     * that replays it (plus the messages appended since) keeps the entire
-     * prior prompt as a strict prefix, so APC providers serve the compaction
-     * request from cache instead of re-billing the whole context.
-     */
-    /**
-     * Per-attempt replay decision made by maybeAutoCompact and read by
-     * summarizeForCompaction. When undefined the legacy transcript-rendered
-     * requests are used (no snapshot yet, or the replay would not fit).
-     */
-    /** E5: identical tool bodies within this turn → pointer instead of re-append. */
     const toolResultHashes = new Map<
       string,
       { toolName: string; count: number }
     >();
-    /** E4: consecutive free-tier stream failures this turn. */
-    // Surface the free-tier "failed N times / switch provider" advisory at most
-    // once per turn — the recovery planner already narrates each retry, so
-    // repeating this on every failure just adds noise.
 
     const { estimateNextRequestTokens, maybeAutoCompact } =
       createCompactionServices({
@@ -956,7 +816,6 @@ export async function runAgentTurn(
       try {
         options.onMessages(buildTurnHistory(liveMessages, msg));
       } catch {
-        // ignore
       }
     }
     emit({
@@ -969,7 +828,6 @@ export async function runAgentTurn(
   }
 }
 
-/** Compatibility boundary for callers that consume visible assistant text. */
 export async function runAgentLoop(
   prompt: string,
   options: AgentRunOptions = {},

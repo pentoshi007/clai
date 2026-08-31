@@ -1,10 +1,3 @@
-/**
- * Ephemeral UI notifications via the toast stack.
- *
- * session.notice also routes here (via composition-root) and no longer
- * appends INFO/WARN rows into the transcript. Prefer `notify` / session.notice
- * for chrome only — never for durable conversation content.
- */
 
 import type { ToastController, ToastLevel } from "./controllers/toast-controller.js";
 
@@ -18,7 +11,6 @@ export interface NotifyOptions {
   readonly key?: string | undefined;
 }
 
-/** Show a short toast. Empty messages are no-ops. */
 export function notify(
   services: NotifyTarget,
   message: string,
