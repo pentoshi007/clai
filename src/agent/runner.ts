@@ -42,6 +42,7 @@ import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { creditSuccessfulWork } from "./turn/task-credit.js";
 import { evaluateEngagementGate } from "./turn/tool-execution/engagement-gate.js";
+import { recordEngagementOutcome } from "./turn/tool-execution/engagement-checkpoint.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import {
@@ -479,15 +480,9 @@ import {
   type LoopGuardStopInfo,
   type TurnOutcomeStatus,
 } from "./turn-outcome.js";
-import {
-  beginEngagementAction,
-  finishEngagementAction,
-  recordEngagementCheckpoint,
-  reconcileEngagementJob,
-  openEngagement,
-  saveEngagement,
-  type EngagementActionRecord,
-  type EngagementGraph,
+import type {
+  EngagementActionRecord,
+  EngagementGraph,
 } from "../store/engagement.js";
 
 
@@ -2071,30 +2066,11 @@ export async function runAgentTurn(
         output: result.output.slice(0, 4_000),
       });
       if (engagementGraph && engagementRecord) {
-        if (result.backgroundJob) {
-          const checkpointInput = {
-            jobId: result.backgroundJob.id,
-            status: result.backgroundJob.status,
-            artifactPath: result.backgroundJob.artifactPath,
-            offset: result.backgroundJob.nextOffset ?? 0,
-            observation: result.output.slice(0, 16_000),
-          };
-          const reconciled = reconcileEngagementJob(engagementGraph, checkpointInput);
-          if (!reconciled || reconciled.actionId !== engagementRecord.id) {
-            recordEngagementCheckpoint(engagementGraph, {
-              actionId: engagementRecord.id,
-              ...checkpointInput,
-            });
-          }
-        } else {
-          finishEngagementAction(engagementGraph, engagementRecord.id, {
-            ok: result.ok,
-            observation: result.output.slice(0, 16_000),
-            ...(savedOutputPath ? { artifactPath: savedOutputPath } : {}),
-            scannerLead: call.name === "net.scan" || call.name.startsWith("pentest."),
-          });
-        }
-        await saveEngagement(engagementGraph);
+        await recordEngagementOutcome(engagementGraph, engagementRecord, {
+          call,
+          result,
+          artifactPath: savedOutputPath,
+        });
       }
 
       workLedger.recordToolCall(call, result.ok, savedOutputPath);
