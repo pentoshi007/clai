@@ -54,6 +54,7 @@ import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
 import { linkResponderJobToPlan } from "./turn/responder-job-linkage.js";
+import { reconcileScaffoldOutcome } from "./turn/scaffold-outcome.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -2417,97 +2418,14 @@ export async function runAgentTurn(
         };
       }
 
-      if (
-        (call.name === "shell.exec" || call.name === "shell.start") &&
-        typeof call.args.command === "string" &&
-        isScaffoldCreateCommand(call.args.command)
-      ) {
-        const cmd = call.args.command;
-        const cwdArg =
-          typeof call.args.cwd === "string" ? call.args.cwd : undefined;
-        const out = result.output ?? "";
-        // Prefer path reported by the scaffolder (handles quoted-cd mis-parse leftovers).
-        const fromOutput = out.match(
-          /Scaffolding project in\s+([^\n]+?)\s*\.{0,3}\s*$/im,
-        )?.[1]?.trim().replace(/['"]/g, "");
-        const fromScaffold =
-          (fromOutput && fromOutput.startsWith("/")
-            ? fromOutput
-            : undefined) ??
-          extractProjectRootFromScaffold(cmd, cwdArg);
-        const cancelled = isScaffoldCancelledOutput(out);
-        let materialized = scaffoldLooksMaterialized(fromScaffold);
-        // One re-check: create-vite can report success before FS snapshot is visible.
-        if (!materialized && fromScaffold) {
-          materialized = scaffoldLooksMaterialized(fromScaffold);
-        }
-        const abortedMid =
-          !result.ok &&
-          (result.exitCode === 124 ||
-            result.exitCode === 130 ||
-            /timed out|aborted|Command aborted/i.test(out));
-        const resumableMaterialized = Boolean(
-          fromScaffold && materialized && (cancelled || abortedMid || !result.ok),
-        );
-        if (resumableMaterialized && fromScaffold) {
-          setActiveProjectRootIfValid(fromScaffold, { force: true });
-          await persistProjectRootOnPlan(fromScaffold);
-          result = {
-            ...result,
-            ok: true,
-            exitCode: 0,
-            output:
-              out +
-              (out.endsWith("\n") ? "" : "\n") +
-              `The scaffold reported ${cancelled ? "cancellation/refusal" : "interruption"}, but a usable project tree already exists at ${fromScaffold} ` +
-              `(package/manifest present). Treat this as resumable: do NOT re-run the scaffolder. ` +
-              `Inspect the existing files, finish any missing install, implement the requested feature, then run/verify.`,
-          };
-          writeNotice(
-            "info",
-            `project root → ${fromScaffold} (existing materialized scaffold — continue)`,
-          );
-        } else if (result.ok && cancelled && !materialized) {
-          result = {
-            ok: false,
-            output:
-              out +
-              (out.endsWith("\n") ? "" : "\n") +
-              `Scaffold FAILED: tool reported cancel/refuse. ` +
-              (fromScaffold ? `Expected project at ${fromScaffold}. ` : "") +
-              `If the folder already exists, CONTINUE it (do not re-scaffold). Otherwise use a new empty name or hand-write a minimal tree.`,
-            exitCode:
-              result.exitCode && result.exitCode !== 0 ? result.exitCode : 1,
-          };
-        } else if (result.ok && !materialized) {
-          // Soft warn only when we truly see no tree — do not flip ok if output
-          // clearly scaffolded (path may still resolve on next tool).
-          const claimedScaffold = /Scaffolding project in\b/i.test(out);
-          if (!claimedScaffold) {
-            result = {
-              ok: false,
-              output:
-                out +
-                (out.endsWith("\n") ? "" : "\n") +
-                `Scaffold FAILED: target project tree was not created. ` +
-                (fromScaffold ? `Expected project at ${fromScaffold}. ` : "") +
-                `If the folder already exists, CONTINUE it (do not re-scaffold). Otherwise use a new empty name or hand-write a minimal tree.`,
-              exitCode:
-                result.exitCode && result.exitCode !== 0 ? result.exitCode : 1,
-            };
-          } else if (fromScaffold) {
-            setActiveProjectRootIfValid(fromScaffold, { force: true });
-            await persistProjectRootOnPlan(fromScaffold);
-            writeNotice(
-              "info",
-              `project root → ${fromScaffold} (scaffold output claimed success — continue)`,
-            );
-          }
-        } else if (result.ok && fromScaffold && materialized) {
-          setActiveProjectRootIfValid(fromScaffold, { force: true });
-          await persistProjectRootOnPlan(fromScaffold);
-          writeNotice("info", `project root → ${fromScaffold}`);
-        }
+      const scaffoldOutcome = reconcileScaffoldOutcome(call, result);
+      result = scaffoldOutcome.result;
+      if (scaffoldOutcome.adoptRoot) {
+        setActiveProjectRootIfValid(scaffoldOutcome.adoptRoot, { force: true });
+        await persistProjectRootOnPlan(scaffoldOutcome.adoptRoot);
+      }
+      if (scaffoldOutcome.notice) {
+        writeNotice("info", scaffoldOutcome.notice);
       }
 
       if (delegation?.taskId && !result.backgroundJob) {
