@@ -43,15 +43,37 @@ boundary that was validated before it was pushed.
 | 34 | `08628eb` | turn history writer | `turn/history-writer.ts` |
 | 35 | `3db5a22` | responder job plan linkage | `turn/responder-job-linkage.ts` |
 | 36 | `77684a1` | scaffold outcome reconciliation | `turn/scaffold-outcome.ts` |
+| 37 | `3db5a22` | responder job plan linkage | `src/agent/turn/*` |
+| 38 | `77684a1` | scaffold outcome reconciliation | `src/agent/turn/*` |
+| 39 | `0a08e1c` | move responder dependency predicate | `src/agent/turn/*` |
+| 40 | `2020300` | tool authorization stage | `src/agent/turn/*` |
+| 41 | `37acef9` | tool dispatch and delegation stage | `src/agent/turn/*` |
+| 42 | `8673b80` | stream failure recovery | `src/agent/turn/*` |
+| 43 | `05e83fa` | request assembly | `src/agent/turn/*` |
+| 44 | `35e076c` | provider stream session | `src/agent/turn/*` |
+| 45 | `148fdc0` | turn workspace setup | `src/agent/turn/*` |
+| 46 | `939306b` | tool execution guards | `src/agent/turn/*` |
+| 47 | `7c7ee3d` | task work signal reading | `src/agent/turn/*` |
+| 48 | `1a9e989` | tool execution supervision | `src/agent/turn/*` |
+| 49 | `562d545` | native tool call card sync | `src/agent/turn/*` |
+| 50 | `f02ac74` | missing tool call recovery | `src/agent/turn/*` |
+| 51 | `aa2453f` | completion usage and interpretation | `src/agent/turn/*` |
+| 52 | `739070a` | native truncated write salvage | `src/agent/turn/*` |
+| 53 | `782f282` | output budget continuation | `src/agent/turn/*` |
+| 54 | `3aa2656` | empty response retry policy | `src/agent/turn/*` |
+| 55 | `fc166f2` | turn finalizer | `src/agent/turn/*` |
+| 56 | `9c668e7` | plan persistence and session refresh | `src/agent/turn/*` |
+| 57 | `b89088e` | tool call preparation helpers | `src/agent/turn/*` |
+| 58 | `2e98ab0` | duplicate wire call replay | `src/agent/turn/*` |
 
 ## Measured effect
 
 | Metric | Phase 1 entry | Current |
 |---|---:|---:|
-| `src/agent/runner.ts` physical lines | 6,769 | 5,223 |
+| `src/agent/runner.ts` physical lines | 6,769 | 4,081 |
 | maximum cognitive complexity | 3,197 | 2,712 |
 | maximum cyclomatic complexity | 456 | 392 |
-| held legacy findings | 572 | 565 |
+| held legacy findings | 572 | 564 |
 | ratchet regressions | 0 | 0 |
 
 Resolved legacy findings so far: `trimExactContinuationOverlap` Halstead,
