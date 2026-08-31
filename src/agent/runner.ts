@@ -49,6 +49,7 @@ import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { decidePlanModeGate } from "./turn/plan-mode-gate.js";
+import { autostartPlanTask } from "./turn/task-autostart.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -1918,76 +1919,29 @@ export async function runAgentTurn(
           () => undefined,
         );
         if (livePlanForGate) {
-          const unfinished = livePlanForGate.tasks.some(
-            (task) =>
-              !task.responderOwned &&
-              (task.state === "pending" || task.state === "in_progress"),
-          );
-          const inProgress = livePlanForGate.tasks.find(
-            (task) => task.state === "in_progress" && !task.responderOwned,
-          );
-          if (unfinished && !inProgress) {
-            // tool.check / fs.list preflight: allow without auto-opening a task
-            // (auto-start on preflight made models skip task.update and confused scope).
-            const skipTaskGate =
-              isPlanPreflightTool(call.name) ||
-              (livePlanForGate.kind === "pentest" &&
-                isReadOnlyReconTool(call.name));
-            if (skipTaskGate) {
-              // fall through
-            } else {
-              const pending = readyPlanTasks(livePlanForGate);
-              // Title/command matching is only a soft ownership hint. If no
-              // heuristic matches, preserve plan order instead of blocking.
-              const nextPending =
-                pickPendingTaskForToolCall(
-                  pending,
-                  call,
-                  livePlanForGate.tasks.map((t) => t.title),
-                ) ?? pending[0];
-              if (nextPending) {
-                markTask(livePlanForGate, nextPending.id, "in_progress");
-                if (
-                  livePlanForGate.status === "draft" ||
-                  livePlanForGate.status === "approved"
-                ) {
-                  livePlanForGate.status = "in_progress";
-                }
-                // Opening a task is a transition applied by
-                // the reducer, which also enforces the single-active invariant.
-                await mutatePlan(session.sessionId, (draft) => {
-                  const target = draft.tasks.find(
-                    (candidate) => candidate.id === nextPending.id,
-                  );
-                  if (!target || target.state === "in_progress") return false;
-                  target.state = "in_progress";
-                  if (draft.status === "draft" || draft.status === "approved") {
-                    draft.status = "in_progress";
-                  }
-                  return true;
-                }).catch(() => undefined);
-                // Preserve evidence already credited to this task (e.g. pentest
-                // recon that ran before the task was formally opened).
-                if (
-                  !taskWorkLedger ||
-                  taskWorkLedger.taskId !== nextPending.id
-                ) {
-                  taskWorkLedger = ledgerFromTaskEvidence(
-                    nextPending.id,
-                    nextPending.evidence,
-                  );
-                }
-                writePlanUpdate(livePlanForGate);
-                writeNotice(
-                  "info",
-                  `auto-started [${nextPending.id}] so work can continue`,
+          await autostartPlanTask(livePlanForGate, call, {
+            openTask: async (taskId) => {
+              await mutatePlan(session.sessionId, (draft) => {
+                const target = draft.tasks.find(
+                  (candidate) => candidate.id === taskId,
                 );
-              }
-            }
-          }
+                if (!target || target.state === "in_progress") return false;
+                target.state = "in_progress";
+                if (draft.status === "draft" || draft.status === "approved") {
+                  draft.status = "in_progress";
+                }
+                return true;
+              }).catch(() => undefined);
+            },
+            renderPlan: writePlanUpdate,
+            notify: (message) => writeNotice("info", message),
+            getLedger: () => taskWorkLedger,
+            setLedger: (ledger) => {
+              taskWorkLedger = ledger;
+            },
+          });
         }
       }
-
 
       call = applyDestinationCwd(
         call,
