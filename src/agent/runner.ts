@@ -45,6 +45,12 @@ import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
 import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.js";
 import {
+  evaluateTaskCompletionGate,
+  planHasVerifiedRemoteWork,
+  planHasVerifiedRuntime,
+  resolveLedgerForTaskGate,
+} from "./turn/task-gate.js";
+import {
   createMcpAgentCallFailure,
   createMcpAgentToolExecutor,
 } from "./turn/mcp-agent-tools.js";
@@ -332,8 +338,6 @@ import {
   applyDestinationCwd,
   canMarkTaskDone,
   classifyTaskTitle,
-  hasLocalRuntimeProof,
-  hasRemoteWorkProof,
   isDevServerCall,
   isEvidenceWorkTool,
   isFeatureImplementationCall,
@@ -1212,12 +1216,6 @@ export async function runAgentTurn(
      */
     const sessionLooseWork: LooseWorkReceipt[] = [];
 
-    const planHasVerifiedRuntime = (plan: SessionPlan): boolean =>
-      plan.tasks.some((task) => hasLocalRuntimeProof(task.evidence));
-
-    const planHasVerifiedRemoteWork = (plan: SessionPlan): boolean =>
-      plan.tasks.some((task) => hasRemoteWorkProof(task.evidence));
-
     /** Rehydrate turn-local runtime/remote flags from durable plan evidence (resume). */
     const rehydrateSessionFlagsFromPlan = (plan: SessionPlan | undefined): void => {
       if (!plan) return;
@@ -1234,53 +1232,27 @@ export async function runAgentTurn(
     };
     rehydrateSessionFlagsFromPlan(activePlan);
 
-    /** Merge loose turn work + live ledger for a task before evidence gates. */
+    const taskGatePorts = {
+      getLiveLedger: () => taskWorkLedger,
+      setLiveLedger: (ledger: TaskWorkLedger) => {
+        taskWorkLedger = ledger;
+      },
+      getLooseWork: () => sessionLooseWork,
+      featureAppRequired: featureAppAsk,
+      existingProject: () =>
+        scaffoldLooksMaterialized(getActiveProjectRoot()),
+    };
     const ledgerForTaskGate = (
       plan: SessionPlan,
       taskId: string,
-    ): TaskWorkLedger | null => {
-      const task = plan.tasks.find((candidate) => candidate.id === taskId);
-      const durableLedger = ledgerFromTaskEvidence(taskId, task?.evidence);
-      let ledger: TaskWorkLedger | null =
-        taskWorkLedger?.taskId === taskId &&
-        taskWorkLedger.successWorkCount >= durableLedger.successWorkCount
-          ? taskWorkLedger
-          : durableLedger;
-      ledger = absorbLooseWorkIntoLedger(
-        ledger,
-        taskId,
-        task?.title ?? "",
-        sessionLooseWork,
-        { planKind: plan.kind },
-      );
-      // Keep the live ledger in sync so subsequent tools append correctly.
-      if (ledger && ledger.successWorkCount > 0) {
-        if (
-          !taskWorkLedger ||
-          taskWorkLedger.taskId !== taskId ||
-          taskWorkLedger.successWorkCount < ledger.successWorkCount
-        ) {
-          taskWorkLedger = ledger;
-        }
-      }
-      return ledger;
-    };
+    ): TaskWorkLedger | null =>
+      resolveLedgerForTaskGate(taskGatePorts, plan, taskId);
 
     const completionGateForTask = (
       plan: SessionPlan,
       taskId: string,
-    ): ReturnType<typeof canMarkTaskDone> => {
-      const task = plan.tasks.find((candidate) => candidate.id === taskId);
-      const ledger = ledgerForTaskGate(plan, taskId);
-      return canMarkTaskDone(ledger, taskId, {
-        taskTitle: task?.title,
-        featureAppRequired: featureAppAsk,
-        existingProject: scaffoldLooksMaterialized(getActiveProjectRoot()),
-        runtimeVerified: planHasVerifiedRuntime(plan),
-        planKind: plan.kind,
-        remoteWorkVerified: planHasVerifiedRemoteWork(plan),
-      });
-    };
+    ): ReturnType<typeof canMarkTaskDone> =>
+      evaluateTaskCompletionGate(taskGatePorts, plan, taskId);
 
     async function persistProjectRootOnPlan(root: string): Promise<void> {
       const pm = detectPackageManager(root);
