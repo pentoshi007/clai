@@ -50,6 +50,7 @@ import { recordEngagementOutcome } from "./turn/tool-execution/engagement-checkp
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import { closeOutRound } from "./turn/loop/round-closeout.js";
+import { decidePlanCallDeferral } from "./turn/loop/plan-call-deferral.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -3067,49 +3068,16 @@ export async function runAgentTurn(
           });
         }
 
-        /** Subset that will actually run this turn (defer/omit rest). */
-        let toRun = bound;
-        let activeDeferredToolCalls = deferredToolCalls;
-        let deferReason =
-          "Cancelled — not executed this turn (deferred or omitted).";
-
-
-        const planCallIndex = bound.findIndex(
-          (b) => b.call.name === "plan.create",
+        const deferral = decidePlanCallDeferral(bound);
+        let toRun = bound.slice(0, deferral.runCount);
+        let activeDeferredToolCalls = deferredToolCalls.slice(
+          0,
+          deferral.runCount,
         );
-        if (planCallIndex > 0) {
-          const deferredCount = bound.length - planCallIndex;
-          toRun = bound.slice(0, planCallIndex);
-          activeDeferredToolCalls = deferredToolCalls.slice(0, planCallIndex);
-          deferReason =
-            "Deferred — plan.create must wait until reconnaissance results exist.";
-          writeNotice(
-            "info",
-            "deferring plan.create until reconnaissance results are available",
-          );
-          messages.push({
-            role: "system",
-            content:
-              `The prior response included plan.create before its reconnaissance results existed. ` +
-              `Only the ${toRun.length} gathering call(s) before it were run; ${deferredCount} plan/follow-on call(s) were not run. ` +
-              "Now analyse the tool results. If a plan is appropriate, emit exactly one standalone plan.create tool call based only on those results. Do not include any other tool calls in that response.",
-          });
-        } else if (planCallIndex === 0 && bound.length > 1) {
-          const deferredCount = bound.length - 1;
-          toRun = bound.slice(0, 1);
-          activeDeferredToolCalls = deferredToolCalls.slice(0, 1);
-          deferReason =
-            "Deferred — waiting for plan approval before follow-on tools.";
-          writeNotice(
-            "info",
-            "creating the plan now; deferring follow-on calls until it is approved",
-          );
-          messages.push({
-            role: "system",
-            content:
-              `You emitted plan.create alongside ${deferredCount} follow-on call(s). Only plan.create was run; ` +
-              `the follow-on call(s) were not. Wait for the plan to be reviewed, then proceed task by task.`,
-          });
+        const deferReason = deferral.deferReason;
+        if (deferral.notice) writeNotice("info", deferral.notice);
+        if (deferral.systemMessage) {
+          messages.push({ role: "system", content: deferral.systemMessage });
         }
 
         // Preserve model/document order. In particular, never move a later
