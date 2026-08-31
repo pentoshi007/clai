@@ -38,6 +38,7 @@ import type {
 import { finalizeTurn } from "./turn/finalizer.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
+import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -2132,71 +2133,34 @@ export async function runAgentTurn(
       workLedger.recordToolCall(call, result.ok, savedOutputPath);
 
       const completedProbeState = probeStateKey(call);
-      const newEvidence = recordToolEvidence(outcomeState, {
-        tool: call.name,
-        callId: toolEventId,
-        ok: result.ok,
-        ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
-        output: result.output,
-        ...(savedOutputPath ? { artifact: savedOutputPath } : {}),
-        ...(dispatchedTaskId ? { taskId: dispatchedTaskId } : {}),
-        ...(completedProbeState ? { stateKey: completedProbeState } : {}),
-        args: call.args,
-      });
-      let hypothesisDelta = 0;
-      if (!result.ok) {
-        const before = outcomeState.failedHypotheses.length;
-        recordFailedHypothesis(outcomeState, {
-          signature: `${call.name}:${result.exitCode ?? 1}`,
-          premise: `${call.name} with ${JSON.stringify(call.args).slice(0, 1_000)}`,
-        });
-        hypothesisDelta = outcomeState.failedHypotheses.length - before;
-        retryDependenciesChanged = false;
-        retryEnvironmentChanged = false;
-        moveTurn("exploring", `${call.name} failed; revise the premise`);
-      } else {
-        const mutatesDependencies =
-          /^(?:fs\.(?:write|writeMany|edit|replaceLines|append|delete)|pkg\.install)$/.test(call.name) ||
-          ((call.name === "shell.exec" || call.name === "shell.start") &&
-            /\b(?:install|mkdir|create|generate|build)\b/i.test(String(call.args.command ?? "")));
-        retryDependenciesChanged ||= mutatesDependencies;
-        retryEnvironmentChanged ||=
-          call.name === "pkg.install" ||
-          ((call.name === "shell.exec" || call.name === "shell.start") &&
-            isPackageInstallCommand(String(call.args.command ?? "")));
-      }
-      // Protocol-repair placeholders are not live work — never let them
-      // accumulate into a mid-turn pause (they used to look like failed tools).
-      if (!isProtocolPlaceholderOutput(result.output)) {
-        const governed = governProgress(governorState, "activity", {
-          evidenceDelta: newEvidence.length,
-          hypothesisDelta,
-          repetitionScore:
-            loopGuard.getAttemptCount(call.name, call.args) > 1 ? 1 : 0,
-          policy: {
-            resourceEnvelope: Math.max(12, maxSteps),
-            // Coding builds get a much higher ceiling; never use the tight
-            // default that stopped multi-file scaffolds after a handful of steps.
-            emergencyCeiling: codingSession
-              ? Math.max(200, maxSteps * 5)
-              : Math.max(70, maxSteps * 3),
-            reflectionAfterNoDelta: codingSession ? 5 : 3,
-            pauseAfterNoDelta: codingSession ? 24 : 6,
-            repetitionThreshold: 0.8,
-          },
-        });
-        governorState = governed.state;
-        if (governed.recommendation === "reflect") {
-          deferredPostToolMessages.push({
-            role: "system",
-            content:
-              `PROGRESS GOVERNOR: ${governed.reason}. Reassess the current premise and choose the next action that can produce criterion-linked evidence.` +
-              (codingSession
-                ? " Keep working — coding builds do not stop for a continue prompt."
-                : ""),
-          });
-        }
-      }
+      const accountingState = {
+        retryDependenciesChanged,
+        retryEnvironmentChanged,
+        governorState,
+      };
+      accountToolOutcome(
+        {
+          outcomeState,
+          maxSteps,
+          codingSession,
+          attemptCount: (attemptedCall) =>
+            loopGuard.getAttemptCount(attemptedCall.name, attemptedCall.args),
+          moveTurn,
+          deferMessage: (message) => deferredPostToolMessages.push(message),
+        },
+        accountingState,
+        {
+          call,
+          result,
+          toolEventId,
+          artifactPath: savedOutputPath,
+          dispatchedTaskId,
+          probeStateKey: completedProbeState,
+        },
+      );
+      retryDependenciesChanged = accountingState.retryDependenciesChanged;
+      retryEnvironmentChanged = accountingState.retryEnvironmentChanged;
+      governorState = accountingState.governorState;
       await saveOutcomeState(outcomeState);
 
       loopGuard.recordAttempt(
