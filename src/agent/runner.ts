@@ -38,7 +38,7 @@ import type {
 import { finalizeTurn } from "./turn/finalizer.js";
 import { assembleTurnMessages } from "./turn/message-assembly.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
-import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
+import { runMetaTool } from "./turn/tool-execution/meta-tools.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { creditSuccessfulWork } from "./turn/task-credit.js";
 import {
@@ -134,14 +134,6 @@ import {
   readRetryReason,
 } from "./turn/tool-execution/guards.js";
 import {
-  decideResponderRead,
-  parseResponderReadRequest,
-} from "./turn/responder-read-tool.js";
-import {
-  decideTaskUpdateDoneGate,
-  parseTaskUpdateRequest,
-} from "./turn/task-update-gate.js";
-import {
   evaluateTaskCompletionGate,
   planHasVerifiedRemoteWork,
   planHasVerifiedRuntime,
@@ -233,10 +225,7 @@ import {
   runToolCall,
   BATCH_SAFE_TOOLS,
 } from "../tools/registry.js";
-import {
-  RUNNER_META_TOOL_NAMES,
-  MCP_AGENT_TOOL_NAMES,
-} from "../tools/definitions.js";
+import { MCP_AGENT_TOOL_NAMES } from "../tools/definitions.js";
 import {
   elidedStubReuseMessage,
   findElidedStubArg,
@@ -379,7 +368,6 @@ import {
   removePlanContextMessage,
   upsertPlanContextMessage,
   handlePlanTool,
-  resolvePlanTaskId,
 } from "./plan-tool.js";
 import {
   absorbLooseWorkIntoLedger,
@@ -1404,155 +1392,71 @@ export async function runAgentTurn(
         return executeMcpAgentCall(mcpRuntime, call, toolEventId);
       }
 
-      if (RUNNER_META_TOOL_NAMES.has(call.name)) {
-        if (call.name === "job.read" || call.name === "task.read") {
-          const readRequest = parseResponderReadRequest(call.name, call.args);
-          const readDecision = decideResponderRead(
-            readRequest,
-            {
-              wakeTurn: responderWakeTurn,
-              notificationId: responderWakeNotificationId,
-              jobId: responderWakeJobId,
-              resultRevision: responderWakeResultRevision,
-            },
-            {
-              pendingNotifications: jobManager.getPendingNotifications(
-                session.sessionId,
-              ),
-              matchesWakeRevision,
-              isClaimed: (id) => responderClaims.has(id),
-              markRead: (id) => jobManager.markRead(id, session.sessionId),
-            },
-          );
-          const marked = readDecision.marked;
-          const output = readDecision.output;
-          if (readDecision.ledgerNotification) {
-            deferredResponderLedgerNotifications.push(
-              readDecision.ledgerNotification,
-            );
-          }
-          if (readDecision.releaseClaimId) {
-            responderClaims.delete(readDecision.releaseClaimId);
-          }
-          if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
-            alreadyPrintedIds.add(toolEventId);
-          }
-          const result = {
-            ok: marked,
-            output,
-            ...(marked ? {} : { exitCode: 1 }),
-          };
-          loopGuard.recordAttempt(step, call.name, call.args, marked, 0);
-          emitToolResult(toolEventId, result, output);
-          writeToolOutput(toolEventId, marked ? "read\n" : "failed\n");
-          return {
-            ok: marked,
-            call,
-            result,
-            contextOutput: output,
-          };
-        }
-
-        if (call.name === "task.update") {
-          const updateRequest = parseTaskUpdateRequest(call.args);
-          if (updateRequest.state === "done" && updateRequest.taskId) {
-            const live = await loadPlan(session.sessionId).catch(() => undefined);
-            const resolved =
-              (live ? resolvePlanTaskId(live, updateRequest.taskId) : undefined) ??
-              updateRequest.taskId;
-            const gate = decideTaskUpdateDoneGate(live, resolved, (livePlan, id) =>
-              completionGateForTask(livePlan, id),
-            );
-            if (!gate.ok) {
-              writeNotice("warn", gate.reason);
-              if (!alreadyPrintedIds.has(toolEventId)) {
-                writeToolCall(toolEventId, call);
-                alreadyPrintedIds.add(toolEventId);
-              }
-              const result = {
-                ok: false,
-                output: gate.reason,
-                exitCode: 1,
-              };
-              emitToolResult(toolEventId, result, gate.reason);
-              writeToolOutput(toolEventId, "failed\n");
-              return {
-                ok: false,
-                call,
-                result,
-                contextOutput: gate.reason,
-              };
-            }
-          }
-        }
-
-        const planResult = await handlePlanTool(call, session, {
-          loopGuard,
+      const metaOutcome = await runMetaTool(
+        {
           step,
-          autoApprove: !isPlanMode,
-        });
-        if (planResult.handled) {
-          if (!planResult.reminder) {
-            loopGuard.recordAttempt(step, call.name, call.args, planResult.ok, 0);
-          }
-
-          if (planResult.ok && call.name === "task.update") {
-            await applyTaskUpdateLedgerTransition(
-              {
-                getLedger: () => taskWorkLedger,
-                setLedger: (ledger) => {
-                  taskWorkLedger = ledger;
-                },
-                looseWork: () => sessionLooseWork,
-                persistTaskEvidence,
-              },
-              call,
-              planResult.plan,
-            );
-          }
-
-          if (planResult.ok && planResult.plan) {
-            // Keep the batch-end SESSION STATE aligned with successful plan
-            // transitions. Otherwise a completed task can still appear open
-            // on the next model round and trigger duplicate work.
-            pendingSessionStatePlan = planResult.plan;
-          }
-
-          if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
+          wake: {
+            wakeTurn: responderWakeTurn,
+            notificationId: responderWakeNotificationId,
+            jobId: responderWakeJobId,
+            resultRevision: responderWakeResultRevision,
+          },
+          pendingNotifications: () =>
+            jobManager.getPendingNotifications(session.sessionId),
+          matchesWakeRevision,
+          isClaimed: (id) => responderClaims.has(id),
+          markRead: (id) => jobManager.markRead(id, session.sessionId),
+          releaseClaim: (id) => responderClaims.delete(id),
+          queueResponderLedger: (notification) =>
+            deferredResponderLedgerNotifications.push(notification),
+          loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
+          completionGate: (livePlan, taskId) =>
+            completionGateForTask(livePlan, taskId),
+          handlePlanTool: (planCall) =>
+            handlePlanTool(planCall, session, {
+              loopGuard,
+              step,
+              autoApprove: !isPlanMode,
+            }),
+          recordAttempt: (attemptedCall, ok) =>
+            loopGuard.recordAttempt(
+              step,
+              attemptedCall.name,
+              attemptedCall.args,
+              ok,
+              0,
+            ),
+          showCall: (shownCall) => {
+            if (alreadyPrintedIds.has(toolEventId)) return;
+            writeToolCall(toolEventId, shownCall);
             alreadyPrintedIds.add(toolEventId);
-          }
-
-          if (planResult.reminder && planResult.toast) {
-            writeNotice("warn", planResult.toast);
-          }
-
-          if (planResult.plan) {
-            writePlanUpdate(planResult.plan);
-            // Refresh sticky root only if path already exists (not bare Desktop).
-            const root = extractProjectRootFromPlan(planResult.plan);
+          },
+          notify: writeNotice,
+          emitToolResult: (result, contextOutput) =>
+            emitToolResult(toolEventId, result, contextOutput),
+          writeToolOutput: (chunk) => writeToolOutput(toolEventId, chunk),
+          renderPlan: writePlanUpdate,
+          adoptProjectRoot: (plan) => {
+            const root = extractProjectRootFromPlan(plan);
             if (root) setActiveProjectRootIfValid(root);
-          }
-
-          if (planResult.ok && planResult.cleared) {
-            pendingSessionStatePlan = null;
+          },
+          setPendingSessionStatePlan: (plan) => {
+            pendingSessionStatePlan = plan;
+          },
+          clearPlanContext: () => {
             removePlanContextMessage(messages);
             emit({ type: "plan-cleared", sessionId: session.sessionId });
-          }
-
-          const result = { ok: planResult.ok, output: planResult.modelNote };
-          emitToolResult(toolEventId, result, planResult.modelNote);
-          writeToolOutput(toolEventId, result.ok ? "ok\n" : "failed\n");
-
-          return {
-            ok: planResult.ok,
-            call,
-            result,
-            contextOutput: planResult.modelNote,
-          };
-        }
-      }
+          },
+          getLedger: () => taskWorkLedger,
+          setLedger: (ledger) => {
+            taskWorkLedger = ledger;
+          },
+          looseWork: () => sessionLooseWork,
+          persistTaskEvidence,
+        },
+        call,
+      );
+      if (metaOutcome.kind === "handled") return metaOutcome.result;
 
       const scope = await loadScopeForSession(session.sessionId);
       const decision =
