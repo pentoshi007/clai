@@ -36,6 +36,12 @@ import type {
   TurnOutputState,
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
+import {
+  createSessionStateRefresher,
+  persistProjectRootOnPlan as persistPlanProjectRoot,
+  persistTaskEvidence as persistPlanTaskEvidence,
+  type PlanMutator,
+} from "./turn/plan-persistence.js";
 import type { TurnOutcome } from "./turn-outcome.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
@@ -1076,54 +1082,28 @@ export async function runAgentTurn(
     ): ReturnType<typeof canMarkTaskDone> =>
       evaluateTaskCompletionGate(taskGatePorts, plan, taskId);
 
-    async function persistProjectRootOnPlan(root: string): Promise<void> {
-      const pm = detectPackageManager(root);
-      // Metadata patches go through the transactional boundary so a
-      // concurrent task transition or responder settlement is not clobbered.
-      await mutatePlan(session.sessionId, (draft) => {
-        patchPlanMeta(draft, {
-          projectRoot: root,
-          ...(pm ? { packageManager: pm } : {}),
-        });
-      }).catch(() => undefined);
-    }
-
-    /** Persist task evidence without rewriting the whole plan. */
-    async function persistTaskEvidence(
+    const mutateSessionPlan: PlanMutator = (mutator) =>
+      mutatePlan(session.sessionId, mutator);
+    const persistProjectRootOnPlan = (root: string): Promise<void> =>
+      persistPlanProjectRoot(mutateSessionPlan, root);
+    const persistTaskEvidence = (
       taskId: string,
       evidence: TaskEvidence,
-    ): Promise<void> {
-      await mutatePlan(session.sessionId, (draft) => {
-        const task = draft.tasks.find((candidate) => candidate.id === taskId);
-        if (!task) return false;
-        task.evidence = evidence;
-      }).catch(() => undefined);
-    }
+    ): Promise<void> =>
+      persistPlanTaskEvidence(mutateSessionPlan, taskId, evidence);
 
-    refreshSessionState = (plan?: SessionPlan | null | undefined): void => {
-      refreshInjectedBlocks();
-      if (idleOrSocialPrompt || informationalQuery) return;
-      const runningJobs = jobManager.getRunningJobs(session.sessionId);
-      const p = plan === null ? undefined : plan ?? activePlan;
-      if (
-        !buildLikeTurn &&
-        !pentestLikeTurn &&
-        !p &&
-        runningJobs.length === 0
-      ) {
-        if (plan === null) removePlanContextMessage(messages);
-        return;
-      }
-      const root = getActiveProjectRoot() ?? p?.meta?.projectRoot;
-      const pm =
-        p?.meta?.packageManager ??
-        (root ? detectPackageManager(root) : undefined);
-      const snap = buildTurnSessionStateSnapshot({
-        plan: p,
-        prompt,
-        projectRoot: root,
-        packageManager: pm,
-        runningJobs,
+    refreshSessionState = createSessionStateRefresher({
+      messages,
+      prompt,
+      requestContextMessage,
+      refreshInjectedBlocks,
+      suppressed: () => idleOrSocialPrompt || informationalQuery,
+      activePlan: () => activePlan,
+      planApproved: () => session.planApproved.value,
+      runningJobs: () => jobManager.getRunningJobs(session.sessionId),
+      projectRoot: getActiveProjectRoot,
+      requiresState: () => buildLikeTurn || pentestLikeTurn,
+      snapshotFlags: () => ({
         featureAppRequired: featureAppAsk,
         featureSeen: sawFeatureImplWrite,
         scaffoldOk: sawScaffoldOk,
@@ -1132,20 +1112,8 @@ export async function runAgentTurn(
         lastProbeFailed: sawFailedLocalHttpProbe,
         lastOkTool: taskWorkLedger?.lastOkTool,
         pentestSession,
-      });
-      upsertRequestContextMessage(messages, requestContextMessage);
-      // One live plan copy, refreshed at the same protocol-safe points as
-      // SESSION STATE so advancing tasks are never contradicted by a stale copy.
-      if (p) {
-        upsertPlanContextMessage(
-          messages,
-          planContextMessage(p, session.planApproved.value),
-        );
-      } else {
-        removePlanContextMessage(messages);
-      }
-      upsertSessionStateMessage(messages, buildSessionStateBlock(snap));
-    };
+      }),
+    });
     refreshSessionState(activePlan);
 
 
