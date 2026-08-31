@@ -68,6 +68,7 @@ import {
   loadTurnInstructions,
   orientTurnWorkspace,
 } from "./turn/workspace-setup.js";
+import { readTaskWorkSignals } from "./turn/task-work-signals.js";
 import {
   evaluateLoopGuardBlock,
   evaluateToolGuards,
@@ -2360,63 +2361,7 @@ export async function runAgentTurn(
         // Never credit whichever task happens to be open after execution: a
         // later task.update in the same batch may already have changed it.
         const creditId = dispatchedTaskId;
-        const cmd =
-          typeof call.args.command === "string" ? call.args.command : "";
-        const signals: TaskWorkSignals = {};
-        if (isFeatureImplementationCall(call)) signals.featureWrite = true;
-        if (
-          call.name === "fs.write" ||
-          call.name === "fs.writeMany" ||
-          call.name === "fs.edit" ||
-          call.name === "fs.replaceLines" ||
-          call.name === "fs.append"
-        ) {
-          signals.sourceWrite = true;
-        }
-        if (
-          (call.name === "shell.exec" || call.name === "shell.start") &&
-          isPackageInstallCommand(cmd)
-        ) {
-          signals.installOk = true;
-        }
-        if (
-          (call.name === "shell.exec" || call.name === "shell.start") &&
-          isScaffoldCreateCommand(cmd)
-        ) {
-          signals.scaffoldOk = true;
-        }
-        if (isDevServerCall(call)) signals.devServerStart = true;
-        const out = result.output ?? "";
-        if (
-          (call.name === "shell.tail" || call.name === "shell.start") &&
-          isServerReadyOutput(out)
-        ) {
-          signals.serverReady = true;
-        }
-        if (
-          call.name === "shell.exec" &&
-          isPortListeningOutput(cmd, out)
-        ) {
-          signals.portListening = true;
-        }
-        if (
-          localHttpProbeIsSuccess(out) ||
-          (sawLocalHttpProbe && !sawFailedLocalHttpProbe)
-        ) {
-          // Prefer explicit success parse on this result
-          if (
-            /\b(localhost|127\.0\.0\.1)\b/i.test(
-              `${call.name} ${cmd} ${JSON.stringify(call.args)}`,
-            )
-          ) {
-            if (localHttpProbeIsSuccess(out)) {
-              signals.localHttpProbeOk = true;
-            }
-          }
-        }
-        // Remote/pentest evidence — never conflate with local app runtime
-        if (isRemoteReconToolCall(call)) signals.remoteReconOk = true;
-        if (isRemoteActiveTestCall(call)) signals.remoteActiveTestOk = true;
+        const signals = readTaskWorkSignals(call, result.output ?? "");
         // Always bank the success for later absorb (preflight / no open task).
         sessionLooseWork.push({
           toolName: call.name,
