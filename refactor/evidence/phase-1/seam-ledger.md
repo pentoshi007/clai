@@ -40,9 +40,9 @@ boundary that was validated before it was pushed.
 | 31 | `ce01016` | plan task autostart | `turn/task-autostart.ts` |
 | 32 | `0d0369f` | scaffold preflight decision | `turn/scaffold-preflight.ts` |
 | 33 | `74c6d90` | automatic compaction coordinator | `turn/compaction-coordinator.ts` |
-| 34 | `d5b12e6` | turn history writer | `turn/history-writer.ts` |
-| 35 | `a3f1c2b` | responder job plan linkage | `turn/responder-job-linkage.ts` |
-| 36 | `bc8e441` | scaffold outcome reconciliation | `turn/scaffold-outcome.ts` |
+| 34 | `08628eb` | turn history writer | `turn/history-writer.ts` |
+| 35 | `3db5a22` | responder job plan linkage | `turn/responder-job-linkage.ts` |
+| 36 | `77684a1` | scaffold outcome reconciliation | `turn/scaffold-outcome.ts` |
 
 ## Measured effect
 
