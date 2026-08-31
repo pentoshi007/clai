@@ -1,21 +1,21 @@
 # Phase 1 completion map — `src/agent/runner.ts`
 
-State: **3,680 physical lines** (Phase 1 entry: 6,769). Public exports and the
+State: **3,519 physical lines** (Phase 1 entry: 6,769). Public exports and the
 `runAgentLoop` / `runAgentTurn` / `shouldYieldForDeclaredResponderDependency`
 signatures are unchanged and enforced by `quality:contracts`.
 
 ## What the file is now
 
-| Lines | Region | Size |
-|---:|---|---:|
-| 1–520 | imports | ~520 |
-| 521–560 | compatibility re-exports and the delegating dependency predicate | 40 |
-| 561–660 | `AgentRunOptions`, turn types, `runAgentTurn` entry, event ports, finalizer wiring | 100 |
-| 661–1269 | turn setup: session, plan, orientation, prompts, counters, ports, services | 610 |
-| 1270–2229 | `executeSingleTool` | 960 |
-| 2230–2270 | compaction coordinator wiring | 40 |
-| 2271–3630 | iteration loop | 1,360 |
-| 3631–3680 | ceiling stop, error handling, `runAgentLoop` | 50 |
+| Region | Size |
+|---|---:|
+| imports | ~500 |
+| compatibility re-exports and the delegating dependency predicate | 40 |
+| `AgentRunOptions`, turn types, entry, event ports, finalizer wiring | 100 |
+| turn setup: session, plan, orientation, prompts, counters, ports, services | ~600 |
+| `executeSingleTool` (now mostly port wiring for eight extracted stages) | ~830 |
+| compaction coordinator wiring | 40 |
+| iteration loop (port wiring for twelve extracted stages) | ~1,350 |
+| ceiling stop, error handling, `runAgentLoop` | 50 |
 
 Everything that could be extracted with a narrow per-service port interface has
 been extracted — 32 modules under `src/agent/turn/`. The three remaining regions

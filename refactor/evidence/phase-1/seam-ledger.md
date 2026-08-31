@@ -70,7 +70,7 @@ boundary that was validated before it was pushed.
 
 | Metric | Phase 1 entry | Current |
 |---|---:|---:|
-| `src/agent/runner.ts` physical lines | 6,769 | 3,680 |
+| `src/agent/runner.ts` physical lines | 6,769 | 3,519 |
 | maximum cognitive complexity | 3,197 | 2,712 |
 | maximum cyclomatic complexity | 456 | 392 |
 | held legacy findings | 572 | 564 |
@@ -119,13 +119,15 @@ removed; `unknown` parameter replaced with a narrowed failure input).
 |---|---:|---|
 | `npm run typecheck` | 0 | clean |
 | `npm run embed-prompts:check` | 0 | 2 prompts match their sources |
-| `npm run test:deterministic -- --reporter=dot` | 0 | 5,993 passed, 12 skipped |
+| `npm run test:deterministic -- --reporter=dot` | 0 | 5,998 passed, 12 skipped |
 | `npm run test:arch -- --reporter=dot` | 0 | 1 file, 5 tests |
 | `npm run quality:contracts` | 0 | public contracts unchanged |
 | `npm run quality:changed` | 0 | 0 failures |
 | `npm run quality:ratchet` | 0 | 564 held, 14 improvements, 0 regressions |
 | `npm run build` | 0 | dist emitted |
 | `git diff --check` | 0 | no whitespace errors |
+
+Modules now under `src/agent/turn/`: 40 source files plus their tests.
 
 Public contract changes: **none**. `test/architecture/legacy-baseline.json` is
 unmodified; `src/agent/runner.ts` is still above the 1,000-line removal
