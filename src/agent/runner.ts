@@ -45,6 +45,7 @@ import { createCompactionRequestEstimator } from "./turn/compaction-request-esti
 import { createCompactionDurableEnvelopeBuilder } from "./turn/compaction-durable-envelope.js";
 import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selection.js";
 import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
+import { prepareCompactionCandidateMessages } from "./turn/compaction-candidate.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -3859,15 +3860,13 @@ export async function runAgentTurn(
         const livePlan = await loadPlan(session.sessionId).catch(
           () => undefined,
         );
-        const candidateMessages = [...result.messages];
-        upsertAgentInstructionsMessage(candidateMessages, agentInstructionsBlock);
-        upsertActiveSkillsMessage(candidateMessages, activeSkillsBlock);
-        if (livePlan) {
-          upsertPlanContextMessage(
-            candidateMessages,
-            planContextMessage(livePlan, session.planApproved.value),
-          );
-        }
+        const candidateMessages = prepareCompactionCandidateMessages({
+          messages: result.messages,
+          agentInstructionsBlock,
+          activeSkillsBlock,
+          livePlan,
+          planApproved: session.planApproved.value,
+        });
         if (contextLimitTokens !== undefined) {
           const finalFit = accountAssembledRequest({
             provider,
