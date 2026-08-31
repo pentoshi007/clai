@@ -156,6 +156,45 @@ export function buildInventory() {
   };
 }
 
+/**
+ * Declaration-site-insensitive form of a type string. Two exports with the same
+ * structural type differ textually when a declaration moves to another module,
+ * because the checker qualifies named types with their declaring path. Stripping
+ * that qualifier distinguishes a relocated declaration from a changed contract.
+ */
+export function stripDeclarationPaths(text) {
+  return text.replace(/import\("[^"]*"[^)]*\)\./g, "");
+}
+
+/**
+ * Exports whose type text changed only because their declaration moved. These
+ * are reported separately: a caller importing the old module still receives the
+ * identical type, so a relocation is a reviewable event rather than a contract
+ * break.
+ */
+export function relocatedExports(baseline, current) {
+  const relocations = [];
+  const flat = (inventory) => {
+    const map = new Map();
+    for (const mod of inventory.modules) {
+      for (const entry of mod.exports) {
+        map.set(`${mod.module}#${entry.name}`, entry);
+      }
+    }
+    return map;
+  };
+  const before = flat(baseline);
+  const after = flat(current);
+  for (const [id, entry] of before) {
+    const now = after.get(id);
+    if (!now || now.kind !== entry.kind || now.type === entry.type) continue;
+    if (stripDeclarationPaths(now.type) === stripDeclarationPaths(entry.type)) {
+      relocations.push(id);
+    }
+  }
+  return relocations.sort();
+}
+
 /** Produces a readable list of differences between two inventories. */
 export function diffInventories(baseline, current) {
   const differences = [];
@@ -181,7 +220,10 @@ export function diffInventories(baseline, current) {
     if (now.kind !== entry.kind) {
       differences.push(`changed kind: ${id}: ${entry.kind} -> ${now.kind}`);
     }
-    if (now.type !== entry.type) {
+    if (
+      now.type !== entry.type &&
+      stripDeclarationPaths(now.type) !== stripDeclarationPaths(entry.type)
+    ) {
       differences.push(
         `changed type: ${id}\n  baseline: ${entry.type}\n  current:  ${now.type}`,
       );
@@ -240,6 +282,14 @@ function main() {
         `contract-inventory: ${differences.length} contract difference(s)\n${differences.join("\n")}\n`,
       );
       process.exit(1);
+    }
+    const relocations = relocatedExports(baseline, inventory);
+    if (relocations.length > 0) {
+      process.stdout.write(
+        `contract-inventory: ${relocations.length} relocated declaration(s), structurally identical\n${relocations
+          .map((id) => `  relocated: ${id}`)
+          .join("\n")}\nrefresh with --write after review\n`,
+      );
     }
     process.stdout.write("contract-inventory: public contracts unchanged\n");
     return;

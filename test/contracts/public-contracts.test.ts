@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildInventory,
   diffInventories,
+  relocatedExports,
+  stripDeclarationPaths,
   HOTSPOT_FILES,
   INVENTORY_SCHEMA_VERSION,
   readBaseline,
@@ -91,6 +93,43 @@ describe("public contract inventory", () => {
     );
     expect(httpModule?.exports.find((entry) => entry.name === "readJson")?.kind).toBe(
       "function",
+    );
+  });
+
+  it("separates a relocated declaration from a changed contract", () => {
+    const qualify = (module: string) =>
+      `(value: import("<repo>/src/${module}", { with: { "resolution-mode": "import" } }).Style) => string`;
+    const moved = structuredClone(current);
+    const runnerModule = moved.modules.find((entry) => entry.module === RUNNER_MODULE);
+    const target = runnerModule!.exports.find((entry) => entry.name === "runAgentTurn");
+    const baselineCopy = structuredClone(baseline);
+    const baselineTarget = baselineCopy.modules
+      .find((entry: { module: string }) => entry.module === RUNNER_MODULE)!
+      .exports.find((entry: { name: string }) => entry.name === "runAgentTurn");
+    baselineTarget!.type = qualify("agent/runner");
+    target!.type = qualify("agent/turn/moved");
+
+    expect(stripDeclarationPaths(qualify("agent/runner"))).toBe(
+      stripDeclarationPaths(qualify("agent/turn/moved")),
+    );
+    expect(diffInventories(baselineCopy, moved)).toEqual([]);
+    expect(relocatedExports(baselineCopy, moved)).toContain(
+      `${RUNNER_MODULE}#runAgentTurn`,
+    );
+  });
+
+  it("still reports a changed contract when the structure differs at the same path", () => {
+    const mutated = structuredClone(current);
+    const runnerModule = mutated.modules.find((entry) => entry.module === RUNNER_MODULE);
+    const target = runnerModule!.exports.find((entry) => entry.name === "runAgentTurn");
+    target!.type = target!.type.replace("prompt: string", "prompt: number");
+
+    const differences = diffInventories(baseline, mutated);
+    expect(
+      differences.some((line) => line.startsWith(`changed type: ${RUNNER_MODULE}#runAgentTurn`)),
+    ).toBe(true);
+    expect(relocatedExports(baseline, mutated)).not.toContain(
+      `${RUNNER_MODULE}#runAgentTurn`,
     );
   });
 
