@@ -90,6 +90,10 @@ import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
 import { executeToolGroups } from "./turn/loop/group-execution.js";
 import { settleUnrunCalls } from "./turn/loop/unrun-calls.js";
+import {
+  bindToolCalls,
+  reconcileToolCallIds,
+} from "./turn/loop/call-binding.js";
 import type { BoundCall } from "./turn/contracts.js";
 import {
   createRoundRecorder,
@@ -250,8 +254,6 @@ import {
 } from "./message-slim.js";
 import {
   appendAssistantWithTools,
-  ensureUniqueToolCallIds,
-  toolCallIdsInHistory,
   appendToolResult,
   fillMissingToolResults,
   repairToolProtocol,
@@ -341,7 +343,6 @@ import {
   salvageTruncatedWriteFromNative,
   type SalvagedWrite,
   countToolFences,
-  parseAllToolCalls,
   groupToolCallsForExecution,
   buildTurnHistory,
   collapseRepeatedText,
@@ -2844,36 +2845,12 @@ export async function runAgentTurn(
         interruptedReasoning = "";
         lowYieldResumptions = 0;
 
-        let bound: BoundCall[] = [];
-        if (nativeToolCalls.length) {
-          bound = nativeToolCalls.map((tc, index) => {
-            const call = tc.args?._parseError
-              ? {
-                name: tc.name || "unknown",
-                args: {
-                  __nativeParseError: true,
-                  _raw: tc.args._raw,
-                },
-              }
-              : normalizeToolCall({ name: tc.name, args: tc.args });
-            return { index, id: tc.id, call, native: tc, wireId: tc.id };
-          });
-        } else {
-          let parsed = parseAllToolCalls(
-            assistantText.visible || assistantText.thinkContent,
-          );
-          if (parsed.length === 0 && call) parsed = [call];
-          bound = parsed.map((rawCall, index) => {
-            const call = normalizeToolCall(rawCall);
-            const id = syntheticToolCallId(index);
-            return {
-              index,
-              id,
-              call,
-              native: { id, name: call.name, args: call.args },
-            };
-          });
-        }
+        let bound = bindToolCalls({
+          nativeToolCalls,
+          visible: assistantText.visible,
+          thinkContent: assistantText.thinkContent,
+          primaryCall: call,
+        });
 
         const deferral = decidePlanCallDeferral(bound);
         let toRun = bound.slice(0, deferral.runCount);
@@ -2891,29 +2868,10 @@ export async function runAgentTurn(
         // in_progress transition ahead of the preceding work or done receipt;
         // doing so inverts dependency order and desynchronizes the task pane.
 
-        // Re-id empty/duplicate native ids BEFORE building toRun/history so
-        // assistant toolCalls and role:tool results always share the same id.
-        // Mismatched ids make results look orphaned → repair injects placeholders
-        // → model thrash-retries tools that already succeeded in the UI.
-        const historyNativeCalls = ensureUniqueToolCallIds(
-          bound.map((b) => b.native),
-          toolCallIdsInHistory(messages),
-        );
-        for (let i = 0; i < bound.length; i++) {
-          const fixed = historyNativeCalls[i]!;
-          bound[i] = {
-            ...bound[i]!,
-            id: fixed.id,
-            native: fixed,
-          };
-        }
-        // Re-bind toRun to the rewritten bound entries (by original call identity).
-        toRun = toRun.map((old) => {
-          const match = bound.find((b) => b.call === old.call);
-          return match ?? old;
-        });
-        // Re-index toRun positions for UI callIds[] (0..n-1 this turn).
-        toRun = toRun.map((b, index) => ({ ...b, index }));
+        const reconciled = reconcileToolCallIds(bound, toRun, messages);
+        const historyNativeCalls = reconciled.historyNativeCalls;
+        bound = reconciled.bound;
+        toRun = reconciled.toRun;
         const allCalls = toRun.map((b) => b.call);
         const actionSequenceCalls = bound.map((entry) => {
           const candidate = entry.call;
