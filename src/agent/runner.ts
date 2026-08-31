@@ -36,6 +36,7 @@ import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
 import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
+import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import {
   createCompactionSummarizer,
   type CompactionExecutionState,
@@ -665,29 +666,14 @@ export async function runAgentTurn(
   // all later mutations are in-place so this reference stays current.
   let liveMessages: ChatMessage[] = [];
   let suppressOutcomeDiagnostics = false;
-  const unreadResponderNotificationIds = new Set<string>();
-  const releaseUnreadResponderClaims = (): void => {
-    // No session filter: this helper runs in the outer turn scope, before the
-    // session policy exists, and every id here is already known to belong to
-    // this turn (notification ids are globally unique).
-    const pending = new Map(
-      jobManager
-        .getPendingNotifications()
-        .map((notification) => [notification.id, notification]),
-    );
-    for (const notificationId of unreadResponderNotificationIds) {
-      const notification = pending.get(notificationId);
-      if (
-        notification?.deliveryStartedAt &&
-        !notification.readAt &&
-        !notification.analyzedAt &&
-        !notification.acknowledgedAt
-      ) {
-        continue;
-      }
-      jobManager.releaseResponderNotificationClaim(notificationId);
-    }
-  };
+  // No session filter: the ledger is created in the outer turn scope, before the
+  // session policy exists, and every id it holds is already known to belong to
+  // this turn (notification ids are globally unique).
+  const responderClaims = new ResponderClaimLedger({
+    getPendingNotifications: () => jobManager.getPendingNotifications(),
+    releaseClaim: (notificationId) =>
+      jobManager.releaseResponderNotificationClaim(notificationId),
+  });
   const finishTurn = (
     answer: string,
     steps: number,
@@ -697,7 +683,7 @@ export async function runAgentTurn(
     displayAnswer?: string,
     loopGuardStop?: LoopGuardStopInfo,
   ): import("./turn-outcome.js").TurnOutcome => {
-    releaseUnreadResponderClaims();
+    responderClaims.release();
     const outcome = createTurnOutcome(
       normalizeTurnOutcomeInput({
         status,
@@ -1294,7 +1280,7 @@ export async function runAgentTurn(
           )
       : undefined;
     if (wakeNotification) {
-      unreadResponderNotificationIds.add(wakeNotification.id);
+      responderClaims.add(wakeNotification.id);
     }
     const refreshResponderInbox = (): ResponderNotification | undefined => {
       const running = jobManager
@@ -1306,7 +1292,7 @@ export async function runAgentTurn(
           .filter(
             (notification) =>
               notification.responder &&
-              unreadResponderNotificationIds.has(notification.id) &&
+              responderClaims.has(notification.id) &&
               matchesWakeRevision(notification) &&
               !notification.readAt &&
               !notification.analyzedAt &&
@@ -1323,13 +1309,13 @@ export async function runAgentTurn(
       const delivery = leaseId
         ? jobManager.claimNextResponderNotification(session.sessionId, leaseId)
         : undefined;
-      if (delivery) unreadResponderNotificationIds.add(delivery.id);
+      if (delivery) responderClaims.add(delivery.id);
       const pending = jobManager
         .getPendingNotifications(session.sessionId)
         .filter(
           (notification) =>
             notification.responder &&
-            unreadResponderNotificationIds.has(notification.id) &&
+            responderClaims.has(notification.id) &&
             !notification.readAt &&
             !notification.analyzedAt &&
             !notification.archivedAt,
@@ -2120,7 +2106,7 @@ export async function runAgentTurn(
             ? undefined
             : (byNotification ?? byJob);
           const visible = Boolean(
-            notification && unreadResponderNotificationIds.has(notification.id),
+            notification && responderClaims.has(notification.id),
           );
           const wakeIdentityMatches = Boolean(
             responderWakeTurn &&
@@ -2156,9 +2142,9 @@ export async function runAgentTurn(
                       : `${call.name} failed: read state for Responder result ${identifier} could not be persisted.`;
           if (persistedRead && notification) {
             deferredResponderLedgerNotifications.push(notification);
-            unreadResponderNotificationIds.delete(notification.id);
+            responderClaims.delete(notification.id);
           } else if (staleWakeSettled && responderWakeNotificationId) {
-            unreadResponderNotificationIds.delete(responderWakeNotificationId);
+            responderClaims.delete(responderWakeNotificationId);
           }
           if (!alreadyPrintedIds.has(toolEventId)) {
             writeToolCall(toolEventId, call);
@@ -5240,7 +5226,7 @@ export async function runAgentTurn(
               (buildLikeTurn || pentestLikeTurn));
 
           const unreadResponderResults =
-            unreadResponderNotificationIds.size > 0;
+            responderClaims.size > 0;
           const wantsAction =
             !completedPlanDuringThisTurn &&
             !idleOrSocialPrompt &&
@@ -5300,7 +5286,7 @@ export async function runAgentTurn(
             );
           }
           if (unreadResponderResults) {
-            const unread = [...unreadResponderNotificationIds];
+            const unread = responderClaims.ids();
             commitAssistantRetry(assistantText.visible);
             messages.push(
               recoveryUserMessage(
@@ -5660,7 +5646,7 @@ export async function runAgentTurn(
             }
           }
           if (sequenceDecision.terminal) {
-            const remainingCriteria = unreadResponderNotificationIds.size > 0
+            const remainingCriteria = responderClaims.size > 0
               ? ["Analyze and acknowledge the delivered Responder result without repeating completed foreground work."]
               : ["Continue with a materially different action that can produce new evidence."];
             outcomeState.outcome.status = "partial";
@@ -5688,7 +5674,7 @@ export async function runAgentTurn(
           upsertActionCycleRecovery(
             reason +
               ` The repeated calls were: ${suppressedCallList}.` +
-              (unreadResponderNotificationIds.size > 0
+              (responderClaims.size > 0
                 ? " A delivered Responder result is still unread: analyze the available result, gather only genuinely necessary bounded evidence, then call job.read before returning to foreground work."
                 : " The original successful tool results remain in context. Reassess that evidence and either finish or select a materially different action; do not replay completed work."),
           );
@@ -6324,7 +6310,7 @@ export async function runAgentTurn(
 
         if (
           responderWakeTurn &&
-          unreadResponderNotificationIds.size > 0 &&
+          responderClaims.size > 0 &&
           !allCalls.some(
             (candidate) =>
               candidate.name === "job.read" || candidate.name === "task.read",
@@ -6402,7 +6388,7 @@ export async function runAgentTurn(
       writeAbort();
       return finishTurn("", 0, "aborted");
     }
-    releaseUnreadResponderClaims();
+    responderClaims.release();
     const msg = `Error: ${error instanceof Error ? error.message : String(error)}`;
     if (options.onMessages) {
       try {
