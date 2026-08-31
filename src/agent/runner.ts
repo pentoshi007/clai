@@ -91,6 +91,10 @@ import { runToolGates } from "./turn/tool-execution/gates.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
 import {
+  createRoundRecorder,
+  type RecordedToolResult,
+} from "./turn/loop/round-recorder.js";
+import {
   createTurnCounters,
   resetToolRetryCounters,
 } from "./turn/turn-counters.js";
@@ -3098,100 +3102,35 @@ export async function runAgentTurn(
          * force-end the turn as "blocked" because one tool failed. Only an
          * explicit user abort stops remaining calls.
          */
+        const record = createRoundRecorder({
+          round,
+          counters,
+          evidenceFlags,
+          recovery,
+          isPlanMode,
+          pentestTurn: pentestLike || pentestSession,
+          planApproved: () => session.planApproved.value,
+          approvePlan: () => {
+            session.planApproved.value = true;
+          },
+          priorObservation: (priorCall) =>
+            loopGuard.getPriorObservation(priorCall.name, priorCall.args),
+          projectRoot: getActiveProjectRoot,
+          kindHint: () =>
+            activePlan?.kind === "pentest" || pentestLikeTurn
+              ? "pentest"
+              : activePlan?.kind === "coding"
+                ? "coding"
+                : "general",
+          recordHistory: (entry) => toolResultRecorder.record(entry),
+          onPlanCreated: (planKind) => {
+            codingSession = codingSessionFromContext({ buildLike, planKind });
+          },
+        });
         const recordResult = (
           boundCall: BoundCall,
-          res: {
-            call: ToolCall;
-            result: ToolResult;
-            contextOutput: string;
-            ok: boolean;
-            lastAnswer?: string | undefined;
-            aborted?: boolean | undefined;
-            suppressedRepeat?: boolean | undefined;
-            blockOrCancel?: boolean | undefined;
-          },
-        ): void => {
-          counters.consecutiveModelOnlyRounds = 0;
-          round.recordedNativeIds.add(boundCall.id);
-          round.actionSequenceExecuted += 1;
-          if (res.suppressedRepeat) round.roundSuppressedCount += 1;
-          const sequenceObservation = res.suppressedRepeat
-            ? loopGuard.getPriorObservation(res.call.name, res.call.args) ??
-              res.contextOutput
-            : res.result.output ?? res.contextOutput;
-          round.actionSequenceOutcomes.set(
-            boundCall.id,
-            JSON.stringify({
-              ok: res.ok,
-              exitCode: res.result.exitCode ?? null,
-              digest: completedOperationObservationDigest(
-                res.call.name,
-                sequenceObservation,
-              ),
-            }),
-          );
-          // A policy-suppressed call is deterministic: replaying it verbatim
-          // returns the identical receipt. It must therefore keep the sequence
-          // eligible, otherwise the tool-level suppression and the sequence
-          // guard cancel each other out and the round can repeat forever.
-          round.actionSequenceEligible &&=
-            (res.ok || Boolean(res.suppressedRepeat)) &&
-            !res.blockOrCancel &&
-            !res.aborted;
-          if (res.ok && res.call.name === "plan.create") {
-            round.planCreatedThisTurn = true;
-          }
-          if (!res.suppressedRepeat) counters.productiveSteps += 1;
-          toolResultRecorder.record({
-            id: boundCall.id,
-            call: res.call,
-            result: res.result,
-            contextOutput: res.contextOutput,
-            isPlanMode,
-            planApproved: session.planApproved.value,
-            hasDraftPlan: round.planCreatedThisTurn,
-            productiveStep: counters.productiveSteps,
-            kindHint:
-              activePlan?.kind === "pentest" || pentestLikeTurn
-                ? "pentest"
-                : activePlan?.kind === "coding"
-                  ? "coding"
-                  : "general",
-          });
-          // Reset retry counters — they track consecutive failures, not cumulative.
-          resetToolRetryCounters(counters);
-
-          const evidence = readToolEvidenceSignals({
-            call: res.call,
-            ok: res.ok,
-            output: res.result.output ?? res.contextOutput ?? "",
-            pentestTurn: pentestLike || pentestSession,
-            activeProjectRoot: getActiveProjectRoot(),
-          });
-          applyToolEvidenceSignals(evidenceFlags, recovery, evidence);
-          if (res.call.name === "instructions.record" && res.ok) {
-            evidenceFlags.instructionsChangedThisRound = true;
-          }
-          if (res.call.name === "plan.create" && res.ok) {
-            evidenceFlags.sawPlanCreateOk = true;
-            if (isPlanMode) {
-              round.awaitingPlanApproval = true;
-            } else {
-              session.planApproved.value = true;
-            }
-            const kindArg =
-              typeof res.call.args.kind === "string"
-                ? res.call.args.kind
-                : undefined;
-            codingSession = codingSessionFromContext({
-              buildLike,
-              planKind: kindArg,
-            });
-          }
-          // User Esc/Ctrl+C only — never cancel siblings because a delete failed
-          // or a confirm was declined; the model must see every tool result.
-          if (res.aborted) round.aborted = true;
-        };
+          res: RecordedToolResult,
+        ): void => record(boundCall.id, res);
 
         // Multi-task sync guard: when one model message advances more than one
         // distinct task at once, hold the whole set behind a single reminder.
