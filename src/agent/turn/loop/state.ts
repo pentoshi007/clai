@@ -28,3 +28,35 @@ export interface TurnLoopState {
   batchReminderNote: string;
   codingSession: boolean;
 }
+
+export const createTurnLoopState = (input: {
+  readonly provider: ProviderId;
+  readonly model: string;
+  readonly previousSuccessfulRequest: SuccessfulRequestSnapshot | undefined;
+}): TurnLoopState => ({
+  provider: input.provider,
+  model: input.model,
+  step: -1,
+  lastAnswer: "",
+  pendingCalls: [],
+  allowModelFallback: false,
+  preferModelFallback: false,
+  retryWithoutThinking: false,
+  stepMaxTokens: 0,
+  dispatchedRawRequestTokens: 0,
+  interruptedVisible: "",
+  interruptedReasoning: "",
+  lowYieldResumptions: 0,
+  emptyVisibleRetries: 0,
+  malformedNativeArgsRounds: 0,
+  truncatedBudgetRounds: 0,
+  continuationBudgetFloor: 0,
+  consecutiveSynthesizedRounds: 0,
+  freeTierConsecutiveFailures: 0,
+  freeTierLargeContextWarned: false,
+  freeTierAdvisoryShown: false,
+  lastSuccessfulRequestSnapshot: input.previousSuccessfulRequest,
+  batchRemindCalls: new Set(),
+  batchReminderNote: "",
+  codingSession: false,
+});

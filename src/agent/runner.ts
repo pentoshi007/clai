@@ -11,9 +11,7 @@ import type {
   ToolResult,
 } from "../types.js";
 import { providerInputTokenBudget } from "../llm/context-windows.js";
-import {
-  createStreamRecoveryState,
-} from "./stream-recovery.js";
+import { createStreamRecoveryState } from "./stream-recovery.js";
 import type {
   SingleToolResult,
   TurnEventPort,
@@ -21,12 +19,8 @@ import type {
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
 import { assembleTurnMessages } from "./turn/message-assembly.js";
-import {
-  createTurnEvidenceFlags,
-} from "./turn/evidence-flags.js";
-import {
-  createWireOccurrenceLedger,
-} from "./turn/loop/wire-occurrences.js";
+import { createTurnEvidenceFlags } from "./turn/evidence-flags.js";
+import { createWireOccurrenceLedger } from "./turn/loop/wire-occurrences.js";
 import {
   createPromptMutex,
   readSalvagedWriteReceipt,
@@ -54,10 +48,9 @@ import { runTurnRounds } from "./turn/loop/run-rounds.js";
 import type { TurnLoopDeps } from "./turn/loop/deps.js";
 import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
-import type { TurnLoopState } from "./turn/loop/state.js";
-import {
-  createTurnCounters,
-} from "./turn/turn-counters.js";
+import { createTurnLoopState } from "./turn/loop/state.js";
+import { classifyTurnPrompt } from "./turn/setup/prompt-classification.js";
+import { createTurnCounters } from "./turn/turn-counters.js";
 import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
 import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
@@ -79,29 +72,21 @@ import {
   parseResponderWake,
   responderWakeMatchesRevision,
 } from "./turn/responder-inbox.js";
-import {
-  type CompactionExecutionState,
-} from "./turn/compaction-summarizer.js";
-import {
-  type ToolCallingMode,
-} from "../llm/tool-protocol.js";
+import { type CompactionExecutionState } from "./turn/compaction-summarizer.js";
+import { type ToolCallingMode } from "../llm/tool-protocol.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../ui-core/rendering/sanitize-display.js";
 import {
   jobManager,
   type BackgroundJob,
   type ResponderNotification,
 } from "../tools/jobs.js";
-import {
-  scratchDirFor,
-} from "../prompts/index.js";
+import { scratchDirFor } from "../prompts/index.js";
 import { getConfig, getProviderModel } from "../store/config.js";
 import {
   beginSessionWorkspace,
   getActiveSessionWorkspace,
 } from "../store/session-workspace.js";
-import {
-  scopeTargetForToolCall,
-} from "../safety/classifier.js";
+import { scopeTargetForToolCall } from "../safety/classifier.js";
 
 /**
  * Scope/engagement classification runs on every tool call and parses
@@ -135,16 +120,11 @@ import {
 import { getSkillIndex } from "../skills/registry.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { safeCwd } from "../os/cwd.js";
-import {
-  analyzeTask,
-  isNarrowExplicitNmapOperation,
-} from "./task-analyzer.js";
+import { analyzeTask, isNarrowExplicitNmapOperation } from "./task-analyzer.js";
 import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { WorkLedger } from "./durable-envelope.js";
 import { LoopGuard } from "./loop-guard.js";
-import {
-  CompactionAttemptLedger,
-} from "./compaction-attempt.js";
+import { CompactionAttemptLedger } from "./compaction-attempt.js";
 import {
   loadPlan,
   mutatePlan,
@@ -170,13 +150,8 @@ import {
   shouldEnableImageOcr,
   type SessionPolicy,
 } from "./session-policy.js";
-import {
-  codingSessionFromContext,
-} from "./progress-pause-policy.js";
-import {
-  planContextMessage,
-  upsertPlanContextMessage,
-} from "./plan-tool.js";
+import { codingSessionFromContext } from "./progress-pause-policy.js";
+import { planContextMessage, upsertPlanContextMessage } from "./plan-tool.js";
 import {
   canMarkTaskDone,
   type LooseWorkReceipt,
@@ -188,29 +163,24 @@ import {
   type PreviousTurnSignal,
 } from "./continue-orient.js";
 import { detectPackageManager } from "./workspace-orient.js";
-import {
-  createRecoveryBudgets,
-} from "./must-continue.js";
+import { createRecoveryBudgets } from "./must-continue.js";
 import {
   EngagementPolicyEngine,
   engagementActionsForToolCall,
 } from "../safety/engagement-policy.js";
-import {
-  getActiveProjectRoot,
-} from "./project-root.js";
-import {
-  scaffoldLooksMaterialized,
-} from "./workspace-orient.js";
+import { getActiveProjectRoot } from "./project-root.js";
+import { scaffoldLooksMaterialized } from "./workspace-orient.js";
 import {
   stdioConfirmPort,
   restoreInteractiveStdin,
   confirmToolExecution,
   type ConfirmPort,
 } from "./confirm-port.js";
-import { composeAgentSystemPrompt, type AgentPromptSection } from "./prompt-composer.js";
 import {
-  createGovernorState,
-} from "./evidence-governor.js";
+  composeAgentSystemPrompt,
+  type AgentPromptSection,
+} from "./prompt-composer.js";
+import { createGovernorState } from "./evidence-governor.js";
 import {
   inferOutcomeKind,
   openOutcomeState,
@@ -221,7 +191,6 @@ import {
   type LoopGuardStopInfo,
   type TurnOutcomeStatus,
 } from "./turn-outcome.js";
-
 
 export * from "./tool-call-parser.js";
 export {
@@ -281,22 +250,22 @@ export interface AgentRunOptions {
    */
   onMessages?: ((messages: ChatMessage[]) => void) | undefined;
   onSuccessfulRequest?:
-  | ((snapshot: SuccessfulRequestSnapshot) => void)
-  | undefined;
+    ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
   /**
    * The session's last successful main request from an earlier turn. Seeds the
    * local snapshot so a first-iteration auto-compaction can still replay the
    * exact cached prefix instead of re-rendering the transcript.
    */
   previousSuccessfulRequest?: SuccessfulRequestSnapshot | undefined;
-  onOutcome?: ((outcome: import("./turn-outcome.js").TurnOutcome) => void) | undefined;
+  onOutcome?:
+    ((outcome: import("./turn-outcome.js").TurnOutcome) => void) | undefined;
   confirm?: ConfirmPort | undefined;
   requestSecret?:
-  | ((request: {
-    title: string;
-    prompt: string;
-  }) => Promise<string | undefined>)
-  | undefined;
+    | ((request: {
+        title: string;
+        prompt: string;
+      }) => Promise<string | undefined>)
+    | undefined;
   session?: SessionPolicy | undefined;
   /** REPL mode: agent executes; plan is planning-only. */
   mode?: Mode | undefined;
@@ -342,7 +311,9 @@ export async function runAgentTurn(
   options: AgentRunOptions = {},
 ): Promise<import("./turn-outcome.js").TurnOutcome> {
   const agentMode: Mode =
-    options.mode === "plan" || options.mode === "agent" || options.mode === "ask"
+    options.mode === "plan" ||
+    options.mode === "agent" ||
+    options.mode === "ask"
       ? options.mode
       : "agent";
   const isPlanMode = agentMode === "plan";
@@ -441,15 +412,21 @@ export async function runAgentTurn(
     }
     if (mcpRuntime && mcpMentioned) mcpRuntime.applyMentionSelection(prompt);
     const mcpToolDefinitions =
-      mcpRuntime?.toolDefinitions({ ...(agentMode === "ask" ? { askMode: true } : {}) }) ?? [];
+      mcpRuntime?.toolDefinitions({
+        ...(agentMode === "ask" ? { askMode: true } : {}),
+      }) ?? [];
     mcpLease = mcpRuntime?.beginTurn();
-    const mcpToolNames = mcpToolDefinitions.map((definition) => definition.name);
+    const mcpToolNames = mcpToolDefinitions.map(
+      (definition) => definition.name,
+    );
     const maxSteps = options.maxSteps ?? 70;
     const confirmPort = options.confirm ?? stdioConfirmPort;
     const projectContext = await loadProjectContext();
     const skillIndex = await getSkillIndex({
       cwd: safeCwd(),
-      ...(getActiveProjectRoot() ? { projectRoot: getActiveProjectRoot()! } : {}),
+      ...(getActiveProjectRoot()
+        ? { projectRoot: getActiveProjectRoot()! }
+        : {}),
     });
     const skillsAvailable = skillIndex.skills.length > 0;
     const hasAttachedImages = Boolean(options.images?.length);
@@ -460,33 +437,11 @@ export async function runAgentTurn(
     );
     const initialProvider = options.provider ?? config.defaultProvider;
     const initialModel = options.model ?? getProviderModel(initialProvider);
-    const loop: TurnLoopState = {
+    const loop = createTurnLoopState({
       provider: initialProvider,
       model: initialModel,
-      step: -1,
-      lastAnswer: "",
-      pendingCalls: [],
-      allowModelFallback: false,
-      preferModelFallback: false,
-      retryWithoutThinking: false,
-      stepMaxTokens: 0,
-      dispatchedRawRequestTokens: 0,
-      interruptedVisible: "",
-      interruptedReasoning: "",
-      lowYieldResumptions: 0,
-      emptyVisibleRetries: 0,
-      malformedNativeArgsRounds: 0,
-      truncatedBudgetRounds: 0,
-      continuationBudgetFloor: 0,
-      consecutiveSynthesizedRounds: 0,
-      freeTierConsecutiveFailures: 0,
-      freeTierLargeContextWarned: false,
-      freeTierAdvisoryShown: false,
-      lastSuccessfulRequestSnapshot: options.previousSuccessfulRequest,
-      batchRemindCalls: new Set(),
-      batchReminderNote: "",
-      codingSession: false,
-    };
+      previousSuccessfulRequest: options.previousSuccessfulRequest,
+    });
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
@@ -503,27 +458,15 @@ export async function runAgentTurn(
     // the tool succeeds, the model must actually receive and inspect its bytes.
     // Offer it only with affirmative capability evidence for the active route.
     const toolNames = routeToolNames(initialProvider, initialModel);
-    // Build / scaffold / continuation turns must NEVER be diverted into a
-    // web.search for "current info". The /implement directive ("Execute it
-    // now…") and prompts like "create a react app" contain words such as
-    // "now"/"latest" that trip the volatile-info regex; without this guard the
-    // agent burns its turn searching the date instead of writing files.
-    const buildLikeTurn = looksLikeBuildTask(prompt, options.history);
-    const pentestLikeTurn = looksLikePentestTask(prompt, options.history);
-    const narrowNmapOperation = isNarrowExplicitNmapOperation(prompt);
-    // A plain informational follow-up ("what do you know so far", "summarize
-    // the findings") in a resumed/continuing build or pentest session must
-    // NOT inherit that session's "must act" behavior — it should be answered
-    // from context, not treated as a signal to start executing or to invent a
-    // brand-new plan (the exact failure where "what do u know till now"
-    // triggered explore→plan and created an unrelated "Enhance clai" plan).
-    const informationalQuery = looksLikeInformationalQuery(prompt);
-    // Greetings / thanks / short acks must never force tools or plans.
-    const idleOrSocialPrompt = looksLikeIdleOrSocialPrompt(prompt);
-    suppressOutcomeDiagnostics =
-      informationalQuery ||
-      idleOrSocialPrompt ||
-      looksLikeContinueOrResumePrompt(prompt);
+    const classification = classifyTurnPrompt(prompt, options.history);
+    const {
+      buildLikeTurn,
+      pentestLikeTurn,
+      narrowNmapOperation,
+      informationalQuery,
+      idleOrSocialPrompt,
+    } = classification;
+    suppressOutcomeDiagnostics = classification.suppressDiagnostics;
     await ensureProviderConfigured(loop.provider);
     const currentContextLimitTokens = (): number | undefined =>
       options.getContextLimitTokens
@@ -533,7 +476,10 @@ export async function runAgentTurn(
     // the normal agent prompt alone. Select a purpose-built compact
     // instruction set before the request is made, rather than treating the
     // provider's 413 as a context-window failure after the fact.
-    const inputTokenBudget = providerInputTokenBudget(loop.provider, loop.model);
+    const inputTokenBudget = providerInputTokenBudget(
+      loop.provider,
+      loop.model,
+    );
     const useCompactSystemPrompt = inputTokenBudget !== undefined;
     const selectToolDefs = (
       native: boolean,
@@ -544,15 +490,15 @@ export async function runAgentTurn(
       toolRouting.selectToolDefs(native, compact, routeProvider, routeModel);
     const buildStableSystemContent = (native: boolean): string =>
       toolRouting.buildStableSystemContent(native, loop.provider, loop.model);
-    let { dialect: toolDialect, native: nativeToolsActive } = resolveNativeTools(
-      loop.provider,
-      loop.model,
-    );
+    let { dialect: toolDialect, native: nativeToolsActive } =
+      resolveNativeTools(loop.provider, loop.model);
     const session: SessionPolicy = options.session ?? createSessionPolicy();
     // Defensive init: external/legacy callers may build a policy without the
     // newer sync-guard holders. Never dereference an undefined holder.
-    if (!session.pendingTaskBatch) session.pendingTaskBatch = { value: undefined };
-    if (!session.pendingDependency) session.pendingDependency = { value: undefined };
+    if (!session.pendingTaskBatch)
+      session.pendingTaskBatch = { value: undefined };
+    if (!session.pendingDependency)
+      session.pendingDependency = { value: undefined };
     // One-shot CLI / tests that never entered TUI/REPL still need an isolated
     // scratch+output workspace. No-op when a session already bound one.
     if (!getActiveSessionWorkspace()) {
@@ -606,36 +552,36 @@ export async function runAgentTurn(
     // constitution (and, on Anthropic, the native tool schemas before it).
     // The red-team methodology block is ~940 tokens on every request. Attach it
     // only when this turn is actually a remote-security engagement.
-    const pentestPromptTurn =
-      pentestLikeTurn || activePlan?.kind === "pentest";
-    const { sections: systemSections, pentestSession } = await buildSystemSections({
-      prompt,
-      mode: agentMode,
-      plan: activePlan,
-      history: options.history,
-      previousTurn: options.previousTurn,
-      sessionId: session.sessionId,
-      projectContext,
-      destinationHint,
-      isPlanMode,
-      buildLikeTurn,
-      informationalQuery,
-      idleOrSocialPrompt,
-      narrowNmapOperation,
-      pentestLikeTurn,
-      skillsAvailable,
-      skillIndex,
-      selectedSkillNames,
-      inputTokenBudget,
-      getMcpContext: () =>
-        mcpRuntime?.promptContext({
-          nativeTools: false,
-          ...(agentMode === "ask" ? { askMode: true } : {}),
-        }),
-      getProjectRoot: getActiveProjectRoot,
-      getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
-      getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
-    });
+    const pentestPromptTurn = pentestLikeTurn || activePlan?.kind === "pentest";
+    const { sections: systemSections, pentestSession } =
+      await buildSystemSections({
+        prompt,
+        mode: agentMode,
+        plan: activePlan,
+        history: options.history,
+        previousTurn: options.previousTurn,
+        sessionId: session.sessionId,
+        projectContext,
+        destinationHint,
+        isPlanMode,
+        buildLikeTurn,
+        informationalQuery,
+        idleOrSocialPrompt,
+        narrowNmapOperation,
+        pentestLikeTurn,
+        skillsAvailable,
+        skillIndex,
+        selectedSkillNames,
+        inputTokenBudget,
+        getMcpContext: () =>
+          mcpRuntime?.promptContext({
+            nativeTools: false,
+            ...(agentMode === "ask" ? { askMode: true } : {}),
+          }),
+        getProjectRoot: getActiveProjectRoot,
+        getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
+        getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
+      });
     const promptSections = (): AgentPromptSection[] =>
       buildPromptSections({
         systemSections,
@@ -682,8 +628,9 @@ export async function runAgentTurn(
     const responderWakeNotificationId = responderWake.notificationId;
     const responderWakeJobId = responderWake.jobId;
     const responderWakeResultRevision = responderWake.resultRevision;
-    const matchesWakeRevision = (notification: ResponderNotification): boolean =>
-      responderWakeMatchesRevision(responderWake, notification);
+    const matchesWakeRevision = (
+      notification: ResponderNotification,
+    ): boolean => responderWakeMatchesRevision(responderWake, notification);
     const wakeNotification = findResponderWakeNotification(
       responderWake,
       jobManager.getPendingNotifications(session.sessionId),
@@ -733,7 +680,6 @@ export async function runAgentTurn(
     // Track consecutive thinking-only responses so we can nudge the model
     // to actually act instead of silently returning an empty answer.
 
-
     // Robust stream-failure recovery. When a provider stream/complete fails we
     // try working approaches (backoff, compaction, thinking-off, provider
     // fallback) before surrendering the turn — see ./stream-recovery. Both are
@@ -746,12 +692,9 @@ export async function runAgentTurn(
 
     /** Consecutive model rounds whose native tool arguments were unusable. */
 
-
-
     // Track a ```tool fence that is present but whose JSON could not be parsed
     // (e.g. malformed extra/missing braces that are NOT simple truncation). We
     // retry instead of leaking the raw block as the final answer.
-
 
     const recovery = createRecoveryBudgets();
     const evidenceFlags = createTurnEvidenceFlags();
@@ -764,7 +707,9 @@ export async function runAgentTurn(
     const sessionLooseWork: LooseWorkReceipt[] = [];
 
     /** Rehydrate turn-local runtime/remote flags from durable plan evidence (resume). */
-    const rehydrateSessionFlagsFromPlan = (plan: SessionPlan | undefined): void => {
+    const rehydrateSessionFlagsFromPlan = (
+      plan: SessionPlan | undefined,
+    ): void => {
       if (!plan) return;
       for (const task of plan.tasks) {
         const e = task.evidence;
@@ -772,7 +717,8 @@ export async function runAgentTurn(
         if (e.sawDevServerStart || e.sawServerReady || e.sawPortListening) {
           evidenceFlags.sawServerStart = true;
         }
-        if (e.sawServerReady || e.sawDevServerStart) evidenceFlags.sawServerTail = true;
+        if (e.sawServerReady || e.sawDevServerStart)
+          evidenceFlags.sawServerTail = true;
         if (e.sawLocalHttpProbeOk) evidenceFlags.sawLocalHttpProbe = true;
         if (e.sawRemoteActiveTestOk) evidenceFlags.sawActivePentestTest = true;
       }
@@ -786,8 +732,7 @@ export async function runAgentTurn(
       },
       getLooseWork: () => sessionLooseWork,
       featureAppRequired: featureAppAsk,
-      existingProject: () =>
-        scaffoldLooksMaterialized(getActiveProjectRoot()),
+      existingProject: () => scaffoldLooksMaterialized(getActiveProjectRoot()),
     };
     const ledgerForTaskGate = (
       plan: SessionPlan,
@@ -835,7 +780,6 @@ export async function runAgentTurn(
     });
     refreshSessionState(activePlan);
 
-
     // Multi-task sync guard state (recomputed per model message before execution).
 
     const deferredPostToolMessages: ChatMessage[] = [];
@@ -852,7 +796,6 @@ export async function runAgentTurn(
      * executeSingleTool / recordResult).
      */
 
-
     const analysis = analyzeTask(prompt);
     const hasHistory = (options.history?.length ?? 0) > 0;
     const buildLike = buildLikeTurn;
@@ -862,15 +805,18 @@ export async function runAgentTurn(
       planKind: activePlan?.kind,
     });
     const continueExistingOutcome =
-      /^(?:continue|resume|proceed|keep\s+going|finish|next)\b/i.test(prompt.trim()) ||
-      Boolean(activePlan && !isPlanTerminal(activePlan));
+      /^(?:continue|resume|proceed|keep\s+going|finish|next)\b/i.test(
+        prompt.trim(),
+      ) || Boolean(activePlan && !isPlanTerminal(activePlan));
     const outcomeState: OutcomeEnvelope = await openOutcomeState({
       sessionId: session.sessionId,
       userIntent: prompt,
       kind: inferOutcomeKind({ userIntent: prompt, buildLike, pentestLike }),
       continueExisting: continueExistingOutcome,
     });
-    loopGuard.restoreCompletedOperations(outcomeState.completedOperations ?? []);
+    loopGuard.restoreCompletedOperations(
+      outcomeState.completedOperations ?? [],
+    );
     await saveOutcomeState(outcomeState);
     // Canonical mutation/artifact ledger feeding the durable compaction envelope.
     const workLedger = new WorkLedger();
