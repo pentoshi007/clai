@@ -136,7 +136,10 @@ export function buildInventory() {
         }
         return {
           name: symbol.getName(),
-          kind: symbolKind(symbol),
+          // Classified from the resolved declaration so that a compatibility
+          // re-export (the mandated migration technique) is not reported as a
+          // contract change while a genuinely changed declaration kind still is.
+          kind: symbolKind(resolved),
           type: typeText,
         };
       })

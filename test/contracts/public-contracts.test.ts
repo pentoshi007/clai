@@ -76,6 +76,34 @@ describe("public contract inventory", () => {
       differences.some((line) => line.startsWith(`changed type: ${RUNNER_MODULE}#runAgentTurn`)),
     ).toBe(true);
   });
+
+  it("classifies re-exported declarations by their resolved kind", () => {
+    // A compatibility re-export is the migration technique the program mandates,
+    // so `export { x } from "./moved.js"` must report x's real declaration kind
+    // instead of the structural "alias" it would otherwise resolve to.
+    const kinds = new Set(
+      current.modules.flatMap((entry) => entry.exports.map((item) => item.kind)),
+    );
+    expect(kinds.has("alias")).toBe(false);
+
+    const httpModule = current.modules.find(
+      (entry) => entry.module === "src/llm/http.ts",
+    );
+    expect(httpModule?.exports.find((entry) => entry.name === "readJson")?.kind).toBe(
+      "function",
+    );
+  });
+
+  it("still reports a kind change when a declaration kind really changes", () => {
+    const mutated = structuredClone(current);
+    const runnerModule = mutated.modules.find((entry) => entry.module === RUNNER_MODULE);
+    const target = runnerModule!.exports.find((entry) => entry.name === "runAgentTurn");
+    target!.kind = "variable";
+
+    expect(diffInventories(baseline, mutated)).toContain(
+      `changed kind: ${RUNNER_MODULE}#runAgentTurn: function -> variable`,
+    );
+  });
 });
 
 describe("runner contract hard gate", () => {

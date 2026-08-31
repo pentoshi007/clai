@@ -180,7 +180,7 @@
         },
         {
           "name": "ConfirmPort",
-          "kind": "alias",
+          "kind": "interface",
           "type": "any"
         },
         {
@@ -190,7 +190,7 @@
         },
         {
           "name": "createSessionPolicy",
-          "kind": "alias",
+          "kind": "function",
           "type": "(sessionId?: string | undefined) => import(\"<repo>/src/agent/session-policy\", { with: { \"resolution-mode\": \"import\" } }).SessionPolicy"
         },
         {
@@ -225,12 +225,12 @@
         },
         {
           "name": "isPlanApprovedByStatus",
-          "kind": "alias",
+          "kind": "function",
           "type": "(status: PlanStatusLike) => boolean"
         },
         {
           "name": "isPreApprovalAllowedTool",
-          "kind": "alias",
+          "kind": "function",
           "type": "(name: string) => boolean"
         },
         {
@@ -325,7 +325,7 @@
         },
         {
           "name": "planHasOpenWork",
-          "kind": "alias",
+          "kind": "function",
           "type": "(status: PlanStatusLike | undefined) => boolean"
         },
         {
@@ -370,7 +370,7 @@
         },
         {
           "name": "SessionPolicy",
-          "kind": "alias",
+          "kind": "interface",
           "type": "any"
         },
         {
@@ -380,7 +380,7 @@
         },
         {
           "name": "shouldEnableImageOcr",
-          "kind": "alias",
+          "kind": "function",
           "type": "(prompt: string, hasAttachedImages: boolean, visionProven?: boolean) => boolean"
         },
         {
@@ -904,7 +904,7 @@
         },
         {
           "name": "BynaraReasoningKind",
-          "kind": "alias",
+          "kind": "type",
           "type": "any"
         },
         {
@@ -924,12 +924,12 @@
         },
         {
           "name": "classifyBynaraModel",
-          "kind": "alias",
+          "kind": "function",
           "type": "(model: string) => import(\"<repo>/src/llm/model-families\", { with: { \"resolution-mode\": \"import\" } }).BynaraReasoningKind"
         },
         {
           "name": "classifyNvidiaModel",
-          "kind": "alias",
+          "kind": "function",
           "type": "(model: string) => import(\"<repo>/src/llm/model-families\", { with: { \"resolution-mode\": \"import\" } }).NvidiaReasoningKind"
         },
         {
@@ -1004,7 +1004,7 @@
         },
         {
           "name": "NvidiaReasoningKind",
-          "kind": "alias",
+          "kind": "type",
           "type": "any"
         },
         {
@@ -1236,7 +1236,7 @@
         },
         {
           "name": "HistorySummary",
-          "kind": "alias",
+          "kind": "interface",
           "type": "any"
         },
         {
@@ -1660,7 +1660,7 @@
         },
         {
           "name": "isBlockedAddress",
-          "kind": "alias",
+          "kind": "function",
           "type": "(host: string) => boolean"
         },
         {
@@ -1802,7 +1802,7 @@
         },
         {
           "name": "compileBatchFailMode",
-          "kind": "alias",
+          "kind": "function",
           "type": "(topLevel: import(\"<repo>/src/tools/batch-fail-policy\", { with: { \"resolution-mode\": \"import\" } }).BatchFailMode, calls: readonly import(\"<repo>/src/tools/batch-fail-policy\", { with: { \"resolution-mode\": \"import\" } }).BatchCallFailMeta[], knownIds: ReadonlySet<string>) => import(\"<repo>/src/tools/batch-fail-policy\", { with: { \"resolution-mode\": \"import\" } }).BatchFailMode"
         },
         {
@@ -1812,7 +1812,7 @@
         },
         {
           "name": "evaluateCancelTargets",
-          "kind": "alias",
+          "kind": "function",
           "type": "(mode: import(\"<repo>/src/tools/batch-fail-policy\", { with: { \"resolution-mode\": \"import\" } }).BatchFailMode, failedIds: ReadonlySet<string>, allIds: readonly string[]) => Set<string>"
         },
         {
@@ -1822,7 +1822,7 @@
         },
         {
           "name": "formatBatchCancelReason",
-          "kind": "alias",
+          "kind": "function",
           "type": "(triggerIds: readonly string[], metaById: ReadonlyMap<string, import(\"<repo>/src/tools/batch-fail-policy\", { with: { \"resolution-mode\": \"import\" } }).BatchCallFailMeta>) => string"
         },
         {
@@ -1847,7 +1847,7 @@
         },
         {
           "name": "parseBatchFailPolicy",
-          "kind": "alias",
+          "kind": "function",
           "type": "(args: Record<string, unknown>, knownIds: ReadonlySet<string>) => import(\"<repo>/src/tools/batch-fail-policy\", { with: { \"resolution-mode\": \"import\" } }).BatchFailMode"
         },
         {
@@ -1862,7 +1862,7 @@
         },
         {
           "name": "ToolHandler",
-          "kind": "alias",
+          "kind": "type",
           "type": "any"
         },
         {
@@ -1872,7 +1872,7 @@
         },
         {
           "name": "ToolRunOptions",
-          "kind": "alias",
+          "kind": "interface",
           "type": "any"
         },
         {
@@ -1979,7 +1979,7 @@
         },
         {
           "name": "WebFetchErrorKind",
-          "kind": "alias",
+          "kind": "type",
           "type": "any"
         }
       ]
