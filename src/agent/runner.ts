@@ -84,6 +84,7 @@ import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { runToolGates } from "./turn/tool-execution/gates.js";
+import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
@@ -802,6 +803,10 @@ export async function runAgentTurn(
     // context. When the user has approved it (via /implement) we instruct the
     // agent to execute task by task; otherwise the agent should refine/wait.
     const activePlan = await loadPlan(session.sessionId).catch(() => undefined);
+    const toolState = createToolExecutionState(
+      activePlan,
+      createGovernorState(),
+    );
     if (activePlan && isPlanApprovedByStatus(activePlan.status)) {
       // session.planApproved is in-memory only (never persisted), so a
       // resumed session (via /history) or a fresh SessionPolicy after
@@ -1027,7 +1032,6 @@ export async function runAgentTurn(
     const recovery = createRecoveryBudgets();
     const evidenceFlags = createTurnEvidenceFlags();
     const featureAppAsk = userAskedForFeatureApp(prompt);
-    let taskWorkLedger: TaskWorkLedger | null = null;
     /**
      * Successful real tools this turn that may not yet be credited to a task
      * (preflight tool.check before in_progress, or work before plan existed).
@@ -1052,9 +1056,9 @@ export async function runAgentTurn(
     rehydrateSessionFlagsFromPlan(activePlan);
 
     const taskGatePorts = {
-      getLiveLedger: () => taskWorkLedger,
+      getLiveLedger: () => toolState.taskWorkLedger,
       setLiveLedger: (ledger: TaskWorkLedger) => {
-        taskWorkLedger = ledger;
+        toolState.taskWorkLedger = ledger;
       },
       getLooseWork: () => sessionLooseWork,
       featureAppRequired: featureAppAsk,
@@ -1101,7 +1105,7 @@ export async function runAgentTurn(
         serverStarted: evidenceFlags.sawServerStart,
         serverProbedOk: evidenceFlags.sawLocalHttpProbe,
         lastProbeFailed: evidenceFlags.sawFailedLocalHttpProbe,
-        lastOkTool: taskWorkLedger?.lastOkTool,
+        lastOkTool: toolState.taskWorkLedger?.lastOkTool,
         pentestSession,
       }),
     });
@@ -1109,7 +1113,6 @@ export async function runAgentTurn(
 
 
     let pendingCalls: ToolCall[] = [];
-    let narrowNmapDispatchCount = 0;
     // Multi-task sync guard state (recomputed per model message before execution).
     let batchRemindCalls = new Set<ToolCall>();
     let batchReminderNote = "";
@@ -1127,7 +1130,6 @@ export async function runAgentTurn(
      * after the full tool batch is recorded — never mid-group (see
      * executeSingleTool / recordResult).
      */
-    let pendingSessionStatePlan: SessionPlan | null | undefined = activePlan;
 
 
     const analysis = analyzeTask(prompt);
@@ -1151,7 +1153,6 @@ export async function runAgentTurn(
     await saveOutcomeState(outcomeState);
     // Canonical mutation/artifact ledger feeding the durable compaction envelope.
     const workLedger = new WorkLedger();
-    let governorState: GovernorState = createGovernorState();
     let turnState: TurnStateSnapshot = createTurnState();
     const moveTurn = (to: TurnState, reason?: string): void => {
       if (turnState.state === to) return;
@@ -1175,8 +1176,6 @@ export async function runAgentTurn(
         }
       }
     };
-    let retryDependenciesChanged = false;
-    let retryEnvironmentChanged = false;
     const stepBudget = computeStepBudget({
       analysis,
       maxSteps,
@@ -1288,8 +1287,6 @@ export async function runAgentTurn(
         emitToolResult(toolEventId, result, summary);
       };
 
-      let dispatchedTaskId: string | undefined;
-      let delegation: { id: string; taskId?: string } | undefined;
       let engagementLease: PolicyLease | undefined;
       let engagementGraph: EngagementGraph | undefined;
       let engagementRecord: EngagementActionRecord | undefined;
@@ -1320,7 +1317,7 @@ export async function runAgentTurn(
       const guard = evaluateToolGuards({
         call,
         narrowNmapOperation,
-        narrowNmapDispatched: narrowNmapDispatchCount,
+        narrowNmapDispatched: toolState.narrowNmapDispatchCount,
         heldBatchReminder:
           call.name === "task.update" && batchRemindCalls.has(rawCall)
             ? batchReminderNote
@@ -1342,14 +1339,14 @@ export async function runAgentTurn(
         return { ok: false, call, result, contextOutput: guard.reason };
       }
       if (guard.kind === "proceed" && guard.consumesNarrowNmapScan) {
-        narrowNmapDispatchCount += 1;
+        toolState.narrowNmapDispatchCount += 1;
       }
 
       const retryReason = readRetryReason(call.args);
       const currentProbeState = probeStateKey(call);
       const loopCheck = loopGuard.shouldBlock(call.name, call.args, {
-        dependenciesChanged: retryDependenciesChanged,
-        environmentChanged: retryEnvironmentChanged,
+        dependenciesChanged: toolState.retryDependenciesChanged,
+        environmentChanged: toolState.retryEnvironmentChanged,
         ...(currentProbeState ? { stateKey: currentProbeState } : {}),
         ...(retryReason ? { retryReason } : {}),
       });
@@ -1444,15 +1441,15 @@ export async function runAgentTurn(
             if (root) setActiveProjectRootIfValid(root);
           },
           setPendingSessionStatePlan: (plan) => {
-            pendingSessionStatePlan = plan;
+            toolState.pendingSessionStatePlan = plan;
           },
           clearPlanContext: () => {
             removePlanContextMessage(messages);
             emit({ type: "plan-cleared", sessionId: session.sessionId });
           },
-          getLedger: () => taskWorkLedger,
+          getLedger: () => toolState.taskWorkLedger,
           setLedger: (ledger) => {
-            taskWorkLedger = ledger;
+            toolState.taskWorkLedger = ledger;
           },
           looseWork: () => sessionLooseWork,
           persistTaskEvidence,
@@ -1519,9 +1516,9 @@ export async function runAgentTurn(
             },
             renderPlan: writePlanUpdate,
             notify: (message) => writeNotice("info", message),
-            getLedger: () => taskWorkLedger,
+            getLedger: () => toolState.taskWorkLedger,
             setLedger: (ledger) => {
-              taskWorkLedger = ledger;
+              toolState.taskWorkLedger = ledger;
             },
           });
         }
@@ -1615,12 +1612,12 @@ export async function runAgentTurn(
           mutatePlan: (mutator) => mutatePlan(session.sessionId, mutator),
           renderPlan: writePlanUpdate,
           setPendingSessionStatePlan: (plan) => {
-            pendingSessionStatePlan = plan;
+            toolState.pendingSessionStatePlan = plan;
           },
           notify: writeNotice,
-          getLedger: () => taskWorkLedger,
+          getLedger: () => toolState.taskWorkLedger,
           setLedger: (ledger) => {
-            taskWorkLedger = ledger;
+            toolState.taskWorkLedger = ledger;
           },
         },
         call,
@@ -1631,8 +1628,8 @@ export async function runAgentTurn(
         emitToolResult(toolEventId, result, dispatch.reason);
         return { ok: false, call, result, contextOutput: dispatch.reason };
       }
-      dispatchedTaskId = dispatch.dispatchedTaskId;
-      delegation = dispatch.delegation;
+      toolState.dispatchedTaskId = dispatch.dispatchedTaskId;
+      toolState.delegation = dispatch.delegation;
 
       if (engagementAction) {
         engagementLease = engagementPolicy.acquire(scope, engagementAction);
@@ -1728,9 +1725,9 @@ export async function runAgentTurn(
           llmProvider: provider,
           llmModel: model,
           sessionId: session.sessionId,
-          ...(delegation?.taskId ? { taskId: delegation.taskId } : {}),
-          ...(delegation ? { delegationId: delegation.id } : {}),
-          ...(dispatchedTaskId ? { parentTaskId: dispatchedTaskId } : {}),
+          ...(toolState.delegation?.taskId ? { taskId: toolState.delegation.taskId } : {}),
+          ...(toolState.delegation ? { delegationId: toolState.delegation.id } : {}),
+          ...(toolState.dispatchedTaskId ? { parentTaskId: toolState.dispatchedTaskId } : {}),
           wakeOnCompletion: true,
           monitor: {
             toolName: call.name,
@@ -1816,10 +1813,10 @@ export async function runAgentTurn(
         writeNotice("info", scaffoldOutcome.notice);
       }
 
-      if (delegation?.taskId && !result.backgroundJob) {
-        // The delegation never became a durable job: settle its child instead of
+      if (toolState.delegation?.taskId && !result.backgroundJob) {
+        // The toolState.delegation never became a durable job: settle its child instead of
         // Leaving a permanently yellow subtask behind.
-        const delegationId = delegation.id;
+        const delegationId = toolState.delegation.id;
         const settledState = result.ok ? "skipped" : "failed";
         const settlement = await mutatePlan(session.sessionId, (draft) => {
           const child = draft.tasks.find(
@@ -1828,15 +1825,15 @@ export async function runAgentTurn(
           if (!child) return false;
           child.state = settledState;
           child.note = result.ok
-            ? `delegation=${delegationId} ran in the foreground; no durable job was created`
-            : `delegation=${delegationId} failed to launch`;
+            ? `toolState.delegation=${delegationId} ran in the foreground; no durable job was created`
+            : `toolState.delegation=${delegationId} failed to launch`;
           return true;
         }).catch(() => undefined);
         if (settlement?.ok && settlement.plan) {
-          pendingSessionStatePlan = settlement.plan;
+          toolState.pendingSessionStatePlan = settlement.plan;
           writePlanUpdate(settlement.plan);
         }
-        delegation = undefined;
+        toolState.delegation = undefined;
       }
 
       if (result.backgroundJob) {
@@ -1851,7 +1848,7 @@ export async function runAgentTurn(
                 jobManager.linkJob(jobIdToLink, patch),
               renderPlan: writePlanUpdate,
               setPendingSessionStatePlan: (plan) => {
-                pendingSessionStatePlan = plan;
+                toolState.pendingSessionStatePlan = plan;
               },
               notify: writeNotice,
             },
@@ -1859,8 +1856,8 @@ export async function runAgentTurn(
               job: durableJob,
               call,
               toolEventId,
-              delegationTaskId: delegation?.taskId,
-              dispatchedTaskId,
+              delegationTaskId: toolState.delegation?.taskId,
+              dispatchedTaskId: toolState.dispatchedTaskId,
             },
             result,
           );
@@ -1912,9 +1909,9 @@ export async function runAgentTurn(
 
       const completedProbeState = probeStateKey(call);
       const accountingState = {
-        retryDependenciesChanged,
-        retryEnvironmentChanged,
-        governorState,
+        retryDependenciesChanged: toolState.retryDependenciesChanged,
+        retryEnvironmentChanged: toolState.retryEnvironmentChanged,
+        governorState: toolState.governorState,
       };
       accountToolOutcome(
         {
@@ -1932,13 +1929,13 @@ export async function runAgentTurn(
           result,
           toolEventId,
           artifactPath: savedOutputPath,
-          dispatchedTaskId,
+          dispatchedTaskId: toolState.dispatchedTaskId,
           probeStateKey: completedProbeState,
         },
       );
-      retryDependenciesChanged = accountingState.retryDependenciesChanged;
-      retryEnvironmentChanged = accountingState.retryEnvironmentChanged;
-      governorState = accountingState.governorState;
+      toolState.retryDependenciesChanged = accountingState.retryDependenciesChanged;
+      toolState.retryEnvironmentChanged = accountingState.retryEnvironmentChanged;
+      toolState.governorState = accountingState.governorState;
       await saveOutcomeState(outcomeState);
 
       loopGuard.recordAttempt(
@@ -1958,9 +1955,9 @@ export async function runAgentTurn(
         );
         await creditSuccessfulWork(
           {
-            getLedger: () => taskWorkLedger,
+            getLedger: () => toolState.taskWorkLedger,
             setLedger: (ledger) => {
-              taskWorkLedger = ledger;
+              toolState.taskWorkLedger = ledger;
             },
             bankLooseWork: (receipt) => sessionLooseWork.push(receipt),
             persistTaskEvidence,
@@ -1968,11 +1965,11 @@ export async function runAgentTurn(
           {
             call,
             signals: readTaskWorkSignals(call, result.output ?? ""),
-            creditId: dispatchedTaskId,
+            creditId: toolState.dispatchedTaskId,
             plan: liveAfter,
           },
         );
-        pendingSessionStatePlan = liveAfter ?? pendingSessionStatePlan;
+        toolState.pendingSessionStatePlan = liveAfter ?? toolState.pendingSessionStatePlan;
       }
 
       if (!result.ok) {
@@ -3405,7 +3402,7 @@ export async function runAgentTurn(
             aborted,
             awaitingPlanApproval,
             instructionsChanged: evidenceFlags.instructionsChangedThisRound,
-            pendingSessionStatePlan,
+            pendingSessionStatePlan: toolState.pendingSessionStatePlan,
             responderWakeTurn,
             unreadResponderResults: responderClaims.size > 0,
             calledResponderRead: allCalls.some(
