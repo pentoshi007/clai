@@ -109,13 +109,15 @@ Milestone boundary: migrations or format changes require separately approved beh
 
 Plan: [plan/phase-5.md](plan/phase-5.md)
 
-- [ ] **P5-01 Split tool-call parsing by protocol** — Preserve native/text parsing, incremental repair, occurrence ordering, and diagnostics.
-- [ ] **P5-02 Split plan/evidence/loop policy** — Separate normalization, task transitions, evidence, reminders, and loop decisions without weakening gates.
-- [ ] **P5-03 Decompose safety classification** — Isolate pure parsing/classification while preserving monotonic confirm/block outcomes and scope enforcement.
-- [ ] **P5-04 Decompose HTTP/web pipeline** — Separate validation, DNS/scope, redirects, transport, decoding, bounds, audit, and redaction.
-- [ ] **P5-05 Decompose interactive-session manager** — Separate registry/identity, lifecycle, input policy, output/artifacts, redaction, recovery, and platform adapters.
-- [ ] **P5-06 Recheck MCP boundary behavior** — Verify auth, redirects, namespaces, untrusted data, and lifecycle against changed shared utilities.
-- [ ] **P5-07 Reduce facades and close gates** — Make scoped files `<500`, remove legacy entries, and pass parser/plan/security/web/session/MCP metrics and tests.
+- [x] **P5-01 Split tool-call parsing by protocol** — Preserve native/text parsing, incremental repair, occurrence ordering, and diagnostics.
+- [x] **P5-02 Split plan/evidence/loop policy** — Separate normalization, task transitions, evidence, reminders, and loop decisions without weakening gates.
+- [x] **P5-03 Decompose safety classification** — Isolate pure parsing/classification while preserving monotonic confirm/block outcomes and scope enforcement.
+- [x] **P5-04 Decompose HTTP/web pipeline** — Separate validation, DNS/scope, redirects, transport, decoding, bounds, audit, and redaction.
+- [x] **P5-05 Decompose interactive-session manager** — Separate registry/identity, lifecycle, input policy, output/artifacts, redaction, recovery, and platform adapters.
+- [x] **P5-06 Recheck MCP boundary behavior** — Verify auth, redirects, namespaces, untrusted data, and lifecycle against changed shared utilities.
+- [x] **P5-07 Reduce facades and close gates** — Make scoped files `<500`, remove legacy entries, and pass parser/plan/security/web/session/MCP metrics and tests.
+
+Evidence: [phase-5 evidence](evidence/phase-5/README.md). parser 2,235 -> 636, plan-tool 1,682 -> 231, fetch-core 1,620 -> 274, tools/http 1,086 -> 16, classifier 902 -> 245; LoopGuard and InteractiveSessionManager deferred to Phase 7 with reason.
 
 Milestone boundary: security behavior may only stay equal or become stricter in a separately reviewed behavior commit. Suggested final subject: `refactor(policy): isolate parsing and execution boundaries`.
 
