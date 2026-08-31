@@ -50,6 +50,7 @@ import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { decidePlanModeGate } from "./turn/plan-mode-gate.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
+import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -1948,48 +1949,30 @@ export async function runAgentTurn(
         destinationHint ?? getActiveProjectRoot(),
       );
 
-      // Soft preflight: refuse scaffold into an existing non-empty project
-      // (avoids endless "Operation cancelled" retries across all stacks).
-      if (
-        (call.name === "shell.exec" || call.name === "shell.start") &&
-        typeof call.args.command === "string" &&
-        isScaffoldCreateCommand(call.args.command)
-      ) {
-        const cwdArg =
-          typeof call.args.cwd === "string" ? call.args.cwd : undefined;
-        const conflict = scaffoldTargetConflictMessage(
-          call.args.command,
-          cwdArg,
-        );
-        if (conflict) {
-          const target = resolveScaffoldTargetPath(call.args.command, cwdArg);
-          const materialized = scaffoldLooksMaterialized(target);
-          if (target && materialized && setActiveProjectRootIfValid(target, { force: true })) {
-            await persistProjectRootOnPlan(target);
-          }
-          const message = materialized
-            ? `Scaffold skipped: the target already contains a usable project${target ? ` at ${target}` : ""}. Continue that project directly; do not re-run the scaffolder.`
-            : `Scaffold was not run: the existing target${target ? ` at ${target}` : ""} is incomplete. Inspect and repair it before completing the scaffold task; do not retry the scaffolder into this non-empty directory.`;
-          writeNotice("info", message);
-          if (!alreadyPrintedIds.has(toolEventId)) {
-            writeToolCall(toolEventId, call);
-            alreadyPrintedIds.add(toolEventId);
-          }
-          const result = { ok: true, output: message, exitCode: 0 };
-          emitToolResult(toolEventId, result, message);
-          writeToolOutput(toolEventId, "ok\n");
-          return {
-            ok: true,
-            call,
-            result,
-            contextOutput: message,
-          };
+      const scaffoldPreflight = decideScaffoldPreflight(call);
+      if (scaffoldPreflight.skip) {
+        if (
+          scaffoldPreflight.adoptTarget &&
+          scaffoldPreflight.target &&
+          setActiveProjectRootIfValid(scaffoldPreflight.target, { force: true })
+        ) {
+          await persistProjectRootOnPlan(scaffoldPreflight.target);
         }
-      }
-
-      if (!alreadyPrintedIds.has(toolEventId)) {
-        writeToolCall(toolEventId, call);
-        alreadyPrintedIds.add(toolEventId);
+        const message = scaffoldPreflight.message;
+        writeNotice("info", message);
+        if (!alreadyPrintedIds.has(toolEventId)) {
+          writeToolCall(toolEventId, call);
+          alreadyPrintedIds.add(toolEventId);
+        }
+        const result = { ok: true, output: message, exitCode: 0 };
+        emitToolResult(toolEventId, result, message);
+        writeToolOutput(toolEventId, "ok\n");
+        return {
+          ok: true,
+          call,
+          result,
+          contextOutput: message,
+        };
       }
 
       const scopeTarget = safeScopeTargetForToolCall(call);
