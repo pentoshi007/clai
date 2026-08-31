@@ -27,6 +27,11 @@ export interface ResponderReadDecision {
   readonly releaseClaimId: string | undefined;
 }
 
+interface ResponderReadMatch {
+  readonly notification: ResponderNotification | undefined;
+  readonly identifiersConflict: boolean;
+}
+
 export const parseResponderReadRequest = (
   toolName: string,
   args: Record<string, unknown>,
@@ -37,20 +42,58 @@ export const parseResponderReadRequest = (
   jobId: typeof args.jobId === "string" ? args.jobId.trim() : "",
 });
 
+const findMatch = (
+  request: ResponderReadRequest,
+  wake: ResponderReadWakeIdentity,
+  ports: ResponderReadPorts,
+): ResponderReadMatch => {
+  const eligible = wake.wakeTurn
+    ? ports.pendingNotifications.filter(ports.matchesWakeRevision)
+    : ports.pendingNotifications;
+  const byNotification = request.notificationId
+    ? eligible.find((candidate) => candidate.id === request.notificationId)
+    : undefined;
+  const byJob = request.jobId
+    ? eligible.find((candidate) => candidate.jobId === request.jobId)
+    : undefined;
+  const notificationMismatch = Boolean(
+    byNotification && request.jobId && byNotification.jobId !== request.jobId,
+  );
+  const jobMismatch = Boolean(
+    byJob && request.notificationId && byJob.id !== request.notificationId,
+  );
+  const identifiersConflict = notificationMismatch || jobMismatch;
+  return {
+    notification: identifiersConflict ? undefined : (byNotification ?? byJob),
+    identifiersConflict,
+  };
+};
+
+const wakeIdentityMatches = (
+  request: ResponderReadRequest,
+  wake: ResponderReadWakeIdentity,
+): boolean => {
+  if (!wake.wakeTurn) return false;
+  if (!request.notificationId && !request.jobId) return false;
+  const notificationMatches =
+    !request.notificationId || request.notificationId === wake.notificationId;
+  const jobMatches = !request.jobId || request.jobId === wake.jobId;
+  return notificationMatches && jobMatches;
+};
+
 const failureText = (
   request: ResponderReadRequest,
-  identifiersConflict: boolean,
-  notification: ResponderNotification | undefined,
+  match: ResponderReadMatch,
   visible: boolean,
   identifier: string,
 ): string => {
   if (!request.notificationId && !request.jobId) {
     return `${request.toolName} failed: jobId or notificationId is required.`;
   }
-  if (identifiersConflict) {
+  if (match.identifiersConflict) {
     return `${request.toolName} failed: jobId and notificationId refer to different Responder results.`;
   }
-  if (!notification) {
+  if (!match.notification) {
     return `${request.toolName} failed: Responder result ${identifier} is unavailable, consumed, or archived.`;
   }
   if (!visible) {
@@ -64,68 +107,43 @@ export const decideResponderRead = (
   wake: ResponderReadWakeIdentity,
   ports: ResponderReadPorts,
 ): ResponderReadDecision => {
-  const eligible = wake.wakeTurn
-    ? ports.pendingNotifications.filter(ports.matchesWakeRevision)
-    : ports.pendingNotifications;
-  const byNotification = request.notificationId
-    ? eligible.find((candidate) => candidate.id === request.notificationId)
-    : undefined;
-  const byJob = request.jobId
-    ? eligible.find((candidate) => candidate.jobId === request.jobId)
-    : undefined;
-  const identifiersConflict = Boolean(
-    (byNotification &&
-      request.jobId &&
-      byNotification.jobId !== request.jobId) ||
-      (byJob && request.notificationId && byJob.id !== request.notificationId),
-  );
-  const notification = identifiersConflict
-    ? undefined
-    : (byNotification ?? byJob);
+  const match = findMatch(request, wake, ports);
+  const notification = match.notification;
   const visible = Boolean(notification && ports.isClaimed(notification.id));
-  const wakeIdentityMatches = Boolean(
-    wake.wakeTurn &&
-      (request.notificationId || request.jobId) &&
-      (!request.notificationId ||
-        request.notificationId === wake.notificationId) &&
-      (!request.jobId || request.jobId === wake.jobId),
-  );
-  const staleWakeSettled =
-    wakeIdentityMatches && !identifiersConflict && !notification;
   const persistedRead = Boolean(
     notification && visible && ports.markRead(notification.id),
   );
-  const marked = persistedRead || staleWakeSettled;
-  const identifier = request.jobId || request.notificationId;
-  const revisionLabel = wake.resultRevision
-    ? ` revision ${wake.resultRevision}`
-    : "";
 
   if (persistedRead && notification) {
     return {
-      marked,
+      marked: true,
       output: `Responder job ${notification.jobId} (${notification.id}) marked delivered and read after model analysis.`,
       ledgerNotification: notification,
       releaseClaimId: notification.id,
     };
   }
+
+  const staleWakeSettled =
+    !notification &&
+    !match.identifiersConflict &&
+    wakeIdentityMatches(request, wake);
+  const identifier = request.jobId || request.notificationId;
+
   if (staleWakeSettled) {
+    const revisionLabel = wake.resultRevision
+      ? ` revision ${wake.resultRevision}`
+      : "";
     return {
-      marked,
+      marked: true,
       output: `Responder result ${identifier}${revisionLabel} was already settled or discarded; the stale wake is acknowledged idempotently.`,
       ledgerNotification: undefined,
       releaseClaimId: wake.notificationId,
     };
   }
+
   return {
-    marked,
-    output: failureText(
-      request,
-      identifiersConflict,
-      notification,
-      visible,
-      identifier,
-    ),
+    marked: false,
+    output: failureText(request, match, visible, identifier),
     ledgerNotification: undefined,
     releaseClaimId: undefined,
   };
