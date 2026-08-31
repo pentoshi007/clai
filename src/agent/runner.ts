@@ -46,6 +46,14 @@ import { buildSystemSections } from "./turn/system-sections.js";
 import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.js";
 import { createToolRouting } from "./turn/tool-routing.js";
 import {
+  decideResponderRead,
+  parseResponderReadRequest,
+} from "./turn/responder-read-tool.js";
+import {
+  decideTaskUpdateDoneGate,
+  parseTaskUpdateRequest,
+} from "./turn/task-update-gate.js";
+import {
   evaluateTaskCompletionGate,
   planHasVerifiedRemoteWork,
   planHasVerifiedRuntime,
@@ -1661,69 +1669,33 @@ export async function runAgentTurn(
 
       if (RUNNER_META_TOOL_NAMES.has(call.name)) {
         if (call.name === "job.read" || call.name === "task.read") {
-          const requestedNotificationId =
-            typeof call.args.notificationId === "string"
-              ? call.args.notificationId.trim()
-              : "";
-          const requestedJobId =
-            typeof call.args.jobId === "string" ? call.args.jobId.trim() : "";
-          const pending = jobManager.getPendingNotifications(session.sessionId);
-          const eligible = responderWakeTurn
-            ? pending.filter(matchesWakeRevision)
-            : pending;
-          const byNotification = requestedNotificationId
-            ? eligible.find((candidate) => candidate.id === requestedNotificationId)
-            : undefined;
-          const byJob = requestedJobId
-            ? eligible.find((candidate) => candidate.jobId === requestedJobId)
-            : undefined;
-          const identifiersConflict = Boolean(
-            (byNotification && requestedJobId && byNotification.jobId !== requestedJobId) ||
-              (byJob && requestedNotificationId && byJob.id !== requestedNotificationId),
+          const readRequest = parseResponderReadRequest(call.name, call.args);
+          const readDecision = decideResponderRead(
+            readRequest,
+            {
+              wakeTurn: responderWakeTurn,
+              notificationId: responderWakeNotificationId,
+              jobId: responderWakeJobId,
+              resultRevision: responderWakeResultRevision,
+            },
+            {
+              pendingNotifications: jobManager.getPendingNotifications(
+                session.sessionId,
+              ),
+              matchesWakeRevision,
+              isClaimed: (id) => responderClaims.has(id),
+              markRead: (id) => jobManager.markRead(id, session.sessionId),
+            },
           );
-          const notification = identifiersConflict
-            ? undefined
-            : (byNotification ?? byJob);
-          const visible = Boolean(
-            notification && responderClaims.has(notification.id),
-          );
-          const wakeIdentityMatches = Boolean(
-            responderWakeTurn &&
-              (requestedNotificationId || requestedJobId) &&
-              (!requestedNotificationId ||
-                requestedNotificationId === responderWakeNotificationId) &&
-              (!requestedJobId || requestedJobId === responderWakeJobId),
-          );
-          const staleWakeSettled =
-            wakeIdentityMatches && !identifiersConflict && !notification;
-          const persistedRead = Boolean(
-            notification &&
-              visible &&
-              jobManager.markRead(notification.id, session.sessionId),
-          );
-          const marked = persistedRead || staleWakeSettled;
-          const identifier = requestedJobId || requestedNotificationId;
-          const revisionLabel = responderWakeResultRevision
-            ? ` revision ${responderWakeResultRevision}`
-            : "";
-          const output = persistedRead
-            ? `Responder job ${notification!.jobId} (${notification!.id}) marked delivered and read after model analysis.`
-            : staleWakeSettled
-              ? `Responder result ${identifier}${revisionLabel} was already settled or discarded; the stale wake is acknowledged idempotently.`
-              : !requestedNotificationId && !requestedJobId
-                ? `${call.name} failed: jobId or notificationId is required.`
-                : identifiersConflict
-                  ? `${call.name} failed: jobId and notificationId refer to different Responder results.`
-                  : !notification
-                    ? `${call.name} failed: Responder result ${identifier} is unavailable, consumed, or archived.`
-                    : !visible
-                      ? `${call.name} failed: Responder result ${identifier} was not delivered to this model turn. Analyze a delivered result before marking it read.`
-                      : `${call.name} failed: read state for Responder result ${identifier} could not be persisted.`;
-          if (persistedRead && notification) {
-            deferredResponderLedgerNotifications.push(notification);
-            responderClaims.delete(notification.id);
-          } else if (staleWakeSettled && responderWakeNotificationId) {
-            responderClaims.delete(responderWakeNotificationId);
+          const marked = readDecision.marked;
+          const output = readDecision.output;
+          if (readDecision.ledgerNotification) {
+            deferredResponderLedgerNotifications.push(
+              readDecision.ledgerNotification,
+            );
+          }
+          if (readDecision.releaseClaimId) {
+            responderClaims.delete(readDecision.releaseClaimId);
           }
           if (!alreadyPrintedIds.has(toolEventId)) {
             writeToolCall(toolEventId, call);
@@ -1745,52 +1717,16 @@ export async function runAgentTurn(
           };
         }
 
-        // Evidence gate: refuse done until at least one successful work tool
-        // ran under this task (model must see results and be satisfied).
         if (call.name === "task.update") {
-          const stateRaw =
-            typeof call.args.state === "string" ? call.args.state : "";
-          const taskIdRaw =
-            typeof call.args.taskId === "string"
-              ? call.args.taskId
-              : typeof call.args.id === "string"
-                ? call.args.id
-                : "";
-          if (stateRaw === "done" && taskIdRaw) {
+          const updateRequest = parseTaskUpdateRequest(call.args);
+          if (updateRequest.state === "done" && updateRequest.taskId) {
             const live = await loadPlan(session.sessionId).catch(() => undefined);
             const resolved =
-              (live ? resolvePlanTaskId(live, taskIdRaw) : undefined) ??
-              taskIdRaw;
-            const target = live?.tasks.find((task) => task.id === resolved);
-            // Soft-auto: pending + deps complete is allowed through to plan-tool,
-            // which will open then complete in one call. Only hard-block when
-            // the task is not ready for that path (failed / deps / missing).
-            const depsIncomplete =
-              target?.dependencies?.some((dependency) => {
-                const dependencyTask = live?.tasks.find((t) => t.id === dependency);
-                return (
-                  !dependencyTask ||
-                  (dependencyTask.state !== "done" && dependencyTask.state !== "skipped")
-                );
-              }) ?? false;
-            const canSoftComplete =
-              target?.state === "pending" && !depsIncomplete;
-            const gate = !live
-              ? {
-                ok: false as const,
-                reason: `Task ${resolved} cannot be marked done because its active plan is unavailable.`,
-              }
-              : target?.state === "in_progress" || canSoftComplete
-                ? completionGateForTask(live, resolved)
-                : target?.state === "failed"
-                  ? {
-                    ok: false as const,
-                    reason: `Task ${resolved} is failed — retry with in_progress first, then mark done after recovery work.`,
-                  }
-                  : {
-                    ok: false as const,
-                    reason: `Task ${resolved} must be in_progress before it can be marked done. Start or retry the task, perform fresh work, then complete it.`,
-                  };
+              (live ? resolvePlanTaskId(live, updateRequest.taskId) : undefined) ??
+              updateRequest.taskId;
+            const gate = decideTaskUpdateDoneGate(live, resolved, (livePlan, id) =>
+              completionGateForTask(livePlan, id),
+            );
             if (!gate.ok) {
               writeNotice("warn", gate.reason);
               if (!alreadyPrintedIds.has(toolEventId)) {
