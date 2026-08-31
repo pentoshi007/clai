@@ -51,6 +51,16 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/llm/wire/model-catalog.ts": "src/llm/http.ts",
+  "src/llm/wire/abort-race.ts": "src/llm/http.ts",
+  "src/llm/wire/openai-stream.ts": "src/llm/http.ts",
+  "src/llm/wire/stream-framing.ts": "src/llm/http.ts",
+  "src/llm/wire/reasoning-payload.ts": "src/llm/http.ts",
+  "src/llm/wire/chat-body.ts": "src/llm/http.ts",
+  "src/llm/wire/openai-complete.ts": "src/llm/http.ts",
+  "src/llm/wire/response-errors.ts": "src/llm/http.ts",
+  "src/llm/wire/reasoning-artifacts.ts": "src/llm/http.ts",
+  "src/llm/wire/capability-errors.ts": "src/llm/http.ts",
   "src/agent/turn/tool-execution/single-tool.ts": "src/agent/runner.ts",
   "src/agent/turn/loop/run-rounds.ts": "src/agent/runner.ts",
   "src/agent/turn/loop/round-request.ts": "src/agent/runner.ts",

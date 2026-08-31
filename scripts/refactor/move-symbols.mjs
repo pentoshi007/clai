@@ -456,7 +456,13 @@ const move = ({ from, to, symbols, dry }) => {
       const declarationStart = entry.statement.getStart() - entry.start;
       return `${body.slice(0, declarationStart)}export ${body.slice(declarationStart)}`;
     });
-  const newText = `${header.join("\n")}\n\n${bodies.join("\n\n")}\n`;
+  const rewriteInlineSpecifiers = (body) =>
+    body.replace(
+      /import\((\s*)("|')(\.[^"']*)\2/g,
+      (match, space, quote, specifier) =>
+        `import(${space}${quote}${specifierFor(from, to, specifier)}${quote}`,
+    );
+  const newText = `${header.join("\n")}\n\n${bodies.map(rewriteInlineSpecifiers).join("\n\n")}\n`;
 
   let sourceText = text;
   for (const entry of [...moving].sort((a, b) => b.start - a.start)) {

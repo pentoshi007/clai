@@ -895,12 +895,12 @@
         {
           "name": "buildChatBody",
           "kind": "function",
-          "type": "(options: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ChatCompletionsBodyOptions) => string"
+          "type": "(options: import(\"<repo>/src/llm/wire/chat-body\", { with: { \"resolution-mode\": \"import\" } }).ChatCompletionsBodyOptions) => string"
         },
         {
           "name": "buildReasoningPayload",
           "kind": "function",
-          "type": "(reasoning: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningPreference | undefined, style: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle, model?: string | undefined, providerId?: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\" | undefined, control?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ReasoningControlContext | undefined) => Record<string, unknown>"
+          "type": "(reasoning: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningPreference | undefined, style: import(\"<repo>/src/llm/wire/reasoning-payload\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle, model?: string | undefined, providerId?: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\" | undefined, control?: import(\"<repo>/src/llm/wire/reasoning-payload\", { with: { \"resolution-mode\": \"import\" } }).ReasoningControlContext | undefined) => Record<string, unknown>"
         },
         {
           "name": "BynaraReasoningKind",
@@ -915,7 +915,7 @@
         {
           "name": "chatCompletionsBodyFromPlan",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/llm/request-plan\", { with: { \"resolution-mode\": \"import\" } }).RequestPlanV1, extras?: { reasoningStyle?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle | undefined; includeStreamUsage?: boolean | undefined; reasoningArtifactReplayObserver?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningArtifactReplayObserver | undefined; forceReasoningReplay?: boolean | undefined; }) => string"
+          "type": "(plan: import(\"<repo>/src/llm/request-plan\", { with: { \"resolution-mode\": \"import\" } }).RequestPlanV1, extras?: { reasoningStyle?: import(\"<repo>/src/llm/wire/reasoning-payload\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle | undefined; includeStreamUsage?: boolean | undefined; reasoningArtifactReplayObserver?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningArtifactReplayObserver | undefined; forceReasoningReplay?: boolean | undefined; }) => string"
         },
         {
           "name": "ChatCompletionsBodyOptions",
@@ -940,7 +940,7 @@
         {
           "name": "compatibleArtifactPolicyFor",
           "kind": "function",
-          "type": "(preservation: import(\"<repo>/src/llm/provider-profile\", { with: { \"resolution-mode\": \"import\" } }).FinalTurnPreservation) => import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).CompatibleReasoningArtifactPolicy"
+          "type": "(preservation: import(\"<repo>/src/llm/provider-profile\", { with: { \"resolution-mode\": \"import\" } }).FinalTurnPreservation) => import(\"<repo>/src/llm/wire/reasoning-artifacts\", { with: { \"resolution-mode\": \"import\" } }).CompatibleReasoningArtifactPolicy"
         },
         {
           "name": "CompatibleReasoningArtifactPolicy",
@@ -1010,7 +1010,7 @@
         {
           "name": "openAiCompatibleComplete",
           "kind": "function",
-          "type": "(options: { provider: string; providerId: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\"; baseUrl: string; apiKey: string; model: string; messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[]; maxTokens?: number | undefined; temperature?: number | undefined; headers?: Record<string, string> | undefined; signal?: AbortSignal | undefined; reasoning?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningPreference | undefined; reasoningStyle?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle | undefined; tools?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolDefinition[] | undefined; toolChoice?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolChoice | undefined; parallelToolCalls?: boolean | undefined; usageAliases?: import(\"<repo>/src/llm/token-usage\", { with: { \"resolution-mode\": \"import\" } }).CompatibleUsageAliases | undefined; reasoningArtifactPolicy?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).CompatibleReasoningArtifactPolicy | undefined; reasoningArtifactReplayObserver?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningArtifactReplayObserver | undefined; forceReasoningReplay?: boolean | undefined; }) => Promise<import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).OpenAiCompatibleResult>"
+          "type": "(options: { provider: string; providerId: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\"; baseUrl: string; apiKey: string; model: string; messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[]; maxTokens?: number | undefined; temperature?: number | undefined; headers?: Record<string, string> | undefined; signal?: AbortSignal | undefined; reasoning?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningPreference | undefined; reasoningStyle?: import(\"<repo>/src/llm/wire/reasoning-payload\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle | undefined; tools?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolDefinition[] | undefined; toolChoice?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolChoice | undefined; parallelToolCalls?: boolean | undefined; usageAliases?: import(\"<repo>/src/llm/token-usage\", { with: { \"resolution-mode\": \"import\" } }).CompatibleUsageAliases | undefined; reasoningArtifactPolicy?: import(\"<repo>/src/llm/wire/reasoning-artifacts\", { with: { \"resolution-mode\": \"import\" } }).CompatibleReasoningArtifactPolicy | undefined; reasoningArtifactReplayObserver?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningArtifactReplayObserver | undefined; forceReasoningReplay?: boolean | undefined; }) => Promise<import(\"<repo>/src/llm/wire/reasoning-artifacts\", { with: { \"resolution-mode\": \"import\" } }).OpenAiCompatibleResult>"
         },
         {
           "name": "openAiCompatiblePing",
@@ -1025,7 +1025,7 @@
         {
           "name": "openAiCompatibleStream",
           "kind": "function",
-          "type": "(options: { provider: string; providerId: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\"; baseUrl: string; apiKey: string; model: string; messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[]; maxTokens?: number | undefined; temperature?: number | undefined; headers?: Record<string, string> | undefined; signal?: AbortSignal | undefined; onToken: (token: string) => void; reasoning?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningPreference | undefined; reasoningStyle?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle | undefined; tools?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolDefinition[] | undefined; toolChoice?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolChoice | undefined; parallelToolCalls?: boolean | undefined; onStreamEvent?: import(\"<repo>/src/llm/stream-events\", { with: { \"resolution-mode\": \"import\" } }).ProviderStreamEventSink | undefined; streamTerminal?: import(\"<repo>/src/llm/stream-terminal\", { with: { \"resolution-mode\": \"import\" } }).StreamTerminalPolicy | undefined; includeStreamUsage?: boolean | undefined; usageAliases?: import(\"<repo>/src/llm/token-usage\", { with: { \"resolution-mode\": \"import\" } }).CompatibleUsageAliases | undefined; reasoningArtifactPolicy?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).CompatibleReasoningArtifactPolicy | undefined; reasoningArtifactReplayObserver?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningArtifactReplayObserver | undefined; forceReasoningReplay?: boolean | undefined; onToolCallDelta?: ((delta: { index: number; id?: string; name?: string; argumentsBytes?: number; }) => void) | undefined; idleTimeoutMs?: number | undefined; initialIdleTimeoutMs?: number | undefined; outputIdleTimeoutMs?: number | undefined; }) => Promise<import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).OpenAiCompatibleResult>"
+          "type": "(options: { provider: string; providerId: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\"; baseUrl: string; apiKey: string; model: string; messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[]; maxTokens?: number | undefined; temperature?: number | undefined; headers?: Record<string, string> | undefined; signal?: AbortSignal | undefined; onToken: (token: string) => void; reasoning?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningPreference | undefined; reasoningStyle?: import(\"<repo>/src/llm/wire/reasoning-payload\", { with: { \"resolution-mode\": \"import\" } }).ReasoningStyle | undefined; tools?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolDefinition[] | undefined; toolChoice?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolChoice | undefined; parallelToolCalls?: boolean | undefined; onStreamEvent?: import(\"<repo>/src/llm/stream-events\", { with: { \"resolution-mode\": \"import\" } }).ProviderStreamEventSink | undefined; streamTerminal?: import(\"<repo>/src/llm/stream-terminal\", { with: { \"resolution-mode\": \"import\" } }).StreamTerminalPolicy | undefined; includeStreamUsage?: boolean | undefined; usageAliases?: import(\"<repo>/src/llm/token-usage\", { with: { \"resolution-mode\": \"import\" } }).CompatibleUsageAliases | undefined; reasoningArtifactPolicy?: import(\"<repo>/src/llm/wire/reasoning-artifacts\", { with: { \"resolution-mode\": \"import\" } }).CompatibleReasoningArtifactPolicy | undefined; reasoningArtifactReplayObserver?: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ReasoningArtifactReplayObserver | undefined; forceReasoningReplay?: boolean | undefined; onToolCallDelta?: ((delta: { index: number; id?: string; name?: string; argumentsBytes?: number; }) => void) | undefined; idleTimeoutMs?: number | undefined; initialIdleTimeoutMs?: number | undefined; outputIdleTimeoutMs?: number | undefined; }) => Promise<import(\"<repo>/src/llm/wire/reasoning-artifacts\", { with: { \"resolution-mode\": \"import\" } }).OpenAiCompatibleResult>"
         },
         {
           "name": "ProviderError",
@@ -1040,7 +1040,7 @@
         {
           "name": "readStreamLines",
           "kind": "function",
-          "type": "(response: Response, options?: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).StreamLineReaderOptions) => AsyncGenerator<string, void, void>"
+          "type": "(response: Response, options?: import(\"<repo>/src/llm/wire/stream-framing\", { with: { \"resolution-mode\": \"import\" } }).StreamLineReaderOptions) => AsyncGenerator<string, void, void>"
         },
         {
           "name": "ReasoningControlContext",
@@ -1050,7 +1050,7 @@
         {
           "name": "reasoningRejectionAdvice",
           "kind": "function",
-          "type": "(error: unknown) => import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).ReasoningRejectionAdvice | undefined"
+          "type": "(error: unknown) => import(\"<repo>/src/llm/wire/capability-errors\", { with: { \"resolution-mode\": \"import\" } }).ReasoningRejectionAdvice | undefined"
         },
         {
           "name": "ReasoningRejectionAdvice",
@@ -1095,7 +1095,7 @@
         {
           "name": "toCompletionResult",
           "kind": "function",
-          "type": "(provider: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\", model: string, payload: import(\"<repo>/src/llm/http\", { with: { \"resolution-mode\": \"import\" } }).OpenAiCompatibleResult) => import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).CompletionResult"
+          "type": "(provider: \"free\" | \"gemini\" | \"openrouter\" | \"openai\" | \"anthropic\" | \"nvidia\" | \"agentrouter\" | \"aws-mantle\" | \"ollama\" | \"bynara\" | \"qwen-cloud\" | \"modal\" | \"lightning\" | \"tokenrouter\" | \"meta\" | \"fireworks\" | \"hetzner\" | \"orcarouter\" | \"merge-gateway\", model: string, payload: import(\"<repo>/src/llm/wire/reasoning-artifacts\", { with: { \"resolution-mode\": \"import\" } }).OpenAiCompatibleResult) => import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).CompletionResult"
         },
         {
           "name": "toOpenAiMessages",
