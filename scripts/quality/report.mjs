@@ -131,7 +131,8 @@ function toolVersion(packageName) {
 }
 
 /** Builds the full report object. */
-export function buildReport() {
+export function buildReport(options = {}) {
+  const includeFunctionRanges = options.includeFunctionRanges === true;
   const startedAt = Date.now();
   const files = listSourceFiles();
   const coverage = coverageIndex(readCoverage());
@@ -164,7 +165,7 @@ export function buildReport() {
     const fileCoverage = coverage ? coverage.get(file) ?? null : null;
     for (const fn of measureFunctions(sourceFile)) {
       const cov = coverageForFunction(fileCoverage, fn);
-      functionReports.push({
+      const functionReport = {
         file,
         name: fn.name,
         line: fn.line,
@@ -174,7 +175,9 @@ export function buildReport() {
         halsteadVolume: fn.halstead.volume,
         coverage: cov === null ? null : Math.round(cov * 10000) / 10000,
         crap: cov === null ? null : crapScore(fn.cyclomatic, cov),
-      });
+      };
+      if (includeFunctionRanges) functionReport.endLine = fn.endLine;
+      functionReports.push(functionReport);
     }
 
     typeFindings.push(...analyzeTypeSyntax(sourceFile, file).findings);
