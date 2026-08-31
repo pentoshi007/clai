@@ -69,6 +69,7 @@ import { runSingleTool } from "./turn/tool-execution/single-tool.js";
 import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
+import type { TurnLoopState } from "./turn/loop/state.js";
 import { executeToolGroups } from "./turn/loop/group-execution.js";
 import { settleUnrunCalls } from "./turn/loop/unrun-calls.js";
 import { buildStreamRequest } from "./turn/loop/stream-request.js";
@@ -452,9 +453,6 @@ export async function runAgentTurn(
   // next tool-call/turn event); this flag stops them from re-committing prose
   // the normal tool path already surfaced, which would render it twice. Reset
   // at the top of every loop iteration.
-  let interruptedVisible = "";
-  let interruptedReasoning = "";
-  let lowYieldResumptions = 0;
   const turnWriters = createTurnEventEmitter(eventPort, outputState);
   const {
     writeStatus,
@@ -558,6 +556,33 @@ export async function runAgentTurn(
     );
     const initialProvider = options.provider ?? config.defaultProvider;
     const initialModel = options.model ?? getProviderModel(initialProvider);
+    const loop: TurnLoopState = {
+      provider: initialProvider,
+      model: initialModel,
+      step: -1,
+      lastAnswer: "",
+      pendingCalls: [],
+      allowModelFallback: false,
+      preferModelFallback: false,
+      retryWithoutThinking: false,
+      stepMaxTokens: 0,
+      dispatchedRawRequestTokens: 0,
+      interruptedVisible: "",
+      interruptedReasoning: "",
+      lowYieldResumptions: 0,
+      emptyVisibleRetries: 0,
+      malformedNativeArgsRounds: 0,
+      truncatedBudgetRounds: 0,
+      continuationBudgetFloor: 0,
+      consecutiveSynthesizedRounds: 0,
+      freeTierConsecutiveFailures: 0,
+      freeTierLargeContextWarned: false,
+      freeTierAdvisoryShown: false,
+      lastSuccessfulRequestSnapshot: options.previousSuccessfulRequest,
+      batchRemindCalls: new Set(),
+      batchReminderNote: "",
+      codingSession: false,
+    };
     const toolRouting = createToolRouting({
       mode: agentMode,
       mcpPresent: Boolean(mcpRuntime),
@@ -595,33 +620,30 @@ export async function runAgentTurn(
       informationalQuery ||
       idleOrSocialPrompt ||
       looksLikeContinueOrResumePrompt(prompt);
-    let provider = initialProvider;
-    await ensureProviderConfigured(provider);
-    let model = initialModel;
+    await ensureProviderConfigured(loop.provider);
     const currentContextLimitTokens = (): number | undefined =>
       options.getContextLimitTokens
-        ? options.getContextLimitTokens(provider, model)
+        ? options.getContextLimitTokens(loop.provider, loop.model)
         : options.contextLimitTokens;
     // Some free-tier routes have a per-request/per-minute input budget below
     // the normal agent prompt alone. Select a purpose-built compact
     // instruction set before the request is made, rather than treating the
     // provider's 413 as a context-window failure after the fact.
-    const inputTokenBudget = providerInputTokenBudget(provider, model);
+    const inputTokenBudget = providerInputTokenBudget(loop.provider, loop.model);
     const useCompactSystemPrompt = inputTokenBudget !== undefined;
     const selectToolDefs = (
       native: boolean,
       compact: boolean,
-      routeProvider: ProviderId = provider,
-      routeModel: string = model,
+      routeProvider: ProviderId = loop.provider,
+      routeModel: string = loop.model,
     ): ToolDefinition[] | undefined =>
       toolRouting.selectToolDefs(native, compact, routeProvider, routeModel);
     const buildStableSystemContent = (native: boolean): string =>
-      toolRouting.buildStableSystemContent(native, provider, model);
+      toolRouting.buildStableSystemContent(native, loop.provider, loop.model);
     let { dialect: toolDialect, native: nativeToolsActive } = resolveNativeTools(
-      provider,
-      model,
+      loop.provider,
+      loop.model,
     );
-    let lastAnswer = "";
     const session: SessionPolicy = options.session ?? createSessionPolicy();
     // Defensive init: external/legacy callers may build a policy without the
     // newer sync-guard holders. Never dereference an undefined holder.
@@ -798,8 +820,6 @@ export async function runAgentTurn(
     // Uncalibrated estimate for the request currently in flight. Paired with the
     // provider's reported prompt size below so the estimator learns this route's
     // bias instead of permanently over-reporting it.
-    let dispatchedRawRequestTokens = 0;
-    let consecutiveSynthesizedRounds = 0;
     const engagementPolicy = new EngagementPolicyEngine();
     const probeStateKey = (call: ToolCall): string | undefined => {
       const project = (job: ReturnType<typeof jobManager.getJob>) =>
@@ -834,26 +854,19 @@ export async function runAgentTurn(
 
     // Track consecutive thinking-only responses so we can nudge the model
     // to actually act instead of silently returning an empty answer.
-    let emptyVisibleRetries = 0;
-    let truncatedBudgetRounds = 0;
-    let continuationBudgetFloor = 0;
 
-    let retryWithoutThinking = false;
 
     // Robust stream-failure recovery. When a provider stream/complete fails we
     // try working approaches (backoff, compaction, thinking-off, provider
     // fallback) before surrendering the turn — see ./stream-recovery. Both are
     // reset on any successful stream so each failure episode gets a fresh
     // budget and we only give up in the worst case.
-    let allowModelFallback = false;
-    let preferModelFallback = false;
     const recoveryState = createStreamRecoveryState();
 
     // Track tool calls truncated by the token limit so we can ask the model
     // to retry in smaller pieces instead of leaking broken JSON as an answer.
 
     /** Consecutive model rounds whose native tool arguments were unusable. */
-    let malformedNativeArgsRounds = 0;
 
 
 
@@ -945,10 +958,7 @@ export async function runAgentTurn(
     refreshSessionState(activePlan);
 
 
-    let pendingCalls: ToolCall[] = [];
     // Multi-task sync guard state (recomputed per model message before execution).
-    let batchRemindCalls = new Set<ToolCall>();
-    let batchReminderNote = "";
 
     const deferredPostToolMessages: ChatMessage[] = [];
     /**
@@ -969,7 +979,7 @@ export async function runAgentTurn(
     const hasHistory = (options.history?.length ?? 0) > 0;
     const buildLike = buildLikeTurn;
     const pentestLike = looksLikePentestTask(prompt, options.history);
-    let codingSession = codingSessionFromContext({
+    loop.codingSession = codingSessionFromContext({
       buildLike,
       planKind: activePlan?.kind,
     });
@@ -1021,8 +1031,6 @@ export async function runAgentTurn(
     const maxIterations = Math.max(210, computeMaxIterations(stepBudget));
 
     /** Successful file mutation this turn — kills false "error diagnosed but not fixed". */
-    let step = -1;
-    let stepMaxTokens = 0;
     let nextToolEventId = 0;
     const alreadyPrintedIds = new Set<string>();
     const wireOccurrences = createWireOccurrenceLedger({
@@ -1072,7 +1080,7 @@ export async function runAgentTurn(
         }
       },
       recordAttempt: (call: ToolCall, ok: boolean, output: string) =>
-        loopGuard.recordAttempt(step, call.name, call.args, ok, 0, output),
+        loopGuard.recordAttempt(loop.step, call.name, call.args, ok, 0, output),
     };
     const failMcpAgentCall = createMcpAgentCallFailure(mcpAgentToolPorts);
     const executeMcpAgentCall = createMcpAgentToolExecutor(mcpAgentToolPorts);
@@ -1095,9 +1103,9 @@ export async function runAgentTurn(
       options,
       messages,
       prompt,
-      provider: () => provider,
-      model: () => model,
-      step: () => step,
+      provider: () => loop.provider,
+      model: () => loop.model,
+      step: () => loop.step,
       isPlanMode,
       maxSteps,
       pentestSession,
@@ -1113,14 +1121,14 @@ export async function runAgentTurn(
       engagementPolicy,
       responderClaims,
       outcomeState,
-      codingSession: () => codingSession,
+      codingSession: () => loop.codingSession,
       toolState,
       alreadyPrintedIds,
       sessionLooseWork,
       deferredPostToolMessages,
       deferredResponderLedgerNotifications,
-      batchRemindCalls: () => batchRemindCalls,
-      batchReminderNote: () => batchReminderNote,
+      batchRemindCalls: () => loop.batchRemindCalls,
+      batchReminderNote: () => loop.batchReminderNote,
       turnState: () => turnState,
       probeStateKey,
       moveTurn,
@@ -1152,8 +1160,6 @@ export async function runAgentTurn(
      * prior prompt as a strict prefix, so APC providers serve the compaction
      * request from cache instead of re-billing the whole context.
      */
-    let lastSuccessfulRequestSnapshot: SuccessfulRequestSnapshot | undefined =
-      options.previousSuccessfulRequest;
     /**
      * Per-attempt replay decision made by maybeAutoCompact and read by
      * summarizeForCompaction. When undefined the legacy transcript-rendered
@@ -1165,18 +1171,15 @@ export async function runAgentTurn(
       { toolName: string; count: number }
     >();
     /** E4: consecutive free-tier stream failures this turn. */
-    let freeTierConsecutiveFailures = 0;
-    let freeTierLargeContextWarned = false;
     // Surface the free-tier "failed N times / switch provider" advisory at most
     // once per turn — the recovery planner already narrates each retry, so
     // repeating this on every failure just adds noise.
-    let freeTierAdvisoryShown = false;
 
     const { estimateNextRequestTokens, maybeAutoCompact } =
       createCompactionServices({
         messages,
-        provider: () => provider,
-        model: () => model,
+        provider: () => loop.provider,
+        model: () => loop.model,
         dialect: () => toolDialect,
         signal: options.signal,
         keepRecent: AUTO_COMPACT_KEEP_RECENT,
@@ -1189,7 +1192,7 @@ export async function runAgentTurn(
         selectTools: () =>
           selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
         selectToolsForResolvedDialect: () => {
-          const { native } = resolveNativeTools(provider, model);
+          const { native } = resolveNativeTools(loop.provider, loop.model);
           return selectToolDefs(native, useCompactSystemPrompt);
         },
         loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
@@ -1200,9 +1203,9 @@ export async function runAgentTurn(
           jobManager.getPendingNotifications(session.sessionId),
         runningJobs: () => jobManager.getRunningJobs(session.sessionId),
         recentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
-        requestSnapshot: () => lastSuccessfulRequestSnapshot,
+        requestSnapshot: () => loop.lastSuccessfulRequestSnapshot,
         clearRequestSnapshot: () => {
-          lastSuccessfulRequestSnapshot = undefined;
+          loop.lastSuccessfulRequestSnapshot = undefined;
         },
         instructionsBlock: () => agentInstructionsBlock,
         skillsBlock: () => activeSkillsBlock,
@@ -1227,7 +1230,7 @@ export async function runAgentTurn(
       outputState.visibleCommitted = false;
       // `step` is the productive-step index (used for display + audit). It only
       // advances when the previous iteration actually executed a tool.
-      step = counters.productiveSteps;
+      loop.step = counters.productiveSteps;
       options.signal?.throwIfAborted();
 
 
@@ -1240,11 +1243,11 @@ export async function runAgentTurn(
       let canonicalAssistantVisible = "";
       let recoveredFromBareJson = false;
 
-      if (pendingCalls.length > 0) {
+      if (loop.pendingCalls.length > 0) {
 
-        call = pendingCalls.shift()!;
+        call = loop.pendingCalls.shift()!;
         assistantText = { visible: "", thinkContent: "", hasThinking: false };
-        const batchStatus = `  ↳ continuing batch (${pendingCalls.length} more queued)\n`;
+        const batchStatus = `  ↳ continuing batch (${loop.pendingCalls.length} more queued)\n`;
         writeStatus(batchStatus);
       } else {
 
@@ -1256,7 +1259,7 @@ export async function runAgentTurn(
         const responderDelivery = refreshResponderInbox();
 
         const streamLabel =
-          step === 0 ? "waiting for model" : `step ${step + 1}`;
+          loop.step === 0 ? "waiting for model" : `step ${loop.step + 1}`;
         emit({ type: "status", text: streamLabel });
         const streamSession = createStreamSession({
           emitStatus: (text) => emit({ type: "status", text }),
@@ -1269,7 +1272,7 @@ export async function runAgentTurn(
           markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
           nativeToolsAttached: () => toolsAttached,
           onSuccessfulRequest: (snapshot) => {
-            lastSuccessfulRequestSnapshot = snapshot;
+            loop.lastSuccessfulRequestSnapshot = snapshot;
             options.onSuccessfulRequest?.(snapshot);
           },
         });
@@ -1281,7 +1284,7 @@ export async function runAgentTurn(
         try {
           // Re-resolve dialect each step so /model or sticky fallback apply.
           ({ dialect: toolDialect, native: nativeToolsActive } =
-            resolveNativeTools(provider, model));
+            resolveNativeTools(loop.provider, loop.model));
           if (messages[0]?.role === "system") {
             // Recompose only when content actually changes (hour-stable env clock
             // keeps the constitution prefix identical across steps, which helps
@@ -1295,11 +1298,11 @@ export async function runAgentTurn(
             }
           }
           const assemblyState: RequestAssemblyState = {
-            freeTierLargeContextWarned,
-            freeTierConsecutiveFailures,
-            truncatedBudgetRounds,
-            continuationBudgetFloor,
-            retryWithoutThinking,
+            freeTierLargeContextWarned: loop.freeTierLargeContextWarned,
+            freeTierConsecutiveFailures: loop.freeTierConsecutiveFailures,
+            truncatedBudgetRounds: loop.truncatedBudgetRounds,
+            continuationBudgetFloor: loop.continuationBudgetFloor,
+            retryWithoutThinking: loop.retryWithoutThinking,
           };
           const contextLimitTokens = currentContextLimitTokens();
           let estimatedInputTokens = 0;
@@ -1307,29 +1310,29 @@ export async function runAgentTurn(
           const assembled = await assembleRequest(
             {
               messages,
-              provider,
-              model,
+              provider: loop.provider,
+              model: loop.model,
               dialect: toolDialect,
               nativeToolsActive,
               thinking: config.thinking,
-              step,
+              step: loop.step,
               contextLimitTokens,
               estimateRequestTokens: estimateNextRequestTokens,
               selectTools: () =>
                 selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
               notify: writeNotice,
               emitContextEstimate: (estimatedTokens) =>
-                emit({ type: "context-estimate", estimatedTokens, model }),
+                emit({ type: "context-estimate", estimatedTokens, model: loop.model }),
               audit: (event, payload) => auditLog(event, payload),
             },
             assemblyState,
           );
-          freeTierLargeContextWarned = assemblyState.freeTierLargeContextWarned;
+          loop.freeTierLargeContextWarned = assemblyState.freeTierLargeContextWarned;
           const turnTools = assembled.tools;
           toolsAttached = assembled.toolsAttached;
           estimatedInputTokens = assembled.estimatedInputTokens;
-          stepMaxTokens = assembled.stepMaxTokens;
-          dispatchedRawRequestTokens = assembled.rawRequestTokens;
+          loop.stepMaxTokens = assembled.stepMaxTokens;
+          loop.dispatchedRawRequestTokens = assembled.rawRequestTokens;
           if (
             responderDelivery &&
             !jobManager.markDeliveryStarted(responderDelivery.id, session.sessionId)
@@ -1343,15 +1346,15 @@ export async function runAgentTurn(
           }
           completion = await streamWithProvider(
             buildStreamRequest({
-              provider,
-              model,
+              provider: loop.provider,
+              model: loop.model,
               messages,
-              allowModelFallback,
-              preferModelFallback,
-              maxTokens: stepMaxTokens,
+              allowModelFallback: loop.allowModelFallback,
+              preferModelFallback: loop.preferModelFallback,
+              maxTokens: loop.stepMaxTokens,
               signal: options.signal,
               thinking: config.thinking,
-              retryWithoutThinking,
+              retryWithoutThinking: loop.retryWithoutThinking,
               toolsAttached,
               tools: turnTools,
               onToolCallDelta: streamSession.onToolCallDelta,
@@ -1363,14 +1366,14 @@ export async function runAgentTurn(
               onSuccessfulRequest: streamSession.onSuccessfulRequest,
             },
           );
-          freeTierConsecutiveFailures = 0;
+          loop.freeTierConsecutiveFailures = 0;
           // Stream succeeded → the failure episode is over. Reset the recovery
           // budget and the one-shot fallback flag so a later, unrelated failure
           // starts fresh (and we never give up while making progress).
           resetStreamRecoveryState(recoveryState);
-          allowModelFallback = false;
-          preferModelFallback = false;
-          lowYieldResumptions = 0;
+          loop.allowModelFallback = false;
+          loop.preferModelFallback = false;
+          loop.lowYieldResumptions = 0;
           } catch (streamError) {
             // User cancelled (double-Esc) — never try to recover, just stop.
             if (options.signal?.aborted) throw streamError;
@@ -1382,21 +1385,21 @@ export async function runAgentTurn(
             const failedAttempt = failedOperationUsage?.attempts.at(-1);
             const failedUsage = failedOperationUsage?.aggregate.usage;
             const failureState: StreamFailureState = {
-              freeTierConsecutiveFailures,
-              freeTierAdvisoryShown,
-              lowYieldResumptions,
-              interruptedVisible,
-              interruptedReasoning,
-              allowModelFallback,
-              preferModelFallback,
-              retryWithoutThinking,
+              freeTierConsecutiveFailures: loop.freeTierConsecutiveFailures,
+              freeTierAdvisoryShown: loop.freeTierAdvisoryShown,
+              lowYieldResumptions: loop.lowYieldResumptions,
+              interruptedVisible: loop.interruptedVisible,
+              interruptedReasoning: loop.interruptedReasoning,
+              allowModelFallback: loop.allowModelFallback,
+              preferModelFallback: loop.preferModelFallback,
+              retryWithoutThinking: loop.retryWithoutThinking,
               visibleCommitted: outputState.visibleCommitted,
             };
             const decision = await recoverFromStreamFailure(
               {
                 messages,
                 recoveryState,
-                provider,
+                provider: loop.provider,
                 estimatedInputTokens,
                 notify: writeNotice,
                 emitStatus: (text) => emit({ type: "status", text }),
@@ -1436,14 +1439,14 @@ export async function runAgentTurn(
                 deferredToolCalls,
               },
             );
-            freeTierConsecutiveFailures = failureState.freeTierConsecutiveFailures;
-            freeTierAdvisoryShown = failureState.freeTierAdvisoryShown;
-            lowYieldResumptions = failureState.lowYieldResumptions;
-            interruptedVisible = failureState.interruptedVisible;
-            interruptedReasoning = failureState.interruptedReasoning;
-            allowModelFallback = failureState.allowModelFallback;
-            preferModelFallback = failureState.preferModelFallback;
-            retryWithoutThinking = failureState.retryWithoutThinking;
+            loop.freeTierConsecutiveFailures = failureState.freeTierConsecutiveFailures;
+            loop.freeTierAdvisoryShown = failureState.freeTierAdvisoryShown;
+            loop.lowYieldResumptions = failureState.lowYieldResumptions;
+            loop.interruptedVisible = failureState.interruptedVisible;
+            loop.interruptedReasoning = failureState.interruptedReasoning;
+            loop.allowModelFallback = failureState.allowModelFallback;
+            loop.preferModelFallback = failureState.preferModelFallback;
+            loop.retryWithoutThinking = failureState.retryWithoutThinking;
             outputState.visibleCommitted = failureState.visibleCommitted;
             if (decision === "rethrow") throw streamError;
             continue;
@@ -1459,11 +1462,11 @@ export async function runAgentTurn(
             jobManager.releaseResponderNotificationClaim(responderDelivery.id);
           }
         }
-        provider = completion.provider;
-        model = completion.model;
+        loop.provider = completion.provider;
+        loop.model = completion.model;
         await accountCompletionUsage(
           {
-            dispatchedRawRequestTokens,
+            dispatchedRawRequestTokens: loop.dispatchedRawRequestTokens,
             emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, attempt }) =>
               emit({
                 type: "token-usage",
@@ -1479,16 +1482,16 @@ export async function runAgentTurn(
         streamSession.finishDeltaParser();
         // Sticky text-only may have flipped dialect during stream retry.
         ({ dialect: toolDialect, native: nativeToolsActive } =
-          resolveNativeTools(provider, model));
+          resolveNativeTools(loop.provider, loop.model));
         // toolsAttached may have been true for the request; if sticky
         // fallback dropped tools, treat as text mode for this turn's parse.
         const usedNativeProtocol = Boolean(completion.toolCalls?.length) ||
-          (toolsAttached && !isTextOnlyModel(provider, model));
+          (toolsAttached && !isTextOnlyModel(loop.provider, loop.model));
 
         const interpreted = interpretCompletion({
           completion,
           streamedReasoningText: streamSession.streamedReasoningText(),
-          interruptedVisible,
+          interruptedVisible: loop.interruptedVisible,
         });
         if (interpreted.thinkContent) rememberThinking(interpreted.thinkContent);
         canonicalAssistantVisible = interpreted.canonicalVisible;
@@ -1513,9 +1516,9 @@ export async function runAgentTurn(
             }
           }
           pushAssistantHistory(historyText, retryReasoning);
-          interruptedVisible = "";
-          interruptedReasoning = "";
-          lowYieldResumptions = 0;
+          loop.interruptedVisible = "";
+          loop.interruptedReasoning = "";
+          loop.lowYieldResumptions = 0;
         };
 
 
@@ -1594,8 +1597,8 @@ export async function runAgentTurn(
             Boolean(tc.args?._parseError),
           );
           if (unparseable.length > 0) {
-            malformedNativeArgsRounds += 1;
-            if (malformedNativeArgsRounds >= 2) {
+            loop.malformedNativeArgsRounds += 1;
+            if (loop.malformedNativeArgsRounds >= 2) {
               const names = [...new Set(unparseable.map((tc) => tc.name))].join(", ");
               for (const entry of deferredToolCalls) {
                 if (!entry.shown || entry.call.name === "…") continue;
@@ -1605,7 +1608,7 @@ export async function runAgentTurn(
                   "Native tool arguments were unusable again; nothing ran. Reissue as a fenced tool block.",
                 );
               }
-              markTextOnlyModel(provider, model);
+              markTextOnlyModel(loop.provider, loop.model);
               writeNotice(
                 "warn",
                 "native tool arguments keep arriving unusable — switching this model to the text tool protocol",
@@ -1623,15 +1626,15 @@ export async function runAgentTurn(
               continue;
             }
           } else {
-            malformedNativeArgsRounds = 0;
+            loop.malformedNativeArgsRounds = 0;
           }
         }
 
 
         const completionBudget = routeCompletionBudget({
-          provider,
-          model,
-          stepMaxTokens,
+          provider: loop.provider,
+          model: loop.model,
+          stepMaxTokens: loop.stepMaxTokens,
         });
         const hitOutputLimit = outputBudgetExhausted({
           completion,
@@ -1645,20 +1648,20 @@ export async function runAgentTurn(
           looksLikeTruncatedToolCall(assistantText.visible);
         if (hitOutputLimit && !call && !outputLimitLooksLikeTool) {
           const budgetState: OutputBudgetState = {
-            truncatedBudgetRounds,
-            continuationBudgetFloor,
-            retryWithoutThinking,
-            interruptedVisible,
-            interruptedReasoning,
-            lowYieldResumptions,
+            truncatedBudgetRounds: loop.truncatedBudgetRounds,
+            continuationBudgetFloor: loop.continuationBudgetFloor,
+            retryWithoutThinking: loop.retryWithoutThinking,
+            interruptedVisible: loop.interruptedVisible,
+            interruptedReasoning: loop.interruptedReasoning,
+            lowYieldResumptions: loop.lowYieldResumptions,
             visibleCommitted: outputState.visibleCommitted,
           };
           const budgetDecision = handleOutputBudgetExhaustion(
             {
               messages,
-              provider,
-              model,
-              stepMaxTokens,
+              provider: loop.provider,
+              model: loop.model,
+              stepMaxTokens: loop.stepMaxTokens,
               maxStepCompletionTokens: MAX_STEP_COMPLETION_TOKENS,
               notify: writeNotice,
               recoveryUserMessage,
@@ -1676,18 +1679,18 @@ export async function runAgentTurn(
             },
             completionBudget,
           );
-          truncatedBudgetRounds = budgetState.truncatedBudgetRounds;
-          continuationBudgetFloor = budgetState.continuationBudgetFloor;
-          retryWithoutThinking = budgetState.retryWithoutThinking;
-          interruptedVisible = budgetState.interruptedVisible;
-          interruptedReasoning = budgetState.interruptedReasoning;
-          lowYieldResumptions = budgetState.lowYieldResumptions;
+          loop.truncatedBudgetRounds = budgetState.truncatedBudgetRounds;
+          loop.continuationBudgetFloor = budgetState.continuationBudgetFloor;
+          loop.retryWithoutThinking = budgetState.retryWithoutThinking;
+          loop.interruptedVisible = budgetState.interruptedVisible;
+          loop.interruptedReasoning = budgetState.interruptedReasoning;
+          loop.lowYieldResumptions = budgetState.lowYieldResumptions;
           outputState.visibleCommitted = budgetState.visibleCommitted;
           if (budgetDecision === "continue-round") continue;
           if (budgetDecision === "stop-partial") {
             return finishTurn(
               "The model exhausted its output budget again after one preserved continuation. No visible answer was produced.",
-              step + 1,
+              loop.step + 1,
               "partial",
               ["Retry at a lower reasoning effort or choose a model with a larger output limit."],
               "The model exhausted the route's output budget twice without a visible answer.",
@@ -1703,16 +1706,16 @@ export async function runAgentTurn(
               if (!deferred.shown || deferred.call.name === "…") continue;
               writeToolBlocked(deferred.eventId, deferred.call.name, reason);
             }
-            markTextOnlyModel(provider, model);
+            markTextOnlyModel(loop.provider, loop.model);
             writeNotice(
               "warn",
               "provider abandoned a native tool call — switching this model to the text tool protocol",
             );
           }
           const emptyState: EmptyResponseState = {
-            emptyVisibleRetries,
-            retryWithoutThinking,
-            interruptedReasoning,
+            emptyVisibleRetries: loop.emptyVisibleRetries,
+            retryWithoutThinking: loop.retryWithoutThinking,
+            interruptedReasoning: loop.interruptedReasoning,
           };
           const emptyDecision = handleEmptyResponse(
             {
@@ -1731,18 +1734,18 @@ export async function runAgentTurn(
               incompleteNativeStream,
             },
           );
-          emptyVisibleRetries = emptyState.emptyVisibleRetries;
-          retryWithoutThinking = emptyState.retryWithoutThinking;
-          interruptedReasoning = emptyState.interruptedReasoning;
+          loop.emptyVisibleRetries = emptyState.emptyVisibleRetries;
+          loop.retryWithoutThinking = emptyState.retryWithoutThinking;
+          loop.interruptedReasoning = emptyState.interruptedReasoning;
           if (emptyDecision === "continue-round") continue;
-          return finishTurn("Model returned an empty response after retries.", step + 1);
+          return finishTurn("Model returned an empty response after retries.", loop.step + 1);
         } else {
           // Reset the counter on any successful visible output or recovered call.
-          emptyVisibleRetries = 0;
-          truncatedBudgetRounds = 0;
-          continuationBudgetFloor = 0;
-          retryWithoutThinking = false;
-          interruptedReasoning = "";
+          loop.emptyVisibleRetries = 0;
+          loop.truncatedBudgetRounds = 0;
+          loop.continuationBudgetFloor = 0;
+          loop.retryWithoutThinking = false;
+          loop.interruptedReasoning = "";
         }
 
 
@@ -1827,8 +1830,8 @@ export async function runAgentTurn(
           const modelOnly = handleModelOnlyRound(
             {
               messages,
-              provider,
-              model,
+              provider: loop.provider,
+              model: loop.model,
               toolsAttached,
               notify: writeNotice,
               commitAssistantRetry,
@@ -1909,26 +1912,26 @@ export async function runAgentTurn(
           moveTurn("verifying", "evaluating current criterion-linked evidence");
           moveTurn(outcomeStatus, `turn completed with ${outcomeStatus} evidence status`);
           await auditLog("agent.final", {
-            provider,
-            model,
-            steps: step + 1,
+            provider: loop.provider,
+            model: loop.model,
+            steps: loop.step + 1,
             outcomeStatus,
             remainingCriteria,
           });
-          lastAnswer = cleaned;
+          loop.lastAnswer = cleaned;
           return finishTurn(
-            lastAnswer,
-            step + 1,
+            loop.lastAnswer,
+            loop.step + 1,
             outcomeStatus,
             remainingCriteria,
             finalOutcome.reason,
-            interruptedVisible ? cleaned : displayCleaned,
+            loop.interruptedVisible ? cleaned : displayCleaned,
           );
         }
 
         // A valid primary tool call exists for this fresh model turn. Show any
         // prose / thinking that preceded it, record the assistant message ONCE.
-        const toolDisplayText = interruptedVisible
+        const toolDisplayText = loop.interruptedVisible
           ? canonicalAssistantVisible
           : assistantText.visible;
         const beforeTool = recoveredFromBareJson
@@ -1941,9 +1944,9 @@ export async function runAgentTurn(
         } else {
           emit({ type: "assistant-message", text: "" });
         }
-        interruptedVisible = "";
-        interruptedReasoning = "";
-        lowYieldResumptions = 0;
+        loop.interruptedVisible = "";
+        loop.interruptedReasoning = "";
+        loop.lowYieldResumptions = 0;
 
         let bound = bindToolCalls({
           nativeToolCalls,
@@ -2175,7 +2178,7 @@ export async function runAgentTurn(
                 : "general",
           recordHistory: (entry) => toolResultRecorder.record(entry),
           onPlanCreated: (planKind) => {
-            codingSession = codingSessionFromContext({ buildLike, planKind });
+            loop.codingSession = codingSessionFromContext({ buildLike, planKind });
           },
         });
         const recordResult = (
@@ -2196,8 +2199,8 @@ export async function runAgentTurn(
             plan: livePlanForBatch,
             pendingSignature: session.pendingTaskBatch.value,
           });
-          batchRemindCalls = new Set<ToolCall>(guard.remindCalls);
-          batchReminderNote = guard.reminderNote;
+          loop.batchRemindCalls = new Set<ToolCall>(guard.remindCalls);
+          loop.batchReminderNote = guard.reminderNote;
           session.pendingTaskBatch.value = guard.pendingSignature;
           for (const notice of guard.notices) {
             writeNotice(notice.level, notice.message);
@@ -2266,7 +2269,7 @@ export async function runAgentTurn(
           toRun,
         );
 
-        const closeoutState = { consecutiveSynthesizedRounds };
+        const closeoutState = { consecutiveSynthesizedRounds: loop.consecutiveSynthesizedRounds };
         const closeout = await closeOutRound(
           {
             messages,
@@ -2314,7 +2317,7 @@ export async function runAgentTurn(
             ),
           },
         );
-        consecutiveSynthesizedRounds = closeoutState.consecutiveSynthesizedRounds;
+        loop.consecutiveSynthesizedRounds = closeoutState.consecutiveSynthesizedRounds;
         if (closeout.kind === "stop") {
           outcomeState.outcome.status = "partial";
           await saveOutcomeState(outcomeState);
@@ -2331,7 +2334,7 @@ export async function runAgentTurn(
         }
 
         if (round.awaitingPlanApproval) {
-          pendingCalls = [];
+          loop.pendingCalls = [];
           outcomeState.outcome.status = "partial";
           await saveOutcomeState(outcomeState);
           moveTurn("partial", "draft plan awaits approval");
@@ -2344,12 +2347,12 @@ export async function runAgentTurn(
         }
 
         if (round.aborted) {
-          lastAnswer = "";
+          loop.lastAnswer = "";
           outcomeState.outcome.status = "aborted";
           await saveOutcomeState(outcomeState);
           moveTurn("aborted", "turn aborted");
           writeAbort();
-          return finishTurn(lastAnswer, counters.productiveSteps, "aborted");
+          return finishTurn(loop.lastAnswer, counters.productiveSteps, "aborted");
         }
         // Confirm declines / tool failures already have role:tool results —
         // continue the agent loop so the model can adapt (do not force "blocked").
@@ -2358,7 +2361,7 @@ export async function runAgentTurn(
 
         if (options.onMessages) {
           try {
-            options.onMessages(buildTurnHistory(liveMessages, lastAnswer));
+            options.onMessages(buildTurnHistory(liveMessages, loop.lastAnswer));
           } catch {
             // ignore
           }
@@ -2374,12 +2377,12 @@ export async function runAgentTurn(
       session,
       counters.productiveSteps,
     );
-    lastAnswer = richSummary;
+    loop.lastAnswer = richSummary;
     outcomeState.outcome.status = "paused_budget";
     await saveOutcomeState(outcomeState);
     moveTurn("paused_budget", "emergency iteration ceiling reached");
     return finishTurn(
-      lastAnswer,
+      loop.lastAnswer,
       counters.productiveSteps,
       "paused_budget",
       ["Continue unfinished work in a subsequent turn."],
