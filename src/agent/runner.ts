@@ -37,6 +37,13 @@ import type {
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
 import {
+  createPromptMutex,
+  invalidToolCall,
+  readSalvagedWriteReceipt,
+  salvagedWriteCall,
+  type SalvagedWriteReceipt,
+} from "./turn/tool-call-preparation.js";
+import {
   createSessionStateRefresher,
   persistProjectRootOnPlan as persistPlanProjectRoot,
   persistTaskEvidence as persistPlanTaskEvidence,
@@ -1210,19 +1217,7 @@ export async function runAgentTurn(
       { call: ToolCall; result: ToolResult; contextOutput: string; ok: boolean }
     >();
 
-    const promptMutex = {
-      promise: Promise.resolve(),
-      async acquire(): Promise<() => void> {
-        let release = () => { };
-        const next = new Promise<void>((r) => {
-          release = r;
-        });
-        const current = this.promise;
-        this.promise = current.then(() => next);
-        await current;
-        return release;
-      },
-    };
+    const promptMutex = createPromptMutex();
 
     /**
      * Apply a salvaged partial write through the NORMAL tool path so the
@@ -1267,65 +1262,13 @@ export async function runAgentTurn(
 
     async function applySalvagedWrite(
       salvaged: SalvagedWrite,
-    ): Promise<{
-      ok: boolean;
-      cancelled: boolean;
-      output: string;
-      bytesOnDisk: number;
-    }> {
-      const args: Record<string, unknown> = {
-        path: salvaged.path,
-        content: salvaged.content,
-      };
-      if (salvaged.operation === "append") {
-        args.position = "end";
-        if (typeof salvaged.expectedPriorBytes === "number") {
-          args.expectedPriorBytes = salvaged.expectedPriorBytes;
-        }
-      }
-      const call: ToolCall = {
-        name: salvaged.operation === "append" ? "fs.append" : "fs.write",
-        args,
-      };
-      const eventId = `tool-${++nextToolEventId}`;
-      const res = await executeSingleTool(
-        call,
-        eventId,
+    ): Promise<SalvagedWriteReceipt> {
+      const executed = await executeSingleTool(
+        salvagedWriteCall(salvaged),
+        `tool-${++nextToolEventId}`,
         options.signal || new AbortController().signal,
       );
-      const ok = res.ok && res.result.ok;
-      let bytesOnDisk = Buffer.byteLength(salvaged.content, "utf8");
-      if (ok) {
-        try {
-          const stats = await stat(resolveFsToolPath(salvaged.path));
-          bytesOnDisk = stats.size;
-        } catch {
-          // Keep the content-length estimate when the file cannot be stat'ed.
-        }
-      }
-      return {
-        ok,
-        cancelled: Boolean(res.blockOrCancel),
-        output: res.result.output,
-        bytesOnDisk,
-      };
-    }
-
-    function invalidToolCall(
-      call: ToolCall,
-    ): { reason: string; result: ToolResult } | undefined {
-      if (call.args?.__nativeParseError) {
-        const raw = String(call.args._raw ?? "").slice(0, 200);
-        const reason =
-          "Tool call arguments were not valid JSON (truncated or malformed). " +
-          "Retry with smaller content, or use fs.writeMany / fs.append continuation. " +
-          (raw ? `Partial: ${raw}` : "");
-        return { reason, result: { ok: false, output: reason, exitCode: 1 } };
-      }
-      const elidedStub = findElidedStubArg(call.args);
-      if (!elidedStub) return undefined;
-      const reason = elidedStubReuseMessage(elidedStub.key);
-      return { reason, result: { ok: false, output: reason, exitCode: 1 } };
+      return readSalvagedWriteReceipt(salvaged, executed);
     }
 
     async function executeSingleTool(
