@@ -40,6 +40,7 @@ import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
+import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import {
   createWireOccurrenceLedger,
   type ReplayedOccurrence,
@@ -2995,69 +2996,39 @@ export async function runAgentTurn(
             (userExpectsWork ||
               (narratedAction && !informationalQuery) ||
               (narratedWebAction && !informationalQuery));
-          if (
-            (wantsAction || unreadResponderResults) &&
-            toolsAttached &&
-            consecutiveModelOnlyRounds === 2
-          ) {
-            markTextOnlyModel(provider, model);
-            commitAssistantRetry(assistantText.visible);
-            writeNotice(
-              "warn",
-              "model repeatedly returned prose instead of a native tool call — switching this model to the text tool protocol",
-            );
-            messages.push(
-              recoveryUserMessage(
-                "Native tool calling did not produce an executable call. Continue now with exactly one complete fenced ```tool block. Do not repeat the prior narration.",
-              ),
-            );
-            continue;
-          }
-          if (
-            (wantsAction || unreadResponderResults) &&
-            consecutiveModelOnlyRounds >= 6
-          ) {
-            commitAssistantRetry(assistantText.visible);
-            const stalledMessage =
-              "Stopped a repeated model-only retry cycle after the model returned no executable tool call. Completed work and transcript output were preserved.";
-            writeAssistantMessage(stalledMessage);
-            const remainingCriteria = livePlanAtCompletion
-              ? foregroundRemaining(livePlanAtCompletion).map(
-                  (task) => `[${task.id}] ${task.title}`,
-                )
-              : [];
-            if (unreadResponderResults) {
-              remainingCriteria.push(
-                "Analyze and acknowledge each delivered Responder result.",
-              );
-            }
-            if (remainingCriteria.length === 0) {
-              remainingCriteria.push(
-                "Continue the unfinished work with an executable tool call.",
-              );
-            }
+          const modelOnly = handleModelOnlyRound(
+            {
+              messages,
+              provider,
+              model,
+              toolsAttached,
+              notify: writeNotice,
+              commitAssistantRetry,
+              recoveryUserMessage,
+              writeAssistantMessage,
+              unreadResponderIds: () => responderClaims.ids(),
+            },
+            {
+              assistantVisible: assistantText.visible,
+              wantsAction,
+              consecutiveModelOnlyRounds,
+              plan: livePlanAtCompletion,
+            },
+          );
+          if (modelOnly.kind === "continue-round") continue;
+          if (modelOnly.kind === "stop") {
             outcomeState.outcome.status = "partial";
             await saveOutcomeState(outcomeState);
             moveTurn("partial", "repeated model-only responses");
             return finishTurn(
-              stalledMessage,
+              modelOnly.answer,
               productiveSteps,
               "partial",
-              remainingCriteria,
-              "The model returned six consecutive responses without executing a tool.",
+              modelOnly.remainingCriteria,
+              modelOnly.reason,
             );
           }
-          if (unreadResponderResults) {
-            const unread = responderClaims.ids();
-            commitAssistantRetry(assistantText.visible);
-            messages.push(
-              recoveryUserMessage(
-                `You have ${unread.length} delivered Responder result(s) that remain unread: ${unread.join(", ")}. ` +
-                  "If analysis is incomplete, call only the bounded evidence tool needed now. If each result has been analyzed and is satisfactory, you MUST call job.read with its jobId or exact notificationId before giving a final response. job.read does not require an active plan; do not create or update a plan merely to acknowledge a result.",
-              ),
-            );
-            continue;
-          }
+
           const deferResponderReport = session.planApproved.value
             ? shouldYieldForDeclaredResponderDependency(
                 livePlanAtCompletion,
