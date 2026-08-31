@@ -8,7 +8,6 @@
     "src/interactive-session/manager.ts",
     "src/store/history.ts",
     "src/store/plan.ts",
-    "src/tools/definitions.ts",
     "src/tools/fs.ts",
     "src/tools/http.ts",
     "src/tools/jobs.ts",
