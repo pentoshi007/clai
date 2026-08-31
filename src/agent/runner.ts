@@ -53,6 +53,7 @@ import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
+import { linkResponderJobToPlan } from "./turn/responder-job-linkage.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -2534,133 +2535,29 @@ export async function runAgentTurn(
 
       if (result.backgroundJob) {
         const durableJob = jobManager.getJob(result.backgroundJob.id);
-        // Responder linkage is opt-in: only jobs launched with responder:true
-        // become fire-and-forget plan subtasks that auto-wake on completion.
-        // Plain background jobs stay pollable (shell.jobs/shell.tail) as before.
         if (durableJob?.responder) {
-        const livePlan = await loadPlan(session.sessionId).catch(
-          () => undefined,
-        );
-        let linkedTaskId = delegation?.taskId;
-        let linkedParentTaskId: string | undefined;
-        let responderTaskId: string | undefined;
-        let responderChildId: string | undefined;
-        if (durableJob && livePlan) {
-          const existing = livePlan.tasks.find(
-            (task) => task.jobId === durableJob.id,
-          );
-          const parentTaskId = dispatchedTaskId && livePlan.tasks.some(
-            (task) => task.id === dispatchedTaskId,
-          )
-            ? dispatchedTaskId
-            : undefined;
-          const terminalState =
-            durableJob.status === "exited"
-              ? "done"
-              : durableJob.status === "failed" ||
-                  durableJob.status === "killed" ||
-                  durableJob.status === "lost"
-                ? "failed"
-                : "in_progress";
-          const note =
-            `job=${durableJob.id} pid=${durableJob.pid ?? "?"} status=${durableJob.status} ` +
-            `artifact=${durableJob.stdoutArtifact}`;
-          const responderTitle = `Responder · ${durableJob.name ?? durableJob.commandDisplay.slice(0, 96)}`;
-          // Upsert the child by delegation/job identity
-          // inside the transactional boundary. A concurrent settlement that
-          // already turned the child green is therefore never reverted, and the
-          // child is never written as the foreground parent.
-          const upsert = await mutatePlan(session.sessionId, (draft) => {
-            const target =
-              (durableJob.delegationId
-                ? draft.tasks.find(
-                    (task) => task.delegationId === durableJob.delegationId,
-                  )
-                : undefined) ??
-              draft.tasks.find((task) => task.jobId === durableJob.id);
-            const child =
-              target ??
-              appendPlanTask(draft, {
-                title: responderTitle,
-                state: terminalState,
-                note,
-                dependencies: [],
-                resourceLocks: [],
-                parentTaskId,
-                jobId: durableJob.id,
-                processId: durableJob.pid,
-                responderOwned: true,
-                ...(durableJob.delegationId
-                  ? { delegationId: durableJob.delegationId }
-                  : {}),
-              });
-            // Never regress a child that process settlement already finished.
-            const settledTerminal =
-              child.state === "done" || child.state === "failed";
-            if (!settledTerminal) {
-              child.state = terminalState;
-              child.note = note;
-            }
-            child.jobId = durableJob.id;
-            child.processId = durableJob.pid;
-            child.responderOwned = true;
-            if (durableJob.delegationId) {
-              child.delegationId = durableJob.delegationId;
-            }
-            if (parentTaskId) child.parentTaskId = parentTaskId;
-            if (isPlanTerminal(draft)) {
-              draft.status = isPlanSuccessful(draft) ? "completed" : "abandoned";
-            } else if (draft.status !== "draft") {
-              draft.status = "in_progress";
-            }
-            responderChildId = child.id;
-            return true;
-          }).catch(() => undefined);
-          if (!upsert?.ok || !responderChildId) {
-            writeNotice(
-              "warn",
-              `Responder job ${durableJob.id} started, but its plan subtask could not be persisted`,
-            );
-          } else {
-            linkedTaskId = responderChildId;
-            linkedParentTaskId = parentTaskId;
-            responderTaskId = responderChildId;
-            pendingSessionStatePlan = upsert.plan ?? livePlan;
-            const rendered = upsert.plan ?? livePlan;
-            writePlanUpdate(rendered);
-          }
-        }
-        if (durableJob) {
-          const linkedJob = jobManager.linkJob(durableJob.id, {
-            ...(linkedTaskId ? { taskId: linkedTaskId } : {}),
-            ...(linkedParentTaskId
-              ? { parentTaskId: linkedParentTaskId }
-              : {}),
-            wakeOnCompletion: true,
-            responder: true,
-            monitor: {
-              ...(durableJob.monitor ?? {}),
-              toolName: call.name,
-              toolEventId,
+          result = await linkResponderJobToPlan(
+            {
+              loadPlan: () =>
+                loadPlan(session.sessionId).catch(() => undefined),
+              mutatePlan: (mutator) => mutatePlan(session.sessionId, mutator),
+              linkJob: (jobIdToLink, patch) =>
+                jobManager.linkJob(jobIdToLink, patch),
+              renderPlan: writePlanUpdate,
+              setPendingSessionStatePlan: (plan) => {
+                pendingSessionStatePlan = plan;
+              },
+              notify: writeNotice,
             },
-          });
-          if (!linkedJob) {
-            writeNotice(
-              "warn",
-              `Responder job ${durableJob.id} started, but durable task linkage will be retried on completion`,
-            );
-          } else if (responderTaskId) {
-            result = {
-              ...result,
-              output:
-                `${result.output}\nResponder linked job ${durableJob.id} to subtask [${responderTaskId}]` +
-                `${linkedParentTaskId ? ` under [${linkedParentTaskId}]` : ""}. ` +
-                "This child subtask advances on its own from the real process result — do not mark, poll, or wait on it. " +
-                "Mark your current launch step done and move to the next task now; do NOT shell.tail/shell.jobs/sleep to watch it. " +
-                "The Responder delivers the completion into your context automatically when it is ready.",
-            };
-          }
-        }
+            {
+              job: durableJob,
+              call,
+              toolEventId,
+              delegationTaskId: delegation?.taskId,
+              dispatchedTaskId,
+            },
+            result,
+          );
         }
       }
 
