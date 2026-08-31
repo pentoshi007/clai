@@ -3,7 +3,6 @@
   "oversizedSourceFiles": [
     "src/agent/loop-guard.ts",
     "src/interactive-session/manager.ts",
-    "src/tools/http.ts",
     "src/tools/jobs.ts",
     "src/ui-core/commands/picker-commands.ts",
     "src/ui-core/rendering/markdown.ts",
