@@ -19,7 +19,7 @@ transmits source, fixtures or reports off the machine.
 | CRAP | repository-owned, joins the two above | — | `npm run quality:report` |
 | Mutation | `@stryker-mutator/core` + `@stryker-mutator/vitest-runner` | 10.0.0 | `npm run quality:mutation` |
 | Dead files / exports / dependencies | `knip` | 6.33.0 | `npm run quality:dead-code` |
-| Duplication | `jscpd` | 5.1.0 | `npm run quality:duplication` |
+| Duplication | `jscpd` | 5.0.16 | `npm run quality:duplication` |
 | Type-syntax report | repository-owned, token-aware | TypeScript 6.0.3 | `npm run quality:report` |
 | Physical lines | repository-owned | — | `npm run quality:report` |
 | Public contracts | repository-owned | TypeScript 6.0.3 | `npm run quality:contracts` |

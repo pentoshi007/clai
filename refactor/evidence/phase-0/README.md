@@ -162,14 +162,23 @@ The comparator is proved to fail: a synthetic mutation of the inventory produces
 ```text
 phase/task: P0-04
 command: npm install --save-exact --save-dev --ignore-scripts --no-audit --no-fund \
-           @vitest/coverage-v8@4.1.10 knip@6.33.0 jscpd@5.1.0 \
+           @vitest/coverage-v8@4.1.10 knip@6.33.0 jscpd@5.0.16 \
            @stryker-mutator/core@10.0.0 @stryker-mutator/vitest-runner@10.0.0
-exit status: 0 (added 165 packages)
+exit status: 0
 verification: every dependency in package.json is an exact version — no ^, ~, *, or tag
+              npm ci --ignore-scripts --no-audit --no-fund → clean install
               npm run release:verify → "exact dependencies and synchronized lockfile"
 changed public contracts: none
 rollback boundary: package.json + package-lock.json (revertible per tool)
 ```
+
+`jscpd@5.1.0` was rejected during the final clean-install check because it
+specified the unpublished optional package
+`jscpd-windows-arm64-msvc@5.0.16`; npm 11 therefore could not produce a
+self-consistent cross-platform lockfile. The exact pin was corrected to
+`5.0.16`, whose published optional dependency set is complete. The 5.1.0
+wrapper already delegated this host to the 5.0.16 native engine, so the
+compatibility and duplication results were reproduced without metric changes.
 
 | Capability | Spike command | Result |
 |---|---|---|
@@ -195,7 +204,7 @@ Recorded tool constraints:
   directory; `npm run test:arch` is back to exactly 1 file / 5 tests.
 - **Version manifests** — several analyzers restrict `exports`, so the report
   reads their `package.json` from disk. Recorded versions: TypeScript 6.0.3,
-  Vitest 4.1.10, coverage-v8 4.1.10, knip 6.33.0, jscpd 5.1.0, Stryker 10.0.0.
+  Vitest 4.1.10, coverage-v8 4.1.10, knip 6.33.0, jscpd 5.0.16, Stryker 10.0.0.
 
 ## E-06 · Metric definitions
 
@@ -412,24 +421,27 @@ depth. Narrowed to `refactor/evidence/phase-0/reports/mutation/`.
   CRAP is a Phase 8 terminal gate, and `scope.crapMeasured` is `false` until a
   full-suite coverage run exists.
 
-### Remaining auditor blocker: the phase is not committed
+### Phase-close commit record and remaining evidence caveats
 
-The auditor correctly notes that Phase 0 is not yet a commit, so there is no
-reviewed green phase-close commit for Phase 1 to start from, and the committed
-baselines the gates require do not yet exist in the tree.
+Phase 0 was split into the four reviewed local commits required by
+`plan/phase-0.md`:
 
-This is deliberate: commits are only created on explicit request. The work is
-staged and validated; the phase-close commit is **pending authorization**. The
-recommended boundaries from `plan/phase-0.md` are:
+1. `c5e8e5b` — `test(refactor): characterize locale and public contracts`
+2. `9d740d7` — `build(quality): add pinned report-only analyzers`
+3. `d5b6035` — `test(quality): add monotonic baseline comparators`
+4. `8157a3c` — `ci(quality): standardize deterministic test execution`
 
-1. `test(refactor): characterize locale and public contracts`
-2. `build(quality): add pinned report-only analyzers`
-3. `test(quality): add monotonic baseline comparators`
-4. `ci(quality): standardize deterministic test execution`
+The branch is four commits ahead of `origin/refactor/codebase`; no trusted CI run
+is available for those commits. The user explicitly authorized proceeding to
+Phase 1 without waiting for CI. Node 22, Bun, macOS, Windows, ConPTY,
+OS-keychain-success, and trusted-host checks therefore remain unverified and are
+not claimed as passed.
 
-Phase 1 must not begin until those commits exist and CI has confirmed
-`quality:ratchet` and `quality:contracts` operate against the committed
-baselines.
+The final clean-install check subsequently exposed `jscpd@5.1.0`'s unpublished
+optional Windows ARM64 package. The exact `5.0.16` correction and regenerated
+version metadata form a separate Phase 0 tooling erratum. They are locally
+validated but remain uncommitted pending explicit commit authorization; no Phase
+1 production extraction may be mixed into that repair boundary.
 
 ## Public contract changes
 

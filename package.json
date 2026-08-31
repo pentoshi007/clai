@@ -108,7 +108,7 @@
     "@vitest/coverage-v8": "4.1.10",
     "fast-check": "4.9.0",
     "ink-testing-library": "4.0.0",
-    "jscpd": "5.1.0",
+    "jscpd": "5.0.16",
     "knip": "6.33.0",
     "react-devtools-core": "7.0.1",
     "tsx": "4.23.12",

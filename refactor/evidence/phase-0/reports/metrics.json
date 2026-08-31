@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "generatedBy": "scripts/quality/report.mjs",
   "measured": true,
-  "durationMs": 3890,
+  "durationMs": 3752,
   "limits": {
     "fileLines": 500,
     "classicFileLines": 400,
@@ -16,7 +16,7 @@
     "vitest": "4.1.10",
     "coverageV8": "4.1.10",
     "knip": "6.33.0",
-    "jscpd": "5.1.0",
+    "jscpd": "5.0.16",
     "stryker": "10.0.0"
   },
   "scope": {
