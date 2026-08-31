@@ -77,14 +77,16 @@ Milestone boundary: wire snapshots and behavior moves never share a blind snapsh
 
 Plan: [plan/phase-3.md](plan/phase-3.md)
 
-- [ ] **P3-01 Freeze aggregate tool contracts** — Capture names, schemas, descriptions, order, result envelopes, and MCP append order.
-- [ ] **P3-02 Split definitions by family** — Preserve one stable aggregate export and deterministic ordering.
-- [ ] **P3-03 Split registry handlers by family** — Preserve normalization, safety calls, artifacts, and output bounds.
-- [ ] **P3-04 Decompose job identity/storage** — Preserve singleton identity, IDs, ownership, ordering, durability, and permissions.
-- [ ] **P3-05 Decompose process lifecycle** — Separate start/tail/stop/cleanup/writer concerns; preserve process-tree semantics and detach behavior.
-- [ ] **P3-06 Decompose file tools** — Separate reads/listing and atomic mutations while preserving path, ordering, permission, and confirmation contracts.
-- [ ] **P3-07 Decompose shell/package tools** — Separate command analysis, foreground/background execution, install, and cleanup behavior.
-- [ ] **P3-08 Reduce facades and close gates** — Make scoped files `<500`, remove applicable legacy entries, and pass tool/job/fs/shell/security metrics and tests.
+- [x] **P3-01 Freeze aggregate tool contracts** — Capture names, schemas, descriptions, order, result envelopes, and MCP append order.
+- [x] **P3-02 Split definitions by family** — Preserve one stable aggregate export and deterministic ordering.
+- [x] **P3-03 Split registry handlers by family** — Preserve normalization, safety calls, artifacts, and output bounds.
+- [x] **P3-04 Decompose job identity/storage** — Preserve singleton identity, IDs, ownership, ordering, durability, and permissions.
+- [x] **P3-05 Decompose process lifecycle** — Separate start/tail/stop/cleanup/writer concerns; preserve process-tree semantics and detach behavior.
+- [x] **P3-06 Decompose file tools** — Separate reads/listing and atomic mutations while preserving path, ordering, permission, and confirmation contracts.
+- [x] **P3-07 Decompose shell/package tools** — Separate command analysis, foreground/background execution, install, and cleanup behavior.
+- [x] **P3-08 Reduce facades and close gates** — Make scoped files `<500`, remove applicable legacy entries, and pass tool/job/fs/shell/security metrics and tests.
+
+Evidence: [phase-3 evidence](evidence/phase-3/README.md). Definitions 1,649 -> 71 and registry 2,126 -> 272 with byte-identical aggregates verified against a pristine worktree; fs 1,471 -> 337; shell 1,042 -> 285; jobs 2,590 -> 2,033 with `JobManager` decomposition deferred to Phase 7 and recorded.
 
 Milestone boundary: never create parallel registries, job stores, or process owners. Suggested final subject: `refactor(tools): decompose registry and lifecycle services`.
 
