@@ -15,7 +15,6 @@ import type {
   ToolResult,
 } from "../types.js";
 import { completeWithProvider, streamWithProvider } from "../llm/router.js";
-import { isProviderFailureStatus } from "../llm/key-rotation.js";
 import {
   REQUEST_CONTEXT_PREFIX,
   upsertRequestContextMessage,
@@ -64,6 +63,7 @@ import {
   assembleRequest,
   type RequestAssemblyState,
 } from "./turn/loop/request-assembly.js";
+import { createStreamSession } from "./turn/loop/stream-session.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -107,7 +107,6 @@ import {
   syntheticToolCallId,
   isTextOnlyModel,
   markTextOnlyModel,
-  fromWireName,
   type ToolCallingMode,
 } from "../llm/tool-protocol.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../ui-core/rendering/sanitize-display.js";
@@ -195,10 +194,7 @@ import {
   describeDominantContextBlock,
 } from "./context-breakdown.js";
 import { recordRequestTokenObservation } from "../llm/token-estimate-calibration.js";
-import {
-  accountAssembledRequest,
-  RequestOverLimitError,
-} from "./request-accounting.js";
+import { RequestOverLimitError } from "./request-accounting.js";
 import {
   freeTierGuardNotices,
   getReliabilityPolicy,
@@ -224,12 +220,10 @@ import type { LoadedSkill } from "../skills/types.js";
 import { loadScopeForSession, isScopeActive } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
-  createThinkingStreamParser,
   rememberThinking,
   stripThinking,
 } from "../ui/thinking.js";
 import { hasReasoningMarker } from "../llm/reasoning-marker.js";
-import type { ProviderStreamEvent } from "../llm/stream-events.js";
 import { safeCwd } from "../os/cwd.js";
 import {
   analyzeTask,
@@ -2724,46 +2718,24 @@ export async function runAgentTurn(
         const streamLabel =
           step === 0 ? "waiting for model" : `step ${step + 1}`;
         emit({ type: "status", text: streamLabel });
-        let sawReasoning = false;
-        let inThinking = false;
-        let emittedThinkingStatus = false;
-        let generatedTokens = 0;
-        let accumulatedText = "";
-        let streamedReasoningText = "";
-        let typedReasoningOpen = false;
-        const callIds: string[] = [];
-        let streamedCallsCount = 0;
-        // A model can think silently for minutes. Without a heartbeat the UI
-        // shows a frozen label and the turn looks hung, so surface the current
-        // phase on a timer rather than only on token arrival.
-        const streamPhase = (): string => {
-          if (generatedTokens > 0 && !inThinking) {
-            return "responding";
-          }
-          if (sawReasoning) return "thinking";
-          return "waiting for model";
-        };
-        const heartbeat = setInterval(() => {
-          emit({ type: "status", text: streamPhase() });
-        }, 10_000);
-        (heartbeat as unknown as { unref?: () => void }).unref?.();
-
-        const deferredToolCalls: {
-          eventId: string;
-          call: ToolCall;
-          shown: boolean;
-        }[] = [];
-        const streamedNativeCallNames = new Map<number, string>();
-        const deltaParser = createThinkingStreamParser(
-          (text) => emit({ type: "assistant-delta", text }),
-          (text) => {
-            if (!emittedThinkingStatus) {
-              emittedThinkingStatus = true;
-              emit({ type: "status", text: "thinking" });
-            }
-            emit({ type: "thinking-delta", text });
+        const streamSession = createStreamSession({
+          emitStatus: (text) => emit({ type: "status", text }),
+          emitAssistantDelta: (text) => emit({ type: "assistant-delta", text }),
+          emitThinkingDelta: (text) => emit({ type: "thinking-delta", text }),
+          writeStatus,
+          notify: writeNotice,
+          writeToolCall,
+          nextToolEventId: () => `tool-${++nextToolEventId}`,
+          markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
+          nativeToolsAttached: () => toolsAttached,
+          onSuccessfulRequest: (snapshot) => {
+            lastSuccessfulRequestSnapshot = snapshot;
+            options.onSuccessfulRequest?.(snapshot);
           },
-        );
+        });
+        const deferredToolCalls = streamSession.deferredToolCalls;
+        const streamedNativeCallNames = streamSession.streamedNativeCallNames;
+        const callIds = streamSession.callIds;
         let completion;
         let toolsAttached = false;
         try {
@@ -2851,94 +2823,15 @@ export async function runAgentTurn(
                   tools: turnTools,
                   toolChoice: "auto" as const,
                   parallelToolCalls: true,
-                  onToolCallDelta: (delta) => {
-                    if (!delta.name) return;
-                    const name = fromWireName(delta.name) ?? delta.name;
-                    streamedNativeCallNames.set(delta.index, name);
-                    emit({
-                      type: "status",
-                      text:
-                        delta.argumentsBytes && delta.argumentsBytes >= 4096
-                          ? `${name} (${Math.round(delta.argumentsBytes / 1024)}KB args)`
-                          : name,
-                    });
-                  },
+                  onToolCallDelta: streamSession.onToolCallDelta,
                 }
                 : {}),
             },
-            (token) => {
-              deltaParser.push(token);
-              generatedTokens += 1;
-              accumulatedText += token;
-
-              // Early UI cards from text fences only when native tools are off
-              // (native args stream as structured deltas, not prose).
-              if (!toolsAttached) {
-                const parsedCalls = parseAllToolCalls(accumulatedText);
-                if (parsedCalls.length > streamedCallsCount) {
-                  while (streamedCallsCount < parsedCalls.length) {
-                    const call = normalizeToolCall(
-                      parsedCalls[streamedCallsCount]!,
-                    );
-                    const eventId = `tool-${++nextToolEventId}`;
-                    callIds[streamedCallsCount] = eventId;
-                    alreadyPrintedIds.add(eventId);
-                    deferredToolCalls.push({
-                      eventId,
-                      call,
-                      shown: true,
-                    });
-                    writeToolCall(eventId, call);
-                    emit({ type: "status", text: call.name });
-                    streamedCallsCount += 1;
-                  }
-                }
-              }
-
-              if (typedReasoningOpen) {
-                typedReasoningOpen = false;
-                inThinking = false;
-                generatedTokens = 0;
-              }
-              if (
-                !sawReasoning &&
-                /^\s*<think(?:ing)?\b/i.test(accumulatedText)
-              ) {
-                sawReasoning = true;
-                inThinking = true;
-                emit({ type: "status", text: "thinking" });
-              }
-              if (inThinking && /<\/think(?:ing)?>/i.test(token)) {
-                inThinking = false;
-                generatedTokens = 0;
-              }
-            },
+            streamSession.onToken,
             {
-              onStatus: (status) => {
-                writeStatus(status);
-                const full = status.replace(/\s+/g, " ").trim();
-                if (isProviderFailureStatus(full)) writeNotice("warn", full);
-              },
-              onStreamEvent: (event: ProviderStreamEvent) => {
-                if (event.type !== "reasoning_delta") return;
-                streamedReasoningText += event.text;
-                typedReasoningOpen = true;
-                sawReasoning = true;
-                inThinking = true;
-                generatedTokens += 1;
-                if (!emittedThinkingStatus) {
-                  emittedThinkingStatus = true;
-                  emit({ type: "status", text: "thinking" });
-                }
-                emit({ type: "thinking-delta", text: event.text });
-              },
-              // Capture every successful dispatch locally as well: an
-              // auto-compaction later in this turn replays the exact request
-              // so the whole prior prompt stays a cached prefix.
-              onSuccessfulRequest: (snapshot) => {
-                lastSuccessfulRequestSnapshot = snapshot;
-                options.onSuccessfulRequest?.(snapshot);
-              },
+              onStatus: streamSession.onStatus,
+              onStreamEvent: streamSession.onStreamEvent,
+              onSuccessfulRequest: streamSession.onSuccessfulRequest,
             },
           );
           freeTierConsecutiveFailures = 0;
@@ -2992,7 +2885,7 @@ export async function runAgentTurn(
                 writeToolBlocked,
                 rememberThinking,
                 sanitizeAssistantText,
-                finishDeltaParser: () => deltaParser.finish(),
+                finishDeltaParser: streamSession.finishDeltaParser,
                 recoveryUserMessage,
                 forceCompact: (reason) => maybeAutoCompact(reason, true),
                 delay: (ms) => delay(ms, options.signal),
@@ -3009,8 +2902,8 @@ export async function runAgentTurn(
                       model: failedAttempt.model,
                     }
                     : undefined,
-                accumulatedText,
-                streamedReasoningText,
+                accumulatedText: streamSession.accumulatedText(),
+                streamedReasoningText: streamSession.streamedReasoningText(),
                 deferredToolCalls,
               },
             );
@@ -3027,7 +2920,7 @@ export async function runAgentTurn(
             continue;
           }
         } finally {
-          clearInterval(heartbeat);
+          streamSession.stopHeartbeat();
         }
         if (responderDelivery) {
           // The result text is now part of this turn, so consumption is durable.
@@ -3076,7 +2969,7 @@ export async function runAgentTurn(
             });
           }
         }
-        deltaParser.finish();
+        streamSession.finishDeltaParser();
         // Sticky text-only may have flipped dialect during stream retry.
         ({ dialect: toolDialect, native: nativeToolsActive } =
           resolveNativeTools(provider, model));
@@ -3087,7 +2980,7 @@ export async function runAgentTurn(
 
         const completionSplit = stripThinking(completion.text);
         const completionThinkContent = [
-          streamedReasoningText.trim() ||
+          streamSession.streamedReasoningText().trim() ||
             (completion.reasoningBlock?.text ?? "").trim(),
           completionSplit.thinkContent,
         ]
