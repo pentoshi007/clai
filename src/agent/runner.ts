@@ -47,6 +47,7 @@ import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.j
 import { createToolRouting } from "./turn/tool-routing.js";
 import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
+import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -5277,128 +5278,36 @@ export async function runAgentTurn(
           malformedFenceRetries = 0;
           bareToolJsonRetries = 0;
 
-          if (
-            res.ok &&
-            (res.call.name === "fs.edit" ||
-              res.call.name === "fs.write" ||
-              res.call.name === "fs.writeMany" ||
-              res.call.name === "fs.replaceLines" ||
-              res.call.name === "fs.append")
-          ) {
-            // Mutation landed — post-fix summaries must not re-force tools.
-            sawSuccessfulMutation = true;
-          }
-          // A fresh failed localhost probe re-opens the diagnosis→fix gate.
-          if (
-            (res.call.name === "http.fetch" ||
-              res.call.name === "web.fetch" ||
-              res.call.name === "shell.exec") &&
-            localHttpProbeIsFailure(
-              res.result.output ?? res.contextOutput ?? "",
-            )
-          ) {
-            sawSuccessfulMutation = false;
-          }
-          if (res.ok && isEvidenceWorkTool(res.call.name)) {
+          const evidence = readToolEvidenceSignals({
+            call: res.call,
+            ok: res.ok,
+            output: res.result.output ?? res.contextOutput ?? "",
+            pentestTurn: pentestLike || pentestSession,
+            activeProjectRoot: getActiveProjectRoot(),
+          });
+          if (evidence.mutationLanded) sawSuccessfulMutation = true;
+          if (evidence.freshProbeFailure) sawSuccessfulMutation = false;
+          if (evidence.evidenceWorkTool) {
             recovery.actionIntent = 0;
             recovery.errorFix = 0;
           }
-          if (res.ok && res.call.name === "shell.start") sawServerStart = true;
-          if (res.ok && res.call.name === "shell.tail") {
-            sawServerTail = true;
-            const tailOut = res.result.output ?? res.contextOutput ?? "";
-            if (isServerReadyOutput(tailOut)) {
-              sawServerStart = true;
-              sawServerTail = true;
-            }
+          if (evidence.serverStarted) sawServerStart = true;
+          if (evidence.serverTailed) sawServerTail = true;
+          if (evidence.activePentestTest) sawActivePentestTest = true;
+          if (evidence.localProbe === "failure") {
+            sawFailedLocalHttpProbe = true;
+            sawLocalHttpProbe = false;
+          } else if (evidence.localProbe === "success") {
+            sawLocalHttpProbe = true;
+            sawFailedLocalHttpProbe = false;
+            recovery.failedProbe = 0;
+          } else if (evidence.localProbe === "softSuccess") {
+            sawLocalHttpProbe = true;
+            sawFailedLocalHttpProbe = false;
           }
-          if (
-            res.ok &&
-            res.call.name === "shell.exec" &&
-            isPortListeningOutput(
-              String(res.call.args.command ?? ""),
-              res.result.output ?? res.contextOutput ?? "",
-            )
-          ) {
-            sawServerStart = true;
-          }
-          if (
-            res.ok &&
-            (pentestLike || pentestSession) &&
-            (res.call.name === "http.fetch" ||
-              res.call.name === "shell.exec" ||
-              res.call.name === "net.scan" ||
-              res.call.name === "pentest.recon")
-          ) {
-            const blob = `${res.call.name} ${JSON.stringify(res.call.args)}`;
-            if (
-              /\b(sqlmap|hydra|nikto|nuclei|ffuf|gobuster|exploit|payload|idor|xss|union\s+select)\b/i.test(
-                blob,
-              ) ||
-              (res.call.name === "http.fetch" &&
-                typeof res.call.args.method === "string" &&
-                !/^get$/i.test(res.call.args.method))
-            ) {
-              sawActivePentestTest = true;
-            }
-          }
-          if (
-            res.ok &&
-            ((res.call.name === "http.fetch" &&
-              /^(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(
-                String(res.call.args.url ?? ""),
-              )) ||
-              (res.call.name === "shell.exec" &&
-                /\bcurl\b[\s\S]*\b(?:localhost|127\.0\.0\.1|\[::1\])\b/i.test(
-                  String(res.call.args.command ?? ""),
-                )))
-          ) {
-            const out = res.result.output ?? res.contextOutput ?? "";
-            if (localHttpProbeIsFailure(out)) {
-              sawFailedLocalHttpProbe = true;
-              sawLocalHttpProbe = false;
-            } else if (localHttpProbeIsSuccess(out)) {
-              sawLocalHttpProbe = true;
-              sawFailedLocalHttpProbe = false;
-              recovery.failedProbe = 0;
-            } else if (
-              res.call.name === "shell.exec" &&
-              !localHttpProbeIsFailure(out)
-            ) {
-              // curl without status line — soft success
-              sawLocalHttpProbe = true;
-              sawFailedLocalHttpProbe = false;
-            }
-          }
-          // Track freestyle local-app materialization (scaffold / install / feature write)
-          if (res.ok) {
-            const cmd =
-              typeof res.call.args.command === "string"
-                ? res.call.args.command
-                : "";
-            const pathArg =
-              typeof res.call.args.path === "string" ? res.call.args.path : "";
-            if (isScaffoldCreateCommand(cmd)) {
-              sawScaffoldOk = true;
-              sawLocalAppMaterialWork = true;
-            }
-            if (isFeatureImplementationCall(res.call)) {
-              sawFeatureImplWrite = true;
-              sawLocalAppMaterialWork = true;
-            }
-            if (
-              /\b(?:npm|pnpm|yarn|bun)\s+i(?:nstall)?\b/i.test(cmd) ||
-              res.call.name === "fs.write" ||
-              res.call.name === "fs.writeMany" ||
-              res.call.name === "fs.edit" ||
-              (pathArg &&
-                getActiveProjectRoot() &&
-                (pathArg.includes(getActiveProjectRoot()!) ||
-                  !pathArg.startsWith("/")))
-            ) {
-              sawLocalAppMaterialWork = true;
-            }
-          }
+          if (evidence.scaffoldCreated) sawScaffoldOk = true;
+          if (evidence.featureWrite) sawFeatureImplWrite = true;
+          if (evidence.localAppMaterialWork) sawLocalAppMaterialWork = true;
           if (res.call.name === "instructions.record" && res.ok) {
             instructionsChangedThisRound = true;
           }
