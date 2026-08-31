@@ -39,12 +39,16 @@ boundary that was validated before it was pushed.
 | 30 | `f247938` | plan mode gather gate | `turn/plan-mode-gate.ts` |
 | 31 | `ce01016` | plan task autostart | `turn/task-autostart.ts` |
 | 32 | `0d0369f` | scaffold preflight decision | `turn/scaffold-preflight.ts` |
+| 33 | `74c6d90` | automatic compaction coordinator | `turn/compaction-coordinator.ts` |
+| 34 | `d5b12e6` | turn history writer | `turn/history-writer.ts` |
+| 35 | `a3f1c2b` | responder job plan linkage | `turn/responder-job-linkage.ts` |
+| 36 | `bc8e441` | scaffold outcome reconciliation | `turn/scaffold-outcome.ts` |
 
 ## Measured effect
 
 | Metric | Phase 1 entry | Current |
 |---|---:|---:|
-| `src/agent/runner.ts` physical lines | 6,769 | 5,617 |
+| `src/agent/runner.ts` physical lines | 6,769 | 5,223 |
 | maximum cognitive complexity | 3,197 | 2,712 |
 | maximum cyclomatic complexity | 456 | 392 |
 | held legacy findings | 572 | 565 |
@@ -107,14 +111,12 @@ threshold, so its entry legitimately remains.
 
 ## Remaining Phase 1 work
 
-1. Finish `executeSingleTool`: the safety/scope decision, confirmation and
-   authorization handoff, dispatch and responder delegation, responder job plan
-   linkage, and the post-execution result framing remain inline.
-2. Decompose the iteration loop (request assembly, stream handling, recovery,
-   continuation, evidence gates).
-3. Extract exactly-once finalization from `finishTurn`.
-4. Reduce the facade below 500 lines and remove the runner's legacy baseline
-   entry in that same structural commit.
+The exact remaining decomposition is enumerated as 23 numbered commits with
+line-range estimates, port requirements, and gate pitfalls in
+[completion-map.md](completion-map.md). Summary: turn setup (8 modules),
+`executeSingleTool` (6 modules), and the iteration loop (9 modules), totalling
+about 4,780 lines. Phase 1 cannot close until `runner.ts` is under 500 lines and
+its `legacy-baseline.json` entry is removed.
 
 Out of local scope on this Linux/Node 24 host: Node 22, Bun/OpenTUI, macOS,
 Windows/ConPTY, and OS-keychain contracts. They are never claimed as passed.
