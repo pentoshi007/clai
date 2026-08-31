@@ -1,13 +1,5 @@
-import { createHash } from "node:crypto";
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from "node:fs";
-import { homedir } from "node:os";
+
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import {
   basename,
   dirname,
@@ -16,7 +8,7 @@ import {
   join,
   resolve,
 } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import {
   detectModelImageMediaType,
   imageBudgetFor,
@@ -25,7 +17,13 @@ import {
 import { prepareImageForModel } from "../attachments/image-prepare.js";
 import { safeCwd } from "../os/cwd.js";
 import type { ChatImage } from "../types.js";
-import { scratchDirFor } from "../prompts/index.js";
+import { expandHome } from "./mentions/file-suggestions.js";
+import { classifyPath, extractMentionTokens, normalizeDroppedPath, stabilizeImagePaths, tokenToPath } from "./mentions/expand.js";
+export { expandMentions } from "./mentions/expand.js";
+export { extractMentionTokens, normalizeDroppedPath, stabilizeImagePaths };
+export type { Attachment, AttachmentKind, ExpandMentionsOptions, MentionExpansion } from "./mentions/expand.js";
+export { findFileSuggestions } from "./mentions/file-suggestions.js";
+export type { FileSuggestion } from "./mentions/file-suggestions.js";
 
 /**
  * @-mention + drag-and-drop file support for the REPL prompt.
@@ -43,174 +41,6 @@ import { scratchDirFor } from "../prompts/index.js";
  * is async-friendly but kept sync-read for simplicity (local files only).
  */
 
-// Directories we never want to surface in autocomplete or recurse into —
-// they're huge and almost never what the user means to attach.
-const NOISE_DIRS = new Set([
-  "node_modules",
-  ".git",
-  ".svn",
-  ".hg",
-  "dist",
-  "build",
-  "out",
-  ".next",
-  ".cache",
-  ".turbo",
-  "coverage",
-  ".venv",
-  "venv",
-  "__pycache__",
-  ".idea",
-  ".DS_Store",
-]);
-
-const TEXT_EXTENSIONS = new Set([
-  ".txt",
-  ".md",
-  ".markdown",
-  ".rst",
-  ".log",
-  ".csv",
-  ".tsv",
-  ".json",
-  ".jsonc",
-  ".json5",
-  ".yaml",
-  ".yml",
-  ".toml",
-  ".ini",
-  ".env.example",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".ts",
-  ".tsx",
-  ".mts",
-  ".cts",
-  ".py",
-  ".rb",
-  ".go",
-  ".rs",
-  ".java",
-  ".kt",
-  ".kts",
-  ".c",
-  ".h",
-  ".cpp",
-  ".cc",
-  ".hpp",
-  ".cs",
-  ".php",
-  ".swift",
-  ".scala",
-  ".clj",
-  ".ex",
-  ".exs",
-  ".sh",
-  ".bash",
-  ".zsh",
-  ".fish",
-  ".ps1",
-  ".bat",
-  ".cmd",
-  ".html",
-  ".htm",
-  ".xml",
-  ".svg",
-  ".css",
-  ".scss",
-  ".sass",
-  ".less",
-  ".vue",
-  ".svelte",
-  ".astro",
-  ".sql",
-  ".graphql",
-  ".gql",
-  ".proto",
-  ".conf",
-  ".cfg",
-  ".properties",
-  ".gradle",
-  ".dockerfile",
-  ".gitignore",
-  ".dockerignore",
-  ".editorconfig",
-]);
-
-const IMAGE_EXTENSIONS = new Set([
-  ".png",
-  ".jpg",
-  ".jpeg",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".tiff",
-  ".tif",
-  ".ico",
-  ".heic",
-]);
-
-const DOC_EXTENSIONS = new Set([
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  ".odt",
-  ".ods",
-]);
-
-export type AttachmentKind =
-  | "text"
-  | "image"
-  | "document"
-  | "binary"
-  | "directory"
-  | "missing";
-
-export interface Attachment {
-  /** Raw token as it appeared in the prompt (e.g. "@src/App.tsx"). */
-  raw: string;
-  /** Absolute resolved path. */
-  path: string;
-  kind: AttachmentKind;
-  /** Inlined text contents (text kind only). */
-  content?: string;
-  truncated?: boolean;
-  /** Human-readable note (binary/missing/directory). */
-  note?: string;
-  /**
-   * Image kind only: the bytes decode to a model-supported image within the
-   * size cap. Callers must not switch models for a rejected image.
-   */
-  sendable?: boolean;
-}
-
-export interface FileSuggestion {
-  /** The text to insert after the leading "@" (e.g. "src/App.tsx" or "src/"). */
-  value: string;
-  /** Display label. */
-  label: string;
-  isDir: boolean;
-}
-
-export interface MentionExpansion {
-  /** The original prompt text, unchanged (mentions stay readable in history). */
-  text: string;
-  attachments: Attachment[];
-  /** Context block to append to the model message, or "" if no attachments. */
-  contextBlock: string;
-}
-
-export interface ExpandMentionsOptions {
-  visionCapable?: boolean | undefined;
-  budget?: ImageBudget | undefined;
-}
-
 const IMAGE_MEDIA_TYPES: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -226,41 +56,6 @@ const IMAGE_MEDIA_TYPES: Record<string, string> = {
 
 export function imageMediaType(absPath: string): string | undefined {
   return IMAGE_MEDIA_TYPES[extname(absPath).toLowerCase()];
-}
-
-function expandHome(p: string): string {
-  if (p === "~") return homedir();
-  if (p.startsWith("~/") || p.startsWith("~\\"))
-    return join(homedir(), p.slice(2));
-  return p;
-}
-
-export function normalizeDroppedPath(token: string): string {
-  let normalized = token.trim();
-  if (normalized.length === 0) return normalized;
-  if (
-    (normalized.startsWith("'") &&
-      normalized.endsWith("'") &&
-      normalized.length >= 2) ||
-    (normalized.startsWith('"') &&
-      normalized.endsWith('"') &&
-      normalized.length >= 2)
-  ) {
-    normalized = normalized.slice(1, -1);
-  } else if (normalized.endsWith("'") || normalized.endsWith('"')) {
-    normalized = normalized.slice(0, -1);
-  }
-  if (/^file:\/\//i.test(normalized)) {
-    try {
-      return fileURLToPath(normalized);
-    } catch {
-      return normalized;
-    }
-  }
-  const windowsPath =
-    /^[A-Za-z]:[\\/]/.test(normalized) || /^\\\\/.test(normalized);
-  if (!windowsPath) normalized = normalized.replace(/\\(.)/g, "$1");
-  return normalized;
 }
 
 export function formatAttachmentReference(
@@ -295,143 +90,6 @@ export function getMentionQuery(
   // No whitespace inside an in-progress mention (we autocomplete a single path).
   if (/\s/.test(token)) return null;
   return { query: token, start: at };
-}
-
-/**
- * Synchronously list file/dir suggestions for an in-progress @-mention.
- * `query` is the text after "@" (may include a directory portion like
- * "src/comp"). Suggestions are returned relative to `baseDir` unless the
- * query is absolute or home-anchored.
- */
-export function findFileSuggestions(
-  query: string,
-  baseDir: string = safeCwd(),
-  limit = 12,
-): FileSuggestion[] {
-  const anchored = query.startsWith("/") || query.startsWith("~");
-  const expanded = expandHome(query);
-
-  // Split into "directory part" + "name prefix".
-  let dirPart: string;
-  let prefix: string;
-  if (query.endsWith("/")) {
-    dirPart = expanded;
-    prefix = "";
-  } else {
-    dirPart = dirname(expanded);
-    prefix = basename(expanded);
-    // dirname(".") or dirname("foo") => "." — keep relative root.
-    if (dirPart === "." && !expanded.includes("/")) dirPart = "";
-  }
-
-  const searchDir = anchored
-    ? dirPart === ""
-      ? "/"
-      : dirPart
-    : resolve(baseDir, dirPart);
-
-  let entries: string[];
-  try {
-    entries = readdirSync(searchDir);
-  } catch {
-    return [];
-  }
-
-  const lowerPrefix = prefix.toLowerCase();
-  const matched: FileSuggestion[] = [];
-
-  // When browsing inside a path (`@src/` or `@src/comp`), offer `../` so the
-  // user can walk back up without backspacing the whole token.
-  if (dirPart !== "" && (prefix === "" || "..".startsWith(lowerPrefix))) {
-    const parentRaw = dirPart.replace(/\/+$/, "");
-    const parentDir = dirname(parentRaw);
-    const parentValue =
-      parentDir === "." || parentDir === ""
-        ? ""
-        : parentDir.endsWith("/")
-          ? parentDir
-          : `${parentDir}/`;
-    matched.push({
-      value: parentValue,
-      label: "../",
-      isDir: true,
-    });
-  }
-
-  for (const name of entries) {
-    if (prefix === "" && NOISE_DIRS.has(name)) continue;
-    if (prefix === "" && name.startsWith(".")) continue; // hide dotfiles unless typed
-    if (!name.toLowerCase().startsWith(lowerPrefix)) continue;
-
-    let isDir = false;
-    try {
-      isDir = statSync(join(searchDir, name)).isDirectory();
-    } catch {
-      continue;
-    }
-
-    // Reconstruct the value to insert after "@" (preserve the dir portion the
-    // user already typed).
-    const joined =
-      dirPart === "" ? name : `${dirPart.replace(/\/$/, "")}/${name}`;
-    const value = isDir ? `${joined}/` : joined;
-    matched.push({
-      value,
-      label: isDir ? `${name}/` : name,
-      isDir,
-    });
-  }
-
-  matched.sort((a, b) => {
-    // Keep "../" first when present, then other dirs, then files.
-    if (a.label === "../") return -1;
-    if (b.label === "../") return 1;
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    return a.label.localeCompare(b.label);
-  });
-  return matched.slice(0, limit);
-}
-
-function classifyPath(absPath: string): AttachmentKind {
-  if (!existsSync(absPath)) return "missing";
-  let st: ReturnType<typeof statSync>;
-  try {
-    st = statSync(absPath);
-  } catch {
-    return "missing";
-  }
-  if (st.isDirectory()) return "directory";
-  if (!st.isFile()) return "binary";
-  const ext = extname(absPath).toLowerCase();
-  if (IMAGE_EXTENSIONS.has(ext)) return "image";
-  if (DOC_EXTENSIONS.has(ext)) return "document";
-  if (TEXT_EXTENSIONS.has(ext) || ext === "") return "text";
-  return "binary";
-}
-
-/**
- * Extract candidate file tokens from a submitted line:
- *  - explicit "@path" mentions (preceded by start/whitespace), and
- *  - explicit file:// references created for dropped files.
- *
- * Returns the raw token strings (including any leading "@") in order.
- */
-export function extractMentionTokens(line: string): string[] {
-  const tokens: string[] = [];
-  const mentionRe = /(^|\s)@(\S+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = mentionRe.exec(line)) !== null) {
-    const token = `@${match[2]}`;
-    if (/^@mcp:/i.test(token)) continue;
-    tokens.push(token);
-  }
-
-  const referenceRe = /file:\/\/[^\s)\]}>]+/gi;
-  while ((match = referenceRe.exec(line)) !== null) {
-    if (match[0]) tokens.push(match[0]);
-  }
-
-  return [...new Set(tokens)];
 }
 
 /**
@@ -598,100 +256,6 @@ export function stabilizeDroppedImagesInText(
   return { text: rewritten, images };
 }
 
-function tokenToPath(token: string, baseDir: string): string {
-  let path = token;
-  if (path.startsWith("@")) path = path.slice(1);
-  path = normalizeDroppedPath(path);
-  path = path.replace(/[\\/]+$/, "") || path;
-  path = expandHome(path);
-  return isAbsolute(path) ? path : resolve(baseDir, path);
-}
-
-/**
- * Resolve explicit references in a submitted prompt into attachment metadata.
- */
-export function expandMentions(
-  line: string,
-  baseDir: string = safeCwd(),
-  vision: boolean | ExpandMentionsOptions = false,
-): MentionExpansion {
-  const options: ExpandMentionsOptions =
-    typeof vision === "boolean" ? { visionCapable: vision } : vision;
-  const visionCapable = options.visionCapable === true;
-  const budget = options.budget ?? imageBudgetFor("");
-  const tokens = extractMentionTokens(line);
-  const attachments: Attachment[] = [];
-  const seenPaths = new Set<string>();
-  for (const token of tokens) {
-    const absPath = tokenToPath(token, baseDir);
-    if (seenPaths.has(absPath)) continue;
-    const kind = classifyPath(absPath);
-    seenPaths.add(absPath);
-
-    if (kind === "text") {
-      attachments.push({ raw: token, path: absPath, kind: "text" });
-    } else if (kind === "image") {
-      const stablePath = stabilizeImagePaths([absPath], baseDir)[0] ?? absPath;
-      let prepared = prepareImageForModel(stablePath, budget, baseDir);
-      if (!prepared.ok && stablePath !== absPath) {
-        const original = prepareImageForModel(absPath, budget, baseDir);
-        if (original.ok) prepared = original;
-      }
-      attachments.push({
-        raw: token,
-        path: prepared.ok ? prepared.path : stablePath,
-        kind: "image",
-        sendable: prepared.ok,
-        note: !prepared.ok
-          ? prepared.recoverable
-            ? `NOT attached — ${prepared.reason}`
-            : `NOT attached — ${prepared.reason}; convert to PNG/JPEG/GIF/WebP first`
-          : visionCapable
-            ? `attached as multimodal input — inspect it directly; prefer vision over OCR unless OCR is asked for`
-            : `not viewable by this model — use image.ocr for text or switch to a vision model for visual detail`,
-      });
-    } else if (kind === "document") {
-      const isPdf = extname(absPath).toLowerCase() === ".pdf";
-      attachments.push({
-        raw: token,
-        path: absPath,
-        kind: "document",
-        note: isPdf
-          ? "PDF file — read it with pdf.read {\"path\":\"<pdf>\"} (extracts the text layer and auto-OCRs scanned PDFs)"
-          : "document file — the agent can extract text with shell tools (e.g. textutil/pandoc/libreoffice) if needed",
-      });
-    } else if (kind === "directory") {
-      attachments.push({
-        raw: token,
-        path: absPath,
-        kind: "directory",
-        note:
-          "not expanded — explore on demand: fs.list {\"path\":\"<dir>\"} to see entries, then fs.read the files you need",
-      });
-    } else if (kind === "missing") {
-      attachments.push({
-        raw: token,
-        path: absPath,
-        kind: "missing",
-        note: "path not found",
-      });
-    } else {
-      attachments.push({
-        raw: token,
-        path: absPath,
-        kind: "binary",
-        note: "binary or non-text path",
-      });
-    }
-  }
-
-  return {
-    text: line,
-    attachments,
-    contextBlock: "",
-  };
-}
-
 /**
  * Return the absolute paths of every image attachment referenced in a prompt
  * (via @-mention or drag-drop), regardless of whether the active model
@@ -713,58 +277,6 @@ export function imageAttachmentPaths(
     if (classifyPath(absPath) === "image") paths.push(absPath);
   }
   return stabilizeImagePaths(paths, baseDir);
-}
-
-export function stabilizeImagePaths(
-  paths: string[],
-  baseDir: string = safeCwd(),
-): string[] {
-  const output: string[] = [];
-  const attachmentDir = join(scratchDirFor(baseDir), "attachments");
-  for (const source of paths) {
-    let info;
-    try {
-      info = statSync(source);
-    } catch {
-      output.push(source);
-      continue;
-    }
-    if (!info.isFile()) {
-      output.push(source);
-      continue;
-    }
-    if (resolve(dirname(source)) === resolve(attachmentDir)) {
-      output.push(source);
-      continue;
-    }
-    try {
-      mkdirSync(attachmentDir, { recursive: true });
-      const extension = extname(source).toLowerCase();
-      const stem =
-        basename(source, extension)
-          .replace(/[^\w.-]+/g, "_")
-          .replace(/_+/g, "_")
-          .slice(0, 100) || "image";
-      const id = createHash("sha1")
-        .update(`${resolve(source)}|${Math.round(info.mtimeMs)}|${info.size}`)
-        .digest("hex")
-        .slice(0, 12);
-      const destination = join(
-        attachmentDir,
-        `${id}-${stem}${extension || ".img"}`,
-      );
-      if (
-        !existsSync(destination) ||
-        statSync(destination).size !== info.size
-      ) {
-        copyFileSync(source, destination);
-      }
-      output.push(destination);
-    } catch {
-      output.push(source);
-    }
-  }
-  return output;
 }
 
 export function loadImagePaths(

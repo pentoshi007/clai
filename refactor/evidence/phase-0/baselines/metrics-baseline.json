@@ -101,6 +101,7 @@
     "src/ui-core/rendering/syntax/language-highlighters.ts",
     "src/ui-core/state/transcript-hydrate.ts",
     "src/ui-core/state/transcript-reducer.ts",
+    "src/ui-core/state/transcript/apply-app-event.ts",
     "src/ui/mentions.ts"
   ],
   "maxima": {
@@ -304,13 +305,19 @@
     "src/ui-core/rendering/syntax/language-highlighters.ts#highlightClike@53",
     "src/ui-core/rendering/tool-presenter.ts#evidencePreviewLines@279",
     "src/ui-core/rendering/tool-presenter.ts#presentTool@92",
+    "src/ui-core/state/hydrate/classic-transcript.ts#hydrateFromClassicTranscript@28",
+    "src/ui-core/state/hydrate/from-messages.ts#enrichToolsFromMessages@124",
+    "src/ui-core/state/hydrate/from-messages.ts#fileChangesFromToolArgs@45",
+    "src/ui-core/state/hydrate/from-messages.ts#hydrateFromMessages@182",
     "src/ui-core/state/transcript-hydrate.ts#enrichToolsFromMessages@351",
     "src/ui-core/state/transcript-hydrate.ts#fileChangesFromToolArgs@256",
     "src/ui-core/state/transcript-hydrate.ts#hydrateFromClassicTranscript@53",
     "src/ui-core/state/transcript-hydrate.ts#hydrateFromMessages@409",
     "src/ui-core/state/transcript-reducer.ts#applyAppEvent@505",
     "src/ui-core/state/transcript-store.ts#TranscriptStore.flushPendingEvents@255",
+    "src/ui-core/state/transcript/apply-app-event.ts#applyAppEvent@482",
     "src/ui/mentions.ts#findFileSuggestions@306",
+    "src/ui/mentions/file-suggestions.ts#findFileSuggestions@48",
     "src/ui/thinking.ts#processPending@270"
   ],
   "functionsOverCognitive": [
@@ -718,6 +725,10 @@
     "src/ui-core/rendering/syntax/language-highlighters.ts#highlightPython@308",
     "src/ui-core/rendering/tool-presenter.ts#evidencePreviewLines@279",
     "src/ui-core/rendering/tool-presenter.ts#presentTool@92",
+    "src/ui-core/state/hydrate/classic-transcript.ts#hydrateFromClassicTranscript@28",
+    "src/ui-core/state/hydrate/from-messages.ts#enrichToolsFromMessages@124",
+    "src/ui-core/state/hydrate/from-messages.ts#fileChangesFromToolArgs@45",
+    "src/ui-core/state/hydrate/from-messages.ts#hydrateFromMessages@182",
     "src/ui-core/state/transcript-hydrate.ts#boundSessionVisualInput@590",
     "src/ui-core/state/transcript-hydrate.ts#enrichToolsFromMessages@351",
     "src/ui-core/state/transcript-hydrate.ts#fileChangesFromToolArgs@256",
@@ -727,8 +738,12 @@
     "src/ui-core/state/transcript-reducer.ts#applyAppEvent@505",
     "src/ui-core/state/transcript-reducer.ts#finalizeMessage@291",
     "src/ui-core/state/transcript-store.ts#TranscriptStore.flushPendingEvents@255",
+    "src/ui-core/state/transcript/apply-app-event.ts#applyAppEvent@482",
+    "src/ui-core/state/transcript/apply-app-event.ts#finalizeMessage@268",
     "src/ui/mentions.ts#expandMentions@613",
     "src/ui/mentions.ts#findFileSuggestions@306",
+    "src/ui/mentions/expand.ts#expandMentions@233",
+    "src/ui/mentions/file-suggestions.ts#findFileSuggestions@48",
     "src/ui/thinking.ts#createThinkingStreamParser@217",
     "src/ui/thinking.ts#processPending@270"
   ],
@@ -754,7 +769,8 @@
     "src/ui-core/rendering/markdown/tables.ts#renderInlineMarkdown@9",
     "src/ui-core/rendering/strip-tool-surfaces.ts#stripToolCallSurfaces@52",
     "src/ui-core/state/transcript-reducer.ts#applyAppEvent@505",
-    "src/ui-core/state/transcript-store.ts#TranscriptStore.flushPendingEvents@255"
+    "src/ui-core/state/transcript-store.ts#TranscriptStore.flushPendingEvents@255",
+    "src/ui-core/state/transcript/apply-app-event.ts#applyAppEvent@482"
   ],
   "typeSyntax": {
     "explicitAny": 40,

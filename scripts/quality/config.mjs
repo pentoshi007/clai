@@ -51,6 +51,11 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/ui/mentions/expand.ts": "src/ui/mentions.ts",
+  "src/ui/mentions/file-suggestions.ts": "src/ui/mentions.ts",
+  "src/ui-core/state/hydrate/classic-transcript.ts": "src/ui-core/state/transcript-hydrate.ts",
+  "src/ui-core/state/hydrate/from-messages.ts": "src/ui-core/state/transcript-hydrate.ts",
+  "src/ui-core/state/transcript/apply-app-event.ts": "src/ui-core/state/transcript-reducer.ts",
   "src/ui-core/commands/pickers/custom-provider.ts": "src/ui-core/commands/picker-commands.ts",
   "src/ui-core/commands/pickers/history.ts": "src/ui-core/commands/picker-commands.ts",
   "src/ui-core/commands/pickers/models.ts": "src/ui-core/commands/picker-commands.ts",
