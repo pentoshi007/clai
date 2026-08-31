@@ -248,6 +248,80 @@ describe("truncated thinking continuation", () => {
     );
   });
 
+  it("trims the longest repeated suffix-prefix overlap when continuation text resumes mid-sentence", async () => {
+    const overlap =
+      "the provider repeats this exact continuation boundary before adding new text";
+    const first = `Opening material before ${overlap}`;
+    const tail = " and then completes the answer.";
+    roundResults = [
+      () => ({
+        text: first,
+        provider: "nvidia",
+        model: "test-model",
+        finishReason: "MAX_TOKENS",
+      }),
+      () => ({
+        text: overlap + tail,
+        provider: "nvidia",
+        model: "test-model",
+        finishReason: "stop",
+      }),
+    ];
+    const { runAgent } = await import("../../src/modes/agent.js");
+    const events: AgentEvent[] = [];
+
+    const answer = await runAgent("answer this", {
+      session: makeSession("session-trunc-think"),
+      provider: "nvidia",
+      model: "test-model",
+      history: [{ role: "system", content: "sys" } as ChatMessage],
+      maxSteps: 6,
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(answer).toBe(first + tail);
+    expect(answer.split(overlap).length - 1).toBe(1);
+    const finalMessage = events
+      .filter((event) => event.type === "assistant-message")
+      .at(-1);
+    expect(
+      finalMessage?.type === "assistant-message" ? finalMessage.text : "",
+    ).toBe(first + tail);
+  });
+
+  it("preserves a repeated partial overlap shorter than the minimum boundary", async () => {
+    const overlap = "1234567890123456789012345678901";
+    const first = `Opening material before ${overlap}`;
+    const tail = " remains repeated at this boundary.";
+    roundResults = [
+      () => ({
+        text: first,
+        provider: "nvidia",
+        model: "test-model",
+        finishReason: "MAX_TOKENS",
+      }),
+      () => ({
+        text: overlap + tail,
+        provider: "nvidia",
+        model: "test-model",
+        finishReason: "stop",
+      }),
+    ];
+    const { runAgent } = await import("../../src/modes/agent.js");
+
+    const answer = await runAgent("answer this", {
+      session: makeSession("session-trunc-think"),
+      provider: "nvidia",
+      model: "test-model",
+      history: [{ role: "system", content: "sys" } as ChatMessage],
+      maxSteps: 6,
+      onEvent: () => {},
+    });
+
+    expect(answer).toBe(first + overlap + tail);
+    expect(answer.split(overlap).length - 1).toBe(2);
+  });
+
   it("uses a catalog output ceiling for usage-only exhaustion and continuation", async () => {
     registerModelCatalogFacts("nvidia", {
       id: "test-model",
