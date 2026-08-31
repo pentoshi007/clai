@@ -54,6 +54,10 @@ import { recordEngagementOutcome } from "./turn/tool-execution/engagement-checkp
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import { closeOutRound } from "./turn/loop/round-closeout.js";
+import {
+  assessCompletion,
+  buildFinalizeGateInput,
+} from "./turn/loop/answer-assessment.js";
 import { decidePlanCallDeferral } from "./turn/loop/plan-call-deferral.js";
 import {
   createWireOccurrenceLedger,
@@ -2693,40 +2697,30 @@ export async function runAgentTurn(
           malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
           if (recoveryDecision === "retry") continue;
 
-          const displayCleaned = collapseRepeatedText(
-            stripSentinelTokens(assistantText.visible),
-          );
-          const cleaned = collapseRepeatedText(
-            stripSentinelTokens(canonicalAssistantVisible),
-          );
-
-          const narratedAction = looksLikeActionNarration(cleaned);
-          const narratedWebAction = looksLikeWebActionNarration(cleaned);
-
           const livePlanAtCompletion = await loadPlan(session.sessionId).catch(
             () => undefined,
           );
-          const planStatusAtCompletion =
-            livePlanAtCompletion?.status ?? activePlan?.status;
-          const completedPlanDuringThisTurn =
-            activePlan?.status !== "completed" &&
-            planStatusAtCompletion === "completed";
-          const planHasOpenWorkNow = planHasOpenWork(planStatusAtCompletion);
+          const assessment = assessCompletion({
+            visible: assistantText.visible,
+            canonicalVisible: canonicalAssistantVisible,
+            livePlan: livePlanAtCompletion,
+            activePlanStatus: activePlan?.status,
+            planApproved: session.planApproved.value,
+            informationalQuery,
+            idleOrSocialPrompt,
+            buildLikeTurn,
+            pentestLikeTurn,
+          });
+          const {
+            cleaned,
+            displayCleaned,
+            narratedAction,
+            narratedWebAction,
+            wantsAction,
+            planHasOpenWorkNow,
+            completedPlanDuringThisTurn,
+          } = assessment;
 
-          const userExpectsWork =
-            (planHasOpenWorkNow && session.planApproved.value) ||
-            (!informationalQuery &&
-              !idleOrSocialPrompt &&
-              (buildLikeTurn || pentestLikeTurn));
-
-          const unreadResponderResults =
-            responderClaims.size > 0;
-          const wantsAction =
-            !completedPlanDuringThisTurn &&
-            !idleOrSocialPrompt &&
-            (userExpectsWork ||
-              (narratedAction && !informationalQuery) ||
-              (narratedWebAction && !informationalQuery));
           const modelOnly = handleModelOnlyRound(
             {
               messages,
@@ -2768,47 +2762,29 @@ export async function runAgentTurn(
                 responderWakeNotificationId,
               )
             : false;
-          const finalizeRecovery = chooseFinalizeRecovery({
-            cleaned,
-            recovery,
-            toolsAttached,
-            productiveSteps,
-            planApproved: session.planApproved.value,
-            planHasOpenWork: planHasOpenWorkNow,
-            activePlanExists: Boolean(activePlan),
-            wantsAction,
-            narratedAction,
-            narratedWebAction,
-            isPlanMode,
-            buildLikeTurn,
-            pentestLikeTurn,
-            buildLike,
-            pentestLike,
-            pentestSession,
-            informationalQuery,
-            idleOrSocialPrompt,
-            sawPlanCreateOk: evidenceFlags.sawPlanCreateOk,
-            sawFeatureImplWrite: evidenceFlags.sawFeatureImplWrite,
-            sawScaffoldOk: evidenceFlags.sawScaffoldOk,
-            sawLocalAppMaterialWork: evidenceFlags.sawLocalAppMaterialWork,
-            sawServerStart: evidenceFlags.sawServerStart,
-            sawServerTail: evidenceFlags.sawServerTail,
-            sawLocalHttpProbe: evidenceFlags.sawLocalHttpProbe,
-            sawFailedLocalHttpProbe: evidenceFlags.sawFailedLocalHttpProbe,
-            sawActivePentestTest: evidenceFlags.sawActivePentestTest,
-            sawSuccessfulMutation: evidenceFlags.sawSuccessfulMutation,
-            featureAppAsk,
-            projectRoot: getActiveProjectRoot(),
-            plan: livePlanAtCompletion
-              ? {
-                  kind: livePlanAtCompletion.kind,
-                  hasVerifiedRuntime:
-                    planHasVerifiedRuntime(livePlanAtCompletion),
-                  tasks: livePlanAtCompletion.tasks,
-                }
-              : undefined,
-            deferResponderReport,
-          });
+          const finalizeRecovery = chooseFinalizeRecovery(
+            buildFinalizeGateInput({
+              assessment,
+              recovery,
+              evidenceFlags,
+              livePlan: livePlanAtCompletion,
+              toolsAttached,
+              productiveSteps,
+              planApproved: session.planApproved.value,
+              activePlanExists: Boolean(activePlan),
+              isPlanMode,
+              buildLikeTurn,
+              pentestLikeTurn,
+              buildLike,
+              pentestLike,
+              pentestSession,
+              informationalQuery,
+              idleOrSocialPrompt,
+              featureAppAsk,
+              projectRoot: getActiveProjectRoot(),
+              deferResponderReport,
+            }),
+          );
           if (finalizeRecovery) {
             consumeBudget(recovery, finalizeRecovery.budgetKey);
             commitAssistantRetry(assistantText.visible);
