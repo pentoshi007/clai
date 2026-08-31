@@ -41,6 +41,10 @@ import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
 import { creditSuccessfulWork } from "./turn/task-credit.js";
+import {
+  applyToolEvidenceSignals,
+  createTurnEvidenceFlags,
+} from "./turn/evidence-flags.js";
 import { evaluateEngagementGate } from "./turn/tool-execution/engagement-gate.js";
 import { recordEngagementOutcome } from "./turn/tool-execution/engagement-checkpoint.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
@@ -1028,16 +1032,7 @@ export async function runAgentTurn(
 
 
     const recovery = createRecoveryBudgets();
-    let sawServerStart = false;
-    let sawPlanCreateOk = false;
-    let instructionsChangedThisRound = false;
-    let sawServerTail = false;
-    let sawLocalHttpProbe = false;
-    let sawFailedLocalHttpProbe = false;
-    let sawLocalAppMaterialWork = false;
-    let sawScaffoldOk = false;
-    let sawFeatureImplWrite = false;
-    let sawActivePentestTest = false;
+    const evidenceFlags = createTurnEvidenceFlags();
     const featureAppAsk = userAskedForFeatureApp(prompt);
     let taskWorkLedger: TaskWorkLedger | null = null;
     /**
@@ -1054,11 +1049,11 @@ export async function runAgentTurn(
         const e = task.evidence;
         if (!e) continue;
         if (e.sawDevServerStart || e.sawServerReady || e.sawPortListening) {
-          sawServerStart = true;
+          evidenceFlags.sawServerStart = true;
         }
-        if (e.sawServerReady || e.sawDevServerStart) sawServerTail = true;
-        if (e.sawLocalHttpProbeOk) sawLocalHttpProbe = true;
-        if (e.sawRemoteActiveTestOk) sawActivePentestTest = true;
+        if (e.sawServerReady || e.sawDevServerStart) evidenceFlags.sawServerTail = true;
+        if (e.sawLocalHttpProbeOk) evidenceFlags.sawLocalHttpProbe = true;
+        if (e.sawRemoteActiveTestOk) evidenceFlags.sawActivePentestTest = true;
       }
     };
     rehydrateSessionFlagsFromPlan(activePlan);
@@ -1108,11 +1103,11 @@ export async function runAgentTurn(
       requiresState: () => buildLikeTurn || pentestLikeTurn,
       snapshotFlags: () => ({
         featureAppRequired: featureAppAsk,
-        featureSeen: sawFeatureImplWrite,
-        scaffoldOk: sawScaffoldOk,
-        serverStarted: sawServerStart,
-        serverProbedOk: sawLocalHttpProbe,
-        lastProbeFailed: sawFailedLocalHttpProbe,
+        featureSeen: evidenceFlags.sawFeatureImplWrite,
+        scaffoldOk: evidenceFlags.sawScaffoldOk,
+        serverStarted: evidenceFlags.sawServerStart,
+        serverProbedOk: evidenceFlags.sawLocalHttpProbe,
+        lastProbeFailed: evidenceFlags.sawFailedLocalHttpProbe,
         lastOkTool: taskWorkLedger?.lastOkTool,
         pentestSession,
       }),
@@ -1203,7 +1198,6 @@ export async function runAgentTurn(
     let productiveSteps = 0;
     let consecutiveModelOnlyRounds = 0;
     /** Successful file mutation this turn — kills false "error diagnosed but not fixed". */
-    let sawSuccessfulMutation = false;
     let step = -1;
     let stepMaxTokens = 0;
     let nextToolEventId = 0;
@@ -2955,16 +2949,16 @@ export async function runAgentTurn(
             pentestSession,
             informationalQuery,
             idleOrSocialPrompt,
-            sawPlanCreateOk,
-            sawFeatureImplWrite,
-            sawScaffoldOk,
-            sawLocalAppMaterialWork,
-            sawServerStart,
-            sawServerTail,
-            sawLocalHttpProbe,
-            sawFailedLocalHttpProbe,
-            sawActivePentestTest,
-            sawSuccessfulMutation,
+            sawPlanCreateOk: evidenceFlags.sawPlanCreateOk,
+            sawFeatureImplWrite: evidenceFlags.sawFeatureImplWrite,
+            sawScaffoldOk: evidenceFlags.sawScaffoldOk,
+            sawLocalAppMaterialWork: evidenceFlags.sawLocalAppMaterialWork,
+            sawServerStart: evidenceFlags.sawServerStart,
+            sawServerTail: evidenceFlags.sawServerTail,
+            sawLocalHttpProbe: evidenceFlags.sawLocalHttpProbe,
+            sawFailedLocalHttpProbe: evidenceFlags.sawFailedLocalHttpProbe,
+            sawActivePentestTest: evidenceFlags.sawActivePentestTest,
+            sawSuccessfulMutation: evidenceFlags.sawSuccessfulMutation,
             featureAppAsk,
             projectRoot: getActiveProjectRoot(),
             plan: livePlanAtCompletion
@@ -3404,34 +3398,12 @@ export async function runAgentTurn(
             pentestTurn: pentestLike || pentestSession,
             activeProjectRoot: getActiveProjectRoot(),
           });
-          if (evidence.mutationLanded) sawSuccessfulMutation = true;
-          if (evidence.freshProbeFailure) sawSuccessfulMutation = false;
-          if (evidence.evidenceWorkTool) {
-            recovery.actionIntent = 0;
-            recovery.errorFix = 0;
-          }
-          if (evidence.serverStarted) sawServerStart = true;
-          if (evidence.serverTailed) sawServerTail = true;
-          if (evidence.activePentestTest) sawActivePentestTest = true;
-          if (evidence.localProbe === "failure") {
-            sawFailedLocalHttpProbe = true;
-            sawLocalHttpProbe = false;
-          } else if (evidence.localProbe === "success") {
-            sawLocalHttpProbe = true;
-            sawFailedLocalHttpProbe = false;
-            recovery.failedProbe = 0;
-          } else if (evidence.localProbe === "softSuccess") {
-            sawLocalHttpProbe = true;
-            sawFailedLocalHttpProbe = false;
-          }
-          if (evidence.scaffoldCreated) sawScaffoldOk = true;
-          if (evidence.featureWrite) sawFeatureImplWrite = true;
-          if (evidence.localAppMaterialWork) sawLocalAppMaterialWork = true;
+          applyToolEvidenceSignals(evidenceFlags, recovery, evidence);
           if (res.call.name === "instructions.record" && res.ok) {
-            instructionsChangedThisRound = true;
+            evidenceFlags.instructionsChangedThisRound = true;
           }
           if (res.call.name === "plan.create" && res.ok) {
-            sawPlanCreateOk = true;
+            evidenceFlags.sawPlanCreateOk = true;
             if (isPlanMode) {
               awaitingPlanApproval = true;
             } else {
@@ -3661,8 +3633,8 @@ export async function runAgentTurn(
           upsertResponderResultLedger(messages, notification);
         }
 
-        if (instructionsChangedThisRound) {
-          instructionsChangedThisRound = false;
+        if (evidenceFlags.instructionsChangedThisRound) {
+          evidenceFlags.instructionsChangedThisRound = false;
           await refreshAgentInstructions();
         }
 
