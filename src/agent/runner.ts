@@ -27,8 +27,6 @@ import { resolveBuiltInProfile } from "../llm/provider-profiles.js";
 import { streamAlreadyEmitted } from "../llm/stream-progress.js";
 import {
   classifyStreamFailure,
-  planStreamRecovery,
-  recordRecoveryAttempt,
   createStreamRecoveryState,
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
@@ -58,6 +56,10 @@ import { reconcileScaffoldOutcome } from "./turn/scaffold-outcome.js";
 import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
 import { authorizeToolExecution } from "./turn/tool-execution/authorization.js";
 import { resolveToolDispatch } from "./turn/tool-execution/dispatch.js";
+import {
+  recoverFromStreamFailure,
+  type StreamFailureState,
+} from "./turn/loop/stream-failure.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -248,7 +250,6 @@ import { LoopGuard } from "./loop-guard.js";
 import {
   appendInterruptedReasoning,
   interruptedReasoningBrief,
-  isMeaningfulResumptionYield,
 } from "./interrupted-reasoning.js";
 import {
   CompactionAttemptLedger,
@@ -3032,173 +3033,74 @@ export async function runAgentTurn(
             // failure — retrying it would just re-bill the same doomed prefix.
             if (streamError instanceof RequestOverLimitError) throw streamError;
 
-            // E4: track free-tier failures for advisory notices (never blocks).
-            freeTierConsecutiveFailures += 1;
-            if (!freeTierAdvisoryShown) {
-              for (const notice of freeTierGuardNotices({
+            const failedOperationUsage = operationUsageFromError(streamError);
+            const failedAttempt = failedOperationUsage?.attempts.at(-1);
+            const failedUsage = failedOperationUsage?.aggregate.usage;
+            const failureState: StreamFailureState = {
+              freeTierConsecutiveFailures,
+              freeTierAdvisoryShown,
+              lowYieldResumptions,
+              interruptedVisible,
+              interruptedReasoning,
+              allowModelFallback,
+              preferModelFallback,
+              retryWithoutThinking,
+              visibleCommitted: outputState.visibleCommitted,
+            };
+            const decision = await recoverFromStreamFailure(
+              {
+                messages,
+                recoveryState,
                 provider,
                 estimatedInputTokens,
-                consecutiveFailures: freeTierConsecutiveFailures,
-              })) {
-                if (notice.includes("Large context")) continue; // already shown above
-                writeNotice("warn", notice);
-                freeTierAdvisoryShown = true;
-              }
-            }
-
-            // Robust recovery: a single flaky provider/model (empty admission,
-            // connection glitch, capacity 5xx, rate limit, or an oversized
-            // request) must not kill the turn. Classify the failure and take a
-            // bounded, escalating recovery step — back off, compact, drop
-            // thinking, or let the router fall back to another provider/model.
-            // We only rethrow (stop the turn) in the worst case: every approach
-            // for that failure class is exhausted or the total budget is spent.
-            const failureKind = classifyStreamFailure(streamError);
-            const failedOperationUsage = operationUsageFromError(streamError);
-            const failedUsage = failedOperationUsage?.aggregate.usage;
-            const failedAttempt = failedOperationUsage?.attempts.at(-1);
-            if (failedUsage && failedAttempt) {
-              emit({
-                type: "token-usage",
-                usage: failedUsage,
-                model: failedAttempt.model,
-                provider: failedAttempt.provider,
-              });
-            }
-            const partialStream =
-              streamAlreadyEmitted(streamError) || accumulatedText.length > 0;
-            const partialSplit = stripThinking(accumulatedText);
-            const partialThinkContent = [
-              streamedReasoningText.trim(),
-              partialSplit.thinkContent,
-            ]
-              .filter(Boolean)
-              .join("\n\n");
-            if (partialThinkContent) rememberThinking(partialThinkContent);
-            const partial = {
-              visible: partialSplit.visible,
-              hasThinking: partialThinkContent.length > 0,
-              thinkContent: partialThinkContent,
-            };
-            const rawPartialVisible = partialStream
-              ? textBeforeToolCall(
-                  stripThinking(collapseRepeatedText(accumulatedText)).visible,
-                )
-              : "";
-            const normalizedPartialVisible = trimExactContinuationOverlap(
-              interruptedVisible,
-              rawPartialVisible,
+                notify: writeNotice,
+                emitStatus: (text) => emit({ type: "status", text }),
+                emitTokenUsage: (usage, usageProvider, usageModel) =>
+                  emit({
+                    type: "token-usage",
+                    usage,
+                    model: usageModel,
+                    provider: usageProvider,
+                  }),
+                emitEmptyAssistantMessage: () =>
+                  emit({ type: "assistant-message", text: "" }),
+                writeAssistantMessage,
+                writeThinkingBlock,
+                writeToolBlocked,
+                rememberThinking,
+                sanitizeAssistantText,
+                finishDeltaParser: () => deltaParser.finish(),
+                recoveryUserMessage,
+                forceCompact: (reason) => maybeAutoCompact(reason, true),
+                delay: (ms) => delay(ms, options.signal),
+              },
+              failureState,
+              {
+                kind: classifyStreamFailure(streamError),
+                alreadyEmitted: streamAlreadyEmitted(streamError),
+                attemptUsage:
+                  failedUsage && failedAttempt
+                    ? {
+                      usage: failedUsage,
+                      provider: failedAttempt.provider,
+                      model: failedAttempt.model,
+                    }
+                    : undefined,
+                accumulatedText,
+                streamedReasoningText,
+                deferredToolCalls,
+              },
             );
-            const partialVisible = normalizedPartialVisible.trim();
-            // A route that drops after a handful of characters is not making
-            // progress, however many times it is retried. Only a substantial
-            // yield unlocks the generous resumption budget; anything less is
-            // charged to the failure class and escalates to another route.
-            const meaningfulProgress =
-              partialStream &&
-              isMeaningfulResumptionYield(
-                normalizedPartialVisible.length + partial.thinkContent.length,
-              );
-            if (partialStream) {
-              lowYieldResumptions = meaningfulProgress
-                ? 0
-                : lowYieldResumptions + 1;
-            }
-            const plan = planStreamRecovery({
-              kind: failureKind,
-              state: recoveryState,
-              progressed: meaningfulProgress,
-            });
-            const terminalFailure = plan.action === "give-up";
-
-            let continuationNudge = "";
-            if (partialStream) {
-              deltaParser.finish();
-              const hasShownToolCall = deferredToolCalls.some(
-                (entry) => entry.shown,
-              );
-              if (partialVisible) {
-                // Finalizing here would close the streaming card and split one
-                // answer across a card per interruption. Keep it open and let
-                // the single commit below paint the stitched text; only a
-                // terminal failure has to flush it now.
-                if (terminalFailure) {
-                  writeAssistantMessage(interruptedVisible + normalizedPartialVisible);
-                } else {
-                  outputState.visibleCommitted = true;
-                }
-                messages.push({
-                  role: "assistant",
-                  content: sanitizeAssistantText(partialVisible),
-                });
-                interruptedVisible += normalizedPartialVisible;
-              } else if (terminalFailure) {
-                emit({ type: "assistant-message", text: "" });
-              }
-              if (partial.hasThinking && !hasShownToolCall) {
-                writeThinkingBlock(partial.thinkContent);
-              }
-              if (partial.hasThinking) {
-                interruptedReasoning = appendInterruptedReasoning(
-                  interruptedReasoning,
-                  partial.thinkContent,
-                );
-              }
-              for (const deferred of deferredToolCalls) {
-                if (!deferred.shown || deferred.call.name === "…") continue;
-                writeToolBlocked(
-                  deferred.eventId,
-                  deferred.call.name,
-                  "Incomplete tool call discarded after the provider stream was interrupted.",
-                );
-              }
-              continuationNudge = [
-                partialVisible
-                  ? "The provider stream was interrupted after partial output. Continue from the exact stopping point without repeating prior text. Any incomplete tool call was discarded and must be reissued in full."
-                  : "The provider stream was interrupted before any answer was produced. Any incomplete tool call was discarded and must be reissued in full. Do not restart your analysis from the beginning.",
-                interruptedReasoningBrief(interruptedReasoning),
-              ]
-                .filter((part): part is string => Boolean(part))
-                .join("\n\n");
-              const restartNotice = terminalFailure
-                ? "partial response preserved before terminal provider failure"
-                : lowYieldResumptions > 1
-                  ? `route is dropping after almost no output (${lowYieldResumptions} in a row) — switching model`
-                  : "partial response preserved — resuming from the interruption";
-              writeNotice("warn", restartNotice);
-            }
-
-            if (terminalFailure) {
-              throw streamError;
-            }
-            recordRecoveryAttempt(recoveryState, failureKind, meaningfulProgress);
-            if (lowYieldResumptions > 1) {
-              allowModelFallback = true;
-              preferModelFallback = true;
-            }
-
-            if (plan.notice) {
-              writeNotice("warn", plan.notice);
-            }
-            if (plan.disableThinking) retryWithoutThinking = true;
-            if (plan.allowModelFallback) allowModelFallback = true;
-            if (plan.preferModelFallback) preferModelFallback = true;
-            if (plan.forceCompact) {
-              await maybeAutoCompact(`stream-recovery:${failureKind}`, true);
-            }
-            const recoveryNudge = [continuationNudge, plan.nudge]
-              .filter((part): part is string => Boolean(part))
-              .join("\n\n");
-            if (recoveryNudge) {
-              messages.push(recoveryUserMessage(recoveryNudge));
-            }
-            if (plan.delayMs > 0) {
-              emit({
-                type: "status",
-                text: `retrying in ${Math.ceil(plan.delayMs / 1000)}s (${failureKind})`,
-              });
-              await delay(plan.delayMs, options.signal);
-            }
+            freeTierConsecutiveFailures = failureState.freeTierConsecutiveFailures;
+            freeTierAdvisoryShown = failureState.freeTierAdvisoryShown;
+            lowYieldResumptions = failureState.lowYieldResumptions;
+            interruptedVisible = failureState.interruptedVisible;
+            interruptedReasoning = failureState.interruptedReasoning;
+            allowModelFallback = failureState.allowModelFallback;
+            preferModelFallback = failureState.preferModelFallback;
+            retryWithoutThinking = failureState.retryWithoutThinking;
+            outputState.visibleCommitted = failureState.visibleCommitted;
+            if (decision === "rethrow") throw streamError;
             continue;
           }
         } finally {
