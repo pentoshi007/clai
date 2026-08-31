@@ -83,7 +83,7 @@ import { createToolRouting } from "./turn/tool-routing.js";
 import { createToolWatchdog } from "./turn/tool-watchdog.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
-import { decidePlanModeGate } from "./turn/plan-mode-gate.js";
+import { runToolGates } from "./turn/tool-execution/gates.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
@@ -286,7 +286,6 @@ import {
   isNarrowExplicitNmapOperation,
 } from "./task-analyzer.js";
 import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
-import { isScratchOnlyWrite } from "./scratch-write.js";
 import { WorkLedger } from "./durable-envelope.js";
 import { normalizeCompactionSummary } from "./compaction-summary.js";
 import {
@@ -1475,57 +1474,29 @@ export async function runAgentTurn(
         () => undefined,
       );
 
-      // Plan mode: gather freely while the draft awaits accept. Once the user
-      // approves (planApproved), mutates must run even if mode still says "plan"
-      // for a beat — otherwise implement loops forever on gather-only blocks.
-      const planModeGate = decidePlanModeGate({
+      const gateDecision = await runToolGates(
+        {
+          isPlanMode,
+          planApproved: () => session.planApproved.value,
+          scratchDir,
+          mcpSafe: (gatedCall) =>
+            mcpRuntime?.classify(gatedCall.name)?.level === "safe",
+          loadPlan: () => loadPlan(session.sessionId).catch(() => undefined),
+          notify: writeNotice,
+          showCall: (shownCall) => {
+            if (alreadyPrintedIds.has(toolEventId)) return;
+            writeToolCall(toolEventId, shownCall);
+            alreadyPrintedIds.add(toolEventId);
+          },
+          emitToolResult: (result, contextOutput) =>
+            emitToolResult(toolEventId, result, contextOutput),
+          writeToolOutput: (chunk) => writeToolOutput(toolEventId, chunk),
+        },
         call,
-        isPlanMode,
-        planApproved: session.planApproved.value,
-        scratchDir,
-        mcpSafe: mcpRuntime?.classify(call.name)?.level === "safe",
-      });
-      if (planModeGate.blocked) {
-        const reason = planModeGate.reason;
-        writeNotice("warn", reason);
-        if (!alreadyPrintedIds.has(toolEventId)) {
-          writeToolCall(toolEventId, call);
-          alreadyPrintedIds.add(toolEventId);
-        }
-        const result = { ok: false, output: reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, reason);
-        writeToolOutput(toolEventId, "failed\n");
-        return {
-          ok: false,
-          call,
-          result,
-          contextOutput: reason,
-        };
-      }
-
-      const isMutatingAction =
-        (decision.level === "confirm" || decision.level === "block") &&
-        !isPreApprovalAllowedTool(call.name) &&
-        !isScratchOnlyWrite(call, scratchDir);
-
-      if (isMutatingAction) {
-        const planNow =
-          livePlanForPreGate ??
-          (await loadPlan(session.sessionId).catch(() => undefined));
-        if (planNow && !session.planApproved.value) {
-          const reason = `plan awaiting approval — ${call.name} is blocked until the plan is accepted (/implement or Accept)`;
-          writeNotice("warn", reason);
-          const result = { ok: false, output: reason, exitCode: 1 };
-          return {
-            ok: false,
-            call,
-            result,
-            contextOutput: reason,
-            blockOrCancel: true,
-          };
-        }
-      }
-
+        decision.level,
+        livePlanForPreGate,
+      );
+      if (gateDecision.kind === "stop") return gateDecision.result;
 
       if (session.planApproved.value) {
         const livePlanForGate = await loadPlan(session.sessionId).catch(
