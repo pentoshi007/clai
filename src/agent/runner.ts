@@ -90,6 +90,10 @@ import { readToolEvidenceSignals } from "./turn/tool-evidence-signals.js";
 import { runToolGates } from "./turn/tool-execution/gates.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createRoundState } from "./turn/loop/round-state.js";
+import {
+  createTurnCounters,
+  resetToolRetryCounters,
+} from "./turn/turn-counters.js";
 import { autostartPlanTask } from "./turn/task-autostart.js";
 import { decideScaffoldPreflight } from "./turn/scaffold-preflight.js";
 import { createCompactionCoordinator } from "./turn/compaction-coordinator.js";
@@ -804,6 +808,7 @@ export async function runAgentTurn(
     // If this session already has a plan, inject it so the model keeps it in
     // context. When the user has approved it (via /implement) we instruct the
     // agent to execute task by task; otherwise the agent should refine/wait.
+    const counters = createTurnCounters();
     const activePlan = await loadPlan(session.sessionId).catch(() => undefined);
     const toolState = createToolExecutionState(
       activePlan,
@@ -1017,18 +1022,15 @@ export async function runAgentTurn(
 
     // Track tool calls truncated by the token limit so we can ask the model
     // to retry in smaller pieces instead of leaking broken JSON as an answer.
-    let truncatedToolRetries = 0;
 
     /** Consecutive model rounds whose native tool arguments were unusable. */
     let malformedNativeArgsRounds = 0;
 
 
-    let bareToolJsonRetries = 0;
 
     // Track a ```tool fence that is present but whose JSON could not be parsed
     // (e.g. malformed extra/missing braces that are NOT simple truncation). We
     // retry instead of leaking the raw block as the final answer.
-    let malformedFenceRetries = 0;
 
 
     const recovery = createRecoveryBudgets();
@@ -1189,8 +1191,6 @@ export async function runAgentTurn(
     // normal continuation is governed by evidence and resource deltas above.
     const maxIterations = Math.max(210, computeMaxIterations(stepBudget));
 
-    let productiveSteps = 0;
-    let consecutiveModelOnlyRounds = 0;
     /** Successful file mutation this turn — kills false "error diagnosed but not fixed". */
     let step = -1;
     let stepMaxTokens = 0;
@@ -2111,7 +2111,7 @@ export async function runAgentTurn(
       outputState.visibleCommitted = false;
       // `step` is the productive-step index (used for display + audit). It only
       // advances when the previous iteration actually executed a tool.
-      step = productiveSteps;
+      step = counters.productiveSteps;
       options.signal?.throwIfAborted();
 
 
@@ -2458,8 +2458,8 @@ export async function runAgentTurn(
 
 
         if (nativeToolCalls.length) {
-          truncatedToolRetries += hasTruncatedNativeWrite(nativeToolCalls) ? 1 : 0;
-          if (truncatedToolRetries <= 5) {
+          counters.truncatedToolRetries += hasTruncatedNativeWrite(nativeToolCalls) ? 1 : 0;
+          if (counters.truncatedToolRetries <= 5) {
             const salvagedNative = await salvageTruncatedNativeWrite(
               {
                 messages,
@@ -2671,11 +2671,11 @@ export async function runAgentTurn(
           }
         }
         if (!call) {
-          consecutiveModelOnlyRounds += 1;
+          counters.consecutiveModelOnlyRounds += 1;
           const recoveryLadderState = {
-            bareToolJsonRetries,
-            truncatedToolRetries,
-            malformedFenceRetries,
+            bareToolJsonRetries: counters.bareToolJsonRetries,
+            truncatedToolRetries: counters.truncatedToolRetries,
+            malformedFenceRetries: counters.malformedFenceRetries,
           };
           const recoveryDecision = await recoverMissingToolCall(
             {
@@ -2690,9 +2690,9 @@ export async function runAgentTurn(
             recoveryLadderState,
             { visible: assistantText.visible, bareArgsOnly },
           );
-          bareToolJsonRetries = recoveryLadderState.bareToolJsonRetries;
-          truncatedToolRetries = recoveryLadderState.truncatedToolRetries;
-          malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
+          counters.bareToolJsonRetries = recoveryLadderState.bareToolJsonRetries;
+          counters.truncatedToolRetries = recoveryLadderState.truncatedToolRetries;
+          counters.malformedFenceRetries = recoveryLadderState.malformedFenceRetries;
           if (recoveryDecision === "retry") continue;
 
           const livePlanAtCompletion = await loadPlan(session.sessionId).catch(
@@ -2734,7 +2734,7 @@ export async function runAgentTurn(
             {
               assistantVisible: assistantText.visible,
               wantsAction,
-              consecutiveModelOnlyRounds,
+              consecutiveModelOnlyRounds: counters.consecutiveModelOnlyRounds,
               plan: livePlanAtCompletion,
             },
           );
@@ -2745,7 +2745,7 @@ export async function runAgentTurn(
             moveTurn("partial", "repeated model-only responses");
             return finishTurn(
               modelOnly.answer,
-              productiveSteps,
+              counters.productiveSteps,
               "partial",
               modelOnly.remainingCriteria,
               modelOnly.reason,
@@ -2767,7 +2767,7 @@ export async function runAgentTurn(
               evidenceFlags,
               livePlan: livePlanAtCompletion,
               toolsAttached,
-              productiveSteps,
+              productiveSteps: counters.productiveSteps,
               planApproved: session.planApproved.value,
               activePlanExists: Boolean(activePlan),
               isPlanMode,
@@ -2975,7 +2975,7 @@ export async function runAgentTurn(
             moveTurn("partial", "repeated identical action sequence");
             return finishTurn(
               suppression.answer,
-              productiveSteps,
+              counters.productiveSteps,
               "partial",
               suppression.remainingCriteria,
               suppression.reason,
@@ -3111,7 +3111,7 @@ export async function runAgentTurn(
             blockOrCancel?: boolean | undefined;
           },
         ): void => {
-          consecutiveModelOnlyRounds = 0;
+          counters.consecutiveModelOnlyRounds = 0;
           round.recordedNativeIds.add(boundCall.id);
           round.actionSequenceExecuted += 1;
           if (res.suppressedRepeat) round.roundSuppressedCount += 1;
@@ -3141,7 +3141,7 @@ export async function runAgentTurn(
           if (res.ok && res.call.name === "plan.create") {
             round.planCreatedThisTurn = true;
           }
-          if (!res.suppressedRepeat) productiveSteps += 1;
+          if (!res.suppressedRepeat) counters.productiveSteps += 1;
           toolResultRecorder.record({
             id: boundCall.id,
             call: res.call,
@@ -3150,7 +3150,7 @@ export async function runAgentTurn(
             isPlanMode,
             planApproved: session.planApproved.value,
             hasDraftPlan: round.planCreatedThisTurn,
-            productiveStep: productiveSteps,
+            productiveStep: counters.productiveSteps,
             kindHint:
               activePlan?.kind === "pentest" || pentestLikeTurn
                 ? "pentest"
@@ -3159,9 +3159,7 @@ export async function runAgentTurn(
                   : "general",
           });
           // Reset retry counters — they track consecutive failures, not cumulative.
-          truncatedToolRetries = 0;
-          malformedFenceRetries = 0;
-          bareToolJsonRetries = 0;
+          resetToolRetryCounters(counters);
 
           const evidence = readToolEvidenceSignals({
             call: res.call,
@@ -3385,7 +3383,7 @@ export async function runAgentTurn(
           moveTurn("partial", "repeated identical action cycle");
           return finishTurn(
             closeout.answer,
-            productiveSteps,
+            counters.productiveSteps,
             "partial",
             closeout.remainingCriteria,
             closeout.reason,
@@ -3401,7 +3399,7 @@ export async function runAgentTurn(
           moveTurn("partial", "draft plan awaits approval");
           return finishTurn(
             "",
-            productiveSteps,
+            counters.productiveSteps,
             "partial",
             ["Approve or revise the draft plan before implementation."],
           );
@@ -3413,7 +3411,7 @@ export async function runAgentTurn(
           await saveOutcomeState(outcomeState);
           moveTurn("aborted", "turn aborted");
           writeAbort();
-          return finishTurn(lastAnswer, productiveSteps, "aborted");
+          return finishTurn(lastAnswer, counters.productiveSteps, "aborted");
         }
         // Confirm declines / tool failures already have role:tool results —
         // continue the agent loop so the model can adapt (do not force "blocked").
@@ -3436,7 +3434,7 @@ export async function runAgentTurn(
     const richSummary = await buildRichStopSummary(
       messages,
       session,
-      productiveSteps,
+      counters.productiveSteps,
     );
     lastAnswer = richSummary;
     outcomeState.outcome.status = "paused_budget";
@@ -3444,7 +3442,7 @@ export async function runAgentTurn(
     moveTurn("paused_budget", "emergency iteration ceiling reached");
     return finishTurn(
       lastAnswer,
-      productiveSteps,
+      counters.productiveSteps,
       "paused_budget",
       ["Continue unfinished work in a subsequent turn."],
       "The emergency iteration ceiling was reached.",
