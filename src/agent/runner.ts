@@ -69,6 +69,12 @@ import {
   orientTurnWorkspace,
 } from "./turn/workspace-setup.js";
 import {
+  evaluateLoopGuardBlock,
+  evaluateToolGuards,
+  LOOP_RESET_OUTPUT,
+  readRetryReason,
+} from "./turn/tool-execution/guards.js";
+import {
   decideResponderRead,
   parseResponderReadRequest,
 } from "./turn/responder-read-tool.js";
@@ -1400,56 +1406,35 @@ export async function runAgentTurn(
         return { ok: true, call, result, contextOutput: recoveryText };
       }
 
-      if (narrowNmapOperation) {
-        const allowed = new Set([
-          "net.scan",
-          "shell.tail",
-          "shell.jobs",
-          "job.read",
-          "task.read",
-        ]);
-        if (!allowed.has(call.name)) {
-          const reason =
-            `Narrow nmap request: ${call.name} was not run because the user requested only one nmap operation. ` +
-            `Call net.scan with the requested target/options; do not create a plan or add DNS, WHOIS, HTTP, recon, or vulnerability steps.`;
-          const result = { ok: false, output: reason, exitCode: 1 };
-          emitToolResult(toolEventId, result, reason);
-          return { ok: false, call, result, contextOutput: reason };
-        }
-        if (call.name === "net.scan") {
-          if (narrowNmapDispatchCount >= 1) {
-            const reason =
-              "Narrow nmap request: a scan has already been dispatched this turn. " +
-              "Do not broaden or retry it automatically; report the existing result/job status and ask before another scan.";
-            const result = { ok: false, output: reason, exitCode: 1 };
-            emitToolResult(toolEventId, result, reason);
-            return { ok: false, call, result, contextOutput: reason };
-          }
-          narrowNmapDispatchCount += 1;
-        }
+      const guard = evaluateToolGuards({
+        call,
+        narrowNmapOperation,
+        narrowNmapDispatched: narrowNmapDispatchCount,
+        heldBatchReminder:
+          call.name === "task.update" && batchRemindCalls.has(rawCall)
+            ? batchReminderNote
+            : undefined,
+      });
+      if (guard.kind === "reject") {
+        const result = { ok: false, output: guard.reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, guard.reason);
+        return { ok: false, call, result, contextOutput: guard.reason };
       }
-
-      // Held batch task update: one reminder for the whole simultaneous set,
-      // no execution, until the model re-issues the identical batch to confirm.
-      if (call.name === "task.update" && batchRemindCalls.has(rawCall)) {
+      if (guard.kind === "hold") {
         if (!alreadyPrintedIds.has(toolEventId)) {
           writeToolCall(toolEventId, call);
           alreadyPrintedIds.add(toolEventId);
         }
-        const result = { ok: false, output: batchReminderNote, exitCode: 1 };
-        emitToolResult(toolEventId, result, batchReminderNote);
+        const result = { ok: false, output: guard.reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, guard.reason);
         writeToolOutput(toolEventId, "held\n");
-        return { ok: false, call, result, contextOutput: batchReminderNote };
+        return { ok: false, call, result, contextOutput: guard.reason };
+      }
+      if (guard.kind === "proceed" && guard.consumesNarrowNmapScan) {
+        narrowNmapDispatchCount += 1;
       }
 
-      const retryReasonRaw = call.args._retryReason;
-      const retryReason =
-        retryReasonRaw && typeof retryReasonRaw === "object"
-          ? {
-            code: String((retryReasonRaw as Record<string, unknown>).code ?? ""),
-            detail: String((retryReasonRaw as Record<string, unknown>).detail ?? ""),
-          }
-          : undefined;
+      const retryReason = readRetryReason(call.args);
       const currentProbeState = probeStateKey(call);
       const loopCheck = loopGuard.shouldBlock(call.name, call.args, {
         dependenciesChanged: retryDependenciesChanged,
@@ -1457,42 +1442,38 @@ export async function runAgentTurn(
         ...(currentProbeState ? { stateKey: currentProbeState } : {}),
         ...(retryReason ? { retryReason } : {}),
       });
-      if (loopCheck.block) {
-        const baseReason =
-          loopCheck.reason ??
-          `${call.name} previously failed with identical arguments. Change the command/args and retry.`;
-        const priorObservation =
+      const loopDecision = evaluateLoopGuardBlock(call, {
+        verdict: loopCheck,
+        priorObservation:
           loopCheck.kind === "unchanged-success"
             ? loopGuard.getPriorObservation(call.name, call.args)
-            : undefined;
-        const reason = priorObservation
-          ? `${baseReason}\n\nPrior successful result (reuse this; it is the result of the requested call):\n${priorObservation}`
-          : baseReason;
-        if (loopCheck.kind === "unchanged-success") {
-          const result: ToolResult = { ok: true, output: reason, exitCode: 0 };
-          emitVisibleSyntheticReceipt(result, reason);
-          return {
-            ok: true,
-            call,
-            result,
-            contextOutput: reason,
-            suppressedRepeat: true,
-          };
-        }
-        writeNotice("warn", reason);
-        const result = { ok: false, output: reason, exitCode: 1 };
-        emitToolResult(toolEventId, result, reason);
+            : undefined,
+      });
+      if (loopDecision.kind === "reuse") {
+        const result: ToolResult = {
+          ok: true,
+          output: loopDecision.reason,
+          exitCode: 0,
+        };
+        emitVisibleSyntheticReceipt(result, loopDecision.reason);
         return {
-          ok: false,
+          ok: true,
           call,
           result,
-          contextOutput: reason,
+          contextOutput: loopDecision.reason,
+          suppressedRepeat: true,
         };
+      }
+      if (loopDecision.kind === "warn-reject") {
+        writeNotice("warn", loopDecision.reason);
+        const result = { ok: false, output: loopDecision.reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, loopDecision.reason);
+        return { ok: false, call, result, contextOutput: loopDecision.reason };
       }
 
       if (call.name === "loop.reset") {
         loopGuard.resetAllSequenceCounts();
-        const output = "Loop guard counters reset. You may re-run commands freely.";
+        const output = LOOP_RESET_OUTPUT;
         const result: ToolResult = { ok: true, output, exitCode: 0 };
         emitVisibleSyntheticReceipt(result, output);
         loopGuard.recordAttempt(step, call.name, call.args, true, 0, output);
