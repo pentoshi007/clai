@@ -33,7 +33,6 @@ import {
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
 import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
-import { insertedText } from "./turn/inserted-text.js";
 import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
@@ -47,6 +46,10 @@ import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selecti
 import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
 import { prepareCompactionCandidateMessages } from "./turn/compaction-candidate.js";
 import { measureCompactionFinalFit } from "./turn/compaction-final-fit.js";
+import {
+  compactionFailureMessage,
+  compactionSummaryText,
+} from "./turn/compaction-messages.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -145,8 +148,6 @@ import {
   estimateTokens,
   estimateMessagesTokens,
   shouldApplyAutoCompact,
-  COMPACTION_MEMORY_PREFIX,
-  PLAN_IMPLEMENT_MEMORY_PREFIX,
   isCompactionMemoryMessage,
 } from "./context-manager.js";
 import {
@@ -3916,20 +3917,9 @@ export async function runAgentTurn(
           compactionAdmissions: compactionLedger.snapshot().attempts.length,
         });
 
-        const insertedSummary =
-          messages.find((m) => isCompactionMemoryMessage(m))?.content ?? "";
-        const summaryText = insertedSummary.startsWith(
-          `${PLAN_IMPLEMENT_MEMORY_PREFIX}\n\n`,
-        )
-          ? insertedText(insertedSummary, `${PLAN_IMPLEMENT_MEMORY_PREFIX}\n\n`)
-          : insertedSummary.startsWith(`${COMPACTION_MEMORY_PREFIX}\n\n`)
-            ? insertedText(insertedSummary, `${COMPACTION_MEMORY_PREFIX}\n\n`)
-            : insertedText(
-                insertedSummary,
-                insertedSummary.startsWith(PLAN_IMPLEMENT_MEMORY_PREFIX)
-                  ? PLAN_IMPLEMENT_MEMORY_PREFIX
-                  : COMPACTION_MEMORY_PREFIX,
-              );
+        const summaryText = compactionSummaryText(
+          messages.find((m) => isCompactionMemoryMessage(m))?.content ?? "",
+        );
         // Report the final assembled request, including live plan and session
         // state reinjection, so the card and the next provider request agree.
         writeCompactionCompleted(compactionId, summaryText, beforeTokens, afterTokens);
@@ -3941,11 +3931,10 @@ export async function runAgentTurn(
         const message = error instanceof Error ? error.message : String(error);
         writeCompactionFailed(
           compactionId,
-          /aborted/i.test(message)
-            ? "Compaction was cancelled."
-            : isOperationPolicyError(error)
-              ? "Compaction is limited to one pinned request (plus its bounded retry) and none completed; the original context was retained."
-              : message,
+          compactionFailureMessage({
+            message,
+            policyLimited: isOperationPolicyError(error),
+          }),
           beforeTokens,
         );
         if (
