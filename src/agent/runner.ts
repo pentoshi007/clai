@@ -76,6 +76,10 @@ import {
 } from "./turn/loop/native-tool-calls.js";
 import { recoverMissingToolCall } from "./turn/loop/tool-call-recovery.js";
 import {
+  handleEmptyResponse,
+  type EmptyResponseState,
+} from "./turn/loop/empty-response.js";
+import {
   handleOutputBudgetExhaustion,
   outputBudgetExhausted,
   routeCompletionBudget,
@@ -3030,63 +3034,32 @@ export async function runAgentTurn(
               "provider abandoned a native tool call — switching this model to the text tool protocol",
             );
           }
-          emptyVisibleRetries += 1;
-          if (emptyVisibleRetries <= 3) {
-            if (assistantText.hasThinking) {
-              writeNotice(
-                "warn",
-                "model produced only thinking — preserving the reasoning and nudging it to act",
-              );
-            } else {
-              writeNotice(
-                "warn",
-                "model returned an empty response — nudging it to answer",
-              );
-            }
-            if (assistantText.hasThinking) {
-              interruptedReasoning = appendInterruptedReasoning(
-                interruptedReasoning,
-                assistantText.thinkContent,
-              );
-            }
-            const preservedReasoning = interruptedReasoning;
-            if (assistantText.hasThinking && emptyVisibleRetries >= 2) {
-              retryWithoutThinking = true;
-            }
-            commitAssistantRetry(assistantText.visible);
-            interruptedReasoning = preservedReasoning;
-            // Keep nudges SHORT — cheap models lose the key instruction in long text.
-            const baseNudge =
-              incompleteNativeStream
-                ? "Your native tool call was incomplete, so nothing ran. Use exactly one complete fenced ```tool block now; do not repeat the incomplete native call."
-                : isPlanMode && !activePlan
-                  ? toolsAttached
-                    ? "No visible output. In plan mode: gather context or call plan.create when ready (do not only describe the plan)."
-                    : "No visible output. In plan mode: emit a ```tool block for research/recon or plan.create. " +
-                    "Do NOT hide tool calls in <think> tags — put them in the visible response."
-                  : toolsAttached
-                    ? "No visible output. " + toolNudge(true)
-                    : "No visible output. Emit a ```tool block or give your final answer. " +
-                    "Do NOT hide tool calls in <think> tags — put them in the visible response.";
-            const reasoningBrief = assistantText.hasThinking
-              ? interruptedReasoningBrief(interruptedReasoning)
-              : undefined;
-            const buildNudge = reasoningBrief
-              ? "Your previous response contained only reasoning and no visible answer or tool call. " +
-                "Do not restart the analysis — your reasoning so far is preserved below. " +
-                "Build on it and act now: emit the next tool call or the final answer.\n\n" +
-                reasoningBrief +
-                "\n\n" +
-                baseNudge
-              : baseNudge;
-            messages.push(recoveryUserMessage(buildNudge));
-            continue;
-          }
-
-          writeNotice(
-            "warn",
-            "model returned an empty response after retries — no answer produced",
+          const emptyState: EmptyResponseState = {
+            emptyVisibleRetries,
+            retryWithoutThinking,
+            interruptedReasoning,
+          };
+          const emptyDecision = handleEmptyResponse(
+            {
+              messages,
+              toolsAttached,
+              planModeWithoutPlan: isPlanMode && !activePlan,
+              notify: writeNotice,
+              commitAssistantRetry,
+              recoveryUserMessage,
+            },
+            emptyState,
+            {
+              assistantVisible: assistantText.visible,
+              assistantThinkContent: assistantText.thinkContent,
+              hasThinking: assistantText.hasThinking,
+              incompleteNativeStream,
+            },
           );
+          emptyVisibleRetries = emptyState.emptyVisibleRetries;
+          retryWithoutThinking = emptyState.retryWithoutThinking;
+          interruptedReasoning = emptyState.interruptedReasoning;
+          if (emptyDecision === "continue-round") continue;
           return finishTurn("Model returned an empty response after retries.", step + 1);
         } else {
           // Reset the counter on any successful visible output or recovered call.
