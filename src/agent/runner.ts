@@ -34,6 +34,7 @@ import {
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
 import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
+import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -640,14 +641,17 @@ export async function runAgentTurn(
       ? options.mode
       : "agent";
   const isPlanMode = agentMode === "plan";
-  const emit = (event: AgentEvent): void => options.onEvent?.(event);
+  const eventPort: TurnEventPort = {
+    emit: (event) => options.onEvent?.(event),
+  };
+  const emit = eventPort.emit;
+  const outputState: TurnOutputState = { visibleCommitted: false };
   // Whether the CURRENT model iteration has already committed its visible
   // prose to the transcript with an `assistant-message` event. The recovery
   // paths preserve streamed prose before retrying (so it isn't wiped by the
   // next tool-call/turn event); this flag stops them from re-committing prose
   // the normal tool path already surfaced, which would render it twice. Reset
   // at the top of every loop iteration.
-  let visibleCommitted = false;
   let interruptedVisible = "";
   let interruptedReasoning = "";
   let lowYieldResumptions = 0;
@@ -682,7 +686,7 @@ export async function runAgentTurn(
     // would paint a stray blank row.
     const clean = sanitizeAssistantText(text);
     if (!clean.trim()) return;
-    visibleCommitted = true;
+    outputState.visibleCommitted = true;
     emit({ type: "assistant-message", text: clean });
   };
   const writeThinkingBlock = (content: string): void => {
@@ -1513,7 +1517,7 @@ export async function runAgentTurn(
       const cleaned = sanitizeAssistantText(
         hasReasoningMarker(content) ? stripThinking(content).visible : content,
       );
-      if (!visibleCommitted) {
+      if (!outputState.visibleCommitted) {
         const prose = recoveryProse(cleaned);
         if (prose) writeAssistantMessage(prose);
       }
@@ -4218,7 +4222,7 @@ export async function runAgentTurn(
 
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
 
-      visibleCommitted = false;
+      outputState.visibleCommitted = false;
       // `step` is the productive-step index (used for display + audit). It only
       // advances when the previous iteration actually executed a tool.
       step = productiveSteps;
@@ -4653,7 +4657,7 @@ export async function runAgentTurn(
                 if (terminalFailure) {
                   writeAssistantMessage(interruptedVisible + normalizedPartialVisible);
                 } else {
-                  visibleCommitted = true;
+                  outputState.visibleCommitted = true;
                 }
                 messages.push({
                   role: "assistant",
@@ -5116,7 +5120,7 @@ export async function runAgentTurn(
             }
             const preservedBudgetReasoning = interruptedReasoning;
             if (canonicalAssistantVisible.trim()) {
-              visibleCommitted = true;
+              outputState.visibleCommitted = true;
               pushAssistantHistory(assistantText.visible, retryReasoning);
               interruptedVisible = canonicalAssistantVisible;
               lowYieldResumptions = 0;
