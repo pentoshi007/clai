@@ -67,6 +67,7 @@ import { createToolRouting } from "./turn/tool-routing.js";
 import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { runSingleTool } from "./turn/tool-execution/single-tool.js";
 import { resolveAnswerPath } from "./turn/loop/answer-path.js";
+import { requestRound } from "./turn/loop/round-request.js";
 import type { TurnLoopDeps } from "./turn/loop/deps.js";
 import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
@@ -1277,6 +1278,7 @@ export async function runAgentTurn(
       estimateNextRequestTokens,
       selectToolDefs,
       maybeAutoCompact,
+      resolveNativeTools,
       refreshResponderInbox,
       refreshAgentInstructions,
       refreshSessionState,
@@ -1324,6 +1326,7 @@ export async function runAgentTurn(
         const streamLabel =
           loop.step === 0 ? "waiting for model" : `step ${loop.step + 1}`;
         emit({ type: "status", text: streamLabel });
+        let toolsAttached = false;
         const streamSession = createStreamSession({
           emitStatus: (text) => emit({ type: "status", text }),
           emitAssistantDelta: (text) => emit({ type: "assistant-delta", text }),
@@ -1342,181 +1345,17 @@ export async function runAgentTurn(
         const deferredToolCalls = streamSession.deferredToolCalls;
         const streamedNativeCallNames = streamSession.streamedNativeCallNames;
         const callIds = streamSession.callIds;
-        let completion;
-        let toolsAttached = false;
-        try {
-          // Re-resolve dialect each step so /model or sticky fallback apply.
-          ({ dialect: toolDialect, native: nativeToolsActive } =
-            resolveNativeTools(loop.provider, loop.model));
-          if (messages[0]?.role === "system") {
-            // Recompose only when content actually changes (hour-stable env clock
-            // keeps the constitution prefix identical across steps, which helps
-            // provider prompt caching and avoids needless object churn).
-            const nextSystem = composeCurrentSystemPrompt(nativeToolsActive);
-            if (messages[0].content !== nextSystem) {
-              messages[0] = {
-                role: "system",
-                content: nextSystem,
-              };
-            }
-          }
-          const assemblyState: RequestAssemblyState = {
-            freeTierLargeContextWarned: loop.freeTierLargeContextWarned,
-            freeTierConsecutiveFailures: loop.freeTierConsecutiveFailures,
-            truncatedBudgetRounds: loop.truncatedBudgetRounds,
-            continuationBudgetFloor: loop.continuationBudgetFloor,
-            retryWithoutThinking: loop.retryWithoutThinking,
-          };
-          const contextLimitTokens = currentContextLimitTokens();
-          let estimatedInputTokens = 0;
-          try {
-          const assembled = await assembleRequest(
-            {
-              messages,
-              provider: loop.provider,
-              model: loop.model,
-              dialect: toolDialect,
-              nativeToolsActive,
-              thinking: config.thinking,
-              step: loop.step,
-              contextLimitTokens,
-              estimateRequestTokens: estimateNextRequestTokens,
-              selectTools: () =>
-                selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
-              notify: writeNotice,
-              emitContextEstimate: (estimatedTokens) =>
-                emit({ type: "context-estimate", estimatedTokens, model: loop.model }),
-              audit: (event, payload) => auditLog(event, payload),
-            },
-            assemblyState,
-          );
-          loop.freeTierLargeContextWarned = assemblyState.freeTierLargeContextWarned;
-          const turnTools = assembled.tools;
-          toolsAttached = assembled.toolsAttached;
-          estimatedInputTokens = assembled.estimatedInputTokens;
-          loop.stepMaxTokens = assembled.stepMaxTokens;
-          loop.dispatchedRawRequestTokens = assembled.rawRequestTokens;
-          if (
-            responderDelivery &&
-            !jobManager.markDeliveryStarted(responderDelivery.id, session.sessionId)
-          ) {
-            jobManager.releaseResponderNotificationClaim(
-              responderDelivery.id,
-            );
-            throw new Error(
-              `failed to record responder delivery attempt ${responderDelivery.id}`,
-            );
-          }
-          completion = await streamWithProvider(
-            buildStreamRequest({
-              provider: loop.provider,
-              model: loop.model,
-              messages,
-              allowModelFallback: loop.allowModelFallback,
-              preferModelFallback: loop.preferModelFallback,
-              maxTokens: loop.stepMaxTokens,
-              signal: options.signal,
-              thinking: config.thinking,
-              retryWithoutThinking: loop.retryWithoutThinking,
-              toolsAttached,
-              tools: turnTools,
-              onToolCallDelta: streamSession.onToolCallDelta,
-            }),
-            streamSession.onToken,
-            {
-              onStatus: streamSession.onStatus,
-              onStreamEvent: streamSession.onStreamEvent,
-              onSuccessfulRequest: streamSession.onSuccessfulRequest,
-            },
-          );
-          loop.freeTierConsecutiveFailures = 0;
-          // Stream succeeded → the failure episode is over. Reset the recovery
-          // budget and the one-shot fallback flag so a later, unrelated failure
-          // starts fresh (and we never give up while making progress).
-          resetStreamRecoveryState(recoveryState);
-          loop.allowModelFallback = false;
-          loop.preferModelFallback = false;
-          loop.lowYieldResumptions = 0;
-          } catch (streamError) {
-            // User cancelled (double-Esc) — never try to recover, just stop.
-            if (options.signal?.aborted) throw streamError;
-            // A blocked over-limit request is a policy stop, not a route
-            // failure — retrying it would just re-bill the same doomed prefix.
-            if (streamError instanceof RequestOverLimitError) throw streamError;
-
-            const failedOperationUsage = operationUsageFromError(streamError);
-            const failedAttempt = failedOperationUsage?.attempts.at(-1);
-            const failedUsage = failedOperationUsage?.aggregate.usage;
-            const failureState: StreamFailureState = {
-              freeTierConsecutiveFailures: loop.freeTierConsecutiveFailures,
-              freeTierAdvisoryShown: loop.freeTierAdvisoryShown,
-              lowYieldResumptions: loop.lowYieldResumptions,
-              interruptedVisible: loop.interruptedVisible,
-              interruptedReasoning: loop.interruptedReasoning,
-              allowModelFallback: loop.allowModelFallback,
-              preferModelFallback: loop.preferModelFallback,
-              retryWithoutThinking: loop.retryWithoutThinking,
-              visibleCommitted: outputState.visibleCommitted,
-            };
-            const decision = await recoverFromStreamFailure(
-              {
-                messages,
-                recoveryState,
-                provider: loop.provider,
-                estimatedInputTokens,
-                notify: writeNotice,
-                emitStatus: (text) => emit({ type: "status", text }),
-                emitTokenUsage: (usage, usageProvider, usageModel) =>
-                  emit({
-                    type: "token-usage",
-                    usage,
-                    model: usageModel,
-                    provider: usageProvider,
-                  }),
-                emitEmptyAssistantMessage: () =>
-                  emit({ type: "assistant-message", text: "" }),
-                writeAssistantMessage,
-                writeThinkingBlock,
-                writeToolBlocked,
-                rememberThinking,
-                sanitizeAssistantText,
-                finishDeltaParser: streamSession.finishDeltaParser,
-                recoveryUserMessage,
-                forceCompact: (reason) => maybeAutoCompact(reason, true),
-                delay: (ms) => delay(ms, options.signal),
-              },
-              failureState,
-              {
-                kind: classifyStreamFailure(streamError),
-                alreadyEmitted: streamAlreadyEmitted(streamError),
-                attemptUsage:
-                  failedUsage && failedAttempt
-                    ? {
-                      usage: failedUsage,
-                      provider: failedAttempt.provider,
-                      model: failedAttempt.model,
-                    }
-                    : undefined,
-                accumulatedText: streamSession.accumulatedText(),
-                streamedReasoningText: streamSession.streamedReasoningText(),
-                deferredToolCalls,
-              },
-            );
-            loop.freeTierConsecutiveFailures = failureState.freeTierConsecutiveFailures;
-            loop.freeTierAdvisoryShown = failureState.freeTierAdvisoryShown;
-            loop.lowYieldResumptions = failureState.lowYieldResumptions;
-            loop.interruptedVisible = failureState.interruptedVisible;
-            loop.interruptedReasoning = failureState.interruptedReasoning;
-            loop.allowModelFallback = failureState.allowModelFallback;
-            loop.preferModelFallback = failureState.preferModelFallback;
-            loop.retryWithoutThinking = failureState.retryWithoutThinking;
-            outputState.visibleCommitted = failureState.visibleCommitted;
-            if (decision === "rethrow") throw streamError;
-            continue;
-          }
-        } finally {
-          streamSession.stopHeartbeat();
-        }
+        const requested = await requestRound(loopDeps, {
+          streamSession,
+          responderDelivery,
+          delay: (ms) => delay(ms, options.signal),
+          setToolsAttached: (attached) => {
+            toolsAttached = attached;
+          },
+        });
+        if (requested.kind === "continue") continue;
+        const completion = requested.completion;
+        toolsAttached = requested.toolsAttached;
         if (responderDelivery) {
           // The result text is now part of this turn, so consumption is durable.
           // A stream that aborted or threw above never reaches this point and the

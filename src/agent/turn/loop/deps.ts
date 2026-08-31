@@ -99,7 +99,11 @@ export interface TurnLoopDeps extends TurnWriters {
     native: boolean,
     compact: boolean,
   ) => ToolDefinition[] | undefined;
-  readonly maybeAutoCompact: (reason: string) => Promise<void>;
+  readonly maybeAutoCompact: (reason: string, force?: boolean) => Promise<void>;
+  readonly resolveNativeTools: (
+    provider: ProviderId,
+    model: string,
+  ) => { dialect: ToolDialect; native: boolean };
   readonly refreshResponderInbox: () => ResponderDelivery | undefined;
   readonly refreshAgentInstructions: () => Promise<void>;
   readonly refreshSessionState: (plan?: SessionPlan | undefined) => void;
