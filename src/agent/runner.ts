@@ -38,6 +38,12 @@ import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import {
+  createResponderInboxRefresher,
+  findResponderWakeNotification,
+  parseResponderWake,
+  responderWakeMatchesRevision,
+} from "./turn/responder-inbox.js";
+import {
   createCompactionSummarizer,
   type CompactionExecutionState,
 } from "./turn/compaction-summarizer.js";
@@ -67,11 +73,7 @@ import {
   type BackgroundJob,
   type ResponderNotification,
 } from "../tools/jobs.js";
-import {
-  responderContextMessage,
-  upsertResponderContextMessage,
-  upsertResponderResultLedger,
-} from "./responder-context.js";
+import { upsertResponderResultLedger } from "./responder-context.js";
 import {
   agentModeDirective,
   planModeDirective,
@@ -1254,79 +1256,35 @@ export async function runAgentTurn(
         planContextMessage(activePlan, session.planApproved.value),
       );
     }
-    const responderWakeTurn =
-      options.displayPrompt === null &&
-      prompt.startsWith("Responder result arrived");
-    const responderWakeNotificationId = responderWakeTurn
-      ? /^notification=(.+)$/m.exec(prompt)?.[1]?.trim()
-      : undefined;
-    const responderWakeJobId = responderWakeTurn
-      ? /^job=(.+)$/m.exec(prompt)?.[1]?.trim()
-      : undefined;
-    const responderWakeResultRevision = responderWakeTurn
-      ? Number(/^resultRevision=(\d+)$/m.exec(prompt)?.[1]) || undefined
-      : undefined;
+    const responderWake = parseResponderWake({
+      prompt,
+      displayPrompt: options.displayPrompt,
+    });
+    const responderWakeTurn = responderWake.wakeTurn;
+    const responderWakeNotificationId = responderWake.notificationId;
+    const responderWakeJobId = responderWake.jobId;
+    const responderWakeResultRevision = responderWake.resultRevision;
     const matchesWakeRevision = (notification: ResponderNotification): boolean =>
-      responderWakeResultRevision === undefined ||
-      (notification.resultRevision ?? 1) === responderWakeResultRevision;
-    const wakeNotification = responderWakeNotificationId
-      ? jobManager
-          .getPendingNotifications(session.sessionId)
-          .find(
-            (notification) =>
-              notification.id === responderWakeNotificationId &&
-              (!responderWakeJobId || notification.jobId === responderWakeJobId) &&
-              matchesWakeRevision(notification),
-          )
-      : undefined;
+      responderWakeMatchesRevision(responderWake, notification);
+    const wakeNotification = findResponderWakeNotification(
+      responderWake,
+      jobManager.getPendingNotifications(session.sessionId),
+    );
     if (wakeNotification) {
       responderClaims.add(wakeNotification.id);
     }
-    const refreshResponderInbox = (): ResponderNotification | undefined => {
-      const running = jobManager
-        .getRunningJobs(session.sessionId)
-        .filter((job) => job.responder);
-      if (responderWakeTurn) {
-        const pending = jobManager
-          .getPendingNotifications(session.sessionId)
-          .filter(
-            (notification) =>
-              notification.responder &&
-              responderClaims.has(notification.id) &&
-              matchesWakeRevision(notification) &&
-              !notification.readAt &&
-              !notification.analyzedAt &&
-              !notification.archivedAt,
-          )
-          .slice(0, 1);
-        upsertResponderContextMessage(
-          messages,
-          responderContextMessage({ running, pending }),
-        );
-        return undefined;
-      }
-      const leaseId = jobManager.getResponderLeaseId(session.sessionId);
-      const delivery = leaseId
-        ? jobManager.claimNextResponderNotification(session.sessionId, leaseId)
-        : undefined;
-      if (delivery) responderClaims.add(delivery.id);
-      const pending = jobManager
-        .getPendingNotifications(session.sessionId)
-        .filter(
-          (notification) =>
-            notification.responder &&
-            responderClaims.has(notification.id) &&
-            !notification.readAt &&
-            !notification.analyzedAt &&
-            !notification.archivedAt,
-        )
-        .slice(0, 12);
-      upsertResponderContextMessage(
-        messages,
-        responderContextMessage({ running, pending }),
-      );
-      return delivery;
-    };
+    const refreshResponderInbox = createResponderInboxRefresher({
+      messages,
+      wake: responderWake,
+      claims: responderClaims,
+      getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
+      getPendingNotifications: () =>
+        jobManager.getPendingNotifications(session.sessionId),
+      getResponderLeaseId: () =>
+        jobManager.getResponderLeaseId(session.sessionId),
+      claimNextNotification: (leaseId) =>
+        jobManager.claimNextResponderNotification(session.sessionId, leaseId),
+    });
     /** Assigned after session flags exist — see below. */
     let refreshSessionState: (
       plan?: SessionPlan | null | undefined,
