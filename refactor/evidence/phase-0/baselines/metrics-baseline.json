@@ -696,6 +696,7 @@
     "src/ui-core/commands/key-commands.ts#openLlmKeysEditor@348",
     "src/ui-core/commands/key-commands.ts#openSetPicker@150",
     "src/ui-core/commands/key-commands.ts#openUnsetPicker@215",
+    "src/ui-core/commands/keys/editors.ts#openLlmKeysEditor@84",
     "src/ui-core/commands/mcp-commands.ts#addServer@106",
     "src/ui-core/commands/picker-commands.ts#activateProvider@454",
     "src/ui-core/commands/picker-commands.ts#addCustomProviderFlow@611",

@@ -3,44 +3,23 @@
  */
 
 import { getProvider } from "../../llm/router.js";
-import { MAX_PROVIDER_KEYS } from "../../llm/key-rotation.js";
 import {
   assertProvider,
   getProviderInfoText,
   maskSecret,
   normalizeEndpointUrl,
 } from "../../llm/provider.js";
-import {
-  MAX_PROVIDER_ENDPOINTS,
-  appendProviderEndpoint,
-  getConfig,
-  getProviderEndpoints,
-  providerUsesEndpoints,
-  setProviderEndpoints,
-  updateConfig,
-} from "../../store/config.js";
-import {
-  appendSearchProviderKey,
-  getProviderKeys,
-  getSearchProviderKeys,
-  listProviderStatuses,
-  setProviderKeys,
-  setSearchProviderKeys,
-  unsetProviderSecret,
-  unsetSearchProviderSecret,
-} from "../../store/keys.js";
+import { appendProviderEndpoint, getConfig, getProviderEndpoints, providerUsesEndpoints, setProviderEndpoints, updateConfig } from "../../store/config.js";
+import { appendSearchProviderKey, getProviderKeys, getSearchProviderKeys, listProviderStatuses, unsetProviderSecret, unsetSearchProviderSecret } from "../../store/keys.js";
 import { searchProviderIds, type SearchProviderId } from "../../tools/web/types.js";
 import type { ProviderId } from "../../types.js";
 import { formatKeyStatus, type SearchKeyStatus } from "../rendering/format-keys.js";
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
+import { notice, openEndpointsEditor, openLlmKeysEditor, openSearchKeysEditor } from "./keys/editors.js";
 
 const SEARCH_IDS = new Set(["brave", "tavily", "duckduckgo", "exa"]);
-
-function notice(services: AppServices, level: "info" | "warn", text: string): void {
-  services.session.notice(level, text);
-}
 
 async function getSearchKeyStatuses(): Promise<SearchKeyStatus[]> {
   const activeSearch = getConfig().activeSearchProvider;
@@ -275,239 +254,6 @@ async function openUnsetPicker(services: AppServices): Promise<void> {
   });
 }
 
-/**
- * Multi-row editor over a provider's endpoint URLs — the same overlay, sticky
- * ★ active row and Reset semantics as the key editor, so endpoints and keys
- * behave identically.
- */
-async function openEndpointsEditor(
-  services: AppServices,
-  id: ProviderId,
-): Promise<void> {
-  const { urls, activeIndex, disabledUrls } = getProviderEndpoints(id);
-  const answer = await services.overlay.openKeysEditor({
-    provider: id,
-    heading: "ENDPOINTS",
-    itemLabel: "endpoint URL",
-    // URLs are not secrets: show them in full so a typo is visible.
-    initialKeys: urls.map((url, index) => ({
-      id: String(index),
-      masked: url,
-      disabled: (disabledUrls ?? []).includes(url),
-    })),
-    activeIndex,
-  });
-  if (!answer) {
-    notice(services, "info", "cancelled");
-    return;
-  }
-  if (answer.action === "reset") {
-    setProviderEndpoints(id, []);
-    notice(services, "info", `unset all endpoint URLs for ${id}`);
-    return;
-  }
-
-  const byId = new Map(urls.map((url, index) => [String(index), url]));
-  const detailed = resolveEditorRowsDetailed(answer.rows, byId).map((row) => ({
-    value: normalizeEndpointUrl(row.value),
-    disabled: row.disabled,
-  }));
-  const resolved = detailed.map((row) => row.value);
-  if (resolved.length === 0) {
-    setProviderEndpoints(id, []);
-    notice(services, "info", `unset all endpoint URLs for ${id}`);
-    return;
-  }
-  if (resolved.length > MAX_PROVIDER_ENDPOINTS) {
-    notice(services, "warn", `at most ${MAX_PROVIDER_ENDPOINTS} endpoint URLs per provider`);
-    return;
-  }
-
-  // Keep whatever was active if it survived the edit, mirroring key editing.
-  let nextActive = answer.activeIndex ?? 0;
-  if (answer.activeIndex === undefined) {
-    const previous = urls[activeIndex];
-    const found = previous ? resolved.indexOf(previous) : -1;
-    if (found >= 0) nextActive = found;
-  }
-  const saved = setProviderEndpoints(
-    id,
-    resolved,
-    nextActive,
-    detailed.filter((row) => row.disabled).map((row) => row.value),
-  );
-  notice(
-    services,
-    "info",
-    saved.urls.length === 1
-      ? `saved ${id} endpoint → ${saved.urls[0]}`
-      : `saved ${saved.urls.length} ${id} endpoints · active #${saved.activeIndex + 1} ${saved.urls[saved.activeIndex]}`,
-  );
-}
-
-async function openLlmKeysEditor(
-  services: AppServices,
-  id: ProviderId,
-): Promise<void> {
-  if (id === "ollama") {
-    const host = await services.overlay.openSecret({
-      title: "Ollama host URL",
-      prompt: "Enter host URL for Ollama:",
-      reveal: true,
-    });
-    if (!host) {
-      notice(services, "info", "cancelled");
-      return;
-    }
-    updateConfig({ ollamaHost: host.trim() });
-    notice(services, "info", `saved ollama host → ${host.trim()}`);
-    return;
-  }
-
-  // Endpoint providers need both lists; edit URLs first (Esc skips ahead to the
-  // keys), or jump straight to either list from the /set picker.
-  if (providerUsesEndpoints(id)) {
-    await openEndpointsEditor(services, id);
-  }
-
-  const multi = await getProviderKeys(id);
-  const stored =
-    multi.source === "env"
-      ? []
-      : multi.keys.map((key) => ({
-          id: key.id,
-          masked: maskSecret(key.value),
-          value: key.value,
-          disabled: key.disabled === true,
-        }));
-
-  const answer = await services.overlay.openKeysEditor({
-    provider: id,
-    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked, disabled: key.disabled })),
-    activeIndex: multi.source !== "env" ? multi.activeIndex : undefined,
-  });
-  if (!answer) {
-    notice(services, "info", "cancelled");
-    return;
-  }
-  if (answer.action === "reset") {
-    await unsetProviderSecret(id);
-    notice(services, "info", `unset all keys for ${id}`);
-    return;
-  }
-
-  const byId = new Map(stored.map((key) => [key.id, key.value]));
-  const detailed = resolveEditorRowsDetailed(answer.rows, byId);
-  const resolved = detailed.map((row) => row.value);
-  if (resolved.length === 0) {
-    await unsetProviderSecret(id);
-    notice(services, "info", `unset all keys for ${id}`);
-    return;
-  }
-
-  const impl = getProvider(id);
-  for (const key of resolved) {
-    if (!impl.validateKey(key)) {
-      notice(services, "warn", `invalid API key format for ${id}`);
-      return;
-    }
-  }
-  if (resolved.length > MAX_PROVIDER_KEYS) {
-    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} API keys per provider`);
-    return;
-  }
-
-  let activeIndex = answer.activeIndex ?? 0;
-  if (answer.activeIndex === undefined && multi.source !== "env" && multi.keys.length > 0) {
-    const previous = multi.keys[multi.activeIndex]?.value;
-    if (previous) {
-      const found = resolved.indexOf(previous);
-      if (found >= 0) activeIndex = found;
-    }
-  }
-
-  await setProviderKeys(
-    id,
-    resolved,
-    activeIndex,
-    detailed.filter((row) => row.disabled).map((row) => row.value),
-  );
-  const label = resolved.length === 1
-    ? maskSecret(resolved[0]!)
-    : `${resolved.length} keys · active: #${activeIndex + 1}`;
-  notice(services, "info", `saved ${id} · ${label}`);
-}
-
-async function openSearchKeysEditor(
-  services: AppServices,
-  id: SearchProviderId,
-): Promise<void> {
-  if (id === "duckduckgo") {
-    notice(services, "info", "duckduckgo is keyless and requires no setup");
-    return;
-  }
-
-  const multi = await getSearchProviderKeys(id);
-  const stored =
-    multi.source === "env"
-      ? []
-      : multi.keys.map((key) => ({
-          id: key.id,
-          masked: maskSecret(key.value),
-          value: key.value,
-          disabled: key.disabled === true,
-        }));
-  const answer = await services.overlay.openKeysEditor({
-    provider: id,
-    initialKeys: stored.map((key) => ({ id: key.id, masked: key.masked, disabled: key.disabled })),
-    activeIndex: multi.source !== "env" ? multi.activeIndex : undefined,
-  });
-  if (!answer) {
-    notice(services, "info", "cancelled");
-    return;
-  }
-  if (answer.action === "reset") {
-    await unsetSearchProviderSecret(id);
-    notice(services, "info", `unset all keys for ${id}`);
-    return;
-  }
-
-  const detailed = resolveEditorRowsDetailed(
-    answer.rows,
-    new Map(stored.map((key) => [key.id, key.value])),
-  );
-  const resolved = detailed.map((row) => row.value);
-  if (resolved.length === 0) {
-    await unsetSearchProviderSecret(id);
-    notice(services, "info", `unset all keys for ${id}`);
-    return;
-  }
-  if (resolved.length > MAX_PROVIDER_KEYS) {
-    notice(services, "warn", `at most ${MAX_PROVIDER_KEYS} API keys per provider`);
-    return;
-  }
-
-  let activeIndex = answer.activeIndex ?? 0;
-  if (answer.activeIndex === undefined && multi.source !== "env" && multi.keys.length > 0) {
-    const previous = multi.keys[multi.activeIndex]?.value;
-    if (previous) {
-      const found = resolved.indexOf(previous);
-      if (found >= 0) activeIndex = found;
-    }
-  }
-
-  await setSearchProviderKeys(
-    id,
-    resolved,
-    activeIndex,
-    detailed.filter((row) => row.disabled).map((row) => row.value),
-  );
-  const label = resolved.length === 1
-    ? maskSecret(resolved[0]!)
-    : `${resolved.length} keys · active: #${activeIndex + 1}`;
-  notice(services, "info", `saved ${id} · ${label}`);
-}
-
 function resolveEditorRows(
   rows: readonly { slotId?: string; value: string }[],
   byId: ReadonlyMap<string, string>,
@@ -520,23 +266,6 @@ function resolveEditorRows(
       if (keep) resolved.push(keep);
     } else if (row.value.trim()) {
       resolved.push(row.value.trim());
-    }
-  }
-  return resolved;
-}
-
-function resolveEditorRowsDetailed(
-  rows: readonly { slotId?: string; value: string; disabled?: boolean }[],
-  byId: ReadonlyMap<string, string>,
-): { value: string; disabled: boolean }[] {
-  const resolved: { value: string; disabled: boolean }[] = [];
-  for (const row of rows) {
-    if (row.slotId) {
-      const value = row.value.trim();
-      const keep = value || byId.get(row.slotId);
-      if (keep) resolved.push({ value: keep, disabled: row.disabled === true });
-    } else if (row.value.trim()) {
-      resolved.push({ value: row.value.trim(), disabled: row.disabled === true });
     }
   }
   return resolved;

@@ -51,6 +51,9 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/tools/http/retry-policy.ts": "src/tools/http/fetch.ts",
+  "src/tools/batch/batch-parsing.ts": "src/tools/batch/run-batch.ts",
+  "src/ui-core/commands/keys/editors.ts": "src/ui-core/commands/key-commands.ts",
   "src/ui-core/rendering/exit-summary/table.ts": "src/ui-core/rendering/exit-summary.ts",
   "src/tools/pdf/read.ts": "src/tools/pdf.ts",
   "src/agent/compaction/summary-execution.ts": "src/agent/compaction-executor.ts",
