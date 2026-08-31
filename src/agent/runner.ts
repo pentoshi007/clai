@@ -40,6 +40,7 @@ import { assembleTurnMessages } from "./turn/message-assembly.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
+import { creditSuccessfulWork } from "./turn/task-credit.js";
 import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
 import {
@@ -2170,66 +2171,24 @@ export async function runAgentTurn(
         const liveAfter = await loadPlan(session.sessionId).catch(
           () => undefined,
         );
-        // Never credit whichever task happens to be open after execution: a
-        // later task.update in the same batch may already have changed it.
-        const creditId = dispatchedTaskId;
-        const signals = readTaskWorkSignals(call, result.output ?? "");
-        // Always bank the success for later absorb (preflight / no open task).
-        sessionLooseWork.push({
-          toolName: call.name,
-          ...(Object.keys(signals).length > 0 ? { signals } : {}),
-        });
-        taskWorkLedger = recordTaskWorkSuccess(
-          taskWorkLedger,
-          creditId,
-          call.name,
-          signals,
+        await creditSuccessfulWork(
+          {
+            getLedger: () => taskWorkLedger,
+            setLedger: (ledger) => {
+              taskWorkLedger = ledger;
+            },
+            bankLooseWork: (receipt) => sessionLooseWork.push(receipt),
+            persistTaskEvidence,
+          },
+          {
+            call,
+            signals: readTaskWorkSignals(call, result.output ?? ""),
+            creditId: dispatchedTaskId,
+            plan: liveAfter,
+          },
         );
-        // If nothing was open, still try to attach to the next ready explore
-        // task so "Check Node/npm" can complete without thrash.
-        if ((!creditId || !taskWorkLedger || taskWorkLedger.taskId !== creditId) && liveAfter) {
-          const ready = readyPlanTasks(liveAfter)[0];
-          if (ready) {
-            const absorbed = absorbLooseWorkIntoLedger(
-              ledgerFromTaskEvidence(ready.id, ready.evidence),
-              ready.id,
-              ready.title,
-              [{ toolName: call.name, signals }],
-              { planKind: liveAfter.kind },
-            );
-            if (absorbed && absorbed.successWorkCount > 0) {
-              const task = liveAfter.tasks.find((t) => t.id === ready.id);
-              if (task) {
-                task.evidence = taskEvidenceFromLedger(absorbed);
-                if (
-                  !taskWorkLedger ||
-                  taskWorkLedger.taskId !== ready.id ||
-                  taskWorkLedger.successWorkCount < absorbed.successWorkCount
-                ) {
-                  taskWorkLedger = absorbed;
-                }
-                await persistTaskEvidence(task.id, task.evidence);
-              }
-            }
-          }
-        }
-        if (liveAfter && creditId && taskWorkLedger?.taskId === creditId) {
-          const task = liveAfter.tasks.find((candidate) => candidate.id === creditId);
-          if (task) {
-            task.evidence = taskEvidenceFromLedger(taskWorkLedger);
-            await persistTaskEvidence(task.id, task.evidence);
-          }
-        }
-        // Do NOT refreshSessionState here. executeSingleTool often finishes
-        // (especially in Promise.all parallel groups) *before* recordResult
-        // appends role:tool rows. Upserting SESSION STATE between
-        // assistant.toolCalls and those results breaks native tool protocol;
-        // repairToolProtocol then drops the live bodies and injects
-        // "No stored body" placeholders — models thrash re-running tools
-        // that already succeeded in the UI. Refresh once after the batch.
         pendingSessionStatePlan = liveAfter ?? pendingSessionStatePlan;
       }
-
 
       if (!result.ok) {
         const reflection = loopGuard.getFailureReflection();
