@@ -42,6 +42,7 @@ import {
   createCompactionSummarizer,
   type CompactionExecutionState,
 } from "./turn/compaction-summarizer.js";
+import { createCompactionRequestEstimator } from "./turn/compaction-request-estimator.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -3737,25 +3738,14 @@ export async function runAgentTurn(
       writeDelta: writeCompactionDelta,
     });
 
-    /**
-     * Estimate the complete next model request through the one serialized-
-     * request accounting service, including attached native-tool schemas and
-     * reasoning replay payloads. The same service owns the final pre-dispatch
-     * fit check, so the trigger path and the dispatch path cannot disagree.
-     */
-    const estimateNextRequestTokens = (
-      contextMessages: readonly ChatMessage[],
-    ): number => {
-      const { native } = resolveNativeTools(provider, model);
-      const nextTools = selectToolDefs(native, useCompactSystemPrompt);
-      return accountAssembledRequest({
-        provider,
-        model,
-        messages: contextMessages,
-        stream: true,
-        ...(nextTools?.length ? { tools: nextTools } : {}),
-      }).accounting.requestTokens;
-    };
+    const estimateNextRequestTokens = createCompactionRequestEstimator({
+      provider,
+      model,
+      selectTools: () => {
+        const { native } = resolveNativeTools(provider, model);
+        return selectToolDefs(native, useCompactSystemPrompt);
+      },
+    });
 
     /**
      * Canonical state that must survive compaction verbatim. Built from the
