@@ -471,15 +471,26 @@ const move = ({ from, to, symbols, dry }) => {
     );
   const newText = `${header.join("\n")}\n\n${bodies.map(rewriteInlineSpecifiers).join("\n\n")}\n`;
 
+  // Removals and visibility widenings are applied as one descending edit list;
+  // interleaving two independently ordered passes would corrupt later offsets.
+  const sourceEdits = [
+    ...moving.map((entry) => ({
+      start: entry.start,
+      end: entry.end + 1,
+      text: "",
+    })),
+    ...staying
+      .filter((entry) => entry.names.some((name) => widenInSource.has(name)))
+      .map((entry) => ({
+        start: entry.statement.getStart(),
+        end: entry.statement.getStart(),
+        text: "export ",
+      })),
+  ].sort((a, b) => b.start - a.start);
   let sourceText = text;
-  for (const entry of [...staying].sort((a, b) => b.start - a.start)) {
-    if (!entry.names.some((name) => widenInSource.has(name))) continue;
-    const at = entry.statement.getStart();
-    sourceText = `${sourceText.slice(0, at)}export ${sourceText.slice(at)}`;
-  }
-  for (const entry of [...moving].sort((a, b) => b.start - a.start)) {
+  for (const edit of sourceEdits) {
     sourceText =
-      sourceText.slice(0, entry.start) + sourceText.slice(entry.end + 1);
+      sourceText.slice(0, edit.start) + edit.text + sourceText.slice(edit.end);
   }
   const specifier = moduleSpecifierBetween(from, to);
   const stillUsed = new Set();

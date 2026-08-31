@@ -51,6 +51,11 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/llm/usage/provider-parsers.ts": "src/llm/token-usage.ts",
+  "src/llm/adapters/anthropic-stream-events.ts": "src/llm/adapters/anthropic-tools.ts",
+  "src/llm/adapters/anthropic-wire-blocks.ts": "src/llm/adapters/anthropic-tools.ts",
+  "src/llm/artifacts/legacy-blocks.ts": "src/llm/reasoning-artifacts.ts",
+  "src/llm/artifacts/replay-selection.ts": "src/llm/reasoning-artifacts.ts",
   "src/llm/profile/layer-merge.ts": "src/llm/provider-profile.ts",
   "src/llm/profile/control-rejections.ts": "src/llm/provider-profile.ts",
   "src/llm/provider-info-text.ts": "src/llm/provider.ts",

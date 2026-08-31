@@ -1,7 +1,6 @@
 import {
   isInternalChatMessage,
   type ChatMessage,
-  type NativeToolCall,
   type ReasoningArtifact,
   type ReasoningArtifactReplayObserver,
   type ReasoningArtifactReplayTarget,
@@ -14,17 +13,18 @@ import {
   selectReasoningArtifactsForReplay,
 } from "../reasoning-artifacts.js";
 import {
-  fromWireName,
   mapToolChoiceToAnthropic,
-  parseToolArguments,
-  syntheticToolCallId,
   toWireName,
   type ToolChoice,
-  MAX_TOOL_ARG_BYTES,
 } from "../tool-protocol.js";
 // Side-effect: register wire name map before fromWireName use.
 import "../../tools/definitions.js";
 import { normalizeSystemMessages } from "../system-messages.js";
+export { parseAnthropicToolUseBlocks } from "./anthropic-wire-blocks.js";
+export {
+  finalizeAnthropicToolStream,
+  handleAnthropicStreamEvent,
+} from "./anthropic-stream-events.js";
 
 export function toAnthropicTools(defs: ToolDefinition[]): Array<{
   name: string;
@@ -40,7 +40,10 @@ export function toAnthropicTools(defs: ToolDefinition[]): Array<{
 
 type AnthropicContentBlock =
   | { type: "text"; text: string }
-  | ({ type: "thinking"; thinking: string; signature: string } & Record<string, unknown>)
+  | ({ type: "thinking"; thinking: string; signature: string } & Record<
+      string,
+      unknown
+    >)
   | {
       type: "image";
       source: { type: "base64"; media_type: string; data: string };
@@ -157,7 +160,9 @@ function assistantThinkingArtifacts(
       const toolCallIndex =
         artifact.position.toolCallIndex ??
         (byId !== undefined && byId >= 0 ? byId : undefined);
-      return [{ block, ...(toolCallIndex === undefined ? {} : { toolCallIndex }) }];
+      return [
+        { block, ...(toolCallIndex === undefined ? {} : { toolCallIndex }) },
+      ];
     });
 }
 
@@ -170,7 +175,10 @@ function assistantThinkingArtifacts(
 export function toAnthropicToolMessages(
   messages: ChatMessage[],
   replay?: AnthropicReasoningReplayOptions,
-): Array<{ role: "user" | "assistant"; content: string | AnthropicContentBlock[] }> {
+): Array<{
+  role: "user" | "assistant";
+  content: string | AnthropicContentBlock[];
+}> {
   const out: Array<{
     role: "user" | "assistant";
     content: string | AnthropicContentBlock[];
@@ -299,7 +307,7 @@ export interface AnthropicThinkingBlock {
   readonly toolCallIndex?: number | undefined;
 }
 
-type AnthropicWireContentBlock = {
+export type AnthropicWireContentBlock = {
   type: string;
   text?: string;
   thinking?: string;
@@ -310,76 +318,7 @@ type AnthropicWireContentBlock = {
   [key: string]: unknown;
 };
 
-export function parseAnthropicToolUseBlocks(
-  content: AnthropicWireContentBlock[] | undefined,
-): {
-  text: string;
-  thinkingText: string;
-  thinkingBlocks: AnthropicThinkingBlock[];
-  toolCalls: NativeToolCall[];
-  thinkingSignature?: string;
-} {
-  let text = "";
-  let thinkingText = "";
-  let thinkingSignature: string | undefined;
-  const toolCalls: NativeToolCall[] = [];
-  const thinkingBlocks: Array<Omit<AnthropicThinkingBlock, "toolCallIndex">> = [];
-  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
-  if (!content) return { text, thinkingText, thinkingBlocks, toolCalls };
-
-  for (const [sequence, part] of content.entries()) {
-    if (part.type === "text" && part.text) text += part.text;
-    if (part.type === "thinking") {
-      const thinking = typeof part.thinking === "string" ? part.thinking : "";
-      if (thinking) thinkingText += thinking;
-      if (typeof part.signature === "string" && part.signature) {
-        thinkingSignature = part.signature;
-      }
-      thinkingBlocks.push({
-        sequence,
-        thinking,
-        ...(typeof part.signature === "string" && part.signature
-          ? { signature: part.signature }
-          : {}),
-        raw: { ...part },
-      });
-    }
-    if (part.type === "tool_use") {
-      const wire = part.name ?? "";
-      const input = part.input;
-      const args =
-        input && typeof input === "object" && !Array.isArray(input)
-          ? (input as Record<string, unknown>)
-          : parseToolArguments(
-              typeof input === "string" ? input : JSON.stringify(input ?? {}),
-            );
-      const toolCallIndex = toolCalls.length;
-      toolCalls.push({
-        id: part.id ?? syntheticToolCallId(toolCallIndex),
-        name: fromWireName(wire) ?? wire,
-        args,
-      });
-      toolCallSequences.push({ sequence, toolCallIndex });
-    }
-  }
-  const positionedThinkingBlocks = thinkingBlocks.map((block) => {
-    const followingTool = toolCallSequences.find(
-      (toolCall) => toolCall.sequence > block.sequence,
-    );
-    return followingTool
-      ? { ...block, toolCallIndex: followingTool.toolCallIndex }
-      : block;
-  });
-  return {
-    text: text.trim(),
-    thinkingText: thinkingText.trim(),
-    thinkingBlocks: positionedThinkingBlocks,
-    toolCalls,
-    ...(thinkingSignature ? { thinkingSignature } : {}),
-  };
-}
-
-interface AnthropicStreamBlock {
+export interface AnthropicStreamBlock {
   kind: "text" | "thinking" | "tool_use";
   id?: string;
   name?: string;
@@ -399,202 +338,4 @@ export interface AnthropicToolStreamState {
 
 export function createAnthropicToolStreamState(): AnthropicToolStreamState {
   return { text: "", thinking: "", thinkingSignature: "", blocks: new Map() };
-}
-
-export function handleAnthropicStreamEvent(
-  state: AnthropicToolStreamState,
-  event: {
-    type?: string;
-    index?: number;
-    content_block?: {
-      type?: string;
-      id?: string;
-      name?: string;
-      text?: string;
-      thinking?: string;
-      signature?: string;
-    };
-    delta?: {
-      type?: string;
-      text?: string;
-      thinking?: string;
-      partial_json?: string;
-      signature?: string;
-    };
-  },
-): {
-  textDelta?: string;
-  thinkingDelta?: string;
-  toolCallDelta?: {
-    index: number;
-    id?: string;
-    name?: string;
-    argumentsBytes?: number;
-    nameBecameKnown?: boolean;
-  };
-} {
-  const result: {
-    textDelta?: string;
-    thinkingDelta?: string;
-    toolCallDelta?: {
-      index: number;
-      id?: string;
-      name?: string;
-      argumentsBytes?: number;
-      nameBecameKnown?: boolean;
-    };
-  } = {};
-
-  if (event.type === "content_block_start" && event.content_block) {
-    const index = event.index ?? 0;
-    const cb = event.content_block;
-    if (cb.type === "tool_use") {
-      const block: AnthropicStreamBlock = {
-        kind: "tool_use",
-        json: "",
-        text: "",
-        signature: "",
-      };
-      if (cb.id !== undefined) block.id = cb.id;
-      if (cb.name !== undefined) block.name = cb.name;
-      state.blocks.set(index, block);
-      if (cb.name) {
-        result.toolCallDelta = {
-          index,
-          ...(cb.id !== undefined ? { id: cb.id } : {}),
-          name: fromWireName(cb.name) ?? cb.name,
-          argumentsBytes: 0,
-          nameBecameKnown: true,
-        };
-      }
-    } else if (cb.type === "text") {
-      state.blocks.set(index, {
-        kind: "text",
-        json: "",
-        text: cb.text ?? "",
-        signature: "",
-      });
-      if (cb.text) state.text += cb.text;
-    } else if (cb.type === "thinking") {
-      const thinking = cb.thinking ?? "";
-      const signature = cb.signature ?? "";
-      state.blocks.set(index, {
-        kind: "thinking",
-        json: "",
-        text: thinking,
-        signature,
-      });
-      state.thinking += thinking;
-      state.thinkingSignature += signature;
-    }
-  }
-
-  if (event.type === "content_block_delta" && event.delta) {
-    const index = event.index ?? 0;
-    let block = state.blocks.get(index);
-    if (!block) {
-      block = { kind: "text", json: "", text: "", signature: "" };
-      state.blocks.set(index, block);
-    }
-    if (event.delta.type === "text_delta" && event.delta.text) {
-      block.text += event.delta.text;
-      state.text += event.delta.text;
-      result.textDelta = event.delta.text;
-    }
-    if (event.delta.type === "thinking_delta" && event.delta.thinking) {
-      block.text += event.delta.thinking;
-      state.thinking += event.delta.thinking;
-      result.thinkingDelta = event.delta.thinking;
-    }
-    if (event.delta.type === "signature_delta" && event.delta.signature) {
-      block.signature += event.delta.signature;
-      state.thinkingSignature += event.delta.signature;
-    }
-    if (
-      event.delta.type === "input_json_delta" &&
-      typeof event.delta.partial_json === "string"
-    ) {
-      block.json += event.delta.partial_json;
-      if (block.json.length > MAX_TOOL_ARG_BYTES) {
-        throw new Error(
-          `Tool call arguments exceeded ${MAX_TOOL_ARG_BYTES} bytes — split the file or reduce content size.`,
-        );
-      }
-      if (
-        block.kind === "tool_use" &&
-        block.json.length > 0 &&
-        block.json.length % 4096 < event.delta.partial_json.length
-      ) {
-        result.toolCallDelta = {
-          index,
-          ...(block.id !== undefined ? { id: block.id } : {}),
-          ...(block.name
-            ? { name: fromWireName(block.name) ?? block.name }
-            : {}),
-          argumentsBytes: block.json.length,
-        };
-      }
-    }
-  }
-
-  return result;
-}
-
-export function finalizeAnthropicToolStream(
-  state: AnthropicToolStreamState,
-): {
-  text: string;
-  thinkingText: string;
-  thinkingBlocks: AnthropicThinkingBlock[];
-  toolCalls: NativeToolCall[];
-  thinkingSignature?: string;
-} {
-  const toolCalls: NativeToolCall[] = [];
-  const thinkingBlocks: Array<Omit<AnthropicThinkingBlock, "toolCallIndex">> = [];
-  const toolCallSequences: Array<{ sequence: number; toolCallIndex: number }> = [];
-  const indices = [...state.blocks.keys()].sort((a, b) => a - b);
-  for (const index of indices) {
-    const block = state.blocks.get(index)!;
-    if (block.kind === "thinking") {
-      thinkingBlocks.push({
-        sequence: index,
-        thinking: block.text,
-        ...(block.signature ? { signature: block.signature } : {}),
-        raw: {
-          type: "thinking",
-          thinking: block.text,
-          ...(block.signature ? { signature: block.signature } : {}),
-        },
-      });
-      continue;
-    }
-    if (block.kind !== "tool_use") continue;
-    const wire = block.name ?? "";
-    const args = parseToolArguments(block.json);
-    const toolCallIndex = toolCalls.length;
-    toolCalls.push({
-      id: block.id ?? syntheticToolCallId(index),
-      name: fromWireName(wire) ?? wire,
-      args,
-      ...(block.json ? { rawArguments: block.json } : {}),
-    });
-    toolCallSequences.push({ sequence: index, toolCallIndex });
-  }
-  const positionedThinkingBlocks = thinkingBlocks.map((block) => {
-    const followingTool = toolCallSequences.find(
-      (toolCall) => toolCall.sequence > block.sequence,
-    );
-    return followingTool
-      ? { ...block, toolCallIndex: followingTool.toolCallIndex }
-      : block;
-  });
-  return {
-    text: state.text.trim(),
-    thinkingText: state.thinking.trim(),
-    thinkingBlocks: positionedThinkingBlocks,
-    toolCalls,
-    ...(state.thinkingSignature
-      ? { thinkingSignature: state.thinkingSignature }
-      : {}),
-  };
 }

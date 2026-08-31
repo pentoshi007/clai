@@ -7,10 +7,17 @@ import type {
   ReasoningArtifactKind,
   ReasoningArtifactProvenance,
   ReasoningArtifactReplayDecision,
-  ReasoningArtifactReplayObserver,
   ReasoningArtifactReplayTarget,
-  ReasoningBlock,
 } from "../types.js";
+import {
+  legacyReasoningArtifacts,
+  legacyReasoningBlockFromArtifacts,
+} from "./artifacts/legacy-blocks.js";
+export {
+  reasoningArtifactReplayDecision,
+  selectReasoningArtifactsForReplay,
+} from "./artifacts/replay-selection.js";
+export { legacyReasoningBlockFromArtifacts };
 
 /** Input accepted by the canonical artifact factory before it is frozen. */
 export interface CreateReasoningArtifactInput {
@@ -36,7 +43,9 @@ function immutableClone(value: unknown): unknown {
   }
   if (value && typeof value === "object") {
     const copy: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    for (const [key, entry] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
       copy[key] = immutableClone(entry);
     }
     return Object.freeze(copy);
@@ -175,7 +184,10 @@ export function reasoningArtifactText(
 export function reasoningArtifactSignature(
   artifact: ReasoningArtifact,
 ): string | undefined {
-  if (artifact.kind === "thought-signature" && typeof artifact.raw === "string") {
+  if (
+    artifact.kind === "thought-signature" &&
+    typeof artifact.raw === "string"
+  ) {
     return artifact.raw;
   }
   const raw = rawRecord(artifact);
@@ -199,95 +211,6 @@ export function reasoningArtifactItems(
       ? [{ ...(item as Record<string, unknown>) }]
       : [],
   );
-}
-
-function legacyProvenance(kind: ReasoningArtifactKind): ReasoningArtifactProvenance {
-  switch (kind) {
-    case "signed":
-      return createReasoningArtifactProvenance({
-        provider: "anthropic",
-        dialect: "anthropic-messages",
-        legacy: true,
-      });
-    case "encrypted":
-      return createReasoningArtifactProvenance({
-        provider: "meta",
-        dialect: "meta-responses",
-        legacy: true,
-      });
-    case "thought-signature":
-      return createReasoningArtifactProvenance({
-        provider: "gemini",
-        dialect: "gemini-generate-content",
-        legacy: true,
-      });
-    default:
-      return createReasoningArtifactProvenance({
-        provider: "legacy",
-        dialect: "openai-compatible",
-        legacy: true,
-      });
-  }
-}
-
-function legacyReasoningArtifacts(message: ChatMessage): ReasoningArtifact[] {
-  const artifacts: ReasoningArtifact[] = [];
-  let sequence = 0;
-  const block = message.reasoningBlock;
-  if (block?.signature && block.text) {
-    artifacts.push(
-      createReasoningArtifact({
-        kind: "signed",
-        raw: { thinking: block.text, signature: block.signature },
-        displaySummary: block.text,
-        provenance: legacyProvenance("signed"),
-        replay: { scope: "tool-turn", persistence: "tool-turn" },
-        position: { sequence: sequence++, placement: "before-tool-call" },
-      }),
-    );
-  } else if (block?.text) {
-    artifacts.push(
-      createReasoningArtifact({
-        kind: "plaintext",
-        raw: block.text,
-        displaySummary: block.text,
-        provenance: legacyProvenance("plaintext"),
-        replay: { scope: "all-history", persistence: "all-turns" },
-        position: { sequence: sequence++, placement: "assistant" },
-      }),
-    );
-  }
-  if (block?.items?.length) {
-    artifacts.push(
-      createReasoningArtifact({
-        kind: "encrypted",
-        raw: { items: block.items },
-        displaySummary: block.text || undefined,
-        provenance: legacyProvenance("encrypted"),
-        replay: { scope: "tool-turn", persistence: "tool-turn" },
-        position: { sequence: sequence++, placement: "before-tool-call" },
-      }),
-    );
-  }
-  for (let index = 0; index < (message.toolCalls?.length ?? 0); index += 1) {
-    const call = message.toolCalls![index]!;
-    if (!call.thoughtSignature) continue;
-    artifacts.push(
-      createReasoningArtifact({
-        kind: "thought-signature",
-        raw: call.thoughtSignature,
-        provenance: legacyProvenance("thought-signature"),
-        replay: { scope: "tool-turn", persistence: "tool-turn" },
-        position: {
-          sequence: sequence++,
-          placement: "on-tool-call",
-          toolCallId: call.id,
-          toolCallIndex: index,
-        },
-      }),
-    );
-  }
-  return artifacts;
 }
 
 function normalizeArtifact(artifact: ReasoningArtifact): ReasoningArtifact {
@@ -316,37 +239,6 @@ export function reasoningArtifactsForMessage(
   return legacyReasoningArtifacts(message);
 }
 
-/** Projects canonical artifacts back onto the existing legacy replay surface. */
-export function legacyReasoningBlockFromArtifacts(
-  artifacts: readonly ReasoningArtifact[],
-): ReasoningBlock | undefined {
-  let text: string | undefined;
-  let signature: string | undefined;
-  const items: Array<Record<string, unknown>> = [];
-  for (const artifact of [...artifacts].sort(
-    (left, right) => left.position.sequence - right.position.sequence,
-  )) {
-    if (artifact.kind === "signed") {
-      text ??= reasoningArtifactText(artifact);
-      signature ??= reasoningArtifactSignature(artifact);
-      continue;
-    }
-    if (artifact.kind === "plaintext") {
-      text ??= reasoningArtifactText(artifact);
-      continue;
-    }
-    if (artifact.kind === "encrypted") {
-      items.push(...reasoningArtifactItems(artifact));
-    }
-  }
-  if (text === undefined && !signature && items.length === 0) return undefined;
-  return {
-    text: text ?? "",
-    ...(signature ? { signature } : {}),
-    ...(items.length ? { items } : {}),
-  };
-}
-
 function applyThoughtSignatures(
   toolCalls: readonly NativeToolCall[] | undefined,
   artifacts: readonly ReasoningArtifact[],
@@ -361,7 +253,9 @@ function applyThoughtSignatures(
         (candidate.position.toolCallId === call.id ||
           candidate.position.toolCallIndex === index),
     );
-    const signature = artifact ? reasoningArtifactSignature(artifact) : undefined;
+    const signature = artifact
+      ? reasoningArtifactSignature(artifact)
+      : undefined;
     if (!signature) return call;
     changed = true;
     return { ...call, thoughtSignature: signature };
@@ -390,7 +284,9 @@ export function canonicalizeChatMessageReasoningArtifacts(
 }
 
 /** Canonical artifact accounting for a message, including un-migrated history. */
-export function reasoningArtifactTokensForMessage(message: ChatMessage): number {
+export function reasoningArtifactTokensForMessage(
+  message: ChatMessage,
+): number {
   return reasoningArtifactsForMessage(message).reduce(
     (sum, artifact) => sum + artifact.accounting.estimatedTokens,
     0,
@@ -399,7 +295,9 @@ export function reasoningArtifactTokensForMessage(message: ChatMessage): number 
 
 const REDACTED_DETAIL = /^\s*\[?redacted]?\s*$/i;
 
-function detailVisibleField(entry: Record<string, unknown>): string | undefined {
+function detailVisibleField(
+  entry: Record<string, unknown>,
+): string | undefined {
   const type = typeof entry.type === "string" ? entry.type : "";
   if (type.includes("encrypted")) return undefined;
   for (const key of ["text", "summary"] as const) {
@@ -426,7 +324,9 @@ export function visibleReasoningDetailText(
     const record = entry as Record<string, unknown>;
     const nested = record.reasoning_details;
     if (Array.isArray(nested)) {
-      const inner = visibleReasoningDetailText(nested as ReasoningArtifact["raw"]);
+      const inner = visibleReasoningDetailText(
+        nested as ReasoningArtifact["raw"],
+      );
       if (inner) parts.push(inner);
       continue;
     }
@@ -499,7 +399,8 @@ export function rebindReasoningArtifactsToToolCalls(input: {
             )
           : -1;
     const toolCall = index >= 0 ? input.toolCalls[index] : undefined;
-    if (!toolCall || artifact.position.toolCallId === toolCall.id) return artifact;
+    if (!toolCall || artifact.position.toolCallId === toolCall.id)
+      return artifact;
     return createReasoningArtifact({
       kind: artifact.kind,
       raw: artifact.raw,
@@ -525,14 +426,15 @@ export function reasoningArtifactsForPersistence(input: {
   if (!input.artifacts?.length) return undefined;
   const retained = input.artifacts.filter((artifact) =>
     input.hasToolCalls
-      ? artifact.replay.scope !== "none" || artifact.replay.persistence === "tool-turn"
+      ? artifact.replay.scope !== "none" ||
+        artifact.replay.persistence === "tool-turn"
       : artifact.replay.persistence === "final-turn" ||
         artifact.replay.persistence === "all-turns",
   );
   return retained.length ? retained : undefined;
 }
 
-function decision(
+export function decision(
   artifact: ReasoningArtifact,
   target: ReasoningArtifactReplayTarget,
   action: ReasoningArtifactReplayDecision["action"],
@@ -547,74 +449,4 @@ function decision(
     target,
     byteLength: artifact.accounting.byteLength,
   });
-}
-
-/**
- * Conservative compatibility predicate used at final serialization only. It
- * never mutates stored history and never returns raw payloads in its decision.
- */
-export function reasoningArtifactReplayDecision(
-  artifact: ReasoningArtifact,
-  target: ReasoningArtifactReplayTarget,
-  context: ReasoningArtifactReplayContext = {},
-): ReasoningArtifactReplayDecision {
-  if (!context.forceScope) {
-    if (artifact.replay.scope === "none") {
-      return decision(artifact, target, "omitted", "replay-disabled");
-    }
-    if (artifact.replay.scope === "tool-turn" && !context.hasToolCalls) {
-      return decision(artifact, target, "omitted", "not-a-tool-turn");
-    }
-  }
-
-  const source = artifact.provenance;
-  const legacyPlaintext =
-    source.legacy === true &&
-    (artifact.kind === "plaintext" || artifact.kind === "summary");
-  if (legacyPlaintext) {
-    return target.dialect === "openai-compatible"
-      ? decision(artifact, target, "replayed")
-      : decision(artifact, target, "omitted", "dialect-mismatch");
-  }
-  if (source.provider !== target.provider) {
-    return decision(artifact, target, "omitted", "provider-mismatch");
-  }
-  if (source.dialect !== target.dialect) {
-    return decision(artifact, target, "omitted", "dialect-mismatch");
-  }
-  if (source.model && source.model !== target.model) {
-    return decision(artifact, target, "omitted", "model-mismatch");
-  }
-  if (source.endpointHash && !target.endpointHash) {
-    return decision(artifact, target, "omitted", "endpoint-unknown");
-  }
-  if (source.endpointHash && source.endpointHash !== target.endpointHash) {
-    return decision(artifact, target, "omitted", "endpoint-mismatch");
-  }
-  return decision(artifact, target, "replayed");
-}
-
-/**
- * Filters only the wire projection. Omitted artifacts remain unchanged in the
- * message/persistence timeline, while callers can emit the metadata-only
- * decisions to their operation telemetry.
- */
-export function selectReasoningArtifactsForReplay(input: {
-  artifacts: readonly ReasoningArtifact[] | undefined;
-  target: ReasoningArtifactReplayTarget;
-  context?: ReasoningArtifactReplayContext | undefined;
-  observe?: ReasoningArtifactReplayObserver | undefined;
-}): readonly ReasoningArtifact[] {
-  if (!input.artifacts?.length) return [];
-  const selected: ReasoningArtifact[] = [];
-  for (const artifact of input.artifacts) {
-    const replay = reasoningArtifactReplayDecision(
-      artifact,
-      input.target,
-      input.context,
-    );
-    input.observe?.(replay);
-    if (replay.action === "replayed") selected.push(artifact);
-  }
-  return selected;
 }
