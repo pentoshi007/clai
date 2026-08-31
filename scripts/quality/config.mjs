@@ -52,6 +52,9 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
   "src/agent/turn/tool-execution/single-tool.ts": "src/agent/runner.ts",
+  "src/agent/turn/loop/run-rounds.ts": "src/agent/runner.ts",
+  "src/agent/turn/loop/round-request.ts": "src/agent/runner.ts",
+  "src/agent/turn/loop/answer-path.ts": "src/agent/runner.ts",
 });
 
 /**

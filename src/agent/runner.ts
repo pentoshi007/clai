@@ -4,23 +4,15 @@ import type {
   ChatMessage,
   ChatImage,
   Mode,
-  NativeToolCall,
   ProviderId,
   SuccessfulRequestSnapshot,
   ToolCall,
   ToolDefinition,
   ToolResult,
 } from "../types.js";
-import {
-  streamWithProvider,
-} from "../llm/router.js";
-import { operationUsageFromError } from "../llm/operation-ledger.js";
 import { providerInputTokenBudget } from "../llm/context-windows.js";
-import { streamAlreadyEmitted } from "../llm/stream-progress.js";
 import {
-  classifyStreamFailure,
   createStreamRecoveryState,
-  resetStreamRecoveryState,
 } from "./stream-recovery.js";
 import type {
   SingleToolResult,
@@ -29,21 +21,11 @@ import type {
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
 import { assembleTurnMessages } from "./turn/message-assembly.js";
-import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import {
   createTurnEvidenceFlags,
 } from "./turn/evidence-flags.js";
-import { resolveFinalOutcome } from "./turn/loop/final-outcome.js";
-import { handleModelOnlyRound } from "./turn/loop/model-only-rounds.js";
-import { closeOutRound } from "./turn/loop/round-closeout.js";
-import {
-  assessCompletion,
-  buildFinalizeGateInput,
-} from "./turn/loop/answer-assessment.js";
-import { decidePlanCallDeferral } from "./turn/loop/plan-call-deferral.js";
 import {
   createWireOccurrenceLedger,
-  type ReplayedOccurrence,
 } from "./turn/loop/wire-occurrences.js";
 import {
   createPromptMutex,
@@ -59,32 +41,16 @@ import {
 } from "./turn/plan-persistence.js";
 import type { TurnOutcome } from "./turn-outcome.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
-import { createToolResultRecorder } from "./turn/tool-result-recorder.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
 import { createToolRouting } from "./turn/tool-routing.js";
-import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import { runSingleTool } from "./turn/tool-execution/single-tool.js";
-import { resolveAnswerPath } from "./turn/loop/answer-path.js";
-import { requestRound } from "./turn/loop/round-request.js";
+import { runTurnRounds } from "./turn/loop/run-rounds.js";
 import type { TurnLoopDeps } from "./turn/loop/deps.js";
 import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
-import { createRoundState } from "./turn/loop/round-state.js";
 import type { TurnLoopState } from "./turn/loop/state.js";
-import { executeToolGroups } from "./turn/loop/group-execution.js";
-import { settleUnrunCalls } from "./turn/loop/unrun-calls.js";
-import { buildStreamRequest } from "./turn/loop/stream-request.js";
-import {
-  bindToolCalls,
-  reconcileToolCallIds,
-} from "./turn/loop/call-binding.js";
-import type { BoundCall } from "./turn/contracts.js";
-import {
-  createRoundRecorder,
-  type RecordedToolResult,
-} from "./turn/loop/round-recorder.js";
 import {
   createTurnCounters,
 } from "./turn/turn-counters.js";
@@ -92,41 +58,9 @@ import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
 import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
 import {
-  recoverFromStreamFailure,
-  type StreamFailureState,
-} from "./turn/loop/stream-failure.js";
-import {
-  assembleRequest,
-  type RequestAssemblyState,
-} from "./turn/loop/request-assembly.js";
-import { createStreamSession } from "./turn/loop/stream-session.js";
-import {
   loadTurnInstructions,
   orientTurnWorkspace,
 } from "./turn/workspace-setup.js";
-import {
-  firstNativeToolCall,
-  syncNativeToolCallCards,
-} from "./turn/loop/native-tool-calls.js";
-import { recoverMissingToolCall } from "./turn/loop/tool-call-recovery.js";
-import {
-  handleEmptyResponse,
-  type EmptyResponseState,
-} from "./turn/loop/empty-response.js";
-import {
-  handleOutputBudgetExhaustion,
-  outputBudgetExhausted,
-  routeCompletionBudget,
-  type OutputBudgetState,
-} from "./turn/loop/output-budget.js";
-import {
-  hasTruncatedNativeWrite,
-  salvageTruncatedNativeWrite,
-} from "./turn/loop/native-write-salvage.js";
-import {
-  accountCompletionUsage,
-  interpretCompletion,
-} from "./turn/loop/completion-interpretation.js";
 import {
   evaluateTaskCompletionGate,
   resolveLedgerForTaskGate,
@@ -145,8 +79,6 @@ import {
   type CompactionExecutionState,
 } from "./turn/compaction-summarizer.js";
 import {
-  isTextOnlyModel,
-  markTextOnlyModel,
   type ToolCallingMode,
 } from "../llm/tool-protocol.js";
 import { sanitizeDisplayText as sanitizeAssistantText } from "../ui-core/rendering/sanitize-display.js";
@@ -164,7 +96,6 @@ import {
   getActiveSessionWorkspace,
 } from "../store/session-workspace.js";
 import {
-  classifyToolCall,
   scopeTargetForToolCall,
 } from "../safety/classifier.js";
 
@@ -191,16 +122,6 @@ function safeEngagementActionsForToolCall(
     return [];
   }
 }
-import {
-  BATCH_SAFE_TOOLS,
-} from "../tools/registry.js";
-import {
-  appendAssistantWithTools,
-} from "./tool-history.js";
-import { RequestOverLimitError } from "./request-accounting.js";
-import {
-  MAX_STEP_COMPLETION_TOKENS,
-} from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
 import {
@@ -208,13 +129,7 @@ import {
   upsertAgentInstructionsMessage,
 } from "./injected-blocks.js";
 import { getSkillIndex } from "../skills/registry.js";
-import {
-  loadScopeForSession,
-} from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
-import {
-  rememberThinking,
-} from "../ui/thinking.js";
 import { safeCwd } from "../os/cwd.js";
 import {
   analyzeTask,
@@ -235,21 +150,12 @@ import {
 } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
 import {
-  parseToolCall,
-  recognizeBareToolJson,
-  looksLikeTruncatedToolCall,
   type SalvagedWrite,
-  countToolFences,
-  groupToolCallsForExecution,
   buildTurnHistory,
-  collapseRepeatedText,
-  textBeforeToolCall,
-  formatToolArgs,
   looksLikePentestTask,
   looksLikeBuildTask,
   looksLikeInformationalQuery,
   looksLikeIdleOrSocialPrompt,
-  looksLikePromptLeak,
 } from "./tool-call-parser.js";
 import {
   createSessionPolicy,
@@ -279,10 +185,8 @@ import {
 } from "./continue-orient.js";
 import { detectPackageManager } from "./workspace-orient.js";
 import {
-  consumeBudget,
   createRecoveryBudgets,
 } from "./must-continue.js";
-import { chooseFinalizeRecovery } from "./finalize-gate.js";
 import {
   EngagementPolicyEngine,
   engagementActionsForToolCall,
@@ -299,7 +203,6 @@ import {
   confirmToolExecution,
   type ConfirmPort,
 } from "./confirm-port.js";
-import { buildRichStopSummary } from "./stop-summary.js";
 import { composeAgentSystemPrompt, type AgentPromptSection } from "./prompt-composer.js";
 import {
   createGovernorState,
@@ -1288,869 +1191,15 @@ export async function runAgentTurn(
       moveTurn,
       finishTurn,
       executeSingleTool,
+      nextToolEventId: () => `tool-${++nextToolEventId}`,
+      pushAssistantHistory,
+      liveMessages: () => liveMessages,
+      upsertActionCycleRecovery,
     };
 
-    for (let iteration = 0; iteration < maxIterations; iteration += 1) {
-
-      outputState.visibleCommitted = false;
-      // `step` is the productive-step index (used for display + audit). It only
-      // advances when the previous iteration actually executed a tool.
-      loop.step = counters.productiveSteps;
-      options.signal?.throwIfAborted();
-
-
-      let call: ToolCall | undefined;
-      let assistantText: {
-        visible: string;
-        thinkContent: string;
-        hasThinking: boolean;
-      };
-      let canonicalAssistantVisible = "";
-      let recoveredFromBareJson = false;
-
-      if (loop.pendingCalls.length > 0) {
-
-        call = loop.pendingCalls.shift()!;
-        assistantText = { visible: "", thinkContent: "", hasThinking: false };
-        const batchStatus = `  ↳ continuing batch (${loop.pendingCalls.length} more queued)\n`;
-        writeStatus(batchStatus);
-      } else {
-
-        await maybeAutoCompact("auto-token-budget");
-        // Safe boundary: no assistant tool-call group is open here. Refresh the
-        // durable Responder inbox immediately before every provider request so
-        // completions arriving mid-turn are visible without corrupting native
-        // tool protocol or forcing a separate busy-wait loop.
-        const responderDelivery = refreshResponderInbox();
-
-        const streamLabel =
-          loop.step === 0 ? "waiting for model" : `step ${loop.step + 1}`;
-        emit({ type: "status", text: streamLabel });
-        let toolsAttached = false;
-        const streamSession = createStreamSession({
-          emitStatus: (text) => emit({ type: "status", text }),
-          emitAssistantDelta: (text) => emit({ type: "assistant-delta", text }),
-          emitThinkingDelta: (text) => emit({ type: "thinking-delta", text }),
-          writeStatus,
-          notify: writeNotice,
-          writeToolCall,
-          nextToolEventId: () => `tool-${++nextToolEventId}`,
-          markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
-          nativeToolsAttached: () => toolsAttached,
-          onSuccessfulRequest: (snapshot) => {
-            loop.lastSuccessfulRequestSnapshot = snapshot;
-            options.onSuccessfulRequest?.(snapshot);
-          },
-        });
-        const deferredToolCalls = streamSession.deferredToolCalls;
-        const streamedNativeCallNames = streamSession.streamedNativeCallNames;
-        const callIds = streamSession.callIds;
-        const requested = await requestRound(loopDeps, {
-          streamSession,
-          responderDelivery,
-          delay: (ms) => delay(ms, options.signal),
-          setToolsAttached: (attached) => {
-            toolsAttached = attached;
-          },
-        });
-        if (requested.kind === "continue") continue;
-        const completion = requested.completion;
-        toolsAttached = requested.toolsAttached;
-        if (responderDelivery) {
-          // The result text is now part of this turn, so consumption is durable.
-          // A stream that aborted or threw above never reaches this point and the
-          // receipt stays deliverable.
-          if (!jobManager.markDelivered(responderDelivery.id, session.sessionId)) {
-            jobManager.releaseResponderNotificationClaim(responderDelivery.id);
-          }
-        }
-        loop.provider = completion.provider;
-        loop.model = completion.model;
-        await accountCompletionUsage(
-          {
-            dispatchedRawRequestTokens: loop.dispatchedRawRequestTokens,
-            emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, attempt }) =>
-              emit({
-                type: "token-usage",
-                usage,
-                model: usageModel,
-                provider: usageProvider,
-                ...(attempt ? { attempt } : {}),
-              }),
-            audit: (event, payload) => auditLog(event, payload),
-          },
-          completion,
-        );
-        streamSession.finishDeltaParser();
-        // Sticky text-only may have flipped dialect during stream retry.
-        ({ dialect: toolDialect, native: nativeToolsActive } =
-          resolveNativeTools(loop.provider, loop.model));
-        // toolsAttached may have been true for the request; if sticky
-        // fallback dropped tools, treat as text mode for this turn's parse.
-        const usedNativeProtocol = Boolean(completion.toolCalls?.length) ||
-          (toolsAttached && !isTextOnlyModel(loop.provider, loop.model));
-
-        const interpreted = interpretCompletion({
-          completion,
-          streamedReasoningText: streamSession.streamedReasoningText(),
-          interruptedVisible: loop.interruptedVisible,
-        });
-        if (interpreted.thinkContent) rememberThinking(interpreted.thinkContent);
-        canonicalAssistantVisible = interpreted.canonicalVisible;
-        assistantText = interpreted.assistantText;
-        const retryReasoning = interpreted.retryReasoning;
-        const commitAssistantRetry = (historyText: string): void => {
-          const hasShownToolCall = deferredToolCalls.some((entry) => entry.shown);
-          if (!hasShownToolCall) {
-            const displayText = textBeforeToolCall(
-              collapseRepeatedText(canonicalAssistantVisible),
-            ).trim();
-            if (displayText) {
-              writeAssistantMessage(displayText);
-            } else {
-              emit({ type: "assistant-message", text: "" });
-            }
-            if (assistantText.hasThinking) {
-              emit({
-                type: "thinking-block",
-                content: assistantText.thinkContent,
-              });
-            }
-          }
-          pushAssistantHistory(historyText, retryReasoning);
-          loop.interruptedVisible = "";
-          loop.interruptedReasoning = "";
-          loop.lowYieldResumptions = 0;
-        };
-
-
-        // Native-first: prefer structured toolCalls from the provider.
-        let nativeToolCalls: NativeToolCall[] = completion.toolCalls ?? [];
-        // Early UI cards: refresh args if stream deltas already opened cards;
-        // otherwise create cards now (non-streaming / name-after-done providers).
-        syncNativeToolCallCards(
-          {
-            deferredToolCalls,
-            callIds,
-            allocateEventId: () => `tool-${++nextToolEventId}`,
-            markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
-          },
-          nativeToolCalls,
-        );
-
-        if (nativeToolCalls.length) {
-          call = firstNativeToolCall(nativeToolCalls);
-        } else {
-          call = parseToolCall(assistantText.visible, {
-            strict: getConfig().parserStrict,
-          });
-          if (!call && assistantText.hasThinking) {
-            call = parseToolCall(assistantText.thinkContent, {
-              strict: getConfig().parserStrict,
-            });
-            if (call) {
-              writeNotice("info", "recovered tool call from thinking content");
-            }
-          }
-        }
-
-        if (looksLikePromptLeak(assistantText.visible)) {
-          if (call || nativeToolCalls.length) {
-            writeNotice(
-              "warn",
-              "suppressed tool call from apparent prompt leak",
-            );
-          }
-          call = undefined;
-          nativeToolCalls = [];
-          deferredToolCalls.length = 0;
-        }
-
-
-        if (nativeToolCalls.length) {
-          counters.truncatedToolRetries += hasTruncatedNativeWrite(nativeToolCalls) ? 1 : 0;
-          if (counters.truncatedToolRetries <= 5) {
-            const salvagedNative = await salvageTruncatedNativeWrite(
-              {
-                messages,
-                toolsAttached,
-                notify: writeNotice,
-                applySalvagedWrite,
-              },
-              {
-                nativeToolCalls,
-                assistantVisible: assistantText.visible,
-                assistantThinkContent: assistantText.thinkContent,
-                hasThinking: assistantText.hasThinking,
-                completion,
-              },
-            );
-            if (salvagedNative) {
-              nativeToolCalls = [];
-              call = undefined;
-              deferredToolCalls.length = 0;
-              continue;
-            }
-          }
-        }
-
-        if (nativeToolCalls.length) {
-          const unparseable = nativeToolCalls.filter((tc) =>
-            Boolean(tc.args?._parseError),
-          );
-          if (unparseable.length > 0) {
-            loop.malformedNativeArgsRounds += 1;
-            if (loop.malformedNativeArgsRounds >= 2) {
-              const names = [...new Set(unparseable.map((tc) => tc.name))].join(", ");
-              for (const entry of deferredToolCalls) {
-                if (!entry.shown || entry.call.name === "…") continue;
-                writeToolBlocked(
-                  entry.eventId,
-                  entry.call.name,
-                  "Native tool arguments were unusable again; nothing ran. Reissue as a fenced tool block.",
-                );
-              }
-              markTextOnlyModel(loop.provider, loop.model);
-              writeNotice(
-                "warn",
-                "native tool arguments keep arriving unusable — switching this model to the text tool protocol",
-              );
-              commitAssistantRetry(assistantText.visible);
-              messages.push(
-                recoveryUserMessage(
-                  `Your native ${names || "tool"} call arguments were not usable, so nothing ran. ` +
-                    "Do not repeat that call. Emit exactly one complete fenced ```tool block with valid JSON arguments now.",
-                ),
-              );
-              nativeToolCalls = [];
-              call = undefined;
-              deferredToolCalls.length = 0;
-              continue;
-            }
-          } else {
-            loop.malformedNativeArgsRounds = 0;
-          }
-        }
-
-
-        const completionBudget = routeCompletionBudget({
-          provider: loop.provider,
-          model: loop.model,
-          stepMaxTokens: loop.stepMaxTokens,
-        });
-        const hitOutputLimit = outputBudgetExhausted({
-          completion,
-          completionBudget,
-        });
-        const incompleteNativeStream =
-          nativeToolCalls.length === 0 && streamedNativeCallNames.size > 0;
-        const outputLimitLooksLikeTool =
-          incompleteNativeStream ||
-          countToolFences(assistantText.visible) > 0 ||
-          looksLikeTruncatedToolCall(assistantText.visible);
-        if (hitOutputLimit && !call && !outputLimitLooksLikeTool) {
-          const budgetState: OutputBudgetState = {
-            truncatedBudgetRounds: loop.truncatedBudgetRounds,
-            continuationBudgetFloor: loop.continuationBudgetFloor,
-            retryWithoutThinking: loop.retryWithoutThinking,
-            interruptedVisible: loop.interruptedVisible,
-            interruptedReasoning: loop.interruptedReasoning,
-            lowYieldResumptions: loop.lowYieldResumptions,
-            visibleCommitted: outputState.visibleCommitted,
-          };
-          const budgetDecision = handleOutputBudgetExhaustion(
-            {
-              messages,
-              provider: loop.provider,
-              model: loop.model,
-              stepMaxTokens: loop.stepMaxTokens,
-              maxStepCompletionTokens: MAX_STEP_COMPLETION_TOKENS,
-              notify: writeNotice,
-              recoveryUserMessage,
-              pushAssistantHistory: (historyText) =>
-                pushAssistantHistory(historyText, retryReasoning),
-              commitAssistantRetry,
-            },
-            budgetState,
-            {
-              completion,
-              assistantVisible: assistantText.visible,
-              assistantThinkContent: assistantText.thinkContent,
-              hasThinking: assistantText.hasThinking,
-              canonicalVisible: canonicalAssistantVisible,
-            },
-            completionBudget,
-          );
-          loop.truncatedBudgetRounds = budgetState.truncatedBudgetRounds;
-          loop.continuationBudgetFloor = budgetState.continuationBudgetFloor;
-          loop.retryWithoutThinking = budgetState.retryWithoutThinking;
-          loop.interruptedVisible = budgetState.interruptedVisible;
-          loop.interruptedReasoning = budgetState.interruptedReasoning;
-          loop.lowYieldResumptions = budgetState.lowYieldResumptions;
-          outputState.visibleCommitted = budgetState.visibleCommitted;
-          if (budgetDecision === "continue-round") continue;
-          if (budgetDecision === "stop-partial") {
-            return finishTurn(
-              "The model exhausted its output budget again after one preserved continuation. No visible answer was produced.",
-              loop.step + 1,
-              "partial",
-              ["Retry at a lower reasoning effort or choose a model with a larger output limit."],
-              "The model exhausted the route's output budget twice without a visible answer.",
-            );
-          }
-        }
-
-        if (!canonicalAssistantVisible.trim() && !call) {
-          if (incompleteNativeStream) {
-            const reason =
-              "The provider began this native tool call but never completed it. Nothing ran; reissue a complete call.";
-            for (const deferred of deferredToolCalls) {
-              if (!deferred.shown || deferred.call.name === "…") continue;
-              writeToolBlocked(deferred.eventId, deferred.call.name, reason);
-            }
-            markTextOnlyModel(loop.provider, loop.model);
-            writeNotice(
-              "warn",
-              "provider abandoned a native tool call — switching this model to the text tool protocol",
-            );
-          }
-          const emptyState: EmptyResponseState = {
-            emptyVisibleRetries: loop.emptyVisibleRetries,
-            retryWithoutThinking: loop.retryWithoutThinking,
-            interruptedReasoning: loop.interruptedReasoning,
-          };
-          const emptyDecision = handleEmptyResponse(
-            {
-              messages,
-              toolsAttached,
-              planModeWithoutPlan: isPlanMode && !activePlan,
-              notify: writeNotice,
-              commitAssistantRetry,
-              recoveryUserMessage,
-            },
-            emptyState,
-            {
-              assistantVisible: assistantText.visible,
-              assistantThinkContent: assistantText.thinkContent,
-              hasThinking: assistantText.hasThinking,
-              incompleteNativeStream,
-            },
-          );
-          loop.emptyVisibleRetries = emptyState.emptyVisibleRetries;
-          loop.retryWithoutThinking = emptyState.retryWithoutThinking;
-          loop.interruptedReasoning = emptyState.interruptedReasoning;
-          if (emptyDecision === "continue-round") continue;
-          return finishTurn("Model returned an empty response after retries.", loop.step + 1);
-        } else {
-          // Reset the counter on any successful visible output or recovered call.
-          loop.emptyVisibleRetries = 0;
-          loop.truncatedBudgetRounds = 0;
-          loop.continuationBudgetFloor = 0;
-          loop.retryWithoutThinking = false;
-          loop.interruptedReasoning = "";
-        }
-
-
-        let bareArgsOnly = false;
-        recoveredFromBareJson = false;
-        if (!call) {
-          const bare = recognizeBareToolJson(assistantText.visible);
-          if (bare?.call) {
-            call = bare.call;
-            recoveredFromBareJson = true;
-            writeNotice(
-              "info",
-              "recovered an unfenced tool call from bare JSON",
-            );
-          } else if (bare?.argsOnly) {
-            bareArgsOnly = true;
-          }
-        }
-        // Also check thinking content for bare JSON calls.
-        if (!call && assistantText.hasThinking) {
-          const bareThink = recognizeBareToolJson(assistantText.thinkContent);
-          if (bareThink?.call) {
-            call = bareThink.call;
-            recoveredFromBareJson = true;
-            writeNotice(
-              "info",
-              "recovered an unfenced tool call from thinking content",
-            );
-          } else if (bareThink?.argsOnly) {
-            bareArgsOnly = true;
-          }
-        }
-        if (!call) {
-          const answer = await resolveAnswerPath(loopDeps, {
-            assistantText,
-            canonicalAssistantVisible,
-            bareArgsOnly,
-            toolsAttached,
-            commitAssistantRetry,
-          });
-          if (answer.kind === "finished") return answer.outcome;
-          continue;
-        }
-
-        // A valid primary tool call exists for this fresh model turn. Show any
-        // prose / thinking that preceded it, record the assistant message ONCE.
-        const toolDisplayText = loop.interruptedVisible
-          ? canonicalAssistantVisible
-          : assistantText.visible;
-        const beforeTool = recoveredFromBareJson
-          ? ""
-          : nativeToolCalls.length
-            ? toolDisplayText.trim()
-            : textBeforeToolCall(toolDisplayText);
-        if (beforeTool) {
-          writeAssistantMessage(beforeTool);
-        } else {
-          emit({ type: "assistant-message", text: "" });
-        }
-        loop.interruptedVisible = "";
-        loop.interruptedReasoning = "";
-        loop.lowYieldResumptions = 0;
-
-        let bound = bindToolCalls({
-          nativeToolCalls,
-          visible: assistantText.visible,
-          thinkContent: assistantText.thinkContent,
-          primaryCall: call,
-        });
-
-        const deferral = decidePlanCallDeferral(bound);
-        let toRun = bound.slice(0, deferral.runCount);
-        let activeDeferredToolCalls = deferredToolCalls.slice(
-          0,
-          deferral.runCount,
-        );
-        const deferReason = deferral.deferReason;
-        if (deferral.notice) writeNotice("info", deferral.notice);
-        if (deferral.systemMessage) {
-          messages.push({ role: "system", content: deferral.systemMessage });
-        }
-
-        // Preserve model/document order. In particular, never move a later
-        // in_progress transition ahead of the preceding work or done receipt;
-        // doing so inverts dependency order and desynchronizes the task pane.
-
-        const reconciled = reconcileToolCallIds(bound, toRun, messages);
-        const historyNativeCalls = reconciled.historyNativeCalls;
-        bound = reconciled.bound;
-        toRun = reconciled.toRun;
-        const allCalls = toRun.map((b) => b.call);
-        const actionSequenceCalls = bound.map((entry) => {
-          const candidate = entry.call;
-          const stateKey = probeStateKey(candidate);
-          return {
-            name: candidate.name,
-            args: candidate.args,
-            ...(stateKey ? { stateKey } : {}),
-          };
-        });
-        /** Stable call→Bound map (object identity; no indexOf for result ids). */
-        const callToBound = new Map<ToolCall, BoundCall>(
-          toRun.map((b) => [b.call, b]),
-        );
-        const runIds = new Set(toRun.map((b) => b.id));
-        const sequenceDecision = loopGuard.observeActionSequence(actionSequenceCalls);
-
-        if (sequenceDecision.suppress) {
-          const suppression = suppressRepeatedActionSequence(
-            {
-              messages,
-              notify: writeNotice,
-              queuedEventId: (index) => deferredToolCalls[index]?.eventId,
-              allocateEventId: () => `tool-${++nextToolEventId}`,
-              writeToolCall,
-              markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
-              emitToolStart: (eventId) =>
-                emit({ type: "tool-start", id: eventId }),
-              writeToolOutput: (eventId, chunk) =>
-                writeToolOutput(eventId, chunk),
-              emitToolResult,
-              priorObservation: (priorCall) =>
-                loopGuard.getPriorObservation(priorCall.name, priorCall.args),
-              pushAssistantHistory: (text) =>
-                pushAssistantHistory(text, completion),
-              upsertActionCycleRecovery,
-              unreadResponderResults: () => responderClaims.size > 0,
-              currentSignature: () =>
-                loopGuard.currentActionSequenceSignature(),
-            },
-            {
-              verdict: sequenceDecision,
-              bound,
-              runIds,
-              deferReason,
-              beforeTool,
-              historyNativeCalls,
-              completion,
-              assistantThinkContent: assistantText.thinkContent,
-              hasThinking: assistantText.hasThinking,
-            },
-          );
-          if (suppression.kind === "stop") {
-            outcomeState.outcome.status = "partial";
-            await saveOutcomeState(outcomeState);
-            moveTurn("partial", "repeated identical action sequence");
-            return finishTurn(
-              suppression.answer,
-              counters.productiveSteps,
-              "partial",
-              suppression.remainingCriteria,
-              suppression.reason,
-              undefined,
-              suppression.loopGuardStop,
-            );
-          }
-          continue;
-        }
-
-        if (sequenceDecision.warn && sequenceDecision.warnMessage) {
-          writeNotice("warn", sequenceDecision.warnMessage);
-          messages.push(
-            recoveryUserMessage(sequenceDecision.warnMessage),
-          );
-        }
-
-        // Notice BEFORE tool cards so the transcript reads:
-        // thinking → response → "N tool calls…" → tool cards (not tools then info).
-        if (allCalls.length > 1) {
-          writeNotice(
-            "info",
-            `${allCalls.length} tool calls in this message — read-only in parallel, writes in order (failures do not cancel siblings)`,
-          );
-        }
-
-
-        // Cards streamed from partial text can predate their arguments. The
-        // executed call is authoritative, so refresh a stale card in place
-        // (same event id → the reducer updates the queued row, no new card).
-        const flushableDeferred = activeDeferredToolCalls.slice(
-          0,
-          allCalls.length,
-        );
-        for (let i = 0; i < flushableDeferred.length; i += 1) {
-          const deferred = flushableDeferred[i]!;
-          if (!deferred.call.name || deferred.call.name === "…") continue;
-          const finalCall = allCalls[i];
-          const stale =
-            finalCall !== undefined &&
-            (finalCall.name !== deferred.call.name ||
-              formatToolArgs(finalCall) !== formatToolArgs(deferred.call));
-          if (stale) {
-            deferred.call = finalCall!;
-          }
-          if (!deferred.shown || stale) {
-            writeToolCall(deferred.eventId, deferred.call);
-            deferred.shown = true;
-          }
-        }
-
-        if (historyNativeCalls.length) {
-          appendAssistantWithTools(
-            messages,
-            beforeTool ?? "",
-            historyNativeCalls,
-            completion.reasoningBlock ??
-              (assistantText.hasThinking && assistantText.thinkContent
-                ? { text: assistantText.thinkContent }
-                : undefined),
-            completion.reasoningArtifacts,
-          );
-        } else {
-          const standardizedContent =
-            (beforeTool ? beforeTool.trim() + "\n\n" : "") +
-            allCalls
-              .map((c) => `\`\`\`tool\n${JSON.stringify(c)}\n\`\`\``)
-              .join("\n\n");
-          pushAssistantHistory(standardizedContent, completion);
-        }
-
-
-        const scopeForBatch = await loadScopeForSession(session.sessionId).catch(
-          () => undefined,
-        );
-
-        const isParallelSafe = (c: ToolCall): boolean => {
-          if (mcpRuntime?.isParallelSafe(c.name)) return true;
-          if (
-            c.name === "pentest.recon" ||
-            c.name === "net.context" ||
-            c.name === "tool.batch" ||
-            c.name === "tool.check" ||
-            c.name === "shell.jobs" ||
-            c.name === "shell.tail"
-          ) {
-            return true;
-          }
-          if (!BATCH_SAFE_TOOLS.has(c.name)) return false;
-          try {
-            return (
-              classifyToolCall(c, { scope: scopeForBatch }).level === "safe"
-            );
-          } catch {
-            return false;
-          }
-        };
-        // Recon waves often emit 6–10 lookups; 4 forced a second sequential wave.
-        const PARALLEL_LIMIT = 8;
-
-        const round = createRoundState(
-          Boolean(activePlan && activePlan.tasks.length > 0),
-          allCalls.length,
-        );
-
-        /** Plan-mode soft reminders already attached this turn (by step). */
-        const planRemindedAt = new Set<number>();
-        const toolResultRecorder = createToolResultRecorder({
-          messages,
-          useNativeToolHistory: historyNativeCalls.length > 0,
-          deferredPostToolMessages,
-          seenHashes: toolResultHashes,
-          remindedAt: planRemindedAt,
-          writeNotice,
-        });
-
-        /**
-         * Record a tool result into history. Failures / user declines are
-         * always returned to the model — we never cancel later siblings or
-         * force-end the turn as "blocked" because one tool failed. Only an
-         * explicit user abort stops remaining calls.
-         */
-        const record = createRoundRecorder({
-          round,
-          counters,
-          evidenceFlags,
-          recovery,
-          isPlanMode,
-          pentestTurn: pentestLike || pentestSession,
-          planApproved: () => session.planApproved.value,
-          approvePlan: () => {
-            session.planApproved.value = true;
-          },
-          priorObservation: (priorCall) =>
-            loopGuard.getPriorObservation(priorCall.name, priorCall.args),
-          projectRoot: getActiveProjectRoot,
-          kindHint: () =>
-            activePlan?.kind === "pentest" || pentestLikeTurn
-              ? "pentest"
-              : activePlan?.kind === "coding"
-                ? "coding"
-                : "general",
-          recordHistory: (entry) => toolResultRecorder.record(entry),
-          onPlanCreated: (planKind) => {
-            loop.codingSession = codingSessionFromContext({ buildLike, planKind });
-          },
-        });
-        const recordResult = (
-          boundCall: BoundCall,
-          res: RecordedToolResult,
-        ): void => record(boundCall.id, res);
-
-        // Multi-task sync guard: when one model message advances more than one
-        // distinct task at once, hold the whole set behind a single reminder.
-        // The model confirms by re-issuing the identical batch; a single-task
-        // (or non-advancing) message clears any pending confirmation.
-        {
-          const livePlanForBatch = await loadPlan(session.sessionId).catch(
-            () => undefined,
-          );
-          const guard = evaluateTaskBatchGuard({
-            calls: toRun.map((bound) => bound.call),
-            plan: livePlanForBatch,
-            pendingSignature: session.pendingTaskBatch.value,
-          });
-          loop.batchRemindCalls = new Set<ToolCall>(guard.remindCalls);
-          loop.batchReminderNote = guard.reminderNote;
-          session.pendingTaskBatch.value = guard.pendingSignature;
-          for (const notice of guard.notices) {
-            writeNotice(notice.level, notice.message);
-          }
-        }
-
-        const replayExecutedOccurrence = (
-          bc: BoundCall,
-          uiId: string,
-        ): ReplayedOccurrence | undefined =>
-          wireOccurrences.replay(bc.wireId, bc.call, uiId);
-        const rememberExecutedOccurrence = (
-          bc: BoundCall,
-          res: {
-            call: ToolCall;
-            result: ToolResult;
-            contextOutput: string;
-            ok: boolean;
-            aborted?: boolean | undefined;
-            suppressedRepeat?: boolean | undefined;
-          },
-        ): void => wireOccurrences.remember(bc.wireId, res);
-
-        const groups = groupToolCallsForExecution(
-          allCalls,
-          isParallelSafe,
-          PARALLEL_LIMIT,
-        );
-        await executeToolGroups(
-          {
-            round,
-            boundFor: (groupCall) => callToBound.get(groupCall),
-            eventIdFor: (bound) => {
-              if (!callIds[bound.index]) {
-                callIds[bound.index] = `tool-${++nextToolEventId}`;
-              }
-              return callIds[bound.index]!;
-            },
-            replay: replayExecutedOccurrence,
-            execute: (groupCall, uiId) =>
-              executeSingleTool(
-                groupCall,
-                uiId,
-                options.signal || new AbortController().signal,
-              ),
-            record: recordResult,
-            remember: rememberExecutedOccurrence,
-          },
-          groups,
-        );
-
-        settleUnrunCalls(
-          {
-            round,
-            messages,
-            useNativeHistory: historyNativeCalls.length > 0,
-            eventIdFor: (index) => {
-              if (!callIds[index]) {
-                callIds[index] = `tool-${++nextToolEventId}`;
-              }
-              return callIds[index]!;
-            },
-            wasPrinted: (uiId) => alreadyPrintedIds.has(uiId),
-            emitToolResult,
-          },
-          toRun,
-        );
-
-        const closeoutState = { consecutiveSynthesizedRounds: loop.consecutiveSynthesizedRounds };
-        const closeout = await closeOutRound(
-          {
-            messages,
-            recordedNativeIds: round.recordedNativeIds,
-            historyNativeCalls,
-            deferReason,
-            priorObservation: (priorCall) =>
-              loopGuard.getPriorObservation(priorCall.name, priorCall.args),
-            completeActionSequence: (eligible, outcome) =>
-              loopGuard.completeActionSequence(
-                actionSequenceCalls,
-                eligible,
-                outcome,
-              ),
-            currentSignature: () => loopGuard.currentActionSequenceSignature(),
-            drainResponderLedger: () =>
-              deferredResponderLedgerNotifications.splice(0),
-            refreshInstructions: async () => {
-              evidenceFlags.instructionsChangedThisRound = false;
-              await refreshAgentInstructions();
-            },
-            refreshSessionState,
-            recoveryUserMessage,
-            drainDeferredMessages: () => deferredPostToolMessages.splice(0),
-          },
-          closeoutState,
-          {
-            bound,
-            runIds,
-            outcomes: round.actionSequenceOutcomes,
-            sequenceEligible: round.actionSequenceEligible,
-            executedCount: round.actionSequenceExecuted,
-            plannedCount: allCalls.length,
-            runCount: toRun.length,
-            suppressedCount: round.roundSuppressedCount,
-            aborted: round.aborted,
-            awaitingPlanApproval: round.awaitingPlanApproval,
-            instructionsChanged: evidenceFlags.instructionsChangedThisRound,
-            pendingSessionStatePlan: toolState.pendingSessionStatePlan,
-            responderWakeTurn,
-            unreadResponderResults: responderClaims.size > 0,
-            calledResponderRead: allCalls.some(
-              (candidate) =>
-                candidate.name === "job.read" || candidate.name === "task.read",
-            ),
-          },
-        );
-        loop.consecutiveSynthesizedRounds = closeoutState.consecutiveSynthesizedRounds;
-        if (closeout.kind === "stop") {
-          outcomeState.outcome.status = "partial";
-          await saveOutcomeState(outcomeState);
-          moveTurn("partial", "repeated identical action cycle");
-          return finishTurn(
-            closeout.answer,
-            counters.productiveSteps,
-            "partial",
-            closeout.remainingCriteria,
-            closeout.reason,
-            undefined,
-            closeout.loopGuardStop,
-          );
-        }
-
-        if (round.awaitingPlanApproval) {
-          loop.pendingCalls = [];
-          outcomeState.outcome.status = "partial";
-          await saveOutcomeState(outcomeState);
-          moveTurn("partial", "draft plan awaits approval");
-          return finishTurn(
-            "",
-            counters.productiveSteps,
-            "partial",
-            ["Approve or revise the draft plan before implementation."],
-          );
-        }
-
-        if (round.aborted) {
-          loop.lastAnswer = "";
-          outcomeState.outcome.status = "aborted";
-          await saveOutcomeState(outcomeState);
-          moveTurn("aborted", "turn aborted");
-          writeAbort();
-          return finishTurn(loop.lastAnswer, counters.productiveSteps, "aborted");
-        }
-        // Confirm declines / tool failures already have role:tool results —
-        // continue the agent loop so the model can adapt (do not force "blocked").
-
-        await maybeAutoCompact("post-tool-token-budget");
-
-        if (options.onMessages) {
-          try {
-            options.onMessages(buildTurnHistory(liveMessages, loop.lastAnswer));
-          } catch {
-            // ignore
-          }
-        }
-      }
-    }
-
-
-    // Hard iteration ceiling (hundreds of steps) — rare. Mid-turn governor
-    // pauses already confirm for non-coding; coding never hard-pauses there.
-    const richSummary = await buildRichStopSummary(
-      messages,
-      session,
-      counters.productiveSteps,
-    );
-    loop.lastAnswer = richSummary;
-    outcomeState.outcome.status = "paused_budget";
-    await saveOutcomeState(outcomeState);
-    moveTurn("paused_budget", "emergency iteration ceiling reached");
-    return finishTurn(
-      loop.lastAnswer,
-      counters.productiveSteps,
-      "paused_budget",
-      ["Continue unfinished work in a subsequent turn."],
-      "The emergency iteration ceiling was reached.",
-    );
+    return await runTurnRounds(loopDeps, {
+      delay: (ms) => delay(ms, options.signal),
+    });
   } catch (error) {
     const isAbort = isAbortError(error, options.signal);
     if (isAbort) {

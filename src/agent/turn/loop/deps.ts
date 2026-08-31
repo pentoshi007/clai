@@ -1,5 +1,6 @@
 import type {
   ChatMessage,
+  CompletionResult,
   ProviderId,
   ReasoningPreference,
   SuccessfulRequestSnapshot,
@@ -32,6 +33,7 @@ import type { ResponderClaimLedger } from "../responder-claims.js";
 import type { WireOccurrenceLedger } from "./wire-occurrences.js";
 import type { StreamRecoveryState } from "../../stream-recovery.js";
 import type { TurnLoopState } from "./state.js";
+
 import type { SalvagedWrite } from "../../tool-call-parser.js";
 import type { SalvagedWriteReceipt } from "../tool-call-preparation.js";
 
@@ -106,11 +108,20 @@ export interface TurnLoopDeps extends TurnWriters {
   ) => { dialect: ToolDialect; native: boolean };
   readonly refreshResponderInbox: () => ResponderDelivery | undefined;
   readonly refreshAgentInstructions: () => Promise<void>;
-  readonly refreshSessionState: (plan?: SessionPlan | undefined) => void;
+  readonly refreshSessionState: (
+    plan?: SessionPlan | null | undefined,
+  ) => void;
   readonly recoveryUserMessage: (text: string) => ChatMessage;
   readonly applySalvagedWrite: (
     salvaged: SalvagedWrite,
   ) => Promise<SalvagedWriteReceipt>;
+  readonly nextToolEventId: () => string;
+  readonly pushAssistantHistory: (
+    text: string,
+    reasoning?: Pick<CompletionResult, "reasoningBlock" | "reasoningArtifacts">,
+  ) => void;
+  readonly liveMessages: () => ChatMessage[];
+  readonly upsertActionCycleRecovery: (message: string) => void;
   readonly probeStateKey: (call: ToolCall) => string | undefined;
   readonly moveTurn: (to: TurnState, reason?: string) => void;
   readonly finishTurn: (

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "counts": {
     "explicitAny": 40,
-    "unknownBoundary": 433,
-    "unknownNarrowing": 224,
-    "unknownInternal": 286,
-    "doubleAssertion": 28,
+    "unknownBoundary": 438,
+    "unknownNarrowing": 223,
+    "unknownInternal": 281,
+    "doubleAssertion": 24,
     "broadCast": 5,
     "suppression": 5
   },
@@ -473,104 +473,6 @@
       "detail": "value"
     },
     {
-      "file": "src/agent/runner.ts",
-      "category": "unknownBoundary",
-      "line": 465,
-      "column": 50,
-      "detail": "args"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownBoundary",
-      "line": 2038,
-      "column": 34,
-      "detail": "args"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownBoundary",
-      "line": 2198,
-      "column": 60,
-      "detail": "retryReason"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownBoundary",
-      "line": 2199,
-      "column": 62,
-      "detail": "retryReason"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownInternal",
-      "line": 2848,
-      "column": 43,
-      "detail": "path"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "doubleAssertion",
-      "line": 3072,
-      "column": 10,
-      "detail": "as unknown as { unref?: () => void }"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownInternal",
-      "line": 3072,
-      "column": 24,
-      "detail": "unknown"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownNarrowing",
-      "line": 3147,
-      "column": 35,
-      "detail": "err"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "doubleAssertion",
-      "line": 3185,
-      "column": 14,
-      "detail": "as unknown as { unref?: () => void }"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownInternal",
-      "line": 3185,
-      "column": 28,
-      "detail": "unknown"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "doubleAssertion",
-      "line": 3201,
-      "column": 12,
-      "detail": "as unknown as { unref?: () => void }"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownInternal",
-      "line": 3201,
-      "column": 25,
-      "detail": "unknown"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "doubleAssertion",
-      "line": 4311,
-      "column": 10,
-      "detail": "as unknown as { unref?: () => void }"
-    },
-    {
-      "file": "src/agent/runner.ts",
-      "category": "unknownInternal",
-      "line": 4311,
-      "column": 23,
-      "detail": "runAgentTurn"
-    },
-    {
       "file": "src/agent/scratch-write.ts",
       "category": "unknownInternal",
       "line": 29,
@@ -870,6 +772,69 @@
       "line": 1783,
       "column": 39,
       "detail": "name"
+    },
+    {
+      "file": "src/agent/turn/loop/sequence-suppression.ts",
+      "category": "unknownBoundary",
+      "line": 51,
+      "column": 26,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/turn/mcp-agent-tools.ts",
+      "category": "unknownBoundary",
+      "line": 19,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/turn/plan-persistence.ts",
+      "category": "unknownBoundary",
+      "line": 20,
+      "column": 14,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/turn/plan-persistence.ts",
+      "category": "unknownBoundary",
+      "line": 55,
+      "column": 40,
+      "detail": "unknown"
+    },
+    {
+      "file": "src/agent/turn/responder-job-linkage.ts",
+      "category": "unknownBoundary",
+      "line": 11,
+      "column": 36,
+      "detail": "monitor"
+    },
+    {
+      "file": "src/agent/turn/responder-read-tool.ts",
+      "category": "unknownBoundary",
+      "line": 37,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/turn/task-update-gate.ts",
+      "category": "unknownBoundary",
+      "line": 13,
+      "column": 24,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/turn/tool-call-preparation.ts",
+      "category": "unknownBoundary",
+      "line": 54,
+      "column": 30,
+      "detail": "args"
+    },
+    {
+      "file": "src/agent/turn/tool-execution/guards.ts",
+      "category": "unknownBoundary",
+      "line": 43,
+      "column": 24,
+      "detail": "args"
     },
     {
       "file": "src/app/controllers/cancel-coordinator.ts",

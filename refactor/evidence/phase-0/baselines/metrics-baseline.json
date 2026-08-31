@@ -18,6 +18,7 @@
     "src/agent/task-evidence.ts",
     "src/agent/tool-call-parser.ts",
     "src/agent/tool-history.ts",
+    "src/agent/turn/loop/run-rounds.ts",
     "src/agent/turn/tool-execution/single-tool.ts",
     "src/agent/workspace-orient.ts",
     "src/app/controllers/session-controller.ts",
@@ -126,6 +127,7 @@
     "src/agent/tool-call-parser.ts#parseXmlToolCall@622",
     "src/agent/tool-history.ts#repairToolProtocol@441",
     "src/agent/tool-output-formatting.ts#formatToolContext@320",
+    "src/agent/turn/loop/run-rounds.ts#runTurnRounds@54",
     "src/agent/turn/tool-execution/single-tool.ts#runSingleTool@62",
     "src/agent/workspace-orient.ts#resolveScaffoldTargetPath@466",
     "src/app/adapters/agent-event-adapter.ts#AgentEventAdapter.ingest@57",
@@ -307,6 +309,7 @@
     "src/agent/tool-history.ts#rewriteConflictingToolCallIds@77",
     "src/agent/tool-history.ts#validateToolProtocol@364",
     "src/agent/tool-output-formatting.ts#formatToolContext@320",
+    "src/agent/turn/loop/run-rounds.ts#runTurnRounds@54",
     "src/agent/turn/tool-execution/single-tool.ts#runSingleTool@62",
     "src/agent/workspace-orient.ts#buildWorkspaceOrientation@332",
     "src/agent/workspace-orient.ts#resolveScaffoldTargetPath@466",
@@ -586,6 +589,7 @@
     "src/agent/runner.ts#runAgentTurn@633",
     "src/agent/runner.ts#trimExactContinuationOverlap@653",
     "src/agent/tool-history.ts#repairToolProtocol@441",
+    "src/agent/turn/loop/run-rounds.ts#runTurnRounds@54",
     "src/llm/adapters/anthropic-tools.ts#handleAnthropicStreamEvent@404",
     "src/llm/custom-provider-profile.ts#validateCustomProviderProfile@247",
     "src/llm/http.ts#openAiCompatibleStream@1743",
@@ -605,5 +609,6 @@
     "doubleAssertion": 28,
     "broadCast": 5,
     "suppression": 5
-  }
+  },
+  "note": "Relocation entries for src/agent/turn/tool-execution/single-tool.ts and src/agent/turn/loop/run-rounds.ts carry src/agent/runner.ts legacy complexity at a new path; they must disappear as those modules are decomposed."
 }
