@@ -46,6 +46,7 @@ import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selecti
 import { executeAutomaticCompaction } from "./turn/automatic-compaction-execution.js";
 import { prepareCompactionCandidateMessages } from "./turn/compaction-candidate.js";
 import { measureCompactionFinalFit } from "./turn/compaction-final-fit.js";
+import { planCompactionAdmission } from "./turn/compaction-admission.js";
 import {
   compactionFailureMessage,
   compactionSummaryText,
@@ -154,7 +155,6 @@ import {
   buildContextBreakdown,
   contextBreakdownAuditPayload,
   describeDominantContextBlock,
-  toolSchemaHash,
 } from "./context-breakdown.js";
 import { recordRequestTokenObservation } from "../llm/token-estimate-calibration.js";
 import {
@@ -218,7 +218,6 @@ import {
 } from "./interrupted-reasoning.js";
 import {
   CompactionAttemptLedger,
-  compactionAttemptKey,
 } from "./compaction-attempt.js";
 import {
   loadPlan,
@@ -3760,29 +3759,26 @@ export async function runAgentTurn(
       reason: string,
       force = false,
     ): Promise<void> {
-      const beforeTokens = estimateNextRequestTokens(messages);
       const contextLimitTokens = currentContextLimitTokens();
-      const compactTrigger = autoCompactTriggerTokens(getReliabilityPolicy(), {
-        provider,
-        model,
-        ...(contextLimitTokens !== undefined
-          ? { contextLimitTokens }
-          : {}),
-      });
-      if (!force && beforeTokens < compactTrigger) return;
-      // Structural eligibility only: there must be closed history to summarize.
-      if (messages.length <= AUTO_COMPACT_KEEP_RECENT + 2) return;
-      const durableEnvelope = await buildTurnDurableEnvelope();
-      const attemptKey = compactionAttemptKey({
-        messages,
-        provider,
-        model,
-        dialect: toolDialect,
-        triggerTokens: compactTrigger,
-        schemaHash: toolSchemaHash(selectToolDefs(nativeToolsActive, useCompactSystemPrompt)),
-        ...(durableEnvelope ? { durableEnvelope } : {}),
-      });
-      if (!force && compactionAttempts.isSuppressed(attemptKey)) return;
+      const admission = await planCompactionAdmission(
+        {
+          messages,
+          provider,
+          model,
+          dialect: toolDialect,
+          keepRecent: AUTO_COMPACT_KEEP_RECENT,
+          contextLimitTokens,
+          estimateRequestTokens: estimateNextRequestTokens,
+          selectTools: () =>
+            selectToolDefs(nativeToolsActive, useCompactSystemPrompt),
+          buildDurableEnvelope: buildTurnDurableEnvelope,
+          isSuppressed: (key) => compactionAttempts.isSuppressed(key),
+        },
+        force,
+      );
+      if (!admission.admitted) return;
+      const { beforeTokens, compactTrigger, durableEnvelope, attemptKey } =
+        admission;
       const compactionId = `compact-${randomUUID().slice(0, 12)}`;
       compactionExecutionState.activeId = compactionId;
       // Admissions: the pinned dispatch plus the executor's bounded error
