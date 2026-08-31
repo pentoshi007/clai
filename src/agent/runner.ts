@@ -44,6 +44,7 @@ import {
 } from "./turn/compaction-summarizer.js";
 import { createCompactionRequestEstimator } from "./turn/compaction-request-estimator.js";
 import { createCompactionDurableEnvelopeBuilder } from "./turn/compaction-durable-envelope.js";
+import { selectCompactionReplaySnapshot } from "./turn/compaction-replay-selection.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -202,12 +203,9 @@ import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { isScratchOnlyWrite } from "./scratch-write.js";
 import { WorkLedger } from "./durable-envelope.js";
 import {
-  buildDirectCompactionPrompt,
   compactionSinglePassInputBudget,
-  COMPACTION_MAX_COMPLETION_TOKENS,
   normalizeCompactionSummary,
 } from "./compaction-summary.js";
-import { planCompactionReplay } from "./compaction-executor.js";
 import {
   isOperationPolicyError,
   OperationLedger,
@@ -3794,30 +3792,15 @@ export async function runAgentTurn(
         singleAdmissionOperationPolicy("compaction", 3),
       );
       compactionExecutionState.activeLedger = compactionLedger;
-      // Plan the cache-preserving replay up front: resend the last successful
-      // request with the tail + instruction appended. When it fits, the direct
-      // single pass is forced (the raw estimate gate would otherwise reject a
-      // request that fits fine); when it does not, compaction falls back to
-      // the legacy transcript-rendered requests so it still succeeds.
-      const replaySnapshot = lastSuccessfulRequestSnapshot;
-      const replayPlan = replaySnapshot
-        ? planCompactionReplay({
-            baseRequest: replaySnapshot,
-            history: messages,
-            prompt: buildDirectCompactionPrompt({
-              ...(durableEnvelope ? { durableState: durableEnvelope } : {}),
-            }),
-            maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
-            ...(contextLimitTokens !== undefined
-              ? { contextLimitTokens }
-              : { contextLimitTokens: modelContextWindow(model, provider) }),
-            stream: true,
-          })
-        : undefined;
       compactionExecutionState.replaySnapshot =
-        replayPlan && !replayPlan.accounting.overLimit
-          ? replaySnapshot
-          : undefined;
+        selectCompactionReplaySnapshot({
+          snapshot: lastSuccessfulRequestSnapshot,
+          history: messages,
+          provider,
+          model,
+          contextLimitTokens,
+          durableEnvelope,
+        });
       writeCompactionStarted(compactionId, beforeTokens);
       try {
         const compactionTools = selectToolDefs(
