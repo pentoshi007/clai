@@ -18,7 +18,6 @@ import type {
   TurnOutputState,
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
-import { assembleTurnMessages } from "./turn/message-assembly.js";
 import { createTurnEvidenceFlags } from "./turn/evidence-flags.js";
 import { createWireOccurrenceLedger } from "./turn/loop/wire-occurrences.js";
 import {
@@ -40,7 +39,6 @@ import {
   createTurnStateMachine,
 } from "./turn/setup/turn-state-machine.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
-import { buildPromptSections } from "./turn/prompt-sections.js";
 import { buildSystemSections } from "./turn/system-sections.js";
 import { createToolRouting } from "./turn/tool-routing.js";
 import { runSingleTool } from "./turn/tool-execution/single-tool.js";
@@ -50,6 +48,8 @@ import type { SingleToolDeps } from "./turn/tool-execution/deps.js";
 import { createToolExecutionState } from "./turn/tool-execution/state.js";
 import { createTurnLoopState } from "./turn/loop/state.js";
 import { classifyTurnPrompt } from "./turn/setup/prompt-classification.js";
+import { setUpResponderWake } from "./turn/setup/responder-wake.js";
+import { composeTurnMessages } from "./turn/setup/turn-messages.js";
 import { createTurnCounters } from "./turn/turn-counters.js";
 import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
@@ -68,9 +68,6 @@ import {
 } from "./turn/mcp-agent-tools.js";
 import {
   createResponderInboxRefresher,
-  findResponderWakeNotification,
-  parseResponderWake,
-  responderWakeMatchesRevision,
 } from "./turn/responder-inbox.js";
 import { type CompactionExecutionState } from "./turn/compaction-summarizer.js";
 import { type ToolCallingMode } from "../llm/tool-protocol.js";
@@ -120,7 +117,9 @@ import {
 import { getSkillIndex } from "../skills/registry.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { safeCwd } from "../os/cwd.js";
-import { analyzeTask, isNarrowExplicitNmapOperation } from "./task-analyzer.js";
+import {
+  analyzeTask,
+} from "./task-analyzer.js";
 import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { WorkLedger } from "./durable-envelope.js";
 import { LoopGuard } from "./loop-guard.js";
@@ -137,9 +136,6 @@ import {
   type SalvagedWrite,
   buildTurnHistory,
   looksLikePentestTask,
-  looksLikeBuildTask,
-  looksLikeInformationalQuery,
-  looksLikeIdleOrSocialPrompt,
 } from "./tool-call-parser.js";
 import {
   createSessionPolicy,
@@ -151,7 +147,6 @@ import {
   type SessionPolicy,
 } from "./session-policy.js";
 import { codingSessionFromContext } from "./progress-pause-policy.js";
-import { planContextMessage, upsertPlanContextMessage } from "./plan-tool.js";
 import {
   canMarkTaskDone,
   type LooseWorkReceipt,
@@ -159,7 +154,6 @@ import {
   type TaskWorkLedger,
 } from "./task-evidence.js";
 import {
-  looksLikeContinueOrResumePrompt,
   type PreviousTurnSignal,
 } from "./continue-orient.js";
 import { detectPackageManager } from "./workspace-orient.js";
@@ -176,10 +170,6 @@ import {
   confirmToolExecution,
   type ConfirmPort,
 } from "./confirm-port.js";
-import {
-  composeAgentSystemPrompt,
-  type AgentPromptSection,
-} from "./prompt-composer.js";
 import { createGovernorState } from "./evidence-governor.js";
 import {
   inferOutcomeKind,
@@ -582,61 +572,46 @@ export async function runAgentTurn(
         getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
         getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
       });
-    const promptSections = (): AgentPromptSection[] =>
-      buildPromptSections({
-        systemSections,
-        selectedSkillNames,
-        prompt,
-        mode: agentMode,
-      });
     const composeCurrentSystemPrompt = (native: boolean): string =>
       buildStableSystemContent(native);
-    const requestContext = composeAgentSystemPrompt({
-      mode: agentMode,
-      nativeToolsActive,
-      maxTokens: inputTokenBudget
-        ? Math.min(2_000, Math.floor(inputTokenBudget * 0.4))
-        : undefined,
-      sections: promptSections(),
-    }).content;
-    const fullSystemPrompt = composeCurrentSystemPrompt(nativeToolsActive);
-    const { messages, requestContextMessage } = assembleTurnMessages({
+    const composed = composeTurnMessages({
       prompt,
       displayPrompt: options.displayPrompt,
       images: options.images,
       history: options.history,
-      systemPrompt: fullSystemPrompt,
-      requestContext,
+      mode: agentMode,
+      systemSections,
+      selectedSkillNames,
+      nativeToolsActive,
+      inputTokenBudget,
+      stableSystemContent: buildStableSystemContent,
+      instructionsBlock: agentInstructionsBlock,
+      skillsBlock: activeSkillsBlock,
+      plan: activePlan,
+      planApproved: session.planApproved.value,
     });
+    const messages = composed.messages;
+    const requestContextMessage = composed.requestContextMessage;
     liveMessages = messages;
     const refreshInjectedBlocks = (): void => {
       upsertAgentInstructionsMessage(messages, agentInstructionsBlock);
       upsertActiveSkillsMessage(messages, activeSkillsBlock);
     };
-    refreshInjectedBlocks();
-    if (activePlan) {
-      upsertPlanContextMessage(
-        messages,
-        planContextMessage(activePlan, session.planApproved.value),
-      );
-    }
-    const responderWake = parseResponderWake({
+    const responderWakeSetup = setUpResponderWake({
       prompt,
       displayPrompt: options.displayPrompt,
+      pendingNotifications: jobManager.getPendingNotifications(
+        session.sessionId,
+      ),
     });
-    const responderWakeTurn = responderWake.wakeTurn;
-    const responderWakeNotificationId = responderWake.notificationId;
-    const responderWakeJobId = responderWake.jobId;
-    const responderWakeResultRevision = responderWake.resultRevision;
-    const matchesWakeRevision = (
-      notification: ResponderNotification,
-    ): boolean => responderWakeMatchesRevision(responderWake, notification);
-    const wakeNotification = findResponderWakeNotification(
-      responderWake,
-      jobManager.getPendingNotifications(session.sessionId),
-    );
-    if (wakeNotification) {
-      responderClaims.add(wakeNotification.id);
+    const responderWake = responderWakeSetup.wake;
+    const responderWakeTurn = responderWakeSetup.wakeTurn;
+    const responderWakeNotificationId = responderWakeSetup.notificationId;
+    const responderWakeJobId = responderWakeSetup.jobId;
+    const responderWakeResultRevision = responderWakeSetup.resultRevision;
+    const matchesWakeRevision = responderWakeSetup.matchesRevision;
+    if (responderWakeSetup.claimedNotificationId) {
+      responderClaims.add(responderWakeSetup.claimedNotificationId);
     }
     const refreshResponderInbox = createResponderInboxRefresher({
       messages,
