@@ -46,6 +46,7 @@ import { buildSystemSections } from "./turn/system-sections.js";
 import { buildTurnSessionStateSnapshot } from "./turn/session-state-projection.js";
 import { createToolRouting } from "./turn/tool-routing.js";
 import { createToolWatchdog } from "./turn/tool-watchdog.js";
+import { evaluateTaskBatchGuard } from "./turn/task-batch-guard.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -323,19 +324,6 @@ import {
   isExplicitResponderDelegation,
   delegationTaskTitle,
 } from "./responder-parent.js";
-import {
-  readTaskUpdateArgs,
-  distinctAdvancingTaskIds,
-  isSimultaneousTaskAdvance,
-  batchUpdateSignature,
-  buildMultiUpdateReminder,
-  buildMultiOpenRejection,
-  multiUpdateToast,
-  multiOpenToast,
-  openingTaskIds,
-  type TaskUpdateIntent,
-  type BatchTaskDescriptor,
-} from "./task-sync.js";
 import {
   absorbLooseWorkIntoLedger,
   applyDestinationCwd,
@@ -5439,58 +5427,20 @@ export async function runAgentTurn(
         // distinct task at once, hold the whole set behind a single reminder.
         // The model confirms by re-issuing the identical batch; a single-task
         // (or non-advancing) message clears any pending confirmation.
-        batchRemindCalls = new Set<ToolCall>();
-        batchReminderNote = "";
         {
           const livePlanForBatch = await loadPlan(session.sessionId).catch(
             () => undefined,
           );
-          const intents: TaskUpdateIntent[] = [];
-          for (const b of toRun) {
-            const parsed = readTaskUpdateArgs(b.call);
-            if (!parsed) continue;
-            const resolvedId = livePlanForBatch
-              ? resolvePlanTaskId(livePlanForBatch, parsed.taskId) ?? parsed.taskId
-              : parsed.taskId;
-            intents.push({ call: b.call, taskId: resolvedId, state: parsed.state });
-          }
-          const openIds = openingTaskIds(intents);
-          if (openIds.length > 1) {
-            // A multi-open is never confirmable; the store keeps at
-            // most one active foreground task.
-            session.pendingTaskBatch.value = undefined;
-            const openDescriptors: BatchTaskDescriptor[] = openIds.map((taskId) => ({
-              taskId,
-              title:
-                livePlanForBatch?.tasks.find((t) => t.id === taskId)?.title ?? "",
-              targetState: "in_progress",
-            }));
-            batchReminderNote = buildMultiOpenRejection(openDescriptors);
-            for (const intent of intents) {
-              if (intent.state === "in_progress") batchRemindCalls.add(intent.call);
-            }
-            writeNotice("warn", multiOpenToast(openIds.length));
-          } else if (isSimultaneousTaskAdvance(intents)) {
-            const signature = batchUpdateSignature(intents);
-            if (session.pendingTaskBatch.value === signature) {
-              session.pendingTaskBatch.value = undefined;
-              writeNotice("info", "confirmed batch task update — applying");
-            } else {
-              session.pendingTaskBatch.value = signature;
-              const descriptors: BatchTaskDescriptor[] = intents.map((intent) => ({
-                taskId: intent.taskId,
-                title:
-                  livePlanForBatch?.tasks.find((t) => t.id === intent.taskId)
-                    ?.title ?? "",
-                targetState: intent.state,
-              }));
-              batchReminderNote = buildMultiUpdateReminder(descriptors);
-              for (const intent of intents) batchRemindCalls.add(intent.call);
-              const advancing = distinctAdvancingTaskIds(intents).length;
-              writeNotice("warn", multiUpdateToast(advancing));
-            }
-          } else {
-            session.pendingTaskBatch.value = undefined;
+          const guard = evaluateTaskBatchGuard({
+            calls: toRun.map((bound) => bound.call),
+            plan: livePlanForBatch,
+            pendingSignature: session.pendingTaskBatch.value,
+          });
+          batchRemindCalls = new Set<ToolCall>(guard.remindCalls);
+          batchReminderNote = guard.reminderNote;
+          session.pendingTaskBatch.value = guard.pendingSignature;
+          for (const notice of guard.notices) {
+            writeNotice(notice.level, notice.message);
           }
         }
 
