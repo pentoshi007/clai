@@ -125,15 +125,17 @@ Milestone boundary: security behavior may only stay equal or become stricter in 
 
 Plan: [plan/phase-6.md](plan/phase-6.md)
 
-- [ ] **P6-01 Freeze semantic parity** — Characterize shared events/state, transcript hydration, commands, stdout/stderr, exit codes, and all renderer projections.
-- [ ] **P6-02 Split app controllers/ports** — Keep session, queue, cancellation, command, and lifecycle semantics renderer-neutral.
-- [ ] **P6-03 Split UI-core command/state modules** — Separate command families, transcript reducers/stores, layout, selection, and focus concerns.
-- [ ] **P6-04 Split rendering primitives** — Decompose Markdown, syntax highlighting, width/wrap, tool presentation, and pager policy.
-- [ ] **P6-05 Decompose OpenTUI components** — Reduce ToolCard/transcript/pager/composer/app complexity without key, mouse, focus, scroll, or performance regressions.
-- [ ] **P6-06 Decompose Classic components** — Follow the 400-line contributor guideline and preserve POSIX/Windows selection and input behavior.
-- [ ] **P6-07 Decompose noninteractive output** — Preserve streaming order, stdout/stderr split, quiet/verbose behavior, cancellation, and exit status.
-- [ ] **P6-08 Remove obsolete runtime-policy edges** — Update exact remove-only architecture expectations in the same structural commit.
-- [ ] **P6-09 Reduce facades and close gates** — Make scoped files `<500`, remove legacy entries, and pass app/UI/renderer/session-runtime/Bun/PTY metrics and tests.
+- [x] **P6-01 Freeze semantic parity** — Characterize shared events/state, transcript hydration, commands, stdout/stderr, exit codes, and all renderer projections.
+- [x] **P6-02 Split app controllers/ports** — Keep session, queue, cancellation, command, and lifecycle semantics renderer-neutral.
+- [x] **P6-03 Split UI-core command/state modules** — Separate command families, transcript reducers/stores, layout, selection, and focus concerns.
+- [x] **P6-04 Split rendering primitives** — Decompose Markdown, syntax highlighting, width/wrap, tool presentation, and pager policy.
+- [x] **P6-05 Decompose OpenTUI components** — Reduce ToolCard/transcript/pager/composer/app complexity without key, mouse, focus, scroll, or performance regressions.
+- [x] **P6-06 Decompose Classic components** — Follow the 400-line contributor guideline and preserve POSIX/Windows selection and input behavior.
+- [x] **P6-07 Decompose noninteractive output** — Preserve streaming order, stdout/stderr split, quiet/verbose behavior, cancellation, and exit status.
+- [x] **P6-08 Remove obsolete runtime-policy edges** — Update exact remove-only architecture expectations in the same structural commit.
+- [x] **P6-09 Reduce facades and close gates** — Make scoped files `<500`, remove legacy entries, and pass app/UI/renderer/session-runtime/Bun/PTY metrics and tests.
+
+Evidence: [phase-6 evidence](evidence/phase-6/README.md). syntax-highlight 1,368 -> 179, picker-commands 1,342 -> 534, transcript-hydrate 810 -> 336, mentions 811 -> 323; ANSI containment and the ui-core runtime-policy edge set were both preserved instead of widening an allowlist; three giant React components deferred with reason.
 
 Milestone boundary: shared semantic model before renderer-specific cleanup. Suggested final subject: `refactor(ui): decompose shared and renderer surfaces`.
 
