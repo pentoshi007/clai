@@ -57,6 +57,7 @@ import { linkResponderJobToPlan } from "./turn/responder-job-linkage.js";
 import { reconcileScaffoldOutcome } from "./turn/scaffold-outcome.js";
 import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "./turn/responder-dependency.js";
 import { authorizeToolExecution } from "./turn/tool-execution/authorization.js";
+import { resolveToolDispatch } from "./turn/tool-execution/dispatch.js";
 import {
   decideResponderRead,
   parseResponderReadRequest,
@@ -257,7 +258,6 @@ import {
   savePlan,
   mutatePlan,
   markTask,
-  appendPlanTask,
   type PlanTask,
   readyPlanTasks,
   foregroundRemaining,
@@ -326,12 +326,6 @@ import {
   resolvePlanTaskId,
 } from "./plan-tool.js";
 import {
-  readDeclaredParentTaskId,
-  resolveResponderParent,
-  isExplicitResponderDelegation,
-  delegationTaskTitle,
-} from "./responder-parent.js";
-import {
   absorbLooseWorkIntoLedger,
   applyDestinationCwd,
   canMarkTaskDone,
@@ -349,7 +343,6 @@ import {
   isScaffoldCreateCommand,
   isServerReadyOutput,
   ledgerFromTaskEvidence,
-  pickPendingTaskForToolCall,
   recordTaskWorkSuccess,
   resolveUserDestinationHint,
   taskEvidenceFromLedger,
@@ -1967,79 +1960,30 @@ export async function runAgentTurn(
       const planAtDispatch = await loadPlan(session.sessionId).catch(
         () => undefined,
       );
-      dispatchedTaskId = planAtDispatch?.tasks.find(
-        (task) => task.state === "in_progress" && !task.responderOwned,
-      )?.id;
-      if (!dispatchedTaskId && planAtDispatch?.kind === "pentest") {
-        const candidate = pickPendingTaskForToolCall(
-          readyPlanTasks(planAtDispatch),
-          call,
-          planAtDispatch.tasks.map((task) => task.title),
-        );
-        dispatchedTaskId = candidate?.id;
+      const dispatch = await resolveToolDispatch(
+        {
+          mutatePlan: (mutator) => mutatePlan(session.sessionId, mutator),
+          renderPlan: writePlanUpdate,
+          setPendingSessionStatePlan: (plan) => {
+            pendingSessionStatePlan = plan;
+          },
+          notify: writeNotice,
+          getLedger: () => taskWorkLedger,
+          setLedger: (ledger) => {
+            taskWorkLedger = ledger;
+          },
+        },
+        call,
+        planAtDispatch,
+      );
+      if (dispatch.kind === "reject") {
+        const result = { ok: false, output: dispatch.reason, exitCode: 1 };
+        emitToolResult(toolEventId, result, dispatch.reason);
+        return { ok: false, call, result, contextOutput: dispatch.reason };
       }
-      // An explicitly declared responder parent wins over inference.
-      const declaredParent = readDeclaredParentTaskId(call);
-      if (declaredParent) {
-        const resolvedParent = resolveResponderParent({
-          plan: planAtDispatch,
-          declared: declaredParent,
-          activeForegroundTaskIds: dispatchedTaskId ? [dispatchedTaskId] : [],
-        });
-        if (!resolvedParent.ok) {
-          const reason = `${call.name} failed: ${resolvedParent.reason}`;
-          const result = { ok: false, output: reason, exitCode: 1 };
-          emitToolResult(toolEventId, result, reason);
-          return { ok: false, call, result, contextOutput: reason };
-        }
-        dispatchedTaskId = resolvedParent.taskId ?? dispatchedTaskId;
-      }
-      // For an explicit delegation, create the child subtask before the
-      // Process starts and launch the job already bound to it. The job therefore
-      // Never carries the foreground parent in `taskId`, and settlement has a
-      // Durable row to advance even if this turn dies right after spawn.
-      if (isExplicitResponderDelegation(call) && planAtDispatch) {
-        delegation = { id: `dg-${randomUUID().slice(0, 8)}` };
-        const created = await mutatePlan(session.sessionId, (draft) => {
-          const parentExists =
-            !!dispatchedTaskId &&
-            draft.tasks.some((task) => task.id === dispatchedTaskId);
-          const child = appendPlanTask(draft, {
-            title: delegationTaskTitle(call),
-            state: "in_progress",
-            note: `delegation=${delegation!.id} awaiting launch`,
-            dependencies: [],
-            resourceLocks: [],
-            ...(parentExists ? { parentTaskId: dispatchedTaskId } : {}),
-            responderOwned: true,
-            delegationId: delegation!.id,
-          });
-          delegation!.taskId = child.id;
-          return true;
-        }).catch(() => undefined);
-        if (!created?.ok || !delegation.taskId) {
-          delegation = undefined;
-          writeNotice(
-            "warn",
-            "Responder delegation record could not be persisted — the job will be linked after launch",
-          );
-        } else if (created.plan) {
-          pendingSessionStatePlan = created.plan;
-          writePlanUpdate(created.plan);
-        }
-      }
-      if (
-        dispatchedTaskId &&
-        (!taskWorkLedger || taskWorkLedger.taskId !== dispatchedTaskId)
-      ) {
-        const dispatchedTask = planAtDispatch?.tasks.find(
-          (task) => task.id === dispatchedTaskId,
-        );
-        taskWorkLedger = ledgerFromTaskEvidence(
-          dispatchedTaskId,
-          dispatchedTask?.evidence,
-        );
-      }
+      dispatchedTaskId = dispatch.dispatchedTaskId;
+      delegation = dispatch.delegation;
+
       if (engagementAction) {
         engagementLease = engagementPolicy.acquire(scope, engagementAction);
         if (!engagementLease.decision.allowed) {
