@@ -51,6 +51,23 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/safety/shell-classification.ts": "src/safety/classifier.ts",
+  "src/safety/tool-classification.ts": "src/safety/classifier.ts",
+  "src/tools/web/request-loop.ts": "src/tools/web/fetch-core.ts",
+  "src/tools/web/validate-args.ts": "src/tools/web/fetch-core.ts",
+  "src/tools/web/response-body.ts": "src/tools/web/fetch-core.ts",
+  "src/agent/evidence/task-classification.ts": "src/agent/task-evidence.ts",
+  "src/agent/evidence/task-selection.ts": "src/agent/task-evidence.ts",
+  "src/agent/evidence/tool-budgets.ts": "src/agent/task-evidence.ts",
+  "src/agent/plan/context-message.ts": "src/agent/plan-tool.ts",
+  "src/agent/plan/handle-plan-tool.ts": "src/agent/plan-tool.ts",
+  "src/agent/parser/arg-formatting.ts": "src/agent/tool-call-parser.ts",
+  "src/agent/parser/bare-recognition.ts": "src/agent/tool-call-parser.ts",
+  "src/agent/parser/parse-entry.ts": "src/agent/tool-call-parser.ts",
+  "src/agent/parser/repetition.ts": "src/agent/tool-call-parser.ts",
+  "src/agent/parser/salvage.ts": "src/agent/tool-call-parser.ts",
+  "src/agent/parser/vendor-protocols.ts": "src/agent/tool-call-parser.ts",
+  "src/agent/parser/xml-protocol.ts": "src/agent/tool-call-parser.ts",
   "src/store/config/endpoints.ts": "src/store/config.ts",
   "src/store/config/settings.ts": "src/store/config.ts",
   "src/store/keys/search-providers.ts": "src/store/keys.ts",
