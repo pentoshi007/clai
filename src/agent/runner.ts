@@ -34,6 +34,7 @@ import {
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
 import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
+import { insertedText } from "./turn/inserted-text.js";
 import type { TurnEventPort, TurnOutputState } from "./turn/contracts.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
@@ -744,9 +745,6 @@ export async function runAgentTurn(
     }
     emit(event);
   };
-  /** Strip a known prefix from a string, returning the remainder unchanged. */
-  const insertedText = (value: string, prefix: string): string =>
-    value.startsWith(prefix) ? value.slice(prefix.length) : value;
   const writeCompactionStarted = (
     id: string,
     beforeTokens: number,
