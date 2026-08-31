@@ -1,0 +1,147 @@
+import type { ProviderId } from "../types.js";
+
+export const providerAliases: Record<string, ProviderId> = {
+  free: "free",
+  zen: "free",
+  opencode: "free",
+  "opencode-zen": "free",
+  gemini: "gemini",
+  google: "gemini",
+  openrouter: "openrouter",
+  openai: "openai",
+  anthropic: "anthropic",
+  claude: "anthropic",
+  nvidia: "nvidia",
+  nim: "nvidia",
+  nvcf: "nvidia",
+  agentrouter: "agentrouter",
+  "agent-router": "agentrouter",
+  router: "agentrouter",
+  "aws-mantle": "aws-mantle",
+  ollama: "ollama",
+  local: "ollama",
+  bynara: "bynara",
+  "bynara-router": "bynara",
+  nararouter: "bynara",
+  nara: "bynara",
+  qwen: "qwen-cloud",
+  "qwen-cloud": "qwen-cloud",
+  dashscope: "qwen-cloud",
+  qwencloud: "qwen-cloud",
+  modal: "modal",
+  "modal-labs": "modal",
+  modalcom: "modal",
+  lightning: "lightning",
+  "lightning-ai": "lightning",
+  lightningai: "lightning",
+  "lightning.ai": "lightning",
+  litai: "lightning",
+  tokenrouter: "tokenrouter",
+  "token-router": "tokenrouter",
+  tr: "tokenrouter",
+  meta: "meta",
+  "meta-ai": "meta",
+  "meta-model-api": "meta",
+  "meta-model": "meta",
+  metamodelapi: "meta",
+  metamodel: "meta",
+  muse: "meta",
+  fireworks: "fireworks",
+  fw: "fireworks",
+  hetzner: "hetzner",
+  "hetzner-inference": "hetzner",
+  "hetzner-experiments": "hetzner",
+  orcarouter: "orcarouter",
+  "orca-router": "orcarouter",
+  orca: "orcarouter",
+  "merge-gateway": "merge-gateway",
+  mergegateway: "merge-gateway",
+  merge: "merge-gateway",
+  mg: "merge-gateway",
+};
+
+export const defaultModels: Record<ProviderId, string> = {
+  free: "free-2/kilo-auto/free",
+  gemini: "gemini-3.5-flash",
+  openrouter: "meta-llama/llama-3.3-70b-instruct:free",
+  openai: "gpt-5.4-mini",
+  anthropic: "claude-3-5-haiku-latest",
+  nvidia: "openai/gpt-oss-20b",
+  agentrouter: "claude-opus-4-6",
+  "aws-mantle": "anthropic.claude-haiku-4-5",
+  ollama: "llama3.1:8b",
+  bynara: "mimo-v2.5-free",
+  "qwen-cloud": "qwen3.7-plus",
+  // Modal Endpoints serve one model per endpoint, named by its source repo id.
+  modal: "moonshotai/Kimi-K3",
+  // Lightning AI namespaces model ids by vendor.
+  lightning: "openai/gpt-5",
+  // TokenRouter namespaces model ids by vendor (moonshotai/kimi-k3).
+  tokenrouter: "moonshotai/kimi-k3",
+  meta: "muse-spark-1.2",
+  fireworks: "accounts/fireworks/models/kimi-k2p6",
+  hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
+  // OrcaRouter namespaces model ids by upstream vendor (openai/gpt-4o-mini).
+  orcarouter: "openai/gpt-4o-mini",
+  "merge-gateway": "openai/gpt-5.2",
+};
+
+export const retiredModelReplacements: Partial<
+  Record<ProviderId, Record<string, string>>
+> = {
+  gemini: {
+    "gemini-2.0-flash": "gemini-3.5-flash",
+    "gemini-2.0-flash-lite": "gemini-3.1-flash-lite",
+  },
+  nvidia: {
+    // Older default; redirect existing configs to the new openai/gpt-oss-20b
+    // default so retired Nemotron entries don't surface 404s.
+    "nvidia/llama-3.3-nemotron-super-49b-v1": defaultModels.nvidia,
+  },
+  openai: {
+    // gpt-4o models have been superseded by the gpt-5.x lineup.
+    "gpt-4o-mini": "gpt-5.4-mini",
+    "gpt-4o": "gpt-5.4",
+  },
+  tokenrouter: {
+    // The gateway retired short ids; models are now namespaced by vendor.
+    "kimi-k2p6": "moonshotai/kimi-k2.6",
+    "kimi-k2p5": "moonshotai/kimi-k2.5",
+    "kimi-k2p7-code": "moonshotai/kimi-k2.7-code",
+    "kimi-k2p7-fast": "moonshotai/kimi-k2.7-code",
+    "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
+    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+    "qwen3p7-plus": "qwen/qwen3.7-plus",
+    "qwen3p6-plus": "qwen/qwen3.6-plus",
+    "glm-5p1": "z-ai/glm-5.1",
+    "glm-5p1-fast": "z-ai/glm-5.1",
+    "gpt-oss-120b": "openai/gpt-oss-120b",
+    "minimax-m3": "MiniMax-M3",
+    "minimax-m2p7": "minimax/minimax-m2.7",
+  },
+};
+
+export const envVars: Record<ProviderId, string | undefined> = {
+  free: "FREE_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  nvidia: "NVIDIA_API_KEY",
+  agentrouter: "AGENTROUTER_API_KEY",
+  "aws-mantle": "ANTHROPIC_API_KEY",
+  ollama: "OLLAMA_HOST",
+  bynara: "BYNARA_API_KEY",
+  "qwen-cloud": "DASHSCOPE_API_KEY",
+  // Modal needs a *pair* of proxy-token env vars plus an endpoint URL; the
+  // second half (MODAL_PROXY_TOKEN_SECRET) and MODAL_BASE_URL are resolved in
+  // store/keys.ts and store/config.ts respectively.
+  modal: "MODAL_PROXY_TOKEN_ID",
+  lightning: "LIGHTNING_API_KEY",
+  tokenrouter: "TOKENROUTER_API_KEY",
+  meta: "MODEL_API_KEY",
+  fireworks: "FIREWORKS_API_KEY",
+  hetzner: "HETZNER_API_KEY",
+  orcarouter: "ORCAROUTER_API_KEY",
+  "merge-gateway": "MERGE_GATEWAY_API_KEY",
+};

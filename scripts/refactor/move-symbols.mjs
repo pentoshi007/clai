@@ -403,6 +403,13 @@ const move = ({ from, to, symbols, dry }) => {
     }
     if (stayingNames.has(name)) backImports.push(name);
   }
+  // A moved declaration may reference a helper that stays behind. Widening that
+  // helper to an export is the minimum edit that keeps the move verbatim.
+  const widenInSource = new Set();
+  for (const name of backImports) {
+    const owner = staying.find((entry) => entry.names.includes(name));
+    if (owner && !owner.exported) widenInSource.add(name);
+  }
   if (backImports.length > 0) {
     const specifier = moduleSpecifierBetween(to, from);
     const typeOnly = new Set(
@@ -465,6 +472,11 @@ const move = ({ from, to, symbols, dry }) => {
   const newText = `${header.join("\n")}\n\n${bodies.map(rewriteInlineSpecifiers).join("\n\n")}\n`;
 
   let sourceText = text;
+  for (const entry of [...staying].sort((a, b) => b.start - a.start)) {
+    if (!entry.names.some((name) => widenInSource.has(name))) continue;
+    const at = entry.statement.getStart();
+    sourceText = `${sourceText.slice(0, at)}export ${sourceText.slice(at)}`;
+  }
   for (const entry of [...moving].sort((a, b) => b.start - a.start)) {
     sourceText =
       sourceText.slice(0, entry.start) + sourceText.slice(entry.end + 1);
