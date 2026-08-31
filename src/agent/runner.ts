@@ -65,6 +65,10 @@ import {
 } from "./turn/loop/request-assembly.js";
 import { createStreamSession } from "./turn/loop/stream-session.js";
 import {
+  loadTurnInstructions,
+  orientTurnWorkspace,
+} from "./turn/workspace-setup.js";
+import {
   decideResponderRead,
   parseResponderReadRequest,
 } from "./turn/responder-read-tool.js";
@@ -204,19 +208,14 @@ import {
 } from "./reliability-policy.js";
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
-import { loadAgentInstructions } from "../instructions/load.js";
-import { ensureProjectInstructionFiles } from "../instructions/scaffold.js";
 import {
   upsertActiveSkillsMessage,
   upsertAgentInstructionsMessage,
 } from "./injected-blocks.js";
-import { getSkillIndex, loadSkill } from "../skills/registry.js";
-import { skillMentionNames } from "../skills/mentions.js";
+import { getSkillIndex } from "../skills/registry.js";
 import {
-  renderActiveSkills,
   renderSkillCatalog,
 } from "../skills/catalog.js";
-import type { LoadedSkill } from "../skills/types.js";
 import { loadScopeForSession, isScopeActive } from "../store/scope.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import {
@@ -338,7 +337,6 @@ import {
   isServerReadyOutput,
   ledgerFromTaskEvidence,
   recordTaskWorkSuccess,
-  resolveUserDestinationHint,
   taskEvidenceFromLedger,
   TOOL_ABORT_GRACE_MS,
   toolHardBudgetMs,
@@ -376,15 +374,11 @@ import { patchPlanMeta } from "../store/plan.js";
 import {
   extractProjectRootFromPlan,
   extractProjectRootFromScaffold,
-  extractProjectRootFromText,
   getActiveProjectRoot,
   setActiveProjectRootIfValid,
 } from "./project-root.js";
 import {
   buildWorkspaceOrientation,
-  discoverImmediateProjectRoots,
-  guessProjectFolderName,
-  isBareParentDirectory,
   isScaffoldCancelledOutput,
   scaffoldLooksMaterialized,
   scaffoldTargetConflictMessage,
@@ -784,75 +778,24 @@ export async function runAgentTurn(
     }
     suppressOutcomeDiagnostics ||= !session.planApproved.value;
 
-    const destinationHint = resolveUserDestinationHint(prompt);
-    const orientationSourceText = [
+    const { destinationHint, instructionScanInput } = orientTurnWorkspace({
       prompt,
-      activePlan?.goal,
-      activePlan?.detail,
-      activePlan?.tasks.map((task) => task.title).join(" "),
-    ].filter(Boolean).join("\n");
-    const fromPlan = extractProjectRootFromPlan(activePlan);
-    const fromPrompt = extractProjectRootFromText(prompt);
-    const guessedName = guessProjectFolderName(orientationSourceText);
-    const orientationParent =
-      destinationHint ?? (isBareParentDirectory(safeCwd()) ? safeCwd() : undefined);
-    const guessedProject =
-      orientationParent && guessedName ? join(orientationParent, guessedName) : undefined;
-    const discoveredProjects = orientationParent
-      ? discoverImmediateProjectRoots(orientationParent)
-      : [];
-
-    // Sticky project root so relative fs paths never hit the agent package.
-    // Preference is explicit durable plan metadata, explicit prompt paths,
-    // exact natural-language folder guesses, then one unambiguous discovered
-    // project. Never pin bare Desktop/home or invent a path before it exists.
-    let pinnedProject = false;
-    for (const candidate of [fromPlan, fromPrompt, guessedProject]) {
-      if (setActiveProjectRootIfValid(candidate)) {
-        pinnedProject = true;
-        break;
-      }
-    }
-    if (!pinnedProject && discoveredProjects.length === 1) {
-      setActiveProjectRootIfValid(discoveredProjects[0]);
-    }
-
-    const instructionScanInput = {
+      plan: activePlan,
       cwd: safeCwd(),
-      ...(getActiveProjectRoot() ? { projectRoot: getActiveProjectRoot()! } : {}),
-    };
-    if (!idleOrSocialPrompt && !informationalQuery) {
-      const scaffold = await ensureProjectInstructionFiles(
-        instructionScanInput,
-      ).catch(() => undefined);
-      if (scaffold && scaffold.created.length > 0) {
-        writeNotice(
-          "info",
-          `created ${scaffold.created.join(" and ")} — put your project rules in CLAI.md`,
-        );
-      }
-    }
-    let agentInstructionsBlock = (
-      await loadAgentInstructions(instructionScanInput).catch(() => undefined)
-    )?.block;
+    });
+    const turnInstructions = await loadTurnInstructions({
+      prompt,
+      scanInput: instructionScanInput,
+      scaffoldInstructionFiles: !idleOrSocialPrompt && !informationalQuery,
+      skillNames: skillsAvailable ? skillIndex.names : new Set<string>(),
+      notify: writeNotice,
+    });
+    let agentInstructionsBlock = turnInstructions.block;
+    const activeSkillsBlock = turnInstructions.skillsBlock;
+    const selectedSkillNames = turnInstructions.selectedSkillNames;
     const refreshAgentInstructions = async (): Promise<void> => {
-      const reloaded = await loadAgentInstructions(instructionScanInput).catch(
-        () => undefined,
-      );
-      agentInstructionsBlock = reloaded?.block;
+      agentInstructionsBlock = await turnInstructions.refresh();
     };
-
-    const selectedSkillNames = skillsAvailable
-      ? skillMentionNames(prompt, skillIndex.names)
-      : [];
-    const activeSkills: LoadedSkill[] = [];
-    for (const name of selectedSkillNames) {
-      const loaded = await loadSkill(name, instructionScanInput).catch(
-        () => undefined,
-      );
-      if (loaded) activeSkills.push(loaded);
-    }
-    const activeSkillsBlock = renderActiveSkills(activeSkills);
 
     // Only long-lived instructions belong in the provider-cached system prefix.
     // Request, project, workspace, recovery, scope, and plan state are appended
