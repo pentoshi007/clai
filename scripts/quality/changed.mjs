@@ -152,12 +152,28 @@ export function evaluateChangedQuality({ current, baseline, changes }) {
       }
     }
 
-    for (const finding of current.typeSyntaxFindings.filter(
-      (entry) =>
-        entry.file === file &&
-        GATED_TYPE_CATEGORIES.has(entry.category) &&
-        (change.status === "A" || change.addedLines.has(entry.line)),
-    )) {
+    // Counted per (category, detail) rather than per line: a pure move shifts
+    // surviving occurrences onto "added" lines, and reporting those as new would
+    // make the gate fire on code motion instead of on new unsafe typing.
+    const gatedFindings = (report) =>
+      report.typeSyntaxFindings.filter(
+        (entry) =>
+          entry.file === file && GATED_TYPE_CATEGORIES.has(entry.category),
+      );
+    const baselineCounts = new Map();
+    if (change.status !== "A") {
+      for (const finding of gatedFindings(baseline)) {
+        const key = `${finding.category}\u0000${finding.detail}`;
+        baselineCounts.set(key, (baselineCounts.get(key) ?? 0) + 1);
+      }
+    }
+    for (const finding of gatedFindings(current)) {
+      const key = `${finding.category}\u0000${finding.detail}`;
+      const allowed = baselineCounts.get(key) ?? 0;
+      if (allowed > 0) {
+        baselineCounts.set(key, allowed - 1);
+        continue;
+      }
       failures.push(
         `${file}:${finding.line}:${finding.column}: new ${finding.category} (${finding.detail})`,
       );
