@@ -17,7 +17,7 @@ import type {
   TurnEventPort,
   TurnOutputState,
 } from "./turn/contracts.js";
-import { finalizeTurn } from "./turn/finalizer.js";
+import { createTurnFinisher } from "./turn/finalizer.js";
 import { createTurnEvidenceFlags } from "./turn/evidence-flags.js";
 import { createWireOccurrenceLedger } from "./turn/loop/wire-occurrences.js";
 import {
@@ -27,12 +27,8 @@ import {
   type SalvagedWriteReceipt,
 } from "./turn/tool-call-preparation.js";
 import {
-  createSessionStateRefresher,
-  persistProjectRootOnPlan as persistPlanProjectRoot,
-  persistTaskEvidence as persistPlanTaskEvidence,
   type PlanMutator,
 } from "./turn/plan-persistence.js";
-import type { TurnOutcome } from "./turn-outcome.js";
 import { createTurnEventEmitter } from "./turn/event-emitter.js";
 import {
   createProbeStateKey,
@@ -51,6 +47,10 @@ import { classifyTurnPrompt } from "./turn/setup/prompt-classification.js";
 import { setUpResponderWake } from "./turn/setup/responder-wake.js";
 import { composeTurnMessages } from "./turn/setup/turn-messages.js";
 import { buildMcpAgentToolPorts } from "./turn/setup/mcp-agent-ports.js";
+import { openTurnBudget } from "./turn/setup/turn-budget.js";
+import { buildSessionStateRefresher } from "./turn/setup/session-state.js";
+import { rehydrateEvidenceFlagsFromPlan } from "./turn/setup/evidence-rehydration.js";
+import { setUpTaskGate } from "./turn/setup/task-gate-setup.js";
 import { createTurnCounters } from "./turn/turn-counters.js";
 import { createCompactionServices } from "./turn/setup/compaction-services.js";
 import { createTurnHistoryWriter } from "./turn/history-writer.js";
@@ -59,10 +59,6 @@ import {
   loadTurnInstructions,
   orientTurnWorkspace,
 } from "./turn/workspace-setup.js";
-import {
-  evaluateTaskCompletionGate,
-  resolveLedgerForTaskGate,
-} from "./turn/task-gate.js";
 import {
   createMcpAgentCallFailure,
   createMcpAgentToolExecutor,
@@ -118,19 +114,13 @@ import {
 import { getSkillIndex } from "../skills/registry.js";
 import { ensureProviderConfigured } from "../commands/providers.js";
 import { safeCwd } from "../os/cwd.js";
-import {
-  analyzeTask,
-} from "./task-analyzer.js";
-import { computeMaxIterations, computeStepBudget } from "./step-budget.js";
 import { WorkLedger } from "./durable-envelope.js";
 import { LoopGuard } from "./loop-guard.js";
 import { CompactionAttemptLedger } from "./compaction-attempt.js";
 import {
   loadPlan,
   mutatePlan,
-  isPlanTerminal,
   type SessionPlan,
-  type TaskEvidence,
 } from "../store/plan.js";
 import type { AgentEvent } from "./events.js";
 import {
@@ -149,10 +139,8 @@ import {
 } from "./session-policy.js";
 import { codingSessionFromContext } from "./progress-pause-policy.js";
 import {
-  canMarkTaskDone,
   type LooseWorkReceipt,
   userAskedForFeatureApp,
-  type TaskWorkLedger,
 } from "./task-evidence.js";
 import {
   type PreviousTurnSignal,
@@ -164,22 +152,11 @@ import {
   engagementActionsForToolCall,
 } from "../safety/engagement-policy.js";
 import { getActiveProjectRoot } from "./project-root.js";
-import { scaffoldLooksMaterialized } from "./workspace-orient.js";
 import {
   stdioConfirmPort,
   type ConfirmPort,
 } from "./confirm-port.js";
 import { createGovernorState } from "./evidence-governor.js";
-import {
-  inferOutcomeKind,
-  openOutcomeState,
-  saveOutcomeState,
-  type OutcomeEnvelope,
-} from "./outcomes.js";
-import {
-  type LoopGuardStopInfo,
-  type TurnOutcomeStatus,
-} from "./turn-outcome.js";
 
 export * from "./tool-call-parser.js";
 export {
@@ -347,38 +324,18 @@ export async function runAgentTurn(
     releaseClaim: (notificationId) =>
       jobManager.releaseResponderNotificationClaim(notificationId),
   });
-  const finishTurn = (
-    answer: string,
-    steps: number,
-    status: TurnOutcomeStatus = "succeeded",
-    remainingCriteria: readonly string[] = [],
-    reason?: string,
-    displayAnswer?: string,
-    loopGuardStop?: LoopGuardStopInfo,
-  ): TurnOutcome =>
-    finalizeTurn(
-      {
-        releaseResponderClaims: () => responderClaims.release(),
-        liveMessages: () => liveMessages,
-        diagnostics: () => !suppressOutcomeDiagnostics,
-        writeAssistantMessage,
-        emitEmptyAssistantMessage: () =>
-          emit({ type: "assistant-message", text: "" }),
-        emitTurnEnd: ({ outcome, finalAnswer, steps: endSteps }) =>
-          emit({ type: "turn-end", outcome, finalAnswer, steps: endSteps }),
-        onMessages: options.onMessages,
-        onOutcome: options.onOutcome,
-      },
-      {
-        answer,
-        steps,
-        status,
-        remainingCriteria,
-        reason,
-        displayAnswer,
-        loopGuardStop,
-      },
-    );
+  const finishTurn = createTurnFinisher({
+    releaseResponderClaims: () => responderClaims.release(),
+    liveMessages: () => liveMessages,
+    diagnostics: () => !suppressOutcomeDiagnostics,
+    writeAssistantMessage,
+    emitEmptyAssistantMessage: () =>
+      emit({ type: "assistant-message", text: "" }),
+    emitTurnEnd: ({ outcome, finalAnswer, steps: endSteps }) =>
+      emit({ type: "turn-end", outcome, finalAnswer, steps: endSteps }),
+    onMessages: options.onMessages,
+    onOutcome: options.onOutcome,
+  });
 
   let mcpLease: McpTurnLease | undefined;
 
@@ -680,77 +637,37 @@ export async function runAgentTurn(
      */
     const sessionLooseWork: LooseWorkReceipt[] = [];
 
-    /** Rehydrate turn-local runtime/remote flags from durable plan evidence (resume). */
-    const rehydrateSessionFlagsFromPlan = (
-      plan: SessionPlan | undefined,
-    ): void => {
-      if (!plan) return;
-      for (const task of plan.tasks) {
-        const e = task.evidence;
-        if (!e) continue;
-        if (e.sawDevServerStart || e.sawServerReady || e.sawPortListening) {
-          evidenceFlags.sawServerStart = true;
-        }
-        if (e.sawServerReady || e.sawDevServerStart)
-          evidenceFlags.sawServerTail = true;
-        if (e.sawLocalHttpProbeOk) evidenceFlags.sawLocalHttpProbe = true;
-        if (e.sawRemoteActiveTestOk) evidenceFlags.sawActivePentestTest = true;
-      }
-    };
-    rehydrateSessionFlagsFromPlan(activePlan);
-
-    const taskGatePorts = {
-      getLiveLedger: () => toolState.taskWorkLedger,
-      setLiveLedger: (ledger: TaskWorkLedger) => {
-        toolState.taskWorkLedger = ledger;
-      },
-      getLooseWork: () => sessionLooseWork,
-      featureAppRequired: featureAppAsk,
-      existingProject: () => scaffoldLooksMaterialized(getActiveProjectRoot()),
-    };
-    const ledgerForTaskGate = (
-      plan: SessionPlan,
-      taskId: string,
-    ): TaskWorkLedger | null =>
-      resolveLedgerForTaskGate(taskGatePorts, plan, taskId);
-
-    const completionGateForTask = (
-      plan: SessionPlan,
-      taskId: string,
-    ): ReturnType<typeof canMarkTaskDone> =>
-      evaluateTaskCompletionGate(taskGatePorts, plan, taskId);
+    rehydrateEvidenceFlagsFromPlan(evidenceFlags, activePlan);
 
     const mutateSessionPlan: PlanMutator = (mutator) =>
       mutatePlan(session.sessionId, mutator);
-    const persistProjectRootOnPlan = (root: string): Promise<void> =>
-      persistPlanProjectRoot(mutateSessionPlan, root);
-    const persistTaskEvidence = (
-      taskId: string,
-      evidence: TaskEvidence,
-    ): Promise<void> =>
-      persistPlanTaskEvidence(mutateSessionPlan, taskId, evidence);
+    const taskGate = setUpTaskGate({
+      toolState,
+      looseWork: sessionLooseWork,
+      featureAppRequired: featureAppAsk,
+      projectRoot: getActiveProjectRoot,
+      mutatePlan: mutateSessionPlan,
+    });
+    const ledgerForTaskGate = taskGate.ledgerForTask;
+    const completionGateForTask = taskGate.completionGateForTask;
+    const persistProjectRootOnPlan = taskGate.persistProjectRootOnPlan;
+    const persistTaskEvidence = taskGate.persistTaskEvidence;
 
-    refreshSessionState = createSessionStateRefresher({
+    refreshSessionState = buildSessionStateRefresher({
       messages,
       prompt,
       requestContextMessage,
       refreshInjectedBlocks,
-      suppressed: () => idleOrSocialPrompt || informationalQuery,
+      suppressed: idleOrSocialPrompt || informationalQuery,
+      requiresState: buildLikeTurn || pentestLikeTurn,
+      featureAppAsk,
+      pentestSession,
+      evidenceFlags,
+      toolState,
       activePlan: () => activePlan,
       planApproved: () => session.planApproved.value,
       runningJobs: () => jobManager.getRunningJobs(session.sessionId),
       projectRoot: getActiveProjectRoot,
-      requiresState: () => buildLikeTurn || pentestLikeTurn,
-      snapshotFlags: () => ({
-        featureAppRequired: featureAppAsk,
-        featureSeen: evidenceFlags.sawFeatureImplWrite,
-        scaffoldOk: evidenceFlags.sawScaffoldOk,
-        serverStarted: evidenceFlags.sawServerStart,
-        serverProbedOk: evidenceFlags.sawLocalHttpProbe,
-        lastProbeFailed: evidenceFlags.sawFailedLocalHttpProbe,
-        lastOkTool: toolState.taskWorkLedger?.lastOkTool,
-        pentestSession,
-      }),
     });
     refreshSessionState(activePlan);
 
@@ -770,7 +687,6 @@ export async function runAgentTurn(
      * executeSingleTool / recordResult).
      */
 
-    const analysis = analyzeTask(prompt);
     const hasHistory = (options.history?.length ?? 0) > 0;
     const buildLike = buildLikeTurn;
     const pentestLike = looksLikePentestTask(prompt, options.history);
@@ -778,34 +694,24 @@ export async function runAgentTurn(
       buildLike,
       planKind: activePlan?.kind,
     });
-    const continueExistingOutcome =
-      /^(?:continue|resume|proceed|keep\s+going|finish|next)\b/i.test(
-        prompt.trim(),
-      ) || Boolean(activePlan && !isPlanTerminal(activePlan));
-    const outcomeState: OutcomeEnvelope = await openOutcomeState({
+    const budget = await openTurnBudget({
+      prompt,
       sessionId: session.sessionId,
-      userIntent: prompt,
-      kind: inferOutcomeKind({ userIntent: prompt, buildLike, pentestLike }),
-      continueExisting: continueExistingOutcome,
+      plan: activePlan,
+      history: options.history,
+      maxSteps,
+      buildLike,
+      pentestLike,
+      restoreCompletedOperations: (operations) =>
+        loopGuard.restoreCompletedOperations(operations ?? []),
     });
-    loopGuard.restoreCompletedOperations(
-      outcomeState.completedOperations ?? [],
-    );
-    await saveOutcomeState(outcomeState);
+    const outcomeState = budget.outcomeState;
+    const analysis = budget.analysis;
+    const maxIterations = budget.maxIterations;
     // Canonical mutation/artifact ledger feeding the durable compaction envelope.
     const workLedger = new WorkLedger();
     const turnStateMachine = createTurnStateMachine();
     const moveTurn = turnStateMachine.move;
-    const stepBudget = computeStepBudget({
-      analysis,
-      maxSteps,
-      buildLike,
-      pentestLike,
-      hasHistory,
-    });
-    // Iteration count is only an emergency protection for recovery/model loops;
-    // normal continuation is governed by evidence and resource deltas above.
-    const maxIterations = Math.max(210, computeMaxIterations(stepBudget));
 
     /** Successful file mutation this turn — kills false "error diagnosed but not fixed". */
     let nextToolEventId = 0;

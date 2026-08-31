@@ -73,3 +73,24 @@ export const finalizeTurn = (
   ports.emitTurnEnd({ outcome, finalAnswer: rendered, steps: input.steps });
   return outcome;
 };
+
+export const createTurnFinisher =
+  (ports: TurnFinalizerPorts) =>
+  (
+    answer: string,
+    steps: number,
+    status: TurnOutcomeStatus = "succeeded",
+    remainingCriteria: readonly string[] = [],
+    reason?: string,
+    displayAnswer?: string,
+    loopGuardStop?: LoopGuardStopInfo,
+  ): TurnOutcome =>
+    finalizeTurn(ports, {
+      answer,
+      steps,
+      status,
+      remainingCriteria,
+      reason,
+      displayAnswer,
+      loopGuardStop,
+    });

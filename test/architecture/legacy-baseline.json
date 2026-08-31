@@ -3,7 +3,6 @@
   "oversizedSourceFiles": [
     "src/agent/loop-guard.ts",
     "src/agent/plan-tool.ts",
-    "src/agent/runner.ts",
     "src/agent/task-evidence.ts",
     "src/agent/tool-call-parser.ts",
     "src/interactive-session/manager.ts",
