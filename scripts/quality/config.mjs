@@ -51,6 +51,11 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/agent/plan/actions/plan-clear.ts": "src/agent/plan-tool.ts",
+  "src/agent/plan/actions/plan-create.ts": "src/agent/plan-tool.ts",
+  "src/agent/plan/actions/task-add.ts": "src/agent/plan-tool.ts",
+  "src/agent/plan/actions/task-move.ts": "src/agent/plan-tool.ts",
+  "src/agent/plan/normalization.ts": "src/agent/plan-tool.ts",
   "src/safety/shell-classification.ts": "src/safety/classifier.ts",
   "src/safety/tool-classification.ts": "src/safety/classifier.ts",
   "src/tools/web/request-loop.ts": "src/tools/web/fetch-core.ts",

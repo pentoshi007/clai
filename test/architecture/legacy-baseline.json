@@ -2,13 +2,9 @@
   "note": "Frozen at task T000. Entries may be removed, never added.",
   "oversizedSourceFiles": [
     "src/agent/loop-guard.ts",
-    "src/agent/plan-tool.ts",
-    "src/agent/task-evidence.ts",
-    "src/agent/tool-call-parser.ts",
     "src/interactive-session/manager.ts",
     "src/tools/http.ts",
     "src/tools/jobs.ts",
-    "src/tools/web/fetch-core.ts",
     "src/ui-core/commands/picker-commands.ts",
     "src/ui-core/rendering/markdown.ts",
     "src/ui-core/rendering/syntax-highlight.ts"
