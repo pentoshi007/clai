@@ -36,6 +36,7 @@ import type {
   TurnOutputState,
 } from "./turn/contracts.js";
 import { finalizeTurn } from "./turn/finalizer.js";
+import { assembleTurnMessages } from "./turn/message-assembly.js";
 import { suppressRepeatedActionSequence } from "./turn/loop/sequence-suppression.js";
 import { applyTaskUpdateLedgerTransition } from "./turn/tool-execution/plan-tool-ledger.js";
 import { accountToolOutcome } from "./turn/outcome-accounting.js";
@@ -892,25 +893,14 @@ export async function runAgentTurn(
       sections: promptSections(),
     }).content;
     const fullSystemPrompt = composeCurrentSystemPrompt(nativeToolsActive);
-    // Backend-only directives (implement, displayPrompt=null) stay in model
-    // history but must never become a YOU bubble on live or /history hydrate.
-    const hideUserBubble =
-      options.displayPrompt === null || options.displayPrompt === "";
-    const userMessage: ChatMessage = {
-      role: "user",
-      content: prompt,
-      ...(hideUserBubble ? { internal: true } : {}),
-    };
-    if (options.images && options.images.length > 0) {
-      userMessage.images = options.images;
-    }
-    const requestContextMessage = `${REQUEST_CONTEXT_PREFIX}\n${requestContext}`;
-    const messages: ChatMessage[] = [
-      { role: "system", content: fullSystemPrompt },
-      ...(options.history ?? []),
-      userMessage,
-      { role: "system", content: requestContextMessage },
-    ];
+    const { messages, requestContextMessage } = assembleTurnMessages({
+      prompt,
+      displayPrompt: options.displayPrompt,
+      images: options.images,
+      history: options.history,
+      systemPrompt: fullSystemPrompt,
+      requestContext,
+    });
     liveMessages = messages;
     const refreshInjectedBlocks = (): void => {
       upsertAgentInstructionsMessage(messages, agentInstructionsBlock);
