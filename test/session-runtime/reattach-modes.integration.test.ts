@@ -47,7 +47,6 @@ socket.on("data", chunk => {
     if (frame.type === "ack") status(true);
     if (frame.type === "repaint") {
       if (clearThenDecline) {
-        process.stdout.write("\u001b[H\u001b[J");
         send({type:"repaint-result",requestId:frame.requestId,accepted:false});
       } else {
         if (repaintEnabled) {
@@ -292,7 +291,7 @@ describe("terminal reattach mode restoration", () => {
     }
   }, 30_000);
 
-  it("replays the prior screen when the child clears but cannot schedule a frame", async () => {
+  it("replays the prior screen when the child cannot schedule a frame", async () => {
     if (process.platform === "win32") return;
     const runtime = await startRuntime();
     if (!runtime) return;
@@ -317,10 +316,10 @@ describe("terminal reattach mode restoration", () => {
       );
 
       const stream = fallback.output();
-      const replayAt = stream.lastIndexOf("SCHEDULING-FAILURE-FALLBACK");
-      const lastClearAt = stream.lastIndexOf("\u001b[H\u001b[J");
-      expect(replayAt).toBeGreaterThanOrEqual(0);
-      expect(replayAt).toBeGreaterThan(lastClearAt);
+      const modesAt = stream.indexOf("\u001b[?1000h");
+      const replayAt = stream.indexOf("SCHEDULING-FAILURE-FALLBACK");
+      expect(modesAt).toBeGreaterThanOrEqual(0);
+      expect(replayAt).toBeGreaterThan(modesAt);
     } finally {
       await stopRuntime(runtime, client);
     }

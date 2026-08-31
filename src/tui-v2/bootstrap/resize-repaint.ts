@@ -79,8 +79,13 @@ export function repaintAttachedScreen(
   options: AttachedScreenRepaintOptions,
 ): boolean {
   if (options.enabled === false || options.isSuspended?.() === true) return false;
+  // Schedule the frame before clearing. requestRender only queues a paint, so
+  // the clear still lands first, but a child that cannot schedule one now emits
+  // nothing at all — otherwise its clear races the decline down a second channel
+  // and can wipe the screen the host replayed.
+  if (!forceFullRepaint(options.renderer)) return false;
   options.write(RESIZE_REPAINT_SEQUENCE);
-  return forceFullRepaint(options.renderer);
+  return true;
 }
 
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {

@@ -156,9 +156,9 @@ describe("OpenTUI resize repaint", () => {
 
     expect(repainted).toBe(true);
     expect(calls).toEqual([
-      RESIZE_REPAINT_SEQUENCE,
       "buffer-clear",
       "request-render",
+      RESIZE_REPAINT_SEQUENCE,
     ]);
   });
 
@@ -206,11 +206,8 @@ describe("OpenTUI resize repaint", () => {
       write: (text) => calls.push(text),
     });
 
-    expect(calls).toEqual([
-      RESIZE_REPAINT_SEQUENCE,
-      "buffer-clear",
-      "request-render",
-    ]);
+    expect(calls).toEqual(["buffer-clear", "request-render"]);
+    expect(calls).not.toContain(RESIZE_REPAINT_SEQUENCE);
     expect(repainted).toBe(false);
   });
 
