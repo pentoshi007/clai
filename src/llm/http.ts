@@ -58,7 +58,6 @@ import {
 } from "./stream-terminal.js";
 import type {
   FinalTurnPreservation,
-  ProviderProfile,
   StreamTerminalProof,
 } from "./provider-profile.js";
 import { modelMaxOutputTokens } from "./context-windows.js";
@@ -76,15 +75,18 @@ import {
   reasoningArtifactsObserved,
   visibleReasoningDetailText,
 } from "./reasoning-artifacts.js";
-import {
-  classifyBynaraModel,
-  classifyNvidiaModel,
-} from "./model-families.js";
-import {
-  compileRequestPlan,
-  type RequestPlanV1,
-} from "./request-plan.js";
+import { classifyBynaraModel, classifyNvidiaModel } from "./model-families.js";
+import { compileRequestPlan, type RequestPlanV1 } from "./request-plan.js";
 import { singleLeadingSystemMessages } from "./system-messages.js";
+import { readJson } from "./wire/response-errors.js";
+import { readWithAbort } from "./wire/abort-race.js";
+export {
+  MAX_ERROR_BODY_CHARS,
+  MAX_ERROR_BODY_IN_MESSAGE_CHARS,
+  bodyAddsInformation,
+  collapseWhitespace,
+} from "./wire/response-errors.js";
+export { readJson };
 
 export class ProviderError extends Error {
   constructor(
@@ -128,50 +130,6 @@ function isFinalUsageFrame(parsed: {
   return reported(USAGE_INPUT_KEYS) && reported(USAGE_OUTPUT_KEYS);
 }
 
-function parseRetryAfterHeader(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number.parseFloat(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds;
-  // HTTP-date form: "Wed, 21 Oct 2015 07:28:00 GMT"
-  const date = Date.parse(value);
-  if (Number.isFinite(date)) {
-    const diff = (date - Date.now()) / 1000;
-    if (diff > 0) return diff;
-  }
-  return undefined;
-}
-
-function parseRetryHintFromBody(text: string): number | undefined {
-  const match = text.match(/try again in\s+([0-9.]+)\s*s/i);
-  if (match) {
-    const seconds = Number.parseFloat(match[1]!);
-    if (Number.isFinite(seconds) && seconds >= 0) return seconds;
-  }
-  return undefined;
-}
-
-function statusCodeHint(status: number): string {
-  if (status === 401) {
-    return " — check that the API key is valid (run `clai providers` to inspect)";
-  }
-  if (status === 403) {
-    return " — the key was rejected (insufficient permissions, billing, or region restriction)";
-  }
-  if (status === 404) {
-    return " — endpoint or model not found (try `/model list` to see supported names)";
-  }
-  if (status === 422) {
-    return " — the provider rejected the request body (model name or parameter mismatch)";
-  }
-  if (status === 413) {
-    return " — request exceeded the provider input limit; retry with a compact prompt or pick another model";
-  }
-  if (status >= 500 && status < 600) {
-    return " — upstream provider error; try again or switch with `/provider`";
-  }
-  return "";
-}
-
 export function catalogEntryVision(entry: unknown): boolean | undefined {
   return parseCatalogFacts(entry)?.vision;
 }
@@ -189,7 +147,9 @@ export function ingestModelCatalogEntries(
     if (seen.has(id)) continue;
     seen.add(id);
     const reasoning = facts.reasoning?.supported;
-    const reasoningEfforts = catalogEffortList(facts.reasoning?.supportedEfforts);
+    const reasoningEfforts = catalogEffortList(
+      facts.reasoning?.supportedEfforts,
+    );
     models.push({
       id,
       facts,
@@ -206,178 +166,10 @@ export function ingestOpenAiModelCatalog(
   provider: ProviderId,
   payload: unknown,
 ): string[] {
-  return ingestModelCatalogEntries(provider, catalogEntriesFromPayload(payload));
-}
-
-export async function readJson<T>(
-  response: Response,
-  signal?: AbortSignal,
-): Promise<T> {
-  const text = await readBodyCapped(
-    response,
-    MAX_JSON_RESPONSE_BYTES,
-    signal,
+  return ingestModelCatalogEntries(
+    provider,
+    catalogEntriesFromPayload(payload),
   );
-  if (!response.ok) {
-    
-    let detail = "";
-    let extractedMessage = "";
-    try {
-      const body = JSON.parse(text) as Record<string, unknown>;
-      const error = (body as { error?: unknown }).error;
-      let msg = "";
-      if (typeof error === "string") {
-        msg = error;
-      } else if (error && typeof error === "object") {
-        const errObj = error as {
-          message?: string;
-          type?: string;
-          code?: string;
-        };
-        msg = errObj.message ?? "";
-        if (!msg && (errObj.type || errObj.code)) {
-          msg = errObj.type ?? errObj.code ?? "";
-        }
-      }
-      if (!msg) {
-        msg =
-          (body as { message?: string }).message ??
-          (body as { detail?: string }).detail ??
-          "";
-      }
-      if (msg) {
-        // Detect NVIDIA DEGRADED function errors and enrich the message.
-        if (/DEGRADED/i.test(msg)) {
-          detail = ` — ${msg} (model is temporarily unavailable on this provider; try a different model with \`/model\`)`;
-        } else {
-          detail = ` — ${msg}`;
-        }
-      }
-      extractedMessage = msg;
-    } catch {
-      // Non-JSON body — the raw text is surfaced via the full-response rule
-      // below, so nothing is lost here.
-    }
-    // Show the full error received from the request: the extracted
-    // `error.message` alone routinely hides the actionable part of a gateway
-    // error (upstream detail, codes, validation fields). Append the complete
-    // body whenever it carries anything beyond that extracted message.
-    const bodyText = text.slice(0, MAX_ERROR_BODY_CHARS);
-    if (bodyAddsInformation(bodyText, extractedMessage)) {
-      const shown = collapseWhitespace(bodyText);
-      const capped =
-        shown.length > MAX_ERROR_BODY_IN_MESSAGE_CHARS
-          ? `${shown.slice(0, MAX_ERROR_BODY_IN_MESSAGE_CHARS)}…`
-          : shown;
-      detail = `${detail} — full response: ${capped}`;
-    }
-    const retryAfterSeconds =
-      parseRetryAfterHeader(response.headers.get("retry-after")) ??
-      parseRetryHintFromBody(text);
-    const retryHint =
-      retryAfterSeconds !== undefined
-        ? ` (retry after ${Math.ceil(retryAfterSeconds)}s)`
-        : "";
-    const codeHint = statusCodeHint(response.status);
-    throw new ProviderError(
-      `Provider request failed with HTTP ${response.status}${retryHint}${detail}${codeHint}`,
-      response.status,
-      bodyText,
-      retryAfterSeconds,
-    );
-  }
-  return JSON.parse(text) as T;
-}
-
-/** Hard cap on a JSON response body so a misbehaving provider can't OOM us. */
-const MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024;
-
-/** How much of a provider error body we retain on the ProviderError. */
-export const MAX_ERROR_BODY_CHARS = 8_000;
-/** How much of that body is embedded in the user-visible error message. */
-export const MAX_ERROR_BODY_IN_MESSAGE_CHARS = 2_000;
-
-export function collapseWhitespace(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-/**
- * True when the raw response body carries information beyond the message we
- * already extracted from it (extra JSON fields, non-JSON payloads, …). Pure
- * `{"error":{"message": …}}` envelopes are redundant and stay compact.
- */
-export function bodyAddsInformation(bodyText: string, extracted: string): boolean {
-  const collapsed = collapseWhitespace(bodyText);
-  if (!collapsed) return false;
-  if (!extracted) return true;
-  const normalizedExtracted = collapseWhitespace(extracted);
-  // The user-facing text already carries the entire body verbatim.
-  if (normalizedExtracted.includes(collapsed)) return false;
-  if (!collapsed.includes(normalizedExtracted)) return true;
-  const rest = collapsed
-    .replace(normalizedExtracted, " ")
-    .replace(/\b(errors?|message|msg|detail|details|type|code|status)\b/gi, " ")
-    .replace(/[{}\[\]":,]/g, " ")
-    .trim();
-  return rest.length > 0;
-}
-
-async function readBodyCapped(
-  response: Response,
-  maxBytes: number,
-  signal?: AbortSignal,
-): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) {
-    if (signal?.aborted) {
-      throw signal.reason ?? new Error("Response body read aborted");
-    }
-    const text = await response.text();
-    return text.length > maxBytes ? text.slice(0, maxBytes) : text;
-  }
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  let collected = "";
-  let bytesRead = 0;
-  const cancelOnAbort = (): void => {
-    void reader.cancel(signal?.reason).catch(() => undefined);
-  };
-  signal?.addEventListener("abort", cancelOnAbort, { once: true });
-  try {
-    while (bytesRead < maxBytes) {
-      const { done, value } = signal
-        ? await readWithAbort(reader, signal)
-        : await reader.read();
-      if (signal?.aborted) {
-        throw signal.reason ?? new Error("Response body read aborted");
-      }
-      if (done) break;
-      if (!value) continue;
-      const remaining = maxBytes - bytesRead;
-      if (value.byteLength > remaining) {
-        collected += decoder.decode(value.subarray(0, remaining), {
-          stream: true,
-        });
-        bytesRead += remaining;
-        try {
-          await reader.cancel();
-        } catch {
-          // ignore — we're abandoning the body deliberately
-        }
-        break;
-      }
-      collected += decoder.decode(value, { stream: true });
-      bytesRead += value.byteLength;
-    }
-    collected += decoder.decode();
-  } finally {
-    signal?.removeEventListener("abort", cancelOnAbort);
-    try {
-      reader.releaseLock();
-    } catch {
-      // already released
-    }
-  }
-  return collected;
 }
 
 /**
@@ -420,8 +212,6 @@ export function streamIdleBudgets(reasoningEnabled: boolean): {
  */
 export const STREAM_STALL_MARKER = "no model output";
 
-
-
 export interface StreamLineReaderOptions {
   signal?: AbortSignal | undefined;
   idleTimeoutMs?: number | undefined;
@@ -431,41 +221,6 @@ export interface StreamLineReaderOptions {
   onActivity?: (() => void) | undefined;
   outputIdleTimeoutMs?: number | undefined;
   outputProgress?: (() => number) | undefined;
-}
-
-
-function readWithAbort(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  signal: AbortSignal,
-): Promise<ReadableStreamReadResult<Uint8Array>> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason ?? new Error("Stream aborted"));
-  }
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const cleanup = (): void => signal.removeEventListener("abort", abort);
-    const succeed = (value: ReadableStreamReadResult<Uint8Array>): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(value);
-    };
-    const fail = (error: unknown): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-    const abort = (): void => {
-      fail(signal.reason ?? new Error("Stream aborted"));
-    };
-    signal.addEventListener("abort", abort, { once: true });
-    try {
-      void reader.read().then(succeed, fail);
-    } catch (error) {
-      fail(error);
-    }
-  });
 }
 
 export async function* readStreamLines(
@@ -499,10 +254,7 @@ export async function* readStreamLines(
   const armOutputTimer = (): void => {
     if (!trackOutput) return;
     if (outputTimer) clearTimeout(outputTimer);
-    outputTimer = setTimeout(
-      () => fireStall("output"),
-      outputIdleTimeoutMs,
-    );
+    outputTimer = setTimeout(() => fireStall("output"), outputIdleTimeoutMs);
   };
   const resetIdleTimer = (): void => {
     if (idleTimer) clearTimeout(idleTimer);
@@ -525,7 +277,8 @@ export async function* readStreamLines(
         );
   resetIdleTimer();
   armOutputTimer();
-  const onCallerAbort = (): void => idleController.abort(options.signal?.reason);
+  const onCallerAbort = (): void =>
+    idleController.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
   // A caller abort must surface as an abort error, not as a clean
   // end-of-stream — otherwise the partial text is returned as a successful
@@ -547,7 +300,7 @@ export async function* readStreamLines(
   const decoder = new TextDecoder();
   let buffer = "";
   let bytesRead = 0;
-  
+
   const cancelReaderOnAbort = (): void => {
     reader.cancel().catch(() => undefined);
   };
@@ -594,7 +347,7 @@ export async function* readStreamLines(
     clearIdleTimers();
     options.signal?.removeEventListener("abort", onCallerAbort);
     idleController.signal.removeEventListener("abort", cancelReaderOnAbort);
-    
+
     void reader.cancel().catch(() => undefined);
     try {
       reader.releaseLock();
@@ -614,15 +367,17 @@ export interface CompatibleReasoningArtifactPolicy {
   readonly persistence: ReasoningArtifact["replay"]["persistence"];
 }
 
-const DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY: CompatibleReasoningArtifactPolicy = {
-  scope: "all-history",
-  persistence: "tool-turn",
-};
+const DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY: CompatibleReasoningArtifactPolicy =
+  {
+    scope: "all-history",
+    persistence: "tool-turn",
+  };
 
-const PRESERVED_FINAL_TURN_ARTIFACT_POLICY: CompatibleReasoningArtifactPolicy = {
-  scope: "all-history",
-  persistence: "all-turns",
-};
+const PRESERVED_FINAL_TURN_ARTIFACT_POLICY: CompatibleReasoningArtifactPolicy =
+  {
+    scope: "all-history",
+    persistence: "all-turns",
+  };
 
 export function compatibleArtifactPolicyFor(
   preservation: FinalTurnPreservation,
@@ -688,12 +443,15 @@ function compatibleReasoningArtifacts(input: {
   toolCalls: readonly NativeToolCall[];
   policy?: CompatibleReasoningArtifactPolicy | undefined;
   reasoning?: { text: string; sequence: number } | undefined;
-  details?: readonly { raw: ReasoningArtifact["raw"]; sequence: number }[] | undefined;
-  thoughtSignatures?: readonly {
-    raw: string;
-    sequence: number;
-    toolCallIndex?: number | undefined;
-  }[] | undefined;
+  details?:
+    readonly { raw: ReasoningArtifact["raw"]; sequence: number }[] | undefined;
+  thoughtSignatures?:
+    | readonly {
+        raw: string;
+        sequence: number;
+        toolCallIndex?: number | undefined;
+      }[]
+    | undefined;
 }): readonly ReasoningArtifact[] | undefined {
   const policy = input.policy ?? DEFAULT_COMPATIBLE_REASONING_ARTIFACT_POLICY;
   const provenance = createReasoningArtifactProvenance({
@@ -715,7 +473,9 @@ function compatibleReasoningArtifacts(input: {
         position: {
           sequence: input.reasoning.sequence,
           placement:
-            primaryToolPosition === undefined ? "assistant" : "before-tool-call",
+            primaryToolPosition === undefined
+              ? "assistant"
+              : "before-tool-call",
           ...(primaryToolPosition === undefined
             ? {}
             : { toolCallIndex: primaryToolPosition }),
@@ -735,7 +495,9 @@ function compatibleReasoningArtifacts(input: {
         position: {
           sequence: detail.sequence,
           placement:
-            primaryToolPosition === undefined ? "assistant" : "before-tool-call",
+            primaryToolPosition === undefined
+              ? "assistant"
+              : "before-tool-call",
           ...(primaryToolPosition === undefined
             ? {}
             : { toolCallIndex: primaryToolPosition }),
@@ -783,7 +545,9 @@ export function toCompletionResult(
     ...(payload.toolCalls?.length ? { toolCalls: payload.toolCalls } : {}),
     ...(payload.finishReason ? { finishReason: payload.finishReason } : {}),
     ...(usage ? { usage } : {}),
-    ...(payload.reasoningBlock ? { reasoningBlock: payload.reasoningBlock } : {}),
+    ...(payload.reasoningBlock
+      ? { reasoningBlock: payload.reasoningBlock }
+      : {}),
     ...(payload.reasoningArtifacts
       ? { reasoningArtifacts: payload.reasoningArtifacts }
       : {}),
@@ -851,27 +615,28 @@ export function toOpenAiMessages(
     forceScope?: boolean | undefined;
   },
 ): Array<Record<string, unknown>> {
-  return toOpenAiToolMessages(messages, (message) => {
-    if (
-      supportsVision &&
-      message.images &&
-      message.images.length > 0
-    ) {
-      const parts: OpenAiContentPart[] = [];
-      if (message.content) parts.push({ type: "text", text: message.content });
-      for (const img of message.images) {
-        parts.push({
-          type: "image_url",
-          image_url: {
-            url: `data:${img.mediaType};base64,${img.dataBase64}`,
-            detail: "high",
-          },
-        });
+  return toOpenAiToolMessages(
+    messages,
+    (message) => {
+      if (supportsVision && message.images && message.images.length > 0) {
+        const parts: OpenAiContentPart[] = [];
+        if (message.content)
+          parts.push({ type: "text", text: message.content });
+        for (const img of message.images) {
+          parts.push({
+            type: "image_url",
+            image_url: {
+              url: `data:${img.mediaType};base64,${img.dataBase64}`,
+              detail: "high",
+            },
+          });
+        }
+        return parts;
       }
-      return parts;
-    }
-    return message.content;
-  }, replay) as Array<Record<string, unknown>>;
+      return message.content;
+    },
+    replay,
+  ) as Array<Record<string, unknown>>;
 }
 
 export type ReasoningStyle =
@@ -885,10 +650,7 @@ export type ReasoningStyle =
   | "bynara"
   | "none";
 
-export {
-  classifyBynaraModel,
-  classifyNvidiaModel,
-} from "./model-families.js";
+export { classifyBynaraModel, classifyNvidiaModel } from "./model-families.js";
 export type {
   BynaraReasoningKind,
   NvidiaReasoningKind,
@@ -915,7 +677,8 @@ function pickAdvertisedEffort(
   effort: string,
   advertised: readonly string[],
 ): string {
-  const order = MODAL_EFFORT_PREFERENCE[effort] ?? MODAL_EFFORT_PREFERENCE.medium!;
+  const order =
+    MODAL_EFFORT_PREFERENCE[effort] ?? MODAL_EFFORT_PREFERENCE.medium!;
   return (
     order.find((candidate) => advertised.includes(candidate)) ??
     advertised[advertised.length - 1]!
@@ -1274,7 +1037,12 @@ export function isImageInputUnsupportedError(error: unknown): boolean {
       hay,
     );
   if (!mentionsImageInput) return false;
-  if (status !== undefined && status !== 400 && status !== 415 && status !== 422) {
+  if (
+    status !== undefined &&
+    status !== 400 &&
+    status !== 415 &&
+    status !== 422
+  ) {
     return false;
   }
   return /not support|unsupported|does not accept|cannot process|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field|type|value)?|unknown|unrecognized|not a valid|not allowed|only text|text[- ]only|expected a string|must be a string|additional propert/.test(
@@ -1282,7 +1050,9 @@ export function isImageInputUnsupportedError(error: unknown): boolean {
   );
 }
 
-export function stripImagesFromMessages(messages: ChatMessage[]): ChatMessage[] {
+export function stripImagesFromMessages(
+  messages: ChatMessage[],
+): ChatMessage[] {
   return messages.map((message) => {
     if (!message.images?.length) return message;
     const { images: _images, ...rest } = message;
@@ -1500,8 +1270,9 @@ export function chatCompletionsBodyFromPlan(
   extras: {
     reasoningStyle?: ReasoningStyle | undefined;
     includeStreamUsage?: boolean | undefined;
-    reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
-  forceReasoningReplay?: boolean | undefined;
+    reasoningArtifactReplayObserver?:
+      ReasoningArtifactReplayObserver | undefined;
+    forceReasoningReplay?: boolean | undefined;
   } = {},
 ): string {
   return emitChatCompletionsBody({
@@ -1780,7 +1551,7 @@ export async function openAiCompatibleStream(options: {
     | undefined;
   /** Abort a stream that delivers no bytes for this long (mid-stream). */
   idleTimeoutMs?: number | undefined;
-  
+
   initialIdleTimeoutMs?: number | undefined;
   /**
    * Abort a stream that delivers bytes but no model output for this long.
@@ -1802,9 +1573,7 @@ export async function openAiCompatibleStream(options: {
       : DEFAULT_STREAM_IDLE_TIMEOUT_MS);
   const initialIdleTimeoutMs =
     options.initialIdleTimeoutMs ??
-    (reasoningOn
-      ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS
-      : idleTimeoutMs);
+    (reasoningOn ? THINKING_STREAM_INITIAL_IDLE_TIMEOUT_MS : idleTimeoutMs);
   // "No bytes" and "no output" are different failures and need separate
   // budgets. The transport watchdog is re-armed by every read, so an SSE
   // keepalive comment, a `delta:{}` heartbeat, a role-only opening delta, or a
@@ -1874,7 +1643,8 @@ export async function openAiCompatibleStream(options: {
     transportTimer = undefined;
     outputTimer = undefined;
   };
-  const onCallerAbort = (): void => idleController.abort(options.signal?.reason);
+  const onCallerAbort = (): void =>
+    idleController.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
 
   const plan = compileRequestPlan({
@@ -1994,15 +1764,18 @@ export async function openAiCompatibleStream(options: {
           : parseOpenAiUsage(data.usage, options.usageAliases);
       const reasoning = openAiReasoningText(message);
       const detailsRaw = artifactRaw(message?.reasoning_details);
-      const thoughtSignature = message?.extra_content?.google?.thought_signature;
+      const thoughtSignature =
+        message?.extra_content?.google?.thought_signature;
       const reasoningArtifacts = compatibleReasoningArtifacts({
         providerId: options.providerId,
         model: options.model,
         baseUrl: options.baseUrl,
         toolCalls,
         policy:
-      options.reasoningArtifactPolicy ??
-      compatibleArtifactPolicyFor(plan.policy.reasoning.finalTurnPreservation),
+          options.reasoningArtifactPolicy ??
+          compatibleArtifactPolicyFor(
+            plan.policy.reasoning.finalTurnPreservation,
+          ),
         ...(typeof reasoning === "string" && reasoning
           ? { reasoning: { text: reasoning, sequence: 0 } }
           : {}),
@@ -2137,9 +1910,7 @@ export async function openAiCompatibleStream(options: {
       const toolCallIndex = toolCalls.length ? 0 : undefined;
       for (const capture of pendingThoughtSignatures.splice(0)) {
         thoughtSignatures.push(
-          toolCallIndex === undefined
-            ? capture
-            : { ...capture, toolCallIndex },
+          toolCallIndex === undefined ? capture : { ...capture, toolCallIndex },
         );
       }
     }
@@ -2149,8 +1920,10 @@ export async function openAiCompatibleStream(options: {
       baseUrl: options.baseUrl,
       toolCalls,
       policy:
-      options.reasoningArtifactPolicy ??
-      compatibleArtifactPolicyFor(plan.policy.reasoning.finalTurnPreservation),
+        options.reasoningArtifactPolicy ??
+        compatibleArtifactPolicyFor(
+          plan.policy.reasoning.finalTurnPreservation,
+        ),
       ...(reasoningSeen
         ? {
             reasoning: {
@@ -2309,7 +2082,10 @@ export async function openAiCompatibleStream(options: {
       if (idleController.signal.aborted) {
         throw new Error("Stream aborted");
       }
-      const { done, value } = await readWithAbort(reader, idleController.signal);
+      const { done, value } = await readWithAbort(
+        reader,
+        idleController.signal,
+      );
       options.signal?.throwIfAborted();
       if (idleController.signal.aborted) {
         throw new Error("Stream aborted");
@@ -2338,7 +2114,10 @@ export async function openAiCompatibleStream(options: {
           const toolCalls = finalizeOpenAiToolCalls(toolCallState);
           emitPrivateReasoningNote(toolCalls.length > 0);
           const reasoningArtifacts = finalReasoningArtifacts(toolCalls);
-          emitStreamReasoningArtifacts(options.onStreamEvent, reasoningArtifacts);
+          emitStreamReasoningArtifacts(
+            options.onStreamEvent,
+            reasoningArtifacts,
+          );
           if (!visible.trim() && toolCalls.length === 0) {
             // Thinking models (Kimi/Moonshot via Mantle, etc.) often emit only
             // reasoning, sometimes with tool sentinels inside <think>. Returning
@@ -2349,7 +2128,9 @@ export async function openAiCompatibleStream(options: {
                 text: full,
                 ...(finishReason ? { finishReason } : { finishReason: "stop" }),
                 ...(streamUsage ? { usage: streamUsage } : {}),
-                ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
+                ...(displayReasoningText()
+                  ? { reasoningBlock: { text: displayReasoningText() } }
+                  : {}),
                 ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
               };
             }
@@ -2366,7 +2147,9 @@ export async function openAiCompatibleStream(options: {
                 ? { finishReason: "tool_calls" }
                 : {}),
             ...(streamUsage ? { usage: streamUsage } : {}),
-            ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
+            ...(displayReasoningText()
+              ? { reasoningBlock: { text: displayReasoningText() } }
+              : {}),
             ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
           };
         }
@@ -2435,13 +2218,14 @@ export async function openAiCompatibleStream(options: {
           const reasoningToken = openAiReasoningText(delta);
           const token = delta?.content;
           const detailRaw = artifactRaw(delta?.reasoning_details);
-          const thoughtSignature = delta?.extra_content?.google?.thought_signature;
+          const thoughtSignature =
+            delta?.extra_content?.google?.thought_signature;
           const artifactSequence = nextArtifactSequence++;
           const toolProgress = delta?.tool_calls?.some((toolCall) =>
             Boolean(
               toolCall.id ||
-                toolCall.function?.name ||
-                toolCall.function?.arguments,
+              toolCall.function?.name ||
+              toolCall.function?.arguments,
             ),
           );
           if (
@@ -2484,7 +2268,10 @@ export async function openAiCompatibleStream(options: {
             }
           }
           if (detailRaw) {
-            structuredDetails.push({ raw: detailRaw, sequence: artifactSequence });
+            structuredDetails.push({
+              raw: detailRaw,
+              sequence: artifactSequence,
+            });
           }
           if (token) {
             const normalized = normalizeChannelDelta(token, contentWireSeen);
@@ -2565,7 +2352,9 @@ export async function openAiCompatibleStream(options: {
           text: full,
           ...(finishReason ? { finishReason } : { finishReason: "stop" }),
           ...(streamUsage ? { usage: streamUsage } : {}),
-          ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
+          ...(displayReasoningText()
+            ? { reasoningBlock: { text: displayReasoningText() } }
+            : {}),
           ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
         };
       }
@@ -2582,7 +2371,9 @@ export async function openAiCompatibleStream(options: {
           ? { finishReason: "tool_calls" }
           : {}),
       ...(streamUsage ? { usage: streamUsage } : {}),
-      ...(displayReasoningText() ? { reasoningBlock: { text: displayReasoningText() } } : {}),
+      ...(displayReasoningText()
+        ? { reasoningBlock: { text: displayReasoningText() } }
+        : {}),
       ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
     };
   } catch (error) {
