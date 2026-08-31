@@ -51,6 +51,13 @@ export const LINE_LIMIT_EXEMPT_FILES = Object.freeze([]);
  * origin, and every entry is expected to disappear as the code is decomposed.
  */
 export const RELOCATED_LEGACY_FILES = Object.freeze({
+  "src/llm/profile/spec-validation.ts": "src/llm/custom-provider-profile.ts",
+  "src/llm/profile/spec-vocabulary.ts": "src/llm/custom-provider-profile.ts",
+  "src/llm/profile/custom-layer.ts": "src/llm/custom-provider-profile.ts",
+  "src/llm/capability/state.ts": "src/llm/capabilities.ts",
+  "src/llm/capability/vision-registry.ts": "src/llm/capabilities.ts",
+  "src/llm/capability/vision-patterns.ts": "src/llm/capabilities.ts",
+  "src/llm/capability/tool-dialect.ts": "src/llm/capabilities.ts",
   "src/llm/routing/attempt-stream.ts": "src/llm/router.ts",
   "src/llm/routing/attempt-complete.ts": "src/llm/router.ts",
   "src/llm/routing/key-rotation.ts": "src/llm/router.ts",
