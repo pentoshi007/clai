@@ -71,6 +71,10 @@ import {
 import { readTaskWorkSignals } from "./turn/task-work-signals.js";
 import { superviseToolExecution } from "./turn/tool-execution/supervision.js";
 import {
+  firstNativeToolCall,
+  syncNativeToolCallCards,
+} from "./turn/loop/native-tool-calls.js";
+import {
   evaluateLoopGuardBlock,
   evaluateToolGuards,
   LOOP_RESET_OUTPUT,
@@ -2869,63 +2873,18 @@ export async function runAgentTurn(
         let nativeToolCalls: NativeToolCall[] = completion.toolCalls ?? [];
         // Early UI cards: refresh args if stream deltas already opened cards;
         // otherwise create cards now (non-streaming / name-after-done providers).
-        if (nativeToolCalls.length) {
-          if (deferredToolCalls.length === 0) {
-            for (let i = 0; i < nativeToolCalls.length; i += 1) {
-              const tc = nativeToolCalls[i]!;
-              const normalized = normalizeToolCall({
-                name: tc.name,
-                args: tc.args,
-              });
-              const eventId = `tool-${++nextToolEventId}`;
-              callIds[i] = eventId;
-              alreadyPrintedIds.add(eventId);
-              deferredToolCalls.push({
-                eventId,
-                call: normalized,
-                shown: false,
-              });
-            }
-          } else {
-            for (let i = 0; i < nativeToolCalls.length; i++) {
-              const tc = nativeToolCalls[i]!;
-              const normalized = normalizeToolCall({
-                name: tc.name,
-                args: tc.args,
-              });
-              const existing = deferredToolCalls[i];
-              if (existing && existing.call.name !== "…") {
-                callIds[i] = existing.eventId;
-                existing.call = normalized;
-              } else if (!existing || existing.call.name === "…") {
-                const eventId =
-                  existing?.eventId ?? `tool-${++nextToolEventId}`;
-                callIds[i] = eventId;
-                alreadyPrintedIds.add(eventId);
-                const entry = {
-                  eventId,
-                  call: normalized,
-                  shown: existing?.shown ?? false,
-                };
-                if (existing) deferredToolCalls[i] = entry;
-                else deferredToolCalls.push(entry);
-              }
-            }
-          }
-        }
-
+        syncNativeToolCallCards(
+          {
+            deferredToolCalls,
+            callIds,
+            allocateEventId: () => `tool-${++nextToolEventId}`,
+            markPrinted: (eventId) => alreadyPrintedIds.add(eventId),
+          },
+          nativeToolCalls,
+        );
 
         if (nativeToolCalls.length) {
-          const first = nativeToolCalls[0]!;
-          call = first.args?._parseError
-            ? {
-              name: first.name || "unknown",
-              args: {
-                __nativeParseError: true,
-                _raw: first.args._raw,
-              },
-            }
-            : normalizeToolCall({ name: first.name, args: first.args });
+          call = firstNativeToolCall(nativeToolCalls);
         } else {
           call = parseToolCall(assistantText.visible, {
             strict: getConfig().parserStrict,
@@ -2939,7 +2898,6 @@ export async function runAgentTurn(
             }
           }
         }
-
 
         if (looksLikePromptLeak(assistantText.visible)) {
           if (call || nativeToolCalls.length) {
