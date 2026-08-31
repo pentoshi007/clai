@@ -33,6 +33,7 @@ import {
   createStreamRecoveryState,
   resetStreamRecoveryState,
 } from "./stream-recovery.js";
+import { trimExactContinuationOverlap } from "./turn/continuation-overlap.js";
 import { modelSupportsVision, resolveToolDialect } from "../llm/capabilities.js";
 import {
   syntheticToolCallId,
@@ -650,41 +651,6 @@ export async function runAgentTurn(
   let interruptedVisible = "";
   let interruptedReasoning = "";
   let lowYieldResumptions = 0;
-  const trimExactContinuationOverlap = (
-    previous: string,
-    current: string,
-    minLength = 32,
-  ): string => {
-    if (previous.length > 0 && current.startsWith(previous)) {
-      return current.slice(previous.length);
-    }
-    const maxLength = Math.min(previous.length, current.length);
-    if (maxLength < minLength) return current;
-    const pattern = current.slice(0, maxLength);
-    const fallback = new Uint32Array(maxLength);
-    for (let index = 1, matched = 0; index < maxLength; index += 1) {
-      while (matched > 0 && pattern[index] !== pattern[matched]) {
-        matched = fallback[matched - 1]!;
-      }
-      if (pattern[index] === pattern[matched]) matched += 1;
-      fallback[index] = matched;
-    }
-    let matched = 0;
-    for (
-      let index = previous.length - maxLength;
-      index < previous.length;
-      index += 1
-    ) {
-      while (matched > 0 && previous[index] !== pattern[matched]) {
-        matched = fallback[matched - 1]!;
-      }
-      if (previous[index] === pattern[matched]) matched += 1;
-      if (matched === maxLength && index < previous.length - 1) {
-        matched = fallback[matched - 1]!;
-      }
-    }
-    return matched >= minLength ? current.slice(matched) : current;
-  };
   const writeStatus = (text: string): void => {
     // Footer activity is single-line; collapse newlines and indents.
     // Never surface /output path hints as activity (garbles the status bar).
