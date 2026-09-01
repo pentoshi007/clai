@@ -76,6 +76,7 @@ export function Pager(props: PagerProps): ReactNode {
     highlightPath,
     markdown = "auto",
   } = props;
+  const colorMode = services.capabilities.colorMode;
   const { width: termWidth } = useTerminalDimensions();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [displayBody, setDisplayBody] = useState(body);
@@ -100,6 +101,8 @@ export function Pager(props: PagerProps): ReactNode {
         width: contentCols,
         mode: "force",
         defaultFg: theme.foreground,
+        theme,
+        colorMode,
       });
     }
     return preparePagerDisplay({
@@ -107,8 +110,10 @@ export function Pager(props: PagerProps): ReactNode {
       width: contentCols,
       mode: "plain",
       defaultFg: theme.foreground,
+      theme,
+      colorMode,
     });
-  }, [displayBody, contentCols, viewMode, theme.foreground]);
+  }, [displayBody, contentCols, viewMode, theme, colorMode]);
 
   const lines = useMemo(
     () => display.lines.map((l) => l.plain),

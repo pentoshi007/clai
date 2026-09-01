@@ -13,7 +13,10 @@ vi.mock("../../src/interactive-session/transport-node-pty.js", async (importOrig
   probePtyCapability,
 }));
 
-import { tryRunDurableInteractive } from "../../src/session-runtime/client.js";
+import {
+  runtimeClientAuthFrame,
+  tryRunDurableInteractive,
+} from "../../src/session-runtime/client.js";
 
 const runtimeEnv = [RUNTIME_CHILD_ENV, RUNTIME_DISABLE_ENV, RUNTIME_HOST_ENV] as const;
 const savedEnv = new Map<string, string | undefined>();
@@ -54,6 +57,27 @@ describe("durable interactive client fallback", () => {
     savedEnv.clear();
     updateConfig({ privateMode: false });
     vi.restoreAllMocks();
+  });
+
+  it("includes one terminal dimension snapshot only on terminal authentication", () => {
+    const metadata = { token: "a".repeat(64) };
+    expect(
+      runtimeClientAuthFrame(metadata, "client-terminal", "client", {
+        columns: 132,
+        rows: 47,
+      }),
+    ).toMatchObject({
+      role: "client-terminal",
+      clientId: "client",
+      columns: 132,
+      rows: 47,
+    });
+    expect(
+      runtimeClientAuthFrame(metadata, "client-control", "client", {
+        columns: 132,
+        rows: 47,
+      }),
+    ).not.toMatchObject({ columns: 132, rows: 47 });
   });
 
   it("gates no-history, private, disabled, and non-TTY launches without probing PTY", async () => {

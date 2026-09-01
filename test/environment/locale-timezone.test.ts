@@ -13,11 +13,9 @@ import { buildTestEnv, CANONICAL_TEST_ENV } from "../../scripts/run-tests.mjs";
  * with an explicit environment. The probe drives real production surfaces
  * (`StreamRenderer`, `fsList`, `formatTokenCount`).
  *
- * These tests record the behavior that exists at the refactor anchor. They do
- * **not** endorse it: the host-sensitive `toLocaleString()` calls in
- * `src/noninteractive/stream-blocks.ts` are documented as actionable debt in
- * `refactor/evidence/phase-0/warning-ledger.md`. Changing that formatting is a
- * separately approved behavior change, not part of Phase 0.
+ * Bare `Number.toLocaleString()` still follows the host ICU locale. Production
+ * noninteractive token labels in `src/noninteractive/stream-blocks.ts` pin
+ * `"en-US"` so compaction transcripts stay stable under `en_IN`.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -133,15 +131,13 @@ describe("host-sensitive behavior under en_IN and Asia/Kolkata", () => {
   });
 
   it.skipIf(!hasIndianLocale)(
-    "changes noninteractive compaction output — the recorded baseline discrepancy",
+    "keeps noninteractive compaction output locale-stable",
     () => {
-      // This is exactly why the canonical wrapper exists: the unqualified suite
-      // fails two expectations on an en_IN host. Recorded, not fixed, in Phase 0.
       expect(indian.noninteractive.compactionLines).toEqual([
-        "✦ compacting context · ~1,20,000 tokens before",
-        "✦ compacted context · ~1,20,000 → ~30,000 tokens",
+        "✦ compacting context · ~120,000 tokens before",
+        "✦ compacted context · ~120,000 → ~30,000 tokens",
       ]);
-      expect(indian.noninteractive.compactionLines).not.toEqual(
+      expect(indian.noninteractive.compactionLines).toEqual(
         canonical.noninteractive.compactionLines,
       );
     },

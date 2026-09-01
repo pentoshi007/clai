@@ -6,6 +6,9 @@ import { contextAttemptFromOperationUsage } from "../../../llm/context-snapshot.
 
 export interface CompletionUsagePorts {
   readonly dispatchedRawRequestTokens: number;
+  readonly dispatchedRequestRoute:
+    | { provider: ProviderId; model: string }
+    | undefined;
   readonly emitTokenUsage: (input: {
     usage: TokenUsage;
     provider: ProviderId;
@@ -24,7 +27,14 @@ export const accountCompletionUsage = async (
 ): Promise<void> => {
   const usage = completion.usage;
   if (!usage) return;
-  if (usage.exact && usage.promptTokens > 0) {
+  const requestRouteMatched =
+    ports.dispatchedRequestRoute?.provider === completion.provider &&
+    ports.dispatchedRequestRoute.model === completion.model;
+  if (
+    usage.exact &&
+    usage.promptTokens > 0 &&
+    requestRouteMatched
+  ) {
     recordRequestTokenObservation({
       provider: completion.provider,
       model: completion.model,

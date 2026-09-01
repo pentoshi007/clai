@@ -108,9 +108,9 @@ const salvageContinuationNudge = (
     `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n`;
   return ports.toolsAttached
     ? head +
-        `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the remaining content (prefer large chunks). Use the platform tool interface — no markdown fences.`
+        `CONTINUE by calling fs.append with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the next remaining chunk not already on disk. Keep each chunk under 24,000 characters and wait for its receipt before sending another. Use the platform tool interface — no markdown fences.`
     : head +
-        `CONTINUE with ONE large fs.append of the remaining content (prefer hundreds of lines per call — do NOT use tiny ~100-line chunks):\n` +
+        `CONTINUE with one fs.append chunk under 24,000 characters, then wait for its receipt before sending another:\n` +
         '```tool\n{"name":"fs.append","args":{"path":' +
         JSON.stringify(salvaged.path) +
         ',"expectedPriorBytes":' +

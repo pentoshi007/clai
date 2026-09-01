@@ -120,7 +120,8 @@ export function requestTokenCalibration(
 ): RequestTokenCalibration | undefined {
   loadCalibrations();
   const entry = calibrations.get(calibrationKey(provider, model));
-  if (!entry || entry.samples < MIN_TRUSTED_SAMPLES) return undefined;
+  if (!entry) return undefined;
+  if (entry.samples < MIN_TRUSTED_SAMPLES && entry.ratio >= 1) return undefined;
   return { ratio: entry.ratio, samples: entry.samples };
 }
 

@@ -59,6 +59,9 @@ export interface RuntimeAuthFrame {
   readonly role: RuntimeChannelRole;
   readonly token: string;
   readonly clientId?: string | undefined;
+  readonly columns?: number | undefined;
+  readonly rows?: number | undefined;
+  readonly supportsRepaint?: boolean | undefined;
 }
 
 export interface RuntimeAckFrame {
@@ -93,6 +96,11 @@ export type RuntimeChildFrame =
   | { readonly type: "minimise" }
   | { readonly type: "exiting"; readonly exitCode: number }
   | {
+      readonly type: "repaint-result";
+      readonly requestId: string;
+      readonly accepted: boolean;
+    }
+  | {
       readonly type: "switch";
       readonly sessionId: string;
       readonly closeCurrent: boolean;
@@ -102,6 +110,7 @@ export type RuntimeChildFrame =
 export type RuntimeHostFrame =
   | { readonly type: "pong" }
   | { readonly type: "shutdown" }
+  | { readonly type: "repaint"; readonly requestId: string }
   | {
       readonly type: "detached";
       readonly reason: "minimise" | "requested" | "taken-over" | "connection-lost";

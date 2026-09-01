@@ -18,8 +18,10 @@ export function bindRuntimeChildBridge(
   bridge: RuntimeChildBridge,
   services: AppServices,
   requestExit: () => void,
+  requestRepaint?: (() => boolean) | undefined,
 ): () => void {
   bridge.setShutdownHandler(requestExit);
+  bridge.setRepaintHandler(requestRepaint);
   const report = (): void => {
     const state = services.session.getState();
     bridge.report({
@@ -33,6 +35,7 @@ export function bindRuntimeChildBridge(
   report();
   return () => {
     unsubscribe();
+    bridge.setRepaintHandler(undefined);
     bridge.dispose();
   };
 }

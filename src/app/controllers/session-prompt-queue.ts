@@ -20,66 +20,64 @@ interface SessionPromptQueueDeps {
   readonly lastTurnResult?: (() => TurnResult | undefined) | undefined;
 }
 
+interface PromptEntry {
+  readonly id: number;
+  text: string;
+  readonly options?: TurnDisplayOptions | undefined;
+  readonly preserveOnCancel: boolean;
+}
+
 function pausedQueueNotice(decision: ContinuationDecision): string {
   const reason = decision.reason ?? "the turn did not succeed";
   return `queued prompts paused because ${reason}. Send or edit them when ready.`;
 }
 
 export class SessionPromptQueue {
-  private readonly items: string[] = [];
-  private priorityPrompt: string | undefined;
-  private priorityQueueIndex: number | undefined;
-  private nextDisplayPrompt: string | null | undefined;
-  private nextDisplayArmed = false;
+  private readonly items: PromptEntry[] = [];
+  private priorityId: number | undefined;
+  private nextId = 0;
   private activeDrain: Promise<TurnResult[]> | undefined;
 
   constructor(private readonly deps: SessionPromptQueueDeps) {}
 
   snapshot(): readonly string[] {
-    return [...this.items];
+    return this.items.map((entry) => entry.text);
   }
 
   hasPending(): boolean {
-    return this.items.length > 0 || this.priorityPrompt !== undefined;
+    return this.items.length > 0;
   }
 
-  clear(clearDisplay = false): void {
+  clear(): void {
     this.items.length = 0;
-    this.priorityPrompt = undefined;
-    this.priorityQueueIndex = undefined;
-    if (clearDisplay) {
-      this.nextDisplayPrompt = undefined;
-      this.nextDisplayArmed = false;
-    }
+    this.priorityId = undefined;
   }
 
   enqueue(prompt: string, options?: TurnDisplayOptions): void {
-    if (options && "displayPrompt" in options) {
-      this.nextDisplayPrompt = options.displayPrompt;
-      this.nextDisplayArmed = true;
-    }
-    const text = prompt.trim();
-    if (!text) return;
-    this.items.push(text);
+    const entry = this.createEntry(prompt, options, true);
+    if (!entry) return;
+    this.items.push(entry);
     this.deps.notifyState();
   }
 
   remove(index: number): void {
     if (index < 0 || index >= this.items.length) return;
-    this.items.splice(index, 1);
+    const [removed] = this.items.splice(index, 1);
+    if (removed?.id === this.priorityId) this.priorityId = undefined;
     this.deps.notifyState();
   }
 
   take(index: number): string | undefined {
     if (index < 0 || index >= this.items.length) return undefined;
-    const [text] = this.items.splice(index, 1);
+    const [entry] = this.items.splice(index, 1);
+    if (entry?.id === this.priorityId) this.priorityId = undefined;
     this.deps.notifyState();
-    return text;
+    return entry?.text;
   }
 
   edit(index: number, text: string): void {
     if (index < 0 || index >= this.items.length) return;
-    this.items[index] = text;
+    this.items[index]!.text = text;
     this.deps.notifyState();
   }
 
@@ -94,31 +92,31 @@ export class SessionPromptQueue {
       return;
     }
     const [moved] = this.items.splice(fromIndex, 1);
-    if (moved !== undefined) this.items.splice(toIndex, 0, moved);
+    if (moved) this.items.splice(toIndex, 0, moved);
     this.deps.notifyState();
   }
 
   sendNow(index: number): void {
-    const text = this.take(index);
-    if (text === undefined) return;
+    const entry = this.items[index];
+    if (!entry) return;
     if (this.deps.isRunning()) {
-      this.priorityPrompt = text;
-      this.priorityQueueIndex = index;
+      this.priorityId = entry.id;
+      this.deps.notifyState();
       this.deps.abort("steer");
       return;
     }
-    void this.submit(text);
+    this.items.splice(index, 1);
+    this.deps.notifyState();
+    void this.submitEntry(entry);
   }
 
   enqueuePriority(prompt: string, displayPrompt?: string | undefined): void {
-    const text = prompt.trim();
-    if (!text) return;
-    this.priorityPrompt = text;
-    this.priorityQueueIndex = undefined;
-    if (displayPrompt !== undefined) {
-      this.nextDisplayPrompt = displayPrompt;
-      this.nextDisplayArmed = true;
-    }
+    const options =
+      displayPrompt === undefined ? undefined : { displayPrompt };
+    const entry = this.createEntry(prompt, options, false);
+    if (!entry) return;
+    this.items.unshift(entry);
+    this.priorityId = entry.id;
     this.deps.notifyState();
   }
 
@@ -128,22 +126,19 @@ export class SessionPromptQueue {
 
   settle(result: TurnResult): void {
     if (this.activeDrain || this.deps.isRunning()) return;
-    if (this.priorityPrompt !== undefined || queueContinuationDecision(result).proceed) {
+    if (this.priorityId !== undefined || queueContinuationDecision(result).proceed) {
       void this.drain();
     }
   }
 
   preservePendingPriority(): void {
-    if (this.priorityPrompt === undefined) return;
-    if (this.priorityQueueIndex !== undefined) {
-      const index = Math.max(0, Math.min(this.priorityQueueIndex, this.items.length));
-      this.items.splice(index, 0, this.priorityPrompt);
-    } else {
-      this.nextDisplayPrompt = undefined;
-      this.nextDisplayArmed = false;
+    const priorityId = this.priorityId;
+    if (priorityId === undefined) return;
+    this.priorityId = undefined;
+    const index = this.items.findIndex((entry) => entry.id === priorityId);
+    if (index >= 0 && !this.items[index]!.preserveOnCancel) {
+      this.items.splice(index, 1);
     }
-    this.priorityPrompt = undefined;
-    this.priorityQueueIndex = undefined;
     this.deps.notifyState();
   }
 
@@ -159,12 +154,7 @@ export class SessionPromptQueue {
     if (this.deps.isRunning()) {
       throw new Error("a turn is already running; enqueue() while busy");
     }
-    if (options && "displayPrompt" in options) {
-      this.nextDisplayArmed = false;
-      this.nextDisplayPrompt = undefined;
-      return this.deps.runTurn(prompt, options);
-    }
-    return this.deps.runTurn(prompt, this.consumeDisplay() ?? options);
+    return this.deps.runTurn(prompt, options);
   }
 
   async drain(): Promise<TurnResult[]> {
@@ -181,34 +171,25 @@ export class SessionPromptQueue {
 
   private async drainPending(): Promise<TurnResult[]> {
     const results: TurnResult[] = [];
-    if (this.priorityPrompt !== undefined && !this.deps.isRunning()) {
-      const priority = this.priorityPrompt;
-      this.priorityPrompt = undefined;
-      this.priorityQueueIndex = undefined;
-      const priorityResult = await this.deps.runTurn(
-        priority,
-        this.consumeDisplay(),
-      );
-      results.push(priorityResult);
-      const decision = queueContinuationDecision(priorityResult);
-      if (!decision.proceed) {
-        if (this.items.length > 0) this.deps.notice(pausedQueueNotice(decision));
-        return results;
+    while (!this.deps.isRunning()) {
+      const priority = this.takePriorityEntry();
+      let entry = priority;
+      if (!entry) {
+        if (this.items.length === 0) break;
+        const gate = this.continuationGate();
+        if (!gate.proceed) {
+          this.deps.notice(pausedQueueNotice(gate));
+          break;
+        }
+        entry = this.items.shift();
+        if (!entry) break;
+        this.deps.notifyState();
       }
-    }
-    while (this.items.length > 0 && !this.deps.isRunning()) {
-      const gate = this.continuationGate();
-      if (!gate.proceed) {
-        this.deps.notice(pausedQueueNotice(gate));
-        break;
-      }
-      const next = this.items.shift();
-      if (next === undefined) break;
-      this.deps.notifyState();
-      const result = await this.deps.runTurn(next);
+
+      const result = await this.submitEntry(entry);
       results.push(result);
       const decision = queueContinuationDecision(result);
-      if (!decision.proceed) {
+      if (!decision.proceed && this.priorityId === undefined) {
         if (this.items.length > 0) this.deps.notice(pausedQueueNotice(decision));
         break;
       }
@@ -216,11 +197,34 @@ export class SessionPromptQueue {
     return results;
   }
 
-  private consumeDisplay(): TurnDisplayOptions | undefined {
-    if (!this.nextDisplayArmed) return undefined;
-    this.nextDisplayArmed = false;
-    const displayPrompt = this.nextDisplayPrompt;
-    this.nextDisplayPrompt = undefined;
-    return { displayPrompt };
+  private takePriorityEntry(): PromptEntry | undefined {
+    const priorityId = this.priorityId;
+    if (priorityId === undefined) return undefined;
+    this.priorityId = undefined;
+    const index = this.items.findIndex((entry) => entry.id === priorityId);
+    if (index < 0) return undefined;
+    const [entry] = this.items.splice(index, 1);
+    this.deps.notifyState();
+    return entry;
+  }
+
+  private submitEntry(entry: PromptEntry): Promise<TurnResult> {
+    return this.deps.runTurn(entry.text, entry.options);
+  }
+
+  private createEntry(
+    prompt: string,
+    options: TurnDisplayOptions | undefined,
+    preserveOnCancel: boolean,
+  ): PromptEntry | undefined {
+    const text = prompt.trim();
+    if (!text) return undefined;
+    this.nextId += 1;
+    return {
+      id: this.nextId,
+      text,
+      ...(options ? { options: { ...options } } : {}),
+      preserveOnCancel,
+    };
   }
 }

@@ -16,7 +16,15 @@ import { PlanView } from "../components/plan/plan-view.js";
 import { OverlayHost } from "../components/overlay/overlay-host.js";
 import { QueuePanel } from "../components/queue/queue-panel.js";
 import { ResponderPanel } from "../components/jobs/jobs-panel.js";
-import { chordFromKeyEvent } from "../input/chord-from-opentui-key.js";
+import {
+  chordFromKeyEvent,
+  consumeCancellationKeyRepeat,
+  isKeyEventRelease,
+} from "../input/chord-from-opentui-key.js";
+import {
+  escapeCancellationAction,
+  preserveEscapeArmAfterTurn,
+} from "../input/escape-cancellation.js";
 import { usePlan } from "../../ui-core/react/use-plan.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
 import { useTranscriptState } from "../../ui-core/react/use-transcript-store.js";
@@ -35,18 +43,21 @@ import { composerActionPort } from "../../ui-core/composer/composer-action-port.
 import { useHasDraft } from "../../ui-core/react/use-has-draft.js";
 import { formatShortcutsReference } from "../../ui-core/actions/format-shortcuts.js";
 import { formatCommandHelpMarkdown } from "../../ui-core/rendering/format-help.js";
+import { armedCancelHint } from "../../ui-core/rendering/status-segments.js";
+import {
+  CTRL_C_QUIT_WINDOW_MS,
+  ESC_CANCEL_WINDOW_MS,
+  ESC_SAME_PRESS_MS,
+} from "../../ui-core/actions/cancel-timing.js";
 import { notify, notifyWarn } from "../../ui-core/notify.js";
 import { setDefaultMode } from "../../store/config.js";
 import { maybeShowUpdateToast } from "../../ui-core/commands/startup-update.js";
 import { modeSwitchSummary, nextMode } from "../../ui-core/actions/mode-cycle.js";
+import {
+  appWidthBudget,
+  focusAfterPlanSuppression,
+} from "./layout-widths.js";
 
-const CTRL_C_QUIT_WINDOW_MS = 1500;
-const ESC_CANCEL_WINDOW_MS = 1500;
-const ESC_SAME_PRESS_MS = 80;
-
-function planOverlayWidth(termWidth: number): number {
-  return Math.min(52, Math.max(34, Math.floor(termWidth * 0.4)));
-}
 
 export function App(): ReactNode {
   const { width, height } = useTerminalDimensions();
@@ -77,7 +88,13 @@ export function App(): ReactNode {
 
   useEffect(() => {
     return services.session.onTurnEnd((result) => {
-      clearEscapeCancellation();
+      if (
+        !preserveEscapeArmAfterTurn(
+          services.cancel.hasCancelableWork(),
+        )
+      ) {
+        clearEscapeCancellation();
+      }
       if (result.status === "completed") void promptPlanApprovalIfNeeded(services);
     });
   }, [services]);
@@ -122,11 +139,14 @@ export function App(): ReactNode {
     setPlanVisible(true);
   }, [plan]);
 
+  const terminalWidth = Number.isFinite(width)
+    ? Math.max(0, Math.floor(width))
+    : 0;
   const layout = computeLayout({
-    columns: width,
+    columns: terminalWidth,
     rows: height,
     planVisible: planPresent,
-    splitEnabled: layoutSupportsSplit(width),
+    splitEnabled: layoutSupportsSplit(terminalWidth),
   });
 
   const composerMaxTextRows = maxComposerTextRows({
@@ -139,31 +159,37 @@ export function App(): ReactNode {
   const session = useSessionState(services.session);
   const transcriptScrollRef = useRef<ScrollBoxRenderable>(null);
   const followKey = useTranscriptFollowKey(transcript, session.running);
-  const horizontalPadding = width >= 56 ? 2 : width >= 28 ? 1 : 0;
   const completionRows = Math.max(6, Math.min(12, Math.floor(height / 3)));
-
-  const contentInnerWidth = Math.max(10, width - horizontalPadding * 2);
-  const planChatGap =
-    planPresent && layout.plan.placement === "split"
-      ? 2
-      : planPresent && layout.plan.placement === "overlay"
-        ? 2
-        : 0;
-  const splitPlanW =
+  const requestedSplitPlanWidth =
     planPresent && layout.plan.placement === "split"
       ? paneSlideWidth(panePresence.progress, layout.plan.width)
       : 0;
-  const overlayPlanW =
-    planPresent && layout.plan.placement === "overlay"
-      ? planOverlayWidth(width) + planChatGap
-      : 0;
-  const chatContentWidth = Math.max(24, contentInnerWidth - splitPlanW - overlayPlanW);
+  const widthBudget = appWidthBudget({
+    terminalWidth,
+    planPresent,
+    planPlacement: layout.plan.placement,
+    requestedSplitPlanWidth,
+  });
+  const horizontalPadding = widthBudget.horizontalPadding;
+  const contentInnerWidth = widthBudget.contentInnerWidth;
+  const planChatGap = widthBudget.planChatGap;
+  const splitPlanW = widthBudget.splitPlanWidth;
+  const overlayPlanW = widthBudget.overlayReserveWidth;
+  const chatContentWidth = widthBudget.chatContentWidth;
+  const planRendered =
+    (layout.plan.placement === "split" && splitPlanW > 0) ||
+    (layout.plan.placement === "overlay" && widthBudget.showPlanOverlay);
+
+  useEffect(() => {
+    const fallback = focusAfterPlanSuppression(focusContext, planRendered);
+    if (fallback) services.focus.focusRegion(fallback);
+  }, [focusContext, planRendered, services.focus]);
 
   useKeyboard((key) => {
-    if (key.eventType === "release") return;
+    if (isKeyEventRelease(key)) return;
 
     const chord = chordFromKeyEvent(key);
-    if (chord === "escape" && key.eventType === "repeat") return;
+    if (consumeCancellationKeyRepeat(key, chord)) return;
 
     if (overlay.kind === "secret" || overlay.kind === "confirm" || overlay.kind === "scope-editor") {
       if (chord === "escape" || chord === "ctrl+c") {
@@ -174,9 +200,7 @@ export function App(): ReactNode {
           const doublePress =
             lastCtrlC.current > 0 &&
             now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
-          if (services.session.getState().running) {
-            services.cancel.abortForeground();
-          }
+          services.cancel.abortForeground();
           if (doublePress) {
             services.requestExit();
             return;
@@ -349,10 +373,9 @@ export function App(): ReactNode {
         break;
       case "focus.next-region": {
         key.preventDefault();
-        const regions =
-          planPresent && layout.plan.placement !== "hidden"
-            ? (["composer", "transcript", "plan"] as const)
-            : (["composer", "transcript"] as const);
+        const regions = planRendered
+          ? (["composer", "transcript", "plan"] as const)
+          : (["composer", "transcript"] as const);
         services.focus.cycleRegion([...regions]);
         const next = services.focus.activeContext();
         notify(services, `Focus · ${next}`, {
@@ -368,10 +391,9 @@ export function App(): ReactNode {
 
   const planPaneWidth =
     layout.plan.placement === "split"
-      ? Math.max(splitPlanW, 1)
-      : planOverlayWidth(width);
-  const planPanel =
-    planPresent && layout.plan.placement !== "hidden" ? (
+      ? splitPlanW
+      : widthBudget.overlayPlanWidth;
+  const planPanel = planRendered ? (
       <PlanView
         theme={theme}
         plan={plan}
@@ -430,7 +452,22 @@ export function App(): ReactNode {
       now - lastEscape.current < ESC_CANCEL_WINDOW_MS;
     const hasCancelableWork = services.cancel.hasCancelableWork();
 
-    if (doublePress && hasCancelableWork) {
+    const action = escapeCancellationAction({
+      dismissed,
+      doublePress,
+      hasCancelableWork,
+    });
+
+    if (action === "dismiss") {
+      clearEscapeCancellation();
+      notify(services, "Closed · Esc", {
+        key: "escape-dismiss",
+        durationMs: 1000,
+      });
+      return;
+    }
+
+    if (action === "cancel-all") {
       clearEscapeCancellation();
       services.overlay.cancelBlockingPrompt();
       void services.cancel.cancelAll().then((outcome) => {
@@ -453,17 +490,16 @@ export function App(): ReactNode {
       return;
     }
 
-    if (hasCancelableWork) {
+    if (action === "arm") {
       armEscapeCancellation(now);
-    } else if (dismissed) {
-      clearEscapeCancellation();
-      notify(services, "Closed · Esc", {
-        key: "escape-dismiss",
-        durationMs: 1000,
+      notify(services, armedCancelHint(), {
+        key: "escape-arm",
+        durationMs: ESC_CANCEL_WINDOW_MS,
       });
-    } else {
-      clearEscapeCancellation();
+      return;
     }
+
+    clearEscapeCancellation();
   }
 
   function onAppWheel(event: MouseEvent): void {
@@ -573,7 +609,7 @@ export function App(): ReactNode {
   return (
     <box
       style={{
-        width,
+        width: terminalWidth,
         height,
         flexDirection: "column",
         backgroundColor: theme.background,
@@ -599,7 +635,7 @@ export function App(): ReactNode {
           <box
             style={{
               width: chatContentWidth,
-              flexGrow: layout.plan.placement === "split" || overlayPlanW > 0 ? 0 : 1,
+              flexGrow: splitPlanW > 0 || overlayPlanW > 0 ? 0 : 1,
               flexShrink: 1,
               backgroundColor: theme.background,
               paddingRight: planChatGap > 0 ? planChatGap : 0,
@@ -609,11 +645,11 @@ export function App(): ReactNode {
               services={services}
               theme={theme}
               focused={focusContext === "transcript" && overlay.kind === "none"}
-              contentWidth={Math.max(20, chatContentWidth - planChatGap)}
+              contentWidth={widthBudget.transcriptContentWidth}
               scrollRef={transcriptScrollRef}
             />
           </box>
-          {layout.plan.placement === "split" && planPresent && splitPlanW > 0 ? (
+          {layout.plan.placement === "split" && planRendered ? (
             <box
               title=" Tasks "
               titleColor={theme.inputBorder}
@@ -721,7 +757,8 @@ export function App(): ReactNode {
         followKey={followKey}
       />
 
-      {layout.plan.placement === "overlay" && planPresent ? (
+      {layout.plan.placement === "overlay" &&
+      widthBudget.showPlanOverlay ? (
         <box
           title=" Tasks "
           titleColor={theme.inputBorder}
@@ -731,7 +768,7 @@ export function App(): ReactNode {
             position: "absolute",
             top: overlayAnimTop,
             right: horizontalPadding,
-            width: planOverlayWidth(width),
+            width: widthBudget.overlayPlanWidth,
             height: overlayPaneHeight,
             borderColor: theme.inputBorder,
             backgroundColor: theme.statusBackground,
@@ -744,13 +781,18 @@ export function App(): ReactNode {
         </box>
       ) : null}
       {}
-      <OverlayHost services={services} theme={theme} width={width} height={height} />
+      <OverlayHost
+        services={services}
+        theme={theme}
+        width={terminalWidth}
+        height={height}
+      />
 
       {}
       <ToastHost
         toast={services.toast}
         theme={theme}
-        termWidth={width}
+        termWidth={terminalWidth}
         termHeight={height}
       />
     </box>

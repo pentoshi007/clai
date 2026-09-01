@@ -1,4 +1,5 @@
-import chalk from "chalk";
+import chalk, { Chalk, type ChalkInstance } from "chalk";
+import type { ColorMode } from "../../app/ports/terminal-port.js";
 import {
   codeBlockBottom,
   codeBlockFitWidth,
@@ -9,6 +10,7 @@ import {
   matchCodeFenceOpen,
   openCodeFence,
   trimCodeBlockBody,
+  type CodeBlockAppearance,
   type CodeFenceState,
 } from "./code-block.js";
 import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdown, renderTableBlock } from "./markdown/tables.js";
@@ -16,6 +18,29 @@ import { BR_RE_GLOBAL, isTableRowLine, isTableSeparatorLine, renderInlineMarkdow
 import { renderColumns } from "./text-width.js";
 export { renderInlineMarkdown };
 
+const CHALK_LEVEL: Record<ColorMode, 0 | 1 | 2 | 3> = {
+  none: 0,
+  "16": 1,
+  "256": 2,
+  truecolor: 3,
+};
+
+export type MarkdownAppearance = CodeBlockAppearance;
+
+interface RenderContext {
+  readonly appearance: MarkdownAppearance | undefined;
+  readonly paint: ChalkInstance;
+}
+
+function renderContext(appearance?: MarkdownAppearance): RenderContext {
+  return {
+    appearance,
+    paint:
+      appearance?.colorMode === undefined
+        ? chalk
+        : new Chalk({ level: CHALK_LEVEL[appearance.colorMode] }),
+  };
+}
 
 function repeat(char: string, count: number): string {
   return char.repeat(Math.max(0, count));
@@ -33,62 +58,90 @@ function panelWidth(state: BlockState): number {
   return codeBlockWidth(state.fenceWidth ?? DEFAULT_FENCE_WIDTH);
 }
 
-function openFencePanel(state: BlockState, marker: string, info: string): string {
+function openFencePanel(
+  state: BlockState,
+  marker: string,
+  info: string,
+  context: RenderContext,
+): string {
   state.inFence = true;
   state.fence = openCodeFence(marker, info);
-  return codeBlockTop(state.fence.label, panelWidth(state));
+  return codeBlockTop(
+    state.fence.label,
+    panelWidth(state),
+    context.appearance,
+  );
 }
 
-function closeFencePanel(state: BlockState): string {
+function closeFencePanel(state: BlockState, context: RenderContext): string {
   state.inFence = false;
   state.fence = undefined;
-  return codeBlockBottom(panelWidth(state));
+  return codeBlockBottom(panelWidth(state), context.appearance);
 }
 
 function renderCodeBlock(
   open: { marker: string; info: string },
   bodyLines: readonly string[],
   wrapWidth: number,
+  context: RenderContext,
 ): string[] {
   const fence = openCodeFence(open.marker, open.info);
   const body = trimCodeBlockBody(bodyLines);
   const width = codeBlockFitWidth(body, fence.label, wrapWidth);
-  const out = [codeBlockTop(fence.label, width)];
+  const out = [codeBlockTop(fence.label, width, context.appearance)];
   for (const line of body) {
-    out.push(...codeBlockRows(line, fence, width));
+    out.push(...codeBlockRows(line, fence, width, context.appearance));
   }
-  out.push(codeBlockBottom(width));
+  out.push(codeBlockBottom(width, context.appearance));
   return out;
 }
 
-function fencePanelRows(line: string, state: BlockState): string[] | undefined {
+function fencePanelRows(
+  line: string,
+  state: BlockState,
+  context: RenderContext,
+): string[] | undefined {
   if (state.inFence && state.fence) {
     if (isCodeFenceClose(line, state.fence.marker)) {
-      return [closeFencePanel(state)];
+      return [closeFencePanel(state, context)];
     }
-    return codeBlockRows(line, state.fence, panelWidth(state));
+    return codeBlockRows(
+      line,
+      state.fence,
+      panelWidth(state),
+      context.appearance,
+    );
   }
   const open = matchCodeFenceOpen(line);
   if (!open) return undefined;
-  return [openFencePanel(state, open.marker, open.info)];
+  return [openFencePanel(state, open.marker, open.info, context)];
 }
 
-function renderBlockLine(line: string, state: BlockState): string {
+function renderBlockLine(
+  line: string,
+  state: BlockState,
+  context: RenderContext,
+): string {
+  const { paint } = context;
   const heading = line.match(/^(#{1,6})\s+(.*)$/);
   if (heading) {
     const level = heading[1]!.length;
     const body = heading[2]!.trim();
-    if (level <= 2) return chalk.bold.magenta(renderInlineMarkdown(body));
-    if (level === 3) return chalk.bold.cyan(renderInlineMarkdown(body));
-    return chalk.bold(renderInlineMarkdown(body));
+    if (level <= 2) {
+      return paint.bold.magenta(renderInlineMarkdown(body, paint));
+    }
+    if (level === 3) {
+      return paint.bold.cyan(renderInlineMarkdown(body, paint));
+    }
+    return paint.bold(renderInlineMarkdown(body, paint));
   }
 
   if (/^\s*[-*_]{3,}\s*$/.test(line)) {
-    return chalk.dim(repeat("─", 60));
+    return paint.dim(repeat("─", 60));
   }
 
   if (/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
-    return chalk.dim(repeat("─", Math.max(20, line.length)));
+    return paint.dim(repeat("─", Math.max(20, line.length)));
   }
 
   if (/^\s*\|.*\|\s*$/.test(line)) {
@@ -96,35 +149,38 @@ function renderBlockLine(line: string, state: BlockState): string {
       .replace(/^\s*\|/, "")
       .replace(/\|\s*$/, "")
       .split("|")
-      .map((cell) => renderInlineMarkdown(cell.trim()));
-    return chalk.dim("│ ") + cells.join(chalk.dim(" │ ")) + chalk.dim(" │");
+      .map((cell) => renderInlineMarkdown(cell.trim(), paint));
+    return (
+      paint.dim("│ ") + cells.join(paint.dim(" │ ")) + paint.dim(" │")
+    );
   }
 
   if (line.startsWith("> ")) {
     return (
-      chalk.dim("│ ") + chalk.dim.italic(renderInlineMarkdown(line.slice(2)))
+      paint.dim("│ ") +
+      paint.dim.italic(renderInlineMarkdown(line.slice(2), paint))
     );
   }
 
   const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
   if (task) {
     const checked = /[xX]/.test(task[2]!);
-    const box = checked ? chalk.green("☑") : chalk.dim("☐");
-    const body = renderInlineMarkdown(task[3]!);
-    return `${task[1]}${box} ${checked ? chalk.dim(body) : body}`;
+    const box = checked ? paint.green("☑") : paint.dim("☐");
+    const body = renderInlineMarkdown(task[3]!, paint);
+    return `${task[1]}${box} ${checked ? paint.dim(body) : body}`;
   }
 
   const ordered = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
   if (ordered) {
-    return `${ordered[1]}${chalk.cyan(`${ordered[2]}.`)} ${renderInlineMarkdown(ordered[3]!)}`;
+    return `${ordered[1]}${paint.cyan(`${ordered[2]}.`)} ${renderInlineMarkdown(ordered[3]!, paint)}`;
   }
 
   const unordered = line.match(/^(\s*)[-*+]\s+(.*)$/);
   if (unordered) {
-    return `${unordered[1]}${chalk.cyan("•")} ${renderInlineMarkdown(unordered[2]!)}`;
+    return `${unordered[1]}${paint.cyan("•")} ${renderInlineMarkdown(unordered[2]!, paint)}`;
   }
 
-  return renderInlineMarkdown(line);
+  return renderInlineMarkdown(line, paint);
 }
 
 const OUTPUT_INDENT = "  ";
@@ -146,34 +202,36 @@ function wrapMarkdownLine(
   line: string,
   wrapWidth: number,
   state: BlockState,
+  context: RenderContext,
 ): string[] {
+  const { paint } = context;
   state.fenceWidth = wrapWidth;
-  const fenceRows = fencePanelRows(line, state);
+  const fenceRows = fencePanelRows(line, state, context);
   if (fenceRows) return fenceRows;
 
   if (/^\s*[-*_]{3,}\s*$/.test(line)) {
-    return [renderBlockLine(line, state)];
+    return [renderBlockLine(line, state, context)];
   }
 
   if (line.startsWith("> ")) {
     const content = line.slice(2);
-    const prefix = chalk.dim("│ ");
-    const renderedContent = renderInlineMarkdown(content);
+    const prefix = paint.dim("│ ");
+    const renderedContent = renderInlineMarkdown(content, paint);
     const wrapped = wrapAnsiLine(renderedContent, Math.max(10, wrapWidth - 2));
-    return wrapped.map((wl) => prefix + chalk.dim.italic(wl));
+    return wrapped.map((wl) => prefix + paint.dim.italic(wl));
   }
 
   const task = line.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/);
   if (task) {
     const indent = task[1] ?? "";
     const checked = /[xX]/.test(task[2]!);
-    const box = checked ? chalk.green("☑") : chalk.dim("☐");
+    const box = checked ? paint.green("☑") : paint.dim("☐");
     const content = task[3] ?? "";
     const prefix = `${indent}${box} `;
     const prefixLength = indent.length + 2;
-    let renderedContent = renderInlineMarkdown(content);
+    let renderedContent = renderInlineMarkdown(content, paint);
     if (checked) {
-      renderedContent = chalk.dim(renderedContent);
+      renderedContent = paint.dim(renderedContent);
     }
     const wrapped = wrapAnsiLine(
       renderedContent,
@@ -190,9 +248,9 @@ function wrapMarkdownLine(
     const indent = ordered[1] ?? "";
     const num = ordered[2] ?? "";
     const content = ordered[3] ?? "";
-    const prefix = `${indent}${chalk.cyan(`${num}.`)} `;
+    const prefix = `${indent}${paint.cyan(`${num}.`)} `;
     const prefixLength = indent.length + num.length + 2;
-    const renderedContent = renderInlineMarkdown(content);
+    const renderedContent = renderInlineMarkdown(content, paint);
     const wrapped = wrapAnsiLine(
       renderedContent,
       Math.max(10, wrapWidth - prefixLength),
@@ -207,9 +265,9 @@ function wrapMarkdownLine(
   if (unordered) {
     const indent = unordered[1] ?? "";
     const content = unordered[2] ?? "";
-    const prefix = `${indent}${chalk.cyan("•")} `;
+    const prefix = `${indent}${paint.cyan("•")} `;
     const prefixLength = indent.length + 2;
-    const renderedContent = renderInlineMarkdown(content);
+    const renderedContent = renderInlineMarkdown(content, paint);
     const wrapped = wrapAnsiLine(
       renderedContent,
       Math.max(10, wrapWidth - prefixLength),
@@ -220,14 +278,19 @@ function wrapMarkdownLine(
     });
   }
 
-  const rendered = renderBlockLine(line, state);
+  const rendered = renderBlockLine(line, state, context);
   return wrapAnsiLine(rendered, wrapWidth);
 }
 
 const BR_RE = /<br\s*\/?>/i;
 
-export function renderMarkdown(text: string, width?: number): string {
+export function renderMarkdown(
+  text: string,
+  width?: number,
+  appearance?: MarkdownAppearance,
+): string {
   if (!text) return text;
+  const context = renderContext(appearance);
   const state: BlockState = { inFence: false };
   const lines = text.split("\n");
   const resultLines: string[] = [];
@@ -248,7 +311,7 @@ export function renderMarkdown(text: string, width?: number): string {
         body.push(lines[j]!);
         j += 1;
       }
-      for (const rendered of renderCodeBlock(fenceOpen, body, wrapWidth)) {
+      for (const rendered of renderCodeBlock(fenceOpen, body, wrapWidth, context)) {
         resultLines.push(`${OUTPUT_INDENT}${rendered}`);
       }
       i = j < lines.length ? j + 1 : j;
@@ -271,7 +334,11 @@ export function renderMarkdown(text: string, width?: number): string {
         block.push(lines[j]!);
         j++;
       }
-      for (const rendered of renderTableBlock(block, wrapWidth)) {
+      for (const rendered of renderTableBlock(
+        block,
+        wrapWidth,
+        context.paint,
+      )) {
         resultLines.push(`${OUTPUT_INDENT}${rendered}`);
       }
       i = j;
@@ -281,7 +348,7 @@ export function renderMarkdown(text: string, width?: number): string {
     const pieces =
       !state.inFence && BR_RE.test(line) ? line.split(BR_RE_GLOBAL) : [line];
     for (const piece of pieces) {
-      for (const wl of wrapMarkdownLine(piece, wrapWidth, state)) {
+      for (const wl of wrapMarkdownLine(piece, wrapWidth, state, context)) {
         resultLines.push(`${OUTPUT_INDENT}${wl}`);
       }
     }
@@ -289,15 +356,19 @@ export function renderMarkdown(text: string, width?: number): string {
   }
 
   if (state.inFence) {
-    resultLines.push(`${OUTPUT_INDENT}${closeFencePanel(state)}`);
+    resultLines.push(`${OUTPUT_INDENT}${closeFencePanel(state, context)}`);
   }
   return resultLines.join("\n");
 }
 
-export function createMarkdownStreamWriter(write: (chunk: string) => void): {
+export function createMarkdownStreamWriter(
+  write: (chunk: string) => void,
+  appearance?: MarkdownAppearance,
+): {
   push(token: string): void;
   finish(): void;
 } {
+  const context = renderContext(appearance);
   const state: BlockState = { inFence: false };
   let buffer = "";
   let outputEndsWithNewline = true;
@@ -318,7 +389,7 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
     for (let p = 0; p < pieces.length; p++) {
       const piece = pieces[p]!;
       const lastPiece = p === pieces.length - 1;
-      const physical = wrapMarkdownLine(piece, wrapWidth, state);
+      const physical = wrapMarkdownLine(piece, wrapWidth, state, context);
       for (let q = 0; q < physical.length; q++) {
         emit(`${OUTPUT_INDENT}${physical[q]!}`);
         const isVeryLast = lastPiece && q === physical.length - 1;
@@ -334,7 +405,11 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
       isTableRowLine(tableBuffer[0]!) &&
       isTableSeparatorLine(tableBuffer[1]!);
     if (looksLikeTable) {
-      for (const rendered of renderTableBlock(tableBuffer, wrapWidth)) {
+      for (const rendered of renderTableBlock(
+        tableBuffer,
+        wrapWidth,
+        context.paint,
+      )) {
         emit(`${OUTPUT_INDENT}${rendered}\n`);
       }
     } else {
@@ -377,7 +452,7 @@ export function createMarkdownStreamWriter(write: (chunk: string) => void): {
       flushTable();
       if (state.inFence) {
         const separator = outputEndsWithNewline ? "" : "\n";
-        emit(`${separator}${OUTPUT_INDENT}${closeFencePanel(state)}`);
+        emit(`${separator}${OUTPUT_INDENT}${closeFencePanel(state, context)}`);
       }
     },
   };

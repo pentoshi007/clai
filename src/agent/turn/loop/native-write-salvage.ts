@@ -62,10 +62,10 @@ const appendNudgeText = (
     `The file ends with: ${JSON.stringify(salvaged.lastLine)}\n\n`;
   return ports.toolsAttached
     ? head +
-        `CONTINUE by calling fs.append now with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the remaining content not already on disk (prefer hundreds of lines per call). ` +
+        `CONTINUE by calling fs.append with path=${JSON.stringify(salvaged.path)}, expectedPriorBytes=${priorBytes}, and content set to ONLY the next remaining chunk not already on disk. Keep each chunk under 24,000 characters and wait for its receipt before sending another. ` +
         `Do not re-read the full file; do not re-send content already saved. Use the platform tool interface — no markdown fences.`
     : head +
-        `CONTINUE with ONE large fs.append of the remaining content:\n` +
+        `CONTINUE with one fs.append chunk under 24,000 characters, then wait for its receipt before sending another:\n` +
         '```tool\n{"name":"fs.append","args":{"path":' +
         JSON.stringify(salvaged.path) +
         ',"expectedPriorBytes":' +
@@ -85,7 +85,29 @@ const pairSalvagedHistory = (
     toolCallIdsInHistory(ports.messages),
   );
   const salvagedIndex = input.nativeToolCalls.indexOf(salvagedCall);
+  const salvagedToolName =
+    salvaged.operation === "append" ? "fs.append" : "fs.write";
+  const salvagedHistoryArgs: Record<string, unknown> = {
+    path: salvaged.path,
+    content: salvaged.content,
+    ...(salvaged.operation === "append"
+      ? {
+          position: "end",
+          ...(typeof salvaged.expectedPriorBytes === "number"
+            ? { expectedPriorBytes: salvaged.expectedPriorBytes }
+            : {}),
+        }
+      : {}),
+  };
   const salvagedCallId = historyCalls[salvagedIndex]?.id ?? salvagedCall.id;
+  if (salvagedIndex >= 0) {
+    historyCalls[salvagedIndex] = {
+      id: salvagedCallId,
+      name: salvagedToolName,
+      args: salvagedHistoryArgs,
+      rawArguments: JSON.stringify(salvagedHistoryArgs),
+    };
+  }
   appendAssistantWithTools(
     ports.messages,
     input.assistantVisible,

@@ -7,6 +7,7 @@ import {
 import {
   expandKeepStartForToolPairs,
   hasOrphanToolMessages,
+  projectToolHistory,
 } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import {
@@ -50,6 +51,7 @@ export function compactMessages(
   messages: ChatMessage[],
   options: CompactOptions = {},
 ): ChatMessage[] {
+  messages = projectToolHistory(messages).messages;
   const budget = options.budgetTokens ?? DEFAULT_BUDGET_TOKENS;
   const keepRecent = Math.max(2, options.keepRecent ?? DEFAULT_KEEP_RECENT);
   if (messages.length <= keepRecent + 1) return messages;

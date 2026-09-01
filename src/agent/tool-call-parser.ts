@@ -1,5 +1,6 @@
 import type { ChatMessage, ToolCall } from "../types.js";
 import { isCompactionMemoryMessage } from "./context-manager.js";
+import { projectToolHistory } from "./tool-history.js";
 import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { preprocessJson } from "./parser/xml-protocol.js";
 import { salvageTruncatedWrite } from "./parser/salvage.js";
@@ -108,7 +109,7 @@ export function buildTurnHistory(
   ) {
     convo.push({ role: "assistant", content: answer });
   }
-  return convo;
+  return projectToolHistory(convo).messages;
 }
 
 export function textBeforeToolCall(text: string): string {

@@ -36,6 +36,7 @@ import { ALT_SCREEN_OFF, AltScreenTracker } from "./alt-screen.js";
 import {
   RUNTIME_PROTOCOL_VERSION,
   type RuntimeAckFrame,
+  type RuntimeAuthFrame,
   type RuntimeHostFrame,
   type RuntimeHostPayload,
   type RuntimeMetadata,
@@ -126,19 +127,33 @@ function isAck(value: unknown): value is RuntimeAckFrame {
   );
 }
 
-async function openChannel(
-  metadata: RuntimeMetadata,
+export function runtimeClientAuthFrame(
+  metadata: Pick<RuntimeMetadata, "token">,
   role: "client-control" | "client-terminal",
   clientId: string,
-): Promise<{ socket: Socket; first: Awaited<ReturnType<typeof readFirstFrame>> }> {
-  const socket = await connectRuntimeSocket(metadata.socketPath);
-  sendFrame(socket, {
+  dimensions?: { readonly columns: number; readonly rows: number } | undefined,
+): RuntimeAuthFrame {
+  return {
     version: RUNTIME_PROTOCOL_VERSION,
     type: "auth",
     role,
     token: metadata.token,
     clientId,
-  });
+    ...(role === "client-terminal" && dimensions ? dimensions : {}),
+  };
+}
+
+async function openChannel(
+  metadata: RuntimeMetadata,
+  role: "client-control" | "client-terminal",
+  clientId: string,
+  dimensions?: { readonly columns: number; readonly rows: number } | undefined,
+): Promise<{ socket: Socket; first: Awaited<ReturnType<typeof readFirstFrame>> }> {
+  const socket = await connectRuntimeSocket(metadata.socketPath);
+  sendFrame(
+    socket,
+    runtimeClientAuthFrame(metadata, role, clientId, dimensions),
+  );
   const first = await readFirstFrame(socket);
   if (!isAck(first.value)) {
     socket.destroy();
@@ -331,6 +346,10 @@ function restoreTerminal(
 
 async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> {
   const clientId = `${process.pid}-${randomUUID()}`;
+  const dimensions = {
+    columns: terminalColumns(),
+    rows: terminalRows(),
+  };
   const controlConnection = await openChannel(
     metadata,
     "client-control",
@@ -342,6 +361,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
       metadata,
       "client-terminal",
       clientId,
+      dimensions,
     );
   } catch (error) {
     controlConnection.socket.destroy();

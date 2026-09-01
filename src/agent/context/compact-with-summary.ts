@@ -6,10 +6,9 @@ import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import { buildCompactionChunkPrompt, buildCompactionReducePrompt, buildCompactionUserPrompt, buildDirectCompactionPrompt, chunkTranscriptForCompaction, COMPACTION_CHUNK_CHAR_BUDGET, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
 import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../durable-envelope.js";
-import { slimToolArgs } from "../message-slim.js";
 import { estimateMessagesTokens, estimateTextTokens as estimateTokens } from "../request-accounting.js";
 import { isResponderResultLedgerMessage, RESPONDER_RESULT_LEDGER_PREFIX } from "../responder-context.js";
-import { expandKeepStartForToolPairs, hasOrphanToolMessages } from "../tool-history.js";
+import { expandKeepStartForToolPairs, hasOrphanToolMessages, projectToolHistory } from "../tool-history.js";
 
 export const POST_COMPACT_SOFT_UPPER_BAND_TOKENS = 20_000;
 
@@ -95,6 +94,7 @@ export async function compactMessagesWithSummary(
   options: CompactOptions = {},
   sessionTranscript?: string | undefined,
 ): Promise<CompactResult> {
+  messages = projectToolHistory(messages).messages;
   const before = messages.length;
   const beforeTokens = estimateMessagesTokens(messages);
   const isForced = options.budgetTokens === 0;
@@ -541,14 +541,9 @@ function leanTailMessages(
           /<think/i.test(msg.content) || hasReasoningMarker(msg.content)
             ? stripThinking(msg.content).visible
             : msg.content;
-        const slimCalls = msg.toolCalls?.map((tc) => ({
-          ...tc,
-          args: slimToolArgs(tc.args ?? {}),
-        }));
         return {
           ...msg,
           content: preferTrimContent(visible, preferMax.assistant),
-          ...(slimCalls ? { toolCalls: slimCalls } : {}),
         };
       }
       if (msg.role === "user") {

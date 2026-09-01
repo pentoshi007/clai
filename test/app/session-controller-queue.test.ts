@@ -207,7 +207,7 @@ describe("SessionController queued-draft management (INPUT-007)", () => {
     session.enqueue("queued-a");
     session.enqueue("queued-b");
     session.sendQueuedNow(1);
-    expect(session.queued()).toEqual(["queued-a"]);
+    expect(session.queued()).toEqual(["queued-a", "queued-b"]);
     expect((await running).status).toBe("aborted");
     await vi.waitFor(() => {
       expect(seen).toEqual(["active", "queued-b", "queued-a"]);

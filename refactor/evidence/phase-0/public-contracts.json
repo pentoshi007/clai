@@ -75,7 +75,7 @@
         {
           "name": "handlePlanTool",
           "kind": "function",
-          "type": "(call: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolCall, session: import(\"<repo>/src/agent/session-policy\", { with: { \"resolution-mode\": \"import\" } }).SessionPolicy, ctx: { loopGuard: import(\"<repo>/src/agent/loop-guard\", { with: { \"resolution-mode\": \"import\" } }).LoopGuard; step: number; autoApprove?: boolean; }) => Promise<import(\"<repo>/src/agent/plan-tool\", { with: { \"resolution-mode\": \"import\" } }).PlanToolResult>"
+          "type": "(call: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolCall, session: import(\"<repo>/src/agent/session-policy\", { with: { \"resolution-mode\": \"import\" } }).SessionPolicy, ctx: { loopGuard: import(\"<repo>/src/agent/loop-guard\", { with: { \"resolution-mode\": \"import\" } }).LoopGuard; step: number; autoApprove?: boolean; }) => Promise<import(\"<repo>/src/agent/plan/handle-plan-tool\", { with: { \"resolution-mode\": \"import\" } }).PlanToolResult>"
         },
         {
           "name": "looksLikeLocalAppScaffold",
@@ -105,7 +105,7 @@
         {
           "name": "normalizePlanTaskEntries",
           "kind": "function",
-          "type": "(args: Record<string, unknown>) => import(\"<repo>/src/agent/plan-tool\", { with: { \"resolution-mode\": \"import\" } }).NormalizedPlanTask[]"
+          "type": "(args: Record<string, unknown>) => import(\"<repo>/src/agent/plan/normalization\", { with: { \"resolution-mode\": \"import\" } }).NormalizedPlanTask[]"
         },
         {
           "name": "PLAN_CONTEXT_PREFIX",
@@ -115,7 +115,7 @@
         {
           "name": "planContextMessage",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, approved: boolean) => string"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, approved: boolean) => string"
         },
         {
           "name": "PlanToolResult",
@@ -130,12 +130,12 @@
         {
           "name": "renderPlanForTerminal",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => string"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => string"
         },
         {
           "name": "resolvePlanTaskId",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, taskId: string) => string | undefined"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, taskId: string) => string | undefined"
         },
         {
           "name": "slugifyTaskId",
@@ -306,7 +306,7 @@
         {
           "name": "parseToolCall",
           "kind": "function",
-          "type": "(text: string, options?: import(\"<repo>/src/agent/tool-call-parser\", { with: { \"resolution-mode\": \"import\" } }).ParseToolCallOptions) => import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolCall | undefined"
+          "type": "(text: string, options?: import(\"<repo>/src/agent/parser/parse-entry\", { with: { \"resolution-mode\": \"import\" } }).ParseToolCallOptions) => import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolCall | undefined"
         },
         {
           "name": "ParseToolCallOptions",
@@ -356,12 +356,12 @@
         {
           "name": "salvageTruncatedWrite",
           "kind": "function",
-          "type": "(text: string) => import(\"<repo>/src/agent/tool-call-parser\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
+          "type": "(text: string) => import(\"<repo>/src/agent/parser/salvage\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
         },
         {
           "name": "salvageTruncatedWriteFromNative",
           "kind": "function",
-          "type": "(name: string, rawArguments: string | undefined) => import(\"<repo>/src/agent/tool-call-parser\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
+          "type": "(name: string, rawArguments: string | undefined) => import(\"<repo>/src/agent/parser/salvage\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
         },
         {
           "name": "sameToolCall",
@@ -386,7 +386,7 @@
         {
           "name": "shouldYieldForDeclaredResponderDependency",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan | undefined, runningJobs: readonly import(\"<repo>/src/tools/jobs\", { with: { \"resolution-mode\": \"import\" } }).BackgroundJob[], notifications: readonly import(\"<repo>/src/tools/jobs\", { with: { \"resolution-mode\": \"import\" } }).ResponderNotification[], currentNotificationId?: string | undefined) => boolean"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan | undefined, runningJobs: readonly import(\"<repo>/src/tools/jobs/types\", { with: { \"resolution-mode\": \"import\" } }).BackgroundJob[], notifications: readonly import(\"<repo>/src/tools/jobs/types\", { with: { \"resolution-mode\": \"import\" } }).ResponderNotification[], currentNotificationId?: string | undefined) => boolean"
         },
         {
           "name": "stripSentinelTokens",
@@ -407,7 +407,7 @@
         {
           "name": "absorbLooseWorkIntoLedger",
           "kind": "function",
-          "type": "(ledger: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null, taskId: string, taskTitle: string, loose: readonly import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).LooseWorkReceipt[], opts?: { planKind?: string | undefined; } | undefined) => import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null"
+          "type": "(ledger: import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null, taskId: string, taskTitle: string, loose: readonly import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).LooseWorkReceipt[], opts?: { planKind?: string | undefined; } | undefined) => import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null"
         },
         {
           "name": "applyDestinationCwd",
@@ -417,7 +417,7 @@
         {
           "name": "canMarkTaskDone",
           "kind": "function",
-          "type": "(ledger: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null, taskId: string, opts?: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).CanMarkTaskDoneOpts | undefined) => { ok: true; } | { ok: false; reason: string; }"
+          "type": "(ledger: import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null, taskId: string, opts?: import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).CanMarkTaskDoneOpts | undefined) => { ok: true; } | { ok: false; reason: string; }"
         },
         {
           "name": "CanMarkTaskDoneOpts",
@@ -427,7 +427,7 @@
         {
           "name": "classifyTaskTitle",
           "kind": "function",
-          "type": "(title: string, opts?: { planKind?: string | undefined; } | undefined) => import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskClass"
+          "type": "(title: string, opts?: { planKind?: string | undefined; } | undefined) => import(\"<repo>/src/agent/evidence/task-classification\", { with: { \"resolution-mode\": \"import\" } }).TaskClass"
         },
         {
           "name": "codingBuildRequiresPlan",
@@ -447,12 +447,12 @@
         {
           "name": "hasLocalRuntimeProof",
           "kind": "function",
-          "type": "(evidence?: Pick<import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence, \"sawDevServerStart\" | \"sawLocalHttpProbeOk\" | \"sawServerReady\" | \"sawPortListening\"> | null | undefined) => boolean"
+          "type": "(evidence?: Pick<import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence, \"sawDevServerStart\" | \"sawLocalHttpProbeOk\" | \"sawServerReady\" | \"sawPortListening\"> | null | undefined) => boolean"
         },
         {
           "name": "hasRemoteWorkProof",
           "kind": "function",
-          "type": "(evidence?: Pick<import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence, \"sawRemoteReconOk\" | \"sawRemoteActiveTestOk\"> | null | undefined) => boolean"
+          "type": "(evidence?: Pick<import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence, \"sawRemoteReconOk\" | \"sawRemoteActiveTestOk\"> | null | undefined) => boolean"
         },
         {
           "name": "isAppSourcePath",
@@ -562,7 +562,7 @@
         {
           "name": "ledgerFromTaskEvidence",
           "kind": "function",
-          "type": "(taskId: string, evidence?: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence | undefined) => import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger"
+          "type": "(taskId: string, evidence?: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence | undefined) => import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger"
         },
         {
           "name": "looksLikeFeatureProductCode",
@@ -592,7 +592,7 @@
         {
           "name": "openTaskLedger",
           "kind": "function",
-          "type": "(taskId: string) => import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger"
+          "type": "(taskId: string) => import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger"
         },
         {
           "name": "pickPendingTaskForToolCall",
@@ -602,7 +602,7 @@
         {
           "name": "recordTaskWorkSuccess",
           "kind": "function",
-          "type": "(ledger: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null, taskId: string | undefined, toolName: string, signals?: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkSignals | undefined) => import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null"
+          "type": "(ledger: import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null, taskId: string | undefined, toolName: string, signals?: import(\"<repo>/src/agent/evidence/task-classification\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkSignals | undefined) => import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger | null"
         },
         {
           "name": "resolveUserDestinationHint",
@@ -617,7 +617,7 @@
         {
           "name": "taskEvidenceFromLedger",
           "kind": "function",
-          "type": "(ledger: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence"
+          "type": "(ledger: import(\"<repo>/src/agent/evidence/task-selection\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkLedger) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).TaskEvidence"
         },
         {
           "name": "TaskWorkLedger",
@@ -637,7 +637,7 @@
         {
           "name": "toolFitsTaskClass",
           "kind": "function",
-          "type": "(toolName: string, taskTitle: string, opts?: { planKind?: string | undefined; signals?: import(\"<repo>/src/agent/task-evidence\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkSignals | undefined; } | undefined) => boolean"
+          "type": "(toolName: string, taskTitle: string, opts?: { planKind?: string | undefined; signals?: import(\"<repo>/src/agent/evidence/task-classification\", { with: { \"resolution-mode\": \"import\" } }).TaskWorkSignals | undefined; } | undefined) => boolean"
         },
         {
           "name": "toolHardBudgetMs",
@@ -783,7 +783,7 @@
         {
           "name": "parseToolCall",
           "kind": "function",
-          "type": "(text: string, options?: import(\"<repo>/src/agent/tool-call-parser\", { with: { \"resolution-mode\": \"import\" } }).ParseToolCallOptions) => import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolCall | undefined"
+          "type": "(text: string, options?: import(\"<repo>/src/agent/parser/parse-entry\", { with: { \"resolution-mode\": \"import\" } }).ParseToolCallOptions) => import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolCall | undefined"
         },
         {
           "name": "ParseToolCallOptions",
@@ -818,12 +818,12 @@
         {
           "name": "salvageTruncatedWrite",
           "kind": "function",
-          "type": "(text: string) => import(\"<repo>/src/agent/tool-call-parser\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
+          "type": "(text: string) => import(\"<repo>/src/agent/parser/salvage\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
         },
         {
           "name": "salvageTruncatedWriteFromNative",
           "kind": "function",
-          "type": "(name: string, rawArguments: string | undefined) => import(\"<repo>/src/agent/tool-call-parser\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
+          "type": "(name: string, rawArguments: string | undefined) => import(\"<repo>/src/agent/parser/salvage\", { with: { \"resolution-mode\": \"import\" } }).SalvagedWrite | undefined"
         },
         {
           "name": "sameToolCall",
@@ -1192,12 +1192,12 @@
         {
           "name": "compareHistoryFreshness",
           "kind": "function",
-          "type": "(left: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord, right: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord) => number"
+          "type": "(left: import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord, right: import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord) => number"
         },
         {
           "name": "dedupeHistoryById",
           "kind": "function",
-          "type": "(records: readonly import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]) => import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]"
+          "type": "(records: readonly import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]) => import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]"
         },
         {
           "name": "deleteSession",
@@ -1227,7 +1227,7 @@
         {
           "name": "getSession",
           "kind": "function",
-          "type": "(sessionId: string) => Promise<import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord | undefined>"
+          "type": "(sessionId: string) => Promise<import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord | undefined>"
         },
         {
           "name": "HistoryRecord",
@@ -1242,7 +1242,7 @@
         {
           "name": "listSessions",
           "kind": "function",
-          "type": "(limit?: number, options?: { recovery?: \"blocking\" | \"background\"; }) => Promise<import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]>"
+          "type": "(limit?: number, options?: { recovery?: \"blocking\" | \"background\"; }) => Promise<import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]>"
         },
         {
           "name": "listSessionSummaries",
@@ -1257,7 +1257,7 @@
         {
           "name": "partitionByRetention",
           "kind": "function",
-          "type": "(records: readonly import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[], limit: number) => { kept: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]; pruned: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]; }"
+          "type": "(records: readonly import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[], limit: number) => { kept: import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]; pruned: import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]; }"
         },
         {
           "name": "PersistedContextUsage",
@@ -1277,7 +1277,7 @@
         {
           "name": "saveSession",
           "kind": "function",
-          "type": "(messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[], name?: string | undefined, transcript?: import(\"<repo>/src/app/ports/transcript-item\", { with: { \"resolution-mode\": \"import\" } }).TranscriptItem[] | undefined, contextUsage?: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).PersistedContextUsage | undefined, revision?: number | undefined, writerGeneration?: string | undefined, previousTurn?: import(\"<repo>/src/agent/continue-orient\", { with: { \"resolution-mode\": \"import\" } }).PreviousTurnSignal | null | undefined, sessionModel?: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).SessionModelSelection | undefined) => Promise<import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord>"
+          "type": "(messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[], name?: string | undefined, transcript?: import(\"<repo>/src/app/ports/transcript-item\", { with: { \"resolution-mode\": \"import\" } }).TranscriptItem[] | undefined, contextUsage?: import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).PersistedContextUsage | undefined, revision?: number | undefined, writerGeneration?: string | undefined, previousTurn?: import(\"<repo>/src/agent/continue-orient\", { with: { \"resolution-mode\": \"import\" } }).PreviousTurnSignal | null | undefined, sessionModel?: import(\"<repo>/src/store/history/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionModelSelection | undefined) => Promise<import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord>"
         },
         {
           "name": "saveToolCall",
@@ -1292,7 +1292,7 @@
         {
           "name": "sortHistoryByUpdatedDesc",
           "kind": "function",
-          "type": "(records: readonly import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]) => import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]"
+          "type": "(records: readonly import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]) => import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord[]"
         },
         {
           "name": "ToolCallRecord",
@@ -1302,7 +1302,7 @@
         {
           "name": "upsertSession",
           "kind": "function",
-          "type": "(id: string, messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[], name?: string | undefined, transcript?: import(\"<repo>/src/app/ports/transcript-item\", { with: { \"resolution-mode\": \"import\" } }).TranscriptItem[] | undefined, contextUsage?: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).PersistedContextUsage | undefined, revision?: number | undefined, writerGeneration?: string | undefined, previousTurn?: import(\"<repo>/src/agent/continue-orient\", { with: { \"resolution-mode\": \"import\" } }).PreviousTurnSignal | null | undefined, sessionModel?: import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).SessionModelSelection | undefined) => Promise<import(\"<repo>/src/store/history\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord>"
+          "type": "(id: string, messages: import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ChatMessage[], name?: string | undefined, transcript?: import(\"<repo>/src/app/ports/transcript-item\", { with: { \"resolution-mode\": \"import\" } }).TranscriptItem[] | undefined, contextUsage?: import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).PersistedContextUsage | undefined, revision?: number | undefined, writerGeneration?: string | undefined, previousTurn?: import(\"<repo>/src/agent/continue-orient\", { with: { \"resolution-mode\": \"import\" } }).PreviousTurnSignal | null | undefined, sessionModel?: import(\"<repo>/src/store/history/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionModelSelection | undefined) => Promise<import(\"<repo>/src/store/history/recovery\", { with: { \"resolution-mode\": \"import\" } }).HistoryRecord>"
         }
       ]
     },
@@ -1313,22 +1313,22 @@
         {
           "name": "activeForegroundTasks",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "appendPlanTask",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, input: Omit<import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask, \"id\"> & { id?: string | undefined; }) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, input: Omit<import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask, \"id\"> & { id?: string | undefined; }) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask"
         },
         {
           "name": "applyForegroundSnapshot",
           "kind": "function",
-          "type": "(draft: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, snapshot: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => void"
+          "type": "(draft: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, snapshot: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => void"
         },
         {
           "name": "applySessionPlanOperation",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, operation: import(\"<repo>/src/agent/task-plan\", { with: { \"resolution-mode\": \"import\" } }).PlanOperation) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, operation: import(\"<repo>/src/agent/task-plan\", { with: { \"resolution-mode\": \"import\" } }).PlanOperation) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan"
         },
         {
           "name": "clearAllPlans",
@@ -1338,7 +1338,7 @@
         {
           "name": "createPlan",
           "kind": "function",
-          "type": "(input: { sessionId: string; goal: string; detail: string; taskTitles: string[]; kind?: string | undefined; meta?: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanMeta | undefined; }) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan"
+          "type": "(input: { sessionId: string; goal: string; detail: string; taskTitles: string[]; kind?: string | undefined; meta?: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanMeta | undefined; }) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan"
         },
         {
           "name": "deletePlan",
@@ -1348,22 +1348,22 @@
         {
           "name": "enforcePlanInvariants",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => string[]"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => string[]"
         },
         {
           "name": "foregroundActiveTask",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask | undefined"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask | undefined"
         },
         {
           "name": "foregroundRemaining",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "foregroundTasks",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "isBareTaskIdTitle",
@@ -1373,52 +1373,52 @@
         {
           "name": "isPlanComplete",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean"
         },
         {
           "name": "isPlanSuccessful",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean"
         },
         {
           "name": "isPlanTerminal",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean"
         },
         {
           "name": "loadPlan",
           "kind": "function",
-          "type": "(sessionId: string) => Promise<import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan | undefined>"
+          "type": "(sessionId: string) => Promise<import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan | undefined>"
         },
         {
           "name": "markNextTask",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, state: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).TaskState) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask | undefined"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, state: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).TaskState) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask | undefined"
         },
         {
           "name": "markTask",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, taskId: string, state: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).TaskState, note?: string | undefined) => boolean"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, taskId: string, state: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).TaskState, note?: string | undefined) => boolean"
         },
         {
           "name": "mutatePlan",
           "kind": "function",
-          "type": "(sessionId: string, reducer: (draft: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean | void, opts?: { expectedVersion?: number | undefined; retries?: number | undefined; } | undefined) => Promise<import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanMutationResult>"
+          "type": "(sessionId: string, reducer: (draft: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => boolean | void, opts?: { expectedVersion?: number | undefined; retries?: number | undefined; } | undefined) => Promise<import(\"<repo>/src/store/plan/mutation\", { with: { \"resolution-mode\": \"import\" } }).PlanMutationResult>"
         },
         {
           "name": "nextPlanTaskId",
           "kind": "function",
-          "type": "(tasks: readonly Pick<import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask, \"id\">[]) => string"
+          "type": "(tasks: readonly Pick<import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask, \"id\">[]) => string"
         },
         {
           "name": "normalizeTaskDependencies",
           "kind": "function",
-          "type": "(tasks: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]) => boolean"
+          "type": "(tasks: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]) => boolean"
         },
         {
           "name": "patchPlanMeta",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, patch: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanMeta) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan, patch: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanMeta) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan"
         },
         {
           "name": "PlanMeta",
@@ -1433,7 +1433,7 @@
         {
           "name": "planProgress",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => { done: number; total: number; }"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => { done: number; total: number; }"
         },
         {
           "name": "PlanStatus",
@@ -1448,17 +1448,17 @@
         {
           "name": "readyPlanTasks",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "responderOpenTasks",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "savePlan",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => Promise<void>"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => Promise<void>"
         },
         {
           "name": "SessionPlan",
@@ -1473,7 +1473,7 @@
         {
           "name": "stripBareTaskIdTasks",
           "kind": "function",
-          "type": "(tasks: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(tasks: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "TaskEvidence",
@@ -1483,7 +1483,7 @@
         {
           "name": "tasksFromTitles",
           "kind": "function",
-          "type": "(titles: string[]) => import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
+          "type": "(titles: string[]) => import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).PlanTask[]"
         },
         {
           "name": "TaskState",
@@ -1493,7 +1493,7 @@
         {
           "name": "validateSessionPlan",
           "kind": "function",
-          "type": "(plan: import(\"<repo>/src/store/plan\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => { ok: true; } | { ok: false; reason: string; }"
+          "type": "(plan: import(\"<repo>/src/store/plan/sqlite-backend\", { with: { \"resolution-mode\": \"import\" } }).SessionPlan) => { ok: true; } | { ok: false; reason: string; }"
         }
       ]
     },
@@ -1570,7 +1570,7 @@
     },
     {
       "module": "src/tools/fs.ts",
-      "exportCount": 15,
+      "exportCount": 16,
       "exports": [
         {
           "name": "FileWrite",
@@ -1643,6 +1643,11 @@
           "type": "(path: string) => string"
         },
         {
+          "name": "withFileMutation",
+          "kind": "function",
+          "type": "<T>(path: string, operation: () => Promise<T>) => Promise<T>"
+        },
+        {
           "name": "writeFileAtomic",
           "kind": "function",
           "type": "(resolved: string, contents: string) => Promise<void>"
@@ -1697,7 +1702,7 @@
         {
           "name": "formatJobElapsed",
           "kind": "function",
-          "type": "(job: Pick<import(\"<repo>/src/tools/jobs\", { with: { \"resolution-mode\": \"import\" } }).BackgroundJob, \"startedAt\" | \"endedAt\">, now?: number) => string"
+          "type": "(job: Pick<import(\"<repo>/src/tools/jobs/types\", { with: { \"resolution-mode\": \"import\" } }).BackgroundJob, \"startedAt\" | \"endedAt\">, now?: number) => string"
         },
         {
           "name": "JobArtifactReceipt",
@@ -1762,7 +1767,7 @@
         {
           "name": "responderPollingPolicy",
           "kind": "function",
-          "type": "(input: import(\"<repo>/src/tools/jobs\", { with: { \"resolution-mode\": \"import\" } }).ResponderPollingPolicyInput) => { blocked: boolean; reason?: string | undefined; }"
+          "type": "(input: import(\"<repo>/src/tools/jobs/polling-policy\", { with: { \"resolution-mode\": \"import\" } }).ResponderPollingPolicyInput) => { blocked: boolean; reason?: string | undefined; }"
         },
         {
           "name": "ResponderPollingPolicyInput",
@@ -1884,7 +1889,7 @@
     },
     {
       "module": "src/tools/shell.ts",
-      "exportCount": 12,
+      "exportCount": 13,
       "exports": [
         {
           "name": "getAllowInteractiveStdinInherit",
@@ -1894,7 +1899,7 @@
         {
           "name": "interactiveStdinKind",
           "kind": "function",
-          "type": "(command: string) => import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).InteractiveStdinKind | undefined"
+          "type": "(command: string, options?: import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).InteractiveStdinOptions) => import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).InteractiveStdinKind | undefined"
         },
         {
           "name": "InteractiveStdinKind",
@@ -1902,14 +1907,19 @@
           "type": "any"
         },
         {
+          "name": "InteractiveStdinOptions",
+          "kind": "interface",
+          "type": "any"
+        },
+        {
           "name": "looksInteractiveStdin",
           "kind": "function",
-          "type": "(command: string) => boolean"
+          "type": "(command: string, options?: import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).InteractiveStdinOptions | undefined) => boolean"
         },
         {
           "name": "OutputDecoder",
           "kind": "class",
-          "type": "typeof import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).OutputDecoder"
+          "type": "typeof import(\"<repo>/src/tools/shell/capture\", { with: { \"resolution-mode\": \"import\" } }).OutputDecoder"
         },
         {
           "name": "resolveShell",
@@ -1919,7 +1929,7 @@
         {
           "name": "RingBuffer",
           "kind": "class",
-          "type": "typeof import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).RingBuffer"
+          "type": "typeof import(\"<repo>/src/tools/shell/capture\", { with: { \"resolution-mode\": \"import\" } }).RingBuffer"
         },
         {
           "name": "setAllowInteractiveStdinInherit",
@@ -1939,7 +1949,7 @@
         {
           "name": "spawnArgv",
           "kind": "function",
-          "type": "(args: import(\"<repo>/src/tools/shell\", { with: { \"resolution-mode\": \"import\" } }).SpawnArgvArgs) => Promise<import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolResult>"
+          "type": "(args: import(\"<repo>/src/tools/shell/spawn-argv\", { with: { \"resolution-mode\": \"import\" } }).SpawnArgvArgs) => Promise<import(\"<repo>/src/types\", { with: { \"resolution-mode\": \"import\" } }).ToolResult>"
         },
         {
           "name": "SpawnArgvArgs",
@@ -2042,12 +2052,12 @@
     },
     {
       "module": "src/ui-core/rendering/markdown.ts",
-      "exportCount": 6,
+      "exportCount": 7,
       "exports": [
         {
           "name": "createMarkdownStreamWriter",
           "kind": "function",
-          "type": "(write: (chunk: string) => void) => { push(token: string): void; finish(): void; }"
+          "type": "(write: (chunk: string) => void, appearance?: import(\"<repo>/src/ui-core/rendering/code-block\", { with: { \"resolution-mode\": \"import\" } }).CodeBlockAppearance | undefined) => { push(token: string): void; finish(): void; }"
         },
         {
           "name": "indentAndWrapText",
@@ -2055,14 +2065,19 @@
           "type": "(text: string, indent?: string) => string"
         },
         {
+          "name": "MarkdownAppearance",
+          "kind": "type",
+          "type": "any"
+        },
+        {
           "name": "renderInlineMarkdown",
           "kind": "function",
-          "type": "(text: string) => string"
+          "type": "(text: string, paint?: import(\"<repo>/node_modules/chalk/source/index\", { with: { \"resolution-mode\": \"import\" } }).ChalkInstance) => string"
         },
         {
           "name": "renderMarkdown",
           "kind": "function",
-          "type": "(text: string, width?: number | undefined) => string"
+          "type": "(text: string, width?: number | undefined, appearance?: import(\"<repo>/src/ui-core/rendering/code-block\", { with: { \"resolution-mode\": \"import\" } }).CodeBlockAppearance | undefined) => string"
         },
         {
           "name": "visibleWidth",
@@ -2083,12 +2098,12 @@
         {
           "name": "clipSpans",
           "kind": "function",
-          "type": "(spans: readonly import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[], maxChars: number) => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[]"
+          "type": "(spans: readonly import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[], maxChars: number) => import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[]"
         },
         {
           "name": "emptyCarry",
           "kind": "function",
-          "type": "() => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).HighlightCarry"
+          "type": "() => import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).HighlightCarry"
         },
         {
           "name": "HighlightCarry",
@@ -2098,17 +2113,17 @@
         {
           "name": "highlightLine",
           "kind": "function",
-          "type": "(line: string, langOrPath: string, carry?: import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).HighlightCarry) => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[]"
+          "type": "(line: string, langOrPath: string, carry?: import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).HighlightCarry) => import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[]"
         },
         {
           "name": "highlightLineForPath",
           "kind": "function",
-          "type": "(line: string, path: string, carry?: import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).HighlightCarry) => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[]"
+          "type": "(line: string, path: string, carry?: import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).HighlightCarry) => import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[]"
         },
         {
           "name": "highlightLines",
           "kind": "function",
-          "type": "(lines: readonly string[], langOrPath: string) => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[][]"
+          "type": "(lines: readonly string[], langOrPath: string) => import(\"<repo>/src/ui-core/rendering/syntax/clike\", { with: { \"resolution-mode\": \"import\" } }).SyntaxSpan[][]"
         },
         {
           "name": "LangFamily",
@@ -2123,12 +2138,12 @@
         {
           "name": "languageFromPath",
           "kind": "function",
-          "type": "(path: string) => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).LangFamily"
+          "type": "(path: string) => import(\"<repo>/src/ui-core/rendering/syntax/language-table\", { with: { \"resolution-mode\": \"import\" } }).LangFamily"
         },
         {
           "name": "languageFromPathLegacy",
           "kind": "function",
-          "type": "(path: string) => import(\"<repo>/src/ui-core/rendering/syntax-highlight\", { with: { \"resolution-mode\": \"import\" } }).LangFamily"
+          "type": "(path: string) => import(\"<repo>/src/ui-core/rendering/syntax/language-table\", { with: { \"resolution-mode\": \"import\" } }).LangFamily"
         },
         {
           "name": "supportedExtensions",

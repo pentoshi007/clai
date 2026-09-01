@@ -1,12 +1,16 @@
 import type { NativeToolCall, ToolCall } from "../../../types.js";
-import { normalizeToolCall } from "../../../tools/registry.js";
 import type { StreamDeferredToolCall } from "./stream-session.js";
+import {
+  canonicalizeTurnCall,
+  type ToolNameCanonicalizer,
+} from "./canonicalize-turn-call.js";
 
 export interface NativeCardPorts {
   readonly deferredToolCalls: StreamDeferredToolCall[];
   readonly callIds: string[];
   readonly allocateEventId: () => string;
   readonly markPrinted: (eventId: string) => void;
+  readonly mcpRuntime?: ToolNameCanonicalizer | undefined;
 }
 
 const PLACEHOLDER_NAME = "…";
@@ -17,7 +21,10 @@ const appendCards = (
 ): void => {
   for (let index = 0; index < calls.length; index += 1) {
     const native = calls[index]!;
-    const call = normalizeToolCall({ name: native.name, args: native.args });
+    const call = canonicalizeTurnCall(
+      { name: native.name, args: native.args },
+      ports.mcpRuntime,
+    );
     const eventId = ports.allocateEventId();
     ports.callIds[index] = eventId;
     ports.markPrinted(eventId);
@@ -31,7 +38,10 @@ const reconcileCards = (
 ): void => {
   for (let index = 0; index < calls.length; index += 1) {
     const native = calls[index]!;
-    const call = normalizeToolCall({ name: native.name, args: native.args });
+    const call = canonicalizeTurnCall(
+      { name: native.name, args: native.args },
+      ports.mcpRuntime,
+    );
     const existing = ports.deferredToolCalls[index];
     if (existing && existing.call.name !== PLACEHOLDER_NAME) {
       ports.callIds[index] = existing.eventId;
@@ -62,6 +72,7 @@ export const syncNativeToolCallCards = (
 
 export const firstNativeToolCall = (
   calls: readonly NativeToolCall[],
+  mcpRuntime?: ToolNameCanonicalizer | undefined,
 ): ToolCall | undefined => {
   const first = calls[0];
   if (!first) return undefined;
@@ -71,5 +82,5 @@ export const firstNativeToolCall = (
       args: { __nativeParseError: true, _raw: first.args._raw },
     };
   }
-  return normalizeToolCall({ name: first.name, args: first.args });
+  return canonicalizeTurnCall({ name: first.name, args: first.args }, mcpRuntime);
 };

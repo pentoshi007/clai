@@ -1,18 +1,18 @@
 import type { ToolResult } from "../../types.js";
 import { buildFileChange, formatUnifiedPreview } from "../file-diff.js";
 import type { FileChange } from "../file-diff.js";
-import { writeFileAtomic } from "../fs.js";
+import { withFileMutation, writeFileAtomic } from "../fs.js";
 import { ensureWriteAllowed } from "./internals.js";
 import type { FileWrite } from "../fs.js";
 import { createHash } from "node:crypto";
 import {
   appendFile,
   mkdir,
+  open,
   readFile,
   rm,
   stat,
   unlink,
-  writeFile,
 } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -87,16 +87,19 @@ export async function fsWriteMany(
     }
     try {
       const resolved = ensureWriteAllowed(file.path, options.confirmed);
-      let before = "";
-      let existed = false;
-      try {
-        before = await readFile(resolved, "utf8");
-        existed = true;
-      } catch (error: any) {
-        if (error?.code !== "ENOENT") throw error;
-      }
-      await mkdir(dirname(resolved), { recursive: true });
-      await writeFile(resolved, file.content, "utf8");
+      const mutation = await withFileMutation(resolved, async () => {
+        let before = "";
+        let existed = false;
+        try {
+          before = await readFile(resolved, "utf8");
+          existed = true;
+        } catch (error: any) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+        await mkdir(dirname(resolved), { recursive: true });
+        await writeFileAtomic(resolved, file.content);
+        return { before, existed };
+      });
       const bytes = Buffer.byteLength(file.content, "utf8");
       const nLines =
         file.content.length === 0 ? 0 : file.content.split(/\r?\n/).length;
@@ -110,9 +113,9 @@ export async function fsWriteMany(
       changes.push(
         buildFileChange({
           path: resolved,
-          before,
+          before: mutation.before,
           after: file.content,
-          kind: existed ? "overwrite" : "create",
+          kind: mutation.existed ? "overwrite" : "create",
         }),
       );
     } catch (error) {
@@ -146,6 +149,7 @@ export async function fsEdit(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
+  return withFileMutation(resolved, async () => {
   const priorStat = await stat(resolved).catch(() => undefined);
   if (priorStat?.isFile() && priorStat.size > LARGE_MUTATION_BYTES) {
     return {
@@ -244,6 +248,7 @@ export async function fsEdit(
     output: `Replaced ${count} occurrence(s) in ${resolved}.\n${preview}`,
     fileChanges: [change],
   };
+  });
 }
 
 export async function fsDelete(
@@ -252,6 +257,7 @@ export async function fsDelete(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
+  return withFileMutation(resolved, async () => {
   try {
     let before = "";
     let canDiff = false;
@@ -292,6 +298,52 @@ export async function fsDelete(
     const msg = error instanceof Error ? error.message : String(error);
     return { ok: false, output: `Delete failed: ${msg}`, exitCode: 1 };
   }
+  });
+}
+
+function appendShrankFailure(
+  path: string,
+  expected: number,
+  actual: number,
+): ToolResult {
+  return {
+    ok: false,
+    output:
+      `fs.append integrity check failed: expected prior bytes=${expected} but the file is only ${actual}. ` +
+      `It was truncated or this is the wrong path — appending would silently drop the missing content. (${path})`,
+    exitCode: 1,
+  };
+}
+
+function appendAlreadyApplied(
+  original: string,
+  content: string,
+  position: "start" | "end",
+): boolean {
+  if (content.length === 0) return false;
+  return position === "start"
+    ? original.startsWith(content)
+    : original.endsWith(content);
+}
+
+async function fileTailEquals(
+  path: string,
+  size: number,
+  content: string,
+): Promise<boolean> {
+  const expected = Buffer.from(content, "utf8");
+  if (expected.length === 0 || size < expected.length) return false;
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, "r");
+    const buffer = Buffer.alloc(expected.length);
+    await handle.read(buffer, 0, expected.length, size - expected.length);
+    return buffer.equals(expected);
+  } catch {
+    return false;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
 }
 
 export async function fsAppend(
@@ -305,6 +357,7 @@ export async function fsAppend(
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
   const position = options.position ?? "end";
+  const expectedPriorBytes = options.expectedPriorBytes;
   if (position !== "start" && position !== "end") {
     return {
       ok: false,
@@ -312,103 +365,113 @@ export async function fsAppend(
       exitCode: 1,
     };
   }
-
-  let original = "";
-  const priorStat = await stat(resolved).catch(() => undefined);
   if (
-    priorStat?.isFile() &&
-    priorStat.size > LARGE_MUTATION_BYTES &&
-    position === "end"
-  ) {
-    const priorBytesLarge = priorStat.size;
-    if (
-      typeof options.expectedPriorBytes === "number" &&
-      options.expectedPriorBytes !== priorBytesLarge
-    ) {
-      return {
-        ok: false,
-        output:
-          `fs.append integrity check failed for ${resolved}: expected prior bytes=${options.expectedPriorBytes}, actual=${priorBytesLarge}. ` +
-          `Do NOT append again until you reconcile (read the last ~20 lines or re-write).`,
-        exitCode: 1,
-      };
-    }
-    await appendFile(resolved, content, "utf8");
-    const afterStat = await stat(resolved).catch(() => undefined);
-    return {
-      ok: true,
-      output:
-        describeWrite(resolved, content, "Appended (end) to") +
-        `\n  prior_bytes=${priorBytesLarge} after_bytes=${afterStat?.size ?? priorBytesLarge + Buffer.byteLength(content, "utf8")}` +
-        `\n  note: file exceeds ${Math.round(LARGE_MUTATION_BYTES / (1024 * 1024))}MB — appended in place and skipped the diff/receipt hash of the whole file.`,
-    };
-  }
-  try {
-    original = await readFile(resolved, "utf8");
-  } catch (error: any) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-    if (
-      typeof options.expectedPriorBytes === "number" &&
-      options.expectedPriorBytes !== 0
-    ) {
-      return {
-        ok: false,
-        output: `fs.append integrity check failed: expected prior bytes=${options.expectedPriorBytes} but file does not exist.`,
-        exitCode: 1,
-      };
-    }
-    await mkdir(dirname(resolved), { recursive: true });
-    await writeFile(resolved, content, "utf8");
-    const change = buildFileChange({
-      path: resolved,
-      before: "",
-      after: content,
-      kind: "create",
-    });
-    return {
-      ok: true,
-      output: describeWrite(resolved, content, "Created"),
-      fileChanges: [change],
-    };
-  }
-
-  const priorBytes = Buffer.byteLength(original, "utf8");
-  if (
-    typeof options.expectedPriorBytes === "number" &&
-    options.expectedPriorBytes !== priorBytes
+    expectedPriorBytes !== undefined &&
+    (!Number.isSafeInteger(expectedPriorBytes) || expectedPriorBytes < 0)
   ) {
     return {
       ok: false,
-      output:
-        `fs.append integrity check failed for ${resolved}: expected prior bytes=${options.expectedPriorBytes}, actual=${priorBytes}. ` +
-        `Do NOT append again until you reconcile (read the last ~20 lines or re-write).`,
+      output: "fs.append expectedPriorBytes must be a non-negative safe integer.",
       exitCode: 1,
     };
   }
 
-  let next = "";
-  if (position === "start") {
-    next = content + original;
-  } else {
-    next = original + content;
-  }
+  return withFileMutation(resolved, async () => {
+    const priorStat = await stat(resolved).catch(() => undefined);
+    if (
+      priorStat?.isFile() &&
+      priorStat.size > LARGE_MUTATION_BYTES &&
+      position === "end"
+    ) {
+      const priorBytes = priorStat.size;
+      if (expectedPriorBytes !== undefined && expectedPriorBytes > priorBytes) {
+        return appendShrankFailure(resolved, expectedPriorBytes, priorBytes);
+      }
+      const stale =
+        expectedPriorBytes !== undefined && expectedPriorBytes < priorBytes;
+      if (stale && (await fileTailEquals(resolved, priorBytes, content))) {
+        return {
+          ok: true,
+          output:
+            describeWrite(resolved, content, "Append already applied to") +
+            `\n  prior_bytes=${priorBytes} expected_prior_bytes=${expectedPriorBytes}`,
+        };
+      }
+      await appendFile(resolved, content, "utf8");
+      const afterBytes =
+        (await stat(resolved).catch(() => undefined))?.size ??
+        priorBytes + Buffer.byteLength(content, "utf8");
+      return {
+        ok: true,
+        output:
+          describeWrite(resolved, content, "Appended (end) to") +
+          `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}` +
+          (stale ? `\n  note: expectedPriorBytes=${expectedPriorBytes} was stale; appended at ${priorBytes}.` : "") +
+          `\n  note: file exceeds ${Math.round(LARGE_MUTATION_BYTES / (1024 * 1024))}MB — appended in place and skipped the diff/receipt hash of the whole file.`,
+      };
+    }
 
-  await writeFileAtomic(resolved, next);
+    let original = "";
+    try {
+      original = await readFile(resolved, "utf8");
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+      if (expectedPriorBytes !== undefined && expectedPriorBytes !== 0) {
+        return {
+          ok: false,
+          output:
+            `fs.append integrity check failed: expected prior bytes=${expectedPriorBytes} but file does not exist.`,
+          exitCode: 1,
+        };
+      }
+      await mkdir(dirname(resolved), { recursive: true });
+      await writeFileAtomic(resolved, content);
+      const change = buildFileChange({
+        path: resolved,
+        before: "",
+        after: content,
+        kind: "create",
+      });
+      return {
+        ok: true,
+        output: describeWrite(resolved, content, "Created"),
+        fileChanges: [change],
+      };
+    }
 
-  const st = await stat(resolved).catch(() => undefined);
-  const change = buildFileChange({
-    path: resolved,
-    before: original,
-    after: next,
-    kind: "append",
+    const priorBytes = Buffer.byteLength(original, "utf8");
+    if (expectedPriorBytes !== undefined && expectedPriorBytes > priorBytes) {
+      return appendShrankFailure(resolved, expectedPriorBytes, priorBytes);
+    }
+    const stale =
+      expectedPriorBytes !== undefined && expectedPriorBytes < priorBytes;
+    if (stale && appendAlreadyApplied(original, content, position)) {
+      return {
+        ok: true,
+        output:
+          describeWrite(resolved, original, "Append already applied to") +
+          `\n  prior_bytes=${priorBytes} expected_prior_bytes=${expectedPriorBytes}`,
+      };
+    }
+
+    const next = position === "start" ? content + original : original + content;
+    await writeFileAtomic(resolved, next);
+    const afterBytes = Buffer.byteLength(next, "utf8");
+    const change = buildFileChange({
+      path: resolved,
+      before: original,
+      after: next,
+      kind: "append",
+    });
+    return {
+      ok: true,
+      output:
+        describeWrite(resolved, next, `Appended (${position}) to`) +
+        `\n  prior_bytes=${priorBytes} after_bytes=${afterBytes}` +
+        (stale
+          ? `\n  note: expectedPriorBytes=${expectedPriorBytes} was stale; appended at ${priorBytes}.`
+          : ""),
+      fileChanges: [change],
+    };
   });
-  return {
-    ok: true,
-    output:
-      describeWrite(resolved, next, `Appended (${position}) to`) +
-      `\n  prior_bytes=${priorBytes} after_bytes=${st?.size ?? Buffer.byteLength(next, "utf8")}`,
-    fileChanges: [change],
-  };
 }

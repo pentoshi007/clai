@@ -47,6 +47,7 @@ import {
 const CLIENT_BACKPRESSURE_BYTES = 1024 * 1024;
 const METADATA_DEBOUNCE_MS = 50;
 const FINAL_OUTPUT_DRAIN_MS = 3_000;
+const CHILD_REPAINT_TIMEOUT_MS = 5_000;
 const FORCE_STOP_MS = 8_000;
 const ATTACH_RESET = Buffer.from("\u001b[?1049h\u001b[H\u001b[J", "utf8");
 
@@ -78,21 +79,53 @@ function authFrame(value: unknown): RuntimeAuthFrame | undefined {
     !["probe", "client-control", "client-terminal", "child"].includes(
       String(frame.role),
     ) ||
-    typeof frame.token !== "string"
+    typeof frame.token !== "string" ||
+    (frame.columns !== undefined && typeof frame.columns !== "number") ||
+    (frame.rows !== undefined && typeof frame.rows !== "number") ||
+    (frame.supportsRepaint !== undefined &&
+      typeof frame.supportsRepaint !== "boolean")
   ) {
     return undefined;
   }
   return frame as RuntimeAuthFrame;
 }
 
-function dimensionsOf(value: RuntimeClientFrame): TerminalDimensions | undefined {
-  if (value.type !== "resize") return undefined;
-  const columns = Math.floor(value.columns);
-  const rows = Math.floor(value.rows);
+function terminalDimensions(
+  columnsValue: unknown,
+  rowsValue: unknown,
+): TerminalDimensions | undefined {
+  if (
+    typeof columnsValue !== "number" ||
+    !Number.isFinite(columnsValue) ||
+    typeof rowsValue !== "number" ||
+    !Number.isFinite(rowsValue)
+  ) {
+    return undefined;
+  }
+  const columns = Math.floor(columnsValue);
+  const rows = Math.floor(rowsValue);
   if (columns < 20 || columns > 1_000 || rows < 5 || rows > 500) {
     return undefined;
   }
   return { columns, rows };
+}
+
+function dimensionsOf(value: RuntimeClientFrame): TerminalDimensions | undefined {
+  if (value.type !== "resize") return undefined;
+  return terminalDimensions(value.columns, value.rows);
+}
+
+export async function resizeRuntimeTransport(
+  transport: Pick<SessionTransport, "resize"> | undefined,
+  dimensions: TerminalDimensions,
+): Promise<boolean> {
+  if (!transport?.resize) return true;
+  try {
+    await transport.resize(dimensions);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function clientFrame(value: unknown): RuntimeClientFrame | undefined {
@@ -115,6 +148,15 @@ function childFrame(value: unknown): RuntimeChildFrame | undefined {
   if (!value || typeof value !== "object") return undefined;
   const frame = value as Partial<RuntimeChildFrame>;
   if (frame.type === "minimise") return frame as RuntimeChildFrame;
+  if (
+    frame.type === "repaint-result" &&
+    typeof frame.requestId === "string" &&
+    frame.requestId.length > 0 &&
+    frame.requestId.length <= 128 &&
+    typeof frame.accepted === "boolean"
+  ) {
+    return frame as RuntimeChildFrame;
+  }
   if (
     frame.type === "exiting" &&
     typeof frame.exitCode === "number" &&
@@ -197,6 +239,11 @@ export class SessionRuntimeHost {
   private client: ActiveClient | undefined;
   private childSocket: Socket | undefined;
   private childChannel: JsonFrameChannel | undefined;
+  private childSupportsRepaint = false;
+  private readonly repaintRequests = new Map<
+    string,
+    (accepted: boolean) => void
+  >();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private forceTimer: ReturnType<typeof setTimeout> | undefined;
   private livenessTimer: ReturnType<typeof setTimeout> | undefined;
@@ -347,10 +394,17 @@ export class SessionRuntimeHost {
         return;
       }
       if (auth.role === "client-terminal") {
-        this.acceptClientTerminal(socket, auth, first.rest);
+        const hasDimensions =
+          auth.columns !== undefined || auth.rows !== undefined;
+        const dimensions = terminalDimensions(auth.columns, auth.rows);
+        if (hasDimensions && !dimensions) {
+          socket.destroy();
+          return;
+        }
+        await this.acceptClientTerminal(socket, auth, first.rest, dimensions);
         return;
       }
-      this.acceptChild(socket, first.rest);
+      this.acceptChild(socket, auth, first.rest);
     } catch {
       socket.destroy();
     }
@@ -389,13 +443,22 @@ export class SessionRuntimeHost {
     socket.once("close", () => this.clientClosed(client, socket));
   }
 
-  private acceptClientTerminal(
+  private async acceptClientTerminal(
     socket: Socket,
     auth: RuntimeAuthFrame,
     rest: Buffer,
-  ): void {
+    dimensions: TerminalDimensions | undefined,
+  ): Promise<void> {
     const client = this.client;
     if (!client || !auth.clientId || client.id !== auth.clientId) {
+      socket.destroy();
+      return;
+    }
+    if (dimensions && !(await this.resize(dimensions))) {
+      socket.destroy();
+      return;
+    }
+    if (this.client !== client) {
       socket.destroy();
       return;
     }
@@ -407,12 +470,6 @@ export class SessionRuntimeHost {
     this.attached = true;
     this.cancelIdleTimer();
     this.queueMetadata();
-    this.acknowledge(socket);
-    this.writeToTerminal(socket, ATTACH_RESET);
-    const modes = this.terminalModes.restoreSequence();
-    if (modes.length > 0) this.writeToTerminal(socket, Buffer.from(modes, "utf8"));
-    const replay = this.replay.snapshot();
-    if (replay.length > 0) this.writeToTerminal(socket, replay);
     if (rest.length > 0) this.queueInput(rest);
     socket.on("data", (bytes: Buffer) => {
       if (this.client === client && client.terminal === socket) {
@@ -421,12 +478,33 @@ export class SessionRuntimeHost {
     });
     socket.once("close", () => this.clientClosed(client, socket));
     socket.resume();
+    this.acknowledge(socket);
+    this.writeToTerminal(socket, ATTACH_RESET);
+    const modes = this.terminalModes.restoreSequence();
+    if (modes.length > 0) this.writeToTerminal(socket, Buffer.from(modes, "utf8"));
+    const replay = this.replay.snapshot();
+    const repainted = await this.requestChildRepaint();
+    if (
+      this.client === client &&
+      client.terminal === socket &&
+      !socket.destroyed &&
+      !repainted &&
+      replay.length > 0
+    ) {
+      this.writeToTerminal(socket, replay);
+    }
   }
 
-  private acceptChild(socket: Socket, rest: Buffer): void {
+  private acceptChild(
+    socket: Socket,
+    auth: RuntimeAuthFrame,
+    rest: Buffer,
+  ): void {
+    this.failChildRepaints();
     this.childChannel?.dispose();
     this.childSocket?.destroy();
     this.childSocket = socket;
+    this.childSupportsRepaint = auth.supportsRepaint === true;
     this.acknowledge(socket);
     this.childChannel = new JsonFrameChannel(
       socket,
@@ -436,10 +514,38 @@ export class SessionRuntimeHost {
     );
     socket.once("close", () => {
       if (this.childSocket !== socket) return;
+      this.failChildRepaints();
       this.childChannel?.dispose();
       this.childChannel = undefined;
       this.childSocket = undefined;
+      this.childSupportsRepaint = false;
     });
+    if (this.client?.terminal) void this.requestChildRepaint();
+  }
+
+  private requestChildRepaint(): Promise<boolean> {
+    const channel = this.childChannel;
+    if (!this.childSupportsRepaint || !channel) return Promise.resolve(false);
+    const requestId = randomUUID();
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (accepted: boolean): void => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        this.repaintRequests.delete(requestId);
+        resolve(accepted);
+      };
+      this.repaintRequests.set(requestId, finish);
+      timer = setTimeout(() => finish(false), CHILD_REPAINT_TIMEOUT_MS);
+      timer.unref?.();
+      if (!channel.send({ type: "repaint", requestId })) finish(false);
+    });
+  }
+
+  private failChildRepaints(): void {
+    for (const finish of [...this.repaintRequests.values()]) finish(false);
   }
 
   private handleClientFrame(client: ActiveClient, value: unknown): void {
@@ -461,6 +567,10 @@ export class SessionRuntimeHost {
   private handleChildFrame(value: unknown): void {
     const frame = childFrame(value);
     if (!frame) return;
+    if (frame.type === "repaint-result") {
+      this.repaintRequests.get(frame.requestId)?.(frame.accepted);
+      return;
+    }
     if (frame.type === "minimise") {
       this.disconnectClient("minimise");
       return;
@@ -629,8 +739,8 @@ export class SessionRuntimeHost {
       .catch(() => undefined);
   }
 
-  private async resize(dimensions: TerminalDimensions): Promise<void> {
-    await this.transport?.resize?.(dimensions).catch(() => undefined);
+  private resize(dimensions: TerminalDimensions): Promise<boolean> {
+    return resizeRuntimeTransport(this.transport, dimensions);
   }
 
   private clientClosed(client: ActiveClient, socket: Socket): void {
@@ -814,6 +924,7 @@ export class SessionRuntimeHost {
     this.releaseOutputBackpressure();
     this.removeSignals();
     this.closeClientSockets();
+    this.failChildRepaints();
     this.childChannel?.dispose();
     this.childSocket?.destroy();
     for (const socket of this.connections) socket.destroy();

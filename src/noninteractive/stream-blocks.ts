@@ -223,7 +223,7 @@ export function buildTurnErrorLines(
 
 function tokenLabel(before: number, after: number): string | undefined {
   if (before <= 0 && after <= 0) return undefined;
-  return `~${before.toLocaleString()} → ~${after.toLocaleString()} tokens`;
+  return `~${before.toLocaleString("en-US")} → ~${after.toLocaleString("en-US")} tokens`;
 }
 
 function compactionRow(
@@ -242,7 +242,7 @@ export function buildCompactionStartLines(
 ): readonly string[] {
   if (quiet(ctx)) return [];
   const label =
-    event.beforeTokens > 0 ? `~${event.beforeTokens.toLocaleString()} tokens before` : undefined;
+    event.beforeTokens > 0 ? `~${event.beforeTokens.toLocaleString("en-US")} tokens before` : undefined;
   return compactionRow(ctx, "compacting context", label, "cyan");
 }
 
@@ -270,7 +270,7 @@ export function buildCompactionFailedLines(
   if (quiet(ctx)) return [];
   const retained =
     event.retainedTokens > 0
-      ? `~${event.retainedTokens.toLocaleString()} tokens retained`
+      ? `~${event.retainedTokens.toLocaleString("en-US")} tokens retained`
       : "original context retained";
   return compactionRow(
     ctx,
@@ -301,17 +301,17 @@ export function buildTokenUsageLines(
   const usage = event.usage;
   const parts: (string | undefined)[] = [
     event.model,
-    `${usage.promptTokens.toLocaleString()} in`,
-    `${usage.completionTokens.toLocaleString()} out`,
+    `${usage.promptTokens.toLocaleString("en-US")} in`,
+    `${usage.completionTokens.toLocaleString("en-US")} out`,
   ];
   if (usage.cachedPromptTokens !== undefined) {
-    parts.push(`${usage.cachedPromptTokens.toLocaleString()} cached`);
+    parts.push(`${usage.cachedPromptTokens.toLocaleString("en-US")} cached`);
   }
   if (usage.cacheCreationTokens !== undefined) {
-    parts.push(`${usage.cacheCreationTokens.toLocaleString()} cache-write`);
+    parts.push(`${usage.cacheCreationTokens.toLocaleString("en-US")} cache-write`);
   }
   if (usage.reasoningTokens !== undefined) {
-    parts.push(`${usage.reasoningTokens.toLocaleString()} reasoning`);
+    parts.push(`${usage.reasoningTokens.toLocaleString("en-US")} reasoning`);
   }
   const body = meta(ctx, parts);
   return [row(ctx, styled(ctx, body, { fg: "muted" }))];
@@ -324,7 +324,7 @@ export function buildContextEstimateLines(
   if (!verbose(ctx)) return [];
   const body = meta(ctx, [
     event.model,
-    `~${event.estimatedTokens.toLocaleString()} tokens assembled`,
+    `~${event.estimatedTokens.toLocaleString("en-US")} tokens assembled`,
   ]);
   return [row(ctx, styled(ctx, body, { fg: "muted" }))];
 }

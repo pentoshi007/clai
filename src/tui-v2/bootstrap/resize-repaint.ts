@@ -33,15 +33,33 @@ export interface FullRepaintRenderer {
   readonly currentRenderBuffer?: { clear(): void } | undefined;
 }
 
-export function forceFullRepaint(renderer: FullRepaintRenderer): void {
+export function forceFullRepaint(renderer: FullRepaintRenderer): boolean {
   try {
     renderer.currentRenderBuffer?.clear();
   } catch {
   }
   try {
     renderer.requestRender();
+    return true;
   } catch {
+    return false;
   }
+}
+
+export interface AttachedScreenRepaintOptions {
+  readonly renderer: FullRepaintRenderer;
+  readonly write: (text: string) => void;
+  readonly enabled?: boolean | undefined;
+  readonly isSuspended?: (() => boolean) | undefined;
+}
+
+export function repaintAttachedScreen(
+  options: AttachedScreenRepaintOptions,
+): boolean {
+  if (options.enabled === false || options.isSuspended?.() === true) return false;
+  if (!forceFullRepaint(options.renderer)) return false;
+  options.write(RESIZE_REPAINT_SEQUENCE);
+  return true;
 }
 
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {

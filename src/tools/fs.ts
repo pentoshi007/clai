@@ -2,7 +2,6 @@ import { lstatSync, readlinkSync, realpathSync } from "node:fs";
 import {
   open,
   readFile,
-  writeFile,
   unlink,
   rename,
   mkdir,
@@ -24,11 +23,50 @@ export { fsAppend, fsDelete, fsEdit, fsWriteMany } from "./fs/mutations.js";
 export { fsSearch } from "./fs/search.js";
 
 let atomicWriteCounter = 0;
+const fileMutationLanes = new Map<string, Promise<void>>();
+const RETRYABLE_FS_CODES = new Set(["EAGAIN", "EBUSY", "EMFILE", "ENFILE", "EPERM"]);
 
-export async function writeFileAtomic(
-  resolved: string,
+function mutationKey(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function mutationTarget(path: string): string {
+  return canonicalizeForContainment(path) ?? path;
+}
+
+export async function withFileMutation<T>(
+  path: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const key = mutationKey(mutationTarget(path));
+  const previous = fileMutationLanes.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fileMutationLanes.set(key, current);
+  await previous.catch(() => undefined);
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (fileMutationLanes.get(key) === current) fileMutationLanes.delete(key);
+  }
+}
+
+function retryableFsError(error: unknown): boolean {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  return RETRYABLE_FS_CODES.has(code);
+}
+
+async function writeFileAtomicAttempt(
+  path: string,
   contents: string,
 ): Promise<void> {
+  const resolved = mutationTarget(path);
   const priorMode = await stat(resolved)
     .then((st) => st.mode & 0o7777)
     .catch(() => undefined);
@@ -47,14 +85,27 @@ export async function writeFileAtomic(
     await handle.sync();
     await handle.close();
     handle = undefined;
-    if (priorMode !== undefined) {
-      await chmod(tempPath, priorMode);
-    }
+    if (priorMode !== undefined) await chmod(tempPath, priorMode);
     await rename(tempPath, resolved);
   } catch (error) {
     if (handle) await handle.close().catch(() => undefined);
     await unlink(tempPath).catch(() => undefined);
     throw error;
+  }
+}
+
+export async function writeFileAtomic(
+  resolved: string,
+  contents: string,
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await writeFileAtomicAttempt(resolved, contents);
+      return;
+    } catch (error) {
+      if (attempt >= 3 || !retryableFsError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 15 * 2 ** attempt));
+    }
   }
 }
 
@@ -158,28 +209,30 @@ export async function fsWrite(
   options: { confirmed?: boolean | undefined } = {},
 ): Promise<ToolResult> {
   const resolved = ensureWriteAllowed(path, options.confirmed);
-  let before = "";
-  let existed = false;
-  try {
-    before = await readFile(resolved, "utf8");
-    existed = true;
-  } catch (error: any) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  await mkdir(dirname(resolved), { recursive: true });
-  await writeFile(resolved, content, "utf8");
-  const change = buildFileChange({
-    path: resolved,
-    before,
-    after: content,
-    kind: existed ? "overwrite" : "create",
+  return withFileMutation(resolved, async () => {
+    let before = "";
+    let existed = false;
+    try {
+      before = await readFile(resolved, "utf8");
+      existed = true;
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await mkdir(dirname(resolved), { recursive: true });
+    await writeFileAtomic(resolved, content);
+    const change = buildFileChange({
+      path: resolved,
+      before,
+      after: content,
+      kind: existed ? "overwrite" : "create",
+    });
+    const verb = existed ? "Wrote" : "Created";
+    return {
+      ok: true,
+      output: describeWrite(resolved, content, verb),
+      fileChanges: [change],
+    };
   });
-  const verb = existed ? "Wrote" : "Created";
-  return {
-    ok: true,
-    output: describeWrite(resolved, content, verb),
-    fileChanges: [change],
-  };
 }
 
 export async function fsReplaceLines(
@@ -203,38 +256,40 @@ export async function fsReplaceLines(
       exitCode: 1,
     };
   }
-  const original = await readFile(resolved, "utf8");
-  const newline = original.includes("\r\n") ? "\r\n" : "\n";
-  const hadFinalNewline = original.endsWith("\n");
-  const lines = original.split(/\r?\n/);
-  if (hadFinalNewline) lines.pop();
-  if (endLine > lines.length) {
+  return withFileMutation(resolved, async () => {
+    const original = await readFile(resolved, "utf8");
+    const newline = original.includes("\r\n") ? "\r\n" : "\n";
+    const hadFinalNewline = original.endsWith("\n");
+    const lines = original.split(/\r?\n/);
+    if (hadFinalNewline) lines.pop();
+    if (endLine > lines.length) {
+      return {
+        ok: false,
+        output: `fs.replaceLines range ${startLine}-${endLine} exceeds ${lines.length} lines`,
+        exitCode: 1,
+      };
+    }
+    const replacement = content === "" ? [] : content.split(/\r?\n/);
+    if (replacement.at(-1) === "") replacement.pop();
+    lines.splice(startLine - 1, endLine - startLine + 1, ...replacement);
+    const next = lines.join(newline) + (hadFinalNewline ? newline : "");
+    await writeFileAtomic(resolved, next);
+    const verb =
+      content === ""
+        ? `Deleted lines ${startLine}-${endLine} in`
+        : `Replaced lines ${startLine}-${endLine} in`;
+    const change = buildFileChange({
+      path: resolved,
+      before: original,
+      after: next,
+      kind: "edit",
+    });
     return {
-      ok: false,
-      output: `fs.replaceLines range ${startLine}-${endLine} exceeds ${lines.length} lines`,
-      exitCode: 1,
+      ok: true,
+      output: describeWrite(resolved, next, verb),
+      fileChanges: [change],
     };
-  }
-  const replacement = content === "" ? [] : content.split(/\r?\n/);
-  if (replacement.at(-1) === "") replacement.pop();
-  lines.splice(startLine - 1, endLine - startLine + 1, ...replacement);
-  const next = lines.join(newline) + (hadFinalNewline ? newline : "");
-  await writeFileAtomic(resolved, next);
-  const verb =
-    content === ""
-      ? `Deleted lines ${startLine}-${endLine} in`
-      : `Replaced lines ${startLine}-${endLine} in`;
-  const change = buildFileChange({
-    path: resolved,
-    before: original,
-    after: next,
-    kind: "edit",
   });
-  return {
-    ok: true,
-    output: describeWrite(resolved, next, verb),
-    fileChanges: [change],
-  };
 }
 
 export interface FileWrite {

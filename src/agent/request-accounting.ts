@@ -45,10 +45,7 @@ export function estimateImageTokens(image: ChatImage): number {
 export function estimateMessageTokens(message: ChatMessage): number {
   let sum = estimateTextTokens(message.content) + 4;
   if (message.toolCalls?.length) {
-    const toolChars = Math.min(
-      measureToolCallsChars(message.toolCalls),
-      2_000_000,
-    );
+    const toolChars = measureToolCallsChars(message.toolCalls);
     sum += Math.ceil(toolChars / 3.3);
   }
   sum += reasoningArtifactTokensForMessage(message);

@@ -20,6 +20,7 @@ import {
   isCompactionMemoryMessage,
   type CompactResult,
 } from "../../agent/context-manager.js";
+import { projectToolHistory } from "../../agent/tool-history.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
 import {
@@ -121,8 +122,14 @@ export async function runSessionCompaction(
     );
   };
 
-  const historyTokensBefore = estimateMessagesTokens(options.history);
+  const history = projectToolHistory(options.history).messages;
+  const historyTokensBefore = estimateMessagesTokens(history);
   const successfulRequest = options.successfulRequest;
+  const replayRequest = successfulRequest
+    ? projectToolHistory(successfulRequest.messages).changed
+      ? undefined
+      : successfulRequest
+    : undefined;
   const contextLimitTokens =
     options.contextLimitTokens ??
     modelContextWindow(
@@ -132,10 +139,10 @@ export async function runSessionCompaction(
   const instruction = buildDirectCompactionPrompt({
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
-  const replayPlan = successfulRequest
+  const replayPlan = replayRequest
     ? planCompactionReplay({
-        baseRequest: successfulRequest,
-        history: options.history,
+        baseRequest: replayRequest,
+        history,
         prompt: instruction,
         maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
         contextLimitTokens,
@@ -200,10 +207,10 @@ export async function runSessionCompaction(
     }
     const replay =
       replayPlan && !replayPlan.accounting.overLimit
-        ? successfulRequest
+        ? replayRequest
         : undefined;
     const result = await compactMessagesWithSummary(
-      options.history,
+      history,
       (prompt, stage) =>
         summarizeForSessionCompact(replay ? instruction : prompt, {
           provider: options.provider,
@@ -214,7 +221,7 @@ export async function runSessionCompaction(
           ...(replay
             ? {
                 baseRequest: replay,
-                history: options.history,
+                history,
                 contextLimitTokens,
               }
             : {

@@ -12,6 +12,9 @@ export interface TurnLoopState {
   retryWithoutThinking: boolean;
   stepMaxTokens: number;
   dispatchedRawRequestTokens: number;
+  dispatchedRequestRoute:
+    | { provider: ProviderId; model: string }
+    | undefined;
   interruptedVisible: string;
   interruptedReasoning: string;
   lowYieldResumptions: number;
@@ -44,6 +47,7 @@ export const createTurnLoopState = (input: {
   retryWithoutThinking: false,
   stepMaxTokens: 0,
   dispatchedRawRequestTokens: 0,
+  dispatchedRequestRoute: undefined,
   interruptedVisible: "",
   interruptedReasoning: "",
   lowYieldResumptions: 0,

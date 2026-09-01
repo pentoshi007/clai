@@ -71,6 +71,7 @@ async function channel(
   token: string,
   role: "client-control" | "client-terminal",
   clientId: string,
+  dimensions?: { readonly columns: number; readonly rows: number } | undefined,
 ): Promise<{ socket: Socket; rest: Buffer<ArrayBufferLike> }> {
   const socket = await connectRuntimeSocket(socketPath);
   sendFrame(socket, {
@@ -79,6 +80,7 @@ async function channel(
     role,
     token,
     clientId,
+    ...(role === "client-terminal" && dimensions ? dimensions : {}),
   });
   const first = await readFirstFrame(socket);
   expect(first.value).toMatchObject({ type: "ack" });
@@ -408,7 +410,7 @@ async function stopCommandRuntime(runtime: CommandRuntime): Promise<void> {
 }
 
 describe("session runtime host hardening", () => {
-  it("delivers live dimensions and preserves them across terminal reattachment", async () => {
+  it("applies attach dimensions before acknowledging a replacement terminal", async () => {
     if (process.platform === "win32") return;
     const runtime = await startCommandRuntime();
     if (!runtime) return;
@@ -431,6 +433,7 @@ describe("session runtime host hardening", () => {
         runtime.metadata.token,
         "client-terminal",
         client.id,
+        { columns: 144, rows: 52 },
       );
       replacement = attached.socket;
       let replacementOutput = attached.rest.toString("utf8");
@@ -446,7 +449,7 @@ describe("session runtime host hardening", () => {
       const sizes = [
         ...replacementOutput.matchAll(/query-size:(\d+x\d+)/g),
       ];
-      expect(sizes.at(-1)?.[1]).toBe("132x47");
+      expect(sizes.at(-1)?.[1]).toBe("144x52");
 
       replacement.write("q");
       await waitForRuntimeExit(runtime);
@@ -458,6 +461,39 @@ describe("session runtime host hardening", () => {
       }
     }
   }, 18_000);
+
+  it("rejects invalid attach dimensions without replacing the active terminal", async () => {
+    const runtime = await startCommandRuntime();
+    if (!runtime) return;
+    const client = await openTestClient(runtime.metadata, "invalid-resize");
+    let invalid: Socket | undefined;
+    try {
+      invalid = await connectRuntimeSocket(runtime.metadata.socketPath);
+      sendFrame(invalid, {
+        version: RUNTIME_PROTOCOL_VERSION,
+        type: "auth",
+        role: "client-terminal",
+        token: runtime.metadata.token,
+        clientId: client.id,
+        columns: 19,
+        rows: 30,
+      });
+      await expect(readFirstFrame(invalid)).rejects.toThrow();
+      expect(await probeRuntime(runtime.metadata)).toBe(true);
+      client.terminal.write("d");
+      await waitFor(async () =>
+        client.output().includes("query-size:100x30") ? true : undefined,
+      );
+      client.terminal.write("q");
+      await waitForRuntimeExit(runtime);
+    } finally {
+      invalid?.destroy();
+      client.dispose();
+      if (await readRuntimeMetadata(runtime.sessionId)) {
+        await stopCommandRuntime(runtime);
+      }
+    }
+  }, 12_000);
 
   it("rejects a wrong token and isolates old-terminal input after takeover", async () => {
     const runtime = await startCommandRuntime();

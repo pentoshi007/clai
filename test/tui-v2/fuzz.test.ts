@@ -12,6 +12,7 @@ import {
 import { createCountingIdFactory, EventSequencer } from "../../src/app/events/sequencer.js";
 import { normalizeChord } from "../../src/ui-core/actions/keymap.js";
 import { computeLayout } from "../../src/ui-core/layout/compute-layout.js";
+import { appWidthBudget } from "../../src/tui-v2/app/layout-widths.js";
 import { detectLinks } from "../../src/ui-core/rendering/link-detector.js";
 import { sanitizeDisplayText } from "../../src/ui-core/rendering/sanitize-display.js";
 import {
@@ -56,6 +57,36 @@ describe("V2-093 fuzz suite", () => {
           expect(
             model.status.height + model.chat.height + model.composer.height,
           ).toBe(model.rows);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it("App widths never exceed their current terminal or content parent", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 400 }),
+        fc.constantFrom("hidden", "overlay", "split" as const),
+        fc.integer({ min: 0, max: 80 }),
+        (terminalWidth, planPlacement, requestedSplitPlanWidth) => {
+          const budget = appWidthBudget({
+            terminalWidth,
+            planPresent: planPlacement !== "hidden",
+            planPlacement,
+            requestedSplitPlanWidth,
+          });
+          expect(
+            budget.horizontalPadding * 2 + budget.contentInnerWidth,
+          ).toBeLessThanOrEqual(budget.terminalWidth);
+          expect(
+            budget.chatContentWidth +
+              budget.splitPlanWidth +
+              budget.overlayReserveWidth,
+          ).toBeLessThanOrEqual(budget.contentInnerWidth);
+          expect(budget.transcriptContentWidth).toBeLessThanOrEqual(
+            budget.chatContentWidth,
+          );
         },
       ),
       { numRuns: 200 },

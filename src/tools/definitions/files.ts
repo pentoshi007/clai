@@ -210,7 +210,7 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
   ),
   def(
     "fs.append",
-    "Append (or prepend) content. Use after truncation notices with expectedPriorBytes.",
+    "Append (or prepend) content. Positional and safe to repeat; expectedPriorBytes is an optional advisory cross-check.",
     {
       type: "object",
       properties: {
@@ -220,7 +220,7 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
         expectedPriorBytes: {
           type: "integer",
           description:
-            "From prior write receipt; required after truncation salvage",
+            "Optional byte count from the prior receipt. A stale value no longer blocks the append; it only fails if the file shrank below it.",
         },
       },
       required: ["path", "content"],

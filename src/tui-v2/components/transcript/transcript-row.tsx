@@ -67,6 +67,7 @@ export function TranscriptRowImpl(props: {
         <AssistantMessage
           item={item}
           theme={theme}
+          colorMode={services.capabilities.colorMode}
           contentWidth={contentWidth}
         />
       );

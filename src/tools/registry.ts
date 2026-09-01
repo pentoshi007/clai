@@ -17,6 +17,7 @@ import { type ToolRunOptions, type ToolHandler } from "./tool-types.js";
 import {
   elidedStubReuseMessage,
   findElidedStubArg,
+  stripSupersededElidedArgs,
 } from "../agent/message-slim.js";
 import { fromWireName } from "../llm/tool-protocol.js";
 import { NON_REGISTRY_TOOL_NAMES } from "./definitions.js";
@@ -160,7 +161,11 @@ export async function runToolCall(
   call: ToolCall,
   options: ToolRunOptions = {},
 ): Promise<ToolResult> {
-  const normalized = normalizeToolCall(call);
+  const parsed = normalizeToolCall(call);
+  const normalized = {
+    ...parsed,
+    args: stripSupersededElidedArgs(parsed.args),
+  };
   const handler = toolRegistry[normalized.name];
   if (!handler) {
     const dispatcher = externalToolDispatcher();

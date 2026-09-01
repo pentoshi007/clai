@@ -1,6 +1,7 @@
 import type { ChatMessage, SuccessfulRequestSnapshot } from "../types.js";
 import { accountAssembledRequest, SAFETY_MARGIN_TOKENS, type RequestAccounting } from "./request-accounting.js";
 import { buildCompactionReplayMessages, comparableMessage, missingHistoryTail } from "./compaction/summary-execution.js";
+import { projectToolHistory } from "./tool-history.js";
 export { CompactionOverLimitError, executeCompactionSummary, isCompactionOverLimitError } from "./compaction/summary-execution.js";
 export { buildCompactionReplayMessages };
 export type { CompactionSummaryExecution } from "./compaction/summary-execution.js";
@@ -22,6 +23,16 @@ export function planCompactionReplay(input: {
   readonly stream?: boolean | undefined;
 }): CompactionReplayPlan | undefined {
   const baseRequest = input.baseRequest;
+  if (
+    projectToolHistory(baseRequest.messages).changed ||
+    projectToolHistory(input.history).changed ||
+    baseRequest.messages.some((message) =>
+      message.content.includes("[context-note]"),
+    ) ||
+    input.history.some((message) => message.content.includes("[context-note]"))
+  ) {
+    return undefined;
+  }
   const snapshotHead = baseRequest.messages[0];
   const historyHead = input.history[0];
   if (!snapshotHead || !historyHead) return undefined;

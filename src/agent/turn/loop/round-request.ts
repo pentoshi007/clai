@@ -87,6 +87,10 @@ export const requestRound = async (
     estimatedInputTokens = assembled.estimatedInputTokens;
     deps.loop.stepMaxTokens = assembled.stepMaxTokens;
     deps.loop.dispatchedRawRequestTokens = assembled.rawRequestTokens;
+    deps.loop.dispatchedRequestRoute = {
+      provider: deps.loop.provider,
+      model: deps.loop.model,
+    };
     if (
       responderDelivery &&
       !jobManager.markDeliveryStarted(responderDelivery.id, deps.session.sessionId)

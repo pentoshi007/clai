@@ -2,7 +2,7 @@ import type { SuccessfulRequestSnapshot, ToolCall } from "../../../types.js";
 import type { ProviderStreamEvent } from "../../../llm/stream-events.js";
 import { createThinkingStreamParser } from "../../../ui/thinking.js";
 import { parseAllToolCalls } from "../../tool-call-parser.js";
-import { normalizeToolCall } from "../../../tools/registry.js";
+import { canonicalizeTurnCall, type ToolNameCanonicalizer } from "./canonicalize-turn-call.js";
 import { fromWireName } from "../../../llm/tool-protocol.js";
 import { isProviderFailureStatus } from "../../../llm/key-rotation.js";
 
@@ -25,6 +25,7 @@ export interface StreamSessionPorts {
   readonly nextToolEventId: () => string;
   readonly markPrinted: (eventId: string) => void;
   readonly nativeToolsAttached: () => boolean;
+  readonly mcpRuntime?: ToolNameCanonicalizer | undefined;
   readonly onSuccessfulRequest: (snapshot: SuccessfulRequestSnapshot) => void;
 }
 
@@ -75,7 +76,10 @@ const emitStreamedTextCards = (
 ): void => {
   const parsedCalls = parseAllToolCalls(state.accumulatedText);
   while (state.streamedCallsCount < parsedCalls.length) {
-    const call = normalizeToolCall(parsedCalls[state.streamedCallsCount]!);
+    const call = canonicalizeTurnCall(
+      parsedCalls[state.streamedCallsCount]!,
+      ports.mcpRuntime,
+    );
     const eventId = ports.nextToolEventId();
     session.callIds[state.streamedCallsCount] = eventId;
     ports.markPrinted(eventId);

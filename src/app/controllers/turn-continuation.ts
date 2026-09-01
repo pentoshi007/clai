@@ -16,6 +16,9 @@ export function queueContinuationDecision(
   if (result.status === "error") {
     return { proceed: false, reason: `the turn failed: ${result.error.message}` };
   }
+  if (result.outcome?.status === "aborted") {
+    return { proceed: false, reason: "the turn was cancelled" };
+  }
   if (result.outcome?.loopGuardStop) {
     return { proceed: false, reason: "the loop guard stopped the turn" };
   }

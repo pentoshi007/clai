@@ -103,3 +103,58 @@ describe("renderMarkdownLines (classic parity for OpenTUI)", () => {
     }
   });
 });
+
+describe("explicit markdown appearance", () => {
+  it("is independent of ambient theme and chalk state and isolates code-row palettes", async () => {
+    const [{ default: chalk }, { themeFor }] = await Promise.all([
+      import("chalk"),
+      import("../../../src/ui-core/rendering/theme.js"),
+    ]);
+    const previousLevel = chalk.level;
+    const previousTheme = process.env.CLAI_THEME;
+    const source = "```ts\nconst value = 42;\n```";
+
+    try {
+      chalk.level = 0;
+      process.env.CLAI_THEME = "light";
+      const first = renderMarkdownLines(source, {
+        width: 72,
+        stripOuterIndent: true,
+        theme: themeFor("dark"),
+        colorMode: "truecolor",
+      });
+      expect(chalk.level).toBe(0);
+
+      chalk.level = 3;
+      process.env.CLAI_THEME = "dark";
+      const second = renderMarkdownLines(source, {
+        width: 72,
+        stripOuterIndent: true,
+        theme: themeFor("dark"),
+        colorMode: "truecolor",
+      });
+      const light = renderMarkdownLines(source, {
+        width: 72,
+        stripOuterIndent: true,
+        theme: themeFor("light"),
+        colorMode: "truecolor",
+      });
+      const colorless = renderMarkdownLines(source, {
+        width: 72,
+        stripOuterIndent: true,
+        theme: themeFor("dark"),
+        colorMode: "none",
+      });
+
+      expect(second).toEqual(first);
+      expect(light).not.toEqual(first);
+      expect(first.join("\n")).toContain("\x1b[");
+      expect(colorless.join("\n")).not.toContain("\x1b[");
+      expect(chalk.level).toBe(3);
+    } finally {
+      chalk.level = previousLevel;
+      if (previousTheme === undefined) delete process.env.CLAI_THEME;
+      else process.env.CLAI_THEME = previousTheme;
+    }
+  });
+});

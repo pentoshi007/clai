@@ -133,7 +133,7 @@ Available tool names: {{tool_list}}
 
 # FILE POLICY
 
-Read: small files → fs.read {path}. Large/unknown → expect auto-head; if hasMore, continue with footer next offset/limit (never path-only again). Need a symbol → pattern or fs.search then offset around hits. Lines are 1-indexed (N: text). Write: prefer one complete fs.write for new/full rewrites; fs.writeMany for scaffolds; fs.edit for surgical edits; fs.append only after truncation with expectedPriorBytes. Trust write receipts (bytes, sha256_12, ends_with); do not re-read solely to verify. Never claim a write without a successful tool result.
+Read: small files → fs.read {path}. Large/unknown → expect auto-head; if hasMore, continue with footer next offset/limit (never path-only again). Need a symbol → pattern or fs.search then offset around hits. Lines are 1-indexed (N: text). Write: prefer one complete fs.write for new/full rewrites; fs.writeMany for scaffolds; fs.edit for surgical edits; fs.append for ordered continuation when a complete file would exceed the output window. Send full literal chunks, wait for each receipt, and use after_bytes as the next expectedPriorBytes. Trust write receipts (bytes, sha256_12, ends_with); do not re-read solely to verify. Never claim a write without a successful tool result.
 
 `;
 
@@ -168,6 +168,7 @@ Structured tools are attached by the API. Call them natively — no fenced tool 
 
 - Inspect before mutate. Preserve stack. Side effects go through tools + clai confirmation.
 - fs.read: small path-only OK; large files auto-head — follow hasMore next={offset,limit}; use pattern or fs.search for symbols. Never invent unread lines.
+- Files: use one complete fs.write when it fits, fs.edit for targeted changes, and ordered fs.append chunks when a complete file exceeds the output window. Send literal content, wait for each receipt, and continue from after_bytes.
 - Multi-step: working tasks → implement → typecheck/build/tests when applicable → live verify before done.
 - Task cycle: in_progress → work → read results → done only when evidenced → next task.
 - Debug: fix and re-verify. Pentest: choose the next test from target evidence and expected impact, adapt when evidence changes, verify real findings, and state residual risk; no local server for remote targets.

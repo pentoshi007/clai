@@ -1,16 +1,18 @@
-
-import chalk from "chalk";
+import chalk, { type ChalkInstance } from "chalk";
 import { visibleWidth, wrapAnsiLine } from "../markdown.js";
 export { visibleWidth, wrapAnsiLine };
 
-export function renderInlineMarkdown(text: string): string {
+export function renderInlineMarkdown(
+  text: string,
+  paint: ChalkInstance = chalk,
+): string {
   let out = "";
   let i = 0;
   while (i < text.length) {
     if (text.startsWith("``", i)) {
       const end = text.indexOf("``", i + 2);
       if (end > i + 2) {
-        out += chalk.cyan(`\`${text.slice(i + 2, end)}\``);
+        out += paint.cyan(`\`${text.slice(i + 2, end)}\``);
         i = end + 2;
         continue;
       }
@@ -19,7 +21,7 @@ export function renderInlineMarkdown(text: string): string {
     if (text[i] === "`") {
       const end = text.indexOf("`", i + 1);
       if (end > i + 1) {
-        out += chalk.cyan(text.slice(i + 1, end));
+        out += paint.cyan(text.slice(i + 1, end));
         i = end + 1;
         continue;
       }
@@ -28,7 +30,7 @@ export function renderInlineMarkdown(text: string): string {
     if (text.startsWith("***", i)) {
       const end = text.indexOf("***", i + 3);
       if (end > i + 3) {
-        out += chalk.bold.italic(renderInlineMarkdown(text.slice(i + 3, end)));
+        out += paint.bold.italic(renderInlineMarkdown(text.slice(i + 3, end), paint));
         i = end + 3;
         continue;
       }
@@ -37,7 +39,7 @@ export function renderInlineMarkdown(text: string): string {
     if (text.startsWith("**", i)) {
       const end = text.indexOf("**", i + 2);
       if (end > i + 2) {
-        out += chalk.bold(renderInlineMarkdown(text.slice(i + 2, end)));
+        out += paint.bold(renderInlineMarkdown(text.slice(i + 2, end), paint));
         i = end + 2;
         continue;
       }
@@ -46,7 +48,7 @@ export function renderInlineMarkdown(text: string): string {
     if (text.startsWith("__", i)) {
       const end = text.indexOf("__", i + 2);
       if (end > i + 2) {
-        out += chalk.bold(renderInlineMarkdown(text.slice(i + 2, end)));
+        out += paint.bold(renderInlineMarkdown(text.slice(i + 2, end), paint));
         i = end + 2;
         continue;
       }
@@ -61,7 +63,7 @@ export function renderInlineMarkdown(text: string): string {
           !inner.startsWith(" ") &&
           !inner.endsWith(" ")
         ) {
-          out += chalk.italic(renderInlineMarkdown(inner));
+          out += paint.italic(renderInlineMarkdown(inner, paint));
           i = end + 1;
           continue;
         }
@@ -83,7 +85,7 @@ export function renderInlineMarkdown(text: string): string {
             !inner.startsWith(" ") &&
             !inner.endsWith(" ")
           ) {
-            out += chalk.italic(renderInlineMarkdown(inner));
+            out += paint.italic(renderInlineMarkdown(inner, paint));
             i = end + 1;
             continue;
           }
@@ -94,8 +96,8 @@ export function renderInlineMarkdown(text: string): string {
     if (text.startsWith("~~", i)) {
       const end = text.indexOf("~~", i + 2);
       if (end > i + 2) {
-        out += chalk.strikethrough(
-          renderInlineMarkdown(text.slice(i + 2, end)),
+        out += paint.strikethrough(
+          renderInlineMarkdown(text.slice(i + 2, end), paint),
         );
         i = end + 2;
         continue;
@@ -109,7 +111,7 @@ export function renderInlineMarkdown(text: string): string {
         if (urlEnd > close + 2) {
           const label = text.slice(i + 1, close);
           const url = text.slice(close + 2, urlEnd);
-          out += chalk.cyan.underline(label) + chalk.dim(`(${url})`);
+          out += paint.cyan.underline(label) + paint.dim(`(${url})`);
           i = urlEnd + 1;
           continue;
         }
@@ -192,7 +194,11 @@ function padCell(
   return rendered + " ".repeat(slack);
 }
 
-export function renderTableBlock(rawLines: string[], availWidth: number): string[] {
+export function renderTableBlock(
+  rawLines: string[],
+  availWidth: number,
+  paint: ChalkInstance,
+): string[] {
   const separatorIndex = rawLines.findIndex(isTableSeparatorLine);
   const headerLines =
     separatorIndex > 0
@@ -217,17 +223,17 @@ export function renderTableBlock(rawLines: string[], availWidth: number): string
       const trimmed = part.trim();
       const bulletMatch = trimmed.match(/^([-\*+])\s+(.*)$/);
       if (bulletMatch) {
-        const content = renderInlineMarkdown(bulletMatch[2]!);
-        const rendered = `${chalk.cyan("•")} ${content}`;
+        const content = renderInlineMarkdown(bulletMatch[2]!, paint);
+        const rendered = `${paint.cyan("•")} ${content}`;
         return { rendered, width: visibleWidth(rendered) };
       }
       const numberMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
       if (numberMatch) {
-        const content = renderInlineMarkdown(numberMatch[2]!);
-        const rendered = `${chalk.cyan(`${numberMatch[1]}.`)} ${content}`;
+        const content = renderInlineMarkdown(numberMatch[2]!, paint);
+        const rendered = `${paint.cyan(`${numberMatch[1]}.`)} ${content}`;
         return { rendered, width: visibleWidth(rendered) };
       }
-      const rendered = renderInlineMarkdown(trimmed);
+      const rendered = renderInlineMarkdown(trimmed, paint);
       return { rendered, width: visibleWidth(rendered) };
     });
 
@@ -272,7 +278,7 @@ export function renderTableBlock(rawLines: string[], availWidth: number): string
     return out.length > 0 ? out : [{ rendered: "", width: 0 }];
   };
 
-  const dim = chalk.dim;
+  const dim = paint.dim;
   const renderRow = (row: CellLine[][], bold: boolean): string[] => {
     const wrapped = row.map((cell, c) => wrapCell(cell, colWidths[c]!));
     const height = Math.max(1, ...wrapped.map((w) => w.length));
@@ -282,7 +288,7 @@ export function renderTableBlock(rawLines: string[], availWidth: number): string
       for (let c = 0; c < columns; c++) {
         const piece = wrapped[c]![h] ?? { rendered: "", width: 0 };
         const content =
-          bold && piece.rendered ? chalk.bold(piece.rendered) : piece.rendered;
+          bold && piece.rendered ? paint.bold(piece.rendered) : piece.rendered;
         s +=
           " " +
           padCell(content, piece.width, colWidths[c]!, aligns[c]!) +

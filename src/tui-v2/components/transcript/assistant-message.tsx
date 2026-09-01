@@ -3,6 +3,7 @@
 import { useMemo, useRef, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
+import type { ColorMode } from "../../../app/ports/terminal-port.js";
 import type { AssistantItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import {
@@ -17,9 +18,10 @@ const BODY_INDENT = 2;
 export function AssistantMessage(props: {
   item: AssistantItem;
   theme: Theme;
+  colorMode: ColorMode;
   contentWidth?: number | undefined;
 }): ReactNode {
-  const { item, theme, contentWidth } = props;
+  const { item, theme, colorMode, contentWidth } = props;
   const { width: termWidth } = useTerminalDimensions();
   const wrapWidth = Math.max(
     20,
@@ -36,12 +38,14 @@ export function AssistantMessage(props: {
         width: wrapWidth,
         defaultFg: theme.response,
         stripOuterIndent: true,
+        theme,
+        colorMode,
       },
       cache: cacheRef.current,
     });
     cacheRef.current = rendered.cache;
     return rendered.lines;
-  }, [item.text, item.streaming, wrapWidth, theme.response]);
+  }, [item.text, item.streaming, wrapWidth, theme, colorMode]);
 
   if (!item.text.trim() && item.streaming) return null;
   if (!item.text.trim() && lines.length === 0) return null;

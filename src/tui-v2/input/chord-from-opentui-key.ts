@@ -1,14 +1,51 @@
-
 import { normalizeChord, type KeyEventLike } from "../../ui-core/actions/chord.js";
 
 export type { KeyEventLike };
 
 const ENTER_NAMES = new Set(["return", "kpenter"]);
 
-function baseKeyName(name: string): string {
-  if (name === "linefeed") return "j";
-  if (ENTER_NAMES.has(name)) return "enter";
-  return name;
+function isEscapeKey(key: KeyEventLike): boolean {
+  const name = key.name.toLowerCase();
+  return (
+    name === "escape" ||
+    name === "esc" ||
+    key.name === "\x1b" ||
+    key.sequence === "\x1b" ||
+    key.raw === "\x1b"
+  );
+}
+
+function baseKeyName(key: KeyEventLike): string {
+  if (isEscapeKey(key)) return "escape";
+  if (key.name === "linefeed") return "j";
+  if (ENTER_NAMES.has(key.name)) return "enter";
+  return key.name;
+}
+
+export function isKeyEventRelease(key: KeyEventLike): boolean {
+  return key.eventType === "release";
+}
+
+export function isKeyEventRepeat(key: KeyEventLike): boolean {
+  return key.eventType === "repeat" || key.repeated === true;
+}
+
+export function consumeCancellationKeyRepeat(
+  key: KeyEventLike & {
+    preventDefault(): void;
+    stopPropagation?(): void;
+  },
+  chord: string,
+): boolean {
+  if (
+    (chord !== "escape" && chord !== "ctrl+c") ||
+    !isKeyEventRepeat(key)
+  ) {
+    return false;
+  }
+  key.preventDefault();
+  key.stopPropagation?.();
+  return true;
 }
 
 export function chordFromKeyEvent(key: KeyEventLike): string {
@@ -16,7 +53,9 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   const isBacktab = key.name === "backtab";
   const ctrl = key.ctrl || isLinefeed;
   const alt = Boolean(key.option || key.meta);
-  const isUpper = key.name.length === 1 && key.name >= "A" && key.name <= "Z";
+  const baseName = isBacktab ? "tab" : baseKeyName(key);
+  const isUpper =
+    baseName.length === 1 && baseName >= "A" && baseName <= "Z";
   const hasShiftSequence =
     typeof key.sequence === "string" &&
     key.sequence.length === 1 &&
@@ -30,7 +69,7 @@ export function chordFromKeyEvent(key: KeyEventLike): string {
   if (alt) parts.push("alt");
   if (shift) parts.push("shift");
   if (meta) parts.push("meta");
-  parts.push(isBacktab ? "tab" : baseKeyName(key.name).toLowerCase());
+  parts.push(baseName.toLowerCase());
 
   return normalizeChord(parts.join("+"));
 }

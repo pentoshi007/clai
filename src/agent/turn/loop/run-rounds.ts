@@ -44,6 +44,7 @@ import { rememberThinking } from "../../../ui/thinking.js";
 import { collapseRepeatedText, looksLikePromptLeak, parseToolCall, textBeforeToolCall } from "../../tool-call-parser.js";
 import { accountCompletionUsage, interpretCompletion } from "./completion-interpretation.js";
 import { firstNativeToolCall, syncNativeToolCallCards } from "./native-tool-calls.js";
+import { canonicalizeTurnCall } from "./canonicalize-turn-call.js";
 import { hasTruncatedNativeWrite, salvageTruncatedNativeWrite } from "./native-write-salvage.js";
 import { requestRound } from "./round-request.js";
 import { createStreamSession } from "./stream-session.js";
@@ -73,7 +74,7 @@ export const runTurnRounds = async (
 
     if (deps.loop.pendingCalls.length > 0) {
 
-      call = deps.loop.pendingCalls.shift()!;
+      call = canonicalizeTurnCall(deps.loop.pendingCalls.shift()!, deps.mcpRuntime);
       assistantText = { visible: "", thinkContent: "", hasThinking: false };
       const batchStatus = `  ↳ continuing batch (${deps.loop.pendingCalls.length} more queued)\n`;
       deps.writeStatus(batchStatus);
@@ -96,6 +97,7 @@ export const runTurnRounds = async (
         nextToolEventId: () => deps.nextToolEventId(),
         markPrinted: (eventId) => deps.alreadyPrintedIds.add(eventId),
         nativeToolsAttached: () => toolsAttached,
+        mcpRuntime: deps.mcpRuntime,
         onSuccessfulRequest: (snapshot) => {
           deps.loop.lastSuccessfulRequestSnapshot = snapshot;
           deps.options.onSuccessfulRequest?.(snapshot);
@@ -125,6 +127,7 @@ export const runTurnRounds = async (
       await accountCompletionUsage(
         {
           dispatchedRawRequestTokens: deps.loop.dispatchedRawRequestTokens,
+          dispatchedRequestRoute: deps.loop.dispatchedRequestRoute,
           emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, attempt }) =>
             deps.emit({
               type: "token-usage",
@@ -187,12 +190,13 @@ export const runTurnRounds = async (
           callIds,
           allocateEventId: () => deps.nextToolEventId(),
           markPrinted: (eventId) => deps.alreadyPrintedIds.add(eventId),
+          mcpRuntime: deps.mcpRuntime,
         },
         nativeToolCalls,
       );
 
       if (nativeToolCalls.length) {
-        call = firstNativeToolCall(nativeToolCalls);
+        call = firstNativeToolCall(nativeToolCalls, deps.mcpRuntime);
       } else {
         call = parseToolCall(assistantText.visible, {
           strict: getConfig().parserStrict,
@@ -205,6 +209,9 @@ export const runTurnRounds = async (
             deps.writeNotice("info", "recovered tool call from thinking content");
           }
         }
+      }
+      if (call && !call.args?.__nativeParseError) {
+        call = canonicalizeTurnCall(call, deps.mcpRuntime);
       }
 
       if (looksLikePromptLeak(assistantText.visible)) {
@@ -465,6 +472,7 @@ export const runTurnRounds = async (
         visible: assistantText.visible,
         thinkContent: assistantText.thinkContent,
         primaryCall: call,
+        mcpRuntime: deps.mcpRuntime,
       });
 
       const deferral = decidePlanCallDeferral(bound);

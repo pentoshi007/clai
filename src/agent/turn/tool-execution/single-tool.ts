@@ -11,7 +11,8 @@ import { loadPlan, mutatePlan } from "../../../store/plan.js";
 import { isScopeActive, loadScopeForSession } from "../../../store/scope.js";
 import { MCP_AGENT_TOOL_NAMES } from "../../../tools/definitions.js";
 import { jobManager } from "../../../tools/jobs.js";
-import { normalizeToolCall, runToolCall } from "../../../tools/registry.js";
+import { runToolCall } from "../../../tools/registry.js";
+import { canonicalizeTurnCall } from "../loop/canonicalize-turn-call.js";
 import { stdioSecretRequester } from "../../confirm-port.js";
 import { saveOutcomeState } from "../../outcomes.js";
 import { handlePlanTool, removePlanContextMessage } from "../../plan-tool.js";
@@ -67,12 +68,7 @@ export const runSingleTool = async (
 ): Promise<SingleToolResult> => {
 
   const scratchDir = scratchDirFor(safeCwd());
-  const normalizedCall = normalizeToolCall(rawCall);
-  const canonicalMcpName = deps.mcpRuntime?.canonicalizeToolName(normalizedCall.name);
-  let call =
-    canonicalMcpName && canonicalMcpName !== normalizedCall.name
-      ? { ...normalizedCall, name: canonicalMcpName }
-      : normalizedCall;
+  let call = canonicalizeTurnCall(rawCall, deps.mcpRuntime);
 
   const emitVisibleSyntheticReceipt = (
     result: ToolResult,
@@ -96,12 +92,21 @@ export const runSingleTool = async (
 
   const invalid = invalidToolCall(call);
   if (invalid) {
+    deps.loopGuard.recordAttempt(
+      deps.step(),
+      call.name,
+      call.args,
+      false,
+      invalid.result.exitCode,
+      invalid.reason,
+    );
     deps.emitToolResult(toolEventId, invalid.result, invalid.reason);
     return {
       ok: false,
       call,
       result: invalid.result,
       contextOutput: invalid.reason,
+      suppressedRepeat: true,
     };
   }
 

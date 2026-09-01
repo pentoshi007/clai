@@ -25,6 +25,7 @@ import {
   compactionSummaryText,
 } from "./compaction-messages.js";
 import { selectCompactionReplaySnapshot } from "./compaction-replay-selection.js";
+import { repairToolProtocol } from "../tool-history.js";
 import type { CompactionExecutionState } from "./compaction-summarizer.js";
 
 export type CompactionAuditPayload = Readonly<
@@ -228,6 +229,9 @@ const runAdmittedCompaction = async (
 export const createCompactionCoordinator =
   (ports: CompactionCoordinatorPorts) =>
   async (reason: string, force = false): Promise<void> => {
+    if (repairToolProtocol(ports.messages) > 0) {
+      ports.clearSuccessfulRequestSnapshot();
+    }
     const contextLimitTokens = ports.contextLimitTokens();
     const admission = await planCompactionAdmission(
       {

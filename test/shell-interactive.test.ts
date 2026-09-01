@@ -22,12 +22,19 @@ describe("looksInteractiveStdin", () => {
     expect(looksInteractiveStdin("foo; sudo systemctl restart nginx")).toBe(true);
   });
 
-  it("respects sudo non-interactive opt-outs", () => {
+  it("respects real non-interactive and supplied-stdin opt-outs", () => {
     expect(looksInteractiveStdin("sudo -n whoami")).toBe(false);
     expect(looksInteractiveStdin("sudo --non-interactive uptime")).toBe(false);
-    // -S means "read password from stdin" — the caller is responsible
-    // for piping it; we should not steal stdin.
+    expect(looksInteractiveStdin("sudo -S whoami")).toBe(true);
+    expect(looksInteractiveStdin("sudo --stdin whoami")).toBe(true);
     expect(looksInteractiveStdin("echo pw | sudo -S whoami")).toBe(false);
+    expect(looksInteractiveStdin("sudo -S whoami < password.txt")).toBe(false);
+    expect(looksInteractiveStdin("sudo -S whoami <<< pw")).toBe(false);
+    expect(looksInteractiveStdin("sudo -S whoami | cat")).toBe(true);
+    expect(looksInteractiveStdin("sudo -S whoami <(echo pw)")).toBe(true);
+    expect(
+      looksInteractiveStdin("sudo -S whoami", { stdinSupplied: true }),
+    ).toBe(false);
   });
 
   it("flags other interactive elevation tools", () => {
@@ -80,6 +87,44 @@ describe("interactiveStdinKind", () => {
     expect(interactiveStdinKind("doas pkg upgrade")).toBe("elevate");
   });
 
+  it("classifies sudo after a background list, inside grouping, or behind a wrapper", () => {
+    expect(interactiveStdinKind("echo ready & sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("(sudo -S whoami)")).toBe("elevate");
+    expect(interactiveStdinKind("(sudo -S whoami) | cat")).toBe("elevate");
+    expect(interactiveStdinKind("false || sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("/usr/bin/env sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env -- sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env FOO=bar sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("nohup sudo -S whoami")).toBe("elevate");
+  });
+
+  it("looks past wrapper options to reach the invoked command", () => {
+    expect(interactiveStdinKind("stdbuf -o0 sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("stdbuf -o 0 sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env -i sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env -u FOO sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env --unset FOO sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env FOO=bar -- sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("command -p sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("time -p sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("env -i ls -la")).toBeUndefined();
+    expect(interactiveStdinKind("stdbuf -o0 echo sudo -S whoami")).toBeUndefined();
+  });
+
+  it("keeps redirections and quoted arguments out of the new boundaries", () => {
+    expect(interactiveStdinKind("echo sudo -S whoami")).toBeUndefined();
+    expect(interactiveStdinKind("env sudo -Sn whoami")).toBeUndefined();
+    expect(interactiveStdinKind("(sudo -Sn whoami)")).toBeUndefined();
+    expect(interactiveStdinKind("echo pw |& sudo -S whoami")).toBeUndefined();
+    expect(interactiveStdinKind("echo pw | (env sudo -S whoami)")).toBeUndefined();
+    expect(interactiveStdinKind("ls &> out.txt")).toBeUndefined();
+    expect(interactiveStdinKind("ls >& out.txt")).toBeUndefined();
+    expect(interactiveStdinKind("sudo -S whoami 0<&3")).toBeUndefined();
+    expect(interactiveStdinKind("sudo -S whoami 2>&1")).toBe("elevate");
+    expect(interactiveStdinKind("ls &")).toBeUndefined();
+  });
+
   it("classifies ssh/gpg/passwd as tty-only", () => {
     expect(interactiveStdinKind("ssh user@host")).toBe("tty");
     expect(interactiveStdinKind("gpg --decrypt x.gpg")).toBe("tty");
@@ -90,10 +135,28 @@ describe("interactiveStdinKind", () => {
     expect(interactiveStdinKind("ssh a && sudo ls")).toBe("elevate");
   });
 
-  it("returns undefined for non-interactive and opted-out commands", () => {
+  it("parses elevation options only before the invoked command", () => {
+    expect(interactiveStdinKind("sudo -Sn whoami")).toBeUndefined();
+    expect(interactiveStdinKind("echo pw | sudo -SH whoami")).toBeUndefined();
+    expect(interactiveStdinKind("sudo -S printf -n hello")).toBe("elevate");
+    expect(
+      interactiveStdinKind("sudo -S echo $(cat < input.txt)"),
+    ).toBe("elevate");
+    expect(interactiveStdinKind("sudo -S whoami | cat")).toBe("elevate");
+  });
+
+  it("returns undefined for non-interactive commands and supplied stdin", () => {
     expect(interactiveStdinKind("ls -la")).toBeUndefined();
     expect(interactiveStdinKind("sudo -n whoami")).toBeUndefined();
+    expect(interactiveStdinKind("sudo -S whoami")).toBe("elevate");
+    expect(interactiveStdinKind("sudo --stdin whoami")).toBe("elevate");
     expect(interactiveStdinKind("echo pw | sudo -S whoami")).toBeUndefined();
+    expect(
+      interactiveStdinKind("sudo -S whoami < password.txt"),
+    ).toBeUndefined();
+    expect(
+      interactiveStdinKind("sudo -S whoami", { stdinSupplied: true }),
+    ).toBeUndefined();
     expect(
       interactiveStdinKind("ssh -o BatchMode=yes user@host uptime"),
     ).toBeUndefined();

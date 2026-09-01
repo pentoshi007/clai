@@ -10,12 +10,28 @@ import {
   reasoningArtifactsForPersistence,
 } from "../llm/reasoning-artifacts.js";
 import { syntheticToolCallId } from "../llm/tool-protocol.js";
-import { slimToolArgs } from "./message-slim.js";
+import {
+  SLIM_ARG_ABSOLUTE_MAX_CHARS,
+  stripSupersededElidedArgs,
+} from "./message-slim.js";
+import {
+  collapseElidedToolHistory,
+  collapseOversizedToolHistory,
+  MAX_RETAINED_COMPLETED_TOOL_ARGUMENT_CHARS,
+  normalizeToolHistoryEntries,
+  parseCanonicalTextToolCalls,
+  PROTOCOL_PLACEHOLDER_MARKER,
+} from "./tool-history-projection.js";
 import { isSessionStateMessage } from "./session-state.js";
 import {
   isActiveSkillsMessage,
   isAgentInstructionsMessage,
 } from "./injected-blocks.js";
+
+export {
+  MAX_RETAINED_COMPLETED_TOOL_ARGUMENT_CHARS,
+  PROTOCOL_PLACEHOLDER_MARKER,
+};
 
 function isBenignTrailingSystemBlock(content: string): boolean {
   return (
@@ -122,16 +138,26 @@ function rewriteConflictingToolCallIds(messages: ChatMessage[]): number {
   return repairs;
 }
 
+function copyToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return structuredClone(args);
+  } catch {
+    return { ...args };
+  }
+}
+
 export function slimNativeToolCallsForHistory(
   toolCalls: readonly NativeToolCall[],
 ): NativeToolCall[] {
   return toolCalls.map((tc) => {
-    const args = slimToolArgs(tc.args ?? {});
+    const args = copyToolArgs(stripSupersededElidedArgs(tc.args ?? {}));
     const { rawArguments: _rawArguments, ...durable } = tc;
     return {
       ...durable,
       args,
-      ...(args._parseError && tc.rawArguments
+      ...(args._parseError &&
+      tc.rawArguments &&
+      tc.rawArguments.length <= SLIM_ARG_ABSOLUTE_MAX_CHARS
         ? { rawArguments: tc.rawArguments }
         : {}),
     };
@@ -188,14 +214,27 @@ export function appendToolResult(
 
 export function hasOrphanToolMessages(messages: ChatMessage[]): boolean {
   const openIds = new Set<string>();
-  for (const msg of messages) {
-    if (msg.role === "assistant" && msg.toolCalls?.length) {
-      for (const tc of msg.toolCalls) openIds.add(tc.id);
+  let pendingTextResults = 0;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      pendingTextResults = message.toolCalls?.length
+        ? 0
+        : parseCanonicalTextToolCalls(message.content).length;
+      for (const call of message.toolCalls ?? []) openIds.add(call.id);
+      continue;
     }
-    if (msg.role === "tool") {
-      const id = msg.toolCallId ?? "";
-      if (!id || !openIds.has(id)) return true;
+    if (message.role === "tool") {
+      const id = message.toolCallId ?? "";
+      if (id) {
+        if (!openIds.has(id)) return true;
+        openIds.delete(id);
+      } else {
+        if (pendingTextResults <= 0) return true;
+        pendingTextResults -= 1;
+      }
+      continue;
     }
+    pendingTextResults = 0;
   }
   return false;
 }
@@ -314,37 +353,67 @@ export function validateToolProtocol(messages: readonly ChatMessage[]): string[]
   const issues: string[] = [];
   const seenIds = new Set<string>();
   let pending = new Set<string>();
+  let pendingTextCalls: NativeToolCall[] = [];
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
-    if (message.role === "assistant" && message.toolCalls?.length) {
-      if (pending.size > 0) {
-        issues.push(`message ${index}: new assistant tool group before results for ${[...pending].join(", ")}`);
+    const textCalls =
+      message.role === "assistant" && !message.toolCalls?.length
+        ? parseCanonicalTextToolCalls(message.content)
+        : [];
+    if (
+      message.role === "assistant" &&
+      (message.toolCalls?.length || textCalls.length > 0)
+    ) {
+      if (pending.size > 0 || pendingTextCalls.length > 0) {
+        const open = [
+          ...pending,
+          ...pendingTextCalls.map((call) => call.name),
+        ];
+        issues.push(`message ${index}: new assistant tool group before results for ${open.join(", ")}`);
       }
       pending = new Set<string>();
-      for (const call of message.toolCalls) {
-        if (!call.id) issues.push(`message ${index}: tool call has no id`);
-        if (seenIds.has(call.id)) issues.push(`message ${index}: duplicate tool call id ${call.id}`);
-        seenIds.add(call.id);
-        pending.add(call.id);
+      pendingTextCalls = [];
+      if (message.toolCalls?.length) {
+        for (const call of message.toolCalls) {
+          if (!call.id) issues.push(`message ${index}: tool call has no id`);
+          if (seenIds.has(call.id)) issues.push(`message ${index}: duplicate tool call id ${call.id}`);
+          seenIds.add(call.id);
+          pending.add(call.id);
+        }
+      } else {
+        pendingTextCalls = textCalls;
       }
       continue;
     }
     if (message.role === "tool") {
       const id = message.toolCallId ?? "";
-      if (!id || !pending.has(id)) {
-        issues.push(`message ${index}: orphan tool result${id ? ` ${id}` : ""}`);
-      } else {
+      if (id && pending.has(id)) {
         pending.delete(id);
+      } else if (!id && pendingTextCalls.length > 0) {
+        pendingTextCalls.shift();
+      } else {
+        issues.push(`message ${index}: orphan tool result${id ? ` ${id}` : ""}`);
       }
       continue;
     }
-    if (pending.size > 0) {
-      issues.push(`message ${index}: non-tool message before results for ${[...pending].join(", ")}`);
+    if (pending.size > 0 || pendingTextCalls.length > 0) {
+      const open = [
+        ...pending,
+        ...pendingTextCalls.map((call) => call.name),
+      ];
+      issues.push(`message ${index}: non-tool message before results for ${open.join(", ")}`);
       pending.clear();
+      pendingTextCalls = [];
     }
   }
-  if (pending.size > 0) issues.push(`end of history: missing results for ${[...pending].join(", ")}`);
+  if (pending.size > 0 || pendingTextCalls.length > 0) {
+    const open = [
+      ...pending,
+      ...pendingTextCalls.map((call) => call.name),
+    ];
+    issues.push(`end of history: missing results for ${open.join(", ")}`);
+  }
   return issues;
 }
 
@@ -352,8 +421,6 @@ export function assertValidToolProtocol(messages: readonly ChatMessage[]): void 
   const issues = validateToolProtocol(messages);
   if (issues.length > 0) throw new Error(`invalid native tool protocol: ${issues.join("; ")}`);
 }
-
-export const PROTOCOL_PLACEHOLDER_MARKER = "[context-note]";
 
 export function formatProtocolPlaceholder(name: string, id: string): string {
   return (
@@ -365,13 +432,25 @@ export function formatProtocolPlaceholder(name: string, id: string): string {
 
 export function repairToolProtocol(messages: ChatMessage[]): number {
   if (messages.length === 0) return 0;
+  let repairs = normalizeToolHistoryEntries(messages);
   const idRepairs = rewriteConflictingToolCallIds(messages);
-  if (validateToolProtocol(messages).length === 0) return idRepairs;
+  repairs += idRepairs;
+  repairs += collapseOversizedToolHistory(messages);
+  if (validateToolProtocol(messages).length === 0) {
+    return (
+      repairs +
+      collapseElidedToolHistory(messages) +
+      collapseOversizedToolHistory(messages)
+    );
+  }
 
   const out: ChatMessage[] = [];
-  let repairs = idRepairs;
   let pending = new Map<string, string | undefined>();
+  let pendingTextCalls: NativeToolCall[] = [];
   let parkedBenignSystem: ChatMessage[] = [];
+
+  const hasPending = (): boolean =>
+    pending.size > 0 || pendingTextCalls.length > 0;
 
   const flushParkedBenign = (): void => {
     if (parkedBenignSystem.length === 0) return;
@@ -379,7 +458,7 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
     parkedBenignSystem = [];
   };
 
-  const flushPending = (_reason: string): void => {
+  const flushPending = (): void => {
     for (const [id, name] of pending) {
       out.push({
         role: "tool",
@@ -390,43 +469,66 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
       });
       repairs += 1;
     }
+    for (const call of pendingTextCalls) {
+      out.push({
+        role: "tool",
+        content: formatProtocolPlaceholder(call.name, call.id),
+        name: call.name,
+        ok: true,
+      });
+      repairs += 1;
+    }
     pending = new Map();
+    pendingTextCalls = [];
     flushParkedBenign();
   };
 
   for (const message of messages) {
-    if (message.role === "assistant" && message.toolCalls?.length) {
-      if (pending.size > 0) {
-        flushPending("Interrupted — later assistant tool group started without results.");
-      } else {
-        flushParkedBenign();
-      }
+    const textCalls =
+      message.role === "assistant" && !message.toolCalls?.length
+        ? parseCanonicalTextToolCalls(message.content)
+        : [];
+    if (
+      message.role === "assistant" &&
+      (message.toolCalls?.length || textCalls.length > 0)
+    ) {
+      if (hasPending()) flushPending();
+      else flushParkedBenign();
       out.push(message);
       pending = new Map();
-      for (const call of message.toolCalls) {
-        if (!call.id) {
-          repairs += 1;
-          continue;
+      pendingTextCalls = [];
+      if (message.toolCalls?.length) {
+        for (const call of message.toolCalls) {
+          if (!call.id) {
+            repairs += 1;
+            continue;
+          }
+          pending.set(call.id, call.name);
         }
-        pending.set(call.id, call.name);
+      } else {
+        pendingTextCalls = textCalls;
       }
       continue;
     }
 
     if (message.role === "tool") {
       const id = message.toolCallId ?? "";
-      if (!id || !pending.has(id)) {
+      if (id && pending.has(id)) {
+        pending.delete(id);
+        out.push(message);
+      } else if (!id && pendingTextCalls.length > 0) {
+        pendingTextCalls.shift();
+        out.push(message);
+      } else {
         repairs += 1;
         continue;
       }
-      pending.delete(id);
-      out.push(message);
-      if (pending.size === 0) flushParkedBenign();
+      if (!hasPending()) flushParkedBenign();
       continue;
     }
 
     if (
-      pending.size > 0 &&
+      hasPending() &&
       message.role === "system" &&
       typeof message.content === "string" &&
       isBenignTrailingSystemBlock(message.content)
@@ -436,93 +538,38 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
       continue;
     }
 
-    if (pending.size > 0) {
-      flushPending(
-        "Interrupted — conversation continued before tool results arrived (repaired).",
-      );
-    } else {
-      flushParkedBenign();
-    }
+    if (hasPending()) flushPending();
+    else flushParkedBenign();
     out.push(message);
   }
 
-  if (pending.size > 0) {
-    flushPending("Missing tool result at end of history (repaired).");
-  } else {
-    flushParkedBenign();
-  }
-
-  if (repairs === 0 && out.length === messages.length) {
-    if (validateToolProtocol(out).length === 0) return 0;
-  }
+  if (hasPending()) flushPending();
+  else flushParkedBenign();
 
   messages.length = 0;
   messages.push(...out);
-  const still = validateToolProtocol(messages);
-  if (still.length > 0) {
-    const cleaned: ChatMessage[] = [];
-    let open: Set<string> | undefined;
-    for (const m of messages) {
-      if (m.role === "assistant" && m.toolCalls?.length) {
-        open = new Set(m.toolCalls.map((t) => t.id).filter(Boolean));
-        cleaned.push(m);
-        continue;
-      }
-      if (m.role === "tool") {
-        const id = m.toolCallId ?? "";
-        if (open?.has(id)) {
-          open.delete(id);
-          cleaned.push(m);
-          if (open.size === 0) open = undefined;
-        } else {
-          repairs += 1;
-        }
-        continue;
-      }
-      if (open && open.size > 0) {
-        const lastAsst = [...cleaned].reverse().find((x) => x.role === "assistant");
-        if (lastAsst && lastAsst.toolCalls?.length) {
-          const satisfied = new Set(
-            cleaned
-              .slice(cleaned.lastIndexOf(lastAsst) + 1)
-              .filter((x) => x.role === "tool")
-              .map((x) => x.toolCallId),
-          );
-          const remaining = lastAsst.toolCalls.filter((t) => !satisfied.has(t.id));
-          for (const tc of remaining) {
-            cleaned.push({
-              role: "tool",
-              content: formatProtocolPlaceholder(tc.name, tc.id),
-              toolCallId: tc.id,
-              name: tc.name,
-              ok: true,
-            });
-            repairs += 1;
-          }
-        }
-        open = undefined;
-      }
-      cleaned.push(m);
-    }
-    if (open && open.size > 0) {
-      const lastAsst = [...cleaned].reverse().find((x) => x.role === "assistant" && x.toolCalls?.length);
-      if (lastAsst?.toolCalls) {
-        for (const tc of lastAsst.toolCalls) {
-          if (!open.has(tc.id)) continue;
-          cleaned.push({
-            role: "tool",
-            content: formatProtocolPlaceholder(tc.name, tc.id),
-            toolCallId: tc.id,
-            name: tc.name,
-            ok: true,
-          });
-          repairs += 1;
-        }
-      }
-    }
-    messages.length = 0;
-    messages.push(...cleaned);
-  }
 
-  return repairs;
+  return (
+    repairs +
+    collapseElidedToolHistory(messages) +
+    collapseOversizedToolHistory(messages)
+  );
+}
+
+export function projectToolHistory(
+  messages: readonly ChatMessage[],
+): { messages: ChatMessage[]; changed: boolean; repairs: number } {
+  const copy = messages.map((message) => {
+    try {
+      return structuredClone(message);
+    } catch {
+      return { ...message };
+    }
+  });
+  const repairs = repairToolProtocol(copy);
+  return {
+    messages: repairs > 0 ? copy : [...messages],
+    changed: repairs > 0,
+    repairs,
+  };
 }

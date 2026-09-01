@@ -231,6 +231,7 @@ export function ToolCard(props: {
   const batchExpanded = expanded || isBatchLive;
 
   const { width: termWidth } = useTerminalDimensions();
+  const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
   const formatMdRead =
     !isBatch &&
@@ -252,8 +253,10 @@ export function ToolCard(props: {
       width: Math.max(24, termWidth - 12),
       defaultFg: theme.toolOutput,
       stripOuterIndent: true,
+      theme,
+      colorMode,
     }).slice(0, budget);
-  }, [formatMdRead, tail, expanded, termWidth, theme.toolOutput]);
+  }, [formatMdRead, tail, expanded, termWidth, theme, colorMode]);
 
   const { lines, hiddenAboveCount, truncatedNotice } =
     isBatch || isBatchLive || isFileDiff || isWriteMany || isMutation || formatMdRead

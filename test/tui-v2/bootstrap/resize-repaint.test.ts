@@ -6,6 +6,7 @@ import {
   RESIZE_REPAINT_SEQUENCE,
   forceFullRepaint,
   installResizeRepaint,
+  repaintAttachedScreen,
   type RepaintScheduler,
   type ResizeListener,
 } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
@@ -143,9 +144,39 @@ describe("OpenTUI resize repaint", () => {
     expect(calls).toEqual(["buffer-clear", "request-render"]);
   });
 
+  it("clears and invalidates the renderer for an attached terminal", () => {
+    const calls: string[] = [];
+    const repainted = repaintAttachedScreen({
+      renderer: {
+        currentRenderBuffer: { clear: () => calls.push("buffer-clear") },
+        requestRender: () => calls.push("request-render"),
+      },
+      write: (text) => calls.push(text),
+    });
+
+    expect(repainted).toBe(true);
+    expect(calls).toEqual([
+      "buffer-clear",
+      "request-render",
+      RESIZE_REPAINT_SEQUENCE,
+    ]);
+  });
+
+  it("does not clear an attached terminal while rendering is suspended", () => {
+    const calls: string[] = [];
+    const repainted = repaintAttachedScreen({
+      renderer: { requestRender: () => calls.push("request-render") },
+      write: (text) => calls.push(text),
+      isSuspended: () => true,
+    });
+
+    expect(repainted).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
   it("still requests a frame when the screen buffer is gone or throws", () => {
     const calls: string[] = [];
-    forceFullRepaint({
+    const clearThrew = forceFullRepaint({
       currentRenderBuffer: {
         clear: () => {
           throw new Error("buffer destroyed");
@@ -153,9 +184,31 @@ describe("OpenTUI resize repaint", () => {
       },
       requestRender: () => calls.push("request-render"),
     });
-    forceFullRepaint({ requestRender: () => calls.push("request-render") });
+    const noBuffer = forceFullRepaint({
+      requestRender: () => calls.push("request-render"),
+    });
 
     expect(calls).toEqual(["request-render", "request-render"]);
+    expect(clearThrew).toBe(true);
+    expect(noBuffer).toBe(true);
+  });
+
+  it("declines an attached repaint when the frame cannot be scheduled", () => {
+    const calls: string[] = [];
+    const repainted = repaintAttachedScreen({
+      renderer: {
+        currentRenderBuffer: { clear: () => calls.push("buffer-clear") },
+        requestRender: () => {
+          calls.push("request-render");
+          throw new Error("renderer destroyed");
+        },
+      },
+      write: (text) => calls.push(text),
+    });
+
+    expect(calls).toEqual(["buffer-clear", "request-render"]);
+    expect(calls).not.toContain(RESIZE_REPAINT_SEQUENCE);
+    expect(repainted).toBe(false);
   });
 
   it("is wired to the live renderer from the OpenTUI bootstrap", () => {

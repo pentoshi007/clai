@@ -6,6 +6,7 @@ import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js"
 import { buildCompactionRetryPrompt, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
 import { accountAssembledRequest, RequestOverLimitError } from "../request-accounting.js";
 import { isAbortError } from "../session-policy.js";
+import { projectToolHistory } from "../tool-history.js";
 
 const RETRY_SYSTEM_SUFFIX =
   "\nReturn only a complete continuation-memory summary. Do not include analysis, reasoning, or <think> tags.";
@@ -308,6 +309,17 @@ export async function executeCompactionSummary(
   };
 
   const baseRequest = execution.baseRequest;
+  if (
+    baseRequest &&
+    (projectToolHistory(baseRequest.messages).changed ||
+      baseRequest.messages.some((message) =>
+        message.content.includes("[context-note]"),
+      ))
+  ) {
+    throw new Error(
+      "compaction failed: captured request contains legacy or oversized completed tool history",
+    );
+  }
   const request: CompletionRequest = {
     provider: baseRequest?.provider ?? execution.provider,
     model: baseRequest?.model ?? execution.model,
