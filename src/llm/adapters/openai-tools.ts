@@ -11,6 +11,7 @@ import {
   reasoningArtifactsForMessage,
   selectReasoningArtifactsForReplay,
 } from "../reasoning-artifacts.js";
+import { wireToolArguments } from "../tool-wire/argument-repair.js";
 import {
   mapToolChoiceToOpenAi,
   toWireName,
@@ -141,7 +142,7 @@ export function toOpenAiToolMessages(
           type: "function" as const,
           function: {
             name: toWireName(tc.name),
-            arguments: tc.rawArguments ?? JSON.stringify(tc.args ?? {}),
+            arguments: wireToolArguments(tc.rawArguments, tc.args),
           },
         })),
       });

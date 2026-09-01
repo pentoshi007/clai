@@ -20,7 +20,6 @@ import type { AgentEvent } from "../../events.js";
 import type { SessionPolicy } from "../../session-policy.js";
 import type { LoopGuard } from "../../loop-guard.js";
 import type { OutcomeEnvelope } from "../../outcomes.js";
-import type { RecoveryBudgets } from "../../must-continue.js";
 import type { McpRuntime } from "../../../mcp/runtime.js";
 import type { ToolDialect } from "../../../llm/tool-protocol.js";
 import type { PolicyLease } from "../../../safety/engagement-policy.js";
@@ -56,7 +55,6 @@ export interface TurnLoopDeps extends TurnWriters {
   readonly counters: TurnCounters;
   readonly toolState: ToolExecutionState;
   readonly evidenceFlags: TurnEvidenceFlags;
-  readonly recovery: RecoveryBudgets;
   readonly session: SessionPolicy;
   readonly options: LoopOptions;
   readonly emit: (event: AgentEvent) => void;

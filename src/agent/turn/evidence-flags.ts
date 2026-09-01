@@ -1,4 +1,3 @@
-import type { RecoveryBudgets } from "../must-continue.js";
 import type { ToolEvidenceSignals } from "./tool-evidence-signals.js";
 
 export interface TurnEvidenceFlags {
@@ -31,7 +30,6 @@ export const createTurnEvidenceFlags = (): TurnEvidenceFlags => ({
 
 const applyLocalProbe = (
   flags: TurnEvidenceFlags,
-  recovery: RecoveryBudgets,
   probe: ToolEvidenceSignals["localProbe"],
 ): void => {
   if (probe === "failure") {
@@ -42,24 +40,18 @@ const applyLocalProbe = (
   if (probe === "none") return;
   flags.sawLocalHttpProbe = true;
   flags.sawFailedLocalHttpProbe = false;
-  if (probe === "success") recovery.failedProbe = 0;
 };
 
 export const applyToolEvidenceSignals = (
   flags: TurnEvidenceFlags,
-  recovery: RecoveryBudgets,
   evidence: ToolEvidenceSignals,
 ): void => {
   if (evidence.mutationLanded) flags.sawSuccessfulMutation = true;
   if (evidence.freshProbeFailure) flags.sawSuccessfulMutation = false;
-  if (evidence.evidenceWorkTool) {
-    recovery.actionIntent = 0;
-    recovery.errorFix = 0;
-  }
   if (evidence.serverStarted) flags.sawServerStart = true;
   if (evidence.serverTailed) flags.sawServerTail = true;
   if (evidence.activePentestTest) flags.sawActivePentestTest = true;
-  applyLocalProbe(flags, recovery, evidence.localProbe);
+  applyLocalProbe(flags, evidence.localProbe);
   if (evidence.scaffoldCreated) flags.sawScaffoldOk = true;
   if (evidence.featureWrite) flags.sawFeatureImplWrite = true;
   if (evidence.localAppMaterialWork) flags.sawLocalAppMaterialWork = true;

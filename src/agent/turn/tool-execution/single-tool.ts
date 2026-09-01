@@ -699,6 +699,8 @@ export const runSingleTool = async (
     retryDependenciesChanged: deps.toolState.retryDependenciesChanged,
     retryEnvironmentChanged: deps.toolState.retryEnvironmentChanged,
     governorState: deps.toolState.governorState,
+    governorReflects: deps.toolState.governorReflects,
+    lastGovernorReason: deps.toolState.lastGovernorReason,
   };
   accountToolOutcome(
     {
@@ -723,6 +725,8 @@ export const runSingleTool = async (
   deps.toolState.retryDependenciesChanged = accountingState.retryDependenciesChanged;
   deps.toolState.retryEnvironmentChanged = accountingState.retryEnvironmentChanged;
   deps.toolState.governorState = accountingState.governorState;
+  deps.toolState.governorReflects = accountingState.governorReflects;
+  deps.toolState.lastGovernorReason = accountingState.lastGovernorReason;
   await saveOutcomeState(deps.outcomeState);
 
   deps.loopGuard.recordAttempt(

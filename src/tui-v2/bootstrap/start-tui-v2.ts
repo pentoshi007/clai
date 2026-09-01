@@ -39,7 +39,7 @@ import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import {
-  forceFullRepaint,
+  createCoordinatedFlush,
   installResizeRepaint,
   repaintAttachedScreen,
 } from "./resize-repaint.js";
@@ -163,13 +163,16 @@ export async function startTuiV2(
     },
   });
 
+  const flush = createCoordinatedFlush(renderer, (text) =>
+    writeTerminalDirect(text),
+  );
   const disposeResizeRepaint = installResizeRepaint({
     renderer,
-    write: (text) => writeTerminalDirect(text),
+    write: (text) => void flush(text),
     enabled: Boolean(process.stdout.isTTY),
     isSuspended: () =>
       renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
-    requestRepaint: () => forceFullRepaint(renderer),
+    requestRepaint: () => undefined,
   });
 
   const lifecycle = new RendererLifecycle({
@@ -233,7 +236,7 @@ export async function startTuiV2(
       () =>
         repaintAttachedScreen({
           renderer,
-          write: (text) => writeTerminalDirect(text),
+          write: (text) => void flush(text),
           enabled: Boolean(process.stdout.isTTY),
           isSuspended: () =>
             renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,

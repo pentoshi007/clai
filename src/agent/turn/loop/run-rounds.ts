@@ -663,7 +663,6 @@ export const runTurnRounds = async (
         round,
         counters: deps.counters,
         evidenceFlags: deps.evidenceFlags,
-        recovery: deps.recovery,
         isPlanMode: deps.isPlanMode,
         pentestTurn: deps.pentestLike || deps.pentestSession,
         planApproved: () => deps.session.planApproved.value,

@@ -15,6 +15,7 @@ import {
   shouldApplyAutoCompact,
 } from "../context-manager.js";
 import { isOperationPolicyError } from "../../llm/operation-ledger.js";
+import { COMPACTION_MAX_ATTEMPTS } from "../compaction-attempt.js";
 import { describeDominantContextBlock } from "../context-breakdown.js";
 import { planCompactionAdmission } from "./compaction-admission.js";
 import { executeAutomaticCompaction } from "./automatic-compaction-execution.js";
@@ -36,6 +37,7 @@ export interface CompactionAttemptLedger {
   readonly isSuppressed: (key: string) => boolean;
   readonly recordFailure: (key: string) => void;
   readonly recordSuccess: (key: string) => void;
+  readonly isExhausted?: ((key: string) => boolean) | undefined;
 }
 
 export interface CompactionCoordinatorPorts {
@@ -244,7 +246,10 @@ export const createCompactionCoordinator =
         estimateRequestTokens: ports.estimateRequestTokens,
         selectTools: ports.selectTools,
         buildDurableEnvelope: ports.buildDurableEnvelope,
-        isSuppressed: ports.attempts.isSuppressed,
+        isSuppressed: (key) => ports.attempts.isSuppressed(key),
+        isExhausted: ports.attempts.isExhausted
+          ? (key) => ports.attempts.isExhausted?.(key) === true
+          : undefined,
       },
       force,
     );
@@ -289,6 +294,13 @@ export const createCompactionCoordinator =
       if (error instanceof Error && isAbortLike(error)) throw error;
       ports.attempts.recordFailure(admission.attemptKey);
       ports.audit("agent.compact.failed", { reason: message });
+      if (ports.attempts.isExhausted?.(admission.attemptKey)) {
+        ports.notify(
+          "warn",
+          `auto-compaction failed ${COMPACTION_MAX_ATTEMPTS} times and was stopped to avoid a repeated compaction loop; the original context was retained. Run /compact manually, switch model with /model, or raise the session context limit.`,
+        );
+        ports.audit("agent.compact.exhausted", { reason: message });
+      }
     } finally {
       if (ports.executionState.activeId === compactionId) {
         ports.executionState.activeId = undefined;

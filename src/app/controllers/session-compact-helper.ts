@@ -200,11 +200,6 @@ export async function runSessionCompaction(
     continuationBudget: 0,
   });
   try {
-    if (!successfulRequest) {
-      throw new Error(
-        "compaction failed: no successful live model request is available for cache-preserving compaction; complete a turn first",
-      );
-    }
     const replay =
       replayPlan && !replayPlan.accounting.overLimit
         ? replayRequest

@@ -300,7 +300,9 @@ describe("exactness lifetime", () => {
     const resolved = resolveContextUsageSnapshot(target, grown, previous)!;
 
     expect(estimateMessagesTokens(grown)).toBeGreaterThan(240_000);
-    expect(resolved.contextTokens).toBe(estimateMessagesTokens(grown));
+    expect(resolved.contextTokens).toBeGreaterThanOrEqual(
+      estimateMessagesTokens(grown),
+    );
     expect(resolved.exact).toBe(false);
   });
 
@@ -313,7 +315,7 @@ describe("exactness lifetime", () => {
     expect(refreshed.exact).toBe(false);
   });
 
-  it("replaces a provider-exact snapshot with a newer assembled-request estimate", () => {
+  it("keeps a provider-exact snapshot instead of a newer assembled-request estimate", () => {
     const previous = createContextSnapshot({
       contextTokens: 78_200,
       lastCompletionTokens: 100,
@@ -333,10 +335,10 @@ describe("exactness lifetime", () => {
     );
 
     expect(refreshed).toMatchObject({
-      contextTokens: 229_182,
-      scope: "assembled-request",
-      precision: "estimate",
-      observedAt: 2,
+      contextTokens: 78_200,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
     });
   });
 

@@ -4,7 +4,7 @@ import type { SessionPlan } from "../../store/plan.js";
 export function planContextMessage(plan: SessionPlan, approved: boolean): string {
   const lines: string[] = [];
   lines.push(
-    `ACTIVE PLAN v${plan.version ?? 1} for this session (goal: ${plan.goal}, status: ${plan.status}):`,
+    `ACTIVE PLAN for this session (goal: ${plan.goal}, status: ${plan.status}):`,
   );
   if (plan.detail.trim()) lines.push(plan.detail.trim());
   lines.push("Tasks:");
@@ -19,9 +19,6 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
     const resourceHint = t.resourceLocks?.length
       ? ` [locks: ${t.resourceLocks.join(", ")}]`
       : "";
-    const evidenceHint = t.evidence?.successWorkCount
-      ? ` [evidence: ${t.evidence.successWorkCount} successful tool${t.evidence.successWorkCount === 1 ? "" : "s"}${t.evidence.lastOkTool ? `; last ${t.evidence.lastOkTool}` : ""}]`
-      : "";
     const acceptanceHint = t.acceptanceCriteria?.trim()
       ? ` [acceptance: ${t.acceptanceCriteria.trim()}]`
       : "";
@@ -29,7 +26,7 @@ export function planContextMessage(plan: SessionPlan, approved: boolean): string
     const jobHint = t.jobId
       ? ` [responder job=${t.jobId}${t.processId ? ` pid=${t.processId}` : ""}]`
       : "";
-    lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}${hierarchyHint}${jobHint}${aliasHint}${dependencyHint}${resourceHint}${acceptanceHint}${evidenceHint}`);
+    lines.push(`  ${i + 1}. [${t.id}] (${t.state}) ${t.title}${hierarchyHint}${jobHint}${aliasHint}${dependencyHint}${resourceHint}${acceptanceHint}`);
   });
   lines.push(
     "task.update taskId MUST be t1, t2, … from this list (or a listed alias). Use task.add for newly discovered work; it is placed before unfinished report creation. Use task.move with position/beforeTaskId/afterTaskId to rearrange work without changing ids or evidence. Responder-owned job tasks advance automatically; never task.update them. After analyzing a delivered Responder result, job.read its job or notification before finalizing.",

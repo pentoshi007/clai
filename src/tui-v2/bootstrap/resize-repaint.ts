@@ -62,6 +62,52 @@ export function repaintAttachedScreen(
   return true;
 }
 
+export interface CoordinatedRenderer extends FullRepaintRenderer {
+  pause(): unknown;
+  resume(): unknown;
+  idle(): Promise<void>;
+}
+
+export interface CoordinatedFlushRenderer {
+  pause(): void;
+  suspend(): void;
+  resume(): void;
+  idle(): Promise<void>;
+  requestRender(): void;
+  readonly currentRenderBuffer?: { clear(): void } | undefined;
+}
+
+export function createCoordinatedFlush(
+  renderer: CoordinatedFlushRenderer,
+  write: (text: string) => void,
+): (sequence: string) => Promise<void> {
+  let queue = Promise.resolve();
+  return (sequence) => {
+    const run = queue.then(async () => {
+      try {
+        renderer.suspend();
+      } catch {
+        return;
+      }
+      try {
+        await renderer.idle().catch(() => undefined);
+        try {
+          write(sequence);
+        } catch {
+        }
+        forceFullRepaint(renderer);
+      } finally {
+        try {
+          renderer.resume();
+        } catch {
+        }
+      }
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  };
+}
+
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {
   if (options.enabled === false) return () => {};
   const schedule = options.schedule ?? defaultSchedule;

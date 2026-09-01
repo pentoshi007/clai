@@ -18,6 +18,7 @@ export interface CompactionAdmissionPorts {
   readonly selectTools: () => readonly ToolDefinition[] | undefined;
   readonly buildDurableEnvelope: () => Promise<string | undefined>;
   readonly isSuppressed: (attemptKey: string) => boolean;
+  readonly isExhausted?: ((attemptKey: string) => boolean) | undefined;
 }
 
 export type CompactionAdmission =
@@ -57,6 +58,7 @@ export const planCompactionAdmission = async (
     ...(durableEnvelope ? { durableEnvelope } : {}),
   });
   if (!force && ports.isSuppressed(attemptKey)) return REJECTED;
+  if (force && ports.isExhausted?.(attemptKey)) return REJECTED;
   return {
     admitted: true,
     beforeTokens,

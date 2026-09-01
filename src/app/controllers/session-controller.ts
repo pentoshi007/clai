@@ -57,6 +57,7 @@ import type { JobsPort } from "../ports/jobs-port.js";
 import type { InteractiveSessionsPort } from "../ports/interactive-sessions-port.js";
 import type { PersistencePort } from "../ports/persistence-port.js";
 import { mergeCancelAllResult } from "./cancel-all-result.js";
+import { withSessionAffinity } from "../../llm/session-affinity.js";
 import type { ConfirmationPort } from "../ports/confirm-port.js";
 import type { SecretPort } from "../ports/secret-port.js";
 import { TurnController, type TurnResult } from "./turn-controller.js";
@@ -321,8 +322,7 @@ export class SessionController implements Disposable {
   private requestScopedContextTokens(): number | undefined {
     const snapshot = this.contextSnapshot;
     if (!snapshot || snapshot.contextTokens <= 0) return undefined;
-    return snapshot.scope === "provider-request" ||
-      snapshot.scope === "assembled-request"
+    return snapshot.scope === "provider-request"
       ? snapshot.contextTokens
       : undefined;
   }
@@ -602,38 +602,40 @@ export class SessionController implements Disposable {
         : undefined);
 
     try {
-      return await runSessionCompaction({
-        history,
-        sessionTranscript,
-        keepRecent,
-        signal: abortController.signal,
-        purpose: options.purpose,
-        provider,
-        model: this.model ?? getProviderModel(provider ?? cfg.defaultProvider),
-        ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
-        ...(this.contextLimitTokens
-          ? { contextLimitTokens: this.contextLimitTokens }
-          : {}),
-        ...(requestTokensBefore !== undefined ? { requestTokensBefore } : {}),
-        persist,
-        compactionId,
-        sequencer: this.sequencer,
-        emit: this.deps.emit,
-        isCurrent: () => generation === this.lifecycleGeneration,
-        commit: (result, reported) => {
-          this.history = result.messages;
-          if (result.summarized) {
-            this.lastMainRequestSnapshot = undefined;
-            this.noteContextCompacted(
-              reported.afterTokens,
-              reported.scope,
-              compactionId,
-            );
-          }
-          this.notifyState();
-        },
-        persistNow: () => this.persistNow(),
-      });
+      return await withSessionAffinity(this.sessionIdValue, () =>
+        runSessionCompaction({
+          history,
+          sessionTranscript,
+          keepRecent,
+          signal: abortController.signal,
+          purpose: options.purpose,
+          provider,
+          model: this.model ?? getProviderModel(provider ?? cfg.defaultProvider),
+          ...(resumedRequest ? { successfulRequest: resumedRequest } : {}),
+          ...(this.contextLimitTokens
+            ? { contextLimitTokens: this.contextLimitTokens }
+            : {}),
+          ...(requestTokensBefore !== undefined ? { requestTokensBefore } : {}),
+          persist,
+          compactionId,
+          sequencer: this.sequencer,
+          emit: this.deps.emit,
+          isCurrent: () => generation === this.lifecycleGeneration,
+          commit: (result, reported) => {
+            this.history = result.messages;
+            if (result.summarized) {
+              this.lastMainRequestSnapshot = undefined;
+              this.noteContextCompacted(
+                reported.afterTokens,
+                reported.scope,
+                compactionId,
+              );
+            }
+            this.notifyState();
+          },
+          persistNow: () => this.persistNow(),
+        }),
+      );
     } finally {
       if (generation === this.lifecycleGeneration) {
         this.compactingFlag = false;

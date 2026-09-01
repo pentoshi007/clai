@@ -134,6 +134,7 @@ export const createCompactionServices = (
       isSuppressed: (key) => input.attempts.isSuppressed(key),
       recordFailure: (key) => input.attempts.recordFailure(key),
       recordSuccess: (key) => input.attempts.recordSuccess(key),
+      isExhausted: (key) => input.attempts.isExhausted(key),
     },
     executionState: input.executionState,
     newCompactionId: () => `compact-${randomUUID().slice(0, 12)}`,

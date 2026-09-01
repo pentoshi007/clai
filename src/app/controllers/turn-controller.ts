@@ -3,6 +3,7 @@ import type { AgentEvent } from "../../agent/events.js";
 import { renderTurnOutcome, type TurnOutcome } from "../../agent/turn-outcome.js";
 import type { ChatMessage, SuccessfulRequestSnapshot } from "../../types.js";
 import { isAbortError, type SessionPolicy } from "../../agent/session-policy.js";
+import { clearThinking } from "../../ui/thinking.js";
 import { asTurnId, type AnyAppEvent, type TurnId } from "../events/app-event.js";
 import type { EventSequencer } from "../events/sequencer.js";
 import type { OutputSpool } from "../events/event-buffer.js";
@@ -128,6 +129,7 @@ export class TurnController implements Disposable {
     if (this.active) throw new Error("a turn is already running");
 
     const turnId = (this.deps.mintTurnId ?? defaultMintTurnId)();
+    clearThinking();
     const ac = new AbortController();
     this.ac = ac;
     this.active = true;

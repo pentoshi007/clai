@@ -1,5 +1,4 @@
 import type { ToolCall, ToolResult } from "../../../types.js";
-import type { RecoveryBudgets } from "../../must-continue.js";
 import type { TurnEvidenceFlags } from "../evidence-flags.js";
 import type { TurnCounters } from "../turn-counters.js";
 import type { RoundState } from "./round-state.js";
@@ -22,7 +21,6 @@ export interface RoundRecorderPorts {
   readonly round: RoundState;
   readonly counters: TurnCounters;
   readonly evidenceFlags: TurnEvidenceFlags;
-  readonly recovery: RecoveryBudgets;
   readonly isPlanMode: boolean;
   readonly pentestTurn: boolean;
   readonly planApproved: () => boolean;
@@ -64,7 +62,6 @@ const applyEvidence = (
 ): void => {
   applyToolEvidenceSignals(
     ports.evidenceFlags,
-    ports.recovery,
     readToolEvidenceSignals({
       call: res.call,
       ok: res.ok,

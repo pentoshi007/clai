@@ -6,6 +6,7 @@ import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
 import { buildCompactionChunkPrompt, buildCompactionReducePrompt, buildCompactionUserPrompt, buildDirectCompactionPrompt, chunkTranscriptForCompaction, COMPACTION_CHUNK_CHAR_BUDGET, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
 import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../durable-envelope.js";
+import { isDurableInjectedBlock } from "../durable-blocks.js";
 import { estimateMessagesTokens, estimateTextTokens as estimateTokens } from "../request-accounting.js";
 import { isResponderResultLedgerMessage, RESPONDER_RESULT_LEDGER_PREFIX } from "../responder-context.js";
 import { expandKeepStartForToolPairs, hasOrphanToolMessages, projectToolHistory } from "../tool-history.js";
@@ -128,15 +129,9 @@ export async function compactMessagesWithSummary(
   }
 
   const isDurableSystem = (content: string): boolean =>
-    isReinjectedSystem(content) ||
-    isDurableEnvelopeContent(content) ||
-    content.startsWith("ACTIVE PLAN") ||
-    content.startsWith("SESSION STATE") ||
-    content.startsWith("ENGAGEMENT SCOPE") ||
-    content.startsWith("TASK ANALYSIS") ||
+    isStaleDurableSystem(content) ||
     isResponderResultLedgerMessage({ role: "system", content }) ||
-    content.includes("\nACTIVE PLAN") ||
-    content.includes("SESSION STATE / WORKING MEMORY");
+    content.includes("\nACTIVE PLAN");
 
   const visual = sessionTranscript?.trim()
     ? redactSecrets(sessionTranscript.trim())
@@ -176,7 +171,8 @@ export async function compactMessagesWithSummary(
       (m) =>
         m.role === "system" &&
         isDurableSystem(m.content) &&
-        !isReinjectedSystem(m.content),
+        !isReinjectedSystem(m.content) &&
+        !isEphemeralAdvisory(m.content),
     )
     .map((m) => {
       if (m.content.length > 4_000) {
@@ -501,14 +497,18 @@ function isReinjectedSystem(content: string): boolean {
   );
 }
 
+function isEphemeralAdvisory(content: string): boolean {
+  return (
+    content.startsWith("PROGRESS GOVERNOR") ||
+    content.startsWith("REQUEST CONTEXT")
+  );
+}
+
 function isStaleDurableSystem(content: string): boolean {
   return (
+    isDurableInjectedBlock({ role: "system", content }) ||
     isReinjectedSystem(content) ||
     isDurableEnvelopeContent(content) ||
-    content.startsWith("ACTIVE PLAN") ||
-    content.startsWith("SESSION STATE") ||
-    content.startsWith("ENGAGEMENT SCOPE") ||
-    content.startsWith("TASK ANALYSIS") ||
     content.includes("SESSION STATE / WORKING MEMORY")
   );
 }

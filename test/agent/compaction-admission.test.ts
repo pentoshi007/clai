@@ -99,4 +99,31 @@ describe("compaction admission", () => {
     expect(forced.admitted).toBe(true);
     expect(isSuppressed).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects a forced compaction whose attempt key is exhausted, so stream recovery cannot loop on a dead context", async () => {
+    const isExhausted = vi.fn(() => true);
+    await expect(
+      planCompactionAdmission(
+        ports({ isExhausted, estimateRequestTokens: () => 1 }),
+        true,
+      ),
+    ).resolves.toEqual({ admitted: false });
+    expect(isExhausted).toHaveBeenCalledTimes(1);
+  });
+
+  it("still forces compaction when the attempt key is not exhausted", async () => {
+    const isExhausted = vi.fn(() => false);
+    const forced = await planCompactionAdmission(
+      ports({ isExhausted, estimateRequestTokens: () => 1 }),
+      true,
+    );
+    expect(forced.admitted).toBe(true);
+    expect(isExhausted).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not consult exhaustion for unforced admission, which cooldown-suppression already governs", async () => {
+    const isExhausted = vi.fn(() => false);
+    await planCompactionAdmission(ports({ isExhausted }), false);
+    expect(isExhausted).not.toHaveBeenCalled();
+  });
 });

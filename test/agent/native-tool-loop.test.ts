@@ -443,9 +443,11 @@ describe("native tool loop integration", () => {
           expect(toolGroup.map((message) => message.content).join("\n")).not.toMatch(
             /No stored body|\[context-note\]/i,
           );
-          expect(request.messages[groupStart + 4]).toMatchObject({
-            role: "system",
-          });
+          expect(
+            request.messages
+              .slice(groupStart + 4)
+              .some((message) => message.role === "system"),
+          ).toBe(false);
 
           return {
             text: "",
@@ -499,7 +501,7 @@ describe("native tool loop integration", () => {
     expect(streamMock).toHaveBeenCalledTimes(4);
   });
 
-  it("recovers when action narration follows a productive tool step", async () => {
+  it("lets the turn end when action narration follows a productive tool step", async () => {
     let turn = 0;
     streamMock.mockImplementation(
       async (request: CompletionRequest, onToken: (token: string) => void) => {
@@ -515,19 +517,10 @@ describe("native tool loop integration", () => {
             finishReason: "tool_calls",
           };
         }
-        if (turn === 2) {
-          const text = "Let's check the remaining files.";
-          onToken(text);
-          return {
-            text,
-            provider: "gemini",
-            model: "gemini-test",
-            finishReason: "stop",
-          };
-        }
-        expect(request.messages.at(-1)?.content).toMatch(/call.*tool|take the action/i);
+        const text = "Let's check the remaining files.";
+        onToken(text);
         return {
-          text: "Found all remaining files.",
+          text,
           provider: "gemini",
           model: "gemini-test",
           finishReason: "stop",
@@ -542,8 +535,8 @@ describe("native tool loop integration", () => {
       maxSteps: 5,
     });
 
-    expect(streamMock).toHaveBeenCalledTimes(3);
-    expect(answer).toBe("Found all remaining files.");
+    expect(streamMock).toHaveBeenCalledTimes(2);
+    expect(answer).toBe("Let's check the remaining files.");
   });
 
   it("does not append internal outcome diagnostics to a continue response", async () => {

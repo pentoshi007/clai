@@ -243,7 +243,7 @@ describe("ContextSnapshotV1", () => {
     });
   });
 
-  it("shows a newer assembled observation until the provider measures that request", () => {
+  it("keeps a provider-measured count until a newer provider measurement", () => {
     const current = recordContextUsageSnapshot(
       target,
       undefined,
@@ -261,16 +261,50 @@ describe("ContextSnapshotV1", () => {
     );
 
     expect(inFlight).toMatchObject({
-      contextTokens: 720,
-      scope: "assembled-request",
-      precision: "estimate",
-      observedAt: 2,
+      contextTokens: 600,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
     });
     expect(completed).toMatchObject({
       contextTokens: 640,
       scope: "provider-request",
       precision: "provider-exact",
       observedAt: 3,
+    });
+  });
+
+  it("does not let a manual estimate override provider-reported context usage", () => {
+    const providerSnapshot = recordContextUsageSnapshot(
+      target,
+      undefined,
+      usage,
+      undefined,
+      () => 1,
+    );
+    const inflated = estimatedContextSnapshot(
+      target,
+      providerSnapshot,
+      298_000,
+      () => 2,
+    );
+    expect(inflated).toMatchObject({
+      contextTokens: 600,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
+    });
+    const usageKnown = recordContextUsageSnapshot(
+      target,
+      inflated,
+      { ...usage, promptTokens: 219_000, totalTokens: 219_100 },
+      undefined,
+      () => 3,
+    );
+    expect(usageKnown).toMatchObject({
+      contextTokens: 219_000,
+      scope: "provider-request",
+      precision: "provider-exact",
     });
   });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildChatBody, toCompletionResult } from "../src/llm/http.js";
-import { cacheAffinityKey } from "../src/llm/cache-affinity.js";
+import { cacheAffinityKey, sessionCacheAffinityKey } from "../src/llm/cache-affinity.js";
+import { withSessionAffinity } from "../src/llm/session-affinity.js";
 import { buildCompactionReplayMessages } from "../src/agent/compaction-executor.js";
 import type { ChatMessage, ProviderId } from "../src/types.js";
 
@@ -85,6 +86,19 @@ describe("provider cache affinity", () => {
     expect(result.usage).toMatchObject({
       reasoningTokens: 0,
       reasoningObserved: true,
+    });
+  });
+
+  it("keeps the session id constant across a compaction while a session is active", () => {
+    const compactedAway: ChatMessage[] = [
+      { role: "system", content: "stable system" },
+      { role: "user", content: "compaction-era first message" },
+    ];
+    withSessionAffinity("ses-affinity-check", () => {
+      const before = body("merge-gateway", BASE);
+      const after = body("merge-gateway", compactedAway);
+      expect(before.session_id).toMatch(/^clai-[a-f0-9]{40}$/);
+      expect(after.session_id).toBe(before.session_id);
     });
   });
 

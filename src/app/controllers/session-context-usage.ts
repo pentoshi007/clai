@@ -1,4 +1,6 @@
 import { estimateMessagesTokens } from "../../agent/context-manager.js";
+import { resolveEffectiveContextLimit } from "../../agent/request-accounting.js";
+import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import {
   contextLimitFromSessionOverride,
   contextSnapshotFromLegacy,
@@ -75,6 +77,26 @@ function reportedReasoning(
   return { kind: "reported", outputTokens: usage.reasoningTokens };
 }
 
+function estimateHistoryRequestTokens(
+  target: ContextUsageTarget,
+  history: readonly ChatMessage[],
+): number {
+  const raw = estimateMessagesTokens(history as ChatMessage[]);
+  if (raw <= 0) return 0;
+  const limit = resolveEffectiveContextLimit({
+    provider: target.provider,
+    model: target.model,
+    ...(target.contextLimitTokens !== undefined
+      ? { contextLimitTokens: target.contextLimitTokens }
+      : {}),
+  }).reservedOutputTokens;
+  return calibratedRequestTokens(
+    target.provider,
+    target.model,
+    raw + Math.max(0, Math.floor(limit / 4)),
+  );
+}
+
 function historyEstimateSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -82,7 +104,7 @@ function historyEstimateSnapshot(
   now: ContextClock,
 ): ContextSnapshotV1 {
   return createContextSnapshot({
-    contextTokens: estimateMessagesTokens(history as ChatMessage[]),
+    contextTokens: estimateHistoryRequestTokens(target, history),
     lastCompletionTokens: current?.lastCompletionTokens,
     sessionPromptTokens: current?.sessionPromptTokens,
     sessionCompletionTokens: current?.sessionCompletionTokens,
@@ -162,7 +184,7 @@ export function compactedContextSnapshot(
   const contextTokens =
     typeof afterTokens === "number" && Number.isFinite(afterTokens) && afterTokens > 0
       ? Math.floor(afterTokens)
-      : estimateMessagesTokens(history as ChatMessage[]);
+      : estimateHistoryRequestTokens(target, history);
   return createContextSnapshot({
     contextTokens,
     lastCompletionTokens: 0,
@@ -182,6 +204,11 @@ export function estimatedContextSnapshot(
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 | undefined {
   if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
+  if (current && current.contextTokens > 0 && current.scope === "provider-request") {
+    return sameLimit(current.limit, limitFor(target))
+      ? current
+      : withContextSnapshotLimit(current, limitFor(target));
+  }
   return createContextSnapshot({
     contextTokens: Math.floor(estimatedTokens),
     lastCompletionTokens: current?.lastCompletionTokens,

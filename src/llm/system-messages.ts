@@ -30,7 +30,11 @@ export function upsertRequestContextMessage(
   content: string,
 ): void {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (isRequestContextSystemMessage(messages[index]!)) messages.splice(index, 1);
+    const message = messages[index]!;
+    if (isRequestContextSystemMessage(message)) {
+      if (message.content === content) return;
+      break;
+    }
   }
   messages.push({ role: "system", content });
 }

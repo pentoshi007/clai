@@ -17,6 +17,8 @@ export interface OutcomeAccountingState {
   retryDependenciesChanged: boolean;
   retryEnvironmentChanged: boolean;
   governorState: GovernorState;
+  governorReflects: number;
+  lastGovernorReason: string | undefined;
 }
 
 export interface OutcomeAccountingPorts {
@@ -71,6 +73,23 @@ const applySuccess = (
     (isShellLaunch(input.call.name) && isPackageInstallCommand(command));
 };
 
+const governorMessage = (reason: string, reflects: number): string => {
+  if (reflects <= 1) {
+    return `PROGRESS GOVERNOR: ${reason}. Reassess the current premise and choose the next action that can produce criterion-linked evidence.`;
+  }
+  if (reflects === 2) {
+    return (
+      `PROGRESS GOVERNOR: ${reason}. Update the plan to match what you now know — ` +
+      "task.update the current task, task.add the discovery, or task.update done what the evidence already settles — before running more tools."
+    );
+  }
+  return (
+    "PROGRESS GOVERNOR: this line of work has stopped producing new evidence. " +
+    "Either take a materially different approach with a concrete new premise, or stop and report what is done, what is blocked, and what remains — honestly. " +
+    "If the user asked you to stop or only to report, finish now with the accurate status; do not keep calling tools past that request."
+  );
+};
+
 const governActivity = (
   ports: OutcomeAccountingPorts,
   state: OutcomeAccountingState,
@@ -94,13 +113,12 @@ const governActivity = (
   });
   state.governorState = governed.state;
   if (governed.recommendation !== "reflect") return;
+  if (governed.reason === state.lastGovernorReason) return;
+  state.lastGovernorReason = governed.reason;
+  state.governorReflects += 1;
   ports.deferMessage({
     role: "system",
-    content:
-      `PROGRESS GOVERNOR: ${governed.reason}. Reassess the current premise and choose the next action that can produce criterion-linked evidence.` +
-      (ports.codingSession
-        ? " Keep working — coding builds do not stop for a continue prompt."
-        : ""),
+    content: governorMessage(governed.reason, state.governorReflects),
   });
 };
 

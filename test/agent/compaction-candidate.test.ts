@@ -43,7 +43,7 @@ describe("compaction candidate preparation", () => {
     expect(candidate.slice(-3).map((message) => message.content)).toEqual([
       `${AGENT_INSTRUCTIONS_PREFIX}\ncurrent rules`,
       `${ACTIVE_SKILLS_PREFIX}\ncurrent skills`,
-      expect.stringMatching(/^ACTIVE PLAN v1/),
+      expect.stringMatching(/^ACTIVE PLAN for this session/),
     ]);
     expect(candidate.at(-1)?.content).toContain("user APPROVED this plan");
   });

@@ -1,16 +1,11 @@
 import { auditLog } from "../../../store/logs.js";
 import { loadPlan } from "../../../store/plan.js";
-import { jobManager } from "../../../tools/jobs.js";
-import { chooseFinalizeRecovery } from "../../finalize-gate.js";
-import { consumeBudget } from "../../must-continue.js";
 import { saveOutcomeState } from "../../outcomes.js";
-import { getActiveProjectRoot } from "../../project-root.js";
-import { assessCompletion, buildFinalizeGateInput } from "../../turn/loop/answer-assessment.js";
+import { assessCompletion } from "../../turn/loop/answer-assessment.js";
 import { resolveFinalOutcome } from "../../turn/loop/final-outcome.js";
 import { handleModelOnlyRound } from "../../turn/loop/model-only-rounds.js";
 import { recoverMissingToolCall } from "../../turn/loop/tool-call-recovery.js";
 import type { TurnOutcome } from "../../turn-outcome.js";
-import { shouldYieldForDeclaredResponderDependency as declaredResponderDependencyYields } from "../responder-dependency.js";
 import type { TurnLoopDeps } from "./deps.js";
 
 export type AnswerPathResult =
@@ -78,15 +73,8 @@ export const resolveAnswerPath = async (
     buildLikeTurn: deps.buildLikeTurn,
     pentestLikeTurn: deps.pentestLikeTurn,
   });
-  const {
-    cleaned,
-    displayCleaned,
-    narratedAction,
-    narratedWebAction,
-    wantsAction,
-    planHasOpenWorkNow,
-    completedPlanDuringThisTurn,
-  } = assessment;
+  const cleaned = assessment.cleaned;
+  const displayCleaned = assessment.displayCleaned;
 
   const modelOnly = handleModelOnlyRound(
     {
@@ -102,7 +90,7 @@ export const resolveAnswerPath = async (
     },
     {
       assistantVisible: assistantText.visible,
-      wantsAction,
+      wantsAction: assessment.wantsAction,
       consecutiveModelOnlyRounds: deps.counters.consecutiveModelOnlyRounds,
       plan: livePlanAtCompletion,
     },
@@ -121,43 +109,6 @@ export const resolveAnswerPath = async (
     ));
   }
 
-  const deferResponderReport = deps.session.planApproved.value
-    ? declaredResponderDependencyYields(
-        livePlanAtCompletion,
-        jobManager.getRunningJobs(deps.session.sessionId),
-        jobManager.getPendingNotifications(deps.session.sessionId),
-        deps.responderWakeNotificationId,
-      )
-    : false;
-  const finalizeRecovery = chooseFinalizeRecovery(
-    buildFinalizeGateInput({
-      assessment,
-      recovery: deps.recovery,
-      evidenceFlags: deps.evidenceFlags,
-      livePlan: livePlanAtCompletion,
-      toolsAttached,
-      productiveSteps: deps.counters.productiveSteps,
-      planApproved: deps.session.planApproved.value,
-      activePlanExists: Boolean(deps.activePlan),
-      isPlanMode: deps.isPlanMode,
-      buildLikeTurn: deps.buildLikeTurn,
-      pentestLikeTurn: deps.pentestLikeTurn,
-      buildLike: deps.buildLike,
-      pentestLike: deps.pentestLike,
-      pentestSession: deps.pentestSession,
-      informationalQuery: deps.informationalQuery,
-      idleOrSocialPrompt: deps.idleOrSocialPrompt,
-      featureAppAsk: deps.featureAppAsk,
-      projectRoot: getActiveProjectRoot(),
-      deferResponderReport,
-    }),
-  );
-  if (finalizeRecovery) {
-    consumeBudget(deps.recovery, finalizeRecovery.budgetKey);
-    commitAssistantRetry(assistantText.visible);
-    deps.messages.push(deps.recoveryUserMessage(finalizeRecovery.message));
-    return { kind: "continue" };
-  }
   const finalOutcome = await resolveFinalOutcome(
     {
       outcomeState: deps.outcomeState,

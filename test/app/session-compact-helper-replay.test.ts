@@ -153,6 +153,33 @@ describe("runSessionCompaction cache-preserving replay", () => {
     ).toBeLessThan(78_200);
   });
 
+  it("summarizes with a fresh request when no successful request snapshot exists", async () => {
+    complete.mockResolvedValueOnce(okResult());
+    const history: ChatMessage[] = [
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "second question" },
+      { role: "assistant", content: "second answer" },
+      { role: "user", content: "now compact" },
+    ];
+    const { options, committed } = harness(history);
+
+    await runSessionCompaction({
+      ...options,
+      successfulRequest: undefined,
+    });
+
+    expect(complete).toHaveBeenCalled();
+    expect(committed).toHaveLength(1);
+    expect(
+      committed[0]!.some(
+        (message) =>
+          message.role === "system" &&
+          message.content.includes("Session memory"),
+      ),
+    ).toBe(true);
+  });
+
   it("falls back to transcript-rendered requests when the replay cannot fit", async () => {
     complete.mockResolvedValueOnce(okResult());
     const history: ChatMessage[] = [

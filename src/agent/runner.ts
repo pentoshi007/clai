@@ -101,6 +101,7 @@ function safeEngagementActionsForToolCall(
 }
 import { auditLog } from "../store/logs.js";
 import { loadProjectContext } from "../store/project.js";
+import { withSessionAffinity } from "../llm/session-affinity.js";
 import {
   upsertActiveSkillsMessage,
   upsertAgentInstructionsMessage,
@@ -140,7 +141,6 @@ import {
   type PreviousTurnSignal,
 } from "./continue-orient.js";
 import { detectPackageManager } from "./workspace-orient.js";
-import { createRecoveryBudgets } from "./must-continue.js";
 import {
   EngagementPolicyEngine,
   engagementActionsForToolCall,
@@ -528,10 +528,6 @@ export async function runAgentTurn(
 
     const recoveryState = createStreamRecoveryState();
 
-
-
-
-    const recovery = createRecoveryBudgets();
     const evidenceFlags = createTurnEvidenceFlags();
     const featureAppAsk = userAskedForFeatureApp(prompt);
     const sessionLooseWork: LooseWorkReceipt[] = [];
@@ -562,14 +558,12 @@ export async function runAgentTurn(
       featureAppAsk,
       pentestSession,
       evidenceFlags,
-      toolState,
       activePlan: () => activePlan,
       planApproved: () => session.planApproved.value,
       runningJobs: () => jobManager.getRunningJobs(session.sessionId),
       projectRoot: getActiveProjectRoot,
     });
     refreshSessionState(activePlan);
-
 
     const deferredPostToolMessages: ChatMessage[] = [];
     const deferredResponderLedgerNotifications: ResponderNotification[] = [];
@@ -759,7 +753,6 @@ export async function runAgentTurn(
       loop,
       counters,
       evidenceFlags,
-      recovery,
       outputState,
       maxIterations,
       activePlan,
@@ -801,9 +794,11 @@ export async function runAgentTurn(
       upsertActionCycleRecovery,
     };
 
-    return await runTurnRounds(loopDeps, {
-      delay: (ms) => delay(ms, options.signal),
-    });
+    return await withSessionAffinity(session.sessionId, () =>
+      runTurnRounds(loopDeps, {
+        delay: (ms) => delay(ms, options.signal),
+      }),
+    );
   } catch (error) {
     const isAbort = isAbortError(error, options.signal);
     if (isAbort) {

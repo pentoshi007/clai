@@ -60,6 +60,31 @@ export function repairConcatenatedToolArguments(
   return merged;
 }
 
+export function wireToolArguments(
+  rawArguments: string | undefined,
+  args: Record<string, unknown> | undefined,
+): string {
+  if (typeof rawArguments === "string") {
+    const trimmed = rawArguments.trim();
+    if (trimmed) {
+      try {
+        JSON.parse(trimmed);
+        return trimmed;
+      } catch {
+      }
+    }
+  }
+  const durable =
+    args && args._parseError === true
+      ? (({ _parseError: _pe, _raw: _r, ...rest }) => rest)(args)
+      : args;
+  try {
+    return JSON.stringify(durable ?? {});
+  } catch {
+    return "{}";
+  }
+}
+
 export function parseToolArguments(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
   if (typeof raw === "object" && !Array.isArray(raw)) {

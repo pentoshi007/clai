@@ -11,6 +11,8 @@ export interface ToolExecutionState {
   retryDependenciesChanged: boolean;
   retryEnvironmentChanged: boolean;
   governorState: GovernorState;
+  governorReflects: number;
+  lastGovernorReason: string | undefined;
 }
 
 export const createToolExecutionState = (
@@ -25,4 +27,6 @@ export const createToolExecutionState = (
   retryDependenciesChanged: false,
   retryEnvironmentChanged: false,
   governorState,
+  governorReflects: 0,
+  lastGovernorReason: undefined,
 });

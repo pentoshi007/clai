@@ -183,7 +183,8 @@ export function upsertPlanContextMessage(
       typeof message.content === "string" &&
       message.content.startsWith(PLAN_CONTEXT_PREFIX)
     ) {
-      messages.splice(index, 1);
+      if (message.content === content) return;
+      break;
     }
   }
   messages.push({ role: "system", content });

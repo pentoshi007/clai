@@ -483,14 +483,14 @@ export async function executeCompactionSummary(
   };
 
   const first = await runAttempt(request);
-  if (first.toolCalls?.length) {
+  let visible = normalizeCompactionSummary(
+    stripThinking(first.text).visible,
+  );
+  if (first.toolCalls?.length && !visible) {
     throw new Error(
       "compaction failed: model returned tool calls instead of a summary — original context retained",
     );
   }
-  let visible = normalizeCompactionSummary(
-    stripThinking(first.text).visible,
-  );
   let retryReason:
     | "truncated"
     | "incomplete"
@@ -522,7 +522,10 @@ export async function executeCompactionSummary(
       },
       true,
     );
-    if (retry.toolCalls?.length) {
+    visible = normalizeCompactionSummary(
+      stripThinking(retry.text).visible,
+    );
+    if (retry.toolCalls?.length && !visible) {
       throw new Error(
         "compaction failed: model returned tool calls instead of a summary — original context retained",
       );
@@ -532,9 +535,6 @@ export async function executeCompactionSummary(
         "compaction failed: model hit the summary output limit twice — original context retained",
       );
     }
-    visible = normalizeCompactionSummary(
-      stripThinking(retry.text).visible,
-    );
     if (!visible) {
       throw new Error("compaction failed: model returned an empty summary");
     }

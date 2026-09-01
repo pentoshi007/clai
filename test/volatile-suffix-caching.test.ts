@@ -13,12 +13,11 @@ import {
 } from "../src/agent/responder-context.js";
 
 /**
- * Provider prompt caching only pays off while the request PREFIX is byte-stable.
- * Plan / session-state / responder blocks are mutable and are refreshed several
- * times per turn, so each one must (a) exist at most once and (b) live at the
- * tail, after the constitution and the whole conversation. Inserting any of them
- * mid-array would silently invalidate the cached prefix on every step and
- * multiply input cost across a long turn, with no visible symptom.
+ * Provider prompt caching pays off only while the request PREFIX is
+ * byte-stable. Plan / session-state / responder blocks are mutable and are
+ * refreshed several times per turn, so a refresh must never rewrite, move, or
+ * delete bytes that were already sent: an unchanged block stays exactly where
+ * it is and a changed block is appended as a new copy (latest copy wins).
  */
 
 type Message = { role: string; content: string };
@@ -57,22 +56,51 @@ function baseConversation(): Message[] {
 }
 
 describe("volatile blocks stay a cacheable request suffix", () => {
-  it("keeps exactly one copy no matter how many times a turn refreshes them", () => {
+  it("leaves the request byte-identical when a refresh renders the same block", () => {
     const messages = baseConversation();
-    for (let step = 1; step <= 7; step += 1) {
-      upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v${step}`);
-      upsertSessionStateMessage(messages, `step ${step}`);
-      upsertResponderContextMessage(
-        messages,
-        `${RESPONDER_CONTEXT_PREFIX}\njobs: ${step}`,
-      );
+    upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v1`);
+    upsertSessionStateMessage(messages, "step 1");
+    const sent = JSON.stringify(messages);
+    for (let step = 0; step < 7; step += 1) {
+      upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v1`);
+      upsertSessionStateMessage(messages, "step 1");
     }
-    for (const prefix of VOLATILE_PREFIXES) {
-      expect(countStartingWith(messages, prefix)).toBe(1);
-    }
-    // Only the newest revision survives.
-    expect(messages.some((m) => m.content.includes("v7"))).toBe(true);
-    expect(messages.some((m) => m.content.includes("v6"))).toBe(false);
+    expect(JSON.stringify(messages)).toBe(sent);
+    expect(messages).toHaveLength(baseConversation().length + 2);
+  });
+
+  it("appends the new copy and keeps the old bytes in place when a block changes", () => {
+    const messages = baseConversation();
+    upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v1`);
+    upsertSessionStateMessage(messages, "step 1");
+    const sent = [...messages];
+    messages.push({ role: "assistant", content: "next step" });
+    messages.push({ role: "tool", content: "result" });
+    upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v2`);
+    upsertSessionStateMessage(messages, "step 2");
+    expect(messages.slice(0, sent.length)).toEqual(sent);
+    expect(messages).toHaveLength(sent.length + 4);
+    expect(messages[sent.length - 2]!.content).toContain("v1");
+    expect(messages.at(-2)!.content).toContain("v2");
+    expect(messages.at(-1)!.content).toContain("step 2");
+  });
+
+  it("keeps the live blocks in deterministic order across many refreshes", () => {
+    const tailOf = (): string[] => {
+      const messages = baseConversation();
+      for (let step = 1; step <= 7; step += 1) {
+        upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v${step}`);
+        upsertSessionStateMessage(messages, `step ${step}`);
+        upsertResponderContextMessage(
+          messages,
+          `${RESPONDER_CONTEXT_PREFIX}\njobs: ${step}`,
+        );
+      }
+      return messages
+        .filter(isVolatile)
+        .map((m) => m.content.split("\n")[0]!);
+    };
+    expect(tailOf()).toEqual(tailOf());
   });
 
   it("never inserts a volatile block ahead of the conversation", () => {
@@ -81,23 +109,9 @@ describe("volatile blocks stay a cacheable request suffix", () => {
     upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v1`);
     upsertSessionStateMessage(messages, "open task t1");
     const after = stablePrefix(messages).map((m) => `${m.role}:${m.content}`);
-    // The bytes the provider can cache must be untouched by a refresh.
     expect(after).toEqual(before);
     const firstVolatile = messages.findIndex(isVolatile);
     expect(messages.slice(firstVolatile).every(isVolatile)).toBe(true);
-  });
-
-  it("holds the prefix stable across many refreshes", () => {
-    const messages = baseConversation();
-    upsertSessionStateMessage(messages, "first");
-    const prefixAfterFirst = JSON.stringify(stablePrefix(messages));
-    for (let step = 0; step < 20; step += 1) {
-      upsertSessionStateMessage(messages, `refresh ${step}`);
-      upsertPlanContextMessage(messages, `${PLAN_CONTEXT_PREFIX} v${step}`);
-    }
-    expect(JSON.stringify(stablePrefix(messages))).toBe(prefixAfterFirst);
-    // Growth is bounded: refreshes replace, they do not accumulate.
-    expect(messages.length).toBe(baseConversation().length + 2);
   });
 
   it("drops the responder block entirely when there is nothing to report", () => {

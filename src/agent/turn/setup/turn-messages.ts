@@ -9,6 +9,7 @@ import {
   upsertActiveSkillsMessage,
   upsertAgentInstructionsMessage,
 } from "../../injected-blocks.js";
+import { upsertRequestContextMessage } from "../../../llm/system-messages.js";
 
 export interface TurnMessagesInput {
   readonly prompt: string;
@@ -57,6 +58,7 @@ export const composeTurnMessages = (input: TurnMessagesInput): TurnMessages => {
     systemPrompt: input.stableSystemContent(input.nativeToolsActive),
     requestContext,
   });
+  upsertRequestContextMessage(messages, requestContextMessage);
   upsertAgentInstructionsMessage(messages, input.instructionsBlock);
   upsertActiveSkillsMessage(messages, input.skillsBlock);
   if (input.plan) {

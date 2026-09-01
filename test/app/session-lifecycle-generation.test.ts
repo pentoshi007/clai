@@ -76,7 +76,9 @@ describe("session lifecycle generations (LIFE-004/005)", () => {
 
     expect(session.messages).toHaveLength(0);
     expect(saved.flat()).not.toContain("old answer");
-    await expect(session.compact()).rejects.toThrow(/no successful live model request/i);
+    const result = await session.compact();
+    expect(result.summarized).toBe(false);
+    expect(result.messages).toHaveLength(0);
   });
 
   it("does not commit a compaction that finishes after a history load", async () => {

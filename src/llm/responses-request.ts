@@ -8,6 +8,7 @@ import type {
   ToolDefinition,
 } from "../types.js";
 import { toWireName } from "./tool-protocol.js";
+import { wireToolArguments } from "./tool-wire/argument-repair.js";
 import {
   reasoningArtifactItems,
   reasoningArtifactsForMessage,
@@ -173,7 +174,7 @@ function appendAssistantToolTurn(
       type: "function_call",
       call_id: tc.id,
       name: toWireName(tc.name),
-      arguments: tc.rawArguments ?? JSON.stringify(tc.args ?? {}),
+      arguments: wireToolArguments(tc.rawArguments, tc.args),
     });
   }
 }

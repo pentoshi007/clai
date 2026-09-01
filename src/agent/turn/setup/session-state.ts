@@ -2,7 +2,6 @@ import type { ChatMessage } from "../../../types.js";
 import type { SessionPlan } from "../../../store/plan.js";
 import type { BackgroundJob } from "../../../tools/jobs.js";
 import type { TurnEvidenceFlags } from "../evidence-flags.js";
-import type { ToolExecutionState } from "../tool-execution/state.js";
 import { createSessionStateRefresher } from "../plan-persistence.js";
 
 export interface SessionStateSetupInput {
@@ -15,7 +14,6 @@ export interface SessionStateSetupInput {
   readonly featureAppAsk: boolean;
   readonly pentestSession: boolean;
   readonly evidenceFlags: TurnEvidenceFlags;
-  readonly toolState: ToolExecutionState;
   readonly activePlan: () => SessionPlan | undefined;
   readonly planApproved: () => boolean;
   readonly runningJobs: () => readonly BackgroundJob[];
@@ -43,7 +41,6 @@ export const buildSessionStateRefresher = (
       serverStarted: input.evidenceFlags.sawServerStart,
       serverProbedOk: input.evidenceFlags.sawLocalHttpProbe,
       lastProbeFailed: input.evidenceFlags.sawFailedLocalHttpProbe,
-      lastOkTool: input.toolState.taskWorkLedger?.lastOkTool,
       pentestSession: input.pentestSession,
     }),
   });

@@ -57,7 +57,7 @@ const outcomeContract = (prompt: string): AgentPromptSection => ({
 const planProtocol: AgentPromptSection = {
   kind: "plan",
   content:
-    "PLAN PROTOCOL\nThe live plan, when one exists, is appended to this request as a single ACTIVE PLAN message. Treat that message as the only authoritative plan state; never rely on plan details quoted in earlier turns.",
+    "PLAN PROTOCOL\nWhen a live plan exists, the most recent ACTIVE PLAN message in this request is the only authoritative plan state; older ACTIVE PLAN copies in the transcript are history. Never rely on plan details quoted in earlier turns when they disagree with the latest task list.",
   mandatory: true,
 };
 

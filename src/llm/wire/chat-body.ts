@@ -11,7 +11,8 @@ import {
   openAiToolBodyFields,
   toOpenAiToolMessages,
 } from "../adapters/openai-tools.js";
-import { cacheAffinityKey } from "../cache-affinity.js";
+import { cacheAffinityKey, sessionCacheAffinityKey } from "../cache-affinity.js";
+import { currentSessionAffinity } from "../session-affinity.js";
 import {
   isReasoningUnsupported,
   modelSupportsThinking,
@@ -165,9 +166,14 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   const effectiveMaxTokens = reasoningOn
     ? outputBudgetWithReasoning(claudeFloored, options)
     : claudeFloored;
+  const affinitySession = currentSessionAffinity();
   const affinityKey =
-    options.providerId === "openrouter" || options.providerId === "fireworks"
-      ? cacheAffinityKey(options.providerId, options.model, options.messages)
+    options.providerId === "openrouter" ||
+    options.providerId === "fireworks" ||
+    options.providerId === "merge-gateway"
+      ? affinitySession
+        ? sessionCacheAffinityKey(affinitySession)
+        : cacheAffinityKey(options.providerId, options.model, options.messages)
       : undefined;
   const body: Record<string, unknown> = {
     model: options.model,
@@ -183,7 +189,9 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
         : undefined,
     ),
     stream: options.stream,
-    ...(options.providerId === "openrouter" && affinityKey
+    ...((options.providerId === "openrouter" ||
+      options.providerId === "merge-gateway") &&
+    affinityKey
       ? { session_id: affinityKey }
       : {}),
     ...(options.providerId === "fireworks"

@@ -35,7 +35,6 @@ export const assembleTurnMessages = (
       { role: "system", content: input.systemPrompt },
       ...(input.history ?? []),
       userMessage,
-      { role: "system", content: requestContextMessage },
     ],
   };
 };

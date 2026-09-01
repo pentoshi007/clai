@@ -33,3 +33,10 @@ export function cacheAffinityKey(
   addMessage(hash, messages.find((message) => message.role !== "system"));
   return `clai-${hash.digest("hex").slice(0, 40)}`;
 }
+
+export function sessionCacheAffinityKey(sessionId: string): string {
+  const hash = createHash("sha256");
+  hash.update("clai-session\0");
+  hash.update(sessionId);
+  return `clai-${hash.digest("hex").slice(0, 40)}`;
+}

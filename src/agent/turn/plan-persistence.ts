@@ -62,7 +62,6 @@ export interface SessionStateRefreshPorts {
     serverStarted: boolean;
     serverProbedOk: boolean;
     lastProbeFailed: boolean;
-    lastOkTool: string | undefined;
     pentestSession: boolean;
   };
 }

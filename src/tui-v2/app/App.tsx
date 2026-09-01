@@ -226,6 +226,23 @@ export function App(): ReactNode {
         key.preventDefault();
         services.overlay.close();
         handleEscapeCancellation(true);
+        return;
+      }
+      if (chord === "ctrl+c") {
+        key.preventDefault();
+        const now = Date.now();
+        const doublePress =
+          lastCtrlC.current > 0 && now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
+        services.cancel.abortForeground();
+        if (doublePress) {
+          services.requestExit();
+          return;
+        }
+        lastCtrlC.current = now;
+        notifyWarn(services, "Ctrl+C again to exit", {
+          key: "interrupt",
+          durationMs: 2200,
+        });
       }
       return;
     }

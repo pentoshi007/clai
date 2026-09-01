@@ -48,14 +48,13 @@ export function buildSessionStateBlock(s: SessionStateSnapshot): string {
   if (s.serverProbedOk) flags.push("probe_ok=true");
   if (s.lastProbeFailed) flags.push("last_probe_failed=true");
   if (flags.length) lines.push(`flags: ${flags.join(" ")}`);
-  if (s.lastOkTool) lines.push(`last_ok_tool: ${s.lastOkTool}`);
   if (s.backgroundJobs) {
     lines.push(`jobs: ${oneLine(s.backgroundJobs, 200)}`);
   }
   if (s.engagementNote) lines.push(`note: ${oneLine(s.engagementNote, 160)}`);
   if (s.nextHint) lines.push(`next: ${oneLine(s.nextHint, 200)}`);
   lines.push(
-    "Use this state. Prefer evidence over claims. Update work via tools; do not invent progress.",
+    "Use this state. Prefer evidence over claims. Update work via tools; do not invent progress. The most recent SESSION STATE message is the live one; older copies in the transcript are history.",
   );
   return lines.join("\n");
 }
@@ -116,7 +115,8 @@ export function upsertSessionStateMessage(
       typeof m.content === "string" &&
       m.content.startsWith(SESSION_STATE_PREFIX)
     ) {
-      messages.splice(i, 1);
+      if (m.content === content) return;
+      break;
     }
   }
 

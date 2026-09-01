@@ -1,5 +1,6 @@
 import type { CompletionRequest } from "../types.js";
 import { toWireName } from "./tool-protocol.js";
+import { wireToolArguments } from "./tool-wire/argument-repair.js";
 import { withReasoningObservation } from "./token-usage.js";
 import type { TokenUsage } from "./token-usage.js";
 import { emitStreamReasoningArtifacts } from "./stream-events.js";
@@ -125,7 +126,7 @@ export function absorbResponseOutput(
         id: tc.id,
         callId: tc.id,
         name: toWireName(tc.name),
-        arguments: tc.rawArguments ?? JSON.stringify(tc.args),
+        arguments: wireToolArguments(tc.rawArguments, tc.args),
       });
     }
   }

@@ -17,7 +17,6 @@ export interface SessionStateProjectionInput {
   readonly serverStarted: boolean;
   readonly serverProbedOk: boolean;
   readonly lastProbeFailed: boolean;
-  readonly lastOkTool: string | undefined;
   readonly pentestSession: boolean;
 }
 
@@ -63,7 +62,6 @@ export const buildTurnSessionStateSnapshot = (
     serverStarted: input.serverStarted,
     serverProbedOk: input.serverProbedOk,
     lastProbeFailed: input.lastProbeFailed,
-    lastOkTool: input.lastOkTool,
     backgroundJobs: jobSummary(input.runningJobs),
     engagementNote: input.pentestSession
       ? "remote/security engagement — no local dev server as completion"
