@@ -103,7 +103,7 @@ describe("/models command registration", () => {
   it("is advertised in the shared slash-command catalogue", () => {
     const entry = slashCommands.find((command) => command.command === "/models");
     expect(entry).toBeDefined();
-    expect(entry?.description).toMatch(/all configured providers/i);
+    expect(entry?.description).toMatch(/browse all models across providers/i);
   });
 
   it("resolves as its own command without shadowing /model", () => {
