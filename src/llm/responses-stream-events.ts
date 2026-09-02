@@ -341,14 +341,12 @@ function dispatchReasoningEvent(
   type: string | undefined,
   parsed: Record<string, unknown>,
 ): boolean {
-  const thinkingEnabled = Boolean(ctx.request.thinking?.enabled);
   if (
     type === "response.reasoning_summary_text.delta" ||
     type === "response.reasoning_text.delta" ||
     type === "response.reasoning_summary.delta" ||
     type === "response.reasoning.delta"
   ) {
-    if (!thinkingEnabled) return true;
     const delta = typeof parsed.delta === "string" ? parsed.delta : "";
     if (delta) {
       ctx.watchdog.resetIdleTimer();
@@ -361,7 +359,6 @@ function dispatchReasoningEvent(
     type === "response.reasoning_text.done" ||
     type === "response.reasoning_summary.done"
   ) {
-    if (!thinkingEnabled) return true;
     const textVal = typeof parsed.text === "string" ? parsed.text : "";
     if (textVal && !ctx.state.reasoningSeen.includes(textVal)) {
       const remaining = textVal.slice(ctx.state.reasoningSeen.length);
@@ -399,13 +396,10 @@ export function finalizeStreamResult(
 ): CompletionResult {
   const { config, model, state, request } = ctx;
   const api = config.providerId === "meta" ? "meta-responses" : "responses";
-  const thinkingEnabled = Boolean(request.thinking?.enabled);
-  const reasoningPart = thinkingEnabled
-    ? streamReasoningReplay(config, model, state, request.onStreamEvent)
-    : {};
-  const usagePart = streamUsageResult(state, thinkingEnabled);
+  const reasoningPart = streamReasoningReplay(config, model, state, request.onStreamEvent);
+  const usagePart = streamUsageResult(state);
   if (!state.visible.trim() && toolCalls.length === 0) {
-    if ((thinkingEnabled && state.reasoningSeen.trim()) || state.finishReason === "length") {
+    if (state.reasoningSeen.trim() || state.finishReason === "length") {
       return {
         text: state.full,
         provider: config.providerId,
@@ -438,7 +432,6 @@ export function finalizeStreamResult(
 
 export function maybeAppendPrivateReasoning(ctx: StreamEventContext): void {
   const { state, config, request } = ctx;
-  if (!request.thinking?.enabled) return;
   if (
     !state.reasoningSeen.trim() &&
     state.streamUsage?.reasoningTokens &&

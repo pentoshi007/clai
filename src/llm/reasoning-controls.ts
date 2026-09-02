@@ -156,14 +156,14 @@ function shapeByDialect(
         ...(enabled && effort !== undefined ? { reasoning_effort: effort } : {}),
       };
     case "qwen-enable-thinking":
-      return enabled
-        ? {
-            enable_thinking: true,
-            ...(effort !== undefined
-              ? { reasoning_effort: effort }
-              : { thinking_budget: budgetTokens }),
-          }
-        : {};
+      return {
+        enable_thinking: enabled,
+        ...(enabled && effort !== undefined
+          ? { reasoning_effort: effort }
+          : enabled
+            ? { thinking_budget: budgetTokens }
+            : {}),
+      };
     case "kimi-template-thinking":
       return { chat_template_kwargs: { thinking: enabled } };
     case "glm-enable-thinking":

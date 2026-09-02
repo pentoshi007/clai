@@ -36,19 +36,15 @@ export async function responsesComplete(
   const parsed = parseResponsesOutput(
     data as { output?: unknown; usage?: unknown },
   );
-  const thinkingEnabled = Boolean(request.thinking?.enabled);
-  const reasoningArtifacts = thinkingEnabled
-    ? responsesReasoningArtifacts(
-        config,
-        model,
-        parsed.reasoningItems,
-        parsed.reasoningItemPositions,
-      )
-    : undefined;
+  const reasoningArtifacts = responsesReasoningArtifacts(
+    config,
+    model,
+    parsed.reasoningItems,
+    parsed.reasoningItemPositions,
+  );
   const usage = withReasoningObservation(
-    parsed.usage ??
-      parseResponsesUsage((data as Record<string, unknown>).usage),
-    thinkingEnabled && Boolean(parsed.reasoningSummary.trim()),
+    parsed.usage ?? parseResponsesUsage((data as Record<string, unknown>).usage),
+    Boolean(parsed.reasoningSummary.trim()),
   );
   const outputBudgetIncomplete = isOutputBudgetIncomplete(
     data as Record<string, unknown>,
@@ -57,13 +53,13 @@ export async function responsesComplete(
     !outputBudgetIncomplete &&
     !parsed.text.trim() &&
     parsed.toolCalls.length === 0 &&
-    !(thinkingEnabled && parsed.reasoningSummary.trim())
+    !parsed.reasoningSummary.trim()
   ) {
     throw new ProviderError(
       `${config.displayName} returned no completion text (model=${model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
     );
   }
-  const result = assembleCompletionResult({
+  return assembleCompletionResult({
     config,
     model,
     parsed,
@@ -71,9 +67,4 @@ export async function responsesComplete(
     reasoningArtifacts,
     outputBudgetIncomplete,
   });
-  if (!thinkingEnabled) {
-    const { reasoningBlock: _rb, reasoningArtifacts: _ra, ...rest } = result as unknown as Record<string, unknown>;
-    return rest as unknown as CompletionResult;
-  }
-  return result;
 }

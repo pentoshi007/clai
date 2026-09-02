@@ -146,44 +146,40 @@ export async function openAiCompatibleComplete(options: {
           response.headers,
         )
       : parseOpenAiUsage(data.usage, options.usageAliases);
-  const reasoningOn = Boolean(options.reasoning?.enabled);
   const reasoning = openAiReasoningText(message);
   const detailsRaw = artifactRaw(message?.reasoning_details);
   const thoughtSignature = message?.extra_content?.google?.thought_signature;
-  const reasoningArtifacts = reasoningOn
-    ? compatibleReasoningArtifacts({
-        providerId: options.providerId,
-        model: options.model,
-        baseUrl: options.baseUrl,
-        toolCalls,
-        policy:
-          options.reasoningArtifactPolicy ??
-          compatibleArtifactPolicyFor(plan.policy.reasoning.finalTurnPreservation),
-        ...(typeof reasoning === "string" && reasoning
-          ? { reasoning: { text: reasoning, sequence: 0 } }
-          : {}),
-        ...(detailsRaw ? { details: [{ raw: detailsRaw, sequence: 1 }] } : {}),
-        ...(thoughtSignature
-          ? {
-              thoughtSignatures: [
-                {
-                  raw: thoughtSignature,
-                  sequence: 2,
-                  ...(toolCalls.length ? { toolCallIndex: 0 } : {}),
-                },
-              ],
-            }
-          : {}),
-      })
-    : undefined;
-  if (reasoningOn && typeof reasoning === "string" && reasoning.trim()) {
+  const reasoningArtifacts = compatibleReasoningArtifacts({
+    providerId: options.providerId,
+    model: options.model,
+    baseUrl: options.baseUrl,
+    toolCalls,
+    policy:
+      options.reasoningArtifactPolicy ??
+      compatibleArtifactPolicyFor(plan.policy.reasoning.finalTurnPreservation),
+    ...(typeof reasoning === "string" && reasoning
+      ? { reasoning: { text: reasoning, sequence: 0 } }
+      : {}),
+    ...(detailsRaw ? { details: [{ raw: detailsRaw, sequence: 1 }] } : {}),
+    ...(thoughtSignature
+      ? {
+          thoughtSignatures: [
+            {
+              raw: thoughtSignature,
+              sequence: 2,
+              ...(toolCalls.length ? { toolCallIndex: 0 } : {}),
+            },
+          ],
+        }
+      : {}),
+  });
+  if (typeof reasoning === "string" && reasoning.trim()) {
     learnModelEmitsReasoning(options.providerId, options.model);
   }
-  const displayReasoning = reasoningOn
-    ? typeof reasoning === "string" && reasoning
+  const displayReasoning =
+    typeof reasoning === "string" && reasoning
       ? reasoning
-      : (visibleReasoningDetailText(detailsRaw) ?? "")
-    : "";
+      : (visibleReasoningDetailText(detailsRaw) ?? "");
   return {
     text,
     api: "chat-completions",

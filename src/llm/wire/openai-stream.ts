@@ -424,7 +424,6 @@ export async function openAiCompatibleStream(options: {
   }> = [];
 
   const finalReasoningArtifacts = (toolCalls: readonly NativeToolCall[]) => {
-    if (!reasoningOn) return undefined;
     if (pendingThoughtSignatures.length) {
       const toolCallIndex = toolCalls.length ? 0 : undefined;
       for (const capture of pendingThoughtSignatures.splice(0)) {
@@ -457,7 +456,6 @@ export async function openAiCompatibleStream(options: {
   };
 
   const displayReasoningText = (): string => {
-    if (!reasoningOn) return "";
     if (reasoningSeen) return reasoningSeen;
     return structuredDetails
       .map((detail) => visibleReasoningDetailText(detail.raw) ?? "")
@@ -483,7 +481,6 @@ export async function openAiCompatibleStream(options: {
   };
 
   const emitPrivateReasoningNote = (hasToolCalls: boolean): void => {
-    if (!reasoningOn) return;
     if (reasoningSeen.trim()) return;
     if (!visible.trim() && !hasToolCalls) return;
     const tokens = streamUsage?.reasoningTokens ?? 0;
@@ -736,7 +733,7 @@ export async function openAiCompatibleStream(options: {
           } else if (finalUsageFrame && terminalSignal === undefined) {
             terminalSignal = "usage-chunk";
           }
-          if (reasoningToken && reasoningOn) {
+          if (reasoningToken) {
             const normalized = normalizeChannelDelta(
               reasoningToken,
               reasoningWireSeen,
@@ -752,7 +749,7 @@ export async function openAiCompatibleStream(options: {
               emitStreamReasoningDelta(options.onStreamEvent, normalized.delta);
             }
           }
-          if (detailRaw && reasoningOn) {
+          if (detailRaw) {
             structuredDetails.push({
               raw: detailRaw,
               sequence: artifactSequence,
@@ -794,7 +791,7 @@ export async function openAiCompatibleStream(options: {
           }
           const signatureToolCallIndex =
             deltaToolCallIndices[0] ?? lastToolCallIndex;
-          if (thoughtSignature && reasoningOn) {
+          if (thoughtSignature) {
             const capture = {
               raw: thoughtSignature,
               sequence: artifactSequence,
