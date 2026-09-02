@@ -442,14 +442,14 @@ describe("session runtime host hardening", () => {
         replacementOutput += chunk.toString("utf8");
       });
       replacement.resume();
-      replacement.write("d");
-      await waitFor(async () =>
-        replacementOutput.includes("query-size:") ? true : undefined,
-      );
-      const sizes = [
-        ...replacementOutput.matchAll(/query-size:(\d+x\d+)/g),
-      ];
-      expect(sizes.at(-1)?.[1]).toBe("144x52");
+      // SIGWINCH reaches the child asynchronously, so keep asking until it
+      // reports the new geometry. host-resize.test.ts covers the ordering
+      // guarantee that the resize precedes the acknowledgement.
+      await waitFor(async () => {
+        replacement.write("d");
+        return /query-size:144x52/.test(replacementOutput) ? true : undefined;
+      }, 8_000);
+      expect(replacementOutput).toContain("query-size:144x52");
 
       replacement.write("q");
       await waitForRuntimeExit(runtime);
