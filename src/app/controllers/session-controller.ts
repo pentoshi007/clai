@@ -322,9 +322,7 @@ export class SessionController implements Disposable {
   private requestScopedContextTokens(): number | undefined {
     const snapshot = this.contextSnapshot;
     if (!snapshot || snapshot.contextTokens <= 0) return undefined;
-    return snapshot.scope === "provider-request"
-      ? snapshot.contextTokens
-      : undefined;
+    return snapshot.contextTokens;
   }
 
   recordTokenUsage(

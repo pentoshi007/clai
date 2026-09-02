@@ -304,7 +304,7 @@ export function contextSnapshotFromLegacy(
     lastCompletionTokens: snapshot.lastCompletionTokens,
     sessionPromptTokens: snapshot.sessionPromptTokens,
     sessionCompletionTokens: snapshot.sessionCompletionTokens,
-    scope: "unknown",
+    scope: snapshot.exact ? "provider-request" : "unknown",
     precision: snapshot.exact ? "provider-exact" : "estimate",
     limit,
     observedAt,

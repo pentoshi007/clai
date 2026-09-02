@@ -291,13 +291,33 @@ describe("exactness lifetime", () => {
   });
 
   it("does not retain a legacy unknown-scope exact count after history grows", () => {
-    const previous = exactSnapshot();
+    const previous = createContextSnapshot({
+      contextTokens: 120_000,
+      lastCompletionTokens: 900,
+      sessionPromptTokens: 120_000,
+      sessionCompletionTokens: 900,
+      scope: "unknown",
+      precision: "estimate",
+      limit: { source: "session-override", tokens: CONTEXT_LIMIT },
+      observedAt: 1,
+    });
     const grown: ChatMessage[] = [
       ...fixture.fullMessages,
       { role: "user", content: textOfTokens(150_000) },
     ];
 
-    const resolved = resolveContextUsageSnapshot(target, grown, previous)!;
+    const resolved = resolveContextUsageSnapshot(
+      target,
+      grown,
+      {
+        contextTokens: previous.contextTokens,
+        contextLimit: CONTEXT_LIMIT,
+        lastCompletionTokens: 900,
+        sessionPromptTokens: 120_000,
+        sessionCompletionTokens: 900,
+        exact: false,
+      },
+    )!;
 
     expect(estimateMessagesTokens(grown)).toBeGreaterThan(240_000);
     expect(resolved.contextTokens).toBeGreaterThanOrEqual(
@@ -307,12 +327,21 @@ describe("exactness lifetime", () => {
   });
 
   it("replaces an exact snapshot with a newer assembled-request estimate", () => {
-    const previous = exactSnapshot();
+    const previous = createContextSnapshot({
+      contextTokens: 120_000,
+      lastCompletionTokens: 900,
+      sessionPromptTokens: 120_000,
+      sessionCompletionTokens: 900,
+      scope: "unknown",
+      precision: "estimate",
+      limit: { source: "session-override", tokens: CONTEXT_LIMIT },
+      observedAt: 1,
+    });
 
-    const refreshed = estimatedUsageSnapshot(target, previous, 250_000)!;
+    const refreshed = estimatedContextSnapshot(target, previous, 250_000, () => 2)!;
 
     expect(refreshed.contextTokens).toBe(250_000);
-    expect(refreshed.exact).toBe(false);
+    expect(refreshed.scope).toBe("assembled-request");
   });
 
   it("keeps a provider-exact snapshot instead of a newer assembled-request estimate", () => {

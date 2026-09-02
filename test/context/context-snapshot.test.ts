@@ -232,10 +232,10 @@ describe("ContextSnapshotV1", () => {
     expect(migrated).toMatchObject({
       version: 1,
       contextTokens: 275,
-      scope: "unknown",
+      scope: "provider-request",
       precision: "provider-exact",
       limit: { source: "session-override", tokens: 1_000 },
-      headroom: { kind: "unknown" },
+      headroom: { kind: "known", remainingTokens: 725 },
       cache: { kind: "unknown" },
       reasoning: { kind: "unknown" },
       attempt: { kind: "unavailable" },
