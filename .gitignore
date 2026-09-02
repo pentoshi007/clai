@@ -33,3 +33,5 @@ typescript
 
 *.bun-build
 prompt.txt
+clai-vs-opencode-cache-report.md
+*-cache-report.md
