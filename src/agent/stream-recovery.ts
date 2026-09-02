@@ -41,7 +41,7 @@ export interface StreamRecoveryLimits {
 
 export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxEmpty: 4,
-  maxRateLimit: 3,
+  maxRateLimit: 5,
   maxServer: 3,
   maxNetwork: 3,
   maxStall: 2,
@@ -49,7 +49,7 @@ export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxStructural: 1,
   maxProgressed: 6,
   maxTotal: 16,
-  maxDelayMs: 30_000,
+  maxDelayMs: 60_000,
 };
 
 export interface StreamRecoveryPlan {

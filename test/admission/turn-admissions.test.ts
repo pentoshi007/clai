@@ -198,8 +198,8 @@ describe("recovery ladder admissions", () => {
       messages: [{ role: "user", content: "hi" }],
     });
 
-    expect(attempts).toBe(4);
-    expect(transport.generations).toHaveLength(28);
+    expect(attempts).toBe(6);
+    expect(transport.generations).toHaveLength(42);
   });
 });
 
