@@ -1,6 +1,3 @@
-/**
- * Summarizer callback used by SessionController.compact (keeps the controller slim).
- */
 
 import type {
   ChatMessage,
@@ -42,7 +39,6 @@ export async function summarizeForSessionCompact(
     provider: ProviderId | undefined;
     model: string | undefined;
     signal?: AbortSignal | undefined;
-    /** plan-implement needs denser handoff memory — allow a larger completion. */
     purpose?: "default" | "plan-implement" | undefined;
     stage?: "single" | "map" | "reduce" | undefined;
     sourceMessages?: readonly ChatMessage[] | undefined;
@@ -93,11 +89,6 @@ interface RunSessionCompactionOptions {
   readonly model: string | undefined;
   readonly successfulRequest?: SuccessfulRequestSnapshot | undefined;
   readonly contextLimitTokens?: number | undefined;
-  /**
-   * Current occupancy of the next model request, when the session already has a
-   * request-scoped measurement. Reporting against it keeps the manual card on
-   * the same scale as the automatic one and as the composer chip.
-   */
   readonly requestTokensBefore?: number | undefined;
   readonly persist: boolean;
   readonly compactionId: string;
@@ -209,16 +200,6 @@ export async function runSessionCompaction(
     continuationBudget: 0,
   });
   try {
-    if (!successfulRequest) {
-      throw new Error(
-        "compaction failed: no successful live model request is available for cache-preserving compaction; complete a turn first",
-      );
-    }
-    // Cache-preserving replay: the summary request resends the last
-    // successful turn request verbatim with the instruction appended, so the
-    // whole prior prompt is served from cache. When that assembled request
-    // would not fit (e.g. compacting a nearly-full session), fall back to the
-    // legacy transcript-rendered requests rather than failing closed.
     const replay =
       replayPlan && !replayPlan.accounting.overLimit
         ? replayRequest
@@ -239,9 +220,6 @@ export async function runSessionCompaction(
                 contextLimitTokens,
               }
             : {
-                // Legacy path: the direct strategy carries the full source
-                // messages; the transcript strategies embed the material in
-                // the prompt itself and need no sourceMessages.
                 ...(stage?.sourceMessages
                   ? { sourceMessages: stage.sourceMessages }
                   : {}),

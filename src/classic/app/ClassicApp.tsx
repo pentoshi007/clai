@@ -100,8 +100,6 @@ export function ClassicApp(
   const selection = services.selection.getState();
   const standaloneLabel = providedWiring === undefined ? "clai classic · Ctrl+C twice to exit" : undefined;
   const phase = wiring.contextLimitEditingValue ? "suspended" : session.running ? "running" : "idle";
-  // Same meta the opentui composer shows on its border: provider · model ·
-  // permission, preferring the live session selection over config defaults.
   const cfg = getConfig();
   const metaLabel = formatComposerMeta(
     session.provider ?? cfg.defaultProvider,

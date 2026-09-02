@@ -6,21 +6,18 @@ export interface SlashCommand {
   description: string;
 }
 
-/** Shared command catalogue used by both the classic REPL and the Ink TUI. */
 export const slashCommands: SlashCommand[] = [
   { command: "/ask", description: "switch to ask mode" },
   { command: "/agent", description: "switch to agent mode" },
   {
     command: "/model",
     usage: "[name|#]",
-    description:
-      "open searchable picker (type:filter · ↑↓:select · enter:confirm), or pass a name/number",
+    description: "open picker or switch model",
   },
   {
     command: "/models",
     usage: "[filter]",
-    description:
-      "every model across all configured providers · pick one to switch provider + model",
+    description: "browse all models across providers",
   },
   {
     command: "/provider",
@@ -72,12 +69,12 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/new",
-    description: "start a fresh session (clear context, no history carryover)",
+    description: "start a fresh session",
   },
   {
     command: "/history",
     usage: "[delete <id>]",
-    description: "browse & resume past sessions (interactive picker) · /history delete <id> to permanently remove",
+    description: "browse past sessions",
   },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/reset", description: "clear all saved history" },
@@ -97,7 +94,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/output",
     usage: "[last|<id>|list]",
-    description: "open full tool output (Ctrl+O); q closes the pager",
+    description: "open tool output (Ctrl+O)",
   },
   {
     command: "/jobs",
@@ -112,21 +109,18 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/fallback",
     usage: "[on|off]",
-    description:
-      "try other configured providers after a failure (off by default)",
+    description: "try other configured providers after a failure (off by default)",
   },
   {
     command: "/skills",
     usage: "[name|list|refresh]",
-    description:
-      "browse Agent Skills and attach one to your next prompt as skill:name · /skills list shows paths",
+    description: "manage Agent Skills",
   },
   {
     command: "/mcp",
     usage:
       "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|login <server>|add [json|notion]]",
-    description:
-      "inspect MCP sources/tools and .clai/mcp.json, connect Notion or another server, sign in with OAuth, and choose session-active tools (off by default)",
+    description: "manage MCP servers (.clai/mcp.json, off by default)",
   },
   {
     command: "/compact",
@@ -135,14 +129,12 @@ export const slashCommands: SlashCommand[] = [
   { command: "/context", description: "show estimated context size" },
   {
     command: "/usage",
-    description:
-      "token usage for this session per provider/model (input, output, cached, cache rate) plus totals",
+    description: "show token usage per provider/model and API",
   },
   {
     command: "/plan",
     usage: "[view|off]",
-    description:
-      "enter plan mode; use /plan view or Ctrl+P to view current tasks",
+    description: "enter plan mode",
   },
   {
     command: "/implement",
@@ -160,7 +152,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/privacy",
     usage: "[status|clear-history|clear-logs|clear-artifacts|clear-all|on|off]",
-    description: "control retention and private mode (in-memory only)",
+    description: "manage private mode and retention",
   },
   {
     command: "/permissions",
@@ -182,8 +174,6 @@ export const slashCommands: SlashCommand[] = [
   },
 ];
 
-// Well-known models per provider (refreshed May 2026)
-/** Curated model choices used by both frontends. */
 export const knownModels: Record<string, string[]> = {
   gemini: [
     "gemini-3.5-flash",
@@ -258,12 +248,10 @@ export const knownModels: Record<string, string[]> = {
   ],
   "aws-mantle": [],
   bynara: [
-    // Free tier models
     "mimo-v2.5-free",
     "mimo-v2.5-pro-free",
     "mistral-large",
     "mistral-medium-3-5",
-    // Pay-as-you-go / subscription models (from https://router.bynara.id/pricing)
     "mimo-v2.5",
     "mimo-v2.5-pro",
     "mimo-v2.5-hermes",
@@ -299,12 +287,7 @@ export const knownModels: Record<string, string[]> = {
     "qwen3.5-plus",
     "qwen3.5-flash",
   ],
-  // A Modal endpoint serves exactly the model it was deployed with, named by
-  // its source repo id, so the live `/models` list is authoritative. These are
-  // only the documented examples used when the endpoint can't be reached.
   modal: ["moonshotai/Kimi-K3", "Qwen/Qwen3.5-4B"],
-  // Lightning AI Model APIs; ids are vendor-namespaced. The live catalog at
-  // lightning.ai/api/v1/models is authoritative — this is the offline subset.
   lightning: [
     "openai/gpt-5",
     "openai/gpt-5-mini",
@@ -335,8 +318,6 @@ export const knownModels: Record<string, string[]> = {
     "lightning-ai/nemotron-3-ultra-550b-a55b",
     "lightning-ai/nemotron-3-nano-omni-30b-a3b-reasoning",
   ],
-  // OrcaRouter routes eleven upstreams under vendor-prefixed ids; the live
-  // catalog at api.orcarouter.ai/v1/models is authoritative — offline subset.
   orcarouter: [
     "orcarouter/auto",
     "openai/gpt-4o-mini",
@@ -382,12 +363,6 @@ export function getKnownModels(provider: string): string[] {
   return [...(knownModels[provider] ?? [])];
 }
 
-/**
- * Given a model string, return the provider that owns it in `knownModels`.
- * Returns undefined if the model is not found in any provider's list.
- * Used to auto-switch the provider when the user picks a model that belongs
- * to a different provider (e.g. `minimaxai/minimax-m3` is an NVIDIA model).
- */
 export function inferProviderForModel(model: string): string | undefined {
   const lower = model.toLowerCase();
   for (const [provider, models] of Object.entries(knownModels)) {
@@ -398,7 +373,6 @@ export function inferProviderForModel(model: string): string | undefined {
   return undefined;
 }
 
-/** Set of known slash-command names (without the leading "/"). */
 const knownSlashNames = new Set(
   slashCommands.map((c) => c.command.slice(1).toLowerCase()),
 );
@@ -406,10 +380,7 @@ const knownSlashNames = new Set(
 
 export function looksLikeSlashCommand(line: string): boolean {
   if (!line.startsWith("/") || line.length < 2) return false;
-  // First whitespace-delimited token, minus the leading slash.
   const firstToken = line.slice(1).split(/\s/)[0] ?? "";
-  // A path-like first token (contains another "/" or a backslash escape, or
-  // looks like a filename with an extension) is never a command.
   if (firstToken.includes("/") || firstToken.includes("\\")) return false;
   const name = firstToken.toLowerCase();
   

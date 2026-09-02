@@ -1,12 +1,9 @@
-/**
- * Session lifecycle slash commands (V2-080): mode, clear/new, save/reset,
- * allow/disallow, think, context, compact.
- */
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { setDefaultMode, getConfig, getProviderModel } from "../../store/config.js";
 import { seedSessionModel } from "../../store/session-model.js";
+import { resetResponsesWireStatesForTesting } from "../../llm/wire/responses-first.js";
 import {
   clearAllHistory,
   getSession,
@@ -34,7 +31,6 @@ function notice(services: AppServices, level: "info" | "warn", text: string): vo
   services.session.notice(level, text);
 }
 
-/** Short chrome feedback — toast only (no transcript clutter). */
 function flash(
   services: AppServices,
   text: string,
@@ -60,10 +56,17 @@ export function handleMode(services: AppServices, mode: Mode): void {
 export async function handleClear(services: AppServices): Promise<void> {
   const purgedId = services.session.sessionId;
   const purgedWorkspace = getActiveSessionWorkspace()?.folderName;
+  const beforeProvider = services.session.getState().provider;
+  const beforeModel = services.session.getState().model;
 
   clearActiveProjectRoot();
   services.plan.clear();
   services.session.reset({ mintNewId: true });
+  resetResponsesWireStatesForTesting();
+  if (beforeProvider) {
+    services.session.setProvider(beforeProvider);
+    if (beforeModel) services.session.setModel(beforeModel);
+  }
   services.transcript.reset();
   services.session.setPlanApproved(false);
   flash(services, "Session cleared", { key: "session", level: "success" });
@@ -77,7 +80,9 @@ export async function handleClear(services: AppServices): Promise<void> {
       "cleared this session in memory, but some of its saved copy could not be deleted",
     );
   }
-  await inheritLastUsedModel(services);
+  if (!beforeProvider) {
+    await inheritLastUsedModel(services);
+  }
 }
 
 async function purgeCurrentSession(
@@ -135,14 +140,23 @@ async function inheritLastUsedModel(services: AppServices): Promise<void> {
 }
 
 async function resetToFreshSession(services: AppServices): Promise<void> {
+  const beforeProvider = services.session.getState().provider;
+  const beforeModel = services.session.getState().model;
   clearActiveProjectRoot();
   services.plan.clear();
   services.session.reset({ mintNewId: true });
+  resetResponsesWireStatesForTesting();
+  if (beforeProvider) {
+    services.session.setProvider(beforeProvider);
+    if (beforeModel) services.session.setModel(beforeModel);
+  }
   services.transcript.reset();
   await services.plan.load(services.session.sessionId).catch(() => undefined);
   services.session.setPlanApproved(false);
   flash(services, "Fresh session", { key: "session", level: "success" });
-  await inheritLastUsedModel(services);
+  if (!beforeProvider) {
+    await inheritLastUsedModel(services);
+  }
 }
 
 export async function handleNew(services: AppServices): Promise<void> {
@@ -171,7 +185,6 @@ export function handleContext(services: AppServices): void {
   const legacy = state.contextUsage;
   const snapshot = state.contextSnapshot;
   const exact = legacy?.exact === true;
-  // Used tokens only — do not invent a model window (limits vary / are unknown).
   const usedLabel = exact
     ? `${tokens.toLocaleString()} tokens`
     : `~${tokens.toLocaleString()} tokens (estimate)`;
@@ -252,8 +265,6 @@ export async function handleCompact(services: AppServices): Promise<void> {  if 
     notice(services, "info", "compaction already in progress…");
     return;
   }
-  // Need either model history or a visual transcript to compact.
-  // Notices are UI-only and do not count as conversation material.
   const historyLen = services.session.messages.length;
   const visualCount = conversationItemCount(services.transcript.getState());
   if (historyLen === 0 && visualCount === 0) {
@@ -261,12 +272,7 @@ export async function handleCompact(services: AppServices): Promise<void> {  if 
     return;
   }
 
-  // Status line already shows "compacting · Ns" — no transcript notice spam.
   try {
-    // Classic-style structured transcript (prompts, tools+outputs, answers,
-    // prior compacted memory from the last card onward). Combined with model
-    // history inside compactMessagesWithSummary so /history resume + new turns
-    // all feed the summary.
     const transcript = serializeTranscriptForCompaction(
       services.transcript.getState(),
       (toolCallId) => services.session.spool.tail(toolCallId),
@@ -279,7 +285,6 @@ export async function handleCompact(services: AppServices): Promise<void> {  if 
     const freed = Math.max(0, result.beforeTokens - result.afterTokens);
     const pct =
       result.beforeTokens > 0 ? Math.round((freed / result.beforeTokens) * 100) : 0;
-    // Compacted card is already in the transcript; short toast only (no notice row).
     flash(
       services,
       `compacted · −${pct}% · ~${result.beforeTokens.toLocaleString()}→~${result.afterTokens.toLocaleString()} (−${freed.toLocaleString()} tok)`,
@@ -311,7 +316,6 @@ export async function handleSave(
     await services.session.persistNow(invocation.args.trim() || undefined);
     notice(services, "info", `saved session ${services.session.sessionId}`);
   } catch {
-    // Fall back to direct upsert if persistNow fails for any reason.
     const rec = await upsertSession(
       services.session.sessionId,
       [...messages],

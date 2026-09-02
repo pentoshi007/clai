@@ -1,10 +1,3 @@
-/**
- * Pane-scoped selection owner (V2-060..064).
- *
- * Owns semantic anchors, drag state, keyboard extension, and explicit copy
- * (Ctrl+Shift+C). Auto-copy-on-release is off by default — OpenTUI native
- * selection must not be fought by delayed clipboard side-effects.
- */
 
 import type { ClipboardPort } from "../../app/ports/clipboard-port.js";
 import { sanitizeDisplayText } from "../rendering/sanitize-display.js";
@@ -33,7 +26,6 @@ export interface PointerPosition {
   readonly y: number;
 }
 
-/** Native scroll primitives are injected to keep this controller renderer-independent. */
 export interface DragEdgeScrollPort {
   startAutoScroll(x: number, y: number): void;
   updateAutoScroll(x: number, y: number): void;
@@ -59,7 +51,6 @@ export type SelectionCopyResult =
 export type SelectionListener = () => void;
 
 export interface SelectionControllerOptions {
-  /** Auto-copy on mouse release. Default false (disabled — was breaking touch/TUI). */
   readonly copyOnRelease?: boolean | undefined;
 }
 

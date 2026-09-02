@@ -36,73 +36,32 @@ import {
  * `redact.applyToHeaders` / `redact.applyToCookies` and `budget.enforce`.
  */
 export interface CapturedFields {
-  /** IP address contacted on the final hop. */
   resolvedIp: string;
-  /** Hostname of the final hop (the one whose body is returned). */
   finalHostname: string;
-  /** Integer HTTP status of the final response. */
   status: number;
-  /** Lowercased response headers from the final hop, repeats joined. */
   headers: HeaderMap;
-  /** TLS session details from the final hop, when the scheme was https. */
   tls?: TlsInfo;
-  /** Per-phase timings; `tlsMs` is omitted on http:// requests. */
   timing: TimingInfo;
-  /** Up to {@link MAX_REDIRECT_HOPS} hops in chronological order. */
   redirectChain: RedirectChain;
-  /** Up to {@link MAX_COOKIES_CAPTURED} cookies parsed from `Set-Cookie`. */
   cookies: CookieInfo[];
 }
 
-/**
- * Pure builder that records the per-hop observations made by
- * `fetch-core.ts` and assembles them into a {@link CapturedFields}
- * snapshot via {@link Capture.finalize}.
- *
- * The builder is single-use: callers should construct one `Capture` per
- * `web.fetch` invocation and discard it after `finalize`.
- */
 export class Capture {
-  /** Final-hop DNS-resolution time in milliseconds. */
   private dnsMs = 0;
-  /** Final-hop TCP-connect time in milliseconds. */
   private tcpMs = 0;
-  /** Final-hop TLS-handshake time in milliseconds (https only). */
   private tlsMs: number | undefined = undefined;
-  /** Final-hop time-to-first-byte in milliseconds. */
   private ttfbMs = 0;
 
-  /** Final-hop resolved IP, set by {@link markDnsResolved}. */
   private resolvedIp = "";
-  /** Final-hop hostname, set by {@link setHopContext}. */
   private finalHostname = "";
-  /** Final-hop HTTP status, set by {@link markResponse}. */
   private status = 0;
-  /** Final-hop normalised headers, set by {@link markResponse}. */
   private headers: HeaderMap = {};
-  /** Final-hop TLS info (https only), set by {@link markTlsHandshaked}. */
   private tls: TlsInfo | undefined = undefined;
-  /** Redirect hops, capped at {@link MAX_REDIRECT_HOPS}. */
   private readonly redirectChain: RedirectHop[] = [];
-  /** Captured cookies, capped at {@link MAX_COOKIES_CAPTURED}. */
   private readonly cookies: CookieInfo[] = [];
 
-  /**
-   * Whether the current invocation is an `https://` fetch. When `false`,
-   * `tlsMs` is omitted from {@link TimingInfo} and `tls` from
-   * {@link CapturedFields} per Requirements 2.16, 2.24, and 2.25.
-   */
   private readonly isHttps: boolean;
 
-  /**
-   * Construct a fresh builder.
-   *
-   * @param opts.isHttps - Whether the request URL used `https://`.
-   *   Controls whether `timing.tlsMs` and `tls` are populated.
-   * @param opts.finalHostname - Optional initial hostname; the transport
-   *   will overwrite this via {@link setHopContext} as redirects are
-   *   followed.
-   */
   constructor(opts: { isHttps: boolean; finalHostname?: string }) {
     this.isHttps = opts.isHttps;
     if (typeof opts.finalHostname === "string") {
@@ -110,25 +69,12 @@ export class Capture {
     }
   }
 
-  /**
-   * Record the hostname of the hop the transport is about to issue.
-   *
-   * Called once per hop, before {@link markDnsResolved}. The most-recent
-   * value becomes {@link CapturedFields.finalHostname}.
-   */
   setHopContext(hostname: string): void {
     if (typeof hostname === "string" && hostname.length > 0) {
       this.finalHostname = hostname;
     }
   }
 
-  /**
-   * Record the DNS-resolution outcome for the current hop.
-   *
-   * The most-recent values overwrite any earlier ones so the values
-   * surfaced in {@link TimingInfo.dnsMs} and
-   * {@link CapturedFields.resolvedIp} correspond to the final hop.
-   */
   markDnsResolved(ms: number, ip: string): void {
     this.dnsMs = sanitiseMs(ms);
     if (typeof ip === "string" && ip.length > 0) {
@@ -136,31 +82,10 @@ export class Capture {
     }
   }
 
-  /**
-   * Record the TCP-connect time for the current hop. The most-recent
-   * value wins (see class-level docstring for per-hop semantics).
-   */
   markTcpConnected(ms: number): void {
     this.tcpMs = sanitiseMs(ms);
   }
 
-  /**
-   * Record the TLS handshake time and extract {@link TlsInfo} from the
-   * final-hop `tls.TLSSocket`.
-   *
-   * - `protocol`           ← `socket.getProtocol()` (`""` if null).
-   * - `cipher`             ← `socket.getCipher().name` (`""` if missing).
-   * - `subjectCN/issuerCN` ← `cert.subject.CN` / `cert.issuer.CN`.
-   * - `subjectAltNames`    ← parsed from `cert.subjectaltname`.
-   * - `notBefore/notAfter` ← `cert.valid_from` / `cert.valid_to` parsed
-   *                          to ISO 8601 (falls back to the raw value).
-   * - `fingerprintSha256`  ← lowercase, colon-separated SHA-256 of
-   *                          `cert.raw` via `node:crypto`.
-   *
-   * Calling this method on an http:// fetch is harmless but pointless —
-   * the constructor's `isHttps=false` flag suppresses the field in
-   * {@link finalize} regardless.
-   */
   markTlsHandshaked(ms: number, socket: TLSSocket): void {
     this.tlsMs = sanitiseMs(ms);
     this.tls = extractTlsInfo(socket);
@@ -185,15 +110,6 @@ export class Capture {
     this.headers = normaliseHeaders(rawHeaders);
   }
 
-  /**
-   * Append a redirect hop to the chronological chain.
-   *
-   * Hops in excess of {@link MAX_REDIRECT_HOPS} are silently dropped so
-   * the array always satisfies the cap from Requirement 2.26.
-   * `fetch-core.ts` is responsible for surfacing the
-   * `redirect-limit` error when the cap is reached; this builder just
-   * stops accumulating.
-   */
   addRedirectHop(url: string, status: number, location?: string): void {
     if (this.redirectChain.length >= MAX_REDIRECT_HOPS) return;
     if (typeof url !== "string" || url.length === 0) return;
@@ -207,34 +123,12 @@ export class Capture {
     this.redirectChain.push(hop);
   }
 
-  /**
-   * Parse one `Set-Cookie` header value via {@link parseSetCookie} and
-   * append the resulting {@link CookieInfo}, bounded at
-   * {@link MAX_COOKIES_CAPTURED}.
-   *
-   * Cookies in excess of the cap are silently dropped, matching
-   * Requirement 2.31.
-   */
   addSetCookieHeader(value: string): void {
     if (this.cookies.length >= MAX_COOKIES_CAPTURED) return;
     if (typeof value !== "string" || value.length === 0) return;
     this.cookies.push(parseSetCookie(value));
   }
 
-  /**
-   * Produce the {@link CapturedFields} snapshot.
-   *
-   * @param totalMs - Wall-clock duration of the whole invocation, in
-   *   milliseconds. Stored in {@link TimingInfo.totalMs}.
-   *
-   * Optional fields obey the design's "include flags applied at the
-   * adapter, not at the builder" principle: this method always emits
-   * every field it observed, including `tls` (when `isHttps=true` and a
-   * handshake was captured). The fetch handler in `fetch.ts` is
-   * responsible for honouring `includeTls` / `includeTiming` /
-   * `includeRedirectChain` by stripping fields from the assembled
-   * {@link WebFetchMetadata} *after* this snapshot is produced.
-   */
   finalize(totalMs: number): CapturedFields {
     const timing: TimingInfo = {
       dnsMs: this.dnsMs,
@@ -262,15 +156,7 @@ export class Capture {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
 
-/**
- * Coerce an arbitrary millisecond value into a non-negative finite
- * integer. Used to keep timing arithmetic resilient to clock skew or
- * non-numeric inputs from a stubbed transport.
- */
 function sanitiseMs(ms: number): number {
   if (typeof ms !== "number" || !Number.isFinite(ms)) return 0;
   if (ms < 0) return 0;
@@ -298,22 +184,11 @@ function normaliseHeaders(raw: IncomingHttpHeaders): HeaderMap {
   return out;
 }
 
-/**
- * Pull the TLS session details we surface from the leaf certificate.
- *
- * `getCipher()` returns `null` for sessions that have not completed the
- * handshake — defensive `?? ""` keeps the field present rather than
- * throwing when fed a half-initialised socket from a test stub.
- */
 function extractTlsInfo(socket: TLSSocket): TlsInfo {
   const protocol = socket.getProtocol() ?? "";
   const cipherInfo = socket.getCipher();
   const cipher = cipherInfo?.name ?? "";
 
-  // `getPeerCertificate(true)` returns the detailed certificate object
-  // including the DER `raw` bytes we need for the SHA-256 fingerprint.
-  // Some test stubs return a plain object lacking `raw`; we guard for
-  // that with a typeof check below.
   const cert = socket.getPeerCertificate(true);
 
   const subjectCN = pickCN(cert?.subject?.CN);
@@ -335,11 +210,6 @@ function extractTlsInfo(socket: TLSSocket): TlsInfo {
   };
 }
 
-/**
- * `tls.Certificate.CN` is typed as `string | string[] | undefined`.
- * When multiple CN values are present, we take the first to keep the
- * field shape simple; SAN expansion already covers the multi-name case.
- */
 function pickCN(cn: string | string[] | undefined): string {
   if (typeof cn === "string") return cn;
   if (Array.isArray(cn) && cn.length > 0) {
@@ -348,14 +218,6 @@ function pickCN(cn: string | string[] | undefined): string {
   return "";
 }
 
-/**
- * Parse `cert.subjectaltname` (the comma-separated string emitted by
- * Node's `getPeerCertificate`, e.g. `"DNS:example.com, IP Address:1.2.3.4"`)
- * into a string array. The type prefix (`DNS:`, `IP Address:`, `URI:`,
- * `email:`) is preserved so callers retain SAN-type information.
- *
- * Empty / undefined input yields an empty array.
- */
 function parseSubjectAltName(san: string | undefined): string[] {
   if (typeof san !== "string" || san.length === 0) return [];
   return san
@@ -364,12 +226,6 @@ function parseSubjectAltName(san: string | undefined): string[] {
     .filter((s) => s.length > 0);
 }
 
-/**
- * Convert a certificate `valid_from`/`valid_to` date string (which uses
- * the OpenSSL `MMM DD HH:mm:ss YYYY GMT` format) into ISO 8601. Falls
- * back to the raw input when parsing fails so the field remains useful
- * for forensic review even if the format is unexpected.
- */
 function isoFromCertDate(value: string | undefined): string {
   if (typeof value !== "string" || value.length === 0) return "";
   const ms = Date.parse(value);
@@ -377,15 +233,6 @@ function isoFromCertDate(value: string | undefined): string {
   return new Date(ms).toISOString();
 }
 
-/**
- * Compute the SHA-256 digest of the certificate's DER bytes via
- * `node:crypto` and format it as a lowercase, colon-separated hex
- * string (`"ab:cd:ef:..."`), matching the `cert.fingerprint256` shape
- * Node exposes for SHA-1 digests.
- *
- * Returns `""` when `raw` is missing or not a Buffer-like value (e.g. a
- * test stub that omitted the field).
- */
 function computeSha256Fingerprint(raw: unknown): string {
   if (raw === undefined || raw === null) return "";
   let bytes: Buffer;
@@ -397,9 +244,6 @@ function computeSha256Fingerprint(raw: unknown): string {
     return "";
   }
   const hex = createHash("sha256").update(bytes).digest("hex");
-  // Pair-up the hex string into colon-separated bytes: `abcdef…` →
-  // `ab:cd:ef:…`. The regex match is bounded by the deterministic
-  // 64-char output of SHA-256 so there is no unbounded work here.
   const pairs = hex.match(/.{2}/g) ?? [];
   return pairs.join(":");
 }

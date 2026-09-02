@@ -1,11 +1,3 @@
-/**
- * Ephemeral toast queue (UI chrome, not transcript history).
- *
- * Lifecycle (host animates enter/exit):
- *   enter (~200ms) → hold (default 5000ms) → exit (~200ms) → dismiss
- *
- * Same-key shows update that toast in place, preserving its id, stack position and enter animation.
- */
 
 export type ToastLevel = "info" | "success" | "warn" | "error";
 
@@ -14,41 +6,25 @@ export interface ToastItem {
   readonly message: string;
   readonly level: ToastLevel;
   readonly createdAt: number;
-  /** Hold time at rest (ms) — enter/exit animation are extra. */
   readonly durationMs: number;
-  /** Optional replace key — new shows with the same key dismiss the old one. */
   readonly key?: string | undefined;
-  /** Sticky toasts never auto-dismiss; the caller dismisses them by id. */
   readonly sticky?: boolean | undefined;
 }
 
 export interface ShowToastOptions {
   readonly level?: ToastLevel | undefined;
-  /** Visible hold at rest; default 5000ms (enter/exit are added on top). */
   readonly durationMs?: number | undefined;
-  /**
-   * Replace any existing toast with this key (e.g. "thinking", "scroll").
-   * Prevents spam when the user hammers a toggle.
-   */
   readonly key?: string | undefined;
-  /** Keep the toast on screen until explicitly dismissed (no auto-dismiss timer). */
   readonly sticky?: boolean | undefined;
 }
 
 export type ToastListener = () => void;
 
-/** Time at rest in the final on-screen position. */
 export const DEFAULT_TOAST_DURATION_MS = 5000;
-/** Slide-in from top. */
 export const TOAST_ENTER_MS = 200;
-/** Slide-out back to top. */
 export const TOAST_EXIT_MS = 200;
 
 const MAX_VISIBLE_TOASTS = 3;
-/**
- * Safety cap only (pathological multi-KB dumps). Normal status lines are not
- * truncated for display — host sizes the chip to the full message.
- */
 export const MAX_TOAST_MESSAGE_CHARS = 400;
 const MAX_MESSAGE_CHARS = MAX_TOAST_MESSAGE_CHARS;
 

@@ -127,10 +127,6 @@ function geminiThinkingConfig(
 ): Record<string, unknown> | undefined {
   if (!reasoning) return undefined;
   if (isGemini3Model(model)) {
-    // Gemini 3 models use `thinkingLevel`, not Gemini 2.5's token budget.
-    // Flash-Lite supports `minimal`, which is the closest available recovery
-    // mode when the runner needs a visible answer instead of a long thought.
-    // 3.1 Pro does not support `minimal`, so `low` is its least costly mode.
     const effort = reasoning?.effort ?? "medium";
     const wantsMinimal = !reasoning?.enabled || effort === "none" || effort === "minimal";
     const isPro = /gemini-3(?:\.\d)?-pro/i.test(model);
@@ -145,17 +141,12 @@ function geminiThinkingConfig(
           : "medium";
     return {
       thinkingLevel,
-      // On a recovery retry, keep Gemini's minimal internal reasoning but do
-      // not stream thought summaries back as an apparent empty completion.
       ...(reasoning?.enabled ? { includeThoughts: true } : {}),
     };
   }
 
   if (!/gemini-2\.5/i.test(model)) return undefined;
   if (!reasoning?.enabled) {
-    // Flash and Flash-Lite support an explicit zero budget. Gemini 2.5 Pro
-    // cannot disable thinking, so omit the control rather than send an
-    // invalid value.
     return /gemini-2\.5-(?:flash|flash-lite)/i.test(model)
       ? { thinkingBudget: 0 }
       : undefined;
@@ -172,12 +163,6 @@ function geminiThinkingConfig(
   }
 }
 
-/**
- * Thinking tokens are billed against `maxOutputTokens` on Gemini 2.5,
- * so a budget at or above the output cap guarantees a thought-only
- * `MAX_TOKENS` finish with no visible answer. Clamp the budget to at most half
- * the effective cap so a visible reserve always remains.
- */
 /**
  * Gemini's default thresholds are `BLOCK_MEDIUM_AND_ABOVE`, which blocks a
  * meaningful share of legitimate sysadmin/pentest turns (exploit discussion,
@@ -200,7 +185,6 @@ const GEMINI_BLOCKING_FINISH_REASONS = new Set([
   "SPII",
 ]);
 
-/** Throws a named error for a finish reason that means "content was blocked". */
 export function assertGeminiFinishReasonAllowed(
   finishReason: string | undefined,
 ): void {
@@ -276,8 +260,6 @@ export const geminiProvider: LlmProvider = {
   displayName: "Google Gemini",
   defaultModel: defaultModels.gemini,
   envVar: "GEMINI_API_KEY",
-  // Classic AI Studio keys start with AIza…; newer Google AI / GenAI keys often
-  // use AQ.… (e.g. from Google AI Studio / Cloud). Both must pass multi-key save.
   validateKey: (key: string) =>
     /^AIza[0-9A-Za-z_-]{12,}$/.test(key) ||
     /^AQ\.[A-Za-z0-9_-]{20,}$/.test(key),
@@ -361,6 +343,7 @@ export const geminiProvider: LlmProvider = {
       text: parsed.text,
       provider: "gemini",
       model,
+      api: "gemini-generate-content",
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(data.candidates?.[0]?.finishReason
@@ -472,7 +455,6 @@ export const geminiProvider: LlmProvider = {
           }
         }
       } catch (frameError) {
-        // Only malformed JSON frames are ignorable.
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }
@@ -510,6 +492,7 @@ export const geminiProvider: LlmProvider = {
       text: full,
       provider: "gemini",
       model,
+      api: "gemini-generate-content",
       ...(toolParsed.toolCalls.length
         ? { toolCalls: toolParsed.toolCalls }
         : {}),

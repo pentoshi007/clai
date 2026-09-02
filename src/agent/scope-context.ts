@@ -1,7 +1,6 @@
 import type { EngagementScope } from "../store/scope.js";
 import { isScopeActive } from "../store/scope.js";
 
-/** Compact engagement-scope block for pentest turns. */
 export function scopeContextMessage(
   scope: EngagementScope | undefined,
 ): string | undefined {

@@ -3,9 +3,7 @@ import type { OverlayContext } from "../../ui-core/controllers/focus-controller.
 
 export const COMPOSER_MAX_TEXT_ROWS = COMPOSER_MAX_HEIGHT;
 export const COMPOSER_BORDER_ROWS = 2;
-/** Directory line rendered above the composer box (inside its allocation). */
 export const COMPOSER_DIR_ROWS = 1;
-/** One blank breather row between the chat feed and the composer area. */
 export const COMPOSER_GAP_ROWS = 1;
 export const OVERLAY_MIN_ROWS = 5;
 export const MAX_TOAST_ROWS = 2;
@@ -57,10 +55,6 @@ function whole(value: number): number {
 
 export function allocateChrome(demand: ChromeDemand): ChromeLayout {
   const rows = whole(demand.rows);
-  // The alternate screen is now owned by TerminalSession, so the shell can
-  // occupy the full usable terminal height. Horizontal safety comes from the
-  // shared padded content column; leaving a phantom bottom row made the
-  // composer/status visibly float above the terminal edge.
   let budget = rows;
 
   const composerCap = Math.min(COMPOSER_MAX_TEXT_ROWS, Math.floor(rows * 0.4));
@@ -68,8 +62,6 @@ export function allocateChrome(demand: ChromeDemand): ChromeLayout {
     COMPOSER_DIR_ROWS +
     COMPOSER_BORDER_ROWS +
     clamp(whole(demand.composerTextRows), 1, composerCap);
-  // The gap row is a luxury: it is shed before it would starve the status
-  // row or the last visible chat row.
   let composer =
     composerBox + COMPOSER_GAP_ROWS + 2 <= budget
       ? composerBox + COMPOSER_GAP_ROWS

@@ -1,10 +1,3 @@
-/**
- * Renderer-independent semantic text coordinates used by pane selection.
- *
- * Anchors point at stable domain block ids and UTF-16 source offsets rather
- * than viewport cells, so wrapping, resizing, and virtualized rows cannot
- * change what an existing selection means.
- */
 
 import { detectLinks } from "../rendering/link-detector.js";
 
@@ -146,7 +139,6 @@ export function moveSemanticAnchor(
   }
 }
 
-/** SEL-005: double-click selects a whole URL/path as one unit, else a word. */
 export function semanticWordRange(
   document: SemanticDocument,
   requested: SemanticAnchor,

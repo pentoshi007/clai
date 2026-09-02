@@ -1,20 +1,11 @@
-/**
- * Detect commands that are likely long-running servers, listeners, or
- * watch processes. These should be started as background jobs rather
- * than blocking the REPL.
- */
 
 const LONG_RUNNING_PATTERNS: RegExp[] = [
-  // Listeners / bind shells. Match nc/ncat with a listen flag in any flag
-  // cluster form: -l, -lvnp, -nvlp, -p 4444 -l, etc.
   /\bnc(?:at)?\b[^|&;\n]*\s-[a-z]*l/i,
   /\bsocat\b.*\bLISTEN\b/i,
 
-  // Python HTTP servers
   /\bpython3?\s+(-m\s+)?http\.server\b/i,
   /\bpython3?\s+(-m\s+)?SimpleHTTPServer\b/i,
 
-  // Node/JS dev servers
   /\bnpm\s+run\s+dev\b/i,
   /\byarn\s+dev\b/i,
   /\bpnpm\s+dev\b/i,
@@ -22,48 +13,37 @@ const LONG_RUNNING_PATTERNS: RegExp[] = [
   /\bnpm\s+start\s*$/i,
   /\bnode\s+server\b/i,
   /\bnodemon\b/i,
-  // Vite must be the invoked executable, not a package/path/argument token.
-  // Applying this regex per shell segment keeps `.vite-tmp`, `npm install vite`,
-  // and `cat vite.config.ts` in the foreground while still catching
-  // `vite`, `npx vite`, and `/path/to/vite --host`.
   /^(?:(?:command|exec)\s+)?(?:(?:npx|bunx|pnpm\s+exec|yarn\s+exec|npm\s+exec)(?:\s+--yes)?\s+)?(?:\S*\/)?vite(?:@\S+)?(?:\s+(?!build\b|--help\b|--version\b).*)?$/i,
   /\bnext\s+dev\b/i,
   /\bnuxt\s+dev\b/i,
 
-  // Log followers / watchers
   /\btail\s+.*-[fF]\b/i,
   /\bjournalctl\s+.*-f\b/i,
   /\bwatch\s+/i,
   /\bcargo\s+watch\b/i,
 
-  // Docker
   /\bdocker\s+logs\s+.*-f\b/i,
   /\bdocker\s+compose\s+up\b/i,
   /\bdocker-compose\s+up\b/i,
 
-  // Python/Ruby/Go servers
   /\buvicorn\b/i,
   /\bgunicorn\b/i,
   /\bflask\s+run\b/i,
   /\brails\s+(?:server|s)\b/i,
   /\bsinatra\b/i,
 
-  // Other dev servers
   /\bphp\s+-S\b/i,
   /\bnginx\s*$/i,
   /\bapache2?\s*$/i,
 
-  // Tunnel / proxy
   /\bngrok\s+http\b/i,
   /\bssh\s+.*-[DLRN]\b/i,
   /\bchisel\s+(server|client)\b/i,
 
-  // Network listeners
   /\btcpdump\b/i,
   /\bwireshark\b/i,
   /\btshark\b.*-i\b/i,
 
-  // Databases / services run in the foreground (these block until killed)
   /\bneo4j\s+console\b/i,
   /\bmongod\b/i,
   /\bredis-server\b/i,
@@ -73,20 +53,10 @@ const LONG_RUNNING_PATTERNS: RegExp[] = [
   /\bjava\s+-jar\b/i,
 ];
 
-/**
- * Detect explicit job-control backgrounding (a bare ` & ` or trailing ` &`,
- * NOT `&&`, NOT the `2>&1` fd-dup). A command that backgrounds a process
- * keeps the piped stdout open, so running it via the blocking shell executor
- * hangs the agent until the timeout — route it to the job manager instead.
- */
 function backgroundsAProcess(command: string): boolean {
   return /(?:^|[^&\d>])\s&(?:\s|$)/.test(command);
 }
 
-/**
- * One-shot project scaffolders — finish and exit. Must stay in the
- * foreground even when the command string mentions `vite` / `next`.
- */
 const SCAFFOLD_FOREGROUND_PATTERNS: RegExp[] = [
   /\bnpm\s+create\b/i,
   /\bnpm\s+init\b/i,
@@ -96,7 +66,6 @@ const SCAFFOLD_FOREGROUND_PATTERNS: RegExp[] = [
   /\bnpx\s+(?:--yes\s+)?create-[\w-]+/i,
   /\bnpmx?\s+create-[\w-]+/i,
   /\bdeno\s+run\b.*\bcreate\b/i,
-  // Non-JS one-shot project creators (must stay foreground)
   /\bcargo\s+new\b/i,
   /\bcargo\s+init\b/i,
   /\bgo\s+mod\s+init\b/i,
@@ -113,12 +82,6 @@ export function looksLikeOneShotScaffolder(command: string): boolean {
   return SCAFFOLD_FOREGROUND_PATTERNS.some((p) => p.test(command));
 }
 
-/**
- * Package-manager operations finish on their own even when an argument is
- * named after a server (`npm install vite`, `pnpm add postgres`, etc.). Keep
- * these segments in shell.exec; a later `&& npm run dev` segment is evaluated
- * independently and will still be backgrounded.
- */
 const PACKAGE_OPERATIONS: Record<string, ReadonlySet<string>> = {
   npm: new Set(["i", "install", "add", "ci", "uninstall", "remove", "view", "info", "list", "ls", "pack", "publish", "audit", "outdated", "update"]),
   yarn: new Set(["add", "install", "remove", "info", "list", "pack", "publish", "audit", "outdated", "upgrade"]),
@@ -135,7 +98,6 @@ function baseCommand(token: string | undefined): string {
   return (token ?? "").replace(/^.*[\\/]/, "").toLowerCase();
 }
 
-/** Recognize finite package operations after common env/sudo/corepack wrappers. */
 function looksLikeForegroundPackageOperation(segment: string): boolean {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
   let index = 0;
@@ -169,7 +131,6 @@ function looksLikeForegroundPackageOperation(segment: string): boolean {
   return operations.has((tokens[index] ?? "").toLowerCase());
 }
 
-/** Split enough shell structure to classify executable segments independently. */
 function commandSegments(command: string): string[] {
   return command
     .split(/\s*(?:&&|\|\||;|\n|\|)\s*/g)
@@ -177,11 +138,6 @@ function commandSegments(command: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * Returns true if the command appears to be a long-running process that
- * should not block the foreground shell. This is a heuristic — false
- * negatives are safer than false positives.
- */
 export function looksLongRunning(command: string): boolean {
   if (backgroundsAProcess(command)) return true;
 
@@ -192,19 +148,12 @@ export function looksLongRunning(command: string): boolean {
   });
 }
 
-/**
- * Finite commands that commonly exceed an interactive timeout or produce a
- * large stream. They run as durable jobs: the agent receives a stable id,
- * session-state reminders keep the job visible, and shell.tail can harvest
- * output incrementally without re-running the command.
- */
 const LONG_FINITE_JOB_BINARIES: readonly RegExp[] = [
   /^(?:\S*\/)?(?:nmap|masscan)\b/i,
   /^(?:\S*\/)?(?:ffuf|feroxbuster|gobuster|dirsearch|wfuzz|nikto|nuclei|sqlmap)\b/i,
   /^(?:\S*\/)?find\s+/i,
 ];
 
-/** True when the segment names one of the potentially expensive binaries. */
 function namesFiniteJobBinary(executable: string): boolean {
   return LONG_FINITE_JOB_BINARIES.some((pattern) => pattern.test(executable));
 }
@@ -229,7 +178,6 @@ function skipWrapperOptions(
   return index;
 }
 
-/** Remove common execution wrappers before classifying the real executable. */
 function unwrapFiniteCommand(segment: string): string {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
   let index = 0;
@@ -250,7 +198,6 @@ function unwrapFiniteCommand(segment: string): string {
     }
     if (wrapper === "timeout" || wrapper === "gtimeout") {
       index = skipWrapperOptions(tokens, index + 1, TIMEOUT_OPTIONS_WITH_VALUE);
-      // GNU timeout requires a duration before the command.
       if (index < tokens.length) index += 1;
       continue;
     }
@@ -263,14 +210,6 @@ export function looksLikeLongFiniteCommand(command: string): boolean {
   return Boolean(longFiniteCommandCost(command).reason);
 }
 
-/**
- * Cost signals that make a finite command worth running as a durable job.
- * The binary name alone is NOT enough: `nmap -p22 host`, `sqlmap --version`,
- * and `find . -name '*.ts'` all finish in seconds and their output is needed in
- * the same turn, while `nmap -p- 10.0.0.0/24`, `ffuf -w big.txt`, and
- * `find / -name id_rsa` genuinely take minutes. Decisions are made from parsed
- * argv (flags, port specs, target shape), never from prompt wording.
- */
 export function longFiniteCommandCost(command: string): {
   reason: string | undefined;
 } {
@@ -320,7 +259,6 @@ export interface ShellExecBackgroundPolicy {
   readonly responder: boolean;
 }
 
-/** Single ownership policy shared by pre-dispatch planning and tool runtime. */
 export function resolveShellExecBackgroundPolicy(input: {
   command: string;
   background?: unknown;
@@ -385,12 +323,10 @@ function nmapCostReason(args: string[]): string | undefined {
       sawPortLimit = true;
       continue;
     }
-    // A CIDR or address-range target scans many hosts.
     if (!token.startsWith("-") && (token.includes("/") || /\d-\d/.test(token))) {
       return `multi-host target ${token}`;
     }
   }
-  // With no port limiter at all, nmap scans its default 1000 ports.
   if (!sawPortLimit) return "default 1000-port scan";
   return undefined;
 }
@@ -407,7 +343,6 @@ function webScannerCostReason(base: string, args: string[]): string | undefined 
     if (/FUZZ/.test(token)) return "fuzz placeholder";
   }
   if (base === "nikto" || base === "nuclei" || base === "dirsearch") {
-    // These have no cheap mode once a target is supplied.
     return args.some((token) => !token.startsWith("-"))
       ? `${base} against a target`
       : undefined;

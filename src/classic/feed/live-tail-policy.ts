@@ -2,11 +2,8 @@ import { clipRow, type BlockContext } from "../blocks/block-context.js";
 import { BLOCK_GAP_ROWS } from "./block-height.js";
 import type { FeedBlock } from "./feed-blocks.js";
 
-/** Rows an open assistant block keeps when it does not fit (03-RENDER-MODEL §6). */
 export const ASSISTANT_LIVE_ROWS = 12;
-/** Output rows kept from an open tool body, on top of the header row. */
 export const TOOL_LIVE_BODY_ROWS = 8;
-/** Hunk rows kept from an open diff body, on top of the header row. */
 export const DIFF_LIVE_HUNK_ROWS = 8;
 
 export interface BoundedBlock {
@@ -14,10 +11,6 @@ export interface BoundedBlock {
   readonly truncated: boolean;
 }
 
-/**
- * Bound an open block to the rows the live region can give it. The bounded form
- * never reaches scrollback — the committed copy is always the complete one.
- */
 export function boundOpenBlock(
   ctx: BlockContext,
   block: FeedBlock,
@@ -61,17 +54,11 @@ export interface LiveTailRow {
 
 export interface LiveTailPlan {
   readonly rows: readonly LiveTailRow[];
-  /** Rows the plan occupies; always `<= budget`. */
   readonly height: number;
-  /** True when content above the first visible row was dropped. */
   readonly clipped: boolean;
   readonly hiddenAbove: number;
 }
 
-/**
- * Fit live blocks into exactly the rows the allocator granted, newest last.
- * Pure so `frame-height` and invariant tests can assert it without Ink.
- */
 export function planLiveTail(
   ctx: BlockContext,
   live: readonly FeedBlock[],

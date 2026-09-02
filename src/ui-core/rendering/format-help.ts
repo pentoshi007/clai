@@ -1,15 +1,6 @@
-/**
- * Markdown body for `/help` and Ctrl+G command reference.
- *
- * Uses bullet lists (not tables): usage strings often contain `|` and `<>`
- * which break markdown table cell parsing in our renderer (even when escaped).
- */
 
 import type { CommandHelpEntry } from "../../app/commands/registry.js";
 
-/**
- * Group slash commands into readable sections by prefix / role.
- */
 function sectionFor(command: string): string {
   const name = command.replace(/^\//, "").toLowerCase();
   if (["ask", "agent", "plan", "implement", "discard"].includes(name)) {
@@ -59,15 +50,10 @@ const SECTION_ORDER = [
   "Other",
 ] as const;
 
-/** Collapse whitespace so a command never splits mid-token in the pager. */
 function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/**
- * Format one command as a markdown list item.
- * Command + usage stay in a single backtick span so `|` / `<>` are literal.
- */
 export function formatHelpEntry(entry: CommandHelpEntry): string {
   const usage = entry.usage ? ` ${oneLine(entry.usage)}` : "";
   const cmd = oneLine(`${entry.command}${usage}`);
@@ -76,13 +62,9 @@ export function formatHelpEntry(entry: CommandHelpEntry): string {
     const aliasList = entry.aliases.map((a) => `\`${oneLine(a)}\``).join(", ");
     desc += ` · aliases: ${aliasList}`;
   }
-  // Em dash between command and description — no table pipes.
   return `- \`${cmd}\` — ${desc}`;
 }
 
-/**
- * Format the slash-command catalog as a clean markdown reference.
- */
 export function formatCommandHelpMarkdown(
   entries: readonly CommandHelpEntry[],
 ): string {

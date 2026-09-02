@@ -1,10 +1,3 @@
-/**
- * Fail policy for `tool.batch`: when a child fails, optionally cancel
- * pending/in-flight siblings.
- *
- * Default is continue (never cancel on child failure). Models opt into
- * cancel_pending (fail-fast) or selective rules / per-call cancel_on_fail.
- */
 
 export type BatchFailMatch = "any" | "all";
 
@@ -22,7 +15,6 @@ export type BatchFailMode =
 export interface BatchCallFailMeta {
   readonly id: string;
   readonly name: string;
-  /** 1-based index matching section headers (#1, #2, …). */
   readonly index1: number;
   readonly cancelOnFail: readonly string[];
 }
@@ -145,10 +137,6 @@ function parseRulesArray(
   });
 }
 
-/**
- * Parse top-level on_fail / aliases. Default: continue.
- * Does not compile per-call cancel_on_fail (see {@link compileBatchFailMode}).
- */
 export function parseBatchFailPolicy(
   args: Record<string, unknown>,
   knownIds: ReadonlySet<string>,
@@ -170,7 +158,6 @@ export function parseBatchFailPolicy(
   }
   if (typeof raw === "object" && !Array.isArray(raw)) {
     const rec = raw as Record<string, unknown>;
-    // Shorthand object: { if_failed, cancel } treated as a single rule.
     if (
       rec.if_failed !== undefined ||
       rec.ifFailed !== undefined ||
@@ -190,7 +177,6 @@ export function parseBatchFailPolicy(
         );
       }
       if (kind === "rules") {
-        // unreachable — normalizeModeString never returns rules
       }
       return kind === "continue"
         ? { kind: "continue" }
@@ -205,10 +191,6 @@ export function parseBatchFailPolicy(
   );
 }
 
-/**
- * Merge top-level policy with per-call cancel_on_fail into a final mode.
- * Per-call shorthand becomes rules: { if_failed: thisId, cancel: targets }.
- */
 export function compileBatchFailMode(
   topLevel: BatchFailMode,
   calls: readonly BatchCallFailMeta[],
@@ -233,7 +215,6 @@ export function compileBatchFailMode(
   }
 
   if (topLevel.kind === "cancel_pending") {
-    // Fail-fast wins; per-call cancel_on_fail is redundant but harmless.
     return topLevel;
   }
 
@@ -245,10 +226,6 @@ export function compileBatchFailMode(
   return { kind: "rules", rules };
 }
 
-/**
- * Given the set of failed call ids so far, return ids that should be cancelled
- * under the given mode. Does not include ids already finished.
- */
 export function evaluateCancelTargets(
   mode: BatchFailMode,
   failedIds: ReadonlySet<string>,
@@ -281,9 +258,6 @@ export function evaluateCancelTargets(
   return out;
 }
 
-/**
- * Human-readable cancel reason listing which failed children triggered it.
- */
 export function formatBatchCancelReason(
   triggerIds: readonly string[],
   metaById: ReadonlyMap<string, BatchCallFailMeta>,
@@ -307,9 +281,6 @@ export function formatBatchCancelReason(
   return `Cancelled — not run because ${head}, and ${last} failed`;
 }
 
-/**
- * Parse optional cancel_on_fail / cancelOnFail on a call entry.
- */
 export function parseCancelOnFailField(
   entry: Record<string, unknown>,
   callLabel: string,
@@ -319,9 +290,6 @@ export function parseCancelOnFailField(
   return asStringArray(raw, `${callLabel}.cancel_on_fail`);
 }
 
-/**
- * Resolve call id: explicit non-empty string, else auto "1"/"2"/… (1-based).
- */
 export function resolveBatchCallId(
   entry: Record<string, unknown>,
   index0: number,

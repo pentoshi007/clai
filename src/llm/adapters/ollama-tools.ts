@@ -5,7 +5,6 @@ import {
   syntheticToolCallId,
   toWireName,
 } from "../tool-protocol.js";
-// Side-effect: register wire name map before fromWireName use.
 import "../../tools/definitions.js";
 import { toOpenAiTools } from "./openai-tools.js";
 
@@ -23,7 +22,6 @@ export function toOllamaToolMessages(
         role: "tool",
         content: message.content,
         ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
-        // Newer Ollama builds read `tool_name`; older ones read `name`.
         ...(message.name
           ? { name: toWireName(message.name), tool_name: toWireName(message.name) }
           : {}),
@@ -38,9 +36,6 @@ export function toOllamaToolMessages(
           type: "function",
           function: {
             name: toWireName(tc.name),
-            // This body goes to the native /api/chat endpoint, whose
-            // ToolCallFunction.Arguments is a map. A JSON string either fails to
-            // unmarshal or arrives as opaque text the model cannot read.
             arguments: tc.args ?? {},
           },
         })),

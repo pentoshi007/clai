@@ -1,7 +1,3 @@
-/**
- * Pure toast motion math — slide in from top-center, hold, slide out.
- * Terminal UIs animate by discrete row steps; ease curves keep it smooth-ish.
- */
 
 import {
   TOAST_ENTER_MS,
@@ -10,36 +6,20 @@ import {
 import { easeInCubic, easeOutCubic } from "../../../ui-core/motion/ease.js";
 
 
-/**
- * Minimum toast chip height (pad + one body line + pad).
- * Multi-line wraps use a taller box; pass `boxHeight` into toastAnimAt.
- */
 export const TOAST_BOX_HEIGHT = 3;
 
-/** Resting top row when fully visible (1 = just under terminal top edge). */
 export const TOAST_REST_TOP = 1;
 
-/** Off-screen top when fully hidden above the viewport (min height). */
 export const TOAST_HIDDEN_TOP = -TOAST_BOX_HEIGHT;
 
 export type ToastAnimPhase = "enter" | "hold" | "exit" | "gone";
 
 export interface ToastAnimState {
   readonly phase: ToastAnimPhase;
-  /** Absolute top row for absolute positioning. */
   readonly top: number;
-  /**
-   * 0..1 visibility for optional dimming (1 = fully shown).
-   * Terminal cannot fade alpha; host may map low values to DIM.
-   */
   readonly visibility: number;
 }
 
-/**
- * Compute motion for a toast at `ageMs` since createdAt.
- * @param holdMs time at rest (item.durationMs)
- * @param boxHeight rendered height (pad + wrapped body lines); default min chip
- */
 export function toastAnimAt(
   ageMs: number,
   holdMs: number,

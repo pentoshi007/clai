@@ -166,7 +166,6 @@ export class BoundedArtifactWriter implements OutputSink {
   }
 }
 
-/** Create the owner-only artifact directory for one session. */
 export async function createArtifactWriter(options: {
   sessionId: string;
   captureBytes: number;

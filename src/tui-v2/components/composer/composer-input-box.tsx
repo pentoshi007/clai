@@ -1,8 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Bordered multi-line input chrome for the composer.
- * Uses native OpenTUI textarea (selectable click-to-caret + flex hit-tests).
- */
 
 import { type RefObject, type ReactNode } from "react";
 import {
@@ -56,8 +52,6 @@ export function ComposerInputBox(props: {
         ? {
             title: ` ${metaShown} `,
             titleAlignment: "right" as const,
-            // Focus changes the border colour only; the provider/model/
-            // permissions label keeps one readable colour in both states.
             titleColor: theme.muted,
           }
         : {})}
@@ -86,12 +80,7 @@ export function ComposerInputBox(props: {
       <textarea
         ref={editorRef}
         focused={focused}
-        // OpenTUI places the caret via selection (updateCursor on mouse
-        // down). selectable={false} kills click-to-position entirely.
         selectable
-        // Without explicit selection colours OpenTUI tracks the selection but
-        // paints no highlight, so dragging or shift+arrow looked like nothing
-        // happened. These make both visible.
         selectionBg={theme.selection}
         selectionFg={theme.white}
         placeholder={

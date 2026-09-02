@@ -14,14 +14,9 @@ import type { BlockKind, FeedBlock } from "./feed-blocks.js";
 
 export interface BlockViewProps {
   readonly block: FeedBlock;
-  /** Rows to render; defaults to every line the block carries. */
   readonly lines?: readonly string[] | undefined;
 }
 
-/**
- * The single row primitive. Lines are already exact-width ANSI, so Ink is told
- * not to wrap: a wrap here would silently break the exact-height contract.
- */
 export function BlockRows(props: {
   readonly id: string;
   readonly lines: readonly string[];

@@ -2,30 +2,13 @@
   "note": "Frozen at task T000. Entries may be removed, never added.",
   "oversizedSourceFiles": [
     "src/agent/loop-guard.ts",
-    "src/agent/plan-tool.ts",
-    "src/agent/runner.ts",
-    "src/agent/task-evidence.ts",
-    "src/agent/tool-call-parser.ts",
     "src/interactive-session/manager.ts",
-    "src/llm/http.ts",
-    "src/llm/router.ts",
-    "src/store/history.ts",
-    "src/store/plan.ts",
-    "src/tools/definitions.ts",
-    "src/tools/fs.ts",
-    "src/tools/http.ts",
-    "src/tools/jobs.ts",
-    "src/tools/registry.ts",
-    "src/tools/shell.ts",
-    "src/tools/web/fetch-core.ts",
-    "src/ui-core/commands/picker-commands.ts",
-    "src/ui-core/rendering/markdown.ts",
-    "src/ui-core/rendering/syntax-highlight.ts"
+    "src/tools/jobs.ts"
   ],
   "uiCoreRuntimePolicyImports": [
-    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/context-manager.ts",
-    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/plan-implement-compact.ts",
     "src/ui-core/commands/key-commands.ts -> src/llm/router.ts",
-    "src/ui-core/commands/picker-commands.ts -> src/llm/router.ts"
+    "src/ui-core/commands/picker-commands.ts -> src/llm/router.ts",
+    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/context-manager.ts",
+    "src/ui-core/plan/plan-lifecycle.ts -> src/agent/plan-implement-compact.ts"
   ]
 }

@@ -1,24 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-/**
- * While OpenTUI owns the screen it repaints only its own framebuffer region.
- * Anything printed straight to the tty lands in cells the renderer never
- * repaints, so the fragment sticks there for the rest of the session — that is
- * the stray column of leftover text along the right edge.
- *
- * Core modules still reach for `console.*` on rare paths (a permission error, a
- * provider capability warning, a plan dump), and any of them can fire mid-turn.
- * This guard routes those calls to a log file instead of the terminal.
- *
- * Only `console.*` is intercepted, never the std stream writers themselves: the
- * renderer emits frames straight through the stream, so patching that would
- * blank the UI.
- */
 
 export interface ConsoleGuardOptions {
   readonly logDir: string;
-  /** Receives every captured message, for optional in-app surfacing. */
   readonly onCapture?: ((level: string, message: string) => void) | undefined;
 }
 
@@ -61,6 +46,7 @@ export function installConsoleGuard(options: ConsoleGuardOptions): () => void {
 
   const target = console as unknown as Record<string, unknown>;
   const originals = new Map<string, unknown>();
+  const warningDedupe = new Set<string>();
 
   const capture = (level: string, message: string): void => {
     if (!message) return;
@@ -84,10 +70,42 @@ export function installConsoleGuard(options: ConsoleGuardOptions): () => void {
     };
   }
 
+  const proc = process as unknown as {
+    emitWarning?: (...args: unknown[]) => void;
+  };
+  const originalEmitWarning = proc.emitWarning;
+  let emitWarningPatched = false;
+  if (typeof originalEmitWarning === "function") {
+    const boundOriginal = originalEmitWarning.bind(process);
+    proc.emitWarning = ((...args: unknown[]) => {
+      const msg = typeof args[0] === "string" ? (args[0] as string) : "";
+      if (/MaxListenersExceededWarning|Possible EventEmitter memory leak/i.test(msg)) {
+        const key = msg.slice(0, 200);
+        if (warningDedupe.has(key)) return;
+        warningDedupe.add(key);
+        capture("warn", msg.split("\n")[0]!.slice(0, 500));
+        try {
+          if (logPath && written < MAX_CAPTURE_BYTES) {
+            const line = `[${new Date().toISOString()}] warn: ${msg}\n`;
+            written += Buffer.byteLength(line);
+            appendFileSync(logPath, line, { mode: 0o600 });
+          }
+        } catch {
+        }
+        return;
+      }
+      return (boundOriginal as (...a: unknown[]) => void)(...args);
+    }) as typeof originalEmitWarning;
+    emitWarningPatched = true;
+  }
+
   return () => {
     for (const [method, original] of originals) {
       target[method] = original;
     }
     originals.clear();
+    if (emitWarningPatched && originalEmitWarning) {
+      proc.emitWarning = originalEmitWarning;
+    }
   };
 }

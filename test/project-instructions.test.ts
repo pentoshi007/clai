@@ -299,17 +299,26 @@ describe("injected block placement (prompt cache safety)", () => {
     expect(messages[messages.length - 1]!.content).toContain("rule");
   });
 
-  it("replaces the prior copy instead of accumulating stale ones", () => {
+  it("appends the new copy instead of rewriting the sent one", () => {
     const messages = baseMessages();
     upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nv1`);
     const lengthAfterFirst = messages.length;
     upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nv2`);
-    expect(messages.length).toBe(lengthAfterFirst);
+    expect(messages.length).toBe(lengthAfterFirst + 1);
     const copies = messages.filter((message) =>
       message.content.startsWith(AGENT_INSTRUCTIONS_PREFIX),
     );
-    expect(copies).toHaveLength(1);
-    expect(copies[0]!.content).toContain("v2");
+    expect(copies).toHaveLength(2);
+    expect(copies[0]!.content).toContain("v1");
+    expect(copies[1]!.content).toContain("v2");
+  });
+
+  it("leaves the block untouched when the content is unchanged", () => {
+    const messages = baseMessages();
+    upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nrule`);
+    const lengthAfterFirst = messages.length;
+    upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nrule`);
+    expect(messages.length).toBe(lengthAfterFirst);
   });
 
   it("removes the block when the instruction files disappear", () => {
@@ -330,9 +339,6 @@ describe("injected block placement (prompt cache safety)", () => {
     upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nrule2`);
     expect(
       messages.filter((m) => m.content.startsWith(ACTIVE_SKILLS_PREFIX)),
-    ).toHaveLength(1);
-    expect(
-      messages.filter((m) => m.content.startsWith(AGENT_INSTRUCTIONS_PREFIX)),
     ).toHaveLength(1);
     expect(messages[0]!.content).toBe(constitution);
   });

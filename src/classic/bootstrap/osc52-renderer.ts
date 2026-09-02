@@ -18,7 +18,6 @@ function passthroughFor(env: Readonly<Record<string, string | undefined>>): Pass
 export function osc52Sequence(text: string, passthrough: Passthrough): string {
   const payload = Buffer.from(text, "utf8").toString("base64");
   const osc = `\x1b]52;c;${payload}\x07`;
-  // Multiplexers swallow OSC 52 unless the sequence is wrapped in their DCS passthrough.
   if (passthrough === "tmux") return `\x1bPtmux;${osc.replace(/\x1b/g, "\x1b\x1b")}\x1b\\`;
   if (passthrough === "screen") return `\x1bP${osc}\x1b\\`;
   return osc;

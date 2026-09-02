@@ -1,11 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Background jobs overlay (CORE-004, V2-075). Jobs live in the core job
- * manager and survive UI rerenders (`JobController` only observes/commands);
- * this component polls for live status since jobs are not event-driven, and
- * exceeds the classic TUI's list-only panel by routing "tail" through the
- * pager instead of leaving output to a separate agent tool call.
- */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
@@ -32,9 +25,6 @@ export interface JobsPanelProps {
 }
 
 const POLL_MS = 1000;
-/** Rows the inline Responder widget shows before deferring to the Jobs overlay.
- * Kept small so the bottom docked stack (prompt + composer + status) never
- * overflows a short terminal; the full list lives in the Ctrl+J overlay. */
 const RESPONDER_MAX_ROWS = 3;
 
 function statusView(job: BackgroundJob, theme: Theme): { text: string; fg: string } {
@@ -57,8 +47,6 @@ function statusView(job: BackgroundJob, theme: Theme): { text: string; fg: strin
   return { text: job.status, fg: theme.accent };
 }
 
-// Live jobs read as a running phase (never a bare duration that looks finished);
-// pending = an unacknowledged completion receipt exists.
 function jobPhase(
   job: BackgroundJob,
   notification?: ResponderNotification,
@@ -93,7 +81,6 @@ function jobPhase(
 export function JobsPanel(props: JobsPanelProps): ReactNode {
   const { services, theme } = props;
   const sessionState = useSessionState(services.session);
-  // Session-scoped durable jobs only (same filter as shell.jobs).
   const readJobs = (): BackgroundJob[] => {
     const sessionId = services.session.sessionId;
     return (
@@ -120,8 +107,6 @@ export function JobsPanel(props: JobsPanelProps): ReactNode {
     };
     refresh();
     const unsubscribe = services.ports.jobs.subscribe?.(refresh);
-    // The elapsed clock only moves while something runs; otherwise job changes
-    // arrive through the subscription instead of a permanent polling timer.
     const interval = hasLiveJob ? setInterval(refresh, POLL_MS) : undefined;
     return () => {
       unsubscribe?.();
@@ -135,10 +120,6 @@ export function JobsPanel(props: JobsPanelProps): ReactNode {
     services.overlay.openPager(`${job.command} · tail`, result.output);
   }
 
-  /**
-   * Live output view. The pager stays stacked over this panel, so closing it
-   * returns to the job list instead of the transcript.
-   */
   function viewLive(job: BackgroundJob): void {
     const source = createJobTailPagerSource({
       jobs: services.ports.jobs,
@@ -194,8 +175,6 @@ export function JobsPanel(props: JobsPanelProps): ReactNode {
     }
   });
 
-  // Full session id — these are short (`sess-<time36>-<rand6>`) and truncation
-  // made history/jobs look like broken ids (`sess-mrq…`).
   const titleLine = `Background jobs · session ${services.session.sessionId}`;
   const helpLine =
     "up/down:select · enter/v:view live · t:snapshot · k:kill · q/esc:close";
@@ -248,8 +227,7 @@ export function JobsPanel(props: JobsPanelProps): ReactNode {
         style={{ fg: theme.border, height: 1, width: "100%" }}
       />
       <text content=" " wrapMode="none" style={{ height: 1 }} />
-      {/* No viewportCulling: rows are variable-height (wrapped command),
-          which culling mis-measures; the list is capped so this is cheap. */}
+      {}
       <scrollbox scrollY scrollX={false} style={{ flexGrow: 1, width: "100%" }}>
       {jobs.length === 0 ? (
         <text
@@ -272,9 +250,6 @@ export function JobsPanel(props: JobsPanelProps): ReactNode {
           ]
             .filter(Boolean)
             .join(" ");
-          // Line 1: glyph + rich status + elapsed (short, never clipped).
-          // Line 2: kind + linkage ids. Line 3: full command, word-wrapped so
-          // long fuzzers/URLs are always readable. Blank spacer separates jobs.
           const marker = focused ? "❯ " : "  ";
           const headline = `${marker}${phase.glyph} ${status.text} · ${phase.label}  ·  ${formatJobElapsed(job, now)}`;
           const meta = `    ${kindTag} · ${linkage}`;
@@ -330,11 +305,6 @@ export interface ResponderPanelProps {
   readonly services: AppServices;
   readonly theme: Theme;
   readonly width: number;
-  /**
-   * True while a blocking docked prompt (password/confirm/scope/keys) is open.
-   * The widget hides so the prompt + composer always fit the bottom stack with
-   * no overflow; jobs keep running and reappear once the prompt is answered.
-   */
   readonly blockingOverlay?: boolean | undefined;
 }
 
@@ -345,9 +315,6 @@ interface ResponderProjection {
 
 function readResponderProjection(services: AppServices): ResponderProjection {
   const sessionId = services.session.sessionId;
-  // Responder shows ONLY jobs explicitly delegated to it (responder:true).
-  // Plain background jobs (servers, ad-hoc commands) live in shell.jobs /
-  // the Ctrl+J overlay and are polled by the agent, not surfaced here.
   const notifications = services.ports.jobs
     .pendingNotifications(sessionId)
     .filter((notification) => notification.responder);
@@ -422,10 +389,6 @@ export function ResponderPanel(props: ResponderPanelProps): ReactNode {
   );
   const liveCount = responderState.running;
   const readyCount = responderState.ready;
-  // The agent is "parked on the Responder" when it is idle but delegated jobs
-  // are still running: no turn is live, yet work it is waiting on continues in
-  // the background. Surfaced with a distinct amber state + a one-time toast so
-  // a stopped-looking agent is never mistaken for a dead one.
   const sessionRunning = sessionState.running;
   const waiting =
     responderState.mode === "listening" &&
@@ -444,9 +407,6 @@ export function ResponderPanel(props: ResponderPanelProps): ReactNode {
     waitingRef.current = waiting;
   }, [waiting, liveCount, services]);
 
-  // Show only while the responder has live work: a job running, a result ready
-  // to deliver, or a delivered result the model has not read yet. Archived,
-  // read, and settled receipts leave nothing to act on, so the widget hides.
   const hasActiveWork =
     responderState.running > 0 ||
     responderState.ready > 0 ||

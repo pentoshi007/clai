@@ -1,11 +1,3 @@
-/**
- * Runtime registry for user-defined ("custom") LLM providers.
- *
- * Built-in providers live in the compile-time `providerIds` tuple, so their
- * `ProviderId` values are part of the type system. Custom providers are added
- * at runtime by the user (via the `/provider` "Add custom provider" flow) and
- * are plain strings. This module is the single source of truth for those.
- */
 
 import type { CompletionRequest, CompletionResult, ProviderId } from "../types.js";
 import { normalizeEndpointUrl, type LlmProvider, type ProviderAuth } from "./provider.js";
@@ -29,25 +21,18 @@ import {
 import { recordControlRejection } from "./provider-profile.js";
 import { CHAT_COMPLETIONS_STREAM_TERMINAL } from "./stream-terminal.js";
 
-/** Persisted shape of one user-defined provider (JSON-serialisable). */
 export interface CustomProviderDef {
   readonly id: string;
   readonly displayName: string;
-  /** Normalised base URL ending in `/v1`. */
   readonly baseUrl: string;
   readonly envVar?: string | undefined;
-  /** Separate API-key environment; takes precedence over `envVar`. */
   readonly keyEnv?: string | undefined;
-  /** Separate endpoint environment; `envVar` never doubles as one. */
   readonly baseUrlEnv?: string | undefined;
   readonly defaultModel: string;
-  /** Optional telemetry-only aliases relative to a compatible `usage` object. */
   readonly usageAliases?: CompatibleUsageAliases | undefined;
-  /** Optional validated wire-profile declaration. */
   readonly profile?: CustomProviderProfileSpec | undefined;
 }
 
-/** Validation errors for a definition's declared profile, if any. */
 export function customProviderProfileErrors(
   def: CustomProviderDef,
 ): string[] {
@@ -73,7 +58,6 @@ function authHeaders(
   return undefined;
 }
 
-/** Build an OpenAI-compatible `LlmProvider` for a custom definition. */
 export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
   const providerId = def.id as ProviderId;
   const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
@@ -81,9 +65,6 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
   const keyless =
     def.profile?.authType === "none-keyless" ||
     def.profile?.authType === "custom-headers";
-  // Declared stream-option capability: "supported" suppresses the adaptive
-  // retry (a rejection becomes route evidence, not a second request);
-  // "unsupported" omits the field from the first request onward.
   const declaredStreamOptions = def.profile?.streamOptions;
   let includeStreamUsage = declaredStreamOptions !== "unsupported";
   const reasoningStyle = customReasoningStyle(def.profile);
@@ -133,6 +114,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const apiKey = requireKey(auth);
       const model = request.model ?? def.defaultModel;
       const payload = await openAiCompatibleComplete({
+        responsesFirst: true,
         provider: def.displayName, providerId,
         baseUrl: resolveBaseUrl(def, auth), apiKey: apiKey ?? "",
         headers: authHeaders(def, apiKey), model,
@@ -155,6 +137,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const baseUrl = resolveBaseUrl(def, auth);
       const headers = authHeaders(def, apiKey);
       const stream = (withUsage: boolean) => openAiCompatibleStream({
+        responsesFirst: true,
         provider: def.displayName, providerId, baseUrl,
         apiKey: apiKey ?? "", headers, model,
         messages: request.messages, maxTokens: request.maxTokens,
@@ -193,21 +176,17 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
   };
 }
 
-// --- Registry (reads ClaiConfig.customProviders via lazy import) ----------------
 
-/** Lazily-imported config reader to avoid a circular dep on store/config.js. */
 async function readCustomDefs(): Promise<CustomProviderDef[]> {
   const { getCustomProviders } = await import("../store/config.js");
   return getCustomProviders();
 }
 
-/** All custom provider ids currently registered in config. */
 export async function getCustomProviderIds(): Promise<string[]> {
   const defs = await readCustomDefs();
   return defs.map((d) => d.id);
 }
 
-/** Resolve a custom definition by id (sync, against a provided defs list). */
 export function findCustomProviderDef(
   id: string,
   defs: readonly CustomProviderDef[],
@@ -215,10 +194,8 @@ export function findCustomProviderDef(
   return defs.find((d) => d.id === id);
 }
 
-/** In-memory cache of materialised `LlmProvider` instances keyed by id. */
 const providerCache = new Map<string, LlmProvider>();
 
-/** Resolve a custom definition by id. */
 export async function getCustomProvider(id: string): Promise<LlmProvider | undefined> {
   const cached = providerCache.get(id);
   if (cached) return cached;
@@ -230,10 +207,6 @@ export async function getCustomProvider(id: string): Promise<LlmProvider | undef
   return built;
 }
 
-/**
- * Sync variant: resolve a custom definition by reading the config directly.
- * This remains safe because config imports this module's type only.
- */
 import { getCustomProviders } from "../store/config.js";
 
 export function getCustomProviderSync(id: string): LlmProvider | undefined {
@@ -246,18 +219,15 @@ export function getCustomProviderSync(id: string): LlmProvider | undefined {
   return built;
 }
 
-/** Invalidate the in-memory provider cache for one id (or all when omitted). */
 export function invalidateCustomProviderCache(id?: string): void {
   if (id) providerCache.delete(id);
   else providerCache.clear();
 }
 
-/** Build an `LlmProvider` from a definition without config (for the add flow). */
 export function materializeCustomProvider(def: CustomProviderDef): LlmProvider {
   return buildCustomProvider(def);
 }
 
-/** Validate + normalise a candidate custom provider id. Returns `""` on invalid. */
 export function normalizeCustomProviderId(raw: string, existing: readonly string[]): string {
   const id = raw.trim().toLowerCase();
   if (!id) return "";
@@ -266,7 +236,6 @@ export function normalizeCustomProviderId(raw: string, existing: readonly string
   return id;
 }
 
-/** Normalise a base URL the way the OpenAI helpers expect (`/v1` suffix). */
 export function normalizeCustomBaseUrl(raw: string): string {
   return normalizeEndpointUrl(raw);
 }

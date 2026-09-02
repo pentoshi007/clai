@@ -91,6 +91,7 @@ vi.mock("react", async (importOriginal) => {
     useMemo: hookHarness.useMemo,
     useRef: hookHarness.useRef,
     useState: hookHarness.useState,
+    useContext: () => ({ width: 100, height: 30 }),
   };
 });
 

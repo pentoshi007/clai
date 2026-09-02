@@ -32,8 +32,11 @@ describe("serialized request snapshots", () => {
         const provider = providers[route.provider];
         await provider.complete(requestForCase(route, requestCase), route.auth);
 
-        expect(transport.generations).toHaveLength(1);
-        const sent = transport.generations[0]!;
+        const scenarioGenerations = transport.generations.filter((generation) =>
+          generation.url.includes(route.urlContains),
+        );
+        expect(scenarioGenerations).toHaveLength(1);
+        const sent = scenarioGenerations[0]!;
         const redacted = {
           url: redactUrl(sent.url),
           method: sent.method,

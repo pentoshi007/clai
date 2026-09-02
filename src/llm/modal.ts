@@ -40,7 +40,6 @@ import {
  * through the existing keychain storage and multi-key rotation untouched.
  */
 
-/** Modal ignores the bearer header; mirrors `apiKey: "unused"` in their docs. */
 const UNUSED_BEARER = "unused";
 
 const SETUP_HINT =
@@ -71,11 +70,6 @@ export function parseModalToken(raw: string | undefined): ModalToken | undefined
 
 
 
-/**
- * Sticky sessions: Modal routes requests carrying the same `Modal-Session-ID`
- * to the same container, which keeps the prompt cache warm across a
- * conversation. One id per clai run unless the user pins their own.
- */
 let generatedSessionId: string | undefined;
 
 export function modalSessionId(): string {
@@ -121,7 +115,7 @@ function modalHeaders(token: ModalToken): Record<string, string> {
 }
 
 let cachedModels: { baseUrl: string; models: string[]; fetchedAt: number } | undefined;
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min: endpoints change when redeployed
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export const modalProvider: LlmProvider = {
   id: "modal",
@@ -153,7 +147,6 @@ export const modalProvider: LlmProvider = {
       }
       return models;
     } catch {
-      // Falls back to the static catalog in the pickers.
       return [];
     }
   },
@@ -170,6 +163,7 @@ export const modalProvider: LlmProvider = {
     const baseUrl = resolveBaseUrl(auth);
     const model = request.model ?? defaultModels.modal;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Modal",
       providerId: "modal",
       baseUrl,
@@ -199,6 +193,7 @@ export const modalProvider: LlmProvider = {
     const baseUrl = resolveBaseUrl(auth);
     const model = request.model ?? defaultModels.modal;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Modal",
       providerId: "modal",
       baseUrl,
@@ -214,17 +209,10 @@ export const modalProvider: LlmProvider = {
       onStreamEvent: request.onStreamEvent,
       reasoning: request.thinking,
       reasoningStyle: "modal",
-      // Endpoints scale to zero, so the first request after idle pays a cold
-      // start. Give the initial byte a generous budget before declaring a stall.
       initialIdleTimeoutMs: Math.max(
         240_000,
         streamIdleBudgets(Boolean(request.thinking?.enabled)).idleTimeoutMs,
       ),
-      // The mid-stream budget must outlast a whole buffered tool call: the
-      // tool-call parser in front of these endpoints emits nothing while it
-      // accumulates a large `arguments` string, so a model writing one big file
-      // is silent on the wire for the full generation. The old 90s budget
-      // aborted those healthy streams at firstToken+90s and retried three times.
       idleTimeoutMs: Math.max(
         300_000,
         streamIdleBudgets(Boolean(request.thinking?.enabled)).idleTimeoutMs,

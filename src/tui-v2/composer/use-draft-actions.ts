@@ -1,7 +1,3 @@
-/**
- * Draft-level composer actions and their registration on
- * {@link composerActionPort}, so status chrome and keystrokes share one path.
- */
 
 import { useEffect, type RefObject } from "react";
 import type { TextareaRenderable } from "@opentui/core";
@@ -13,11 +9,8 @@ import { tokenInsertion } from "../../ui-core/composer/insert-token.js";
 export interface DraftActionsInput {
   readonly editorRef: RefObject<TextareaRenderable | null>;
   readonly services: AppServices;
-  /** Expands paste placeholders into the real text. */
   readonly expandPastes: (text: string) => string;
-  /** Drop paste + prompt-history state tied to the current draft. */
   readonly resetRegistries: () => void;
-  /** Collapse the completion menu and any accepted-slash marker. */
   readonly resetMenuState: () => void;
   readonly setContentRows: (rows: number) => void;
   readonly clearPasteChips: () => void;
@@ -28,11 +21,8 @@ export interface DraftActionsInput {
 }
 
 export interface DraftActions {
-  /** Wipe the draft and everything derived from it. */
   readonly clear: (editor: TextareaRenderable) => void;
-  /** Ctrl+X — copy the draft to the clipboard, then clear it. */
   readonly cut: () => Promise<void>;
-  /** Show every slash command, as typing "/" in the composer does. */
   readonly showCommands: () => void;
   readonly insert: (text: string) => void;
 }
@@ -79,7 +69,6 @@ export function useDraftActions(input: DraftActionsInput): DraftActions {
     input.syncContentRows();
   };
 
-  // Re-registered every render so the handlers close over current state.
   useEffect(() => {
     const unregisterClear = composerActionPort.registerClear(() => {
       const editor = input.editorRef.current;

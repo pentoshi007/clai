@@ -1,4 +1,3 @@
-/** React binding for `PlanController` (V2-070), mirroring `use-transcript-store.ts`. */
 
 import { useSyncExternalStore } from "react";
 import type { PlanController } from "../../app/controllers/plan-controller.js";

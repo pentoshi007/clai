@@ -15,18 +15,6 @@ import {
   ingestOpenAiModelCatalog,
 } from "./http.js";
 
-/**
- * TokenRouter — an OpenAI-compatible gateway to frontier open models (Kimi,
- * DeepSeek, Qwen, GLM, GPT-OSS, MiniMax) behind one bearer key. Chat
- * Completions at `/chat/completions`, model list at `/models`, SSE streaming,
- * native tools, JSON mode. Reasoning models return their thinking in
- * `reasoning_content`, which the shared OpenAI helper already folds into a
- * <think> block.
- *
- * TokenRouter is reachable on more than one host, so the base URL is an
- * override-able endpoint (same mechanism as Modal/Lightning) rather than a
- * hard constant.
- */
 export const TOKENROUTER_DEFAULT_BASE_URL = "https://api.tokenrouter.com/v1";
 
 function resolveBaseUrl(auth: ProviderAuth): string {
@@ -34,9 +22,8 @@ function resolveBaseUrl(auth: ProviderAuth): string {
   return override || TOKENROUTER_DEFAULT_BASE_URL;
 }
 
-// Keyed by base URL + key: `/models` returns only the channels a key can use.
 const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const tokenrouterProvider: LlmProvider = {
   id: "tokenrouter",
@@ -80,6 +67,7 @@ export const tokenrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("TokenRouter API key is required");
     const model = request.model ?? defaultModels.tokenrouter;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "TokenRouter",
       providerId: "tokenrouter",
       baseUrl: resolveBaseUrl(auth),
@@ -107,6 +95,7 @@ export const tokenrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("TokenRouter API key is required");
     const model = request.model ?? defaultModels.tokenrouter;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "TokenRouter",
       providerId: "tokenrouter",
       baseUrl: resolveBaseUrl(auth),

@@ -1,10 +1,3 @@
-/**
- * Tool adapter for the seven additive `terminal.*` operations.
- *
- * Existing shell and job tools are untouched. Every handler requires an owning
- * conversation id, projects a concise ANSI-free `output` for providers and
- * transcripts, and returns the structured result under `interactiveSession`.
- */
 
 import { loadScopeForSession, type EngagementScope } from "../store/scope.js";
 import {
@@ -67,7 +60,6 @@ function optionalView(args: Record<string, unknown>): OutputView | undefined {
   return value;
 }
 
-/** Strict validation of the dependent send fields before the manager sees them. */
 async function parseInput(
   args: Record<string, unknown>,
   options: ToolRunOptions | undefined,
@@ -130,11 +122,6 @@ function requireOwner(options: ToolRunOptions | undefined, operation: SessionOpe
   );
 }
 
-/**
- * Interactive confirmation. The runner already prompted when it marked the call
- * confirmed; otherwise the managed secret/confirm path is unavailable and a
- * `confirm`-level action is refused rather than silently delivered.
- */
 function confirmPort(options: ToolRunOptions | undefined): ConfirmPreview {
   return async () => options?.confirmed === true;
 }

@@ -53,8 +53,6 @@ export function slimValue(value: unknown, depth = 0, key?: string): unknown {
   const out: Record<string, unknown> = {};
   for (const childKey of Object.keys(value as Record<string, unknown>).sort()) {
     const childValue = (value as Record<string, unknown>)[childKey];
-    // Leave no placeholder in the key the model must fill: a stub sitting in
-    // "content" invites it to copy that back as the real payload.
     if (isElidedBulkValue(childKey, childValue)) {
       out[`${childKey}_elided`] = elidedNote(childValue);
       continue;

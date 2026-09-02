@@ -68,6 +68,7 @@ export const fireworksProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Fireworks API key is required");
     const model = request.model ?? defaultModels.fireworks;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Fireworks",
       providerId: "fireworks",
       baseUrl,
@@ -95,6 +96,7 @@ export const fireworksProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Fireworks API key is required");
     const model = request.model ?? defaultModels.fireworks;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Fireworks",
       providerId: "fireworks",
       baseUrl,

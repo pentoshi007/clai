@@ -1,6 +1,3 @@
-// Live reasoning can run to tens of thousands of chars. While it streams, only
-// a bounded tail is painted so per-frame wrap work stays constant; the finalized
-// block still shows the full content.
 
 export const LIVE_THINKING_TAIL_CHARS = 2_000;
 

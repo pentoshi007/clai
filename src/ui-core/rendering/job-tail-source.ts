@@ -15,15 +15,6 @@ export interface JobTailSourceOptions {
 
 const LIVE_STATUSES = new Set(["starting", "running", "stopping"]);
 
-/**
- * Live view over a background job's output.
- *
- * Bytes are never buffered: every read is one stat plus one bounded page read
- * straight off the artifact file, and the path is re-resolved each time so a
- * rotation to `<artifact>.N` is followed without restarting the view. Updates
- * are driven by the job manager's existing change stream, which is already
- * coalesced to a few notifications per second, so following adds no timer.
- */
 export function createJobTailPagerSource(
   options: JobTailSourceOptions,
 ): ArtifactPagerSource | undefined {

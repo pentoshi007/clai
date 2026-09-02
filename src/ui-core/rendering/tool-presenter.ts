@@ -1,9 +1,3 @@
-/**
- * Pure presentation logic for tool cards (CHAT-004/005, V2-054/055).
- *
- * Collapsed cards must stay cheap even when the spool holds multi‑MB output
- * (no full-string split on every render). Full bodies open in the pager.
- */
 
 import type { BoundedTextState } from "../../app/events/event-buffer.js";
 import type { ToolItem, ToolStatus } from "../state/transcript-types.js";
@@ -33,18 +27,14 @@ const STATUS_LABEL: Record<ToolStatus, string> = {
 export interface ToolPresentation {
   readonly glyph: string;
   readonly statusLabel: string;
-  /** Bold title — tool name or "Edited App.css". */
   readonly name: string;
   readonly argsLabel: string | undefined;
   readonly argsDisplay: string | undefined;
   readonly detail: string | undefined;
-  /** Full absolute path line under file-mutation titles. */
   readonly pathLine: string | undefined;
-  /** True when the card should render a structured file-diff body. */
   readonly isFileDiff: boolean;
 }
 
-/** Pull a display path / "N file(s)" out of argsDisplay even when it is JSON. */
 function pathFromArgsDisplay(
   toolName: string,
   argsDisplay: string | undefined,
@@ -60,26 +50,14 @@ function pathFromArgsDisplay(
       return n > 0 ? `${n} file(s)` : "files";
     }
   } catch {
-    // fall through
   }
   return toolName === "fs.writeMany" ? "files" : "";
 }
 
-/** Max preview rows for the args/command line under a tool title. */
 const ARGS_PREVIEW_MAX_LINES = 3;
 
 const FAILURE_DETAIL_CHARS = 120;
 
-/**
- * Bound the args/command preview.
- *
- * A heredoc (`cat > main.py << 'EOF' … EOF`) puts an entire file into
- * `argsDisplay`. Rendering it verbatim made one card hundreds of rows tall,
- * which overflowed the card border and corrupted the surrounding transcript
- * layout. The full command is still available in the pager and the artifact.
- * Rows keep their full text — callers soft-wrap to the visible width, they
- * never get a `…` slapped mid-line.
- */
 export function clampArgsDisplay(raw: string | undefined): string | undefined {
   if (!raw) return raw ?? undefined;
   const lines = raw.split("\n");
@@ -107,15 +85,12 @@ export function presentTool(item: ToolItem): ToolPresentation {
 
   if (fileDiff) {
     const kind = item.fileChanges?.[0]?.kind as FileChangeKind | undefined;
-    // Prefer structured file list for multi-write; never use raw JSON args.
     let pathOrDisplay = "";
     if (item.name === "fs.writeMany" && item.fileChanges?.length) {
       pathOrDisplay = `${item.fileChanges.length} file(s)`;
     } else if (item.fileChanges?.[0]?.path) {
       pathOrDisplay = item.fileChanges[0].path;
     } else if (item.name === "fs.writeMany") {
-      // No fileChanges — do not invent a count from argsDisplay ("6 file(s)")
-      // or the card title becomes "Wrote 6 files" with a "0 files" footer.
       pathOrDisplay =
         item.status === "failed" || item.status === "blocked" ? "files" : "";
     } else {
@@ -127,7 +102,6 @@ export function presentTool(item: ToolItem): ToolPresentation {
       item.name === "fs.writeMany"
         ? undefined
         : titled.pathLine ?? item.fileChanges?.[0]?.path;
-    // Never dump oldText/newText / multi-file JSON under a file mutation card.
     argsLabel = undefined;
     argsDisplay = undefined;
   }
@@ -144,10 +118,6 @@ export function presentTool(item: ToolItem): ToolPresentation {
           : `${short.slice(0, FAILURE_DETAIL_CHARS - 1).trimEnd()}…`;
     }
   }
-  // Keep the badge short so "done (exit 0)" never overflows the card border.
-  // Non-zero exit is still shown; success exit is implied by green "done".
-  // 126/127 are the common POSIX "can't run this" codes — spell them out so a
-  // probe chain that dies on a missing binary doesn't look like a mystery fail.
   let statusLabel = STATUS_LABEL[item.status];
   if (
     item.exitCode !== undefined &&
@@ -176,7 +146,6 @@ export function presentTool(item: ToolItem): ToolPresentation {
   };
 }
 
-/** Basename + create/overwrite marker for writeMany list rows. */
 export function writeManyFileLabel(change: {
   readonly path: string;
   readonly kind: string;
@@ -195,13 +164,8 @@ export interface OutputPresentation {
 
 const COLLAPSED_HEAD_LINES = 4;
 const COLLAPSED_TAIL_LINES = 4;
-/**
- * Expanded (Ctrl+O) shows the full cleaned body. Safety caps only kick in for
- * multi‑MB spools so the TUI never tries to mount millions of lines.
- */
 const EXPANDED_SAFE_CHARS = 400_000;
 const EXPANDED_SAFE_LINES = 4_000;
-/** Chars to sample from each end when collapsing huge spool bodies. */
 const SAMPLE_CHARS = 4_000;
 
 function formatBytes(bytes: number): string {
@@ -221,15 +185,10 @@ function isSpoolNoiseLine(line: string): boolean {
   if (/^\(tool still running/i.test(t)) return true;
   if (t === "...") return true;
   if (/^artifact:\s+/i.test(t)) return true;
-  // tool.batch progress heartbeats (live only; final body replaces spool).
   if (/^\[batch\]\b/i.test(t)) return true;
   return false;
 }
 
-/**
- * Sample start+end of a huge string so we never `.split("\n")` a multi‑MB body
- * just to draw a collapsed card.
- */
 export function sampleEnds(raw: string, eachEnd = SAMPLE_CHARS): string {
   if (raw.length <= eachEnd * 2) return raw;
   return `${raw.slice(0, eachEnd)}\n…\n${raw.slice(-eachEnd)}`;
@@ -244,20 +203,12 @@ function roughLineCount(raw: string): number {
   return n;
 }
 
-// Some POSIX tools print ESC as the caret notation `^[`, which can arrive as
-// literal `^[[39m` text after output is captured. Remove only complete CSI
-// forms so ordinary prose such as `^[` remains untouched.
 const PRINTABLE_CARET_CSI = /\^\[\[[0-9;?]*[ -/]*[@-~]/g;
 
 function stripPrintableCaretCsi(text: string): string {
   return text.replace(PRINTABLE_CARET_CSI, "");
 }
 
-/**
- * Clean raw spool body for card rendering. Lines keep their full text —
- * every caller soft-wraps to its own visible width instead of relying on a
- * fixed character cap here.
- */
 export function cleanToolOutputLines(raw: string): string[] {
   const safe = stripPrintableCaretCsi(sanitizeDisplayText(raw));
   if (safe.length === 0) return [];
@@ -267,8 +218,6 @@ export function cleanToolOutputLines(raw: string): string[] {
     if (isSpoolNoiseLine(line)) continue;
     if (line.trim() === "" && (out.length === 0 || lastKept === "")) continue;
     if (line === lastKept) continue;
-    // Prefer human-readable markdown link titles in the compact card:
-    //   [Liz Truss](https://…)  →  Liz Truss
     const deLinked = line.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
     out.push(deLinked);
     lastKept = line;
@@ -277,23 +226,17 @@ export function cleanToolOutputLines(raw: string): string[] {
   return out;
 }
 
-/**
- * Prefer keeping high-signal evidence lines at the top of a collapsed card
- * for research tools (R5): top search hits, fetch title/status + lede.
- */
 export function evidencePreviewLines(
   toolName: string | undefined,
   cleaned: readonly string[],
 ): string[] | undefined {
   if (!toolName || cleaned.length === 0) return undefined;
   if (toolName === "web.search") {
-    // Keep summary line + first ~2 title/url hits when present.
     const out: string[] = [];
     for (const line of cleaned) {
       if (out.length >= 8) break;
       const t = line.trim();
       if (!t) continue;
-      // title / url / snippet shaped lines or JSON-ish keys
       if (
         out.length < 2 ||
         /^https?:\/\//i.test(t) ||
@@ -310,7 +253,6 @@ export function evidencePreviewLines(
     return out.length >= 2 ? out.slice(0, 8) : undefined;
   }
   if (toolName === "web.fetch" || toolName === "http.fetch") {
-    // Title/status-ish first lines + first meaningful paragraph body.
     const out: string[] = [];
     let bodyLines = 0;
     for (const line of cleaned) {
@@ -320,7 +262,7 @@ export function evidencePreviewLines(
         continue;
       }
       out.push(line);
-      if (out.length <= 2) continue; // keep header/status
+      if (out.length <= 2) continue;
       bodyLines += 1;
       if (bodyLines >= 4 || out.length >= 8) break;
     }
@@ -329,14 +271,6 @@ export function evidencePreviewLines(
   return undefined;
 }
 
-/**
- * Card body presentation.
- *
- * Collapsed: head + tail with a mid-body “··· N lines more ···” gap so the end
- * of streaming output stays visible. Expanded (Ctrl+O): full cleaned body in
- * place (classic parity). The unbounded raw body always lives in the spool /
- * artifact and the click-to-open pager modal.
- */
 export function presentOutput(
   tail: string,
   state: BoundedTextState | undefined,
@@ -349,7 +283,6 @@ export function presentOutput(
     : undefined;
 
   if (expanded) {
-    // Full in-place body. Only sample when the spool is pathologically large.
     const source =
       tail.length <= EXPANDED_SAFE_CHARS
         ? tail
@@ -362,7 +295,6 @@ export function presentOutput(
           : 0;
       return { lines: cleaned, hiddenAboveCount: hidden, truncatedNotice };
     }
-    // Extreme line counts: keep head+tail so the UI stays responsive.
     const head = cleaned.slice(0, COLLAPSED_HEAD_LINES);
     const visibleTail = cleaned.slice(-COLLAPSED_TAIL_LINES);
     const hiddenAboveCount = Math.max(
@@ -376,7 +308,6 @@ export function presentOutput(
     };
   }
 
-  // Collapsed: cheap sample + head/tail preview.
   const source = sampleEnds(tail, SAMPLE_CHARS);
   const cleaned = cleanToolOutputLines(source);
   const headCount = COLLAPSED_HEAD_LINES;

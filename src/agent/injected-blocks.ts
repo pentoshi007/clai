@@ -4,18 +4,28 @@ import { ACTIVE_SKILLS_PREFIX } from "../skills/catalog.js";
 
 export { AGENT_INSTRUCTIONS_PREFIX, ACTIVE_SKILLS_PREFIX };
 
-function upsertKeyed(
+export function upsertKeyed(
   messages: ChatMessage[],
   prefix: string,
   content: string | undefined,
 ): void {
+  if (!content?.trim()) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!;
+      if (message.role === "system" && message.content.startsWith(prefix)) {
+        messages.splice(index, 1);
+      }
+    }
+    return;
+  }
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (message.role === "system" && message.content.startsWith(prefix)) {
-      messages.splice(index, 1);
+      if (message.content === content) return;
+      break;
     }
   }
-  if (content?.trim()) messages.push({ role: "system", content });
+  messages.push({ role: "system", content });
 }
 
 export function isAgentInstructionsMessage(content: string): boolean {

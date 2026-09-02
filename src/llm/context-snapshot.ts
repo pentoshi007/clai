@@ -8,7 +8,6 @@ import {
 import type { OperationUsageSnapshot } from "./operation-usage.js";
 import type { ContextUsageSnapshot } from "./token-usage.js";
 
-/** Versioned runtime representation for one observed context measurement. */
 export const CONTEXT_SNAPSHOT_VERSION = 1 as const;
 
 export type ContextSnapshotScope =
@@ -37,27 +36,22 @@ export interface ContextSnapshotLimit {
 export type ContextSnapshotHeadroom =
   | {
       readonly kind: "known";
-      /** Remaining tokens in the same scope as contextTokens. */
       readonly remainingTokens: number;
-      /** Optional future request-budget metadata; T110 leaves it unknown. */
       readonly effectiveTriggerTokens?: number | undefined;
       readonly outputReserveTokens?: number | undefined;
       readonly safetyMarginTokens?: number | undefined;
     }
   | { readonly kind: "unknown" };
 
-/** Provider-reported cache outcomes; absence is explicitly unknown, never zero. */
 export type ContextSnapshotCache =
   | { readonly kind: "unknown" }
   | {
       readonly kind: "reported";
       readonly readTokens?: number | undefined;
       readonly creationTokens?: number | undefined;
-      /** Input tokens explicitly not served from the provider cache. */
       readonly uncachedTokens?: number | undefined;
     };
 
-/** Provider-reported reasoning usage; absence is explicitly unknown, never zero. */
 export type ContextSnapshotReasoning =
   | { readonly kind: "unknown" }
   | {
@@ -66,10 +60,6 @@ export type ContextSnapshotReasoning =
       readonly inputArtifactTokens?: number | undefined;
     };
 
-/**
- * A T100 record sequence is scoped to one logical provider operation. It is
- * exposed only when that operation snapshot actually reached the caller.
- */
 export type ContextAttemptReference =
   | { readonly kind: "unavailable" }
   | {
@@ -84,7 +74,6 @@ export type ContextAttemptReference =
 
 export interface ContextSnapshotV1 {
   readonly version: typeof CONTEXT_SNAPSHOT_VERSION;
-  /** The observed context fill in the declared scope. */
   readonly contextTokens: number;
   readonly lastCompletionTokens: number;
   readonly sessionPromptTokens: number;
@@ -96,7 +85,6 @@ export interface ContextSnapshotV1 {
   readonly cache: ContextSnapshotCache;
   readonly reasoning: ContextSnapshotReasoning;
   readonly attempt: ContextAttemptReference;
-  /** Epoch milliseconds captured at measurement time, never at projection time. */
   readonly observedAt: number;
 }
 
@@ -241,7 +229,6 @@ function normalizeObservedAt(value: number | undefined): number {
   return nonNegativeInteger(candidate);
 }
 
-/** Build one immutable, versioned observation without synthesizing telemetry. */
 export function createContextSnapshot(
   input: CreateContextSnapshotInput,
 ): ContextSnapshotV1 {
@@ -264,7 +251,6 @@ export function createContextSnapshot(
   });
 }
 
-/** The only legacy projection consumed by existing renderers and old history. */
 export function toLegacyContextUsage(
   snapshot: ContextSnapshotV1,
 ): ContextUsageSnapshot {
@@ -292,7 +278,6 @@ export function contextLimitFromSessionOverride(
   );
 }
 
-/** Rebind only live limit metadata; measurements retain their original time. */
 export function withContextSnapshotLimit(
   snapshot: ContextSnapshotV1,
   limit: ContextSnapshotLimit,
@@ -309,7 +294,6 @@ export function withContextSnapshotLimit(
   });
 }
 
-/** Convert an unversioned six-field persisted/rendering snapshot once. */
 export function contextSnapshotFromLegacy(
   snapshot: ContextUsageSnapshot,
   limit: ContextSnapshotLimit,
@@ -320,7 +304,7 @@ export function contextSnapshotFromLegacy(
     lastCompletionTokens: snapshot.lastCompletionTokens,
     sessionPromptTokens: snapshot.sessionPromptTokens,
     sessionCompletionTokens: snapshot.sessionCompletionTokens,
-    scope: "unknown",
+    scope: snapshot.exact ? "provider-request" : "unknown",
     precision: snapshot.exact ? "provider-exact" : "estimate",
     limit,
     observedAt,
@@ -416,7 +400,6 @@ function isContextAttempt(value: unknown): value is ContextAttemptReference {
   );
 }
 
-/** Narrow persisted JSON before treating it as the current schema. */
 export function isContextSnapshotV1(value: unknown): value is ContextSnapshotV1 {
   if (!isRecord(value) || value.version !== CONTEXT_SNAPSHOT_VERSION) return false;
   return (
@@ -437,7 +420,6 @@ export function isContextSnapshotV1(value: unknown): value is ContextSnapshotV1 
   );
 }
 
-/** Return the final physical T100 attempt only when it really exists. */
 export function contextAttemptFromOperationUsage(
   operationUsage: OperationUsageSnapshot | undefined,
 ): ContextAttemptReference {

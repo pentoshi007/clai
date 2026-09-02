@@ -1,8 +1,3 @@
-/**
- * Single source of the confirmation prompt wording (06-ONESHOT.md §4). The
- * overlay surface and the readline surface both build their questions here so
- * every frontend asks the same thing in the same words.
- */
 
 import type { ToolCall } from "../types.js";
 
@@ -21,7 +16,6 @@ export function toolPromptText(call: ToolCall): string {
   return `Run ${call.name}${args ? ` ${args}` : ""}?`;
 }
 
-/** `viewHint` is only true where a pager action exists to offer. */
 export function deletePromptText(
   path: string,
   options?: { viewHint?: boolean },

@@ -6,14 +6,6 @@ export interface ExternalToolCallOptions {
   readonly timeoutMs?: number | undefined;
 }
 
-/**
- * Tools that live outside the static registry (today: MCP servers).
- *
- * Registered process-wide so every dispatch path reaches them — direct calls,
- * `tool.batch` children, and the risk classifier — instead of each call site
- * needing its own plumbing. A dotted name the dispatcher owns must never fall
- * through to the static registry, or the model is told its tool vanished.
- */
 export interface ExternalToolDispatcher {
   toolNames(): readonly string[];
   hasTool(name: string): boolean;

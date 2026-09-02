@@ -11,12 +11,12 @@ import {
   reasoningArtifactsForMessage,
   selectReasoningArtifactsForReplay,
 } from "../reasoning-artifacts.js";
+import { wireToolArguments } from "../tool-wire/argument-repair.js";
 import {
   mapToolChoiceToOpenAi,
   toWireName,
   type ToolChoice,
 } from "../tool-protocol.js";
-// Side-effect: register wire name map (incl. snake_case aliases) before fromWireName use.
 import "../../tools/definitions.js";
 
 export function toOpenAiTools(defs: ToolDefinition[]): Array<{
@@ -103,10 +103,6 @@ function compatibleReasoningFields(
   };
 }
 
-/**
- * Map dialect-neutral ChatMessage[] to OpenAI Chat Completions wire format,
- * preserving tool roles and assistant tool_calls.
- */
 export function toOpenAiToolMessages(
   messages: ChatMessage[],
   mapUserContent: (message: ChatMessage) => string | unknown[],
@@ -146,7 +142,7 @@ export function toOpenAiToolMessages(
           type: "function" as const,
           function: {
             name: toWireName(tc.name),
-            arguments: tc.rawArguments ?? JSON.stringify(tc.args ?? {}),
+            arguments: wireToolArguments(tc.rawArguments, tc.args),
           },
         })),
       });
@@ -193,11 +189,6 @@ export function openAiToolBodyFields(options: {
   return {
     tools: toOpenAiTools(options.tools),
     tool_choice: mapToolChoiceToOpenAi(options.toolChoice),
-    // Only send the field when it changes behavior. Several OpenAI-compatible
-    // gateways (self-hosted NIM chat templates, DashScope compatible mode)
-    // reject unknown top-level fields with a 400 that used to be misread as
-    // "tools not supported", permanently downgrading the model to the legacy
-    // fenced protocol. Parallel calls are the upstream default anyway.
     ...(options.parallelToolCalls === false
       ? { parallel_tool_calls: false }
       : {}),

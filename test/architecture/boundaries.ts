@@ -23,6 +23,8 @@ export const RUNTIME_POLICY_EXCEPTIONS = new Set([
   "src/llm/provider.ts",
   "src/llm/reasoning-marker.ts",
   "src/llm/token-usage.ts",
+  "src/llm/transport-events.ts",
+  "src/llm/wire/responses-first.ts",
 ]);
 
 export const NEW_FILE_MAX_LINES = 1000;

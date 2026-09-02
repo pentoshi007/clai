@@ -32,7 +32,6 @@ export interface BuiltTurnRequest {
   readonly imageIssues: readonly string[];
 }
 
-/** Resolve attachments/vision once and assemble the agent request. */
 export function buildTurnRequest(input: TurnRequestInput): BuiltTurnRequest {
   const resolved = resolveTurnInput({
     prompt: input.prompt,

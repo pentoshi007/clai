@@ -22,13 +22,6 @@ import { compileRequestPlan } from "./request-plan.js";
 import { OLLAMA_STREAM_TERMINAL, PartialStreamError } from "./stream-terminal.js";
 import type { TokenUsage } from "../types.js";
 
-/**
- * Ollama's server default context is small (2048 on most builds) and
- * silently truncates the *front* of the prompt, which is exactly where the
- * constitution, tool contract, plan and scope live. Send an explicit,
- * model-aware `num_ctx`, bounded so a local host is not asked for more KV cache
- * than it can hold, plus the output budget the caller actually requested.
- */
 const OLLAMA_MAX_NUM_CTX = 32_768;
 const OLLAMA_DEFAULT_NUM_PREDICT = 4_096;
 const OLLAMA_KEEP_ALIVE = "5m";
@@ -146,6 +139,7 @@ export const ollamaProvider: LlmProvider = {
       text,
       provider: "ollama",
       model,
+      api: "ollama-chat",
       ...(toolCalls.length ? { toolCalls } : {}),
       ...(toolCalls.length ? { finishReason: "tool_calls" } : {}),
       ...(usage ? { usage } : {}),
@@ -197,8 +191,6 @@ export const ollamaProvider: LlmProvider = {
           prompt_eval_count?: number;
           eval_count?: number;
         };
-        // A missing model or load failure arrives as an NDJSON error line; it
-        // used to be ignored and returned as a blank success.
         if (typeof parsed.error === "string" && parsed.error.trim()) {
           throw new Error(`Ollama: ${parsed.error}`);
         }
@@ -208,7 +200,6 @@ export const ollamaProvider: LlmProvider = {
           onToken(token);
         }
         if (parsed.message?.tool_calls?.length) {
-          // Merge: multi-chunk emission used to drop every earlier call.
           toolCalls = [
             ...toolCalls,
             ...parseOllamaToolCalls(parsed.message.tool_calls),
@@ -224,13 +215,13 @@ export const ollamaProvider: LlmProvider = {
             text: full,
             provider: "ollama",
             model,
+            api: "ollama-chat",
             ...(toolCalls.length ? { toolCalls } : {}),
             ...(toolCalls.length ? { finishReason: "tool_calls" } : {}),
             ...(streamUsage ? { usage: streamUsage } : {}),
           };
         }
       } catch (frameError) {
-        // Only malformed JSON lines are ignorable.
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }

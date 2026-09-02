@@ -1,11 +1,3 @@
-/**
- * v2 renderer entry point (V2-030/031/034).
- *
- * Assembles the composition root, creates the OpenTUI renderer in the alternate
- * screen, mounts the shell, and hands ownership to `RendererLifecycle` so
- * signals/errors tear the renderer down before the process exits.
- */
-
 import { createElement } from "react";
 import { createCliRenderer, RendererControlState } from "@opentui/core";
 import { createRoot } from "@opentui/react";
@@ -15,13 +7,13 @@ import { App } from "../app/App.js";
 import { ServicesProvider } from "../../ui-core/react/providers.js";
 import { attachCommandHandlers } from "../../ui-core/commands/command-handlers.js";
 import {
-  readCachedThemeMode,
-  rememberThemeMode,
-} from "../../ui-core/bootstrap/theme-mode-cache.js";
-import {
   readCapabilitiesFromProcess,
   resolveOpenTuiCapabilities,
 } from "../../ui-core/bootstrap/capabilities.js";
+import {
+  readCachedThemeMode,
+  rememberThemeMode,
+} from "../../ui-core/bootstrap/theme-mode-cache.js";
 import { createCompositionRoot } from "../../ui-core/bootstrap/composition-root.js";
 import { RendererLifecycle } from "../../ui-core/bootstrap/lifecycle.js";
 import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
@@ -47,7 +39,7 @@ import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
 import {
-  forceFullRepaint,
+  createCoordinatedFlush,
   installResizeRepaint,
   repaintAttachedScreen,
 } from "./resize-repaint.js";
@@ -70,8 +62,6 @@ export async function startTuiV2(
   const startedAt = Date.now();
   const detectedCapabilities = readCapabilitiesFromProcess();
   const fallbackClipboard = createSystemClipboardPort();
-  // We own Ctrl+C (abort then double-press exit). OpenTUI must not kill the
-  // process on the first press, and SIGINT is handled cooperatively below.
   let markRendererFinalized = (): void => undefined;
   const rendererFinalized = new Promise<void>((resolve) => {
     markRendererFinalized = resolve;
@@ -86,6 +76,9 @@ export async function startTuiV2(
     clearOnShutdown: true,
     onDestroy: markRendererFinalized,
   });
+  try {
+    (renderer as unknown as { setMaxListeners?: (n: number) => void }).setMaxListeners?.(50);
+  } catch {}
   const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
   if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
     rememberThemeMode(reportedThemeMode);
@@ -102,8 +95,6 @@ export async function startTuiV2(
     },
   );
   const disarmTerminalRescue = installTerminalRescue();
-  // lifecycle is assigned before requestExit runs; use a holder so the
-  // composition root can close over a stable callback.
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
     current: undefined,
   };
@@ -165,9 +156,6 @@ export async function startTuiV2(
     disposeServices: () => services.dispose(),
   });
 
-  // Stray console output would land in cells the renderer never repaints and
-  // stick there for the rest of the session. Route it to a log while the TUI
-  // owns the screen; restored during teardown so errors print normally again.
   const restoreConsole = installConsoleGuard({
     logDir: getLogsDirRoot(),
     onCapture: (level, message) => {
@@ -178,19 +166,20 @@ export async function startTuiV2(
     },
   });
 
+  const flush = createCoordinatedFlush(renderer, (text) =>
+    writeTerminalDirect(text),
+  );
   const disposeResizeRepaint = installResizeRepaint({
     renderer,
-    write: (text) => writeTerminalDirect(text),
+    write: (text) => void flush(text),
     enabled: Boolean(process.stdout.isTTY),
     isSuspended: () =>
       renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
-    requestRepaint: () => forceFullRepaint(renderer),
+    requestRepaint: () => undefined,
   });
 
   const lifecycle = new RendererLifecycle({
     handle,
-    // Flush chat + visual transcript before the renderer is destroyed so an
-    // aborted mid-run session still restores tools/code under /history.
     disposers: [
       () => disposeRuntimeBridge(),
       disposeResizeRepaint,
@@ -214,13 +203,7 @@ export async function startTuiV2(
       },
     ],
     epilogue: epilogue.run,
-    // Ctrl+C / SIGINT: first signal aborts a live turn (or arms quit via the
-    // App handler path when the key event arrives). A second SIGINT within
-    // the window still exits so kill -INT remains usable without the TUI.
     onSigint: () => {
-      // Backup path when the key event is not delivered (raw SIGINT). Always
-      // dismiss a stuck password/confirm overlay first — abort alone used to
-      // leave the sudo modal open and block a clean exit.
       const dismissed = services.overlay.cancelBlockingPrompt();
       if (services.session.getState().running) {
         services.session.abort();
@@ -256,13 +239,14 @@ export async function startTuiV2(
       () =>
         repaintAttachedScreen({
           renderer,
-          write: (text) => writeTerminalDirect(text),
+          write: (text) => void flush(text),
           enabled: Boolean(process.stdout.isTTY),
           isSuspended: () =>
             renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
         }),
     );
   }
+
   await done;
   await lifecycle.shutdown();
 }

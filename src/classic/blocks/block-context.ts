@@ -6,7 +6,6 @@ import { clipToWidth, joinSeparated, trimTrailingSpaces } from "../render/ansi-t
 import type { Glyphs } from "../render/glyphs.js";
 import type { InkTheme } from "../render/ink-theme.js";
 
-/** Read side of `OutputSpool`; keeps builders decoupled from the class. */
 export interface SpoolReader {
   tail(toolCallId: ToolCallId): string;
   state(toolCallId: ToolCallId): BoundedTextState | undefined;
@@ -17,12 +16,7 @@ export const EMPTY_SPOOL: SpoolReader = {
   state: () => undefined,
 };
 
-/**
- * Everything a block builder may read. Nothing here is derived from process
- * state at build time — `now` is injected so every builder stays deterministic.
- */
 export interface BlockContext {
-  /** Content columns available to a block: `columns - 2`. */
   readonly width: number;
   readonly ink: InkTheme;
   readonly glyphs: Glyphs;
@@ -32,7 +26,6 @@ export interface BlockContext {
   readonly markdownCache: MarkdownStreamCache | undefined;
 }
 
-/** Suffix threshold — keep timings visible; below this the label is clipped not dropped. Classic shows timings even at 40 cols. */
 export const SUFFIX_MIN_COLUMNS = 44;
 
 export function separator(ctx: BlockContext): string {

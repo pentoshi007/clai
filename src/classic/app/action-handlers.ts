@@ -43,9 +43,6 @@ export class ClassicActionHandlers {
   constructor(private readonly deps: ClassicActionHandlerDeps) {}
 
   handle(action: ActionId, chord: string, key: KeyEvent): void {
-    // The composer keymap resolves arrows as history actions before the
-    // generic panel fallback gets a chance to see them. Completion menus own
-    // those arrows, so preserve ComposerController's menu semantics here.
     if (
       (chord === "up" || chord === "down") &&
       this.deps.services.focus.activeContext() === "composer" &&
@@ -146,7 +143,6 @@ export class ClassicActionHandlers {
       case "jobs.close":
         this.deps.panels.handleKey(chord, key.text);
         return;
-      // OpenTUI-only: classic has no focusable thinking card to copy from.
       case "transcript.copy-thinking":
         return;
       default: {

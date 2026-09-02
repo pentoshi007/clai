@@ -384,8 +384,6 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         evidence: providerDoc("merge-gateway-openai-route"),
       },
       acceptedEfforts: ["low", "medium", "high"],
-      // Merge returns the chain of thought on `message.thinking` /
-      // `delta.thinking` (with `thinking_signature`), not `reasoning_content`.
       outputShapes: ["reasoning-content", "reasoning-field"],
       replayScope: "tool-turn",
     },

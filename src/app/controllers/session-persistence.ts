@@ -11,11 +11,6 @@ import type {
   SaveSessionOptions,
 } from "../ports/persistence-port.js";
 
-/**
- * A session is worth writing (and therefore worth resuming) once it holds a
- * real user turn or a compaction memory. Shared by every persistence trigger
- * so `persistNow`, autosave, and the exit epilogue never disagree.
- */
 export function hasPersistableHistory(
   messages: readonly ChatMessage[],
 ): boolean {
@@ -24,8 +19,6 @@ export function hasPersistableHistory(
   );
 }
 
-// High-resolution epoch time orders resume ownership; a process-local counter
-// makes repeated rebinds monotonic even if the clock reading does not advance.
 let lastWriterEpochMicros = 0;
 function mintWriterGeneration(): string {
   const nowMicros = Math.floor((performance.timeOrigin + performance.now()) * 1_000);
@@ -33,7 +26,6 @@ function mintWriterGeneration(): string {
   return `${String(lastWriterEpochMicros).padStart(16, "0")}-${String(process.pid).padStart(8, "0")}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Ordered whole-session snapshots shared by every persistence trigger. */
 export class SessionPersistenceQueue {
   private writerGeneration = mintWriterGeneration();
   private revision = 0;
@@ -55,7 +47,6 @@ export class SessionPersistenceQueue {
     messages: readonly ChatMessage[],
     options: Omit<SaveSessionOptions, "revision">,
   ): Promise<void> {
-    // Capture synchronously; queued I/O must never observe later mutations.
     const snapshot = messages.map((message) => ({ ...message }));
     const transcript = options.transcript ? [...options.transcript] : undefined;
     const revision = ++this.revision;
@@ -68,7 +59,6 @@ export class SessionPersistenceQueue {
         revision,
       }),
     );
-    // Report failure to this caller without poisoning newer queued snapshots.
     this.chain = run.catch(() => undefined);
     return run;
   }

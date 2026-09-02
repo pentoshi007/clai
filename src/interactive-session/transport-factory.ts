@@ -1,8 +1,3 @@
-/**
- * Default transport factory. PTY support stays behind a lazy capability probe so
- * pipe sessions and every legacy shell/job path remain reachable on targets
- * without a verified native artifact.
- */
 
 import { startPipeTransport } from "./transport-pipe.js";
 import { probePtyCapability, startPtyTransport } from "./transport-node-pty.js";

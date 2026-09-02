@@ -523,7 +523,7 @@ describe("session state block", () => {
     );
   });
 
-  it("upserts SESSION STATE at the end so history prefix stays cacheable", () => {
+  it("appends a changed SESSION STATE so sent history stays byte-identical", () => {
     const messages: Array<{ role: string; content: string }> = [
       { role: "system", content: "CONSTITUTION stable" },
       { role: "user", content: "scan the target" },
@@ -532,71 +532,75 @@ describe("session state block", () => {
     ];
     const blockA = buildSessionStateBlock({
       goal: "pentest",
-      lastOkTool: "http.fetch",
       openTask: "[t1] recon",
     });
     upsertSessionStateMessage(messages, blockA);
     expect(messages).toHaveLength(5);
     expect(messages[0]!.content).toBe("CONSTITUTION stable");
     expect(messages[1]!.role).toBe("user");
-    expect(messages[4]!.content).toContain("last_ok_tool: http.fetch");
+    expect(messages[4]!.content).toContain("open_task: [t1] recon");
     expect(
       messages.filter((m) => m.content.startsWith(SESSION_STATE_PREFIX)),
     ).toHaveLength(1);
 
-    // Simulate another tool turn, then refresh state (last_ok_tool changes).
+    // Simulate another tool turn, then refresh state (the open task moved on).
     messages.push(
       { role: "assistant", content: "next probe" },
       { role: "tool", content: "403 on /admin" },
     );
-    const prefixBefore = messages
-      .slice(0, 4)
-      .map((m) => m.content)
-      .join("\0");
+    const sent = [...messages];
     const blockB = buildSessionStateBlock({
       goal: "pentest",
-      lastOkTool: "shell.exec",
       openTask: "[t2] auth",
     });
     upsertSessionStateMessage(messages, blockB);
 
-    // Long history prefix must remain byte-identical (prompt-cache friendly).
-    const prefixAfter = messages
-      .slice(0, 4)
-      .map((m) => m.content)
-      .join("\0");
-    expect(prefixAfter).toBe(prefixBefore);
+    // Already-sent history stays byte-identical; the new copy is appended.
+    expect(messages.slice(0, sent.length)).toEqual(sent);
+    expect(
+      messages.filter((m) => m.content.startsWith(SESSION_STATE_PREFIX)),
+    ).toHaveLength(2);
+    expect(messages[messages.length - 1]!.content).toContain("open_task:");
+    expect(messages.at(-1)!.content).toContain("goal: pentest");
+  });
+
+  it("reuses the existing copy when the rendered block is unchanged", () => {
+    const messages: Array<{ role: string; content: string }> = [
+      { role: "system", content: "CONSTITUTION" },
+      { role: "user", content: "continue" },
+    ];
+    upsertSessionStateMessage(
+      messages,
+      buildSessionStateBlock({ goal: "same" }),
+    );
+    const snapshot = JSON.stringify(messages);
+    upsertSessionStateMessage(
+      messages,
+      buildSessionStateBlock({ goal: "same" }),
+    );
+    expect(JSON.stringify(messages)).toBe(snapshot);
     expect(
       messages.filter((m) => m.content.startsWith(SESSION_STATE_PREFIX)),
     ).toHaveLength(1);
-    expect(messages[messages.length - 1]!.content).toContain(
-      "last_ok_tool: shell.exec",
-    );
-    expect(messages[messages.length - 1]!.content).toContain("open_task:");
   });
 
-  it("migrates a legacy early SESSION STATE insert to the trailing position", () => {
+  it("keeps stale copies behind the newest one after a state change", () => {
     const messages: Array<{ role: string; content: string }> = [
       { role: "system", content: "CONSTITUTION" },
       {
         role: "system",
-        content: `${SESSION_STATE_PREFIX}\ngoal: old\nlast_ok_tool: web.search`,
+        content: `${SESSION_STATE_PREFIX}\ngoal: old`,
       },
       { role: "user", content: "continue" },
       { role: "assistant", content: "ok" },
     ];
     upsertSessionStateMessage(
       messages,
-      buildSessionStateBlock({ goal: "new", lastOkTool: "http.fetch" }),
+      buildSessionStateBlock({ goal: "new" }),
     );
     expect(messages[0]!.content).toBe("CONSTITUTION");
-    expect(messages[1]!.role).toBe("user");
-    expect(messages[messages.length - 1]!.content).toContain(
-      "last_ok_tool: http.fetch",
-    );
-    expect(
-      messages.filter((m) => m.content.startsWith(SESSION_STATE_PREFIX)),
-    ).toHaveLength(1);
+    expect(messages[1]!.content).toContain("goal: old");
+    expect(messages.at(-1)!.content).toContain("goal: new");
   });
 });
 

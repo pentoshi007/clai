@@ -1,7 +1,3 @@
-/**
- * Prompts and helpers for LLM-based context compaction.
- * The model produces structured continuation memory — not a raw transcript dump.
- */
 
 import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
 
@@ -26,16 +22,10 @@ Rules:
 export interface CompactionPromptParts {
   visualTranscript?: string | undefined;
   messageTranscript: string;
-  /** Optional live plan / session state to prioritize. */
   durableState?: string | undefined;
-  /**
-   * When "plan-implement", bias the summarizer toward recon evidence and
-   * remaining work so agent mode can execute the accepted plan.
-   */
   purpose?: "default" | "plan-implement" | undefined;
 }
 
-/** User message fed to the summarizer model. */
 export function buildCompactionUserPrompt(parts: CompactionPromptParts): string {
   const visual = parts.visualTranscript?.trim() ?? "";
   const fromMessages = parts.messageTranscript.trim();
@@ -172,15 +162,8 @@ export function buildDirectCompactionPrompt(input: {
   });
 }
 
-/** Soft cap for transcript fed to the summarizer (chars). */
 export const COMPACTION_TRANSCRIPT_CHAR_BUDGET = 48_000;
 
-/**
- * A compaction is a compression operation, not a reasoning task. The final
- * memory is required to carry mechanism-level detail (per the prompts above),
- * so its allowance must comfortably exceed the ~1400–2400 token target while
- * still discouraging hidden reasoning blowout.
- */
 export const COMPACTION_MAX_COMPLETION_TOKENS = 12_288;
 
 export const COMPACTION_INPUT_SAFETY_TOKENS = 4_096;
@@ -203,11 +186,6 @@ export const COMPACTION_CHUNK_CHAR_BUDGET = 64_000;
 
 export const MAX_COMPACTION_CHUNKS = 8;
 
-/**
- * Split the transcript into ordered chunks that together contain every
- * character of the input. Boundaries prefer blank lines so a message is not cut
- * mid-record when that is avoidable.
- */
 export function chunkTranscriptForCompaction(
   transcript: string,
   chunkChars = COMPACTION_CHUNK_CHAR_BUDGET,
@@ -236,7 +214,6 @@ export function chunkTranscriptForCompaction(
   return chunks.map((chunk) => chunk.trim()).filter((chunk) => chunk.length > 0);
 }
 
-/** Map-stage prompt: summarize one ordered region of the session. */
 export function buildCompactionChunkPrompt(input: {
   readonly chunk: string;
   readonly index: number;
@@ -259,7 +236,6 @@ export function buildCompactionChunkPrompt(input: {
   ].join("\n");
 }
 
-/** Reduce-stage prompt: merge ordered region memories into one memory. */
 export function buildCompactionReducePrompt(input: {
   readonly partials: readonly string[];
   readonly durableState?: string | undefined;
@@ -275,7 +251,6 @@ export function buildCompactionReducePrompt(input: {
   });
 }
 
-/** Prefer head goals + tail recency when the transcript is huge. */
 export function trimTranscriptForCompaction(
   transcript: string,
   budget = COMPACTION_TRANSCRIPT_CHAR_BUDGET,

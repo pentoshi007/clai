@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompletionRequest, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
 import { OperationUsageRecorder } from "../../src/llm/operation-usage.js";
-import { installTransport, type FakeTransport } from "../conformance/fake-transport.js";
+import {
+  installTransport,
+  isResponsesProbe,
+  type FakeTransport,
+} from "../conformance/fake-transport.js";
 import { buildWireResponse } from "../conformance/wire-fixtures.js";
 import {
   admittedHosts,
@@ -71,13 +75,27 @@ const NVIDIA_MODEL = providers.nvidia.defaultModel;
 const META_MODEL = providers.meta.defaultModel;
 const REASONING_CONTROL_MODEL = "moonshotai/kimi-k2-thinking";
 
-function installScript(...steps: Array<() => Response>): FakeTransport {
+function installScript(
+  ...args:
+    | Array<() => Response>
+    | [{ responsesNative?: boolean }, ...Array<() => Response>]
+): FakeTransport {
+  const options =
+    typeof args[0] === "object" && args[0] !== null && !Array.isArray(args[0])
+      ? (args.shift() as { responsesNative?: boolean })
+      : {};
   let index = 0;
-  return installTransport(() => {
+  const transport = installTransport((record) => {
+    if (!options.responsesNative && isResponsesProbe(record.url)) {
+      transport.generations.pop();
+      return new Response("not found", { status: 404 });
+    }
+    const steps = args as Array<() => Response>;
     const step = steps[Math.min(index, steps.length - 1)]!;
     index += 1;
     return step();
   });
+  return transport;
 }
 
 function metaSseBudgetIncomplete(): Response {
@@ -374,7 +392,9 @@ describe("in-place route adaptation admissions", () => {
 describe("Meta output-budget admissions", () => {
   it("surfaces one incomplete admission instead of hiding recursive retries", async () => {
     slotsByProvider = { meta: keySlots(["meta-a"]) };
-    const transport = installScript(() => metaBudgetIncomplete(META_MODEL));
+    const transport = installScript({ responsesNative: true }, () =>
+        metaBudgetIncomplete(META_MODEL),
+      );
 
     const result = await completeWithProvider(
       { provider: "meta", messages: userTurn() },
@@ -393,7 +413,9 @@ describe("Meta output-budget admissions", () => {
 
   it("retains usage from the surfaced incomplete admission", async () => {
     slotsByProvider = { meta: keySlots(["meta-a"]) };
-    installScript(() => metaBudgetIncomplete(META_MODEL));
+    installScript({ responsesNative: true }, () =>
+        metaBudgetIncomplete(META_MODEL),
+      );
 
     const result = await completeWithProvider(
       { provider: "meta", messages: userTurn() },
@@ -819,7 +841,7 @@ describe("operation attempt usage", () => {
   ]) {
     it(`surfaces one Meta ${label} stream budget stop as one admission`, async () => {
       slotsByProvider = { meta: keySlots(["meta-a"]) };
-      const transport = installScript(responseFactory);
+      const transport = installScript({ responsesNative: true }, responseFactory);
       const recorder = new OperationUsageRecorder();
 
       const result = await streamWithProvider(

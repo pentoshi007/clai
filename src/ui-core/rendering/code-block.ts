@@ -1,11 +1,3 @@
-/**
- * Fenced code block presentation for chat + pager markdown.
- *
- * Renders a bordered panel with a language label, real syntax colors, exact
- * source indentation, and column-accurate soft wrapping (no ellipsis, no
- * dropped characters, wide glyphs never straddle the right border).
- */
-
 import chalk, { Chalk, type ChalkInstance } from "chalk";
 import type { ColorMode } from "../../app/ports/terminal-port.js";
 import { renderColumns } from "./text-width.js";
@@ -19,16 +11,13 @@ import {
   type SyntaxSpan,
 } from "./syntax-highlight.js";
 
-/** Columns consumed by `│ ` + body + ` │`. */
 export const CODE_BLOCK_CHROME = 4;
 
 const TAB_WIDTH = 2;
 const HANGING_INDENT = 2;
-/** Narrowest code body worth rendering — the panel is sized to protect it. */
 const MIN_BODY = 8;
 const MIN_WIDTH = CODE_BLOCK_CHROME + MIN_BODY;
 const MAX_WIDTH = 120;
-/** Only honour a soft break past this fraction of the row budget. */
 const SOFT_BREAK_FLOOR = 0.5;
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, {
   granularity: "grapheme",
@@ -108,7 +97,6 @@ function palette(appearance?: CodeBlockAppearance): Palette {
   return resolved;
 }
 
-/** Fence info strings that are not already file extensions. */
 const INFO_EXTENSION: Record<string, string> = {
   typescript: "ts",
   javascript: "js",
@@ -158,7 +146,6 @@ const INFO_EXTENSION: Record<string, string> = {
   none: "txt",
 };
 
-/** Short fence tags shown under their full language name. */
 const INFO_LABEL: Record<string, string> = {
   ts: "typescript",
   js: "javascript",
@@ -180,20 +167,15 @@ const INFO_LABEL: Record<string, string> = {
 };
 
 export interface CodeFenceState {
-  /** Opening run of backticks or tildes — only a matching run closes it. */
   readonly marker: string;
-  /** Language name or file path shown in the panel header. */
   readonly label: string;
-  /** Synthetic path handed to the highlighter to resolve the language. */
   readonly langPath: string;
   readonly carry: HighlightCarry;
-  /** Blank rows held back so trailing padding never reaches the footer. */
   pendingBlanks: number;
 }
 
 const FENCE_OPEN_RE = /^\s*(`{3,}|~{3,})[ \t]*(.*)$/;
 
-/** Match an opening fence and capture its marker + info string. */
 export function matchCodeFenceOpen(
   line: string,
 ): { marker: string; info: string } | undefined {
@@ -202,7 +184,6 @@ export function matchCodeFenceOpen(
   return { marker: match[1]!, info: (match[2] ?? "").trim() };
 }
 
-/** A fence closes on a bare run of the same character, at least as long. */
 export function isCodeFenceClose(line: string, marker: string): boolean {
   const match = /^\s*(`{3,}|~{3,})\s*$/.exec(line);
   if (!match) return false;
@@ -216,8 +197,6 @@ function looksLikePath(info: string): boolean {
 }
 
 export function openCodeFence(marker: string, info: string): CodeFenceState {
-  // Info strings carry attributes models pick up from docs: `ts {1,3}`,
-  // `py title="x"`. Only the first token identifies the language.
   const token = (info.split(/[\s,;]+/)[0] ?? "").replace(/^[{"']|["']$/g, "");
   const tag = token.toLowerCase();
 
@@ -234,12 +213,10 @@ export function openCodeFence(marker: string, info: string): CodeFenceState {
   };
 }
 
-/** Clamp the panel to the wrap budget so it never overflows the pane. */
 export function codeBlockWidth(wrapWidth: number): number {
   return Math.max(MIN_WIDTH, Math.min(Math.floor(wrapWidth), MAX_WIDTH));
 }
 
-/** Drop blank lines at the block edges so the panel hugs its code. */
 export function trimCodeBlockBody(lines: readonly string[]): string[] {
   let start = 0;
   let end = lines.length;
@@ -248,11 +225,6 @@ export function trimCodeBlockBody(lines: readonly string[]): string[] {
   return lines.slice(start, end);
 }
 
-/**
- * Panel width that fits the widest code line, so a one-line snippet is not
- * stretched across the whole pane. Falls back to `available` when the code is
- * wider than the pane, which is when wrapping takes over.
- */
 export function codeBlockFitWidth(
   lines: readonly string[],
   label: string,
@@ -263,7 +235,6 @@ export function codeBlockFitWidth(
     const width = renderColumns(expandTabs(line.replace(/\s+$/, "")));
     if (width > widest) widest = width;
   }
-  // `╭─ label ─╮` needs the label plus six columns of chrome.
   const labelNeeds = label ? renderColumns(label) + 6 : 0;
   const wanted = Math.max(widest + CODE_BLOCK_CHROME, labelNeeds);
   return codeBlockWidth(Math.min(codeBlockWidth(available), wanted));
@@ -384,18 +355,10 @@ function toCells(spans: readonly SyntaxSpan[]): Cell[] {
   return cells;
 }
 
-/** Break after separators so wrapped code splits at token edges when it can. */
 function breaksAfter(ch: string): boolean {
   return ch === " " || ",;)]}>".includes(ch);
 }
 
-/**
- * Split one highlighted source line into rows that fit its column budget.
- * Breaks at a token edge when one falls in the back half of the row, otherwise
- * hard-breaks. Separator cells remain in the output so wrapping never changes
- * meaningful code whitespace. Always consumes at least one cell so a glyph
- * wider than the budget cannot stall the loop.
- */
 function sliceRows(cells: Cell[], firstBudget: number, restBudget: number): Cell[][] {
   const rows: Cell[][] = [];
   let start = 0;
@@ -448,12 +411,6 @@ function leadingSpaces(line: string): number {
   return match ? match[0].length : 0;
 }
 
-/**
- * Streaming re-renders the whole open fence on every frame, so highlighting +
- * wrapping one source line is memoised on its language, width, and inbound
- * carry. The carry after the line is replayed on a hit so multi-line strings
- * and block comments still chain correctly.
- */
 const ROW_CACHE = new Map<string, { rows: readonly string[]; carry: HighlightCarry }>();
 const ROW_CACHE_MAX = 4096;
 
@@ -483,10 +440,6 @@ function cacheRows(key: string, rows: readonly string[], carry: HighlightCarry):
   ROW_CACHE.set(key, { rows, carry: snapshotCarry(carry) });
 }
 
-/**
- * Render one source line as complete panel rows. Blank lines are buffered so a
- * block that ends with padding does not push empty rows against the footer.
- */
 export function codeBlockRows(
   source: string,
   fence: CodeFenceState,
@@ -498,8 +451,6 @@ export function codeBlockRows(
   const inner = panel - CODE_BLOCK_CHROME;
   const line = expandTabs(source.replace(/\s+$/, ""));
 
-  // Leading blanks are dropped outright; interior ones survive as padding once
-  // a following content row proves they were not trailing.
   if (line.length === 0) {
     fence.pendingBlanks += 1;
     return [];
@@ -520,9 +471,6 @@ export function codeBlockRows(
   }
 
   const cells = toCells(highlightLineForPath(line, fence.langPath, fence.carry));
-  // Continuation rows are indented under the source line so a wrap reads as a
-  // wrap. It never eats more than half the body, nor the minimum code columns,
-  // so `prefix + body` always fits `inner` and the right border stays flush.
   const indent = Math.min(
     leadingSpaces(line) + HANGING_INDENT,
     Math.floor(inner / 2),

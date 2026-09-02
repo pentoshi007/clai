@@ -21,7 +21,7 @@ const headers = {
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 export const openrouterProvider: LlmProvider = {
   id: "openrouter",
@@ -61,6 +61,7 @@ export const openrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("OpenRouter API key is required");
     const model = request.model ?? defaultModels.openrouter;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "OpenRouter",
       providerId: "openrouter",
       baseUrl,
@@ -89,6 +90,7 @@ export const openrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("OpenRouter API key is required");
     const model = request.model ?? defaultModels.openrouter;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "OpenRouter",
       providerId: "openrouter",
       baseUrl,

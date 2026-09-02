@@ -1,88 +1,29 @@
-/**
- * `web.search` registry handler: resolves the active
- * {@link SearchProviderId}, looks up its API key, dispatches a single
- * outbound request per provider (no retry of the *same* provider),
- * validates/truncates the hits to `maxResults`, and emits one audit-log
- * entry per attempt. Failures surface as `ok=false` with a categorical
- * `error.kind` naming the provider.
- *
- * DuckDuckGo fallback: DuckDuckGo is the keyless default and regularly
- * returns anti-bot challenges (HTTP 202) or upstream 502/5xx responses on
- * shared or rate-limited networks. When the active provider is DuckDuckGo
- * and it fails, the handler transparently falls back to a keyed provider
- * — Exa first, then Tavily, then Brave — whenever a key is configured for
- * it. Each
- * fallback is a single attempt against a *different* provider, so the
- * per-provider single-attempt contract (Requirement 6.7) is preserved.
- *
- * Provider modules self-register into {@link searchProviders} on import,
- * so they're eagerly imported here.
- */
 
 import type { ToolResult } from "../../types.js";
 import { auditLog } from "../../store/logs.js";
 import type { ToolRunOptions } from "../registry.js";
 import { getActiveSearchProvider } from "../../store/config.js";
 import { buildSearchAuditPayload } from "./audit.js";
-import {
-  searchProviders,
-  type RawProviderResponse,
-  type SearchProvider,
-} from "./providers/provider.js";
-// Importing the provider modules below ensures their side-effect
-// registration into `searchProviders` runs before the handler is
-// invoked. (DDG → keyless default; Exa / Brave / Tavily → optional.)
+import { searchProviders, type SearchProvider } from "./providers/provider.js";
 import "./providers/duckduckgo.js";
 import "./providers/brave.js";
 import "./providers/tavily.js";
 import "./providers/exa.js";
-import {
-  DEFAULT_MAX_RESULTS,
-  MAX_MAX_RESULTS,
-  MAX_QUERY_LENGTH,
-  MAX_SNIPPET_LENGTH,
-  MAX_TITLE_LENGTH,
-  MIN_MAX_RESULTS,
-  MIN_QUERY_LENGTH,
-  SEARCH_TIMEOUT_MS,
-  type SearchProviderId,
-  type SearchResult,
-  type WebSearchArgs,
-  type WebSearchError,
-  type WebSearchErrorKind,
-  type WebSearchOutcome,
-} from "./types.js";
+import { DEFAULT_MAX_RESULTS, MAX_MAX_RESULTS, MAX_QUERY_LENGTH, MIN_MAX_RESULTS, MIN_QUERY_LENGTH, SEARCH_TIMEOUT_MS, type SearchProviderId, type WebSearchArgs, type WebSearchErrorKind, type WebSearchOutcome } from "./types.js";
+import { SearchKeySet, attemptProviderWithKeyRotation } from "./search-attempts.js";
 
-// ---------------------------------------------------------------------------
-// Public entry
-// ---------------------------------------------------------------------------
 
-/**
- * Optional injection points for tests so the search dispatch can be
- * exercised without invoking the real provider modules. Production
- * callers never pass these.
- */
 export interface WebSearchOptions extends ToolRunOptions {
-  /** Override the active provider lookup. */
   provider?: SearchProviderId;
-  /** Override the registered {@link SearchProvider} for the active id. */
   providerOverride?: SearchProvider;
-  /** Override the API-key resolver. Returns the raw key (or undefined). */
   resolveKey?: (id: SearchProviderId) => Promise<string | undefined>;
-  /** Wall-clock timeout in milliseconds. Default: {@link SEARCH_TIMEOUT_MS}. */
   timeoutMs?: number;
 }
 
-/**
- * Run `web.search`. Always emits a single audit-log entry. Never
- * throws — every failure mode surfaces as `ok=false`.
- */
 export async function webSearch(
   args: WebSearchArgs,
   options: WebSearchOptions = {},
 ): Promise<ToolResult> {
-  // Validate args before resolving the provider so a malformed call
-  // never appears in the audit log under a real provider's id.
   const validated = validateArgs(args);
   if (!validated.ok) {
     const provider = options.provider ?? safeProvider();
@@ -102,14 +43,10 @@ export async function webSearch(
 
   const trimmedQuery = validated.query;
   const maxResults = validated.maxResults;
-  // One deadline covers provider selection, the primary request, and every
-  // cross-provider fallback. A failed attempt never receives a fresh budget.
   const timeoutMs = Math.max(1, options.timeoutMs ?? SEARCH_TIMEOUT_MS);
   const deadline = Date.now() + timeoutMs;
   const remainingMs = (): number => Math.max(0, deadline - Date.now());
 
-  // Resolve the active provider (Requirement 3.5: defaults to
-  // DuckDuckGo when no key configured).
   const providerId = options.provider ?? safeProvider();
   const provider =
     options.providerOverride ?? searchProviders[providerId];
@@ -163,9 +100,6 @@ export async function webSearch(
     return errorResult(primaryOutcome);
   }
 
-  // DuckDuckGo is keyless and remains the default. When it fails, try a
-  // configured keyed provider; each keyed provider applies the same circular
-  // key rotation as a directly selected search provider.
   const fallbackAllowed = options.providerOverride === undefined;
   if (fallbackAllowed && provider.id === "duckduckgo") {
     const fallbackNotes: string[] = [];
@@ -208,20 +142,8 @@ export async function webSearch(
   return errorResult(primaryOutcome);
 }
 
-// ---------------------------------------------------------------------------
-// Per-provider attempt and API-key rotation
-// ---------------------------------------------------------------------------
 
-/** Ordered fallback after a keyless DuckDuckGo failure. */
 const DDG_FALLBACK_ORDER: readonly SearchProviderId[] = ["exa", "tavily", "brave"];
-const MAX_SEARCH_RETRIES = 6;
-const MAX_SEARCH_RETRY_WAIT_MS = 120_000;
-
-interface SearchKeySet {
-  readonly keys: readonly { value: string }[];
-  readonly activeIndex: number;
-  readonly source: string;
-}
 
 async function resolveSearchKeySet(
   id: SearchProviderId,
@@ -239,254 +161,6 @@ async function resolveSearchKeySet(
   return getSearchProviderKeys(id);
 }
 
-function searchKeyAttemptPlan(keyCount: number, activeIndex: number): number[] {
-  if (keyCount <= 0) return [];
-  const start = ((activeIndex % keyCount) + keyCount) % keyCount;
-  return Array.from({ length: keyCount }, (_, offset) => (start + offset) % keyCount);
-}
-
-function searchAttemptsPerKey(keyCount: number): number {
-  return keyCount <= 1 ? MAX_SEARCH_RETRIES + 1 : 2;
-}
-
-function shouldStopSearchKeyCircle(outcome: WebSearchOutcome): boolean {
-  const status = outcome.error?.status;
-  return status === 404 || status === 422;
-}
-
-function shouldSwitchSearchKeyImmediately(outcome: WebSearchOutcome): boolean {
-  return outcome.error?.kind === "auth" || outcome.error?.status === 402;
-}
-
-function isRetriableSearchKeyFailure(outcome: WebSearchOutcome): boolean {
-  return ["rate-limit", "network", "server"].includes(outcome.error?.kind ?? "");
-}
-
-function searchRetryWaitMs(outcome: WebSearchOutcome, attempt: number): number {
-  return outcome.error?.kind === "rate-limit"
-    ? Math.pow(3, attempt) * 2_000
-    : Math.pow(2, attempt) * 1_000;
-}
-
-async function waitForSearchRetry(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
-  await new Promise<void>((resolve, reject) => {
-    const abort = (): void => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      reject(signal?.reason ?? new Error("Aborted"));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }, ms);
-    signal?.addEventListener("abort", abort, { once: true });
-  });
-}
-
-async function attemptProviderWithKeyRotation(opts: {
-  provider: SearchProvider;
-  keys: SearchKeySet;
-  query: string;
-  maxResults: number;
-  timeoutMs: number;
-  remainingMs: () => number;
-  signal?: AbortSignal | undefined;
-  retrySameKey: boolean;
-  onOutcome: (outcome: WebSearchOutcome) => void;
-}): Promise<WebSearchOutcome> {
-  const { provider, keys } = opts;
-  const keyCount = keys.keys.length;
-  const plan = provider.needsApiKey
-    ? searchKeyAttemptPlan(keyCount, keys.activeIndex)
-    : [0];
-  let lastOutcome: WebSearchOutcome | undefined;
-
-  for (const keyIndex of plan) {
-    const apiKey = provider.needsApiKey ? keys.keys[keyIndex]?.value : undefined;
-    const attempts =
-      opts.retrySameKey && provider.needsApiKey ? searchAttemptsPerKey(keyCount) : 1;
-    for (let attempt = 0; attempt < attempts; attempt++) {
-      const budgetMs = opts.remainingMs();
-      if (budgetMs <= 0 || opts.signal?.aborted) {
-        return buildTimeoutOutcome(provider.id, opts.timeoutMs);
-      }
-      const outcome = await attemptProvider(
-        provider,
-        apiKey,
-        opts.query,
-        opts.maxResults,
-        budgetMs,
-        opts.signal,
-      );
-      opts.onOutcome(outcome);
-      if (outcome.ok) {
-        if (provider.needsApiKey && keys.source !== "env" && keys.source !== "injected") {
-          const { markSearchProviderKeySuccess } = await import("../../store/keys.js");
-          void markSearchProviderKeySuccess(provider.id, keyIndex).catch(() => {});
-        }
-        return outcome;
-      }
-      lastOutcome = outcome;
-      if (outcome.error?.kind === "timeout" || shouldStopSearchKeyCircle(outcome)) {
-        return outcome;
-      }
-      if (shouldSwitchSearchKeyImmediately(outcome)) break;
-      if (!isRetriableSearchKeyFailure(outcome)) return outcome;
-      if (!opts.retrySameKey || attempt + 1 >= attempts) break;
-
-      const wait = searchRetryWaitMs(outcome, attempt);
-      if (wait > MAX_SEARCH_RETRY_WAIT_MS || wait >= opts.remainingMs()) {
-        break;
-      }
-      try {
-        await waitForSearchRetry(wait, opts.signal);
-      } catch {
-        return buildTimeoutOutcome(provider.id, opts.timeoutMs);
-      }
-    }
-  }
-
-  return lastOutcome ?? buildTimeoutOutcome(provider.id, opts.timeoutMs);
-}
-
-/**
- * Dispatch a single search request against one provider, arming the
- * per-attempt timeout and propagating any caller-supplied `AbortSignal`.
- * Never throws — every failure mode is mapped to `WebSearchOutcome`.
- */
-async function attemptProvider(
-  provider: SearchProvider,
-  apiKey: string | undefined,
-  query: string,
-  maxResults: number,
-  timeoutMs: number,
-  callerSignal: AbortSignal | undefined,
-): Promise<WebSearchOutcome> {
-  const controller = new AbortController();
-  const onCallerAbort = (): void => controller.abort();
-  if (callerSignal) {
-    if (callerSignal.aborted) controller.abort();
-    else callerSignal.addEventListener("abort", onCallerAbort);
-  }
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  // Do not pin the event loop on the timeout.
-  (timer as unknown as { unref?: () => void }).unref?.();
-
-  let raw: RawProviderResponse;
-  try {
-    raw = await provider.search(
-      query,
-      maxResults,
-      { ...(apiKey !== undefined ? { apiKey } : {}) },
-      controller.signal,
-    );
-  } catch (err) {
-    return controller.signal.aborted
-      ? buildTimeoutOutcome(provider.id, timeoutMs)
-      : buildNetworkOutcome(provider.id, err);
-  } finally {
-    clearTimeout(timer);
-    if (callerSignal) callerSignal.removeEventListener("abort", onCallerAbort);
-  }
-
-  // Map provider HTTP status to a categorical WebSearchErrorKind.
-  const httpError = classifyHttpStatus(provider.id, raw);
-  if (httpError) {
-    return {
-      ok: false,
-      provider: provider.id,
-      results: [],
-      error: httpError,
-    };
-  }
-
-  // 2xx with parseError surfaces as a `parse` failure (Requirement 6.5).
-  if (raw.parseError) {
-    return {
-      ok: false,
-      provider: provider.id,
-      results: [],
-      error: {
-        kind: "parse",
-        provider: provider.id,
-        message: `${provider.displayName}: response parse error (${raw.parseError})`,
-      },
-    };
-  }
-
-  // Filter and validate hits per Requirement 7.3, soft-boost high-trust
-  // hosts, then truncate so official sources surface earlier when present.
-  const filtered: SearchResult[] = [];
-  for (const hit of raw.hits) {
-    const normalised = normaliseHit(hit);
-    if (!normalised) continue;
-    filtered.push(normalised);
-  }
-  filtered.sort(
-    (a, b) => trustHostScore(b.url) - trustHostScore(a.url),
-  );
-  const truncated = filtered.slice(0, maxResults);
-
-  return {
-    ok: true,
-    provider: provider.id,
-    results: truncated,
-  };
-}
-
-/** Soft boost for official / major-wire hosts (stable sort key only). */
-function trustHostScore(url: string): number {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    if (
-      host.endsWith(".gov") ||
-      host.endsWith(".gov.uk") ||
-      host.endsWith(".gov.au") ||
-      host.endsWith(".europa.eu") ||
-      host === "wikipedia.org" ||
-      host.endsWith(".wikipedia.org")
-    ) {
-      return 3;
-    }
-    if (
-      host === "bbc.co.uk" ||
-      host.endsWith(".bbc.co.uk") ||
-      host === "bbc.com" ||
-      host.endsWith(".bbc.com") ||
-      host === "reuters.com" ||
-      host.endsWith(".reuters.com") ||
-      host === "apnews.com" ||
-      host.endsWith(".apnews.com") ||
-      host === "theguardian.com" ||
-      host.endsWith(".theguardian.com") ||
-      host === "nytimes.com" ||
-      host.endsWith(".nytimes.com") ||
-      host.endsWith(".who.int") ||
-      host.endsWith(".un.org")
-    ) {
-      return 2;
-    }
-    if (
-      host === "github.com" ||
-      host.endsWith(".github.io") ||
-      host.endsWith(".mozilla.org") ||
-      host.endsWith(".microsoft.com") ||
-      host.endsWith(".apple.com") ||
-      host.endsWith(".google.com") ||
-      host.endsWith(".cloudflare.com")
-    ) {
-      return 1;
-    }
-  } catch {
-    // ignore invalid URLs
-  }
-  return 0;
-}
-
-// ---------------------------------------------------------------------------
-// Argument validation
-// ---------------------------------------------------------------------------
 
 interface ValidArgs {
   ok: true;
@@ -501,11 +175,6 @@ interface InvalidArgs {
   queryLength: number;
 }
 
-/**
- * Synchronous validation of {@link WebSearchArgs} per Requirements 1.1,
- * 1.2, 1.5, 1.6. Returns the trimmed query and a concrete `maxResults`
- * value so downstream code does not need to re-derive defaults.
- */
 function validateArgs(args: WebSearchArgs): ValidArgs | InvalidArgs {
   const rawQuery = args?.query;
   if (typeof rawQuery !== "string") {
@@ -545,150 +214,8 @@ function validateArgs(args: WebSearchArgs): ValidArgs | InvalidArgs {
   return { ok: true, query: trimmed, maxResults, queryLength: len };
 }
 
-// ---------------------------------------------------------------------------
-// Hit normalisation (Requirement 7.3)
-// ---------------------------------------------------------------------------
 
-const URL_INVALID_CHARS_RE = /[\s\u0000-\u001f\u007f]/;
 
-function normaliseHit(
-  hit: { title?: string; url?: string; snippet?: string },
-): SearchResult | undefined {
-  const url = typeof hit.url === "string" ? hit.url : "";
-  if (url.length === 0) return undefined;
-  if (URL_INVALID_CHARS_RE.test(url)) return undefined;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return undefined;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return undefined;
-  }
-
-  const title = typeof hit.title === "string" ? hit.title.trim() : "";
-  if (title.length === 0) return undefined;
-  const clampedTitle = title.slice(0, MAX_TITLE_LENGTH);
-
-  const snippet = typeof hit.snippet === "string" ? hit.snippet : "";
-  const clampedSnippet = snippet.slice(0, MAX_SNIPPET_LENGTH);
-
-  return {
-    title: clampedTitle,
-    url,
-    snippet: clampedSnippet,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Error helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Map provider HTTP status codes to a {@link WebSearchErrorKind} per the
- * design's error matrix. Returns `undefined` when the status is in the
- * 2xx range so the caller can move on to body classification.
- */
-function classifyHttpStatus(
-  id: SearchProviderId,
-  raw: RawProviderResponse,
-): WebSearchError | undefined {
-  const provider = searchProviders[id];
-  const displayName = provider?.displayName ?? id;
-  const { status } = raw;
-  // Only a plain 200 carries a real results page. Other 2xx codes —
-  // notably the HTTP 202 anti-bot challenge that DuckDuckGo's
-  // html/lite endpoints now return — are NOT results pages. Treating
-  // them as success made the handler parse zero hits and report the
-  // misleading literal "No results found.", which in turn made the
-  // agent loop. Surface them as an actionable error instead.
-  if (status === 200) return undefined;
-  if (status > 200 && status < 300) {
-    return {
-      kind: "http",
-      provider: id,
-      status,
-      message: `${displayName}: received HTTP ${status} instead of a results page (typically an anti-bot challenge). Configure a keyed provider with \`clai search-provider brave\` (or \`tavily\`) and \`clai set <provider> <KEY>\`.`,
-    };
-  }
-  if (status === 401 || status === 403) {
-    return {
-      kind: "auth",
-      provider: id,
-      status,
-      message: `${displayName} authentication failed (HTTP ${status}). Run \`clai set ${id}\` to update the key.`,
-    };
-  }
-  if (status === 429) {
-    return {
-      kind: "rate-limit",
-      provider: id,
-      status,
-      message: `${displayName} rate-limited (HTTP 429). Retry later.`,
-    };
-  }
-  if (status >= 500 && status < 600) {
-    return {
-      kind: "server",
-      provider: id,
-      status,
-      message: `${displayName} server error (HTTP ${status}).`,
-    };
-  }
-  if (status === 0) {
-    return {
-      kind: "network",
-      provider: id,
-      message: `${displayName}: provider returned no response (status=0).`,
-    };
-  }
-  return {
-    kind: "http",
-    provider: id,
-    status,
-    message: `${displayName}: HTTP ${status}.`,
-  };
-}
-
-function buildTimeoutOutcome(
-  id: SearchProviderId,
-  timeoutMs: number,
-): WebSearchOutcome {
-  const display = searchProviders[id]?.displayName ?? id;
-  return {
-    ok: false,
-    provider: id,
-    results: [],
-    error: {
-      kind: "timeout",
-      provider: id,
-      message: `${display}: timeout after ${Math.round(timeoutMs / 1000)}s`,
-    },
-  };
-}
-
-function buildNetworkOutcome(
-  id: SearchProviderId,
-  err: unknown,
-): WebSearchOutcome {
-  const display = searchProviders[id]?.displayName ?? id;
-  const detail = err instanceof Error ? err.message : String(err);
-  return {
-    ok: false,
-    provider: id,
-    results: [],
-    error: {
-      kind: "network",
-      provider: id,
-      message: `${display}: network failure (${detail})`,
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Audit + ToolResult
-// ---------------------------------------------------------------------------
 
 async function emitAudit(
   outcome: WebSearchOutcome,
@@ -700,16 +227,9 @@ async function emitAudit(
       buildSearchAuditPayload(outcome, queryLength),
     );
   } catch {
-    // never let audit failures bubble up
   }
 }
 
-/**
- * Best-effort active-provider lookup that never throws even when the
- * config store is mid-migration or unreadable. Falls back to
- * `"duckduckgo"` so a fresh install still works keylessly per
- * Requirement 3.5.
- */
 function safeProvider(): SearchProviderId {
   try {
     return getActiveSearchProvider();
@@ -718,23 +238,14 @@ function safeProvider(): SearchProviderId {
   }
 }
 
-/**
- * Compose a successful {@link ToolResult}. The output starts with a one
- * line summary so the agent sees the result count and provider before
- * the JSON, then includes the structured `{results: [...]}` block.
- */
 function successResult(outcome: WebSearchOutcome): ToolResult {
   if (outcome.results.length === 0) {
-    // Requirement 1.7 / 7.4: literal "No results found." string.
     return {
       ok: true,
       output: "No results found.",
       exitCode: 0,
     };
   }
-  // Compact human listing for the model + UI card. Pretty-printed JSON made
-  // tool cards show "··· N lines more ···" and the generic reducer then
-  // dropped the middle hits — models misread that as "search interrupted".
   const n = outcome.results.length;
   const lines: string[] = [
     `web.search complete · ${outcome.provider} · ${n} result${n === 1 ? "" : "s"}`,
@@ -753,7 +264,6 @@ function successResult(outcome: WebSearchOutcome): ToolResult {
     }
     lines.push("");
   }
-  // Single-line JSON appendix for tests/tooling (not pretty-printed).
   lines.push(JSON.stringify({ results: outcome.results }));
   return {
     ok: true,
@@ -779,5 +289,4 @@ function errorResult(outcome: WebSearchOutcome): ToolResult {
   };
 }
 
-// Re-export for convenience to match the symmetric `webFetch` shape.
 export type { WebSearchOutcome, WebSearchErrorKind };

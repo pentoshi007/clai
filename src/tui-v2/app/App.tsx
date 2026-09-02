@@ -1,17 +1,8 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Responsive v2 shell (V2-032, Phase 7 plan/overlay host).
- *
- * Legacy-style layout: scrollable transcript (intro card + messages), optional
- * plan, completion menu + composer at the bottom, OverlayHost for pickers.
- *
- * Confirm/secret dock above the composer (in-flow). Pickers, pager, and jobs
- * live in a full-bleed absolute host so they never reflow the intro card.
- * Plan split/overlay reserves chat width so the agent card stays intact.
- */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { TerminalDimensionsContext } from "../hooks/terminal-dimensions.js";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import {
   COMPOSER_MAX_HEIGHT,
@@ -74,7 +65,6 @@ export function App(): ReactNode {
   const services = useServices();
   const theme = useTheme();
   const [focusContext, setFocusContext] = useState(services.focus.activeContext());
-  /** User / auto request to show the task pane. */
   const [planVisible, setPlanVisible] = useState(false);
   const plan = usePlan(services.plan);
   const overlay = useOverlayState(services.overlay);
@@ -87,15 +77,12 @@ export function App(): ReactNode {
   const [escapeCancelArmed, setEscapeCancelArmed] = useState(false);
   const hasDraft = useHasDraft();
   const seenPlanKey = useRef<string | undefined>(undefined);
-  /** Seed the composer when the user clicks Edit on a queued prompt. */
   const [composerSeed, setComposerSeed] = useState<
     { token: number; text: string } | undefined
   >(undefined);
   const [contextLimitEditing, setContextLimitEditing] = useState(false);
 
-  // Smooth enter/exit (~120ms in / ~100ms out); stays mounted through exit.
   const panePresence = usePanePresence(planVisible);
-  /** Layout + focus treat the pane as present until exit finishes. */
   const planPresent = panePresence.mounted;
 
   useEffect(() => services.focus.onChange(setFocusContext), [services.focus]);
@@ -132,12 +119,9 @@ export function App(): ReactNode {
     };
   }, []);
 
-  // Startup update notice: one toast when a newer release exists. Respects the
-  // 4h check interval and offline/disabled flags so it never spams every launch.
   useEffect(() => {
     let cancelled = false;
     void maybeShowUpdateToast(services, () => cancelled).catch(() => {
-      // never let a startup check crash the shell
     });
     return () => {
       cancelled = true;
@@ -156,7 +140,6 @@ export function App(): ReactNode {
     setPlanVisible(true);
   }, [plan]);
 
-  // Reserve split/overlay space while the pane is mounted (incl. exit anim).
   const terminalWidth = Number.isFinite(width)
     ? Math.max(0, Math.floor(width))
     : 0;
@@ -209,10 +192,6 @@ export function App(): ReactNode {
     const chord = chordFromKeyEvent(key);
     if (consumeCancellationKeyRepeat(key, chord)) return;
 
-    // Password / confirm overlays used to swallow ALL global keys (early return
-    // when overlay !== none). Then Ctrl+C only aborted via SIGINT and left the
-    // secret UI stuck; Esc never reached App if the hidden input lost focus.
-    // Still allow cancel/interrupt while a blocking prompt is open.
     if (overlay.kind === "secret" || overlay.kind === "confirm" || overlay.kind === "scope-editor") {
       if (chord === "escape" || chord === "ctrl+c") {
         key.preventDefault();
@@ -240,7 +219,6 @@ export function App(): ReactNode {
         handleEscapeCancellation(dismissed);
         return;
       }
-      // Typing / y-n / etc. handled by the modal's own useKeyboard.
       return;
     }
 
@@ -249,25 +227,35 @@ export function App(): ReactNode {
         key.preventDefault();
         services.overlay.close();
         handleEscapeCancellation(true);
+        return;
+      }
+      if (chord === "ctrl+c") {
+        key.preventDefault();
+        const now = Date.now();
+        const doublePress =
+          lastCtrlC.current > 0 && now - lastCtrlC.current < CTRL_C_QUIT_WINDOW_MS;
+        services.cancel.abortForeground();
+        if (doublePress) {
+          services.requestExit();
+          return;
+        }
+        lastCtrlC.current = now;
+        notifyWarn(services, "Ctrl+C again to exit", {
+          key: "interrupt",
+          durationMs: 2200,
+        });
       }
       return;
     }
 
     if (contextLimitEditing && chord !== "ctrl+c") return;
 
-    // Esc from the transcript region binds to selection.clear, which shadowed
-    // the global app.cancel — so double-Esc could never cancel a turn/queue/
-    // Responder jobs unless the composer had focus. Clear an active selection
-    // first; otherwise run the same double-Esc cancel every other region gets.
     if (chord === "escape" && focusContext === "transcript" && !services.selection.hasSelection()) {
       key.preventDefault();
       handleEscapeCancellation(false);
       return;
     }
 
-    // Tab belongs to the completion menu while the composer is active. The
-    // previous global focus binding consumed it first, which made `/mod` + Tab
-    // appear to freeze the input instead of completing `/model`.
     if (focusContext === "composer" && chord === "tab") return;
     const action = services.router.resolve(chord, focusContext);
     if (!action) return;
@@ -277,10 +265,6 @@ export function App(): ReactNode {
         handleEscapeCancellation(services.overlay.cancelBlockingPrompt());
         break;
       case "app.interrupt": {
-        // Ctrl+C: first press aborts if running (and arms quit); second press
-        // within the window exits. Idle: first arms, second exits.
-        // Important: while a hung tool is still "running", a second Ctrl+C
-        // must still exit — otherwise cancel that never settles traps the UI.
         key.preventDefault();
         services.overlay.cancelBlockingPrompt();
         const now = Date.now();
@@ -354,8 +338,6 @@ export function App(): ReactNode {
         break;
       case "plan.toggle-detail":
         key.preventDefault();
-        // Ctrl+P: full plan detail pager. Reload from disk if memory is empty
-        // (e.g. after /history resume before the plan controller was refreshed).
         void (async () => {
           let live = services.plan.current() ?? plan;
           if (!live) {
@@ -392,13 +374,10 @@ export function App(): ReactNode {
         toggleOutput();
         break;
       case "transcript.top":
-        // ^U on transcript/pager focus (not global — composer owns Ctrl+U for
-        // line-delete / empty-draft jump in composer-editor).
         key.preventDefault();
         jumpChatTop();
         break;
       case "transcript.bottom":
-        // ^D — absolute end of the chat (works from composer).
         key.preventDefault();
         jumpChatBottom();
         break;
@@ -449,9 +428,6 @@ export function App(): ReactNode {
     overlayPaneHeight,
   );
 
-  // Composer only owns the keyboard when the focus region is composer.
-  // Clicking the transcript leaves focus there so ↑/↓ scroll the chat instead
-  // of walking prompt history in the textarea.
   const composerFocused =
     overlay.kind === "none" &&
     focusContext === "composer" &&
@@ -482,8 +458,6 @@ export function App(): ReactNode {
 
   function handleEscapeCancellation(dismissed: boolean): void {
     const now = Date.now();
-    // One physical Esc can reach both this global handler and the composer's
-    // handler; collapse those into a single logical press.
     if (
       lastEscapeHandledAt.current > 0 &&
       now - lastEscapeHandledAt.current < ESC_SAME_PRESS_MS
@@ -546,13 +520,8 @@ export function App(): ReactNode {
     clearEscapeCancellation();
   }
 
-  /**
-   * Wheel outside focused regions that own their own scroll (plan pane)
-   * scrolls the chat. Composer forwards wheel to chat itself (classic).
-   */
   function onAppWheel(event: MouseEvent): void {
     if (!event.scroll || overlay.kind !== "none") return;
-    // Plan owns its ScrollBox — never steal its wheel into chat.
     if (focusContext === "plan") return;
     event.preventDefault();
     event.stopPropagation();
@@ -564,15 +533,12 @@ export function App(): ReactNode {
     if (dy !== 0) transcriptScrollPort.scrollBy(dy);
   }
 
-  /** Plan pane wheel: claim focus + stop bubble so chat does not scroll too. */
   function onPlanWheel(event: MouseEvent): void {
     if (!event.scroll) return;
     event.stopPropagation();
     services.focus.focusRegion("plan");
-    // Native ScrollBox under PlanView handles the actual list motion.
   }
 
-  /** Keep chat edge-scrolling while drag-selecting even over composer/status. */
   function onAppMouseDrag(event: MouseEvent): void {
     if (!event.isDragging || overlay.kind !== "none") return;
     transcriptScrollPort.updateAutoScroll(event.x, event.y);
@@ -634,8 +600,6 @@ export function App(): ReactNode {
   }
 
   function toggleTasksPane(): void {
-    // Same path as Ctrl+H — opening loads the active plan from disk when the
-    // in-memory projection is empty.
     setPlanVisible((visible) => {
       const next = !visible;
       if (next && !services.plan.current()) {
@@ -661,6 +625,7 @@ export function App(): ReactNode {
   }
 
   return (
+    <TerminalDimensionsContext.Provider value={{ width, height }}>
     <box
       style={{
         width: terminalWidth,
@@ -674,8 +639,7 @@ export function App(): ReactNode {
       onMouseUp={onAppMouseUp}
       onMouseDragEnd={onAppMouseUp}
     >
-      {/* Padded content column — overlays are siblings outside this box so
-          absolute full-bleed hosts never inherit padding and clip chrome. */}
+      {}
       <box
         style={{
           flexGrow: 1,
@@ -689,13 +653,10 @@ export function App(): ReactNode {
         <box style={{ flexGrow: 1, flexDirection: "row", width: "100%" }}>
           <box
             style={{
-              // Explicit width so OpenTUI does not let the plan panel steal
-              // columns from under a flex-grown intro card mid-frame.
               width: chatContentWidth,
               flexGrow: splitPlanW > 0 || overlayPlanW > 0 ? 0 : 1,
               flexShrink: 1,
               backgroundColor: theme.background,
-              // Keep transcript text off the plan border when the task pane is open.
               paddingRight: planChatGap > 0 ? planChatGap : 0,
             }}
           >
@@ -717,7 +678,6 @@ export function App(): ReactNode {
                 width: splitPlanW,
                 height: "100%",
                 flexShrink: 0,
-                // Same electric aqua as the composer input border.
                 borderColor: theme.inputBorder,
                 backgroundColor: theme.statusBackground,
               }}
@@ -729,7 +689,7 @@ export function App(): ReactNode {
           ) : null}
         </box>
 
-        {/* Queued prompts (send after current turn; click Send now / Edit). */}
+        {}
         <QueuePanel
           services={services}
           theme={theme}
@@ -740,7 +700,7 @@ export function App(): ReactNode {
           }}
         />
 
-        {/* Confirm / secret docked above the input (no full-screen black wash). */}
+        {}
         <OverlayHost
           services={services}
           theme={theme}
@@ -761,7 +721,7 @@ export function App(): ReactNode {
           }
         />
 
-        {/* Completion menu + input live here; menu grows upward into flex space. */}
+        {}
         <ComposerEditor
           services={services}
           theme={theme}
@@ -825,14 +785,10 @@ export function App(): ReactNode {
           borderStyle="rounded"
           style={{
             position: "absolute",
-            // Slide in from above (same ease as toasts), hold, slide out.
             top: overlayAnimTop,
-            // Sit flush with the right edge of the padded content column
-            // so the plan pane aligns with where the input box ends.
             right: horizontalPadding,
             width: widthBudget.overlayPlanWidth,
             height: overlayPaneHeight,
-            // Same electric aqua as the composer input border.
             borderColor: theme.inputBorder,
             backgroundColor: theme.statusBackground,
             zIndex: 50,
@@ -843,8 +799,7 @@ export function App(): ReactNode {
           {planPanel}
         </box>
       ) : null}
-      {/* Full-bleed overlay host (pickers, Ctrl+P pager, prompt actions, …).
-          Sibling of the padded column so open/close never reflows the intro. */}
+      {}
       <OverlayHost
         services={services}
         theme={theme}
@@ -852,8 +807,7 @@ export function App(): ReactNode {
         height={height}
       />
 
-      {/* Right-edge copy/status toasts — outside padded column so they never
-          reflow chat; z-index above plan overlay, below blocking overlays. */}
+      {}
       <ToastHost
         toast={services.toast}
         theme={theme}
@@ -861,6 +815,7 @@ export function App(): ReactNode {
         termHeight={height}
       />
     </box>
+    </TerminalDimensionsContext.Provider>
   );
 }
 

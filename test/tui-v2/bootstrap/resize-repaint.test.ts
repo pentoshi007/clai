@@ -4,9 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   RESIZE_REPAINT_SEQUENCE,
+  createCoordinatedFlush,
   forceFullRepaint,
   installResizeRepaint,
   repaintAttachedScreen,
+  type CoordinatedFlushRenderer,
   type RepaintScheduler,
   type ResizeListener,
 } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
@@ -216,7 +218,7 @@ describe("OpenTUI resize repaint", () => {
       join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
       "utf8",
     );
-    expect(source).toContain("requestRepaint: () => forceFullRepaint(renderer)");
+    expect(source).toContain("requestRepaint: () => undefined");
   });
 
   it("clears on every settled resize so shrink cannot leave stale wide rows", () => {
@@ -349,13 +351,86 @@ describe("OpenTUI resize repaint", () => {
     expect(source).toContain("disposeResizeRepaint,");
   });
 
-  it("writes repaint bytes past a hijacked stdout so OpenTUI cannot queue or drop them", () => {
+  it("routes repaint bytes through a coordinated flush so they cannot interleave with a native frame", () => {
     const source = readFileSync(
       join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
       "utf8",
     );
-    expect(source).toContain("write: (text) => writeTerminalDirect(text)");
+    expect(source).toContain("createCoordinatedFlush(renderer");
+    expect(source).toContain("write: (text) => void flush(text)");
+    expect(source).not.toContain("write: (text) => writeTerminalDirect(text)");
     expect(source).not.toContain("write: (text) => void process.stdout.write(text)");
+  });
+
+  describe("createCoordinatedFlush", () => {
+    function flushRenderer(): CoordinatedFlushRenderer & {
+      calls: string[];
+      idleCalls: () => number;
+    } {
+      const calls: string[] = [];
+      let idleCount = 0;
+      return {
+        calls,
+        pause: () => void calls.push("pause"),
+        suspend: () => void calls.push("suspend"),
+        resume: () => void calls.push("resume"),
+        requestRender: () => void calls.push("request-render"),
+        currentRenderBuffer: { clear: () => void calls.push("buffer-clear") },
+        idle: () => {
+          idleCount += 1;
+          return Promise.resolve();
+        },
+        idleCalls: () => idleCount,
+      };
+    }
+
+    it("suspends, waits idle, writes, repaints, then resumes so the write never interleaves a frame or re-reads stdin", async () => {
+      const renderer = flushRenderer();
+      const flush = createCoordinatedFlush(renderer, (t) =>
+        renderer.calls.push(`write:${t}`),
+      );
+      await flush("CLEAR");
+      expect(renderer.calls).toEqual([
+        "suspend",
+        "write:CLEAR",
+        "buffer-clear",
+        "request-render",
+        "resume",
+      ]);
+      expect(renderer.idleCalls()).toBe(1);
+    });
+
+    it("serializes concurrent flushes so two writes cannot interleave with each other", async () => {
+      const renderer = flushRenderer();
+      const flush = createCoordinatedFlush(renderer, (t) =>
+        renderer.calls.push(`write:${t}`),
+      );
+      const p1 = flush("A");
+      const p2 = flush("B");
+      await Promise.all([p1, p2]);
+      expect(renderer.calls).toEqual([
+        "suspend",
+        "write:A",
+        "buffer-clear",
+        "request-render",
+        "resume",
+        "suspend",
+        "write:B",
+        "buffer-clear",
+        "request-render",
+        "resume",
+      ]);
+      expect(renderer.idleCalls()).toBe(2);
+    });
+
+    it("still resumes if the write throws, so the render loop is never left paused", async () => {
+      const renderer = flushRenderer();
+      const flush = createCoordinatedFlush(renderer, () => {
+        throw new Error("fd write failed");
+      });
+      await flush("X");
+      expect(renderer.calls[renderer.calls.length - 1]).toBe("resume");
+    });
   });
 
   it("keeps every exit sequence free of cursor movement so the card and the screen survive", () => {

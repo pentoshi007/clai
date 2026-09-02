@@ -1,14 +1,3 @@
-/**
- * Optional *structured* polish for known scanner outputs (nmap open ports,
- * ffuf hits, …). There is **no** generic keyword-ranker — arbitrary shell/fs
- * output is never "reduced" by guessing what looks interesting.
- *
- * Philosophy (clai):
- * - Eliminate noise at the **command** (flags, matchers, quiet modes).
- * - Long runs → durable background jobs with live artifact files; model uses
- *   shell.tail / head+tail / full file when needed.
- * - Model context gets honest head+tail + artifact path, not invented omissions.
- */
 
 import { ffufReducer } from "../reducers/ffuf.js";
 import { gobusterReducer } from "../reducers/gobuster.js";
@@ -29,11 +18,6 @@ function commandHead(command: string): string {
   return command.trim().split(/\s+/)[0]?.replace(/^.*\//, "") ?? "";
 }
 
-/**
- * Structured reducers only for tools that emit parseable *findings*.
- * Returns null when the caller should use raw head+tail (default for all
- * other tools — including shell.exec whoami, npm, ls, …).
- */
 export function pickReducer(context: PolicyContext): Reducer | null {
   if (context.toolName === "net.scan" || context.toolName === "pentest.recon") {
     return nmapReducer;
@@ -72,7 +56,6 @@ export function reduceToolOutput(
 ): ReducerOutput {
   const reducer = pickReducer(context);
   if (!reducer) {
-    // No post-hoc keyword filtering — caller formats with head/tail.
     return { summary: raw };
   }
   return reducer(raw, {
@@ -81,7 +64,6 @@ export function reduceToolOutput(
   });
 }
 
-/** True when a specialized (non-identity) reducer will run. */
 export function hasStructuredReducer(context: PolicyContext): boolean {
   return pickReducer(context) !== null;
 }

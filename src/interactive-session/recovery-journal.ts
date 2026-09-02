@@ -1,10 +1,3 @@
-/**
- * Crash-recovery journal for live interactive sessions.
- *
- * Interactive sessions are never reattachable: this file exists only so a crash
- * cannot leave an orphaned process tree behind. It therefore stores cleanup
- * evidence and nothing else — no command, cwd, input, environment, or output.
- */
 
 import { createHash, randomUUID } from "node:crypto";
 import {

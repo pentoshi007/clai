@@ -3,10 +3,6 @@ import { sanitizeTitle } from "../../agent/session-title.js";
 import { getConfig, getProviderModel } from "../../store/config.js";
 import { completeWithProvider } from "../../llm/router.js";
 
-/**
- * Naming traffic is auxiliary: it keeps its own cache-affinity identity so a
- * short, unrelated prompt can never evict the turn/compaction cached prefix.
- */
 export async function completeForSessionNaming(
   messages: ChatMessage[],
   route: { provider?: ProviderId | undefined; model?: string | undefined },

@@ -69,11 +69,6 @@ function logicalPagerLines(body: string, width: number, format: PagerFormat): re
   return body.replace(/\r\n?/g, "\n").split("\n");
 }
 
-/**
- * Prepare pager rows for the exact body width. Number gutters consume two
- * columns plus their digit width, so wrapping is iterated until the gutter
- * width and resulting line count agree.
- */
 export function pagerLines(
   body: string,
   columns: number,
@@ -99,12 +94,6 @@ export interface PagerViewModel {
   readonly searchLines: readonly string[];
 }
 
-/**
- * One-slot memo for the expensive body → wrapped/searched lines pipeline
- * (markdown render + width-iterated wrap + ANSI strip). Key handlers and
- * the renderer both call this every interaction; bodies are immutable
- * strings, so a same-reference hit skips the whole recompute.
- */
 let pagerCache:
   | {
       readonly body: string;

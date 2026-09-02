@@ -1,12 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ChatMessage } from "../types.js";
 
-// Failed compaction must not be retried on every iteration: the transcript has
-// not changed, so the same provider call would fail the same way while burning
-// cost, latency and rate limit. An attempt is identified by everything that can
-// change its outcome; a repeat is only allowed after a cooldown or a real state
-// change.
 export const COMPACTION_RETRY_COOLDOWN_MS = 60_000;
+
+export const COMPACTION_MAX_ATTEMPTS = 3;
 
 export interface CompactionAttemptKeyInput {
   readonly messages: readonly ChatMessage[];
@@ -53,30 +50,47 @@ export function compactionAttemptKey(input: CompactionAttemptKeyInput): string {
     .slice(0, 32);
 }
 
-// Tracks attempts that failed so an unchanged retry is suppressed.
 export class CompactionAttemptLedger {
-  private readonly failures = new Map<string, number>();
+  private readonly failures = new Map<
+    string,
+    { readonly failedAt: number; readonly count: number; readonly exhausted: boolean }
+  >();
 
   constructor(
     private readonly cooldownMs: number = COMPACTION_RETRY_COOLDOWN_MS,
     private readonly now: () => number = Date.now,
+    private readonly maxAttempts: number = COMPACTION_MAX_ATTEMPTS,
   ) {}
 
-  // True when this exact attempt failed recently and must not be repeated.
   isSuppressed(key: string): boolean {
-    const failedAt = this.failures.get(key);
-    if (failedAt === undefined) return false;
-    if (this.now() - failedAt < this.cooldownMs) return true;
+    const record = this.failures.get(key);
+    if (record === undefined) return false;
+    if (record.exhausted) return true;
+    if (this.now() - record.failedAt < this.cooldownMs) return true;
     this.failures.delete(key);
     return false;
   }
 
   recordFailure(key: string): void {
-    this.failures.set(key, this.now());
+    const prior = this.failures.get(key);
+    const count = (prior?.count ?? 0) + 1;
+    this.failures.set(key, {
+      failedAt: this.now(),
+      count,
+      exhausted: count >= this.maxAttempts,
+    });
   }
 
   recordSuccess(key: string): void {
     this.failures.delete(key);
+  }
+
+  attemptCount(key: string): number {
+    return this.failures.get(key)?.count ?? 0;
+  }
+
+  isExhausted(key: string): boolean {
+    return this.failures.get(key)?.exhausted === true;
   }
 
   clear(): void {

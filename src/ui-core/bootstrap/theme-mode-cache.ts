@@ -13,11 +13,6 @@ function storePath(): string {
   return join(getDataDir(), "terminal-theme-mode.json");
 }
 
-/**
- * A terminal's light/dark mode is stable, but the OSC query that reports it can
- * time out. Without a remembered answer a timeout silently falls back to a
- * default and the whole UI changes hue between launches.
- */
 function terminalKey(
   env: Readonly<Record<string, string | undefined>>,
 ): string {

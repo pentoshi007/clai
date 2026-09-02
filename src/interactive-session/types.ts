@@ -1,11 +1,3 @@
-/**
- * Public domain contracts for agent-controlled interactive terminal sessions.
- *
- * Deliberate non-goals encoded here: no user keyboard passthrough, no transfer
- * of the host controlling terminal, no reattachment after restart, no screen
- * emulation, and no command rewriting. Nothing in this module carries raw
- * commands, input bytes, environment values, or unredacted output.
- */
 
 export type SessionOperation =
   | "start"
@@ -90,7 +82,6 @@ export type SessionInput =
 
 export type SessionInputKind = SessionInput["kind"];
 
-// --- Process outcome and identity ---------------------------------------
 
 export interface ProcessOutcome {
   readonly exitCode?: number | undefined;
@@ -100,12 +91,9 @@ export interface ProcessOutcome {
 
 export type ProcessIdentityComparison = "match" | "mismatch" | "gone" | "unknown";
 
-// --- Output ------------------------------------------------------------
 
 export interface OutputEvent {
-  /** Inclusive canonical safe-byte offset. */
   readonly startCursor: number;
-  /** Exclusive canonical safe-byte offset. */
   readonly endCursor: number;
   readonly stream: OutputStream;
   readonly observedAt: number;
@@ -117,7 +105,6 @@ export interface PresentedOutputEvent {
   readonly endCursor: number;
   readonly stream: OutputStream;
   readonly observedAt: number;
-  /** Inert text for `plain`, base64 for `encoded`. */
   readonly content: string;
   readonly decodingLoss?: boolean | undefined;
 }
@@ -147,7 +134,6 @@ export interface OutputPage {
   readonly artifact: ArtifactReference;
 }
 
-// --- Records and summaries ---------------------------------------------
 
 export interface InteractiveSessionRecord {
   readonly id: string;
@@ -168,7 +154,6 @@ export interface InteractiveSessionRecord {
   cleanupVerified?: boolean | undefined;
 }
 
-/** Immutable, non-disclosing projection handed to callers. */
 export interface SessionSummary {
   readonly id: string;
   readonly state: SessionState;
@@ -187,7 +172,6 @@ export interface SessionSummary {
   readonly cleanupVerified?: boolean | undefined;
 }
 
-// --- Requests ----------------------------------------------------------
 
 export interface OwnerScoped {
   readonly ownerId: string;
@@ -232,7 +216,6 @@ export interface CloseRequest extends OwnerScoped {
   readonly deadlineMs?: number | undefined;
 }
 
-// --- Results -----------------------------------------------------------
 
 export interface StartResult {
   readonly operation: "start";
@@ -313,7 +296,6 @@ export type InteractiveSessionToolResult =
   | ResizeResult
   | CloseResult;
 
-// --- Stable errors -----------------------------------------------------
 
 export const STABLE_ERROR_CODES = [
   "INVALID_REQUEST",
@@ -341,10 +323,6 @@ export type StableErrorCode = (typeof STABLE_ERROR_CODES)[number];
 
 export type StableErrorDetailValue = string | number | boolean;
 
-/**
- * Detail keys are allowlisted so a native error, command line, or output byte
- * can never reach a model, transcript, or log through an error payload.
- */
 export const STABLE_ERROR_DETAIL_KEYS = [
   "earliestAvailableCursor",
   "latestCursor",
@@ -386,11 +364,6 @@ export interface StableError {
 const MAX_ERROR_MESSAGE_CHARS = 400;
 const MAX_ERROR_DETAIL_CHARS = 120;
 
-/**
- * Retryability describes whether a fresh caller-decided attempt could help. It
- * never authorizes an automatic retry, and it is false for every code whose
- * failure could already have produced a process or input side effect.
- */
 const NON_RETRYABLE_CODES = new Set<StableErrorCode>([
   "INVALID_REQUEST",
   "INVALID_CONFIGURATION",
@@ -421,7 +394,6 @@ export interface SessionErrorInit {
   readonly sessionId?: string | undefined;
   readonly state?: SessionState | undefined;
   readonly details?: Readonly<Partial<Record<StableErrorDetailKey, StableErrorDetailValue>>> | undefined;
-  /** Only `LAUNCH_FAILED` and `PERSIST_FAILED` may set this explicitly. */
   readonly retryable?: boolean | undefined;
 }
 
@@ -435,12 +407,9 @@ function boundDetailValue(value: StableErrorDetailValue): StableErrorDetailValue
 function resolveRetryable(init: SessionErrorInit): boolean {
   if (NON_RETRYABLE_CODES.has(init.code)) return false;
   if (RETRYABLE_CODES.has(init.code)) return init.retryable ?? true;
-  // LAUNCH_FAILED / PERSIST_FAILED are retryable only when the caller proved no
-  // process side effect was possible.
   return init.retryable ?? false;
 }
 
-/** Single construction point for every interactive-session failure. */
 export function sessionError(init: SessionErrorInit): StableError {
   const details: Partial<Record<StableErrorDetailKey, StableErrorDetailValue>> = {};
   for (const key of STABLE_ERROR_DETAIL_KEYS) {
@@ -462,7 +431,6 @@ export function sessionError(init: SessionErrorInit): StableError {
   };
 }
 
-/** Carrier so internal layers can reject with a StableError and be unwrapped. */
 export class SessionErrorException extends Error {
   constructor(readonly stable: StableError) {
     super(stable.message);

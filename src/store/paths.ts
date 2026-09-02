@@ -35,22 +35,10 @@ export function getLogsDirRoot(): string {
   return envPath("CLAI_LOG_DIR") ?? join(getDataDir(), "logs");
 }
 
-/**
- * Global (non-session) tool-output root — used by `clear-artifacts` and as
- * a fallback when no session workspace is bound (one-shot / early boot).
- */
 export function getGlobalArtifactDir(): string {
   return envPath("CLAI_ARTIFACT_DIR") ?? join(getDataDir(), "outputs");
 }
 
-/**
- * Tool-output directory for the current session.
- *
- * Prefer the active session's `{workspace}/temp` so each history session
- * keeps its run outputs isolated. Explicit `CLAI_ARTIFACT_DIR` always wins
- * (tests + power-user override). Falls back to the global outputs dir when
- * no session is bound.
- */
 export function getArtifactDir(): string {
   const configured = envPath("CLAI_ARTIFACT_DIR");
   if (configured) return configured;

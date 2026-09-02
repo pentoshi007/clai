@@ -2,6 +2,8 @@ node_modules/
 dist/
 release/
 coverage/
+.stryker-tmp/
+refactor/evidence/phase-0/reports/mutation/
 .env
 .DS_Store
 .clai/
@@ -31,3 +33,5 @@ typescript
 
 *.bun-build
 prompt.txt
+clai-vs-opencode-cache-report.md
+*-cache-report.md

@@ -1,15 +1,7 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Startup intro / model card for OpenTUI v2.
- *
- * Same layout and colors as the legacy Ink TUI: chalk lines from
- * `renderIntroHeaderLines` converted to OpenTUI `StyledText` so chips,
- * badges, and the wordmark gradient keep their colors (not B&W).
- * Always the first scroll child so it scrolls with chat.
- */
 
 import { useMemo, type ReactNode } from "react";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { homedir } from "node:os";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -23,7 +15,6 @@ import { safeCwd } from "../../../os/cwd.js";
 export interface IntroCardProps {
   readonly services: AppServices;
   readonly theme: Theme;
-  /** Available width of the chat pane (fallback: full terminal width). */
   readonly width?: number | undefined;
 }
 
@@ -34,7 +25,7 @@ function displayWorkdir(workdir: string): string {
 
 export function IntroCard(props: IntroCardProps): ReactNode {
   const { services, width: widthProp } = props;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const width = widthProp ?? Math.max(56, termWidth - 4);
 
   const session = services.session.getState();
@@ -43,9 +34,6 @@ export function IntroCard(props: IntroCardProps): ReactNode {
   const version = getCurrentVersion();
   const workdir = displayWorkdir(safeCwd());
 
-  // Fall back to the configured defaults (never the literal "default") so the
-  // card always shows the real provider and its exact model, matching the
-  // composer meta line, even before the session selection is populated.
   const provider = session.provider ?? cfg.defaultProvider;
   const model = session.model ?? getProviderModel(provider);
   const variant = effectiveThinkingEffort(provider, model, cfg.thinking) ?? "off";

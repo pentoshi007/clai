@@ -1,10 +1,3 @@
-/**
- * Single-line stderr spinner for the non-interactive surface (06-ONESHOT §3).
- *
- * Active only when `err` is a TTY. The line is rewritten with `\r` and cleared
- * with `\r\x1b[K` before any other write, so stdout and stderr never interleave
- * mid-line. `clear()` is safe to call when inactive or already cleared.
- */
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 const ASCII_FRAMES = ["-", "\\", "|", "/"] as const;
@@ -32,7 +25,6 @@ export class StreamSpinner {
     return this.active;
   }
 
-  /** Paint (or repaint) the status line; a new label advances the frame. */
   tick(label: string): void {
     if (!this.active) return;
     if (this.painted && label !== this.label) {

@@ -16,7 +16,6 @@ export interface ComposerFrameInput {
   readonly mode: Mode;
   readonly phase: ComposerPhase;
   readonly unicode: boolean;
-  /** provider · model · permission label for the top border (pre-format). */
   readonly metaLabel?: string | undefined;
 }
 
@@ -30,9 +29,7 @@ export interface ComposerFrame {
   readonly mark: string;
   readonly placeholder: string;
   readonly showCaret: boolean;
-  /** Clipped meta label for the top border's right side ("" → no title). */
   readonly meta: string;
-  /** Whether the allocation leaves room for the directory row above the box. */
   readonly showDirectory: boolean;
 }
 
@@ -53,9 +50,6 @@ export function composerPlaceholder(mode: Mode, phase: ComposerPhase): string {
 export function composerFrame(input: ComposerFrameInput): ComposerFrame {
   const width = Math.max(1, Math.floor(input.columns));
   const textWidth = Math.max(1, width - COMPOSER_CHROME_COLS);
-  // The gap + directory rows are part of the composer section's allocation;
-  // they are only shown when the allocator granted room for them on top of
-  // the box.
   const showDirectory =
     input.allocatedRows >= COMPOSER_GAP_ROWS + COMPOSER_DIR_ROWS + COMPOSER_BORDER_ROWS + 1;
   const dirRows = showDirectory ? COMPOSER_GAP_ROWS + COMPOSER_DIR_ROWS : 0;

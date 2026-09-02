@@ -8,10 +8,8 @@ export type CharsetSource =
 
 export interface DecodedText {
   text: string;
-  /** Canonical encoding name reported by TextDecoder. */
   charset: string;
   charsetSource: CharsetSource;
-  /** Original unsupported label when UTF-8 fallback was required. */
   unsupportedCharset?: string;
 }
 
@@ -20,12 +18,6 @@ const CONTENT_TYPE_CHARSET_RE = /(?:^|;)\s*charset\s*=\s*["']?([^;\s"']+)/i;
 const META_CHARSET_RE = /<meta\b[^>]*\bcharset\s*=\s*["']?([^\s"'/>;]+)/i;
 const META_HTTP_EQUIV_RE = /<meta\b[^>]*\bcontent\s*=\s*["'][^"']*charset\s*=\s*([^\s;"']+)/i;
 
-/**
- * Decode a textual HTTP body without silently corrupting legacy encodings.
- * Content-Type wins; HTML meta declarations are a fallback; UTF-8 is the
- * standards-compatible default. Invalid/unsupported labels fall back to
- * UTF-8 with replacement and are reported to the caller.
- */
 export function decodeTextBody(
   body: Buffer | Uint8Array,
   contentType?: string,
@@ -77,9 +69,6 @@ function looksLikeHtml(body: Buffer, contentType: string | undefined): boolean {
 }
 
 function charsetFromHtmlMeta(body: Buffer): string | undefined {
-  // Charset declarations are ASCII-compatible and are required near the
-  // document start. latin1 gives a byte-preserving probe without first
-  // assuming the very encoding we are trying to discover.
   const probe = body.subarray(0, 8_192).toString("latin1");
   return probe.match(META_CHARSET_RE)?.[1]?.trim()
     ?? probe.match(META_HTTP_EQUIV_RE)?.[1]?.trim();

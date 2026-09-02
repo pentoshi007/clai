@@ -19,16 +19,6 @@ export interface ResizeRepaintOptions {
   readonly enabled?: boolean | undefined;
   readonly isSuspended?: (() => boolean) | undefined;
   readonly schedule?: RepaintScheduler | undefined;
-  /**
-   * Forces the renderer to redraw every cell after the clear.
-   *
-   * OpenTUI emits `resize` and then calls `requestRender()` itself, so the
-   * coalesced clear lands *after* the renderer has already painted the new
-   * geometry. The clear wipes that frame, and the renderer will not redraw it
-   * because its diff still believes the screen matches its buffer — leaving only
-   * the components that repaint on their own (the composer) visible. Pairing the
-   * clear with a forced repaint makes the outcome independent of that ordering.
-   */
   readonly requestRepaint?: (() => void) | undefined;
 }
 
@@ -43,27 +33,15 @@ export interface FullRepaintRenderer {
   readonly currentRenderBuffer?: { clear(): void } | undefined;
 }
 
-/**
- * Invalidates the renderer's picture of the screen, then asks for a frame.
- *
- * OpenTUI's native renderer only emits the cells that differ from
- * `currentRenderBuffer`, so `requestRender()` alone is a no-op after we clear the
- * terminal behind its back. Zeroing that buffer first makes every cell differ,
- * which is the same effect as the renderer's internal full-repaint flag (private,
- * and only set on suspend/resume and screen-mode transitions). The buffer clear
- * is best-effort: if the shape ever changes, the plain render request still runs.
- */
 export function forceFullRepaint(renderer: FullRepaintRenderer): boolean {
   try {
     renderer.currentRenderBuffer?.clear();
   } catch {
-    /* buffer already torn down — the render request below is still worth making */
   }
   try {
     renderer.requestRender();
     return true;
   } catch {
-    /* renderer is going away; the next mount repaints from scratch */
     return false;
   }
 }
@@ -79,13 +57,55 @@ export function repaintAttachedScreen(
   options: AttachedScreenRepaintOptions,
 ): boolean {
   if (options.enabled === false || options.isSuspended?.() === true) return false;
-  // Schedule the frame before clearing. requestRender only queues a paint, so
-  // the clear still lands first, but a child that cannot schedule one now emits
-  // nothing at all — otherwise its clear races the decline down a second channel
-  // and can wipe the screen the host replayed.
   if (!forceFullRepaint(options.renderer)) return false;
   options.write(RESIZE_REPAINT_SEQUENCE);
   return true;
+}
+
+export interface CoordinatedRenderer extends FullRepaintRenderer {
+  pause(): unknown;
+  resume(): unknown;
+  idle(): Promise<void>;
+}
+
+export interface CoordinatedFlushRenderer {
+  pause(): void;
+  suspend(): void;
+  resume(): void;
+  idle(): Promise<void>;
+  requestRender(): void;
+  readonly currentRenderBuffer?: { clear(): void } | undefined;
+}
+
+export function createCoordinatedFlush(
+  renderer: CoordinatedFlushRenderer,
+  write: (text: string) => void,
+): (sequence: string) => Promise<void> {
+  let queue = Promise.resolve();
+  return (sequence) => {
+    const run = queue.then(async () => {
+      try {
+        renderer.suspend();
+      } catch {
+        return;
+      }
+      try {
+        await renderer.idle().catch(() => undefined);
+        try {
+          write(sequence);
+        } catch {
+        }
+        forceFullRepaint(renderer);
+      } finally {
+        try {
+          renderer.resume();
+        } catch {
+        }
+      }
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  };
 }
 
 export function installResizeRepaint(options: ResizeRepaintOptions): () => void {

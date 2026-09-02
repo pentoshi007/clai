@@ -140,10 +140,6 @@ const UNICODE_TO_ASCII: ReadonlyMap<string, string> = new Map([
   ...PRESENTER_ONLY_ASCII,
 ]);
 
-/**
- * Downgrade glyphs produced by shared `ui-core` presenters, which always emit
- * the Unicode table. Applied to presenter output, never to user content.
- */
 export function toAsciiGlyphs(text: string): string {
   let out = "";
   for (const char of text) {

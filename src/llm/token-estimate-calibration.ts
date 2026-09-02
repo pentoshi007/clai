@@ -3,34 +3,14 @@ import { join } from "node:path";
 import type { ProviderId } from "../types.js";
 import { getDataDir } from "../store/paths.js";
 
-/**
- * Reconciles the local request estimate with provider truth.
- *
- * The estimator in `request-accounting.ts` is deliberately conservative: it
- * assumes a dense chars-per-token ratio and counts every reasoning artifact and
- * tool schema it can see, including artifacts a serializer later drops. On a
- * real route that can read 40-60% high, which pushes the context chip, the
- * compaction card and the auto-compaction trigger away from what the provider
- * actually bills.
- *
- * Every successful request reports its own prompt size, so the correction factor
- * does not need to be guessed. Each observation pairs the estimate we made for a
- * request with the count the provider returned for that same request, and the
- * ratio is smoothed per provider+model. Until a route has been observed the raw
- * conservative estimate stands unchanged.
- */
 
-/** Below this the fixed per-message overhead dominates and the ratio is noise. */
 const MIN_SAMPLE_TOKENS = 400;
 
 const MIN_TRUSTED_SAMPLES = 2;
 
-// A learned factor corrects estimator bias; it must never be able to convince
-// the fit gate that a request is dramatically smaller or larger than measured.
 const MIN_RATIO = 0.35;
 const MAX_RATIO = 1.5;
 
-/** Weight of the newest observation; the route adapts without thrashing. */
 const SMOOTHING = 0.4;
 
 export interface RequestTokenCalibration {
@@ -111,11 +91,6 @@ function clampRatio(ratio: number): number {
   return Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio));
 }
 
-/**
- * Pair the estimate made for one request with the prompt size the provider
- * reported for it. Callers must pass the uncalibrated estimate, otherwise the
- * correction compounds against itself.
- */
 export function recordRequestTokenObservation(input: {
   readonly provider: ProviderId | undefined;
   readonly model: string | undefined;
@@ -150,7 +125,6 @@ export function requestTokenCalibration(
   return { ratio: entry.ratio, samples: entry.samples };
 }
 
-/** Apply the learned factor, or return the estimate unchanged when untrained. */
 export function calibratedRequestTokens(
   provider: ProviderId | undefined,
   model: string | undefined,

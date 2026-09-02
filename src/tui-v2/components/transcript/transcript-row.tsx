@@ -1,11 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Dispatches one normalized item to its renderer (V2-051..055).
- *
- * The only place that switches on `item.kind`; adding an item kind means
- * adding one case here plus its renderer, not touching a scattered UI switch
- * (ARCHITECTURE "commands are data plus handlers, not switch statements").
- */
 
 import { memo, type ReactNode } from "react";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
@@ -29,21 +22,14 @@ export function TranscriptRowImpl(props: {
   spool: OutputSpool;
   services: AppServices;
   onOpenUserPrompt: (prompt: string) => void;
-  /** Effective expand state for this item (per-item override or global). */
   expanded: boolean;
-  /** Effective file-diff expand state (tool cards only). */
   fileDiffExpanded: boolean;
-  /** Global toggle fallbacks used when a per-item override is set. */
   expandThinkingGlobal: boolean;
   expandOutputGlobal: boolean;
   expandFileDiffsGlobal: boolean;
-  /** Chat-pane columns so markdown tables reflow beside the plan pane. */
   contentWidth?: number | undefined;
-  /** This item contains at least one match for the current ^R query. */
   searchMatched?: boolean | undefined;
-  /** This item is the currently selected n/N match. */
   searchActiveMatch?: boolean | undefined;
-  /** This thinking card owns the pointer wheel (clicked, not Ctrl+T). */
   thinkingFocused?: boolean | undefined;
 }): ReactNode {
   const {
@@ -95,8 +81,6 @@ export function TranscriptRowImpl(props: {
           contentWidth={contentWidth}
           focused={thinkingFocused ?? false}
           onFocus={() => {
-            // Keyboard must follow the click so `c` copies this card instead
-            // of typing into the composer.
             services.focus.focusRegion("transcript");
             store.focusThinking(item.id);
           }}
@@ -106,8 +90,6 @@ export function TranscriptRowImpl(props: {
       );
       break;
     case "tool": {
-      // plan.create / task.update success is Tasks-pane only — hide from chat
-      // so huge plan payloads never flood the transcript. Failures still show.
       if (shouldHideQuietMetaToolInChat(item.name, item.status)) {
         return null;
       }
@@ -150,7 +132,6 @@ export function TranscriptRowImpl(props: {
           contentWidth={contentWidth}
           expanded={expanded}
           onToggle={() => {
-            // Ctrl+O / toggle: open pager (do not dump multi‑KB memory in chat).
             const summary = item.summary;
             const title =
               item.beforeTokens > 0 || item.afterTokens > 0
@@ -167,7 +148,6 @@ export function TranscriptRowImpl(props: {
     }
   }
 
-  // Search highlight wrapper — active match gets a strong wash; other hits a soft one.
   if (!searchMatched) return body;
   return (
     <box

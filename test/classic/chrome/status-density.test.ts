@@ -125,8 +125,8 @@ describe("status rows", () => {
   it("replaces the hints with the activity while busy", () => {
     const idle = plainText(statusRows(base(120))[0]!);
     const busy = plainText(statusRows(base(120, { running: true, activity: "thinking" }))[0]!);
-    expect(idle).toContain("thinking");
-    expect(idle).toContain("/ commands");
+    expect(idle).not.toContain("/ commands");
+    expect(idle).not.toContain("^T thinking");
     expect(busy).toContain("esc: cancel");
     expect(busy).not.toContain("/ commands");
   });

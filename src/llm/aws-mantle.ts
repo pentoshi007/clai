@@ -91,7 +91,6 @@ function anthropicThinkingBudget(reasoning: ReasoningPreference | undefined): nu
   }
 }
 
-/** See anthropic.ts — Opus 4.7+ / Sonnet 5+ require adaptive thinking. */
 function requiresAdaptiveThinking(model: string): boolean {
   return /claude-(?:opus|sonnet|haiku)-(?:4-[7-9]|4-\d\d|5(?:-|$))/i.test(model);
 }
@@ -206,7 +205,6 @@ export const mantleProvider: LlmProvider = {
         system,
         messages,
         max_tokens: anthropicMaxTokens(request.maxTokens, thinking),
-        // See anthropic.ts: temperature must stay default when thinking is on.
         ...(thinking ? {} : { temperature: request.temperature ?? 0.2 }),
         ...anthropicToolBodyFields({
           tools: request.tools,
@@ -247,6 +245,7 @@ export const mantleProvider: LlmProvider = {
       text: parsed.text,
       provider: "aws-mantle",
       model,
+      api: "anthropic-messages",
       ...(usage ? { usage } : {}),
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningBlock ? { reasoningBlock } : {}),
@@ -384,7 +383,6 @@ export const mantleProvider: LlmProvider = {
             stop_reason?: string;
           };
         };
-        // Surface mid-stream provider error frames.
         if (parsed.type === "error") {
           throw new ProviderError(
             `AWS Mantle stream error: ${parsed.error?.message ?? parsed.error?.type ?? "unknown"}`,
@@ -442,7 +440,6 @@ export const mantleProvider: LlmProvider = {
           }
         }
       } catch (frameError) {
-        // Only malformed JSON frames are ignorable.
         if (!(frameError instanceof SyntaxError)) throw frameError;
       }
     }
@@ -479,6 +476,7 @@ export const mantleProvider: LlmProvider = {
       text: full,
       provider: "aws-mantle",
       model,
+      api: "anthropic-messages",
       ...(usage ? { usage } : {}),
       ...(finalized.toolCalls.length ? { toolCalls: finalized.toolCalls } : {}),
       ...(finalized.thinkingSignature && finalized.thinkingText

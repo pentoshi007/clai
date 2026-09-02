@@ -1,18 +1,6 @@
-/**
- * Renderer lifecycle owner (V2-030).
- *
- * Bootstrap creates the renderer, controllers, and stores inside one `try` and
- * tears them down in `finally`. This object centralizes that contract: it
- * installs bounded signal/error handlers, tears resources down in reverse order
- * exactly once, and guarantees the renderer is destroyed (so alternate-screen
- * reset bytes flush) BEFORE the process exits. The terminal must never be left
- * corrupted, so destruction is idempotent and covered by signal/error tests.
- */
 
 export interface RendererHandle {
-  /** Enter alternate screen / take over the terminal. */
   start(): void | Promise<void>;
-  /** Leave alternate screen and flush pending reset bytes. */
   destroy(): void | Promise<void>;
 }
 
@@ -27,26 +15,12 @@ export type Disposer = () => void | Promise<void>;
 export interface LifecycleOptions {
   readonly handle: RendererHandle;
   readonly process?: ProcessLike | undefined;
-  /** Extra teardown (controllers/stores) disposed in reverse creation order. */
   readonly disposers?: readonly Disposer[] | undefined;
-  /** Surfaced errors from signals/uncaught exceptions before shutdown. */
   readonly onError?: ((error: unknown) => void) | undefined;
-  /**
-   * Optional cooperative first-SIGINT hook (e.g. abort the agent). A second
-   * SIGINT within {@link SIGINT_QUIT_WINDOW_MS} still shuts down and exits so
-   * `kill -INT` remains a reliable way to leave the TUI.
-   */
   readonly onSigint?: (() => void) | undefined;
-  /**
-   * Sign-off written after the renderer has released the terminal and before
-   * the process exits, so it lands on the normal screen instead of the
-   * alternate buffer the renderer just discarded. Runs exactly once, cannot
-   * block teardown, and its failures are reported through {@link onError}.
-   */
   readonly epilogue?: (() => void | Promise<void>) | undefined;
 }
 
-/** Double-SIGINT quit window — matches the App Ctrl+C exit window. */
 export const SIGINT_QUIT_WINDOW_MS = 1500;
 
 const FATAL_SIGNALS: Record<string, number> = {
@@ -77,7 +51,6 @@ export class RendererLifecycle {
     return this.destroyed;
   }
 
-  /** Install handlers and hand the terminal to the renderer. */
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
@@ -85,23 +58,11 @@ export class RendererLifecycle {
     try {
       await this.options.handle.start();
     } catch (error) {
-      // Never leave the terminal in the alternate screen if start failed.
       await this.shutdown();
       throw error;
     }
   }
 
-  /**
-   * Idempotent teardown: dispose extra resources in reverse order, then destroy
-   * the renderer. Safe to call from multiple signals/error paths concurrently.
-   *
-   * Concurrent callers await the SAME in-flight teardown instead of returning
-   * early. This matters at quit: a second exit trigger (App Ctrl+C plus a raw
-   * SIGINT, SIGTERM during shutdown, etc.) must not let `shutdownAndExit` call
-   * `process.exit()` while the first shutdown's disposers — including the final
-   * history flush — are still writing to disk. Returning early here is exactly
-   * how a terminal `/compact` save was being truncated before it hit disk.
-   */
   async shutdown(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
     this.shuttingDown = true;
@@ -143,10 +104,6 @@ export class RendererLifecycle {
     }
   }
 
-  /**
-   * Tear down fully, then exit — destroy always precedes exit, and exit never
-   * runs until the (possibly already in-flight) shutdown has fully completed.
-   */
   async shutdownAndExit(code: number): Promise<void> {
     try {
       await this.shutdown();
@@ -156,9 +113,6 @@ export class RendererLifecycle {
   }
 
   private installHandlers(): void {
-    // SIGINT is cooperative: first press aborts / arms quit, second exits.
-    // Immediate-exit on SIGINT made the first Ctrl+C kill clai even when the
-    // App only wanted to abort the agent.
     this.addListener("SIGINT", () => {
       const now = Date.now();
       if (

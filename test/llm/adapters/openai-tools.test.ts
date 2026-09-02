@@ -148,6 +148,63 @@ describe("openai tools adapter", () => {
     expect(wire[1]).not.toHaveProperty("reasoning_content");
   });
 
+  it("never sends an unparseable tool-call arguments fragment on the wire", () => {
+    const wire = toOpenAiToolMessages(
+      [
+        { role: "user", content: "do it" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "shell.exec",
+              args: { _parseError: true, _raw: "}" },
+              rawArguments: "}",
+            },
+          ],
+        },
+        { role: "tool", toolCallId: "call_1", name: "shell.exec", content: "ok" },
+      ],
+      (m) => m.content,
+    );
+    const args = (
+      wire[1] as {
+        tool_calls: Array<{ function: { arguments: string } }>;
+      }
+    ).tool_calls[0]!.function.arguments;
+    expect(() => JSON.parse(args)).not.toThrow();
+    expect(args).toBe("{}");
+  });
+
+  it("replays a valid rawArguments payload byte-for-byte", () => {
+    const wire = toOpenAiToolMessages(
+      [
+        { role: "user", content: "do it" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: "call_1",
+              name: "fs.write",
+              args: { path: "a.ts", content: "x" },
+              rawArguments: '{"path":"a.ts","content":"x"}',
+            },
+          ],
+        },
+        { role: "tool", toolCallId: "call_1", name: "fs.write", content: "ok" },
+      ],
+      (m) => m.content,
+    );
+    const args = (
+      wire[1] as {
+        tool_calls: Array<{ function: { arguments: string } }>;
+      }
+    ).tool_calls[0]!.function.arguments;
+    expect(args).toBe('{"path":"a.ts","content":"x"}');
+  });
+
   it("toOpenAiMessages no longer rewrites tool → user", () => {
     const msgs = toOpenAiMessages([
       {

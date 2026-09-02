@@ -59,7 +59,6 @@ export function createPagerExportPort(renderer: RendererSuspendPort): PagerExpor
         try {
           renderer.resume();
         } catch {
-          // Restoring the UI must never be skipped because resume threw.
         }
       }
     },
@@ -77,7 +76,6 @@ export function createPagerExportPort(renderer: RendererSuspendPort): PagerExpor
         try {
           renderer.resume();
         } catch {
-          // Same reason as above.
         }
         await rm(dir, { recursive: true, force: true }).catch(() => {});
       }

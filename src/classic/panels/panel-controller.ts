@@ -84,7 +84,6 @@ export class PanelController {
     this.publish({ ...this.snapshot, search: undefined });
   }
 
-  /** Rows the panel asks the allocator for, before it is clamped. */
   rowsWanted(): number {
     const snapshot = this.snapshot;
     const columns = this.deps.columns();
@@ -268,7 +267,6 @@ export class PanelController {
     }
     return false;
   }
-  /** Trackpad / mouse-wheel scrolling on whichever overlay owns the screen. */
   handleWheel(direction: 1 | -1, steps = 3): boolean {
     const moved = panelWheelMove(
       this.snapshot,

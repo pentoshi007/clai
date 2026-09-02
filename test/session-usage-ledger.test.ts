@@ -248,20 +248,20 @@ describe("formatSessionUsage markdown", () => {
 
   it("renders a markdown table with right-aligned numbers and a bold total last", () => {
     const ledger = new SessionUsageLedger();
-    ledger.record(usage({ promptTokens: 32_704, completionTokens: 1_312, totalTokens: 34_016, cachedPromptTokens: 28_928 }), "anthropic", "claude-opus-4-7");
-    ledger.record(usage({ promptTokens: 640, completionTokens: 96, totalTokens: 736 }), "ollama", "llama3.1:8b");
+    ledger.record(usage({ promptTokens: 32_704, completionTokens: 1_312, totalTokens: 34_016, cachedPromptTokens: 28_928 }), "anthropic", "claude-opus-4-7", "anthropic-messages");
+    ledger.record(usage({ promptTokens: 640, completionTokens: 96, totalTokens: 736 }), "ollama", "llama3.1:8b", "ollama-chat");
     const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1", title: "audit" });
     const lines = body.split("\n");
 
     expect(lines[0]).toBe("# Session usage");
-    expect(body).toContain("| PROVIDER / MODEL | REQ | IN | OUT | TOTAL | CACHED | RATE |");
-    expect(body).toContain("| --- | ---: | ---: | ---: | ---: | ---: | ---: |");
-    expect(body).toContain("| `anthropic / claude-opus-4-7` | 1 | 32,704 | 1,312 | 34,016 | 28,928 | 88.5% |");
-    expect(body).toContain("| `ollama / llama3.1:8b` | 1 | 640 | 96 | 736 | — | — |");
+    expect(body).toContain("| PROVIDER / MODEL | API | REQ | IN | OUT | TOTAL | CACHED | RATE |");
+    expect(body).toContain("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |");
+    expect(body).toContain("| `anthropic / claude-opus-4-7` | anthropic-messages | 1 | 32,704 | 1,312 | 34,016 | 28,928 | 88.5% |");
+    expect(body).toContain("| `ollama / llama3.1:8b` | ollama-chat | 1 | 640 | 96 | 736 | — | — |");
 
     const tableRows = lines.filter((line) => line.startsWith("|"));
     expect(tableRows[tableRows.length - 1]).toBe(
-      "| **TOTAL · 2 routes** | **2** | **33,344** | **1,408** | **34,752** | **28,928** | **88.5%** |",
+      "| **TOTAL · 2 routes** | anthropic-messages, ollama-chat | **2** | **33,344** | **1,408** | **34,752** | **28,928** | **88.5%** |",
     );
   });
 
@@ -269,7 +269,7 @@ describe("formatSessionUsage markdown", () => {
     const ledger = new SessionUsageLedger();
     ledger.record(usage(), "ollama", "llama3.1:8b");
     const body = formatSessionUsage(ledger.report(), { sessionId: "sess-1" });
-    expect(body).toContain("| `ollama / llama3.1:8b` | 1 | 100 | 20 | 120 | — | — |");
+    expect(body).toContain("| `ollama / llama3.1:8b` | — | 1 | 100 | 20 | 120 | — | — |");
     expect(body).not.toContain("0.0%");
   });
 
@@ -310,7 +310,7 @@ describe("formatSessionUsage markdown", () => {
     expect(body).toContain("weird\\|model");
     expect(body).toContain("sess\\|1");
     for (const row of body.split("\n").filter((line) => line.startsWith("|"))) {
-      expect(row.replace(/\\\|/g, "").split("|")).toHaveLength(9);
+      expect(row.replace(/\\\|/g, "").split("|")).toHaveLength(10);
     }
   });
 

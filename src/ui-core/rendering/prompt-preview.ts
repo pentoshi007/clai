@@ -1,11 +1,6 @@
-/**
- * Soft-wrap + hard-cap helpers for the prompt-actions modal body.
- * Kept free of OpenTUI imports so unit tests stay pure-Node.
- */
 
 import { wrapPagerLine } from "./pager-chrome.js";
 
-/** Soft-wrap + hard-cap lines for the prompt preview body. */
 export function preparePromptPreview(
   text: string,
   maxCols: number,

@@ -91,16 +91,19 @@ describe("duplicated full-snapshot tool arguments", () => {
     });
   });
 
-  it("still flags genuinely truncated arguments so write salvage can run", () => {
+  it("keeps genuinely truncated arguments flagged for salvage while making replay wire-safe", () => {
     const raw = '{"path":"/tmp/a.ts","content":"half';
     const args = parseToolArguments(raw);
     expect(args._parseError).toBe(true);
+    expect(args._raw).toBe(raw);
     const state = new Map();
     accumulateOpenAiToolCallDelta(state, {
       index: 0,
       function: { name: "fs_write", arguments: raw },
     });
-    expect(finalizeOpenAiToolCalls(state)[0]?.rawArguments).toBe(raw);
+    expect(finalizeOpenAiToolCalls(state)[0]?.rawArguments).toBe(
+      '{"path":"/tmp/a.ts","content":"half"}',
+    );
     expect(
       repairConcatenatedToolArguments('{"path":"/tmp/a.ts"} trailing'),
     ).toBeUndefined();

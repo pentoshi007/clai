@@ -19,7 +19,6 @@ export function secretInitialState(initialValue = ""): SecretPanelState {
   return { buffer, cursor };
 }
 
-/** Pasted bytes reach the buffer stripped of escapes and line breaks. */
 export function sanitizeSecretInput(text: string): string {
   return stripAnsi(text).replace(/[\r\n\t]+/g, "");
 }

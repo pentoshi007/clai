@@ -1,12 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Masked secret entry (INPUT-009, CORE-002, V2-073).
- *
- * Docked above the composer — same chrome as confirmations (no full-screen
- * black wash). Keys are handled via `useKeyboard` (not a focus-trapped
- * 1-cell input) so click-away cannot freeze typing/Esc, and bullets always
- * reflect keystrokes. Value only leaves via onSubmit / answerSecret.
- */
 
 import { useRef, useState, type ReactNode } from "react";
 import { useKeyboard, usePaste } from "@opentui/react";
@@ -38,7 +30,6 @@ function isPrintableSequence(seq: string): boolean {
   if (!seq) return false;
   for (let i = 0; i < seq.length; i += 1) {
     const code = seq.charCodeAt(i);
-    // Allow space and printable ASCII; reject control bytes.
     if (code < 0x20 || code === 0x7f) return false;
   }
   return true;
@@ -70,13 +61,9 @@ export function SecretModal(props: SecretModalProps): ReactNode {
   function submit(): void {
     const value = bufferRef.current.reveal();
     bufferRef.current.clear();
-    // Empty submit = cancel (same as Esc) — never send empty password to sudo.
     services.overlay.answerSecret(value.length > 0 ? value : undefined);
   }
 
-  // Global keyboard (like ConfirmModal) — does not depend on input focus.
-  // A previous 1-cell hidden <input> lost focus after clicks and stopped
-  // accepting keys; Esc only worked when that cell was focused.
   useKeyboard((key) => {
     if (isKeyEventRelease(key)) return;
     const chord = chordFromKeyEvent(key);
@@ -88,7 +75,6 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       return;
     }
     if (chord === "ctrl+c") {
-      // Cancel the password UI immediately. App / SIGINT still own double-press quit.
       key.preventDefault();
       cancel();
       services.cancel.abortForeground();
@@ -106,7 +92,6 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       refreshMask();
       return;
     }
-    // Ignore other chords (arrows, ctrl+*, etc.) so they don't inject garbage.
     if (key.ctrl || key.meta || key.option || key.super) return;
     if (
       [
@@ -138,7 +123,6 @@ export function SecretModal(props: SecretModalProps): ReactNode {
     refreshMask();
   });
 
-  // Paste into the secret buffer (composer paste is disabled while overlay open).
   usePaste((event) => {
     try {
       const text = sanitizeDisplayText(decodePasteBytes(event.bytes));
@@ -150,7 +134,6 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       buf.insert(cleaned, buf.length);
       refreshMask();
     } catch {
-      // ignore paste decode errors
     }
   });
 

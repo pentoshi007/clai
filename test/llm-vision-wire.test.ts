@@ -23,7 +23,10 @@ function stubFetch(): { bodies: string[] } {
   const bodies: string[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init?: RequestInit) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/responses")) {
+        return new Response("not found", { status: 404 });
+      }
       bodies.push(String(init?.body ?? ""));
       return new Response(
         JSON.stringify({

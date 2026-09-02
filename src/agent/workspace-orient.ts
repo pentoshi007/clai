@@ -1,19 +1,9 @@
-/**
- * Stack-agnostic workspace orientation for build turns.
- *
- * Weak models often skip fs.list/fs.read and plan against an imaginary empty
- * destination — then re-scaffold into a non-empty folder ("Operation cancelled")
- * or write into the agent package. This module snapshots the real cwd /
- * destination / candidate project paths so the model always sees ground truth
- * before plan.create or implement.
- */
 
 import { existsSync, readdirSync, statSync, type Dirent } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { safeCwd } from "../os/cwd.js";
 
-/** Filenames that strongly suggest "this directory is already a software project". */
 export const PROJECT_MARKERS = [
   "package.json",
   "package-lock.json",
@@ -45,13 +35,12 @@ export const PROJECT_MARKERS = [
   ".git",
 ] as const;
 
-/** Parent folders that are destinations, not project roots (never pin sticky root here). */
 const BARE_PARENT_DIR_RE =
   /(?:^|[/\\])(?:Desktop|Documents|Downloads|Projects|dev|code|work|repos?|tmp|temp)$/i;
 
 export function isBareParentDirectory(path: string): boolean {
   const p = resolve(path.trim()).replace(/[/\\]+$/, "");
-  if (/^\/(?:Users|home)\/[^/\\]+$/i.test(p)) return true; // ~ only
+  if (/^\/(?:Users|home)\/[^/\\]+$/i.test(p)) return true;
   if (p === homedir() || p === resolve(homedir())) return true;
   return BARE_PARENT_DIR_RE.test(p);
 }
@@ -63,16 +52,11 @@ export function detectProjectMarkers(dir: string): string[] {
     try {
       if (existsSync(join(dir, name))) found.push(name);
     } catch {
-      /* ignore */
     }
   }
   return found;
 }
 
-/**
- * Infer package manager from lockfiles / markers present in a project dir.
- * Prefer lockfile over bare package.json.
- */
 export function detectPackageManager(
   dir: string,
 ): "npm" | "pnpm" | "yarn" | "bun" | "pip" | "poetry" | "cargo" | "go" | undefined {
@@ -88,7 +72,6 @@ export function detectPackageManager(
   if (existsSync(join(dir, "package-lock.json"))) return "npm";
   if (existsSync(join(dir, "package.json"))) return "npm";
   if (existsSync(join(dir, "poetry.lock")) || existsSync(join(dir, "pyproject.toml"))) {
-    // poetry.lock is definitive; pyproject may be non-poetry — still useful hint
     if (existsSync(join(dir, "poetry.lock"))) return "poetry";
   }
   if (existsSync(join(dir, "requirements.txt"))) return "pip";
@@ -117,11 +100,6 @@ const IGNORED_PROJECT_CHILDREN = new Set([
   "__pycache__",
 ]);
 
-/**
- * Discover marker-bearing immediate children under a user-named destination.
- * This is intentionally bounded and non-recursive: enough to resume an
- * arbitrary existing Desktop project without crawling the user's filesystem.
- */
 export function discoverImmediateProjectRoots(
   parent: string,
   maxEntries = 80,
@@ -160,7 +138,6 @@ export interface DirSnapshot {
   exists: boolean;
   isDir: boolean;
   entryCount: number;
-  /** Up to maxNames entry basenames. */
   entries: string[];
   markers: string[];
   isProject: boolean;
@@ -214,7 +191,6 @@ export function snapshotDir(path: string, maxNames = 36): DirSnapshot {
   } catch {
     names = [];
   }
-  // Ignore pure noise when judging emptiness for scaffolders
   const meaningful = names.filter((n) => n !== ".DS_Store" && n !== "Thumbs.db");
   const markers = detectProjectMarkers(resolved);
   return {
@@ -267,23 +243,15 @@ function formatSnapshot(label: string, snap: DirSnapshot): string {
 
 export interface WorkspaceOrientationInput {
   cwd?: string;
-  /** User-named parent destination (e.g. Desktop). */
   destinationHint?: string;
-  /** Candidate project path from plan/prompt (may not exist yet). */
   candidateProject?: string;
-  /** Extra absolute paths to snapshot (e.g. Desktop/todo-app guessed from prompt). */
   extraPaths?: string[];
 }
 
-/**
- * Guess a likely project subfolder name from free text (todo-app, my-api, …).
- * Stack-agnostic: any reasonable folder token after create/scaffold/in/on.
- */
 export function guessProjectFolderName(text: string): string | undefined {
   const blob = text.trim();
   if (!blob) return undefined;
 
-  // …/Desktop/todo-app or Desktop/todo-app
   const pathish = blob.match(
     /(?:Desktop|Documents|Projects|dev|code|work)[/\\]([A-Za-z0-9._-]+)/i,
   );
@@ -291,13 +259,11 @@ export function guessProjectFolderName(text: string): string | undefined {
     return pathish[1];
   }
 
-  // create a <name> app / project called <name>
   const named = blob.match(
     /\b(?:project|app|service|cli|package|crate|module)\s+(?:called|named)\s+["']?([A-Za-z][A-Za-z0-9._-]{1,40})/i,
   );
   if (named?.[1]) return named[1];
 
-  // create <name> in/on desktop — prefer hyphenated or *app* tokens
   const createName = blob.match(
     /\b(?:create|scaffold|init|bootstrap)\s+(?:a\s+|an\s+)?(?:new\s+)?([A-Za-z][A-Za-z0-9._-]{1,40})(?:\s+(?:app|project|service))?\s+(?:in|on|under|into)\b/i,
   );
@@ -310,7 +276,6 @@ export function guessProjectFolderName(text: string): string | undefined {
     return createName[1];
   }
 
-  // "todo app" / "blog app" → todo-app style
   const kindApp = blob.match(
     /\b([a-z][a-z0-9]{1,20})[\s-]+(?:app|application|project|service|cli)\b/i,
   );
@@ -326,14 +291,11 @@ export function guessProjectFolderName(text: string): string | undefined {
   return undefined;
 }
 
-/**
- * Human + model-facing block injected into the system prompt for build turns.
- */
 export function buildWorkspaceOrientation(
   input: WorkspaceOrientationInput,
 ): string {
   const cwd = resolve(input.cwd?.trim() || safeCwd());
-  const paths = new Map<string, string>(); // path → label
+  const paths = new Map<string, string>();
 
   paths.set(cwd, "agent process cwd (NOT necessarily the user project)");
 
@@ -353,9 +315,6 @@ export function buildWorkspaceOrientation(
     if (!paths.has(p)) paths.set(p, "related path");
   }
 
-  // If destination is a bare parent, snapshot bounded marker-bearing children
-  // regardless of their name (for example Desktop/blogging-app), plus a few
-  // conventional folders even when they are only partially materialized.
   const dest = input.destinationHint?.trim()
     ? resolve(input.destinationHint.trim())
     : undefined;
@@ -394,17 +353,10 @@ export function buildWorkspaceOrientation(
   return lines.join("\n").trimEnd();
 }
 
-/**
- * Extract the directory name a scaffolder would create (stack-agnostic).
- * Returns undefined when the command is not a one-shot create into a named path.
- */
 export function extractScaffoldTargetName(command: string): string | undefined {
   const cmd = command.trim();
   if (!cmd) return undefined;
 
-  // Absolute path only when it is the scaffolder's target argument — never the
-  // `cd /path` destination (that wrongly returned "Desktop" for
-  // `cd ~/Desktop && npm create vite@latest blogging-app`).
   const absCreate = cmd.match(
     /(?:npm\s+create\s+\S+|npx\s+(?:--yes\s+)?create-[\w@./-]+|yarn\s+create\s+\S+|pnpm\s+create\s+\S+|bun\s+create\s+\S+|npm\s+init\s+\S+|create-[\w@./-]+|vite@\S+|cargo\s+new|rails\s+new|poetry\s+new|flutter\s+create|django-admin\s+startproject|composer\s+create-project\s+\S+|mix\s+new|dotnet\s+new\s+\S+\s+(?:-n|--name))\s+((?:\/(?:Users|home)\/\S+|~\/\S+))/i,
   );
@@ -413,7 +365,6 @@ export function extractScaffoldTargetName(command: string): string | undefined {
     if (base && !base.startsWith("-")) return base;
   }
 
-  // Generic: create-* / npm create X / yarn create / cargo new / rails new / etc.
   const patterns: RegExp[] = [
     /(?:npm\s+create\s+\S+|npx\s+(?:--yes\s+)?create-[\w@./-]+|yarn\s+create\s+\S+|pnpm\s+create\s+\S+|bun\s+create\s+\S+)\s+([A-Za-z0-9._@/-]+)/i,
     /(?:npm\s+init\s+\S+)\s+([A-Za-z0-9._-]+)/i,
@@ -425,7 +376,7 @@ export function extractScaffoldTargetName(command: string): string | undefined {
     /\bcomposer\s+create-project\s+\S+\s+([A-Za-z0-9._-]+)/i,
     /\bmix\s+new\s+([A-Za-z0-9._-]+)/i,
     /\bflutter\s+create\s+([A-Za-z0-9._-]+)/i,
-    /\bcargo\s+init\b/i, // init in place — no name
+    /\bcargo\s+init\b/i,
     /\bdotnet\s+new\s+\S+\s+-n\s+([A-Za-z0-9._-]+)/i,
     /\bdotnet\s+new\s+\S+\s+--name\s+([A-Za-z0-9._-]+)/i,
   ];
@@ -433,14 +384,12 @@ export function extractScaffoldTargetName(command: string): string | undefined {
   for (const re of patterns) {
     const m = cmd.match(re);
     if (m?.[1] && m[1] !== "." && m[1] !== ".." && !m[1].startsWith("-")) {
-      // Strip version tags from package names mistaken as target
       if (/^@/.test(m[1]) && !m[1].includes("/")) continue;
       const name = m[1].replace(/\/+$/, "").split(/[/\\]/).pop()!;
       if (name && name !== "." && !name.startsWith("-")) return name;
     }
   }
 
-  // Trailing bare name before flags: `create-vite@latest todo-app -- --template react`
   const beforeFlags = cmd
     .replace(/\s+--\s+.*$/, "")
     .replace(/\s+--\S+=\S+/g, "")
@@ -460,9 +409,6 @@ export function extractScaffoldTargetName(command: string): string | undefined {
   return undefined;
 }
 
-/**
- * Resolve absolute path a scaffolder would write into.
- */
 export function resolveScaffoldTargetPath(
   command: string,
   shellCwd?: string,
@@ -470,8 +416,6 @@ export function resolveScaffoldTargetPath(
   const cmd = command.trim();
   if (!cmd) return undefined;
 
-  // Honour leading `cd /path && …` / `mkdir -p /path && cd /path && …`
-  // so preflight sees the real target when models chain shell in one call.
   let base = resolve(shellCwd?.trim() || safeCwd());
   const stripShellQuotes = (raw: string): string =>
     raw.trim().replace(/^['"]|['"]$/g, "");
@@ -482,7 +426,6 @@ export function resolveScaffoldTargetPath(
     const cdTarget = stripShellQuotes(cdMatch[1]).replace(/^~(?=\/)/, homedir());
     base = isAbsolute(cdTarget) ? resolve(cdTarget) : resolve(base, cdTarget);
   }
-  // `mkdir -p /abs/path && … create .` without explicit cd
   const mkdirMatch = cmd.match(
     /mkdir\s+(?:-p\s+)?([^\s;&|]+)\s*(?:&&|;)/i,
   );
@@ -493,7 +436,6 @@ export function resolveScaffoldTargetPath(
     }
   }
 
-  // In-place initializers (no new subfolder)
   if (
     /\bgo\s+mod\s+init\b/i.test(cmd) ||
     /\bcargo\s+init\b/i.test(cmd) ||
@@ -510,7 +452,6 @@ export function resolveScaffoldTargetPath(
     return resolve(createAbs[1].replace(/^~(?=\/)/, homedir()));
   }
 
-  // `create-vite .` / `npm init vite@latest .` → current (post-cd) base
   if (
     /(?:create-\S+|vite@\S+|init\s+\S+)\s+\.(?:\s|$)/i.test(cmd) ||
     /\s\.(?:\s+--|\s*$)/.test(cmd)
@@ -520,7 +461,6 @@ export function resolveScaffoldTargetPath(
 
   const name = extractScaffoldTargetName(cmd);
   if (!name) return undefined;
-  // go.mod style module paths are not directory names
   if (name.includes("/") || name.includes("@")) {
     return base;
   }
@@ -533,7 +473,6 @@ export function resolveScaffoldTargetPath(
   return resolve(base, name);
 }
 
-/** Scaffold cancelled / refused without creating a usable tree. */
 export function isScaffoldCancelledOutput(output: string): boolean {
   const o = output.toLowerCase();
   return (
@@ -548,23 +487,15 @@ export function isScaffoldCancelledOutput(output: string): boolean {
   );
 }
 
-/**
- * True when the target path looks like a materialized project after scaffold.
- */
 export function scaffoldLooksMaterialized(targetPath: string | undefined): boolean {
   if (!targetPath || !existsSync(targetPath)) return false;
   const snap = snapshotDir(targetPath);
   if (!snap.isDir) return false;
-  // At least one marker OR several source-ish entries
   if (snap.isProject) return true;
   if (snap.entryCount >= 3 && !snap.emptyOrMissing) return true;
   return false;
 }
 
-/**
- * Soft preflight: block scaffold into an existing non-empty project path.
- * Returns an error message for the model, or undefined if OK to proceed.
- */
 export function scaffoldTargetConflictMessage(
   command: string,
   shellCwd?: string,
@@ -573,7 +504,6 @@ export function scaffoldTargetConflictMessage(
   if (!target) return undefined;
   const snap = snapshotDir(target);
   if (!snap.exists || snap.emptyOrMissing) return undefined;
-  // Existing non-empty (or project) — refuse re-scaffold
   if (snap.isProject || snap.entryCount > 0) {
     return (
       `Scaffold blocked: target already exists at ${target} ` +

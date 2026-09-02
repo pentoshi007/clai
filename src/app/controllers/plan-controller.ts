@@ -42,18 +42,12 @@ export class PlanController implements Disposable {
         return;
       }
       this.activeSessionId ??= eventSessionId;
-      // A live event is newer than any in-flight disk projection.
       this.loadGeneration += 1;
       this.plan = event.payload.plan;
       this.notify();
     }
   }
 
-  /**
-   * Load the plan for `sessionId` from disk into memory. The previous session's
-   * projection is cleared synchronously, and a generation token prevents a
-   * slower old-session load from repopulating the controller after /new.
-   */
   async load(sessionId: string): Promise<SessionPlan | undefined> {
     this.activeSessionId = sessionId;
     const generation = ++this.loadGeneration;
@@ -84,10 +78,7 @@ export class PlanController implements Disposable {
     return this.plan;
   }
 
-  /** Drop the in-memory plan without touching disk. */
   clear(): void {
-    // Always invalidate pending loads, even when the visible projection is
-    // already empty (a late promise must not resurrect it).
     this.loadGeneration += 1;
     const changed = this.plan !== undefined;
     this.plan = undefined;
@@ -97,8 +88,6 @@ export class PlanController implements Disposable {
   async approve(): Promise<SessionPlan | undefined> {
     if (!this.plan) return undefined;
     this.loadGeneration += 1;
-    // Approval is a status transition, not a whole-plan replacement —
-    // saving the loaded copy could revert a concurrent task/child update.
     if (this.persistence.mutatePlan) {
       const result = await this.persistence.mutatePlan(
         this.plan.sessionId,

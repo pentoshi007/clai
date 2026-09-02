@@ -1,12 +1,3 @@
-/**
- * Single owner of the one blocking overlay (V2-071..076, PICK-002).
- *
- * Holds the overlay's data (picker options, confirm prompt, pager body) and
- * coordinates with `FocusController`'s context stack so opening while one is
- * already active is rejected (nested-action prevention) and closing restores
- * whichever base region had focus (focus restoration) — both for free from
- * `FocusController`'s existing single-slot design, not reimplemented here.
- */
 
 import type { FocusController, OverlayContext } from "./focus-controller.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
@@ -14,16 +5,11 @@ import type { ArtifactPagerSource } from "../rendering/artifact-pager-source.js"
 
 export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch";
 
-/** Rich outcome for plan-ready confirm (not a boolean y/n only). */
 export type PlanConfirmResult = "implement" | "discard" | "suggest" | "dismiss";
 
 export interface ConfirmRequest {
   readonly kind: ConfirmKind;
   readonly prompt: string;
-  /**
-   * Absolute or user path the operator can preview with `v` before approving
-   * (used for fs.delete so they can inspect the file first).
-   */
   readonly viewPath?: string | undefined;
 }
 
@@ -38,64 +24,39 @@ export interface PickerRequest {
   readonly rowAction?: PickerRowAction | undefined;
   readonly searchDescription?: boolean | undefined;
   readonly twoLine?: boolean | undefined;
-  /**
-   * History-oriented chrome: larger panel, session badges, clearer filter
-   * line, and description-aware search.
-   */
   readonly historyStyle?: boolean | undefined;
 }
 
 export interface SecretRequestView {
   readonly title: string;
   readonly prompt: string;
-  /**
-   * Show the typed value instead of bullets. For inputs that are not secret
-   * but reuse this modal — a Modal endpoint URL or an Ollama host — where
-   * masking a long URL just hides typos.
-   */
   readonly reveal?: boolean | undefined;
   readonly initialValue?: string | undefined;
 }
 
-/** Multi-row engagement scope editor (/scope). */
 export interface ScopeEditorRequest {
-  /** Existing authorized targets (pre-fill). */
   readonly initialTargets: readonly string[];
 }
 
-/**
- * Full multiline text editor for long, structured input (MCP server JSON).
- * Unlike the secret prompt this keeps a visible caret, arrow-key navigation,
- * mid-text edits and newlines.
- */
 export interface TextEditorRequest {
   readonly title: string;
   readonly prompt: string;
   readonly initialValue?: string | undefined;
   readonly placeholder?: string | undefined;
-  /** Footer label for the submit chord. Defaults to "save". */
   readonly submitLabel?: string | undefined;
 }
 
-/** One existing key shown masked in the multi-key editor (/set). */
 export interface KeysEditorSlotView {
   readonly id: string;
   readonly masked: string;
   readonly disabled?: boolean | undefined;
 }
 
-/** Multi-row API key editor for a single LLM provider. */
 export interface KeysEditorRequest {
   readonly provider: string;
   readonly initialKeys: readonly KeysEditorSlotView[];
-  /** Index of the currently-active (sticky) key for rotation. */
   readonly activeIndex?: number | undefined;
-  /**
-   * Singular noun for what a row holds. Defaults to "API key"; endpoint editors
-   * pass "endpoint URL" so the same overlay can manage base URLs.
-   */
   readonly itemLabel?: string | undefined;
-  /** Short heading chip. Defaults to "KEYS". */
   readonly heading?: string | undefined;
 }
 
@@ -123,10 +84,8 @@ export type OverlayState =
   | {
       readonly kind: "confirm";
       readonly request: ConfirmRequest;
-      /** Boolean for tool/pentest/etc.; plan uses PlanConfirmResult via answerPlanConfirm. */
       readonly resolve: (ok: boolean | PlanConfirmResult) => void;
       readonly onViewPlan?: (() => void) | undefined;
-      /** Open file preview pager without resolving the confirm (fs.delete `v`). */
       readonly onViewFile?: (() => void) | undefined;
       readonly planResolve?: ((result: PlanConfirmResult) => void) | undefined;
     }
@@ -134,19 +93,16 @@ export type OverlayState =
   | {
       readonly kind: "text-editor";
       readonly request: TextEditorRequest;
-      /** undefined = cancel. */
       readonly resolve: (value: string | undefined) => void;
     }
   | {
       readonly kind: "scope-editor";
       readonly request: ScopeEditorRequest;
-      /** undefined = cancel; [] = clear/disable; non-empty = save targets. */
       readonly resolve: (targets: string[] | undefined) => void;
     }
   | {
       readonly kind: "keys-editor";
       readonly request: KeysEditorRequest;
-      /** undefined = cancel. */
       readonly resolve: (answer: KeysEditorAnswer | undefined) => void;
     }
   | { readonly kind: "prompt-actions"; readonly request: PromptActionsRequest }
@@ -155,12 +111,7 @@ export type OverlayState =
       readonly title: string;
       readonly body: string;
       readonly source?: ArtifactPagerSource | undefined;
-      /** Path for syntax highlighting in file-diff modals. */
       readonly highlightPath?: string | undefined;
-      /**
-       * Markdown rendering: force for help/shortcuts/plan, auto for mixed
-       * bodies, plain to disable. Default auto.
-       */
       readonly markdown?: "auto" | "force" | "plain" | undefined;
     }
   | { readonly kind: "jobs" };
@@ -171,7 +122,6 @@ const NONE: OverlayState = { kind: "none" };
 
 export class OverlayController {
   private state: OverlayState = NONE;
-  /** Confirm suspended under a plan-detail pager (classic TUI: confirm chrome + pager overlay). */
   private suspended: OverlayState | undefined;
   private readonly listeners = new Set<OverlayListener>();
   private closeFocus: (() => void) | undefined;
@@ -220,11 +170,6 @@ export class OverlayController {
     this.notify();
   }
 
-  /**
-   * Opens a pager. Allowed over an open plan confirm so "P" can show full
-   * plan detail without resolving the confirm (F-021); closing the pager
-   * restores the suspended confirm. Any other open overlay is still rejected.
-   */
   openPager(
     title: string,
     body: string,
@@ -240,9 +185,6 @@ export class OverlayController {
       ...(highlightPath ? { highlightPath } : {}),
       ...(markdown ? { markdown } : {}),
     };
-    // Allow a pager over any confirm (plan "p" or delete "v") without resolving
-    // it, and over the jobs panel so closing a live output view returns to the
-    // job list rather than dropping the user back in the transcript.
     const stackable = this.state.kind === "confirm" || this.state.kind === "jobs";
     const opened =
       stackable && !this.suspended
@@ -260,7 +202,6 @@ export class OverlayController {
     return this.open({ kind: "prompt-actions", request }, "modal");
   }
 
-  /** Resolves `false` if a blocking overlay was already open rather than hanging. */
   openConfirm(
     request: ConfirmRequest,
     onViewPlan?: () => void,
@@ -281,10 +222,6 @@ export class OverlayController {
     });
   }
 
-  /**
-   * Plan-ready confirm with implement / discard / suggest / dismiss.
-   * Resolves `dismiss` if another overlay was already open.
-   */
   openPlanConfirm(
     request: ConfirmRequest,
     onViewPlan?: () => void,
@@ -296,7 +233,6 @@ export class OverlayController {
           kind: "confirm",
           request: { ...request, kind: "plan" },
           resolve: (ok) => {
-            // Backward-compat path if something calls answerConfirm(true/false)
             if (ok === true) resolve("implement");
             else if (ok === false) resolve("discard");
             else resolve(ok);
@@ -310,7 +246,6 @@ export class OverlayController {
     });
   }
 
-  /** Resolves `undefined` if a blocking overlay was already open rather than hanging. */
   openSecret(request: SecretRequestView): Promise<string | undefined> {
     return new Promise((resolve) => {
       const opened = this.open({ kind: "secret", request, resolve }, "secret");
@@ -318,7 +253,6 @@ export class OverlayController {
     });
   }
 
-  /** Multiline editor. Resolves the edited text, or `undefined` on cancel. */
   openTextEditor(request: TextEditorRequest): Promise<string | undefined> {
     return new Promise((resolve) => {
       const opened = this.open({ kind: "text-editor", request, resolve }, "modal");
@@ -334,12 +268,7 @@ export class OverlayController {
     resolve(value);
   }
 
-  /**
-   * Multi-input scope editor. Resolves:
-   * - `undefined` cancel / overlay busy
-   * - `[]` clear (scoping disabled)
-   * - non-empty string[] save those targets
-   */  openScopeEditor(request: ScopeEditorRequest): Promise<string[] | undefined> {
+  openScopeEditor(request: ScopeEditorRequest): Promise<string[] | undefined> {
     return new Promise((resolve) => {
       const opened = this.open(
         { kind: "scope-editor", request, resolve },
@@ -356,12 +285,6 @@ export class OverlayController {
     resolve(targets);
   }
 
-  /**
-   * Multi-row API key editor. Resolves:
-   * - `undefined` cancel / overlay busy
-   * - `{ action: "reset" }` clear all keys
-   * - `{ action: "save", rows }` keep/replace/add keys
-   */
   openKeysEditor(request: KeysEditorRequest): Promise<KeysEditorAnswer | undefined> {
     return new Promise((resolve) => {
       const opened = this.open(
@@ -382,7 +305,6 @@ export class OverlayController {
   answerConfirm(ok: boolean): void {
     const confirm = this.activeConfirm();
     if (!confirm) return;
-    // Plan confirm with rich resolver: map boolean to implement/discard
     if (confirm.request.kind === "plan" && confirm.planResolve) {
       this.answerPlanConfirm(ok ? "implement" : "discard");
       return;
@@ -411,11 +333,6 @@ export class OverlayController {
     resolve(value);
   }
 
-  /**
-   * Dismiss a blocking secret (or confirm) so turn abort / Ctrl+C never leaves
-   * a stuck password UI while the agent has already cancelled.
-   * Returns true if something was dismissed.
-   */
   cancelBlockingPrompt(): boolean {
     if (this.state.kind === "secret") {
       this.answerSecret(undefined);
@@ -444,8 +361,6 @@ export class OverlayController {
     return false;
   }
 
-  /** The picker's own `onSelect` decides whether/when to close (e.g. a
-   * provider pick may chain into a secret prompt instead of closing). */
   selectPicker(value: string): void {
     if (this.state.kind !== "picker") return;
     this.state.onSelect(value);
@@ -566,8 +481,6 @@ export class OverlayController {
 
   private forceClose(): void {
     if (this.state.kind === "pager") this.state.source?.dispose();
-    // A promise-bearing editor must never be closed without an answer, or the
-    // caller awaits forever (Esc / overlay.close from global key handling).
     const pending = this.state.kind === "text-editor" ? this.state.resolve : undefined;
     this.state = NONE;
     this.closeFocus?.();

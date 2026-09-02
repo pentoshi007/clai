@@ -2,11 +2,8 @@ import { graphemes, tokenize, sealStyle } from "./ansi-text.js";
 import { layoutWidth } from "./measure.js";
 
 export interface WrapOptions {
-  /** Columns available to the first row. */
   readonly width: number;
-  /** Prefix prepended to row 1. Its width is subtracted from `width`. */
   readonly firstPrefix?: string | undefined;
-  /** Prefix prepended to rows 2..n. Its width is subtracted from `width`. */
   readonly nextPrefix?: string | undefined;
 }
 
@@ -14,12 +11,6 @@ function isBreakable(grapheme: string): boolean {
   return grapheme === " " || grapheme === "\t";
 }
 
-/**
- * Wrap a single logical line at word boundaries, falling back to a hard break
- * for tokens wider than the budget. ANSI escapes carry no width and are never
- * split; the active style is re-emitted at the start of each continuation row
- * so a wrapped styled run stays styled.
- */
 export function wrapAnsiLine(text: string, budget: number): string[] {
   if (budget <= 0) return [""];
   if (text.length === 0) return [""];
@@ -84,7 +75,6 @@ export function wrapAnsiLine(text: string, budget: number): string[] {
   return rows;
 }
 
-/** Wrap a paragraph (embedded newlines respected) with per-row prefixes. */
 export function wrapWithPrefixes(
   text: string,
   options: WrapOptions,
@@ -104,7 +94,6 @@ export function wrapWithPrefixes(
   return out.length > 0 ? out : [firstPrefix];
 }
 
-/** Re-wrap already-rendered ANSI rows that exceed the budget. */
 export function reflowRows(rows: readonly string[], budget: number): string[] {
   const out: string[] = [];
   for (const row of rows) {

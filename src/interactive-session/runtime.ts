@@ -1,13 +1,4 @@
-/**
- * Per-session concurrency primitives.
- *
- * The locking model is deliberately fine-grained: one owner-level mutex guards
- * id issuance and live-slot reservation, one mutation mutex per session guards
- * state/input/resize decisions, and output ingestion never takes either lock so
- * a chatty child cannot block Close.
- */
 
-/** Monotonic time source. Wall time is only used for receipts, never deadlines. */
 export interface Clock {
   now(): number;
   setTimeout(handler: () => void, ms: number): TimerHandle;
@@ -31,7 +22,6 @@ export const systemClock: Clock = {
 export class AsyncMutex {
   private tail: Promise<void> = Promise.resolve();
 
-  /** Serialize `fn`; rejections do not poison the queue. */
   run<T>(fn: () => Promise<T> | T): Promise<T> {
     const result = this.tail.then(fn);
     this.tail = result.then(
@@ -42,10 +32,6 @@ export class AsyncMutex {
   }
 }
 
-/**
- * Single-winner terminal work. Every later caller joins the first promise, so
- * cleanup executes exactly once no matter how many triggers race.
- */
 export class FinalizeOnce<T> {
   private promise: Promise<T> | undefined;
   private winnerReason: string | undefined;
@@ -54,7 +40,6 @@ export class FinalizeOnce<T> {
     return this.promise !== undefined;
   }
 
-  /** The reason that won the race, useful for choosing a terminal state. */
   get reason(): string | undefined {
     return this.winnerReason;
   }
@@ -74,7 +59,6 @@ export class FinalizeOnce<T> {
 
 export type Unsubscribe = () => void;
 
-/** Version-counter subscription used by blocking reads and send gathering. */
 export class Notifier {
   private version = 0;
   private readonly listeners = new Set<(version: number) => void>();
@@ -105,7 +89,6 @@ export interface SessionTimers {
   lifetime?: TimerHandle | undefined;
 }
 
-/** Idle resets on activity; lifetime is fixed from confirmed launch. */
 export class TimerSet {
   private readonly timers: SessionTimers = {};
 
@@ -140,7 +123,6 @@ export class TimerSet {
   }
 }
 
-/** Resolve/reject handle for one in-flight wait, removable on cancel. */
 export interface Waiter {
   cancel(): void;
 }
@@ -165,14 +147,9 @@ export class WaiterSet {
   }
 }
 
-/**
- * One accepted input action. Immutable once queued: the payload is never
- * rewritten, and delivery is attempted exactly once.
- */
 export interface QueuedInputAction {
   readonly sequence: number;
   readonly queuedBytes: number;
-  /** Cursor captured when the action was accepted, used as the default page start. */
   readonly cursorAtAcceptance: number;
   readonly deliver: () => Promise<InputDeliveryOutcome>;
   readonly settle: (outcome: InputDeliveryOutcome) => void;
@@ -184,11 +161,6 @@ export interface InputDeliveryOutcome {
   readonly cause?: unknown;
 }
 
-/**
- * FIFO writer lane. Accepted actions are written strictly in ascending sequence
- * order by a single drain loop, so concurrent sends can never interleave bytes
- * or reorder commands.
- */
 export class OrderedInputQueue {
   private readonly queue: QueuedInputAction[] = [];
   private draining = false;
@@ -207,7 +179,6 @@ export class OrderedInputQueue {
     return this.nextSequence;
   }
 
-  /** Reserve a sequence number and queued-byte budget for one action. */
   reserve(bytes: number): number {
     const sequence = this.nextSequence;
     this.nextSequence += 1;
@@ -240,7 +211,6 @@ export class OrderedInputQueue {
     }
   }
 
-  /** Reject every undelivered entry, e.g. after process exit or close. */
   rejectAll(outcome: InputDeliveryOutcome): void {
     while (this.queue.length > 0) {
       const action = this.queue.shift()!;

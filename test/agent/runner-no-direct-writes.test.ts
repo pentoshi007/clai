@@ -6,11 +6,20 @@ const runnerPath = fileURLToPath(
   new URL("../../src/agent/runner.ts", import.meta.url),
 );
 const source = readFileSync(runnerPath, "utf8");
+const directProcessWritePattern = /process\.(?:stdout|stderr)\.write/;
+
+function hasDirectProcessWrite(value: string): boolean {
+  return directProcessWritePattern.test(value);
+}
 
 describe("agent runner has no direct process output", () => {
   it("never writes to process stdout or stderr", () => {
-    expect(source).not.toMatch(/process\.stdout\.write/);
-    expect(source).not.toMatch(/process\.stderr\.write/);
+    expect(hasDirectProcessWrite(source)).toBe(false);
+  });
+
+  it("detects synthetic direct process writes", () => {
+    expect(hasDirectProcessWrite('process.stdout.write("out")')).toBe(true);
+    expect(hasDirectProcessWrite('process.stderr.write("err")')).toBe(true);
   });
 
   it("keeps the legacy direct-write branch removed", () => {

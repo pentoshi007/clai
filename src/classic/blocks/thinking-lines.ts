@@ -5,7 +5,6 @@ import { isItemExpanded, type ThinkingItem } from "../../ui-core/state/transcrip
 import { wrapWithPrefixes } from "../render/wrap.js";
 import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
 
-/** Rough token estimate from content length — never a re-tokenization. */
 export function thinkingTokenEstimate(content: string): number {
   return Math.max(1, Math.round(content.trim().length / 4));
 }

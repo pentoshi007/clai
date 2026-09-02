@@ -2,7 +2,6 @@ import { execFile, spawn } from "node:child_process";
 
 export type TreeSignalOutcome = "sent" | "gone" | "failed";
 
-/** POSIX detaches into its own group; Windows needs an explicit tree kill. */
 export function supportsProcessGroups(): boolean {
   return process.platform !== "win32";
 }
@@ -13,7 +12,6 @@ export function processAlive(pid: number | undefined): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    // EPERM proves the process exists but is not signalable by this user.
     return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
@@ -45,11 +43,6 @@ function windowsTaskkill(pid: number, force: boolean): TreeSignalOutcome {
   }
 }
 
-/**
- * Terminate a process and its descendants. POSIX signals the process group when
- * one is known; Windows uses `taskkill /T` because signalling the shell pid
- * leaves the real workload (servers, scanners) holding ports and CPU.
- */
 export function terminateProcessTree(
   pid: number,
   options: { signal: NodeJS.Signals; processGroupId?: number | undefined },
@@ -67,7 +60,6 @@ export function terminateProcessTree(
   }
 }
 
-/** Best-effort synchronous-looking descendant check used by tests/diagnostics. */
 export async function hasLiveDescendants(pid: number): Promise<boolean> {
   if (process.platform === "win32") {
     return await new Promise((resolve) => {

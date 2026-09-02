@@ -1,15 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Queued prompts while a turn is running (or waiting to drain).
- *
- * Each row is clickable:
- *  - Send now → interrupt current turn and run this prompt next
- *  - Edit → pull the draft back into the composer
- *  - × → drop from the queue
- *
- * If left alone, items run in order after the current turn finishes
- * (SessionController.continueQueue).
- */
 
 import type { ReactNode } from "react";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
@@ -20,7 +9,6 @@ export interface QueuePanelProps {
   readonly services: AppServices;
   readonly theme: Theme;
   readonly width: number;
-  /** Load a draft into the composer for editing. */
   readonly onEdit: (text: string) => void;
 }
 
@@ -42,10 +30,9 @@ export function QueuePanel(props: QueuePanelProps): ReactNode {
   const contentWidth = Math.max(24, width - 2);
   const visible = queued.slice(0, MAX_VISIBLE);
   const hidden = queued.length - visible.length;
-  // Header + rows + optional "N more" + borders.
   const height =
-    2 + // borders
-    1 + // header
+    2 +
+    1 +
     visible.length +
     (hidden > 0 ? 1 : 0);
 
@@ -108,7 +95,6 @@ function QueueRow(props: {
   readonly onRemove: () => void;
 }): ReactNode {
   const { index, text, width, theme, onSendNow, onEdit, onRemove } = props;
-  // " N. " + buttons budget, rest for preview.
   const prefix = ` ${index + 1}. `;
   const actions = "  [Send now] [Edit] [×]";
   const previewBudget = Math.max(8, width - prefix.length - actions.length);

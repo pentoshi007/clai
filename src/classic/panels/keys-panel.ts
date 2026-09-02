@@ -45,7 +45,6 @@ export function keysItemLabel(request: KeysEditorRequest): string {
   return request.itemLabel ?? "API key";
 }
 
-/** Endpoint-URL variants reuse this panel unmasked; secrets stay masked. */
 export function keysRevealed(request: KeysEditorRequest): boolean {
   const label = request.itemLabel;
   return label !== undefined && !/key|secret|token|password/i.test(label);

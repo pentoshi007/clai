@@ -2,8 +2,6 @@ import type { SessionPlan } from "../store/plan.js";
 import type { ToolCall } from "../types.js";
 import { resolveShellExecBackgroundPolicy } from "../tools/command-intent.js";
 
-// responder ownership is declared by the caller, never inferred from
-// titles. `parentTaskId` names the foreground task that owns the delegation;
 // the child task id is generated at launch and is not caller-supplied.
 
 const RESPONDER_PARENT_ARG = "parentTaskId";
@@ -23,7 +21,6 @@ export type ResponderParentResolution =
   | ResponderParentAccepted
   | ResponderParentRejected;
 
-/** Read a declared responder parent from a tool call, if the model supplied one. */
 export function readDeclaredParentTaskId(call: ToolCall): string | undefined {
   const raw = call.args?.[RESPONDER_PARENT_ARG];
   if (typeof raw !== "string") return undefined;
@@ -31,10 +28,6 @@ export function readDeclaredParentTaskId(call: ToolCall): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-/**
- * Validate the declared parent against the live plan. Omission falls back to the
- * single active foreground task; ambiguity is reported instead of guessed.
- */
 export function resolveResponderParent(input: {
   readonly plan: SessionPlan | undefined;
   readonly declared: string | undefined;
@@ -80,10 +73,6 @@ export function resolveResponderParent(input: {
 }
 
 
-/**
- * True when an explicit shell.exec request will actually be Responder-owned
- * after applying the same foreground/persistent precedence as tool runtime.
- */
 export function isExplicitResponderDelegation(call: ToolCall): boolean {
   if (
     call.name !== "shell.exec" ||
@@ -99,7 +88,6 @@ export function isExplicitResponderDelegation(call: ToolCall): boolean {
   }).responder;
 }
 
-/** Stable, readable child-task title for a delegated command. */
 export function delegationTaskTitle(call: ToolCall): string {
   const command =
     typeof call.args?.command === "string"

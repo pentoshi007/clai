@@ -1,11 +1,3 @@
-/**
- * Semantic action identifiers and input contexts (V2-033).
- *
- * Actions are semantic, never byte-sequence promises: a component or test asks
- * for `editor.newline`, and the keymap plus terminal adapter decide which chord
- * currently delivers it. Contexts model where keyboard input is routed so the
- * same chord can mean different things in the composer, a picker, or a modal.
- */
 
 export const ACTION_CONTEXTS = [
   "global",
@@ -23,14 +15,8 @@ export const ACTION_CONTEXTS = [
 export type ActionContext = (typeof ACTION_CONTEXTS)[number];
 
 export const ACTION_IDS = [
-  // global
   "app.quit",
-  /** Esc arms/dismisses; a second press cancels turn, queue, and session jobs. */
   "app.cancel",
-  /**
-   * Ctrl+C: first press aborts a running turn (or arms quit); second press
-   * within a short window exits the process.
-   */
   "app.interrupt",
   "app.help",
   "app.toggle-plan",
@@ -39,14 +25,12 @@ export const ACTION_IDS = [
   "focus.next-region",
   "focus.composer",
   "focus.transcript",
-  // composer / editor
   "editor.submit",
   "editor.newline",
   "editor.history-prev",
   "editor.history-next",
   "editor.clear",
   "editor.cut-draft",
-  // transcript / scrolling
   "transcript.scroll-up",
   "transcript.scroll-down",
   "transcript.page-up",
@@ -58,7 +42,6 @@ export const ACTION_IDS = [
   "transcript.toggle-thinking",
   "transcript.copy-thinking",
   "transcript.toggle-output",
-  // pane selection
   "selection.copy",
   "selection.clear",
   "selection.select-all",
@@ -70,27 +53,22 @@ export const ACTION_IDS = [
   "selection.extend-word-right",
   "selection.extend-line-start",
   "selection.extend-line-end",
-  // picker
   "picker.up",
   "picker.down",
   "picker.accept",
   "picker.dismiss",
   "picker.filter",
-  // modal
   "modal.confirm",
   "modal.deny",
   "modal.dismiss",
-  // plan
   "plan.next-task",
   "plan.prev-task",
   "plan.toggle-detail",
-  // queue
   "queue.select-prev",
   "queue.select-next",
   "queue.send-now",
   "queue.edit",
   "queue.remove",
-  // pager
   "pager.line-up",
   "pager.line-down",
   "pager.page-up",
@@ -105,13 +83,10 @@ export const ACTION_IDS = [
   "pager.export-scrollback",
   "pager.export-editor",
   "pager.copy",
-  /** Render body as markdown (formatted). */
   "pager.toggle-follow",
   "pager.format",
-  /** Show body as plain/raw text. */
   "pager.raw",
   "pager.close",
-  // jobs
   "jobs.up",
   "jobs.down",
   "jobs.tail",

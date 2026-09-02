@@ -1,13 +1,8 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Actions for a user prompt row (copy / resend). Opened by clicking a prompt
- * bubble in the transcript. Centered card with a fixed max width; long prompts
- * soft-wrap to the card and scroll inside a fixed-height body (never paint past
- * the border).
- */
 
 import { useMemo, useRef, type ReactNode } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { PromptActionsRequest } from "../../../ui-core/controllers/overlay-controller.js";
@@ -26,16 +21,13 @@ export function PromptActionsModal(props: {
   request: PromptActionsRequest;
 }): ReactNode {
   const { services, theme, request } = props;
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
-  // Leave room for host padding + border; never claim more than ~55% of cols.
   const cardWidth = Math.min(72, Math.max(36, Math.floor(termWidth * 0.55)));
-  // Inner body columns: card − border(2) − padding(2) − inner border(2) − pad(2).
   const bodyCols = Math.max(16, cardWidth - 8);
-  // Header + buttons + chrome ≈ 8 rows; body takes the rest up to 40% of term.
   const bodyMaxLines = Math.max(6, Math.min(16, Math.floor(termHeight * 0.4)));
-  const bodyHeight = bodyMaxLines + 2; // +2 for inner border rows
+  const bodyHeight = bodyMaxLines + 2;
 
   const preview = useMemo(
     () => preparePromptPreview(request.prompt, bodyCols, bodyMaxLines),
@@ -95,7 +87,6 @@ export function PromptActionsModal(props: {
       style={{
         flexDirection: "column",
         width: cardWidth,
-        // Cap total card height so host centering never clips action buttons.
         maxHeight: Math.max(12, Math.floor(termHeight * 0.75)),
         borderColor: theme.userBorder,
         backgroundColor: theme.statusBackground,
@@ -114,7 +105,7 @@ export function PromptActionsModal(props: {
         />
       </box>
 
-      {/* Fixed-height body — pre-wrapped lines, no OpenTUI soft-wrap overflow. */}
+      {}
       <box
         border
         borderStyle="rounded"

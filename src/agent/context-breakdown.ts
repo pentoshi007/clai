@@ -1,9 +1,3 @@
-/**
- * Estimate how a model request's context is composed (system / history / tools).
- * Metadata-only: no prompt text is stored — only role counts and token estimates.
- *
- * Used for reliability ops and regression harnesses. Does not truncate context.
- */
 
 import { createHash } from "node:crypto";
 import type { ChatMessage, ToolDefinition } from "../types.js";
@@ -19,7 +13,6 @@ import {
 import { SESSION_STATE_PREFIX } from "./session-state.js";
 
 export interface ContextBreakdown {
-  /** Rough total estimated tokens for messages (+ tools if provided). */
   readonly estimatedTotalTokens: number;
   readonly systemTokens: number;
   readonly userTokens: number;
@@ -31,7 +24,6 @@ export interface ContextBreakdown {
   readonly userMessageCount: number;
   readonly assistantMessageCount: number;
   readonly toolMessageCount: number;
-  /** High-level system subsections when detected by prefix. */
   readonly systemParts: {
     readonly constitutionTokens: number;
     readonly planTokens: number;
@@ -66,14 +58,10 @@ function isCompactionSystem(content: string): boolean {
     content.startsWith(COMPACTION_MEMORY_PREFIX) ||
     content.startsWith(PLAN_IMPLEMENT_MEMORY_PREFIX) ||
     content.startsWith(MECHANICAL_MEMORY_PREFIX) ||
-    // Message-shaped helper when role is system.
     isCompactionMemoryMessage({ role: "system", content })
   );
 }
 
-/**
- * Build a metadata-only breakdown of an assembled completion request.
- */
 export function buildContextBreakdown(
   messages: readonly ChatMessage[],
   tools?: readonly ToolDefinition[] | undefined,
@@ -114,7 +102,6 @@ export function buildContextBreakdown(
             message.content,
           )
         ) {
-          // Primary system / composed constitution (often message[0]).
           constitutionTokens += tokens;
         } else {
           otherSystemTokens += tokens;
@@ -178,7 +165,6 @@ export function buildContextBreakdown(
   };
 }
 
-/** Flatten for audit/diagnostic logs (numeric keys only — no content). */
 export function contextBreakdownAuditPayload(
   breakdown: ContextBreakdown,
 ): Record<string, number> {
@@ -205,9 +191,6 @@ export function contextBreakdownAuditPayload(
 }
 
 
-// Name the block that dominates an irreducible request: when compaction cannot
-// get under the trigger, the user needs to know what is actually large instead
-// of watching the same attempt repeat.
 export function describeDominantContextBlock(
   messages: readonly ChatMessage[],
   tools?: readonly ToolDefinition[] | undefined,
@@ -238,7 +221,6 @@ export function describeDominantContextBlock(
   return `${dominant.label} (~${dominant.tokens.toLocaleString()} tokens)`;
 }
 
-// Stable hash of the attached tool schemas, for attempt identity.
 export function toolSchemaHash(
   tools: readonly ToolDefinition[] | undefined,
 ): string {

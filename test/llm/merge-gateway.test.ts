@@ -272,8 +272,7 @@ describe("Merge Gateway wire behavior over real HTTP", () => {
       { apiKey: "mg_wirekey1" },
     );
 
-    const call = captured[0]!;
-    expect(call.url).toContain("/chat/completions");
+    const call = captured.find((c) => c.url.includes("/chat/completions"))!;
     expect(call.auth).toBe("Bearer mg_wirekey1");
     expect(call.body.model).toBe("openai/gpt-5.2");
     expect(call.body.reasoning_effort).toBe("high");

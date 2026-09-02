@@ -1,31 +1,10 @@
-/**
- * HTML-to-readable-text conversion and a permissive `Set-Cookie` parser,
- * shared by `web.fetch` (via `capture.ts`) and DuckDuckGo's lite-HTML adapter.
- *
- * - {@link toReadableText} strips chrome/non-rendering content from HTML and
- *   returns visible prose with whitespace collapsed (cheerio-based, no
- *   browser/jsdom dependency).
- * - {@link parseSetCookie} parses one `Set-Cookie` value into a
- *   {@link CookieInfo}; regex-driven and permissive — malformed or missing
- *   attributes are simply absent rather than a hard error.
- */
 
 import * as cheerio from "cheerio/slim";
 import type { AnyNode } from "domhandler";
 
 import type { CookieInfo, CookieSameSite } from "./types.js";
 
-// ---------------------------------------------------------------------------
-// HTML → readable text
-// ---------------------------------------------------------------------------
 
-/**
- * Selectors for elements whose text content should never appear in the
- * readable view. `script`/`style`/`noscript` carry executable or styling
- * payloads (Requirement 2.4); `nav`/`header`/`footer`/`aside` are the
- * obvious chrome regions called out in the design's
- * "HTML-to-readable-text strategy".
- */
 const STRIPPED_SELECTORS = [
   "script",
   "style",
@@ -35,7 +14,6 @@ const STRIPPED_SELECTORS = [
   "canvas",
 ].join(", ");
 
-/** Obvious page chrome; scoped so article/main headers and asides survive. */
 const CHROME_SELECTORS = [
   "nav",
   "[role='navigation']",
@@ -44,26 +22,6 @@ const CHROME_SELECTORS = [
   "body > aside",
 ].join(", ");
 
-/**
- * Convert an HTML document into a single readable text string.
- *
- * The conversion:
- * 1. Parses `html` with cheerio (no DOM/browser dependency).
- * 2. Removes executable/non-text subtrees and obvious page-level chrome while
- *    preserving headers, footers, and asides nested inside the chosen article
- *    or main content.
- * 3. Removes every HTML comment node anywhere in the tree.
- * 4. Extracts the remaining text via `$.root().text()`.
- * 5. Collapses runs of page-text whitespace while preserving line breaks and
- *    indentation inside `<pre>` blocks.
- * 6. Appends a deduplicated "Links" section so the agent can find the
- *    correct URL for any link on the page without guessing.
- *
- * @param html     - Raw HTML string to convert.
- * @param baseUrl  - The final page URL (used to resolve relative hrefs).
- *                   When provided, all href values are resolved to absolute
- *                   URLs. When omitted, relative hrefs are included as-is.
- */
 export function toReadableText(html: string, baseUrl?: string): string {
   if (typeof html !== "string" || html.length === 0) return "";
 
@@ -91,9 +49,6 @@ export function toReadableText(html: string, baseUrl?: string): string {
   if (description && description !== title) out.push(`Summary: ${description}`);
   out.push(...lines);
 
-  // Collect all links on the page and append a deduplicated Links section.
-  // This is the canonical source of URLs — the agent must use these rather
-  // than constructing or guessing paths.
   const linkSection = collectLinks($, baseUrl);
   if (linkSection.length > 0) {
     out.push("");
@@ -104,27 +59,12 @@ export function toReadableText(html: string, baseUrl?: string): string {
   return normalizeReadableLines(out);
 }
 
-/**
- * Collapse every contiguous run of whitespace characters into a single
- * ASCII space and trim leading/trailing whitespace.
- *
- * Treated as whitespace: the standard `\s` set (space, tab, CR, LF, FF,
- * VT) plus the most common non-breaking and zero-width characters that
- * show up in real-world web HTML — `\u00a0` (NBSP), `\u200b` (zero-width
- * space), `\u200c`/`\u200d` (zero-width joiner/non-joiner), `\ufeff`
- * (BOM/zero-width no-break space), and the assorted `\u2000-\u200a` set
- * of Unicode spaces.
- */
 function collapseWhitespace(text: string): string {
   return text
     .replace(/[\s\u00a0\u2000-\u200a\u200b\u200c\u200d\u2028\u2029\ufeff]+/g, " ")
     .trim();
 }
 
-/**
- * Resolve an href (possibly relative) against a base URL string.
- * Returns the absolute URL string, or the original href if resolution fails.
- */
 function resolveHref(href: string, baseUrl: string | undefined): string {
   if (!baseUrl) return href;
   try {
@@ -134,12 +74,6 @@ function resolveHref(href: string, baseUrl: string | undefined): string {
   }
 }
 
-/**
- * Collect all unique, non-anchor-only `<a href>` links from the page and
- * return them as `[text](url)` markdown lines for the Links section.
- * Deduplicates by URL. Fragment-only (#section) links are skipped.
- * Limits to 80 links to avoid flooding the model context.
- */
 function collectLinks(
   $: cheerio.CheerioAPI,
   baseUrl: string | undefined,
@@ -151,13 +85,12 @@ function collectLinks(
     const rawHref = collapseWhitespace($(el).attr("href") ?? "");
     if (!rawHref || rawHref.startsWith("#")) return;
     const resolved = resolveHref(rawHref, baseUrl);
-    // Skip javascript: and mailto: etc.
     if (/^(javascript|mailto|tel):/i.test(resolved)) return;
     if (seen.has(resolved)) return;
     seen.add(resolved);
     const text = collapseWhitespace($(el).text()) || resolved;
     links.push(`- [${text}](${resolved})`);
-    if (links.length >= 80) return false; // cheerio each — returning false stops iteration
+    if (links.length >= 80) return false;
   });
 
   return links;
@@ -343,8 +276,6 @@ function normalizeReadableLines(lines: string[]): string {
       continue;
     }
     if (inCodeBlock) {
-      // Preserve indentation and line structure inside <pre>; only remove CR
-      // and trailing horizontal whitespace that add no source information.
       out.push(line.replace(/\r/g, "").replace(/[ \t]+$/g, ""));
       continue;
     }
@@ -358,61 +289,18 @@ function normalizeReadableLines(lines: string[]): string {
   return out.join("\n").trim();
 }
 
-// ---------------------------------------------------------------------------
-// Set-Cookie parser
-// ---------------------------------------------------------------------------
 
-/**
- * Allowed values for `SameSite`, lower-cased for case-insensitive lookup.
- * The map preserves the canonical capitalisation used in the
- * {@link CookieInfo.sameSite} field.
- */
 const SAME_SITE_VALUES: ReadonlyMap<string, CookieSameSite> = new Map([
   ["strict", "Strict"],
   ["lax", "Lax"],
   ["none", "None"],
 ]);
 
-/**
- * Parse a single `Set-Cookie` header value into a {@link CookieInfo}.
- *
- * The parser is intentionally permissive: it never throws for malformed
- * input. The first `;`-separated attribute is treated as the
- * `name=value` pair (with everything after the first `=` taken verbatim
- * as the value, matching common server practice). Subsequent attributes
- * are matched case-insensitively against the public RFC 6265 set the
- * `web.fetch` tool surfaces:
- *
- * - `Domain`        → {@link CookieInfo.domain}
- * - `Path`          → {@link CookieInfo.path}
- * - `Expires`       → {@link CookieInfo.expires} as an ISO 8601 string
- *                     (omitted if the date string fails to parse)
- * - `Max-Age`       → {@link CookieInfo.maxAge} as a finite integer
- *                     (omitted if not a finite integer)
- * - `HttpOnly`      → {@link CookieInfo.httpOnly} = `true`
- * - `Secure`        → {@link CookieInfo.secure}   = `true`
- * - `SameSite=…`    → {@link CookieInfo.sameSite} normalized to
- *                     `"Strict"`/`"Lax"`/`"None"` (omitted if value is
- *                     unknown)
- *
- * Unknown attributes (e.g. `Priority`, `Partitioned`) are ignored. When
- * an attribute is missing, malformed, or unrecognised, the corresponding
- * field is simply absent from the returned object.
- *
- * The header value is expected to be a single cookie. Callers that
- * receive multiple cookies in a single header (which servers must not
- * do, but a few do) should split on the appropriate boundary before
- * calling this function.
- */
 export function parseSetCookie(value: string): CookieInfo {
   if (typeof value !== "string") {
     return { name: "", value: "" };
   }
 
-  // Split on `;` to peel attributes off the name=value pair. We do not
-  // split on `,` because RFC 6265 §4.1 forbids commas in cookie values
-  // unrelated to date attributes, and Node/undici always hand us one
-  // header value per Set-Cookie line.
   const parts = value.split(";");
   const head = (parts[0] ?? "").trim();
 
@@ -420,18 +308,13 @@ export function parseSetCookie(value: string): CookieInfo {
   let name: string;
   let cookieValue: string;
   if (eqIdx === -1) {
-    // No `=` at all: treat the whole token as the name, value empty.
     name = head;
     cookieValue = "";
   } else {
     name = head.slice(0, eqIdx).trim();
-    // Per RFC 6265 the value runs to end-of-attribute; trim outer
-    // whitespace but keep internal characters verbatim.
     cookieValue = head.slice(eqIdx + 1).trim();
   }
 
-  // Build the result one field at a time so `exactOptionalPropertyTypes`
-  // sees an absent key for any attribute we did not observe.
   const result: CookieInfo = { name, value: cookieValue };
 
   for (let i = 1; i < parts.length; i++) {
@@ -479,7 +362,6 @@ export function parseSetCookie(value: string): CookieInfo {
         break;
       }
       default:
-        // Ignore unknown attributes (Priority, Partitioned, etc.).
         break;
     }
   }
@@ -487,11 +369,6 @@ export function parseSetCookie(value: string): CookieInfo {
   return result;
 }
 
-/**
- * Parse an HTTP-date string (RFC 7231 §7.1.1.1, including the legacy
- * RFC 850 and asctime forms) into an ISO 8601 timestamp. Returns
- * `undefined` when the value does not parse to a finite, valid date.
- */
 function parseHttpDate(value: string): string | undefined {
   if (value.length === 0) return undefined;
   const ms = Date.parse(value);
@@ -499,16 +376,8 @@ function parseHttpDate(value: string): string | undefined {
   return new Date(ms).toISOString();
 }
 
-/**
- * Parse a `Max-Age` attribute value into a finite integer. Returns
- * `undefined` for empty input, non-numeric input, fractional values, or
- * values outside the safe-integer range.
- */
 function parseMaxAge(value: string): number | undefined {
   if (value.length === 0) return undefined;
-  // RFC 6265 §5.2.2 specifies the value as DIGIT *DIGIT (optionally
-  // preceded by `-` for delete-now semantics). Reject anything that
-  // does not match that shape.
   if (!/^-?\d+$/.test(value)) return undefined;
   const n = Number(value);
   if (!Number.isFinite(n) || !Number.isInteger(n)) return undefined;

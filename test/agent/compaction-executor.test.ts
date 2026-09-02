@@ -66,6 +66,31 @@ afterEach(() => {
 });
 
 describe("shared compaction executor", () => {
+  it("summarizes from source messages when no successful request snapshot exists", async () => {
+    complete.mockResolvedValueOnce(completion("## Work\nDone.\n## Remaining\nMore."));
+
+    const visible = await executeCompactionSummary(
+      baseExecution({
+        sourceMessages: [
+          { role: "user", content: "first question" },
+          { role: "assistant", content: "first answer" },
+        ],
+      }),
+    );
+
+    expect(visible).toBe("## Work\nDone.\n## Remaining\nMore.");
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0]![0]).toMatchObject({
+      provider: "nvidia",
+      model: "test-model",
+      messages: [
+        { role: "user", content: "first question" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "summarize this history" },
+      ],
+    });
+  });
+
   it("dispatches one complete-mode request with the compaction contract", async () => {
     complete.mockResolvedValueOnce(completion("## Work\nDone.\n## Remaining\nMore."));
 
@@ -129,6 +154,30 @@ describe("shared compaction executor", () => {
       executeCompactionSummary(baseExecution()),
     ).rejects.toThrow(/summary output limit twice/i);
     expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts a valid textual summary that arrives with tool-call metadata", async () => {
+    complete.mockResolvedValueOnce({
+      ...completion("## Work\nDone.\n## Remaining\nMore."),
+      toolCalls: [{ id: "call-1", name: "fs.read", args: { path: "x" } }],
+    });
+
+    const visible = await executeCompactionSummary(baseExecution());
+
+    expect(visible).toBe("## Work\nDone.\n## Remaining\nMore.");
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("still fails when the model returns only tool calls and no summary text", async () => {
+    complete.mockResolvedValue({
+      ...completion("", "tool_calls"),
+      toolCalls: [{ id: "call-1", name: "fs.read", args: { path: "x" } }],
+    });
+
+    await expect(
+      executeCompactionSummary(baseExecution()),
+    ).rejects.toThrow(/tool calls instead of a summary/i);
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it("retries a 5xx once only when server-error retry is enabled", async () => {

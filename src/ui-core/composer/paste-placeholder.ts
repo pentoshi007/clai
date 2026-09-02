@@ -1,15 +1,3 @@
-/**
- * Large-paste placeholders (INPUT-003, V2-042).
- *
- * A large paste is replaced in the visible buffer by a single short token so
- * it stays scannable and cheap to edit around; the real text is kept in a
- * registry and swapped back in at submit time. Because the placeholder is
- * inserted with one `insertText` call, it is one undo step — undoing it
- * removes the whole paste, not one character at a time.
- *
- * The composer also renders a blue chip above the input for each active
- * paste (hover preview + double-click expand).
- */
 
 const DEFAULT_LINE_THRESHOLD = 8;
 const DEFAULT_CHAR_THRESHOLD = 800;
@@ -29,7 +17,6 @@ export function isLargePaste(text: string, thresholds: PasteThresholds = {}): bo
   return countLines(text) > lineLimit || text.length > charLimit;
 }
 
-/** First N non-empty-friendly lines for hover preview. */
 export function pastePreviewLines(text: string, maxLines = 2): string[] {
   const lines = text.split("\n");
   return lines.slice(0, Math.max(1, maxLines)).map((line) => {
@@ -38,7 +25,6 @@ export function pastePreviewLines(text: string, maxLines = 2): string[] {
   });
 }
 
-/** Blue chip label: "10 lines pasted" / "1 line pasted". */
 export function pasteChipLabel(lines: number, chars: number): string {
   if (lines > 1) return `${lines} lines pasted`;
   if (chars > 0) return `${chars} chars pasted`;
@@ -47,12 +33,10 @@ export function pasteChipLabel(lines: number, chars: number): string {
 
 export interface PastePlaceholderEntry {
   readonly id: number;
-  /** Token inserted into the textarea (kept short for editing). */
   readonly token: string;
   readonly text: string;
   readonly lines: number;
   readonly chars: number;
-  /** Human chip label (blue). */
   readonly label: string;
 }
 
@@ -63,10 +47,6 @@ export function samePastePlaceholderEntries(
   return a.length === b.length && a.every((item, index) => item.id === b[index]?.id);
 }
 
-/**
- * Holds full pasted text keyed by an incrementing id and renders the token
- * shown in the composer buffer in its place.
- */
 export class PasteRegistry {
   private readonly entries = new Map<number, PastePlaceholderEntry>();
   private nextId = 1;
@@ -91,7 +71,6 @@ export class PasteRegistry {
     return this.entries.get(id);
   }
 
-  /** Entries whose token still appears in the composer buffer. */
   activeIn(value: string): PastePlaceholderEntry[] {
     const out: PastePlaceholderEntry[] = [];
     for (const entry of this.entries.values()) {
@@ -104,7 +83,6 @@ export class PasteRegistry {
     this.entries.clear();
   }
 
-  /** Replace every known placeholder token in `value` with its full text. */
   expand(value: string): string {
     let result = value;
     for (const entry of this.entries.values()) {
@@ -113,7 +91,6 @@ export class PasteRegistry {
     return result;
   }
 
-  /** Expand a single paste id (double-click chip). */
   expandOne(value: string, id: number): string {
     const entry = this.entries.get(id);
     if (!entry) return value;

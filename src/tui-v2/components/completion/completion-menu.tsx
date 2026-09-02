@@ -1,8 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Slash / @-mention completion list rendered ABOVE the composer (legacy parity).
- * Rows are mouse-hoverable and clickable (pickers parity).
- */
 
 import type { ReactNode } from "react";
 import type { MouseEvent } from "@opentui/core";
@@ -58,10 +54,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
   const items = menu.items.slice(window.start, window.end);
   const before = window.before;
   const after = window.after;
-  // Header (hints) + rule boundary + optional earlier/more rows + items.
   const menuHeight = 4 + items.length + (before > 0 ? 1 : 0) + (after > 0 ? 1 : 0);
-  // Borders consume two terminal columns; padding to the outer width used to
-  // make the last character overwrite the right rail on narrow terminals.
   const contentWidth = Math.max(10, width - 2);
   const onMouseScroll = (event: MouseEvent): void => {
     if (!event.scroll) return;
@@ -94,7 +87,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
         )}
         style={{ fg: theme.muted, bg: theme.rowA }}
       />
-      {/* Quiet boundary before match rows (muted, not neon cyan). */}
+      {}
       <text
         content={padLine("─".repeat(Math.max(8, contentWidth)), contentWidth)}
         style={{ fg: theme.chip, bg: theme.background }}
@@ -179,9 +172,8 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
 function formatSlash(cmd: CommandDefinition, focused: boolean, width: number): string {
   const mark = focused ? " ❯ " : "   ";
   const name = `/${cmd.name}`.padEnd(14);
-  const usage = cmd.usage ? `${cmd.usage} ` : "";
-  const desc = cmd.description;
-  return padLine(`${mark}${name}${usage} ${desc}`, width);
+  const suffix = cmd.usage ? ` ${cmd.usage}` : cmd.description ? ` ${cmd.description}` : "";
+  return padLine(`${mark}${name}${suffix}`, width);
 }
 
 function formatFile(file: FileSuggestion, focused: boolean, width: number): string {

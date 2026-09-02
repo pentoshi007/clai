@@ -1,583 +1,27 @@
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, type WriteStream } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, open, stat } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { StringDecoder } from "node:string_decoder";
 import type { Readable } from "node:stream";
-import type { ToolCall, ToolResult } from "../types.js";
+import type { ToolResult } from "../types.js";
 import { redactSecrets } from "../llm/provider.js";
 import { safeCwd } from "../os/cwd.js";
 import { getJobsDir } from "../store/paths.js";
 import { resolveShell } from "./shell.js";
 import { terminateProcessTree } from "../os/process-tree.js";
+import { forgetProcessIdentity, processAlive, processIdentity } from "./jobs/process-identity.js";
+import { RotatingRedactedWriter } from "./jobs/redacted-writer.js";
+import { responderPollingPolicy } from "./jobs/polling-policy.js";
+import { ARCHIVED_UNSETTLED_MAX_AGE_MS, DEFAULT_TAIL_BYTES, DURABLE_PROGRESS_FLUSH_MS, LIST_JOBS_MAX_LINES, LIVENESS_LOST_GRACE_MS, LIVENESS_PROBE_INTERVAL_MS, LIVENESS_WATCH_INTERVAL_MS, MAX_ARCHIVED_UNSETTLED_NOTIFICATIONS, MAX_DURABLE_TERMINAL_JOBS, MAX_SUPERSEDED_REVISIONS, PROGRESS_FLUSH_MS, REGISTRY_FILE, SETTLEMENT_DEAD_LETTER_MS, SETTLEMENT_MAX_BACKOFF_MS, TERMINAL_JOB_MAX_AGE_MS, TRANSIENT_V2_REGISTRY_FILE, WAIT_JOB_DEFAULT_TIMEOUT_MS, WAIT_JOB_INTERVAL_MS, WAIT_JOB_MAX_TIMEOUT_MS, WAIT_JOB_TAIL_BYTES } from "./jobs/limits.js";
+import { commandDisplay, formatJobElapsed, launchFollowUp, looksLikeEphemeralToolTrack, trailingIncompleteBytes } from "./jobs/helpers.js";
+import { BackgroundJob, BackgroundSpawnSpec, ConsumedResponderResult, JobArtifactReceipt, JobLinkMetadata, JobManagerChange, JobManagerListener, JobStatus, JobTerminalStatus, PendingSettlement, PersistedRegistry, PersistedRegistryV2, ResponderNotification, StartJobOptions } from "./jobs/types.js";
+export type { BackgroundJob, BackgroundSpawnSpec, JobArtifactReceipt, JobKind, JobLinkMetadata, JobManagerChange, JobManagerListener, JobMonitorMetadata, JobStatus, JobTerminalStatus, PendingSettlement, ResponderNotification, StartJobOptions, SupersededResultRevision } from "./jobs/types.js";
+export { formatJobElapsed };
+export { responderPollingPolicy };
+export type { ResponderPollingPolicyInput } from "./jobs/polling-policy.js";
 
-export type JobStatus = "starting" | "running" | "exited" | "failed" | "stopping" | "killed" | "lost";
-export type JobTerminalStatus = Exclude<JobStatus, "starting" | "running" | "stopping">;
-
-export interface JobArtifactReceipt {
-  path: string;
-  chunks: string[];
-  bytes: number;
-  droppedBytes: number;
-  redacted: boolean;
-  sha256: string;
-}
-
-export type JobMonitorMetadata = Record<string, unknown>;
-
-export interface JobLinkMetadata {
-  taskId?: string | undefined;
-  parentTaskId?: string | undefined;
-  /**
-   * Stable delegation identity minted before launch. It is the
-   * reconciliation key between a job and its responder child task, so a fast
-   * exit or a failed link cannot orphan the child.
-   */
-  delegationId?: string | undefined;
-  wakeOnCompletion?: boolean | undefined;
-  monitor?: JobMonitorMetadata | undefined;
-  /** Runtime listening lease that authorized this responder delegation. */
-  responderLeaseId?: string | undefined;
-  /**
-   * Opt-in delegation to the Responder: fire-and-continue, plan subtask +
-   * auto-wake on completion, and inclusion in the Responder inbox/UI. When
-   * false/absent the job is a plain background job the agent polls itself
-   * (shell.jobs/shell.tail) exactly as before Responder existed.
-   */
-  responder?: boolean | undefined;
-}
-
-/**
- * durable  — shell.start / auto-backgrounded servers (listed by shell.jobs, persisted)
- * ephemeral — per-tool stall tracking in the agent runner (never listed, never persisted)
- */
-export type JobKind = "durable" | "ephemeral";
-
-export interface BackgroundJob extends JobLinkMetadata {
-  id: string;
-  command: string;
-  commandDisplay: string;
-  cwd: string;
-  pid?: number | undefined;
-  processGroupId?: number | undefined;
-  processIdentity?: string | undefined;
-  status: JobStatus;
-  startedAt: string;
-  heartbeatAt?: string | undefined;
-  endedAt?: string | undefined;
-  exitCode?: number | undefined;
-  signal?: string | undefined;
-  artifactPath: string;
-  stdoutArtifact: string;
-  stderrArtifact: string;
-  artifacts: { stdout: JobArtifactReceipt; stderr: JobArtifactReceipt };
-  redactionProfile: string;
-  ownerSessionId: string;
-  /** Default durable for registry records; ephemeral for tool-stall tracking. */
-  kind?: JobKind | undefined;
-  name?: string | undefined;
-  authorization?: { target: string; expiresAt?: string | undefined } | undefined;
-  /** Accepted when reading legacy registries but never armed or restored. */
-  timeoutAt?: string | undefined;
-}
-
-export interface ResponderPollingPolicyInput {
-  call: ToolCall;
-  targetJob?: BackgroundJob | undefined;
-  /** Jobs in the exact shell.jobs display window, in display order. */
-  recentJobs?: readonly BackgroundJob[] | undefined;
-}
-
-/**
- * Responder-owned jobs are push-delivered and must not be polled. Normal jobs
- * remain pollable, including mixed sessions with a visible terminal normal job.
- */
-const LIVE_JOB_STATUSES = new Set<JobStatus>([
-  "starting",
-  "running",
-  "stopping",
-]);
-
-export function responderPollingPolicy(
-  input: ResponderPollingPolicyInput,
-): { blocked: boolean; reason?: string | undefined } {
-  // Only a still-running Responder job can be polled in a loop. Once it is
-  // terminal its output is fixed, so reading it is a normal bounded read and
-  // blocking it would remove the only way to inspect the full result.
-  if (
-    input.call.name === "shell.tail" &&
-    input.targetJob?.responder &&
-    LIVE_JOB_STATUSES.has(input.targetJob.status)
-  ) {
-    return {
-      blocked: true,
-      reason:
-        `Responder owns job ${input.targetJob.id}; shell.tail was not dispatched. ` +
-        "This job is fire-and-continue: its terminal result will be delivered automatically. " +
-        "Continue other work, and call job.read only after analyzing that delivered completion.",
-    };
-  }
-
-  if (input.call.name === "shell.jobs") {
-    const recent = input.recentJobs ?? [];
-    const runningResponderJobs = recent.filter(
-      (job) => job.responder && LIVE_JOB_STATUSES.has(job.status),
-    );
-    const visibleNormalJobs = recent.filter((job) => !job.responder);
-    if (runningResponderJobs.length > 0 && visibleNormalJobs.length === 0) {
-      const ids = runningResponderJobs.map((job) => job.id).join(", ");
-      return {
-        blocked: true,
-        reason:
-          `shell.jobs was not dispatched because the only running background job(s) (${ids}) are Responder-owned. ` +
-          "They are fire-and-continue and their terminal results will be delivered automatically. " +
-          "Continue other work; do not sleep or poll, and call job.read only after analyzing a delivered completion.",
-      };
-    }
-  }
-
-  return { blocked: false };
-}
-
-export function formatJobElapsed(
-  job: Pick<BackgroundJob, "startedAt" | "endedAt">,
-  now = Date.now(),
-): string {
-  const startedAt = Date.parse(job.startedAt);
-  const endedAt = job.endedAt ? Date.parse(job.endedAt) : now;
-  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) return "unknown";
-  const seconds = Math.max(0, Math.floor((endedAt - startedAt) / 1000));
-  if (seconds < 1) return "<1s";
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m${seconds % 60}s`;
-}
-
-export interface SupersededResultRevision {
-  resultRevision: number;
-  resultHash: string;
-  status: JobTerminalStatus;
-  endedAt: string;
-  exitCode?: number | undefined;
-  signal?: string | undefined;
-  deliveredAt?: string | undefined;
-  readAt?: string | undefined;
-  analyzedAt?: string | undefined;
-  acknowledgedAt?: string | undefined;
-  settledAt?: string | undefined;
-}
-
-export interface ResponderNotification {
-  id: string;
-  ownerSessionId: string;
-  jobId: string;
-  taskId?: string | undefined;
-  parentTaskId?: string | undefined;
-  status: JobTerminalStatus;
-  createdAt: string;
-  startedAt: string;
-  endedAt: string;
-  exitCode?: number | undefined;
-  signal?: string | undefined;
-  stdoutArtifact: JobArtifactReceipt;
-  stderrArtifact: JobArtifactReceipt;
-  commandDisplay: string;
-  wakeOnCompletion: boolean;
-  responder: boolean;
-  monitor?: JobMonitorMetadata | undefined;
-  responderLeaseId?: string | undefined;
-  /** A delivery attempt began; not durable consumption. Cleared claims may retry. */
-  deliveryStartedAt?: string | undefined;
-  deliveredAt?: string | undefined;
-  readAt?: string | undefined;
-  analyzedAt?: string | undefined;
-  acknowledgedAt?: string | undefined;
-  /** User discarded this receipt (cancel/new session); never model analysis. */
-  discardedAt?: string | undefined;
-  discardReason?: "session-cancelled" | undefined;
-  /** Monotonic revision of the authoritative result this receipt carries. */
-  resultRevision?: number | undefined;
-  /** Content hash of the authoritative result, used to detect a correction. */
-  resultHash?: string | undefined;
-  /** Bounded audit trail of revisions this receipt superseded. */
-  supersededRevisions?: readonly SupersededResultRevision[] | undefined;
-  archivedAt?: string | undefined;
-  settledAt?: string | undefined;
-}
-
-export type JobManagerChange =
-  | { type: "job"; jobId: string }
-  | { type: "notification"; jobId: string; notificationId: string };
-export type JobManagerListener = (change: JobManagerChange) => void;
-
-interface PersistedRegistryV1 { schemaVersion: 1; jobs: BackgroundJob[] }
-interface PersistedRegistryV2 {
-  schemaVersion: 2;
-  jobs: BackgroundJob[];
-  notifications: ResponderNotification[];
-  settlements?: PendingSettlement[];
-  consumedResults?: ConsumedResponderResult[];
-}
-
-interface ConsumedResponderResult {
-  jobId: string;
-  resultHash: string;
-  resultRevision: number;
-  acknowledgedAt: string;
-}
-
-/** Durable projection marker for a terminal result whose plan child is unsettled. */
-export interface PendingSettlement {
-  jobId: string;
-  resultRevision: number;
-  attempts: number;
-  firstAttemptAt: string;
-  lastAttemptAt: string;
-  lastReason: string;
-  deadLetteredAt?: string | undefined;
-}
-type PersistedRegistry = PersistedRegistryV1 | PersistedRegistryV2;
 interface TailCursor { stream?: "stdout" | "stderr" | "combined"; offset?: number; bytes?: number }
-
-/** Safe detached process form. stdinText is written once, then stdin is closed. */
-export interface BackgroundSpawnSpec {
-  command: string;
-  argv: string[];
-  stdinText?: string | undefined;
-  /** Non-secret display text persisted in the registry and artifacts. */
-  display?: string | undefined;
-}
-
-export interface StartJobOptions extends JobLinkMetadata {
-  cwd?: string | undefined;
-  name?: string | undefined;
-  ownerSessionId?: string | undefined;
-  profile?: string | undefined;
-  estimatedSeconds?: number | undefined;
-  /** Legacy compatibility input. Durable jobs no longer have generic deadlines. */
-  timeoutMs?: number | undefined;
-  authorization?: { target: string; expiresAt?: string | undefined } | undefined;
-}
-
-function displayArg(value: string): string {
-  return /^[A-Za-z0-9_./:=@+-]+$/.test(value)
-    ? value
-    : JSON.stringify(value);
-}
-
-function commandDisplay(command: string | BackgroundSpawnSpec): string {
-  if (typeof command === "string") return command;
-  return command.display ?? [command.command, ...command.argv].map(displayArg).join(" ");
-}
-
-function launchFollowUp(id: string, responder: boolean): string {
-  return responder
-    ? "Responder owns completion tracking for this self-completing job. " +
-        "Do not poll it with shell.tail/shell.jobs, sleep, or read its artifact. " +
-        "Continue other work; if not already delivered, its terminal result will be delivered automatically."
-    : "OS launch does not prove application readiness or continued liveness. " +
-        `If this command is finite, block once with shell.wait {"id":"${id}"} rather than polling for status; ` +
-        "repeated identical polls return no new information and are refused. " +
-        `If it is a persistent server or watcher, run an application readiness probe and read new output with shell.tail {"id":"${id}"} using nextOffset. ` +
-        "Do not launch a duplicate.";
-}
-
-const PER_FILE_BYTES = 1024 * 1024;
-const MAX_STREAM_BYTES = 16 * 1024 * 1024;
-const DEFAULT_TAIL_BYTES = 8_000;
-const WAIT_JOB_DEFAULT_TIMEOUT_MS = 120_000;
-const WAIT_JOB_MAX_TIMEOUT_MS = 600_000;
-const WAIT_JOB_INTERVAL_MS = 500;
-const WAIT_JOB_TAIL_BYTES = 4_000;
-const REGISTRY_FILE = "registry-v1.json";
-const TRANSIENT_V2_REGISTRY_FILE = "registry-v2.json";
-/** Cap durable terminal jobs kept on disk/in memory (per process). */
-const MAX_DURABLE_TERMINAL_JOBS = 80;
-/** Drop terminal durable jobs older than this on load/list. */
-const TERMINAL_JOB_MAX_AGE_MS = 48 * 60 * 60 * 1000;
-const ARCHIVED_UNSETTLED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const MAX_ARCHIVED_UNSETTLED_NOTIFICATIONS = 40;
-const MAX_SUPERSEDED_REVISIONS = 5;
-const SETTLEMENT_MAX_BACKOFF_MS = 30_000;
-const LIVENESS_WATCH_INTERVAL_MS = 2_000;
-const SETTLEMENT_DEAD_LETTER_MS = 10 * 60_000;
-/** Max lines shell.jobs returns to the model (running first, then recent). */
-const LIST_JOBS_MAX_LINES = 40;
-/** Coalesce window for chatty stdout/stderr progress persistence + UI events. */
-const PROGRESS_FLUSH_MS = 250;
-/** Durable registry cadence for running-job progress (UI updates stay at 250ms). */
-const DURABLE_PROGRESS_FLUSH_MS = 5_000;
-/**
- * A live job with no in-process ChildProcess handle (resumed session, or a
- * handle that was released) is only declared "lost" after failing the liveness
- * check continuously for this long. A single transient `ps`/`kill` hiccup — or
- * an identity read that momentarily fails — must never finalize a job that is
- * actually still running (which produced premature "result ready", a "<1s"
- * elapsed, and a ✗ status=lost that later flipped back to exit=0).
- */
-const LIVENESS_LOST_GRACE_MS = 8_000;
-
-/** Minimum spacing between liveness probes for the same job. */
-const LIVENESS_PROBE_INTERVAL_MS = 1_000;
-
-/**
- * Number of trailing bytes in `buf` that form an incomplete multi-byte UTF-8
- * sequence (a lead byte whose continuation bytes were cut off by the read
- * boundary). Returns 0 if the buffer already ends on a complete character.
- */
-function trailingIncompleteBytes(buf: Buffer): number {
-  const len = buf.length;
-  for (let back = 1; back <= 3 && back <= len; back++) {
-    const byte = buf[len - back]!;
-    if ((byte & 0xc0) === 0x80) continue; // continuation byte, keep walking back
-    let expectedLen = 1;
-    if ((byte & 0xe0) === 0xc0) expectedLen = 2;
-    else if ((byte & 0xf0) === 0xe0) expectedLen = 3;
-    else if ((byte & 0xf8) === 0xf0) expectedLen = 4;
-    return expectedLen > back ? back : 0;
-  }
-  return 0;
-}
-
-function processAlive(pid: number | undefined): boolean {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM means the process EXISTS but we lack permission to signal it
-    // (common for detached jobs in another process group) — that is alive, not
-    // gone. Only ESRCH ("no such process") proves it is truly dead.
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** Identity is invariant for a pid's lifetime, so it caches safely. */
-const PROCESS_IDENTITY_TTL_MS = 15_000;
-const PROCESS_IDENTITY_CACHE_MAX = 512;
-const processIdentityCache = new Map<
-  number,
-  { value: string | undefined; at: number }
->();
-
-function readLinuxProcessStart(pid: number): string | undefined {
-  try {
-    const raw = readFileSync(`/proc/${pid}/stat`, "utf8");
-    const commEnd = raw.lastIndexOf(")");
-    if (commEnd < 0) return undefined;
-    const fields = raw.slice(commEnd + 2).trim().split(/\s+/);
-    const startTime = fields[19];
-    return startTime && startTime.length > 0 ? startTime : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function readPsProcessStart(pid: number): string | undefined {
-  try {
-    // Start time only: the command line is deliberately excluded — `sh -c "cmd"`
-    // execs into `cmd`, mutating `ps command=` mid-run, which made a live job
-    // fail its OWN identity check.
-    return execFileSync("ps", ["-p", String(pid), "-o", "lstart="], {
-      encoding: "utf8",
-      timeout: 2_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return undefined;
-  }
-}
-
-function computeProcessIdentity(pid: number): string | undefined {
-  const raw =
-    process.platform === "linux"
-      ? readLinuxProcessStart(pid)
-      : readPsProcessStart(pid);
-  return raw ? createHash("sha256").update(raw).digest("hex") : undefined;
-}
-
-function pruneProcessIdentityCache(now: number): void {
-  if (processIdentityCache.size <= PROCESS_IDENTITY_CACHE_MAX) return;
-  for (const [pid, entry] of processIdentityCache) {
-    if (now - entry.at >= PROCESS_IDENTITY_TTL_MS) processIdentityCache.delete(pid);
-  }
-  if (processIdentityCache.size > PROCESS_IDENTITY_CACHE_MAX) {
-    processIdentityCache.clear();
-  }
-}
-
-function forgetProcessIdentity(pid: number | undefined): void {
-  if (pid) processIdentityCache.delete(pid);
-}
-
-function processIdentity(
-  pid: number | undefined,
-  options: { refresh?: boolean } = {},
-): string | undefined {
-  if (!pid || process.platform === "win32") return undefined;
-  const now = Date.now();
-  const cached = processIdentityCache.get(pid);
-  if (
-    cached &&
-    !options.refresh &&
-    now - cached.at < PROCESS_IDENTITY_TTL_MS
-  ) {
-    return cached.value;
-  }
-  const value = computeProcessIdentity(pid);
-  processIdentityCache.set(pid, { value, at: now });
-  pruneProcessIdentityCache(now);
-  return value;
-}
-
-/**
- * Heuristic for legacy registry rows that were actually agent tool-stall
- * trackers (commandDisplay = "fs.list /path", "shell.jobs {}", …), not real
- * shell.start / auto-backgrounded processes.
- */
-function looksLikeEphemeralToolTrack(job: BackgroundJob): boolean {
-  if (job.kind === "ephemeral") return true;
-  const cmd = (job.commandDisplay || job.command || "").trim();
-  // Real OS commands rarely look like "tool.name …" dotted tool registry names.
-  if (/^(fs|shell|tool|web|http|net|pdf|image|pkg|dns|whois|plan|task|pentest|sysinfo)\.[a-zA-Z]+(\s|$)/.test(cmd)) {
-    return true;
-  }
-  // Empty artifact paths = never a real background process capture.
-  if (!job.stdoutArtifact && !job.artifactPath && !job.pid) return true;
-  return false;
-}
-
-class RotatingRedactedWriter {
-  private stream: WriteStream | undefined;
-  private streamDone: Promise<void> | undefined;
-  private readonly completedStreams: Promise<void>[] = [];
-  private index = 0;
-  private currentBytes = 0;
-  private hash = createHash("sha256");
-  private readonly decoder = new StringDecoder("utf8");
-  private pending = "";
-  private closePromise: Promise<void> | undefined;
-  private writeError: Error | undefined;
-  private closed = false;
-  private acceptedBytes: number;
-  private readonly backpressuredStreams = new Set<WriteStream>();
-  private static readonly REDACTION_OVERLAP_CHARS = 4096;
-
-  constructor(private readonly receipt: JobArtifactReceipt) {
-    this.acceptedBytes = receipt.bytes;
-  }
-
-  append(raw: Buffer | string): boolean {
-    if (this.closed) throw new Error("Cannot append to a closed job artifact");
-    this.pending += Buffer.isBuffer(raw) ? this.decoder.write(raw) : raw;
-    let writable = true;
-    const lastNewline = this.pending.lastIndexOf("\n");
-    if (lastNewline >= 0) {
-      writable = this.writeRedacted(this.pending.slice(0, lastNewline + 1));
-      this.pending = this.pending.slice(lastNewline + 1);
-    }
-    if (this.pending.length <= RotatingRedactedWriter.REDACTION_OVERLAP_CHARS) {
-      return writable;
-    }
-    const flushLength = this.pending.length - RotatingRedactedWriter.REDACTION_OVERLAP_CHARS;
-    writable = this.writeRedacted(this.pending.slice(0, flushLength)) && writable;
-    this.pending = this.pending.slice(flushLength);
-    return writable;
-  }
-
-  waitForDrain(): Promise<void> {
-    const blocked = [...this.backpressuredStreams].filter(
-      (stream) => stream.writableNeedDrain,
-    );
-    if (blocked.length === 0) return Promise.resolve();
-    return Promise.all(
-      blocked.map(
-        (stream) =>
-          new Promise<void>((resolve) => {
-            const done = (): void => {
-              stream.off("drain", done);
-              stream.off("finish", done);
-              stream.off("error", done);
-              this.backpressuredStreams.delete(stream);
-              resolve();
-            };
-            stream.once("drain", done);
-            stream.once("finish", done);
-            stream.once("error", done);
-          }),
-      ),
-    ).then(() => undefined);
-  }
-
-  close(): Promise<void> {
-    if (this.closePromise) return this.closePromise;
-    this.pending += this.decoder.end();
-    if (this.pending) this.writeRedacted(this.pending);
-    this.pending = "";
-    this.closed = true;
-    this.finishCurrentStream();
-    this.closePromise = Promise.all(this.completedStreams).then(() => {
-      if (this.writeError) throw this.writeError;
-    });
-    return this.closePromise;
-  }
-
-  private writeRedacted(source: string): boolean {
-    const safe = redactSecrets(source);
-    if (safe !== source) this.receipt.redacted = true;
-    let data = Buffer.from(safe, "utf8");
-    const remaining = Math.max(0, MAX_STREAM_BYTES - this.acceptedBytes);
-    if (data.length > remaining) {
-      this.receipt.droppedBytes += data.length - remaining;
-      data = data.subarray(0, remaining);
-    }
-    this.acceptedBytes += data.length;
-    let writable = true;
-    while (data.length > 0) {
-      if (!this.stream || this.currentBytes >= PER_FILE_BYTES) this.rotate();
-      const room = PER_FILE_BYTES - this.currentBytes;
-      const part = data.subarray(0, room);
-      const stream = this.stream!;
-      const accepted = stream.write(part);
-      if (!accepted) this.backpressuredStreams.add(stream);
-      writable = accepted && writable;
-      this.hash.update(part);
-      this.receipt.bytes += part.length;
-      this.receipt.sha256 = this.hash.copy().digest("hex");
-      this.currentBytes += part.length;
-      data = data.subarray(part.length);
-    }
-    return writable;
-  }
-
-  private finishCurrentStream(): void {
-    if (!this.stream || !this.streamDone) return;
-    const stream = this.stream;
-    const done = this.streamDone;
-    this.stream = undefined;
-    this.streamDone = undefined;
-    stream.end();
-    this.completedStreams.push(done);
-  }
-
-  private rotate(): void {
-    this.finishCurrentStream();
-    const path = this.index === 0 ? this.receipt.path : `${this.receipt.path}.${this.index}`;
-    this.index += 1;
-    this.currentBytes = 0;
-    this.receipt.chunks.push(path);
-    const stream = createWriteStream(path, { flags: "w", mode: 0o600 });
-    this.stream = stream;
-    this.streamDone = new Promise<void>((resolve) => {
-      stream.once("finish", resolve);
-      stream.once("error", (error) => {
-        this.writeError ??= error;
-        resolve();
-      });
-    });
-  }
-}
 
 export class JobManager {
   private jobs = new Map<string, BackgroundJob>();
@@ -594,12 +38,6 @@ export class JobManager {
   private livenessWatchTimer: ReturnType<typeof setInterval> | undefined;
   private finalizations = new Map<string, Promise<boolean>>();
   private listeners = new Set<JobManagerListener>();
-  /**
-   * Tracks the first time a live job (with no ChildProcess handle) failed the
-   * liveness check, so we only finalize it as "lost" after a sustained grace
-   * window instead of on a single transient miss. Cleared as soon as the job is
-   * observed alive again or finalized.
-   */
   private livenessMisses = new Map<string, number>();
   private livenessCheckedAt = new Map<string, number>();
   private registryRetryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -625,7 +63,6 @@ export class JobManager {
       ...(job.artifacts?.stderr.chunks ?? []),
     ].filter((path): path is string => Boolean(path));
   }
-  /** Delete a dropped job's artifact chunks, never one still referenced. */
   private removeJobArtifacts(job: BackgroundJob): void {
     const paths = this.artifactPathsOf(job).filter((path) =>
       path.startsWith(`${this.jobsDir}${sep}`),
@@ -640,11 +77,9 @@ export class JobManager {
       try {
         rmSync(path, { force: true });
       } catch {
-        // Artifact cleanup is best-effort; a locked file is retried on boot.
       }
     }
   }
-  /** Drop a job row plus its per-job caches and artifacts. */
   private forgetJob(id: string): void {
     const job = this.jobs.get(id);
     this.jobs.delete(id);
@@ -658,7 +93,6 @@ export class JobManager {
     forgetProcessIdentity(job.pid);
     this.removeJobArtifacts(job);
   }
-  /** Remove artifact files whose job row no longer exists. */
   private sweepOrphanArtifacts(): void {
     let names: string[];
     try {
@@ -676,7 +110,6 @@ export class JobManager {
         if (now - statSync(path).mtimeMs <= TERMINAL_JOB_MAX_AGE_MS) continue;
         rmSync(path, { force: true });
       } catch {
-        // Ignore unreadable/locked leftovers.
       }
     }
   }
@@ -695,7 +128,7 @@ export class JobManager {
 
   private emit(change: JobManagerChange): void {
     for (const listener of this.listeners) {
-      try { listener(change); } catch { /* listeners cannot break job persistence */ }
+      try { listener(change); } catch { }
     }
   }
 
@@ -759,8 +192,6 @@ export class JobManager {
         continue;
       }
       this.claimedNotifications.delete(notification.id);
-      // Releasing a runtime lease must not discard an unread durable result;
-      // detach it so the next lease for this session adopts it.
       if (!notification.acknowledgedAt && !notification.archivedAt) {
         delete notification.responderLeaseId;
         changed = true;
@@ -826,9 +257,6 @@ export class JobManager {
       !existing && consumed && consumed.resultHash !== resultHash,
     );
     if (correctsConsumed) this.consumedResponderResults.delete(job.id);
-    // A materially different authoritative result is a new revision: every
-    // delivery/read/analysis marker belonged to the superseded result and must
-    // not suppress review of the corrected one.
     const supersedes = Boolean(
       existing &&
         completionChanged &&
@@ -994,7 +422,6 @@ export class JobManager {
     }
   }
 
-  /** Reconcile a restored process that no longer has a ChildProcess close event. */
   private refreshJobLiveness(
     job: BackgroundJob,
     options: { force?: boolean } = {},
@@ -1004,8 +431,6 @@ export class JobManager {
       this.livenessCheckedAt.delete(job.id);
       return;
     }
-    // Subscribers can ask for state many times per frame; one probe per job per
-    // interval is enough because the lost grace window is far longer.
     const checkedAt = this.livenessCheckedAt.get(job.id);
     const probeAt = Date.now();
     if (
@@ -1016,11 +441,6 @@ export class JobManager {
       return;
     }
     this.livenessCheckedAt.set(job.id, probeAt);
-    // Primary signal is the pid itself. If the process is alive we keep the job
-    // running and only ever declare "lost" on a PROVEN pid reuse (both the
-    // stored and the current identity are present AND differ). An identity read
-    // that fails or returns nothing is "unknown", never "dead" — treating it as
-    // dead is exactly what flipped live jobs to lost mid-run.
     if (processAlive(job.pid)) {
       const identity = processIdentity(job.pid);
       const provenReuse = Boolean(
@@ -1033,9 +453,6 @@ export class JobManager {
     } else {
       forgetProcessIdentity(job.pid);
     }
-    // The process looks gone (or is a proven pid reuse). Require the miss to
-    // persist across a grace window before finalizing — a single transient
-    // hiccup must not kill a job whose real close event is still in flight.
     const nowMs = Date.now();
     const firstMiss = this.livenessMisses.get(job.id);
     if (firstMiss === undefined) {
@@ -1114,11 +531,6 @@ export class JobManager {
     });
   }
 
-  /**
-   * Retry until the projection lands. The marker is durable, so a crash or a
-   * long-lived plan-write conflict cannot silently strand a green child, and an
-   * unrecoverable case is dead-lettered with a visible reason.
-   */
   private retrySettlement(
     job: BackgroundJob,
     resultRevision: number,
@@ -1151,11 +563,6 @@ export class JobManager {
     );
   }
 
-  /**
-   * One coalesced, unref'd watcher that reconciles restored live jobs without a
-   * UI read. Without it a headless session can leave a finished responder job
-   * "running" forever, because liveness was only refreshed by list/get calls.
-   */
   private scheduleLivenessWatch(): void {
     if (this.livenessWatchTimer) return;
     const restored = [...this.jobs.values()].filter(
@@ -1178,7 +585,6 @@ export class JobManager {
     this.livenessWatchTimer = timer;
   }
 
-  /** Ownership guard: a receipt may only be mutated by its owning session. */
   private ownsNotification(
     notification: ResponderNotification | undefined,
     sessionId: string | undefined,
@@ -1187,7 +593,6 @@ export class JobManager {
     return sessionId === undefined || notification.ownerSessionId === sessionId;
   }
 
-  /** Receipt for a launch that was deduplicated by its delegation key. */
   private startJobReceipt(job: BackgroundJob, reason: string): ToolResult {
     return {
       ok: true,
@@ -1206,15 +611,10 @@ export class JobManager {
     };
   }
 
-  /** Terminal results whose plan child could not be settled yet. */
   getPendingSettlements(): PendingSettlement[] {
     return [...this.pendingSettlements.values()];
   }
 
-  /**
-   * Register an in-flight tool for stall tracking only.
-   * Never appears in shell.jobs and never touches the durable registry.
-   */
   registerJob(id: string, job: BackgroundJob, ac?: AbortController, child?: ChildProcess): void {
     const tracked: BackgroundJob = { ...job, kind: job.kind ?? "ephemeral" };
     this.jobs.set(id, tracked);
@@ -1257,8 +657,6 @@ export class JobManager {
       }
     }
     if (options?.delegationId) {
-      // A retried tool call must not spawn a second scanner: the delegation key
-      // identifies the work, so the existing job is returned unchanged.
       const existing = [...this.jobs.values()].find(
         (candidate) =>
           candidate.delegationId === options.delegationId &&
@@ -1374,9 +772,6 @@ export class JobManager {
       this.writers.set(id, { stdout, stderr });
       stdout.append(`$ ${job.commandDisplay}\n\n`);
 
-      // A ChildProcess object is returned before the OS confirms launch. Wait
-      // for `spawn` (or `error`) so shell.start never reports a phantom running
-      // job whose pid is absent and whose eventual status is opaque exit=-2.
       const waitForLaunch = (
         candidate: ChildProcess,
       ): Promise<NodeJS.ErrnoException | undefined> =>
@@ -1400,8 +795,6 @@ export class JobManager {
         existsSync(shell!) &&
         existsSync(cwd)
       ) {
-        // Safe: the first child never started, so no command side effects are
-        // duplicated. Own this transient retry in the runtime, not the model.
         launchRetried = true;
         await new Promise((resolve) => setTimeout(resolve, 75));
         child = spawnChild();
@@ -1444,8 +837,6 @@ export class JobManager {
       }
       launchConfirmed = true;
 
-      // Sensitive input is never copied into the job record, display, logs, or
-      // artifacts. Write it once only after launch has been confirmed.
       if (typeof command !== "string" && command.stdinText !== undefined) {
         child.stdin?.end(command.stdinText);
       }
@@ -1461,8 +852,6 @@ export class JobManager {
       let lastDurableFlush = Date.now();
       let progressDirty = false;
       let progressTimer: ReturnType<typeof setTimeout> | undefined;
-      // UI freshness is cheap; rewriting the whole registry is not. Terminal
-      // transitions always persist authoritatively below.
       const flushProgress = (): void => {
         progressDirty = false;
         lastProgressFlush = Date.now();
@@ -1472,11 +861,6 @@ export class JobManager {
         }
         this.emit({ type: "job", jobId: id });
       };
-      // Coalesce high-frequency stdout/stderr chunks: a chatty job (scanner,
-      // dev server) must not force a registry write + UI rerender per data
-      // event. Flush at most every PROGRESS_FLUSH_MS, with a trailing flush so
-      // the last chunk before a quiet gap is never dropped. Terminal
-      // finalize/close always persists authoritatively and clears the timer.
       const scheduleProgressFlush = (): void => {
         const elapsed = Date.now() - lastProgressFlush;
         if (elapsed >= PROGRESS_FLUSH_MS) {
@@ -1534,15 +918,12 @@ export class JobManager {
       child.on("error", (error: NodeJS.ErrnoException) => {
         stopProgressFlush();
         const code = error.code ?? "UNKNOWN";
-        try { stderr.append(`Background process error [${code}]: ${error.message}\n`); } catch { /* finalization already owns the writers */ }
+        try { stderr.append(`Background process error [${code}]: ${error.message}\n`); } catch { }
         void this.finalizeJob(job, "failed", { exitCode: 127 });
       });
       this.persistSync();
       this.emit({ type: "job", jobId: id });
 
-      // Best-effort detection for shell-level failures such as command-not-found
-      // immediately after the command shell launches. This bounded window is
-      // not an application readiness guarantee; callers must tail/probe.
       let closedEarly = false;
       await new Promise<void>((resolve) => {
         if (!this.isLive(job)) {
@@ -1658,10 +1039,6 @@ export class JobManager {
     }
   }
 
-  /**
-   * List durable background jobs for this session only.
-   * Ephemeral tool-stall rows and other sessions' jobs are excluded.
-   */
   listJobs(sessionId?: string): ToolResult {
     this.pruneTerminalJobs();
     for (const job of this.jobs.values()) this.refreshJobLiveness(job);
@@ -1684,8 +1061,6 @@ export class JobManager {
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     const ordered = [...live, ...done];
     const shown = ordered.slice(0, LIST_JOBS_MAX_LINES);
-    // Judge on every job in scope, not just the display window: a normal job
-    // pushed past the window must still keep shell.jobs answerable.
     const pollingPolicy = responderPollingPolicy({
       call: { name: "shell.jobs", args: {} },
       recentJobs: ordered,
@@ -1793,8 +1168,6 @@ export class JobManager {
     if (this.responderLeases.get(sessionId) !== leaseId) return undefined;
     let adopted = false;
     for (const notification of this.notifications.values()) {
-      // Receipts belong to the session, not to a runtime lease: a new lease
-      // adopts everything unread that an earlier lease left behind.
       if (
         notification.ownerSessionId === sessionId &&
         !notification.acknowledgedAt &&
@@ -1828,10 +1201,6 @@ export class JobManager {
     this.claimedNotifications.delete(notificationId);
   }
 
-  /**
-   * Record that a delivery attempt started. This is deliberately weaker than
-   * `markDelivered`: an aborted or failed analysis turn must remain deliverable.
-   */
   markDeliveryStarted(notificationId: string, sessionId?: string): boolean {
     const notification = this.notifications.get(notificationId);
     if (!this.ownsNotification(notification, sessionId)) return false;
@@ -2112,10 +1481,7 @@ export class JobManager {
         remaining -= localLength;
       }
       let combined = Buffer.concat(parts);
-      // A fixed byte window can land mid-character (e.g. inside the 3-byte
       // "•" redaction marker). Trim any dangling lead byte(s) off the end so
-      // decoding never mangles a character; the trimmed bytes are re-read
-      // (and land on a boundary) on the caller's next offset-based poll.
       const trim = start + combined.length < total ? trailingIncompleteBytes(combined) : 0;
       if (trim > 0) combined = combined.subarray(0, combined.length - trim);
       const nextOffset = start + (length - remaining) - trim;
@@ -2391,7 +1757,6 @@ export class JobManager {
       .slice(0, limit);
   }
 
-  /** Drop stale terminal durable jobs and all leftover ephemeral rows. */
   pruneTerminalJobs(): void {
     const now = Date.now();
     const archivedUnsettled = [...this.notifications.values()]
@@ -2436,7 +1801,6 @@ export class JobManager {
     const durableTerminal: BackgroundJob[] = [];
     for (const [id, job] of this.jobs) {
       if (!this.isDurable(job)) {
-        // Safety: never keep ephemeral rows that are not live.
         if (!this.isLive(job)) this.forgetJob(id);
         continue;
       }
@@ -2475,7 +1839,7 @@ export class JobManager {
         if ((candidate.schemaVersion === 1 || candidate.schemaVersion === 2) && Array.isArray(candidate.jobs)) {
           parsed = candidate;
         }
-      } catch { /* a corrupt current registry must not replay stale v1 state */ }
+      } catch { }
       if (!parsed) return;
       if (parsed.schemaVersion === 2 && Array.isArray(parsed.settlements)) {
         for (const settlement of parsed.settlements) {
@@ -2502,8 +1866,6 @@ export class JobManager {
           if (notifiedJobs.has(notification.jobId)) continue;
           notifiedJobs.add(notification.jobId);
           if (!notification.acknowledgedAt && !notification.archivedAt) {
-            // A durable receipt must survive the restart it exists for. Drop the
-            // dead runtime lease so the next activated lease can adopt it.
             delete notification.responderLeaseId;
           }
           this.notifications.set(notification.id, notification);
@@ -2515,10 +1877,6 @@ export class JobManager {
         if (["starting", "running", "stopping"].includes(job.status)) {
           const alive = processAlive(job.pid);
           const identity = alive ? processIdentity(job.pid) : undefined;
-          // Only declare lost when the process is truly gone, or when we can
-          // PROVE a pid reuse (stored + current identity both known and
-          // different). An alive pid whose identity is unknown/unreadable is
-          // kept running — never kill a live process over a failed `ps` read.
           const provenReuse = Boolean(
             identity && job.processIdentity && identity !== job.processIdentity,
           );
@@ -2543,10 +1901,9 @@ export class JobManager {
       this.scheduleLivenessWatch();
       this.pruneTerminalJobs();
       this.persistSync();
-    } catch { /* Corrupt registries are ignored, never trusted as running. */ }
+    } catch { }
   }
 
-  /** Only durable jobs and responder notifications are written to disk. */
   private registry(): PersistedRegistryV2 {
     return {
       schemaVersion: 2,

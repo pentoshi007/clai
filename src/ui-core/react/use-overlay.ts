@@ -1,4 +1,3 @@
-/** React binding for `OverlayController`, mirroring `use-transcript-store.ts`. */
 
 import { useSyncExternalStore } from "react";
 import type { OverlayController, OverlayState } from "../controllers/overlay-controller.js";

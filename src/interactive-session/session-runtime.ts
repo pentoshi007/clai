@@ -1,10 +1,3 @@
-/**
- * Mutable per-session runtime: the transport, the output store, the ordered
- * input lane, timers, and the single finalization promise.
- *
- * Sessions share no locks, queues, cursors, deadlines, or finalization state, so
- * a failure in one session cannot affect another.
- */
 
 import type { BoundedArtifactWriter } from "./artifact-writer.js";
 import type { InteractiveSessionConfig } from "./config.js";
@@ -53,7 +46,6 @@ export class SessionRuntime {
   readonly exitSignal = new Notifier();
   engagementState: InteractiveEngagementState;
 
-  /** Set once a terminal transition is chosen so late observations only enrich. */
   processExited = false;
   exitObserved: TerminationReason | undefined;
   disposed = false;
@@ -79,7 +71,6 @@ export class SessionRuntime {
     this.unsubscribes.push(unsubscribe);
   }
 
-  /** Accepted input and observed output both count as activity. */
   touch(): void {
     this.record.lastActivityAt = Date.now();
     this.timers.armIdle(this.idleTimeoutMs);
@@ -95,7 +86,6 @@ export class SessionRuntime {
       try {
         unsubscribe();
       } catch {
-        // Listener teardown is best effort; cleanup must still complete.
       }
     }
   }

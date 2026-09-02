@@ -109,7 +109,6 @@ function renderIntroHeaderLinesInner(opts: IntroHeaderOptions): string[] {
   const leftWidth = Math.floor(available / 2);
   const rightWidth = available - leftWidth;
 
-  // Fill the pane: the six-row wordmark whenever the left cell can hold it.
   const wmLines = renderWordmark("clai", {
     indent: "",
     size: leftWidth >= wordmarkWidth("clai", "large") ? "large" : "compact",

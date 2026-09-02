@@ -1,9 +1,3 @@
-/**
- * Attaches UI-coupled handlers to the shared command registry (V2-072, V2-080).
- *
- * Registry metadata lives in Phase 2; each frontend attaches handler bodies.
- * Implementations are split by surface under `./commands/*`.
- */
 
 import type { AppServices } from "../bootstrap/composition-root.js";
 import type { CommandInvocation } from "../../app/commands/command.js";

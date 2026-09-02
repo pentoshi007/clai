@@ -83,7 +83,6 @@ function contextSegment(input: StatusViewInput, density: StatusDensity): string 
   return input.ink.fg("userBorder", chip);
 }
 
-/** Mode chip plate per mode — opentui ModeChip parity. */
 const MODE_PLATE: Readonly<Record<Mode, ThemeToken>> = {
   agent: "chipTeal",
   ask: "chipIndigo",
@@ -101,11 +100,6 @@ function separator(input: StatusViewInput): string {
   return input.ink.fg("muted", ` ${input.ink.glyphs.separator} `);
 }
 
-/**
- * Priority-ordered prefix fit: segments join with `separator` and the tail
- * segments that would overflow the budget are dropped whole, so a row never
- * ends in a ragged mid-word ellipsis at ordinary widths.
- */
 export function fitSegments(
   segments: readonly string[],
   budget: number,
@@ -133,7 +127,6 @@ function idleSegments(input: StatusViewInput, density: StatusDensity): string[] 
       return { label, token };
     }),
   );
-  // Classic-only: ^N newline (Ctrl+N) works on all OS, shown in the existing status row only.
   if (density !== "xs") {
     const thinkingIdx = hints.findIndex((h) => h.label === HINT_LABELS.thinking);
     const entry = { label: "^N newline", token: "muted" as ThemeToken };
@@ -157,8 +150,6 @@ function idleSegments(input: StatusViewInput, density: StatusDensity): string[] 
 
 function busySegments(input: StatusViewInput, density: StatusDensity, leftBudget: number): string[] {
   const { ink } = input;
-  // classic: reserve less for chrome so "continue"/"done" + timings survive at 48–68 cols.
-  // prev 34/46 clipped activity to 8 chars at 48 cols and dropped the timing segment.
   const reserve = density === "sm" ? 22 : density === "xs" ? 18 : 30;
   const budget = Math.max(10, leftBudget - reserve);
   const label = input.compacting ? "compacting" : formatActivity(input.activity, budget);
@@ -174,13 +165,6 @@ export function statusRowsWanted(): StatusRowsWanted {
   return 1;
 }
 
-/**
- * One straight row under the composer: mode badge + hints (or activity while
- * busy) on the left, context usage flush right — the opentui status-line
- * arrangement, inset one column on each side so no glyph ever touches the
- * composer box's border columns. Scroll position lives on the right-edge
- * scrollbar now, not in this row.
- */
 export function statusRows(input: StatusViewInput): readonly string[] {
   const density = statusDensityForWidth(input.columns);
   const inset = STATUS_INSET_COLUMNS;

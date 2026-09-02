@@ -43,17 +43,18 @@ export function readWithAbort(
   });
 }
 
+export const PRIVATE_REASONING_NOTE_PREFIX = "Reasoning is private on";
+
 export function responsesPrivateReasoningNote(
   config: ResponsesDialectConfig,
   request: CompletionRequest,
   reasoningTokens: number,
 ): string {
   const payload = config.reasoningPayload(request.thinking) as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const effort = payload ? (payload.effort as string | undefined) : undefined;
   const effortText = effort ? ` at ${effort} effort` : "";
-  return `Reasoning is private on ${config.displayName}: the model reasoned${effortText} and used ${reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
+  return `${PRIVATE_REASONING_NOTE_PREFIX} ${config.displayName}: the model reasoned${effortText} and used ${reasoningTokens.toLocaleString("en-US")} reasoning tokens, but the API returns no reasoning text to display.`;
 }
 
 export async function postResponses(
@@ -86,7 +87,12 @@ export async function readResponsesJson(
   model: string,
   response: Response,
   signal?: AbortSignal,
-): Promise<{ output?: unknown; usage?: unknown; id?: string; error?: unknown }> {
+): Promise<{
+  output?: unknown;
+  usage?: unknown;
+  id?: string;
+  error?: unknown;
+}> {
   try {
     return await readJson(response, signal);
   } catch (error) {
@@ -115,6 +121,7 @@ export function buildResponsesRequestBody(
     temperature: request.temperature,
     stream,
     reasoning: request.thinking,
+    toolChoice: request.toolChoice,
     tools: request.tools,
     parallelToolCalls: request.parallelToolCalls,
     purpose: request.purpose,

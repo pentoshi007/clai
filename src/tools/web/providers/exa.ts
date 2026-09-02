@@ -1,32 +1,3 @@
-/**
- * Exa search-provider adapter for `web.search`.
- *
- * Implements the {@link SearchProvider} contract from `./provider.ts` and
- * registers itself in the {@link searchProviders} registry on import. Like
- * the Brave and Tavily adapters it issues exactly one outbound HTTPS request
- * per invocation (Requirement 6.7), forwards the caller-provided
- * {@link AbortSignal} so the `web.search` timeout is honored (Requirement
- * 1.8), and returns a {@link RawProviderResponse} carrying the raw HTTP
- * status plus the parsed hit list for uniform error classification in the
- * handler (Requirements 6.1, 6.2, 6.5, 6.6).
- *
- * Endpoint and request shape follow Exa's `/search` reference
- * (https://docs.exa.ai/reference/search-api-guide-for-coding-agents):
- *
- *   - POST `https://api.exa.ai/search`
- *   - Header: `x-api-key: <key>`
- *   - Body: `{ query, type, numResults, contents: { highlights: true } }`
- *     where `type` is the user-configured {@link ExaSearchType} and
- *     `contents` is omitted for the `instant` tier so it keeps its
- *     sub-second latency profile.
- *   - Response: `{ results: [{ title, url, highlights?, text?, summary? }] }`
- *     mapped into `SearchResult { title, url, snippet }`.
- *
- * Only raw `results` + `highlights` are requested; `outputSchema` synthesis
- * is intentionally not used because the handler maps discrete hits rather
- * than a single grounded answer, and skipping it keeps latency and response
- * shape stable across every search type.
- */
 
 import { Buffer } from "node:buffer";
 import https from "node:https";
@@ -43,56 +14,28 @@ import {
 } from "../types.js";
 import { getExaSearchType } from "../../../store/config.js";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
-/** Exa search endpoint (host + path). */
 const EXA_HOST = "api.exa.ai";
 const EXA_PATH = "/search";
 
-/**
- * `numResults` accepted by Exa. The `web.search` handler already clamps the
- * caller's `maxResults` to `[1, 20]`; we re-clamp defensively so the adapter
- * is self-consistent when invoked directly (e.g. from a unit test).
- */
 const EXA_MIN_RESULTS = 1;
 const EXA_MAX_RESULTS = 20;
 
-/** User-Agent sent on outbound Exa requests. */
 const DEFAULT_USER_AGENT = "clai-web-search/1.0";
 
-/**
- * Hard cap on the number of body bytes read before surfacing a `parse`
- * error. Deep-search responses with highlights are comfortably under this
- * cap; it exists purely as a memory guard against a misbehaving upstream.
- */
-const MAX_RESPONSE_BYTES = 4_194_304; // 4 MiB
+const MAX_RESPONSE_BYTES = 4_194_304;
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 type HttpsRequestFn = typeof https.request;
 
 let httpsRequestFn: HttpsRequestFn = https.request;
 
-/**
- * Test-only seam: swap the HTTPS transport used by the adapter. Production
- * callers never invoke this; tests use it to inject a stubbed `request`
- * implementation that emits scripted responses.
- */
 export function __setExaHttpsRequestForTesting(
   fn: HttpsRequestFn | undefined,
 ): void {
   httpsRequestFn = fn ?? https.request;
 }
 
-/**
- * Resolver for the configured search type. Reads `ClaiConfig.exaSearchType`
- * lazily so a config-store failure degrades to {@link DEFAULT_EXA_SEARCH_TYPE}
- * rather than throwing inside the search path. Tests may override it.
- */
 let searchTypeResolver: () => ExaSearchType = defaultSearchTypeResolver;
 
 function defaultSearchTypeResolver(): ExaSearchType {
@@ -103,17 +46,12 @@ function defaultSearchTypeResolver(): ExaSearchType {
   }
 }
 
-/**
- * Test-only seam: override how the adapter resolves the configured search
- * type. Passing `undefined` restores the config-backed resolver.
- */
 export function __setExaSearchTypeResolverForTesting(
   resolver: (() => ExaSearchType) | undefined,
 ): void {
   searchTypeResolver = resolver ?? defaultSearchTypeResolver;
 }
 
-/** Clamp `numResults` to the Exa-supported range. */
 function clampResults(count: number): number {
   if (!Number.isFinite(count)) return EXA_MIN_RESULTS;
   const rounded = Math.trunc(count);
@@ -122,11 +60,6 @@ function clampResults(count: number): number {
   return rounded;
 }
 
-/**
- * Drain `res` into a UTF-8 string, capped at {@link MAX_RESPONSE_BYTES}. The
- * body cap defends against a misbehaving upstream; the {@link AbortSignal}
- * short-circuits the read on the `web.search` timeout (Requirement 1.8).
- */
 function readBody(res: IncomingMessage, signal: AbortSignal): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -174,11 +107,6 @@ function readBody(res: IncomingMessage, signal: AbortSignal): Promise<string> {
   });
 }
 
-/**
- * Build the JSON request body. `contents.highlights` is requested for every
- * tier except `instant`, matching Exa's guidance that the instant tier stays
- * content-free to preserve its ~250 ms latency.
- */
 function buildPayload(
   query: string,
   numResults: number,
@@ -191,12 +119,6 @@ function buildPayload(
   return JSON.stringify(body);
 }
 
-/**
- * Issue the Exa HTTPS POST and resolve `{status, body}` once the response is
- * fully read. Network failures propagate as a thrown error so the adapter
- * can map them to a `status: 0` placeholder for the handler's `network`
- * classification (Requirement 6.3).
- */
 function dispatchRequest(
   query: string,
   numResults: number,
@@ -246,11 +168,6 @@ function dispatchRequest(
   });
 }
 
-/**
- * Collapse an Exa result's `highlights` (query-relevant excerpts) into a
- * single snippet, falling back to `text` then `summary`. Returns an empty
- * string when none is present so the handler's normaliser can decide.
- */
 function extractSnippet(entry: {
   highlights?: unknown;
   text?: unknown;
@@ -269,12 +186,6 @@ function extractSnippet(entry: {
   return "";
 }
 
-/**
- * Extract the Exa `results[]` array from a parsed JSON body and map it to
- * the {@link RawProviderResponse.hits} shape. Returns `null` when the body
- * did not carry a `{ results: [...] }` array so the adapter can surface a
- * `parseError` (Requirement 6.5).
- */
 function extractHits(parsed: unknown): RawProviderResponse["hits"] | null {
   if (!parsed || typeof parsed !== "object") return null;
   const results = (parsed as { results?: unknown }).results;
@@ -300,15 +211,7 @@ function extractHits(parsed: unknown): RawProviderResponse["hits"] | null {
   return hits;
 }
 
-// ---------------------------------------------------------------------------
-// Provider definition
-// ---------------------------------------------------------------------------
 
-/**
- * Exa adapter. Registered in {@link searchProviders} as a side-effect of
- * importing this module — `web.search` resolves the active provider via the
- * registry.
- */
 export const exaProvider: SearchProvider = {
   id: "exa",
   displayName: "Exa",
@@ -321,9 +224,6 @@ export const exaProvider: SearchProvider = {
     auth: { apiKey?: string },
     signal: AbortSignal,
   ): Promise<RawProviderResponse> {
-    // Defensive: the handler resolves the key before calling us. If somehow
-    // invoked without one, surface a 0-status response so the handler maps
-    // it to `missing-key` / `network` rather than dispatching unauthenticated.
     if (!auth.apiKey) {
       return { status: 0, hits: [], parseError: "missing api key" };
     }
@@ -338,8 +238,6 @@ export const exaProvider: SearchProvider = {
       signal,
     );
 
-    // Non-2xx: forward the status with an empty hit list; the handler maps
-    // the status to the appropriate error kind.
     if (status < 200 || status >= 300) {
       return { status, hits: [] };
     }
@@ -371,6 +269,4 @@ export const exaProvider: SearchProvider = {
   },
 };
 
-// Register on import so `searchProviders.exa` is populated by the time the
-// `web.search` handler dispatches.
 searchProviders.exa = exaProvider;

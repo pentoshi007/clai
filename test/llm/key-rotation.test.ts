@@ -116,6 +116,6 @@ describe("formatKeyEventStatus", () => {
         reason: "rate limited",
         waitMs: 2000,
       }),
-    ).toMatch(/rate limited in 2s/);
+    ).toMatch(/rate limited.*retrying in 2s/);
   });
 });

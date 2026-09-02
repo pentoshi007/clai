@@ -14,9 +14,6 @@ import {
   ingestOpenAiModelCatalog,
 } from "./http.js";
 
-// NVIDIA NIM exposes an OpenAI-compatible Chat Completions API at
-// https://integrate.api.nvidia.com/v1. API keys are prefixed `nvapi-`.
-// Reference: https://docs.api.nvidia.com/nim/reference/llm-apis
 const baseUrl = "https://integrate.api.nvidia.com/v1";
 
 export const nvidiaFallbackModels = [
@@ -54,15 +51,8 @@ export const nvidiaFallbackModels = [
 
 let cachedModels: string[] | null = null;
 let lastFetchTime = 0;
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour cache TTL
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
-// NVIDIA NIM cold-starts less-popular models on first request, so the first
-// token can lag well past the shared stall budget while the model spins up
-// (popular models like gpt-oss stay warm and answer immediately). Give the
-// first byte a longer budget to avoid abort/retry churn that itself triggers
-// another cold start. The mid-stream budget falls back to the shared default,
-// which must outlast a fully buffered tool call — see
-// DEFAULT_STREAM_IDLE_TIMEOUT_MS.
 const NVIDIA_FIRST_BYTE_IDLE_TIMEOUT_MS = 120_000;
 
 export const nvidiaProvider: LlmProvider = {
@@ -112,6 +102,7 @@ export const nvidiaProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("NVIDIA NIM API key is required");
     const model = request.model ?? defaultModels.nvidia;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "NVIDIA NIM",
       providerId: "nvidia",
       baseUrl,
@@ -139,6 +130,7 @@ export const nvidiaProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("NVIDIA NIM API key is required");
     const model = request.model ?? defaultModels.nvidia;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "NVIDIA NIM",
       providerId: "nvidia",
       baseUrl,

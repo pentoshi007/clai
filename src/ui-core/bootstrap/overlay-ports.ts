@@ -1,10 +1,3 @@
-/**
- * Adapts `OverlayController` into the typed app-layer confirm/secret ports
- * (CORE-002, V2-073). The agent never reads the terminal directly: it awaits
- * these promises, which resolve once the user answers the rendered modal.
- * Prompt text is ported from the classic TUI's `confirm.ts` so both
- * frontends read the same way.
- */
 
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -20,7 +13,6 @@ import {
   toolPromptText,
 } from "../../app/confirm-prompt-text.js";
 
-/** Cap for delete-preview body so huge files do not flood the pager. */
 const PREVIEW_MAX_BYTES = 256 * 1024;
 
 function expandUserPath(path: string): string {
@@ -31,16 +23,11 @@ function expandUserPath(path: string): string {
   return path;
 }
 
-/**
- * Load a text preview of a path for the delete-confirm `v` action.
- * Binary / unreadable files get a short diagnostic instead of a crash.
- */
 export async function loadDeletePreview(path: string): Promise<string> {
   const resolved = expandUserPath(path);
   try {
     const buf = await readFile(resolved);
     const head = buf.subarray(0, PREVIEW_MAX_BYTES);
-    // Heuristic: high NUL density ⇒ binary
     let nuls = 0;
     for (let i = 0; i < head.length; i += 1) {
       if (head[i] === 0) nuls += 1;

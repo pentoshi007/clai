@@ -34,28 +34,8 @@ export const SENSITIVE_HEADERS: ReadonlySet<string> = new Set([
   "proxy-authorization",
 ]);
 
-/**
- * Ordered list of `[name, value]` pairs, the most general header input
- * shape. Repeats of the same name are preserved in the order observed and
- * are joined by {@link applyToHeaders} per RFC 7230.
- *
- * Callers that have a Node `http.IncomingMessage.rawHeaders` array (a flat
- * `string[]` of alternating name/value entries) can convert it with
- *
- * ```ts
- * const pairs: HeaderEntries = [];
- * for (let i = 0; i < raw.length; i += 2) pairs.push([raw[i]!, raw[i + 1]!]);
- * ```
- */
 export type HeaderEntries = ReadonlyArray<readonly [string, string]>;
 
-/**
- * Reduced cookie shape produced by {@link stripForAudit}: only the
- * non-secret public attributes named by Requirement 5.11 are kept. The
- * cookie's `value`, `expires`, and `maxAge` fields are intentionally
- * absent — the audit log never carries cookie values nor any field that
- * could leak session lifetime back to a third party.
- */
 export interface AuditSafeCookie {
   name: string;
   domain?: string;
@@ -65,12 +45,6 @@ export interface AuditSafeCookie {
   sameSite?: CookieSameSite;
 }
 
-/**
- * Output shape of {@link stripForAudit}: a header map with every
- * sensitive header dropped and a cookies list with every value-bearing
- * field removed. Both fields are always present (possibly empty) so the
- * caller can spread them into an audit payload without `undefined` checks.
- */
 export interface AuditSafePayload {
   headers: HeaderMap;
   cookies: AuditSafeCookie[];
@@ -106,7 +80,6 @@ export function applyToHeaders(
   input: HeaderMap | HeaderEntries,
   redactSensitive: boolean,
 ): HeaderMap {
-  // Group repeated header names. Ordering is preserved by the Map.
   const grouped = new Map<string, string[]>();
   const entries: Iterable<readonly [string, string]> = Array.isArray(input)
     ? (input as HeaderEntries)
@@ -127,7 +100,6 @@ export function applyToHeaders(
   for (const [key, values] of grouped) {
     if (redactSensitive && SENSITIVE_HEADERS.has(key)) {
       // The redacted placeholder is shorter than the cap and is a fixed
-      // marker; do not run it through the truncator.
       out[key] = REDACTED_PLACEHOLDER;
       continue;
     }

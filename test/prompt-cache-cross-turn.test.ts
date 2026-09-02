@@ -15,12 +15,19 @@ import {
 } from "../src/agent/session-state.js";
 import type { ChatMessage } from "../src/types.js";
 
+/**
+ * Conformance contract for provider prefix caching: request N must be a byte
+ * prefix of request N+1 except for the appended tail. Injected state blocks
+ * follow latest-copy-wins: unchanged blocks stay put, changed blocks are
+ * appended, stale copies ride in history until compaction strips them.
+ */
+
 const HEAD = "SYSTEM CONSTITUTION\nstable rules";
 
 const requestContext = (turn: number): string =>
   `${REQUEST_CONTEXT_PREFIX}\nOUTCOME CONTRACT\nGoal: goal ${turn}\nTASK STATE\nMode: agent`;
 const planBlock = (version: number): string =>
-  `${PLAN_CONTEXT_PREFIX} v${version} for this session (goal: ship, status: in_progress):`;
+  `${PLAN_CONTEXT_PREFIX} for this session (goal: ship, status: in_progress): rev ${version}`;
 const stateBlock = (step: number): string =>
   `SESSION STATE / WORKING MEMORY\nstep ${step}`;
 
@@ -56,7 +63,7 @@ function runTurn(
   }
   return {
     sent: messages,
-    history: messages.filter((message) => !isInjected(message) && message.content !== HEAD),
+    history: messages.filter((message) => message.content !== HEAD),
   };
 }
 
@@ -72,45 +79,56 @@ function sharedPrefixLength(a: readonly ChatMessage[], b: readonly ChatMessage[]
   return index;
 }
 
+function lastCopy(messages: readonly ChatMessage[], prefix: string): ChatMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "system" && message.content.startsWith(prefix)) return message;
+  }
+  return undefined;
+}
+
 describe("cross-turn prompt cache prefix", () => {
   it("keeps every injected block behind the conversation it annotates", () => {
     const { sent } = runTurn([], 1, 3);
     const firstInjected = sent.findIndex(isInjected);
     expect(firstInjected).toBeGreaterThan(0);
-    expect(sent.slice(firstInjected).every(isInjected)).toBe(true);
+    expect(sent.slice(0, firstInjected).some(isInjected)).toBe(false);
   });
 
-  it("keeps exactly one live copy of each injected block", () => {
+  it("keeps the newest revision last so the live copy is unambiguous", () => {
     const { sent } = runTurn([], 1, 5);
-    expect(sent.filter(isRequestContextSystemMessage)).toHaveLength(1);
-    expect(
-      sent.filter((m) => m.role === "system" && m.content.startsWith(PLAN_CONTEXT_PREFIX)),
-    ).toHaveLength(1);
-    expect(
-      sent.filter((m) => m.role === "system" && isSessionStateMessage(m.content)),
-    ).toHaveLength(1);
+    expect(lastCopy(sent, REQUEST_CONTEXT_PREFIX)?.content).toBe(requestContext(1));
+    expect(lastCopy(sent, PLAN_CONTEXT_PREFIX)?.content).toContain("rev 1");
+    expect(lastCopy(sent, "SESSION STATE / WORKING MEMORY")?.content).toContain("step 5");
+    expect(sent.filter((m) => isSessionStateMessage(m.content))).toHaveLength(6);
   });
 
-  it("orders the trailing blocks deterministically across steps", () => {
-    const tailOf = (steps: number): string[] =>
-      runTurn([], 1, steps)
-        .sent.filter(isInjected)
-        .map((m) => m.content.split("\n")[0]!.replace(/v\d+/, "vN").replace(/step \d+/, "step N"));
-    expect(tailOf(1)).toEqual(tailOf(4));
+  it("orders the live blocks deterministically across steps", () => {
+    const liveOf = (steps: number): string[] => {
+      const sent = runTurn([], 1, steps).sent;
+      return [REQUEST_CONTEXT_PREFIX, PLAN_CONTEXT_PREFIX, "SESSION STATE / WORKING MEMORY"].map(
+        (prefix) =>
+          lastCopy(sent, prefix)!
+            .content.split("\n")[0]!
+            .replace(/rev \d+/, "rev N")
+            .replace(/step \d+/, "step N"),
+      );
+    };
+    expect(liveOf(1)).toEqual(liveOf(4));
   });
 
   it("preserves the whole previous turn as a shared prefix on the next turn", () => {
     const first = runTurn([], 1, 30);
     const second = runTurn(first.history, 2, 1);
     const shared = sharedPrefixLength(first.sent, second.sent);
-    expect(shared).toBe(first.sent.length - 3);
+    expect(shared).toBe(first.sent.length);
     expect(shared / first.sent.length).toBeGreaterThan(0.95);
   });
 
   it("still shares the prefix when the previous turn ran a single step", () => {
     const first = runTurn([], 1, 1);
     const second = runTurn(first.history, 2, 1);
-    expect(sharedPrefixLength(first.sent, second.sent)).toBe(first.sent.length - 3);
+    expect(sharedPrefixLength(first.sent, second.sent)).toBe(first.sent.length);
   });
 
   it("grows the shared prefix monotonically over a multi-turn session", () => {
@@ -157,14 +175,13 @@ describe("cross-turn prompt cache prefix", () => {
     expect(sharedPrefixLength(first.sent, second.sent)).toBe(1);
   });
 
-  it("keeps the trailing blocks in place for single-system dialects", () => {
+  it("keeps single-system dialects working with a user-turn tail", () => {
     const { sent } = runTurn([], 1, 2);
     const normalized = singleLeadingSystemMessages(sent);
     expect(normalized[0]).toMatchObject({ role: "system", content: HEAD });
     expect(normalized.filter((m) => m.role === "system")).toHaveLength(1);
-    const tail = normalized.slice(-3).map((m) => m.content);
-    expect(tail[0]).toContain(REQUEST_CONTEXT_PREFIX);
-    expect(tail[1]).toContain(PLAN_CONTEXT_PREFIX);
-    expect(tail[2]).toContain("SESSION STATE");
+    const last = normalized.at(-1)?.content ?? "";
+    expect(last).toContain("SESSION STATE");
+    expect(last).toContain("step 2");
   });
 });

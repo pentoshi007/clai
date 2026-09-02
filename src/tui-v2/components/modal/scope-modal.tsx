@@ -1,9 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Engagement scope editor — multi-row target inputs docked above the composer.
- *
- * Empty targets = scoping disabled. Each row has a remove control; + adds rows.
- */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
@@ -22,7 +17,6 @@ export interface ScopeModalProps {
 
 const ACCENT = "#2EEBFF";
 
-/** One editor row: stable id so remove/add does not scramble refs. */
 interface ScopeRow {
   readonly id: number;
   readonly text: string;
@@ -34,7 +28,6 @@ function rowsFromTargets(targets: readonly string[]): ScopeRow[] {
   if (targets.length === 0) {
     return [{ id: nextRowId++, text: "" }];
   }
-  // Saved targets + one empty row for the next host.
   return [
     ...targets.map((text) => ({ id: nextRowId++, text })),
     { id: nextRowId++, text: "" },
@@ -48,7 +41,6 @@ export function ScopeModal(props: ScopeModalProps): ReactNode {
   );
   const [focusIdx, setFocusIdx] = useState(0);
   const inputRefs = useRef<Map<number, InputRenderable | null>>(new Map());
-  /** After first paint, push saved text into every Input via setText. */
   const prefilled = useRef(false);
 
   function applyTextToInputs(list: ScopeRow[]): void {
@@ -60,12 +52,10 @@ export function ScopeModal(props: ScopeModalProps): ReactNode {
           el.setText(row.text);
         }
       } catch {
-        /* ignore */
       }
     }
   }
 
-  // Prefill all inputs once refs exist (not only the focused row).
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       applyTextToInputs(rows);
@@ -78,7 +68,6 @@ export function ScopeModal(props: ScopeModalProps): ReactNode {
       }
     });
     return () => cancelAnimationFrame(id);
-    // Re-run when row count / ids change so new empty rows get focus wiring.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [rows.map((r) => r.id).join(","), focusIdx]);
 
@@ -115,7 +104,6 @@ export function ScopeModal(props: ScopeModalProps): ReactNode {
   function removeRow(index: number): void {
     const synced = syncFromInputs();
     if (synced.length <= 1) {
-      // Keep one empty row (scoping disabled until they type).
       const only = { id: nextRowId++, text: "" };
       setRows([only]);
       setFocusIdx(0);
@@ -158,7 +146,6 @@ export function ScopeModal(props: ScopeModalProps): ReactNode {
     }
     if (chord === "enter") {
       key.preventDefault();
-      // Enter always saves (use + / ^a to add rows) so multi-target saves work.
       submit();
     }
   });

@@ -1,7 +1,3 @@
-/**
- * Pure presentation helpers for Cursor-style file-change previews in the
- * tool card and export/copy paths.
- */
 
 import { relative } from "node:path";
 import type {
@@ -29,22 +25,13 @@ export type DiffLineTone = "context" | "add" | "del" | "gap" | "header";
 
 export interface PresentedDiffRow {
   readonly tone: DiffLineTone;
-  /** Right-aligned gutter (line number or blank). */
   readonly gutter: string;
-  /** Prefix character: space / + / − / · */
   readonly prefix: string;
   readonly text: string;
-  /** Soft-clipped body for chat cards. */
   readonly displayText: string;
-  /** Syntax spans for the display body (clipped). */
   readonly spans: readonly SyntaxSpan[];
 }
 
-/**
- * Soft-wrap budget for chat card code rows. Gutter + " │ " + card chrome eat
- * ~12 cols; keep body under this so long SVG/HTML lines never collide the
- * right border. Never use ellipsis truncation — full text via wrap chunks.
- */
 const DEFAULT_WRAP = 72;
 
 function gutterWidth(change: FileChange): number {
@@ -76,7 +63,6 @@ function prefixFor(op: DiffOp): string {
   return " ";
 }
 
-/** Hard-wrap by character columns — no ellipsis, no dropped characters. */
 export function wrapCodeLine(text: string, max: number): string[] {
   const width = Math.max(8, max);
   if (text.length <= width) return [text];
@@ -87,7 +73,6 @@ export function wrapCodeLine(text: string, max: number): string[] {
   return out.length > 0 ? out : [""];
 }
 
-/** Slice syntax spans for [start, end) character offsets on a single source line. */
 function sliceSpans(
   spans: readonly SyntaxSpan[],
   start: number,
@@ -146,7 +131,6 @@ export function rowBackground(
   return undefined;
 }
 
-/** Flatten preview hunks into styled rows for the tool card. */
 export function presentFileChangePreview(
   change: FileChange,
   options: { maxLineChars?: number; maxRows?: number } = {},
@@ -186,7 +170,6 @@ export function presentFileChangePreview(
         const spans = sliceSpans(fullSpans, offset, end);
         rows.push({
           tone: dl.op,
-          // Only the first visual row of a wrapped source line shows the number.
           gutter: ci === 0 ? lineGutter(dl, width) : " ".repeat(width),
           prefix: ci === 0 ? prefixFor(dl.op) : " ",
           text: chunk,
@@ -203,7 +186,6 @@ export function presentFileChangePreview(
   }
 
   if (change.truncated || used >= maxRows) {
-    // Prefer a concrete "+N more" when the card only showed a head of the file.
     const totalTouched = Math.max(
       change.stats.newLines,
       change.stats.added + change.stats.removed,
@@ -248,21 +230,17 @@ export function presentAllFileChangePreviews(
   }));
 }
 
-/** Plain-text export of a file change (no ANSI). */
 export function fileChangeExportText(change: FileChange): string {
   const head = `${change.kind} ${change.path}`;
   const body = formatUnifiedPreview(change);
   return `${head}\n${body}`;
 }
 
-/** Structured modal row for pager (gutter split from body). */
 export interface ModalPagerRow {
   readonly gutter: string;
-  /** Prefix + body without line number, e.g. `+ const x = 1` */
   readonly body: string;
   readonly tone: DiffOp | "header";
   readonly spans: readonly SyntaxSpan[];
-  /** Raw code only (no prefix) for copy. */
   readonly code: string;
 }
 
@@ -339,10 +317,6 @@ export function buildModalPagerRows(
   return rows;
 }
 
-/**
- * Build numbered modal body for the pager (plain string fallback).
- * Format: `<lineno> │ <+/−/ > <text>` so the pager can split gutter/body.
- */
 export function formatModalPlainText(change: FileChange): string {
   const rows = buildModalPagerRows(change);
   return rows
@@ -357,10 +331,6 @@ export function formatModalPlainText(change: FileChange): string {
 
 export type { ModalDiffLine, SyntaxSpan, LangId };
 
-/**
- * Prefer project-relative path for chat titles (Cursor-style).
- * Falls back to absolute when outside the project root / cwd.
- */
 export function relativeDisplayPath(absPath: string): string {
   const roots = [getActiveProjectRoot(), safeCwd()].filter(
     (r): r is string => Boolean(r),
@@ -372,21 +342,15 @@ export function relativeDisplayPath(absPath: string): string {
         return rel.split("\\").join("/");
       }
     } catch {
-      /* ignore */
     }
   }
   return absPath;
 }
 
-/**
- * Compact path line under the card title.
- * Title already carries the verb ("Edited App.tsx") — do not repeat it here.
- */
 export function collapsedFileChangeLabel(change: FileChange): string {
   return `file  ${relativeDisplayPath(change.path)}`;
 }
 
-/** Multi-file collapsed label. */
 export function collapsedFileChangesLabel(changes: readonly FileChange[]): string {
   if (changes.length === 0) return "files";
   if (changes.length === 1) return collapsedFileChangeLabel(changes[0]!);

@@ -10,7 +10,6 @@ import {
   type TurnId,
 } from "./app-event.js";
 
-/** Injectable time source so replay tests are deterministic. */
 export interface Clock {
   now(): number;
 }
@@ -56,7 +55,6 @@ export class EventSequencer {
     return this.seq;
   }
 
-  /** Start a fresh sequence (e.g. after /new remints the session id). */
   rebind(sessionId: SessionId): void {
     this.sessionId = sessionId;
     this.seq = 0;

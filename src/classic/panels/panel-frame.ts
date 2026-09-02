@@ -64,8 +64,6 @@ export function panelFrameRows(input: PanelFrameInput): PanelFrameRows {
   const body: string[] = [];
   for (let index = 0; index < bodyHeight; index += 1) {
     const content = input.body[index] ?? "";
-    // Body rows are pre-wrapped by each panel view. Do not truncate a user
-    // value at the frame boundary; clipping here would silently discard it.
     const cell = padToWidth(content, bodyWidth);
     body.push(sealStyle(`${side} ${cell} ${side}`));
   }

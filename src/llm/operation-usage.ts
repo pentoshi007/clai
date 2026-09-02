@@ -11,6 +11,8 @@ import type {
   TokenUsage,
 } from "../types.js";
 import { fingerprintFinalRequest } from "./request-fingerprint.js";
+import { sessionCacheAffinityKey } from "./cache-affinity.js";
+import { currentSessionAffinity } from "./session-affinity.js";
 
 export type AttemptUsageValue =
   | { readonly kind: "known"; readonly value: TokenUsage }
@@ -169,6 +171,18 @@ function statusCodeFromError(error: unknown): number | undefined {
   return Number.isFinite(status) && status > 0 ? status : undefined;
 }
 
+function withSessionAffinityHeaders(
+  init: RequestInit | undefined,
+  sessionId: string,
+): RequestInit {
+  const headers = new Headers(init?.headers ?? undefined);
+  if (!headers.has("x-clai-session")) headers.set("x-clai-session", sessionId);
+  if (!headers.has("x-session-affinity")) {
+    headers.set("x-session-affinity", sessionCacheAffinityKey(sessionId));
+  }
+  return { ...init, headers };
+}
+
 interface GenerationAttemptContext {
   readonly request: CompletionRequest;
   readonly input: GenerationAttemptInput;
@@ -177,6 +191,23 @@ interface GenerationAttemptContext {
 }
 
 const generationAttemptContext = new AsyncLocalStorage<GenerationAttemptContext>();
+
+const unrecordedTransportStorage = new AsyncLocalStorage<true>();
+
+export function withUnrecordedTransport<T>(run: () => T): T {
+  return unrecordedTransportStorage.run(true, run);
+}
+
+export function recordGenerationAttemptOutcome(
+  outcome: GenerationAttemptOutcome,
+  usage?: TokenUsage,
+  statusCode?: number,
+): void {
+  const context = generationAttemptContext.getStore();
+  if (!context?.request.attemptUsage || context.active) return;
+  const handle = context.request.attemptUsage.begin(context.input);
+  handle.complete(outcome, usage, statusCode);
+}
 
 function settleActiveAttempt(
   context: GenerationAttemptContext,
@@ -202,6 +233,9 @@ export async function generationFetch(
   input: string | URL | Request,
   init?: RequestInit,
 ): Promise<Response> {
+  const affinity = currentSessionAffinity();
+  if (affinity) init = withSessionAffinityHeaders(init, affinity);
+  if (unrecordedTransportStorage.getStore()) return fetch(input, init);
   const context = generationAttemptContext.getStore();
   if (!context?.request.attemptUsage) return fetch(input, init);
   if (context.active) {

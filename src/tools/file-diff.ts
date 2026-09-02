@@ -1,26 +1,8 @@
-/**
- * Pure line-diff engine for file mutation tools (fs.edit / write / append / …).
- * Produces Cursor/Claude-style hunks with configurable context and size caps.
- */
 
 import { basename } from "node:path";
-
-export type DiffOp = "context" | "add" | "del";
-
-export interface DiffLine {
-  readonly op: DiffOp;
-  readonly text: string;
-  /** 1-based line in the old file; undefined for pure adds */
-  readonly oldLine?: number | undefined;
-  /** 1-based line in the new file; undefined for pure dels */
-  readonly newLine?: number | undefined;
-}
-
-export interface DiffHunk {
-  readonly oldStart: number;
-  readonly newStart: number;
-  readonly lines: readonly DiffLine[];
-}
+import { DIFF_MAX_LINES, DeletedSegment, DiffHunk, DiffOp, PREVIEW_CONTEXT, PREVIEW_MAX_DIFF_LINES, capPreviewHunks, collectAddedNewLines, collectDeletedAt, computeLineOps, countOps, groupHunks, wholeFileReplace } from "./diff/line-ops.js";
+export { DIFF_MAX_LINES, PREVIEW_CONTEXT, PREVIEW_MAX_DIFF_LINES, capPreviewHunks, computeLineOps, groupHunks };
+export type { DeletedSegment, DiffHunk, DiffLine, DiffOp } from "./diff/line-ops.js";
 
 export type FileChangeKind =
   | "create"
@@ -36,58 +18,26 @@ export interface FileChangeStats {
   readonly removed: number;
 }
 
-export interface DeletedSegment {
-  /** 1-based line in the new file after which these deletions sit (0 = before first) */
-  readonly atNewLine: number;
-  readonly oldStart: number;
-  readonly lines: readonly string[];
-}
-
 export interface FileChange {
   readonly path: string;
   readonly basename: string;
   readonly kind: FileChangeKind;
   readonly stats: FileChangeStats;
-  /** Chat preview hunks (context=1, capped). */
   readonly previewHunks: readonly DiffHunk[];
-  /**
-   * Full after-content for the modal. Omitted when too large (use snapshotPath)
-   * or for deletes (after is empty).
-   */
   readonly afterText?: string | undefined;
-  /** New-file line numbers that are pure additions. */
   readonly addedNewLines: readonly number[];
-  /** Deleted segments for full-file modal rendering. */
   readonly deletedAt: readonly DeletedSegment[];
-  /** Optional on-disk JSON snapshot for large files. */
   readonly snapshotPath?: string | undefined;
-  /** True when content was treated as binary / non-diffable. */
   readonly binary?: boolean | undefined;
-  /** True when diff was collapsed due to size caps. */
   readonly truncated?: boolean | undefined;
 }
 
-/** Max lines on either side before falling back to whole-file replace. */
-export const DIFF_MAX_LINES = 20_000;
-/** Max UTF-8 bytes on either side for full LCS. */
 export const DIFF_MAX_BYTES = 1_000_000;
-/**
- * Max afterText kept inline on FileChange (else snapshot only).
- * Kept modest so transcript tool cards from writeMany scaffolds do not pin
- * multi‑MB file bodies in the TUI process for the whole session.
- */
 export const INLINE_AFTER_MAX_BYTES = 48_000;
-/** Max diff body lines in chat preview. */
-export const PREVIEW_MAX_DIFF_LINES = 40;
-/** Context lines around each change for chat. */
-export const PREVIEW_CONTEXT = 1;
 
 export function splitLines(text: string): string[] {
   if (text.length === 0) return [];
   const lines = text.split(/\r?\n/);
-  // Trailing newline produces a final empty entry — keep content lines only
-  // when the file ends with newline (standard diff behavior keeps the empty
-  // last element only if there is content after the last newline).
   if (text.endsWith("\n") || text.endsWith("\r\n")) {
     if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   }
@@ -95,255 +45,8 @@ export function splitLines(text: string): string[] {
 }
 
 export function looksBinary(text: string): boolean {
-  // NUL in the first 8KB is a strong binary signal.
   const sample = text.slice(0, 8_192);
   return sample.includes("\0");
-}
-
-/**
- * Myers O(ND) line diff → list of ops over the full file (no hunk grouping).
- * Falls back to whole-file replace when sizes exceed caps.
- */
-export function computeLineOps(
-  oldLines: readonly string[],
-  newLines: readonly string[],
-): DiffLine[] {
-  const n = oldLines.length;
-  const m = newLines.length;
-
-  if (n === 0 && m === 0) return [];
-  if (n === 0) {
-    return newLines.map((text, i) => ({
-      op: "add" as const,
-      text,
-      newLine: i + 1,
-    }));
-  }
-  if (m === 0) {
-    return oldLines.map((text, i) => ({
-      op: "del" as const,
-      text,
-      oldLine: i + 1,
-    }));
-  }
-
-  let prefix = 0;
-  while (prefix < n && prefix < m && oldLines[prefix] === newLines[prefix]) {
-    prefix += 1;
-  }
-
-  let suffix = 0;
-  while (
-    suffix < n - prefix &&
-    suffix < m - prefix &&
-    oldLines[n - 1 - suffix] === newLines[m - 1 - suffix]
-  ) {
-    suffix += 1;
-  }
-
-  const oldMiddle = oldLines.slice(prefix, n - suffix);
-  const newMiddle = newLines.slice(prefix, m - suffix);
-  const middleN = oldMiddle.length;
-  const middleM = newMiddle.length;
-
-  const prefixOps: DiffLine[] = [];
-  for (let i = 0; i < prefix; i += 1) {
-    prefixOps.push({
-      op: "context",
-      text: oldLines[i]!,
-      oldLine: i + 1,
-      newLine: i + 1,
-    });
-  }
-
-  const suffixOps: DiffLine[] = [];
-  for (let i = 0; i < suffix; i += 1) {
-    suffixOps.push({
-      op: "context",
-      text: oldLines[n - suffix + i]!,
-      oldLine: n - suffix + i + 1,
-      newLine: m - suffix + i + 1,
-    });
-  }
-
-  if (middleN > DIFF_MAX_LINES || middleM > DIFF_MAX_LINES || middleN * middleM > 4_000_000) {
-    const middleReplace = wholeFileReplace(oldMiddle, newMiddle);
-    const shiftedMiddle = middleReplace.map((op) => {
-      if (op.op === "add") return { ...op, newLine: op.newLine! + prefix };
-      if (op.op === "del") return { ...op, oldLine: op.oldLine! + prefix };
-      return { ...op, oldLine: op.oldLine! + prefix, newLine: op.newLine! + prefix };
-    });
-    return [...prefixOps, ...shiftedMiddle, ...suffixOps];
-  }
-
-  const dp: Uint32Array[] = new Array(middleN + 1);
-  for (let i = 0; i <= middleN; i += 1) dp[i] = new Uint32Array(middleM + 1);
-  for (let i = 1; i <= middleN; i += 1) {
-    const oi = oldMiddle[i - 1]!;
-    const row = dp[i]!;
-    const prev = dp[i - 1]!;
-    for (let j = 1; j <= middleM; j += 1) {
-      if (oi === newMiddle[j - 1]) row[j] = prev[j - 1]! + 1;
-      else row[j] = Math.max(prev[j]!, row[j - 1]!);
-    }
-  }
-
-  const rev: DiffLine[] = [];
-  let i = middleN;
-  let j = middleM;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldMiddle[i - 1] === newMiddle[j - 1]) {
-      rev.push({
-        op: "context",
-        text: oldMiddle[i - 1]!,
-        oldLine: i + prefix,
-        newLine: j + prefix,
-      });
-      i -= 1;
-      j -= 1;
-    } else if (j > 0 && (i === 0 || dp[i]![j - 1]! >= dp[i - 1]![j]!)) {
-      rev.push({ op: "add", text: newMiddle[j - 1]!, newLine: j + prefix });
-      j -= 1;
-    } else {
-      rev.push({ op: "del", text: oldMiddle[i - 1]!, oldLine: i + prefix });
-      i -= 1;
-    }
-  }
-  rev.reverse();
-
-  return [...prefixOps, ...rev, ...suffixOps];
-}
-
-function wholeFileReplace(
-  oldLines: readonly string[],
-  newLines: readonly string[],
-): DiffLine[] {
-  const out: DiffLine[] = [];
-  for (let i = 0; i < oldLines.length; i += 1) {
-    out.push({ op: "del", text: oldLines[i]!, oldLine: i + 1 });
-  }
-  for (let i = 0; i < newLines.length; i += 1) {
-    out.push({ op: "add", text: newLines[i]!, newLine: i + 1 });
-  }
-  return out;
-}
-
-/**
- * Group full-file ops into unified hunks with `context` lines of surrounding
- * unchanged content. Adjacent change regions within `context*2` merge.
- */
-export function groupHunks(
-  ops: readonly DiffLine[],
-  context = PREVIEW_CONTEXT,
-): DiffHunk[] {
-  if (ops.length === 0) return [];
-
-  // Mark change indices
-  const isChange = ops.map((o) => o.op !== "context");
-  if (!isChange.some(Boolean)) return [];
-
-  // Expand change islands by context
-  const include = new Array<boolean>(ops.length).fill(false);
-  for (let i = 0; i < ops.length; i += 1) {
-    if (!isChange[i]) continue;
-    const from = Math.max(0, i - context);
-    const to = Math.min(ops.length - 1, i + context);
-    for (let k = from; k <= to; k += 1) include[k] = true;
-  }
-
-  const hunks: DiffHunk[] = [];
-  let i = 0;
-  while (i < ops.length) {
-    if (!include[i]) {
-      i += 1;
-      continue;
-    }
-    const start = i;
-    while (i < ops.length && include[i]) i += 1;
-    const slice = ops.slice(start, i);
-    const first = slice[0]!;
-    hunks.push({
-      oldStart: first.oldLine ?? first.newLine ?? 1,
-      newStart: first.newLine ?? first.oldLine ?? 1,
-      lines: slice,
-    });
-  }
-  return hunks;
-}
-
-/** Cap total preview lines across hunks; drop tail hunks with a sentinel. */
-export function capPreviewHunks(
-  hunks: readonly DiffHunk[],
-  maxLines = PREVIEW_MAX_DIFF_LINES,
-): { hunks: DiffHunk[]; truncated: boolean; omittedLines: number } {
-  let used = 0;
-  const out: DiffHunk[] = [];
-  let omitted = 0;
-  for (const h of hunks) {
-    if (used >= maxLines) {
-      omitted += h.lines.length;
-      continue;
-    }
-    const room = maxLines - used;
-    if (h.lines.length <= room) {
-      out.push(h);
-      used += h.lines.length;
-    } else {
-      out.push({
-        oldStart: h.oldStart,
-        newStart: h.newStart,
-        lines: h.lines.slice(0, room),
-      });
-      used += room;
-      omitted += h.lines.length - room;
-    }
-  }
-  return { hunks: out, truncated: omitted > 0, omittedLines: omitted };
-}
-
-function countOps(ops: readonly DiffLine[]): {
-  added: number;
-  removed: number;
-} {
-  let added = 0;
-  let removed = 0;
-  for (const o of ops) {
-    if (o.op === "add") added += 1;
-    else if (o.op === "del") removed += 1;
-  }
-  return { added, removed };
-}
-
-function collectAddedNewLines(ops: readonly DiffLine[]): number[] {
-  const out: number[] = [];
-  for (const o of ops) {
-    if (o.op === "add" && typeof o.newLine === "number") out.push(o.newLine);
-  }
-  return out;
-}
-
-function collectDeletedAt(ops: readonly DiffLine[]): DeletedSegment[] {
-  const segments: DeletedSegment[] = [];
-  let i = 0;
-  // Track the last seen new-line number so deletions attach after it.
-  let lastNew = 0;
-  while (i < ops.length) {
-    const op = ops[i]!;
-    if (op.op === "context" || op.op === "add") {
-      if (typeof op.newLine === "number") lastNew = op.newLine;
-      i += 1;
-      continue;
-    }
-    // del run
-    const lines: string[] = [];
-    const oldStart = op.oldLine ?? 1;
-    while (i < ops.length && ops[i]!.op === "del") {
-      lines.push(ops[i]!.text);
-      i += 1;
-    }
-    segments.push({ atNewLine: lastNew, oldStart, lines });
-  }
-  return segments;
 }
 
 export interface BuildFileChangeOptions {
@@ -353,13 +56,9 @@ export interface BuildFileChangeOptions {
   readonly kind: FileChangeKind;
   readonly context?: number | undefined;
   readonly previewMaxLines?: number | undefined;
-  /** When set, afterText is omitted from the in-memory object. */
   readonly snapshotPath?: string | undefined;
 }
 
-/**
- * Build a UI-ready FileChange from before/after text.
- */
 export function buildFileChange(opts: BuildFileChangeOptions): FileChange {
   const path = opts.path;
   const base = basename(path);
@@ -413,9 +112,6 @@ export function buildFileChange(opts: BuildFileChangeOptions): FileChange {
   const keepInline =
     !opts.snapshotPath && afterBytes <= INLINE_AFTER_MAX_BYTES;
 
-  // Full line-number maps / deleted bodies are only needed for the full-file
-  // modal. Cap them so chat cards from large creates/overwrites cannot pin
-  // tens of thousands of line strings in the process heap.
   const MAX_ADDED_LINE_MAP = 2_000;
   const MAX_DELETED_BODY_CHARS = 32_000;
   let addedNewLines = collectAddedNewLines(ops);
@@ -451,7 +147,6 @@ export function buildFileChange(opts: BuildFileChangeOptions): FileChange {
   };
 }
 
-/** Infer kind from before/after when the caller only knows the tool. */
 export function inferChangeKind(
   before: string | undefined,
   after: string,
@@ -467,10 +162,6 @@ export function inferChangeKind(
   return "edit";
 }
 
-/**
- * Render preview hunks as plain text (for spool / export / classic REPL).
- * Uses unified +/- prefixes; no ANSI.
- */
 export function formatUnifiedPreview(
   change: FileChange,
   options: { maxLines?: number } = {},
@@ -503,15 +194,10 @@ export function formatUnifiedPreview(
   return lines.join("\n");
 }
 
-/**
- * Full modal body lines: after-file order with deleted segments injected.
- * Each entry carries a display line number (new-file) and op for coloring.
- */
 export interface ModalDiffLine {
   readonly lineNo: number | undefined;
   readonly text: string;
   readonly op: DiffOp;
-  /** For dels, old line number when known */
   readonly oldLineNo?: number | undefined;
 }
 
@@ -538,7 +224,6 @@ export function buildModalLines(change: FileChange): ModalDiffLine[] {
 
   const out: ModalDiffLine[] = [];
 
-  // Deletions before first new line
   for (const seg of delByAt.get(0) ?? []) {
     seg.lines.forEach((text, idx) => {
       out.push({
@@ -570,11 +255,8 @@ export function buildModalLines(change: FileChange): ModalDiffLine[] {
     }
   }
 
-  // Pure delete (empty after): show all deleted lines
   if (afterLines.length === 0 && change.deletedAt.length > 0) {
-    // already handled via atNewLine 0; if empty deletedAt but kind delete, rebuild
   } else if (afterLines.length === 0 && change.kind === "delete" && change.stats.removed > 0) {
-    // fallback: nothing in after, deletedAt may have been built from ops
   }
 
   if (out.length === 0 && change.kind === "delete") {
@@ -590,7 +272,6 @@ export function buildModalLines(change: FileChange): ModalDiffLine[] {
   return out;
 }
 
-/** Human verb for status titles. */
 export function changeVerb(
   kind: FileChangeKind,
   status: "running" | "ok" | "failed",
@@ -623,7 +304,6 @@ export function changeVerb(
         return "Editing";
     }
   }
-  // ok
   switch (kind) {
     case "create":
       return "Created";
@@ -638,7 +318,6 @@ export function changeVerb(
   }
 }
 
-/** Map tool name + optional kind to a display title basename. */
 export function fileToolTitle(
   toolName: string,
   status: "queued" | "running" | "ok" | "failed" | "blocked",
@@ -653,11 +332,6 @@ export function fileToolTitle(
   const fullPath = path && path.includes("/") ? path : undefined;
 
   if (toolName === "fs.writeMany") {
-    // pathOrDisplay may be "3 file(s): a, b" from formatToolArgs, a count, or
-    // (legacy) raw JSON — never dump JSON into the title.
-    // Prefer structured fileChanges count from the caller when present;
-    // do not claim "Wrote 6 files" from args alone when the write failed
-    // or fileChanges is empty (ghost second card).
     const countMatch = /^(\d+)\s*file/i.exec(path);
     const count = countMatch ? Number(countMatch[1]) : 0;
     const label =
@@ -675,7 +349,6 @@ export function fileToolTitle(
         pathLine: undefined,
       };
     }
-    // Success without a countable label → generic title (empty fileChanges).
     if (count === 0 && (path === "files" || !path)) {
       return { title: "Wrote files", pathLine: undefined };
     }

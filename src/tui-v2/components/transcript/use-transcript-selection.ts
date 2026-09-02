@@ -1,5 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/** Renderer adapter for the pure pane-scoped selection controller. */
 
 import { useEffect, useRef, type RefObject } from "react";
 import type { KeyEvent, MouseEvent, Renderable, ScrollBoxRenderable } from "@opentui/core";
@@ -57,9 +56,6 @@ export function useTranscriptSelection(
   const builtForRef = useRef<TranscriptState | undefined>(undefined);
   stateRef.current = state;
 
-  // Bounded updates: extracting the semantic document walks the whole
-  // transcript, so it is rebuilt on interaction (or while a selection is live)
-  // instead of on every streaming delta.
   function ensureDocument(): SemanticDocument {
     const current = stateRef.current;
     if (builtForRef.current === current) return documentRef.current;
@@ -89,10 +85,7 @@ export function useTranscriptSelection(
 
   function onMouseDown(event: MouseEvent): void {
     if (event.button !== 0) return;
-    // Keep keyboard with the transcript so ↑/↓ scroll the chat, not history.
     services.focus.focusRegion("transcript");
-    // If a child (YOU bubble / tool card) already handled the click, do not
-    // start a selection drag that would swallow open-modal handlers.
     if (event.defaultPrevented) return;
     const anchor = anchorAtPointer(ensureDocument(), scrollRef.current, event.x, event.y);
     if (!anchor) return;
@@ -137,8 +130,6 @@ export function useTranscriptSelection(
     if (!focused || services.focus.activeContext() !== "transcript") return false;
     const action = services.router.resolve(chord, "transcript");
     if (!action || !action.startsWith("selection.")) return false;
-    // Esc must fall through to the global cancel ladder unless there is
-    // actually a selection to clear.
     if (action === "selection.clear" && !services.selection.hasSelection()) {
       return false;
     }
@@ -195,11 +186,6 @@ function anchorAtPointer(
   x: number,
   y: number,
 ): SemanticAnchor | undefined {
-  // Resolve every mounted block renderable in ONE depth-first pass over the
-  // (viewport-culled) tree instead of a per-block findDescendantById walk —
-  // 4k blocks × O(tree) per mouse-move was the drag-lag bottleneck. Blocks are
-  // in document (source) order, which matches their vertical layout order in
-  // the transcript column, so no sort is needed.
   const renderableById = new Map<string, Renderable>();
   collectVisibleRenderables(scroll, renderableById);
 

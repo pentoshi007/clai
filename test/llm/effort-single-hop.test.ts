@@ -50,10 +50,13 @@ function effortOf(body: unknown): unknown {
 
 describe("a route with a declared effort vocabulary takes one hop, not a ladder", () => {
   it("retries exactly once when the metadata turns out to be wrong", async () => {
-    let calls = 0;
-    const transport = installTransport(() => {
-      calls += 1;
-      if (calls === 1) return jsonResponse(EFFORT_REJECTED, 400);
+    let chatCalls = 0;
+    const transport = installTransport((record) => {
+      if (record.url.endsWith("/responses")) {
+        return new Response("not found", { status: 404 });
+      }
+      chatCalls += 1;
+      if (chatCalls === 1) return jsonResponse(EFFORT_REJECTED, 400);
       return jsonResponse({
         choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
       });
@@ -67,8 +70,11 @@ describe("a route with a declared effort vocabulary takes one hop, not a ladder"
     });
 
     expect(result.text).toBe("ok");
-    expect(transport.generations).toHaveLength(2);
-    expect(effortOf(transport.generations[1]?.body)).toBe("high");
+    const chatGenerations = transport.generations.filter((generation) =>
+      generation.url.includes("/chat/completions"),
+    );
+    expect(chatGenerations).toHaveLength(2);
+    expect(effortOf(chatGenerations[1]?.body)).toBe("high");
   });
 
   it("gives up after that single hop instead of walking the whole scale", async () => {

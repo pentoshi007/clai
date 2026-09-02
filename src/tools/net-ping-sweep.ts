@@ -28,7 +28,6 @@ function commandAvailable(command: string): boolean {
   return Boolean(findExecutableSync(command));
 }
 
-/** Cap on accumulated child output so a /16 sweep cannot buffer tens of MB. */
 const MAX_SWEEP_OUTPUT_BYTES = 1024 * 1024;
 
 function runCommand(
@@ -111,10 +110,6 @@ function runCommand(
   });
 }
 
-/**
- * Parse nmap -sn output to extract active devices.
- * Exported for testing.
- */
 export function parseNmapPingSweep(output: string): ActiveDevice[] {
   const devices: ActiveDevice[] = [];
   const blocks = output.split(/(?=Nmap scan report for )/);
@@ -140,17 +135,11 @@ export function parseNmapPingSweep(output: string): ActiveDevice[] {
   return devices;
 }
 
-/**
- * Parse arp -a output to extract devices from the ARP table.
- * Exported for testing.
- */
 export function parseArpTable(output: string): ActiveDevice[] {
   const devices: ActiveDevice[] = [];
   const lines = output.split("\n");
 
   for (const line of lines) {
-    // macOS: ? (192.168.1.1) at aa:bb:cc:dd:ee:ff on en0 [ethernet]
-    // Linux: ? (192.168.1.1) at aa:bb:cc:dd:ee:ff [ether] on eth0
     const match = /\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-fA-F:]+)/i.exec(line);
     if (match && match[2] !== "(incomplete)") {
       devices.push({
@@ -169,7 +158,6 @@ function parseArpScanOutput(output: string): ActiveDevice[] {
   const lines = output.split("\n");
 
   for (const line of lines) {
-    // 192.168.1.1	aa:bb:cc:dd:ee:ff	Vendor Corp
     const match = /^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-fA-F:]+)\s*(.*)/i.exec(line);
     if (match) {
       devices.push({
@@ -189,7 +177,6 @@ function parseIpNeigh(output: string): ActiveDevice[] {
   const lines = output.split("\n");
 
   for (const line of lines) {
-    // 192.168.1.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE
     const match = /^(\d+\.\d+\.\d+\.\d+)\s+.*?lladdr\s+([0-9a-fA-F:]+)/i.exec(line);
     if (match) {
       devices.push({
@@ -239,15 +226,11 @@ export async function pingSweep(
     };
   }
 
-  // Method selection. For "auto", try nmap first, but fall through to ARP
-  // methods when nmap returns 0 hosts (common without root — no ARP probe).
   if (method === "nmap" || (method === "auto" && commandAvailable("nmap"))) {
-    // Prefer non-interactive cached sudo when available so nmap can ARP-scan.
     let result = await runCommand("nmap", ["-sn", target], timeoutMs, signal);
     if (result.aborted) return abortedResult();
     let devices = parseNmapPingSweep(result.stdout + "\n" + result.stderr);
     if (devices.length === 0 && platform() !== "win32" && commandAvailable("sudo")) {
-      // -n: only works if sudo timestamp is already valid (no password prompt).
       const elevated = await runCommand(
         "sudo",
         ["-n", "nmap", "-sn", target],
@@ -278,7 +261,6 @@ export async function pingSweep(
       };
     }
 
-    // nmap found nothing — in "nmap" mode return that; in "auto" fall through.
     if (method === "nmap") {
       return {
         ok: result.ok,
@@ -291,11 +273,9 @@ export async function pingSweep(
         exitCode: result.exitCode ?? (result.ok ? 0 : 1),
       };
     }
-    // auto + empty → continue to ARP/neigh below
   }
 
   if (method === "arp" || method === "auto") {
-    // Try arp-scan first (gives richer data; often needs root)
     if (commandAvailable("arp-scan")) {
       let result = await runCommand("arp-scan", ["--localnet"], timeoutMs, signal);
       if (result.aborted) return abortedResult();
@@ -333,7 +313,6 @@ export async function pingSweep(
       }
     }
 
-    // Linux: try ip neigh
     if (platform() === "linux" && commandAvailable("ip")) {
       const result = await runCommand("ip", ["neigh", "show"], timeoutMs, signal);
       if (result.aborted) return abortedResult();
@@ -348,7 +327,6 @@ export async function pingSweep(
       }
     }
 
-    // Fallback: arp -a (available everywhere)
     const result = await runCommand("arp", ["-a"], timeoutMs, signal);
     if (result.aborted) return abortedResult();
     const devices = parseArpTable(result.stdout);

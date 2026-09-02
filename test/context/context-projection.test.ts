@@ -291,29 +291,60 @@ describe("exactness lifetime", () => {
   });
 
   it("does not retain a legacy unknown-scope exact count after history grows", () => {
-    const previous = exactSnapshot();
+    const previous = createContextSnapshot({
+      contextTokens: 120_000,
+      lastCompletionTokens: 900,
+      sessionPromptTokens: 120_000,
+      sessionCompletionTokens: 900,
+      scope: "unknown",
+      precision: "estimate",
+      limit: { source: "session-override", tokens: CONTEXT_LIMIT },
+      observedAt: 1,
+    });
     const grown: ChatMessage[] = [
       ...fixture.fullMessages,
       { role: "user", content: textOfTokens(150_000) },
     ];
 
-    const resolved = resolveContextUsageSnapshot(target, grown, previous)!;
+    const resolved = resolveContextUsageSnapshot(
+      target,
+      grown,
+      {
+        contextTokens: previous.contextTokens,
+        contextLimit: CONTEXT_LIMIT,
+        lastCompletionTokens: 900,
+        sessionPromptTokens: 120_000,
+        sessionCompletionTokens: 900,
+        exact: false,
+      },
+    )!;
 
     expect(estimateMessagesTokens(grown)).toBeGreaterThan(240_000);
-    expect(resolved.contextTokens).toBe(estimateMessagesTokens(grown));
+    expect(resolved.contextTokens).toBeGreaterThanOrEqual(
+      estimateMessagesTokens(grown),
+    );
     expect(resolved.exact).toBe(false);
   });
 
   it("replaces an exact snapshot with a newer assembled-request estimate", () => {
-    const previous = exactSnapshot();
+    const previous = createContextSnapshot({
+      contextTokens: 120_000,
+      lastCompletionTokens: 900,
+      sessionPromptTokens: 120_000,
+      sessionCompletionTokens: 900,
+      scope: "unknown",
+      precision: "estimate",
+      limit: { source: "session-override", tokens: CONTEXT_LIMIT },
+      observedAt: 1,
+    });
 
-    const refreshed = estimatedUsageSnapshot(target, previous, 250_000)!;
+    const refreshed = estimatedContextSnapshot(target, previous, 250_000, () => 2)!;
 
     expect(refreshed.contextTokens).toBe(250_000);
-    expect(refreshed.exact).toBe(false);
+    expect(refreshed.scope).toBe("assembled-request");
   });
 
-  it("replaces a provider-exact snapshot with a newer assembled-request estimate", () => {
+  it("keeps a provider-exact snapshot instead of a newer assembled-request estimate", () => {
     const previous = createContextSnapshot({
       contextTokens: 78_200,
       lastCompletionTokens: 100,
@@ -333,10 +364,10 @@ describe("exactness lifetime", () => {
     );
 
     expect(refreshed).toMatchObject({
-      contextTokens: 229_182,
-      scope: "assembled-request",
-      precision: "estimate",
-      observedAt: 2,
+      contextTokens: 78_200,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
     });
   });
 

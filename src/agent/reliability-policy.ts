@@ -1,10 +1,3 @@
-/**
- * Reliability experiments from the architecture audit (E1–E6).
- *
- * Defaults are capability-preserving: they reduce unnecessary context / fragile
- * free-tier overload without hard-truncating critical evidence or blocking free
- * users. Every knob is config-backed and can be disabled independently.
- */
 
 import { createHash } from "node:crypto";
 import { getConfig, providerCategory } from "../store/config.js";
@@ -17,26 +10,17 @@ import {
   resolveRequestBudget,
 } from "./request-budget.js";
 
-/** Hard auto-compact ceiling — never raise soft past this. */
 export const HARD_COMPACT_TOKEN_BUDGET = AUTO_COMPACT_TOKEN_BUDGET;
 
-/**
- * Auto-compaction trigger default, in total estimated request tokens. Owned by
- * request-budget.ts so behaviour, UI and policy cannot diverge.
- */
 export const DEFAULT_SOFT_COMPACT_TOKEN_BUDGET =
   DEFAULT_AUTO_COMPACT_REQUEST_TOKENS;
 
-/** E2 default fs passthrough (was 400k). Full body always on disk when truncated. */
 export const DEFAULT_FS_PASSTHROUGH_CAP_CHARS = 64_000;
 
-/** E4: warn when free-cloud context is this large. */
 export const DEFAULT_FREE_TIER_WARN_TOKENS = 40_000;
 
-/** E4: stronger notice after this many consecutive free-tier stream failures. */
 export const DEFAULT_FREE_TIER_FAIL_THRESHOLD = 2;
 
-/** E3 floors — large enough for fs.write / salvage, lower than prior 32k default. */
 export const ADAPTIVE_MAX_TOKENS_TOOL_STEP = 24_576;
 export const ADAPTIVE_MAX_TOKENS_LIGHT = 12_288;
 export const ADAPTIVE_MAX_TOKENS_FLOOR = 8_192;
@@ -72,7 +56,6 @@ function intEnv(name: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Resolve effective policy from config + optional env overrides. */
 export function getReliabilityPolicy(): ReliabilityPolicy {
   const cfg = getConfig();
   const softEarly =
@@ -114,12 +97,6 @@ export function getReliabilityPolicy(): ReliabilityPolicy {
   };
 }
 
-/**
- * E1: token threshold that triggers auto-compact.
- * Soft path fires earlier; hard budget is the ceiling used when soft is off.
- * Defaults are provider/model-neutral; a session model-window override uses
- * 70% of its explicit limit.
- */
 export function autoCompactTriggerTokens(
   policy = getReliabilityPolicy(),
   target?: {
@@ -141,11 +118,6 @@ export function autoCompactTriggerTokens(
   }).effectiveTrigger;
 }
 
-/**
- * E3: max completion tokens for a model step.
- * Tool-heavy steps keep room for large writes; light steps use a lower cap.
- * Never goes below {@link ADAPTIVE_MAX_TOKENS_FLOOR}.
- */
 export function resolveStepMaxTokens(input: {
   nativeToolsActive: boolean;
   toolsAttached: boolean;
@@ -227,10 +199,6 @@ export function isFreeCloudProvider(provider: ProviderId): boolean {
   return providerCategory[provider] === "free-cloud";
 }
 
-/**
- * E4: advisory notices for free-tier + large context / repeated failures.
- * Never blocks the request.
- */
 export function freeTierGuardNotices(input: {
   provider: ProviderId;
   estimatedInputTokens: number;
@@ -254,16 +222,10 @@ export function freeTierGuardNotices(input: {
   return notices;
 }
 
-/** Stable hash for E5 tool-result dedup (content only). */
 export function hashToolResultContent(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
-/**
- * E5: if identical tool output already appeared this turn, replace with a
- * pointer so history does not grow with duplicate dumps. Full text remains
- * available via artifact path when present.
- */
 export function dedupeToolContextOutput(input: {
   content: string;
   toolName: string;
@@ -276,7 +238,6 @@ export function dedupeToolContextOutput(input: {
   if (!policy.toolResultDedup) {
     return { content: input.content, deduped: false, hash };
   }
-  // Tiny results are not worth pointer indirection.
   if (input.content.length < 400) {
     input.seenHashes.set(hash, {
       toolName: input.toolName,

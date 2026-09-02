@@ -39,14 +39,9 @@ function referral(body: string): string | undefined {
   return match?.[1]?.trim();
 }
 
-/**
- * Registration lookup with zero `whois` binary dependency.
- * Order: RDAP over HTTPS → port-43 WHOIS via IANA referral.
- */
 export async function nativeWhoisLookup(target: string): Promise<ToolResult> {
   let rdapFailure: string | undefined;
   try {
-    // RDAP works when raw TCP:43 is blocked but HTTPS is allowed.
     const kind = netLooksLikeIp(target) ? "ip" : "domain";
     const response = await fetch(
       `https://rdap.org/${kind}/${encodeURIComponent(target)}`,
@@ -92,6 +87,5 @@ export async function nativeWhoisLookup(target: string): Promise<ToolResult> {
 }
 
 function netLooksLikeIp(value: string): boolean {
-  // Loose: IPv4 dotted or IPv6 with colon — enough to pick RDAP kind.
   return /^[\d.]+$/.test(value) || value.includes(":");
 }

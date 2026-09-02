@@ -13,10 +13,6 @@ export class BoundedText {
   private total = 0;
   private dropped = 0;
 
-  /**
-   * @param maxChars Finite positive cap keeps only the last N chars.
-   *   Defaults to 256 KiB; use Infinity only in explicitly controlled tests.
-   */
   constructor(private readonly maxChars: number = 256 * 1024) {
     if (!(this.maxChars > 0)) throw new RangeError("maxChars must be positive");
   }
@@ -34,7 +30,6 @@ export class BoundedText {
     this.tailBuf = combined.slice(overflow);
   }
 
-  /** Replace with an authoritative body while preserving the configured cap. */
   replace(text: string): void {
     this.tailBuf = "";
     this.total = 0;
@@ -72,7 +67,6 @@ export class BoundedText {
 export class OutputSpool {
   private readonly byTool = new Map<ToolCallId, BoundedText>();
 
-  /** Finite production defaults; full bodies remain available in tool artifacts. */
   constructor(
     private readonly maxCharsPerTool = 256 * 1024,
     private readonly maxTools = 128,

@@ -4324,6 +4324,7 @@ exports[`serialized request snapshots > merge-gateway / images 1`] = `
     ],
     "model": "openai/gpt-5.2",
     "reasoning_effort": "minimal",
+    "session_id": "clai-b316632fd0a67440dbaabfa3cbe67f6f686d7207",
     "stream": false,
   },
   "headers": {
@@ -4360,6 +4361,7 @@ exports[`serialized request snapshots > merge-gateway / minimal 1`] = `
     ],
     "model": "openai/gpt-5.2",
     "reasoning_effort": "minimal",
+    "session_id": "clai-b316632fd0a67440dbaabfa3cbe67f6f686d7207",
     "stream": false,
   },
   "headers": {
@@ -4396,6 +4398,7 @@ exports[`serialized request snapshots > merge-gateway / reasoning-control 1`] = 
     ],
     "model": "openai/gpt-5.2",
     "reasoning_effort": "high",
+    "session_id": "clai-b316632fd0a67440dbaabfa3cbe67f6f686d7207",
     "stream": false,
   },
   "headers": {
@@ -4452,6 +4455,7 @@ exports[`serialized request snapshots > merge-gateway / tool-loop-replay 1`] = `
     ],
     "model": "openai/gpt-5.2",
     "reasoning_effort": "medium",
+    "session_id": "clai-b316632fd0a67440dbaabfa3cbe67f6f686d7207",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -4552,6 +4556,7 @@ exports[`serialized request snapshots > merge-gateway / tool-loop-replay-unsigne
     ],
     "model": "openai/gpt-5.2",
     "reasoning_effort": "medium",
+    "session_id": "clai-b316632fd0a67440dbaabfa3cbe67f6f686d7207",
     "stream": false,
     "tool_choice": "auto",
     "tools": [
@@ -4631,6 +4636,7 @@ exports[`serialized request snapshots > merge-gateway / tools 1`] = `
     ],
     "model": "openai/gpt-5.2",
     "reasoning_effort": "minimal",
+    "session_id": "clai-b316632fd0a67440dbaabfa3cbe67f6f686d7207",
     "stream": false,
     "tool_choice": "auto",
     "tools": [

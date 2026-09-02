@@ -121,9 +121,6 @@ export function isPlanComplete(plan: TaskPlan): boolean {
   return isPlanSuccessful(plan);
 }
 
-/**
- * Compact plan summary for LLM context injection. Keeps token count low.
- */
 export function formatPlanForPrompt(plan: TaskPlan): string {
   const lines = [`PLAN: ${plan.goal} (${plan.complexity})`];
   for (const step of plan.steps) {
@@ -143,9 +140,6 @@ export function formatPlanForPrompt(plan: TaskPlan): string {
   return lines.join("\n");
 }
 
-/**
- * Terminal-formatted plan for user display. Uses Unicode box-drawing.
- */
 export function formatPlanForDisplay(plan: TaskPlan): string {
   const icons: Record<TaskStatus, string> = {
     pending: "·",
@@ -167,7 +161,6 @@ export function formatPlanForDisplay(plan: TaskPlan): string {
 }
 
 
-/** Versioned dependency/resource metadata. Fields are optional for legacy persisted plans. */
 export interface VersionedPlanStep extends PlanStep {
   dependencies?: string[] | undefined;
   resourceLocks?: string[] | undefined;
@@ -185,7 +178,6 @@ export interface VersionedTaskPlan extends Omit<TaskPlan, "steps"> {
 }
 
 interface VersionedPlanOperation {
-  /** The plan version read by the caller. Stale operations are rejected. */
   expectedVersion: number;
 }
 

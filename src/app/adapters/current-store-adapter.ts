@@ -3,7 +3,6 @@ import { deletePlan, loadPlan, mutatePlan, savePlan } from "../../store/plan.js"
 import type { PersistencePort } from "../ports/persistence-port.js";
 import type { TranscriptItem } from "../ports/transcript-item.js";
 
-/** Backs `PersistencePort` with the existing history + plan stores. */
 export function createCurrentPersistencePort(): PersistencePort {
   return {
     async saveSession(messages, options) {

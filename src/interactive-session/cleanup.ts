@@ -1,11 +1,3 @@
-/**
- * Identity-safe, single-winner teardown.
- *
- * Every termination trigger — explicit close, process exit, owner cancellation,
- * idle/lifetime timeout, conversation teardown, application shutdown — funnels
- * through `FinalizeOnce`, so exactly one execution owns the terminal transition
- * and repeated Close returns the recorded result without signalling again.
- */
 
 import {
   processIdentityTracker,
@@ -62,7 +54,6 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-/** Terminal state chosen by the cleanup owner from its winning reason. */
 function terminalStateFor(
   reason: TerminationReason,
   processExited: boolean,
@@ -81,7 +72,6 @@ export class CleanupCoordinator {
     this.process = { ...defaultProcessDeps, ...deps.process };
   }
 
-  /** Idempotent: later callers join the first execution's promise. */
   close(
     runtime: SessionRuntime,
     reason: TerminationReason,
@@ -102,7 +92,6 @@ export class CleanupCoordinator {
     const started = Date.now();
     const remaining = (): number => Math.max(0, deadlineMs - (Date.now() - started));
 
-    // Commit `closing` before any termination action so later input is rejected.
     this.deps.registry.transition(record, "closing", { terminationReason: reason });
 
     runtime.input.rejectAll({ status: "not-delivered", deliveredBytes: 0 });
@@ -162,7 +151,6 @@ export class CleanupCoordinator {
 
     await this.waitForOutputDrain(runtime, remaining());
 
-    // Final captured output must reach the store before resources close.
     runtime.output.finish();
     runtime.syncCursors();
     try {
@@ -241,7 +229,6 @@ export class CleanupCoordinator {
     }
   }
 
-  /** True when a verified descendant or the root is still alive. */
   private async verifyAbsence(
     runtime: SessionRuntime,
     budgetMs: number,

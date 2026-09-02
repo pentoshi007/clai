@@ -10,13 +10,9 @@ export interface TranscriptWindowRow {
 
 export interface TranscriptWindow {
   readonly rows: readonly TranscriptWindowRow[];
-  /** Rows the window occupies; always `<= budget`. */
   readonly height: number;
-  /** Rows the flattened transcript would take without any budget. */
   readonly totalRows: number;
-  /** Furthest the viewport may pull away from the bottom. */
   readonly maxOffset: number;
-  /** Rows hidden below the viewport; `0` means pinned to the newest line. */
   readonly offset: number;
   readonly scrollAbove: number;
   readonly scrollBelow: number;
@@ -46,12 +42,6 @@ export function totalTranscriptRows(blocks: readonly FeedBlock[]): number {
   return total;
 }
 
-/**
- * One page: intro card is `blocks[0]` and scrolls together with the chat.
- * `offsetFromBottom = 0` pins the viewport to the newest row so streaming
- * content paints stick to the bottom; growth while scrolled away is anchored
- * by the wiring, which bumps the offset by the appended row count.
- */
 export function planTranscriptWindow(
   flat: readonly TranscriptWindowRow[],
   budget: number,

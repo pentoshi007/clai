@@ -1,21 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Renders a `ThinkingItem` (CHAT-006, V2-053).
- *
- * Live stream: while the model is still reasoning (`item.streaming`), the body
- * is always shown so the user sees live progress — regardless of the global
- * thinking toggle (Ctrl+T). After the block is finalized, the body follows the
- * global Ctrl+T toggle (or a per-block override from clicking the header).
- *
- * The body is a fixed-height window of pre-wrapped rows, paged by an internal
- * offset. A nested ScrollBox is deliberately avoided: inside the transcript
- * ScrollBox its children escaped the parent's scissor rect and overdrew the
- * following response rows.
- *
- * Placement: thinking rows always precede the ◆ Response / tool cards for
- * the same model step (agent emits thinking-block before assistant-message
- * and tool-call). Violet accent distinguishes reasoning from green replies.
- */
 
 import {
   useEffect,
@@ -29,7 +12,7 @@ import {
   type BoxRenderable,
   type MouseEvent,
 } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { renderColumns } from "../../../ui-core/rendering/text-width.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import { thinkingElapsedLabel } from "../../../ui-core/rendering/duration.js";
@@ -47,9 +30,7 @@ import {
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 
 const WHEEL_ROWS = 3;
-/** Rows per tick while drag-selecting at a body edge. */
 const DRAG_SCROLL_ROWS = 2;
-/** Autoscroll cadence while the pointer is held at a body edge. */
 const DRAG_SCROLL_MS = 45;
 
 export function ThinkingBlock(props: {
@@ -58,7 +39,6 @@ export function ThinkingBlock(props: {
   expanded: boolean;
   contentWidth?: number | undefined;
   onToggle: () => void;
-  /** This card owns the pointer wheel (clicked, not Ctrl+T). */
   focused?: boolean | undefined;
   onFocus?: (() => void) | undefined;
   onBlur?: (() => void) | undefined;
@@ -73,7 +53,7 @@ export function ThinkingBlock(props: {
     onFocus,
     onBlur,
   } = props;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const cardRef = useRef<BoxRenderable>(null);
   const followTail = useRef(true);
   const offsetRef = useRef(0);
@@ -145,7 +125,6 @@ export function ThinkingBlock(props: {
     return Math.max(0, lineCountRef.current - rows);
   };
 
-  /** Step the body window by `rows`; returns false at the matching end. */
   const stepBody = (rows: number): boolean => {
     const maxOffset = maxOffsetNow();
     const next = Math.max(0, Math.min(maxOffset, offsetRef.current + rows));
@@ -183,9 +162,6 @@ export function ThinkingBlock(props: {
     if (!event.scroll) return;
     const rows = Math.max(1, Math.min(THINKING_BODY_MAX_ROWS, lines.length));
     const maxOffset = Math.max(0, lines.length - rows);
-    // Only a focused card with hidden rows owns the wheel; then it keeps it at
-    // both extremes. Unfocused or fully visible cards let the transcript
-    // scroll, so the wheel never feels trapped.
     if (!focused || maxOffset === 0) return;
     event.stopPropagation();
     const base =
@@ -215,9 +191,6 @@ export function ThinkingBlock(props: {
       click.onMouseDown(event);
       return;
     }
-    // Body press: take focus and let OpenTUI's native text selection own the
-    // drag. preventDefault keeps the transcript's semantic selection from
-    // hijacking a gesture that starts inside this card.
     if (event.button === 0) {
       if (!focused) onFocus?.();
       dragActive.current = true;
@@ -231,8 +204,6 @@ export function ThinkingBlock(props: {
   };
 
   const onCardTitleMouseMove = (event: MouseEvent): void => {
-    // Plain movement means no button is held, so any earlier drag is over even
-    // if its release landed outside this card and never reached us.
     if (dragActive.current) {
       dragActive.current = false;
       stopDragScroll();
@@ -252,9 +223,6 @@ export function ThinkingBlock(props: {
     );
   };
 
-  // Leaving the card releases the wheel, so the pointer never stays trapped.
-  // Geometry-checked because OpenTUI also emits `out` when the pointer crosses
-  // between the card's own child rows.
   const onCardMouseOut = (event: MouseEvent): void => {
     setHeadingHovered(false);
     if (dragActive.current) return;
@@ -266,11 +234,6 @@ export function ThinkingBlock(props: {
     stopDragScroll();
   };
 
-  /**
-   * Drag-select at a body edge pages the window so the selection keeps
-   * travelling through hidden reasoning. Once the window hits that end the
-   * gesture is released, so the drag continues into the transcript.
-   */
   const onBodyDrag = (event: MouseEvent): void => {
     if (!dragActive.current) return;
     const card = cardRef.current;
@@ -284,8 +247,6 @@ export function ThinkingBlock(props: {
     const canScrollDown = down && offsetRef.current < maxOffset;
     if (!canScrollUp && !canScrollDown) {
       stopDragScroll();
-      // At an end (or mid-body): let the transcript own the gesture so the
-      // selection can leave this card.
       if (up || down) endBodyDrag();
       return;
     }

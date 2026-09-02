@@ -1,9 +1,3 @@
-// Deterministic durable work envelope for compaction.
-//
-// Narrative memory is model-written and therefore lossy. The envelope is built
-// from canonical stores (plan, outcome contract, evidence, responder ledger,
-// mutation ledger) so file changes, proven checks, unresolved criteria, failed
-// approaches and the exact next step survive every compaction verbatim.
 import { relative } from "node:path";
 import type { ToolCall } from "../types.js";
 import type { OutcomeEnvelope } from "./outcomes.js";
@@ -18,9 +12,7 @@ import {
 
 export const DURABLE_ENVELOPE_PREFIX = "DURABLE WORK ENVELOPE";
 
-// Max entries rendered per list before a bounded overflow marker.
 const MAX_LIST_ENTRIES = 20;
-// Max chars of a single rendered statement.
 const MAX_STATEMENT_CHARS = 180;
 
 export type FileMutationKind = "created" | "modified" | "deleted";
@@ -34,9 +26,6 @@ const MUTATION_KIND_BY_TOOL: ReadonlyMap<string, FileMutationKind> = new Map([
   ["fs.delete", "deleted"],
 ]);
 
-// Session-scoped record of successful filesystem mutations and durable
-// artifacts. Insertion order is preserved so the envelope is stable between
-// compactions of the same work.
 export class WorkLedger {
   private readonly files = new Map<string, FileMutationKind>();
   private readonly artifacts = new Set<string>();
@@ -48,7 +37,6 @@ export class WorkLedger {
     if (!kind) return;
     for (const path of scratchWriteTargetPaths(call)) {
       const existing = this.files.get(path);
-      // A create followed by edits is still a create; a delete always wins.
       if (kind === "deleted" || existing === undefined) {
         this.files.set(path, kind);
       }
@@ -88,9 +76,7 @@ export interface DurableEnvelopeInput {
   readonly outcome?: OutcomeEnvelope | undefined;
   readonly ledger?: WorkLedger | undefined;
   readonly responder?: ResponderEnvelopeState | undefined;
-  /** Background work still running when compaction happened. */
   readonly liveJobs?: readonly EnvelopeJobState[] | undefined;
-  /** Terminal jobs whose output has not been harvested yet. */
   readonly finishedJobs?: readonly EnvelopeJobState[] | undefined;
   readonly projectRoot?: string | undefined;
   readonly packageManager?: string | undefined;
@@ -188,8 +174,6 @@ function renderJob(job: EnvelopeJobState): string {
   return `[${job.id}] ${job.status}${task} — ${clip(job.command, 90)}${artifact}`;
 }
 
-// Background work is the state most often lost across compaction: without it
-// the model relaunches scans/builds that are already running or finished.
 function jobLines(input: DurableEnvelopeInput, lines: string[]): void {
   const live = input.liveJobs ?? [];
   const finished = input.finishedJobs ?? [];
@@ -211,8 +195,6 @@ function jobLines(input: DurableEnvelopeInput, lines: string[]): void {
   }
 }
 
-// Render the envelope. Returns undefined when there is no canonical state worth
-// preserving, so compaction does not inject an empty block.
 export function buildDurableEnvelope(
   input: DurableEnvelopeInput,
 ): string | undefined {

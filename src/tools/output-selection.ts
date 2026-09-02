@@ -22,8 +22,6 @@ function truncateUtf8(text: string, maxBytes: number): string {
   let prefix = encoded.subarray(0, contentBudget).toString("utf8");
   const suffix = markerBytes <= maxBytes ? marker : "";
 
-  // Buffer boundaries can bisect a multi-byte code point. Enforce the ceiling
-  // after decoding as well, removing complete code points until it fits.
   while (Buffer.byteLength(prefix + suffix, "utf8") > maxBytes) {
     prefix = prefix.slice(0, -1);
   }
@@ -70,7 +68,6 @@ function truncateUtf8PreservingBody(text: string, maxBytes: number): string {
   return `${preamble}${regions.marker}${truncateUtf8(regions.body, bodyBudget)}`;
 }
 
-/** Apply model-requested line windows, then a strict UTF-8 byte ceiling. */
 export function selectOutput(
   text: string,
   selection: OutputSelection,

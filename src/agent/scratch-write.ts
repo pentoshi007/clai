@@ -37,7 +37,6 @@ export function scratchWriteTargetPaths(call: ToolCall): string[] {
   return [pathArg];
 }
 
-/** True when every write target is under the session scratch directory. */
 export function isScratchOnlyWrite(call: ToolCall, scratchDir: string): boolean {
   if (!SCRATCH_WRITABLE_TOOLS.has(call.name)) return false;
   const paths = scratchWriteTargetPaths(call);

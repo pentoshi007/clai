@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChatMessage, CompletionRequest, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
-import { installTransport, type FakeTransport } from "../conformance/fake-transport.js";
+import {
+  installTransport,
+  isResponsesProbe,
+  type FakeTransport,
+} from "../conformance/fake-transport.js";
 import {
   chatCompletion,
   contextTooLarge,
@@ -79,13 +83,27 @@ const USABLE_SUMMARY = [
 
 const UNUSABLE_SUMMARY = "- Goal: keep the baseline reproducible and";
 
-function installScript(...steps: Array<() => Response>): FakeTransport {
+function installScript(
+  ...args:
+    | Array<() => Response>
+    | [{ responsesNative?: boolean }, ...Array<() => Response>]
+): FakeTransport {
+  const options =
+    typeof args[0] === "object" && args[0] !== null && !Array.isArray(args[0])
+      ? (args.shift() as { responsesNative?: boolean })
+      : {};
   let index = 0;
-  return installTransport(() => {
+  const transport = installTransport((record) => {
+    if (!options.responsesNative && isResponsesProbe(record.url)) {
+      transport.generations.pop();
+      return new Response("not found", { status: 404 });
+    }
+    const steps = args as Array<() => Response>;
     const step = steps[Math.min(index, steps.length - 1)]!;
     index += 1;
     return step();
   });
+  return transport;
 }
 
 async function runTurnWithRecovery(

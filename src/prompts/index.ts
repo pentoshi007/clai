@@ -7,14 +7,6 @@ import { EMBEDDED_PROMPTS } from "./embedded.js";
 import { getActiveSessionScratchDir } from "../store/session-workspace.js";
 
 
-/**
- * Absolute path the agent should use for scratch / engagement notes.
- *
- * When a session workspace is bound (normal TUI/REPL), this is the unique
- * per-session folder under `{tmpdir}/clai/{code}-{dd}-{mm}-{yyyy}-…}`.
- * Without a bound session (unit tests, early boot), fall back to a
- * project-name path so existing callers stay stable.
- */
 export function scratchDirFor(cwd: string): string {
   const active = getActiveSessionScratchDir();
   if (active) return active;
@@ -26,14 +18,6 @@ export function scratchDirFor(cwd: string): string {
 
 const PROMPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
-/**
- * Load a system prompt template.
- *
- * Prefer the compile-time embedded copy so `bun build --compile` single-file
- * binaries (Homebrew/Scoop) work — sibling `.md` files are NOT present under
- * Bun's virtual FS (`/$bunfs/root/`). Fall back to reading the on-disk
- * markdown when developing with plain Node/tsx and the file exists.
- */
 function loadPromptFile(filename: string): string {
   const embedded = EMBEDDED_PROMPTS[filename];
   if (typeof embedded === "string" && embedded.length > 0) {
@@ -91,7 +75,6 @@ After a tool result, next call or concise final answer. tool.batch for independe
 - Stay in scope; OS-correct commands for {{os}} / {{shell}}. Scratch under {{scratch}} only.
 `
 
-/** Slice template at a stable markdown section header (inclusive of header). */
 function sectionFrom(template: string, header: string): string {
   const idx = template.indexOf(header);
   return idx < 0 ? "" : template.slice(idx);
@@ -112,12 +95,6 @@ const agentToolsCatalog = (() => {
   return agentPrompt.slice(start, end);
 })();
 
-/**
- * Red-team methodology block. A coding turn carried the whole encyclopedia for
- * nothing, so it is sliced out of the constitution and re-attached only for
- * remote-security turns. Staying inside the constitution (rather than becoming a
- * separate suffix section) keeps the cacheable prefix byte-stable per turn kind.
- */
 const agentPentestMethodology = (() => {
   const start = agentPrompt.indexOf("# PENTEST METHODOLOGY");
   const end = agentPrompt.indexOf("# CROSS-OS AWARENESS");
@@ -131,7 +108,6 @@ function withPentestMethodology(template: string, include: boolean): string {
   return template.replace(agentPentestMethodology, "");
 }
 
-/** Exposed so the budget script can price both turn kinds. */
 export const _PENTEST_METHODOLOGY = agentPentestMethodology;
 
 function slicePentestMethodologyCore(block: string): string {
@@ -161,18 +137,12 @@ Read: small files → fs.read {path}. Large/unknown → expect auto-head; if has
 
 `;
 
-/** Full native prompt: short native tool protocol + full argument encyclopedia. */
 const agentPromptNative =
   sectionBefore(agentPrompt, "# TOOL CALLS — HOW TO USE TOOLS") +
   agentNativeToolsHeader +
   agentToolsCatalog +
   sectionFrom(agentPrompt, "# OPERATING RULES");
 
-/**
- * E6 slim native: rely on API tool schemas for argument names; keep FILE POLICY
- * and OPERATING RULES. Omits the long fence-protocol tool encyclopedia so the
- * stable system prefix is smaller and cache-friendlier when native tools are on.
- */
 const agentPromptNativeSlim =
   sectionBefore(agentPrompt, "# TOOL CALLS — HOW TO USE TOOLS") +
   agentNativeToolsHeader +
@@ -242,7 +212,6 @@ function render(template: string, values: Record<string, string>): string {
   );
 }
 
-/** Remove image.view instructions when the concrete route lacks proven vision. */
 export function applyImageViewAvailability(
   prompt: string,
   available: boolean,
@@ -280,15 +249,6 @@ export function applyImageViewAvailability(
     .join("\n");
 }
 
-/**
- * Environment clock for system prompts.
- *
- * Hour-stable on purpose: agent loops re-render the system prompt every step.
- * Second-precision ISO timestamps busted provider prompt-cache prefixes with no
- * capability gain (models only need current day/year for freshness queries).
- * Minutes/seconds are omitted so consecutive steps within the same local hour
- * produce an identical constitution string when nothing else changed.
- */
 export function currentDateTimeContext(now = new Date()): string {
   const floored = floorToLocalHour(now);
   const local = floored.toLocaleString(undefined, {
@@ -300,12 +260,10 @@ export function currentDateTimeContext(now = new Date()): string {
     minute: "2-digit",
     timeZoneName: "short",
   });
-  // Floor ISO to the hour (UTC) so the string is stable across re-renders.
   const isoHour = `${floored.toISOString().slice(0, 13)}:00:00.000Z`;
   return `${local} (ISO hour: ${isoHour})`;
 }
 
-/** Local-hour floor used by {@link currentDateTimeContext} (exported for tests). */
 export function floorToLocalHour(now: Date): Date {
   const d = new Date(now.getTime());
   d.setMinutes(0, 0, 0);
@@ -337,7 +295,6 @@ function promptEnvironmentValues(stable: boolean): Record<string, string> {
 
 import type { SessionPlan } from "../store/plan.js";
 
-/** Mutable environment facts carried after the cached constitution. */
 export function renderRequestEnvironmentContext(options?: {
   plan?: SessionPlan | null | undefined;
 }): string {
@@ -371,7 +328,6 @@ export const _AGENT_TEMPLATE = agentPrompt;
 export function renderAskSystemPrompt(options?: {
   nativeTools?: boolean;
   stableEnvironment?: boolean;
-  /** Advertise image.view only for a route with affirmative vision evidence. */
   imageView?: boolean;
 }): string {
   const rendered = render(options?.nativeTools ? askPromptNative : askPrompt, {
@@ -385,20 +341,9 @@ export function renderAgentSystemPrompt(
   toolList: string,
   options?: {
     nativeTools?: boolean;
-    /**
-     * E6: omit long tool-arg encyclopedia when native schemas are attached.
-     * Defaults to true when nativeTools is true (overridable via config /
-     * CLAI_SLIM_NATIVE_PROMPT when callers pass nothing).
-     */
     slimNative?: boolean;
-    /** Replace mutable environment values with a stable suffix reference. */
     stableEnvironment?: boolean;
-    /** Advertise image.view only for a route with affirmative vision evidence. */
     imageView?: boolean;
-    /**
-     * Attach the red-team methodology block. Off by default: a coding turn has
-     * no use for it and it costs ~940 tokens on every request.
-     */
     pentest?: boolean;
   },
 ): string {
@@ -437,14 +382,12 @@ export function renderCompactAgentSystemPrompt(
   return applyImageViewAvailability(rendered, options?.imageView !== false);
 }
 
-/** Dual-mode recovery nudge wording. */
 export function toolNudge(native: boolean): string {
   return native
     ? "Call the appropriate tool now (do not only describe the action)."
     : "Emit a ```tool block with valid JSON now.";
 }
 
-/** Injected when REPL mode is plan — deep research + comprehensive durable plan. */
 export function planModeDirective(): string {
   return [
     "PLAN MODE — research and design a durable plan. Do not implement or fully exploit yet.",
@@ -474,7 +417,6 @@ export function planModeDirective(): string {
   ].join("\n");
 }
 
-/** Injected when REPL mode is agent — execute with working tasks, verify before done. */
 export function agentModeDirective(): string {
   return [
     "AGENT MODE — you are able to act, and you decide each turn whether acting is what the user asked for.",

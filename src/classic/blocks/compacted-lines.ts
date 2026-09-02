@@ -11,7 +11,6 @@ import { wrapWithPrefixes } from "../render/wrap.js";
 import { clipRow, joinMeta, type BlockContext } from "./block-context.js";
 import { outputToggleLabel } from "./tool-lines.js";
 
-/** Summary rows shown in the collapsed card (OpenTUI parity). */
 export const COMPACTED_PREVIEW_ROWS = 4;
 const BODY_INDENT = 4;
 

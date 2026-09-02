@@ -1,13 +1,8 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Searchable picker (models, providers, history, …).
- *
- * Quiet chrome: muted header boundary, soft zebra rows (no neon per-row rules).
- * Provider rows show the configured model in green (classic parity).
- */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -25,7 +20,6 @@ export interface PickerProps {
   readonly request: PickerRequest;
 }
 
-/** Hide native scrollbar so the list edge stays clean. */
 const HIDDEN_SCROLLBARS = {
   visible: false,
   showArrows: false,
@@ -74,7 +68,7 @@ function pad(text: string, width: number): string {
 
 export function Picker(props: PickerProps): ReactNode {
   const { services, theme, request } = props;
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<number | undefined>(undefined);
   const [cursor, setCursor] = useState(() => activeIndex(request.options));
@@ -223,7 +217,7 @@ export function Picker(props: PickerProps): ReactNode {
         backgroundColor: theme.statusBackground,
       }}
     >
-      {/* Header: title / filter / hints, then quiet gap (no neon rule). */}
+      {}
       <box
         style={{
           flexDirection: "column",
@@ -258,7 +252,7 @@ export function Picker(props: PickerProps): ReactNode {
           content={hintText}
           style={{ fg: theme.muted, bg: theme.rowB, height: 1 }}
         />
-        {/* Soft separator: dim hairline on status bg, then list starts. */}
+        {}
         <text
           selectable={false}
           content={pad("─".repeat(Math.max(8, innerW)), innerW)}
@@ -331,7 +325,6 @@ function PickerRow(props: {
     onSelect,
   } = props;
 
-  // Soft zebra only — no cyan rules between rows.
   const idleBg = stripe ? theme.rowB : theme.background;
   const bg = focused
     ? theme.selection
@@ -386,8 +379,6 @@ function PickerRow(props: {
     );
   }
 
-  // Single-line: label + optional "active" + description (model) in green.
-  // Classic: `nvidia openai/gpt-oss-20b` with model in response green.
   const labelFg = focused || option.active ? theme.white : theme.foreground;
   const activeFg = focused ? theme.white : theme.cyan;
   const modelFg = focused ? theme.white : theme.response;

@@ -13,11 +13,6 @@ export interface IntroBlockInput {
   readonly variant?: string | undefined;
 }
 
-/**
- * The intro card is reused verbatim from `ui-core`. It always emits truecolor
- * SGR, so the only adaptation classic makes is stripping colour at
- * `colorMode: "none"` and clipping to the block content width.
- */
 export function buildIntroLines(ctx: BlockContext, input: IntroBlockInput): string[] {
   const rendered = renderIntroHeaderLines({
     width: ctx.width,

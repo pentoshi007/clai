@@ -1,8 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Compacted-context card — compact summary strip; full memory opens in the
- * pager modal (same as tool OUTPUT), not an in-chat mega-expand.
- */
 
 import {
   Fragment,
@@ -13,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { CompactedItem } from "../../../ui-core/state/transcript-types.js";
 import { compactionTokenLabel } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -34,15 +30,13 @@ export function CompactedRow(props: {
   item: CompactedItem;
   theme: Theme;
   services: AppServices;
-  /** Chat-pane columns (plan split/overlay already subtracted). */
   contentWidth?: number | undefined;
-  /** Kept for Ctrl+O parity — still opens the pager, does not dump in-chat. */
   expanded: boolean;
   onToggle: () => void;
 }): ReactNode {
   const { item, theme, services, contentWidth } = props;
   const colorMode = services.capabilities.colorMode;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!item.streaming) return;

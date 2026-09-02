@@ -1,13 +1,3 @@
-/**
- * Audit-log payload builders for `web.search` and `web.fetch`. Single
- * source of truth for the entry shape; `search.ts`/`fetch.ts` pass the
- * result straight to `auditLog`.
- *
- * Two invariants matter here: header/cookie values always go through
- * {@link stripForAudit} (sensitive headers dropped entirely, cookies
- * reduced to name/domain/path/flags — never the value), and the search
- * query text is never logged, only its length.
- */
 
 import { stripForAudit, type AuditSafeCookie } from "./redact.js";
 import type {
@@ -18,28 +8,13 @@ import type {
   WebSearchOutcome,
 } from "./types.js";
 
-// ---------------------------------------------------------------------------
-// Shared payload sub-shapes
-// ---------------------------------------------------------------------------
 
-/**
- * Categorical error description embedded in either audit payload when
- * `outcome.ok === false`. The `kind` discriminator mirrors the matching
- * `Web*ErrorKind` union from `types.ts` so consumers (and the property
- * tests in 7.6) can switch on it without re-parsing the message.
- */
 export interface AuditError {
   kind: string;
   message: string;
   status?: number;
 }
 
-/**
- * Subset of {@link TlsInfo} surfaced to the audit log. The full
- * `subjectAltNames` list and `notBefore` are intentionally omitted —
- * the requirements (5.8) call for the seven fields below and nothing
- * else; including more would only widen the audit log surface.
- */
 export interface AuditTlsInfo {
   protocol: string;
   cipher: string;
@@ -49,11 +24,9 @@ export interface AuditTlsInfo {
   fingerprintSha256: string;
 }
 
-/** Per-phase millisecond timings copied straight from {@link TimingInfo}. */
 export interface AuditTimingInfo {
   dnsMs: number;
   tcpMs: number;
-  /** Present iff the URL was `https://` (Requirement 5.9). */
   tlsMs?: number;
   ttfbMs: number;
   totalMs: number;
@@ -70,18 +43,7 @@ export interface AuditRedirectHop {
   status: number;
 }
 
-// ---------------------------------------------------------------------------
-// web.search
-// ---------------------------------------------------------------------------
 
-/**
- * Audit payload shape emitted for `tool.web_search`. Mirrors the field
- * list in Requirement 5.5: provider id, integer query length, integer
- * result count, outcome status (`ok`), and a categorical error block
- * when the invocation failed.
- *
- * The query text itself never appears here.
- */
 export interface SearchAuditPayload {
   ok: boolean;
   provider: SearchProviderId;
@@ -90,16 +52,6 @@ export interface SearchAuditPayload {
   error?: AuditError;
 }
 
-/**
- * Build the audit payload for a single `web.search` invocation.
- *
- * The caller passes the trimmed query length explicitly because the
- * outcome object does not carry it (the query text is dropped before
- * the outcome leaves the handler, by design — see Requirement 5.5).
- * `queryLength` is clamped to `>= 0` and coerced to a non-negative
- * integer so a malformed caller cannot inject a string or negative
- * value into the audit log.
- */
 export function buildSearchAuditPayload(
   outcome: WebSearchOutcome,
   queryLength: number,
@@ -129,28 +81,7 @@ export function buildSearchAuditPayload(
   return payload;
 }
 
-// ---------------------------------------------------------------------------
-// web.fetch
-// ---------------------------------------------------------------------------
 
-/**
- * Audit payload shape emitted for `tool.web_fetch`. Required fields are
- * always present (Requirements 5.6–5.7); the optional sub-objects are
- * present iff the corresponding metadata stage produced output:
- *
- *  - `tls`           when {@link WebFetchMetadata.tls} is defined
- *                      (Requirement 5.8).
- *  - `timing`        when {@link WebFetchMetadata.timing} is defined
- *                      (Requirement 5.9).
- *  - `redirectChain` when {@link WebFetchMetadata.redirectChain} is
- *                      defined and non-empty (Requirement 5.10).
- *  - `headers`       when {@link WebFetchMetadata.headers} is defined,
- *                      with sensitive header keys stripped entirely
- *                      (Requirement 5.12).
- *  - `cookies`       when {@link WebFetchMetadata.cookies} is defined
- *                      and non-empty, reduced to the
- *                      {@link AuditSafeCookie} shape (Requirement 5.11).
- */
 export interface FetchAuditPayload {
   ok: boolean;
   requestedUrl: string;
@@ -169,28 +100,12 @@ export interface FetchAuditPayload {
   error?: AuditError;
 }
 
-/**
- * Build the audit payload for a single `web.fetch` invocation.
- *
- * Routes `outcome.metadata.headers` and `outcome.metadata.cookies`
- * through {@link stripForAudit} unconditionally so the audit log
- * never carries a `Cookie` / `Set-Cookie` / `Authorization` /
- * `Proxy-Authorization` value, nor any cookie's `value`,
- * `expires`, or `maxAge` (Requirements 5.11, 5.12).
- *
- * The `body` field of the outcome is intentionally never read here —
- * the response body is excluded from the audit log per Requirement 5.6
- * and the request body never enters the outcome shape per
- * Requirement 5.13.
- */
 export function buildFetchAuditPayload(
   outcome: WebFetchOutcome,
 ): FetchAuditPayload {
   const meta = outcome.metadata;
 
   // Always-on redaction of headers and cookies for audit. See the
-  // module-level invariant (1): the audit log never sees sensitive
-  // header *values* nor any cookie *value*, regardless of the user's
   // `redactSensitive` choice.
   const safe = stripForAudit(meta.headers, meta.cookies);
 
@@ -238,9 +153,6 @@ export function buildFetchAuditPayload(
   }
 
   if (meta.redirectChain && meta.redirectChain.length > 0) {
-    // Requirement 5.10: chronological, capped at 5. The pipeline already
-    // caps at MAX_REDIRECT_HOPS, but slice defensively to make this
-    // helper safe to call from tests with synthetic outcomes.
     payload.redirectChain = meta.redirectChain.slice(0, 5).map((hop) => ({
       url: hop.url,
       status: Math.trunc(hop.status) || 0,

@@ -1,12 +1,3 @@
-/**
- * readline-backed `ConfirmationPort` / `SecretPort["request"]` for the
- * non-interactive surface (06-ONESHOT.md §4). Prompt wording comes from
- * `app/confirm-prompt-text.ts`, shared with the overlay surface.
- *
- * A confirmation on a non-TTY stdin cannot be answered, so it rejects with
- * `CONFIRMATION_REQUIRED_MESSAGE` and the runner surfaces it as a blocked
- * tool. The previous inquirer prompt hung forever in that case.
- */
 
 import type { ConfirmationPort } from "../app/ports/confirm-port.js";
 import type { SecretPort } from "../app/ports/secret-port.js";

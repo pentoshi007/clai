@@ -31,11 +31,8 @@ import {
 
 
 export interface AskActionRequired {
-  /** The original prompt, so the caller can re-run it in agent mode. */
   prompt: string;
-  /** The model's natural-language preamble with tool-call syntax stripped. */
   preamble: string;
-  /** Distinct names of the action tools the model wanted to run. */
   tools: string[];
 }
 
@@ -51,7 +48,6 @@ export interface AskOptions {
   onEvent?: ((event: AgentEvent) => void) | undefined;
 }
 
-/** Strip tool-call markup so only the model's prose preamble remains. */
 function stripToolCallSyntax(text: string): string {
   return text
     .replace(/```tool\s*\n?[\s\S]*?```/gi, "")
@@ -61,7 +57,6 @@ function stripToolCallSyntax(text: string): string {
     .trim();
 }
 
-/** Clean fallback shown when no onActionRequired handler is provided. */
 function buildActionRequiredMessage(info: AskActionRequired): string {
   const lead = info.preamble ? `${info.preamble}\n\n` : "";
   const tools =
@@ -72,7 +67,6 @@ function buildActionRequiredMessage(info: AskActionRequired): string {
   );
 }
 
-/** Short result label shown on a research tool's card once it finishes. */
 function researchResultSummary(call: ToolCall, ok: boolean): string {
   if (!ok) return "failed";
   switch (call.name) {
@@ -107,11 +101,8 @@ const ASK_RESEARCH_TOOLS = new Set([
   "image.view",
 ]);
 
-/** Max research rounds before forcing a final answer (each round may run several tools). */
 const ASK_MAX_RESEARCH_ROUNDS = 5;
-/** Max tools executed per round so one message can't fan out unbounded. */
 const ASK_MAX_TOOLS_PER_ROUND = 4;
-/** Per-tool output cap fed back into the conversation. */
 const ASK_TOOL_OUTPUT_CAP = 6000;
 
 const EXPLICIT_FRESH_RE =
@@ -240,8 +231,6 @@ async function streamAskRound(
     (token) => {
       full += token;
       if (suppressed) return;
-      // When native tools are attached, do not suppress prose on fence markers
-      // (there should be none); still suppress if the model emits fences anyway.
       const toolAt = toolCallStartIndex(full);
       if (toolAt >= 0) {
         if (toolAt > forwardedLen) onToken(full.slice(forwardedLen, toolAt));
@@ -343,8 +332,6 @@ async function resolveAskAnswer(
   let activeModel = model;
   let baseRequest = buildBaseRequest(activeProvider, activeModel);
 
-  // Surface research activity (web.search/web.fetch/…) to the UI as tool
-  // events so the user can see what's being searched/fetched.
   const emit = (event: AgentEvent): void => options.onEvent?.(event);
   let toolSeq = 0;
 
@@ -397,7 +384,6 @@ async function resolveAskAnswer(
       return text;
     }
 
-    // Prefer native toolCalls; fall back to text fences.
     const allCalls: ToolCall[] =
       roundResult.toolCalls?.length
         ? roundResult.toolCalls
@@ -441,14 +427,10 @@ async function resolveAskAnswer(
           return "";
         }
         const message = buildActionRequiredMessage(info);
-        // The preamble already streamed live; stream the explanatory tail too
-        // so a live display matches the authoritative returned message.
         const tail = info.preamble ? message.slice(info.preamble.length) : message;
         if (tail) onToken(tail);
         return message;
       }
-      // Otherwise this round is the final (general-knowledge) answer, and it
-      // was already streamed to the display.
       return text;
     }
     const historyNativeCalls = roundResult.toolCalls?.length
@@ -464,8 +446,6 @@ async function resolveAskAnswer(
           toolCallIdsInHistory(messages),
         )
       : [];
-    // Record the model's tool-call turn, then run the read-only tools and
-    // feed their outputs back so the next round can synthesize.
     if (historyNativeCalls.length) {
       appendAssistantWithTools(
         messages,
@@ -545,9 +525,6 @@ async function resolveAskAnswer(
         );
       }
     }
-    // Native tool-result messages must stay contiguous with the assistant's
-    // tool_calls. Replay image.view bytes only after the complete result group,
-    // as an internal user turn — the same multimodal path as user attachments.
     if (viewedImages.length > 0) {
       messages.push({
         role: "user",
@@ -560,7 +537,6 @@ async function resolveAskAnswer(
     }
   }
 
-  // Round cap reached — force a tool-free final answer from what we gathered.
   options.signal?.throwIfAborted();
   messages.push({
     role: "user",
@@ -576,7 +552,6 @@ export async function runAsk(
   options: AskOptions = {},
 ): Promise<string> {
   const request = await buildAskMessages(prompt, options);
-  // Non-streaming public API: discard live tokens, return the final answer.
   return resolveAskAnswer(
     prompt,
     request.provider,

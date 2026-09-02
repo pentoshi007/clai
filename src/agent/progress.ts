@@ -8,11 +8,6 @@ export interface ProgressEvaluation {
   reason: string;
 }
 
-/**
- * Deterministic heuristics to evaluate whether a tool call made
- * progress toward the plan goal. Used to decide whether to continue
- * the agent loop or nudge the model to summarize.
- */
 export function evaluateProgress(
   plan: TaskPlan | undefined,
   call: ToolCall,
@@ -21,7 +16,6 @@ export function evaluateProgress(
   const output = result.output.toLowerCase();
   const ok = result.ok;
 
-  // Command not found → no progress, suggest install
   if (
     !ok &&
     (output.includes("command not found") ||
@@ -36,7 +30,6 @@ export function evaluateProgress(
     };
   }
 
-  // Permission denied
   if (!ok && output.includes("permission denied")) {
     return {
       madeProgress: false,
@@ -46,7 +39,6 @@ export function evaluateProgress(
     };
   }
 
-  // Network discovery goals
   if (plan?.steps.some((s) => s.kind === "network-discovery")) {
     if (output.includes("hosts up") || output.includes("active device")) {
       return {
@@ -58,7 +50,6 @@ export function evaluateProgress(
     }
   }
 
-  // DNS goals
   if (call.name === "dns.lookup") {
     if (ok && output.length > 10) {
       return {
@@ -78,7 +69,6 @@ export function evaluateProgress(
     }
   }
 
-  // Whois goals
   if (call.name === "whois.lookup" && ok && output.length > 50) {
     return {
       madeProgress: true,
@@ -88,7 +78,6 @@ export function evaluateProgress(
     };
   }
 
-  // File edit/write goals
   if (
     (call.name === "fs.edit" ||
       call.name === "fs.replaceLines" ||
@@ -104,7 +93,6 @@ export function evaluateProgress(
     };
   }
 
-  // File delete goals
   if (call.name === "fs.delete" && ok) {
     return {
       madeProgress: true,
@@ -114,7 +102,6 @@ export function evaluateProgress(
     };
   }
 
-  // Generic: if the call succeeded and produced output, we made progress
   if (ok && output.length > 0) {
     return {
       madeProgress: true,
@@ -124,7 +111,6 @@ export function evaluateProgress(
     };
   }
 
-  // Generic: call failed
   if (!ok) {
     return {
       madeProgress: false,

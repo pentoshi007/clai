@@ -1,10 +1,3 @@
-/**
- * Dependency-injection providers for the v2 shell (V2-031).
- *
- * The composition root is created once at bootstrap and handed to the tree
- * here; components read services through `useServices` instead of importing
- * singletons, so the same App can be mounted with fakes in a headless renderer.
- */
 
 import { createContext, useContext, type ReactNode } from "react";
 import type { AppServices } from "../bootstrap/composition-root.js";

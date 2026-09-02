@@ -2,7 +2,6 @@ import type { Reducer, ReducerOutput } from "./types.js";
 
 const LINE_RE = /^(?<path>\S+)\s+\(Status:\s*(?<status>\d+)\)\s+\[Size:\s*(?<size>\d+)\]/;
 
-/** Prefer real hits; 404 is noise when other statuses exist (filter at command too). */
 function isInterestingStatus(status: number): boolean {
   return status !== 404;
 }

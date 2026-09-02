@@ -44,7 +44,6 @@ const priority: Record<PromptSectionKind, number> = {
   context: 8,
 };
 
-/** Canonical composer used immediately before every provider request. */
 export function composeAgentSystemPrompt(ctx: AgentPromptContext): ComposedPrompt {
   const modeSection: AgentPromptSection = {
     kind: "mode",
@@ -60,7 +59,6 @@ export function composeAgentSystemPrompt(ctx: AgentPromptContext): ComposedPromp
   let used = 0;
 
   for (const section of ordered) {
-    // One shared estimator decides section admission; no local chars ratio.
     const size = estimateTextTokens(section.content) + (selected.length === 0 ? 0 : 1);
     if (section.mandatory || used + size <= maxSectionTokens) {
       selected.push(section);

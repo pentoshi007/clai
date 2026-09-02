@@ -13,8 +13,6 @@ import {
   ingestOpenAiModelCatalog,
 } from "./http.js";
 
-// Qwen Cloud documents this OpenAI-compatible endpoint for international
-// accounts. See https://docs.qwencloud.com/developer-guides/getting-started/first-api-call
 const baseUrl = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 
 let cachedModels: string[] | null = null;
@@ -27,8 +25,6 @@ export const qwenCloudProvider: LlmProvider = {
   displayName: "Qwen Cloud",
   defaultModel: defaultModels["qwen-cloud"],
   envVar: "DASHSCOPE_API_KEY",
-  // Qwen Cloud workspace keys use `sk-ws-...` and may contain periods in
-  // addition to the usual URL-safe key characters.
   validateKey: (key: string) => /^sk-[A-Za-z0-9._-]{8,}$/.test(key),
   async listModels(auth: ProviderAuth): Promise<string[]> {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
@@ -58,6 +54,7 @@ export const qwenCloudProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
     const model = request.model ?? defaultModels["qwen-cloud"];
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Qwen Cloud",
       providerId: "qwen-cloud",
       baseUrl,
@@ -85,6 +82,7 @@ export const qwenCloudProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
     const model = request.model ?? defaultModels["qwen-cloud"];
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Qwen Cloud",
       providerId: "qwen-cloud",
       baseUrl,

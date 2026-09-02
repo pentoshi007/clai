@@ -1,10 +1,3 @@
-/**
- * clai theme tokens (V2-030 / QUALITY "visual correctness").
- *
- * Palette is anchored to the clai wordmark gradient (teal → aqua → cyan)
- * plus the legacy amber mode badge, green READY/success, and aqua chrome.
- * Components should pull from these tokens — never scatter raw hex.
- */
 
 import type { ThemeHint } from "../bootstrap/capabilities.js";
 
@@ -15,105 +8,47 @@ export interface Theme {
   readonly accent: string;
   readonly border: string;
   readonly statusBackground: string;
-  /** Selected row / focus highlight (legacy #2563EB). */
   readonly selection: string;
-  /** Alternating list row A (legacy #1E293B). */
   readonly rowA: string;
-  /** Alternating list row B (legacy #0F172A). */
   readonly rowB: string;
-  /** Chip / badge slate (legacy #334155). */
   readonly chip: string;
-  /** Mode badge amber / RUNNING (legacy #B45309). */
   readonly mode: string;
-  /**
-   * Success / done / READY green — bright enough to read on dark panes
-   * (tasks list, toasts, confirmations). Not a dim forest green.
-   */
   readonly success: string;
-  /**
-   * Dark green plate for "done" status chips (white label on solid bg).
-   * Brighter `success` is for text/borders only — too light as a fill.
-   */
   readonly successBg: string;
-  /**
-   * Dark red plate for "failed" / "blocked" status chips (white on solid bg).
-   * Brighter `diffDel` stays for text/borders.
-   */
   readonly failedBg: string;
-  /**
-   * Magenta accent (chalk.magentaBright).
-   * Used for plan/task pane border, agent-card frame, output accents.
-   */
   readonly magenta: string;
-  /** Soft cyan for command labels (legacy #67E8F9). */
   readonly cyan: string;
   readonly aqua: string;
   readonly white: string;
-  /** Assistant / model reply body (user request: green chat text). */
   readonly response: string;
-  /** Amber/yellow activity text while RUNNING (legacy yellow). */
   readonly activity: string;
-  /**
-   * Dark amber plate for "running" status chips (white label on solid bg).
-   * Brighter `activity` is for text/borders only — too light as a fill.
-   */
   readonly activityBg: string;
-  /** Spinner color while RUNNING (legacy magenta). */
   readonly spinner: string;
-  /** Queued badge amber-dark (legacy #854D0E). */
   readonly queued: string;
-  /** Teal chip for idle command shortcuts (richer than flat slate). */
   readonly chipTeal: string;
-  /** Indigo chip alternate for idle shortcuts. */
   readonly chipIndigo: string;
-  /**
-   * Prompt / YOU badge background — warm amber (matches user bubble border).
-   */
   readonly prompt: string;
-  /** Thinking / reasoning text (violet). */
   readonly thinking: string;
   readonly thinkingDim: string;
   readonly thinkingBg: string;
-  /**
-   * Input / composer border, ❯ mark, and cursor — electric aqua, a step
-   * stronger than the `/` command menu border (`theme.border` #22D3EE).
-   */
   readonly inputBorder: string;
-  /** User prompt bubble border — warm amber. */
   readonly userBorder: string;
-  /** Tool card chrome accent (legacy mid-blue). */
   readonly toolBorder: string;
-  /** Tool OUTPUT body text (readable sky cyan). */
   readonly toolOutput: string;
-  /** Modal accent border. */
   readonly modalBorder: string;
-  /** Added lines in file-diff cards / pager (green). */
   readonly diffAdd: string;
-  /** Removed lines in file-diff cards / pager (red). */
   readonly diffDel: string;
-  /** Line-number gutter for diffs. */
   readonly diffGutter: string;
-  /** Soft background wash for added diff lines (Cursor-style). */
   readonly diffAddBg: string;
-  /** Soft background wash for removed diff lines. */
   readonly diffDelBg: string;
-  /** Syntax: keyword (blue). */
   readonly synKeyword: string;
-  /** Syntax: string (orange). */
   readonly synString: string;
-  /** Syntax: comment. */
   readonly synComment: string;
-  /** Syntax: number. */
   readonly synNumber: string;
-  /** Syntax: function name. */
   readonly synFunction: string;
-  /** Syntax: type / class. */
   readonly synType: string;
-  /** Syntax: property / attr. */
   readonly synProperty: string;
-  /** Syntax: operator. */
   readonly synOperator: string;
-  /** Syntax: regex. */
   readonly synRegex: string;
 }
 
@@ -129,36 +64,27 @@ const DARK_THEME: Theme = {
   rowB: "#0F172A",
   chip: "#334155",
   mode: "#B45309",
-  // Readable on #0b0e14 / statusBackground — was #166534 (too dark / washed).
   success: "#4ADE80",
-  // Solid dark green for "done" badge fills (white text stays crisp).
   successBg: "#166534",
-  // Solid dark red for "failed" badge fills.
   failedBg: "#991B1B",
-  // Magenta accent (magentaBright) — plan pane + agent card frame.
   magenta: "#FF55FF",
   cyan: "#67E8F9",
   aqua: "#2EEBFF",
   white: "#FFFFFF",
   response: "#4ADE80",
   activity: "#FACC15",
-  // Dark yellow/amber plate for running badges (white text stays crisp).
   activityBg: "#854D0E",
   spinner: "#E879F9",
   queued: "#854D0E",
   chipTeal: "#0E7490",
   chipIndigo: "#3730A3",
-  // YOU badge plate — darker amber so white "YOU" stays crisp.
   prompt: "#B45309",
   thinking: "#A78BFA",
   thinkingDim: "#8B79C4",
   thinkingBg: "#171225",
-  // Stronger aqua than /command border (#22D3EE) — high-sat electric cyan.
   inputBorder: "#2EEBFF",
-  // User prompt bubble border — lighter warm amber (distinct from YOU plate).
   userBorder: "#f5b351",
   toolBorder: "#3B82F6",
-  // Tool OUTPUT body text — sky cyan (readable on dark panes).
   toolOutput: "#7DD3FC",
   modalBorder: "#22D3EE",
   diffAdd: "#4ADE80",
@@ -190,34 +116,26 @@ const LIGHT_THEME: Theme = {
   chip: "#e2e8f0",
   mode: "#B45309",
   success: "#16A34A",
-  // Darker plate for "done" chips on light terminals.
   successBg: "#14532d",
-  // Darker plate for "failed" chips on light terminals.
   failedBg: "#7f1d1d",
-  // Magenta accent (slightly deeper on light bg for contrast).
   magenta: "#D946EF",
   cyan: "#0891b2",
   aqua: "#0891B2",
   white: "#FFFFFF",
   response: "#15803d",
   activity: "#a16207",
-  // Dark amber plate for running badges on light terminals.
   activityBg: "#92400E",
   spinner: "#a21caf",
   queued: "#854D0E",
   chipTeal: "#0e7490",
   chipIndigo: "#4338ca",
-  // YOU badge plate — deep amber.
   prompt: "#b45309",
   thinking: "#7c3aed",
   thinkingDim: "#9a72e0",
   thinkingBg: "#F5F0FF",
-  // Stronger aqua than /command border (#0891B2) for light terminals.
   inputBorder: "#06B6D4",
-  // User prompt bubble border — lighter warm amber.
   userBorder: "#f5b351",
   toolBorder: "#2563eb",
-  // Tool OUTPUT body text — sky cyan.
   toolOutput: "#0369a1",
   modalBorder: "#0891B2",
   diffAdd: "#15803d",

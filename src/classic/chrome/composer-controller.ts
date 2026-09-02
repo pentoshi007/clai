@@ -192,9 +192,6 @@ export class ComposerController {
   handleAction(action: ActionId): boolean {
     switch (action) {
       case "editor.submit": {
-        // Classic cross-OS fallback: trailing "\" + Enter means newline, not submit.
-        // Works everywhere (backslash is just a character) and mirrors shell continuation.
-        // Check " \" first so "foo \" removes the space+backslash pair, not just "\"
         const { text, cursor } = this.snapshot.state;
         const atEnd = cursor === text.length;
         if (atEnd && text.endsWith(" \\") && text.trim().length > 0) {
@@ -378,7 +375,6 @@ export class ComposerController {
     const recalled =
       direction === "up" ? this.history.prev(state.text) : this.history.next();
     if (recalled === undefined) {
-      // No history to recall — scroll the transcript instead of swallowing the key.
       this.deps.onScrollChat(direction === "up" ? -1 : 1);
       return true;
     }

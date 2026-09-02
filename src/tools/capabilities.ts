@@ -52,11 +52,6 @@ const INSTALL_HINTS: Record<string, string> = {
   tesseract: "pkg.install tesseract",
 };
 
-/**
- * Binaries that are never hard-required because clai ships a native tool
- * path (or a soft substitute). Missing them must not fail tool.check or
- * push the model into pkg.install death spirals.
- */
 const BUILTIN_COVERED = new Set([
   "dig",
   "whois",
@@ -65,7 +60,6 @@ const BUILTIN_COVERED = new Set([
   "hostid",
 ]);
 
-/** True if path is only a project-local node_modules/.bin shim (not global). */
 export function isProjectLocalNodeBin(path: string): boolean {
   return /(?:^|[/\\])node_modules[/\\]\.bin[/\\]/i.test(path);
 }
@@ -75,11 +69,6 @@ async function findCommand(name: string): Promise<string | undefined> {
   return found && !isProjectLocalNodeBin(found) ? found : undefined;
 }
 
-/**
- * Version probes are cached per process: binaries rarely appear or change
- * mid-session, and `tool.check` (the tool models call first) previously ran up
- * to 20 blocking `execFileSync` probes of 5s each — a visible TUI freeze.
- */
 const versionCache = new Map<string, string | undefined>();
 
 async function getVersion(
@@ -91,8 +80,6 @@ async function getVersion(
   const cacheKey = `${name}\u0000${resolvedPath ?? ""}`;
   if (versionCache.has(cacheKey)) return versionCache.get(cacheKey);
   const version = await new Promise<string | undefined>((resolve) => {
-    // Prefer the absolute path we already resolved so empty/stripped PATH
-    // cannot break version probes.
     const argv0 = resolvedPath ?? spec[0]!;
     execFile(
       argv0,
@@ -149,8 +136,6 @@ export async function checkTools(names: string[]): Promise<ToolAvailability[]> {
 export async function toolCheckHandler(
   args: Record<string, unknown>,
 ): Promise<ToolResult> {
-  // Canonical: tools: string[] | "a,b". Aliases for single-tool mistakes
-  // models make from older schemas / prompts (name, binary, tool).
   const toolsRaw =
     args.tools ??
     args.name ??
@@ -185,7 +170,6 @@ export async function toolCheckHandler(
   }
 
   const results = await checkTools(names);
-  // Project-local CLIs: missing globally is fine for scaffold (use npx / local bin after install).
   const LOCAL_OPTIONAL = new Set([
     "vite",
     "next",
@@ -196,11 +180,6 @@ export async function toolCheckHandler(
     "webpack",
     "parcel",
   ]);
-  /**
-   * Interchangeable tool families. Missing one member is soft (○) when any
-   * other member in this check (or on PATH) is available — e.g. yarn ✗ with
-   * npm ✓ must not fail the whole tool.check (models often spray npm+yarn+pnpm).
-   */
   const SUBSTITUTE_FAMILIES: string[][] = [
     ["npm", "yarn", "pnpm", "bun"],
     ["pip", "pip3", "poetry", "uv", "pipenv"],
@@ -220,7 +199,6 @@ export async function toolCheckHandler(
     if (results.some((r) => family.includes(r.name.toLowerCase()) && r.available)) {
       return true;
     }
-    // Substitute may not be in the requested list — probe PATH lightly
     for (const alt of family) {
       if (alt === name.toLowerCase()) continue;
       if (await findCommand(alt)) return true;
@@ -231,10 +209,7 @@ export async function toolCheckHandler(
   async function isSoftMissing(name: string): Promise<boolean> {
     const n = name.toLowerCase();
     if (LOCAL_OPTIONAL.has(n)) return true;
-    // dig/whois/nslookup are optional — dns.lookup / whois.lookup are built-in.
     if (BUILTIN_COVERED.has(n)) return true;
-    // Alternate package managers are always soft when missing: work proceeds with
-    // whichever manager is present; never hard-fail the whole check for yarn alone.
     if (["yarn", "pnpm", "bun", "pipenv", "poetry", "uv"].includes(n)) return true;
     if (await substituteAvailable(n)) return true;
     return false;
@@ -266,9 +241,6 @@ export async function toolCheckHandler(
     return `✗ ${r.name} — not found${hint}`;
   });
 
-  // A completed probe is a successful observation even when something is
-  // missing: the model needs the report, not a tool failure. Absence is
-  // reported in the body so it can install or substitute.
   const hardMissing = results.filter((r, index) => !r.available && !softMissing[index]);
   const footer =
     hardMissing.length > 0

@@ -174,13 +174,6 @@ interface McpLeaseView {
   selection: McpRuntimeSelection;
 }
 
-/**
- * A turn's pinned view of the catalog. Tool schemas are advertised once per
- * turn, so dispatch, classification and prompt context must keep resolving
- * against that same catalog even if a refresh, reconnect or selection edit
- * lands mid-turn — otherwise an advertised tool becomes "unknown" halfway
- * through and the model is told its tools disappeared.
- */
 export interface McpTurnLease {
   release(): void;
 }
@@ -432,7 +425,6 @@ export class McpRuntime {
     return { snapshot: this.state.snapshot, selection: this.state.selection };
   }
 
-  /** Newest pinned turn view, or the live one when no turn is in flight. */
   private view(): McpView {
     return this.leases.at(-1) ?? this.liveView();
   }
@@ -452,13 +444,6 @@ export class McpRuntime {
     return this.toolDefinitions(options).map((definition) => definition.name);
   }
 
-  /**
-   * Tolerant lookup: exact canonical / wire hit first, then a punctuation- and
-   * case-insensitive match, then an unambiguous suffix match. Models routinely
-   * rewrite `mcp.docs.resolve-library-id` as `mcp_docs_resolve_library_id` or
-   * drop the server segment; a live tool must not be reported missing for a
-   * cosmetic difference.
-   */
   private resolveMetadata(
     view: McpView,
     name: string,

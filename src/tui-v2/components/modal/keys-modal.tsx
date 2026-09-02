@@ -1,15 +1,4 @@
 /** @jsxImportSource @opentui/react */
-/**
- * Multi-row API key editor for one LLM provider (/set).
- *
- * Existing keys show as masked placeholders — typing replaces that slot.
- * Empty save on an existing row keeps the stored secret. Mirrors ScopeModal
- * layout (docked above composer).
- *
- * Each existing key row has a ★ / ☆ toggle to mark it as the active (sticky)
- * key used as the rotation start.  New (unsaved) rows cannot be activated
- * until they are saved.
- */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
@@ -32,18 +21,14 @@ const ACTIVE_FG = "#f5c542";
 
 interface KeyRow {
   readonly id: number;
-  /** Existing storage slot id (keep value when input empty). */
   readonly slotId?: string | undefined;
-  /** Placeholder when existing (masked). */
   readonly placeholder: string;
-  /** Live typed text (replacement or new). */
   readonly text: string;
   readonly disabled: boolean;
 }
 
 let nextRowId = 1;
 
-/** "API key" by default; endpoint editors relabel every row and hint. */
 function itemLabelOf(request: KeysEditorRequest): string {
   return request.itemLabel ?? "API key";
 }
@@ -70,16 +55,11 @@ export function KeysModal(props: KeysModalProps): ReactNode {
   const itemLabel = itemLabelOf(request);
   const itemLabelPlural = `${itemLabel}s`;
   const [rows, setRows] = useState<KeyRow[]>(() => rowsFromRequest(request));
-  // Track which key row is marked as active (sticky rotation start).
-  // Defaults to the stored activeIndex; clamped to existing-key rows only.
   const existingCount = request.initialKeys.length;
   const [activeKeyIdx, setActiveKeyIdx] = useState(() => {
     const stored = request.activeIndex ?? 0;
     return existingCount > 0 ? Math.min(stored, existingCount - 1) : 0;
   });
-  // With N stored keys we render N rows + one trailing empty — focus that empty
-  // row so the user can paste a new key without editing an existing slot first.
-  // With no keys, a single empty row is focused at index 0.
   const [focusIdx, setFocusIdx] = useState(() =>
     Math.max(0, request.initialKeys.length),
   );
@@ -95,7 +75,6 @@ export function KeysModal(props: KeysModalProps): ReactNode {
           el.setText(row.text);
         }
       } catch {
-        /* ignore */
       }
     }
   }
@@ -104,8 +83,6 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     const id = requestAnimationFrame(() => {
       applyTextToInputs(rows);
       prefilled.current = true;
-      // Always honor focusIdx (initial open targets the trailing empty row when
-      // existing keys are present — never force rows[0]).
       const idx = Math.max(0, Math.min(focusIdx, rows.length - 1));
       const focused = rows[idx];
       if (focused) inputRefs.current.get(focused.id)?.focus();
@@ -167,7 +144,6 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     const removed = synced[index];
     if (removed) inputRefs.current.delete(removed.id);
     const next = synced.filter((_, i) => i !== index);
-    // Adjust active index if the removed row was before or at the active row.
     if (removed?.slotId) {
       if (index < activeKeyIdx) {
         setActiveKeyIdx((prev) => Math.max(0, prev - 1));
@@ -192,7 +168,6 @@ export function KeysModal(props: KeysModalProps): ReactNode {
     for (const row of synced) {
       const value = row.text.trim();
       if (row.slotId) {
-        // Existing: empty value keeps stored secret; typed value replaces.
         out.push({ slotId: row.slotId, value, disabled: row.disabled });
       } else if (value) {
         out.push({ value, disabled: row.disabled });
@@ -223,8 +198,6 @@ export function KeysModal(props: KeysModalProps): ReactNode {
       toggleDisabled(focusIdx);
       return;
     }
-    // Single-letter 'r' only when not typing in an input with content — use
-    // explicit chord: bare "r" when all inputs empty is awkward; use Ctrl+R.
     if (chord === "ctrl+r") {
       key.preventDefault();
       resetAll();

@@ -30,7 +30,6 @@ export interface EngagementScope {
 
 let cached: EngagementScope | undefined;
 let cacheLoaded = false;
-/** File mtime (ms) of the last successful load — detect mid-session `clai scope add`. */
 let cachedMtimeMs = 0;
 
 export async function loadScope(): Promise<EngagementScope | undefined> {
@@ -43,7 +42,6 @@ export async function loadScope(): Promise<EngagementScope | undefined> {
     }
     const st = await stat(scopeFile);
     const mtime = st.mtimeMs;
-    // Re-read when another process (shell `clai scope add`) updated the file.
     if (cacheLoaded && mtime === cachedMtimeMs) {
       return cached;
     }
@@ -92,7 +90,6 @@ export function normalizeScopeTarget(target: string): string {
       return new URL(trimmed).hostname.toLowerCase();
     }
   } catch {
-    // Fall through to token cleanup below.
   }
 
   const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(trimmed);
@@ -147,10 +144,6 @@ export async function addScopeTargets(
   return scope;
 }
 
-/**
- * Replace the authorized target list entirely (does not merge with existing).
- * Empty `targets` clears the file (scoping disabled).
- */
 export async function replaceScopeTargets(
   targets: string[],
   patch: Partial<Omit<EngagementScope, "authorizedTargets">> = {},
@@ -187,9 +180,6 @@ export function getScopePath(): string {
   return scopeFile;
 }
 
-/**
- * Reset the cache. Used by tests so a fresh load picks up the new file.
- */
 export function resetScopeCache(): void {
   cached = undefined;
   cacheLoaded = false;
@@ -363,7 +353,6 @@ export function resetSessionScopeCache(): void {
   sessionBindings.clear();
 }
 
-/** Loopback aliases that all mean "this machine" for local app verify. */
 export function isLoopbackScopeTarget(target: string): boolean {
   const n = normalizeScopeTarget(target);
   if (!n) return false;
@@ -400,20 +389,11 @@ function ipInCidr(ip: string, cidr: string): boolean {
   }
 }
 
-/**
- * Returns true if `target` (hostname / IP / CIDR string) is covered by any
- * authorized entry in scope. A target is in-scope if:
- *   - it appears literally in authorizedTargets
- *   - it is a subdomain of an authorized hostname
- *   - it is an IPv4 inside an authorized CIDR
- *   - the CIDR target is exactly an authorized CIDR
- */
 export function targetInScope(target: string, scope: EngagementScope): boolean {
   const trimmed = normalizeScopeTarget(target);
   if (!trimmed) return false;
   const excluded = (scope.excludedTargets ?? []).map(normalizeScopeTarget);
   if (excluded.some((entry) => matchEntry(trimmed, entry))) return false;
-  // localhost / 127.0.0.1 / ::1 are equivalent for local-dev authorization.
   if (isLoopbackScopeTarget(trimmed)) {
     if (
       scope.authorizedTargets.some((entry) =>
@@ -428,11 +408,9 @@ export function targetInScope(target: string, scope: EngagementScope): boolean {
 
 function matchEntry(target: string, entry: string): boolean {
   if (entry === target) return true;
-  // CIDR membership for IP targets.
   if (entry.includes("/") && net.isIP(target)) {
     return ipInCidr(target, entry);
   }
-  // Hostname suffix match (entry "example.com" covers "api.example.com")
   if (!net.isIP(target) && !entry.includes("/")) {
     return target === entry || target.endsWith(`.${entry}`);
   }

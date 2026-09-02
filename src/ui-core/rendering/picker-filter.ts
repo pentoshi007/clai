@@ -1,12 +1,3 @@
-/**
- * Pure fuzzy-search ranking for the generic picker (PICK-001, V2-071).
- *
- * Ranks by subsequence span: every query character must appear in order, not
- * necessarily consecutively, and a tighter span (matched characters packed
- * closer together) ranks higher. Ported from the classic TUI's PickerPanel so
- * both frontends agree on match behavior; kept renderer-independent here so it
- * is unit-testable without mounting a component.
- */
 
 export interface PickerOption {
   readonly value: string;
@@ -57,7 +48,6 @@ function bestFieldScore(
   return best;
 }
 
-/** Filters and ranks options by `query`; empty query returns options unchanged. */
 export function filterPickerOptions(
   options: readonly PickerOption[],
   query: string,
@@ -76,7 +66,6 @@ export function filterPickerOptions(
   return scored.map((entry) => entry.option);
 }
 
-/** Index of the active option within `options`, or 0 if none is active. */
 export function activeIndex(options: readonly PickerOption[]): number {
   const index = options.findIndex((option) => option.active);
   return Math.max(0, index);

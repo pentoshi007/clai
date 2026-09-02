@@ -1,10 +1,3 @@
-/**
- * Soft orientation for continue / mid-work recovery after interruptions.
- *
- * Professional agents (Claude Code, Cursor, etc.) re-attach to interrupted
- * work: live jobs, open tasks, last tools — they do not skip ahead and mark
- * plan items done. This is guidance + facts, not a hard gate.
- */
 
 import type { SessionPlan } from "../store/plan.js";
 import type { ChatMessage } from "../types.js";
@@ -12,11 +5,9 @@ import type { BackgroundJob } from "../tools/jobs.js";
 
 export const CONTINUE_ORIENT_PREFIX = "CONTINUE / RECOVER MID-WORK";
 
-/** User is asking to pick up after a pause, error, or short nudge. */
 export function looksLikeContinueOrResumePrompt(prompt: string): boolean {
   const t = prompt.replace(/\s+/g, " ").trim();
   if (!t) return false;
-  // Bare or short continue-family prompts
   if (
     /^(?:continue|resume|proceed|keep\s+going|go\s+on|finish(?:\s+it)?|next|try\s+again|retry|pick\s+up)(?:\s+please)?[.!]?$/i.test(
       t,
@@ -24,7 +15,6 @@ export function looksLikeContinueOrResumePrompt(prompt: string): boolean {
   ) {
     return true;
   }
-  // Slightly longer but clearly recovery-oriented
   if (
     /^(?:continue|resume|proceed|keep\s+going|go\s+on|finish|retry|try\s+again)\b.{0,80}$/i.test(
       t,
@@ -49,10 +39,8 @@ export interface ContinueOrientInput {
   readonly plan?: SessionPlan | undefined;
   readonly runningJobs?: readonly BackgroundJob[] | undefined;
   readonly recentJobs?: readonly BackgroundJob[] | undefined;
-  /** Skip for pure Q&A / social — never force re-attach on "what did you find?" */
   readonly informationalQuery?: boolean | undefined;
   readonly idleOrSocial?: boolean | undefined;
-  /** Structured outcome of the previous turn in this session, when known. */
   readonly previousTurn?: PreviousTurnSignal | undefined;
 }
 
@@ -77,7 +65,6 @@ const UNFINISHED_PREVIOUS_STATUSES = new Set([
   "error",
 ]);
 
-/** True when the last turn provably did not finish its work. */
 export function previousTurnUnfinished(
   signal: PreviousTurnSignal | undefined,
 ): boolean {
@@ -96,7 +83,6 @@ export interface RecentToolHint {
   readonly head: string;
 }
 
-/** Last few tool results from history (newest last), high-signal one-liners. */
 export function extractRecentToolHints(
   history: readonly ChatMessage[] | undefined,
   limit = 6,
@@ -140,16 +126,11 @@ function jobLine(job: BackgroundJob): string {
   return `[${job.id}] ${job.status}${exit} — ${cmd}`;
 }
 
-/**
- * Whether this turn should receive mid-work recovery orientation.
- * Soft: continue phrasing, or open plan work / live jobs with prior history.
- */
 export function shouldInjectContinueOrientation(
   input: ContinueOrientInput,
 ): boolean {
   if (input.informationalQuery || input.idleOrSocial) return false;
   if (looksLikeContinueOrResumePrompt(input.prompt)) return true;
-  // A known-unfinished previous turn is proof, not a guess.
   if (
     previousTurnUnfinished(input.previousTurn) &&
     !startsNewDirection(input.prompt)
@@ -164,12 +145,8 @@ export function shouldInjectContinueOrientation(
     (t) => t.state === "in_progress" || t.state === "failed",
   );
   const liveJobs = (input.runningJobs?.length ?? 0) > 0;
-  // Recovery after provider/tool failure often looks like a short follow-up
-  // while work is still open (not necessarily the word "continue").
   if ((openTask || liveJobs) && input.prompt.trim().length < 160) {
-    // Avoid hijacking a brand-new concrete request mid-session.
     if (startsNewDirection(input.prompt)) return false;
-    // Short nudges with open work → re-attach
     if (
       /^(?:ok|okay|yes|y|go|do\s+it|keep\s+going|and\s+then|what\s+next|now\s+what)[.!]?$/i.test(
         input.prompt.trim(),
@@ -182,9 +159,6 @@ export function shouldInjectContinueOrientation(
   return false;
 }
 
-/**
- * Factual briefing + soft procedure. Empty string if nothing useful to say.
- */
 export function buildContinueOrientation(input: ContinueOrientInput): string {
   if (!shouldInjectContinueOrientation(input)) return "";
 

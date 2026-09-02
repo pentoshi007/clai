@@ -1,13 +1,3 @@
-/**
- * Format tool results for the model context (not the UI spool).
- *
- * Philosophy:
- * - Full bodies stay on disk (artifact / job logs). Never invent "empty".
- * - Default: honest head+tail size cap — no keyword-rank "generic reduce".
- * - Optional structured polish only for known scanners (nmap/ffuf/…) that
- *   extract findings; noise should already be filtered at the command.
- * - Long work → background job + live file; point at path, use shell.tail.
- */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -117,11 +107,6 @@ function collectTail(
   return { kept, used };
 }
 
-/**
- * Truncate long tool output for the model. When `preferErrors` is set (failed
- * commands), keep error-bearing lines and a heavy tail so stack traces survive.
- * Never ranks by CVE/port keywords (that was genericReducer — removed).
- */
 export function summarizeOutput(
   output: string,
   maxChars = 8_000,
@@ -241,7 +226,6 @@ export function summarizeFetchOutput(
   };
 }
 
-/** Prefer real error lines over banner/echo headers when summarizing failures. */
 function failureSnippetFromOutput(output: string | undefined): string {
   const lines = (output ?? "")
     .split(/\r?\n/)
@@ -251,17 +235,13 @@ function failureSnippetFromOutput(output: string | undefined): string {
 
   const errorLike =
     /command not found|not found|No such file|permission denied|EACCES|ENOENT|error:|fatal:|Traceback|Exception|FAILED|exit code|cannot|can't |couldn't |denied|refused|timed out|timeout|killed|segmentation fault|usage:/i;
-  // Scan from the end — probe chains (`a && b && c`) print success noise first
-  // and the actual failure last (e.g. `yarn: command not found`).
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i]!;
     if (errorLike.test(line)) return line.slice(0, 120);
   }
-  // No explicit error pattern: last non-empty line is usually the failing step.
   return lines[lines.length - 1]!.slice(0, 120);
 }
 
-/** One-line failure cue prepended when a tool returns ok=false. */
 export function failureSummaryLine(result: {
   ok: boolean;
   exitCode?: number | undefined;
@@ -270,7 +250,6 @@ export function failureSummaryLine(result: {
   if (result.ok) return undefined;
   const exit =
     typeof result.exitCode === "number" ? `exit=${result.exitCode}` : "failed";
-  // Exit 127 is almost always "command not found" in POSIX shells.
   const hint =
     result.exitCode === 127
       ? "command not found"
@@ -284,10 +263,8 @@ export function failureSummaryLine(result: {
   return `FAILURE SUMMARY: ${parts.join("; ")}`;
 }
 
-/** Legacy hard ceiling; effective cap comes from reliability policy (E2). */
 export const PASSTHROUGH_CAP_CHARS_LEGACY = 400_000;
 
-/** Effective default model-context cap for tool bodies (E2). */
 export function fsPassthroughCapChars(): number {
   return getReliabilityPolicy().fsPassthroughCapChars;
 }
@@ -295,7 +272,6 @@ export function fsPassthroughCapChars(): number {
 const HTTP_FETCH_CAP_CHARS = 14_000;
 const WEB_FETCH_CAP_CHARS = 14_000;
 const WEB_SEARCH_CAP_CHARS = 24_000;
-/** Default for shell and other tools after optional structured polish. */
 const DEFAULT_CONTEXT_CAP_CHARS = 12_000;
 
 function artifactFooter(
@@ -357,7 +333,6 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
     return [failLine, body].filter(Boolean).join("\n").trim();
   }
 
-  // Large file / listing tools: generous passthrough cap.
   if (
     call.name === "fs.read" ||
     call.name === "fs.list" ||
@@ -378,7 +353,6 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
     return [failLine, body].filter(Boolean).join("\n").trim();
   }
 
-  // Optional structured polish (nmap/ffuf/…) — never keyword-rank arbitrary shell.
   const command =
     call.name === "shell.exec" || call.name === "shell.start"
       ? String(call.args.command ?? "")
@@ -397,7 +371,6 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
       }).summary.trim();
       if (polished.length > 0) bodySource = polished;
     } catch {
-      // keep raw
     }
   }
 
@@ -414,7 +387,6 @@ export function formatToolContext(call: ToolCall, result: ToolResult): string {
       DEFAULT_CONTEXT_CAP_CHARS,
       "Output",
     );
-  // If we polished scanners, still remind that full log may be longer.
   const polishNote =
     bodySource !== output && result.outputPath
       ? `\n(Structured hit summary above; complete log: ${result.outputPath})`

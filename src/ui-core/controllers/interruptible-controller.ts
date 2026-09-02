@@ -1,9 +1,3 @@
-/**
- * Registry for cancellable non-session operations (e.g. /update download and
- * install). Session turns and Responder jobs have their own cancellation
- * paths; this covers fire-and-forget command handlers so Esc / Ctrl+C can
- * abort them instead of leaving them running until they settle.
- */
 export class InterruptibleController {
   private readonly controllers = new Set<AbortController>();
   private readonly listeners = new Set<() => void>();

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage, ProviderId } from "../../src/types.js";
 import type { ProviderKeySlot } from "../../src/store/keys.js";
-import { installTransport, type FakeTransport } from "../conformance/fake-transport.js";
+import {
+  installTransport,
+  isResponsesProbe,
+  type FakeTransport,
+} from "../conformance/fake-transport.js";
 import { textStreamResponse } from "../conformance/wire-fixtures.js";
 import { chatCompletion, keySlots, rateLimitedWithoutBackoff } from "../admission/admission-fixtures.js";
 
@@ -69,11 +73,16 @@ const USABLE_SUMMARY = [
 
 function installScript(...steps: Array<() => Response>): FakeTransport {
   let index = 0;
-  return installTransport(() => {
+  const transport = installTransport((record) => {
+    if (isResponsesProbe(record.url)) {
+      transport.generations.pop();
+      return new Response("not found", { status: 404 });
+    }
     const step = steps[Math.min(index, steps.length - 1)]!;
     index += 1;
     return step();
   });
+  return transport;
 }
 
 function streamFrame(payload: unknown): string {

@@ -1,11 +1,3 @@
-/**
- * Action router (V2-033).
- *
- * Resolves a normalized key chord to a semantic action given the active input
- * context. Context bindings win over `global`, so a picker can rebind Enter
- * without losing global cancel. Validates on construction so a conflicting
- * keymap fails fast instead of resolving nondeterministically.
- */
 
 import type { ActionContext, ActionId } from "./action-id.js";
 import {
@@ -15,12 +7,6 @@ import {
   type KeyBinding,
 } from "./keymap.js";
 
-/**
- * Blocking-overlay contexts trap input (PICK-002): an unbound chord does
- * nothing rather than falling through to a global action like Ctrl+H. Base
- * regions (composer/transcript/plan) intentionally keep the global fallback
- * so app-wide shortcuts work no matter which region has focus.
- */
 const TRAPPING_CONTEXTS: ReadonlySet<ActionContext> = new Set([
   "picker",
   "modal",
@@ -51,7 +37,6 @@ export class ActionRouter {
     }
   }
 
-  /** Resolve a chord in `context`, then fall back to `global` unless `context` traps input. */
   resolve(chord: string, context: ActionContext): ActionId | undefined {
     const normalized = normalizeChord(chord);
     const contextHit = this.byContext.get(context)?.get(normalized);
@@ -60,7 +45,6 @@ export class ActionRouter {
     return this.byContext.get("global")?.get(normalized);
   }
 
-  /** All chords bound to an action, for help/status display. */
   chordsFor(action: ActionId): string[] {
     const chords: string[] = [];
     for (const map of this.byContext.values()) {

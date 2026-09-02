@@ -21,11 +21,6 @@ export interface ComposerProps {
   readonly accentSpans?: readonly EditorSpan[] | undefined;
 }
 
-/**
- * Top border with the session meta (`provider · model · permission`) tucked
- * into the rule, flush right — the same placement the OpenTUI composer gives
- * its box title.
- */
 export function composerTopBorder(ink: InkTheme, frame: ComposerFrame): string {
   const glyphs = ink.glyphs;
   const inner = Math.max(0, frame.width - 2);
