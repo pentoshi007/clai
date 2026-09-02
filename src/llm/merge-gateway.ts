@@ -328,6 +328,7 @@ export const mergeGatewayProvider: LlmProvider = {
     const apiKey = requireKey(auth);
     const model = request.model ?? defaultModels["merge-gateway"];
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Merge Gateway",
       providerId: "merge-gateway",
       baseUrl: mergeGatewayBaseUrl,
@@ -355,6 +356,7 @@ export const mergeGatewayProvider: LlmProvider = {
     const apiKey = requireKey(auth);
     const model = request.model ?? defaultModels["merge-gateway"];
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Merge Gateway",
       providerId: "merge-gateway",
       baseUrl: mergeGatewayBaseUrl,

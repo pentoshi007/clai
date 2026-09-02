@@ -171,7 +171,10 @@ describe('custom providers', () => {
   it('retries a stream once without stream_options when a custom gateway rejects it', async () => {
     const { config, router } = await loadModules();
     const requests: Record<string, unknown>[] = [];
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/responses')) {
+        return new Response('not found', { status: 404 });
+      }
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       if (requests.length === 1) {
         return new Response(
@@ -208,7 +211,7 @@ describe('custom providers', () => {
 
     expect(result.text).toBe('ok');
     expect(nextResult.text).toBe('ok');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(requests[0]?.stream_options).toEqual({ include_usage: true });
     expect(requests[1]?.stream_options).toBeUndefined();
     expect(requests[2]?.stream_options).toBeUndefined();
@@ -229,6 +232,9 @@ describe('custom providers', () => {
       'fetch',
       vi.fn(async (url: string) => {
         urls.push(String(url));
+        if (String(url).endsWith('/responses')) {
+          return new Response('not found', { status: 404 });
+        }
         return new Response(
           JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
           { headers: { 'content-type': 'application/json' } },
@@ -246,7 +252,7 @@ describe('custom providers', () => {
       { messages: [{ role: 'user', content: 'hi' }] },
       { apiKey: 'k', baseUrl: 'https://new.example/v1' },
     );
-    expect(urls[0]).toContain('https://new.example/v1/chat/completions');
+    expect(urls.at(-1)).toContain('https://new.example/v1/chat/completions');
   });
 
   it('never interprets an API-key env var as an endpoint override', async () => {
@@ -280,7 +286,10 @@ describe('custom providers', () => {
     const bodies: Record<string, unknown>[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_url: string, init?: RequestInit) => {
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/responses')) {
+          return new Response('not found', { status: 404 });
+        }
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return new Response(
           JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
@@ -307,7 +316,10 @@ describe('custom providers', () => {
     const bodies: Record<string, unknown>[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_url: string, init?: RequestInit) => {
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/responses')) {
+          return new Response('not found', { status: 404 });
+        }
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return new Response(
           JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),

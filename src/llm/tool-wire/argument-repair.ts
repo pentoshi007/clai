@@ -85,6 +85,55 @@ export function wireToolArguments(
   }
 }
 
+export function repairTruncatedToolArguments(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") || completeObjectArgumentsText(trimmed)) {
+    return undefined;
+  }
+  const closers: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (const char of trimmed) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{") closers.push("}");
+    else if (char === "[") closers.push("]");
+    else if (char === "}" || char === "]") {
+      if (closers.pop() !== char) return undefined;
+    }
+  }
+  let repaired = trimmed;
+  if (inString) repaired += '"';
+  if (/:\s*$/.test(repaired)) repaired += "null";
+  repaired = repaired.replace(/,\s*$/, "");
+  while (closers.length > 0) repaired += closers.pop();
+  try {
+    const parsed = JSON.parse(repaired) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? repaired
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function completeObjectArgumentsText(raw: string): boolean {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Boolean(parsed && typeof parsed === "object" && !Array.isArray(parsed));
+  } catch {
+    return false;
+  }
+}
+
 export function parseToolArguments(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
   if (typeof raw === "object" && !Array.isArray(raw)) {

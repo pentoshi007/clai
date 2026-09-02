@@ -63,6 +63,7 @@ export const hetznerProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Hetzner API key is required");
     const model = request.model ?? defaultModels.hetzner;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Hetzner",
       providerId: "hetzner",
       baseUrl,
@@ -90,6 +91,7 @@ export const hetznerProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Hetzner API key is required");
     const model = request.model ?? defaultModels.hetzner;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Hetzner",
       providerId: "hetzner",
       baseUrl,

@@ -67,6 +67,7 @@ export const tokenrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("TokenRouter API key is required");
     const model = request.model ?? defaultModels.tokenrouter;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "TokenRouter",
       providerId: "tokenrouter",
       baseUrl: resolveBaseUrl(auth),
@@ -94,6 +95,7 @@ export const tokenrouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("TokenRouter API key is required");
     const model = request.model ?? defaultModels.tokenrouter;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "TokenRouter",
       providerId: "tokenrouter",
       baseUrl: resolveBaseUrl(auth),

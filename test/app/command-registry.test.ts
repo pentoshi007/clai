@@ -17,8 +17,13 @@ describe("V2-024 command registry", () => {
     const mcp = slashCommands.find((entry) => entry.command === "/mcp");
     expect(mcp?.usage).toContain("add");
     expect(mcp?.usage).toContain("locations");
-    expect(mcp?.description).toContain(".clai/mcp.json");
-    expect(mcp?.description).toMatch(/off by default/i);
+    expect(mcp?.usage).toContain("refresh");
+    expect(mcp?.usage).toContain("login");
+    expect(mcp?.usage).toContain("reconnect");
+    expect(mcp?.usage).toContain("tools");
+    expect(mcp?.usage).toContain("status");
+    // for commands with enumerated options, description is kept minimal (single-line use-case)
+    expect(mcp?.description.length).toBeLessThan(60);
   });
 
   it("resolves aliases to their canonical command", () => {

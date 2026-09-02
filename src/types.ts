@@ -325,6 +325,8 @@ export interface CompletionResult {
   text: string;
   provider: ProviderId;
   model: string;
+  /** Wire API that produced this result: responses | chat-completions | anthropic-messages | gemini-generate-content | meta-responses | ollama-chat */
+  api?: string | undefined;
   toolCalls?: NativeToolCall[] | undefined;
   finishReason?: "stop" | "tool_calls" | "length" | "error" | string | undefined;
   rawAssistantMessage?: unknown | undefined;

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { ToolItem } from "../../../ui-core/state/transcript-types.js";
@@ -230,7 +230,7 @@ export function ToolCard(props: {
   const isBatchLive = isBatchName && item.status === "running";
   const batchExpanded = expanded || isBatchLive;
 
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
   const formatMdRead =

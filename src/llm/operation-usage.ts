@@ -192,6 +192,23 @@ interface GenerationAttemptContext {
 
 const generationAttemptContext = new AsyncLocalStorage<GenerationAttemptContext>();
 
+const unrecordedTransportStorage = new AsyncLocalStorage<true>();
+
+export function withUnrecordedTransport<T>(run: () => T): T {
+  return unrecordedTransportStorage.run(true, run);
+}
+
+export function recordGenerationAttemptOutcome(
+  outcome: GenerationAttemptOutcome,
+  usage?: TokenUsage,
+  statusCode?: number,
+): void {
+  const context = generationAttemptContext.getStore();
+  if (!context?.request.attemptUsage || context.active) return;
+  const handle = context.request.attemptUsage.begin(context.input);
+  handle.complete(outcome, usage, statusCode);
+}
+
 function settleActiveAttempt(
   context: GenerationAttemptContext,
   outcome: GenerationAttemptOutcome,
@@ -218,6 +235,7 @@ export async function generationFetch(
 ): Promise<Response> {
   const affinity = currentSessionAffinity();
   if (affinity) init = withSessionAffinityHeaders(init, affinity);
+  if (unrecordedTransportStorage.getStore()) return fetch(input, init);
   const context = generationAttemptContext.getStore();
   if (!context?.request.attemptUsage) return fetch(input, init);
   if (context.active) {

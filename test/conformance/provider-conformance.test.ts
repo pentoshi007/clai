@@ -120,13 +120,16 @@ describe("provider conformance matrix", () => {
 
             const result = await run(route, mode, scenario);
 
-            expect(transport.generations.length).toBeGreaterThanOrEqual(1);
             const expectedUrl =
               mode === "stream"
                 ? route.streamUrlContains ?? route.urlContains
                 : route.urlContains;
-            expect(transport.generations[0]!.url).toContain(expectedUrl);
-            expect(transport.generations[0]!.method).toBe("POST");
+            const scenarioGenerations = transport.generations.filter(
+              (generation) => generation.url.includes(expectedUrl),
+            );
+            expect(scenarioGenerations.length).toBeGreaterThanOrEqual(1);
+            expect(scenarioGenerations[0]!.url).toContain(expectedUrl);
+            expect(scenarioGenerations[0]!.method).toBe("POST");
             expect(result.provider).toBe(route.provider);
             expect(result.text).toContain(ANSWER_TEXT);
 

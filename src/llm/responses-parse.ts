@@ -322,16 +322,29 @@ export function assembleCompletionResult(
     reasoningArtifacts,
     outputBudgetIncomplete,
   } = input;
+  const api = config.providerId === "meta" ? "meta-responses" : "responses";
   return {
     text: parsed.text,
     provider: config.providerId,
     model,
+    api,
     ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
     finishReason: completionFinishReason(parsed, outputBudgetIncomplete),
     ...(usage ? { usage } : {}),
     ...reasoningResultFields(parsed),
     ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
   };
+}
+
+export function assembleCompletionResultWithThinking(
+  input: CompletionAssembly & { thinkingEnabled?: boolean | undefined },
+): CompletionResult {
+  const base = assembleCompletionResult(input);
+  if (input.thinkingEnabled === false) {
+    const { reasoningBlock: _rb, reasoningArtifacts: _ra, ...rest } = base as unknown as Record<string, unknown>;
+    return rest as unknown as CompletionResult;
+  }
+  return base;
 }
 
 export { extractReasoningSummary };

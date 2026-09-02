@@ -94,6 +94,7 @@ export class AgentEventAdapter {
             : {}),
           ...(event.model !== undefined ? { model: event.model } : {}),
           ...(event.provider !== undefined ? { provider: event.provider } : {}),
+          ...(event.api !== undefined ? { api: event.api } : {}),
           ...(event.attempt?.kind === "generation"
             ? { attempt: event.attempt }
             : {}),

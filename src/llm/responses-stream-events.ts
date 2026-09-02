@@ -1,5 +1,6 @@
 import type { CompletionResult, NativeToolCall } from "../types.js";
 import { ProviderError } from "./http.js";
+import { ChatShapedResponsesPayload } from "./responses-shape.js";
 import { fromWireName } from "./tool-protocol.js";
 import { emitStreamReasoningDelta } from "./stream-events.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
@@ -340,7 +341,14 @@ function dispatchReasoningEvent(
   type: string | undefined,
   parsed: Record<string, unknown>,
 ): boolean {
-  if (type === "response.reasoning_summary_text.delta") {
+  const thinkingEnabled = Boolean(ctx.request.thinking?.enabled);
+  if (
+    type === "response.reasoning_summary_text.delta" ||
+    type === "response.reasoning_text.delta" ||
+    type === "response.reasoning_summary.delta" ||
+    type === "response.reasoning.delta"
+  ) {
+    if (!thinkingEnabled) return true;
     const delta = typeof parsed.delta === "string" ? parsed.delta : "";
     if (delta) {
       ctx.watchdog.resetIdleTimer();
@@ -348,7 +356,12 @@ function dispatchReasoningEvent(
     }
     return true;
   }
-  if (type === "response.reasoning_summary_text.done") {
+  if (
+    type === "response.reasoning_summary_text.done" ||
+    type === "response.reasoning_text.done" ||
+    type === "response.reasoning_summary.done"
+  ) {
+    if (!thinkingEnabled) return true;
     const textVal = typeof parsed.text === "string" ? parsed.text : "";
     if (textVal && !ctx.state.reasoningSeen.includes(textVal)) {
       const remaining = textVal.slice(ctx.state.reasoningSeen.length);
@@ -385,15 +398,22 @@ export function finalizeStreamResult(
   toolCalls: NativeToolCall[],
 ): CompletionResult {
   const { config, model, state, request } = ctx;
+  const api = config.providerId === "meta" ? "meta-responses" : "responses";
+  const thinkingEnabled = Boolean(request.thinking?.enabled);
+  const reasoningPart = thinkingEnabled
+    ? streamReasoningReplay(config, model, state, request.onStreamEvent)
+    : {};
+  const usagePart = streamUsageResult(state, thinkingEnabled);
   if (!state.visible.trim() && toolCalls.length === 0) {
-    if (state.reasoningSeen.trim() || state.finishReason === "length") {
+    if ((thinkingEnabled && state.reasoningSeen.trim()) || state.finishReason === "length") {
       return {
         text: state.full,
         provider: config.providerId,
         model,
+        api,
         finishReason: state.finishReason ?? "stop",
-        ...streamUsageResult(state),
-        ...streamReasoningReplay(config, model, state, request.onStreamEvent),
+        ...usagePart,
+        ...reasoningPart,
       };
     }
     throw new ProviderError(
@@ -404,19 +424,21 @@ export function finalizeStreamResult(
     text: state.full,
     provider: config.providerId,
     model,
+    api,
     ...(toolCalls.length ? { toolCalls } : {}),
     ...(state.finishReason
       ? { finishReason: state.finishReason }
       : toolCalls.length
         ? { finishReason: "tool_calls" }
         : {}),
-    ...streamUsageResult(state),
-    ...streamReasoningReplay(config, model, state, request.onStreamEvent),
+    ...usagePart,
+    ...reasoningPart,
   };
 }
 
 export function maybeAppendPrivateReasoning(ctx: StreamEventContext): void {
   const { state, config, request } = ctx;
+  if (!request.thinking?.enabled) return;
   if (
     !state.reasoningSeen.trim() &&
     state.streamUsage?.reasoningTokens &&
@@ -449,6 +471,9 @@ export function processStreamPayload(
     parsed = JSON.parse(payload) as Record<string, unknown>;
   } catch {
     return undefined;
+  }
+  if (typeof parsed.type !== "string" && parsed.choices !== undefined) {
+    throw new ChatShapedResponsesPayload();
   }
   dispatchStreamEvent(ctx, parsed, payload);
   return undefined;

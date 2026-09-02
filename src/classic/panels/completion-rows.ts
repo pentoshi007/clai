@@ -103,11 +103,12 @@ function slashRows(input: CompletionViewInput, items: readonly CommandDefinition
   return items.map((command, index) => {
     const activeRow = index === input.active;
     const marker = activeRow ? ink.fg("inputBorder", `${ink.glyphs.promptMark} `) : "  ";
+    const right = command.usage ? command.usage : command.description;
     return twoColumnRow(
       ink,
       marker,
       ink.fg("accent", commandLabel(command)),
-      ink.fg("muted", command.description),
+      ink.fg("muted", right),
       width,
       activeRow,
     );

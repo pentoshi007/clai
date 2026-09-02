@@ -257,6 +257,7 @@ export const anthropicProvider: LlmProvider = {
       text: parsed.text,
       provider: "anthropic",
       model,
+      api: "anthropic-messages",
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningBlock ? { reasoningBlock } : {}),
       ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
@@ -429,6 +430,7 @@ export const anthropicProvider: LlmProvider = {
       text: full,
       provider: "anthropic",
       model,
+      api: "anthropic-messages",
       ...(finalized.toolCalls.length
         ? { toolCalls: finalized.toolCalls }
         : {}),

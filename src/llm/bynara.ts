@@ -89,6 +89,7 @@ export const bynaraProvider: LlmProvider = {
           },
           async () => {
             const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
               provider: "Bynara",
               providerId: "bynara",
               baseUrl,
@@ -142,6 +143,7 @@ export const bynaraProvider: LlmProvider = {
           async () => {
             const budgets = streamIdleBudgets(Boolean(thinking?.enabled));
             const payload = await openAiCompatibleStream({
+      responsesFirst: true,
               provider: "Bynara",
               providerId: "bynara",
               baseUrl,

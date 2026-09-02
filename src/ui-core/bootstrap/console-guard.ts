@@ -46,6 +46,7 @@ export function installConsoleGuard(options: ConsoleGuardOptions): () => void {
 
   const target = console as unknown as Record<string, unknown>;
   const originals = new Map<string, unknown>();
+  const warningDedupe = new Set<string>();
 
   const capture = (level: string, message: string): void => {
     if (!message) return;
@@ -69,10 +70,42 @@ export function installConsoleGuard(options: ConsoleGuardOptions): () => void {
     };
   }
 
+  const proc = process as unknown as {
+    emitWarning?: (...args: unknown[]) => void;
+  };
+  const originalEmitWarning = proc.emitWarning;
+  let emitWarningPatched = false;
+  if (typeof originalEmitWarning === "function") {
+    const boundOriginal = originalEmitWarning.bind(process);
+    proc.emitWarning = ((...args: unknown[]) => {
+      const msg = typeof args[0] === "string" ? (args[0] as string) : "";
+      if (/MaxListenersExceededWarning|Possible EventEmitter memory leak/i.test(msg)) {
+        const key = msg.slice(0, 200);
+        if (warningDedupe.has(key)) return;
+        warningDedupe.add(key);
+        capture("warn", msg.split("\n")[0]!.slice(0, 500));
+        try {
+          if (logPath && written < MAX_CAPTURE_BYTES) {
+            const line = `[${new Date().toISOString()}] warn: ${msg}\n`;
+            written += Buffer.byteLength(line);
+            appendFileSync(logPath, line, { mode: 0o600 });
+          }
+        } catch {
+        }
+        return;
+      }
+      return (boundOriginal as (...a: unknown[]) => void)(...args);
+    }) as typeof originalEmitWarning;
+    emitWarningPatched = true;
+  }
+
   return () => {
     for (const [method, original] of originals) {
       target[method] = original;
     }
     originals.clear();
+    if (emitWarningPatched && originalEmitWarning) {
+      proc.emitWarning = originalEmitWarning;
+    }
   };
 }

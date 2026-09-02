@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { TerminalDimensionsContext } from "../hooks/terminal-dimensions.js";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import {
   COMPOSER_MAX_HEIGHT,
@@ -624,6 +625,7 @@ export function App(): ReactNode {
   }
 
   return (
+    <TerminalDimensionsContext.Provider value={{ width, height }}>
     <box
       style={{
         width: terminalWidth,
@@ -813,6 +815,7 @@ export function App(): ReactNode {
         termHeight={height}
       />
     </box>
+    </TerminalDimensionsContext.Provider>
   );
 }
 

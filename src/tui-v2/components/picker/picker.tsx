@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/react */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -67,7 +68,7 @@ function pad(text: string, width: number): string {
 
 export function Picker(props: PickerProps): ReactNode {
   const { services, theme, request } = props;
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<number | undefined>(undefined);
   const [cursor, setCursor] = useState(() => activeIndex(request.options));

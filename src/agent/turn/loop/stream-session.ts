@@ -63,7 +63,7 @@ interface StreamState {
 const streamPhase = (state: StreamState): string => {
   if (state.generatedTokens > 0 && !state.inThinking) return "responding";
   if (state.sawReasoning) return "thinking";
-  return "waiting for model";
+  return "waiting";
 };
 
 const emitStreamedTextCards = (
@@ -189,9 +189,21 @@ export const createStreamSession = (
       applyThinkingTransitions(ports, state, token);
     },
     onStatus: (status) => {
-      ports.writeStatus(status);
       const full = status.replace(/\s+/g, " ").trim();
-      if (isProviderFailureStatus(full)) ports.notify("warn", full);
+      if (!full) return;
+      if (full.startsWith("ℹ")) {
+        ports.notify("info", full);
+        return;
+      }
+      if (isProviderFailureStatus(full)) {
+        ports.notify("warn", full);
+        return;
+      }
+      if (full.length > 80 && /error|failed|exception/i.test(full)) {
+        ports.notify("warn", full);
+        return;
+      }
+      ports.writeStatus(status);
     },
     onStreamEvent: (event) => {
       if (event.type !== "reasoning_delta") return;

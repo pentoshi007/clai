@@ -8,7 +8,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -128,7 +129,7 @@ export function TranscriptView(props: TranscriptViewProps): ReactNode {
   const state = useTranscriptState(services.transcript);
   const session = useSessionState(services.session);
   const items = useMemo(() => transcriptItems(state), [state]);
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const paneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const introWidth = Math.max(40, paneWidth);
   const [windowStart, setWindowStart] = useState<number | undefined>(undefined);

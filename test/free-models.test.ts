@@ -188,9 +188,14 @@ describe("free provider (zen + kilo)", () => {
 
   describe("complete", () => {
     function jsonCompletionMock() {
-      return vi.fn(async () => new Response(JSON.stringify({
-        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
-      }), { status: 200, headers: { "content-type": "application/json" } }));
+      return vi.fn(async (url: string | URL) => {
+        if (String(url).endsWith("/responses")) {
+          return new Response("not found", { status: 404 });
+        }
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      });
     }
 
     it("sends no Authorization header for a keyless free model", async () => {
@@ -205,8 +210,8 @@ describe("free provider (zen + kilo)", () => {
         {},
       );
 
-      const request = fetchMock.mock.calls[0]![1] as RequestInit;
-      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
+      expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
         "https://opencode.ai/zen/v1/chat/completions",
       );
       expect(request.headers).not.toHaveProperty("authorization");
@@ -224,10 +229,10 @@ describe("free provider (zen + kilo)", () => {
         {},
       );
 
-      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
         "https://opencode.ai/zen/v1/chat/completions",
       );
-      const request = fetchMock.mock.calls[0]![1] as RequestInit;
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       const body = JSON.parse(String(request.body)) as { model?: string };
       expect(body.model).toBe("deepseek-v4-flash-free");
       expect(request.headers).not.toHaveProperty("authorization");
@@ -245,10 +250,10 @@ describe("free provider (zen + kilo)", () => {
         {},
       );
 
-      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      expect(String(fetchMock.mock.calls.at(-1)![0])).toBe(
         "https://api.kilo.ai/api/gateway/chat/completions",
       );
-      const request = fetchMock.mock.calls[0]![1] as RequestInit;
+      const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
       const body = JSON.parse(String(request.body)) as { model?: string };
       expect(body.model).toBe("nvidia/nemotron-3-ultra-550b-a55b:free");
       expect(request.headers).not.toHaveProperty("authorization");

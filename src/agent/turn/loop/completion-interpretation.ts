@@ -13,6 +13,7 @@ export interface CompletionUsagePorts {
     usage: TokenUsage;
     provider: ProviderId;
     model: string;
+    api?: string | undefined;
     attempt?: ReturnType<typeof contextAttemptFromOperationUsage> | undefined;
   }) => void;
   readonly audit: (
@@ -47,6 +48,7 @@ export const accountCompletionUsage = async (
     usage,
     provider: completion.provider,
     model: completion.model,
+    ...(completion.api ? { api: completion.api } : {}),
     ...(attempt.kind === "generation" ? { attempt } : {}),
   });
 

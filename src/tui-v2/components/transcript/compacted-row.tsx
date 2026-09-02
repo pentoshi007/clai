@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { CompactedItem } from "../../../ui-core/state/transcript-types.js";
 import { compactionTokenLabel } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -36,7 +36,7 @@ export function CompactedRow(props: {
 }): ReactNode {
   const { item, theme, services, contentWidth } = props;
   const colorMode = services.capabilities.colorMode;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!item.streaming) return;

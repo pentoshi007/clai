@@ -245,6 +245,7 @@ export const mantleProvider: LlmProvider = {
       text: parsed.text,
       provider: "aws-mantle",
       model,
+      api: "anthropic-messages",
       ...(usage ? { usage } : {}),
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningBlock ? { reasoningBlock } : {}),
@@ -475,6 +476,7 @@ export const mantleProvider: LlmProvider = {
       text: full,
       provider: "aws-mantle",
       model,
+      api: "anthropic-messages",
       ...(usage ? { usage } : {}),
       ...(finalized.toolCalls.length ? { toolCalls: finalized.toolCalls } : {}),
       ...(finalized.thinkingSignature && finalized.thinkingText

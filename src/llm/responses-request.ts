@@ -5,9 +5,10 @@ import type {
   ReasoningArtifactReplayObserver,
   ReasoningArtifactReplayTarget,
   ReasoningPreference,
+  ToolChoice,
   ToolDefinition,
 } from "../types.js";
-import { toWireName } from "./tool-protocol.js";
+import { mapToolChoiceToOpenAi, toWireName } from "./tool-protocol.js";
 import { wireToolArguments } from "./tool-wire/argument-repair.js";
 import {
   reasoningArtifactItems,
@@ -35,6 +36,7 @@ export interface BuildResponsesBodyOptions {
   temperature?: number | undefined;
   stream: boolean;
   reasoning?: ReasoningPreference | undefined;
+  toolChoice?: ToolChoice | undefined;
   tools?: ToolDefinition[] | undefined;
   parallelToolCalls?: boolean | undefined;
   purpose?: CompletionRequestPurpose | undefined;
@@ -265,6 +267,7 @@ export function buildResponsesBody(
     stream: options.stream,
     endpoint: config.baseUrl,
     reasoning: options.reasoning,
+    toolChoice: options.toolChoice,
     tools: options.tools,
     parallelToolCalls: options.parallelToolCalls,
     temperature: options.temperature,
@@ -298,5 +301,8 @@ export function buildResponsesBody(
   if (reasoning) body.reasoning = reasoning;
   if (options.stream) body.stream = true;
   applyResponsesTools(body, tools, options.parallelToolCalls);
+  if (tools && options.toolChoice !== undefined) {
+    body.tool_choice = mapToolChoiceToOpenAi(options.toolChoice);
+  }
   return JSON.stringify(body);
 }

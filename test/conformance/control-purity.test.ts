@@ -194,7 +194,10 @@ describe("reasoning controls are a pure function of route, preference and model"
             { ...base, purpose, attemptReason },
             route.auth,
           );
-          bodies.push(controlSubset(transport.generations[0]!.body));
+          const chatGeneration = transport.generations.find((generation) =>
+            generation.url.includes(route.urlContains),
+          )!;
+          bodies.push(controlSubset(chatGeneration.body));
           vi.unstubAllGlobals();
         }
       }

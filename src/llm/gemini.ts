@@ -343,6 +343,7 @@ export const geminiProvider: LlmProvider = {
       text: parsed.text,
       provider: "gemini",
       model,
+      api: "gemini-generate-content",
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
       ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
       ...(data.candidates?.[0]?.finishReason
@@ -491,6 +492,7 @@ export const geminiProvider: LlmProvider = {
       text: full,
       provider: "gemini",
       model,
+      api: "gemini-generate-content",
       ...(toolParsed.toolCalls.length
         ? { toolCalls: toolParsed.toolCalls }
         : {}),

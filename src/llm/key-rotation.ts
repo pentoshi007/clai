@@ -101,8 +101,13 @@ export function formatKeyEventStatus(event: ProviderKeyEvent): string {
     }
     case "retry": {
       const secs =
-        event.waitMs !== undefined ? ` in ${Math.ceil(event.waitMs / 1000)}s` : "";
+        event.waitMs !== undefined
+          ? ` — retrying in ${Math.ceil(event.waitMs / 1000)}s`
+          : "";
       const why = event.reason ?? "retrying";
+      if (why === "rate limited" && secs) {
+        return `⏳ ${event.provider}${idx}${keyPart} rate limited${secs}…`;
+      }
       return `⏳ ${event.provider}${idx}${keyPart} ${why}${secs}…`;
     }
     case "endpoint": {

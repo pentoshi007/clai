@@ -114,6 +114,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const apiKey = requireKey(auth);
       const model = request.model ?? def.defaultModel;
       const payload = await openAiCompatibleComplete({
+        responsesFirst: true,
         provider: def.displayName, providerId,
         baseUrl: resolveBaseUrl(def, auth), apiKey: apiKey ?? "",
         headers: authHeaders(def, apiKey), model,
@@ -136,6 +137,7 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const baseUrl = resolveBaseUrl(def, auth);
       const headers = authHeaders(def, apiKey);
       const stream = (withUsage: boolean) => openAiCompatibleStream({
+        responsesFirst: true,
         provider: def.displayName, providerId, baseUrl,
         apiKey: apiKey ?? "", headers, model,
         messages: request.messages, maxTokens: request.maxTokens,

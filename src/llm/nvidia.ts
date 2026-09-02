@@ -102,6 +102,7 @@ export const nvidiaProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("NVIDIA NIM API key is required");
     const model = request.model ?? defaultModels.nvidia;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "NVIDIA NIM",
       providerId: "nvidia",
       baseUrl,
@@ -129,6 +130,7 @@ export const nvidiaProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("NVIDIA NIM API key is required");
     const model = request.model ?? defaultModels.nvidia;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "NVIDIA NIM",
       providerId: "nvidia",
       baseUrl,

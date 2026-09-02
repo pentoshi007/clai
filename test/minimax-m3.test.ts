@@ -9,9 +9,14 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
   });
 
   it("sends minimax-m3 specific payload parameters", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: "hello world" } }]
-    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (String(url).endsWith("/responses")) {
+        return new Response("not found", { status: 404 });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "hello world" } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await nvidiaProvider.complete(
@@ -23,7 +28,7 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
     );
 
     expect(fetchMock).toHaveBeenCalled();
-    const fetchCallArgs = fetchMock.mock.calls[0];
+    const fetchCallArgs = fetchMock.mock.calls.at(-1)!;
     const options = fetchCallArgs[1] as RequestInit;
     const body = JSON.parse(options.body as string);
 
@@ -42,9 +47,14 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
   });
 
   it("respects user specified temperature and maxTokens for minimax-m3", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: "hello world" } }]
-    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (String(url).endsWith("/responses")) {
+        return new Response("not found", { status: 404 });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "hello world" } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await nvidiaProvider.complete(
@@ -58,7 +68,7 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
     );
 
     expect(fetchMock).toHaveBeenCalled();
-    const fetchCallArgs = fetchMock.mock.calls[0];
+    const fetchCallArgs = fetchMock.mock.calls.at(-1)!;
     const options = fetchCallArgs[1] as RequestInit;
     const body = JSON.parse(options.body as string);
 
@@ -81,7 +91,7 @@ describe("NVIDIA NIM minimax-m3 payload alignment", () => {
       { apiKey: "gateway-test-key" },
     );
 
-    const options = fetchMock.mock.calls[0]![1] as RequestInit;
+    const options = fetchMock.mock.calls.at(-1)![1] as RequestInit;
     const body = JSON.parse(options.body as string);
     expect(body.model).toBe("minimax-m3");
     expect(body.max_tokens).toBe(8_192);

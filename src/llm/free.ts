@@ -190,11 +190,14 @@ const ZEN_RESPONSES_CONFIG: ResponsesDialectConfig = {
   baseUrl: ZEN_BASE_URL,
   providerId: "free",
   displayName: "Free (opencode zen)",
-  artifactDialect: "meta-responses",
+  artifactDialect: "openai-compatible",
   terminalPolicy: META_STREAM_TERMINAL,
   buildHeaders: zenResponsesHeaders,
   reasoningPayload: zenReasoningPayload,
-  bodyExtras: () => ({}),
+  bodyExtras: () => ({
+    store: false,
+    include: ["reasoning.encrypted_content"],
+  }),
 };
 
 interface ModelCache {
@@ -275,6 +278,7 @@ export const freeProvider: LlmProvider = {
       return { ...result, model: requested };
     }
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Free",
       providerId: "free",
       baseUrl: source.baseUrl,
@@ -315,6 +319,7 @@ export const freeProvider: LlmProvider = {
     }
     const budgets = streamIdleBudgets(Boolean(request.thinking?.enabled));
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Free",
       providerId: "free",
       baseUrl: source.baseUrl,

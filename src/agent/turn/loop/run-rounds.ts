@@ -84,7 +84,7 @@ export const runTurnRounds = async (
       const responderDelivery = deps.refreshResponderInbox();
 
       const streamLabel =
-        deps.loop.step === 0 ? "waiting for model" : `step ${deps.loop.step + 1}`;
+        deps.loop.step === 0 ? "waiting" : `step ${deps.loop.step + 1}`;
       deps.emit({ type: "status", text: streamLabel });
       let toolsAttached = false;
       const streamSession = createStreamSession({
@@ -128,12 +128,13 @@ export const runTurnRounds = async (
         {
           dispatchedRawRequestTokens: deps.loop.dispatchedRawRequestTokens,
           dispatchedRequestRoute: deps.loop.dispatchedRequestRoute,
-          emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, attempt }) =>
+          emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, api, attempt }) =>
             deps.emit({
               type: "token-usage",
               usage,
               model: usageModel,
               provider: usageProvider,
+              ...(api ? { api } : {}),
               ...(attempt ? { attempt } : {}),
             }),
           audit: (event, payload) => auditLog(event, payload),

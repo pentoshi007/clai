@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { UserItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { wrapUserPrompt } from "../../../ui-core/rendering/user-message-wrap.js";
@@ -20,7 +20,7 @@ export function UserMessage(props: {
 }): ReactNode {
   const { item, theme, onOpen, contentWidth } = props;
   const [expanded, setExpanded] = useState(false);
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const wrapBudget = Math.max(
     20,
     contentWidth != null ? contentWidth : Math.max(40, termWidth - 8),

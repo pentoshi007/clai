@@ -146,6 +146,7 @@ export const agentrouterProvider: LlmProvider = {
           },
           async () => {
             const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
               provider: "AgentRouter",
               providerId: "agentrouter",
               baseUrl,
@@ -202,6 +203,7 @@ export const agentrouterProvider: LlmProvider = {
           },
           async () => {
             const payload = await openAiCompatibleStream({
+      responsesFirst: true,
               provider: "AgentRouter",
               providerId: "agentrouter",
               baseUrl,

@@ -3,6 +3,8 @@ import { providerIds, type ProviderId, type TokenUsage } from "../../types.js";
 export interface SessionUsageRoute {
   readonly provider: ProviderId | undefined;
   readonly model: string | undefined;
+  readonly api?: string | undefined;
+  readonly apis: readonly string[];
   readonly requests: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
@@ -31,6 +33,7 @@ export interface SessionUsageTotals {
   readonly cacheBasePromptTokens: number | undefined;
   readonly estimatedRequests: number;
   readonly unmeasuredPromptRequests: number;
+  readonly apis: readonly string[];
 }
 
 export interface SessionUsageReport {
@@ -41,6 +44,8 @@ export interface SessionUsageReport {
 export interface PersistedRouteUsage {
   readonly provider?: string | undefined;
   readonly model?: string | undefined;
+  readonly api?: string | undefined;
+  readonly apis?: readonly string[] | undefined;
   readonly requests: number;
   readonly promptTokens: number;
   readonly completionTokens: number;
@@ -58,6 +63,7 @@ export interface PersistedRouteUsage {
 interface MutableRoute {
   provider: ProviderId | undefined;
   model: string | undefined;
+  apis: Set<string>;
   sequence: number;
   requests: number;
   promptTokens: number;
@@ -112,10 +118,21 @@ function normalizeProvider(provider: unknown): ProviderId | undefined {
     : undefined;
 }
 
+function normalizeApi(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  // keep known wire identifiers lower-cased, but preserve case for custom
+  return trimmed.toLowerCase();
+}
+
 function toRoute(entry: MutableRoute): SessionUsageRoute {
+  const apis = [...entry.apis].sort();
   return Object.freeze({
     provider: entry.provider,
     model: entry.model,
+    ...(apis.length === 1 ? { api: apis[0] } : {}),
+    apis,
     requests: entry.requests,
     promptTokens: entry.promptTokens,
     completionTokens: entry.completionTokens,
@@ -153,6 +170,7 @@ export class SessionUsageLedger {
     usage: TokenUsage,
     provider: ProviderId | undefined,
     model: string | undefined,
+    api?: string | undefined,
   ): void {
     const normalizedModel = normalizeModel(model);
     const key = routeKey(provider, normalizedModel);
@@ -161,6 +179,7 @@ export class SessionUsageLedger {
       entry = {
         provider,
         model: normalizedModel,
+        apis: new Set<string>(),
         sequence: this.sequence++,
         requests: 0,
         promptTokens: 0,
@@ -177,17 +196,20 @@ export class SessionUsageLedger {
       };
       this.entries.set(key, entry);
     }
+    const normalizedApi = normalizeApi(api);
+    if (normalizedApi) entry.apis.add(normalizedApi);
 
     const promptMeasured = usage.promptTokensKnown !== false;
     const promptTokens = promptMeasured ? nonNegativeInteger(usage.promptTokens) : 0;
     const completionTokens = nonNegativeInteger(usage.completionTokens);
     const cached = optionalNonNegativeInteger(usage.cachedPromptTokens);
+    const rawCached = cached !== undefined && promptMeasured ? Math.min(cached, promptTokens) : cached;
 
     entry.requests += 1;
     entry.promptTokens += promptTokens;
     entry.completionTokens += completionTokens;
     entry.totalTokens += nonNegativeInteger(usage.totalTokens);
-    entry.cachedPromptTokens = addOptional(entry.cachedPromptTokens, cached);
+    entry.cachedPromptTokens = addOptional(entry.cachedPromptTokens, rawCached);
     entry.cacheCreationTokens = addOptional(
       entry.cacheCreationTokens,
       optionalNonNegativeInteger(usage.cacheCreationTokens),
@@ -201,7 +223,7 @@ export class SessionUsageLedger {
       optionalNonNegativeInteger(usage.reasoningTokens),
     );
     entry.reasoningObserved ||= usage.reasoningObserved === true;
-    if (cached !== undefined && promptMeasured) {
+    if (rawCached !== undefined && promptMeasured) {
       entry.cacheBasePromptTokens =
         (entry.cacheBasePromptTokens ?? 0) + promptTokens;
     }
@@ -238,6 +260,7 @@ export class SessionUsageLedger {
     let cacheBasePromptTokens: number | undefined;
     let estimatedRequests = 0;
     let unmeasuredPromptRequests = 0;
+    const totalsApis = new Set<string>();
     for (const route of routes) {
       requests += route.requests;
       promptTokens += route.promptTokens;
@@ -260,6 +283,7 @@ export class SessionUsageLedger {
       );
       estimatedRequests += route.estimatedRequests;
       unmeasuredPromptRequests += route.unmeasuredPromptRequests;
+      for (const api of route.apis) totalsApis.add(api);
     }
 
     return Object.freeze({
@@ -278,6 +302,7 @@ export class SessionUsageLedger {
         cacheBasePromptTokens,
         estimatedRequests,
         unmeasuredPromptRequests,
+        apis: Object.freeze([...totalsApis].sort()),
       }),
     });
   }
@@ -290,6 +315,8 @@ export class SessionUsageLedger {
       .map((entry) => ({
         ...(entry.provider !== undefined ? { provider: entry.provider } : {}),
         ...(entry.model !== undefined ? { model: entry.model } : {}),
+        ...(entry.apis.size > 0 ? { apis: [...entry.apis].sort() } : {}),
+        ...(entry.apis.size === 1 ? { api: [...entry.apis][0] } : {}),
         requests: entry.requests,
         promptTokens: entry.promptTokens,
         completionTokens: entry.completionTokens,
@@ -336,9 +363,23 @@ export class SessionUsageLedger {
       );
       const key = routeKey(provider, model);
       if (this.entries.has(key)) continue;
+      const apis = new Set<string>();
+      const rawApis = Array.isArray((raw as Record<string, unknown>).apis)
+        ? ((raw as Record<string, unknown>).apis as unknown[])
+        : undefined;
+      if (rawApis) {
+        for (const entry of rawApis) {
+          const normalized = normalizeApi(entry);
+          if (normalized) apis.add(normalized);
+        }
+      } else {
+        const single = normalizeApi((raw as Record<string, unknown>).api);
+        if (single) apis.add(single);
+      }
       this.entries.set(key, {
         provider,
         model,
+        apis,
         sequence: this.sequence++,
         requests,
         promptTokens,

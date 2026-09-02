@@ -33,8 +33,8 @@ export function idleHintIds(
   const draft: IdleHintId[] = hasDraft ? ["cut-draft", "clear-draft"] : [];
   if (density === "xs") return [];
   if (density === "sm") return draft;
-  if (density === "md") return ["commands", ...draft, "thinking", "output"];
-  return ["commands", ...draft, "thinking", "output"];
+  if (density === "md") return draft;
+  return draft;
 }
 
 export function statusDensityForWidth(width: number): StatusDensity {
@@ -98,7 +98,7 @@ export function cwdViewportWidth(
 }
 
 export function formatActivity(activity: string | undefined, maxLen: number): string {
-  let base = (activity ?? "waiting for model").replace(/\s+/g, " ").trim() || "working";
+  let base = (activity ?? "waiting").replace(/\s+/g, " ").trim() || "working";
   base = base.replace(/^[⏳·•\s]+/, "").replace(/\n/g, " ").trim();
   if (/\/output\b|open full output|Ctrl\+O or|full output saved|\.clai\/outputs/i.test(base)) {
     base = "tool finished";

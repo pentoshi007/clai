@@ -12,14 +12,12 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/model",
     usage: "[name|#]",
-    description:
-      "open searchable picker (type:filter · ↑↓:select · enter:confirm), or pass a name/number",
+    description: "open picker or switch model",
   },
   {
     command: "/models",
     usage: "[filter]",
-    description:
-      "every model across all configured providers · pick one to switch provider + model",
+    description: "browse all models across providers",
   },
   {
     command: "/provider",
@@ -71,12 +69,12 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     command: "/new",
-    description: "start a fresh session (clear context, no history carryover)",
+    description: "start a fresh session",
   },
   {
     command: "/history",
     usage: "[delete <id>]",
-    description: "browse & resume past sessions (interactive picker) · /history delete <id> to permanently remove",
+    description: "browse past sessions",
   },
   { command: "/save", usage: "<name>", description: "save session" },
   { command: "/reset", description: "clear all saved history" },
@@ -96,7 +94,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/output",
     usage: "[last|<id>|list]",
-    description: "open full tool output (Ctrl+O); q closes the pager",
+    description: "open tool output (Ctrl+O)",
   },
   {
     command: "/jobs",
@@ -111,21 +109,18 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/fallback",
     usage: "[on|off]",
-    description:
-      "try other configured providers after a failure (off by default)",
+    description: "try other configured providers after a failure (off by default)",
   },
   {
     command: "/skills",
     usage: "[name|list|refresh]",
-    description:
-      "browse Agent Skills and attach one to your next prompt as skill:name · /skills list shows paths",
+    description: "manage Agent Skills",
   },
   {
     command: "/mcp",
     usage:
       "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|login <server>|add [json|notion]]",
-    description:
-      "inspect MCP sources/tools and .clai/mcp.json, connect Notion or another server, sign in with OAuth, and choose session-active tools (off by default)",
+    description: "manage MCP servers (.clai/mcp.json, off by default)",
   },
   {
     command: "/compact",
@@ -134,14 +129,12 @@ export const slashCommands: SlashCommand[] = [
   { command: "/context", description: "show estimated context size" },
   {
     command: "/usage",
-    description:
-      "token usage for this session per provider/model (input, output, cached, cache rate) plus totals",
+    description: "show token usage per provider/model and API",
   },
   {
     command: "/plan",
     usage: "[view|off]",
-    description:
-      "enter plan mode; use /plan view or Ctrl+P to view current tasks",
+    description: "enter plan mode",
   },
   {
     command: "/implement",
@@ -159,7 +152,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/privacy",
     usage: "[status|clear-history|clear-logs|clear-artifacts|clear-all|on|off]",
-    description: "control retention and private mode (in-memory only)",
+    description: "manage private mode and retention",
   },
   {
     command: "/permissions",

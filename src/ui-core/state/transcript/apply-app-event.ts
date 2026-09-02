@@ -1,4 +1,5 @@
 import type { AnyAppEvent } from "../../../app/events/app-event.js";
+import { isProviderFailureStatus } from "../../../llm/key-rotation.js";
 import { isToolFenceOnlyText, stripToolCallSurfaces } from "../../rendering/strip-tool-surfaces.js";
 import { appendItem, removeItem, updateItem } from "../transcript-struct.js";
 import type { AssistantItem, CompactedItem, NoticeLevel, ThinkingItem, ToolItem, TranscriptState, TurnSummaryItem } from "../transcript-types.js";
@@ -147,8 +148,15 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
       });
     }
 
-    case "status":
-      return { ...withSeq, runningStatus: event.payload.text };
+    case "status": {
+      const raw = event.payload.text ?? "";
+      const trimmed = raw.replace(/\s+/g, " ").trim();
+      if (!trimmed) return withSeq;
+      if (trimmed.startsWith("ℹ")) return withSeq;
+      if (isProviderFailureStatus(trimmed)) return withSeq;
+      if (trimmed.length > 80 && /error|failed|exception/i.test(trimmed)) return withSeq;
+      return { ...withSeq, runningStatus: raw };
+    }
 
     case "assistant-delta": {
       const visible = event.payload.text.trim().length > 0;

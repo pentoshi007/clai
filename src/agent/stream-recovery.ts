@@ -41,7 +41,7 @@ export interface StreamRecoveryLimits {
 
 export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxEmpty: 4,
-  maxRateLimit: 3,
+  maxRateLimit: 5,
   maxServer: 3,
   maxNetwork: 3,
   maxStall: 2,
@@ -49,7 +49,7 @@ export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxStructural: 1,
   maxProgressed: 6,
   maxTotal: 16,
-  maxDelayMs: 30_000,
+  maxDelayMs: 60_000,
 };
 
 export interface StreamRecoveryPlan {
@@ -272,7 +272,7 @@ export function planStreamRecovery(input: {
     case "rate-limit": {
       const n = attempt(state.rateLimit, limits.maxRateLimit);
       if (n >= limits.maxRateLimit) return giveUp;
-      const delayMs = pick([8_000, 20_000, 30_000], n, cap);
+      const delayMs = pick([10_000, 20_000, 30_000, 40_000, 60_000], n, cap);
       return {
         action: "retry",
         kind,
@@ -282,7 +282,7 @@ export function planStreamRecovery(input: {
         allowModelFallback: true,
         notice:
           n === 0
-            ? `provider rate limited — backing off ${Math.ceil(delayMs / 1000)}s and trying alternates`
+            ? `provider rate limited — retrying in ${Math.ceil(delayMs / 1000)}s and trying alternates`
             : undefined,
       };
     }

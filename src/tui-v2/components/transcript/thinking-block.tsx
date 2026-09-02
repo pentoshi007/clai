@@ -12,7 +12,7 @@ import {
   type BoxRenderable,
   type MouseEvent,
 } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { renderColumns } from "../../../ui-core/rendering/text-width.js";
 import { sanitizeDisplayText } from "../../../ui-core/rendering/sanitize-display.js";
 import { thinkingElapsedLabel } from "../../../ui-core/rendering/duration.js";
@@ -53,7 +53,7 @@ export function ThinkingBlock(props: {
     onFocus,
     onBlur,
   } = props;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const cardRef = useRef<BoxRenderable>(null);
   const followTail = useRef(true);
   const offsetRef = useRef(0);

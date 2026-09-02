@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/react */
 
 import { useMemo, useRef, type ReactNode } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { PromptActionsRequest } from "../../../ui-core/controllers/overlay-controller.js";
@@ -20,7 +21,7 @@ export function PromptActionsModal(props: {
   request: PromptActionsRequest;
 }): ReactNode {
   const { services, theme, request } = props;
-  const { width: termWidth, height: termHeight } = useTerminalDimensions();
+  const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
   const cardWidth = Math.min(72, Math.max(36, Math.floor(termWidth * 0.55)));

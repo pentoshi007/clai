@@ -47,6 +47,7 @@ export interface OpenAiCompatibleResult {
   usage?: TokenUsage | undefined;
   reasoningBlock?: ReasoningBlock | undefined;
   reasoningArtifacts?: readonly ReasoningArtifact[] | undefined;
+  api?: string | undefined;
 }
 
 export function artifactRaw(
@@ -180,6 +181,7 @@ export function toCompletionResult(
     text: payload.text,
     provider,
     model,
+    ...(payload.api ? { api: payload.api } : {}),
     ...(payload.toolCalls?.length ? { toolCalls: payload.toolCalls } : {}),
     ...(payload.finishReason ? { finishReason: payload.finishReason } : {}),
     ...(usage ? { usage } : {}),

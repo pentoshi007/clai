@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { ColorMode } from "../../../app/ports/terminal-port.js";
 import type { AssistantItem } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -22,7 +22,7 @@ export function AssistantMessage(props: {
   contentWidth?: number | undefined;
 }): ReactNode {
   const { item, theme, colorMode, contentWidth } = props;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const wrapWidth = Math.max(
     20,
     (contentWidth != null ? contentWidth : Math.max(40, termWidth - 8)) -

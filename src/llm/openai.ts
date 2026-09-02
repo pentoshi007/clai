@@ -41,6 +41,7 @@ export const openaiProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("OpenAI API key is required");
     const model = request.model ?? defaultModels.openai;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "OpenAI",
       providerId: "openai",
       baseUrl,
@@ -68,6 +69,7 @@ export const openaiProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("OpenAI API key is required");
     const model = request.model ?? defaultModels.openai;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "OpenAI",
       providerId: "openai",
       baseUrl,

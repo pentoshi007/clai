@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { setDefaultMode, getConfig, getProviderModel } from "../../store/config.js";
 import { seedSessionModel } from "../../store/session-model.js";
+import { resetResponsesWireStatesForTesting } from "../../llm/wire/responses-first.js";
 import {
   clearAllHistory,
   getSession,
@@ -55,10 +56,17 @@ export function handleMode(services: AppServices, mode: Mode): void {
 export async function handleClear(services: AppServices): Promise<void> {
   const purgedId = services.session.sessionId;
   const purgedWorkspace = getActiveSessionWorkspace()?.folderName;
+  const beforeProvider = services.session.getState().provider;
+  const beforeModel = services.session.getState().model;
 
   clearActiveProjectRoot();
   services.plan.clear();
   services.session.reset({ mintNewId: true });
+  resetResponsesWireStatesForTesting();
+  if (beforeProvider) {
+    services.session.setProvider(beforeProvider);
+    if (beforeModel) services.session.setModel(beforeModel);
+  }
   services.transcript.reset();
   services.session.setPlanApproved(false);
   flash(services, "Session cleared", { key: "session", level: "success" });
@@ -72,7 +80,9 @@ export async function handleClear(services: AppServices): Promise<void> {
       "cleared this session in memory, but some of its saved copy could not be deleted",
     );
   }
-  await inheritLastUsedModel(services);
+  if (!beforeProvider) {
+    await inheritLastUsedModel(services);
+  }
 }
 
 async function purgeCurrentSession(
@@ -130,14 +140,23 @@ async function inheritLastUsedModel(services: AppServices): Promise<void> {
 }
 
 async function resetToFreshSession(services: AppServices): Promise<void> {
+  const beforeProvider = services.session.getState().provider;
+  const beforeModel = services.session.getState().model;
   clearActiveProjectRoot();
   services.plan.clear();
   services.session.reset({ mintNewId: true });
+  resetResponsesWireStatesForTesting();
+  if (beforeProvider) {
+    services.session.setProvider(beforeProvider);
+    if (beforeModel) services.session.setModel(beforeModel);
+  }
   services.transcript.reset();
   await services.plan.load(services.session.sessionId).catch(() => undefined);
   services.session.setPlanApproved(false);
   flash(services, "Fresh session", { key: "session", level: "success" });
-  await inheritLastUsedModel(services);
+  if (!beforeProvider) {
+    await inheritLastUsedModel(services);
+  }
 }
 
 export async function handleNew(services: AppServices): Promise<void> {

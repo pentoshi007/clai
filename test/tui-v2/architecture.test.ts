@@ -19,6 +19,7 @@ const tuiV2Root = join(here, "..", "..", "src", "tui-v2");
  * `RendererSuspendPort` it's injected rather than importing `@opentui/*`.
  */
 const RENDERER_ALLOWED = new Set<string>([
+  join(tuiV2Root, "hooks", "terminal-dimensions.tsx"),
   join(tuiV2Root, "app", "App.tsx"),
   join(tuiV2Root, "bootstrap", "start-tui-v2.ts"),
   join(tuiV2Root, "bootstrap", "pager-export.ts"),

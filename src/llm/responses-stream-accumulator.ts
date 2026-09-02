@@ -113,9 +113,7 @@ export function absorbResponseOutput(
     const position = out.reasoningItemPositions[index];
     noteReasoningItem(state, item, position?.sequence, position?.toolCallIndex);
   }
-  if (out.reasoningSummary && !state.reasoningSeen.trim()) {
-    emitReasoningDelta(out.reasoningSummary);
-  }
+  // reasoningSummary is only emitted via dispatchReasoningEvent for streams; absorb here is for non-stream fallback
   if (out.text && !state.visible.trim()) emitVisible(out.text);
   for (const tc of out.toolCalls) {
     const exists = [...state.toolCallState.values()].some(
@@ -138,10 +136,9 @@ export function streamReasoningReplay(
   state: StreamAccumulator,
   onStreamEvent: CompletionRequest["onStreamEvent"],
 ): Record<string, unknown> {
+  if (!state.reasoningSeen.trim() && !state.reasoningItems.length) return {};
   if (!state.reasoningItems.length) {
-    return state.reasoningSeen
-      ? { reasoningBlock: { text: state.reasoningSeen } }
-      : {};
+    return { reasoningBlock: { text: state.reasoningSeen } };
   }
   const positions = reasoningItemPositionsFor(state);
   const reasoningArtifacts = responsesReasoningArtifacts(
@@ -159,10 +156,11 @@ export function streamReasoningReplay(
 
 export function streamUsageResult(
   state: StreamAccumulator,
+  thinkingEnabled?: boolean | undefined,
 ): { usage: TokenUsage } | Record<string, never> {
   const usage = withReasoningObservation(
     state.streamUsage,
-    Boolean(state.reasoningSeen.trim()),
+    thinkingEnabled !== false && Boolean(state.reasoningSeen.trim()),
   );
   return usage ? { usage } : {};
 }

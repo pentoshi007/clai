@@ -101,7 +101,7 @@ describe("Bynara model discovery", () => {
       { apiKey: "test-key" },
     );
 
-    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
       messages: Array<{ role: string; content?: string }>;
     };
@@ -109,9 +109,14 @@ describe("Bynara model discovery", () => {
   });
 
   async function bodyFor(model: string, thinking: { enabled: boolean; effort: string }) {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      choices: [{ message: { content: "memory" }, finish_reason: "stop" }],
-    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (String(url).endsWith("/responses")) {
+        return new Response("not found", { status: 404 });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "memory" }, finish_reason: "stop" }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetchMock);
     await bynaraProvider.complete(
       {
@@ -122,7 +127,7 @@ describe("Bynara model discovery", () => {
       },
       { apiKey: "test-key" },
     );
-    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    const request = fetchMock.mock.calls.at(-1)![1] as RequestInit;
     return JSON.parse(String(request.body)) as {
       max_tokens: number;
       chat_template_kwargs?: { thinking?: boolean };

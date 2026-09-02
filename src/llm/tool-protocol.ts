@@ -4,7 +4,10 @@ import type {
   ToolChoice,
   ToolDefinition,
 } from "../types.js";
-import { parseToolArguments } from "./tool-wire/argument-repair.js";
+import {
+  parseToolArguments,
+  repairTruncatedToolArguments,
+} from "./tool-wire/argument-repair.js";
 export { repairConcatenatedToolArguments } from "./tool-wire/argument-repair.js";
 export { parseToolArguments };
 
@@ -384,9 +387,7 @@ export function finalizeOpenAiToolCalls(
     const canonical = fromWireName(wire) ?? wire;
     const rawArguments = acc.arguments;
     const args = parseToolArguments(rawArguments);
-    const replayArguments = args._parseError
-      ? rawArguments
-      : JSON.stringify(args);
+    const replayArguments = replayArgumentsFor(args, rawArguments);
     out.push({
       id: acc.id ?? syntheticToolCallId(index),
       name: canonical,
@@ -395,6 +396,14 @@ export function finalizeOpenAiToolCalls(
     });
   }
   return out;
+}
+
+function replayArgumentsFor(
+  args: Record<string, unknown>,
+  rawArguments: string,
+): string | undefined {
+  if (!args._parseError) return JSON.stringify(args);
+  return repairTruncatedToolArguments(rawArguments);
 }
 
 export function parseOpenAiMessageToolCalls(
@@ -411,9 +420,7 @@ export function parseOpenAiMessageToolCalls(
     const wire = tc.function?.name ?? "";
     const rawArguments = tc.function?.arguments ?? "";
     const args = parseToolArguments(rawArguments);
-    const replayArguments = args._parseError
-      ? rawArguments
-      : JSON.stringify(args);
+    const replayArguments = replayArgumentsFor(args, rawArguments);
     return {
       id: tc.id ?? syntheticToolCallId(i),
       name: fromWireName(wire) ?? wire,

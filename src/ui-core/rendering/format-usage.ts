@@ -9,6 +9,7 @@ const MISSING = "—";
 
 const HEADERS = [
   "PROVIDER / MODEL",
+  "API",
   "REQ",
   "IN",
   "OUT",
@@ -17,7 +18,7 @@ const HEADERS = [
   "RATE",
 ] as const;
 
-const ALIGNS = ["---", "---:", "---:", "---:", "---:", "---:", "---:"] as const;
+const ALIGNS = ["---", "---", "---:", "---:", "---:", "---:", "---:", "---:"] as const;
 
 export interface SessionUsageContext {
   readonly sessionId: string;
@@ -55,13 +56,24 @@ function percent(value: number | undefined): string {
   return `${scaled.toFixed(1)}%`;
 }
 
+function apiLabel(entry: { apis?: readonly string[] | undefined; api?: string | undefined }): string {
+  const apis = entry.apis ?? (entry.api ? [entry.api] : []);
+  if (apis.length === 0) return MISSING;
+  if (apis.length === 1) return apis[0]!;
+  return apis.join(", ");
+}
+
 function metrics(entry: SessionUsageRoute | SessionUsageTotals): readonly string[] {
+  const total = entry.promptTokens + entry.completionTokens;
+  const cached = entry.cachedPromptTokens !== undefined && entry.cacheBasePromptTokens !== undefined
+    ? Math.min(entry.cachedPromptTokens, entry.cacheBasePromptTokens)
+    : entry.cachedPromptTokens;
   return [
     count(entry.requests),
     count(entry.promptTokens),
     count(entry.completionTokens),
-    count(entry.totalTokens),
-    optionalCount(entry.cachedPromptTokens),
+    count(total),
+    optionalCount(cached),
     percent(usageCacheHitRate(entry)),
   ];
 }
@@ -137,8 +149,8 @@ export function formatSessionUsage(
     "",
     row(HEADERS),
     row(ALIGNS),
-    ...report.routes.map((route) => row([code(routeLabel(route)), ...metrics(route)])),
-    row([bold(`TOTAL · ${plural(totals.routes, "route")}`), ...metrics(totals).map(bold)]),
+    ...report.routes.map((route) => row([code(routeLabel(route)), escapeCell(apiLabel(route)), ...metrics(route)])),
+    row([bold(`TOTAL · ${plural(totals.routes, "route")}`), escapeCell(apiLabel(totals)), ...metrics(totals).map(bold)]),
   ];
 
   const details = report.routes

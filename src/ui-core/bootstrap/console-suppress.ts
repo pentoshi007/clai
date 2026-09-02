@@ -1,5 +1,7 @@
 const SUPPRESSED_CONSOLE_PATTERNS: readonly RegExp[] = [
   /Possible EventTarget memory leak detected/i,
+  /Possible EventEmitter memory leak detected/i,
+  /MaxListenersExceededWarning/i,
   /Cannot update a component/i,
   /while rendering a different component/i,
 ];

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
 import { useMemo, type ReactNode } from "react";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { homedir } from "node:os";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -25,7 +25,7 @@ function displayWorkdir(workdir: string): string {
 
 export function IntroCard(props: IntroCardProps): ReactNode {
   const { services, width: widthProp } = props;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const width = widthProp ?? Math.max(56, termWidth - 4);
 
   const session = services.session.getState();

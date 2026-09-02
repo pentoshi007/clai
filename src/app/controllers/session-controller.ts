@@ -332,10 +332,11 @@ export class SessionController implements Disposable {
     model?: string,
     provider?: ProviderId,
     attempt?: ContextAttemptReference,
+    api?: string | undefined,
   ): void {
     if (provider !== undefined) this.provider = provider;
     if (model !== undefined) this.model = model;
-    this.usageLedger.record(usage, this.provider, this.model);
+    this.usageLedger.record(usage, this.provider, this.model, api);
     this.setContextSnapshot(
       recordContextUsageSnapshot(
         this.usageTarget,

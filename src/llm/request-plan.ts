@@ -264,9 +264,6 @@ function warnSamplingFieldNotModifiable(
   const key = `${provider}:${model}:${field}`;
   if (warnedSamplingOmissions.has(key)) return;
   warnedSamplingOmissions.add(key);
-  process.emitWarning(
-    `${provider} declares ${field} is not modifiable for ${model}; the requested value was dropped.`,
-  );
 }
 
 export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV1 {

@@ -133,6 +133,7 @@ export interface AppEventPayloads {
     readonly reasoningTokens?: number | undefined;
     readonly model?: string | undefined;
     readonly provider?: ProviderId | undefined;
+    readonly api?: string | undefined;
     readonly attempt?: ContextAttemptReference | undefined;
   };
   "context-estimate": {

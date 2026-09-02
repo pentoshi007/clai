@@ -64,6 +64,7 @@ export type AgentEvent =
       usage: TokenUsage;
       model?: string | undefined;
       provider?: ProviderId | undefined;
+      api?: string | undefined;
       attempt?: ContextAttemptReference | undefined;
     }
   | { type: "context-estimate"; estimatedTokens: number; model?: string | undefined };

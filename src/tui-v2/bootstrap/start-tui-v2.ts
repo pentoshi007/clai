@@ -76,6 +76,9 @@ export async function startTuiV2(
     clearOnShutdown: true,
     onDestroy: markRendererFinalized,
   });
+  try {
+    (renderer as unknown as { setMaxListeners?: (n: number) => void }).setMaxListeners?.(50);
+  } catch {}
   const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
   if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
     rememberThemeMode(reportedThemeMode);

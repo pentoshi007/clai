@@ -116,6 +116,7 @@ export const orcarouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("OrcaRouter API key is required");
     const model = request.model ?? defaultModels.orcarouter;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "OrcaRouter",
       providerId: "orcarouter",
       baseUrl,
@@ -143,6 +144,7 @@ export const orcarouterProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("OrcaRouter API key is required");
     const model = request.model ?? defaultModels.orcarouter;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "OrcaRouter",
       providerId: "orcarouter",
       baseUrl,

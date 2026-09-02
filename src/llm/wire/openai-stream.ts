@@ -1,6 +1,7 @@
 import type {
   ChatMessage,
   NativeToolCall,
+  ToolCallStreamDelta,
   ProviderId,
   ReasoningArtifact,
   ReasoningArtifactReplayObserver,
@@ -47,6 +48,7 @@ import {
 } from "./reasoning-artifacts.js";
 import { ReasoningStyle } from "./reasoning-payload.js";
 import { readJson } from "./response-errors.js";
+import { openAiCompatibleStreamViaResponses } from "./responses-first.js";
 import {
   createSseFrameAssembler,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
@@ -80,19 +82,23 @@ export async function openAiCompatibleStream(options: {
   reasoningArtifactPolicy?: CompatibleReasoningArtifactPolicy | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
   forceReasoningReplay?: boolean | undefined;
-  onToolCallDelta?:
-    | ((delta: {
-        index: number;
-        id?: string;
-        name?: string;
-        argumentsBytes?: number;
-      }) => void)
-    | undefined;
+  onToolCallDelta?: ((delta: ToolCallStreamDelta) => void) | undefined;
   idleTimeoutMs?: number | undefined;
 
   initialIdleTimeoutMs?: number | undefined;
   outputIdleTimeoutMs?: number | undefined;
+  responsesFirst?: boolean | undefined;
 }): Promise<OpenAiCompatibleResult> {
+  const viaResponses = options.responsesFirst
+    ? await openAiCompatibleStreamViaResponses(options, {
+        onToken: options.onToken,
+        ...(options.onToolCallDelta
+          ? { onToolCallDelta: options.onToolCallDelta }
+          : {}),
+        ...(options.onStreamEvent ? { onStreamEvent: options.onStreamEvent } : {}),
+      })
+    : undefined;
+  if (viaResponses) return { ...viaResponses, api: "responses" };
   const reasoningOn = Boolean(options.reasoning?.enabled);
   const idleTimeoutMs =
     options.idleTimeoutMs ??
@@ -312,6 +318,7 @@ export async function openAiCompatibleStream(options: {
         if (text) options.onToken(text);
         return {
           text,
+          api: "chat-completions",
           ...(toolCalls.length ? { toolCalls } : {}),
           ...(choice?.finish_reason
             ? { finishReason: choice.finish_reason }
@@ -417,6 +424,7 @@ export async function openAiCompatibleStream(options: {
   }> = [];
 
   const finalReasoningArtifacts = (toolCalls: readonly NativeToolCall[]) => {
+    if (!reasoningOn) return undefined;
     if (pendingThoughtSignatures.length) {
       const toolCallIndex = toolCalls.length ? 0 : undefined;
       for (const capture of pendingThoughtSignatures.splice(0)) {
@@ -449,6 +457,7 @@ export async function openAiCompatibleStream(options: {
   };
 
   const displayReasoningText = (): string => {
+    if (!reasoningOn) return "";
     if (reasoningSeen) return reasoningSeen;
     return structuredDetails
       .map((detail) => visibleReasoningDetailText(detail.raw) ?? "")
@@ -474,6 +483,7 @@ export async function openAiCompatibleStream(options: {
   };
 
   const emitPrivateReasoningNote = (hasToolCalls: boolean): void => {
+    if (!reasoningOn) return;
     if (reasoningSeen.trim()) return;
     if (!visible.trim() && !hasToolCalls) return;
     const tokens = streamUsage?.reasoningTokens ?? 0;
@@ -606,6 +616,7 @@ export async function openAiCompatibleStream(options: {
             if (reasoningSeen.trim()) {
               return {
                 text: full,
+                api: "chat-completions",
                 ...(finishReason ? { finishReason } : { finishReason: "stop" }),
                 ...(streamUsage ? { usage: streamUsage } : {}),
                 ...(displayReasoningText()
@@ -620,6 +631,7 @@ export async function openAiCompatibleStream(options: {
           }
           return {
             text: full,
+            api: "chat-completions",
             ...(toolCalls.length ? { toolCalls } : {}),
             ...(finishReason
               ? { finishReason }
@@ -724,7 +736,7 @@ export async function openAiCompatibleStream(options: {
           } else if (finalUsageFrame && terminalSignal === undefined) {
             terminalSignal = "usage-chunk";
           }
-          if (reasoningToken) {
+          if (reasoningToken && reasoningOn) {
             const normalized = normalizeChannelDelta(
               reasoningToken,
               reasoningWireSeen,
@@ -740,7 +752,7 @@ export async function openAiCompatibleStream(options: {
               emitStreamReasoningDelta(options.onStreamEvent, normalized.delta);
             }
           }
-          if (detailRaw) {
+          if (detailRaw && reasoningOn) {
             structuredDetails.push({
               raw: detailRaw,
               sequence: artifactSequence,
@@ -782,7 +794,7 @@ export async function openAiCompatibleStream(options: {
           }
           const signatureToolCallIndex =
             deltaToolCallIndices[0] ?? lastToolCallIndex;
-          if (thoughtSignature) {
+          if (thoughtSignature && reasoningOn) {
             const capture = {
               raw: thoughtSignature,
               sequence: artifactSequence,
@@ -821,6 +833,7 @@ export async function openAiCompatibleStream(options: {
       if (reasoningSeen.trim()) {
         return {
           text: full,
+          api: "chat-completions",
           ...(finishReason ? { finishReason } : { finishReason: "stop" }),
           ...(streamUsage ? { usage: streamUsage } : {}),
           ...(displayReasoningText()
@@ -835,6 +848,7 @@ export async function openAiCompatibleStream(options: {
     }
     return {
       text: full,
+      api: "chat-completions",
       ...(toolCalls.length ? { toolCalls } : {}),
       ...(finishReason
         ? { finishReason }

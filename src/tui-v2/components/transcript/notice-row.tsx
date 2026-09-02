@@ -2,7 +2,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import { useTerminalDimensions } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import type { NoticeItem, NoticeLevel } from "../../../ui-core/state/transcript-types.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { wrapAnsiLine } from "../../../ui-core/rendering/markdown.js";
@@ -29,7 +29,7 @@ export function NoticeRow(props: {
   contentWidth?: number | undefined;
 }): ReactNode {
   const { item, theme, contentWidth } = props;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const b = badge(item.level);
   const fg = bodyColor(item.level, theme);
 

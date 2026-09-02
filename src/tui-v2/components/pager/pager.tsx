@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/react */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import { useKeyboard } from "@opentui/react";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -77,7 +78,7 @@ export function Pager(props: PagerProps): ReactNode {
     markdown = "auto",
   } = props;
   const colorMode = services.capabilities.colorMode;
-  const { width: termWidth } = useTerminalDimensions();
+  const { width: termWidth } = useTerminalDimensionsContext();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [displayBody, setDisplayBody] = useState(body);
   const [artifactPage, setArtifactPage] = useState<ArtifactPage | undefined>(undefined);

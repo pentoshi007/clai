@@ -163,6 +163,7 @@ export const modalProvider: LlmProvider = {
     const baseUrl = resolveBaseUrl(auth);
     const model = request.model ?? defaultModels.modal;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Modal",
       providerId: "modal",
       baseUrl,
@@ -192,6 +193,7 @@ export const modalProvider: LlmProvider = {
     const baseUrl = resolveBaseUrl(auth);
     const model = request.model ?? defaultModels.modal;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Modal",
       providerId: "modal",
       baseUrl,

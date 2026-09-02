@@ -67,6 +67,10 @@ export function installFakeTransport(options: {
   );
 }
 
+export function isResponsesProbe(url: string): boolean {
+  return url.endsWith("/responses");
+}
+
 export function installTransport(
   respond: (request: RecordedRequest) => Response,
 ): FakeTransport {

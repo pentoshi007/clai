@@ -43,6 +43,7 @@ import {
   readCapabilitiesFromProcess,
   type TerminalCapabilityReport,
 } from "./capabilities.js";
+import { onTransportEvent, type TransportEvent } from "../../llm/transport-events.js";
 
 function noopPagerExportPort(): PagerExportPort {
   return {
@@ -130,6 +131,35 @@ export function createCompositionRoot(
   const toast = new ToastController();
   const interruptible = new InterruptibleController();
 
+  const transportEventMessage = (event: TransportEvent): string => {
+    const base = `${event.provider}/${event.model}`;
+    switch (event.kind) {
+      case "responses-fallback-endpoint":
+        return `${base}: /responses not supported — using chat completions`;
+      case "responses-fallback-shape":
+        return `${base}: /responses returned chat-shaped data — using chat completions`;
+      case "responses-fallback-error":
+        return `${base}: /responses error${event.detail ? ` ${event.detail}` : ""} — using chat completions`;
+      case "responses-fallback-reasoning":
+        return `${base}: thinking not visible on /responses — using chat completions for reasoning`;
+      case "responses-downgrade-extras":
+        return `${base}: retrying /responses without optional extras`;
+      case "responses-eof-accepted":
+        return `${base}: /responses stream ended without completion — accepted partial output`;
+      default:
+        return `${base}: /responses fallback ${event.kind}`;
+    }
+  };
+
+  const unsubscribeTransport = onTransportEvent((event) => {
+    const level = event.kind === "responses-downgrade-extras" ? "info" : "warn";
+    toast.show(transportEventMessage(event), {
+      level,
+      key: `transport-${event.provider}-${event.model}-${event.kind}`,
+      durationMs: 3500,
+    });
+  });
+
   const emit = (event: AnyAppEvent): void => {
     transcript.dispatch(event);
     plan.observe(event);
@@ -159,6 +189,7 @@ export function createCompositionRoot(
         event.payload.model,
         event.payload.provider,
         event.payload.attempt,
+        event.payload.api,
       );
     }
     if (event.type === "compaction-completed" && sessionRef) {
@@ -291,6 +322,7 @@ export function createCompositionRoot(
     dispose() {
       if (disposed) return;
       disposed = true;
+      unsubscribeTransport();
       unsubscribePlanJobs();
       interruptible.cancelAll();
       overlay.dispose();

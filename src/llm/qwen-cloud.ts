@@ -54,6 +54,7 @@ export const qwenCloudProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
     const model = request.model ?? defaultModels["qwen-cloud"];
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Qwen Cloud",
       providerId: "qwen-cloud",
       baseUrl,
@@ -81,6 +82,7 @@ export const qwenCloudProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Qwen Cloud API key is required");
     const model = request.model ?? defaultModels["qwen-cloud"];
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Qwen Cloud",
       providerId: "qwen-cloud",
       baseUrl,

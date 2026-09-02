@@ -172,9 +172,8 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
 function formatSlash(cmd: CommandDefinition, focused: boolean, width: number): string {
   const mark = focused ? " ❯ " : "   ";
   const name = `/${cmd.name}`.padEnd(14);
-  const usage = cmd.usage ? `${cmd.usage} ` : "";
-  const desc = cmd.description;
-  return padLine(`${mark}${name}${usage} ${desc}`, width);
+  const suffix = cmd.usage ? ` ${cmd.usage}` : cmd.description ? ` ${cmd.description}` : "";
+  return padLine(`${mark}${name}${suffix}`, width);
 }
 
 function formatFile(file: FileSuggestion, focused: boolean, width: number): string {

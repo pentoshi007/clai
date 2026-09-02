@@ -21,14 +21,17 @@ function jsonResponsesMock() {
 }
 
 function chatCompletionsMock() {
-  return vi.fn(async () =>
-    new Response(
+  return vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/responses")) {
+      return new Response("not found", { status: 404 });
+    }
+    return new Response(
       JSON.stringify({
         choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
       }),
       { status: 200, headers: { "content-type": "application/json" } },
-    ),
-  );
+    );
+  });
 }
 
 function sseResponse(events: Array<Record<string, unknown>>): Response {
@@ -167,7 +170,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     expect(result.model).toBe("free-1/muse-spark-1.2-contributor-free");
   });
 
-  it("keeps a non-muse-spark zen model on /chat/completions", async () => {
+  it("probes /responses first for a non-muse-spark zen model, then keeps /chat/completions when absent", async () => {
     const fetchMock = chatCompletionsMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -180,9 +183,12 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://opencode.ai/zen/v1/responses",
+    );
+    expect(String(fetchMock.mock.calls[1]![0])).toBe(
       "https://opencode.ai/zen/v1/chat/completions",
     );
-    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    const request = fetchMock.mock.calls[1]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
       messages?: unknown;
       input?: unknown;
@@ -191,7 +197,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     expect(body.input).toBeUndefined();
   });
 
-  it("keeps the kilo source (free-2) on /chat/completions", async () => {
+  it("probes /responses first for the kilo source (free-2), then keeps /chat/completions when absent", async () => {
     const fetchMock = chatCompletionsMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -204,9 +210,12 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://api.kilo.ai/api/gateway/responses",
+    );
+    expect(String(fetchMock.mock.calls[1]![0])).toBe(
       "https://api.kilo.ai/api/gateway/chat/completions",
     );
-    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    const request = fetchMock.mock.calls[1]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
       model?: string;
       messages?: unknown;
@@ -217,7 +226,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     expect(body.input).toBeUndefined();
   });
 
-  it("keeps a kilo muse-spark-like id on /chat/completions (dialect is zen-only)", async () => {
+  it("keeps a kilo muse-spark-like id off the zen responses dialect", async () => {
     const fetchMock = chatCompletionsMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -230,9 +239,12 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      "https://api.kilo.ai/api/gateway/responses",
+    );
+    expect(String(fetchMock.mock.calls[1]![0])).toBe(
       "https://api.kilo.ai/api/gateway/chat/completions",
     );
-    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    const request = fetchMock.mock.calls[1]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as { input?: unknown };
     expect(body.input).toBeUndefined();
   });

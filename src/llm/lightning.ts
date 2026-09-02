@@ -63,6 +63,7 @@ export const lightningProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Lightning AI API key is required");
     const model = request.model ?? defaultModels.lightning;
     const payload = await openAiCompatibleComplete({
+      responsesFirst: true,
       provider: "Lightning AI",
       providerId: "lightning",
       baseUrl: resolveBaseUrl(auth),
@@ -90,6 +91,7 @@ export const lightningProvider: LlmProvider = {
     if (!auth.apiKey) throw new Error("Lightning AI API key is required");
     const model = request.model ?? defaultModels.lightning;
     const payload = await openAiCompatibleStream({
+      responsesFirst: true,
       provider: "Lightning AI",
       providerId: "lightning",
       baseUrl: resolveBaseUrl(auth),
