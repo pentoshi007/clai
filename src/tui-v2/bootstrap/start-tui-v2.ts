@@ -86,11 +86,15 @@ export async function startTuiV2(
   } catch {}
   const root = createRoot(renderer);
   root.render(
-    createElement(
-      "box",
-      null,
-      createElement("text", { content: "Loading session…" }),
-    ),
+    createElement("box", {
+      style: {
+        width: "100%",
+        height: "100%",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+      },
+    }, createElement("text", { content: "Loading session…" })),
   );
   const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
   if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
