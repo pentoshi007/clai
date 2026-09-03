@@ -34,6 +34,24 @@ export interface TurnMessages {
   readonly promptSections: () => AgentPromptSection[];
 }
 
+export const dropSectionsAlreadyInHistory = (
+  sections: readonly AgentPromptSection[],
+  history: readonly ChatMessage[] | undefined,
+  prompt: string,
+): AgentPromptSection[] => {
+  if (!history?.length || !prompt) return [...sections];
+  const sent = history
+    .map((message) => message.content)
+    .filter((content): content is string => typeof content === "string");
+  if (sent.length === 0) return [...sections];
+  const kept = sections.filter(
+    (section) =>
+      section.content.includes(prompt) ||
+      !sent.some((prior) => prior.includes(section.content)),
+  );
+  return kept.length > 0 ? kept : [...sections];
+};
+
 export const composeTurnMessages = (input: TurnMessagesInput): TurnMessages => {
   const promptSections = (): AgentPromptSection[] =>
     buildPromptSections({
@@ -48,7 +66,11 @@ export const composeTurnMessages = (input: TurnMessagesInput): TurnMessages => {
     maxTokens: input.inputTokenBudget
       ? Math.min(2_000, Math.floor(input.inputTokenBudget * 0.4))
       : undefined,
-    sections: promptSections(),
+    sections: dropSectionsAlreadyInHistory(
+      promptSections(),
+      input.history,
+      input.prompt,
+    ),
   }).content;
   const { messages, requestContextMessage } = assembleTurnMessages({
     prompt: input.prompt,

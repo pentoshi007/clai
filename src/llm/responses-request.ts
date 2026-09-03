@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type {
   ChatMessage,
   CompletionRequestPurpose,
@@ -89,10 +91,20 @@ function systemInputItem(message: ChatMessage): Record<string, unknown> {
 function toolInputItem(message: ChatMessage): Record<string, unknown> {
   return {
     type: "function_call_output",
-    call_id: message.toolCallId ?? `call_${Date.now()}`,
+    call_id: message.toolCallId ?? fallbackToolCallId(message),
     output: message.content,
   };
 }
+
+export const fallbackToolCallId = (message: ChatMessage): string => {
+  const digest = createHash("sha256")
+    .update(message.name ?? "", "utf8")
+    .update("\0", "utf8")
+    .update(message.content ?? "", "utf8")
+    .digest("hex")
+    .slice(0, 16);
+  return `call_${digest}`;
+};
 
 function appendUserImageBlock(
   blocks: Array<Record<string, unknown>>,
