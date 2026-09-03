@@ -1,7 +1,7 @@
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import type { TranscriptItem } from "../../app/ports/transcript-item.js";
 import { fixOwner, fixOwnerSync, handlePermissionError } from "../../os/permissions.js";
-import type { ChatMessage, ProviderId } from "../../types.js";
+import type { ChatMessage, ProviderId, ReasoningPreference } from "../../types.js";
 import { getConfig } from "../config.js";
 import { historySummary } from "../history-index.js";
 import type { HistorySummary } from "../history-index.js";
@@ -23,6 +23,7 @@ const sqliteModuleName = "better-sqlite3";
 export interface SessionModelSelection {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
+  readonly thinking?: ReasoningPreference | undefined;
 }
 
 export function sessionModelFields(
@@ -31,9 +32,11 @@ export function sessionModelFields(
 ): SessionModelSelection {
   const provider = selection?.provider ?? fallback?.provider;
   const model = selection?.model ?? fallback?.model;
+  const thinking = selection?.thinking ?? fallback?.thinking;
   return {
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(thinking ? { thinking: { ...thinking } } : {}),
   };
 }
 
@@ -236,6 +239,7 @@ export function rowToSession(row: unknown): HistoryRecord {
         previousTurn?: PreviousTurnSignal;
         provider?: ProviderId;
         model?: string;
+        thinking?: ReasoningPreference;
         workspaceFolder?: string;
         workspaceCode?: string;
       };
@@ -265,6 +269,7 @@ export function rowToSession(row: unknown): HistoryRecord {
     previousTurn: payload.previousTurn,
     provider: payload.provider,
     model: payload.model,
+    thinking: payload.thinking,
     workspaceFolder: payload.workspaceFolder,
     workspaceCode: payload.workspaceCode,
   });

@@ -2,7 +2,7 @@ import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import type { TranscriptItem } from "../../app/ports/transcript-item.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../../llm/reasoning-artifacts.js";
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
-import type { ChatMessage, ProviderId } from "../../types.js";
+import type { ChatMessage, ProviderId, ReasoningPreference } from "../../types.js";
 import { readValidatedHistoryIndex, rebuildHistoryIndexWithStatus, writeIndexedJsonl } from "../history-index.js";
 import type { HistorySummary } from "../history-index.js";
 import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
@@ -52,6 +52,7 @@ export interface HistoryRecord {
   workspaceCode?: string | undefined;
   provider?: ProviderId | undefined;
   model?: string | undefined;
+  thinking?: ReasoningPreference | undefined;
 }
 
 export let cachedSessionList:

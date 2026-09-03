@@ -4,14 +4,25 @@ import { fixOwner, handlePermissionError, safeExists } from "../os/permissions.j
 import { getDataDir } from "./paths.js";
 import { getConfig, getProviderModel } from "./config.js";
 import { resolveFreeDefaultModel } from "../llm/free-default-model.js";
-import type { ProviderId } from "../types.js";
+import type { ProviderId, ReasoningEffort, ReasoningPreference } from "../types.js";
 
 const FREE_PROVIDER: ProviderId = "free";
 const LAST_USED_SCAN_LIMIT = 32;
 
+const THINKING_EFFORTS: readonly ReasoningEffort[] = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
 export interface SessionModelBinding {
   readonly provider?: ProviderId | undefined;
   readonly model?: string | undefined;
+  readonly thinking?: ReasoningPreference | undefined;
 }
 
 export interface ResolvedSessionModel {
@@ -59,19 +70,35 @@ function normalizeField(value: unknown): string | undefined {
   return trimmed;
 }
 
+function sanitizeThinking(value: unknown): ReasoningPreference | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.enabled !== "boolean") return undefined;
+  if (typeof raw.effort !== "string") return undefined;
+  const effort = raw.effort.trim() as ReasoningEffort;
+  if (!THINKING_EFFORTS.includes(effort)) return undefined;
+  return { enabled: raw.enabled, effort };
+}
+
 function sanitizeBinding(value: unknown): SessionModelBinding {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const raw = value as Record<string, unknown>;
   const provider = normalizeField(raw.provider);
   const model = normalizeField(raw.model);
+  const thinking = sanitizeThinking(raw.thinking);
   return {
     ...(provider ? { provider: provider as ProviderId } : {}),
     ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
   };
 }
 
 function hasBinding(binding: SessionModelBinding): boolean {
-  return binding.provider !== undefined || binding.model !== undefined;
+  return (
+    binding.provider !== undefined ||
+    binding.model !== undefined ||
+    binding.thinking !== undefined
+  );
 }
 
 async function readSessionModelState(sessionId: string): Promise<SessionModelState> {

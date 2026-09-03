@@ -143,10 +143,12 @@ describe("/model writes per session, not global config", () => {
       });
 
       expect(getConfig().defaultProvider).toBe(defaultProviderBefore);
+      const thinkingBefore = { ...getConfig().thinking };
       await vi.waitFor(async () => {
         expect(await loadSessionModelBinding(sessionId)).toEqual({
           provider: "nvidia",
           model: "openai/gpt-oss-20b",
+          thinking: thinkingBefore,
         });
       });
     } finally {

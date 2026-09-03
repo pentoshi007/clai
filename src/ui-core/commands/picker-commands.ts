@@ -184,7 +184,11 @@ function persistSessionModel(
   provider: ProviderId,
   model: string,
 ): Promise<void> {
-  return saveSessionModel(services.session.sessionId, { provider, model });
+  return saveSessionModel(services.session.sessionId, {
+    provider,
+    model,
+    thinking: { ...getConfig().thinking },
+  });
 }
 
 async function switchToCatalogEntry(

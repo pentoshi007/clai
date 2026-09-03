@@ -5,8 +5,11 @@ import {
   type HistoryRecord,
 } from "../../store/history.js";
 import { safeCwd } from "../../os/cwd.js";
-import { getProviderModel } from "../../store/config.js";
-import { loadModelForSession } from "../../store/session-model.js";
+import { getProviderModel, setThinking } from "../../store/config.js";
+import {
+  loadModelForSession,
+  loadSessionModelBinding,
+} from "../../store/session-model.js";
 import {
   boundSessionVisualInput,
   hydrateSessionVisual,
@@ -125,6 +128,15 @@ export async function applySessionResume(
     (record.provider && record.provider !== fallback.provider
       ? getProviderModel(record.provider)
       : fallback.model);
+  const storedThinking =
+    record.thinking ??
+    (await loadSessionModelBinding(record.id).catch(() => undefined))?.thinking;
+  if (storedThinking) {
+    setThinking({
+      enabled: storedThinking.enabled,
+      effort: storedThinking.effort,
+    });
+  }
   services.session.loadHistory(record.messages, {
     sessionId: record.id,
     title: record.name,

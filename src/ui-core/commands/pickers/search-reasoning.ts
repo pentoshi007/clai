@@ -1,6 +1,7 @@
 import type { CommandInvocation } from "../../../app/commands/command.js";
 import { clearReasoningRejection, displayReasoningEfforts, effectiveThinkingEffort, modelReasoningEvidence, modelReasoningIsMandatory, modelSupportsThinking, routeReasoningIsMandatory } from "../../../llm/capabilities.js";
 import { getConfig, getExaSearchType, setActiveSearchProvider, setExaSearchType, setThinking } from "../../../store/config.js";
+import { saveSessionModel as saveSessionThinking } from "../../../store/session-model.js";
 import { getSearchProviderKey, setSecret } from "../../../store/keys.js";
 import { assertSearchProvider, searchProviders } from "../../../tools/web/providers/provider.js";
 import { asExaSearchType, exaSearchTypeDescriptions, exaSearchTypes, searchProviderIds } from "../../../tools/web/types.js";
@@ -174,22 +175,34 @@ function applyReasoning(services: AppServices, value: string): void {
   if (/^(on|enable|true)$/.test(lower)) {
     clearRouteReasoningRejection(services);
     setThinking({ enabled: true });
+    persistSessionThinking(services);
     services.session.notice("info", `thinking → ${getConfig().thinking.effort}`);
     return;
   }
   if (["off", "none", "disable", "false"].includes(lower)) {
     setThinking({ enabled: false });
+    persistSessionThinking(services);
     services.session.notice("info", "thinking → off");
     return;
   }
   if (["minimal", "low", "medium", "high", "xhigh", "max"].includes(lower)) {
     clearRouteReasoningRejection(services);
     setThinking({ enabled: true, effort: lower as ReasoningEffort });
+    persistSessionThinking(services);
     services.session.notice("info", `thinking → ${lower}`);
     warnUnacceptedEffort(services, lower);
     return;
   }
   services.session.notice("warn", "usage: /effort [on|off|minimal|low|medium|high|xhigh|max]");
+}
+
+function persistSessionThinking(services: AppServices): void {
+  const state = services.session.getState();
+  void saveSessionThinking(services.session.sessionId, {
+    ...(state.provider ? { provider: state.provider } : {}),
+    ...(state.model ? { model: state.model } : {}),
+    thinking: { ...getConfig().thinking },
+  }).catch(() => undefined);
 }
 
 function clearRouteReasoningRejection(services: AppServices): void {

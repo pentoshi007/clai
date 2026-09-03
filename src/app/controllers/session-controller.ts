@@ -695,6 +695,7 @@ export class SessionController implements Disposable {
       previousTurn: this.continuationCheckpoint() ?? null,
       ...(this.provider ? { provider: this.provider } : {}),
       ...(this.model ? { model: this.model } : {}),
+      thinking: { ...getConfig().thinking },
       ...(contextUsage ? { contextUsage } : {}),
     });
     this.settlePersistedResponderResults();

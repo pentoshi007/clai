@@ -12,10 +12,11 @@ export function createCurrentPersistencePort(): PersistencePort {
         : undefined;
       const contextUsage = options?.contextUsage;
       const sessionModel =
-        options?.provider || options?.model
+        options?.provider || options?.model || options?.thinking
           ? {
               ...(options.provider ? { provider: options.provider } : {}),
               ...(options.model ? { model: options.model } : {}),
+              ...(options.thinking ? { thinking: { ...options.thinking } } : {}),
             }
           : undefined;
       if (options?.sessionId) {
