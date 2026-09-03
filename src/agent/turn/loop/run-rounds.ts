@@ -568,14 +568,6 @@ export const runTurnRounds = async (
         );
       }
 
-      if (allCalls.length > 1) {
-        deps.writeNotice(
-          "info",
-          `${allCalls.length} tool calls in this message — read-only in parallel, writes in order (failures do not cancel siblings)`,
-        );
-      }
-
-
       const flushableDeferred = activeDeferredToolCalls.slice(
         0,
         allCalls.length,

@@ -125,6 +125,26 @@ function failureText(error: unknown): string {
   return `${error.message}\n${body}`;
 }
 
+function isGenericModelRejection(error: unknown): boolean {
+  const status =
+    error instanceof ProviderError && error.status !== undefined
+      ? error.status
+      : undefined;
+  if (status !== undefined && status !== 400 && status !== 422) return false;
+  const text = failureText(error);
+  if (!/bad_request|response\.failed|the model rejected/i.test(text)) {
+    return false;
+  }
+  if (
+    /reasoning|thinking|effort|enable_thinking|chat_template|include|store|prompt_cache/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
 type FailureVerdict = "unsupported-endpoint" | "unsupported-extras" | "other";
 
 function classifyResponsesFailure(
@@ -401,6 +421,14 @@ async function runResponsesFirst(
             model: options.model,
           });
         }
+        if (probing && isGenericModelRejection(retryError)) {
+          return fallback({
+            kind: "responses-fallback-error",
+            provider: options.provider,
+            model: options.model,
+            detail: "HTTP 400",
+          });
+        }
         recordRethrownFailure(retryError, options.signal);
         throw retryError;
       }
@@ -409,6 +437,13 @@ async function runResponsesFirst(
         kind: "responses-fallback-endpoint",
         provider: options.provider,
         model: options.model,
+      });
+    } else if (probing && isGenericModelRejection(error)) {
+      return fallback({
+        kind: "responses-fallback-error",
+        provider: options.provider,
+        model: options.model,
+        detail: "HTTP 400",
       });
     } else {
       recordRethrownFailure(error, options.signal);

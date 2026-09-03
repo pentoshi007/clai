@@ -278,6 +278,9 @@ export const knownModels: Record<string, string[]> = {
     "qwen-3.7-max",
     "qwen-3.7-plus",
     "qwen-3.7-plus-1m",
+    "qwen3.8-flash-free",
+    "qwen3.8-27b",
+    "qwen-3.8-max-free",
     "bynara-max",
   ],
   "qwen-cloud": [

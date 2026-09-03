@@ -121,6 +121,16 @@ export function buildReasoningPayload(
         case "stepfun":
           if (noThinking) return {};
           return { reasoning_effort: clampEffort(effort) };
+        case "qwen": {
+          if (noThinking) return { reasoning_effort: "none" };
+          if (/qwen-?3\.?8-?max/i.test(model ?? "")) {
+            if (effort === "low") return { reasoning_effort: "low" };
+            return { reasoning_effort: "medium" };
+          }
+          if (effort === "low") return { reasoning_effort: "low" };
+          if (effort === "medium") return { reasoning_effort: "medium" };
+          return { reasoning_effort: "xhigh" };
+        }
         case "none":
           return {};
       }

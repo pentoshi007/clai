@@ -275,6 +275,7 @@ export type BynaraReasoningKind =
   | "deepseek"
   | "agnes"
   | "stepfun"
+  | "qwen"
   | "none";
 
 export function classifyBynaraModel(model: string): BynaraReasoningKind {
@@ -283,5 +284,6 @@ export function classifyBynaraModel(model: string): BynaraReasoningKind {
   if (/deepseek/.test(m)) return "deepseek";
   if (/agnes/.test(m)) return "agnes";
   if (/stepfun|step-3/.test(m)) return "stepfun";
+  if (/qwen/.test(m)) return "qwen";
   return "none";
 }

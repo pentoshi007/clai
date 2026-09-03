@@ -70,6 +70,21 @@ function bynaraModelLayer(model: string): ProviderProfileLayer | undefined {
           disableForm: "none-documented",
         },
       };
+    case "qwen":
+      return {
+        evidence: codeFact("bynara-qwen38-live-probed"),
+        reasoning: {
+          generation: "default-on",
+          control: {
+            dialect: "openai-effort",
+            status: "supported",
+            evidence: codeFact("bynara-qwen38-live-probed"),
+          },
+          acceptedEfforts: ["low", "medium", "xhigh"],
+          disable: "supported",
+          disableForm: "effort-none",
+        },
+      };
     default:
       return undefined;
   }

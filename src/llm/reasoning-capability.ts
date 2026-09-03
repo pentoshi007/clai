@@ -36,7 +36,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /o[134]/i,
   ],
   "aws-mantle": [/claude-(?:opus|sonnet|haiku)-4/i],
-  bynara: [/kimi/i, /deepseek/i, /agnes/i, /stepfun/i],
+  bynara: [/kimi/i, /deepseek/i, /agnes/i, /stepfun/i, /qwen/i],
   "qwen-cloud": [/qwen3/i, /qwen2/i],
   modal: [
     /kimi/i,
