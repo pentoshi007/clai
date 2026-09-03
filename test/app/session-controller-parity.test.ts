@@ -594,12 +594,12 @@ describe("SessionController parity helpers (V2-080)", () => {
       model: "test-model",
     });
     session.loadHistory(
-      [
-        { role: "user", content: "resumed task" },
-        { role: "assistant", content: "old progress" },
-        { role: "user", content: "post-resume work" },
-        { role: "assistant", content: "new progress" },
-      ],
+      Array.from({ length: 25 }, (_, round) => [
+        { role: "user", content: `resumed task batch ${round}` },
+        { role: "assistant", content: `old progress batch ${round}` },
+        { role: "user", content: `post-resume work batch ${round}` },
+        { role: "assistant", content: `new progress batch ${round}` },
+      ]).flat(),
       {
         sessionId: "sess-ordered-compact",
         persistenceRevision: 7,
