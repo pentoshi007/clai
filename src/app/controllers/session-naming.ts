@@ -1,15 +1,39 @@
 import type { ChatMessage, ProviderId } from "../../types.js";
 import { sanitizeTitle } from "../../agent/session-title.js";
-import { getConfig, getProviderModel } from "../../store/config.js";
+import {
+  findCustomProviderDefSync,
+  getConfig,
+  getProviderModel,
+} from "../../store/config.js";
+import type { ClaiConfig } from "../../store/config/endpoints.js";
+import { providerIds } from "../../types.js";
 import { completeWithProvider } from "../../llm/router.js";
+
+export function resolveNamingRoute(
+  route: { provider?: ProviderId | undefined; model?: string | undefined },
+  config: Pick<ClaiConfig, "defaultProvider" | "namingProvider" | "namingModel"> = getConfig(),
+): { provider: ProviderId; model: string } {
+  const configuredProvider = config.namingProvider;
+  const knownProvider =
+    configuredProvider !== undefined &&
+    ((providerIds as readonly string[]).includes(configuredProvider) ||
+      findCustomProviderDefSync(configuredProvider) !== undefined)
+      ? configuredProvider
+      : undefined;
+  const provider =
+    knownProvider ?? route.provider ?? config.defaultProvider;
+  const model =
+    (knownProvider !== undefined ? config.namingModel : undefined) ??
+    (knownProvider === undefined ? route.model : undefined) ??
+    getProviderModel(provider);
+  return { provider, model };
+}
 
 export async function completeForSessionNaming(
   messages: ChatMessage[],
   route: { provider?: ProviderId | undefined; model?: string | undefined },
 ): Promise<string> {
-  const config = getConfig();
-  const provider = route.provider ?? config.defaultProvider;
-  const model = route.model ?? getProviderModel(provider);
+  const { provider, model } = resolveNamingRoute(route);
   const result = await completeWithProvider({
     provider,
     model,

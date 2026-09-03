@@ -71,6 +71,8 @@ export interface ClaiConfig {
   sandboxReads: boolean;
   activeSearchProvider: SearchProviderId;
   exaSearchType: ExaSearchType;
+  namingProvider?: ProviderId | undefined;
+  namingModel?: string | undefined;
   /** When true, bypass the OS keychain and always use plaintext file storage. */
   disableKeychain: boolean;
   permissions?: "default" | "allow-all";

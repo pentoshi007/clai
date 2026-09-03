@@ -322,3 +322,64 @@ describe("session controller naming wiring", () => {
     session.dispose();
   });
 });
+
+describe("resolveNamingRoute", () => {
+  const base = { defaultProvider: "free" as const };
+
+  it("uses the configured naming route when set", async () => {
+    const { resolveNamingRoute } = await import(
+      "../src/app/controllers/session-naming.js"
+    );
+    expect(
+      resolveNamingRoute(
+        { provider: "free", model: "free-1/mimo-v2.5-free" },
+        {
+          ...base,
+          namingProvider: "openai",
+          namingModel: "gpt-4o-mini",
+        },
+      ),
+    ).toEqual({ provider: "openai", model: "gpt-4o-mini" });
+  });
+
+  it("falls back to the session route when unconfigured", async () => {
+    const { resolveNamingRoute } = await import(
+      "../src/app/controllers/session-naming.js"
+    );
+    expect(
+      resolveNamingRoute(
+        { provider: "free", model: "free-1/mimo-v2.5-free" },
+        base,
+      ),
+    ).toEqual({ provider: "free", model: "free-1/mimo-v2.5-free" });
+  });
+
+  it("ignores an unknown configured provider", async () => {
+    const { resolveNamingRoute } = await import(
+      "../src/app/controllers/session-naming.js"
+    );
+    const resolved = resolveNamingRoute(
+      { provider: "free", model: "free-1/mimo-v2.5-free" },
+      {
+        ...base,
+        namingProvider: "no-such-provider" as never,
+      },
+    );
+    expect(resolved).toEqual({
+      provider: "free",
+      model: "free-1/mimo-v2.5-free",
+    });
+  });
+
+  it("resolves the naming provider default model when no naming model is set", async () => {
+    const { resolveNamingRoute } = await import(
+      "../src/app/controllers/session-naming.js"
+    );
+    const resolved = resolveNamingRoute(
+      { provider: "free", model: "free-1/mimo-v2.5-free" },
+      { ...base, namingProvider: "openai" },
+    );
+    expect(resolved.provider).toBe("openai");
+    expect(typeof resolved.model).toBe("string");
+  });
+});

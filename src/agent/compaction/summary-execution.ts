@@ -240,7 +240,12 @@ const FAIL_CLOSED_BY_REASON = {
 } as const;
 
 export function comparableMessage(message: ChatMessage): string {
-  const { images: _images, ...rest } = message;
+  const {
+    images: _images,
+    reasoningBlock: _reasoningBlock,
+    reasoningArtifacts: _reasoningArtifacts,
+    ...rest
+  } = message;
   return JSON.stringify(rest);
 }
 
