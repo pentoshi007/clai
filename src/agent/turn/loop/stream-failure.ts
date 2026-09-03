@@ -37,7 +37,6 @@ export interface StreamFailurePorts {
   readonly messages: ChatMessage[];
   readonly recoveryState: StreamRecoveryState;
   readonly provider: ProviderId;
-  readonly estimatedInputTokens: number;
   readonly notify: (level: "info" | "warn", message: string) => void;
   readonly emitStatus: (text: string) => void;
   readonly emitTokenUsage: (
@@ -102,10 +101,8 @@ const showFreeTierAdvisories = (
   if (state.freeTierAdvisoryShown) return;
   for (const notice of freeTierGuardNotices({
     provider: ports.provider,
-    estimatedInputTokens: ports.estimatedInputTokens,
     consecutiveFailures: state.freeTierConsecutiveFailures,
   })) {
-    if (notice.includes("Large context")) continue;
     ports.notify("warn", notice);
     state.freeTierAdvisoryShown = true;
   }

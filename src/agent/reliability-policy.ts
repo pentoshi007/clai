@@ -17,8 +17,6 @@ export const DEFAULT_SOFT_COMPACT_TOKEN_BUDGET =
 
 export const DEFAULT_FS_PASSTHROUGH_CAP_CHARS = 64_000;
 
-export const DEFAULT_FREE_TIER_WARN_TOKENS = 40_000;
-
 export const DEFAULT_FREE_TIER_FAIL_THRESHOLD = 2;
 
 export const ADAPTIVE_MAX_TOKENS_TOOL_STEP = 24_576;
@@ -35,7 +33,6 @@ export interface ReliabilityPolicy {
   readonly fsPassthroughCapChars: number;
   readonly adaptiveMaxTokens: boolean;
   readonly freeTierContextGuard: boolean;
-  readonly freeTierWarnTokens: number;
   readonly freeTierFailThreshold: number;
   readonly toolResultDedup: boolean;
   readonly slimNativePrompt: boolean;
@@ -82,10 +79,6 @@ export function getReliabilityPolicy(): ReliabilityPolicy {
       boolEnv("CLAI_ADAPTIVE_MAX_TOKENS") ?? cfg.adaptiveMaxTokens ?? true,
     freeTierContextGuard:
       boolEnv("CLAI_FREE_TIER_GUARD") ?? cfg.freeTierContextGuard ?? true,
-    freeTierWarnTokens:
-      intEnv("CLAI_FREE_TIER_WARN_TOKENS") ??
-      cfg.freeTierWarnTokens ??
-      DEFAULT_FREE_TIER_WARN_TOKENS,
     freeTierFailThreshold:
       intEnv("CLAI_FREE_TIER_FAIL_THRESHOLD") ??
       cfg.freeTierFailThreshold ??
@@ -201,7 +194,6 @@ export function isFreeCloudProvider(provider: ProviderId): boolean {
 
 export function freeTierGuardNotices(input: {
   provider: ProviderId;
-  estimatedInputTokens: number;
   consecutiveFailures: number;
   policy?: ReliabilityPolicy | undefined;
 }): string[] {
@@ -209,11 +201,6 @@ export function freeTierGuardNotices(input: {
   if (!policy.freeTierContextGuard) return [];
   if (!isFreeCloudProvider(input.provider)) return [];
   const notices: string[] = [];
-  if (input.estimatedInputTokens >= policy.freeTierWarnTokens) {
-    notices.push(
-      `Large context (~${input.estimatedInputTokens.toLocaleString()} tokens) on free-cloud model — disconnects and empty admissions are more common. Prefer /compact, a paid/local model, or shorter turns if this fails.`,
-    );
-  }
   if (input.consecutiveFailures >= policy.freeTierFailThreshold) {
     notices.push(
       `Free-cloud model failed ${input.consecutiveFailures} time(s) this turn. Switch with /model or /provider, or enable providerFallback for automatic recovery.`,

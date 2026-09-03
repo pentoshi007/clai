@@ -196,17 +196,16 @@ describe("reliability policy (E1–E6)", () => {
     ).toBe(false);
   });
 
-  it("E4: free-tier notices are advisory only and never empty for large context", () => {
-    const large = freeTierGuardNotices({
-      provider: "bynara",
-      estimatedInputTokens: 50_000,
-      consecutiveFailures: 0,
-    });
-    expect(large.some((n) => /Large context/i.test(n))).toBe(true);
+  it("E4: no large-context notice exists; failure notices still fire", () => {
+    expect(
+      freeTierGuardNotices({
+        provider: "bynara",
+        consecutiveFailures: 0,
+      }),
+    ).toEqual([]);
 
     const fails = freeTierGuardNotices({
       provider: "bynara",
-      estimatedInputTokens: 1_000,
       consecutiveFailures: 2,
     });
     expect(fails.some((n) => /failed/i.test(n))).toBe(true);
@@ -215,7 +214,6 @@ describe("reliability policy (E1–E6)", () => {
     expect(
       freeTierGuardNotices({
         provider: "openai",
-        estimatedInputTokens: 90_000,
         consecutiveFailures: 5,
       }),
     ).toEqual([]);
@@ -224,7 +222,6 @@ describe("reliability policy (E1–E6)", () => {
     expect(
       freeTierGuardNotices({
         provider: "bynara",
-        estimatedInputTokens: 90_000,
         consecutiveFailures: 5,
         policy: getReliabilityPolicy(),
       }),

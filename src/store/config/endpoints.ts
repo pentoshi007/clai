@@ -88,7 +88,6 @@ export interface ClaiConfig {
   fsPassthroughCapChars?: number;
   adaptiveMaxTokens?: boolean;
   freeTierContextGuard?: boolean;
-  freeTierWarnTokens?: number;
   freeTierFailThreshold?: number;
   toolResultDedup?: boolean;
   slimNativePrompt?: boolean;
@@ -127,7 +126,6 @@ const defaults: ClaiConfig = {
   fsPassthroughCapChars: 64_000,
   adaptiveMaxTokens: true,
   freeTierContextGuard: true,
-  freeTierWarnTokens: 40_000,
   freeTierFailThreshold: 2,
   toolResultDedup: true,
   slimNativePrompt: true,

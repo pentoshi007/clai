@@ -51,14 +51,12 @@ export const requestRound = async (
       }
     }
     const assemblyState: RequestAssemblyState = {
-      freeTierLargeContextWarned: deps.loop.freeTierLargeContextWarned,
       freeTierConsecutiveFailures: deps.loop.freeTierConsecutiveFailures,
       truncatedBudgetRounds: deps.loop.truncatedBudgetRounds,
       continuationBudgetFloor: deps.loop.continuationBudgetFloor,
       retryWithoutThinking: deps.loop.retryWithoutThinking,
     };
     const contextLimitTokens = deps.currentContextLimitTokens();
-    let estimatedInputTokens = 0;
     try {
     const assembled = await assembleRequest(
       {
@@ -80,11 +78,9 @@ export const requestRound = async (
       },
       assemblyState,
     );
-    deps.loop.freeTierLargeContextWarned = assemblyState.freeTierLargeContextWarned;
     const turnTools = assembled.tools;
     toolsAttached = assembled.toolsAttached;
     input.setToolsAttached(toolsAttached);
-    estimatedInputTokens = assembled.estimatedInputTokens;
     deps.loop.stepMaxTokens = assembled.stepMaxTokens;
     deps.loop.dispatchedRawRequestTokens = assembled.rawRequestTokens;
     deps.loop.dispatchedRequestRoute = {
@@ -152,7 +148,6 @@ export const requestRound = async (
           messages: deps.messages,
           recoveryState: deps.recoveryState,
           provider: deps.loop.provider,
-          estimatedInputTokens,
           notify: deps.writeNotice,
           emitStatus: (text) => deps.emit({ type: "status", text }),
           emitTokenUsage: (usage, usageProvider, usageModel) =>

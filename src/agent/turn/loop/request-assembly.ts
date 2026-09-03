@@ -26,7 +26,6 @@ import {
 } from "../../request-accounting.js";
 
 export interface RequestAssemblyState {
-  freeTierLargeContextWarned: boolean;
   freeTierConsecutiveFailures: number;
   truncatedBudgetRounds: number;
   continuationBudgetFloor: number;
@@ -60,20 +59,14 @@ export interface AssembledRequest {
   readonly rawRequestTokens: number;
 }
 
-const showLargeContextAdvisories = (
+const showFreeTierAdvisories = (
   ports: RequestAssemblyPorts,
   state: RequestAssemblyState,
-  estimatedInputTokens: number,
 ): void => {
-  if (state.freeTierLargeContextWarned) return;
   for (const notice of freeTierGuardNotices({
     provider: ports.provider,
-    estimatedInputTokens,
     consecutiveFailures: state.freeTierConsecutiveFailures,
   })) {
-    if (notice.includes("Large context")) {
-      state.freeTierLargeContextWarned = true;
-    }
     ports.notify("info", notice);
   }
 };
@@ -95,7 +88,7 @@ export const assembleRequest = async (
     toolsAttached ? tools : undefined,
   );
   const estimatedInputTokens = ports.estimateRequestTokens(ports.messages);
-  showLargeContextAdvisories(ports, state, estimatedInputTokens);
+  showFreeTierAdvisories(ports, state);
 
   const routeOutputTokenLimit = resolveBuiltInProfile({
     provider: ports.provider,

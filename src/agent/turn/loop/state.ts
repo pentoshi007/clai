@@ -24,7 +24,6 @@ export interface TurnLoopState {
   continuationBudgetFloor: number;
   consecutiveSynthesizedRounds: number;
   freeTierConsecutiveFailures: number;
-  freeTierLargeContextWarned: boolean;
   freeTierAdvisoryShown: boolean;
   lastSuccessfulRequestSnapshot: SuccessfulRequestSnapshot | undefined;
   batchRemindCalls: Set<ToolCall>;
@@ -57,7 +56,6 @@ export const createTurnLoopState = (input: {
   continuationBudgetFloor: 0,
   consecutiveSynthesizedRounds: 0,
   freeTierConsecutiveFailures: 0,
-  freeTierLargeContextWarned: false,
   freeTierAdvisoryShown: false,
   lastSuccessfulRequestSnapshot: input.previousSuccessfulRequest,
   batchRemindCalls: new Set(),
