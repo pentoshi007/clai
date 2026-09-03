@@ -1,8 +1,11 @@
 /** @jsxImportSource @opentui/react */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
+import type { TranscriptStore } from "../../../ui-core/state/transcript-store.js";
+import { useTranscriptFollowKeyValue } from "../../../ui-core/react/use-transcript-meta.js";
 
 export interface ScrollbarMetrics {
   readonly scrollTop: number;
@@ -49,12 +52,15 @@ function glyphRows(glyph: string, rows: number): string {
   return Array<string>(Math.max(0, rows)).fill(glyph).join("\n");
 }
 
-export function TranscriptScrollbar(props: {
+function TranscriptScrollbarImpl(props: {
   readonly scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   readonly theme: Theme;
-  readonly followKey: string;
+  readonly store: TranscriptStore;
+  readonly running: boolean;
 }): ReactNode {
-  const { scrollRef, theme, followKey } = props;
+  countRender("TranscriptScrollbar");
+  const { scrollRef, theme, store, running } = props;
+  const followKey = useTranscriptFollowKeyValue(store, running);
   const [metrics, setMetrics] = useState<ScrollbarMetrics>(() =>
     readMetrics(scrollRef.current),
   );
@@ -76,6 +82,14 @@ export function TranscriptScrollbar(props: {
     const next = readMetrics(scrollRef.current);
     setMetrics((prev) => {
       if (prev.scrollTop !== next.scrollTop) triggerVisible();
+      if (
+        prev.scrollTop === next.scrollTop &&
+        prev.scrollHeight === next.scrollHeight &&
+        prev.viewportHeight === next.viewportHeight &&
+        prev.y === next.y
+      ) {
+        return prev;
+      }
       return next;
     });
   }, [scrollRef, triggerVisible]);
@@ -87,7 +101,7 @@ export function TranscriptScrollbar(props: {
   useEffect(() => {
     const id = setInterval(refresh, 100);
     return () => clearInterval(id);
-  }, [refresh, followKey]);
+  }, [refresh]);
 
   useEffect(() => {
     return () => {
@@ -259,3 +273,4 @@ export function TranscriptScrollbar(props: {
     </box>
   );
 }
+export const TranscriptScrollbar = memo(TranscriptScrollbarImpl);

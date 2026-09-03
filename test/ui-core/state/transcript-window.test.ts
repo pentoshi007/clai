@@ -22,11 +22,19 @@ describe("transcript mount windows", () => {
       newerCount: 0,
     });
     expect(resolveTranscriptMountWindow(1_000, undefined)).toEqual({
-      start: 680,
+      start: 880,
       end: 1_000,
-      olderCount: 680,
+      olderCount: 880,
       newerCount: 0,
     });
+  });
+
+  it("mounts at most the default window on a long transcript", () => {
+    const window = resolveTranscriptMountWindow(1_000, undefined);
+    expect(window.end - window.start).toBeLessThanOrEqual(
+      DEFAULT_TRANSCRIPT_MOUNT_ROWS,
+    );
+    expect(window.newerCount).toBe(0);
   });
 
   it("clamps explicit windows and never mounts more than the configured size", () => {
@@ -57,8 +65,8 @@ describe("transcript mount windows", () => {
 
   it("centers search targets where possible and clamps both edges", () => {
     expect(transcriptWindowStartForItem(1_000, 0)).toBe(0);
-    expect(transcriptWindowStartForItem(1_000, 500)).toBe(340);
-    expect(transcriptWindowStartForItem(1_000, 999)).toBe(680);
+    expect(transcriptWindowStartForItem(1_000, 500)).toBe(440);
+    expect(transcriptWindowStartForItem(1_000, 999)).toBe(880);
     expect(transcriptWindowStartForItem(20, 10)).toBe(0);
     expect(transcriptWindowStartForItem(0, 10)).toBe(0);
   });

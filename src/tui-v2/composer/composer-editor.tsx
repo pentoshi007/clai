@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/react */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { countRender } from "../perf/render-counters.js";
 import {
   decodePasteBytes,
   type KeyEvent,
@@ -78,7 +79,8 @@ export interface ComposerEditorProps {
 }
 const textareaKeyBindings = buildComposerTextareaOverrides() as never;
 
-export function ComposerEditor(props: ComposerEditorProps): ReactNode {
+function ComposerEditorImpl(props: ComposerEditorProps): ReactNode {
+  countRender("ComposerEditor");
   const { services, theme } = props;
   const editorRef = useRef<TextareaRenderable>(null);
   const promptHistory = useRef(new PromptHistory());
@@ -819,3 +821,4 @@ export function ComposerEditor(props: ComposerEditorProps): ReactNode {
     </box>
   );
 }
+export const ComposerEditor = memo(ComposerEditorImpl);

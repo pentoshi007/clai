@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import {
   TextAttributes,
   type MouseEvent,
@@ -250,7 +251,8 @@ function ModeBadge(props: {
   );
 }
 
-export function StatusLine(props: StatusLineProps): ReactNode {
+function StatusLineImpl(props: StatusLineProps): ReactNode {
+  countRender("StatusLine");
   const {
     session,
     mode,
@@ -642,3 +644,4 @@ export function StatusLine(props: StatusLineProps): ReactNode {
     </box>
   );
 }
+export const StatusLine = memo(StatusLineImpl);

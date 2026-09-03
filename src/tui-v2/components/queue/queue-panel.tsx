@@ -1,6 +1,8 @@
 /** @jsxImportSource @opentui/react */
 
+import { memo } from "react";
 import type { ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { useSessionState } from "../../../ui-core/react/use-session-state.js";
@@ -21,7 +23,8 @@ function clip(text: string, max: number): string {
   return `${one.slice(0, Math.max(1, max - 1))}…`;
 }
 
-export function QueuePanel(props: QueuePanelProps): ReactNode {
+function QueuePanelImpl(props: QueuePanelProps): ReactNode {
+  countRender("QueuePanel");
   const { services, theme, width, onEdit } = props;
   const session = useSessionState(services.session);
   const queued = session.queued;
@@ -130,3 +133,4 @@ function pad(text: string, width: number): string {
   if (text.length >= width) return text.slice(0, width);
   return text + " ".repeat(width - text.length);
 }
+export const QueuePanel = memo(QueuePanelImpl);

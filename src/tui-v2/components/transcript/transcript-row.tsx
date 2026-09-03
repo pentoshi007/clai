@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
 import { memo, type ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import type { OutputSpool } from "../../../app/events/event-buffer.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { TranscriptStore } from "../../../ui-core/state/transcript-store.js";
@@ -32,6 +33,7 @@ export function TranscriptRowImpl(props: {
   searchActiveMatch?: boolean | undefined;
   thinkingFocused?: boolean | undefined;
 }): ReactNode {
+  countRender("TranscriptRow");
   const {
     item,
     theme,

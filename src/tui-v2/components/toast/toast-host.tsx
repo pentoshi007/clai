@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import { TextAttributes } from "@opentui/core";
 import type {
   ToastController,
@@ -213,7 +214,8 @@ function ToastPill(props: {
   );
 }
 
-export function ToastHost(props: ToastHostProps): ReactNode {
+function ToastHostImpl(props: ToastHostProps): ReactNode {
+  countRender("ToastHost");
   const { toast, theme, termWidth, termHeight } = props;
   const items = useToastState(toast);
   const [now, setNow] = useState(() => Date.now());
@@ -284,3 +286,4 @@ export function ToastHost(props: ToastHostProps): ReactNode {
     </>
   );
 }
+export const ToastHost = memo(ToastHostImpl);

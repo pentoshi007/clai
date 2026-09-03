@@ -1,4 +1,4 @@
-export const DEFAULT_TRANSCRIPT_MOUNT_ROWS = 320;
+export const DEFAULT_TRANSCRIPT_MOUNT_ROWS = 120;
 export const DEFAULT_TRANSCRIPT_WINDOW_OVERLAP = 64;
 
 export interface TranscriptMountWindow {

@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { countRender } from "../perf/render-counters.js";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { TerminalDimensionsContext } from "../hooks/terminal-dimensions.js";
 import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
@@ -11,7 +12,7 @@ import {
 } from "../../ui-core/layout/compute-layout.js";
 import { ComposerEditor } from "../composer/composer-editor.js";
 import { maxComposerTextRows } from "../../ui-core/composer/composer-height.js";
-import { TranscriptView, useTranscriptFollowKey } from "../components/transcript/transcript-view.js";
+import { TranscriptView } from "../components/transcript/transcript-view.js";
 import { TranscriptScrollbar } from "../components/transcript/transcript-scrollbar.js";
 import { PlanView } from "../components/plan/plan-view.js";
 import { OverlayHost } from "../components/overlay/overlay-host.js";
@@ -28,8 +29,10 @@ import {
 } from "../input/escape-cancellation.js";
 import { usePlan } from "../../ui-core/react/use-plan.js";
 import { useOverlayState } from "../../ui-core/react/use-overlay.js";
-import { useTranscriptState } from "../../ui-core/react/use-transcript-store.js";
-import { useSessionState } from "../../ui-core/react/use-session-state.js";
+import {
+  useSessionField,
+  useTranscriptField,
+} from "../../ui-core/react/use-transcript-meta.js";
 import { useServices, useTheme } from "../../ui-core/react/providers.js";
 import { promptPlanApprovalIfNeeded } from "../../ui-core/plan/plan-lifecycle.js";
 import { StatusLine } from "../components/status/status-line.js";
@@ -61,6 +64,7 @@ import {
 
 
 export function App(): ReactNode {
+  countRender("App");
   const { width, height } = useTerminalDimensions();
   const services = useServices();
   const theme = useTheme();
@@ -68,7 +72,18 @@ export function App(): ReactNode {
   const [planVisible, setPlanVisible] = useState(false);
   const plan = usePlan(services.plan);
   const overlay = useOverlayState(services.overlay);
-  const transcript = useTranscriptState(services.transcript);
+  const runningStatus = useTranscriptField(
+    services.transcript,
+    (state) => state.runningStatus,
+  );
+  const thinkingExpanded = useTranscriptField(
+    services.transcript,
+    (state) => state.expandThinkingGlobal,
+  );
+  const outputExpanded = useTranscriptField(
+    services.transcript,
+    (state) => state.expandOutputGlobal,
+  );
   const lastCtrlC = useRef(0);
   const lastEscape = useRef(0);
   const lastEscapeHandledAt = useRef(0);
@@ -157,9 +172,9 @@ export function App(): ReactNode {
     maxCap: COMPOSER_MAX_HEIGHT,
   });
 
-  const session = useSessionState(services.session);
+  const sessionRunning = useSessionField(services.session, (state) => state.running);
+  const sessionMode = useSessionField(services.session, (state) => state.mode);
   const transcriptScrollRef = useRef<ScrollBoxRenderable>(null);
-  const followKey = useTranscriptFollowKey(transcript, session.running);
   const completionRows = Math.max(6, Math.min(12, Math.floor(height / 3)));
   const requestedSplitPlanWidth =
     planPresent && layout.plan.placement === "split"
@@ -548,16 +563,16 @@ export function App(): ReactNode {
     transcriptScrollPort.stopAutoScroll();
   }
 
-  function toggleThinking(): void {
+  const toggleThinking = useCallback((): void => {
     services.transcript.toggleThinkingGlobal();
     const on = services.transcript.getState().expandThinkingGlobal;
     notify(services, on ? "Thinking expanded · ^T" : "Thinking collapsed · ^T", {
       key: "thinking",
       durationMs: 1500,
     });
-  }
+  }, [services]);
 
-  function cycleMode(): void {
+  const cycleMode = useCallback((): void => {
     const current = services.session.getState().mode;
     const target = nextMode(current);
     services.session.setMode(target);
@@ -567,26 +582,26 @@ export function App(): ReactNode {
       `Mode · ${target.toUpperCase()} — ${modeSwitchSummary(target)} · ⇧⇥`,
       { key: "mode", level: "success", durationMs: 1800 },
     );
-  }
+  }, [services]);
 
-  function toggleOutput(): void {
+  const toggleOutput = useCallback((): void => {
     services.transcript.toggleOutputGlobal();
     const on = services.transcript.getState().expandOutputGlobal;
     notify(services, on ? "Tool output expanded · ^O" : "Tool output collapsed · ^O", {
       key: "output",
       durationMs: 1500,
     });
-  }
+  }, [services]);
 
-  function jumpChatTop(): void {
+  const jumpChatTop = useCallback((): void => {
     transcriptScrollPort.scrollToTop();
     notify(services, "Chat · top · ^U", { key: "scroll", durationMs: 1200 });
-  }
+  }, [services]);
 
-  function jumpChatBottom(): void {
+  const jumpChatBottom = useCallback((): void => {
     transcriptScrollPort.scrollToBottom();
     notify(services, "Chat · end · ^D", { key: "scroll", durationMs: 1200 });
-  }
+  }, [services]);
 
   function openShortcutsPager(): void {
     services.overlay.openPager(
@@ -599,7 +614,7 @@ export function App(): ReactNode {
     notify(services, "Keyboard shortcuts", { key: "help", durationMs: 1200 });
   }
 
-  function toggleTasksPane(): void {
+  const toggleTasksPane = useCallback((): void => {
     setPlanVisible((visible) => {
       const next = !visible;
       if (next && !services.plan.current()) {
@@ -622,7 +637,31 @@ export function App(): ReactNode {
       );
       return next;
     });
-  }
+  }, [services]);
+
+  const editComposerDraft = useCallback(
+    (text: string): void => {
+      setComposerSeed({ token: Date.now(), text });
+      services.focus.focusRegion("composer");
+    },
+    [services],
+  );
+
+  const requestEscapeCancel = useCallback((): void => {
+    handleEscapeCancellation(false);
+  }, []);
+
+  const startContextLimitEditing = useCallback((): void => {
+    setContextLimitEditing(true);
+    services.focus.setInputCaptured(true);
+    services.focus.focusRegion("composer");
+  }, [services]);
+
+  const focusComposer = useCallback((): void => {
+    setContextLimitEditing(false);
+    services.focus.setInputCaptured(false);
+    services.focus.focusRegion("composer");
+  }, [services]);
 
   return (
     <TerminalDimensionsContext.Provider value={{ width, height }}>
@@ -694,10 +733,7 @@ export function App(): ReactNode {
           services={services}
           theme={theme}
           width={contentInnerWidth}
-          onEdit={(text) => {
-            setComposerSeed({ token: Date.now(), text });
-            services.focus.focusRegion("composer");
-          }}
+          onEdit={editComposerDraft}
         />
 
         {}
@@ -729,22 +765,22 @@ export function App(): ReactNode {
           height={composerMaxTextRows}
           focused={composerFocused}
           maxSuggestions={completionRows}
-          running={session.running}
+          running={sessionRunning}
           inputSuspended={contextLimitEditing}
-          onEscapeCancel={() => handleEscapeCancellation(false)}
+          onEscapeCancel={requestEscapeCancel}
           seedDraft={composerSeed}
         />
 
         <StatusLine
           session={services.session}
-          mode={session.mode}
+          mode={sessionMode}
           theme={theme}
-          activity={transcript.runningStatus}
+          activity={runningStatus}
           width={contentInnerWidth}
           hasActivePlan={Boolean(plan)}
           planVisible={planVisible}
-          thinkingExpanded={transcript.expandThinkingGlobal}
-          outputExpanded={transcript.expandOutputGlobal}
+          thinkingExpanded={thinkingExpanded}
+          outputExpanded={outputExpanded}
           onToggleThinking={toggleThinking}
           onToggleOutput={toggleOutput}
           onTogglePlan={toggleTasksPane}
@@ -756,24 +792,17 @@ export function App(): ReactNode {
           hasDraft={hasDraft}
           onCycleMode={cycleMode}
           cancelArmed={escapeCancelArmed}
-          onRequestCancel={() => handleEscapeCancellation(false)}
-          onContextLimitEditingStart={() => {
-            setContextLimitEditing(true);
-            services.focus.setInputCaptured(true);
-            services.focus.focusRegion("composer");
-          }}
-          onFocusComposer={() => {
-            setContextLimitEditing(false);
-            services.focus.setInputCaptured(false);
-            services.focus.focusRegion("composer");
-          }}
+          onRequestCancel={requestEscapeCancel}
+          onContextLimitEditingStart={startContextLimitEditing}
+          onFocusComposer={focusComposer}
         />
       </box>
 
       <TranscriptScrollbar
         scrollRef={transcriptScrollRef}
         theme={theme}
-        followKey={followKey}
+        store={services.transcript}
+        running={sessionRunning}
       />
 
       {layout.plan.placement === "overlay" &&

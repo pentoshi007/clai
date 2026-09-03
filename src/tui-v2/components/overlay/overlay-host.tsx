@@ -1,6 +1,8 @@
 /** @jsxImportSource @opentui/react */
 
+import { memo } from "react";
 import type { ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { useOverlayState } from "../../../ui-core/react/use-overlay.js";
@@ -31,7 +33,8 @@ function isDockedKind(kind: string): boolean {
   );
 }
 
-export function OverlayHost(props: OverlayHostProps): ReactNode {
+function OverlayHostImpl(props: OverlayHostProps): ReactNode {
+  countRender("OverlayHost");
   const { services, theme, width, height, docked } = props;
   const state = useOverlayState(services.overlay);
   if (state.kind === "none") return null;
@@ -131,3 +134,4 @@ export function OverlayHost(props: OverlayHostProps): ReactNode {
     </box>
   );
 }
+export const OverlayHost = memo(OverlayHostImpl);

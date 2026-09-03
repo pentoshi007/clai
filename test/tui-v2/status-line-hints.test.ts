@@ -132,7 +132,8 @@ describe("status line hints and Esc semantics", () => {
 
     const app = readFileSync(APP, "utf8");
     expect(app).toContain("cancelArmed={escapeCancelArmed}");
-    expect(app).toContain("onRequestCancel={() => handleEscapeCancellation(false)}");
+    expect(app).toContain("onRequestCancel={requestEscapeCancel}");
+    expect(app).toContain("handleEscapeCancellation(false)");
     expect(app).toContain("}, ESC_CANCEL_WINDOW_MS)");
   });
 

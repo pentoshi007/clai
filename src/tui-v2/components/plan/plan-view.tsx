@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useRef, type ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import type { PlanTask, SessionPlan, TaskState } from "../../../store/plan.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -82,7 +83,8 @@ function ActionChip(props: {
   );
 }
 
-export function PlanView(props: PlanViewProps): ReactNode {
+function PlanViewImpl(props: PlanViewProps): ReactNode {
+  countRender("PlanView");
   const { theme, plan, services, width: widthProp } = props;
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const activeId = plan ? activeTaskId(plan) : undefined;
@@ -465,3 +467,4 @@ function TaskRow(props: {
     </box>
   );
 }
+export const PlanView = memo(PlanViewImpl);

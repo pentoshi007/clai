@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { countRender } from "../../perf/render-counters.js";
 import { useKeyboard } from "@opentui/react";
 import { TextAttributes, type MouseEvent } from "@opentui/core";
 import type {
@@ -78,7 +79,8 @@ function jobPhase(
   }
 }
 
-export function JobsPanel(props: JobsPanelProps): ReactNode {
+function JobsPanelImpl(props: JobsPanelProps): ReactNode {
+  countRender("JobsPanel");
   const { services, theme } = props;
   const sessionState = useSessionState(services.session);
   const readJobs = (): BackgroundJob[] => {
@@ -351,7 +353,8 @@ function responderHeadline(
   return `${glyph} ${label} · ${formatJobElapsed(job, now)}${taskRef}`;
 }
 
-export function ResponderPanel(props: ResponderPanelProps): ReactNode {
+function ResponderPanelImpl(props: ResponderPanelProps): ReactNode {
+  countRender("ResponderPanel");
   const { services, theme, width, blockingOverlay } = props;
   const sessionState = useSessionState(services.session);
   const responderState = sessionState.responder;
@@ -507,3 +510,5 @@ export function ResponderPanel(props: ResponderPanelProps): ReactNode {
     </box>
   );
 }
+export const JobsPanel = memo(JobsPanelImpl);
+export const ResponderPanel = memo(ResponderPanelImpl);

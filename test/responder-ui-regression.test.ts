@@ -8,7 +8,7 @@ async function source(path: string): Promise<string> {
 describe("responder UI placement", () => {
   it("keeps responder lifecycle text out of the composer StatusLine", async () => {
     const text = await source("../src/tui-v2/components/status/status-line.tsx");
-    const statusLine = text.slice(text.indexOf("export function StatusLine"));
+    const statusLine = text.slice(text.indexOf("function StatusLineImpl"));
 
     expect(statusLine).not.toContain("responderStatusText(");
     expect(statusLine).not.toContain("state.responder");
@@ -16,7 +16,7 @@ describe("responder UI placement", () => {
 
   it("initializes the dedicated responder panel collapsed", async () => {
     const text = await source("../src/tui-v2/components/jobs/jobs-panel.tsx");
-    const panel = text.slice(text.indexOf("export function ResponderPanel"));
+    const panel = text.slice(text.indexOf("function ResponderPanelImpl"));
 
     expect(panel).toMatch(/const \[collapsed, setCollapsed\] = useState\(true\)/);
     expect(panel).toContain('const header = `${collapsed ? "▸" : "▾"} Responder:');
@@ -24,7 +24,7 @@ describe("responder UI placement", () => {
 
   it("hides the responder panel when nothing is running, ready, or unread", async () => {
     const text = await source("../src/tui-v2/components/jobs/jobs-panel.tsx");
-    const panel = text.slice(text.indexOf("export function ResponderPanel"));
+    const panel = text.slice(text.indexOf("function ResponderPanelImpl"));
 
     expect(panel).toContain("const hasActiveWork =");
     expect(panel).toMatch(/responderState\.running > 0/);
