@@ -60,6 +60,11 @@ export async function startTuiV2(
   patchOpenTuiTextContent();
   setAllowInteractiveStdinInherit(false);
   const startedAt = Date.now();
+  let forwardConsoleCapture: ((level: string, message: string) => void) | undefined;
+  const restoreConsole = installConsoleGuard({
+    logDir: getLogsDirRoot(),
+    onCapture: (level, message) => forwardConsoleCapture?.(level, message),
+  });
   const detectedCapabilities = readCapabilitiesFromProcess();
   const fallbackClipboard = createSystemClipboardPort();
   let markRendererFinalized = (): void => undefined;
@@ -79,6 +84,14 @@ export async function startTuiV2(
   try {
     (renderer as unknown as { setMaxListeners?: (n: number) => void }).setMaxListeners?.(50);
   } catch {}
+  const root = createRoot(renderer);
+  root.render(
+    createElement(
+      "box",
+      null,
+      createElement("text", { content: "Loading session…" }),
+    ),
+  );
   const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
   if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
     rememberThemeMode(reportedThemeMode);
@@ -127,6 +140,13 @@ export async function startTuiV2(
     requestExit: () => void lifecycleRef.current?.shutdownAndExit(0),
   });
   attachCommandHandlers(services);
+  forwardConsoleCapture = (level, message) => {
+    if (level === "error" || level === "warn") {
+      if (isSuppressedConsoleMessage(message)) return;
+      const text = message.split("\n")[0]!.slice(0, 200);
+      queueMicrotask(() => services.session.notice("warn", text));
+    }
+  };
   const epilogue = createExitEpilogue({
     services,
     startedAt,
@@ -138,7 +158,6 @@ export async function startTuiV2(
     ? await resolveResumeTarget(options.resume)
     : undefined;
   await applyResumeResolution(services, pendingResume);
-  const root = createRoot(renderer);
 
   const { handle, done } = createOpenTuiRendererHandle({
     mount: () => {
@@ -154,16 +173,6 @@ export async function startTuiV2(
     finalized: rendererFinalized,
     disarmTerminalRescue,
     disposeServices: () => services.dispose(),
-  });
-
-  const restoreConsole = installConsoleGuard({
-    logDir: getLogsDirRoot(),
-    onCapture: (level, message) => {
-      if (level === "error" || level === "warn") {
-        if (isSuppressedConsoleMessage(message)) return;
-        services.session.notice("warn", message.split("\n")[0]!.slice(0, 200));
-      }
-    },
   });
 
   const flush = createCoordinatedFlush(renderer, (text) =>
@@ -231,6 +240,13 @@ export async function startTuiV2(
   lifecycleRef.current = lifecycle;
 
   await lifecycle.start();
+  repaintAttachedScreen({
+    renderer,
+    write: (text) => void flush(text),
+    enabled: Boolean(process.stdout.isTTY),
+    isSuspended: () =>
+      renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
+  });
   if (runtimeBridge) {
     disposeRuntimeBridge = bindRuntimeChildBridge(
       runtimeBridge,
