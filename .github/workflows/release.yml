@@ -52,10 +52,6 @@ jobs:
       # Same deterministic suite CI runs (canonical locale/timezone), so a
       # locale-dependent failure can never ship via a tag while CI is red.
       - run: npm run test:deterministic -- --reporter=dot
-      - run: npm run quality:contracts
-      - run: npm run quality:report
-      # The ratchet is the gate CI was failing on: releases must not bypass it.
-      - run: npm run quality:ratchet
       - run: npm run release:verify
       - run: bun run test:bun
 

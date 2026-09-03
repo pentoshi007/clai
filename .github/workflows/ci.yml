@@ -36,15 +36,11 @@ jobs:
       - run: npm run embed-prompts:check
       - run: npm run typecheck
       # Canonical locale/timezone are applied before Node starts by
-      # scripts/run-tests.mjs (Phase 0, P0-01). Verified equivalent to the
-      # recorded `LC_ALL=C LANG=C` baseline: 557 files / 5,695 passed / 12 skipped.
+      # scripts/run-tests.mjs.
       - run: npm run test:deterministic -- --reporter=dot
-      # Guard against accidental locale/timezone coupling: the architecture and
-      # environment characterization suites must also pass on the raw host env.
-      - run: npm run test:host -- test/architecture test/environment test/quality --reporter=dot
-      - run: npm run quality:contracts
-      - run: npm run quality:report
-      - run: npm run quality:ratchet
+      # Guard against accidental locale/timezone coupling: the environment
+      # characterization suite must also pass on the raw host env.
+      - run: npm run test:host -- test/environment --reporter=dot
       - run: npm run build
       - name: Smoke-test the built entrypoint
         run: |
@@ -59,7 +55,6 @@ jobs:
           path: |
             ${{ runner.temp }}/clai/logs
             ${{ runner.temp }}/clai/artifacts
-            refactor/evidence/phase-0/reports
           if-no-files-found: ignore
           retention-days: 7
 

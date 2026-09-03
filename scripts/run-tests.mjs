@@ -1,5 +1,5 @@
 /**
- * Deterministic test launcher for the refactor program (Phase 0, P0-01).
+ * Deterministic test launcher.
  *
  * Locale and timezone must be fixed *before* the test process starts, because
  * Node initializes ICU collation/number formatting and the default timezone at
@@ -9,8 +9,7 @@
  * process with the canonical environment applied to the child's env block, so
  * the same command is valid on Linux, macOS and Windows.
  *
- * Canonical environment (verified against the recorded baseline; see
- * refactor/baseline.md and refactor/evidence/phase-0/README.md):
+ * Canonical environment:
  *   LC_ALL=C  LANG=C  LC_NUMERIC=C  LC_COLLATE=C  LC_TIME=C  TZ=UTC
  *
  * Usage:
