@@ -79,7 +79,7 @@ export interface ComposerEditorProps {
 }
 const textareaKeyBindings = buildComposerTextareaOverrides() as never;
 
-function ComposerEditorImpl(props: ComposerEditorProps): ReactNode {
+export const ComposerEditor = memo(function ComposerEditor(props: ComposerEditorProps): ReactNode {
   countRender("ComposerEditor");
   const { services, theme } = props;
   const editorRef = useRef<TextareaRenderable>(null);
@@ -820,5 +820,4 @@ function ComposerEditorImpl(props: ComposerEditorProps): ReactNode {
       />
     </box>
   );
-}
-export const ComposerEditor = memo(ComposerEditorImpl);
+});

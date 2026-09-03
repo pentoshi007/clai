@@ -52,7 +52,7 @@ function glyphRows(glyph: string, rows: number): string {
   return Array<string>(Math.max(0, rows)).fill(glyph).join("\n");
 }
 
-function TranscriptScrollbarImpl(props: {
+export const TranscriptScrollbar = memo(function TranscriptScrollbar(props: {
   readonly scrollRef: React.RefObject<ScrollBoxRenderable | null>;
   readonly theme: Theme;
   readonly store: TranscriptStore;
@@ -272,5 +272,4 @@ function TranscriptScrollbarImpl(props: {
       ) : null}
     </box>
   );
-}
-export const TranscriptScrollbar = memo(TranscriptScrollbarImpl);
+});

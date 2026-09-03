@@ -79,7 +79,7 @@ function jobPhase(
   }
 }
 
-function JobsPanelImpl(props: JobsPanelProps): ReactNode {
+export const JobsPanel = memo(function JobsPanel(props: JobsPanelProps): ReactNode {
   countRender("JobsPanel");
   const { services, theme } = props;
   const sessionState = useSessionState(services.session);
@@ -300,7 +300,7 @@ function JobsPanelImpl(props: JobsPanelProps): ReactNode {
       ) : null}
     </box>
   );
-}
+});
 
 
 export interface ResponderPanelProps {
@@ -353,7 +353,7 @@ function responderHeadline(
   return `${glyph} ${label} · ${formatJobElapsed(job, now)}${taskRef}`;
 }
 
-function ResponderPanelImpl(props: ResponderPanelProps): ReactNode {
+export const ResponderPanel = memo(function ResponderPanel(props: ResponderPanelProps): ReactNode {
   countRender("ResponderPanel");
   const { services, theme, width, blockingOverlay } = props;
   const sessionState = useSessionState(services.session);
@@ -509,6 +509,4 @@ function ResponderPanelImpl(props: ResponderPanelProps): ReactNode {
       ) : null}
     </box>
   );
-}
-export const JobsPanel = memo(JobsPanelImpl);
-export const ResponderPanel = memo(ResponderPanelImpl);
+});

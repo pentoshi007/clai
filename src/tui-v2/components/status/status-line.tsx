@@ -251,7 +251,7 @@ function ModeBadge(props: {
   );
 }
 
-function StatusLineImpl(props: StatusLineProps): ReactNode {
+export const StatusLine = memo(function StatusLine(props: StatusLineProps): ReactNode {
   countRender("StatusLine");
   const {
     session,
@@ -643,5 +643,4 @@ function StatusLineImpl(props: StatusLineProps): ReactNode {
       </box>
     </box>
   );
-}
-export const StatusLine = memo(StatusLineImpl);
+});

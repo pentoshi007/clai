@@ -70,14 +70,15 @@ function normalizeField(value: unknown): string | undefined {
   return trimmed;
 }
 
-function sanitizeThinking(value: unknown): ReasoningPreference | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const raw = value as Record<string, unknown>;
-  if (typeof raw.enabled !== "boolean") return undefined;
-  if (typeof raw.effort !== "string") return undefined;
-  const effort = raw.effort.trim() as ReasoningEffort;
+function sanitizeThinking(
+  value: Record<string, unknown> | undefined,
+): ReasoningPreference | undefined {
+  if (!value) return undefined;
+  if (typeof value.enabled !== "boolean") return undefined;
+  if (typeof value.effort !== "string") return undefined;
+  const effort = value.effort.trim() as ReasoningEffort;
   if (!THINKING_EFFORTS.includes(effort)) return undefined;
-  return { enabled: raw.enabled, effort };
+  return { enabled: value.enabled, effort };
 }
 
 function sanitizeBinding(value: unknown): SessionModelBinding {
@@ -85,7 +86,11 @@ function sanitizeBinding(value: unknown): SessionModelBinding {
   const raw = value as Record<string, unknown>;
   const provider = normalizeField(raw.provider);
   const model = normalizeField(raw.model);
-  const thinking = sanitizeThinking(raw.thinking);
+  const thinkingInput =
+    raw.thinking && typeof raw.thinking === "object" && !Array.isArray(raw.thinking)
+      ? (raw.thinking as Record<string, unknown>)
+      : undefined;
+  const thinking = sanitizeThinking(thinkingInput);
   return {
     ...(provider ? { provider: provider as ProviderId } : {}),
     ...(model ? { model } : {}),

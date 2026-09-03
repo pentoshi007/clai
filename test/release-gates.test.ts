@@ -22,8 +22,11 @@ describe("release identity gate (REL-002)", () => {
     expect(validate).toContain("Verify tag matches package.json version");
     expect(validate).toContain("refusing to release");
     // build/publish must be gated on validate, not on the npm-token job.
-    expect(releaseWorkflow).toMatch(/build:\n\s+needs: validate/);
+    // build additionally requires a green CI run on the same commit so a tag
+    // can never ship while CI is red.
+    expect(releaseWorkflow).toMatch(/build:\n\s+needs: \[validate, ci-gate\]/);
     expect(releaseWorkflow).toMatch(/publish:\n\s+needs: build/);
+    expect(releaseWorkflow).toContain("Require green CI on this commit");
   });
 });
 
