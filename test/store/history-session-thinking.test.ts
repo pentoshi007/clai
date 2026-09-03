@@ -183,4 +183,47 @@ describe("per-session thinking", () => {
     await applySessionResume(services, stored!);
     expect(getConfig().thinking).toEqual({ enabled: false, effort: "medium" });
   });
+
+  it("keeps each session effort across a full switch round-trip", async () => {
+    const { services } = stubServices();
+    setThinking({ enabled: true, effort: "xhigh" });
+    const recordA = await saveSession(
+      MESSAGES,
+      "session a",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        provider: "nvidia",
+        model: "openai/gpt-oss-20b",
+        thinking: { ...getConfig().thinking },
+      },
+    );
+    setThinking({ enabled: true, effort: "high" });
+    const recordB = await saveSession(
+      MESSAGES,
+      "session b",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        thinking: { ...getConfig().thinking },
+      },
+    );
+
+    await applySessionResume(services, (await getSession(recordA.id))!);
+    expect(getConfig().thinking).toEqual({ enabled: true, effort: "xhigh" });
+
+    await applySessionResume(services, (await getSession(recordB.id))!);
+    expect(getConfig().thinking).toEqual({ enabled: true, effort: "high" });
+
+    await applySessionResume(services, (await getSession(recordA.id))!);
+    expect(getConfig().thinking).toEqual({ enabled: true, effort: "xhigh" });
+  });
 });

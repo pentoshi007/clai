@@ -203,6 +203,7 @@ function persistSessionThinking(services: AppServices): void {
     ...(state.model ? { model: state.model } : {}),
     thinking: { ...getConfig().thinking },
   }).catch(() => undefined);
+  void services.session.persistNow().catch(() => undefined);
 }
 
 function clearRouteReasoningRejection(services: AppServices): void {
