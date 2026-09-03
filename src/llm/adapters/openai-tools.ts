@@ -77,7 +77,11 @@ function compatibleReasoningFields(
       artifacts: reasoningArtifactsForMessage(message),
       target: replay.target,
       context: {
-        hasToolCalls: Boolean(message.toolCalls?.length),
+        hasToolCalls: Boolean(
+          message.toolCalls?.length ||
+            (typeof message.content === "string" &&
+              (/```tool\b|<tool_call>|<\|tool_call/i.test(message.content))),
+        ),
         ...(replay.forceScope ? { forceScope: true } : {}),
       },
       observe: replay.observe,

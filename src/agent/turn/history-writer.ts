@@ -27,6 +27,7 @@ export interface TurnHistoryWriter {
   readonly pushAssistantHistory: (
     content: string,
     reasoning?: Pick<CompletionResult, "reasoningArtifacts" | "reasoningBlock">,
+    hasToolCalls?: boolean,
   ) => void;
 }
 
@@ -74,17 +75,21 @@ const replaceActionCycleRecovery = (
   ports.messages.push(buildRecoveryUserMessage(ports, prefix + content));
 };
 
+const isToolCallContent = (text: string): boolean =>
+  /```tool\b|<tool_call>|<\|tool_call/i.test(text);
+
 const persistedReasoning = (
   reasoning: ReasoningInput,
+  hasToolCalls = false,
 ): Pick<ChatMessage, "reasoningBlock" | "reasoningArtifacts"> => {
   const persistedArtifacts = reasoningArtifactsForPersistence({
     artifacts: reasoning?.reasoningArtifacts,
-    hasToolCalls: false,
+    hasToolCalls,
   });
   const reasoningBlock = persistedArtifacts
     ? legacyReasoningBlockFromArtifacts(persistedArtifacts)
     : reasoning?.reasoningArtifacts
-      ? undefined
+      ? (hasToolCalls ? reasoning?.reasoningBlock : undefined)
       : reasoning?.reasoningBlock;
   return {
     ...(reasoningBlock?.text || reasoningBlock?.items?.length
@@ -98,6 +103,7 @@ const appendAssistantHistory = (
   ports: TurnHistoryPorts,
   content: string,
   reasoning: ReasoningInput,
+  hasToolCalls?: boolean,
 ): void => {
   const cleaned = ports.sanitizeAssistantText(
     hasReasoningMarker(content) ? stripThinking(content).visible : content,
@@ -106,12 +112,13 @@ const appendAssistantHistory = (
     const prose = recoveryProseFrom(cleaned);
     if (prose) ports.writeAssistantMessage(prose);
   }
+  const toolTurn = hasToolCalls ?? isToolCallContent(content);
   ports.messages.push({
     role: "assistant",
     content: cleaned.trim()
       ? cleaned
       : "[No visible assistant response was produced.]",
-    ...persistedReasoning(reasoning),
+    ...persistedReasoning(reasoning, toolTurn),
   });
 };
 
@@ -122,6 +129,6 @@ export const createTurnHistoryWriter = (
   upsertActionCycleRecovery: (content) =>
     replaceActionCycleRecovery(ports, content),
   recoveryProse: recoveryProseFrom,
-  pushAssistantHistory: (content, reasoning) =>
-    appendAssistantHistory(ports, content, reasoning),
+  pushAssistantHistory: (content, reasoning, hasToolCalls) =>
+    appendAssistantHistory(ports, content, reasoning, hasToolCalls),
 });

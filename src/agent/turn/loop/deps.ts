@@ -117,6 +117,7 @@ export interface TurnLoopDeps extends TurnWriters {
   readonly pushAssistantHistory: (
     text: string,
     reasoning?: Pick<CompletionResult, "reasoningBlock" | "reasoningArtifacts">,
+    hasToolCalls?: boolean,
   ) => void;
   readonly liveMessages: () => ChatMessage[];
   readonly upsertActionCycleRecovery: (message: string) => void;

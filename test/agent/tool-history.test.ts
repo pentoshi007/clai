@@ -18,6 +18,8 @@ import {
   createReasoningArtifact,
   createReasoningArtifactProvenance,
 } from "../../src/llm/reasoning-artifacts.js";
+import { createTurnHistoryWriter } from "../../src/agent/turn/history-writer.js";
+import { resolveBuiltInProfile } from "../../src/llm/provider-profiles.js";
 import type { ChatMessage, NativeToolCall } from "../../src/types.js";
 
 describe("tool-history", () => {
@@ -712,5 +714,72 @@ describe("reasoning signature adjacency (T620)", () => {
     expect(hasOrphanToolMessages(messages)).toBe(false);
     expect(allToolCallsHaveResults(messages)).toBe(true);
     expect(validateToolProtocol(messages)).toEqual([]);
+  });
+
+  it("preserves reasoning artifacts when pushing assistant history with tool calls", () => {
+    const messages: ChatMessage[] = [];
+    const writer = createTurnHistoryWriter({
+      messages,
+      sanitizeAssistantText: (t) => t,
+      visibleCommitted: () => false,
+      writeAssistantMessage: () => {},
+    });
+    const artifact = createReasoningArtifact({
+      kind: "plaintext",
+      raw: "deep reasoning steps",
+      provenance: createReasoningArtifactProvenance({
+        provider: "hetzner",
+        dialect: "openai-compatible",
+      }),
+      replay: { scope: "tool-turn", persistence: "tool-turn" },
+      position: { sequence: 0, placement: "assistant" },
+    });
+    writer.pushAssistantHistory(
+      '```tool\n{"name":"fs.list","args":{}}\n```',
+      {
+        reasoningBlock: { text: "deep reasoning steps" },
+        reasoningArtifacts: [artifact],
+      },
+      true,
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.reasoningArtifacts).toHaveLength(1);
+    expect(messages[0]!.reasoningArtifacts![0]!.raw).toBe("deep reasoning steps");
+    expect(messages[0]!.reasoningBlock?.text).toBe("deep reasoning steps");
+  });
+
+  it("omits tool-turn reasoning artifacts when pushing assistant history without tool calls", () => {
+    const messages: ChatMessage[] = [];
+    const writer = createTurnHistoryWriter({
+      messages,
+      sanitizeAssistantText: (t) => t,
+      visibleCommitted: () => false,
+      writeAssistantMessage: () => {},
+    });
+    const artifact = createReasoningArtifact({
+      kind: "plaintext",
+      raw: "final reasoning steps",
+      provenance: createReasoningArtifactProvenance({
+        provider: "hetzner",
+        dialect: "openai-compatible",
+      }),
+      replay: { scope: "tool-turn", persistence: "tool-turn" },
+      position: { sequence: 0, placement: "assistant" },
+    });
+    writer.pushAssistantHistory("Here is the answer", {
+      reasoningBlock: { text: "final reasoning steps" },
+      reasoningArtifacts: [artifact],
+    });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.reasoningArtifacts).toBeUndefined();
+    expect(messages[0]!.reasoningBlock).toBeUndefined();
+  });
+
+  it("configures replayScope as tool-turn for hetzner qwen models", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "hetzner",
+      model: "Qwen/Qwen3.6-35B-A3B-FP8",
+    });
+    expect(profile.reasoning.replayScope).toBe("tool-turn");
   });
 });

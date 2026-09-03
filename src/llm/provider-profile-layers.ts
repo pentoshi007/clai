@@ -367,6 +367,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         status: "unknown",
         evidence: codeFact("hetzner-stepfun-style"),
       },
+      replayScope: "tool-turn",
       outputShapes: ["reasoning-content"],
     },
     terminal: {

@@ -361,7 +361,11 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
       index < liveBoundary && !isRequestContextSystemMessage(message);
     for (const artifact of reasoningArtifactsForMessage(message)) {
       const decision = reasoningArtifactReplayDecision(artifact, target, {
-        hasToolCalls: Boolean(message.toolCalls?.length),
+        hasToolCalls: Boolean(
+          message.toolCalls?.length ||
+            (typeof message.content === "string" &&
+              (/```tool\b|<tool_call>|<\|tool_call/i.test(message.content))),
+        ),
       });
       decisions.push(Object.freeze({ messageIndex: index, decision }));
       if (decision.action === "replayed" && withinCacheBoundary) {

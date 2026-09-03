@@ -2,7 +2,6 @@ import { wrapPagerLine } from "../../../ui-core/rendering/pager-chrome.js";
 import { liveThinkingFull } from "../../../ui-core/rendering/thinking-tail.js";
 
 export const THINKING_BODY_MAX_ROWS = 20;
-const MAX_BODY_CHARS = 20_000;
 
 export function wrapThinkingBody(
   content: string,
@@ -11,13 +10,9 @@ export function wrapThinkingBody(
 ): string[] {
   if (streaming) return createLiveThinkingWrap(width)(content);
   const budget = Math.max(1, Math.floor(width));
-  const source =
-    content.length > MAX_BODY_CHARS
-      ? `${content.slice(0, MAX_BODY_CHARS)}\n…`
-      : content;
-  if (!source.trim()) return [];
+  if (!content.trim()) return [];
   const rows: string[] = [];
-  for (const line of source.split("\n")) {
+  for (const line of content.split("\n")) {
     for (const wrapped of wrapPagerLine(line, budget)) rows.push(wrapped);
   }
   return rows;

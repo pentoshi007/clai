@@ -198,6 +198,7 @@ export const MODEL_RULES: Partial<Record<ProviderId, readonly ModelRule[]>> = {
           },
           disable: "supported",
           disableForm: "template-enable-thinking-false",
+          replayScope: "tool-turn",
         },
       },
     },

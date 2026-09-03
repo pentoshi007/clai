@@ -124,10 +124,10 @@ describe("thinking body rows", () => {
     expect(wrapThinkingBody("   \n  ", 40, false)).toEqual([]);
   });
 
-  it("bounds very long completed reasoning instead of wrapping it all", () => {
+  it("wraps very long completed reasoning without truncation", () => {
     const rows = wrapThinkingBody("x".repeat(60_000), 40, false);
-    expect(rows.length).toBeLessThanOrEqual(20_000 / 40 + 2);
-    expect(rows.at(-1)).toBe("…");
+    expect(rows.length).toBe(60_000 / 40);
+    expect(rows.at(-1)).not.toBe("…");
   });
 
   it("keeps streaming reasoning from the start instead of a tail window", () => {

@@ -606,7 +606,11 @@ export const runTurnRounds = async (
           allCalls
             .map((c) => `\`\`\`tool\n${JSON.stringify(c)}\n\`\`\``)
             .join("\n\n");
-        deps.pushAssistantHistory(standardizedContent, completion);
+        deps.pushAssistantHistory(
+          standardizedContent,
+          completion,
+          allCalls.length > 0,
+        );
       }
 
 
