@@ -342,22 +342,43 @@ describe("resolveNamingRoute", () => {
     ).toEqual({ provider: "openai", model: "gpt-4o-mini" });
   });
 
-  it("falls back to the session route when unconfigured", async () => {
-    const { resolveNamingRoute } = await import(
-      "../src/app/controllers/session-naming.js"
-    );
+  it("defaults to kilo-auto instead of the session route when unconfigured", async () => {
+    const { resolveNamingRoute, DEFAULT_NAMING_PROVIDER, DEFAULT_NAMING_MODEL } =
+      await import("../src/app/controllers/session-naming.js");
     expect(
       resolveNamingRoute(
         { provider: "free", model: "free-1/mimo-v2.5-free" },
         base,
       ),
-    ).toEqual({ provider: "free", model: "free-1/mimo-v2.5-free" });
+    ).toEqual({ provider: DEFAULT_NAMING_PROVIDER, model: DEFAULT_NAMING_MODEL });
+    expect(
+      resolveNamingRoute(
+        { provider: "bynara", model: "bynara/qwen3.8-27b" },
+        { defaultProvider: "bynara" as const },
+      ),
+    ).toEqual({ provider: DEFAULT_NAMING_PROVIDER, model: DEFAULT_NAMING_MODEL });
   });
 
-  it("ignores an unknown configured provider", async () => {
+  it("honors a lone naming model on the default naming provider", async () => {
     const { resolveNamingRoute } = await import(
       "../src/app/controllers/session-naming.js"
     );
+    const resolved = resolveNamingRoute(
+      { provider: "bynara", model: "bynara/qwen3.8-27b" },
+      {
+        ...base,
+        namingModel: "free-2/stepfun/step-3.7-flash:free",
+      },
+    );
+    expect(resolved).toEqual({
+      provider: "free",
+      model: "free-2/stepfun/step-3.7-flash:free",
+    });
+  });
+
+  it("ignores an unknown configured provider", async () => {
+    const { resolveNamingRoute, DEFAULT_NAMING_PROVIDER, DEFAULT_NAMING_MODEL } =
+      await import("../src/app/controllers/session-naming.js");
     const resolved = resolveNamingRoute(
       { provider: "free", model: "free-1/mimo-v2.5-free" },
       {
@@ -366,8 +387,8 @@ describe("resolveNamingRoute", () => {
       },
     );
     expect(resolved).toEqual({
-      provider: "free",
-      model: "free-1/mimo-v2.5-free",
+      provider: DEFAULT_NAMING_PROVIDER,
+      model: DEFAULT_NAMING_MODEL,
     });
   });
 

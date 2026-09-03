@@ -210,4 +210,35 @@ describe("runSessionCompaction cache-preserving replay", () => {
       ),
     ).toBe(true);
   });
+
+  it("reports retained history instead of zero when the local estimate overshoots the provider count", async () => {
+    stream.mockResolvedValueOnce(okResult());
+    const history: ChatMessage[] = [
+      { role: "system", content: "stable constitution" },
+      { role: "user", content: "historical user detail ".repeat(1500) },
+      { role: "assistant", content: "historical assistant detail ".repeat(1500) },
+      { role: "assistant", content: "done — feature built" },
+      { role: "user", content: "now compact" },
+    ];
+    const events: AnyAppEvent[] = [];
+    const { options } = harness(history);
+
+    await runSessionCompaction({
+      ...options,
+      requestTokensBefore: 500,
+      persist: true,
+      emit: (event) => events.push(event),
+    });
+
+    const completed = events.find(
+      (event) => event.type === "compaction-completed",
+    );
+    expect(completed?.type).toBe("compaction-completed");
+    const afterTokens =
+      completed?.type === "compaction-completed"
+        ? completed.payload.afterTokens
+        : 0;
+    expect(afterTokens).toBeGreaterThan(0);
+    expect(afterTokens).toBeLessThan(500);
+  });
 });

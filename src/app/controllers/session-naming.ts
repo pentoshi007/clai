@@ -9,8 +9,11 @@ import type { ClaiConfig } from "../../store/config/endpoints.js";
 import { providerIds } from "../../types.js";
 import { completeWithProvider } from "../../llm/router.js";
 
+export const DEFAULT_NAMING_PROVIDER: ProviderId = "free";
+export const DEFAULT_NAMING_MODEL = "free-2/kilo-auto/free";
+
 export function resolveNamingRoute(
-  route: { provider?: ProviderId | undefined; model?: string | undefined },
+  _route: { provider?: ProviderId | undefined; model?: string | undefined },
   config: Pick<ClaiConfig, "defaultProvider" | "namingProvider" | "namingModel"> = getConfig(),
 ): { provider: ProviderId; model: string } {
   const configuredProvider = config.namingProvider;
@@ -20,13 +23,16 @@ export function resolveNamingRoute(
       findCustomProviderDefSync(configuredProvider) !== undefined)
       ? configuredProvider
       : undefined;
-  const provider =
-    knownProvider ?? route.provider ?? config.defaultProvider;
-  const model =
-    (knownProvider !== undefined ? config.namingModel : undefined) ??
-    (knownProvider === undefined ? route.model : undefined) ??
-    getProviderModel(provider);
-  return { provider, model };
+  if (knownProvider !== undefined) {
+    return {
+      provider: knownProvider,
+      model: config.namingModel ?? getProviderModel(knownProvider),
+    };
+  }
+  return {
+    provider: DEFAULT_NAMING_PROVIDER,
+    model: config.namingModel ?? DEFAULT_NAMING_MODEL,
+  };
 }
 
 export async function completeForSessionNaming(
@@ -40,6 +46,9 @@ export async function completeForSessionNaming(
     purpose: "auxiliary",
     messages,
     temperature: 0.2,
+    ...(provider === "free"
+      ? { thinking: { enabled: true, effort: "low" as const } }
+      : {}),
   });
   return result.text;
 }

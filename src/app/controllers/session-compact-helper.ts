@@ -167,23 +167,20 @@ export async function runSessionCompaction(
       : "assembled-request";
   const beforeTokens = requestTokensBefore ?? historyTokensBefore;
   const reportedFor = (result: CompactResult): ReportedCompaction => {
-    const removedHistoryTokens = Math.max(
-      0,
-      result.beforeTokens - result.afterTokens,
-    );
+    const retainedHistoryTokens = Math.max(0, result.afterTokens);
+    const overheadTokens = (assembledTokens: number): number =>
+      Math.max(0, assembledTokens - result.beforeTokens);
     const afterTokens =
       useContinuationAccounting && continuationAccounting
         ? calibratedRequestTokens(
             successfulRequest?.provider,
             successfulRequest?.model,
-            Math.max(
-              0,
-              continuationAccounting.rawRequestTokens - removedHistoryTokens,
-            ),
+            retainedHistoryTokens +
+              overheadTokens(continuationAccounting.rawRequestTokens),
           )
         : requestTokensBefore === undefined
-          ? result.afterTokens
-          : Math.max(0, requestTokensBefore - removedHistoryTokens);
+          ? retainedHistoryTokens
+          : retainedHistoryTokens + overheadTokens(requestTokensBefore);
     return { beforeTokens, afterTokens, scope };
   };
   if (options.persist) {
