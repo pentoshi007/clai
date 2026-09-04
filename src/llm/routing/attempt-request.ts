@@ -14,6 +14,8 @@ import {
 } from "../capabilities.js";
 import { buildReasoningPayload, stripImagesFromMessages } from "../http.js";
 import type { ReasoningStyle } from "../http.js";
+import { isBuiltInProviderId } from "../provider-profile.js";
+import { resolveBuiltInProfile } from "../provider-profiles.js";
 import { isOperationPolicyError } from "../operation-ledger.js";
 import { runGenerationAttempt } from "../operation-usage.js";
 import { isModelNotFoundError } from "./error-classification.js";
@@ -60,8 +62,14 @@ export function reasoningWireKey(
   model: string,
   providerId: ProviderId,
 ): string {
+  const control = isBuiltInProviderId(providerId)
+    ? {
+        profile: resolveBuiltInProfile({ provider: providerId, model }),
+        willReplayReasoning: false,
+      }
+    : undefined;
   return JSON.stringify(
-    buildReasoningPayload(thinking, style, model, providerId),
+    buildReasoningPayload(thinking, style, model, providerId, control),
   );
 }
 
