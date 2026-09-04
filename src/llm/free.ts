@@ -75,6 +75,7 @@ interface FreeSource {
   name: string;
   baseUrl: string;
   curated: readonly string[];
+  responsesApi: boolean;
   catalogFreeIds(payload: unknown): string[];
   keylessId(id: string): boolean;
   fallbackModels(): string[];
@@ -85,6 +86,7 @@ const zenSource: FreeSource = {
   name: "opencode zen",
   baseUrl: ZEN_BASE_URL,
   curated: CURATED_ZEN_MODELS,
+  responsesApi: false,
   catalogFreeIds(payload) {
     return ingestModelCatalogEntries("free", catalogEntries(payload)).filter(
       (id) => /free/i.test(id),
@@ -103,6 +105,7 @@ const kiloSource: FreeSource = {
   name: "kilo gateway",
   baseUrl: KILO_BASE_URL,
   curated: CURATED_KILO_MODELS,
+  responsesApi: true,
   catalogFreeIds(payload) {
     const freeEntries = catalogEntries(payload).filter((entry) => {
       const raw = entry as { id?: unknown; isFree?: unknown };
@@ -278,7 +281,7 @@ export const freeProvider: LlmProvider = {
       return { ...result, model: requested };
     }
     const payload = await openAiCompatibleComplete({
-      responsesFirst: true,
+      responsesFirst: source.responsesApi,
       provider: "Free",
       providerId: "free",
       baseUrl: source.baseUrl,
@@ -319,7 +322,7 @@ export const freeProvider: LlmProvider = {
     }
     const budgets = streamIdleBudgets(Boolean(request.thinking?.enabled));
     const payload = await openAiCompatibleStream({
-      responsesFirst: true,
+      responsesFirst: source.responsesApi,
       provider: "Free",
       providerId: "free",
       baseUrl: source.baseUrl,

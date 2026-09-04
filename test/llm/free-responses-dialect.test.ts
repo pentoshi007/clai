@@ -170,7 +170,7 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
     expect(result.model).toBe("free-1/muse-spark-1.2-contributor-free");
   });
 
-  it("probes /responses first for a non-muse-spark zen model, then keeps /chat/completions when absent", async () => {
+  it("uses /chat/completions directly for a non-muse-spark zen model without probing /responses", async () => {
     const fetchMock = chatCompletionsMock();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -182,13 +182,11 @@ describe("free provider Responses dialect (muse-spark on zen)", () => {
       {},
     );
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]![0])).toBe(
-      "https://opencode.ai/zen/v1/responses",
-    );
-    expect(String(fetchMock.mock.calls[1]![0])).toBe(
       "https://opencode.ai/zen/v1/chat/completions",
     );
-    const request = fetchMock.mock.calls[1]![1] as RequestInit;
+    const request = fetchMock.mock.calls[0]![1] as RequestInit;
     const body = JSON.parse(String(request.body)) as {
       messages?: unknown;
       input?: unknown;

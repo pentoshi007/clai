@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   freeProvider,
   isKeylessModel,
   resolveFreeSource,
 } from "../src/llm/free.js";
 import { ProviderError } from "../src/llm/http.js";
+import { resetResponsesWireStatesForTesting } from "../src/llm/wire/responses-first.js";
 
 const ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
 const KILO_MODELS_URL = "https://api.kilo.ai/api/gateway/models";
@@ -187,6 +188,10 @@ describe("free provider (zen + kilo)", () => {
   });
 
   describe("complete", () => {
+    beforeEach(() => {
+      resetResponsesWireStatesForTesting();
+    });
+
     function jsonCompletionMock() {
       return vi.fn(async (url: string | URL) => {
         if (String(url).endsWith("/responses")) {
@@ -335,6 +340,80 @@ describe("free provider (zen + kilo)", () => {
         reasoning_effort?: string;
       };
       expect(body.reasoning_effort).toBe("high");
+    });
+
+    it("does not probe /responses for zen free models", async () => {
+      const fetchMock = vi.fn(async (input: unknown) => {
+        if (String(input).endsWith("/responses")) {
+          return new Response(
+            JSON.stringify({ error: { message: "Internal server error" } }),
+            { status: 500, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.5-free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      expect(result.text).toBe("ok");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+        "https://opencode.ai/zen/v1/chat/completions",
+      );
+    });
+
+    it("probes /responses first for kilo free models", async () => {
+      const fetchMock = vi.fn(async (input: unknown) => {
+        if (String(input).endsWith("/responses")) {
+          return new Response(
+            JSON.stringify({
+              status: "completed",
+              output: [
+                {
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: "responses-ok" }],
+                },
+              ],
+              usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "chat-ok" }, finish_reason: "stop" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await freeProvider.complete(
+        {
+          model: "free-2/kilo-auto/free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      expect(result.text).toBe("responses-ok");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0]![0])).toBe(
+        "https://api.kilo.ai/api/gateway/responses",
+      );
     });
   });
 });
