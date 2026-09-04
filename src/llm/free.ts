@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   CompletionRequest,
   CompletionResult,
@@ -28,6 +30,7 @@ import {
   responsesStream,
   type ResponsesDialectConfig,
 } from "./responses-dialect.js";
+import { currentSessionAffinity } from "./session-affinity.js";
 
 const ZEN_BASE_URL = "https://opencode.ai/zen/v1";
 const KILO_BASE_URL = "https://api.kilo.ai/api/gateway";
@@ -70,12 +73,38 @@ function catalogEntries(payload: unknown): unknown[] {
 
 let kiloDynamicFreeIds = new Set<string>();
 
+const OPENCODE_USER_AGENT = "opencode/1.18.27";
+
+const gatewayIdentity = {
+  session: randomUUID(),
+  request: randomUUID(),
+  project: randomUUID(),
+};
+
+function zenClientHeaders(): Record<string, string> {
+  return {
+    "user-agent": OPENCODE_USER_AGENT,
+    "x-opencode-session": currentSessionAffinity() ?? gatewayIdentity.session,
+    "x-opencode-request": gatewayIdentity.request,
+    "x-opencode-client": "cli",
+    "x-opencode-project": gatewayIdentity.project,
+  };
+}
+
+function kiloClientHeaders(): Record<string, string> {
+  return {
+    "user-agent": "opencode-kilo-provider",
+    "x-kilocode-editorname": "Kilo CLI",
+  };
+}
+
 interface FreeSource {
   id: "free-1" | "free-2";
   name: string;
   baseUrl: string;
   curated: readonly string[];
   responsesApi: boolean;
+  requestHeaders(): Record<string, string>;
   catalogFreeIds(payload: unknown): string[];
   keylessId(id: string): boolean;
   fallbackModels(): string[];
@@ -87,6 +116,7 @@ const zenSource: FreeSource = {
   baseUrl: ZEN_BASE_URL,
   curated: CURATED_ZEN_MODELS,
   responsesApi: false,
+  requestHeaders: zenClientHeaders,
   catalogFreeIds(payload) {
     return ingestModelCatalogEntries("free", catalogEntries(payload)).filter(
       (id) => /free/i.test(id),
@@ -106,6 +136,7 @@ const kiloSource: FreeSource = {
   baseUrl: KILO_BASE_URL,
   curated: CURATED_KILO_MODELS,
   responsesApi: true,
+  requestHeaders: kiloClientHeaders,
   catalogFreeIds(payload) {
     const freeEntries = catalogEntries(payload).filter((entry) => {
       const raw = entry as { id?: unknown; isFree?: unknown };
@@ -175,6 +206,7 @@ function zenResponsesHeaders(
   const headers: Record<string, string> = {
     "content-type": "application/json",
     accept,
+    ...zenClientHeaders(),
   };
   return auth.apiKey
     ? { ...headers, authorization: `Bearer ${auth.apiKey}` }
@@ -282,6 +314,7 @@ export const freeProvider: LlmProvider = {
     }
     const payload = await openAiCompatibleComplete({
       responsesFirst: source.responsesApi,
+      headers: source.requestHeaders(),
       provider: "Free",
       providerId: "free",
       baseUrl: source.baseUrl,
@@ -323,6 +356,7 @@ export const freeProvider: LlmProvider = {
     const budgets = streamIdleBudgets(Boolean(request.thinking?.enabled));
     const payload = await openAiCompatibleStream({
       responsesFirst: source.responsesApi,
+      headers: source.requestHeaders(),
       provider: "Free",
       providerId: "free",
       baseUrl: source.baseUrl,
