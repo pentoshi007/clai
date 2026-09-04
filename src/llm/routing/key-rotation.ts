@@ -90,6 +90,7 @@ export async function runWithKeyRotation<T>(opts: {
   onStatus?: ((message: string) => void) | undefined;
   maxRetries?: number | undefined;
   singleDispatch?: boolean | undefined;
+  retryRateLimits?: boolean | undefined;
   onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
 }): Promise<T> {
@@ -238,6 +239,11 @@ export async function runWithKeyRotation<T>(opts: {
 
         const rotatable = isKeyRotatableError(error, isRetriableError);
         if (!rotatable) {
+          throw error;
+        }
+
+        if (isRateLimited(error) && opts.retryRateLimits === false) {
+          if (multiKey) break;
           throw error;
         }
 

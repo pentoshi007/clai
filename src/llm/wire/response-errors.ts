@@ -22,6 +22,63 @@ function parseRetryHintFromBody(text: string): number | undefined {
   return undefined;
 }
 
+const RESET_METADATA_KEYS: readonly string[] = [
+  "x-ratelimit-reset",
+  "ratelimit-reset",
+];
+
+export function parseResetSeconds(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) return undefined;
+    if (value >= 1e12) return Math.max(0, value / 1000 - Date.now() / 1000);
+    if (value >= 1e9) return Math.max(0, value - Date.now() / 1000);
+    return value;
+  }
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) return parseResetSeconds(numeric);
+  const date = Date.parse(trimmed);
+  return Number.isFinite(date)
+    ? Math.max(0, (date - Date.now()) / 1000)
+    : undefined;
+}
+
+function resetSecondsFromHeaders(headers: Headers): number | undefined {
+  for (const key of RESET_METADATA_KEYS) {
+    const parsed = parseResetSeconds(headers.get(key));
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function lookupResetSeconds(record: Record<string, unknown>): number | undefined {
+  for (const [name, value] of Object.entries(record)) {
+    const lowered = name.toLowerCase().replace(/[._\s]+/g, "-");
+    if (!RESET_METADATA_KEYS.includes(lowered)) continue;
+    const parsed = parseResetSeconds(value);
+    if (parsed !== undefined) return parsed;
+  }
+  const headers = record.headers;
+  return headers && typeof headers === "object"
+    ? lookupResetSeconds(headers as Record<string, unknown>)
+    : undefined;
+}
+
+function resetSecondsFromBody(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const container = payload as Record<string, unknown>;
+  const error = container.error;
+  if (error && typeof error === "object") {
+    const errorRecord = error as Record<string, unknown>;
+    const fromMetadata = resetSecondsFromBody(errorRecord.metadata);
+    const fromError = fromMetadata ?? lookupResetSeconds(errorRecord);
+    if (fromError !== undefined) return fromError;
+  }
+  return lookupResetSeconds(container);
+}
+
 function statusCodeHint(status: number): string {
   if (status === 401) {
     return " — check that the API key is valid (run `clai providers` to inspect)";
@@ -52,8 +109,10 @@ export async function readJson<T>(
   if (!response.ok) {
     let detail = "";
     let extractedMessage = "";
+    let parsedBody: unknown;
     try {
       const body = JSON.parse(text) as Record<string, unknown>;
+      parsedBody = body;
       const error = (body as { error?: unknown }).error;
       let msg = "";
       if (typeof error === "string") {
@@ -96,6 +155,8 @@ export async function readJson<T>(
     }
     const retryAfterSeconds =
       parseRetryAfterHeader(response.headers.get("retry-after")) ??
+      resetSecondsFromHeaders(response.headers) ??
+      resetSecondsFromBody(parsedBody) ??
       parseRetryHintFromBody(text);
     const retryHint =
       retryAfterSeconds !== undefined

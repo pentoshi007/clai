@@ -62,12 +62,13 @@ export function reasoningWireKey(
   model: string,
   providerId: ProviderId,
 ): string {
-  const control = isBuiltInProviderId(providerId)
-    ? {
-        profile: resolveBuiltInProfile({ provider: providerId, model }),
-        willReplayReasoning: false,
-      }
+  const profile = isBuiltInProviderId(providerId)
+    ? resolveBuiltInProfile({ provider: providerId, model })
     : undefined;
+  const control =
+    profile && profile.reasoning.control.status === "supported"
+      ? { profile, willReplayReasoning: false }
+      : undefined;
   return JSON.stringify(
     buildReasoningPayload(thinking, style, model, providerId, control),
   );

@@ -59,7 +59,7 @@ function isServerError(error: unknown): boolean {
   return status >= 500 && status <= 504;
 }
 
-function isReasoningRelatedServerError(error: unknown): boolean {
+export function isReasoningRelatedServerError(error: unknown): boolean {
   if (!isServerError(error)) return false;
   return mentionsReasoning(error);
 }

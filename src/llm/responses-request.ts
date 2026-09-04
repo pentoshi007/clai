@@ -285,7 +285,9 @@ export function buildResponsesBody(
     temperature: options.temperature,
     maxTokens: options.maxTokens,
   });
-  const reasoning = config.reasoningPayload(plan.controls.reasoning);
+  const reasoning = plan.controls.controlSuppression
+    ? undefined
+    : config.reasoningPayload(plan.controls.reasoning);
   const input = toResponsesInput(
     [...plan.timeline.messages],
     plan.images.visionAccepted,

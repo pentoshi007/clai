@@ -4997,8 +4997,8 @@ exports[`serialized request snapshots > meta / tool-loop-replay 1`] = `
     "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
-      "effort": "medium",
-      "summary": "concise",
+      "effort": "high",
+      "summary": "detailed",
     },
     "store": false,
     "temperature": 0.2,
@@ -5117,8 +5117,8 @@ exports[`serialized request snapshots > meta / tool-loop-replay-unsigned 1`] = `
     "prompt_cache_key": "clai-9d04c8a8bccdd4c877d4bf8f4e9b153c81249a04",
     "prompt_cache_retention": "24h",
     "reasoning": {
-      "effort": "medium",
-      "summary": "concise",
+      "effort": "high",
+      "summary": "detailed",
     },
     "store": false,
     "temperature": 0.2,

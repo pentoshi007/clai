@@ -16,6 +16,7 @@ import {
 import {
   isImageInputUnsupportedError,
   reasoningRejectionAdvice,
+  isReasoningUnsupportedError,
 } from "../http.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
 import {
@@ -41,6 +42,7 @@ import {
 } from "./attempt-request.js";
 import {
   effortCandidatesFor,
+  isReasoningRelatedServerError,
   shouldContinueEffortLadder,
   shouldEnterEffortLadder,
 } from "./error-classification.js";
@@ -256,6 +258,7 @@ export async function tryStreamOnce(
         throw markStreamEmittedBytes(error, emittedBytes);
       }
       const thinking = activeRequest.thinking;
+      let attemptedRung = false;
       if (thinking?.enabled) {
         const style = provider.reasoningStyle ?? "none";
         const seen = new Set<string>([
@@ -270,6 +273,7 @@ export async function tryStreamOnce(
           const key = reasoningWireKey(candidate, style, model, providerId);
           if (seen.has(key)) continue;
           seen.add(key);
+          attemptedRung = true;
           onStatus?.(
             `ℹ ${providerId}/${model} rejected reasoning effort — retrying with ${effort}`,
           );
@@ -290,6 +294,12 @@ export async function tryStreamOnce(
             }
           }
         }
+      }
+      const reasoningAttributed =
+        isReasoningUnsupportedError(error) ||
+        isReasoningRelatedServerError(error);
+      if (!attemptedRung && !reasoningAttributed) {
+        throw markStreamEmittedBytes(error, emittedBytes);
       }
       if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
       onStatus?.(

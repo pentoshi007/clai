@@ -38,6 +38,7 @@ import {
 } from "./provider-profile.js";
 import type { StreamTerminalPolicy } from "./stream-terminal.js";
 import { providerWireApi, resolveBuiltInProfile } from "./provider-profiles.js";
+import { clampEffortToRoute } from "./route-dialect-registry.js";
 import { customProviderProfileFor } from "./custom-provider-profile.js";
 
 
@@ -309,7 +310,6 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
   }
 
   const reasoningEnabled = Boolean(input.reasoning?.enabled);
-  const effort = input.reasoning?.effort ?? "medium";
   const sampling = resolveSampling({
     provider: input.provider,
     model: input.model,
@@ -352,6 +352,18 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
         !modelSupportsThinking(input.provider, input.model)
       ? ("capability-denied" as const)
       : undefined;
+  const emittedReasoning =
+    input.reasoning &&
+    profile.reasoning.acceptedEfforts.length > 0 &&
+    !profile.reasoning.acceptedEfforts.includes(input.reasoning.effort)
+      ? {
+          ...input.reasoning,
+          effort: clampEffortToRoute(
+            input.reasoning.effort,
+            profile.reasoning.acceptedEfforts,
+          ),
+        }
+      : input.reasoning;
 
   const decisions: RequestPlanArtifactDecision[] = [];
   const replayedArtifactParts: string[] = [];
@@ -398,8 +410,8 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
     .slice(instructionsBoundary, liveBoundary)
     .filter((message) => !isRequestContextSystemMessage(message));
   const settingsValueInput = {
-    reasoningEnabled,
-    effort,
+    reasoningEnabled: Boolean(emittedReasoning?.enabled),
+    effort: emittedReasoning?.effort ?? "medium",
     temperature: emittedTemperature,
     topP: emittedTopP,
   };
@@ -459,7 +471,7 @@ export function compileRequestPlan(input: CompileRequestPlanInput): RequestPlanV
       decisions: Object.freeze(decisions),
     }),
     controls: Object.freeze({
-      ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+      ...(emittedReasoning ? { reasoning: emittedReasoning } : {}),
       ...(controlSuppression ? { controlSuppression } : {}),
       ...(emittedTemperature !== undefined
         ? { temperature: emittedTemperature }
