@@ -103,7 +103,7 @@ describe("a free model that mandates thinking", () => {
         provider: "free",
         model: MODEL,
         messages,
-        thinking: { enabled: true, effort: "xhigh" },
+        thinking: { enabled: true, effort: "medium" },
       },
       () => {},
     );

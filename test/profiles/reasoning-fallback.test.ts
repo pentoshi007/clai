@@ -11,7 +11,7 @@ import {
 } from "../../src/llm/capabilities.js";
 
 const UNLISTED = "free-2/brand-new-model-nobody-listed:free";
-const PROBED_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"];
+const PROBED_EFFORTS = ["none", "low", "medium", "high"];
 
 afterEach(() => {
   resetReasoningKnowledge();
@@ -27,7 +27,7 @@ describe("reasoning capability fallback for unlisted models", () => {
   it("clamps a requested effort the endpoint does not accept", () => {
     expect(
       effectiveThinkingEffort("free", UNLISTED, { enabled: true, effort: "max" }),
-    ).toBe("xhigh");
+    ).toBe("high");
   });
 
   it("does not invent a contract for providers without one", () => {
