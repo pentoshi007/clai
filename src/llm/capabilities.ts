@@ -139,6 +139,19 @@ export function registerWireRejectionEfforts(
   });
 }
 
+export function learnRejectedEffort(
+  provider: ProviderId,
+  model: string,
+  effort: ReasoningEffort,
+): void {
+  if (!model.trim()) return;
+  const effective = displayReasoningEfforts(provider, model);
+  if (!effective?.length) return;
+  const reduced = effective.filter((value) => value !== effort);
+  if (reduced.length === 0 || reduced.length === effective.length) return;
+  registerWireRejectionEfforts(provider, model, reduced);
+}
+
 export function markReasoningMandatory(
   provider: ProviderId,
   model: string,

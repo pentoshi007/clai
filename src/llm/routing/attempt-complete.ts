@@ -6,6 +6,7 @@ import type {
 } from "../../types.js";
 import {
   learnModelVisionCapability,
+  learnRejectedEffort,
   markReasoningMandatory,
   markReasoningUnsupported,
   registerWireRejectionEfforts,
@@ -139,7 +140,9 @@ export async function tryCompleteOnce(
             thinking: candidate,
           };
           try {
-            return await runAttempt(retryRequest, "adaptation");
+            const result = await runAttempt(retryRequest, "adaptation");
+            learnRejectedEffort(providerId, model, thinking.effort);
+            return result;
           } catch (retryError) {
             if (!shouldContinueEffortLadder(retryError)) throw retryError;
           }

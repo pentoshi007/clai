@@ -126,9 +126,11 @@ describe("a model that mandates thinking", () => {
     learnFromRejection();
     expect(displayReasoningEfforts("free", "hy3-free")).toEqual([
       "none",
+      "minimal",
       "low",
       "medium",
       "high",
+      "xhigh",
     ]);
   });
 });

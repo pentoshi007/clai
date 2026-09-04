@@ -49,7 +49,7 @@ function effortOf(body: unknown): unknown {
 }
 
 describe("a route with a declared effort vocabulary takes one hop, not a ladder", () => {
-  it("retries exactly once when the metadata turns out to be wrong", async () => {
+  it("retries without re-sending a payload the emitter already chose", async () => {
     let chatCalls = 0;
     const transport = installTransport((record) => {
       if (record.url.endsWith("/responses")) {
@@ -74,7 +74,8 @@ describe("a route with a declared effort vocabulary takes one hop, not a ladder"
       generation.url.includes("/chat/completions"),
     );
     expect(chatGenerations).toHaveLength(2);
-    expect(effortOf(chatGenerations[1]?.body)).toBe("high");
+    expect(effortOf(chatGenerations[0]?.body)).toBe("high");
+    expect(effortOf(chatGenerations[1]?.body)).toBeUndefined();
   });
 
   it("gives up after that single hop instead of walking the whole scale", async () => {
@@ -143,9 +144,9 @@ describe("candidate selection", () => {
     ).toEqual(["high"]);
   });
 
-  it("offers nothing when the declared vocabulary already contains the request", () => {
+  it("steps down one rung when the declared vocabulary contains the request", () => {
     expect(effortCandidatesFor("tokenrouter", "moonshotai/kimi-k3", "high")).toEqual(
-      [],
+      ["low"],
     );
   });
 
