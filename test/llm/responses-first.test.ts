@@ -218,6 +218,50 @@ describe("responses-first transport", () => {
     expect(retryBody.include).toBeUndefined();
   });
 
+  it("falls back to chat completions when the probe fails with an unreliable status", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses"
+        ? responsesJson({ error: { message: "Internal server error" } }, 500)
+        : chatJson("chat-ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await openAiCompatibleComplete(completeOptions("m8"));
+
+    expect(result.text).toBe("chat-ok");
+    expect(String(fetchMock.mock.calls[0]![0])).toContain("/responses");
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("/chat/completions");
+  });
+
+  it("falls back to chat completions when the bare retry fails with an unreliable status", async () => {
+    const fetchMock = routeByPath((path, init) => {
+      if (path !== "responses") return chatJson("chat-ok");
+      const body = init.body as string;
+      if (body.includes("prompt_cache_key")) {
+        return responsesJson(
+          { error: { message: "Unknown parameter: prompt_cache_key" } },
+          400,
+        );
+      }
+      return responsesJson(
+        { error: { message: "Internal server error" } },
+        500,
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await openAiCompatibleComplete(completeOptions("m9"));
+
+    expect(result.text).toBe("chat-ok");
+    const responsesCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes("/responses"),
+    );
+    expect(responsesCalls).toHaveLength(2);
+    expect(String(fetchMock.mock.calls.at(-1)![0])).toContain(
+      "/chat/completions",
+    );
+  });
+
   it("propagates request-content errors instead of falling back", async () => {
     const fetchMock = routeByPath((path) =>
       path === "responses"

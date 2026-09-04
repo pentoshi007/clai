@@ -343,6 +343,18 @@ async function runResponsesFirst(
           rememberChatThinkingWire();
           return undefined;
         }
+        const retryStatus = providerStatusCode(retryError);
+        if (
+          retryStatus !== undefined &&
+          PROBE_UNRELIABLE_STATUS.has(retryStatus)
+        ) {
+          return fallback({
+            kind: "responses-fallback-error",
+            provider: options.provider,
+            model: options.model,
+            detail: `HTTP ${retryStatus}`,
+          });
+        }
         const retryText = failureText(retryError);
         if (thinkingRequested && /reasoning/i.test(retryText) && classifyResponsesFailure(retryError, "bare") !== "other") {
           rememberChatThinkingWire();
