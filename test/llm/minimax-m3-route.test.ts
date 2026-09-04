@@ -6,6 +6,7 @@ import {
   registerRouteAcceptedEfforts,
   resetReasoningKnowledge,
 } from "../../src/llm/capabilities.js";
+import { ingestModelCatalogEntries } from "../../src/llm/wire/model-catalog.js";
 
 const messages = [{ role: "user" as const, content: "hi" }];
 
@@ -92,6 +93,29 @@ describe("MiniMax M3 documented effort contract", () => {
       "low",
       "medium",
     ]);
+  });
+
+  it("lets catalog-advertised efforts override the documented contract", async () => {
+    ingestModelCatalogEntries("free", [
+      {
+        id: "minimax/minimax-m3:free",
+        reasoning: {
+          supported: true,
+          supported_efforts: ["low", "medium", "high", "xhigh"],
+        },
+      },
+    ]);
+    expect(displayReasoningEfforts("free", "minimax/minimax-m3:free")).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    const body = await kiloResponsesEffort(
+      "free-2/minimax/minimax-m3:free",
+      "xhigh",
+    );
+    expect(body.reasoning?.effort).toBe("xhigh");
   });
 
   it("sends high on the Kilo Responses wire when xhigh is requested", async () => {
