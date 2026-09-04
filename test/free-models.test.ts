@@ -342,6 +342,50 @@ describe("free provider (zen + kilo)", () => {
       expect(body.reasoning_effort).toBe("high");
     });
 
+    it("presents zen requests as the opencode client", async () => {
+      const fetchMock = jsonCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-1/mimo-v2.5-free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      const request = fetchMock.mock.calls.at(-1)![1] as Record<string, unknown>;
+      expect(request.headers).toMatchObject({
+        "user-agent": "opencode/1.18.27",
+        "x-opencode-client": "cli",
+      });
+      const headers = request.headers as Record<string, string>;
+      expect(headers["x-opencode-session"]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(headers["x-opencode-request"]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(headers["x-opencode-project"]).toMatch(/^[0-9a-f-]{36}$/);
+      expect(request.headers).not.toHaveProperty("authorization");
+    });
+
+    it("presents kilo requests as the kilocode client", async () => {
+      const fetchMock = jsonCompletionMock();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await freeProvider.complete(
+        {
+          model: "free-2/kilo-auto/free",
+          messages: [{ role: "user", content: "hi" }],
+        },
+        {},
+      );
+
+      const request = fetchMock.mock.calls.at(-1)![1] as Record<string, unknown>;
+      expect(request.headers).toMatchObject({
+        "user-agent": "opencode-kilo-provider",
+        "x-kilocode-editorname": "Kilo CLI",
+      });
+      expect(request.headers).not.toHaveProperty("authorization");
+    });
+
     it("does not probe /responses for zen free models", async () => {
       const fetchMock = vi.fn(async (input: unknown) => {
         if (String(input).endsWith("/responses")) {

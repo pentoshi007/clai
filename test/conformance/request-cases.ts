@@ -146,13 +146,23 @@ const SECRET_HEADERS = new Set([
   "api-key",
 ]);
 
+const VOLATILE_HEADERS = new Set([
+  "x-opencode-session",
+  "x-opencode-request",
+  "x-opencode-project",
+]);
+
 export function redactHeaders(
   headers: Record<string, string>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     const lower = key.toLowerCase();
-    out[lower] = SECRET_HEADERS.has(lower) ? "<redacted>" : value;
+    out[lower] = SECRET_HEADERS.has(lower)
+      ? "<redacted>"
+      : VOLATILE_HEADERS.has(lower)
+        ? "<generated>"
+        : value;
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
