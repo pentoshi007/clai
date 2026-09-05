@@ -24,6 +24,7 @@ import {
   sendFrame,
 } from "./protocol.js";
 import { TerminalReplayBuffer } from "./replay-buffer.js";
+import { TerminalAttachOutput } from "./attach-output.js";
 import { TerminalModeState } from "./terminal-modes.js";
 import { enforceIdleRuntimeCap } from "./reaper.js";
 import {
@@ -63,6 +64,7 @@ interface ActiveClient {
   readonly control: Socket;
   channel?: JsonFrameChannel | undefined;
   terminal?: Socket | undefined;
+  output?: TerminalAttachOutput | undefined;
 }
 
 function errorText(error: unknown): string {
@@ -463,10 +465,16 @@ export class SessionRuntimeHost {
       return;
     }
     if (client.terminal) {
+      client.output?.dispose();
       this.releaseOutputBackpressure(client.terminal);
       client.terminal.destroy();
     }
+    const output = new TerminalAttachOutput(
+      this.replay.snapshot(),
+      (bytes) => this.writeToTerminal(socket, bytes),
+    );
     client.terminal = socket;
+    client.output = output;
     this.attached = true;
     this.cancelIdleTimer();
     this.queueMetadata();
@@ -482,17 +490,8 @@ export class SessionRuntimeHost {
     this.writeToTerminal(socket, ATTACH_RESET);
     const modes = this.terminalModes.restoreSequence();
     if (modes.length > 0) this.writeToTerminal(socket, Buffer.from(modes, "utf8"));
-    const replay = this.replay.snapshot();
     const repainted = await this.requestChildRepaint();
-    if (
-      this.client === client &&
-      client.terminal === socket &&
-      !socket.destroyed &&
-      !repainted &&
-      replay.length > 0
-    ) {
-      this.writeToTerminal(socket, replay);
-    }
+    output.finish(repainted);
   }
 
   private acceptChild(
@@ -640,8 +639,7 @@ export class SessionRuntimeHost {
   private publishOutput(bytes: Uint8Array): void {
     this.replay.append(bytes);
     this.terminalModes.observe(bytes);
-    const terminal = this.client?.terminal;
-    if (terminal) this.writeToTerminal(terminal, bytes);
+    this.client?.output?.push(bytes);
   }
 
   private writeToTerminal(terminal: Socket, bytes: Uint8Array): void {
@@ -677,6 +675,7 @@ export class SessionRuntimeHost {
   }
 
   private async flushTerminalOutput(): Promise<void> {
+    this.client?.output?.finish(false);
     const deadline = Date.now() + FINAL_OUTPUT_DRAIN_MS;
     while (Date.now() < deadline) {
       const paused = this.outputPausedFor;
@@ -745,6 +744,8 @@ export class SessionRuntimeHost {
 
   private clientClosed(client: ActiveClient, socket: Socket): void {
     if (client.terminal === socket) {
+      client.output?.dispose();
+      client.output = undefined;
       client.terminal = undefined;
       this.releaseOutputBackpressure(socket);
       if (this.client === client) {
@@ -782,6 +783,7 @@ export class SessionRuntimeHost {
     if (!client) return;
     this.client = undefined;
     this.attached = false;
+    client.output?.dispose();
     this.releaseOutputBackpressure(client.terminal);
     client.channel?.dispose();
     client.control.end();

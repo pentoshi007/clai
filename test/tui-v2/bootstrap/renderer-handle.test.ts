@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RendererLifecycle } from "../../../src/ui-core/bootstrap/lifecycle.js";
 import { createOpenTuiRendererHandle } from "../../../src/tui-v2/bootstrap/renderer-handle.js";
-import { installResizeRepaint } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
+import { repaintAttachedScreen } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
 
 describe("OpenTUI renderer teardown", () => {
   it("restores the normal screen before the exit epilogue runs", async () => {
@@ -109,28 +109,19 @@ describe("OpenTUI renderer teardown", () => {
     ]);
   });
 
-  it("prevents resize output after normal-screen restoration and the sign-off card", async () => {
+  it("prevents attach repaint after normal-screen restoration and the sign-off card", async () => {
     const events: string[] = [];
-    const resizeListeners = new Set<(width: number, height: number) => void>();
     const renderer = {
-      on(_event: "resize", listener: (width: number, height: number) => void) {
-        resizeListeners.add(listener);
-      },
-      off(_event: "resize", listener: (width: number, height: number) => void) {
-        resizeListeners.delete(listener);
-      },
+      isDestroyed: false,
+      forceFullRepaintRequested: false,
+      requestRender: () => events.push("repaint-requested"),
       suspend: () => events.push("suspend"),
       idle: async () => void events.push("idle"),
-      destroy: () => events.push("alternate-screen-off"),
-    };
-    const disposeResize = installResizeRepaint({
-      renderer,
-      write: () => events.push("resize-clear"),
-      schedule: (run) => {
-        run();
-        return () => {};
+      destroy() {
+        this.isDestroyed = true;
+        events.push("alternate-screen-off");
       },
-    });
+    };
     const { handle } = createOpenTuiRendererHandle({
       mount: () => events.push("mount"),
       unmount: () => events.push("unmount"),
@@ -141,18 +132,17 @@ describe("OpenTUI renderer teardown", () => {
     });
     const lifecycle = new RendererLifecycle({
       handle,
-      disposers: [disposeResize],
       epilogue: () => events.push("summary"),
     });
 
     await lifecycle.start();
-    for (const listener of resizeListeners) listener(62, 18);
+    expect(repaintAttachedScreen({ renderer })).toBe(true);
     await lifecycle.shutdown();
-    for (const listener of resizeListeners) listener(80, 24);
+    expect(repaintAttachedScreen({ renderer })).toBe(false);
 
     expect(events).toEqual([
       "mount",
-      "resize-clear",
+      "repaint-requested",
       "unmount",
       "suspend",
       "idle",
@@ -161,6 +151,5 @@ describe("OpenTUI renderer teardown", () => {
       "services-disposed",
       "summary",
     ]);
-    expect(resizeListeners.size).toBe(0);
   });
 });

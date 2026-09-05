@@ -35,6 +35,7 @@ const send = frame => socket.write(JSON.stringify(frame) + "\n");
 const status = busy => send({type:"status",sessionId:process.env.CLAI_RUNTIME_SESSION_ID,cwd:process.cwd(),busy,title:"Reattach fixture"});
 let repaintEnabled = true;
 let clearThenDecline = false;
+let delayedDecline = false;
 let buffer = "";
 socket.on("data", chunk => {
   buffer += chunk.toString("utf8");
@@ -46,7 +47,10 @@ socket.on("data", chunk => {
     const frame = JSON.parse(line);
     if (frame.type === "ack") status(true);
     if (frame.type === "repaint") {
-      if (clearThenDecline) {
+      if (delayedDecline) {
+        process.stdout.write("LIVE-DURING-REPAINT\r\n");
+        setTimeout(() => send({type:"repaint-result",requestId:frame.requestId,accepted:false}), 80);
+      } else if (clearThenDecline) {
         send({type:"repaint-result",requestId:frame.requestId,accepted:false});
       } else {
         if (repaintEnabled) {
@@ -71,6 +75,9 @@ process.stdin.on("data", chunk => {
     } else if (command === "f") {
       clearThenDecline = true;
       process.stdout.write("SCHEDULING-FAILURE-FALLBACK\r\n");
+    } else if (command === "d") {
+      delayedDecline = true;
+      process.stdout.write("BEFORE-REATTACH\r\n");
     } else if (command === "q") {
       send({type:"exiting",exitCode:0});
       setTimeout(() => process.exit(0), 10);
@@ -239,6 +246,34 @@ async function stopRuntime(runtime: Runtime, client: Client): Promise<void> {
 }
 
 describe("terminal reattach mode restoration", () => {
+  it("never replays an older screen after live output produced while repaint is pending", async () => {
+    if (process.platform === "win32") return;
+    const runtime = await startRuntime();
+    if (!runtime) throw new Error("PTY transport is required for the reattach regression");
+    const id = "delayed-repaint";
+    const client = await openClient(runtime.metadata, id);
+    try {
+      await waitFor(async () =>
+        client.output.includes("FULL-FRAME:100x30") ? true : undefined,
+      );
+      client.terminal.write("d");
+      await waitFor(async () =>
+        client.output.includes("BEFORE-REATTACH") ? true : undefined,
+      );
+      const attached = await reattachTerminal(runtime.metadata, client, id);
+      await waitFor(async () =>
+        attached.output().includes("BEFORE-REATTACH") &&
+        attached.output().includes("LIVE-DURING-REPAINT") ? true : undefined,
+      );
+      expect(attached.output().indexOf("BEFORE-REATTACH")).toBeLessThan(
+        attached.output().indexOf("LIVE-DURING-REPAINT"),
+      );
+      expect(attached.output().match(/LIVE-DURING-REPAINT/g)).toHaveLength(1);
+    } finally {
+      await stopRuntime(runtime, client);
+    }
+  }, 15_000);
+
   it("orders an authoritative same-size frame and falls back when repaint is declined", async () => {
     if (process.platform === "win32") return;
     const runtime = await startRuntime();
