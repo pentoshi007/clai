@@ -70,6 +70,7 @@ export interface StreamWithProviderOptions {
     ((snapshot: OperationUsageSnapshot) => void) | undefined;
   readonly maxRetries?: number | undefined;
   readonly singleDispatch?: boolean | undefined;
+  readonly retryRateLimits?: boolean | undefined;
   readonly onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
 }
@@ -142,6 +143,9 @@ async function completeWithProviderOperation(
         ...(options?.onStatus ? { onStatus: options.onStatus } : {}),
         ...(options?.maxRetries !== undefined
           ? { maxRetries: options.maxRetries }
+          : {}),
+        ...(options?.retryRateLimits === false
+          ? { retryRateLimits: false }
           : {}),
         ...(singleDispatch ? { singleDispatch: true } : {}),
       });
@@ -322,6 +326,9 @@ async function streamWithProviderOperation(
         onStatus: emitStatus,
         ...(options.maxRetries !== undefined
           ? { maxRetries: options.maxRetries }
+          : {}),
+        ...(options.retryRateLimits === false
+          ? { retryRateLimits: false }
           : {}),
         ...(singleDispatch ? { singleDispatch: true } : {}),
         ...(options.onSuccessfulRequest

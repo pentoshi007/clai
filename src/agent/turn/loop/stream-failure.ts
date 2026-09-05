@@ -68,6 +68,7 @@ export interface StreamFailureAttemptUsage {
 
 export interface StreamFailureInput {
   readonly kind: ReturnType<typeof classifyStreamFailure>;
+  readonly error?: unknown;
   readonly alreadyEmitted: boolean;
   readonly attemptUsage: StreamFailureAttemptUsage | undefined;
   readonly accumulatedText: string;
@@ -234,6 +235,7 @@ export const recoverFromStreamFailure = async (
   }
   const plan = planStreamRecovery({
     kind: failureKind,
+    ...(input.error !== undefined ? { error: input.error } : {}),
     state: ports.recoveryState,
     progressed: meaningfulProgress,
   });

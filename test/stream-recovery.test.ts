@@ -174,6 +174,50 @@ describe("planStreamRecovery — bounded escalation", () => {
     );
   });
 
+  it("follows the exact 10/20/30/40/60 second rate-limit schedule", () => {
+    const state = createStreamRecoveryState();
+    const schedule = [10_000, 20_000, 30_000, 40_000, 60_000];
+    for (const expected of schedule) {
+      const plan = planStreamRecovery({ kind: "rate-limit", state });
+      expect(plan.action).toBe("retry");
+      expect(plan.delayMs).toBe(expected);
+      recordRecoveryAttempt(state, "rate-limit");
+    }
+    expect(planStreamRecovery({ kind: "rate-limit", state }).action).toBe(
+      "give-up",
+    );
+  });
+
+  it("waits out a longer provider reset window instead of the schedule", () => {
+    const state = createStreamRecoveryState();
+    const error = new ProviderError("rate limited", 429, "", 45);
+    expect(
+      planStreamRecovery({ kind: "rate-limit", state, error }).delayMs,
+    ).toBe(45_000);
+  });
+
+  it("keeps the schedule as a floor and 60s as the ceiling for resets", () => {
+    const state = createStreamRecoveryState();
+    const short = new ProviderError("rate limited", 429, "", 2);
+    expect(
+      planStreamRecovery({ kind: "rate-limit", state, error: short }).delayMs,
+    ).toBe(10_000);
+    const long = new ProviderError("rate limited", 429, "", 600);
+    expect(
+      planStreamRecovery({ kind: "rate-limit", state, error: long }).delayMs,
+    ).toBe(60_000);
+  });
+
+  it("derives the reset window from the failure message when needed", () => {
+    const state = createStreamRecoveryState();
+    const error = new Error(
+      "hetzner: Provider request failed with HTTP 429 (retry after 35s)",
+    );
+    expect(
+      planStreamRecovery({ kind: "rate-limit", state, error }).delayMs,
+    ).toBe(35_000);
+  });
+
   it("compacts on context overflow before retrying, then gives up", () => {
     const state = createStreamRecoveryState();
     const first = planStreamRecovery({ kind: "context-overflow", state });

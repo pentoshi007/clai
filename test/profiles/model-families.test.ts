@@ -70,8 +70,8 @@ describe("family resolution is stable across gateway id spellings", () => {
     ["nemotron-lightning-3p5-30b-a3b", "nemotron-3"],
     ["nvidia/llama-3.3-nemotron-super-49b-v1", "nemotron-legacy"],
     ["gpt-5.4-mini", "openai-reasoning"],
-    ["minimax/minimax-m3", undefined],
-    ["MiniMax-M3", undefined],
+    ["minimax/minimax-m3", "minimax-m3"],
+    ["MiniMax-M3", "minimax-m3"],
     ["openai/gpt-4o-mini", undefined],
     ["meta-llama/llama-3.3-70b-instruct:free", undefined],
   ];

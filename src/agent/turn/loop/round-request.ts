@@ -118,6 +118,7 @@ export const requestRound = async (
         onStatus: streamSession.onStatus,
         onStreamEvent: streamSession.onStreamEvent,
         onSuccessfulRequest: streamSession.onSuccessfulRequest,
+        retryRateLimits: false,
       },
     );
     deps.loop.freeTierConsecutiveFailures = 0;
@@ -172,6 +173,7 @@ export const requestRound = async (
         failureState,
         {
           kind: classifyStreamFailure(streamError),
+          error: streamError,
           alreadyEmitted: streamAlreadyEmitted(streamError),
           attemptUsage:
             failedUsage && failedAttempt

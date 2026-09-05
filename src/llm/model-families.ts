@@ -217,6 +217,15 @@ export const MODEL_FAMILIES: readonly ModelFamilyContract[] = [
     disableForm: "omit-control",
     finalTurnPreservation: "unknown",
   },
+  {
+    id: "minimax-m3",
+    pattern: /minimax[-./]?m3/,
+    generation: "optional",
+    dialect: "openai-effort",
+    acceptedEfforts: ["none", "minimal", "low", "medium", "high"],
+    disableForm: "effort-none",
+    finalTurnPreservation: "unknown",
+  },
 ];
 
 export function bareModelId(model: string): string {
