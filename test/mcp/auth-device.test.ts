@@ -111,9 +111,10 @@ describe("OAuth device flow", () => {
     expect(headers.authorization).toBe("Bearer AT-DEVICE");
   });
 
-  it("falls back to the device flow when the browser cannot open", async () => {
+  it("prefers the device flow even when a browser is available", async () => {
     const capture = { registrationBodies: [] as Array<Record<string, unknown>>, devicePolls: 0, pendingPolls: 0 };
     const shown: DeviceAuthorizationInfo[] = [];
+    const browser = vi.fn(async () => {});
     const provider = createAuthProvider(
       { kind: "oauth" },
       {
@@ -121,9 +122,7 @@ describe("OAuth device flow", () => {
         interactive: true,
         tokenStore: memoryStore(),
         fetchImpl: deviceRouter(capture),
-        openBrowser: async () => {
-          throw new McpTransportError("browser", "no browser here");
-        },
+        openBrowser: browser,
         onDeviceAuthorization: (info) => {
           shown.push(info);
         },
@@ -131,6 +130,7 @@ describe("OAuth device flow", () => {
     );
     const ok = await provider.onUnauthorized(undefined);
     expect(ok).toBe(true);
+    expect(browser).not.toHaveBeenCalled();
     expect(shown).toHaveLength(1);
     const headers = await provider.headers();
     expect(headers.authorization).toBe("Bearer AT-DEVICE");
