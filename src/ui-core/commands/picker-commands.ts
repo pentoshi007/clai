@@ -330,7 +330,7 @@ export function handleProvider(services: AppServices, invocation: CommandInvocat
       {
         value: ADD_CUSTOM_PROVIDER,
         label: "+ Add custom provider",
-        description: "connect an OpenAI-compatible endpoint not listed above",
+        description: "connect Chat Completions, Responses, or Anthropic Messages endpoint",
       },
       ...(custom.length > 0
         ? [

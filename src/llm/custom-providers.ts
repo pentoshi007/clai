@@ -10,6 +10,17 @@ import {
   ingestOpenAiModelCatalog,
   isStreamOptionsUnsupportedError,
 } from "./http.js";
+import { responsesComplete } from "./responses-complete.js";
+import { responsesStream } from "./responses-stream.js";
+import {
+  mapResponsesEffort,
+  responsesReasoningSummary,
+  type ResponsesAccept,
+  type ResponsesBodyExtrasContext,
+  type ResponsesDialectConfig,
+} from "./responses-config.js";
+import { CHAT_COMPLETIONS_STREAM_TERMINAL } from "./stream-terminal.js";
+import { anthropicProvider } from "./anthropic.js";
 import type { CompatibleUsageAliases } from "./token-usage.js";
 import {
   customReasoningStyle,
@@ -19,7 +30,10 @@ import {
   type CustomProviderProfileSpec,
 } from "./custom-provider-profile.js";
 import { recordControlRejection } from "./provider-profile.js";
-import { CHAT_COMPLETIONS_STREAM_TERMINAL } from "./stream-terminal.js";
+export type CustomProviderApi =
+  | "chat-completions"
+  | "responses"
+  | "anthropic-messages";
 
 export interface CustomProviderDef {
   readonly id: string;
@@ -29,6 +43,7 @@ export interface CustomProviderDef {
   readonly keyEnv?: string | undefined;
   readonly baseUrlEnv?: string | undefined;
   readonly defaultModel: string;
+  readonly api?: CustomProviderApi | undefined;
   readonly usageAliases?: CompatibleUsageAliases | undefined;
   readonly profile?: CustomProviderProfileSpec | undefined;
 }
@@ -56,6 +71,39 @@ function authHeaders(
     return { authorization: `Bearer ${apiKey}`, ...declared };
   }
   return undefined;
+}
+
+function responsesConfig(
+  def: CustomProviderDef,
+  baseUrl: string,
+): ResponsesDialectConfig {
+  return {
+    baseUrl,
+    providerId: def.id as ProviderId,
+    displayName: def.displayName,
+    artifactDialect: "openai-compatible",
+    terminalPolicy: {
+      proofs: ["response-completed", "response-incomplete"],
+      naturalEofAccepted: false,
+    },
+    buildHeaders(auth: ProviderAuth, accept: ResponsesAccept) {
+      const apiKey = auth.apiKey;
+      return {
+        "content-type": "application/json",
+        accept,
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        ...authHeaders(def, apiKey),
+      };
+    },
+    reasoningPayload(reasoning) {
+      if (!reasoning?.enabled) return undefined;
+      const effort = mapResponsesEffort(reasoning.effort);
+      return { effort, summary: responsesReasoningSummary(effort) };
+    },
+    bodyExtras(_context: ResponsesBodyExtrasContext) {
+      return { store: false, include: ["reasoning.encrypted_content"] };
+    },
+  };
 }
 
 export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
@@ -91,8 +139,12 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const cached = modelCache.get(cacheKey);
       if (cached && now - cached.fetchedAt < CACHE_TTL_MS) return cached.models;
       try {
-        const headers: Record<string, string> = {};
-        if (auth.apiKey) headers["authorization"] = `Bearer ${auth.apiKey}`;
+        const headers = def.api === "anthropic-messages"
+          ? {
+              ...(auth.apiKey ? { "x-api-key": auth.apiKey } : {}),
+              "anthropic-version": "2023-06-01",
+            }
+          : authHeaders(def, auth.apiKey) ?? {};
         const response = await fetch(`${baseUrl}/models`, { headers });
         const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
         const models = ingestOpenAiModelCatalog(providerId, data);
@@ -104,6 +156,16 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
     },
     async ping(auth: ProviderAuth): Promise<void> {
       const apiKey = requireKey(auth);
+      if (def.api === "anthropic-messages") {
+        const response = await fetch(`${resolveBaseUrl(def, auth)}/models`, {
+          headers: {
+            ...(apiKey ? { "x-api-key": apiKey } : {}),
+            "anthropic-version": "2023-06-01",
+          },
+        });
+        await readJson<unknown>(response);
+        return;
+      }
       await openAiCompatiblePing(
         resolveBaseUrl(def, auth),
         apiKey ?? "",
@@ -113,10 +175,26 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
     async complete(request: CompletionRequest, auth: ProviderAuth): Promise<CompletionResult> {
       const apiKey = requireKey(auth);
       const model = request.model ?? def.defaultModel;
+      const baseUrl = resolveBaseUrl(def, auth);
+      if (def.api === "responses") {
+        return responsesComplete(
+          responsesConfig(def, baseUrl),
+          request,
+          { ...auth, apiKey },
+          model,
+        );
+      }
+      if (def.api === "anthropic-messages") {
+        const result = await anthropicProvider.complete(
+          { ...request, provider: providerId, model },
+          { ...auth, apiKey, baseUrl },
+        );
+        return { ...result, provider: providerId, model };
+      }
       const payload = await openAiCompatibleComplete({
-        responsesFirst: true,
+        responsesFirst: def.api === undefined,
         provider: def.displayName, providerId,
-        baseUrl: resolveBaseUrl(def, auth), apiKey: apiKey ?? "",
+        baseUrl, apiKey: apiKey ?? "",
         headers: authHeaders(def, apiKey), model,
         messages: request.messages, maxTokens: request.maxTokens,
         temperature: request.temperature, signal: request.signal,
@@ -136,8 +214,25 @@ export function buildCustomProvider(def: CustomProviderDef): LlmProvider {
       const model = request.model ?? def.defaultModel;
       const baseUrl = resolveBaseUrl(def, auth);
       const headers = authHeaders(def, apiKey);
+      if (def.api === "responses") {
+        return responsesStream(
+          responsesConfig(def, baseUrl),
+          request,
+          { ...auth, apiKey },
+          onToken,
+          model,
+        );
+      }
+      if (def.api === "anthropic-messages") {
+        const result = await anthropicProvider.stream!(
+          { ...request, provider: providerId, model },
+          { ...auth, apiKey, baseUrl },
+          onToken,
+        );
+        return { ...result, provider: providerId, model };
+      }
       const stream = (withUsage: boolean) => openAiCompatibleStream({
-        responsesFirst: true,
+        responsesFirst: def.api === undefined,
         provider: def.displayName, providerId, baseUrl,
         apiKey: apiKey ?? "", headers, model,
         messages: request.messages, maxTokens: request.maxTokens,
