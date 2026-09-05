@@ -540,8 +540,9 @@ describe("LLM-005 — Chat Completions reasoning dialect", () => {
 
 
 describe("capability table and wire payload agree", () => {
-  it("omits reasoning knobs when the capability table says the model has none", () => {
-    // Mantle lists only Claude models as reasoning-capable.
+  it("tries reasoning when the model family declares it, even without a route hint", () => {
+    // gpt-oss carries a reasoning family contract; an endpoint that cannot
+    // serve it rejects the knob at runtime and the ladder strips it then.
     const body = JSON.parse(
       buildChatBody({
         model: "openai.gpt-oss-120b",
@@ -552,7 +553,7 @@ describe("capability table and wire payload agree", () => {
         reasoningStyle: "openai",
       }),
     ) as Record<string, unknown>;
-    expect(body).not.toHaveProperty("reasoning_effort");
+    expect(body.reasoning_effort).toBe("high");
   });
 
   it("still sends them for a capable model", () => {

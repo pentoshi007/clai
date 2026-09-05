@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   clearLearnedRouteCapabilities,
+  isReasoningUnsupported,
   learnRouteAcceptedEfforts,
   learnRouteRejectedField,
   learnedRouteRejectedFields,
@@ -37,32 +38,37 @@ afterEach(() => {
   resetReasoningKnowledge();
 });
 
-describe("learned route capabilities survive a restart", () => {
-  it("keeps a reasoning rejection across a config reload", () => {
+describe("learned route capabilities persist positives only", () => {
+  it("keeps a reasoning rejection session-scoped instead of persisting it", () => {
     markReasoningUnsupported(PROVIDER, MODEL);
-    expect(getConfig().learnedRouteCapabilities?.[KEY]?.reasoning).toBe(false);
+    expect(isReasoningUnsupported(PROVIDER, MODEL)).toBe(true);
+    expect(getConfig().learnedRouteCapabilities?.[KEY]?.reasoning).toBeUndefined();
+    expect(
+      getConfig().learnedRouteCapabilities?.[KEY]?.controlDialect,
+    ).toBeUndefined();
     reload();
-    expect(resolveBuiltInProfile({ provider: PROVIDER, model: MODEL }).reasoning.control.status).toBe(
-      "unsupported",
-    );
+    expect(
+      resolveBuiltInProfile({ provider: PROVIDER, model: MODEL }).reasoning.control
+        .status,
+    ).not.toBe("unsupported");
   });
 
-  it("ignores a negative older than the fourteen-day window", () => {
-    markReasoningUnsupported(PROVIDER, MODEL);
-    const stored = getConfig().learnedRouteCapabilities?.[KEY];
-    expect(stored).toBeDefined();
+  it("ignores and scrubs a legacy persisted negative, however fresh", () => {
     updateConfig({
       learnedRouteCapabilities: {
         [KEY]: {
-          ...stored!,
-          at: new Date(Date.now() - FOURTEEN_DAYS_MS - 60_000).toISOString(),
+          reasoning: false,
+          controlDialect: "openai-effort",
+          at: new Date().toISOString(),
         },
       },
     });
     reload();
-    expect(resolveBuiltInProfile({ provider: PROVIDER, model: MODEL }).reasoning.control.status).not.toBe(
-      "unsupported",
-    );
+    expect(
+      resolveBuiltInProfile({ provider: PROVIDER, model: MODEL }).reasoning.control
+        .status,
+    ).not.toBe("unsupported");
+    expect(getConfig().learnedRouteCapabilities?.[KEY]?.reasoning).toBeUndefined();
   });
 
   it("keeps learned accepted efforts across a reload and surfaces them on the profile", () => {
@@ -89,19 +95,14 @@ describe("learned route capabilities survive a restart", () => {
     expect(modelReasoningEfforts(PROVIDER, MODEL)).toEqual(["low", "high"]);
   });
 
-  it("records rejected fields per route and expires them with the negative window", () => {
+  it("remembers rejected fields for the session and forgets them on reset", () => {
     learnRouteRejectedField(PROVIDER, MODEL, "Reasoning_Effort");
     expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual(["reasoning_effort"]);
     expect(learnedRouteRejectedFields(PROVIDER, "other-model")).toEqual([]);
-    const stored = getConfig().learnedRouteCapabilities?.[KEY];
-    updateConfig({
-      learnedRouteCapabilities: {
-        [KEY]: {
-          ...stored!,
-          at: new Date(Date.now() - FOURTEEN_DAYS_MS - 60_000).toISOString(),
-        },
-      },
-    });
+    expect(
+      getConfig().learnedRouteCapabilities?.[KEY]?.rejectedFields,
+    ).toBeUndefined();
+    resetReasoningKnowledge();
     expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual([]);
   });
 

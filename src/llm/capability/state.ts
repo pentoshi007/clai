@@ -4,16 +4,14 @@ import { isModelUnavailable, providerModelIsKnown } from "../capabilities.js";
 import type { CatalogFacts } from "../catalog-facts.js";
 import {
   clearPersistedLearnedRouteReasoning,
+  clearSessionRejectedFields,
   learnedRouteAt,
   learnedRouteCapabilities,
   learnedVisionCapabilities,
   negativeIsStale,
   readLearnedVisionEntry,
 } from "../learned-capabilities.js";
-import {
-  clearRouteDialectRegistry,
-  setNegativeControlDialect,
-} from "../route-dialect-registry.js";
+import { clearRouteDialectRegistry } from "../route-dialect-registry.js";
 
 export const reasoningUnsupportedModels = new Set<string>();
 
@@ -40,6 +38,7 @@ export function resetReasoningKnowledge(): void {
   catalogReasoningEfforts.clear();
   catalogFactsByRoute.clear();
   clearRouteDialectRegistry();
+  clearSessionRejectedFields();
   learnedLoaded = true;
 }
 
@@ -107,10 +106,7 @@ function applyLearnedRouteEntry(key: string, entry: LearnedRouteEntry): void {
   }
   if (entry.reasoning === true) observedReasoningModels.add(key);
   else if (entry.reasoning === false) {
-    if (!stale && entry.controlDialect) {
-      reasoningUnsupportedModels.add(key);
-      setNegativeControlDialect(key, entry.controlDialect);
-    } else clearPersistedLearnedRouteReasoning(key);
+    clearPersistedLearnedRouteReasoning(key);
   }
   if (entry.reasoningMandatory === true) {
     mandatoryReasoningRoutes.add(key);
