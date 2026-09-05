@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  effectiveThinkingEffort,
   learnModelEmitsReasoning,
   markReasoningUnsupported,
   modelReasoningEfforts,
@@ -105,5 +106,42 @@ describe('reasoning capability knowledge', () => {
 
     expect(modelReasoningEvidence('bynara', 'kimi-k3-free')).toBe('pattern');
     expect(modelSupportsThinking('bynara', 'kimi-k3-free')).toBe(true);
+  });
+
+  it('treats a matching model-family contract as support on any provider', () => {
+    expect(modelSupportsThinking('bynara', 'minimax-m3-free')).toBe(true);
+    expect(modelReasoningEvidence('bynara', 'minimax-m3-free')).toBe('family');
+    expect(modelReasoningEfforts('bynara', 'minimax-m3-free')).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+    ]);
+    expect(
+      effectiveThinkingEffort('bynara', 'minimax-m3-free', {
+        enabled: true,
+        effort: 'xhigh',
+      }),
+    ).toBe('high');
+  });
+
+  it('emits the family effort on the wire for a family-known gateway model', async () => {
+    const { resolveBuiltInProfile } = await import(
+      '../../src/llm/provider-profiles.js'
+    );
+    const { emitReasoningControls } = await import(
+      '../../src/llm/reasoning-controls.js'
+    );
+    expect(
+      emitReasoningControls({
+        profile: resolveBuiltInProfile({
+          provider: 'bynara',
+          model: 'minimax-m3-free',
+        }),
+        preference: { enabled: true, effort: 'high' },
+        willReplayReasoning: false,
+      }),
+    ).toEqual({ reasoning_effort: 'high' });
   });
 });

@@ -294,20 +294,22 @@ describe("ordinary-turn responder delivery", () => {
 
     expect(outcome.answer).toBe("done");
     expect(requests).toHaveLength(3);
-    const inbox = requests[1]!.messages.find(
-      (message) =>
-        message.role === "system" &&
-        message.content.startsWith("RESPONDER / DURABLE JOB INBOX"),
-    );
+    const latestInbox = (
+      messages: Array<{ role: string; content: string }>,
+    ): { content: string } | undefined =>
+      [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "system" &&
+            message.content.startsWith("RESPONDER / DURABLE JOB INBOX"),
+        );
+    const inbox = latestInbox(requests[1]!.messages);
     expect(inbox?.content).toContain("notification=completion:inband-job");
     expect(inbox?.content).toContain("MANDATORY READ RECEIPT");
-    expect(
-      requests[2]!.messages.some(
-        (message) =>
-          message.role === "system" &&
-          message.content.startsWith("RESPONDER / DURABLE JOB INBOX"),
-      ),
-    ).toBe(false);
+    expect(latestInbox(requests[2]!.messages)?.content).toBe(
+      "RESPONDER / DURABLE JOB INBOX\n(cleared)",
+    );
     expect(jobsHarness.manager.markDelivered).toHaveBeenCalledTimes(1);
     expect(jobsHarness.manager.markRead).toHaveBeenCalledWith(
       jobsHarness.notification.id,

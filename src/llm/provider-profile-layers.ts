@@ -95,7 +95,6 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         status: "supported",
         evidence: providerDoc("meta-reasoning-effort"),
       },
-      acceptedEfforts: ["minimal", "low", "high", "xhigh"],
       disable: "unsupported",
       outputShapes: ["encrypted-reasoning-items"],
       replayScope: "tool-turn",

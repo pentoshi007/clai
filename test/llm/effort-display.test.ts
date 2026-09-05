@@ -142,10 +142,13 @@ describe("a persisted negative without provenance is not trusted", () => {
     expect(getConfig().learnedRouteCapabilities?.[KEY]?.reasoning).toBeUndefined();
   });
 
-  it("records provenance for every new rejection", () => {
+  it("keeps every new rejection in memory instead of persisting it", () => {
     publishRouteReasoningVocabulary(provider, model);
     markReasoningUnsupported(provider, model);
-    expect(getConfig().learnedRouteCapabilities?.[KEY]?.controlDialect).toBeTruthy();
+    expect(isReasoningUnsupported(provider, model)).toBe(true);
+    const stored = getConfig().learnedRouteCapabilities?.[KEY];
+    expect(stored?.reasoning).toBeUndefined();
+    expect(stored?.controlDialect).toBeUndefined();
   });
 });
 

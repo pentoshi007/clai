@@ -81,20 +81,49 @@ export function pruneLearnedRoutes(
   return trimmed;
 }
 
+function sanitizeLearnedRouteEntry(
+  entry: Omit<LearnedRouteEntry, "at"> & { at: string },
+): LearnedRouteEntry {
+  const {
+    controlDialect: _controlDialect,
+    rejectedFields: _rejectedFields,
+    ...rest
+  } = entry;
+  if (rest.reasoning === false) {
+    const { reasoning: _reasoning, ...positive } = rest;
+    return positive;
+  }
+  return rest;
+}
+
 export function persistLearnedRoute(
   key: string,
   update: Omit<LearnedRouteEntry, "at">,
 ): void {
   try {
     const routes = { ...learnedRouteCapabilities() };
-    routes[key] = {
+    routes[key] = sanitizeLearnedRouteEntry({
       ...(routes[key] ?? {}),
       ...update,
       at: new Date().toISOString(),
-    };
+    });
     updateConfig({ learnedRouteCapabilities: pruneLearnedRoutes(routes) });
   } catch {
   }
+}
+
+const sessionRejectedFields = new Map<string, readonly string[]>();
+
+export function learnSessionRejectedField(key: string, field: string): void {
+  const name = field.trim().toLowerCase();
+  if (!name) return;
+  const existing = sessionRejectedFields.get(key) ?? [];
+  if (existing.includes(name)) return;
+  sessionRejectedFields.set(key, [...existing, name]);
+}
+
+export function clearSessionRejectedFields(): void {
+  sessionRejectedFields.clear();
 }
 
 export function pruneLearnedVision(
@@ -144,7 +173,12 @@ export function clearPersistedLearnedRouteReasoning(key: string): void {
     const routes = { ...learnedRouteCapabilities() };
     const entry = routes[key];
     if (!entry) return;
-    const { reasoning: _reasoning, controlDialect: _controlDialect, ...rest } = entry;
+    const {
+      reasoning: _reasoning,
+      controlDialect: _controlDialect,
+      rejectedFields: _rejectedFields,
+      ...rest
+    } = entry;
     routes[key] = { ...rest, at: entry.at };
     updateConfig({ learnedRouteCapabilities: routes });
   } catch {
@@ -162,7 +196,5 @@ export function learnedRouteRejectedFields(
   provider: string,
   model: string,
 ): readonly string[] {
-  const entry = readLearnedRoute(routeCapabilityKey(provider, model));
-  if (!entry?.rejectedFields?.length) return [];
-  return negativeIsStale(learnedRouteAt(entry)) ? [] : entry.rejectedFields;
+  return sessionRejectedFields.get(routeCapabilityKey(provider, model)) ?? [];
 }

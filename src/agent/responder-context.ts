@@ -122,27 +122,20 @@ export function upsertResponderContextMessage(
   messages: Array<{ role: string; content: string }>,
   content: string | undefined,
 ): void {
-  if (!content) {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index]!;
-      if (
-        message.role === "system" &&
-        message.content.startsWith(RESPONDER_CONTEXT_PREFIX)
-      ) {
-        messages.splice(index, 1);
-      }
-    }
-    return;
-  }
+  const cleared = `${RESPONDER_CONTEXT_PREFIX}\n(cleared)`;
+  const next = content ?? cleared;
+  let sawKeyed = false;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (
       message.role === "system" &&
       message.content.startsWith(RESPONDER_CONTEXT_PREFIX)
     ) {
-      if (message.content === content) return;
+      sawKeyed = true;
+      if (message.content === next) return;
       break;
     }
   }
-  messages.push({ role: "system", content });
+  if (!sawKeyed && !content) return;
+  messages.push({ role: "system", content: next });
 }

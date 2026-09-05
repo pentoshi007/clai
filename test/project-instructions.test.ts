@@ -321,15 +321,19 @@ describe("injected block placement (prompt cache safety)", () => {
     expect(messages.length).toBe(lengthAfterFirst);
   });
 
-  it("removes the block when the instruction files disappear", () => {
+  it("marks the block cleared when the instruction files disappear", () => {
     const messages = baseMessages();
-    upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nrule`);
+    upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\\nrule`);
     upsertAgentInstructionsMessage(messages, undefined);
-    expect(
-      messages.some((message) =>
+    const latest = [...messages]
+      .reverse()
+      .find((message) =>
         message.content.startsWith(AGENT_INSTRUCTIONS_PREFIX),
-      ),
-    ).toBe(false);
+      );
+    expect(latest?.content.endsWith("\n(cleared)")).toBe(true);
+    expect(messages.at(-1)!.content).toBe(
+      `${AGENT_INSTRUCTIONS_PREFIX}\n(cleared)`,
+    );
   });
 
   it("keeps instructions and active skills as separate keyed blocks", () => {

@@ -6,6 +6,7 @@ import {
   resolveBuiltInProfile,
 } from "../../src/llm/provider-profiles.js";
 import {
+  displayReasoningEfforts,
   registerModelCatalogFacts,
   resetReasoningKnowledge,
 } from "../../src/llm/capabilities.js";
@@ -105,5 +106,35 @@ describe("catalog facts reach the resolved profile per facet", () => {
       model: "deepseek/deepseek-v4-pro",
     });
     expect(profile.limits.contextTokens).not.toBe(131_072);
+  });
+});
+
+describe("meta effort vocabulary follows the live catalog", () => {
+  it("advertises no fixed list until the provider sends one", () => {
+    const profile = resolveBuiltInProfile({
+      provider: "meta",
+      model: "muse-spark-1.2",
+    });
+    expect(profile.reasoning.acceptedEfforts).toEqual([]);
+    expect(displayReasoningEfforts("meta", "muse-spark-1.2")).toBeUndefined();
+  });
+
+  it("scopes efforts to what the catalog advertises for the model", () => {
+    registerModelCatalogFacts(
+      "meta",
+      parseCatalogFacts({
+        id: "muse-spark-1.2",
+        reasoning: { supported_efforts: ["low", "high"] },
+      })!,
+    );
+    const profile = resolveBuiltInProfile({
+      provider: "meta",
+      model: "muse-spark-1.2",
+    });
+    expect(profile.reasoning.acceptedEfforts).toEqual(["low", "high"]);
+    expect(displayReasoningEfforts("meta", "muse-spark-1.2")).toEqual([
+      "low",
+      "high",
+    ]);
   });
 });
