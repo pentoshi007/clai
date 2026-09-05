@@ -52,6 +52,8 @@ export interface McpManagerOptions {
   readonly openBrowser?: ((url: string) => Promise<void>) | undefined;
   readonly requestOAuthConsent?: ((info: OAuthConsentInfo) => Promise<boolean>) | undefined;
   readonly oauthInteractive?: boolean | undefined;
+  readonly onDeviceAuthorization?: AuthProviderDeps["onDeviceAuthorization"];
+  readonly onAuthorizationUrl?: AuthProviderDeps["onAuthorizationUrl"];
   readonly authProviderFactory?:
     | ((definition: McpServerDefinition) => McpAuthProvider | undefined)
     | undefined;
@@ -146,6 +148,12 @@ export class McpManager {
       ...(this.options.oauthInteractive !== undefined
         ? { interactive: this.options.oauthInteractive }
         : {}),
+      ...(this.options.onDeviceAuthorization
+        ? { onDeviceAuthorization: this.options.onDeviceAuthorization }
+        : {}),
+      ...(this.options.onAuthorizationUrl
+        ? { onAuthorizationUrl: this.options.onAuthorizationUrl }
+        : {}),
     };
     const provider = createAuthProvider(config.auth ?? { kind: "oauth" }, deps);
     this.rememberAuthProvider(definition, provider);
@@ -193,6 +201,10 @@ export class McpManager {
 
   getDiscovery(): McpDiscoveryResult {
     return this.discovery;
+  }
+
+  get discoveryWorkspaceFolder(): string | undefined {
+    return this.options.discovery?.workspaceFolder;
   }
 
   async refresh(options: { force?: boolean } = {}): Promise<McpSnapshot> {
@@ -293,9 +305,55 @@ export class McpManager {
   private async connect(definition: McpServerDefinition): Promise<void> {
     const state = this.connections.get(definition.name);
     if (!state) return;
+    const primaryError = await this.attemptConnect(
+      definition,
+      state,
+      this.createTransport(definition),
+    );
+    if (primaryError === undefined) return;
+    const fallback = this.fallbackTransportFor(definition, primaryError);
+    if (!fallback) return;
+    const fallbackError = await this.attemptConnect(definition, state, fallback);
+    if (fallbackError !== undefined) return;
+    const status =
+      primaryError instanceof McpTransportError && primaryError.status !== undefined
+        ? ` ${primaryError.status}`
+        : "";
+    const note = `primary ${definition.config.transport} transport failed with${status || " an error"}; connected via ${fallback.kind} fallback`;
+    state.detail = state.detail ? `${state.detail} · ${note}` : note;
+  }
+
+  private fallbackTransportFor(
+    definition: McpServerDefinition,
+    error: unknown,
+  ): McpTransport | undefined {
+    if (this.options.transportFactory) return undefined;
+    if (!(error instanceof McpTransportError)) return undefined;
+    const status = error.status ?? 0;
+    if (![400, 404, 405, 410, 415].includes(status)) return undefined;
+    const config = definition.config;
+    if (config.transport === "stdio") return undefined;
+    const alternate: McpHttpConfig = {
+      ...config,
+      transport: config.transport === "sse" ? "http" : "sse",
+    };
+    const authProvider = this.buildAuthProvider(definition, config);
+    const httpOptions: HttpTransportOptions = {
+      requestTimeoutMs: this.requestTimeoutMs,
+      ...(authProvider ? { authProvider } : {}),
+    };
+    return alternate.transport === "sse"
+      ? new LegacySseTransport(alternate, httpOptions)
+      : new StreamableHttpTransport(alternate, httpOptions);
+  }
+
+  private async attemptConnect(
+    definition: McpServerDefinition,
+    state: ConnectionState,
+    transport: McpTransport,
+  ): Promise<unknown> {
     let client: McpClient | undefined;
     try {
-      const transport = this.createTransport(definition);
       client = new McpClient(transport, this.options.clientOptions ?? {});
       const init = await client.initialize({ timeoutMs: this.connectTimeoutMs });
       state.client = client;
@@ -340,7 +398,9 @@ export class McpManager {
       state.detail = describeError(error, this.mergedSecrets(definition));
       if (client) await client.close().catch(() => undefined);
       state.client = undefined;
+      return error;
     }
+    return undefined;
   }
 
   private reconcileToolNames(): void {

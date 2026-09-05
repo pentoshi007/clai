@@ -42,6 +42,12 @@ export const runMcpAgentTool = async (
   if (call.name === "mcp.connect") {
     return mcp.agentConnect(typeof args.server === "string" ? args.server : "");
   }
+  if (call.name === "mcp.add") {
+    return mcp.agentAdd({
+      ...(typeof args.name === "string" ? { name: args.name } : {}),
+      ...(typeof args.json === "string" ? { json: args.json } : {}),
+    });
+  }
   return mcp.agentLogin(typeof args.server === "string" ? args.server : "");
 };
 

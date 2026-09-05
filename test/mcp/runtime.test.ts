@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fromWireName } from "../../src/llm/tool-protocol.js";
@@ -14,6 +14,7 @@ import type {
 import { getToolDefinitions } from "../../src/tools/definitions.js";
 
 const closeCounts = new Map<string, number>();
+const callArgs: Array<Record<string, unknown> | undefined> = [];
 
 class RuntimeTransport implements McpTransport {
   readonly kind = "stdio" as const;
@@ -45,7 +46,11 @@ class RuntimeTransport implements McpTransport {
                 description: "Look up an indexed record",
                 inputSchema: {
                   type: "object",
-                  properties: { id: { type: "string" } },
+                  properties: {
+                    id: { type: "string" },
+                    limit: { type: "number" },
+                    filter: { type: "object" },
+                  },
                   required: ["id"],
                   additionalProperties: false,
                 },
@@ -70,7 +75,11 @@ class RuntimeTransport implements McpTransport {
       });
     }
     if (message.method === "tools/call") {
-      const params = message.params as { name?: string };
+      const params = message.params as {
+        name?: string;
+        arguments?: Record<string, unknown>;
+      };
+      callArgs.push(params.arguments);
       const result =
         params.name === "lookup"
           ? { content: [{ type: "text", text: "record secret-value" }] }
@@ -123,6 +132,7 @@ function makeRuntime(): McpRuntime {
 
 beforeEach(() => {
   closeCounts.clear();
+  callArgs.length = 0;
   root = mkdtempSync(join(tmpdir(), "clai-mcp-runtime-"));
   workspace = join(root, "project");
   home = join(root, "home");
@@ -263,7 +273,7 @@ describe("McpRuntime calls and guidance", () => {
     runtime.selectAll();
     const native = runtime.promptContext({ nativeTools: true });
     expect(native).toContain("Live servers: 2/2");
-    expect(native).toContain("mcp.alpha.lookup");
+    expect(native).toContain("mcp_alpha_lookup");
     expect(native).toContain("stronger direct result than a generic substitute");
     expect(native).toContain("untrusted data");
     expect(native).toContain("normal confirmation policy");
@@ -284,5 +294,74 @@ describe("McpRuntime calls and guidance", () => {
     await runtime.closeAll();
     expect(closeCounts.get("alpha")).toBeGreaterThanOrEqual(1);
     expect(closeCounts.get("beta")).toBeGreaterThanOrEqual(1);
+  });
+
+  it("coerces stringified arguments to schema types before dispatch", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    runtime.selectAll();
+    const result = await runtime.callTool("mcp.alpha.lookup", {
+      id: "7",
+      limit: "3",
+      filter: '{"kind":"a"}',
+    });
+    expect(result.ok).toBe(true);
+    expect(callArgs.at(-1)).toEqual({ id: "7", limit: 3, filter: { kind: "a" } });
+    await runtime.closeAll();
+  });
+
+  it("mcp.add installs a catalog server into the project config", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    const result = await runtime.agentAdd({ name: "fetch" });
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain("fetch");
+    const config = JSON.parse(
+      readFileSync(join(workspace, ".clai", "mcp.json"), "utf8"),
+    ) as { servers: Record<string, { command?: string }> };
+    expect(config.servers.fetch?.command).toBe("uvx");
+    expect(
+      runtime.getState().snapshot.statuses.some((status) => status.name === "fetch"),
+    ).toBe(true);
+    await runtime.closeAll();
+  });
+
+  it("mcp.add reports missing required secrets with exact env vars", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    const env = process.env.BRAVE_API_KEY;
+    delete process.env.BRAVE_API_KEY;
+    try {
+      const result = await runtime.agentAdd({ name: "brave-search" });
+      expect(result.ok).toBe(false);
+      expect(result.output).toContain("BRAVE_API_KEY");
+    } finally {
+      if (env !== undefined) process.env.BRAVE_API_KEY = env;
+    }
+    const config = JSON.parse(
+      readFileSync(join(workspace, ".clai", "mcp.json"), "utf8"),
+    ) as { servers: Record<string, unknown> };
+    expect(config.servers["brave-search"]).toBeUndefined();
+    await runtime.closeAll();
+  });
+
+  it("mcp.add accepts raw JSON server definitions", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    const result = await runtime.agentAdd({
+      json: '{"gamma":{"command":"gamma-server"}}',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain("gamma");
+    await runtime.closeAll();
+  });
+
+  it("mcp.add rejects unknown catalog names with the catalog list", async () => {
+    const runtime = makeRuntime();
+    const result = await runtime.agentAdd({ name: "does-not-exist" });
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("github");
+    expect(result.output).toContain("mongodb");
+    await runtime.closeAll();
   });
 });

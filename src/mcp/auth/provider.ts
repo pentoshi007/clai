@@ -12,6 +12,10 @@ import {
   runLoopbackAuthorization,
   type LoopbackAuthorizationParams,
 } from "./loopback.js";
+import {
+  pollDeviceTokens,
+  requestDeviceAuthorization,
+} from "./device.js";
 import { canonicalResourceUri } from "./security.js";
 import {
   findGithubCredential,
@@ -27,6 +31,7 @@ import {
 import { defaultOAuthTokenStore, oauthTokenKey } from "./token-store.js";
 import type {
   AuthorizationServerMetadata,
+  DeviceAuthorizationInfo,
   LoopbackAuthorizationResult,
   McpAuthChallenge,
   McpAuthProvider,
@@ -59,6 +64,12 @@ export interface AuthProviderDeps {
   readonly validateUrl?: ((url: string) => URL) | undefined;
   readonly runLoopback?:
     | ((params: LoopbackAuthorizationParams) => Promise<LoopbackAuthorizationResult>)
+    | undefined;
+  readonly onDeviceAuthorization?:
+    | ((info: DeviceAuthorizationInfo) => void | Promise<void>)
+    | undefined;
+  readonly onAuthorizationUrl?:
+    | ((info: { serverUrl: string; url: string }) => void)
     | undefined;
   readonly env?: Record<string, string | undefined> | undefined;
   readonly readHostToken?: (() => Promise<string | undefined>) | undefined;
@@ -382,6 +393,13 @@ class OAuthProvider implements McpAuthProvider {
         );
       },
       openBrowser: this.deps.openBrowser!,
+      ...(this.deps.onAuthorizationUrl
+        ? {
+            onAuthorizationUrl: (url: string) => {
+              this.deps.onAuthorizationUrl?.({ serverUrl: this.deps.serverUrl, url });
+            },
+          }
+        : {}),
     });
     const response = await exchangeAuthorizationCode(
       {
@@ -392,6 +410,86 @@ class OAuthProvider implements McpAuthProvider {
         ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
         codeVerifier: pkce.verifier,
         resource: this.resource,
+      },
+      this.tokenDeps(),
+    );
+    const next = this.toTokenSet(response, undefined);
+    await this.persist(this.issuer, next);
+  }
+
+  private canDeviceFlow(metadata: AuthorizationServerMetadata): boolean {
+    return (
+      typeof metadata.deviceAuthorizationEndpoint === "string" &&
+      this.deps.onDeviceAuthorization !== undefined
+    );
+  }
+
+  private async ensureDeviceClient(
+    metadata: AuthorizationServerMetadata,
+    scope: string | undefined,
+  ): Promise<OAuthClientRegistration> {
+    if (this.clientId) {
+      return {
+        clientId: this.clientId,
+        ...(this.clientSecret ? { clientSecret: this.clientSecret } : {}),
+      };
+    }
+    if (!metadata.registrationEndpoint) {
+      throw new McpTransportError("protocol", this.missingClientMessage());
+    }
+    const registration = await registerOAuthClient(
+      {
+        registrationEndpoint: metadata.registrationEndpoint,
+        redirectUris: [],
+        clientName: this.deps.clientName ?? DEFAULT_CLIENT_NAME,
+        ...(scope ? { scope } : {}),
+        deviceFlow: true,
+      },
+      this.metadataDeps(),
+    );
+    this.clientId = registration.clientId;
+    this.clientSecret = registration.clientSecret;
+    return registration;
+  }
+
+  private async runDeviceFlow(
+    metadata: AuthorizationServerMetadata,
+    scope: string | undefined,
+  ): Promise<void> {
+    const endpoint = metadata.deviceAuthorizationEndpoint;
+    if (!endpoint) {
+      throw new McpTransportError("protocol", "MCP OAuth server has no device authorization endpoint.");
+    }
+    await this.requireConsent(metadata, scope);
+    const registration = await this.ensureDeviceClient(metadata, scope);
+    const authorization = await requestDeviceAuthorization(
+      {
+        deviceAuthorizationEndpoint: endpoint,
+        clientId: registration.clientId,
+        ...(scope ? { scope } : {}),
+      },
+      this.metadataDeps(),
+    );
+    const info: DeviceAuthorizationInfo = {
+      serverUrl: this.deps.serverUrl,
+      verificationUri: authorization.verificationUri,
+      ...(authorization.verificationUriComplete
+        ? { verificationUriComplete: authorization.verificationUriComplete }
+        : {}),
+      userCode: authorization.userCode,
+      expiresInSeconds: authorization.expiresInSeconds,
+    };
+    await this.deps.onDeviceAuthorization?.(info);
+    const response = await pollDeviceTokens(
+      {
+        tokenEndpoint: metadata.tokenEndpoint,
+        deviceCode: authorization.deviceCode,
+        clientId: registration.clientId,
+        ...(registration.clientSecret
+          ? { clientSecret: registration.clientSecret }
+          : {}),
+        intervalSeconds: authorization.intervalSeconds,
+        expiresInSeconds: authorization.expiresInSeconds,
       },
       this.tokenDeps(),
     );
@@ -441,9 +539,21 @@ class OAuthProvider implements McpAuthProvider {
     if (!this.clientId && !metadata.registrationEndpoint) {
       if (await this.adoptHostCredential()) return true;
     }
-    if (!this.canInteract()) throw new McpTransportError("network", this.reauthMessage());
-    await this.runFullFlow(metadata, scope);
-    return true;
+    if (this.canInteract()) {
+      try {
+        await this.runFullFlow(metadata, scope);
+        return true;
+      } catch (error) {
+        const browserUnavailable =
+          error instanceof McpTransportError && error.kind === "browser";
+        if (!browserUnavailable || !this.canDeviceFlow(metadata)) throw error;
+      }
+    }
+    if (this.canDeviceFlow(metadata)) {
+      await this.runDeviceFlow(metadata, scope);
+      return true;
+    }
+    throw new McpTransportError("network", this.reauthMessage());
   }
 
   liveSecrets(): readonly string[] {

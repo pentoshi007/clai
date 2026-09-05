@@ -88,7 +88,14 @@ export async function startNoninteractive(
   const promptIO = { input, output: err, signal: controller.signal };
   const confirm = createStdioConfirmPort(promptIO);
   const requestSecret = createStdioSecretPort(promptIO);
-  const mcp = new McpRuntime({ oauthInteractive: false });
+  const mcp = new McpRuntime({
+    oauthInteractive: false,
+    onDeviceAuthorization: (info) => {
+      err.write(
+        `\nMCP sign-in for ${info.serverUrl}\n  open: ${info.verificationUriComplete ?? info.verificationUri}\n  code: ${info.userCode}\n  (expires in ${Math.round(info.expiresInSeconds / 60)} min)\n`,
+      );
+    },
+  });
   let turnRunning = false;
   const cancel = new CancelCoordinator({
     session: {

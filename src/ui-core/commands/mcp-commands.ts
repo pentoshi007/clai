@@ -3,8 +3,15 @@ import {
   displayMcpConfigPath,
   projectMcpConfigPath,
   writeProjectMcpServer,
+  writeUserMcpServer,
 } from "../../mcp/config-file.js";
 import { formatCatalog, formatStatuses, formatToolLine } from "../../mcp/format.js";
+import {
+  KNOWN_MCP_SERVERS,
+  knownMcpServer,
+  planKnownMcpInstall,
+  type KnownMcpServer,
+} from "../../mcp/known-servers.js";
 import { formatMcpToken } from "../../mcp/mentions.js";
 import { mcpSelectionLabel } from "../../mcp/runtime.js";
 import { MCP_SOURCE_LABELS, type McpServerStatus } from "../../mcp/types.js";
@@ -13,17 +20,10 @@ import type { AppServices } from "../bootstrap/composition-root.js";
 import { composerActionPort } from "../composer/composer-action-port.js";
 
 const ADD_VALUE = "__mcp_add__";
-const NOTION_VALUE = "__mcp_notion__";
+const KNOWN_PREFIX = "__mcp_known__:";
 const LOGIN_PREFIX = "__mcp_login__:";
 const ALL_VALUE = "__mcp_all__";
 const OFF_VALUE = "__mcp_off__";
-const NOTION_SERVER = "notion";
-const NOTION_FRAGMENT = JSON.stringify({
-  [NOTION_SERVER]: {
-    url: "https://mcp.notion.com/mcp",
-    auth: { kind: "oauth" },
-  },
-});
 
 function selectionText(services: AppServices): string {
   return mcpSelectionLabel(services.mcp.getState().selection);
@@ -185,14 +185,88 @@ async function loginServer(
   return true;
 }
 
-async function addNotion(services: AppServices): Promise<void> {
-  const serverName = await addServer(services, NOTION_FRAGMENT);
-  if (!serverName) return;
-  const status = services.mcp
-    .getState()
-    .snapshot.statuses.find((candidate) => candidate.name === serverName);
-  if (status?.status === "ready") return;
-  await loginServer(services, serverName);
+async function addKnownServer(
+  services: AppServices,
+  query: string,
+): Promise<void> {
+  const known = knownMcpServer(query);
+  if (!known) {
+    services.session.notice(
+      "warn",
+      `unknown catalog server "${query}" · catalog: ${KNOWN_MCP_SERVERS.map((server) => server.id).join(", ")}`,
+    );
+    return;
+  }
+  const existing = resolveConfiguredServer(services, known.id);
+  if (existing) {
+    services.session.notice(
+      "info",
+      `MCP server ${known.id} is already configured (${existing.status})`,
+    );
+    if (existing.status === "ready") selectServer(services, existing);
+    return;
+  }
+  const collected: Record<string, string> = {};
+  for (const secret of known.secrets) {
+    if (secret.optional) continue;
+    if (process.env[secret.env]) continue;
+    const requestSecret = services.ports.requestSecret;
+    const value = requestSecret
+      ? await requestSecret({
+          title: `Add ${known.title} MCP server`,
+          prompt: `${secret.label}${secret.hint ? ` — ${secret.hint}` : ""}`,
+        })
+      : await services.overlay.openTextEditor({
+          title: `Add ${known.title} MCP server`,
+          prompt: `${secret.label}${secret.hint ? ` — ${secret.hint}` : ""}`,
+          submitLabel: "save",
+        });
+    if (value === undefined || value.trim() === "") {
+      services.session.notice(
+        "warn",
+        `MCP server ${known.id} not added · ${secret.env} is required`,
+      );
+      return;
+    }
+    collected[secret.env] = value.trim();
+  }
+  const plan = planKnownMcpInstall(known, { secrets: collected });
+  const snippet = JSON.stringify({ [known.id]: plan.entry });
+  const userScope = Object.keys(collected).length > 0;
+  const written = userScope
+    ? await writeUserMcpServer(snippet)
+    : await writeProjectMcpServer(snippet);
+  if (!written.ok) {
+    services.session.notice(
+      "warn",
+      `MCP config not changed · ${written.displayPath} · ${written.error}`,
+    );
+    return;
+  }
+  const state = await services.mcp.refresh({ force: true });
+  const status = state.snapshot.statuses.find(
+    (candidate) => candidate.name === written.serverName,
+  );
+  if (status?.status === "ready") {
+    selectServer(services, status);
+    services.session.notice(
+      "info",
+      `${written.replaced ? "updated" : "added"} ${known.title} MCP in ${written.displayPath} · ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"} · use ${formatMcpToken(known.id)} in your prompt`,
+    );
+    return;
+  }
+  if (known.oauth && services.mcp.canLogin(written.serverName)) {
+    services.session.notice(
+      "info",
+      `added ${known.title} MCP in ${written.displayPath} · signing in…`,
+    );
+    await loginServer(services, written.serverName);
+    return;
+  }
+  services.session.notice(
+    "warn",
+    `added ${known.title} MCP in ${written.displayPath} · ${status?.status ?? "not discovered"}${status?.detail ? ` · ${status.detail}` : ""}${known.requires ? ` · requires ${known.requires}` : ""}`,
+  );
 }
 
 function pickerTitle(services: AppServices): string {
@@ -233,19 +307,17 @@ function serverPickerOptions(services: AppServices): PickerOption[] {
   });
 }
 
-function notionPickerOptions(
+function knownPickerOptions(
   statuses: readonly McpServerStatus[],
 ): PickerOption[] {
-  if (statuses.some((status) => status.name.toLowerCase().includes("notion"))) {
-    return [];
-  }
-  return [
-    {
-      value: NOTION_VALUE,
-      label: "+ connect Notion",
-      description: "official hosted MCP · OAuth browser sign-in",
-    },
-  ];
+  const configured = new Set(statuses.map((status) => status.name.toLowerCase()));
+  return KNOWN_MCP_SERVERS.filter(
+    (server) => !configured.has(server.id) && !configured.has(server.title.toLowerCase()),
+  ).map((server) => ({
+    value: `${KNOWN_PREFIX}${server.id}`,
+    label: `+ add ${server.title}`,
+    description: `${server.summary}${server.oauth ? " · OAuth sign-in" : server.secrets.length > 0 ? " · needs API key" : " · no auth needed"}`,
+  }));
 }
 
 function pickerOptions(services: AppServices): PickerOption[] {
@@ -257,7 +329,7 @@ function pickerOptions(services: AppServices): PickerOption[] {
       label: "+ add MCP server",
       description: `paste one JSON server object · merge into ${target}`,
     },
-    ...notionPickerOptions(state.snapshot.statuses),
+    ...knownPickerOptions(state.snapshot.statuses),
     {
       value: OFF_VALUE,
       label: "MCP tools off",
@@ -289,8 +361,8 @@ function openPicker(services: AppServices): void {
         void addServer(services);
         return;
       }
-      if (value === NOTION_VALUE) {
-        void addNotion(services);
+      if (value.startsWith(KNOWN_PREFIX)) {
+        void addKnownServer(services, value.slice(KNOWN_PREFIX.length));
         return;
       }
       if (value.startsWith(LOGIN_PREFIX)) {
@@ -395,9 +467,19 @@ async function loginCommand(services: AppServices, tail: string): Promise<void> 
 }
 
 async function addCommand(services: AppServices, tail: string): Promise<void> {
-  if (tail.toLowerCase() === NOTION_SERVER) {
-    await addNotion(services);
-    return;
+  if (tail && !tail.startsWith("{") && !tail.startsWith("[")) {
+    const known = knownMcpServer(tail);
+    if (known) {
+      await addKnownServer(services, known.id);
+      return;
+    }
+    if (!tail.includes('"')) {
+      services.session.notice(
+        "warn",
+        `unknown catalog server "${tail}" · catalog: ${KNOWN_MCP_SERVERS.map((server) => server.id).join(", ")} · or paste a JSON server object`,
+      );
+      return;
+    }
   }
   await addServer(services, tail);
 }
