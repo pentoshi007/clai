@@ -106,6 +106,21 @@ describe("learned route capabilities persist positives only", () => {
     expect(learnedRouteRejectedFields(PROVIDER, MODEL)).toEqual([]);
   });
 
+  it("keys session rejected fields consistently for free-N/ model aliases", () => {
+    learnRouteRejectedField(PROVIDER, "free-3/alias-probe", "Reasoning_Effort");
+    expect(learnedRouteRejectedFields(PROVIDER, "free-3/alias-probe")).toEqual([
+      "reasoning_effort",
+    ]);
+    expect(learnedRouteRejectedFields(PROVIDER, "alias-probe")).toEqual([
+      "reasoning_effort",
+    ]);
+    resetReasoningKnowledge();
+    learnRouteRejectedField(PROVIDER, "alias-probe", "reasoning");
+    expect(learnedRouteRejectedFields(PROVIDER, "free-7/alias-probe")).toEqual([
+      "reasoning",
+    ]);
+  });
+
   it("migrates an existing learned vision entry forward without dropping it", () => {
     updateConfig({
       learnedVisionCapabilities: { [KEY]: { vision: true, at: new Date().toISOString() } },

@@ -273,6 +273,48 @@ describe("tool-history", () => {
     expect(sessionIdx).toBeGreaterThan(lastToolIdx ?? -1);
   });
 
+  it("repairToolProtocol treats cleared injected blocks as benign mid-group", async () => {
+    const { AGENT_INSTRUCTIONS_PREFIX, ACTIVE_SKILLS_PREFIX } = await import(
+      "../../src/agent/injected-blocks.js"
+    );
+    const calls: NativeToolCall[] = [
+      { id: "chatcmpl-tool-a", name: "fs.list", args: { path: "/tmp" } },
+      { id: "chatcmpl-tool-b", name: "tool.check", args: { tools: ["node"] } },
+    ];
+    const messages: ChatMessage[] = [
+      { role: "system", content: "constitution" },
+      { role: "user", content: "build blog" },
+    ];
+    appendAssistantWithTools(messages, "researching", calls);
+    messages.push({
+      role: "system",
+      content: `${AGENT_INSTRUCTIONS_PREFIX}\n(cleared)`,
+    });
+    messages.push({
+      role: "system",
+      content: `${ACTIVE_SKILLS_PREFIX}\n(cleared)`,
+    });
+    for (const call of calls) {
+      appendToolResult(
+        messages,
+        call.id,
+        `Tool ${call.name} result (exit=0, ok=true):\nREAL BODY for ${call.name}`,
+        call.name,
+        true,
+      );
+    }
+    expect(validateToolProtocol(messages).length).toBeGreaterThan(0);
+    repairToolProtocol(messages);
+    expect(validateToolProtocol(messages)).toEqual([]);
+    for (const call of calls) {
+      const tool = messages.find(
+        (m) => m.role === "tool" && m.toolCallId === call.id,
+      );
+      expect(tool?.content).toContain(`REAL BODY for ${call.name}`);
+      expect(tool?.content).not.toMatch(/No stored body/i);
+    }
+  });
+
   it("keeps fresh literal content and removes only stale elision metadata", () => {
     const placeholder = "«20000 chars sha256=0123456789ab»";
     const messages: ChatMessage[] = [
