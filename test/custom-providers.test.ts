@@ -341,6 +341,52 @@ describe('custom providers', () => {
     expect(bodies[0]?.reasoning_effort).toBe('high');
   });
 
+  it('uses the selected Responses API without probing chat completions', async () => {
+    const { config, router } = await loadModules();
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://responses.example/v1/responses');
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body.reasoning).toEqual({ effort: 'high', summary: 'detailed' });
+      return new Response(JSON.stringify({
+        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }],
+      }), { headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    config.addCustomProvider({
+      id: 'responses-only', displayName: 'Responses only',
+      baseUrl: 'https://responses.example/v1', defaultModel: 'r1', api: 'responses',
+    });
+    const result = await router.getProvider('responses-only' as never).complete(
+      { messages: [{ role: 'user', content: 'hi' }], thinking: { enabled: true, effort: 'high' } },
+      { apiKey: 'test-key' },
+    );
+    expect(result).toMatchObject({ text: 'ok', provider: 'responses-only', api: 'responses' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the selected Anthropic Messages API at the configured endpoint', async () => {
+    const { config, router } = await loadModules();
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://anthropic.example/v1/messages');
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body.model).toBe('claude-custom');
+      expect(init?.headers).toMatchObject({ 'x-api-key': 'test-key' });
+      return new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn',
+      }), { headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    config.addCustomProvider({
+      id: 'anthropic-only', displayName: 'Anthropic only',
+      baseUrl: 'https://anthropic.example/v1', defaultModel: 'claude-custom', api: 'anthropic-messages',
+    });
+    const result = await router.getProvider('anthropic-only' as never).complete(
+      { messages: [{ role: 'user', content: 'hi' }] }, { apiKey: 'test-key' },
+    );
+    expect(result).toMatchObject({ text: 'ok', provider: 'anthropic-only', api: 'anthropic-messages' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not issue a second request when stream_options support was declared', async () => {
     const { config, router } = await loadModules();
     const fetchMock = vi.fn(async () =>

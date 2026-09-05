@@ -53,16 +53,18 @@ const baseUrl = "https://api.anthropic.com/v1";
 const anthropicVersion = "2023-06-01";
 
 function anthropicReasoningArtifacts(
+  provider: "anthropic" | import("../types.js").ProviderId,
   model: string,
   blocks: readonly AnthropicThinkingBlock[],
+  endpoint: string,
 ) {
   const artifacts = createSignedThinkingArtifacts({
     blocks,
     provenance: createReasoningArtifactProvenance({
-      provider: "anthropic",
+      provider,
       model,
       dialect: "anthropic-messages",
-      endpoint: baseUrl,
+      endpoint,
     }),
   });
   return artifacts.length ? artifacts : undefined;
@@ -136,14 +138,19 @@ export function anthropicSystemBlocks(
   return blocks;
 }
 
-export function buildAnthropicBody(request: CompletionRequest, stream: boolean): string {
+export function buildAnthropicBody(
+  request: CompletionRequest,
+  stream: boolean,
+  endpoint = baseUrl,
+): string {
   const model = request.model ?? defaultModels.anthropic;
+  const provider = request.provider ?? "anthropic";
   const plan = compileRequestPlan({
-    provider: "anthropic",
+    provider,
     model,
     messages: request.messages,
     stream,
-    endpoint: baseUrl,
+    endpoint,
     reasoning: request.thinking,
     tools: request.tools,
     toolChoice: request.toolChoice,
@@ -162,7 +169,7 @@ export function buildAnthropicBody(request: CompletionRequest, stream: boolean):
   };
   const messages = toAnthropicToolMessages(
     withoutRequestContextSystemMessages(
-      imageCapableMessages("anthropic", model, [...plan.timeline.messages]),
+      imageCapableMessages(provider, model, [...plan.timeline.messages]),
     ),
     reasoningArtifactReplay,
   );
@@ -215,7 +222,9 @@ export const anthropicProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
     const model = request.model ?? defaultModels.anthropic;
-    const response = await generationFetch(`${baseUrl}/messages`, {
+    const endpoint = auth.baseUrl ?? baseUrl;
+    const provider = request.provider ?? "anthropic";
+    const response = await generationFetch(`${endpoint}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: {
@@ -223,7 +232,7 @@ export const anthropicProvider: LlmProvider = {
         "x-api-key": auth.apiKey,
         "anthropic-version": anthropicVersion,
       },
-      body: buildAnthropicBody(request, false),
+      body: buildAnthropicBody(request, false, endpoint),
     });
     const data = await readJson<{
       content?: Array<{
@@ -246,8 +255,10 @@ export const anthropicProvider: LlmProvider = {
         ? { text: parsed.thinkingText, signature: parsed.thinkingSignature }
         : undefined;
     const reasoningArtifacts = anthropicReasoningArtifacts(
+      provider,
       model,
       parsed.thinkingBlocks,
+      endpoint,
     );
     const usage = withReasoningObservation(
       parseAnthropicUsage(data.usage),
@@ -255,7 +266,7 @@ export const anthropicProvider: LlmProvider = {
     );
     return {
       text: parsed.text,
-      provider: "anthropic",
+      provider,
       model,
       api: "anthropic-messages",
       ...(parsed.toolCalls.length ? { toolCalls: parsed.toolCalls } : {}),
@@ -279,7 +290,9 @@ export const anthropicProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     if (!auth.apiKey) throw new Error("Anthropic API key is required");
     const model = request.model ?? defaultModels.anthropic;
-    const response = await generationFetch(`${baseUrl}/messages`, {
+    const endpoint = auth.baseUrl ?? baseUrl;
+    const provider = request.provider ?? "anthropic";
+    const response = await generationFetch(`${endpoint}/messages`, {
       method: "POST",
       signal: request.signal ?? null,
       headers: {
@@ -287,7 +300,7 @@ export const anthropicProvider: LlmProvider = {
         "x-api-key": auth.apiKey,
         "anthropic-version": anthropicVersion,
       },
-      body: buildAnthropicBody(request, true),
+      body: buildAnthropicBody(request, true, endpoint),
     });
     if (!response.ok) {
       await readJson<unknown>(response);
@@ -411,8 +424,10 @@ export const anthropicProvider: LlmProvider = {
       toolArgumentBytes: anthropicToolArgumentBytes,
     });
     const reasoningArtifacts = anthropicReasoningArtifacts(
+      provider,
       model,
       finalized.thinkingBlocks,
+      endpoint,
     );
     emitStreamReasoningArtifacts(request.onStreamEvent, reasoningArtifacts);
     if (
@@ -428,7 +443,7 @@ export const anthropicProvider: LlmProvider = {
     );
     return {
       text: full,
-      provider: "anthropic",
+      provider,
       model,
       api: "anthropic-messages",
       ...(finalized.toolCalls.length

@@ -1,5 +1,5 @@
 import { invalidateCustomProviderCache, materializeCustomProvider, normalizeCustomBaseUrl, normalizeCustomProviderId } from "../../../llm/custom-providers.js";
-import type { CustomProviderDef } from "../../../llm/custom-providers.js";
+import type { CustomProviderApi, CustomProviderDef } from "../../../llm/custom-providers.js";
 import { addCustomProvider, getConfig, getCustomProviders, getProviderModel, removeCustomProvider, setDefaultProvider, setProviderModel, updateConfig } from "../../../store/config.js";
 import { setProviderSecret, unsetProviderSecret } from "../../../store/keys.js";
 import { providerIds } from "../../../types.js";
@@ -14,7 +14,7 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
   const existing = [...existingBuiltins, ...existingCustom];
 
   const idAnswer = await services.overlay.openSecret({
-    title: "New custom provider · 1 of 5 · id",
+    title: "New custom provider · 1 of 6 · id",
     prompt:
       "Enter a short id (lowercase, a-z 0-9 and hyphens, e.g. myllm). This is how clai names the provider internally.",
     reveal: true,
@@ -31,15 +31,35 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
   }
 
   const nameAnswer = await services.overlay.openSecret({
-    title: `New custom provider · 2 of 5 · name`,
+    title: `New custom provider · 2 of 6 · name`,
     prompt: `Enter a display name for "${id}" (shown in pickers), e.g. My LLM Gateway:`,
     reveal: true,
   });
   const displayName = nameAnswer?.trim() || id;
 
+  const api = await new Promise<CustomProviderApi | undefined>((resolve) => {
+    const opened = services.overlay.openPicker(
+      {
+        title: `New custom provider · 3 of 6 · API type`,
+        options: [
+          { value: "chat-completions", label: "OpenAI Chat Completions", description: "/chat/completions" },
+          { value: "responses", label: "OpenAI Responses", description: "/responses" },
+          { value: "anthropic-messages", label: "Anthropic Messages", description: "/messages" },
+        ],
+      },
+      (value) => resolve(value as CustomProviderApi),
+    );
+    if (!opened) resolve(undefined);
+  });
+  services.overlay.close();
+  if (!api) {
+    services.session.notice("info", "cancelled · provider unchanged");
+    return;
+  }
+
   const urlAnswer = await services.overlay.openSecret({
-    title: `New custom provider · 3 of 5 · base URL`,
-    prompt: `Paste the base URL for ${displayName} (OpenAI-compatible). e.g. https://api.example.com/v1`,
+    title: `New custom provider · 4 of 6 · base URL`,
+    prompt: `Paste the base URL for ${displayName}. e.g. https://api.example.com/v1`,
     reveal: true,
   });
   const baseUrl = normalizeCustomBaseUrl(urlAnswer?.trim() ?? "");
@@ -49,7 +69,7 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
   }
 
   const keyAnswer = await services.overlay.openSecret({
-    title: `New custom provider · 4 of 5 · API key`,
+    title: `New custom provider · 5 of 6 · API key`,
     prompt: `Enter the API key / bearer token for ${displayName} (input hidden). Leave blank to skip and set it later with /set ${id}.`,
   });
   const apiKey = keyAnswer?.trim() ?? "";
@@ -59,6 +79,7 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
     displayName,
     baseUrl,
     defaultModel: "",
+    api,
   };
   const tempProvider = materializeCustomProvider(tempDef);
   const fetchingToastId = services.toast.info(`fetching ${displayName} models…`, {
@@ -99,7 +120,7 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
     }
   } else {
     const modelAnswer = await services.overlay.openSecret({
-      title: `New custom provider · 5 of 5 · default model`,
+      title: `New custom provider · 6 of 6 · default model`,
       prompt: `Enter the default model id for ${displayName} (you can change it later with /model <name>):`,
       reveal: true,
     });
@@ -110,7 +131,7 @@ export async function addCustomProviderFlow(services: AppServices): Promise<void
     }
   }
 
-  const def: CustomProviderDef = { id, displayName, baseUrl, defaultModel };
+  const def: CustomProviderDef = { id, displayName, baseUrl, defaultModel, api };
   addCustomProvider(def);
   invalidateCustomProviderCache(id);
   if (apiKey) {
