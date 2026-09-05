@@ -123,6 +123,12 @@ async function addServer(
       draft = input;
     }
     const written = await writeProjectMcpServer(draft);
+    if (written.ok) {
+      services.session.notice(
+        "info",
+        `added MCP server ${written.serverName} to ${written.displayPath} · connecting…`,
+      );
+    }
     if (!written.ok) {
       services.session.notice(
         "warn",
@@ -206,6 +212,7 @@ async function addKnownServer(
     if (existing.status === "ready") selectServer(services, existing);
     return;
   }
+  services.session.notice("info", `adding ${known.title} MCP server…`);
   const collected: Record<string, string> = {};
   for (const secret of known.secrets) {
     if (secret.optional) continue;
