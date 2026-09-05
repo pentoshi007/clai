@@ -165,7 +165,9 @@ class ScreenProbe:
 
     def _apply_csi(self, params: bytes, final: bytes) -> None:
         text = params.decode("ascii", "ignore")
-        private = text.startswith("?")
+        # CSI_RE admits ?, < and > private markers (e.g. kitty keyboard CSI >...u
+        # and DA replies); all must be stripped before parsing numeric params.
+        private = text.startswith(("?", "<", ">"))
         if private:
             text = text[1:]
         values = [int(value) if value else 1 for value in text.split(";") if value or ";" in text]
