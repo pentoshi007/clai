@@ -193,6 +193,7 @@ export function upsertPlanContextMessage(
 export function removePlanContextMessage(
   messages: Array<{ role: string; content: string }>,
 ): void {
+  const cleared = `${PLAN_CONTEXT_PREFIX}\n(cleared)`;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (
@@ -200,7 +201,9 @@ export function removePlanContextMessage(
       typeof message.content === "string" &&
       message.content.startsWith(PLAN_CONTEXT_PREFIX)
     ) {
-      messages.splice(index, 1);
+      if (message.content === cleared) return;
+      messages.push({ role: "system", content: cleared });
+      return;
     }
   }
 }

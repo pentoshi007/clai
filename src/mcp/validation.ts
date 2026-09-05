@@ -231,8 +231,11 @@ export function validateServerEntry(
   }
 
   if (substitutor.missing.size > 0) {
+    const missing = [...substitutor.missing].sort();
+    const shown = missing.slice(0, 3);
+    const rest = missing.length - shown.length;
     errors.push(
-      `unresolved configuration variable(s): ${[...substitutor.missing].sort().join(", ")}`,
+      `unresolved configuration variable(s): ${shown.join(", ")}${rest > 0 ? ` +${rest} more` : ""} — export matching environment variables or add input defaults in the source config`,
     );
   }
 

@@ -168,7 +168,8 @@ export function classifyToolCall(
     call.name === "fs.write" ||
     call.name === "mcp.enable" ||
     call.name === "mcp.connect" ||
-    call.name === "mcp.login"
+    call.name === "mcp.login" ||
+    call.name === "mcp.add"
   ) {
     return {
       level: "confirm",

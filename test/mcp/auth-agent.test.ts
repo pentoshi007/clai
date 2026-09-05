@@ -167,12 +167,14 @@ describe("MCP agent tool ask-mode filtering", () => {
       "mcp.enable",
       "mcp.connect",
       "mcp.login",
+      "mcp.add",
     ]);
     const askNames = new Set(getToolDefinitions({ askMode: true }).map((d) => d.name));
     expect(askNames.has("mcp.list")).toBe(true);
     expect(askNames.has("mcp.tools")).toBe(true);
     expect(askNames.has("mcp.enable")).toBe(false);
     expect(askNames.has("mcp.login")).toBe(false);
+    expect(askNames.has("mcp.add")).toBe(false);
   });
 
   it("registers all agent tools as non-registry meta tools", () => {

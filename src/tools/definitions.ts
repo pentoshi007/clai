@@ -31,13 +31,14 @@ export const MCP_AGENT_TOOL_NAMES = new Set([
   "mcp.enable",
   "mcp.connect",
   "mcp.login",
+  "mcp.add",
 ]);
 
 export function mcpAgentToolNames(askMode: boolean): string[] {
   const readOnly = ["mcp.list", "mcp.tools"];
   return askMode
     ? readOnly
-    : [...readOnly, "mcp.enable", "mcp.connect", "mcp.login"];
+    : [...readOnly, "mcp.enable", "mcp.connect", "mcp.login", "mcp.add"];
 }
 
 export const NON_REGISTRY_TOOL_NAMES = new Set([

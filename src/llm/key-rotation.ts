@@ -1,4 +1,6 @@
 
+import { mentionsQuotaExhaustion } from "./quota-signals.js";
+
 export const MAX_PROVIDER_KEYS = 10;
 
 export const MULTI_KEY_ATTEMPTS = 2;
@@ -38,15 +40,7 @@ export function isAuthKeyError(error: unknown): boolean {
 export function isQuotaKeyError(error: unknown): boolean {
   const status = errorStatus(error);
   if (status === 402) return true;
-  const msg = errorMessage(error);
-  if (
-    /insufficient credits|insufficient balance|out of credits|no credits|payment required|balance is 0|top up to continue|quota exceeded|billing/i.test(
-      msg,
-    )
-  ) {
-    return true;
-  }
-  return false;
+  return mentionsQuotaExhaustion(error);
 }
 
 export function isImmediateKeySwitchError(error: unknown): boolean {

@@ -12,14 +12,17 @@ export type McpTransportFailureKind =
   | "closed"
   | "protocol"
   | "network"
-  | "too-large";
+  | "too-large"
+  | "browser";
 
 export class McpTransportError extends Error {
   readonly kind: McpTransportFailureKind;
-  constructor(kind: McpTransportFailureKind, message: string) {
+  readonly status?: number | undefined;
+  constructor(kind: McpTransportFailureKind, message: string, status?: number) {
     super(message);
     this.name = "McpTransportError";
     this.kind = kind;
+    this.status = status;
   }
 }
 

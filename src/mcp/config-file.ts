@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { safeCwd } from "../os/cwd.js";
 import { parseJsonc } from "./discovery.js";
@@ -185,20 +186,24 @@ export function projectMcpConfigPath(workspaceFolder = safeCwd()): string {
   return join(resolve(workspaceFolder), ".clai", "mcp.json");
 }
 
+export function userMcpConfigPath(homeDir?: string): string {
+  return join(resolve(homeDir ?? homedir()), ".clai", "mcp.json");
+}
+
 export function displayMcpConfigPath(path: string, workspaceFolder = safeCwd()): string {
   const shown = relative(resolve(workspaceFolder), path).replace(/\\/g, "/");
   return shown && !shown.startsWith("..") ? shown : path;
 }
 
-export async function writeProjectMcpServer(
+async function writeMcpServerTo(
+  path: string,
   text: string,
   options: {
     readonly workspaceFolder?: string | undefined;
     readonly env?: Readonly<Record<string, string | undefined>> | undefined;
-  } = {},
+  },
 ): Promise<McpConfigWriteResult> {
   const workspaceFolder = resolve(options.workspaceFolder ?? safeCwd());
-  const path = projectMcpConfigPath(workspaceFolder);
   const displayPath = displayMcpConfigPath(path, workspaceFolder);
   const parsed = parseMcpServerSnippet(text, {
     workspaceFolder,
@@ -257,4 +262,32 @@ export async function writeProjectMcpServer(
       displayPath,
     };
   }
+}
+
+export async function writeProjectMcpServer(
+  text: string,
+  options: {
+    readonly workspaceFolder?: string | undefined;
+    readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  } = {},
+): Promise<McpConfigWriteResult> {
+  const workspaceFolder = resolve(options.workspaceFolder ?? safeCwd());
+  return writeMcpServerTo(projectMcpConfigPath(workspaceFolder), text, {
+    workspaceFolder,
+    ...(options.env ? { env: options.env } : {}),
+  });
+}
+
+export async function writeUserMcpServer(
+  text: string,
+  options: {
+    readonly workspaceFolder?: string | undefined;
+    readonly homeDir?: string | undefined;
+    readonly env?: Readonly<Record<string, string | undefined>> | undefined;
+  } = {},
+): Promise<McpConfigWriteResult> {
+  return writeMcpServerTo(userMcpConfigPath(options.homeDir), text, {
+    ...(options.workspaceFolder ? { workspaceFolder: options.workspaceFolder } : {}),
+    ...(options.env ? { env: options.env } : {}),
+  });
 }

@@ -58,7 +58,27 @@ export async function openSystemBrowser(
     shell: false,
     detached: false,
   });
-  child.on("error", () => undefined);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => finish(), 25);
+    if (typeof timer.unref === "function") timer.unref();
+    child.on("spawn", () => finish());
+    child.on("error", (error) =>
+      finish(
+        new McpTransportError(
+          "browser",
+          `Could not launch a browser (${command}): ${error.message}.`,
+        ),
+      ),
+    );
+  });
   if (typeof child.unref === "function") child.unref();
 }
 
@@ -69,6 +89,7 @@ export interface LoopbackAuthorizationParams {
   readonly host?: string | undefined;
   readonly callbackPath?: string | undefined;
   readonly successHtml?: string | undefined;
+  readonly onAuthorizationUrl?: ((url: string) => void) | undefined;
 }
 
 type CallbackReading =
@@ -149,7 +170,10 @@ export function runLoopbackAuthorization(
       redirectUri = `http://${host}:${port}${callbackPath}`;
       Promise.resolve()
         .then(() => params.buildAuthorizationUrl(redirectUri, state))
-        .then((authUrl) => params.openBrowser(authUrl))
+        .then((authUrl) => {
+          params.onAuthorizationUrl?.(authUrl);
+          return params.openBrowser(authUrl);
+        })
         .catch((error) =>
           finishReject(error instanceof Error ? error : new Error(String(error))),
         );

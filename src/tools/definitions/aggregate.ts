@@ -354,5 +354,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     { mutates: true },
   ),
+  def(
+    "mcp.add",
+    'Add an MCP server to this project. Pass name with a well-known server id from the built-in catalog (github, notion, context7, fetch, filesystem, memory, sequential-thinking, brave-search, mongodb, puppeteer, slack) for a curated one-step install, or pass json with a full server definition. Required API keys must already exist as environment variables; otherwise the call reports exactly which variable to set.',
+    {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Well-known server id from the built-in catalog.",
+        },
+        json: {
+          type: "string",
+          description:
+            'Full server definition as JSON, e.g. {"docs":{"command":"docs-server"}} or a named single server object.',
+        },
+      },
+      additionalProperties: false,
+    },
+    { mutates: true },
+  ),
   ...TOOL_DEFINITIONS_TERMINAL,
 ];

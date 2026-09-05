@@ -24,8 +24,9 @@ import {
 } from "./tool-history-projection.js";
 import { isSessionStateMessage } from "./session-state.js";
 import {
-  isActiveSkillsMessage,
-  isAgentInstructionsMessage,
+  ACTIVE_SKILLS_PREFIX,
+  AGENT_INSTRUCTIONS_PREFIX,
+  isKeyedBlockMessage,
 } from "./injected-blocks.js";
 
 export {
@@ -36,8 +37,8 @@ export {
 function isBenignTrailingSystemBlock(content: string): boolean {
   return (
     isSessionStateMessage(content) ||
-    isAgentInstructionsMessage(content) ||
-    isActiveSkillsMessage(content)
+    isKeyedBlockMessage(content, AGENT_INSTRUCTIONS_PREFIX) ||
+    isKeyedBlockMessage(content, ACTIVE_SKILLS_PREFIX)
   );
 }
 

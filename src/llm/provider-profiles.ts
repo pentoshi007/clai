@@ -17,6 +17,7 @@ import { modelFamilyFor } from "./model-families.js";
 import {
   isReasoningUnsupported,
   routeReasoningIsMandatory,
+  catalogAdvertisedEfforts,
   modelCatalogFacts,
   learnedRouteEfforts,
   modelReasoningEfforts,
@@ -229,8 +230,10 @@ function observedReasoningOverlay(profile: ProviderProfile): ProviderProfile {
   const mandatory = routeReasoningIsMandatory(provider, model);
   const suppressed = !mandatory && isReasoningUnsupported(provider, model);
   const wireEfforts = learnedRouteEfforts(provider, model);
+  const advertised = catalogAdvertisedEfforts(provider, model);
   const learnedEfforts =
     wireEfforts ??
+    advertised ??
     (profile.reasoning.acceptedEfforts.length === 0
       ? modelReasoningEfforts(provider, model)
       : undefined);

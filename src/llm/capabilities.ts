@@ -4,7 +4,7 @@ import type {
   ReasoningPreference,
 } from "../types.js";
 import type { ToolCallingMode } from "./tool-protocol.js";
-import type { CatalogFacts } from "./catalog-facts.js";
+import { catalogEffortList, type CatalogFacts } from "./catalog-facts.js";
 import { modelFamilyFor } from "./model-families.js";
 import {
   endpointAcceptedEfforts,
@@ -22,8 +22,8 @@ import {
   clearPersistedLearnedRoutes,
   learnedRouteRejectedFields,
   clearPersistedLearnedRouteReasoning,
+  learnSessionRejectedField,
   persistLearnedRoute,
-  readLearnedRoute,
   UNATTRIBUTED_CONTROL_DIALECT,
 } from "./learned-capabilities.js";
 import {
@@ -71,7 +71,7 @@ export function markReasoningUnsupported(
   reasoningUnsupportedModels.add(key);
   const dialect = routeControlDialect(key) ?? UNATTRIBUTED_CONTROL_DIALECT;
   setNegativeControlDialect(key, dialect);
-  learnRouteReasoningSupport(provider, model, false, dialect);
+  learnRouteReasoningSupport(provider, model, false);
 }
 
 export function registerRouteControlDialect(
@@ -207,7 +207,7 @@ export function learnModelEmitsReasoning(
 }
 
 export type ReasoningEvidence =
-  "rejected" | "observed" | "catalog" | "pattern" | "endpoint" | "unknown";
+  "rejected" | "observed" | "catalog" | "pattern" | "family" | "endpoint" | "unknown";
 
 export function modelReasoningEvidence(
   provider: ProviderId,
@@ -217,8 +217,12 @@ export function modelReasoningEvidence(
   if (reasoningUnsupportedModels.has(key)) return "rejected";
   if (observedReasoningModels.has(key)) return "observed";
   if (catalogReasoningSupport.has(key)) return "catalog";
+  const facts = catalogFactsByRoute.get(key);
+  if (facts?.reasoning?.supported !== undefined) return "catalog";
+  if (catalogAdvertisedEfforts(provider, model) !== undefined) return "catalog";
   const patterns = REASONING_PATTERNS[provider] ?? [];
   if (patterns.some((pattern) => pattern.test(model))) return "pattern";
+  if (modelFamilyFor(model)) return "family";
   return endpointAcceptedEfforts(provider) ? "endpoint" : "unknown";
 }
 
@@ -232,6 +236,10 @@ export function modelSupportsThinking(
   if (observedReasoningModels.has(key)) return true;
   const declared = catalogReasoningSupport.get(key);
   if (declared !== undefined) return declared;
+  const facts = catalogFactsByRoute.get(key);
+  if (facts?.reasoning?.supported !== undefined) return facts.reasoning.supported;
+  if (catalogAdvertisedEfforts(provider, model) !== undefined) return true;
+  if (modelFamilyFor(model)) return true;
   const patterns = REASONING_PATTERNS[provider];
   if (patterns === undefined) return true;
   if (patterns.some((pattern) => pattern.test(model))) return true;
@@ -299,13 +307,25 @@ export function registerModelReasoningEfforts(
   catalogReasoningEfforts.set(reasoningKey(provider, model), normalized);
 }
 
+export function catalogAdvertisedEfforts(
+  provider: ProviderId,
+  model: string,
+): readonly string[] | undefined {
+  const key = reasoningKey(provider, model);
+  const registered = catalogReasoningEfforts.get(key);
+  if (registered?.length) return registered;
+  const facts = catalogFactsByRoute.get(key);
+  const efforts = catalogEffortList(facts?.reasoning?.supportedEfforts);
+  return efforts?.length ? efforts : undefined;
+}
+
 export function modelReasoningEfforts(
   provider: ProviderId,
   model: string,
 ): readonly string[] | undefined {
   loadLearnedCapabilities();
-  const learned = catalogReasoningEfforts.get(reasoningKey(provider, model));
-  if (learned?.length) return learned;
+  const advertised = catalogAdvertisedEfforts(provider, model);
+  if (advertised !== undefined) return advertised;
   const family = modelFamilyFor(model);
   return family && family.acceptedEfforts.length > 0
     ? family.acceptedEfforts
@@ -388,13 +408,14 @@ export function learnRouteReasoningSupport(
   provider: ProviderId,
   model: string,
   reasoning: boolean,
-  controlDialect?: string,
 ): void {
   if (!model.trim()) return;
-  persistLearnedRoute(reasoningKey(provider, model), {
-    reasoning,
-    ...(controlDialect ? { controlDialect } : {}),
-  });
+  const key = reasoningKey(provider, model);
+  if (!reasoning) {
+    clearPersistedLearnedRouteReasoning(key);
+    return;
+  }
+  persistLearnedRoute(key, { reasoning });
 }
 
 export function learnRouteAcceptedEfforts(
@@ -440,12 +461,8 @@ export function learnRouteRejectedField(
   model: string,
   field: string,
 ): void {
-  const name = field.trim().toLowerCase();
-  if (!name) return;
-  const key = reasoningKey(provider, model);
-  const existing = readLearnedRoute(key)?.rejectedFields ?? [];
-  if (existing.includes(name)) return;
-  persistLearnedRoute(key, { rejectedFields: [...existing, name] });
+  if (!model.trim()) return;
+  learnSessionRejectedField(reasoningKey(provider, model), field);
 }
 
 export function clearLearnedRouteCapabilities(): void {

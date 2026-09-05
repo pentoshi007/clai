@@ -7,6 +7,7 @@ export interface RegistrationParams {
   readonly redirectUris: readonly string[];
   readonly clientName: string;
   readonly scope?: string | undefined;
+  readonly deviceFlow?: boolean | undefined;
 }
 
 export interface RegistrationDeps {
@@ -24,8 +25,10 @@ export async function registerOAuthClient(
   const body = {
     client_name: params.clientName,
     redirect_uris: [...params.redirectUris],
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
+    grant_types: params.deviceFlow
+      ? ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"]
+      : ["authorization_code", "refresh_token"],
+    response_types: params.deviceFlow ? [] : ["code"],
     token_endpoint_auth_method: "none",
     ...(params.scope ? { scope: params.scope } : {}),
   };

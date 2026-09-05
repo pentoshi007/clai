@@ -13,6 +13,7 @@ import {
   ProviderError,
   STREAM_STALL_MARKER,
 } from "../http.js";
+import { quotaOrRateLimited } from "../quota-signals.js";
 import { resolveBuiltInProfile } from "../provider-profiles.js";
 import { EFFORT_SCALE, nearestAcceptedEffort } from "../reasoning-controls.js";
 import { mentionsReasoning } from "../reasoning-errors.js";
@@ -44,7 +45,8 @@ export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export function isRateLimited(error: unknown): boolean {
-  return error instanceof ProviderError && error.status === 429;
+  if (error instanceof ProviderError && error.status === 429) return true;
+  return quotaOrRateLimited(error);
 }
 
 export function isServerUnavailable(error: unknown): boolean {
