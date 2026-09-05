@@ -323,7 +323,7 @@ describe("injected block placement (prompt cache safety)", () => {
 
   it("marks the block cleared when the instruction files disappear", () => {
     const messages = baseMessages();
-    upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\\nrule`);
+    upsertAgentInstructionsMessage(messages, `${AGENT_INSTRUCTIONS_PREFIX}\nrule`);
     upsertAgentInstructionsMessage(messages, undefined);
     const latest = [...messages]
       .reverse()

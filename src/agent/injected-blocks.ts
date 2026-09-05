@@ -42,6 +42,10 @@ export function isClearedKeyedBlock(content: string): boolean {
   return content.endsWith("\n(cleared)");
 }
 
+export function isKeyedBlockMessage(content: string, prefix: string): boolean {
+  return content.startsWith(prefix);
+}
+
 export function latestKeyedBlock(
   messages: readonly { role: string; content: string }[],
   prefix: string,

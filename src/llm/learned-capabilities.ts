@@ -196,5 +196,12 @@ export function learnedRouteRejectedFields(
   provider: string,
   model: string,
 ): readonly string[] {
-  return sessionRejectedFields.get(routeCapabilityKey(provider, model)) ?? [];
+  return sessionRejectedFields.get(sessionRejectedFieldsKey(provider, model)) ?? [];
+}
+
+function sessionRejectedFieldsKey(provider: string, model: string): string {
+  return `${provider}:${model
+    .trim()
+    .toLowerCase()
+    .replace(/^free-\d+\//, "")}`;
 }
