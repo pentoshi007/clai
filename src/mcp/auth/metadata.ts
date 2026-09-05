@@ -111,6 +111,9 @@ function parseAuthorizationServerMetadata(
     ...(typeof record.registration_endpoint === "string"
       ? { registrationEndpoint: record.registration_endpoint }
       : {}),
+    ...(typeof record.device_authorization_endpoint === "string"
+      ? { deviceAuthorizationEndpoint: record.device_authorization_endpoint }
+      : {}),
     scopesSupported: stringArray(record.scopes_supported),
     codeChallengeMethodsSupported: stringArray(record.code_challenge_methods_supported),
   };

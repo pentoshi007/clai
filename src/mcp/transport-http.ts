@@ -60,6 +60,7 @@ function sseStreamError(server: string, status: number): McpTransportError {
     status === 401
       ? unauthorizedHint(server)
       : `MCP SSE stream returned ${status}.`,
+    status,
   );
 }
 
@@ -69,6 +70,7 @@ function ssePostError(server: string, status: number): McpTransportError {
     status === 401
       ? unauthorizedHint(server)
       : `MCP SSE POST returned ${status}.`,
+    status,
   );
 }
 
@@ -238,12 +240,14 @@ export class StreamableHttpTransport implements McpTransport {
       throw new McpTransportError(
         "network",
         `${unauthorizedHint(this.config.url)}${detail ? ` Server said: ${detail.slice(0, 300)}` : ""}`,
+        401,
       );
     }
     const detail = await readBoundedText(response, this.maxBytes).catch(() => "");
     throw new McpTransportError(
       "network",
       `MCP HTTP request returned ${response.status}${detail ? `: ${detail.slice(0, 400)}` : ""}.`,
+      response.status,
     );
   }
 

@@ -116,16 +116,31 @@ export interface AppServices {
 export function createCompositionRoot(
   options: CompositionOptions = {},
 ): AppServices {
+  let sessionRef: SessionController | undefined;
   const mcp =
     options.mcp ??
-    new McpRuntime({ openBrowser: openSystemBrowser, oauthInteractive: true });
+    new McpRuntime({
+      openBrowser: openSystemBrowser,
+      oauthInteractive: true,
+      onDeviceAuthorization: (info) => {
+        sessionRef?.notice(
+          "info",
+          `MCP sign-in for ${info.serverUrl} · open ${info.verificationUriComplete ?? info.verificationUri} and enter code ${info.userCode} (expires in ${Math.round(info.expiresInSeconds / 60)} min)`,
+        );
+      },
+      onAuthorizationUrl: (info) => {
+        sessionRef?.notice(
+          "info",
+          `MCP sign-in for ${info.serverUrl} · if the browser did not open, visit ${info.url}`,
+        );
+      },
+    });
   const recorded: AnyAppEvent[] = [];
   const captureEvents = options.captureEvents === true;
   const transcript = new TranscriptStore();
   const persistence = options.persistence ?? createCurrentPersistencePort();
   const plan = new PlanController(persistence);
   const externalEmit = options.emit;
-  let sessionRef: SessionController | undefined;
   const focus = new FocusController();
   const overlay = new OverlayController(focus);
   const toast = new ToastController();

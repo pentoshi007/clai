@@ -25,6 +25,7 @@ export interface AuthorizationServerMetadata {
   readonly authorizationEndpoint: string;
   readonly tokenEndpoint: string;
   readonly registrationEndpoint?: string | undefined;
+  readonly deviceAuthorizationEndpoint?: string | undefined;
   readonly scopesSupported: readonly string[];
   readonly codeChallengeMethodsSupported: readonly string[];
 }
@@ -61,6 +62,14 @@ export interface LoopbackAuthorizationResult {
   readonly code: string;
   readonly state: string;
   readonly redirectUri: string;
+}
+
+export interface DeviceAuthorizationInfo {
+  readonly serverUrl: string;
+  readonly verificationUri: string;
+  readonly verificationUriComplete?: string | undefined;
+  readonly userCode: string;
+  readonly expiresInSeconds: number;
 }
 
 export interface TokenResponse {

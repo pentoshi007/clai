@@ -7,6 +7,10 @@ import {
   STREAM_STALL_MARKER,
 } from "../http.js";
 import { markStreamEmittedBytes } from "../stream-progress.js";
+import {
+  mentionsQuotaExhaustion,
+  mentionsRateLimit,
+} from "../quota-signals.js";
 import { isCacheOnlyColdError } from "./error-classification.js";
 
 function appendFullProviderBody(text: string, error: unknown): string {
@@ -94,6 +98,20 @@ export function formatProviderFailureForUser(error: unknown): string {
         ),
       );
     }
+    if (mentionsQuotaExhaustion(error)) {
+      return withFullBody(
+        withExactError(
+          "Provider reports the quota/credits for this key are exhausted. Add another API key (clai set <provider> <key>), top up the account, or switch provider.",
+        ),
+      );
+    }
+    if (mentionsRateLimit(error)) {
+      return withFullBody(
+        withExactError(
+          "Model is rate limited (reported in the provider error body, without a 429 status). Try another API key, provider, or model.",
+        ),
+      );
+    }
   }
   const message = (error instanceof Error ? error.message : String(error))
     .replace(/\s+/g, " ")
@@ -128,6 +146,12 @@ export function formatProviderFailureForUser(error: unknown): string {
       )
     ) {
       return `${message} — network/DNS failure reaching the provider. Check connectivity and provider base URL.`;
+    }
+    if (mentionsQuotaExhaustion(error)) {
+      return `${message} — the provider reports quota/credits exhausted for this key. Add another API key or switch provider.`;
+    }
+    if (mentionsRateLimit(error)) {
+      return `${message} — the provider reports rate limiting without a 429 status. Retry shortly, or switch API key/provider.`;
     }
     return message;
   })();
