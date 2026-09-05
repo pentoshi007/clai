@@ -150,16 +150,21 @@ async function openChannel(
   dimensions?: { readonly columns: number; readonly rows: number } | undefined,
 ): Promise<{ socket: Socket; first: Awaited<ReturnType<typeof readFirstFrame>> }> {
   const socket = await connectRuntimeSocket(metadata.socketPath);
-  sendFrame(
-    socket,
-    runtimeClientAuthFrame(metadata, role, clientId, dimensions),
-  );
-  const first = await readFirstFrame(socket);
-  if (!isAck(first.value)) {
+  socket.on("error", () => socket.destroy());
+  try {
+    sendFrame(
+      socket,
+      runtimeClientAuthFrame(metadata, role, clientId, dimensions),
+    );
+    const first = await readFirstFrame(socket);
+    if (!isAck(first.value)) {
+      throw new Error("session runtime rejected the client connection");
+    }
+    return { socket, first };
+  } catch (error) {
     socket.destroy();
-    throw new Error("session runtime rejected the client connection");
+    throw error;
   }
-  return { socket, first };
 }
 
 function childEnvironment(payload: string): NodeJS.ProcessEnv {
@@ -335,16 +340,35 @@ function waitForStdoutDrain(timeoutMs = 1_000): Promise<void> {
   });
 }
 
-function restoreTerminal(
-  previousRaw: boolean | undefined,
-  altScreenActive: boolean,
-): void {
-  const stdin = process.stdin;
-  stdin.setRawMode?.(previousRaw ?? false);
-  process.stdout.write(terminalRestoreSequence(altScreenActive));
+function resetTerminal(tracker: AltScreenTracker): Promise<void> {
+  const sequence = terminalRestoreSequence(tracker.isActive);
+  tracker.observe(sequence);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      process.stdout.off("error", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 1_000);
+    process.stdout.once("error", finish);
+    try {
+      process.stdout.write(sequence, (error) => {
+        if (!error) finish();
+      });
+    } catch {
+      finish();
+    }
+  });
 }
 
-async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> {
+async function attachRuntime(
+  metadata: RuntimeMetadata,
+  altScreen: AltScreenTracker,
+  signal: AbortSignal,
+): Promise<AttachOutcome> {
   const clientId = `${process.pid}-${randomUUID()}`;
   const dimensions = {
     columns: terminalColumns(),
@@ -369,11 +393,10 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
   }
   const control = controlConnection.socket;
   const terminal = terminalConnection.socket;
-  const altScreen = new AltScreenTracker();
   let settled = false;
   let exitPending = false;
-  let previousRaw: boolean | undefined;
   let channel: JsonFrameChannel | undefined;
+  let controlCloseTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveOutcome: ((value: AttachOutcome) => void) | undefined;
   const outcome = new Promise<AttachOutcome>((resolve) => {
     resolveOutcome = resolve;
@@ -408,21 +431,8 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
       })();
     }
   };
-  channel = new JsonFrameChannel(
-    control,
-    receive,
-    () => {
-      if (exitPending) return;
-      settle({
-        kind: "detach",
-        reason: "connection-lost",
-        sessionId: metadata.sessionId,
-      });
-    },
-    controlConnection.first.rest,
-  );
-  control.once("close", () => {
-    setTimeout(() => {
+  const onControlClose = (): void => {
+    controlCloseTimer = setTimeout(() => {
       if (!settled && !exitPending) {
         settle({
           kind: "detach",
@@ -431,17 +441,15 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
         });
       }
     }, 30).unref?.();
-  });
+  };
 
   const stdin = process.stdin;
-  previousRaw = stdin.isRaw;
-  stdin.setRawMode?.(true);
-  stdin.resume();
   const onInput = (bytes: Buffer): void => {
+    if (settled || exitPending) return;
     if (!terminal.write(bytes)) stdin.pause();
   };
   const onTerminalDrain = (): void => {
-    stdin.resume();
+    if (!settled && !exitPending) stdin.resume();
   };
   const onTerminalError = (): void => {
     if (exitPending) return;
@@ -452,6 +460,7 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
     });
   };
   const onOutput = (bytes: Buffer): void => {
+    if (settled) return;
     if (!writeOutput(altScreen, bytes)) terminal.pause();
   };
   const onStdoutDrain = (): void => {
@@ -473,25 +482,35 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
   };
   const onTerminate = (): void => onInputEnd();
 
-  stdin.on("data", onInput);
-  stdin.once("end", onInputEnd);
-  terminal.on("drain", onTerminalDrain);
-  terminal.on("error", onTerminalError);
-  terminal.on("data", onOutput);
-  process.stdout.on("drain", onStdoutDrain);
-  process.on("SIGWINCH", sendResize);
-  process.on("SIGHUP", onTerminate);
-  process.on("SIGTERM", onTerminate);
-  if (terminalConnection.first.rest.length > 0) {
-    writeOutput(altScreen, terminalConnection.first.rest);
-  }
-  terminal.resume();
-  sendResize();
-
   try {
+    channel = new JsonFrameChannel(
+      control,
+      receive,
+      onTerminalError,
+      controlConnection.first.rest,
+    );
+    control.once("close", onControlClose);
+    stdin.on("data", onInput);
+    stdin.once("end", onInputEnd);
+    terminal.on("drain", onTerminalDrain);
+    terminal.on("error", onTerminalError);
+    terminal.on("data", onOutput);
+    process.stdout.on("drain", onStdoutDrain);
+    process.on("SIGWINCH", sendResize);
+    signal.addEventListener("abort", onTerminate, { once: true });
+    if (signal.aborted) onTerminate();
+    if (!settled) {
+      const writable = terminalConnection.first.rest.length === 0 ||
+        writeOutput(altScreen, terminalConnection.first.rest);
+      if (writable) terminal.resume();
+      sendResize();
+    }
     return await outcome;
   } finally {
-    channel.dispose();
+    settled = true;
+    channel?.dispose();
+    if (controlCloseTimer) clearTimeout(controlCloseTimer);
+    control.off("close", onControlClose);
     stdin.off("data", onInput);
     stdin.off("end", onInputEnd);
     terminal.off("drain", onTerminalDrain);
@@ -499,12 +518,72 @@ async function attachRuntime(metadata: RuntimeMetadata): Promise<AttachOutcome> 
     terminal.off("data", onOutput);
     process.stdout.off("drain", onStdoutDrain);
     process.off("SIGWINCH", sendResize);
-    process.off("SIGHUP", onTerminate);
-    process.off("SIGTERM", onTerminate);
+    signal.removeEventListener("abort", onTerminate);
     control.destroy();
     terminal.destroy();
-    stdin.pause();
-    restoreTerminal(previousRaw, altScreen.isActive);
+    stdin.resume();
+  }
+}
+
+async function runRuntimeClient(
+  options: DurableInteractiveOptions,
+): Promise<Exclude<AttachOutcome, { kind: "switch" }>> {
+  const stdin = process.stdin;
+  const previousRaw = stdin.isRaw;
+  const altScreen = new AltScreenTracker();
+  const discardInput = (): void => undefined;
+  const controller = new AbortController();
+  let interrupted: Extract<AttachOutcome, { kind: "exit" }> | undefined;
+  const interrupt = (exitCode: number): void => {
+    interrupted ??= { kind: "exit", exitCode };
+    controller.abort();
+  };
+  const onHangup = (): void => interrupt(129);
+  const onTerminate = (): void => interrupt(143);
+  try {
+    process.on("SIGHUP", onHangup);
+    process.on("SIGTERM", onTerminate);
+    stdin.on("data", discardInput);
+    stdin.setRawMode?.(true);
+    stdin.resume();
+    let target = await initialTarget(options.resume);
+    for (;;) {
+      if (interrupted) return interrupted;
+      const metadata = await ensureRuntime(options, target);
+      if (interrupted) return interrupted;
+      const outcome = await attachRuntime(metadata, altScreen, controller.signal);
+      if (interrupted) return interrupted;
+      if (outcome.kind !== "switch") return outcome;
+      await resetTerminal(altScreen);
+      try {
+        target = await switchTarget(outcome.sessionId, outcome.fresh);
+      } catch (error) {
+        const current = await findLiveRuntime(metadata.sessionId).catch(
+          () => undefined,
+        );
+        if (!current) throw error;
+        process.stderr.write(
+          `Unable to switch sessions (${runtimeFallbackMessage(error)}); reattaching the current session.\n`,
+        );
+        target = { sessionId: current.sessionId };
+      }
+    }
+  } catch (error) {
+    if (interrupted) return interrupted;
+    throw error;
+  } finally {
+    try {
+      await resetTerminal(altScreen);
+    } finally {
+      stdin.pause();
+      stdin.off("data", discardInput);
+      try {
+        stdin.setRawMode?.(previousRaw ?? false);
+      } finally {
+        process.off("SIGHUP", onHangup);
+        process.off("SIGTERM", onTerminate);
+      }
+    }
   }
 }
 
@@ -552,32 +631,13 @@ export async function tryRunDurableInteractive(
     const capability = await probePtyCapability();
     if (!capability.available) return false;
 
-    let target = await initialTarget(options.resume);
-    for (;;) {
-      const metadata = await ensureRuntime(options, target);
-      const outcome = await attachRuntime(metadata);
-      if (outcome.kind === "switch") {
-        try {
-          target = await switchTarget(outcome.sessionId, outcome.fresh);
-        } catch (error) {
-          const current = await findLiveRuntime(metadata.sessionId).catch(
-            () => undefined,
-          );
-          if (!current) throw error;
-          process.stderr.write(
-            `Unable to switch sessions (${runtimeFallbackMessage(error)}); reattaching the current session.\n`,
-          );
-          target = { sessionId: current.sessionId };
-        }
-        continue;
-      }
-      if (outcome.kind === "exit") {
-        process.exitCode = outcome.exitCode;
-        return true;
-      }
-      reportDetach(outcome);
+    const outcome = await runRuntimeClient(options);
+    if (outcome.kind === "exit") {
+      process.exitCode = outcome.exitCode;
       return true;
     }
+    reportDetach(outcome);
+    return true;
   } catch (error) {
     process.stderr.write(
       `Durable session runtime unavailable (${runtimeFallbackMessage(error)}); using foreground mode.\n`,

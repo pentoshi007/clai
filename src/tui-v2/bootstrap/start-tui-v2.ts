@@ -20,7 +20,7 @@ import { createExitEpilogue } from "../../ui-core/bootstrap/exit-epilogue.js";
 import {
   EXIT_SUMMARY_RESET,
 } from "../../os/screen-sequences.js";
-import { writeTerminalAndWait, writeTerminalDirect } from "../../os/terminal-write.js";
+import { writeTerminalAndWait } from "../../os/terminal-write.js";
 import {
   applyResumeResolution,
   resolveResumeTarget,
@@ -38,11 +38,7 @@ import { createRuntimeChildBridge } from "../../session-runtime/child-bridge.js"
 import { bindRuntimeChildBridge } from "../../session-runtime/binding.js";
 import { seedSessionModel } from "../../store/session-model.js";
 import { createOpenTuiRendererHandle } from "./renderer-handle.js";
-import {
-  createCoordinatedFlush,
-  installResizeRepaint,
-  repaintAttachedScreen,
-} from "./resize-repaint.js";
+import { repaintAttachedScreen } from "./resize-repaint.js";
 
 export interface StartTuiV2Options {
   readonly mode?: Mode | undefined;
@@ -96,6 +92,17 @@ export async function startTuiV2(
       },
     }, createElement("text", { content: "Loading session…" })),
   );
+  const requestRepaint = (): boolean =>
+    repaintAttachedScreen({
+      renderer,
+      enabled: Boolean(process.stdout.isTTY),
+      isSuspended: () =>
+        renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
+    });
+  const runtimeBridge = createRuntimeChildBridge(true);
+  runtimeBridge?.setRepaintHandler(requestRepaint);
+  if (runtimeBridge) await runtimeBridge.connect();
+  let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   const reportedThemeMode = await renderer.waitForThemeMode(300).catch(() => null);
   if (reportedThemeMode === "dark" || reportedThemeMode === "light") {
     rememberThemeMode(reportedThemeMode);
@@ -115,9 +122,6 @@ export async function startTuiV2(
   const lifecycleRef: { current: RendererLifecycle | undefined } = {
     current: undefined,
   };
-  const runtimeBridge = createRuntimeChildBridge(true);
-  if (runtimeBridge) await runtimeBridge.connect();
-  let disposeRuntimeBridge = (): void => runtimeBridge?.dispose();
   const seeded = await seedSessionModel(options.sessionId, {
     provider: options.provider,
     model: options.model,
@@ -179,23 +183,10 @@ export async function startTuiV2(
     disposeServices: () => services.dispose(),
   });
 
-  const flush = createCoordinatedFlush(renderer, (text) =>
-    writeTerminalDirect(text),
-  );
-  const disposeResizeRepaint = installResizeRepaint({
-    renderer,
-    write: (text) => void flush(text),
-    enabled: Boolean(process.stdout.isTTY),
-    isSuspended: () =>
-      renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
-    requestRepaint: () => undefined,
-  });
-
   const lifecycle = new RendererLifecycle({
     handle,
     disposers: [
       () => disposeRuntimeBridge(),
-      disposeResizeRepaint,
       epilogue.capture,
       async () => {
         await services.session.persistNow().catch(() => undefined);
@@ -244,26 +235,12 @@ export async function startTuiV2(
   lifecycleRef.current = lifecycle;
 
   await lifecycle.start();
-  repaintAttachedScreen({
-    renderer,
-    write: (text) => void flush(text),
-    enabled: Boolean(process.stdout.isTTY),
-    isSuspended: () =>
-      renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
-  });
   if (runtimeBridge) {
     disposeRuntimeBridge = bindRuntimeChildBridge(
       runtimeBridge,
       services,
       () => void lifecycle.shutdownAndExit(0),
-      () =>
-        repaintAttachedScreen({
-          renderer,
-          write: (text) => void flush(text),
-          enabled: Boolean(process.stdout.isTTY),
-          isSuspended: () =>
-            renderer.controlState === RendererControlState.EXPLICIT_SUSPENDED,
-        }),
+      requestRepaint,
     );
   }
 

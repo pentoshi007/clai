@@ -1,16 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  RESIZE_REPAINT_SEQUENCE,
-  createCoordinatedFlush,
   forceFullRepaint,
-  installResizeRepaint,
   repaintAttachedScreen,
-  type CoordinatedFlushRenderer,
-  type RepaintScheduler,
-  type ResizeListener,
 } from "../../../src/tui-v2/bootstrap/resize-repaint.js";
 import {
   ABANDONED_TERMINAL_RESET,
@@ -22,415 +17,155 @@ import {
 } from "../../../src/os/screen-sequences.js";
 
 const root = join(fileURLToPath(new URL("../../..", import.meta.url)));
+const bun = spawnSync("bun", ["--version"], { encoding: "utf8" });
+const bunMissing = bun.error && "code" in bun.error && bun.error.code === "ENOENT";
 
 function fakeRenderer() {
-  const listeners = new Set<ResizeListener>();
   return {
-    listenerCount: () => listeners.size,
-    emitResize(width: number, height: number) {
-      for (const listener of [...listeners]) listener(width, height);
-    },
-    on(_event: "resize", listener: ResizeListener) {
-      listeners.add(listener);
-      return this;
-    },
-    off(_event: "resize", listener: ResizeListener) {
-      listeners.delete(listener);
-      return this;
-    },
+    forceFullRepaintRequested: false,
+    isDestroyed: false,
+    requestRender: vi.fn(),
+    currentRenderBuffer: { clear: vi.fn() },
+    pause: vi.fn(),
+    suspend: vi.fn(),
+    resume: vi.fn(),
+    idle: vi.fn(),
   };
 }
 
-function manualScheduler(): {
-  schedule: RepaintScheduler;
-  flush: () => void;
-  pending: () => number;
-} {
-  let queued: (() => void) | undefined;
-  return {
-    schedule: (run) => {
-      queued = run;
-      return () => {
-        queued = undefined;
-      };
-    },
-    flush: () => {
-      const run = queued;
-      queued = undefined;
-      run?.();
-    },
-    pending: () => (queued ? 1 : 0),
-  };
-}
-
-const immediate: RepaintScheduler = (run) => {
-  run();
-  return () => {};
-};
-
-describe("OpenTUI resize repaint", () => {
-  it("repaints with erase-to-end rather than erase-display, which terminals may push to scrollback", () => {
-    expect(RESIZE_REPAINT_SEQUENCE).toBe("\u001b[H\u001b[J");
-    expect(RESIZE_REPAINT_SEQUENCE).not.toContain("2J");
-    expect(RESIZE_REPAINT_SEQUENCE).not.toContain("3J");
-  });
-
-  it("coalesces a resize burst into a single clear instead of one torn frame per event", () => {
+describe("OpenTUI native repaint", () => {
+  it("sets the native one-shot latch synchronously before scheduling the frame", () => {
     const renderer = fakeRenderer();
-    const writes: string[] = [];
-    const scheduler = manualScheduler();
-    installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      schedule: scheduler.schedule,
+    renderer.requestRender.mockImplementation(() => {
+      expect(renderer.forceFullRepaintRequested).toBe(true);
     });
 
-    renderer.emitResize(62, 18);
-    renderer.emitResize(120, 40);
-    renderer.emitResize(90, 30);
-    expect(writes).toEqual([]);
-    expect(scheduler.pending()).toBe(1);
+    expect(forceFullRepaint(renderer)).toBe(true);
 
-    scheduler.flush();
-    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE]);
-
-    renderer.emitResize(100, 32);
-    scheduler.flush();
-    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE, RESIZE_REPAINT_SEQUENCE]);
+    expect(renderer.forceFullRepaintRequested).toBe(true);
+    expect(renderer.requestRender).toHaveBeenCalledExactlyOnceWith();
+    expect(renderer.currentRenderBuffer.clear).not.toHaveBeenCalled();
+    expect(renderer.pause).not.toHaveBeenCalled();
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+    expect(renderer.idle).not.toHaveBeenCalled();
   });
 
-  it("forces a repaint after the clear, so growing the window cannot leave a blank frame", () => {
-    // OpenTUI paints the new geometry before the coalesced clear lands. Without a
-    // forced repaint the clear wipes that frame for good and only self-repainting
-    // components (the composer) stay visible.
+  it("keeps repeated attach requests inside the renderer's existing scheduler", async () => {
     const renderer = fakeRenderer();
-    const order: string[] = [];
-    const scheduler = manualScheduler();
-    installResizeRepaint({
-      renderer,
-      write: () => order.push("clear"),
-      requestRepaint: () => order.push("repaint"),
-      schedule: scheduler.schedule,
-    });
+    expect(repaintAttachedScreen({ renderer })).toBe(true);
+    expect(repaintAttachedScreen({ renderer })).toBe(true);
+    expect(renderer.forceFullRepaintRequested).toBe(true);
+    expect(renderer.requestRender).toHaveBeenCalledTimes(2);
 
-    renderer.emitResize(120, 40);
-    expect(order).toEqual([]);
-    scheduler.flush();
+    renderer.forceFullRepaintRequested = false;
+    await Promise.resolve();
 
-    expect(order).toEqual(["clear", "repaint"]);
+    expect(renderer.forceFullRepaintRequested).toBe(false);
+    expect(renderer.requestRender).toHaveBeenCalledTimes(2);
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
+    expect(renderer.idle).not.toHaveBeenCalled();
   });
 
-  it("does not repaint when the clear is skipped for a suspended renderer", () => {
+  it.each([
+    { enabled: false },
+    { isSuspended: () => true },
+  ])("declines attach repaint without terminal ownership: %o", (options) => {
     const renderer = fakeRenderer();
-    const order: string[] = [];
-    installResizeRepaint({
-      renderer,
-      write: () => order.push("clear"),
-      requestRepaint: () => order.push("repaint"),
-      isSuspended: () => true,
-      schedule: immediate,
-    });
-
-    renderer.emitResize(120, 40);
-
-    expect(order).toEqual([]);
+    expect(repaintAttachedScreen({ renderer, ...options })).toBe(false);
+    expect(renderer.forceFullRepaintRequested).toBe(false);
+    expect(renderer.requestRender).not.toHaveBeenCalled();
   });
 
-  it("invalidates the renderer's screen buffer before requesting the frame", () => {
-    const calls: string[] = [];
-    forceFullRepaint({
-      currentRenderBuffer: { clear: () => calls.push("buffer-clear") },
-      requestRender: () => calls.push("request-render"),
-    });
+  it("declines destroyed renderers without queuing work after the exit summary", () => {
+    const renderer = fakeRenderer();
+    renderer.isDestroyed = true;
 
-    expect(calls).toEqual(["buffer-clear", "request-render"]);
+    expect(repaintAttachedScreen({ renderer })).toBe(false);
+    expect(renderer.forceFullRepaintRequested).toBe(false);
+    expect(renderer.requestRender).not.toHaveBeenCalled();
   });
 
-  it("clears and invalidates the renderer for an attached terminal", () => {
-    const calls: string[] = [];
-    const repainted = repaintAttachedScreen({
-      renderer: {
-        currentRenderBuffer: { clear: () => calls.push("buffer-clear") },
-        requestRender: () => calls.push("request-render"),
-      },
-      write: (text) => calls.push(text),
-    });
+  it("declines unsupported renderer implementations rather than clearing their buffers", () => {
+    const renderer = {
+      requestRender: vi.fn(),
+      currentRenderBuffer: { clear: vi.fn() },
+    };
 
-    expect(repainted).toBe(true);
-    expect(calls).toEqual([
-      "buffer-clear",
-      "request-render",
-      RESIZE_REPAINT_SEQUENCE,
-    ]);
+    expect(forceFullRepaint(renderer)).toBe(false);
+    expect(renderer.requestRender).not.toHaveBeenCalled();
+    expect(renderer.currentRenderBuffer.clear).not.toHaveBeenCalled();
+    expect(renderer).not.toHaveProperty("forceFullRepaintRequested");
   });
 
-  it("does not clear an attached terminal while rendering is suspended", () => {
-    const calls: string[] = [];
-    const repainted = repaintAttachedScreen({
-      renderer: { requestRender: () => calls.push("request-render") },
-      write: (text) => calls.push(text),
-      isSuspended: () => true,
-    });
+  it.each([
+    { value: undefined, writable: true },
+    { value: "false", writable: true },
+    { value: false, writable: false },
+    { get: () => false, set: () => { throw new Error("unexpected setter"); } },
+  ])("guards incompatible private latch descriptors: %o", (descriptor) => {
+    const renderer = { requestRender: vi.fn() };
+    Object.defineProperty(renderer, "forceFullRepaintRequested", descriptor);
 
-    expect(repainted).toBe(false);
-    expect(calls).toEqual([]);
+    expect(forceFullRepaint(renderer)).toBe(false);
+    expect(renderer.requestRender).not.toHaveBeenCalled();
   });
 
-  it("still requests a frame when the screen buffer is gone or throws", () => {
-    const calls: string[] = [];
-    const clearThrew = forceFullRepaint({
-      currentRenderBuffer: {
-        clear: () => {
-          throw new Error("buffer destroyed");
-        },
-      },
-      requestRender: () => calls.push("request-render"),
-    });
-    const noBuffer = forceFullRepaint({
-      requestRender: () => calls.push("request-render"),
+  it("declines a failed scheduling request without suspending or resuming input", () => {
+    const renderer = fakeRenderer();
+    renderer.requestRender.mockImplementation(() => {
+      throw new Error("renderer unavailable");
     });
 
-    expect(calls).toEqual(["request-render", "request-render"]);
-    expect(clearThrew).toBe(true);
-    expect(noBuffer).toBe(true);
+    expect(repaintAttachedScreen({ renderer })).toBe(false);
+    expect(renderer.currentRenderBuffer.clear).not.toHaveBeenCalled();
+    expect(renderer.suspend).not.toHaveBeenCalled();
+    expect(renderer.resume).not.toHaveBeenCalled();
   });
 
-  it("declines an attached repaint when the frame cannot be scheduled", () => {
-    const calls: string[] = [];
-    const repainted = repaintAttachedScreen({
-      renderer: {
-        currentRenderBuffer: { clear: () => calls.push("buffer-clear") },
-        requestRender: () => {
-          calls.push("request-render");
-          throw new Error("renderer destroyed");
-        },
-      },
-      write: (text) => calls.push(text),
-    });
+  it.skipIf(bunMissing)("repaints unchanged text and blank cells through the installed native renderer", () => {
+    expect(bun.status, bun.stderr).toBe(0);
+    const result = spawnSync(
+      "bun",
+      ["run", join(root, "test/tui-v2/bootstrap/resize-repaint.native.ts")],
+      { cwd: root, encoding: "utf8", timeout: 20_000 },
+    );
 
-    expect(calls).toEqual(["buffer-clear", "request-render"]);
-    expect(calls).not.toContain(RESIZE_REPAINT_SEQUENCE);
-    expect(repainted).toBe(false);
-  });
+    expect(result.error).toBeUndefined();
+    expect(result.signal, result.stderr).toBeNull();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Native repaint regressions passed");
+  }, 25_000);
 
-  it("is wired to the live renderer from the OpenTUI bootstrap", () => {
+  it.skipIf(bunMissing || process.platform === "win32")("preserves actual PTY raw mode, screen contents, and mouse input across native repaints", () => {
+    const result = spawnSync(
+      "python3",
+      [join(root, "test/tui-v2/bootstrap/resize-repaint.pty.py")],
+      { cwd: root, encoding: "utf8", timeout: 25_000 },
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.signal, result.stderr).toBeNull();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toMatch(
+      /PTY repaint continuity passed|PTY native output unavailable/,
+    );
+  }, 30_000);
+
+  it("leaves resize invalidation and startup output exclusively to OpenTUI", () => {
     const source = readFileSync(
-      join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
+      join(root, "src/tui-v2/bootstrap/start-tui-v2.ts"),
       "utf8",
     );
-    expect(source).toContain("requestRepaint: () => undefined");
-  });
-
-  it("clears on every settled resize so shrink cannot leave stale wide rows", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      schedule: immediate,
-    });
-
-    renderer.emitResize(62, 18);
-    renderer.emitResize(100, 32);
-
-    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE, RESIZE_REPAINT_SEQUENCE]);
-  });
-
-  it("clears regardless of suspension history once the renderer is active", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    let suspended = true;
-    installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      isSuspended: () => suspended,
-      schedule: immediate,
-    });
-
-    renderer.emitResize(80, 24);
-    expect(writes).toEqual([]);
-
-    suspended = false;
-    renderer.emitResize(80, 25);
-    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE]);
-  });
-
-  it("never clears while the renderer is suspended, so a pager on the normal screen is safe", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      isSuspended: () => true,
-      schedule: immediate,
-    });
-
-    renderer.emitResize(80, 24);
-    expect(writes).toEqual([]);
-  });
-
-  it("drops a scheduled clear when the renderer suspends before it flushes", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    const scheduler = manualScheduler();
-    let suspended = false;
-    installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      isSuspended: () => suspended,
-      schedule: scheduler.schedule,
-    });
-
-    renderer.emitResize(80, 24);
-    suspended = true;
-    scheduler.flush();
-
-    expect(writes).toEqual([]);
-  });
-
-  it("stops clearing once disposed so teardown cannot wipe the exit summary", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    const dispose = installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      schedule: immediate,
-    });
-
-    renderer.emitResize(70, 20);
-    dispose();
-    dispose();
-    renderer.emitResize(60, 18);
-
-    expect(writes).toEqual([RESIZE_REPAINT_SEQUENCE]);
-    expect(renderer.listenerCount()).toBe(0);
-  });
-
-  it("cancels a pending clear on dispose so it cannot land after the sign-off card", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    const scheduler = manualScheduler();
-    const dispose = installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      schedule: scheduler.schedule,
-    });
-
-    renderer.emitResize(70, 20);
-    dispose();
-    scheduler.flush();
-
-    expect(writes).toEqual([]);
-    expect(renderer.listenerCount()).toBe(0);
-  });
-
-  it("stays inert when the renderer does not own a TTY", () => {
-    const renderer = fakeRenderer();
-    const writes: string[] = [];
-    const dispose = installResizeRepaint({
-      renderer,
-      write: (text) => writes.push(text),
-      enabled: false,
-    });
-
-    renderer.emitResize(80, 24);
-    dispose();
-
-    expect(writes).toEqual([]);
-    expect(renderer.listenerCount()).toBe(0);
-  });
-
-  it("is wired into the OpenTUI bootstrap with a suspend guard and torn down as a disposer", () => {
-    const source = readFileSync(
-      join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
-      "utf8",
-    );
-    expect(source).toContain("installResizeRepaint({");
+    expect(source).not.toContain("installResizeRepaint");
+    expect(source).not.toContain("createCoordinatedFlush");
+    expect(source).not.toContain("writeTerminalDirect");
+    expect(source).not.toContain("currentRenderBuffer");
     expect(source).toContain("RendererControlState.EXPLICIT_SUSPENDED");
     expect(source).toContain("enabled: Boolean(process.stdout.isTTY)");
-    expect(source).toContain("disposeResizeRepaint,");
-  });
-
-  it("routes repaint bytes through a coordinated flush so they cannot interleave with a native frame", () => {
-    const source = readFileSync(
-      join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
-      "utf8",
-    );
-    expect(source).toContain("createCoordinatedFlush(renderer");
-    expect(source).toContain("write: (text) => void flush(text)");
-    expect(source).not.toContain("write: (text) => writeTerminalDirect(text)");
-    expect(source).not.toContain("write: (text) => void process.stdout.write(text)");
-  });
-
-  describe("createCoordinatedFlush", () => {
-    function flushRenderer(): CoordinatedFlushRenderer & {
-      calls: string[];
-      idleCalls: () => number;
-    } {
-      const calls: string[] = [];
-      let idleCount = 0;
-      return {
-        calls,
-        pause: () => void calls.push("pause"),
-        suspend: () => void calls.push("suspend"),
-        resume: () => void calls.push("resume"),
-        requestRender: () => void calls.push("request-render"),
-        currentRenderBuffer: { clear: () => void calls.push("buffer-clear") },
-        idle: () => {
-          idleCount += 1;
-          return Promise.resolve();
-        },
-        idleCalls: () => idleCount,
-      };
-    }
-
-    it("suspends, waits idle, writes, repaints, then resumes so the write never interleaves a frame or re-reads stdin", async () => {
-      const renderer = flushRenderer();
-      const flush = createCoordinatedFlush(renderer, (t) =>
-        renderer.calls.push(`write:${t}`),
-      );
-      await flush("CLEAR");
-      expect(renderer.calls).toEqual([
-        "suspend",
-        "write:CLEAR",
-        "buffer-clear",
-        "request-render",
-        "resume",
-      ]);
-      expect(renderer.idleCalls()).toBe(1);
-    });
-
-    it("serializes concurrent flushes so two writes cannot interleave with each other", async () => {
-      const renderer = flushRenderer();
-      const flush = createCoordinatedFlush(renderer, (t) =>
-        renderer.calls.push(`write:${t}`),
-      );
-      const p1 = flush("A");
-      const p2 = flush("B");
-      await Promise.all([p1, p2]);
-      expect(renderer.calls).toEqual([
-        "suspend",
-        "write:A",
-        "buffer-clear",
-        "request-render",
-        "resume",
-        "suspend",
-        "write:B",
-        "buffer-clear",
-        "request-render",
-        "resume",
-      ]);
-      expect(renderer.idleCalls()).toBe(2);
-    });
-
-    it("still resumes if the write throws, so the render loop is never left paused", async () => {
-      const renderer = flushRenderer();
-      const flush = createCoordinatedFlush(renderer, () => {
-        throw new Error("fd write failed");
-      });
-      await flush("X");
-      expect(renderer.calls[renderer.calls.length - 1]).toBe("resume");
-    });
+    expect(source.slice(source.indexOf("await lifecycle.start()")))
+      .not.toContain("repaintAttachedScreen({");
   });
 
   it("keeps every exit sequence free of cursor movement so the card and the screen survive", () => {
@@ -473,7 +208,7 @@ describe("OpenTUI resize repaint", () => {
     expect(EXIT_SUMMARY_RESET).not.toContain("3J");
 
     const tui = readFileSync(
-      join(root, "src", "tui-v2", "bootstrap", "start-tui-v2.ts"),
+      join(root, "src/tui-v2/bootstrap/start-tui-v2.ts"),
       "utf8",
     );
     expect(tui).toContain("`${EXIT_SUMMARY_RESET}${text}`");
@@ -481,7 +216,7 @@ describe("OpenTUI resize repaint", () => {
     expect(tui).not.toContain("geometry.resized");
 
     const classic = readFileSync(
-      join(root, "src", "classic", "bootstrap", "start-classic.tsx"),
+      join(root, "src/classic/bootstrap/start-classic.tsx"),
       "utf8",
     );
     expect(classic).toContain("`${EXIT_SUMMARY_RESET}${text}`");
