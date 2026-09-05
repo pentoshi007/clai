@@ -114,15 +114,19 @@ describe("volatile blocks stay a cacheable request suffix", () => {
     expect(messages.slice(firstVolatile).every(isVolatile)).toBe(true);
   });
 
-  it("drops the responder block entirely when there is nothing to report", () => {
+  it("marks the responder block cleared without rewriting sent bytes when there is nothing to report", () => {
     const messages = baseConversation();
     upsertResponderContextMessage(
       messages,
       `${RESPONDER_CONTEXT_PREFIX}\njobs: 1`,
     );
     expect(countStartingWith(messages, RESPONDER_CONTEXT_PREFIX)).toBe(1);
+    const sent = [...messages];
     upsertResponderContextMessage(messages, undefined);
-    expect(countStartingWith(messages, RESPONDER_CONTEXT_PREFIX)).toBe(0);
-    expect(messages).toEqual(baseConversation());
+    expect(messages.slice(0, sent.length)).toEqual(sent);
+    expect(messages.at(-1)!.content).toBe(`${RESPONDER_CONTEXT_PREFIX}\n(cleared)`);
+    expect(countStartingWith(messages, RESPONDER_CONTEXT_PREFIX)).toBe(2);
+    upsertResponderContextMessage(messages, undefined);
+    expect(messages).toHaveLength(sent.length + 1);
   });
 });

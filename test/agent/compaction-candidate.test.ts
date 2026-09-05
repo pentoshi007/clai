@@ -48,7 +48,7 @@ describe("compaction candidate preparation", () => {
     expect(candidate.at(-1)?.content).toContain("user APPROVED this plan");
   });
 
-  it("removes absent injected blocks without changing stale plan context", () => {
+  it("marks absent injected blocks cleared without changing stale plan context", () => {
     const candidate = prepareCompactionCandidateMessages({
       messages: baseMessages(),
       agentInstructionsBlock: undefined,
@@ -57,16 +57,14 @@ describe("compaction candidate preparation", () => {
       planApproved: false,
     });
 
-    expect(
-      candidate.some((message) =>
-        message.content.startsWith(AGENT_INSTRUCTIONS_PREFIX),
-      ),
-    ).toBe(false);
-    expect(
-      candidate.some((message) => message.content.startsWith(ACTIVE_SKILLS_PREFIX)),
-    ).toBe(false);
-    expect(
-      candidate.some((message) => message.content.startsWith(PLAN_CONTEXT_PREFIX)),
-    ).toBe(true);
+    const latestLive = (prefix: string): boolean => {
+      const latest = [...candidate]
+        .reverse()
+        .find((message) => message.content.startsWith(prefix));
+      return latest !== undefined && !latest.content.endsWith("\n(cleared)");
+    };
+    expect(latestLive(AGENT_INSTRUCTIONS_PREFIX)).toBe(false);
+    expect(latestLive(ACTIVE_SKILLS_PREFIX)).toBe(false);
+    expect(latestLive(PLAN_CONTEXT_PREFIX)).toBe(true);
   });
 });

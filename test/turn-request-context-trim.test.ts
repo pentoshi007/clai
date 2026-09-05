@@ -77,9 +77,13 @@ describe("per-prompt request context trim", () => {
     const first = compose("do the first thing");
     const history = first.messages.filter((m) => m.role !== "system" || m.content.startsWith(REQUEST_CONTEXT_PREFIX));
     const second = compose("do the second thing", history as ChatMessage[]);
-    const sent1 = first.messages;
-    const sent2 = second.messages;
-    const shared = sent1.filter((m, i) => JSON.stringify(m) === JSON.stringify(sent2[i]));
-    expect(shared.length).toBe(sent1.length);
+    const isVolatile = (m: ChatMessage): boolean =>
+      m.role === "system" && m.content.startsWith(REQUEST_CONTEXT_PREFIX);
+    const stable1 = first.messages.filter((m) => !isVolatile(m));
+    const stable2 = second.messages.filter((m) => !isVolatile(m));
+    const shared = stable1.filter(
+      (m, i) => JSON.stringify(m) === JSON.stringify(stable2[i]),
+    );
+    expect(shared.length).toBe(stable1.length);
   });
 });
