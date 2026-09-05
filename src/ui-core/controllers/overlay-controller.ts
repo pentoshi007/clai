@@ -3,7 +3,7 @@ import type { FocusController, OverlayContext } from "./focus-controller.js";
 import type { PickerOption } from "../rendering/picker-filter.js";
 import type { ArtifactPagerSource } from "../rendering/artifact-pager-source.js";
 
-export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch";
+export type ConfirmKind = "tool" | "pentest" | "reset" | "continue" | "plan" | "switch" | "mcp-oauth";
 
 export type PlanConfirmResult = "implement" | "discard" | "suggest" | "dismiss";
 

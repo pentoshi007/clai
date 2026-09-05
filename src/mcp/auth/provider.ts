@@ -50,6 +50,7 @@ export interface OAuthConsentInfo {
   readonly issuer: string | undefined;
   readonly authorizationEndpoint: string;
   readonly scope: string | undefined;
+  readonly message?: string | undefined;
 }
 
 export interface AuthProviderDeps {
@@ -221,12 +222,15 @@ class OAuthProvider implements McpAuthProvider {
 
   private missingClientMessage(): string {
     const issuer = this.issuer ?? "its authorization server";
+    const deviceNote = this.metadata?.deviceAuthorizationEndpoint
+      ? " The server supports device-code sign-in, but it still needs an OAuth client id."
+      : "";
     const remedy = isGithubHost(this.deps.serverUrl)
-      ? `${githubCredentialHint()}, or add a token explicitly — `
+      ? `${githubCredentialHint()}, run \`gh auth login\` so clai can reuse that credential, or add a token explicitly — `
       : "Add a token instead — ";
     return (
       `MCP server ${this.deps.serverUrl} cannot complete OAuth: ${issuer} does not support ` +
-      `dynamic client registration, so clai has no client to sign in with. ${remedy}` +
+      `dynamic client registration, so clai has no client to sign in with.${deviceNote} ${remedy}` +
       '"auth": {"kind": "bearer", "token": "${env:YOUR_TOKEN}"} — ' +
       'or register an OAuth app and set "auth": {"kind": "oauth", "clientId": "…"} ' +
       "in the server entry of .clai/mcp.json."
@@ -376,6 +380,15 @@ class OAuthProvider implements McpAuthProvider {
     metadata: AuthorizationServerMetadata,
     scope: string | undefined,
   ): Promise<void> {
+    this.scope = scope ?? this.scope;
+    const approved = await this.requestLoopbackConsent(metadata);
+    if (!approved) {
+      if (this.canDeviceFlow(metadata)) {
+        await this.runDeviceFlow(metadata, scope);
+        return;
+      }
+      throw new McpTransportError("network", "MCP OAuth authorization was declined.");
+    }
     await this.requireConsent(metadata, scope);
     const pkce = createPkcePair();
     const loopback = this.deps.runLoopback ?? runLoopbackAuthorization;
@@ -422,6 +435,19 @@ class OAuthProvider implements McpAuthProvider {
       typeof metadata.deviceAuthorizationEndpoint === "string" &&
       this.deps.onDeviceAuthorization !== undefined
     );
+  }
+
+  private async requestLoopbackConsent(
+    metadata: AuthorizationServerMetadata,
+  ): Promise<boolean> {
+    if (!this.deps.requestConsent) return true;
+    return this.deps.requestConsent({
+      serverUrl: this.deps.serverUrl,
+      issuer: this.issuer,
+      authorizationEndpoint: metadata.authorizationEndpoint,
+      scope: this.scope,
+      message: "Open the browser to sign in? (a sign-in link will be shown either way)",
+    });
   }
 
   private async ensureDeviceClient(
@@ -539,6 +565,10 @@ class OAuthProvider implements McpAuthProvider {
     if (!this.clientId && !metadata.registrationEndpoint) {
       if (await this.adoptHostCredential()) return true;
     }
+    if (this.canDeviceFlow(metadata)) {
+      await this.runDeviceFlow(metadata, scope);
+      return true;
+    }
     if (this.canInteract()) {
       try {
         await this.runFullFlow(metadata, scope);
@@ -547,11 +577,9 @@ class OAuthProvider implements McpAuthProvider {
         const browserUnavailable =
           error instanceof McpTransportError && error.kind === "browser";
         if (!browserUnavailable || !this.canDeviceFlow(metadata)) throw error;
+        await this.runDeviceFlow(metadata, scope);
+        return true;
       }
-    }
-    if (this.canDeviceFlow(metadata)) {
-      await this.runDeviceFlow(metadata, scope);
-      return true;
     }
     throw new McpTransportError("network", this.reauthMessage());
   }

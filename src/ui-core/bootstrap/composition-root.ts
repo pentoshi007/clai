@@ -117,23 +117,61 @@ export function createCompositionRoot(
   options: CompositionOptions = {},
 ): AppServices {
   let sessionRef: SessionController | undefined;
+  let overlay: OverlayController;
   const mcp =
     options.mcp ??
     new McpRuntime({
       openBrowser: openSystemBrowser,
       oauthInteractive: true,
       onDeviceAuthorization: (info) => {
-        sessionRef?.notice(
-          "info",
-          `MCP sign-in for ${info.serverUrl} · open ${info.verificationUriComplete ?? info.verificationUri} and enter code ${info.userCode} (expires in ${Math.round(info.expiresInSeconds / 60)} min)`,
+        const lines = [
+          `MCP server: ${info.serverUrl}`,
+          "",
+          "1. Open this URL on any device:",
+          `   ${info.verificationUriComplete ?? info.verificationUri}`,
+          "",
+          `2. Enter this code: ${info.userCode}`,
+          "",
+          `The code expires in ${Math.max(1, Math.round(info.expiresInSeconds / 60))} minute(s). Sign-in completes automatically once approved.`,
+        ];
+        const shown = overlay?.openPager(
+          `MCP sign-in · ${info.serverUrl}`,
+          lines.join("\n"),
+          undefined,
+          undefined,
+          "plain",
         );
+        if (!shown) {
+          sessionRef?.notice("info", lines.join(" · "));
+        }
       },
       onAuthorizationUrl: (info) => {
-        sessionRef?.notice(
-          "info",
-          `MCP sign-in for ${info.serverUrl} · if the browser did not open, visit ${info.url}`,
+        const shown = overlay?.openPager(
+          `MCP sign-in · ${info.serverUrl}`,
+          [
+            `MCP server: ${info.serverUrl}`,
+            "",
+            "If the browser did not open, complete sign-in at:",
+            `   ${info.url}`,
+          ].join("\n"),
+          undefined,
+          undefined,
+          "plain",
         );
+        if (!shown) sessionRef?.notice("info", `MCP sign-in: ${info.url}`);
       },
+      requestOAuthConsent: (info) =>
+        overlay?.openConfirm({
+          kind: "mcp-oauth",
+          prompt: [
+            info.message ?? "Authorize MCP access?",
+            `Server: ${info.serverUrl}`,
+            info.issuer ? `Issuer: ${info.issuer}` : undefined,
+            info.scope ? `Scope: ${info.scope}` : undefined,
+          ]
+            .filter((line): line is string => typeof line === "string")
+            .join("\n"),
+        }) ?? Promise.resolve(false),
     });
   const recorded: AnyAppEvent[] = [];
   const captureEvents = options.captureEvents === true;
@@ -142,7 +180,7 @@ export function createCompositionRoot(
   const plan = new PlanController(persistence);
   const externalEmit = options.emit;
   const focus = new FocusController();
-  const overlay = new OverlayController(focus);
+  overlay = new OverlayController(focus);
   const toast = new ToastController();
   const interruptible = new InterruptibleController();
 

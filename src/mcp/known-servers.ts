@@ -6,6 +6,7 @@ export interface KnownMcpServerSecret {
   readonly hint?: string | undefined;
   readonly optional?: boolean | undefined;
   readonly password?: boolean | undefined;
+  readonly target?: "env" | "auth.clientId" | undefined;
 }
 
 export interface KnownMcpServer {
@@ -38,7 +39,15 @@ export const KNOWN_MCP_SERVERS: readonly KnownMcpServer[] = [
     summary: "Repos, issues, PRs, code search via the hosted GitHub MCP server.",
     homepage: "https://github.com/github/github-mcp-server",
     oauth: true,
-    secrets: [],
+    secrets: [
+      {
+        env: "GITHUB_OAUTH_CLIENT_ID",
+        label: "GitHub OAuth App client ID (optional — enables device-code sign-in without a browser)",
+        hint: "https://github.com/settings/developers",
+        optional: true,
+        target: "auth.clientId",
+      },
+    ],
     entry: {
       url: "https://api.githubcopilot.com/mcp/",
       auth: { kind: "oauth" },
@@ -268,6 +277,15 @@ export function planKnownMcpInstall(
     entry.env = envBlock;
   }
   for (const secret of server.secrets) {
+    if (secret.target === "auth.clientId") {
+      const literal = literals.get(secret.env) ?? (adopted.includes(secret.env) ? ENV_REF(secret.env) : undefined);
+      if (literal) {
+        const auth = { ...((entry.auth as JsonObject | undefined) ?? { kind: "oauth" }) };
+        auth.clientId = literal;
+        entry.auth = auth;
+      }
+      continue;
+    }
     const literal = literals.get(secret.env);
     const adoptedRef = adopted.includes(secret.env);
     if (!literal && !adoptedRef) continue;
