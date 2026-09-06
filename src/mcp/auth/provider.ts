@@ -389,7 +389,6 @@ class OAuthProvider implements McpAuthProvider {
       }
       throw new McpTransportError("network", "MCP OAuth authorization was declined.");
     }
-    await this.requireConsent(metadata, scope);
     const pkce = createPkcePair();
     const loopback = this.deps.runLoopback ?? runLoopbackAuthorization;
     const bootstrapClientId = this.clientId ?? this.deps.clientName ?? DEFAULT_CLIENT_NAME;
