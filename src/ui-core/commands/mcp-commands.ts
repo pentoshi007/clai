@@ -123,12 +123,6 @@ async function addServer(
       draft = input;
     }
     const written = await writeProjectMcpServer(draft);
-    if (written.ok) {
-      services.session.notice(
-        "info",
-        `added MCP server ${written.serverName} to ${written.displayPath} · connecting…`,
-      );
-    }
     if (!written.ok) {
       services.session.notice(
         "warn",
@@ -145,16 +139,24 @@ async function addServer(
       draft = retry;
       continue;
     }
-    const state = await services.mcp.refresh({ force: true });
-    const status = state.snapshot.statuses.find(
-      (candidate) => candidate.name === written.serverName,
+    const pendingToast = services.toast.show(
+      `adding MCP server ${written.serverName}…`,
+      { level: "info", sticky: true },
     );
-    if (status?.status === "ready") selectServer(services, status);
-    services.session.notice(
-      status?.status === "ready" ? "info" : "warn",
-      `${written.replaced ? "updated" : "added"} MCP server ${written.serverName} in ${written.displayPath}${status?.status === "ready" ? ` · use ${formatMcpToken(written.serverName)} in your prompt · ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}` : ` · ${status?.status ?? "not discovered"}${status?.detail ? ` · ${status.detail}` : ""}`}`,
-    );
-    return written.serverName;
+    try {
+      const state = await services.mcp.refresh({ force: true });
+      const status = state.snapshot.statuses.find(
+        (candidate) => candidate.name === written.serverName,
+      );
+      if (status?.status === "ready") selectServer(services, status);
+      services.session.notice(
+        status?.status === "ready" ? "info" : "warn",
+        `${written.replaced ? "updated" : "added"} MCP server ${written.serverName} in ${written.displayPath}${status?.status === "ready" ? ` · use ${formatMcpToken(written.serverName)} in your prompt · ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}` : ` · ${status?.status ?? "not discovered"}${status?.detail ? ` · ${status.detail}` : ""}`}`,
+      );
+      return written.serverName;
+    } finally {
+      services.toast.dismiss(pendingToast);
+    }
   }
   return undefined;
 }
@@ -212,7 +214,21 @@ async function addKnownServer(
     if (existing.status === "ready") selectServer(services, existing);
     return;
   }
-  services.session.notice("info", `adding ${known.title} MCP server…`);
+  const pendingToast = services.toast.show(
+    `adding ${known.title} MCP server…`,
+    { level: "info", sticky: true },
+  );
+  try {
+    await finishKnownServerAdd(services, known);
+  } finally {
+    services.toast.dismiss(pendingToast);
+  }
+}
+
+async function finishKnownServerAdd(
+  services: AppServices,
+  known: KnownMcpServer,
+): Promise<void> {
   const collected: Record<string, string> = {};
   for (const secret of known.secrets) {
     if (secret.optional) continue;
