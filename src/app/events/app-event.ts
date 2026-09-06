@@ -68,6 +68,7 @@ export interface AppEventPayloads {
     readonly toolCallId: ToolCallId;
     readonly ok: boolean;
     readonly exitCode?: number | undefined;
+    readonly runFailure?: boolean | undefined;
     readonly summary: string;
     readonly artifactPath?: string | undefined;
     readonly fileChanges?:

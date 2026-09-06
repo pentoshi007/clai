@@ -1,7 +1,7 @@
 
 import { LangFamily, languageFromPath } from "./syntax/language-table.js";
 import { KW, keywordSetFor } from "./syntax/keywords.js";
-import { HighlightCarry, SyntaxSpan, highlightClike, highlightDiff, highlightGeneric, highlightHaskell, highlightHtml, highlightIniToml, highlightJsonLike, highlightLineCommentLang, highlightLisp, highlightLua, highlightMarkdown, highlightPhp, highlightPython, highlightYaml, push } from "./syntax/language-highlighters.js";
+import { HighlightCarry, SyntaxSpan, highlightClike, highlightCss, highlightDiff, highlightGeneric, highlightHaskell, highlightHtml, highlightIniToml, highlightJsonLike, highlightLineCommentLang, highlightLisp, highlightLua, highlightMarkdown, highlightPhp, highlightPython, highlightYaml, push } from "./syntax/language-highlighters.js";
 export type { HighlightCarry, SyntaxKind, SyntaxSpan } from "./syntax/language-highlighters.js";
 export { supportedExtensions } from "./syntax/language-table.js";
 export { languageFromPath };
@@ -65,7 +65,7 @@ export function highlightLine(
     case "json":
       return highlightJsonLike(line);
     case "css":
-      return highlightClike(line, KW.css, carry, { regex: false, hashNumber: true });
+      return highlightCss(line, carry);
     case "html":
       return highlightHtml(line, carry);
     case "yaml":

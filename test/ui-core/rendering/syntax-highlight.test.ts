@@ -50,6 +50,97 @@ describe("languageFromPath — broad coverage", () => {
   });
 });
 
+describe("highlightCss", () => {
+  const kinds = (line: string, carry = emptyCarry(), path = "styles.css") =>
+    highlightLineForPath(line, path, carry).map((s) => `${s.kind}:${s.text}`);
+
+  it("keeps hyphenated property names in a single span", () => {
+    const carry = emptyCarry();
+    kinds(".a {", carry);
+    expect(kinds("  background-color: #fafafa;", carry)).toEqual([
+      "plain:  ",
+      "property:background-color",
+      "punctuation::",
+      "plain: ",
+      "number:#fafafa",
+      "punctuation:;",
+    ]);
+  });
+
+  it("highlights custom properties and numbers with units", () => {
+    const carry = emptyCarry();
+    kinds(".a {", carry);
+    expect(kinds("  --main-padding: 1.5rem;", carry)).toEqual([
+      "plain:  ",
+      "property:--main-padding",
+      "punctuation::",
+      "plain: ",
+      "number:1.5rem",
+      "punctuation:;",
+    ]);
+  });
+
+  it("highlights classes, pseudo-classes, at-rules, and !important", () => {
+    const carry = emptyCarry();
+    expect(kinds(".nav-item:hover {", carry)).toEqual([
+      "punctuation:.",
+      "type:nav-item",
+      "punctuation::",
+      "keyword:hover",
+      "plain: ",
+      "punctuation:{",
+    ]);
+    expect(kinds("  color: red !important;", carry)).toEqual([
+      "plain:  ",
+      "property:color",
+      "punctuation::",
+      "plain: red ",
+      "keyword:!important",
+      "punctuation:;",
+    ]);
+    expect(kinds("@media (max-width: 768px) {", carry)).toEqual([
+      "keyword:@media",
+      "plain: ",
+      "punctuation:(",
+      "property:max-width",
+      "punctuation::",
+      "plain: ",
+      "number:768px",
+      "punctuation:)",
+      "plain: ",
+      "punctuation:{",
+    ]);
+  });
+
+  it("does not treat // inside strings or url() as comments", () => {
+    const carry = emptyCarry();
+    kinds(".a {", carry);
+    expect(kinds('  content: "a // b";', carry)).toContain('string:"a // b"');
+    expect(kinds("  background: url(//cdn.example.com/x.png);", carry)).toContain(
+      "string://cdn.example.com/x.png",
+    );
+  });
+
+  it("tracks block comments and brace depth across lines", () => {
+    const carry = emptyCarry();
+    expect(kinds("/* outer", carry)).toEqual(["comment:/* outer"]);
+    expect(kinds("still comment */ .x {", carry)[0]).toBe("comment:still comment */");
+    expect(kinds("  display: flex;", carry)).toContain("property:display");
+  });
+
+  it("supports scss line comments and variables", () => {
+    expect(kinds("$primary: #333; // theme", emptyCarry(), "styles.scss")).toEqual([
+      "property:$primary",
+      "punctuation::",
+      "plain: ",
+      "number:#333",
+      "punctuation:;",
+      "plain: ",
+      "comment:// theme",
+    ]);
+  });
+});
+
 describe("highlightLineForPath", () => {
   it("colors JS keywords and strings", () => {
     const spans = highlightLineForPath(
