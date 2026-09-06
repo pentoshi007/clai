@@ -188,34 +188,27 @@ describe("planStreamRecovery — bounded escalation", () => {
     );
   });
 
-  it("waits out a longer provider reset window instead of the schedule", () => {
+  it("caps provider reset windows at the uniform schedule but honors shorter hints", () => {
     const state = createStreamRecoveryState();
-    const error = new ProviderError("rate limited", 429, "", 45);
+    const long = new ProviderError("rate limited", 429, "", 45);
     expect(
-      planStreamRecovery({ kind: "rate-limit", state, error }).delayMs,
-    ).toBe(45_000);
-  });
-
-  it("keeps the schedule as a floor and 60s as the ceiling for resets", () => {
-    const state = createStreamRecoveryState();
+      planStreamRecovery({ kind: "rate-limit", state, error: long }).delayMs,
+    ).toBe(10_000);
+    recordRecoveryAttempt(state, "rate-limit");
     const short = new ProviderError("rate limited", 429, "", 2);
     expect(
       planStreamRecovery({ kind: "rate-limit", state, error: short }).delayMs,
-    ).toBe(10_000);
-    const long = new ProviderError("rate limited", 429, "", 600);
-    expect(
-      planStreamRecovery({ kind: "rate-limit", state, error: long }).delayMs,
-    ).toBe(60_000);
+    ).toBe(2_000);
   });
 
-  it("derives the reset window from the failure message when needed", () => {
+  it("keeps the uniform schedule when the failure message carries a reset window", () => {
     const state = createStreamRecoveryState();
     const error = new Error(
       "hetzner: Provider request failed with HTTP 429 (retry after 35s)",
     );
     expect(
       planStreamRecovery({ kind: "rate-limit", state, error }).delayMs,
-    ).toBe(35_000);
+    ).toBe(10_000);
   });
 
   it("compacts on context overflow before retrying, then gives up", () => {
