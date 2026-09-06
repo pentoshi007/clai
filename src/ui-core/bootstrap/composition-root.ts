@@ -142,7 +142,10 @@ export function createCompositionRoot(
           "plain",
         );
         if (!shown) {
-          sessionRef?.notice("info", lines.join(" · "));
+          sessionRef?.notice(
+            "info",
+            lines.filter((line) => line.trim().length > 0).join(" · "),
+          );
         }
       },
       onAuthorizationUrl: (info) => {

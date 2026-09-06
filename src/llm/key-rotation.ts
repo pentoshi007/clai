@@ -5,6 +5,51 @@ export const MAX_PROVIDER_KEYS = 10;
 
 export const MULTI_KEY_ATTEMPTS = 2;
 
+export const RATE_LIMIT_RETRY_WAIT_MS: readonly number[] = [
+  10_000, 20_000, 30_000, 40_000, 60_000,
+];
+
+export function rateLimitRetryWaitMs(
+  attempt: number,
+  maxMs = Number.POSITIVE_INFINITY,
+): number {
+  const index = Math.min(
+    Math.max(0, attempt),
+    RATE_LIMIT_RETRY_WAIT_MS.length - 1,
+  );
+  return Math.min(RATE_LIMIT_RETRY_WAIT_MS[index]!, maxMs);
+}
+
+export function providerRetryAfterMs(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "retryAfterSeconds" in error) {
+    const seconds = (error as { retryAfterSeconds?: unknown })
+      .retryAfterSeconds;
+    if (
+      typeof seconds === "number" &&
+      Number.isFinite(seconds) &&
+      seconds >= 0
+    ) {
+      return Math.ceil(seconds * 1000);
+    }
+  }
+  const match = errorMessage(error).match(/retry after ([0-9.]+)\s*s/i);
+  if (!match) return undefined;
+  const seconds = Number.parseFloat(match[1]!);
+  return Number.isFinite(seconds) && seconds >= 0
+    ? Math.ceil(seconds * 1000)
+    : undefined;
+}
+
+export function rateLimitWaitMsFor(
+  error: unknown,
+  attempt: number,
+  maxMs = Number.POSITIVE_INFINITY,
+): number {
+  const scheduled = rateLimitRetryWaitMs(attempt, maxMs);
+  const hint = providerRetryAfterMs(error);
+  return hint === undefined ? scheduled : Math.min(scheduled, hint);
+}
+
 export function buildKeyAttemptPlan(n: number, startIndex: number): number[] {
   if (n <= 0) return [];
   if (n === 1) return [0];

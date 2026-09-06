@@ -13,6 +13,7 @@ import {
   ProviderError,
   STREAM_STALL_MARKER,
 } from "../http.js";
+import { rateLimitWaitMsFor } from "../key-rotation.js";
 import { quotaOrRateLimited } from "../quota-signals.js";
 import { resolveBuiltInProfile } from "../provider-profiles.js";
 import { EFFORT_SCALE, nearestAcceptedEffort } from "../reasoning-controls.js";
@@ -193,6 +194,9 @@ export function isRetriableError(error: unknown): boolean {
 }
 
 export function retryWaitMs(error: unknown, attempt: number): number {
+  if (isRateLimited(error)) {
+    return rateLimitWaitMsFor(error, attempt, MAX_RETRY_WAIT_MS);
+  }
   if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
     return Math.ceil(error.retryAfterSeconds * 1000);
   }

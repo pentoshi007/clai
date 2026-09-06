@@ -1,5 +1,6 @@
 
 import { ProviderError, STREAM_STALL_MARKER } from "../llm/http.js";
+import { rateLimitWaitMsFor } from "../llm/key-rotation.js";
 import { isEmptyCompletionError } from "../llm/router.js";
 
 export type StreamFailureKind =
@@ -222,18 +223,6 @@ function pick(delays: readonly number[], attempt: number, max: number): number {
   return Math.min(delays[attempt] ?? delays[delays.length - 1] ?? 0, max);
 }
 
-function retryAfterSecondsFrom(error: unknown): number | undefined {
-  if (error instanceof ProviderError && error.retryAfterSeconds !== undefined) {
-    return error.retryAfterSeconds;
-  }
-  const match = (error instanceof Error ? error.message : String(error ?? "")).match(
-    /retry after ([0-9.]+)\s*s/i,
-  );
-  if (!match) return undefined;
-  const seconds = Number.parseFloat(match[1]!);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
-}
-
 export function planStreamRecovery(input: {
   error?: unknown;
   kind?: StreamFailureKind;
@@ -284,14 +273,7 @@ export function planStreamRecovery(input: {
     case "rate-limit": {
       const n = attempt(state.rateLimit, limits.maxRateLimit);
       if (n >= limits.maxRateLimit) return giveUp;
-      const scheduled = pick([10_000, 20_000, 30_000, 40_000, 60_000], n, cap);
-      const providerSeconds = retryAfterSecondsFrom(input.error);
-      const delayMs = Math.min(
-        cap,
-        providerSeconds === undefined
-          ? scheduled
-          : Math.max(scheduled, providerSeconds * 1000),
-      );
+      const delayMs = rateLimitWaitMsFor(input.error, n, cap);
       return {
         action: "retry",
         kind,
