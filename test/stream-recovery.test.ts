@@ -6,9 +6,12 @@ import {
   createStreamRecoveryState,
   planStreamRecovery,
   recordRecoveryAttempt,
+  recordServerErrorAttempts,
   resetStreamRecoveryState,
+  serverErrorAttemptsFrom,
   type StreamFailureKind,
 } from "../src/agent/stream-recovery.js";
+import { markServerErrorAttempts } from "../src/llm/routing/error-classification.js";
 
 describe("classifyStreamFailure", () => {
   it("classifies empty admissions (raw and router-wrapped)", () => {
@@ -286,5 +289,35 @@ describe("recordRecoveryAttempt / resetStreamRecoveryState", () => {
 
     resetStreamRecoveryState(state);
     expect(state).toEqual(createStreamRecoveryState());
+  });
+});
+
+describe("server error attempt budget", () => {
+  it("retries while cumulative server attempts are below the budget", () => {
+    const state = createStreamRecoveryState();
+    recordServerErrorAttempts(state, 2);
+    const plan = planStreamRecovery({ kind: "server", state });
+    expect(plan.action).toBe("retry");
+  });
+
+  it("gives up once cumulative server attempts reach the budget", () => {
+    const state = createStreamRecoveryState();
+    recordServerErrorAttempts(state, DEFAULT_STREAM_RECOVERY_LIMITS.maxServerAttempts);
+    expect(planStreamRecovery({ kind: "server", state }).action).toBe("give-up");
+  });
+
+  it("counts tagged attempts from the error, defaulting to one", () => {
+    const tagged = new ProviderError("upstream 500", 500);
+    expect(serverErrorAttemptsFrom(tagged)).toBe(1);
+    markServerErrorAttempts(tagged, 4);
+    expect(serverErrorAttemptsFrom(tagged)).toBe(4);
+  });
+
+  it("resets the budget with the rest of the state", () => {
+    const state = createStreamRecoveryState();
+    recordServerErrorAttempts(state, 4);
+    resetStreamRecoveryState(state);
+    expect(state.serverAttempts).toBe(0);
+    expect(planStreamRecovery({ kind: "server", state }).action).toBe("retry");
   });
 });

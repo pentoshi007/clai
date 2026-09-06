@@ -4,6 +4,8 @@ import {
   classifyStreamFailure,
   planStreamRecovery,
   recordRecoveryAttempt,
+  recordServerErrorAttempts,
+  serverErrorAttemptsFrom,
 } from "../../stream-recovery.js";
 import {
   appendInterruptedReasoning,
@@ -232,6 +234,12 @@ export const recoverFromStreamFailure = async (
     state.lowYieldResumptions = meaningfulProgress
       ? 0
       : state.lowYieldResumptions + 1;
+  }
+  if (failureKind === "server" && !meaningfulProgress) {
+    recordServerErrorAttempts(
+      ports.recoveryState,
+      serverErrorAttemptsFrom(input.error),
+    );
   }
   const plan = planStreamRecovery({
     kind: failureKind,

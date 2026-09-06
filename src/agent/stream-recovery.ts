@@ -2,6 +2,10 @@
 import { ProviderError, STREAM_STALL_MARKER } from "../llm/http.js";
 import { rateLimitWaitMsFor } from "../llm/key-rotation.js";
 import { isEmptyCompletionError } from "../llm/router.js";
+import {
+  SERVER_ERROR_MAX_ATTEMPTS,
+  serverErrorAttemptsFor,
+} from "../llm/routing/error-classification.js";
 
 export type StreamFailureKind =
   | "aborted"
@@ -19,6 +23,7 @@ export interface StreamRecoveryState {
   empty: number;
   rateLimit: number;
   server: number;
+  serverAttempts: number;
   network: number;
   stall: number;
   context: number;
@@ -31,6 +36,7 @@ export interface StreamRecoveryLimits {
   readonly maxEmpty: number;
   readonly maxRateLimit: number;
   readonly maxServer: number;
+  readonly maxServerAttempts: number;
   readonly maxNetwork: number;
   readonly maxStall: number;
   readonly maxContext: number;
@@ -44,6 +50,7 @@ export const DEFAULT_STREAM_RECOVERY_LIMITS: StreamRecoveryLimits = {
   maxEmpty: 4,
   maxRateLimit: 5,
   maxServer: 3,
+  maxServerAttempts: SERVER_ERROR_MAX_ATTEMPTS,
   maxNetwork: 3,
   maxStall: 2,
   maxContext: 2,
@@ -163,6 +170,7 @@ export function createStreamRecoveryState(): StreamRecoveryState {
     empty: 0,
     rateLimit: 0,
     server: 0,
+    serverAttempts: 0,
     network: 0,
     stall: 0,
     context: 0,
@@ -176,6 +184,7 @@ export function resetStreamRecoveryState(state: StreamRecoveryState): void {
   state.empty = 0;
   state.rateLimit = 0;
   state.server = 0;
+  state.serverAttempts = 0;
   state.network = 0;
   state.stall = 0;
   state.context = 0;
@@ -217,6 +226,17 @@ export function recordRecoveryAttempt(
       state.structural += 1;
       break;
   }
+}
+
+export function recordServerErrorAttempts(
+  state: StreamRecoveryState,
+  attempts: number,
+): void {
+  state.serverAttempts += Math.max(0, attempts);
+}
+
+export function serverErrorAttemptsFrom(error: unknown): number {
+  return Math.max(1, serverErrorAttemptsFor(error));
 }
 
 function pick(delays: readonly number[], attempt: number, max: number): number {
@@ -288,6 +308,7 @@ export function planStreamRecovery(input: {
       };
     }
     case "server": {
+      if (state.serverAttempts >= limits.maxServerAttempts) return giveUp;
       const n = attempt(state.server, limits.maxServer);
       if (n >= limits.maxServer) return giveUp;
       return {

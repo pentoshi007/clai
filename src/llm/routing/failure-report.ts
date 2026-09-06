@@ -11,7 +11,11 @@ import {
   mentionsQuotaExhaustion,
   mentionsRateLimit,
 } from "../quota-signals.js";
-import { isCacheOnlyColdError } from "./error-classification.js";
+import {
+  isCacheOnlyColdError,
+  markServerErrorAttempts,
+  serverErrorAttemptsFor,
+} from "./error-classification.js";
 
 function appendFullProviderBody(text: string, error: unknown): string {
   if (!(error instanceof ProviderError)) return text;
@@ -223,7 +227,12 @@ export function aggregateProviderError(
     actionable?.status,
     actionable?.retryAfterSeconds,
   );
-  return markStreamEmittedBytes(aggregate, emittedBytes);
+  markStreamEmittedBytes(aggregate, emittedBytes);
+  const serverAttempts = failures.reduce(
+    (total, failure) => Math.max(total, serverErrorAttemptsFor(failure.error)),
+    0,
+  );
+  return markServerErrorAttempts(aggregate, serverAttempts);
 }
 
 function escapeTableCell(value: string): string {
