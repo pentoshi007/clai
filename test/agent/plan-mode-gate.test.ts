@@ -46,7 +46,7 @@ describe("plan mode gate", () => {
     expect(gate({ name: "fs.read", args: { path: "/app/a.ts" } })).toEqual({
       blocked: false,
     });
-    expect(gate({ name: "dns.lookup", args: { host: "example.com" } })).toEqual({
+    expect(gate({ name: "web.search", args: { query: "example.com" } })).toEqual({
       blocked: false,
     });
   });

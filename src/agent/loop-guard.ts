@@ -22,13 +22,10 @@ const READ_ONLY_TOOLS = new Set([
   "web.fetch",
   "http.fetch",
   "web.search",
-  "dns.lookup",
-  "whois.lookup",
   "fs.read",
   "fs.list",
   "fs.search",
   "sysinfo",
-  "net.context",
   "tool.check",
   "wordlist.find",
   "image.ocr",
@@ -41,7 +38,6 @@ const STATE_POLLING_TOOLS = new Set([
   "terminal.read",
   "terminal.status",
   "terminal.list",
-  "pentest.scanStatus",
 ]);
 
 export interface LoopGuardOptions {

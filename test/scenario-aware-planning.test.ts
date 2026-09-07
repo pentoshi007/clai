@@ -48,7 +48,7 @@ describe("pentestWorkflowDirective", () => {
 describe("narrowNmapOperationDirective", () => {
   it("requires one scan and forbids automatic pentest expansion", () => {
     const directive = narrowNmapOperationDirective();
-    expect(directive).toMatch(/net\.scan exactly once/i);
+    expect(directive).toMatch(/exactly one nmap command via shell\.exec/i);
     expect(directive).toMatch(/Do NOT call plan\.create/i);
     expect(directive).toMatch(/WHOIS, DNS, HTTP/i);
     expect(directive).toMatch(/backgroundJob\.id/i);
@@ -72,7 +72,7 @@ describe("looksLikePentestTask", () => {
 
 describe("renderAgentSystemPrompt — pentest planning guidance", () => {
   const toolList =
-    "shell.exec, fs.read, whois.lookup, dns.lookup, net.context, http.fetch, net.scan, pentest.recon, plan.create, task.update";
+    "shell.exec, fs.read, net.pingSweep, http.fetch, plan.create, task.update";
 
   it("renders evidence-driven pentest guidance without a fixed tool sequence", () => {
     const prompt = renderAgentSystemPrompt(toolList, { pentest: true });

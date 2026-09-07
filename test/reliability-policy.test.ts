@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  resolveEffectiveContextLimit,
+} from "../src/agent/request-accounting.js";
+import {
   ADAPTIVE_MAX_TOKENS_LIGHT,
   ADAPTIVE_MAX_TOKENS_TOOL_STEP,
   DEFAULT_FS_PASSTHROUGH_CAP_CHARS,
@@ -27,7 +30,7 @@ afterEach(() => {
 });
 
 describe("reliability policy (E1–E6)", () => {
-  it("E1: soft early compact defaults to 180k for every provider/model", () => {
+  it("E1: soft early compact defaults to 180k, clamped to the model's safe window", () => {
     const p = getReliabilityPolicy();
     expect(p.softEarlyCompact).toBe(true);
     expect(p.softCompactTokenBudget).toBe(DEFAULT_SOFT_COMPACT_TOKEN_BUDGET);
@@ -36,16 +39,58 @@ describe("reliability policy (E1–E6)", () => {
     expect(autoCompactTriggerTokens(p)).toBe(HARD_COMPACT_TOKEN_BUDGET);
     expect(
       autoCompactTriggerTokens(p, {
-        provider: "nvidia",
-        model: "openai/gpt-oss-20b",
-      }),
-    ).toBe(180_000);
-    expect(
-      autoCompactTriggerTokens(p, {
         provider: "modal",
         model: "moonshotai/Kimi-K3",
       }),
     ).toBe(180_000);
+    expect(
+      autoCompactTriggerTokens(p, {
+        provider: "nvidia",
+        model: "openai/gpt-oss-20b",
+      }),
+    ).toBe(128_000 - 24_576 - 2_048);
+    expect(
+      autoCompactTriggerTokens(p, {
+        provider: "anthropic",
+        model: "claude-sonnet-4",
+      }),
+    ).toBe(200_000 - 24_576 - 2_048);
+  });
+
+  it("E1: trigger never exceeds the effective safe dispatch limit (no dead zone)", () => {
+    const p = getReliabilityPolicy();
+    for (const [provider, model] of [
+      ["anthropic", "claude-sonnet-4"],
+      ["openai", "gpt-4o"],
+      ["openai", "gpt-5"],
+      ["nvidia", "openai/gpt-oss-20b"],
+      ["modal", "moonshotai/Kimi-K3"],
+      ["tokenrouter", "minimax-m3"],
+    ] as const) {
+      const trigger = autoCompactTriggerTokens(p, { provider, model });
+      const safe = resolveEffectiveContextLimit({ provider, model })
+        .effectiveSafeTokens!;
+      expect(trigger).toBeLessThanOrEqual(safe);
+      expect(trigger).toBeGreaterThan(0);
+    }
+    for (const customLimit of [20_000, 25_000, 30_000, 100_000, 200_000, 253_000, 1_000_000]) {
+      const trigger = autoCompactTriggerTokens(p, {
+        provider: "tokenrouter",
+        model: "custom-model",
+        contextLimitTokens: customLimit,
+      });
+      const safe = resolveEffectiveContextLimit({
+        provider: "tokenrouter",
+        model: "custom-model",
+        contextLimitTokens: customLimit,
+      }).effectiveSafeTokens!;
+      const expected = Math.min(
+        Math.floor(customLimit * 0.7),
+        customLimit - Math.min(24_576, Math.floor(customLimit * 0.25)) - 2_048,
+      );
+      expect(trigger).toBe(expected);
+      expect(trigger).toBeLessThanOrEqual(safe);
+    }
   });
 
   it("E1: a session model window compacts at exactly 70%", () => {

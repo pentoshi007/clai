@@ -24,8 +24,6 @@ export function inferToolFromArgs(
   ) return "task.move";
   if (has("taskId") || has("state")) return "task.update";
   if (has("tool")) return "pkg.install";
-  if (has("record") && has("target")) return "dns.lookup";
-  if (has("ports") && has("target")) return "net.scan";
   if (has("url")) {
     return has("method") || has("body") ? "http.fetch" : "web.fetch";
   }

@@ -121,11 +121,8 @@ describe("tool definitions", () => {
     const compact = getToolDefinitions({ compact: true });
     const names = new Set(compact.map((d) => d.name));
     for (const n of [
-      "dns.lookup",
-      "whois.lookup",
       "http.fetch",
-      "net.context",
-      "pentest.recon",
+      "net.pingSweep",
       "wordlist.find",
       "web.search",
       "fs.write",
@@ -133,8 +130,11 @@ describe("tool definitions", () => {
     ]) {
       expect(names.has(n)).toBe(true);
     }
-    // Keep compact: net.scan (confirm/sudo heavy) still out of compact set.
     expect(names.has("net.scan")).toBe(false);
+    expect(names.has("pentest.recon")).toBe(false);
+    expect(names.has("dns.lookup")).toBe(false);
+    expect(names.has("whois.lookup")).toBe(false);
+    expect(names.has("net.context")).toBe(false);
     expect(names.has("pkg.install")).toBe(false);
   });
 });

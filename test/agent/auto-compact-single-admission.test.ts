@@ -132,7 +132,7 @@ describe("automatic compaction single-admission policy", () => {
     const history = smallHistory();
     history.splice(1, 1, {
       role: "user",
-      content: "x ".repeat(160_000),
+      content: "x ".repeat(220_000),
     });
     const events: AgentEvent[] = [];
     await runAgent("continue", {

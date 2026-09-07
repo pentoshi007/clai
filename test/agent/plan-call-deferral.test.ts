@@ -18,7 +18,7 @@ describe("plan call deferral", () => {
 
   it("runs only the gathering calls before plan.create", () => {
     const decision = decidePlanCallDeferral(
-      boundOf("dns.lookup", "net.scan", "plan.create", "fs.write"),
+      boundOf("net.pingSweep", "http.fetch", "plan.create", "fs.write"),
     );
     expect(decision.runCount).toBe(2);
     expect(decision.notice).toBe(

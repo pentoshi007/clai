@@ -99,7 +99,7 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
         {
           type: "text",
           text: "current",
-          cache_control: { type: "ephemeral" },
+          cache_control: { type: "ephemeral", ttl: "1h" },
         },
       ],
     });
@@ -165,7 +165,7 @@ describe("Anthropic explicit conversation cache breakpoints", () => {
           {
             type: "text",
             text: "stable answer",
-            cache_control: { type: "ephemeral" },
+            cache_control: { type: "ephemeral", ttl: "1h" },
           },
         ],
       },
@@ -239,7 +239,7 @@ describe("Anthropic explicit conversation cache breakpoints", () => {
     ]);
     expect(results).toHaveProperty(
       "content.1.cache_control",
-      { type: "ephemeral" },
+      { type: "ephemeral", ttl: "1h" },
     );
     expect(results).toHaveProperty("content.0.tool_use_id", "tool-1");
     expect(results).toHaveProperty("content.1.tool_use_id", "tool-2");

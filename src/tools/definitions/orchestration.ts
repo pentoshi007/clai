@@ -34,7 +34,7 @@ export const TOOL_DEFINITIONS_ORCHESTRATION: ToolDefinition[] = [
             properties: {
               name: {
                 type: "string",
-                description: "Tool name (e.g. dns.lookup)",
+                description: "Tool name (e.g. web.search)",
               },
               args: { type: "object", description: "Arguments for that tool" },
               id: {

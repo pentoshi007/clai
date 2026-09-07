@@ -140,7 +140,6 @@ export function toolFitsTaskClass(
         toolName === "fs.list" ||
         toolName === "fs.read" ||
         toolName === "fs.search" ||
-        toolName === "net.context" ||
         toolName === "shell.exec"
       );
     case "scaffold":

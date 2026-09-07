@@ -153,8 +153,10 @@ back-end DBMS: MySQL 5.7
 });
 
 describe("output policy — no generic keyword reducer", () => {
-  it("picks nmap reducer for net.scan", () => {
-    expect(pickReducer({ toolName: "net.scan" })).toBe(nmapReducer);
+  it("picks nmap reducer for shell.exec running nmap", () => {
+    expect(
+      pickReducer({ toolName: "shell.exec", command: "nmap -sV example.com" }),
+    ).toBe(nmapReducer);
   });
   it("picks ffuf reducer for shell.exec running ffuf", () => {
     expect(
@@ -183,7 +185,7 @@ describe("output policy — no generic keyword reducer", () => {
   it("reduceToolOutput nmap summary still works", () => {
     const result = reduceToolOutput(
       "Nmap scan report for example.com (1.2.3.4)\n22/tcp open ssh\n",
-      { toolName: "net.scan", command: "nmap" },
+      { toolName: "shell.exec", command: "nmap" },
     );
     expect(result.summary).toMatch(/nmap reduced summary/);
   });

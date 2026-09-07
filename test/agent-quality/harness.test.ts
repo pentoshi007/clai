@@ -39,7 +39,7 @@ describe("agent quality harness skeleton", () => {
 
   it("cold system baseline stays in a professional agent band (not empty, not huge)", () => {
     const base = baselineColdSystemTokens(
-      "shell.exec, fs.read, fs.write, plan.create, task.update, net.scan",
+      "shell.exec, fs.read, fs.write, plan.create, task.update",
     );
     // Floor: real agent constitution is multi-k tokens.
     expect(base.systemEstTokens).toBeGreaterThan(2_000);

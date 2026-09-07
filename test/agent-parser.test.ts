@@ -892,8 +892,7 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
     "fs.read",
     "fs.list",
     "fs.search",
-    "dns.lookup",
-    "whois.lookup",
+    "net.pingSweep",
     "http.fetch",
     "web.fetch",
     "web.search",
@@ -904,28 +903,26 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
 
   it("groups consecutive read-only calls to run in parallel", () => {
     const groups = groupToolCallsForExecution(
-      [call("dns.lookup"), call("whois.lookup"), call("http.fetch")],
+      [call("net.pingSweep"), call("web.search"), call("http.fetch")],
       safe,
     );
     expect(groups).toHaveLength(1);
     expect(groups[0]!.map((c) => c.name)).toEqual([
-      "dns.lookup",
-      "whois.lookup",
+      "net.pingSweep",
+      "web.search",
       "http.fetch",
     ]);
   });
 
-  it("can group pentest.recon with dns/http when both are concurrent-safe", () => {
-    // Runner now treats pentest.recon as concurrent discovery so nmap does
-    // not serialize the whole recon wave behind a single barrier.
+  it("can group recon calls with dns/http when all are concurrent-safe", () => {
     const concurrent = (c: { name: string }) =>
-      READ_ONLY.has(c.name) || c.name === "pentest.recon";
+      READ_ONLY.has(c.name);
     const groups = groupToolCallsForExecution(
       [
-        call("pentest.recon"),
+        call("net.pingSweep"),
         call("http.fetch"),
-        call("dns.lookup"),
-        call("dns.lookup"),
+        call("web.search"),
+        call("web.search"),
       ],
       concurrent,
       8,
@@ -940,15 +937,15 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
     const groups = groupToolCallsForExecution(
       [
         call("task.update"),
-        call("dns.lookup"),
-        call("whois.lookup"),
+        call("net.pingSweep"),
+        call("web.search"),
         call("task.update"),
       ],
       safe,
     );
     expect(groups.map((g) => g.map((c) => c.name))).toEqual([
       ["task.update"],
-      ["dns.lookup", "whois.lookup"],
+      ["net.pingSweep", "web.search"],
       ["task.update"],
     ]);
   });
@@ -964,11 +961,11 @@ describe("scoped-parallel batch grouping (groupToolCallsForExecution)", () => {
   it("caps a parallel group at maxGroupSize (spilling into a second group)", () => {
     const groups = groupToolCallsForExecution(
       [
-        call("dns.lookup"),
-        call("dns.lookup"),
-        call("dns.lookup"),
-        call("dns.lookup"),
-        call("dns.lookup"),
+        call("net.pingSweep"),
+        call("net.pingSweep"),
+        call("net.pingSweep"),
+        call("net.pingSweep"),
+        call("net.pingSweep"),
       ],
       safe,
       4,

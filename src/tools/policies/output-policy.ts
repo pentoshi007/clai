@@ -19,9 +19,6 @@ function commandHead(command: string): string {
 }
 
 export function pickReducer(context: PolicyContext): Reducer | null {
-  if (context.toolName === "net.scan" || context.toolName === "pentest.recon") {
-    return nmapReducer;
-  }
   const head = context.command ? commandHead(context.command) : "";
   switch (head) {
     case "nmap":
