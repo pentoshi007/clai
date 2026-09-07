@@ -8,6 +8,7 @@ refactor/evidence/phase-0/reports/mutation/
 .DS_Store
 .clai/
 .claude/
+.hoplite/
 .kilo/
 .kiro/
 *.tgz
