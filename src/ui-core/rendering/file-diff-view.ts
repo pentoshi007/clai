@@ -23,6 +23,25 @@ import {
 
 export type DiffLineTone = "context" | "add" | "del" | "gap" | "header";
 
+/**
+ * Columns a diff code row loses to card chrome in the OpenTUI transcript:
+ * card border (2) + card padding (2) + the " │ " gutter separator (3).
+ * The code budget must subtract these or long lines run through the border.
+ */
+export const DIFF_CARD_CHROME_COLS = 7;
+
+export function diffCardMaxLineChars(paneWidth: number, gutterChars: number): number {
+  return Math.max(8, paneWidth - gutterChars - DIFF_CARD_CHROME_COLS);
+}
+
+export function clipDiffCardText(text: string, max: number): string {
+  if (max <= 0) return "";
+  const chars = [...text];
+  if (chars.length <= max) return text;
+  if (max === 1) return "…";
+  return chars.slice(0, max - 1).join("") + "…";
+}
+
 export interface PresentedDiffRow {
   readonly tone: DiffLineTone;
   readonly gutter: string;
@@ -34,7 +53,7 @@ export interface PresentedDiffRow {
 
 const DEFAULT_WRAP = 72;
 
-function gutterWidth(change: FileChange): number {
+export function gutterWidth(change: FileChange): number {
   let max = 1;
   for (const h of change.previewHunks) {
     for (const l of h.lines) {

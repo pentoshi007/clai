@@ -17,6 +17,7 @@ import {
 } from "../../../ui-core/rendering/batch-sections.js";
 import { presentOutput, presentTool } from "../../../ui-core/rendering/tool-presenter.js";
 import { toolElapsedLabel } from "../../../ui-core/rendering/duration.js";
+import { clipDiffCardText } from "../../../ui-core/rendering/file-diff-view.js";
 import {
   openToolOutputPager,
   pathFromArgsDisplay,
@@ -192,6 +193,7 @@ export function ToolCard(props: {
   onToggleFileDiff?: () => void;
   onCollapseAllFileDiffs?: () => void;
   onExpandAllFileDiffs?: () => void;
+  contentWidth?: number | undefined;
 }): ReactNode {
   const {
     item,
@@ -206,6 +208,7 @@ export function ToolCard(props: {
     onToggleFileDiff,
     onCollapseAllFileDiffs,
     onExpandAllFileDiffs,
+    contentWidth,
   } = props;
   const { glyph, statusLabel, name, argsLabel, argsDisplay, detail, pathLine, isFileDiff } =
     presentTool(item);
@@ -231,6 +234,7 @@ export function ToolCard(props: {
   const batchExpanded = expanded || isBatchLive;
 
   const { width: termWidth } = useTerminalDimensionsContext();
+  const diffPaneWidth = Math.max(20, contentWidth ?? termWidth - 6);
   const colorMode = services.capabilities.colorMode;
   const readPath = pathFromArgsDisplay(item.argsDisplay);
   const formatMdRead =
@@ -566,11 +570,15 @@ export function ToolCard(props: {
             diffExpanded={fileDiffExpanded}
             multiFilePreview={isWriteMany}
             onOpen={openFileChange}
+            contentWidth={diffPaneWidth}
           />
           {isWriteMany && fileChanges.length > 12 ? (
             <text
               selectable
-              content={` ··· +${fileChanges.length - 12} more files · click for full ···`}
+              content={clipDiffCardText(
+                ` ··· +${fileChanges.length - 12} more files · click for full ···`,
+                diffPaneWidth - 4,
+              )}
               style={{ fg: theme.muted, height: 1 }}
             />
           ) : null}

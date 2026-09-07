@@ -111,6 +111,9 @@ export function TranscriptRowImpl(props: {
           }
           onCollapseAllFileDiffs={() => store.setFileDiffsGlobal(false)}
           onExpandAllFileDiffs={() => store.setFileDiffsGlobal(true)}
+          contentWidth={
+            searchMatched && contentWidth != null ? contentWidth - 2 : contentWidth
+          }
         />
       );
       break;

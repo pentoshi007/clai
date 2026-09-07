@@ -20,6 +20,7 @@ const SPIKES: Array<{ id: string; arg: string }> = [
   { id: "V2-013", arg: "viewport" },
   { id: "V2-014", arg: "markdown" },
   { id: "V2-032", arg: "shell" },
+  { id: "V2-DIFF-OVERFLOW", arg: "diff-card-overflow" },
 ];
 
 interface SpikeOutcome {

@@ -22,8 +22,12 @@ async function main(): Promise<SpikeResult> {
     const { runShellRenderSpike } = await import("./shell-render.spike.js");
     return runShellRenderSpike();
   }
+  if (kind === "diff-card-overflow" || kind === "v2-diff-overflow") {
+    const { runDiffCardOverflowSpike } = await import("./diff-card-overflow.spike.js");
+    return runDiffCardOverflowSpike();
+  }
   throw new Error(
-    `Unknown spike "${kind}". Use: viewport | markdown | shell`,
+    `Unknown spike "${kind}". Use: viewport | markdown | shell | diff-card-overflow`,
   );
 }
 
