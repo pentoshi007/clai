@@ -189,6 +189,9 @@ export class AgentEventAdapter {
           toolCallId,
           ok: event.ok,
           exitCode: event.exitCode,
+          ...(event.runFailure !== undefined
+            ? { runFailure: event.runFailure }
+            : {}),
           summary: event.summary,
           artifactPath: event.artifactPath,
           ...(event.fileChanges ? { fileChanges: event.fileChanges } : {}),

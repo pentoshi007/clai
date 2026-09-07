@@ -520,3 +520,273 @@ export function highlightDiff(line: string): SyntaxSpan[] {
   if (line.startsWith("-")) return [{ kind: "regex", text: line }];
   return [{ kind: "plain", text: line }];
 }
+
+const CSS_KEYWORDS = new Set([
+  "important",
+  "and",
+  "or",
+  "not",
+  "only",
+  "from",
+  "to",
+]);
+
+function isCssIdentStart(line: string, index: number): boolean {
+  const ch = line[index]!;
+  if (/[A-Za-z_]/.test(ch)) return true;
+  if (ch === "-") {
+    const next = line[index + 1];
+    return next !== undefined && /[A-Za-z_-]/.test(next);
+  }
+  return false;
+}
+
+function isCssIdentCont(ch: string): boolean {
+  return /[A-Za-z0-9_-]/.test(ch);
+}
+
+export function highlightCss(line: string, carry: HighlightCarry): SyntaxSpan[] {
+  const spans: SyntaxSpan[] = [];
+  const n = line.length;
+  let i = 0;
+  let depth = carry.cssDepth ?? 0;
+  let paren = 0;
+  let expectProperty = depth >= 1;
+  let declarationColonPending = false;
+  let lastColonDeclaration = false;
+
+  const finish = (): SyntaxSpan[] => {
+    carry.cssDepth = depth;
+    return spans;
+  };
+
+  while (i < n) {
+    if (carry.inBlockComment) {
+      const end = line.indexOf("*/", i);
+      if (end < 0) {
+        push(spans, "comment", line.slice(i));
+        return finish();
+      }
+      push(spans, "comment", line.slice(i, end + 2));
+      carry.inBlockComment = false;
+      i = end + 2;
+      continue;
+    }
+
+    const ch = line[i]!;
+    const next = line[i + 1];
+
+    if (ch === "/" && next === "*") {
+      const end = line.indexOf("*/", i + 2);
+      if (end < 0) {
+        push(spans, "comment", line.slice(i));
+        carry.inBlockComment = true;
+        return finish();
+      }
+      push(spans, "comment", line.slice(i, end + 2));
+      i = end + 2;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      push(spans, "comment", line.slice(i));
+      return finish();
+    }
+
+    if (ch === '"' || ch === "'") {
+      i = readString(line, i, ch, spans);
+      expectProperty = false;
+      continue;
+    }
+
+    if (/^url\(\s*[^"')]/.test(line.slice(i))) {
+      push(spans, "function", line.slice(i, i + 3));
+      push(spans, "punctuation", "(");
+      const close = line.indexOf(")", i + 4);
+      const end = close < 0 ? n : close;
+      push(spans, "string", line.slice(i + 4, end));
+      i = end;
+      expectProperty = false;
+      continue;
+    }
+
+    if (ch === "{") {
+      push(spans, "punctuation", ch);
+      depth += 1;
+      expectProperty = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "}") {
+      push(spans, "punctuation", ch);
+      depth = Math.max(0, depth - 1);
+      expectProperty = depth >= 1;
+      i += 1;
+      continue;
+    }
+    if (ch === "(") {
+      push(spans, "punctuation", ch);
+      paren += 1;
+      expectProperty = true;
+      i += 1;
+      continue;
+    }
+    if (ch === ")") {
+      push(spans, "punctuation", ch);
+      paren = Math.max(0, paren - 1);
+      expectProperty = false;
+      i += 1;
+      continue;
+    }
+    if (ch === ";") {
+      push(spans, "punctuation", ch);
+      expectProperty = depth >= 1;
+      i += 1;
+      continue;
+    }
+    if (ch === ",") {
+      push(spans, "punctuation", ch);
+      expectProperty = false;
+      i += 1;
+      continue;
+    }
+    if (ch === "[" || ch === "]") {
+      push(spans, "punctuation", ch);
+      i += 1;
+      continue;
+    }
+    if (ch === ":") {
+      push(spans, "punctuation", ch);
+      lastColonDeclaration = declarationColonPending;
+      declarationColonPending = false;
+      i += 1;
+      continue;
+    }
+    if (ch === ".") {
+      push(spans, "punctuation", ch);
+      i += 1;
+      continue;
+    }
+
+    if (ch === "#") {
+      const hex = /^#[0-9a-fA-F]{3,8}\b/.exec(line.slice(i));
+      if (hex) {
+        push(spans, "number", hex[0]);
+        i += hex[0].length;
+        continue;
+      }
+      const id = /^#[A-Za-z_][A-Za-z0-9_-]*/.exec(line.slice(i));
+      if (id) {
+        push(spans, "type", id[0]);
+        i += id[0].length;
+        expectProperty = false;
+        continue;
+      }
+      push(spans, "plain", ch);
+      i += 1;
+      continue;
+    }
+
+    if (ch === "@") {
+      const at = /^@[A-Za-z_-][A-Za-z0-9_-]*/.exec(line.slice(i));
+      if (at) {
+        push(spans, "keyword", at[0]);
+        i += at[0].length;
+        expectProperty = false;
+        continue;
+      }
+      push(spans, "operator", ch);
+      i += 1;
+      continue;
+    }
+
+    if (ch === "$") {
+      const variable = /^\$[A-Za-z_][A-Za-z0-9_-]*/.exec(line.slice(i));
+      if (variable) {
+        push(spans, "property", variable[0]);
+        i += variable[0].length;
+        expectProperty = false;
+        continue;
+      }
+      push(spans, "operator", ch);
+      i += 1;
+      continue;
+    }
+
+    if (ch === "&") {
+      push(spans, "keyword", ch);
+      expectProperty = false;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "!") {
+      const bang = /^!([A-Za-z-]+)/.exec(line.slice(i));
+      if (bang && CSS_KEYWORDS.has(bang[1]!.toLowerCase())) {
+        push(spans, "keyword", bang[0]);
+        i += bang[0].length;
+        expectProperty = false;
+        continue;
+      }
+      push(spans, "operator", ch);
+      i += 1;
+      continue;
+    }
+
+    const numberMatch = /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[a-zA-Z%][a-zA-Z0-9%]*)?/.exec(
+      line.slice(i),
+    );
+    if (
+      numberMatch &&
+      (/\d/.test(ch) ||
+        (ch === "." && next !== undefined && /\d/.test(next)) ||
+        (ch === "-" && next !== undefined && /[\d.]/.test(next)))
+    ) {
+      push(spans, "number", numberMatch[0]);
+      i += numberMatch[0].length;
+      expectProperty = false;
+      continue;
+    }
+
+    if (isCssIdentStart(line, i)) {
+      let j = i + 1;
+      while (j < n && isCssIdentCont(line[j]!)) j += 1;
+      const word = line.slice(i, j);
+      let k = j;
+      while (k < n && (line[k] === " " || line[k] === "\t")) k += 1;
+      const after = line[k];
+      const declarationContext = depth >= 1 || paren >= 1;
+      const lastSpan = spans[spans.length - 1];
+      if (lastSpan?.text.endsWith(".")) {
+        push(spans, "type", word);
+      } else if (lastSpan?.text.endsWith(":") && !lastColonDeclaration) {
+        push(spans, "keyword", word);
+      } else if (word.startsWith("--")) {
+        push(spans, "property", word);
+      } else if (expectProperty && declarationContext && after === ":") {
+        push(spans, "property", word);
+        declarationColonPending = true;
+      } else if (after === "(") {
+        push(spans, "function", word);
+      } else if (CSS_KEYWORDS.has(word.toLowerCase())) {
+        push(spans, "keyword", word);
+      } else if (!declarationContext) {
+        push(spans, "type", word);
+      } else {
+        push(spans, "plain", word);
+      }
+      expectProperty = false;
+      i = j;
+      continue;
+    }
+
+    if (/[>+~=|^]/.test(ch)) {
+      push(spans, "operator", ch);
+      i += 1;
+      continue;
+    }
+
+    push(spans, "plain", ch);
+    i += 1;
+  }
+  return finish();
+}

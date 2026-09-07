@@ -31,11 +31,14 @@ import { tryStreamOnce } from "./attempt-stream.js";
 import {
   isRateLimited,
   isRetriableError,
+  isServerErrorFailure,
   isServerUnavailable,
+  markServerErrorAttempts,
   MAX_RETRIES,
   MAX_RETRY_WAIT_MS,
   networkRetryWaitMs,
   retryWaitMs,
+  SERVER_ERROR_MAX_ATTEMPTS,
   sleep,
 } from "./error-classification.js";
 import { authForSlot } from "./provider-selection.js";
@@ -118,6 +121,7 @@ export async function runWithKeyRotation<T>(opts: {
     ? 1
     : attemptsPerKey(enabledCount, (opts.maxRetries ?? MAX_RETRIES) + 1);
   let lastError: unknown;
+  let serverAttempts = 0;
 
   const storedEndpoints =
     providerUsesEndpoints(providerId) && !singleDispatch
@@ -211,6 +215,11 @@ export async function runWithKeyRotation<T>(opts: {
         const previousError = lastError;
         lastError = error;
 
+        if (isServerErrorFailure(error)) {
+          serverAttempts += 1;
+          markServerErrorAttempts(error, serverAttempts);
+        }
+
         if (isOperationPolicyError(error) && previousError !== undefined) {
           throw previousError;
         }
@@ -247,7 +256,10 @@ export async function runWithKeyRotation<T>(opts: {
           throw error;
         }
 
-        const canRetrySame = attempt + 1 < maxPerKey;
+        const serverBudgetExhausted =
+          isServerErrorFailure(error) &&
+          serverAttempts >= SERVER_ERROR_MAX_ATTEMPTS;
+        const canRetrySame = attempt + 1 < maxPerKey && !serverBudgetExhausted;
         if (canRetrySame) {
           const wait =
             isRateLimited(error) || isServerUnavailable(error)
@@ -271,6 +283,13 @@ export async function runWithKeyRotation<T>(opts: {
         }
         break;
       }
+    }
+
+    if (
+      isServerErrorFailure(lastError) &&
+      serverAttempts >= SERVER_ERROR_MAX_ATTEMPTS
+    ) {
+      throw lastError;
     }
 
     if (

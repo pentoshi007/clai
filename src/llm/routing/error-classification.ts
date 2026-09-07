@@ -24,6 +24,38 @@ export const MAX_RETRIES = 6;
 
 export const MAX_RETRY_WAIT_MS = 120_000;
 
+export const SERVER_ERROR_MAX_ATTEMPTS = 4;
+
+const SERVER_ERROR_ATTEMPTS = Symbol.for("clai.serverError.attempts");
+
+export function isServerErrorFailure(error: unknown): boolean {
+  if (!(error instanceof ProviderError)) return false;
+  const status = error.status ?? 0;
+  return status >= 500 && status <= 599;
+}
+
+export function markServerErrorAttempts<E>(error: E, attempts: number): E {
+  if (attempts > 0 && typeof error === "object" && error !== null) {
+    try {
+      Object.defineProperty(error, SERVER_ERROR_ATTEMPTS, {
+        value: attempts,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      });
+    } catch {}
+  }
+  return error;
+}
+
+export function serverErrorAttemptsFor(error: unknown): number {
+  if (typeof error !== "object" || error === null) return 0;
+  const value = (error as Record<symbol, unknown>)[SERVER_ERROR_ATTEMPTS];
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
 export async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
   return new Promise((resolve, reject) => {

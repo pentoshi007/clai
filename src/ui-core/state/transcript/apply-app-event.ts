@@ -300,7 +300,10 @@ export function applyAppEvent(state: TranscriptState, event: AnyAppEvent): Trans
     case "tool-result":
       return updateToolItem(withSeq, event.payload.toolCallId, (item) => ({
         ...item,
-        status: event.payload.ok ? "ok" : "failed",
+        status:
+          event.payload.ok || event.payload.runFailure === false
+            ? "ok"
+            : "failed",
         exitCode: event.payload.exitCode,
         summary: event.payload.summary,
         artifactPath: event.payload.artifactPath,

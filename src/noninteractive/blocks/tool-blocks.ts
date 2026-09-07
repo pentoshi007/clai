@@ -95,17 +95,25 @@ export interface ToolResultExtras {
   readonly elapsed?: string | undefined;
 }
 
+function resultSucceeded(event: {
+  readonly ok: boolean;
+  readonly runFailure?: boolean | undefined;
+}): boolean {
+  return event.ok || event.runFailure === false;
+}
+
 export function buildToolResultLines(
   ctx: StreamContext,
   event: Extract<AgentEvent, { type: "tool-result" }>,
   extras: ToolResultExtras = {},
 ): readonly string[] {
   if (quiet(ctx)) return [];
-  const state = event.ok ? "ok" : "failed";
-  const token: ThemeToken = event.ok ? "success" : "diffDel";
+  const succeeded = resultSucceeded(event);
+  const state = succeeded ? "ok" : "failed";
+  const token: ThemeToken = succeeded ? "success" : "diffDel";
   const glyph = marker(
     ctx,
-    event.ok ? ctx.glyphs.toolOk : ctx.glyphs.toolFailed,
+    succeeded ? ctx.glyphs.toolOk : ctx.glyphs.toolFailed,
     state,
     token,
   );
@@ -117,7 +125,11 @@ export function buildToolResultLines(
   const lines = [row(ctx, `${glyph} ${styled(ctx, body, { fg: token })}`)];
   if (!event.ok) {
     const detail = sanitizeDisplayText(event.summary).split("\n")[0]?.trim();
-    if (detail) lines.push(...indented(ctx, detail, { fg: "diffDel" }));
+    if (detail) {
+      lines.push(
+        ...indented(ctx, detail, { fg: succeeded ? "muted" : "diffDel" }),
+      );
+    }
   }
   if (event.artifactPath) {
     lines.push(...indented(ctx, `saved ${event.artifactPath}`, { fg: "muted" }));

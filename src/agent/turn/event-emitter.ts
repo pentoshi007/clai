@@ -96,6 +96,9 @@ const emitToolResultEvent = (
     summary,
   };
   if (typeof result.exitCode === "number") event.exitCode = result.exitCode;
+  if (typeof result.runFailure === "boolean") {
+    event.runFailure = result.runFailure;
+  }
   if (artifactPath) event.artifactPath = artifactPath;
   if (result.fileChanges && result.fileChanges.length > 0) {
     event.fileChanges = result.fileChanges;

@@ -12,6 +12,7 @@ import {
   syntaxColor,
 } from "../../../ui-core/rendering/file-diff-view.js";
 import type { FileChange } from "../../../tools/file-diff.js";
+import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
 import { useClickWithoutDrag } from "./use-click-without-drag.js";
 
 const SINGLE_FILE_PREVIEW_ROWS = 40;
@@ -137,6 +138,7 @@ function FileDiffHunks(props: {
     maxRows = SINGLE_FILE_PREVIEW_ROWS,
   } = props;
   const open = useClickWithoutDrag(() => onOpen(change));
+  const { width: termWidth } = useTerminalDimensionsContext();
   const mark =
     change.kind === "create" ? "+" : change.kind === "overwrite" ? "~" : "·";
   const markFg =
@@ -146,7 +148,9 @@ function FileDiffHunks(props: {
         ? theme.activity
         : theme.toolOutput;
 
-  const rows = presentFileChangePreview(change, { maxRows });
+  const gutterChars = String(Math.max(1, change.stats.newLines)).length;
+  const maxLineChars = Math.max(16, termWidth - gutterChars - 6);
+  const rows = presentFileChangePreview(change, { maxRows, maxLineChars });
   return (
     <box
       style={{ flexDirection: "column", width: "100%" }}

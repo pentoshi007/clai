@@ -64,6 +64,22 @@ describe("a missing-reasoning_content rejection is not an unsupported-reasoning 
     }
   });
 
+  it("matches the reasoning_text phrasing used by AgentRouter's thinking models", () => {
+    const body = JSON.stringify({
+      error: {
+        message:
+          "The `reasoning_text` in the thinking mode must be passed back to the API. [trace_id=abc123]",
+        type: "invalid_request_error",
+        param: "",
+        code: null,
+      },
+    });
+    const error = providerError(400, body);
+    expect(isMissingReasoningContentError(error)).toBe(true);
+    expect(isReasoningUnsupportedError(error)).toBe(false);
+    expect(isEffortRejectedError(error)).toBe(false);
+  });
+
   it("ignores a 5xx that merely mentions reasoning", () => {
     expect(
       isMissingReasoningContentError(

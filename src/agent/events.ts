@@ -23,6 +23,7 @@ export type AgentEvent =
       id: string;
       ok: boolean;
       exitCode?: number;
+      runFailure?: boolean;
       summary: string;
       artifactPath?: string;
       fileChanges?: import("../tools/file-diff.js").FileChange[] | undefined;

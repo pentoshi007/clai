@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProviderError } from "../../src/llm/http.js";
+import { SERVER_ERROR_MAX_ATTEMPTS } from "../../src/llm/routing/error-classification.js";
 import { streamWithProvider, providers } from "../../src/llm/router.js";
 import type { LlmProvider } from "../../src/llm/provider.js";
 
@@ -90,12 +91,12 @@ describe("router retry ownership for agent streams", () => {
     expect(calls()).toBe(2);
   });
 
-  it("still retries non-rate-limit failures in router ownership", async () => {
+  it("stops non-rate-limit server failures after the attempt budget", async () => {
     const calls = hetznerAlwaysUnavailable();
     await expect(
       streamWithProvider(request, () => {}, { retryRateLimits: false }),
     ).rejects.toThrow(/503/);
-    expect(calls()).toBe(7);
+    expect(calls()).toBe(SERVER_ERROR_MAX_ATTEMPTS);
   });
 
   it("keeps rate-limit retries in default router ownership", async () => {
