@@ -675,6 +675,63 @@ describe("transcript reducer (V2-050)", () => {
     });
   });
 
+  it("keeps a completed command with a non-zero exit as ok, not failed", () => {
+    const seq = buildSequencer();
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("tool-call", { toolCallId: asToolCallId("c1"), name: "shell.exec", argsDisplay: "find . -name missing" }, undefined),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "tool-result",
+        { toolCallId: asToolCallId("c1"), ok: false, exitCode: 1, runFailure: false, summary: "exit 1", artifactPath: undefined },
+        undefined,
+      ),
+    );
+    const item = transcriptItems(state)[0] as ToolItem;
+    expect(item).toMatchObject({ status: "ok", exitCode: 1 });
+  });
+
+  it("marks genuine tool run failures as failed", () => {
+    const seq = buildSequencer();
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("tool-call", { toolCallId: asToolCallId("c1"), name: "shell.exec", argsDisplay: "sleep 99" }, undefined),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "tool-result",
+        { toolCallId: asToolCallId("c1"), ok: false, exitCode: 124, runFailure: true, summary: "Command timed out.", artifactPath: undefined },
+        undefined,
+      ),
+    );
+    const item = transcriptItems(state)[0] as ToolItem;
+    expect(item).toMatchObject({ status: "failed", exitCode: 124 });
+  });
+
+  it("keeps legacy failures without a run failure flag as failed", () => {
+    const seq = buildSequencer();
+    let state = EMPTY_TRANSCRIPT_STATE;
+    state = applyAppEvent(
+      state,
+      seq.build("tool-call", { toolCallId: asToolCallId("c1"), name: "fs.read", argsDisplay: "missing.ts" }, undefined),
+    );
+    state = applyAppEvent(
+      state,
+      seq.build(
+        "tool-result",
+        { toolCallId: asToolCallId("c1"), ok: false, summary: "file not found", artifactPath: undefined },
+        undefined,
+      ),
+    );
+    const item = transcriptItems(state)[0] as ToolItem;
+    expect(item).toMatchObject({ status: "failed" });
+  });
+
   it("marks a tool blocked", () => {
     const seq = buildSequencer();
     let state = EMPTY_TRANSCRIPT_STATE;

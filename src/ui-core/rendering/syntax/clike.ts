@@ -22,6 +22,7 @@ export interface HighlightCarry {
   inBlockComment: boolean;
   inTripleString: boolean;
   tripleQuote?: string | undefined;
+  cssDepth?: number | undefined;
 }
 
 export function push(spans: SyntaxSpan[], kind: SyntaxKind, text: string): void {

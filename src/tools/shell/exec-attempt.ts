@@ -39,7 +39,7 @@ export async function shellExecAttempt(
   args: ShellExecArgs,
 ): Promise<ShellExecAttemptResult> {
   if (args.signal?.aborted) {
-    return { ok: false, output: "Command aborted.", exitCode: 130 };
+    return { ok: false, output: "Command aborted.", exitCode: 130, runFailure: true };
   }
 
   const cwd = args.cwd ?? safeCwd();
@@ -52,6 +52,7 @@ export async function shellExecAttempt(
           `Command launch error [INVALID_CWD]: working directory is not a directory.\n` +
           `cwd=${JSON.stringify(cwd)}\nThe command did not start; correct the shell.exec cwd instead of changing command syntax.`,
         exitCode: 127,
+        runFailure: true,
       };
     }
   } catch (error) {
@@ -62,6 +63,7 @@ export async function shellExecAttempt(
         `Command launch error [INVALID_CWD]: ${detail}\n` +
         `cwd=${JSON.stringify(cwd)}\nThe command did not start; correct the shell.exec cwd instead of changing command syntax.`,
       exitCode: 127,
+      runFailure: true,
     };
   }
 
@@ -99,6 +101,7 @@ export async function shellExecAttempt(
         exitCode: 127,
         output:
           "No usable command shell was found. shell.exec requires /bin/sh (or $SHELL); use a purpose-built tool where available.",
+        runFailure: true,
       });
       return;
     }
@@ -191,7 +194,12 @@ export async function shellExecAttempt(
     child.on("error", (error) => {
       cleanup();
       if (aborted || args.signal?.aborted) {
-        resolve({ ok: false, output: "Command aborted.", exitCode: 130 });
+        resolve({
+          ok: false,
+          output: "Command aborted.",
+          exitCode: 130,
+          runFailure: true,
+        });
       } else {
         resolve({
           ok: false,
@@ -205,6 +213,7 @@ export async function shellExecAttempt(
             shell,
             cwd,
           },
+          runFailure: true,
         });
       }
     });
@@ -262,6 +271,7 @@ export async function shellExecAttempt(
           ok: false,
           output: output ? `${output}\nCommand aborted.` : "Command aborted.",
           exitCode: 130,
+          runFailure: true,
           ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: bytesRead > inMemory,
           stats,
@@ -275,6 +285,7 @@ export async function shellExecAttempt(
             ? `${output}\nCommand timed out.`
             : "Command timed out.",
           exitCode: 124,
+          runFailure: true,
           ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: bytesRead > inMemory,
           stats,
@@ -288,6 +299,7 @@ export async function shellExecAttempt(
             ? `${output}\nCommand killed after exceeding capture cap of ${maxCaptureBytes.toLocaleString()} bytes.`
             : "Command exceeded capture cap.",
           exitCode: 137,
+          runFailure: true,
           ...(artifact ? { outputPath: artifact.path } : {}),
           truncated: true,
           stats,
@@ -308,6 +320,7 @@ export async function shellExecAttempt(
           ? `${output ? `${output}\n` : ""}[note: exit=1 from ${noMatchTool} (${benignNote}) — not an error]`
           : output,
         exitCode: code ?? undefined,
+        runFailure: false,
         ...(artifact ? { outputPath: artifact.path } : {}),
         truncated: bytesRead > inMemory,
         stats,

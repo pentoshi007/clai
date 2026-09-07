@@ -224,10 +224,12 @@ export async function tryStreamOnce(
         `ℹ ${providerId}/${model} needs its reasoning replayed — retrying with it attached`,
       );
       try {
-        return await runAttempt(
+        const result = await runAttempt(
           { ...activeRequest, forceReasoningReplay: true },
           "adaptation",
         );
+        markReasoningMandatory(providerId, model);
+        return result;
       } catch (retryError) {
         if (!isMissingReasoningContentError(retryError)) {
           throw markStreamEmittedBytes(

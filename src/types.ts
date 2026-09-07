@@ -383,6 +383,7 @@ export interface ToolResult {
   ok: boolean;
   output: string;
   exitCode?: number | undefined;
+  runFailure?: boolean | undefined;
   outputPath?: string | undefined;
   backgroundJob?: BackgroundJobReceipt | undefined;
   truncated?: boolean | undefined;
