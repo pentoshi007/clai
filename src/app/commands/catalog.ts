@@ -360,6 +360,20 @@ export const knownModels: Record<string, string[]> = {
     "meta/llama-3.3-70b-instruct",
     "mistral/mistral-large-latest",
   ],
+  explabs: [
+    "claude-fable-5.1",
+    "claude-fable-5",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "gpt-5.6-sol",
+    "gpt-5.6-luna",
+    "gemini-3.7-flash",
+    "kimi-k3",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "deepseek-v4-flash",
+    "qwen3.8-27b",
+  ],
 };
 
 export function getKnownModels(provider: string): string[] {

@@ -19,7 +19,6 @@ export interface ToolRoutingInput {
   readonly mcpPresent: boolean;
   readonly mcpToolNames: readonly string[];
   readonly mcpToolDefinitions: readonly ToolDefinition[];
-  readonly imageOcrEnabled: boolean;
   readonly skillsAvailable: boolean;
   readonly toolCalling: ToolCallingMode | undefined;
   readonly useCompactSystemPrompt: () => boolean;
@@ -50,7 +49,6 @@ const nameAllowed = (
   provider: ProviderId,
   model: string,
 ): boolean => {
-  if (name === "image.ocr") return input.imageOcrEnabled;
   if (name === "image.view") return modelSupportsVision(provider, model);
   if (name === "skill.load" || name === "skill.list") {
     return input.skillsAvailable;

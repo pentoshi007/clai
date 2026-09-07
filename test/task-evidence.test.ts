@@ -48,7 +48,7 @@ describe("task evidence / verify-before-done", () => {
     expect(isBatchSoftFailTool("task.update")).toBe(true);
     expect(isBatchSoftFailTool("plan.create")).toBe(true);
     expect(isBatchSoftFailTool("http.fetch")).toBe(true);
-    expect(isBatchSoftFailTool("dns.lookup")).toBe(true);
+    expect(isBatchSoftFailTool("net.pingSweep")).toBe(true);
     expect(isBatchSoftFailTool("fs.write")).toBe(false);
     expect(isBatchSoftFailTool("shell.exec")).toBe(false);
   });
@@ -427,7 +427,7 @@ describe("typed task evidence", () => {
     ).not.toBe("implement");
 
     let led = openTaskLedger("t2");
-    led = recordTaskWorkSuccess(led, "t2", "dns.lookup", { remoteReconOk: true });
+    led = recordTaskWorkSuccess(led, "t2", "net.pingSweep", { remoteReconOk: true });
     expect(
       canMarkTaskDone(led, "t2", {
         taskTitle: "Probe HTTP endpoints on example.com",
@@ -486,7 +486,7 @@ describe("typed task evidence", () => {
 
   it("does not block pentest recon or report tasks with the exploit rule", () => {
     let recon = openTaskLedger("t6");
-    recon = recordTaskWorkSuccess(recon, "t6", "net.scan", {
+    recon = recordTaskWorkSuccess(recon, "t6", "shell.exec", {
       remoteReconOk: true,
     });
     expect(

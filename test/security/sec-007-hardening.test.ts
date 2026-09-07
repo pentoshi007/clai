@@ -5,8 +5,6 @@ import {
   salvageTruncatedWrite,
 } from "../../src/agent/tool-call-parser.js";
 import { engagementActionsForToolCall } from "../../src/safety/engagement-policy.js";
-import { toolRegistry } from "../../src/tools/registry.js";
-import { profileToNmapArgs } from "../../src/tools/validate.js";
 
 describe("SEC-007 duplicate mutating calls collapse message-wide", () => {
   it("runs a repeated identical fs.append only once", () => {
@@ -104,13 +102,5 @@ describe("SEC-007 engagement scope covers every named host", () => {
     const targets = actions.map((a) => a.target);
     expect(targets).toContain("in-scope.example.com");
     expect(targets).toContain("out-of-scope.example.org");
-  });
-});
-
-describe("SEC-007 net.scan honors an explicit scan type", () => {
-  it("does not rewrite scanType tcp based on prompt wording", async () => {
-    expect(profileToNmapArgs({ scanType: "tcp" })).toContain("-sT");
-    const result = toolRegistry["net.scan"];
-    expect(result).toBeDefined();
   });
 });

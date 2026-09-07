@@ -342,7 +342,6 @@ export async function runAgentTurn(
       mcpPresent: Boolean(mcpRuntime),
       mcpToolNames,
       mcpToolDefinitions,
-      imageOcrEnabled,
       skillsAvailable,
       toolCalling: options.toolCalling ?? config.toolCalling,
       useCompactSystemPrompt: () => useCompactSystemPrompt,

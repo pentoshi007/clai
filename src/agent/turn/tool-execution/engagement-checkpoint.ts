@@ -11,7 +11,10 @@ import {
 const OBSERVATION_LIMIT = 16_000;
 
 const isScannerLead = (call: ToolCall): boolean =>
-  call.name === "net.scan" || call.name.startsWith("pentest.");
+  (call.name === "shell.exec" || call.name === "shell.start") &&
+  /\b(?:nmap|masscan|nikto|nuclei|ffuf|gobuster|feroxbuster)\b/i.test(
+    String(call.args.command ?? ""),
+  );
 
 export const recordEngagementOutcome = async (
   graph: EngagementGraph,

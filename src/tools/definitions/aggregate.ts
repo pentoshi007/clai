@@ -3,10 +3,8 @@ import { TOOL_DEFINITIONS_CONTEXT_1 } from "./context-1.js";
 import { TOOL_DEFINITIONS_CONTEXT_2 } from "./context-2.js";
 import { def, emptyObject } from "./define.js";
 import { TOOL_DEFINITIONS_FILES } from "./files.js";
-import { TOOL_DEFINITIONS_NETWORK_1 } from "./network-1.js";
-import { TOOL_DEFINITIONS_NETWORK_2 } from "./network-2.js";
+import { TOOL_DEFINITIONS_NETWORK } from "./network.js";
 import { TOOL_DEFINITIONS_ORCHESTRATION } from "./orchestration.js";
-import { TOOL_DEFINITIONS_PENTEST } from "./pentest.js";
 import { TOOL_DEFINITIONS_SHELL } from "./shell.js";
 import { TOOL_DEFINITIONS_TERMINAL } from "./terminal.js";
 import { TOOL_DEFINITIONS_WEB_1 } from "./web-1.js";
@@ -15,10 +13,8 @@ import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_FILES,
   ...TOOL_DEFINITIONS_SHELL,
-  ...TOOL_DEFINITIONS_NETWORK_1,
+  ...TOOL_DEFINITIONS_NETWORK,
   ...TOOL_DEFINITIONS_WEB_1,
-  ...TOOL_DEFINITIONS_NETWORK_2,
-  ...TOOL_DEFINITIONS_PENTEST,
   ...TOOL_DEFINITIONS_WEB_2,
   ...TOOL_DEFINITIONS_CONTEXT_1,
   ...TOOL_DEFINITIONS_ORCHESTRATION,

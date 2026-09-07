@@ -86,6 +86,7 @@ interface AnthropicReasoningReplayOptions {
   readonly target: ReasoningArtifactReplayTarget;
   readonly observe?: ReasoningArtifactReplayObserver | undefined;
   readonly cacheConversation?: boolean | undefined;
+  readonly cacheTtl?: "1h" | undefined;
 }
 
 function conversationCacheTarget(
@@ -102,14 +103,19 @@ function conversationCacheTarget(
 
 function withConversationCacheBreakpoint(
   content: string | AnthropicContentBlock[],
+  ttl?: "1h" | undefined,
 ): string | AnthropicContentBlock[] {
+  const cacheControl = {
+    type: "ephemeral",
+    ...(ttl ? { ttl } : {}),
+  } as const;
   if (typeof content === "string") {
     if (!content.trim()) return content;
     return [
       {
         type: "text",
         text: content,
-        cache_control: { type: "ephemeral" },
+        cache_control: cacheControl,
       } as AnthropicContentBlock,
     ];
   }
@@ -126,7 +132,7 @@ function withConversationCacheBreakpoint(
   const blocks = [...content];
   blocks[target] = {
     ...blocks[target]!,
-    cache_control: { type: "ephemeral" },
+    cache_control: cacheControl,
   } as AnthropicContentBlock;
   return blocks;
 }
@@ -188,7 +194,7 @@ export function toAnthropicToolMessages(
       role,
       content:
         source === cacheTarget
-          ? withConversationCacheBreakpoint(content)
+          ? withConversationCacheBreakpoint(content, replay?.cacheTtl)
           : content,
     });
   };

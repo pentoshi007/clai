@@ -58,6 +58,11 @@ export const providerAliases: Record<string, ProviderId> = {
   mergegateway: "merge-gateway",
   merge: "merge-gateway",
   mg: "merge-gateway",
+  explabs: "explabs",
+  experiential: "explabs",
+  experientiallabs: "explabs",
+  "experiential-labs": "explabs",
+  exp: "explabs",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -80,6 +85,7 @@ export const defaultModels: Record<ProviderId, string> = {
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
   orcarouter: "openai/gpt-4o-mini",
   "merge-gateway": "openai/gpt-5.2",
+  explabs: "claude-fable-5.1",
 };
 
 export const retiredModelReplacements: Partial<
@@ -133,4 +139,5 @@ export const envVars: Record<ProviderId, string | undefined> = {
   hetzner: "HETZNER_API_KEY",
   orcarouter: "ORCAROUTER_API_KEY",
   "merge-gateway": "MERGE_GATEWAY_API_KEY",
+  explabs: "EXPLABS_API_KEY",
 };

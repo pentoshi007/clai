@@ -37,6 +37,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   hetzner: "free-cloud",
   orcarouter: "paid-cloud",
   "merge-gateway": "paid-cloud",
+  explabs: "paid-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

@@ -621,8 +621,6 @@ export const runTurnRounds = async (
       const isParallelSafe = (c: ToolCall): boolean => {
         if (deps.mcpRuntime?.isParallelSafe(c.name)) return true;
         if (
-          c.name === "pentest.recon" ||
-          c.name === "net.context" ||
           c.name === "tool.batch" ||
           c.name === "tool.check" ||
           c.name === "shell.jobs" ||

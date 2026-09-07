@@ -11,7 +11,6 @@ import {
   fsAppend,
   type FileWrite,
 } from "../fs.js";
-import { getNetworkContext } from "../network-context.js";
 import { type ToolRunOptions, type ToolHandler } from "../tool-types.js";
 import {
   optionalBoolean,

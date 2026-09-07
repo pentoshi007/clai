@@ -52,13 +52,6 @@ export function classifyToolCall(
     };
   }
 
-  if (call.name === "dns.lookup" || call.name === "whois.lookup") {
-    return {
-      level: "safe",
-      reason: "Passive lookup against public registries",
-    };
-  }
-
   if (call.name === "tool.batch") {
     const rawCalls = call.args?.calls;
     if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
@@ -156,14 +149,6 @@ export function classifyToolCall(
     return { level: "safe", reason: "Interactive session management" };
   }
 
-  if (call.name === "net.scan") {
-    return { level: "safe", reason: "Read-only network scan" };
-  }
-
-  if (call.name === "pentest.recon") {
-    return { level: "safe", reason: "Read-only pentest recon" };
-  }
-
   if (
     call.name === "fs.write" ||
     call.name === "mcp.enable" ||
@@ -202,10 +187,6 @@ export function classifyToolCall(
     };
   }
 
-
-  if (call.name === "net.context") {
-    return { level: "safe", reason: "Read-only local network info" };
-  }
 
   if (call.name === "tool.check") {
     return { level: "safe", reason: "Read-only tool availability check" };

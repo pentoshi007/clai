@@ -16,10 +16,14 @@ describe("tool registry", () => {
     expect(names).toContain("fs.list");
     expect(names).toContain("fs.search");
     expect(names).toContain("pkg.install");
-    expect(names).toContain("net.scan");
+    expect(names).toContain("net.pingSweep");
     expect(names).toContain("http.fetch");
     expect(names).toContain("sysinfo");
-    expect(names).toContain("pentest.recon");
+    expect(names).not.toContain("net.scan");
+    expect(names).not.toContain("pentest.recon");
+    expect(names).not.toContain("dns.lookup");
+    expect(names).not.toContain("whois.lookup");
+    expect(names).not.toContain("net.context");
     expect(names).toContain("image.ocr");
     expect(names).toContain("image.view");
     expect(names).toContain("pdf.read");

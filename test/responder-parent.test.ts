@@ -32,7 +32,7 @@ function plan() {
 
 describe("responder parent ownership (TASK-005)", () => {
   it("exposes parentTaskId only on tools that can create Responder children", () => {
-    for (const name of ["shell.exec", "net.scan", "pentest.recon"]) {
+    for (const name of ["shell.exec"]) {
       const def = TOOL_DEFINITIONS.find((candidate) => candidate.name === name);
       expect(def, name).toBeDefined();
       const properties = (def!.parameters as any).properties ?? {};
@@ -162,8 +162,8 @@ describe("explicit responder delegation", () => {
       delegationTaskTitle({ name: "shell.exec", args: { command: "nmap -p- host" } }),
     ).toBe("Responder · nmap -p- host");
     expect(
-      delegationTaskTitle({ name: "net.scan", args: { target: "10.0.0.1" } }),
-    ).toBe("Responder · net.scan 10.0.0.1");
+      delegationTaskTitle({ name: "shell.exec", args: { command: "nmap 10.0.0.1" } }),
+    ).toBe("Responder · nmap 10.0.0.1");
     const long = delegationTaskTitle({
       name: "shell.exec",
       args: { command: "x".repeat(200) },

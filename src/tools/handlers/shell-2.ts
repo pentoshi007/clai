@@ -23,27 +23,6 @@ export const toolRegistry_SHELL_2: Record<string, ToolHandler> = {
     const tool = assertSafePackageName(requireString(args, "tool"));
     const checkArg = optionalString(args, "checkBinary");
     const binary = checkArg ?? packageBinaryName(tool);
-    const nativeCovered = new Set([
-      "dig",
-      "whois",
-      "bind",
-      "bind9",
-      "dnsutils",
-      "bind-utils",
-      "nslookup",
-    ]);
-    if (
-      nativeCovered.has(tool.toLowerCase()) ||
-      nativeCovered.has(binary.toLowerCase())
-    ) {
-      return {
-        ok: true,
-        output:
-          `${tool} is optional. Use built-in dns.lookup (Node resolver + DNS-over-HTTPS) ` +
-          `and whois.lookup (RDAP + port-43) — no system binary install required.`,
-        exitCode: 0,
-      };
-    }
     if (await commandAvailable(binary)) {
       return {
         ok: true,

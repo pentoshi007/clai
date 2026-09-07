@@ -15,7 +15,7 @@ import {
   calibratedRequestTokens,
   requestTokenCalibration,
 } from "../llm/token-estimate-calibration.js";
-import { nominalModelContextWindow } from "../llm/context-windows.js";
+import { modelContextWindow } from "../llm/context-windows.js";
 import { readImageDimensions } from "../attachments/image-content.js";
 import { measureToolCallsChars } from "./message-slim.js";
 
@@ -104,7 +104,7 @@ export function resolveEffectiveContextLimit(input?: {
   const limitTokens =
     override ??
     (input?.model !== undefined || input?.provider !== undefined
-      ? nominalModelContextWindow(input.model)
+      ? modelContextWindow(input.model, input.provider)
       : undefined);
   if (limitTokens === undefined) {
     return {

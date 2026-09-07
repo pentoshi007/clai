@@ -141,14 +141,7 @@ export function isPortListeningOutput(command: string, output: string): boolean 
 }
 
 export function isRemoteReconToolCall(call: ToolCall): boolean {
-  if (
-    call.name === "dns.lookup" ||
-    call.name === "whois.lookup" ||
-    call.name === "net.scan" ||
-    call.name === "pentest.recon" ||
-    call.name === "net.pingSweep" ||
-    call.name === "net.context"
-  ) {
+  if (call.name === "net.pingSweep") {
     return true;
   }
   if (call.name === "http.fetch" || call.name === "web.fetch") {
@@ -193,8 +186,7 @@ export function isPlanPreflightTool(name: string): boolean {
     name === "sysinfo" ||
     name === "fs.list" ||
     name === "fs.read" ||
-    name === "fs.search" ||
-    name === "net.context"
+    name === "fs.search"
   );
 }
 
@@ -202,13 +194,10 @@ export function isReadOnlyReconTool(name: string): boolean {
   return (
     isPlanPreflightTool(name) ||
     name === "tool.batch" ||
-    name === "dns.lookup" ||
-    name === "whois.lookup" ||
     name === "http.fetch" ||
     name === "web.fetch" ||
     name === "web.search" ||
-    name === "net.scan" ||
-    name === "pentest.recon" ||
+    name === "net.pingSweep" ||
     name === "wordlist.find"
   );
 }
