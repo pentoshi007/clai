@@ -395,6 +395,29 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  explabs: {
+    evidence: providerDoc("experiential-gateway"),
+    capabilities: { tools: "supported", images: "unknown" },
+    reasoning: {
+      control: {
+        dialect: "openai-effort",
+        status: "supported",
+        evidence: providerDoc("experiential-unified-effort"),
+      },
+      acceptedEfforts: ["low", "medium", "high", "xhigh", "max"],
+      disable: "supported",
+      disableForm: "effort-none",
+      outputShapes: ["reasoning-content", "reasoning-field"],
+      replayScope: "tool-turn",
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+    },
+    terminal: {
+      proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
+      naturalEofAccepted: false,
+    },
+  },
   orcarouter: {
     evidence: providerDoc("orcarouter-reasoning"),
     capabilities: { tools: "supported", images: "unknown" },

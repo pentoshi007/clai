@@ -130,6 +130,14 @@ export const CONFORMANCE_ROUTES: readonly ConformanceRoute[] = [
     urlContains: "/chat/completions",
   },
   {
+    id: "explabs",
+    provider: "explabs",
+    family: "chat_completions",
+    model: "claude-fable-5.1",
+    auth: { apiKey: "xpl_0123456789abcdef0123456789abcdef01234567" },
+    urlContains: "/chat/completions",
+  },
+  {
     id: "aws-mantle-compatible",
     provider: "aws-mantle",
     family: "chat_completions",

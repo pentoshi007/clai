@@ -100,6 +100,17 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /thinking/i,
     /grok-.*reasoning|grok-4\.[3-9]|grok-[5-9]/i,
   ],
+  explabs: [
+    /claude-(?:fable|opus|sonnet|haiku)/i,
+    /gpt-5/i,
+    /gpt-6/i,
+    /gemini-/i,
+    /kimi/i,
+    /glm/i,
+    /deepseek/i,
+    /qwen3/i,
+    /aion/i,
+  ],
 };
 
 export function endpointAcceptedEfforts(

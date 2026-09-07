@@ -583,4 +583,70 @@ GOOD TO KNOW
 
 Docs: https://gateway.merge.dev
 API:  https://api-gateway.merge.dev/v1/openai (OpenAI-compatible)`,
+
+  explabs: `Experiential Labs — one key for Claude, GPT, Gemini, Kimi, GLM and
+more through an OpenAI-compatible gateway
+
+WHAT IT IS
+  A gateway at https://api.experientiallabs.ai that fronts hosted providers,
+  your own provider keys (BYOK) and platform-funded credits behind one key.
+  Each model is a slug (claude-fable-5.1, gpt-5.6-sol, gemini-3.7-flash) that
+  resolves through a provider waterfall with automatic failover — you get one
+  OpenAI-shaped response. clai drives the OpenAI-compatible surface
+  (Chat Completions + Responses), so streaming, native tool calling, prompt
+  caching, reasoning effort and multi-key rotation behave exactly like every
+  other OpenAI-compatible provider.
+
+  Base URL   https://api.experientiallabs.ai/v1
+  Auth       Authorization: Bearer <key>
+  Endpoints  /models · /chat/completions · /responses
+
+MODELS
+  /model lists the slugs your key can call, read live from /v1/models and
+  enriched from the public catalog at /api/models (context window, vision,
+  per-model reasoning efforts). Both are cached for an hour; if the gateway
+  is unreachable, a documented offline subset is shown. Image/embedding/batch
+  slugs stay out of the picker.
+
+REASONING
+  reasoning_effort (low/medium/high/xhigh/max; minimal/none on some models)
+  passes through when the route supports it and snaps to the nearest
+  supported level otherwise — never a hard error. /think and /effort map
+  onto it. The gateway discloses every substitution in
+  x-experiential-ignored-parameters.
+
+COST
+  Two lanes, zero markup: pass-through (your BYOK provider key bills you
+  directly) or platform-funded credits. Promotional free tiers exist (today
+  gpt-6-astra and claude-fable-5.1); past the free allowance the gateway
+  answers 429 insufficient_quota, which clai treats as a quota error and
+  rotates keys or falls back. clai classes it paid-cloud, so /freeonly keeps
+  it out of the fallback chain.
+
+SETUP
+  1. Mint a key at https://platform.experientiallabs.ai/settings/api-keys
+     (starts xpl_…, shown once).
+  2. clai set explabs xpl_yourKey
+  3. clai use explabs
+  4. /model claude-fable-5.1           (or any slug from /model)
+
+MANAGING KEYS IN clai
+  clai set explabs <key>       add a key (up to 10, rotated on failure)
+  clai set explabs <key2>      add another; the last that worked is sticky
+  clai keys                    masked keys + the active endpoint
+  clai unset explabs           remove every stored key
+  /set explabs                 TUI: multi-key editor
+  /info explabs                this page
+
+GOOD TO KNOW
+  - Aliases: explabs, experiential, experientiallabs, experiential-labs, exp.
+  - Errors follow the documented table — 400 invalid_request /
+    invalid_parameter / unsupported_capability (fix the request), 401
+    invalid_key, 403 model_not_granted (pick a slug from /v1/models), 429
+    insufficient_quota / gateway_overloaded (backs off, then rotates),
+    502/503/504 retried with backoff.
+  - Env var: EXPLABS_API_KEY (used when nothing is stored).
+
+Docs: https://platform.experientiallabs.ai/docs
+API:  https://api.experientiallabs.ai/v1 (OpenAI-compatible)`,
 };

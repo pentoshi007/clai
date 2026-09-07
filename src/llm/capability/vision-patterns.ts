@@ -168,6 +168,17 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /vision/i,
     /vl$/i,
   ],
+  explabs: [
+    /claude-(?:fable|opus|sonnet|haiku)/i,
+    /gpt-5/i,
+    /gpt-6/i,
+    /gemini-/i,
+    /kimi/i,
+    /glm-.*flash/i,
+    /qwen/i,
+    /vision/i,
+    /vl$/i,
+  ],
 };
 
 export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
@@ -188,4 +199,5 @@ export const preferredVisionModels: Partial<Record<ProviderId, string>> = {
   hetzner: "Qwen/Qwen3.6-35B-A3B-FP8",
   orcarouter: "openai/gpt-4o-mini",
   "merge-gateway": "openai/gpt-5.2",
+  explabs: "claude-fable-5.1",
 };
