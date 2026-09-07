@@ -577,7 +577,7 @@ export function recordToolEvidence(
   const isProbe = input.tool === "http.fetch" || (input.tool === "shell.exec" && /\bcurl\b/i.test(command));
   const isStart = input.tool === "shell.start";
   const isReady = input.tool === "shell.tail" && /\b(?:ready|listening|started|localhost|127\.0\.0\.1)\b/i.test(input.output);
-  const isScanner = input.tool === "net.scan" || input.tool === "pentest.recon" || /\b(?:nmap|nikto|nuclei|ffuf|gobuster)\b/i.test(command);
+  const isScanner = /\b(?:nmap|nikto|nuclei|ffuf|gobuster)\b/i.test(command);
   const isActiveSecurity = input.tool === "http.fetch" && !/^(?:GET|HEAD|OPTIONS)?$/i.test(String(input.args?.method ?? "GET"));
 
   if (isWrite) add(["implementation"], "artifact", "supporting");

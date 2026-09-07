@@ -50,34 +50,6 @@ export function evaluateProgress(
     }
   }
 
-  if (call.name === "dns.lookup") {
-    if (ok && output.length > 10) {
-      return {
-        madeProgress: true,
-        goalSatisfied: true,
-        shouldContinue: false,
-        reason: "DNS records retrieved.",
-      };
-    }
-    if (output.includes("nxdomain")) {
-      return {
-        madeProgress: true,
-        goalSatisfied: true,
-        shouldContinue: false,
-        reason: "Domain does not exist (NXDOMAIN).",
-      };
-    }
-  }
-
-  if (call.name === "whois.lookup" && ok && output.length > 50) {
-    return {
-      madeProgress: true,
-      goalSatisfied: true,
-      shouldContinue: false,
-      reason: "Whois data retrieved.",
-    };
-  }
-
   if (
     (call.name === "fs.edit" ||
       call.name === "fs.replaceLines" ||

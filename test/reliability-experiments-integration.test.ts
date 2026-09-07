@@ -31,7 +31,7 @@ describe("reliability experiment integration", () => {
 
   it("E6: slim native prompt is smaller than full catalog native prompt", () => {
     const tools =
-      "shell.exec, fs.read, fs.write, plan.create, task.update, net.scan, web.search";
+      "shell.exec, fs.read, fs.write, plan.create, task.update, web.search";
     const slim = renderAgentSystemPrompt(tools, {
       nativeTools: true,
       slimNative: true,

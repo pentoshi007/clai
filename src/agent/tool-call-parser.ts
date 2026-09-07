@@ -383,10 +383,10 @@ export function buildWorkflowDirective(): string {
 export function narrowNmapOperationDirective(): string {
   return [
     "NARROW NMAP OPERATION (the user requested one bounded scan, not a broader pentest):",
-    "- Call net.scan exactly once with the requested target, ports, scan type, and timing/profile semantics.",
+    "- Run exactly one nmap command via shell.exec with the requested target and options. You choose the flags that match the request (port spec, scan type, timing, service detection, scripts).",
     "- Do NOT call plan.create or task.update. Do NOT add WHOIS, DNS, HTTP fetching, crawling, vulnerability checks, reconnaissance, or attack-surface analysis unless the user explicitly requested them.",
     "- A delivered background result must still be acknowledged with job.read; this receipt operation does not create or require a plan.",
-    "- If the scan needs administrator access, let net.scan open the secure password prompt. Never retry through shell.exec or place a password in command text.",
+    "- If the scan needs administrator access, use the secure sudo flow (the shell can open a managed password prompt). Never place a password in command text.",
     "- For a background result, use only backgroundJob.id as the shell.tail id. Report the canonical job ID and current/terminal status; do not mistake the artifact filename for the ID.",
     "- Stop after reporting this scan's result or durable job receipt. Ask before broadening the operation.",
   ].join("\n");

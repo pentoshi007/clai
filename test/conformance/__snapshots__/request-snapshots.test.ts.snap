@@ -428,6 +428,7 @@ exports[`serialized request snapshots > anthropic / images 1`] = `
           },
           {
             "cache_control": {
+              "ttl": "1h",
               "type": "ephemeral",
             },
             "source": {
@@ -472,6 +473,7 @@ exports[`serialized request snapshots > anthropic / minimal 1`] = `
         "content": [
           {
             "cache_control": {
+              "ttl": "1h",
               "type": "ephemeral",
             },
             "text": "second user turn",
@@ -512,6 +514,7 @@ exports[`serialized request snapshots > anthropic / reasoning-control 1`] = `
         "content": [
           {
             "cache_control": {
+              "ttl": "1h",
               "type": "ephemeral",
             },
             "text": "second user turn",
@@ -577,6 +580,7 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay 1`] = `
         "content": [
           {
             "cache_control": {
+              "ttl": "1h",
               "type": "ephemeral",
             },
             "content": "example file contents",
@@ -678,6 +682,7 @@ exports[`serialized request snapshots > anthropic / tool-loop-replay-unsigned 1`
         "content": [
           {
             "cache_control": {
+              "ttl": "1h",
               "type": "ephemeral",
             },
             "content": "example file contents",
@@ -762,6 +767,7 @@ exports[`serialized request snapshots > anthropic / tools 1`] = `
         "content": [
           {
             "cache_control": {
+              "ttl": "1h",
               "type": "ephemeral",
             },
             "text": "second user turn",
@@ -6538,6 +6544,7 @@ exports[`serialized request snapshots > openai / images 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "prompt_cache_key": "clai-4c60a46be6dea881ec9dda6b706ee421bd92ee39",
     "reasoning_effort": "minimal",
     "stream": false,
   },
@@ -6574,6 +6581,7 @@ exports[`serialized request snapshots > openai / minimal 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "prompt_cache_key": "clai-4c60a46be6dea881ec9dda6b706ee421bd92ee39",
     "reasoning_effort": "minimal",
     "stream": false,
   },
@@ -6610,6 +6618,7 @@ exports[`serialized request snapshots > openai / reasoning-control 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "prompt_cache_key": "clai-4c60a46be6dea881ec9dda6b706ee421bd92ee39",
     "reasoning_effort": "high",
     "stream": false,
   },
@@ -6666,6 +6675,7 @@ exports[`serialized request snapshots > openai / tool-loop-replay 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "prompt_cache_key": "clai-4c60a46be6dea881ec9dda6b706ee421bd92ee39",
     "reasoning_effort": "medium",
     "stream": false,
     "tool_choice": "auto",
@@ -6766,6 +6776,7 @@ exports[`serialized request snapshots > openai / tool-loop-replay-unsigned 1`] =
       },
     ],
     "model": "gpt-5.4-mini",
+    "prompt_cache_key": "clai-4c60a46be6dea881ec9dda6b706ee421bd92ee39",
     "reasoning_effort": "medium",
     "stream": false,
     "tool_choice": "auto",
@@ -6845,6 +6856,7 @@ exports[`serialized request snapshots > openai / tools 1`] = `
       },
     ],
     "model": "gpt-5.4-mini",
+    "prompt_cache_key": "clai-4c60a46be6dea881ec9dda6b706ee421bd92ee39",
     "reasoning_effort": "minimal",
     "stream": false,
     "tool_choice": "auto",

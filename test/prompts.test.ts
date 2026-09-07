@@ -53,7 +53,7 @@ describe("prompt rendering", () => {
   });
 
   it("agent prompt contains pentesting authorization reminder", () => {
-    const prompt = renderAgentSystemPrompt("net.scan");
+    const prompt = renderAgentSystemPrompt("shell.exec");
     expect(prompt).toContain("responsible for authorization");
   });
 

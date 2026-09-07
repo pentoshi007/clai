@@ -221,7 +221,7 @@ export async function pingSweep(
   if (!isPrivateCidr(target)) {
     return {
       ok: false,
-      output: `net.pingSweep is restricted to local/private networks. Target "${target}" does not appear to be a private CIDR. Use net.scan for individual host scanning.`,
+      output: `net.pingSweep is restricted to local/private networks. Target "${target}" does not appear to be a private CIDR. Use shell.exec with nmap (or another scanner) for individual host scanning.`,
       exitCode: 1,
     };
   }

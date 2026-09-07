@@ -41,24 +41,16 @@ const INSTALL_HINTS: Record<string, string> = {
   hydra: "pkg.install hydra",
   rg: "pkg.install ripgrep",
   jq: "pkg.install jq",
-  dig: "optional — dns.lookup uses built-in resolver (no dig needed)",
-  whois: "optional — whois.lookup uses RDAP/port-43 (no whois binary needed)",
-  nslookup: "optional — use dns.lookup (built-in)",
-  host: "optional — use dns.lookup (built-in)",
+  dig: "pkg.install dnsutils",
+  whois: "pkg.install whois",
+  nslookup: "pkg.install dnsutils",
+  host: "pkg.install dnsutils",
   subfinder:
     "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
   httpx: "go install github.com/projectdiscovery/httpx/cmd/httpx@latest",
   nuclei: "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
   tesseract: "pkg.install tesseract",
 };
-
-const BUILTIN_COVERED = new Set([
-  "dig",
-  "whois",
-  "nslookup",
-  "host",
-  "hostid",
-]);
 
 export function isProjectLocalNodeBin(path: string): boolean {
   return /(?:^|[/\\])node_modules[/\\]\.bin[/\\]/i.test(path);
@@ -209,7 +201,6 @@ export async function toolCheckHandler(
   async function isSoftMissing(name: string): Promise<boolean> {
     const n = name.toLowerCase();
     if (LOCAL_OPTIONAL.has(n)) return true;
-    if (BUILTIN_COVERED.has(n)) return true;
     if (["yarn", "pnpm", "bun", "pipenv", "poetry", "uv"].includes(n)) return true;
     if (await substituteAvailable(n)) return true;
     return false;
@@ -227,9 +218,6 @@ export async function toolCheckHandler(
         `○ ${r.name} — not on global PATH (ok for scaffold: use npx / project bin after install; ` +
         `project-local node_modules/.bin is ignored)${hint}`
       );
-    }
-    if (BUILTIN_COVERED.has(r.name.toLowerCase())) {
-      return `○ ${r.name} — not found (optional; use dns.lookup / whois.lookup — built-in, no binary needed)${hint ? ` ${hint}` : ""}`;
     }
     if (softMissing[index]) {
       const fam = familyOf(r.name);

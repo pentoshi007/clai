@@ -22,7 +22,7 @@ export const IMPLEMENT_PROMPT_CODING =
 export const IMPLEMENT_PROMPT_PENTEST =
   "Plan approved. Execute the engagement tasks. " +
   "Work through pending tasks: in_progress → recon/testing with tools → done (or failed with a note). " +
-  "Prefer tool.batch / dns / http.fetch / net.scan for recon; continue when one lookup fails. " +
+  "Prefer tool.batch / http.fetch for parallel recon; run nmap, dig, whois, and other recon commands via shell.exec with the flags the situation calls for; continue when one lookup fails. " +
   "Do NOT start a local dev server, npm run dev, bun run, vite, next, or shell.start. " +
   "Do NOT list or read the clai workspace/package.json as a follow-up. Stay on the remote engagement target/scope. " +
   "When all tasks are done, write the report if needed and STOP with findings — no localhost step.";

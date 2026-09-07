@@ -28,8 +28,6 @@ const PROBE_TOOLS: ReadonlySet<string> = new Set([
 const PENTEST_TOOLS: ReadonlySet<string> = new Set([
   "http.fetch",
   "shell.exec",
-  "net.scan",
-  "pentest.recon",
 ]);
 
 const ACTIVE_PENTEST_PATTERN =

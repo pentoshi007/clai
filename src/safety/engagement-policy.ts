@@ -332,22 +332,6 @@ export function evaluateInteractiveEngagementInput(
 }
 
 export function engagementActionForToolCall(call: ToolCall): EngagementAction | undefined {
-  if (call.name === "pentest.webDiscover") {
-    const url = String(call.args.baseUrl ?? "");
-    return url ? actionFromUrl({ url, phase: "enumeration", capability: "active-enumeration" }) : undefined;
-  }
-  if (call.name === "pentest.apiEnumerate") {
-    const url = String(call.args.specUrl ?? "");
-    return url ? actionFromUrl({ url, phase: "enumeration", capability: "active-enumeration" }) : undefined;
-  }
-  if (call.name === "pentest.authCompare") {
-    const url = String(call.args.url ?? "");
-    return url ? actionFromUrl({ url, phase: "authentication", capability: "authentication" }) : undefined;
-  }
-  if (call.name === "pentest.scanStatus") {
-    const target = String(call.args.target ?? "");
-    return target ? { target, path: "/", method: "GET", phase: "recon", capability: "passive" } : undefined;
-  }
   if (call.name === "http.fetch") {
     const url = typeof call.args.url === "string" ? call.args.url : "";
     if (!url) return undefined;
@@ -367,12 +351,6 @@ export function engagementActionForToolCall(call: ToolCall): EngagementAction | 
       method: typeof call.args.method === "string" ? call.args.method : "GET",
       phase: /^(?:GET|HEAD|OPTIONS)$/i.test(String(call.args.method ?? "GET")) ? "enumeration" : "exploitation",
     });
-  }
-  if (call.name === "net.scan" || call.name === "pentest.recon") {
-    const target = String(call.args.target ?? call.args.host ?? "");
-    if (!target) return undefined;
-    const port = typeof call.args.port === "number" ? call.args.port : undefined;
-    return { target, port, path: "/", method: "GET", phase: "recon", capability: "active-enumeration" };
   }
   if (
     call.name !== "shell.exec" &&

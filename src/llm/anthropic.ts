@@ -117,18 +117,23 @@ const CACHE_BREAKPOINT_MIN_CHARS = 4_000;
 export function anthropicSystemBlocks(
   system: string | undefined,
   requestContexts: readonly string[] = [],
+  cacheTtl?: "1h" | undefined,
 ): string | Array<Record<string, unknown>> | undefined {
   if (!system && requestContexts.length === 0) return undefined;
   if (system && system.length < CACHE_BREAKPOINT_MIN_CHARS && requestContexts.length === 0) {
     return system;
   }
+  const cacheControl = {
+    type: "ephemeral",
+    ...(cacheTtl ? { ttl: cacheTtl } : {}),
+  } as const;
   const blocks: Array<Record<string, unknown>> = [];
   if (system) {
     blocks.push({
       type: "text",
       text: system,
       ...(system.length >= CACHE_BREAKPOINT_MIN_CHARS
-        ? { cache_control: { type: "ephemeral" } }
+        ? { cache_control: cacheControl }
         : {}),
     });
   }
@@ -161,11 +166,13 @@ export function buildAnthropicBody(
   const system = anthropicSystemBlocks(
     firstSystemPrompt(request.messages),
     requestContexts,
+    "1h",
   );
   const reasoningArtifactReplay = {
     target: plan.replay.target,
     observe: request.onReasoningArtifactReplayDecision,
     cacheConversation: true,
+    cacheTtl: "1h" as const,
   };
   const messages = toAnthropicToolMessages(
     withoutRequestContextSystemMessages(

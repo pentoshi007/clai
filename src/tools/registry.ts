@@ -12,7 +12,6 @@ import {
 } from "./external-tools.js";
 import { isCanonicalToolName } from "../mcp/names.js";
 import { skillListTool, skillLoadTool } from "./skills.js";
-import { resolveNmapTimeoutPolicy } from "./nmap-runner.js";
 import { type ToolRunOptions, type ToolHandler } from "./tool-types.js";
 import {
   elidedStubReuseMessage,
@@ -27,15 +26,11 @@ import {
   formatBatchCancelReason,
   parseBatchFailPolicy,
 } from "./batch-fail-policy.js";
-import { buildPentestReconNmapArgv } from "./handlers/nmap-preparation.js";
 import { toolRegistry_SHELL_1 } from "./handlers/shell-1.js";
 import { toolRegistry_FILES_1 } from "./handlers/files-1.js";
 import { toolRegistry_SHELL_2 } from "./handlers/shell-2.js";
-import { toolRegistry_NETWORK_1 } from "./handlers/network-1.js";
 import { toolRegistry_WEB } from "./handlers/web.js";
 import { toolRegistry_CONTEXT_1 } from "./handlers/context-1.js";
-import { toolRegistry_NETWORK_2 } from "./handlers/network-2.js";
-import { toolRegistry_PENTEST } from "./handlers/pentest.js";
 import { toolRegistry_ORCHESTRATION_1 } from "./handlers/orchestration-1.js";
 import { toolRegistry_NETWORK_3 } from "./handlers/network-3.js";
 import { toolRegistry_ORCHESTRATION_2 } from "./handlers/orchestration-2.js";
@@ -45,7 +40,6 @@ import { toolRegistry_FILES_2 } from "./handlers/files-2.js";
 import { normalizeToolCall } from "./call-normalization.js";
 
 export { normalizeToolCall };
-export { buildPentestReconNmapArgv };
 
 export type { ToolRunOptions, ToolHandler };
 export {
@@ -55,37 +49,13 @@ export {
   formatBatchCancelReason,
 } from "./batch-fail-policy.js";
 
-export interface ScanResourceEstimate {
-  profile: "standard" | "deep" | "full";
-  estimatedSeconds: number;
-  timeoutMs: number;
-  durableRecommended: boolean;
-}
-
-export function estimateScanResources(
-  argv: readonly string[],
-): ScanResourceEstimate {
-  const policy = resolveNmapTimeoutPolicy(argv, {});
-  const estimatedSeconds =
-    policy.depth === "full" ? 1_800 : policy.depth === "deep" ? 600 : 120;
-  return {
-    profile: policy.depth,
-    estimatedSeconds,
-    timeoutMs: policy.timeoutMs,
-    durableRecommended: policy.depth !== "standard",
-  };
-}
-
 export const toolRegistry: Record<string, ToolHandler> = {
   ...createInteractiveSessionHandlers(),
   ...toolRegistry_SHELL_1,
   ...toolRegistry_FILES_1,
   ...toolRegistry_SHELL_2,
-  ...toolRegistry_NETWORK_1,
   ...toolRegistry_WEB,
   ...toolRegistry_CONTEXT_1,
-  ...toolRegistry_NETWORK_2,
-  ...toolRegistry_PENTEST,
   ...toolRegistry_ORCHESTRATION_1,
   ...toolRegistry_NETWORK_3,
   ...toolRegistry_ORCHESTRATION_2,
@@ -211,12 +181,7 @@ export const BATCH_SAFE_TOOLS = new Set([
   "fs.search",
   "http.fetch",
   "sysinfo",
-  "dns.lookup",
-  "whois.lookup",
-  "net.context",
-  "net.scan",
   "net.pingSweep",
-  "pentest.recon",
   "tool.check",
   "wordlist.find",
   "image.ocr",

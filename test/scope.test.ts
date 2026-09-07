@@ -101,31 +101,31 @@ describe("phase 10 — scope helpers", () => {
 });
 
 describe("phase 10 — classifier scope gating", () => {
-  it("auto-runs public net.scan without requiring a scope prompt", () => {
+  it("auto-runs a public nmap scan without requiring a scope prompt", () => {
     const result = classifyToolCall({
-      name: "net.scan",
-      args: { target: "example.com" },
+      name: "shell.exec",
+      args: { command: "nmap example.com" },
     });
     expect(result.level).toBe("safe");
   });
 
-  it("keeps public net.scan safe when scope covers the target", () => {
+  it("keeps a public nmap scan safe when scope covers the target", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["example.com"],
     };
     const result = classifyToolCall(
-      { name: "net.scan", args: { target: "api.example.com" } },
+      { name: "shell.exec", args: { command: "nmap api.example.com" } },
       { scope },
     );
     expect(result.level).toBe("safe");
   });
 
-  it("auto-runs pentest.recon without a y/n prompt", () => {
+  it("auto-runs multi-step recon without a y/n prompt", () => {
     const scope: EngagementScope = {
       authorizedTargets: ["myco.com"],
     };
     const result = classifyToolCall(
-      { name: "pentest.recon", args: { target: "evil.com" } },
+      { name: "shell.exec", args: { command: "whois evil.com && dig evil.com ANY" } },
       { scope },
     );
     expect(result.level).toBe("safe");
@@ -134,10 +134,10 @@ describe("phase 10 — classifier scope gating", () => {
   it("extracts the target that can be suggested for scope", () => {
     expect(
       scopeTargetForToolCall({
-        name: "pentest.recon",
-        args: { target: "https://example.com/login" },
+        name: "shell.exec",
+        args: { command: "curl -s https://example.com/login" },
       }),
-    ).toBe("example.com");
+    ).toBeUndefined();
     expect(
       scopeTargetForToolCall({
         name: "shell.exec",
@@ -146,8 +146,8 @@ describe("phase 10 — classifier scope gating", () => {
     ).toBe("scanme.nmap.org");
     expect(
       scopeTargetForToolCall({
-        name: "net.scan",
-        args: { target: "192.168.1.1" },
+        name: "shell.exec",
+        args: { command: "nmap 192.168.1.1" },
       }),
     ).toBeUndefined();
   });
@@ -173,8 +173,8 @@ describe("phase 10 — classifier scope gating", () => {
 
   it("private targets do not need a scope prompt", () => {
     const result = classifyToolCall({
-      name: "net.scan",
-      args: { target: "192.168.1.1" },
+      name: "shell.exec",
+      args: { command: "nmap 192.168.1.1" },
     });
     expect(result.level).toBe("safe");
   });

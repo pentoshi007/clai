@@ -116,7 +116,6 @@ function containsPublicTarget(command: string): boolean {
 }
 
 export function isPentestToolCall(call: ToolCall): boolean {
-  if (call.name === "net.scan" || call.name.startsWith("pentest.")) return true;
   if (call.name === "http.fetch") {
     const method = (stringArg(call.args, "method") ?? "GET").toUpperCase();
     return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
@@ -204,13 +203,6 @@ export function scopeTargetForToolCall(call: ToolCall): string | undefined {
       return undefined;
     }
     const target = extractScanTarget(command, call.name === "terminal.send");
-    return target && isPublicTarget(target)
-      ? normalizeScopeTarget(target)
-      : undefined;
-  }
-
-  if (call.name === "net.scan" || call.name === "pentest.recon") {
-    const target = stringArg(call.args, "target") ?? "";
     return target && isPublicTarget(target)
       ? normalizeScopeTarget(target)
       : undefined;

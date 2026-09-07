@@ -47,15 +47,20 @@ export function configuredRequestTokens(): {
   };
 }
 
+export function effectiveSafeTokensForWindow(window: number): number {
+  const floored = Math.max(0, Math.floor(window));
+  const reserved = Math.min(
+    RESERVED_OUTPUT_TOKENS,
+    Math.floor(floored * 0.25),
+  );
+  return Math.max(1, floored - reserved - SAFETY_MARGIN_TOKENS);
+}
+
 export function modelSafeRequestTokens(
   provider: ProviderId | undefined,
   model: string | undefined,
 ): number {
-  const window = modelContextWindow(model, provider);
-  return Math.max(
-    MIN_AUTO_COMPACT_REQUEST_TOKENS,
-    window - RESERVED_OUTPUT_TOKENS - SAFETY_MARGIN_TOKENS,
-  );
+  return effectiveSafeTokensForWindow(modelContextWindow(model, provider));
 }
 
 export function resolveRequestBudget(input?: {
@@ -70,26 +75,28 @@ export function resolveRequestBudget(input?: {
     Number.isFinite(customLimit) &&
     customLimit >= MIN_AUTO_COMPACT_REQUEST_TOKENS
   ) {
-    const modelSafe = Math.floor(customLimit);
-    const effectiveTrigger = Math.floor(modelSafe * CUSTOM_CONTEXT_COMPACTION_RATIO);
+    const modelSafe = effectiveSafeTokensForWindow(customLimit);
+    const configured = Math.floor(customLimit * CUSTOM_CONTEXT_COMPACTION_RATIO);
+    const effectiveTrigger = Math.max(1, Math.min(configured, modelSafe));
     return {
-      configured: effectiveTrigger,
+      configured,
       modelSafe,
       effectiveTrigger,
       source: "session",
-      clampedByModel: false,
+      clampedByModel: effectiveTrigger < configured,
     };
   }
   const resolved = configuredRequestTokens();
   const raw = input?.overrideTokens ?? resolved.tokens;
   const configured = Math.max(MIN_AUTO_COMPACT_REQUEST_TOKENS, raw);
   const modelSafe = modelSafeRequestTokens(input?.provider, input?.model);
+  const effectiveTrigger = Math.max(1, Math.min(configured, modelSafe));
   return {
     configured,
     modelSafe,
-    effectiveTrigger: configured,
+    effectiveTrigger,
     source: input?.overrideTokens === undefined ? resolved.source : "explicit",
-    clampedByModel: false,
+    clampedByModel: effectiveTrigger < configured,
   };
 }
 

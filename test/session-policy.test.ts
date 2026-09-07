@@ -50,14 +50,9 @@ describe("plan-awaiting-approval gate — allowed tools", () => {
       "sysinfo",
       "tool.batch",
       "tool.check",
-      "net.context",
       "web.search",
       "web.fetch",
-      "dns.lookup",
-      "whois.lookup",
       "http.fetch",
-      "net.scan",
-      "pentest.recon",
       "wordlist.find",
     ]) {
       expect(isPreApprovalAllowedTool(tool)).toBe(true);

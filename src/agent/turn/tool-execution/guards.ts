@@ -1,12 +1,17 @@
 import type { ToolCall } from "../../../types.js";
 
 const NARROW_NMAP_ALLOWED: ReadonlySet<string> = new Set([
-  "net.scan",
+  "shell.exec",
+  "shell.start",
   "shell.tail",
   "shell.jobs",
+  "shell.wait",
   "job.read",
   "task.read",
 ]);
+
+const NARROW_NMAP_COMMAND =
+  /(?:^|[^A-Za-z0-9._/-])nmap(?:\.exe)?(?:\s|$)/i;
 
 export interface LoopGuardVerdict {
   readonly block: boolean;
@@ -53,17 +58,21 @@ export const readRetryReason = (
 
 const narrowNmapRejection = (toolName: string): string =>
   `Narrow nmap request: ${toolName} was not run because the user requested only one nmap operation. ` +
-  `Call net.scan with the requested target/options; do not create a plan or add DNS, WHOIS, HTTP, recon, or vulnerability steps.`;
+  `Run the nmap command via shell.exec with the requested target/options; do not create a plan or add DNS, WHOIS, HTTP, recon, or vulnerability steps.`;
 
 const NARROW_NMAP_REPEAT =
   "Narrow nmap request: a scan has already been dispatched this turn. " +
   "Do not broaden or retry it automatically; report the existing result/job status and ask before another scan.";
 
+const isNarrowNmapScanCall = (call: ToolCall): boolean =>
+  (call.name === "shell.exec" || call.name === "shell.start") &&
+  NARROW_NMAP_COMMAND.test(String(call.args.command ?? ""));
+
 const checkNarrowNmap = (input: ToolGuardInput): ToolGuardDecision => {
   if (!NARROW_NMAP_ALLOWED.has(input.call.name)) {
     return { kind: "reject", reason: narrowNmapRejection(input.call.name) };
   }
-  if (input.call.name === "net.scan") {
+  if (isNarrowNmapScanCall(input.call)) {
     if (input.narrowNmapDispatched >= 1) {
       return { kind: "reject", reason: NARROW_NMAP_REPEAT };
     }

@@ -74,12 +74,6 @@ function requestedToolTimeoutMs(call: {
   ) {
     return 15 * 60_000;
   }
-  if (call.name === "net.scan" || call.name === "pentest.recon") {
-    return 15 * 60_000;
-  }
-  if (call.name === "pentest.webDiscover") return 8 * 60_000;
-  if (call.name === "pentest.apiEnumerate") return 2 * 60_000;
-  if (call.name === "pentest.authCompare") return 3 * 60_000;
   if (call.name === "shell.exec" && isLongRunningTestOrBuildCommand(cmd)) {
     return 120_000;
   }

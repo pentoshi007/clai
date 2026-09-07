@@ -44,12 +44,6 @@ export function formatToolArgs(call: ToolCall): string {
     return `id=${String(call.args.id ?? "")} kind=${String(call.args.kind ?? "")}`;
   }
   if (call.name === "shell.exec") return String(call.args.command ?? "");
-  if (call.name === "net.scan")
-    return `${call.args.target ?? ""}${call.args.ports ? ` -p ${call.args.ports}` : ""}${call.args.flags ? ` ${call.args.flags}` : ""}`;
-  if (call.name === "pentest.recon") return String(call.args.target ?? "");
-  if (call.name === "dns.lookup")
-    return `${call.args.target ?? ""}${call.args.record ? ` ${call.args.record}` : " A"}`;
-  if (call.name === "whois.lookup") return String(call.args.target ?? "");
   if (call.name === "fs.read") {
     const path = String(call.args.path ?? "");
     const range = formatFsReadLineRange(call.args);

@@ -89,7 +89,7 @@ describe("task autostart", () => {
   });
 
   it("skips the gate for read-only recon on a pentest plan", () => {
-    const reconCall: ToolCall = { name: "dns.lookup", args: { host: "x" } };
+    const reconCall: ToolCall = { name: "net.pingSweep", args: { target: "192.168.1.0/24" } };
     expect(
       selectAutostartTask(plan([task({})], { kind: "pentest" }), reconCall),
     ).toBeUndefined();

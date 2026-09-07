@@ -7,7 +7,7 @@ import {
 
 const guard = (overrides: Record<string, unknown> = {}) =>
   evaluateToolGuards({
-    call: { name: "net.scan", args: { target: "lab" } },
+    call: { name: "shell.exec", args: { command: "nmap -sV lab" } },
     narrowNmapOperation: false,
     narrowNmapDispatched: 0,
     heldBatchReminder: undefined,
@@ -21,12 +21,12 @@ describe("tool guards", () => {
 
   it("rejects unrelated tools during a narrow nmap request", () => {
     const decision = guard({
-      call: { name: "dns.lookup", args: {} },
+      call: { name: "web.search", args: {} },
       narrowNmapOperation: true,
     });
     expect(decision.kind).toBe("reject");
     expect(decision).toMatchObject({
-      reason: expect.stringContaining("Narrow nmap request: dns.lookup"),
+      reason: expect.stringContaining("Narrow nmap request: web.search"),
     });
   });
 

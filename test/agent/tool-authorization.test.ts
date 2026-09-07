@@ -90,7 +90,7 @@ describe("tool authorization", () => {
   it("stops when pentest authorization is refused", async () => {
     pentestAuth.mockResolvedValue(false);
     const outcome = await authorizeToolExecution(
-      input({ name: "net.scan", args: { target: "lab" } }, "confirm"),
+      input({ name: "shell.exec", args: { command: "nmap -sV lab" } }, "confirm"),
       ports(),
     );
     if (outcome.kind !== "stop") throw new Error("expected stop");
@@ -104,7 +104,7 @@ describe("tool authorization", () => {
   it("skips the second prompt when pentest was just authorized", async () => {
     isPentest.mockReturnValue(true);
     const outcome = await authorizeToolExecution(
-      input({ name: "net.scan", args: { target: "lab" } }, "confirm"),
+      input({ name: "shell.exec", args: { command: "nmap -sV lab" } }, "confirm"),
       ports(),
     );
     expect(outcome).toEqual({ kind: "proceed", pentestJustConfirmed: true });

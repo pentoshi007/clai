@@ -170,7 +170,8 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
   const affinityKey =
     options.providerId === "openrouter" ||
     options.providerId === "fireworks" ||
-    options.providerId === "merge-gateway"
+    options.providerId === "merge-gateway" ||
+    options.providerId === "openai"
       ? affinitySession
         ? sessionCacheAffinityKey(affinitySession)
         : cacheAffinityKey(options.providerId, options.model, options.messages)
@@ -193,6 +194,9 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
       options.providerId === "merge-gateway") &&
     affinityKey
       ? { session_id: affinityKey }
+      : {}),
+    ...(options.providerId === "openai" && affinityKey
+      ? { prompt_cache_key: affinityKey }
       : {}),
     ...(options.providerId === "fireworks"
       ? {

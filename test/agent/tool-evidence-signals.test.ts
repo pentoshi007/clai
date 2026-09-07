@@ -35,7 +35,7 @@ describe("tool evidence signals", () => {
         .freshProbeFailure,
     ).toBe(true);
     expect(
-      signals({ name: "net.scan", args: {} }, failing).freshProbeFailure,
+      signals({ name: "web.search", args: {} }, failing).freshProbeFailure,
     ).toBe(false);
   });
 

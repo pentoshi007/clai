@@ -5,10 +5,6 @@ import { join } from "node:path";
 import { OutputDecoder, spawnArgv, shellExec } from "../../src/tools/shell.js";
 import { fsEdit, fsAppend, fsSearch } from "../../src/tools/fs.js";
 import { getToolDefinitions } from "../../src/tools/definitions.js";
-import { toOpenAiTools } from "../../src/llm/adapters/openai-tools.js";
-import { toAnthropicTools } from "../../src/llm/adapters/anthropic-tools.js";
-import { toGeminiFunctionDeclarations } from "../../src/llm/adapters/gemini-tools.js";
-import { toOllamaTools } from "../../src/llm/adapters/ollama-tools.js";
 
 let dir: string;
 let cwd: string;
@@ -85,62 +81,6 @@ describe("TOOL-003 timeoutMs is opt-in per tool", () => {
     for (const name of ["shell.exec", "http.fetch", "pdf.read", "image.ocr"]) {
       const props = byName.get(name)?.parameters.properties ?? {};
       expect(Object.keys(props)).toContain("timeoutMs");
-    }
-  });
-
-  it("publishes the exact structured net.scan profile contract", () => {
-    const definitions = getToolDefinitions();
-    const scan = definitions.find((definition) => definition.name === "net.scan");
-    const profile = scan?.parameters.properties?.profile as
-      | {
-          properties?: Record<string, unknown>;
-          additionalProperties?: boolean;
-        }
-      | undefined;
-    expect(profile?.additionalProperties).toBe(false);
-    expect(Object.keys(profile?.properties ?? {})).toEqual(
-      expect.arrayContaining([
-        "scanType",
-        "topPorts",
-        "serviceDetect",
-        "scripts",
-        "timing",
-        "udp",
-      ]),
-    );
-    expect((profile?.properties?.scripts as any)?.type).toBe("array");
-    expect(scan?.description).toMatch(/ports without a -p prefix/i);
-    expect(scan?.description).toMatch(/synchronously unless background or responder/i);
-    expect(Object.keys(scan?.parameters.properties ?? {})).toEqual(
-      expect.arrayContaining(["background", "responder"]),
-    );
-  });
-
-  it("preserves the net.scan profile across every native provider schema", () => {
-    const definitions = getToolDefinitions({ names: ["net.scan"] });
-    const profiles = [
-      (toOpenAiTools(definitions)[0] as any).function.parameters.properties.profile,
-      (toAnthropicTools(definitions)[0] as any).input_schema.properties.profile,
-      (toGeminiFunctionDeclarations(definitions)[0] as any).parameters.properties.profile,
-      (toOllamaTools(definitions)[0] as any).function.parameters.properties.profile,
-    ];
-    for (const profile of profiles) {
-      expect(profile.type).toBe("object");
-      expect(profile.properties.scanType.enum).toEqual([
-        "syn",
-        "tcp",
-        "udp",
-        "ping",
-      ]);
-      expect(profile.properties.scripts).toMatchObject({
-        type: "array",
-        items: { type: "string", pattern: "^[A-Za-z0-9_-]+$" },
-      });
-      expect(profile.properties.topPorts).toMatchObject({
-        type: "integer",
-        minimum: 1,
-        maximum: 65535,
-      });
     }
   });
 

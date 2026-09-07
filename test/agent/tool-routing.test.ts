@@ -19,7 +19,6 @@ const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
     mcpPresent: false,
     mcpToolNames: [],
     mcpToolDefinitions: [],
-    imageOcrEnabled: false,
     skillsAvailable: false,
     toolCalling: "auto",
     useCompactSystemPrompt: () => false,
@@ -27,14 +26,15 @@ const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
   });
 
 describe("tool routing", () => {
-  it("filters capability-gated names and keeps the registry order", () => {
-    const gatedOff = routing().routeToolNames("nvidia", "test-model");
-    expect(gatedOff).not.toContain("image.ocr");
-    expect(gatedOff).not.toContain("skill.load");
-    expect(gatedOff).not.toContain("skill.list");
+  it("keeps the tool list prompt-independent so the cache prefix stays stable", () => {
+    const names = routing().routeToolNames("nvidia", "test-model");
+    if (availableToolNames().includes("image.ocr")) {
+      expect(names).toContain("image.ocr");
+    }
+    expect(names).not.toContain("skill.load");
+    expect(names).not.toContain("skill.list");
 
     const gatedOn = routing({
-      imageOcrEnabled: true,
       skillsAvailable: true,
     }).routeToolNames("nvidia", "test-model");
     expect(gatedOn).toContain("skill.load");
