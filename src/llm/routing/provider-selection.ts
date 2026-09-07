@@ -11,6 +11,7 @@ import { anthropicProvider } from "../anthropic.js";
 import { mantleProvider } from "../aws-mantle.js";
 import { bynaraProvider } from "../bynara.js";
 import { getCustomProviderSync } from "../custom-providers.js";
+import { explabsProvider } from "../explabs.js";
 import { fireworksProvider } from "../fireworks.js";
 import { freeProvider } from "../free.js";
 import { geminiProvider } from "../gemini.js";
@@ -48,6 +49,7 @@ export const providers: Record<ProviderId, LlmProvider> = {
   hetzner: hetznerProvider,
   orcarouter: orcarouterProvider,
   "merge-gateway": mergeGatewayProvider,
+  explabs: explabsProvider,
 };
 
 const fallbackOrder: ProviderId[] = [
@@ -70,6 +72,7 @@ const fallbackOrder: ProviderId[] = [
   "hetzner",
   "orcarouter",
   "merge-gateway",
+  "explabs",
 ];
 
 function allFallbackIds(): ProviderId[] {

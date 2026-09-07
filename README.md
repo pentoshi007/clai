@@ -341,6 +341,31 @@ answers `402`, which clai treats as a quota error and rotates to the next key or
 Aliases: `merge-gateway`, `mergegateway`, `merge`, `mg`. Env var `MERGE_GATEWAY_API_KEY`.
 `/info merge-gateway` prints the full walkthrough.
 
+#### Experiential Labs (one key, every vendor, OpenAI-compatible)
+
+[Experiential Labs](https://platform.experientiallabs.ai) fronts hosted providers,
+your own provider keys (BYOK) and platform-funded credits behind a single key. Every
+model is a slug that resolves through a provider waterfall with automatic failover, and
+the gateway is a drop-in OpenAI-compatible endpoint — streaming, native tool calling,
+prompt caching and reasoning effort all behave exactly as they do for every other
+OpenAI-compatible provider.
+
+```sh
+clai set explabs xpl_your-key         # key: https://platform.experientiallabs.ai/settings/api-keys (starts with xpl_)
+clai use explabs                      # model defaults to claude-fable-5.1
+/model gpt-5.6-sol                    # or any slug from the live catalog
+```
+
+`/model` lists the slugs your key can call (from `/v1/models`), enriched with catalog
+facts from the public `/api/models` (context window, vision, per-model reasoning
+efforts) and cached for an hour; image/embedding/batch slugs stay out of the picker and
+a documented offline subset is shown when the gateway is unreachable. Reasoning uses one
+`reasoning_effort` knob (low/medium/high/xhigh/max) that passes through when the route
+supports it and snaps to the nearest supported level otherwise, so `/think` and `/effort`
+work across every vendor. Keys are multi-key with rotation like everywhere else; env var
+is `EXPLABS_API_KEY`. Aliases: `explabs`, `experiential`, `experientiallabs`,
+`experiential-labs`, `exp`. `/info explabs` prints the full walkthrough.
+
 ### Manage keys
 
 ```sh
@@ -357,6 +382,7 @@ clai set fireworks fw_your_key         # Fireworks
 clai set hetzner your-token            # Hetzner Inference (experiments.hetzner.com)
 clai set orcarouter sk-your-key        # OrcaRouter (orcarouter.ai/console)
 clai set merge-gateway mg_your-key     # Merge Gateway (gateway.merge.dev)
+clai set explabs xpl_your-key          # Experiential Labs (platform.experientiallabs.ai)
 clai set free <key>                    # optional: unlock premium models (free is keyless by default)
 clai unset modal --url                 # drop stored endpoint URLs, keep the keys
 clai keys                              # providers + masked keys (★ active) + endpoint URLs

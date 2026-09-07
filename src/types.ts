@@ -18,6 +18,7 @@ export const providerIds = [
   "hetzner",
   "orcarouter",
   "merge-gateway",
+  "explabs",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];

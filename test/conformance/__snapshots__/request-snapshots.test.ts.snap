@@ -2044,6 +2044,410 @@ exports[`serialized request snapshots > bynara / tools 1`] = `
 }
 `;
 
+exports[`serialized request snapshots > explabs / images 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": [
+          {
+            "text": "describe this image",
+            "type": "text",
+          },
+          {
+            "image_url": {
+              "detail": "high",
+              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+            },
+            "type": "image_url",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "model": "claude-fable-5.1",
+    "reasoning_effort": "none",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.experientiallabs.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > explabs / minimal 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "claude-fable-5.1",
+    "reasoning_effort": "none",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.experientiallabs.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > explabs / reasoning-control 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "claude-fable-5.1",
+    "reasoning_effort": "high",
+    "stream": false,
+    "temperature": 0.2,
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.experientiallabs.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > explabs / tool-loop-replay 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "claude-fable-5.1",
+    "reasoning_effort": "medium",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.experientiallabs.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > explabs / tool-loop-replay-unsigned 1`] = `
+{
+  "body": {
+    "max_tokens": 16384,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "read the example file",
+        "role": "user",
+      },
+      {
+        "content": null,
+        "reasoning_content": "the file must be inspected first",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{"path":"docs/example.md"}",
+              "name": "fs_read",
+            },
+            "id": "call_replay_1",
+            "type": "function",
+          },
+        ],
+      },
+      {
+        "content": "example file contents",
+        "name": "fs_read",
+        "role": "tool",
+        "tool_call_id": "call_replay_1",
+      },
+    ],
+    "model": "claude-fable-5.1",
+    "reasoning_effort": "medium",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.experientiallabs.ai/v1/chat/completions",
+}
+`;
+
+exports[`serialized request snapshots > explabs / tools 1`] = `
+{
+  "body": {
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "content": "stable system prefix for cache reuse",
+        "role": "system",
+      },
+      {
+        "content": "first user turn",
+        "role": "user",
+      },
+      {
+        "content": "first assistant answer",
+        "role": "assistant",
+      },
+      {
+        "content": "second user turn",
+        "role": "user",
+      },
+    ],
+    "model": "claude-fable-5.1",
+    "reasoning_effort": "none",
+    "stream": false,
+    "temperature": 0.2,
+    "tool_choice": "auto",
+    "tools": [
+      {
+        "function": {
+          "description": "read a file",
+          "name": "fs_read",
+          "parameters": {
+            "properties": {
+              "limit": {
+                "type": "number",
+              },
+              "path": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "path",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+      {
+        "function": {
+          "description": "run a shell command",
+          "name": "shell_run",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+        },
+        "type": "function",
+      },
+    ],
+  },
+  "headers": {
+    "accept": "application/json",
+    "authorization": "<redacted>",
+    "content-type": "application/json",
+  },
+  "method": "POST",
+  "url": "https://api.experientiallabs.ai/v1/chat/completions",
+}
+`;
+
 exports[`serialized request snapshots > fireworks / images 1`] = `
 {
   "body": {
