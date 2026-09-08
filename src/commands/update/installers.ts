@@ -3,7 +3,7 @@ import type { SudoAuthOutcome } from "../../tools/sudo-session.js";
 import chalk from "chalk";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, chmodSync, constants, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, copyFileSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -158,6 +158,19 @@ function escalationFailure(execPath: string): Error {
 
 function escalationCancelled(execPath: string): Error {
   return new Error(`update cancelled: could not replace ${execPath} without elevated permission`);
+}
+
+function swapViaStagedCopy(tmp: string, execPath: string): boolean {
+  const staged = `${execPath}.update`;
+  try {
+    copyFileSync(tmp, staged);
+    chmodSync(staged, 0o755);
+    renameSync(staged, execPath);
+    return true;
+  } catch {
+    rmSync(staged, { recursive: true, force: true });
+    return false;
+  }
 }
 
 async function elevateReplace(
@@ -367,7 +380,8 @@ async function replaceExecutable(
       return;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EACCES" && code !== "EPERM") throw error;
+      if (code === "EXDEV" && swapViaStagedCopy(tmp, execPath)) return;
+      if (code !== "EACCES" && code !== "EPERM" && code !== "EXDEV") throw error;
       if (elevation?.auth.status === "granted") {
         await spawnElevatedMove(tmp, execPath, elevation.auth.password);
         return;
