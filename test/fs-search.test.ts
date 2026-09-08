@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fsSearch, globToPathRegExp } from "../src/tools/fs/search.js";
+import {
+  capHits,
+  filterHitsByGlob,
+  fsSearch,
+  globToPathRegExp,
+  parseEngineOutput,
+  parseHitLine,
+} from "../src/tools/fs/search.js";
 
 function makeTree(): string {
   const dir = mkdtempSync(join(process.cwd(), ".test-tmp-fssearch-"));
@@ -152,5 +159,72 @@ describe("fsSearch", () => {
     expect(globToPathRegExp("src/**/*.tsx")?.test("/p/src/x/y.tsx")).toBe(true);
     expect(globToPathRegExp("src/**/*.tsx")?.test("/p/src/y.tsx")).toBe(true);
     expect(globToPathRegExp("src/**/*.tsx")?.test("/p/lib/y.tsx")).toBe(false);
+  });
+});
+
+describe("engine output parsing", () => {
+  const OUTPUT = [
+    "/repo/test/a.test.ts-87-  it(\"coalesces\", () => {",
+    "/repo/test/a.test.ts:88:    vi.useFakeTimers();",
+    "/repo/test/a.test.ts-89-    try {",
+    "--",
+    "/repo/src/b.ts-110-  before",
+    "/repo/src/b.ts:111:    vi.useFakeTimers();",
+    "--",
+  ].join("\n");
+
+  it("drops group separators instead of counting them as hits", () => {
+    const hits = parseEngineOutput(OUTPUT, false);
+    expect(hits.map((hit) => hit.line)).toEqual([87, 88, 89, 110, 111]);
+    expect(hits.filter((hit) => hit.match).map((hit) => hit.line)).toEqual([
+      88, 111,
+    ]);
+  });
+
+  it("attributes context lines to their file and keeps the match text", () => {
+    expect(parseHitLine("/repo/src/b.ts:111:    vi.useFakeTimers();")).toEqual({
+      path: "/repo/src/b.ts",
+      line: 111,
+      match: true,
+      text: "    vi.useFakeTimers();",
+    });
+    expect(parseHitLine("/repo/src/b.ts-110-  before")).toMatchObject({
+      path: "/repo/src/b.ts",
+      line: 110,
+      match: false,
+    });
+    expect(parseHitLine("--")).toBeUndefined();
+    expect(parseHitLine("C:\\repo\\src\\b.ts:9:hit")).toMatchObject({
+      path: "C:\\repo\\src\\b.ts",
+      line: 9,
+    });
+  });
+
+  it("drops every line of a file the glob excludes, separators included", () => {
+    const filtered = filterHitsByGlob(
+      parseEngineOutput(OUTPUT, false),
+      "src/**/*.ts",
+    );
+    expect(filtered.map((hit) => hit.path)).toEqual([
+      "/repo/src/b.ts",
+      "/repo/src/b.ts",
+    ]);
+    expect(filterHitsByGlob(parseEngineOutput(OUTPUT, false), "**/*.tsx")).toEqual(
+      [],
+    );
+  });
+
+  it("caps on matches rather than rendered lines and never ends on context", () => {
+    const capped = capHits(parseEngineOutput(OUTPUT, false), 1);
+    expect(capped.matches).toBe(1);
+    expect(capped.truncated).toBe(true);
+    expect(capped.hits.map((hit) => hit.line)).toEqual([87, 88]);
+  });
+
+  it("keeps whole files in filesOnly mode", () => {
+    expect(parseEngineOutput("/repo/a.ts\n/repo/b.ts\n", true)).toEqual([
+      { path: "/repo/a.ts", line: 0, match: true, text: "" },
+      { path: "/repo/b.ts", line: 0, match: true, text: "" },
+    ]);
   });
 });
