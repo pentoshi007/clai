@@ -31,8 +31,11 @@ describe("release identity gate (REL-002)", () => {
 });
 
 describe("generated prompt drift gate (REL-003)", () => {
-  it("checks embedded prompts in the same checkout that builds binaries", () => {
-    expect(validateJob()).toContain("npm run embed-prompts:check");
+  it("blocks builds on prompt drift via the CI run ci-gate requires on the tagged commit", () => {
+    const ciWorkflow = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8");
+    expect(ciWorkflow).toContain("npm run embed-prompts:check");
+    expect(releaseWorkflow).toMatch(/build:\n\s+needs: \[validate, ci-gate\]/);
+    expect(releaseWorkflow).toContain("Require green CI on this commit");
   });
 
   it("passes for the committed tree and fails on drift", () => {
