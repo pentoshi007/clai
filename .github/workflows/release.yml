@@ -10,30 +10,19 @@ permissions:
   contents: read
 
 jobs:
-  # Platform-independent gate. Runs ONCE (not per build-matrix target) so
-  # typecheck / tests / release:verify are not repeated 5×.
+  # Identity gate only — verifies the tag matches package.json. The full
+  # validation battery (embedded prompts, typecheck, deterministic suite,
+  # release:verify, bun conformance) is not re-run here: ci-gate below refuses
+  # to build unless CI already concluded success on this exact commit, and CI
+  # runs all of those steps on every push. Re-running them here duplicated
+  # several minutes of work on the critical path to `build`.
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      # `runner` context isn't available in job-level `env:` (GitHub Actions
-      # only resolves it inside steps), so derive these from $RUNNER_TEMP here.
-      - name: Set CI directories
-        run: |
-          echo "CLAI_CONFIG_DIR=${RUNNER_TEMP}/clai/config" >> "$GITHUB_ENV"
-          echo "CLAI_DATA_DIR=${RUNNER_TEMP}/clai/data" >> "$GITHUB_ENV"
-          echo "CLAI_ARTIFACT_DIR=${RUNNER_TEMP}/clai/artifacts" >> "$GITHUB_ENV"
-          echo "CLAI_LOG_DIR=${RUNNER_TEMP}/clai/logs" >> "$GITHUB_ENV"
-      - name: Install ripgrep (fs.search engine tests)
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
       # Mandatory identity gate: every downstream job (binaries, GitHub
       # release, npm, tap) depends on this, so a mismatched tag never ships.
       - name: Verify tag matches package.json version
@@ -47,15 +36,6 @@ jobs:
             exit 1
           fi
           echo "Releasing version ${pkg}."
-      # Generated prompts must match the reviewed markdown in this checkout.
-      - name: Verify embedded prompts are current
-        run: npm run embed-prompts:check
-      - run: npm run typecheck
-      # Same deterministic suite CI runs (canonical locale/timezone), so a
-      # locale-dependent failure can never ship via a tag while CI is red.
-      - run: npm run test:deterministic -- --reporter=dot
-      - run: npm run release:verify
-      - run: bun run test:bun
 
   # Independent of validate: refuses to build or publish when the CI workflow
   # has not concluded success on this exact commit. Tag pushes do not trigger
@@ -287,8 +267,9 @@ jobs:
           echo "Retained ${VERSION} and latest/; GitHub Releases remains the archive for older versions."
 
   publish-npm:
-    # validate already ran typecheck + tests once; build produced verified
-    # binaries. This job only checks version/publish-state and publishes.
+    # CI (required green on this commit by ci-gate) already ran the full
+    # suite; build produced verified binaries. This job only checks
+    # version/publish-state and publishes.
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest

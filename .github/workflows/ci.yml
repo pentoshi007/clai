@@ -48,6 +48,11 @@ jobs:
         run: |
           node dist/index.js --version
           node dist/index.js --help > /dev/null
+      # Classic pty smoke runs here (node 22 leg only) so ubuntu coverage needs
+      # no dedicated job; classic-posix below provides the macOS leg.
+      - name: Classic pty smoke
+        if: matrix.node == 22
+        run: npm run test:classic:pty -- --timeout 20
       - run: npm run release:verify
       - name: Upload redacted local diagnostics on failure
         if: failure()
@@ -127,12 +132,12 @@ jobs:
 
 
   classic-posix:
-    name: Classic POSIX (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    # ubuntu is intentionally omitted: the `node` job already runs the full
+    # suite (test/classic, test/ui-core and test/noninteractive included) and
+    # the classic pty smoke on ubuntu. This job exists only for macOS POSIX
+    # coverage that ubuntu cannot provide.
+    name: Classic POSIX (macos-latest)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
       - name: Set CI directories
