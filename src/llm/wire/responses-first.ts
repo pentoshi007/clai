@@ -18,6 +18,7 @@ import {
 } from "./responses-failure.js";
 import { cacheAffinityKey } from "../cache-affinity.js";
 import { responsesComplete } from "../responses-complete.js";
+import { isResponsesEmptyOutput } from "../responses-empty-output.js";
 import { responsesStream } from "../responses-stream.js";
 import {
   mapResponsesEffort,
@@ -307,6 +308,13 @@ async function runResponsesFirst(
       error.reasoningBytes === 0 &&
       error.toolArgumentBytes === 0
     ) {
+      return fallback({
+        kind: "responses-fallback-shape",
+        provider: options.provider,
+        model: options.model,
+      });
+    }
+    if (probing && isResponsesEmptyOutput(error)) {
       return fallback({
         kind: "responses-fallback-shape",
         provider: options.provider,

@@ -48,6 +48,7 @@ export interface RuntimeChildStatus {
   readonly sessionId: string;
   readonly cwd: string;
   readonly busy: boolean;
+  readonly active: boolean;
   readonly title?: string | undefined;
 }
 
@@ -96,12 +97,14 @@ export class RuntimeChildBridge {
       sessionId: status.sessionId.trim().slice(0, 256),
       cwd: status.cwd.slice(0, 4096),
       busy: status.busy,
+      active: status.active,
       ...(title ? { title } : {}),
     };
     const key = JSON.stringify([
       normalized.sessionId,
       normalized.cwd,
       normalized.busy,
+      normalized.active,
       normalized.title ?? null,
     ]);
     this.latestStatus = normalized;
@@ -119,6 +122,7 @@ export class RuntimeChildBridge {
         sessionId: normalized.sessionId,
         cwd: normalized.cwd,
         busy: normalized.busy,
+        active: normalized.active,
         ...(normalized.title ? { title: normalized.title } : {}),
       })
     ) {

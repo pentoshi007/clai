@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMPACTION_MAX_COMPLETION_TOKENS } from "../../src/agent/compaction-summary.js";
+import { effortReasoningBudgetTokens } from "../../src/llm/reasoning-controls.js";
 import type { AgentPort } from "../../src/app/ports/agent-port.js";
 import type { SuccessfulRequestSnapshot } from "../../src/types.js";
 import type {
@@ -335,7 +336,8 @@ describe("SessionController parity helpers (V2-080)", () => {
 
     expect(completeWithProvider).toHaveBeenCalledTimes(1);
     expect(completeWithProvider.mock.calls[0]?.[0]).toMatchObject({
-      maxTokens: COMPACTION_MAX_COMPLETION_TOKENS,
+      maxTokens:
+        COMPACTION_MAX_COMPLETION_TOKENS + effortReasoningBudgetTokens("medium"),
       temperature: 0.2,
       thinking: { enabled: true, effort: "medium" },
       toolChoice: "auto",
@@ -345,7 +347,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(session.messages).toEqual(original);
   });
 
-  it("fails closed after one output-limited manual summary", async () => {
+  it("retries once after an output-limited manual summary", async () => {
     completeWithProvider.mockResolvedValueOnce({
       text: "## User goals\nPreserve the session.\n## Remaining work\nContinue with",
       chunks: ["## User goals\nPreserve the session.", "\n## Remaining work\nContinue with"],
@@ -373,12 +375,19 @@ describe("SessionController parity helpers (V2-080)", () => {
     const original = session.messages.map((message) => ({ ...message }));
     primeCompactionSnapshot(session);
 
-    await expect(session.compact(undefined, 2)).rejects.toThrow(
-      /summary output limit/i,
-    );
-    expect(completeWithProvider).toHaveBeenCalledTimes(1);
-    expect(renderedCompaction(events)).toContain("Continue with");
-    expect(session.messages).toEqual(original);
+    await expect(session.compact(undefined, 2)).resolves.toMatchObject({
+      summarized: true,
+    });
+    expect(completeWithProvider).toHaveBeenCalledTimes(2);
+    const firstCall = completeWithProvider.mock.calls[0]?.[0];
+    const retryCall = completeWithProvider.mock.calls[1]?.[0];
+    expect(retryCall).toMatchObject({
+      thinking: { enabled: true, effort: "medium" },
+      messages: firstCall.messages,
+    });
+    expect(retryCall.maxTokens).toBeGreaterThan(firstCall.maxTokens);
+    expect(renderedCompaction(events)).toContain("User goals: resumed work");
+    expect(session.messages).not.toEqual(original);
   });
 
   it("keeps the exact original messages when a manual summary contains only reasoning", async () => {

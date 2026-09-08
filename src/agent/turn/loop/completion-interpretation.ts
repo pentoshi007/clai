@@ -2,6 +2,7 @@ import type { CompletionResult, ProviderId, TokenUsage } from "../../../types.js
 import { stripThinking } from "../../../ui/thinking.js";
 import { trimExactContinuationOverlap } from "../continuation-overlap.js";
 import { recordRequestTokenObservation } from "../../../llm/token-estimate-calibration.js";
+import { effectivePromptTokens } from "../../../llm/token-usage.js";
 import { contextAttemptFromOperationUsage } from "../../../llm/context-snapshot.js";
 
 export interface CompletionUsagePorts {
@@ -31,16 +32,13 @@ export const accountCompletionUsage = async (
   const requestRouteMatched =
     ports.dispatchedRequestRoute?.provider === completion.provider &&
     ports.dispatchedRequestRoute.model === completion.model;
-  if (
-    usage.exact &&
-    usage.promptTokens > 0 &&
-    requestRouteMatched
-  ) {
+  const consumedPromptTokens = effectivePromptTokens(usage) ?? 0;
+  if (usage.exact && consumedPromptTokens > 0 && requestRouteMatched) {
     recordRequestTokenObservation({
       provider: completion.provider,
       model: completion.model,
       estimatedRequestTokens: ports.dispatchedRawRequestTokens,
-      actualPromptTokens: usage.promptTokens,
+      actualPromptTokens: consumedPromptTokens,
     });
   }
   const attempt = contextAttemptFromOperationUsage(completion.operationUsage);

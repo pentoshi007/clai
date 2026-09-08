@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTO_COMPACT_HEADROOM_TOKENS,
+  autoCompactHeadroomTokens,
+} from "../src/agent/request-budget.js";
+import {
   resolveEffectiveContextLimit,
 } from "../src/agent/request-accounting.js";
 import {
@@ -48,13 +52,13 @@ describe("reliability policy (E1–E6)", () => {
         provider: "nvidia",
         model: "openai/gpt-oss-20b",
       }),
-    ).toBe(128_000 - 24_576 - 2_048);
+    ).toBe(128_000 - 24_576 - 2_048 - AUTO_COMPACT_HEADROOM_TOKENS);
     expect(
       autoCompactTriggerTokens(p, {
         provider: "anthropic",
         model: "claude-sonnet-4",
       }),
-    ).toBe(200_000 - 24_576 - 2_048);
+    ).toBe(200_000 - 24_576 - 2_048 - AUTO_COMPACT_HEADROOM_TOKENS);
   });
 
   it("E1: trigger never exceeds the effective safe dispatch limit (no dead zone)", () => {
@@ -71,6 +75,9 @@ describe("reliability policy (E1–E6)", () => {
       const safe = resolveEffectiveContextLimit({ provider, model })
         .effectiveSafeTokens!;
       expect(trigger).toBeLessThanOrEqual(safe);
+      expect(safe - trigger).toBeGreaterThanOrEqual(
+        Math.min(AUTO_COMPACT_HEADROOM_TOKENS, Math.floor(safe * 0.25)),
+      );
       expect(trigger).toBeGreaterThan(0);
     }
     for (const customLimit of [20_000, 25_000, 30_000, 100_000, 200_000, 253_000, 1_000_000]) {
@@ -84,9 +91,13 @@ describe("reliability policy (E1–E6)", () => {
         model: "custom-model",
         contextLimitTokens: customLimit,
       }).effectiveSafeTokens!;
+      const modelSafe =
+        customLimit -
+        Math.min(24_576, Math.floor(customLimit * 0.25)) -
+        2_048;
       const expected = Math.min(
         Math.floor(customLimit * 0.7),
-        customLimit - Math.min(24_576, Math.floor(customLimit * 0.25)) - 2_048,
+        modelSafe - autoCompactHeadroomTokens(modelSafe),
       );
       expect(trigger).toBe(expected);
       expect(trigger).toBeLessThanOrEqual(safe);

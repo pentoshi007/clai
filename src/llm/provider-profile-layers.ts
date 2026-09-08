@@ -311,7 +311,7 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
     },
   },
   tokenrouter: {
-    evidence: codeFact("tokenrouter-unknown-contract"),
+    evidence: codeFact("tokenrouter-live-probe"),
     capabilities: { tools: "supported", images: "unknown" },
     reasoning: {
       control: {
@@ -319,9 +319,23 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
         status: "supported",
         evidence: providerDoc("tokenrouter-reasoning-effort-validated"),
       },
+      acceptedEfforts: ["low", "medium", "high"],
       outputShapes: ["reasoning-content"],
     },
-    cache: { kind: "unknown", cacheAffectingFields: [] },
+    cache: {
+      kind: "affinity-key",
+      affinityField: "prompt_cache_key",
+      cacheAffectingFields: [
+        "messages",
+        "tools",
+        "tool_choice",
+        "prompt_cache_key",
+      ],
+    },
+    usage: {
+      cachedInput: ["usage.prompt_tokens_details.cached_tokens"],
+      reasoningOutput: ["usage.completion_tokens_details.reasoning_tokens"],
+    },
     terminal: {
       proofs: CHAT_COMPLETIONS_TERMINAL_PROOFS,
       naturalEofAccepted: false,
@@ -505,6 +519,7 @@ export const FAMILYLESS_ENDPOINT_LAYERS: Partial<
   Record<ProviderId, ProviderProfileLayer>
 > = {
   free: freeGatewayEffortLayer,
+  tokenrouter: FAMILY_LAYERS.tokenrouter!,
 };
 
 export const kimiMandatoryLayer: ProviderProfileLayer = {  evidence: viaGateway("kimi-k3-k2p7-official-contract"),

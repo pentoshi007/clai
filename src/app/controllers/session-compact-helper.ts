@@ -6,12 +6,13 @@ import type {
 } from "../../types.js";
 import {
   buildDirectCompactionPrompt,
-  compactionSinglePassInputBudget,
+  calibratedCompactionSinglePassInputBudget,
   COMPACTION_MAX_COMPLETION_TOKENS,
   COMPACTION_MAP_MAX_COMPLETION_TOKENS,
 } from "../../agent/compaction-summary.js";
 import {
   executeCompactionSummary,
+  isCompactionOverLimitError,
   planCompactionReplay,
 } from "../../agent/compaction-executor.js";
 import {
@@ -23,10 +24,7 @@ import {
 import { projectToolHistory } from "../../agent/tool-history.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
-import {
-  OperationLedger,
-  singleAdmissionOperationPolicy,
-} from "../../llm/operation-ledger.js";
+import { OperationLedger } from "../../llm/operation-ledger.js";
 import type {
   AnyAppEvent,
   AppEventPayloads,
@@ -197,56 +195,72 @@ export async function runSessionCompaction(
     continuationBudget: 0,
   });
   try {
-    const replay =
-      replayPlan && !replayPlan.accounting.overLimit
-        ? replayRequest
-        : undefined;
-    const result = await compactMessagesWithSummary(
-      history,
-      (prompt, stage) =>
-        summarizeForSessionCompact(replay ? instruction : prompt, {
-          provider: options.provider,
-          model: options.model,
-          signal: options.signal,
+    const execute = (forcePrefixSlice: boolean): Promise<CompactResult> => {
+      const replay =
+        !forcePrefixSlice && replayPlan && !replayPlan.accounting.overLimit
+          ? replayRequest
+          : undefined;
+      const requestProvider = replay?.provider ?? options.provider;
+      const requestModel = replay?.model ?? options.model;
+      return compactMessagesWithSummary(
+        history,
+        (prompt, stage) =>
+          summarizeForSessionCompact(replay ? instruction : prompt, {
+            provider: requestProvider,
+            model: requestModel,
+            signal: options.signal,
+            purpose: options.purpose,
+            stage: stage?.phase,
+            ...(replay
+              ? {
+                  baseRequest: replay,
+                  history,
+                }
+              : {
+                  ...(stage?.sourceMessages
+                    ? { sourceMessages: stage.sourceMessages }
+                    : {}),
+                }),
+            contextLimitTokens,
+            operation,
+            ...(options.persist && stage?.phase !== "map"
+              ? {
+                  onToken: (text: string, replace?: boolean) => {
+                    if (options.isCurrent()) {
+                      emit("compaction-delta", {
+                        compactionId: options.compactionId,
+                        text,
+                        ...(replace ? { replace: true } : {}),
+                      });
+                    }
+                  },
+                }
+              : {}),
+          }),
+        {
+          budgetTokens: 0,
+          keepRecent: options.keepRecent,
           purpose: options.purpose,
-          stage: stage?.phase,
-          ...(replay
-            ? {
-                baseRequest: replay,
-                history,
-                contextLimitTokens,
-              }
-            : {
-                ...(stage?.sourceMessages
-                  ? { sourceMessages: stage.sourceMessages }
-                  : {}),
-              }),
-          operation,
-          ...(options.persist && stage?.phase !== "map"
-            ? {
-                onToken: (text: string, replace?: boolean) => {
-                  if (options.isCurrent()) {
-                    emit("compaction-delta", {
-                      compactionId: options.compactionId,
-                      text,
-                      ...(replace ? { replace: true } : {}),
-                    });
-                  }
-                },
-              }
-            : {}),
-        }),
-      {
-        budgetTokens: 0,
-        keepRecent: options.keepRecent,
-        purpose: options.purpose,
-        singleAdmission: true,
-        ...(replay ? { forceDirectSinglePass: true } : {}),
-        singlePassInputBudgetTokens: compactionSinglePassInputBudget(
-          contextLimitTokens,
-        ),
-      },
-    );
+          singleAdmission: true,
+          ...(replay ? { forceDirectSinglePass: true } : {}),
+          ...(forcePrefixSlice ? { forcePrefixSlice: true } : {}),
+          singlePassInputBudgetTokens:
+            calibratedCompactionSinglePassInputBudget(
+              contextLimitTokens,
+              requestProvider,
+              requestModel,
+            ),
+        },
+      );
+    };
+
+    let result: CompactResult;
+    try {
+      result = await execute(false);
+    } catch (error) {
+      if (!isCompactionOverLimitError(error)) throw error;
+      result = await execute(true);
+    }
 
     if (!options.isCurrent()) return result;
     const reported = reportedFor(result);

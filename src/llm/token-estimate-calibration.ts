@@ -114,15 +114,40 @@ export function recordRequestTokenObservation(input: {
   persistCalibrations();
 }
 
+function trustedCalibration(
+  entry: CalibrationEntry | undefined,
+): RequestTokenCalibration | undefined {
+  if (!entry) return undefined;
+  if (entry.samples < MIN_TRUSTED_SAMPLES && entry.ratio >= 1) return undefined;
+  return { ratio: entry.ratio, samples: entry.samples };
+}
+
+function aggregateCalibration(
+  keyPrefix: string | undefined,
+): CalibrationEntry | undefined {
+  let samples = 0;
+  let weighted = 0;
+  for (const [key, entry] of calibrations) {
+    if (keyPrefix !== undefined && !key.startsWith(keyPrefix)) continue;
+    samples += entry.samples;
+    weighted += entry.ratio * entry.samples;
+  }
+  if (samples === 0) return undefined;
+  return { ratio: clampRatio(weighted / samples), samples };
+}
+
 export function requestTokenCalibration(
   provider: ProviderId | undefined,
   model: string | undefined,
 ): RequestTokenCalibration | undefined {
   loadCalibrations();
-  const entry = calibrations.get(calibrationKey(provider, model));
-  if (!entry) return undefined;
-  if (entry.samples < MIN_TRUSTED_SAMPLES && entry.ratio >= 1) return undefined;
-  return { ratio: entry.ratio, samples: entry.samples };
+  return (
+    trustedCalibration(calibrations.get(calibrationKey(provider, model))) ??
+    trustedCalibration(
+      aggregateCalibration(`${provider ?? "unknown"}::`),
+    ) ??
+    trustedCalibration(aggregateCalibration(undefined))
+  );
 }
 
 export function calibratedRequestTokens(

@@ -31,6 +31,21 @@ export interface RoundRequestInput {
   readonly setToolsAttached: (attached: boolean) => void;
 }
 
+export async function recoverDispatchOverLimit(
+  deps: Pick<
+    TurnLoopDeps,
+    "messages" | "estimateNextRequestTokens" | "maybeAutoCompact"
+  >,
+  error: RequestOverLimitError,
+): Promise<void> {
+  const beforeRecovery = deps.estimateNextRequestTokens(deps.messages);
+  await deps.maybeAutoCompact("dispatch-over-limit", {
+    bypassThreshold: true,
+  });
+  const afterRecovery = deps.estimateNextRequestTokens(deps.messages);
+  if (afterRecovery >= beforeRecovery) throw error;
+}
+
 export const requestRound = async (
   deps: TurnLoopDeps,
   input: RoundRequestInput,
@@ -128,7 +143,10 @@ export const requestRound = async (
     deps.loop.lowYieldResumptions = 0;
     } catch (streamError) {
       if (deps.options.signal?.aborted) throw streamError;
-      if (streamError instanceof RequestOverLimitError) throw streamError;
+      if (streamError instanceof RequestOverLimitError) {
+        await recoverDispatchOverLimit(deps, streamError);
+        return { kind: "continue" };
+      }
 
       const failedOperationUsage = operationUsageFromError(streamError);
       const failedAttempt = failedOperationUsage?.attempts.at(-1);
@@ -167,7 +185,11 @@ export const requestRound = async (
           sanitizeAssistantText,
           finishDeltaParser: streamSession.finishDeltaParser,
           recoveryUserMessage: deps.recoveryUserMessage,
-          forceCompact: (reason) => deps.maybeAutoCompact(reason, true),
+          forceCompact: (reason) =>
+            deps.maybeAutoCompact(reason, {
+              bypassThreshold: true,
+              retrySuppressed: true,
+            }),
           delay: (ms) => input.delay(ms),
         },
         failureState,

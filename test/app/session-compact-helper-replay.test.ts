@@ -99,7 +99,7 @@ describe("runSessionCompaction cache-preserving replay", () => {
     const last = sent.messages.at(-1)!;
     expect(last.role).toBe("user");
     expect(last.content).toContain("entire conversation above this instruction");
-    // Sampling and reasoning mirror the captured request — the cached prefix
+    // Sampling and reasoning mirror the captured request so the cached prefix
     // identity is untouched.
     expect(sent.temperature).toBe(0.7);
     expect(sent.thinking).toEqual({ enabled: true, effort: "medium" });
@@ -180,10 +180,24 @@ describe("runSessionCompaction cache-preserving replay", () => {
     ).toBe(true);
   });
 
-  it("falls back to transcript-rendered requests when the replay cannot fit", async () => {
+  it("falls back to a bounded transcript request when the replay cannot fit", async () => {
     complete.mockResolvedValueOnce(okResult());
+    const successfulRequest = {
+      ...SNAPSHOT,
+      messages: [
+        { role: "system" as const, content: "stable constitution" },
+        {
+          role: "user" as const,
+          content: "build the feature with historical detail ".repeat(2_000),
+        },
+        {
+          role: "assistant" as const,
+          content: "working on the historical implementation ".repeat(2_000),
+        },
+      ],
+    };
     const history: ChatMessage[] = [
-      ...SNAPSHOT.messages,
+      ...successfulRequest.messages,
       { role: "assistant", content: "done — feature built" },
       { role: "user", content: "now compact" },
     ];
@@ -191,24 +205,52 @@ describe("runSessionCompaction cache-preserving replay", () => {
 
     await runSessionCompaction({
       ...options,
-      // A tiny window cannot hold the replay, so the legacy transcript path
-      // must take over instead of failing closed.
-      contextLimitTokens: 64,
+      successfulRequest,
+      contextLimitTokens: 24_000,
     });
 
     expect(complete).toHaveBeenCalledTimes(1);
     const sent = complete.mock.calls[0]![0] as {
       messages: Array<{ role: string; content: string }>;
     };
-    // No verbatim replay of the snapshot; the material travels as transcript
-    // text inside the instruction prompt.
-    expect(sent.messages[0]).not.toEqual(SNAPSHOT.messages[0]);
+    expect(sent.messages[0]).not.toEqual(successfulRequest.messages[0]);
     expect(
       sent.messages.some(
         (message) =>
-          message.role === "user" && message.content.includes("build the feature"),
+          message.role === "user" &&
+          message.content.includes("build the feature"),
       ),
     ).toBe(true);
+  });
+
+  it("fails closed without dispatching when no manual summary request can fit", async () => {
+    const history: ChatMessage[] = [
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "second question" },
+      { role: "assistant", content: "second answer" },
+      { role: "user", content: "now compact" },
+    ];
+    const events: AnyAppEvent[] = [];
+    const { options } = harness(history);
+
+    await expect(
+      runSessionCompaction({
+        ...options,
+        successfulRequest: undefined,
+        contextLimitTokens: 64,
+        persist: true,
+        emit: (event) => events.push(event),
+      }),
+    ).rejects.toThrow(/context limit.*original context retained/i);
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+    const failed = events.find((event) => event.type === "compaction-failed");
+    expect(failed?.type).toBe("compaction-failed");
+    expect(
+      failed?.type === "compaction-failed" ? failed.payload.message : "",
+    ).not.toMatch(/retrying/i);
   });
 
   it("reports retained history instead of zero when the local estimate overshoots the provider count", async () => {

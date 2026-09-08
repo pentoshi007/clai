@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SessionState } from "../../src/app/controllers/session-controller.js";
 import { asSessionId } from "../../src/app/events/app-event.js";
-import { runtimeSessionBusy } from "../../src/session-runtime/binding.js";
+import {
+  runtimeSessionActive,
+  runtimeSessionBusy,
+} from "../../src/session-runtime/binding.js";
 
 function state(overrides: Partial<SessionState> = {}): SessionState {
   return {
@@ -43,5 +46,25 @@ describe("runtimeSessionBusy", () => {
     { responder: { ...state().responder, delivered: 1, mode: "listening" as const } },
   ])("keeps active work alive for $running$compacting", (overrides) => {
     expect(runtimeSessionBusy(state(overrides as Partial<SessionState>))).toBe(true);
+  });
+});
+
+
+describe("runtimeSessionActive", () => {
+  it.each([
+    { responder: { ...state().responder, ready: 1, mode: "listening" as const } },
+    { responder: { ...state().responder, delivered: 1, mode: "listening" as const } },
+  ])("treats responder bookkeeping as idle after the detached grace period", (overrides) => {
+    expect(runtimeSessionBusy(state(overrides as Partial<SessionState>))).toBe(true);
+    expect(runtimeSessionActive(state(overrides as Partial<SessionState>))).toBe(false);
+  });
+
+  it.each([
+    { running: true },
+    { compacting: true },
+    { queued: ["next"] },
+    { responder: { ...state().responder, running: 1, mode: "listening" as const } },
+  ])("protects live or queued user work", (overrides) => {
+    expect(runtimeSessionActive(state(overrides as Partial<SessionState>))).toBe(true);
   });
 });

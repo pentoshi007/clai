@@ -11,14 +11,16 @@ export interface CompactionFinalFitInput {
 
 export const measureCompactionFinalFit = (
   input: CompactionFinalFitInput,
-): ReturnType<typeof accountAssembledRequest> | undefined => {
-  if (input.contextLimitTokens === undefined) return undefined;
+): ReturnType<typeof accountAssembledRequest> => {
+  const tools = input.selectTools();
   return accountAssembledRequest({
     provider: input.provider,
     model: input.model,
     messages: input.messages,
     stream: true,
-    ...(input.selectTools()?.length ? { tools: input.selectTools() } : {}),
-    contextLimitTokens: input.contextLimitTokens,
+    ...(tools?.length ? { tools } : {}),
+    ...(input.contextLimitTokens !== undefined
+      ? { contextLimitTokens: input.contextLimitTokens }
+      : {}),
   });
 };

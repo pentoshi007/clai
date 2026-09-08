@@ -21,6 +21,10 @@ const { executeCompactionSummary, planCompactionReplay, CompactionOverLimitError
   "../../src/agent/compaction-executor.js"
 );
 
+const { effortReasoningBudgetTokens } = await import(
+  "../../src/llm/reasoning-controls.js"
+);
+
 const SYSTEM = "summarize the session";
 
 function baseExecution(
@@ -116,7 +120,7 @@ describe("shared compaction executor", () => {
     expect(stream).not.toHaveBeenCalled();
   });
 
-  it("streams with delta plumbing and replaces the card on a quality retry", async () => {
+  it("retries an output-limited summary with more room and the same prompt", async () => {
     stream
       .mockResolvedValueOnce(completion("", "length"))
       .mockResolvedValueOnce(completion("## Work\nFixed.\n## Remaining\nMore."));
@@ -131,19 +135,18 @@ describe("shared compaction executor", () => {
 
     expect(visible).toBe("## Work\nFixed.\n## Remaining\nMore.");
     expect(stream).toHaveBeenCalledTimes(2);
+    const firstRequest = stream.mock.calls[0]![0] as {
+      maxTokens: number;
+      messages: Array<{ role: string; content: string }>;
+    };
     const retryRequest = stream.mock.calls[1]![0] as {
+      maxTokens: number;
       temperature: number;
       messages: Array<{ role: string; content: string }>;
     };
-    expect(retryRequest.temperature).toBe(0);
-    expect(retryRequest.messages[0]).toMatchObject({
-      role: "system",
-      content: `${SYSTEM}\nReturn only a complete continuation-memory summary. Do not include analysis, reasoning, or <think> tags.`,
-    });
-    expect(retryRequest.messages[1]!.content).toContain(
-      "The previous draft hit its output limit.",
-    );
-    expect(retryRequest.messages[1]!.content).toContain("QUALITY RETRY");
+    expect(retryRequest.maxTokens).toBeGreaterThan(firstRequest.maxTokens);
+    expect(retryRequest.messages).toEqual(firstRequest.messages);
+    expect(retryRequest.messages[1]!.content).not.toContain("QUALITY RETRY");
     expect(tokens.some((entry) => entry.replace === true)).toBe(true);
   });
 
@@ -430,6 +433,7 @@ describe("cache-preserving snapshot replay", () => {
     expect(sent.model).toBe("test-model");
     expect(sent.temperature).toBe(0.6);
     expect(sent.thinking).toEqual({ enabled: true, effort: "high" });
+    expect(sent.maxTokens).toBe(4096 + effortReasoningBudgetTokens("high"));
     expect(sent.toolChoice).toBe("auto");
     expect(sent.parallelToolCalls).toBe(true);
     expect(sent.tools).toHaveLength(1);
@@ -564,5 +568,23 @@ describe("transient-error retry", () => {
       ),
     ).rejects.toThrow(/aborted/i);
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("non-replay compaction fit guard", () => {
+  it("rejects an oversized source request before provider dispatch", async () => {
+    await expect(
+      executeCompactionSummary(
+        baseExecution({
+          sourceMessages: [
+            { role: "user", content: "x".repeat(20_000) },
+            { role: "assistant", content: "y".repeat(20_000) },
+          ],
+          contextLimitTokens: 8_000,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CompactionOverLimitError);
+    expect(complete).not.toHaveBeenCalled();
   });
 });

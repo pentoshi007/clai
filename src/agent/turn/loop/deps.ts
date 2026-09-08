@@ -28,6 +28,7 @@ import type { TurnEvidenceFlags } from "../evidence-flags.js";
 import type { TurnCounters } from "../turn-counters.js";
 import type { ToolExecutionState } from "../tool-execution/state.js";
 import type { ResponderClaimLedger } from "../responder-claims.js";
+import type { CompactionAdmissionOptions } from "../compaction-admission.js";
 
 import type { WireOccurrenceLedger } from "./wire-occurrences.js";
 import type { StreamRecoveryState } from "../../stream-recovery.js";
@@ -99,7 +100,10 @@ export interface TurnLoopDeps extends TurnWriters {
     native: boolean,
     compact: boolean,
   ) => ToolDefinition[] | undefined;
-  readonly maybeAutoCompact: (reason: string, force?: boolean) => Promise<void>;
+  readonly maybeAutoCompact: (
+    reason: string,
+    options?: CompactionAdmissionOptions,
+  ) => Promise<void>;
   readonly resolveNativeTools: (
     provider: ProviderId,
     model: string,

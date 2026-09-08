@@ -41,6 +41,7 @@ function isRuntimeMetadata(value: unknown): value is RuntimeMetadata {
     isString(record.updatedAt, 64) &&
     ["starting", "running", "stopping", "failed"].includes(String(record.phase)) &&
     typeof record.busy === "boolean" &&
+    (record.active === undefined || typeof record.active === "boolean") &&
     typeof record.attached === "boolean"
   );
 }

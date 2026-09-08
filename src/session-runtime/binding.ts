@@ -14,6 +14,15 @@ export function runtimeSessionBusy(state: SessionState): boolean {
   );
 }
 
+export function runtimeSessionActive(state: SessionState): boolean {
+  return (
+    state.running ||
+    state.compacting ||
+    state.queued.length > 0 ||
+    state.responder.running > 0
+  );
+}
+
 export function bindRuntimeChildBridge(
   bridge: RuntimeChildBridge,
   services: AppServices,
@@ -28,6 +37,7 @@ export function bindRuntimeChildBridge(
       sessionId: state.sessionId,
       cwd: safeCwd(),
       busy: runtimeSessionBusy(state),
+      active: runtimeSessionActive(state),
       ...(state.title ? { title: state.title } : {}),
     });
   };

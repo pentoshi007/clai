@@ -55,9 +55,15 @@ const { executeCompactionSummary } = await import(
 const { OperationLedger, OperationAdmissionBudgetExceededError, singleAdmissionOperationPolicy } = await import(
   "../../src/llm/operation-ledger.js"
 );
-const { compactMessagesWithSummary } = await import(
+const { compactMessagesWithSummary, estimateMessagesTokens } = await import(
   "../../src/agent/context-manager.js"
 );
+const {
+  buildCompactionUserPrompt,
+  COMPACTION_MAP_MAX_COMPLETION_TOKENS,
+  COMPACTION_MAX_COMPLETION_TOKENS,
+  COMPACTION_SYSTEM_PROMPT,
+} = await import("../../src/agent/compaction-summary.js");
 const { hasOrphanToolMessages } = await import("../../src/agent/tool-history.js");
 const { fingerprintFinalRequest } = await import(
   "../../src/llm/request-fingerprint.js"
@@ -205,7 +211,7 @@ describe("single-admission compaction executor", () => {
     expect(second.tools).toBeUndefined();
     expect(second.tool_choice).toBeUndefined();
     expect(second.parallel_tool_calls).toBeUndefined();
-    expect(second.max_tokens).toBe(12_288);
+    expect(second.max_tokens).toBe(first.max_tokens);
     expect(second).not.toEqual(first);
     expect(ledger.admissionsUsed).toBe(2);
     expect(ledger.terminalOutcome).toBe("completed");
@@ -237,7 +243,28 @@ describe("single-admission compaction executor", () => {
     expect(ledger.terminalOutcome).toBe("failed");
   });
 
-  it("does not quality-retry a truncated summary", async () => {
+  it("retries a truncated summary exactly once", async () => {
+    slotsByProvider = { nvidia: keySlots(["nvapi-a"]) };
+    const transport = installScript(
+      () => chatCompletion("- Goal: partial summary that hit", NVIDIA_MODEL, "length"),
+      () => chatCompletion(USABLE_SUMMARY, NVIDIA_MODEL),
+    );
+
+    const summary = await executeCompactionSummary({
+      provider: "nvidia",
+      model: NVIDIA_MODEL,
+      systemContent: "summarize",
+      prompt: "summarize the history",
+      maxTokens: 4096,
+      stream: false,
+      qualityRetry: false,
+    });
+
+    expect(summary).toContain("one-admission automatic compaction");
+    expect(transport.generations).toHaveLength(2);
+  });
+
+  it("fails closed when a retried summary truncates with nothing salvageable", async () => {
     slotsByProvider = { nvidia: keySlots(["nvapi-a"]) };
     const transport = installScript(() =>
       chatCompletion("- Goal: partial summary that hit", NVIDIA_MODEL, "length"),
@@ -253,9 +280,40 @@ describe("single-admission compaction executor", () => {
         stream: false,
         qualityRetry: false,
       }),
-    ).rejects.toThrow(/summary output limit/i);
+    ).rejects.toThrow(/summary output limit twice/i);
 
-    expect(transport.generations).toHaveLength(1);
+    expect(transport.generations).toHaveLength(2);
+  });
+
+  it("salvages a long twice-truncated summary instead of wedging the session", async () => {
+    slotsByProvider = { nvidia: keySlots(["nvapi-a"]) };
+    const longBody = [
+      "## Work completed",
+      ...Array.from(
+        { length: 24 },
+        (_, index) =>
+          `- Edited src/module-${index}.ts to add the guard and verified it with vitest.`,
+      ),
+      "- Next step: rerun the build and confirm the",
+    ].join("\n");
+    const transport = installScript(() =>
+      chatCompletion(longBody, NVIDIA_MODEL, "length"),
+    );
+
+    const summary = await executeCompactionSummary({
+      provider: "nvidia",
+      model: NVIDIA_MODEL,
+      systemContent: "summarize",
+      prompt: "summarize the history",
+      maxTokens: 4096,
+      stream: false,
+      qualityRetry: false,
+    });
+
+    expect(summary).toContain("## Work completed");
+    expect(summary).not.toContain("confirm the");
+    expect(summary).toContain("cut short by the model's summary output limit");
+    expect(transport.generations).toHaveLength(2);
   });
 
   it("does not server-retry a 5xx in automatic mode", async () => {
@@ -381,6 +439,7 @@ describe("single-admission compaction executor", () => {
     expect(compactionBody.temperature).toBe(0.6);
     expect(compactionBody.tool_choice).toBe("auto");
     expect(compactionBody.tools).toBeDefined();
+    expect(compactionBody.reasoning_effort).toBe("high");
     expect(priorFingerprint.body.sha256).not.toBe(
       compactionFingerprint.body.sha256,
     );
@@ -479,15 +538,64 @@ describe("single-admission chunking strategies", () => {
     expect(result.afterTokens).toBeLessThan(result.beforeTokens);
   });
 
+  it("hard-bounds a forced prefix slice to a positive input budget", async () => {
+    const fixedInputTokens = estimateMessagesTokens([
+      { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: buildCompactionUserPrompt({ messageTranscript: "" }),
+      },
+    ]);
+    const inputBudget = fixedInputTokens + 50;
+    let measuredInputTokens = 0;
+    const result = await compactMessagesWithSummary(
+      largeHistory(),
+      async (prompt) => {
+        measuredInputTokens = estimateMessagesTokens([
+          { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ]);
+        return USABLE_SUMMARY;
+      },
+      {
+        budgetTokens: 0,
+        keepRecent: 2,
+        singleAdmission: true,
+        forcePrefixSlice: true,
+        singlePassInputBudgetTokens: inputBudget,
+      },
+    );
+
+    expect(result.strategy).toBe("emergency_prefix_slice");
+    expect(measuredInputTokens).toBeLessThanOrEqual(inputBudget);
+    expect(result.summarized).toBe(true);
+  });
+
   it("fans out map/reduce only when single admission is not required", async () => {
     const stages: string[] = [];
+    const singlePassInputBudget = 30_000;
+    const mapInputBudget =
+      singlePassInputBudget -
+      (COMPACTION_MAP_MAX_COMPLETION_TOKENS -
+        COMPACTION_MAX_COMPLETION_TOKENS);
     await compactMessagesWithSummary(
       largeHistory(),
       async (prompt, stage) => {
         stages.push(stage?.phase ?? "none");
+        if (stage?.phase === "map") {
+          const requestTokens = estimateMessagesTokens([
+            { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+            { role: "user", content: prompt },
+          ]);
+          expect(requestTokens).toBeLessThanOrEqual(mapInputBudget);
+        }
         return USABLE_SUMMARY;
       },
-      { budgetTokens: 0, keepRecent: 2, singlePassInputBudgetTokens: 0 },
+      {
+        budgetTokens: 0,
+        keepRecent: 2,
+        singlePassInputBudgetTokens: singlePassInputBudget,
+      },
     );
 
     expect(stages.length).toBeGreaterThan(2);

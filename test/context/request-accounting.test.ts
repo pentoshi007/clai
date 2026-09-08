@@ -14,6 +14,7 @@ import {
   estimateTokens,
 } from "../../src/agent/context-manager.js";
 import { buildContextBreakdown } from "../../src/agent/context-breakdown.js";
+import { reasoningArtifactTokensForMessage } from "../../src/llm/reasoning-artifacts.js";
 import { compileRequestPlan } from "../../src/llm/request-plan.js";
 import { composeAgentSystemPrompt } from "../../src/agent/prompt-composer.js";
 import type {
@@ -69,16 +70,33 @@ const HISTORY: ChatMessage[] = [
 ];
 
 describe("serialized-request accounting service", () => {
-  it("matches the legacy breakdown totals exactly (no heuristic drift)", () => {
+  it("counts only reasoning artifacts the route can replay", () => {
     const legacy = buildContextBreakdown(HISTORY, [...TOOLS]).estimatedTotalTokens;
-    const { accounting } = accountAssembledRequest({
+    const signedArtifactTokens = HISTORY.reduce(
+      (sum, message) => sum + reasoningArtifactTokensForMessage(message),
+      0,
+    );
+    expect(signedArtifactTokens).toBeGreaterThan(0);
+
+    const compatible = accountAssembledRequest({
       provider: "nvidia",
       model: "meta/llama-3.3-70b-instruct",
       messages: HISTORY,
       stream: true,
       tools: TOOLS,
-    });
-    expect(accounting.requestTokens).toBe(legacy);
+    }).accounting;
+    expect(compatible.artifactTokens).toBe(0);
+    expect(compatible.requestTokens).toBe(legacy - signedArtifactTokens);
+
+    const native = accountAssembledRequest({
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
+      messages: HISTORY,
+      stream: true,
+      tools: TOOLS,
+    }).accounting;
+    expect(native.artifactTokens).toBe(signedArtifactTokens);
+    expect(native.requestTokens).toBe(legacy);
   });
 
   it("attributes sections that sum to the whole request with tools", () => {

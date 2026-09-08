@@ -68,7 +68,32 @@ describe("request token calibration persistence", () => {
     ).toBe(120_000);
   });
 
-  it("keeps calibration separate per provider and model route", async () => {
+  it("reduces the compaction input allowance for trusted upward calibration", async () => {
+    const calibration = await import(
+      "../../src/llm/token-estimate-calibration.js"
+    );
+    const compaction = await import("../../src/agent/compaction-summary.js");
+    calibration.resetRequestTokenCalibration({ removePersisted: true });
+    const observation = {
+      provider: "openai" as const,
+      model: "gpt-5.4",
+      estimatedRequestTokens: 100_000,
+      actualPromptTokens: 150_000,
+    };
+    calibration.recordRequestTokenObservation(observation);
+    calibration.recordRequestTokenObservation(observation);
+
+    const nominal = compaction.compactionSinglePassInputBudget(100_000);
+    expect(
+      compaction.calibratedCompactionSinglePassInputBudget(
+        100_000,
+        "openai",
+        "gpt-5.4",
+      ),
+    ).toBe(Math.floor(nominal / 1.5));
+  });
+
+  it("prefers the exact route and inherits a prior for unseen routes", async () => {
     const calibration = await import(
       "../../src/llm/token-estimate-calibration.js"
     );
@@ -79,18 +104,41 @@ describe("request token calibration persistence", () => {
       estimatedRequestTokens: 300_000,
       actualPromptTokens: 150_000,
     });
+    calibration.recordRequestTokenObservation({
+      provider: "agentrouter",
+      model: "glm-5.3",
+      estimatedRequestTokens: 300_000,
+      actualPromptTokens: 240_000,
+    });
 
     expect(
       calibration.requestTokenCalibration("openai", "gpt-5.4")?.ratio,
     ).toBeCloseTo(0.5, 10);
     expect(
-      calibration.requestTokenCalibration("openai", "gpt-5.5"),
-    ).toBeUndefined();
+      calibration.requestTokenCalibration("agentrouter", "glm-5.3")?.ratio,
+    ).toBeCloseTo(0.8, 10);
     expect(
-      calibration.requestTokenCalibration("nvidia", "gpt-5.4"),
-    ).toBeUndefined();
+      calibration.requestTokenCalibration("openai", "gpt-5.5")?.ratio,
+    ).toBeCloseTo(0.5, 10);
+    expect(
+      calibration.requestTokenCalibration("nvidia", "gpt-5.4")?.ratio,
+    ).toBeCloseTo(0.65, 10);
     expect(
       calibration.calibratedRequestTokens("nvidia", "gpt-5.4", 300_000),
+    ).toBe(195_000);
+  });
+
+  it("does not inherit anything before any observation", async () => {
+    const calibration = await import(
+      "../../src/llm/token-estimate-calibration.js"
+    );
+    calibration.resetRequestTokenCalibration({ removePersisted: true });
+
+    expect(
+      calibration.requestTokenCalibration("openai", "gpt-5.4"),
+    ).toBeUndefined();
+    expect(
+      calibration.calibratedRequestTokens("openai", "gpt-5.4", 300_000),
     ).toBe(300_000);
   });
 

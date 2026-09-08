@@ -1,5 +1,7 @@
 
 import { stripReasoningMarkers } from "../llm/reasoning-marker.js";
+import { requestTokenCalibration } from "../llm/token-estimate-calibration.js";
+import type { ProviderId } from "../types.js";
 
 export const COMPACTION_SYSTEM_PROMPT = `You are a session-memory compressor for an autonomous coding and security agent.
 
@@ -178,6 +180,18 @@ export function compactionSinglePassInputBudget(
       COMPACTION_MAX_COMPLETION_TOKENS -
       COMPACTION_INPUT_SAFETY_TOKENS,
   );
+}
+
+export function calibratedCompactionSinglePassInputBudget(
+  contextLimitTokens: number,
+  provider: ProviderId | undefined,
+  model: string | undefined,
+): number {
+  const nominalInputBudget = compactionSinglePassInputBudget(contextLimitTokens);
+  const calibration = requestTokenCalibration(provider, model);
+  return calibration && calibration.ratio > 1
+    ? Math.floor(nominalInputBudget / calibration.ratio)
+    : nominalInputBudget;
 }
 
 export const COMPACTION_MAP_MAX_COMPLETION_TOKENS = 16_384;

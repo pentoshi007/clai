@@ -16,6 +16,7 @@ import {
   type ContextSnapshotV1,
 } from "../../llm/context-snapshot.js";
 import type { ContextUsageSnapshot } from "../../llm/token-usage.js";
+import { effectivePromptTokens } from "../../llm/token-usage.js";
 import type { ChatMessage, ProviderId, TokenUsage } from "../../types.js";
 
 export interface ContextUsageTarget {
@@ -143,6 +144,7 @@ export function recordContextUsageSnapshot(
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 {
   const promptMeasured = hasPromptMeasurement(usage);
+  const consumedPromptTokens = effectivePromptTokens(usage);
   const sessionPromptTokens =
     (current?.sessionPromptTokens ?? 0) +
     (usage.exact && promptMeasured ? usage.promptTokens : 0);
@@ -152,9 +154,7 @@ export function recordContextUsageSnapshot(
   const cache = reportedCache(usage);
   const reasoning = reportedReasoning(usage);
   return createContextSnapshot({
-    contextTokens: promptMeasured
-      ? usage.promptTokens
-      : (current?.contextTokens ?? 0),
+    contextTokens: consumedPromptTokens ?? current?.contextTokens ?? 0,
     lastCompletionTokens: usage.completionTokens,
     sessionPromptTokens,
     sessionCompletionTokens,
@@ -197,6 +197,18 @@ export function compactedContextSnapshot(
   });
 }
 
+function measuredOnTargetRoute(
+  target: ContextUsageTarget,
+  snapshot: ContextSnapshotV1,
+): boolean {
+  const attempt = snapshot.attempt;
+  if (attempt.kind !== "generation") return true;
+  return (
+    (target.provider === undefined || attempt.provider === target.provider) &&
+    (target.model === undefined || attempt.model === target.model)
+  );
+}
+
 export function estimatedContextSnapshot(
   target: ContextUsageTarget,
   current: ContextSnapshotV1 | undefined,
@@ -204,13 +216,19 @@ export function estimatedContextSnapshot(
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 | undefined {
   if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
-  if (current && current.contextTokens > 0 && current.scope === "provider-request") {
+  const tokens = Math.floor(estimatedTokens);
+  if (
+    current &&
+    current.scope === "provider-request" &&
+    current.contextTokens >= tokens &&
+    measuredOnTargetRoute(target, current)
+  ) {
     return sameLimit(current.limit, limitFor(target))
       ? current
       : withContextSnapshotLimit(current, limitFor(target));
   }
   return createContextSnapshot({
-    contextTokens: Math.floor(estimatedTokens),
+    contextTokens: tokens,
     lastCompletionTokens: current?.lastCompletionTokens,
     sessionPromptTokens: current?.sessionPromptTokens,
     sessionCompletionTokens: current?.sessionCompletionTokens,

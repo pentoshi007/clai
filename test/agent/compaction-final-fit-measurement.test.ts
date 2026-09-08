@@ -15,8 +15,9 @@ const tool = (name: string): ToolDefinition => ({
 });
 
 describe("compaction final fit", () => {
-  it("skips accounting and tool selection without an explicit context limit", () => {
-    const selectTools = vi.fn(() => [tool("first")]);
+  it("accounts against the model window when no explicit context limit is set", () => {
+    const tools = [tool("first")];
+    const selectTools = vi.fn(() => tools);
     expect(
       measureCompactionFinalFit({
         provider: "nvidia",
@@ -25,8 +26,16 @@ describe("compaction final fit", () => {
         contextLimitTokens: undefined,
         selectTools,
       }),
-    ).toBeUndefined();
-    expect(selectTools).not.toHaveBeenCalled();
+    ).toEqual(
+      accountAssembledRequest({
+        provider: "nvidia",
+        model: "test-model",
+        messages,
+        stream: true,
+        tools,
+      }),
+    );
+    expect(selectTools).toHaveBeenCalledTimes(1);
   });
 
   it("omits empty tools after one dynamic selection", () => {
@@ -51,13 +60,9 @@ describe("compaction final fit", () => {
     expect(selectTools).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the second dynamic tool selection when the first is non-empty", () => {
-    const first = [tool("first")];
-    const second = [tool("second")];
-    const selectTools = vi
-      .fn<() => readonly ToolDefinition[] | undefined>()
-      .mockReturnValueOnce(first)
-      .mockReturnValueOnce(second);
+  it("uses one stable dynamic tool selection", () => {
+    const selected = [tool("first")];
+    const selectTools = vi.fn<() => readonly ToolDefinition[] | undefined>(() => selected);
     const measured = measureCompactionFinalFit({
       provider: "nvidia",
       model: "test-model",
@@ -72,10 +77,10 @@ describe("compaction final fit", () => {
         model: "test-model",
         messages,
         stream: true,
-        tools: second,
+        tools: selected,
         contextLimitTokens: 100_000,
       }),
     );
-    expect(selectTools).toHaveBeenCalledTimes(2);
+    expect(selectTools).toHaveBeenCalledTimes(1);
   });
 });

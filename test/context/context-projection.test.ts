@@ -10,6 +10,7 @@ import {
   compactedUsageSnapshot,
   estimatedContextSnapshot,
   estimatedUsageSnapshot,
+  recordContextUsageSnapshot,
   resolveContextUsageSnapshot,
   type ContextUsageTarget,
 } from "../../src/app/controllers/session-context-usage.js";
@@ -17,6 +18,7 @@ import { parseMetaUsage } from "../../src/llm/meta.js";
 import { createContextSnapshot } from "../../src/llm/context-snapshot.js";
 import {
   applyUsageToSnapshot,
+  effectivePromptTokens,
   formatContextChip,
   mergeAnthropicStreamUsage,
   normalizeTokenUsage,
@@ -187,6 +189,39 @@ describe("cache and reasoning bucket normalization", () => {
     expect(formatContextChip(snapshot, { compact: true })).not.toContain("96k");
   });
 
+  it("folds additive cache counters into the consumed context", () => {
+    const inclusive = parseOpenAiUsage(
+      openAiUsagePayload({
+        promptTokens: 120_000,
+        completionTokens: 900,
+        cachedTokens: 96_000,
+        reasoningTokens: 640,
+      }),
+    )!;
+    expect(effectivePromptTokens(inclusive)).toBe(120_000);
+
+    const additive = parseOpenAiUsage({
+      prompt_tokens: 88_700,
+      completion_tokens: 900,
+      prompt_tokens_details: { cached_tokens: 132_065 },
+    })!;
+    expect(effectivePromptTokens(additive)).toBe(220_765);
+
+    const snapshot = recordContextUsageSnapshot(
+      target,
+      undefined,
+      additive,
+      undefined,
+      () => 5,
+    );
+    expect(snapshot).toMatchObject({
+      contextTokens: 220_765,
+      scope: "provider-request",
+      precision: "provider-exact",
+    });
+    expect(snapshot.sessionPromptTokens).toBe(88_700);
+  });
+
   it("normalizes Gemini cached and thought counters", () => {
     const usage = parseGeminiUsage(
       geminiUsagePayload({
@@ -344,7 +379,34 @@ describe("exactness lifetime", () => {
     expect(refreshed.scope).toBe("assembled-request");
   });
 
-  it("keeps a provider-exact snapshot instead of a newer assembled-request estimate", () => {
+  it("keeps a provider-exact snapshot when the next request is not larger", () => {
+    const previous = createContextSnapshot({
+      contextTokens: 78_200,
+      lastCompletionTokens: 100,
+      sessionPromptTokens: 78_200,
+      sessionCompletionTokens: 100,
+      scope: "provider-request",
+      precision: "provider-exact",
+      limit: { source: "session-override", tokens: 300_000 },
+      observedAt: 1,
+    });
+
+    const refreshed = estimatedContextSnapshot(
+      { ...target, contextLimitTokens: 300_000 },
+      previous,
+      70_000,
+      () => 2,
+    );
+
+    expect(refreshed).toMatchObject({
+      contextTokens: 78_200,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
+    });
+  });
+
+  it("follows the assembled-request estimate once history outgrows the measurement", () => {
     const previous = createContextSnapshot({
       contextTokens: 78_200,
       lastCompletionTokens: 100,
@@ -361,13 +423,48 @@ describe("exactness lifetime", () => {
       previous,
       229_182,
       () => 2,
-    );
+    )!;
 
     expect(refreshed).toMatchObject({
-      contextTokens: 78_200,
+      contextTokens: 229_182,
+      scope: "assembled-request",
+      precision: "estimate",
+      observedAt: 2,
+    });
+  });
+
+  it("stops trusting a measurement taken on another route", () => {
+    const previous = createContextSnapshot({
+      contextTokens: 200_000,
+      lastCompletionTokens: 100,
+      sessionPromptTokens: 200_000,
+      sessionCompletionTokens: 100,
       scope: "provider-request",
       precision: "provider-exact",
+      limit: { source: "session-override", tokens: 300_000 },
+      attempt: {
+        kind: "generation",
+        sequence: 1,
+        provider: "openai",
+        model: "gpt-5.4-mini",
+        mode: "stream",
+        reason: "initial",
+        outcome: "success",
+      },
       observedAt: 1,
+    });
+
+    const refreshed = estimatedContextSnapshot(
+      { ...target, contextLimitTokens: 300_000 },
+      previous,
+      90_000,
+      () => 2,
+    )!;
+
+    expect(refreshed).toMatchObject({
+      contextTokens: 90_000,
+      scope: "assembled-request",
+      precision: "estimate",
     });
   });
 

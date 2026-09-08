@@ -311,6 +311,63 @@ describe("responses-first transport", () => {
     expect(String(fetchMock.mock.calls[1]![0])).toContain("/chat/completions");
   });
 
+  it("falls back when the probe answers with an empty completed payload", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses"
+        ? responsesJson({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "" }],
+              },
+            ],
+            usage: null,
+          })
+        : chatJson("chat-ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await openAiCompatibleComplete(completeOptions("m10"));
+
+    expect(result.text).toBe("chat-ok");
+    expect(String(fetchMock.mock.calls[0]![0])).toContain("/responses");
+    expect(String(fetchMock.mock.calls[1]![0])).toContain("/chat/completions");
+  });
+
+  it("surfaces an empty payload once the endpoint is known to work", async () => {
+    const responses = [
+      responsesCompleted("first-ok"),
+      responsesJson({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: "" }],
+          },
+        ],
+      }),
+    ];
+    const fetchMock = routeByPath((path) =>
+      path === "responses" ? responses.shift()! : chatJson("chat-ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await openAiCompatibleComplete(completeOptions("m11"));
+    expect(first.text).toBe("first-ok");
+
+    await expect(
+      openAiCompatibleComplete(completeOptions("m11")),
+    ).rejects.toThrow(/no completion text/);
+    expect(
+      fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes("/chat/completions"),
+      ),
+    ).toHaveLength(0);
+  });
+
   it("does not touch /responses when the transport is not opted in", async () => {
     const fetchMock = routeByPath((path) =>
       path === "responses" ? responsesCompleted("nope") : chatJson("chat-ok"),

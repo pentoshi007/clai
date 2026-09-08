@@ -58,12 +58,12 @@ const summarize = async (
         ? {
             baseRequest: replay,
             history: ports.history,
-            ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
           }
         : {
             ...(sourceMessages ? { sourceMessages } : {}),
             ...(compactionTools?.length ? { tools: compactionTools } : {}),
           }),
+      ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
       ...(ports.state.activeLedger ? { operation: ports.state.activeLedger } : {}),
       qualityRetry: false,
       retryOnServerError: true,

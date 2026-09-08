@@ -202,8 +202,8 @@ const socket = net.connect(process.env.CLAI_RUNTIME_SOCKET, () => {
   socket.write(JSON.stringify({version:1,type:"auth",role:"child",token:process.env.CLAI_RUNTIME_TOKEN}) + "\n");
 });
 const send = frame => socket.write(JSON.stringify(frame) + "\n");
-const status = (busy, sessionId = process.env.CLAI_RUNTIME_SESSION_ID) => {
-  send({type:"status",sessionId,cwd:process.cwd(),busy,title:"Command fixture"});
+const status = (busy, sessionId = process.env.CLAI_RUNTIME_SESSION_ID, active = busy) => {
+  send({type:"status",sessionId,cwd:process.cwd(),busy,active,title:"Command fixture"});
 };
 let buffer = "";
 socket.on("data", chunk => {
@@ -230,6 +230,8 @@ process.stdin.on("data", chunk => {
       send({type:"switch",sessionId:"switch-keep-target",closeCurrent:false});
     } else if (command === "x") {
       send({type:"switch",sessionId:"switch-close-target",closeCurrent:true});
+    } else if (command === "p") {
+      status(true, process.env.CLAI_RUNTIME_SESSION_ID, false);
     } else if (command === "i") {
       status(false);
     } else if (command === "d") {
@@ -598,12 +600,14 @@ describe("session runtime host hardening", () => {
     if (!runtime) return;
     const client = await openTestClient(runtime.metadata, "idle-half-close");
     try {
-      client.terminal.write("i");
+      client.terminal.write("p");
       await waitFor(
-        async () =>
-          (await readRuntimeMetadata(runtime.sessionId))?.busy === false
+        async () => {
+          const metadata = await readRuntimeMetadata(runtime.sessionId);
+          return metadata?.busy === true && metadata.active === false
             ? true
-            : undefined,
+            : undefined;
+        },
         8_000,
       );
       client.terminal.destroy();
@@ -644,6 +648,7 @@ describe("session runtime host hardening", () => {
       replacement = attached.socket;
       replacement.on("error", () => undefined);
       replacement.resume();
+      expect((await readRuntimeMetadata(runtime.sessionId))?.attached).toBe(true);
       await new Promise((resolve) => setTimeout(resolve, 350));
       expect(await probeRuntime(runtime.metadata)).toBe(true);
       replacement.write("q");

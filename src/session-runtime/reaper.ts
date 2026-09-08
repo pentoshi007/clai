@@ -4,7 +4,7 @@ import { listLiveRuntimeMetadata } from "./discovery.js";
 import { readRuntimeMetadata } from "./store.js";
 import type { RuntimeMetadata } from "./types.js";
 
-const DEFAULT_MAX_IDLE_RUNTIMES = 6;
+const DEFAULT_MAX_IDLE_RUNTIMES = 2;
 const MIN_MAX_IDLE_RUNTIMES = 1;
 const MAX_MAX_IDLE_RUNTIMES = 256;
 
@@ -20,8 +20,16 @@ export function idleRuntimeCap(): number {
   );
 }
 
+export function runtimeActivelyComputing(metadata: RuntimeMetadata): boolean {
+  return metadata.active ?? metadata.busy;
+}
+
 function idleDetached(metadata: RuntimeMetadata): boolean {
-  return metadata.phase === "running" && !metadata.attached && !metadata.busy;
+  return (
+    metadata.phase === "running" &&
+    !metadata.attached &&
+    !runtimeActivelyComputing(metadata)
+  );
 }
 
 export function selectEvictableRuntimes(

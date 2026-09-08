@@ -181,6 +181,7 @@ function childFrame(value: unknown): RuntimeChildFrame | undefined {
     typeof frame.cwd === "string" &&
     frame.cwd.length <= 4096 &&
     typeof frame.busy === "boolean" &&
+    (frame.active === undefined || typeof frame.active === "boolean") &&
     (frame.title === undefined ||
       (typeof frame.title === "string" && frame.title.length <= 256))
   ) {
@@ -231,6 +232,7 @@ export class SessionRuntimeHost {
   private socketPath: string;
   private title: string | undefined;
   private busy = true;
+  private active = true;
   private attached = false;
   private phase: RuntimeMetadata["phase"] = "starting";
   private error: string | undefined;
@@ -477,7 +479,7 @@ export class SessionRuntimeHost {
     client.output = output;
     this.attached = true;
     this.cancelIdleTimer();
-    this.queueMetadata();
+    await this.writeMetadataNow();
     if (rest.length > 0) this.queueInput(rest);
     socket.on("data", (bytes: Buffer) => {
       if (this.client === client && client.terminal === socket) {
@@ -609,14 +611,17 @@ export class SessionRuntimeHost {
     }
     const nextCwd = frame.cwd || this.cwd;
     const nextTitle = frame.title?.trim() || undefined;
+    const nextActive = frame.active ?? frame.busy;
     changed ||=
       nextCwd !== this.cwd ||
       nextTitle !== this.title ||
-      frame.busy !== this.busy;
+      frame.busy !== this.busy ||
+      nextActive !== this.active;
     if (!changed) return;
     this.cwd = nextCwd;
     this.title = nextTitle;
     this.busy = frame.busy;
+    this.active = nextActive;
     this.queueMetadata();
     this.scheduleIdleTimer();
   }
@@ -798,7 +803,7 @@ export class SessionRuntimeHost {
 
   private scheduleIdleTimer(): void {
     this.cancelIdleTimer();
-    if (this.closing || this.attached || this.busy) return;
+    if (this.closing || this.attached || this.active) return;
     this.idleTimer = setTimeout(
       () => this.requestGracefulStop(),
       this.payload.idleTimeoutMs,
@@ -854,6 +859,7 @@ export class SessionRuntimeHost {
       updatedAt: now,
       phase: this.phase,
       busy: this.busy,
+      active: this.active,
       attached: this.attached,
       ...(this.error ? { error: this.error } : {}),
     };

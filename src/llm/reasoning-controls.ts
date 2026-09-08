@@ -34,6 +34,13 @@ const EFFORT_BUDGET_TOKENS: Readonly<Record<ReasoningEffort, number>> = {
   max: 32_768,
 };
 
+export function effortReasoningBudgetTokens(
+  effort: string | undefined,
+): number {
+  const normalized = (effort ?? "").trim().toLowerCase() as ReasoningEffort;
+  return EFFORT_BUDGET_TOKENS[normalized] ?? EFFORT_BUDGET_TOKENS.medium;
+}
+
 export function nearestAcceptedEffort(
   requested: ReasoningEffort,
   accepted: readonly string[],

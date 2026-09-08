@@ -127,6 +127,7 @@ export async function listLiveSessionRuntimes(): Promise<RuntimeView[]> {
     updatedAt: record.updatedAt,
     phase: record.phase,
     busy: record.busy,
+    ...(record.active !== undefined ? { active: record.active } : {}),
     attached: record.attached,
   }));
 }

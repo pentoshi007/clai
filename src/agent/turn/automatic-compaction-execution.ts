@@ -6,7 +6,7 @@ import {
   type CompactionSummaryStage,
 } from "../context-manager.js";
 import { buildContextBreakdown } from "../context-breakdown.js";
-import { compactionSinglePassInputBudget } from "../compaction-summary.js";
+import { calibratedCompactionSinglePassInputBudget } from "../compaction-summary.js";
 
 export interface AutomaticCompactionExecutionInput {
   readonly messages: ChatMessage[];
@@ -20,6 +20,7 @@ export interface AutomaticCompactionExecutionInput {
   readonly contextLimitTokens: number | undefined;
   readonly keepRecent: number;
   readonly forceDirectSinglePass: boolean;
+  readonly forcePrefixSlice?: boolean | undefined;
   readonly durableEnvelope: string | undefined;
 }
 
@@ -32,14 +33,20 @@ export const executeAutomaticCompaction = (
   ).estimatedTotalTokens;
   const contextLimit =
     input.contextLimitTokens ?? modelContextWindow(input.model, input.provider);
+  const calibratedInputBudget = calibratedCompactionSinglePassInputBudget(
+    contextLimit,
+    input.provider,
+    input.model,
+  );
   return compactMessagesWithSummary(input.messages, input.summarize, {
     budgetTokens: 0,
     keepRecent: input.keepRecent,
     singleAdmission: true,
     ...(input.forceDirectSinglePass ? { forceDirectSinglePass: true } : {}),
+    ...(input.forcePrefixSlice ? { forcePrefixSlice: true } : {}),
     singlePassInputBudgetTokens: Math.max(
       0,
-      compactionSinglePassInputBudget(contextLimit) - schemaTokens,
+      calibratedInputBudget - schemaTokens,
     ),
     ...(input.durableEnvelope
       ? { durableEnvelope: input.durableEnvelope }

@@ -41,7 +41,7 @@ const ports = (
 
 describe("compaction admission", () => {
   it("admits at the trigger and reports the canonical attempt key", async () => {
-    const admission = await planCompactionAdmission(ports(), false);
+    const admission = await planCompactionAdmission(ports());
 
     expect(admission).toEqual({
       admitted: true,
@@ -68,62 +68,79 @@ describe("compaction admission", () => {
           estimateRequestTokens: () => trigger - 1,
           buildDurableEnvelope,
         }),
-        false,
       ),
     ).resolves.toEqual({ admitted: false });
     expect(buildDurableEnvelope).not.toHaveBeenCalled();
   });
 
-  it("rejects structurally short history even when forced", async () => {
+  it("admits a structurally short history when compaction can still remove an older turn", async () => {
+    const buildDurableEnvelope = vi.fn(async () => "durable state");
+    const admission = await planCompactionAdmission(
+      ports({ messages: history(4), buildDurableEnvelope }),
+      { bypassThreshold: true },
+    );
+    expect(admission.admitted).toBe(true);
+    expect(buildDurableEnvelope).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a history with no safely removable turn", async () => {
     const buildDurableEnvelope = vi.fn(async () => "durable state");
     await expect(
       planCompactionAdmission(
-        ports({ messages: history(4), buildDurableEnvelope }),
-        true,
+        ports({ messages: history(2), buildDurableEnvelope }),
+        { bypassThreshold: true },
       ),
     ).resolves.toEqual({ admitted: false });
     expect(buildDurableEnvelope).not.toHaveBeenCalled();
   });
 
-  it("honors suppression unless the caller forces compaction", async () => {
+  it("bypasses the threshold without retrying a suppressed attempt", async () => {
     const isSuppressed = vi.fn(() => true);
     await expect(
-      planCompactionAdmission(ports({ isSuppressed }), false),
+      planCompactionAdmission(ports({ isSuppressed })),
     ).resolves.toEqual({ admitted: false });
     expect(isSuppressed).toHaveBeenCalledTimes(1);
 
-    const forced = await planCompactionAdmission(
+    await expect(
+      planCompactionAdmission(
+        ports({ isSuppressed, estimateRequestTokens: () => 1 }),
+        { bypassThreshold: true },
+      ),
+    ).resolves.toEqual({ admitted: false });
+    expect(isSuppressed).toHaveBeenCalledTimes(2);
+
+    const retried = await planCompactionAdmission(
       ports({ isSuppressed, estimateRequestTokens: () => 1 }),
-      true,
+      { bypassThreshold: true, retrySuppressed: true },
     );
-    expect(forced.admitted).toBe(true);
-    expect(isSuppressed).toHaveBeenCalledTimes(1);
+    expect(retried.admitted).toBe(true);
+    expect(isSuppressed).toHaveBeenCalledTimes(2);
   });
 
-  it("rejects a forced compaction whose attempt key is exhausted, so stream recovery cannot loop on a dead context", async () => {
+  it("rejects a forced retry whose attempt key is exhausted, so stream recovery cannot loop on a dead context", async () => {
     const isExhausted = vi.fn(() => true);
     await expect(
       planCompactionAdmission(
         ports({ isExhausted, estimateRequestTokens: () => 1 }),
-        true,
+        { bypassThreshold: true, retrySuppressed: true },
       ),
     ).resolves.toEqual({ admitted: false });
     expect(isExhausted).toHaveBeenCalledTimes(1);
   });
 
-  it("still forces compaction when the attempt key is not exhausted", async () => {
+  it("still retries forced compaction when the attempt key is not exhausted", async () => {
     const isExhausted = vi.fn(() => false);
     const forced = await planCompactionAdmission(
       ports({ isExhausted, estimateRequestTokens: () => 1 }),
-      true,
+      { bypassThreshold: true, retrySuppressed: true },
     );
     expect(forced.admitted).toBe(true);
     expect(isExhausted).toHaveBeenCalledTimes(1);
   });
 
-  it("does not consult exhaustion for unforced admission, which cooldown-suppression already governs", async () => {
+  it("does not consult exhaustion when suppressed attempts cannot be retried", async () => {
     const isExhausted = vi.fn(() => false);
-    await planCompactionAdmission(ports({ isExhausted }), false);
+    await planCompactionAdmission(ports({ isExhausted }));
     expect(isExhausted).not.toHaveBeenCalled();
   });
 });

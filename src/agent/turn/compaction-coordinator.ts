@@ -16,8 +16,12 @@ import {
 } from "../context-manager.js";
 import { isOperationPolicyError } from "../../llm/operation-ledger.js";
 import { COMPACTION_MAX_ATTEMPTS } from "../compaction-attempt.js";
+import { isCompactionOverLimitError } from "../compaction-executor.js";
 import { describeDominantContextBlock } from "../context-breakdown.js";
-import { planCompactionAdmission } from "./compaction-admission.js";
+import {
+  planCompactionAdmission,
+  type CompactionAdmissionOptions,
+} from "./compaction-admission.js";
 import { executeAutomaticCompaction } from "./automatic-compaction-execution.js";
 import { prepareCompactionCandidateMessages } from "./compaction-candidate.js";
 import { measureCompactionFinalFit } from "./compaction-final-fit.js";
@@ -113,17 +117,33 @@ const runAdmittedCompaction = async (
     contextLimitTokens,
     ledger,
   } = admitted;
-  const result = await executeAutomaticCompaction({
-    messages: ports.messages,
-    summarize: ports.summarize,
-    tools: ports.selectTools(),
-    provider: ports.provider(),
-    model: ports.model(),
-    contextLimitTokens,
-    keepRecent: ports.keepRecent,
-    forceDirectSinglePass: Boolean(ports.executionState.replaySnapshot),
-    durableEnvelope,
-  });
+  const execute = (forcePrefixSlice: boolean) =>
+    executeAutomaticCompaction({
+      messages: ports.messages,
+      summarize: ports.summarize,
+      tools: ports.selectTools(),
+      provider: ports.provider(),
+      model: ports.model(),
+      contextLimitTokens,
+      keepRecent: ports.keepRecent,
+      forceDirectSinglePass:
+        !forcePrefixSlice && Boolean(ports.executionState.replaySnapshot),
+      ...(forcePrefixSlice ? { forcePrefixSlice: true } : {}),
+      durableEnvelope,
+    });
+  let result;
+  try {
+    result = await execute(false);
+  } catch (error) {
+    if (!isCompactionOverLimitError(error)) throw error;
+    ports.executionState.replaySnapshot = undefined;
+    ports.audit("agent.compact.slice-fallback", {
+      reason,
+      requestTokens: error.requestTokens,
+      safeLimit: error.effectiveSafeTokens,
+    });
+    result = await execute(true);
+  }
 
   if (
     !shouldApplyAutoCompact({
@@ -179,7 +199,7 @@ const runAdmittedCompaction = async (
     contextLimitTokens,
     selectTools: ports.selectTools,
   });
-  if (finalFit?.accounting.overLimit) {
+  if (finalFit.accounting.overLimit) {
     const dominant = describeDominantContextBlock(candidateMessages);
     ports.attempts.recordFailure(attemptKey);
     ports.audit("agent.compact.overflow", {
@@ -230,7 +250,10 @@ const runAdmittedCompaction = async (
 
 export const createCompactionCoordinator =
   (ports: CompactionCoordinatorPorts) =>
-  async (reason: string, force = false): Promise<void> => {
+  async (
+    reason: string,
+    options: CompactionAdmissionOptions = {},
+  ): Promise<void> => {
     if (repairToolProtocol(ports.messages) > 0) {
       ports.clearSuccessfulRequestSnapshot();
     }
@@ -251,7 +274,7 @@ export const createCompactionCoordinator =
           ? (key) => ports.attempts.isExhausted?.(key) === true
           : undefined,
       },
-      force,
+      options,
     );
     if (!admission.admitted) return;
 
@@ -272,7 +295,11 @@ export const createCompactionCoordinator =
     ports.writeStarted(compactionId, admission.beforeTokens);
 
     try {
-      await runAdmittedCompaction(ports, reason, force, {
+      await runAdmittedCompaction(
+        ports,
+        reason,
+        options.bypassThreshold === true,
+        {
         beforeTokens: admission.beforeTokens,
         compactTrigger: admission.compactTrigger,
         durableEnvelope: admission.durableEnvelope,

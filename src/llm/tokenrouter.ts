@@ -25,6 +25,46 @@ function resolveBaseUrl(auth: ProviderAuth): string {
 const modelCache = new Map<string, { models: string[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
+const CHAT_ENDPOINT_TYPES = new Set([
+  "openai",
+  "openai-response",
+  "anthropic",
+  "anthropic-compatible",
+  "gemini",
+]);
+
+interface TokenrouterCatalogEntry {
+  readonly id?: string | undefined;
+  readonly supported_endpoint_types?: unknown;
+  readonly tags?: unknown;
+}
+
+const NON_CHAT_MODEL_ID =
+  /embedding|(?:^|[-/])embed(?:[-/]|$)|(?:^|[-/])image|image(?:[-/]|$)|(?:^|[-/])tts(?:[-/]|$)|whisper/i;
+
+function servesChatCompletions(entry: TokenrouterCatalogEntry): boolean {
+  const id = typeof entry.id === "string" ? entry.id : "";
+  if (!id.trim() || NON_CHAT_MODEL_ID.test(id)) return false;
+  const endpoints = Array.isArray(entry.supported_endpoint_types)
+    ? entry.supported_endpoint_types.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  if (endpoints.length > 0) {
+    return endpoints.some((endpoint) => CHAT_ENDPOINT_TYPES.has(endpoint));
+  }
+  const tags = typeof entry.tags === "string" ? entry.tags : "";
+  return !tags.trim() || /text/i.test(tags);
+}
+
+export function chatCapableCatalog(data: {
+  data?: TokenrouterCatalogEntry[] | undefined;
+}): { data: TokenrouterCatalogEntry[] } {
+  const entries = Array.isArray(data.data) ? data.data : [];
+  const chat = entries.filter(servesChatCompletions);
+  return { data: chat.length > 0 ? chat : entries };
+}
+
 export const tokenrouterProvider: LlmProvider = {
   id: "tokenrouter",
   reasoningStyle: "openai",
@@ -44,8 +84,13 @@ export const tokenrouterProvider: LlmProvider = {
       const headers: Record<string, string> = {};
       if (auth.apiKey) headers["authorization"] = `Bearer ${auth.apiKey}`;
       const response = await fetch(`${baseUrl}/models`, { headers });
-      const data = await readJson<{ data?: Array<{ id?: string }> }>(response);
-      const models = ingestOpenAiModelCatalog("tokenrouter", data);
+      const data = await readJson<{ data?: TokenrouterCatalogEntry[] }>(
+        response,
+      );
+      const models = ingestOpenAiModelCatalog(
+        "tokenrouter",
+        chatCapableCatalog(data),
+      );
       if (models.length > 0) {
         modelCache.set(cacheKey, { models, fetchedAt: now });
         return models;

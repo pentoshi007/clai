@@ -1,10 +1,13 @@
 import type { OperationLedger } from "../../llm/operation-ledger.js";
 import { completeWithProvider, streamWithProvider } from "../../llm/router.js";
+import { modelMaxOutputTokens } from "../../llm/context-windows.js";
+import { effortReasoningBudgetTokens } from "../../llm/reasoning-controls.js";
 import { streamAlreadyEmitted } from "../../llm/stream-progress.js";
 import type { ChatMessage, CompletionRequest, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
 import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
-import { buildCompactionRetryPrompt, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
+import { buildCompactionRetryPrompt, COMPACTION_INPUT_SAFETY_TOKENS, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
 import { accountAssembledRequest, RequestOverLimitError } from "../request-accounting.js";
+import type { RequestAccounting } from "../request-accounting.js";
 import { isAbortError } from "../session-policy.js";
 import { projectToolHistory } from "../tool-history.js";
 
@@ -239,6 +242,28 @@ const FAIL_CLOSED_BY_REASON = {
     "compaction failed: model returned an incomplete summary — original context retained",
 } as const;
 
+const MIN_SALVAGEABLE_SUMMARY_CHARS = 600;
+const MAX_SALVAGE_TRIMMED_LINES = 40;
+
+const TRUNCATION_NOTICE =
+  "\n\n(This memory was cut short by the model's summary output limit; the most recent turns are retained in full below it.)";
+
+export function salvageTruncatedSummary(summary: string): string | undefined {
+  const lines = normalizeCompactionSummary(summary).split("\n");
+  let trimmed = 0;
+  while (lines.length > 0 && trimmed <= MAX_SALVAGE_TRIMMED_LINES) {
+    const candidate = lines.join("\n").trim();
+    if (candidate && !looksLikeIncompleteCompactionSummary(candidate)) {
+      return candidate.length >= MIN_SALVAGEABLE_SUMMARY_CHARS
+        ? `${candidate}${TRUNCATION_NOTICE}`
+        : undefined;
+    }
+    lines.pop();
+    trimmed += 1;
+  }
+  return undefined;
+}
+
 export function comparableMessage(message: ChatMessage): string {
   const {
     images: _images,
@@ -363,38 +388,96 @@ export async function executeCompactionSummary(
     ...(execution.signal ? { signal: execution.signal } : {}),
   };
 
-  if (baseRequest) {
-    const accounting = accountAssembledRequest({
-      provider: baseRequest.provider,
-      model: baseRequest.model,
-      messages: request.messages,
+  const attemptAccounting = (
+    attemptRequest: CompletionRequest,
+  ): RequestAccounting | undefined => {
+    const provider = attemptRequest.provider ?? execution.provider;
+    const model = attemptRequest.model ?? execution.model;
+    if (!provider || !model) return undefined;
+    return accountAssembledRequest({
+      provider,
+      model,
+      messages: attemptRequest.messages,
       stream: execution.stream,
-      ...(request.tools?.length ? { tools: request.tools } : {}),
-      ...(request.toolChoice !== undefined
-        ? { toolChoice: request.toolChoice }
+      ...(attemptRequest.tools?.length ? { tools: attemptRequest.tools } : {}),
+      ...(attemptRequest.toolChoice !== undefined
+        ? { toolChoice: attemptRequest.toolChoice }
         : {}),
-      ...(request.parallelToolCalls !== undefined
-        ? { parallelToolCalls: request.parallelToolCalls }
+      ...(attemptRequest.parallelToolCalls !== undefined
+        ? { parallelToolCalls: attemptRequest.parallelToolCalls }
         : {}),
-      ...(request.thinking ? { reasoning: request.thinking } : {}),
+      ...(attemptRequest.thinking ? { reasoning: attemptRequest.thinking } : {}),
       ...(execution.contextLimitTokens !== undefined
         ? { contextLimitTokens: execution.contextLimitTokens }
         : {}),
-      reservedOutputTokens: execution.maxTokens,
+      reservedOutputTokens: attemptRequest.maxTokens ?? execution.maxTokens,
+      safetyMarginTokens: COMPACTION_INPUT_SAFETY_TOKENS,
     }).accounting;
-    if (accounting.overLimit) {
-      throw new CompactionOverLimitError(
-        `compaction failed: captured request plus compaction instruction needs about ${accounting.requestTokens.toLocaleString()} input tokens but only ${accounting.limit.effectiveSafeTokens?.toLocaleString()} fit after reserving summary output — original context retained`,
-        accounting.requestTokens,
-        accounting.limit.effectiveSafeTokens,
-      );
-    }
-  }
+  };
+
+  const outputHeadroomTokens = (
+    attemptRequest: CompletionRequest,
+    wanted: number,
+  ): number => {
+    if (wanted <= 0) return 0;
+    const current = attemptRequest.maxTokens ?? execution.maxTokens;
+    const ceiling = modelMaxOutputTokens(
+      attemptRequest.provider ?? execution.provider,
+      attemptRequest.model ?? execution.model,
+    );
+    const byCeiling = ceiling === undefined ? wanted : ceiling - current;
+    const byContext = attemptAccounting(attemptRequest)?.headroomTokens ?? wanted;
+    return Math.max(0, Math.min(wanted, byCeiling, byContext));
+  };
+
+  const grownRequest = (
+    attemptRequest: CompletionRequest,
+    wanted: number,
+  ): CompletionRequest | undefined => {
+    const extra = outputHeadroomTokens(attemptRequest, wanted);
+    if (extra <= 0) return undefined;
+    return {
+      ...attemptRequest,
+      maxTokens: (attemptRequest.maxTokens ?? execution.maxTokens) + extra,
+    };
+  };
+
+  const withReasoningHeadroom = (
+    attemptRequest: CompletionRequest,
+  ): CompletionRequest => {
+    if (attemptRequest.thinking?.enabled !== true) return attemptRequest;
+    return (
+      grownRequest(
+        attemptRequest,
+        effortReasoningBudgetTokens(attemptRequest.thinking.effort),
+      ) ?? attemptRequest
+    );
+  };
+
+  const truncationRetryRequest = (
+    attemptRequest: CompletionRequest,
+  ): CompletionRequest | undefined => {
+    const grown = grownRequest(attemptRequest, execution.maxTokens);
+    if (grown) return grown;
+    if (attemptRequest.thinking?.enabled !== true) return undefined;
+    return { ...attemptRequest, thinking: COMPACTION_THINKING };
+  };
+
+  const assertRequestFits = (attemptRequest: CompletionRequest): void => {
+    const accounting = attemptAccounting(attemptRequest);
+    if (!accounting?.overLimit) return;
+    throw new CompactionOverLimitError(
+      `compaction failed: summary request exceeds the context limit: needs about ${accounting.requestTokens.toLocaleString()} input tokens but only ${accounting.limit.effectiveSafeTokens?.toLocaleString()} fit after reserving summary output — original context retained`,
+      accounting.requestTokens,
+      accounting.limit.effectiveSafeTokens,
+    );
+  };
 
   const runProviderAttempt = async (
     attemptRequest: CompletionRequest,
     replace = false,
   ) => {
+    assertRequestFits(attemptRequest);
     const routerOptions = {
       maxRetries: 0,
       singleDispatch: true,
@@ -487,7 +570,8 @@ export async function executeCompactionSummary(
     }
   };
 
-  const first = await runAttempt(request);
+  const sizedRequest = withReasoningHeadroom(request);
+  const first = await runAttempt(sizedRequest);
   let visible = normalizeCompactionSummary(
     stripThinking(first.text).visible,
   );
@@ -502,7 +586,12 @@ export async function executeCompactionSummary(
     | "reasoning-only"
     | "replayed"
     | undefined;
-  if (isCompactionCompletionTruncated(first, execution.maxTokens)) {
+  if (
+    isCompactionCompletionTruncated(
+      first,
+      sizedRequest.maxTokens ?? execution.maxTokens,
+    )
+  ) {
     retryReason = "truncated";
   } else if (!visible) {
     retryReason = "reasoning-only";
@@ -513,20 +602,26 @@ export async function executeCompactionSummary(
   }
 
   if (retryReason) {
-    if (execution.qualityRetry === false) {
+    if (execution.qualityRetry === false && retryReason !== "truncated") {
       throw new Error(FAIL_CLOSED_BY_REASON[retryReason]);
     }
-    const retry = await runAttempt(
-      {
-        ...request,
-        messages: attemptMessages(
-          buildCompactionRetryPrompt(execution.prompt, retryReason),
-          `${execution.systemContent}${RETRY_SYSTEM_SUFFIX}`,
-        ),
-        temperature: 0,
-      },
-      true,
-    );
+    const retryRequest =
+      retryReason === "truncated"
+        ? truncationRetryRequest(sizedRequest)
+        : {
+            ...sizedRequest,
+            messages: attemptMessages(
+              buildCompactionRetryPrompt(execution.prompt, retryReason),
+              `${execution.systemContent}${RETRY_SYSTEM_SUFFIX}`,
+            ),
+            temperature: 0,
+          };
+    if (!retryRequest) {
+      const salvaged = salvageTruncatedSummary(visible);
+      if (salvaged) return salvaged;
+      throw new Error(FAIL_CLOSED_BY_REASON.truncated);
+    }
+    const retry = await runAttempt(retryRequest, true);
     visible = normalizeCompactionSummary(
       stripThinking(retry.text).visible,
     );
@@ -535,10 +630,19 @@ export async function executeCompactionSummary(
         "compaction failed: model returned tool calls instead of a summary — original context retained",
       );
     }
-    if (isCompactionCompletionTruncated(retry, execution.maxTokens)) {
-      throw new Error(
-        "compaction failed: model hit the summary output limit twice — original context retained",
-      );
+    if (
+      isCompactionCompletionTruncated(
+        retry,
+        retryRequest.maxTokens ?? execution.maxTokens,
+      )
+    ) {
+      const salvaged = salvageTruncatedSummary(visible);
+      if (!salvaged) {
+        throw new Error(
+          "compaction failed: model hit the summary output limit twice — original context retained",
+        );
+      }
+      return salvaged;
     }
     if (!visible) {
       throw new Error("compaction failed: model returned an empty summary");

@@ -160,17 +160,39 @@ describe("idle runtime LRU selection", () => {
     expect(victims).toEqual(["old", "mid"]);
   });
 
-  it("never selects a busy or attached runtime", () => {
+  it("selects bookkeeping-only runtimes but never attached or actively computing runtimes", () => {
     const runtimes = [
-      runtime({ sessionId: "busy", updatedAt: "2026-01-01T00:00:00.000Z", busy: true }),
+      runtime({
+        sessionId: "legacy-busy",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        busy: true,
+      }),
+      runtime({
+        sessionId: "active",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+        busy: true,
+        active: true,
+      }),
       runtime({
         sessionId: "attached",
-        updatedAt: "2026-01-01T00:00:01.000Z",
+        updatedAt: "2026-01-01T00:00:02.000Z",
+        active: false,
         attached: true,
       }),
-      runtime({ sessionId: "idle", updatedAt: "2026-01-01T00:00:02.000Z" }),
+      runtime({
+        sessionId: "bookkeeping",
+        updatedAt: "2026-01-01T00:00:03.000Z",
+        busy: true,
+        active: false,
+      }),
+      runtime({
+        sessionId: "idle",
+        updatedAt: "2026-01-01T00:00:04.000Z",
+        active: false,
+      }),
     ];
     expect(selectEvictableRuntimes(runtimes, 0).map((r) => r.sessionId)).toEqual([
+      "bookkeeping",
       "idle",
     ]);
   });
@@ -215,7 +237,7 @@ describe("idleRuntimeCap", () => {
 
   it("uses the default when unset", () => {
     delete process.env.CLAI_SESSION_RUNTIME_MAX_IDLE;
-    expect(idleRuntimeCap()).toBe(6);
+    expect(idleRuntimeCap()).toBe(2);
   });
 
   it("honors a configured positive value within bounds", () => {
@@ -230,6 +252,6 @@ describe("idleRuntimeCap", () => {
 
   it("uses the default for a malformed value", () => {
     process.env.CLAI_SESSION_RUNTIME_MAX_IDLE = "not-a-number";
-    expect(idleRuntimeCap()).toBe(6);
+    expect(idleRuntimeCap()).toBe(2);
   });
 });

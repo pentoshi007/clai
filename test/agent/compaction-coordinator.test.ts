@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "../../src/types.js";
+import { CompactionOverLimitError } from "../../src/agent/compaction-executor.js";
 import { CompactionAttemptLedger } from "../../src/agent/compaction-attempt.js";
 import {
   createCompactionCoordinator,
@@ -55,7 +56,10 @@ describe("compaction coordinator spam guards", () => {
       ports({ writeStarted, writeFailed }),
     );
 
-    await coordinator("stream-recovery:context-overflow", true);
+    await coordinator("stream-recovery:context-overflow", {
+      bypassThreshold: true,
+      retrySuppressed: true,
+    });
 
     expect(writeStarted).toHaveBeenCalledTimes(1);
     expect(writeFailed).not.toHaveBeenCalledWith(
@@ -79,8 +83,58 @@ describe("compaction coordinator spam guards", () => {
       }),
     );
 
-    await coordinator("auto-token-budget", false);
+    await coordinator("auto-token-budget");
 
     expect(writeStarted).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it("falls back from an over-limit replay to one bounded prefix slice", async () => {
+  const oversized = messages().map((message) => ({
+    ...message,
+    content: `${message.content} ${"x".repeat(50_000)}`,
+  }));
+  const summarize = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new CompactionOverLimitError("replay overflow", 190_000, 180_000),
+    )
+    .mockResolvedValueOnce(
+      "## Current state\nThe oversized replay was replaced by a bounded prefix summary with the recent turns retained.\n## Remaining work\nContinue the active task from the preserved tail.",
+    );
+  const writeCompleted = vi.fn();
+  const writeFailed = vi.fn();
+  const audit = vi.fn();
+  const coordinator = createCompactionCoordinator(
+    ports({
+      messages: oversized,
+      contextLimitTokens: () => 1_000_000,
+      estimateRequestTokens: (candidate) =>
+        candidate.some((message) =>
+          message.content.startsWith("Session memory from compacted earlier turns:"),
+        )
+          ? 10_000
+          : 190_000,
+      summarize,
+      lastSuccessfulRequestSnapshot: () => ({
+        provider: "nvidia",
+        model: "test-model",
+        messages: oversized,
+      }),
+      writeCompleted,
+      writeFailed,
+      audit,
+    }),
+  );
+
+  await coordinator("auto-token-budget", { bypassThreshold: true });
+
+  expect(summarize).toHaveBeenCalledTimes(2);
+  expect(audit).toHaveBeenCalledWith(
+    "agent.compact.slice-fallback",
+    expect.objectContaining({ requestTokens: 190_000, safeLimit: 180_000 }),
+  );
+  expect(writeCompleted).toHaveBeenCalledTimes(1);
+  expect(writeFailed).not.toHaveBeenCalled();
 });

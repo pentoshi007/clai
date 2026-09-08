@@ -133,6 +133,17 @@ export function withReasoningObservation(
   return { ...usage, reasoningObserved: true };
 }
 
+export function effectivePromptTokens(
+  usage: TokenUsage | undefined,
+): number | undefined {
+  if (!usage || usage.promptTokensKnown === false) return undefined;
+  const cached = usage.cachedPromptTokens ?? 0;
+  const created = usage.cacheCreationTokens ?? 0;
+  return cached + created > usage.promptTokens
+    ? usage.promptTokens + cached + created
+    : usage.promptTokens;
+}
+
 export function estimateUsageFromMessages(
   messages: readonly ChatMessage[],
 ): TokenUsage {
@@ -204,9 +215,8 @@ export function applyUsageToSnapshot(
   const sessionCompletion =
     (prev?.sessionCompletionTokens ?? 0) +
     (usage.exact ? usage.completionTokens : 0);
-  const contextTokens = hasPromptMeasurement
-    ? usage.promptTokens
-    : (prev?.contextTokens ?? usage.totalTokens);
+  const contextTokens =
+    effectivePromptTokens(usage) ?? prev?.contextTokens ?? usage.totalTokens;
   return {
     contextTokens,
     contextLimit,

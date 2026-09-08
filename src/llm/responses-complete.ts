@@ -1,6 +1,7 @@
 import type { CompletionRequest, CompletionResult } from "../types.js";
 import type { ProviderAuth } from "./provider.js";
 import { ProviderError } from "./http.js";
+import { markResponsesEmptyOutput } from "./responses-empty-output.js";
 import { withReasoningObservation } from "./token-usage.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
 import {
@@ -55,8 +56,10 @@ export async function responsesComplete(
     parsed.toolCalls.length === 0 &&
     !parsed.reasoningSummary.trim()
   ) {
-    throw new ProviderError(
-      `${config.displayName} returned no completion text (model=${model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
+    throw markResponsesEmptyOutput(
+      new ProviderError(
+        `${config.displayName} returned no completion text (model=${model}). The response was empty — try /effort off, raise max_tokens, or pick another model with /model.`,
+      ),
     );
   }
   return assembleCompletionResult({

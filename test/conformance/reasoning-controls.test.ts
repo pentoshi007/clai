@@ -120,7 +120,7 @@ describe("a mandatory-reasoning gateway route is never silent", () => {
 
   it("falls back to the cheapest accepted effort when asked to turn off", () => {
     expect(emit("tokenrouter", "moonshotai/kimi-k2.7-code", false, "max")).toEqual({
-      reasoning_effort: "minimal",
+      reasoning_effort: "low",
     });
   });
 });

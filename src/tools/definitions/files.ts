@@ -124,7 +124,12 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
   ),
   def(
     "fs.search",
-    "Search file contents by pattern (ripgrep-style). Returns path:line:text hits so you can follow up with fs.read offset/limit or pattern.",
+    [
+      "Search file contents by pattern (ripgrep-style regex, ripgrep or grep backend).",
+      "Returns path:line:text hits so you can follow up with fs.read offset/limit or pattern.",
+      "Alternation, groups and escaped metacharacters work as written; lookaround falls back to PCRE2, and a pattern that is not a valid regex is retried as a literal string with a note.",
+      "glob matches at any depth ('*.ts', 'src/**/*.tsx', '!**/*.test.ts'), and build/vendor directories are skipped.",
+    ].join(" "),
     {
       type: "object",
       properties: {

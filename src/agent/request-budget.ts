@@ -5,10 +5,17 @@ import {
   RESERVED_OUTPUT_TOKENS,
   SAFETY_MARGIN_TOKENS,
 } from "./request-accounting.js";
+import {
+  COMPACTION_INPUT_SAFETY_TOKENS,
+  COMPACTION_MAX_COMPLETION_TOKENS,
+} from "./compaction-summary.js";
 
 export { RESERVED_OUTPUT_TOKENS, SAFETY_MARGIN_TOKENS };
 
 export const DEFAULT_AUTO_COMPACT_REQUEST_TOKENS = 180_000;
+
+export const AUTO_COMPACT_HEADROOM_TOKENS =
+  COMPACTION_MAX_COMPLETION_TOKENS + COMPACTION_INPUT_SAFETY_TOKENS;
 
 export const CUSTOM_CONTEXT_COMPACTION_RATIO = 0.7;
 
@@ -56,6 +63,26 @@ export function effectiveSafeTokensForWindow(window: number): number {
   return Math.max(1, floored - reserved - SAFETY_MARGIN_TOKENS);
 }
 
+export function autoCompactHeadroomTokens(modelSafe: number): number {
+  return Math.min(
+    AUTO_COMPACT_HEADROOM_TOKENS,
+    Math.max(0, Math.floor(modelSafe * 0.25)),
+  );
+}
+
+function effectiveAutoCompactTrigger(
+  configured: number,
+  modelSafe: number,
+): number {
+  return Math.max(
+    1,
+    Math.min(
+      configured,
+      modelSafe - autoCompactHeadroomTokens(modelSafe),
+    ),
+  );
+}
+
 export function modelSafeRequestTokens(
   provider: ProviderId | undefined,
   model: string | undefined,
@@ -77,7 +104,7 @@ export function resolveRequestBudget(input?: {
   ) {
     const modelSafe = effectiveSafeTokensForWindow(customLimit);
     const configured = Math.floor(customLimit * CUSTOM_CONTEXT_COMPACTION_RATIO);
-    const effectiveTrigger = Math.max(1, Math.min(configured, modelSafe));
+    const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
     return {
       configured,
       modelSafe,
@@ -90,7 +117,7 @@ export function resolveRequestBudget(input?: {
   const raw = input?.overrideTokens ?? resolved.tokens;
   const configured = Math.max(MIN_AUTO_COMPACT_REQUEST_TOKENS, raw);
   const modelSafe = modelSafeRequestTokens(input?.provider, input?.model);
-  const effectiveTrigger = Math.max(1, Math.min(configured, modelSafe));
+  const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
   return {
     configured,
     modelSafe,

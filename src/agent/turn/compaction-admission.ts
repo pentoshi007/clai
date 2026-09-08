@@ -33,10 +33,17 @@ export type CompactionAdmission =
 
 const REJECTED: CompactionAdmission = { admitted: false };
 
+export interface CompactionAdmissionOptions {
+  readonly bypassThreshold?: boolean | undefined;
+  readonly retrySuppressed?: boolean | undefined;
+}
+
 export const planCompactionAdmission = async (
   ports: CompactionAdmissionPorts,
-  force: boolean,
+  options: CompactionAdmissionOptions = {},
 ): Promise<CompactionAdmission> => {
+  const bypassThreshold = options.bypassThreshold === true;
+  const retrySuppressed = options.retrySuppressed === true;
   const beforeTokens = ports.estimateRequestTokens(ports.messages);
   const compactTrigger = autoCompactTriggerTokens(getReliabilityPolicy(), {
     provider: ports.provider,
@@ -45,8 +52,8 @@ export const planCompactionAdmission = async (
       ? { contextLimitTokens: ports.contextLimitTokens }
       : {}),
   });
-  if (!force && beforeTokens < compactTrigger) return REJECTED;
-  if (ports.messages.length <= ports.keepRecent + 2) return REJECTED;
+  if (!bypassThreshold && beforeTokens < compactTrigger) return REJECTED;
+  if (ports.messages.length <= 2) return REJECTED;
   const durableEnvelope = await ports.buildDurableEnvelope();
   const attemptKey = compactionAttemptKey({
     messages: ports.messages,
@@ -57,8 +64,8 @@ export const planCompactionAdmission = async (
     schemaHash: toolSchemaHash(ports.selectTools()),
     ...(durableEnvelope ? { durableEnvelope } : {}),
   });
-  if (!force && ports.isSuppressed(attemptKey)) return REJECTED;
-  if (force && ports.isExhausted?.(attemptKey)) return REJECTED;
+  if (!retrySuppressed && ports.isSuppressed(attemptKey)) return REJECTED;
+  if (retrySuppressed && ports.isExhausted?.(attemptKey)) return REJECTED;
   return {
     admitted: true,
     beforeTokens,

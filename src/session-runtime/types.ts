@@ -17,6 +17,7 @@ export interface RuntimeMetadata {
   readonly updatedAt: string;
   readonly phase: RuntimePhase;
   readonly busy: boolean;
+  readonly active?: boolean | undefined;
   readonly attached: boolean;
   readonly error?: string | undefined;
 }
@@ -29,6 +30,7 @@ export interface RuntimeView {
   readonly updatedAt: string;
   readonly phase: RuntimePhase;
   readonly busy: boolean;
+  readonly active?: boolean | undefined;
   readonly attached: boolean;
 }
 
@@ -91,6 +93,7 @@ export type RuntimeChildFrame =
       readonly sessionId: string;
       readonly cwd: string;
       readonly busy: boolean;
+      readonly active?: boolean | undefined;
       readonly title?: string | undefined;
     }
   | { readonly type: "minimise" }

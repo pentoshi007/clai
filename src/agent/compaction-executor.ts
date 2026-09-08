@@ -1,12 +1,11 @@
 import type { ChatMessage, SuccessfulRequestSnapshot } from "../types.js";
-import { accountAssembledRequest, SAFETY_MARGIN_TOKENS, type RequestAccounting } from "./request-accounting.js";
+import { accountAssembledRequest, type RequestAccounting } from "./request-accounting.js";
+import { COMPACTION_INPUT_SAFETY_TOKENS } from "./compaction-summary.js";
 import { buildCompactionReplayMessages, comparableMessage, missingHistoryTail } from "./compaction/summary-execution.js";
 import { projectToolHistory } from "./tool-history.js";
 export { CompactionOverLimitError, executeCompactionSummary, isCompactionOverLimitError } from "./compaction/summary-execution.js";
 export { buildCompactionReplayMessages };
 export type { CompactionSummaryExecution } from "./compaction/summary-execution.js";
-
-const REPLAY_PLAN_SLACK_TOKENS = 4_096;
 
 export interface CompactionReplayPlan {
   readonly messages: ChatMessage[];
@@ -73,8 +72,7 @@ export function planCompactionReplay(input: {
       ...(compactionRequest
         ? {
             reservedOutputTokens: input.maxTokens,
-            safetyMarginTokens:
-              SAFETY_MARGIN_TOKENS + REPLAY_PLAN_SLACK_TOKENS,
+            safetyMarginTokens: COMPACTION_INPUT_SAFETY_TOKENS,
           }
         : {}),
     }).accounting;

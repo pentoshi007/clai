@@ -532,7 +532,7 @@ Optional controls:
 
 ```sh
 CLAI_SESSION_RUNTIME_IDLE_MS=1800000  # detached idle lifetime (1 minute–24 hours)
-CLAI_SESSION_RUNTIME_MAX_IDLE=6       # idle-detached LRU cap (1–256; 0 disables)
+CLAI_SESSION_RUNTIME_MAX_IDLE=2       # idle-detached LRU cap (1–256; 0 disables)
 CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 ```
 

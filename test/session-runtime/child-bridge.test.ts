@@ -82,6 +82,7 @@ describe("runtime child bridge", () => {
       sessionId: "bridge-session",
       cwd: process.cwd(),
       busy: true,
+      active: true,
     } as const;
     bridge.report(initial);
     bridge.report(initial);

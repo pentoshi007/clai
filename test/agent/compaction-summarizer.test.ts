@@ -48,6 +48,7 @@ describe("createCompactionSummarizer", () => {
       prompt: "map prompt",
       maxTokens: COMPACTION_MAP_MAX_COMPLETION_TOKENS,
       signal: undefined,
+      contextLimitTokens: 1000,
       sourceMessages,
       tools: [tool],
       qualityRetry: false,

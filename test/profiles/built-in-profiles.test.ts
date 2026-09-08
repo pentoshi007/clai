@@ -30,7 +30,7 @@ describe("unknown models stay conservative", () => {
     });
     expect(profile.reasoning.control.dialect).toBe("openai-effort");
     expect(profile.reasoning.generation).toBe("unknown");
-    expect(profile.reasoning.acceptedEfforts).toHaveLength(0);
+    expect(profile.reasoning.acceptedEfforts).toEqual(["low", "medium", "high"]);
     expect(profile.reasoning.replayScope).toBe("none");
   });
 

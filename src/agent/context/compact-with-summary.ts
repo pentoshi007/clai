@@ -4,10 +4,23 @@ import { hasReasoningMarker } from "../../llm/reasoning-marker.js";
 import { ACTIVE_SKILLS_PREFIX } from "../../skills/catalog.js";
 import type { ChatMessage } from "../../types.js";
 import { stripThinking } from "../../ui/thinking.js";
-import { buildCompactionChunkPrompt, buildCompactionReducePrompt, buildCompactionUserPrompt, buildDirectCompactionPrompt, chunkTranscriptForCompaction, COMPACTION_CHUNK_CHAR_BUDGET, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
+import {
+  buildCompactionChunkPrompt,
+  buildCompactionReducePrompt,
+  buildCompactionUserPrompt,
+  buildDirectCompactionPrompt,
+  chunkTranscriptForCompaction,
+  COMPACTION_CHUNK_CHAR_BUDGET,
+  COMPACTION_MAP_MAX_COMPLETION_TOKENS,
+  COMPACTION_MAX_COMPLETION_TOKENS,
+  COMPACTION_SYSTEM_PROMPT,
+  looksLikeIncompleteCompactionSummary,
+  looksLikeTranscriptReplay,
+  normalizeCompactionSummary,
+} from "../compaction-summary.js";
 import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../durable-envelope.js";
 import { isDurableInjectedBlock } from "../durable-blocks.js";
-import { estimateMessagesTokens, estimateTextTokens as estimateTokens } from "../request-accounting.js";
+import { estimateMessagesTokens } from "../request-accounting.js";
 import { isResponderResultLedgerMessage, RESPONDER_RESULT_LEDGER_PREFIX } from "../responder-context.js";
 import { expandKeepStartForToolPairs, hasOrphanToolMessages, projectToolHistory } from "../tool-history.js";
 
@@ -29,6 +42,7 @@ export interface CompactOptions {
   durableEnvelope?: string | undefined;
   singleAdmission?: boolean | undefined;
   forceDirectSinglePass?: boolean | undefined;
+  forcePrefixSlice?: boolean | undefined;
 }
 
 export type CompactionStrategy =
@@ -208,7 +222,9 @@ export async function compactMessagesWithSummary(
     .filter(Boolean)
     .join("\n\n---\n\n");
   const directPrompt = buildDirectCompactionPrompt({
-    ...(durableState ? { durableState } : {}),
+    ...(options.durableEnvelope?.trim()
+      ? { durableState: options.durableEnvelope.trim() }
+      : {}),
     ...(options.purpose ? { purpose: options.purpose } : {}),
   });
   const directSourceMessages = visual ? undefined : messages;
@@ -223,26 +239,57 @@ export async function compactMessagesWithSummary(
       ])
     : Number.POSITIVE_INFINITY;
   const useDirectSinglePass =
+    options.forcePrefixSlice !== true &&
     Boolean(directSourceMessages?.length) &&
     (options.forceDirectSinglePass === true ||
       (singlePassInputBudget > 0 &&
         directInputTokens <= singlePassInputBudget));
-  const serializedPromptTokens = estimateTokens(
-    buildCompactionUserPrompt({
-      messageTranscript: "",
-      ...(durableState ? { durableState } : {}),
-      ...(options.purpose ? { purpose: options.purpose } : {}),
-    }),
-  );
-  const dynamicChunkChars =
-    singlePassInputBudget > serializedPromptTokens
+  const serializedPrompt = buildCompactionUserPrompt({
+    messageTranscript: "",
+    ...(durableState ? { durableState } : {}),
+    ...(options.purpose ? { purpose: options.purpose } : {}),
+  });
+  const fixedSinglePassInputTokens = estimateMessagesTokens([
+    { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+    { role: "user", content: serializedPrompt },
+  ]);
+  const mapInputBudget =
+    singlePassInputBudget > 0
       ? Math.max(
-          COMPACTION_CHUNK_CHAR_BUDGET,
-          Math.floor(
-            (singlePassInputBudget - serializedPromptTokens) * 3.3,
-          ),
+          0,
+          singlePassInputBudget -
+            (COMPACTION_MAP_MAX_COMPLETION_TOKENS -
+              COMPACTION_MAX_COMPLETION_TOKENS),
+        )
+      : 0;
+  const fixedMapInputTokens = estimateMessagesTokens([
+    { role: "system", content: COMPACTION_SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: buildCompactionChunkPrompt({
+        chunk: "",
+        index: 0,
+        total: 1,
+        purpose: options.purpose,
+      }),
+    },
+  ]);
+  const dynamicChunkChars =
+    mapInputBudget > 0
+      ? Math.max(
+          1,
+          Math.floor((mapInputBudget - fixedMapInputTokens - 8) * 3.3),
         )
       : COMPACTION_CHUNK_CHAR_BUDGET;
+  const prefixSliceCharBudget =
+    singlePassInputBudget > 0
+      ? Math.max(
+          0,
+          Math.floor(
+            (singlePassInputBudget - fixedSinglePassInputTokens - 8) * 3.3,
+          ),
+        )
+      : dynamicChunkChars;
   const chunks = chunkTranscriptForCompaction(
     combinedTranscript,
     dynamicChunkChars,
@@ -281,7 +328,7 @@ export async function compactMessagesWithSummary(
       phase: "single",
       sourceMessages: directSourceMessages,
     });
-  } else if (chunks.length <= 1) {
+  } else if (chunks.length <= 1 && options.forcePrefixSlice !== true) {
     strategy = "single";
     modelSummary = await summarizeUsable(
       buildCompactionUserPrompt({
@@ -298,6 +345,22 @@ export async function compactMessagesWithSummary(
         "compaction failed: single-admission compaction cannot slice a visual transcript — run /compact explicitly",
       );
     }
+    if (prefixSliceCharBudget <= 0) {
+      throw new Error(
+        "compaction failed: the context limit leaves no room for a bounded history slice after reserving summary output",
+      );
+    }
+    const renderSliceMessage = (message: ChatMessage): string => {
+      let content = redactSecrets(message.content);
+      if (message.role === "assistant") {
+        content = stripThinking(content).visible;
+      }
+      return `${message.role.toUpperCase()}: ${content}${
+        message.toolCalls?.length
+          ? `\n[tools: ${message.toolCalls.map((t) => t.name).join(", ")}]`
+          : ""
+      }`;
+    };
     let sliceEnd = 0;
     let sliceChars = 0;
     for (let index = 0; index < older.length; index += 1) {
@@ -305,20 +368,16 @@ export async function compactMessagesWithSummary(
       if (message.role === "system" && isDurableSystem(message.content)) {
         continue;
       }
-      let content = redactSecrets(message.content);
-      if (message.role === "assistant") {
-        content = stripThinking(content).visible;
-      }
-      const rendered = `${message.role.toUpperCase()}: ${content}${
-        message.toolCalls?.length
-          ? `\n[tools: ${message.toolCalls.map((t) => t.name).join(", ")}]`
-          : ""
-      }`;
-      if (sliceChars > 0 && sliceChars + rendered.length > dynamicChunkChars) {
+      const rendered = renderSliceMessage(message);
+      if (
+        sliceChars > 0 &&
+        sliceChars + rendered.length > prefixSliceCharBudget
+      ) {
         break;
       }
-      sliceChars += rendered.length + 2;
+      sliceChars += Math.min(rendered.length, prefixSliceCharBudget) + 2;
       sliceEnd = index + 1;
+      if (rendered.length >= prefixSliceCharBudget) break;
     }
     if (sliceEnd === 0) sliceEnd = 1;
     while (
@@ -331,24 +390,17 @@ export async function compactMessagesWithSummary(
     }
     strategy = "emergency_prefix_slice";
     retainedMiddle = older.slice(sliceEnd);
-    const sliceTranscript = older
-      .slice(0, sliceEnd)
-      .filter(
-        (message) =>
-          !(message.role === "system" && isDurableSystem(message.content)),
-      )
-      .map((message) => {
-        let content = redactSecrets(message.content);
-        if (message.role === "assistant") {
-          content = stripThinking(content).visible;
-        }
-        return `${message.role.toUpperCase()}: ${content}${
-          message.toolCalls?.length
-            ? `\n[tools: ${message.toolCalls.map((t) => t.name).join(", ")}]`
-            : ""
-        }`;
-      })
-      .join("\n\n");
+    const sliceTranscript = preferTrimContent(
+      older
+        .slice(0, sliceEnd)
+        .filter(
+          (message) =>
+            !(message.role === "system" && isDurableSystem(message.content)),
+        )
+        .map(renderSliceMessage)
+        .join("\n\n"),
+      prefixSliceCharBudget,
+    );
     modelSummary = await summarizeUsable(
       buildCompactionUserPrompt({
         messageTranscript: sliceTranscript,
@@ -515,8 +567,9 @@ function isStaleDurableSystem(content: string): boolean {
 
 function preferTrimContent(text: string, preferMax: number): string {
   if (text.length <= preferMax) return text;
+  if (preferMax <= 0) return "";
   const half = Math.floor((preferMax - 48) / 2);
-  if (half < 120) return text;
+  if (half < 120) return text.slice(0, preferMax);
   return `${text.slice(0, half)}\n…(trimmed oversized dump in compact tail; full may be on disk)…\n${text.slice(-half)}`;
 }
 

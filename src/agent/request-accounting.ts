@@ -42,19 +42,25 @@ export function estimateImageTokens(image: ChatImage): number {
   return Math.min(MAX_IMAGE_TOKENS, Math.max(MIN_IMAGE_TOKENS, tokens));
 }
 
-export function estimateMessageTokens(message: ChatMessage): number {
+export function estimateMessageBaseTokens(message: ChatMessage): number {
   let sum = estimateTextTokens(message.content) + 4;
   if (message.toolCalls?.length) {
     const toolChars = measureToolCallsChars(message.toolCalls);
     sum += Math.ceil(toolChars / 3.3);
   }
-  sum += reasoningArtifactTokensForMessage(message);
   if (message.images) {
     for (const image of message.images) {
       sum += estimateImageTokens(image);
     }
   }
   return sum;
+}
+
+export function estimateMessageTokens(message: ChatMessage): number {
+  return (
+    estimateMessageBaseTokens(message) +
+    reasoningArtifactTokensForMessage(message)
+  );
 }
 
 export function estimateMessagesTokens(
@@ -146,7 +152,25 @@ export interface RequestAccounting {
   readonly precision: "estimate" | "calibrated";
 }
 
-function accountTimeline(plan: RequestPlanV1): {
+function replayedArtifactTokensByMessage(
+  plan: RequestPlanV1,
+): Map<number, number> {
+  const totals = new Map<number, number>();
+  for (const entry of plan.replay.decisions) {
+    if (entry.decision.action !== "replayed") continue;
+    totals.set(
+      entry.messageIndex,
+      (totals.get(entry.messageIndex) ?? 0) +
+        Math.ceil(entry.decision.byteLength / 3.3),
+    );
+  }
+  return totals;
+}
+
+function accountTimeline(
+  plan: RequestPlanV1,
+  replayedArtifactTokens: ReadonlyMap<number, number>,
+): {
   instructionsTokens: number;
   historyTokens: number;
   liveTokens: number;
@@ -156,7 +180,9 @@ function accountTimeline(plan: RequestPlanV1): {
   for (const section of plan.timeline.sections) {
     let sectionTokens = 0;
     for (let index = section.messageStart; index < section.messageEnd; index += 1) {
-      sectionTokens += estimateMessageTokens(messages[index]!);
+      sectionTokens +=
+        estimateMessageBaseTokens(messages[index]!) +
+        (replayedArtifactTokens.get(index) ?? 0);
     }
     if (section.kind === "instructions") totals.instructionsTokens = sectionTokens;
     else if (section.kind === "history") totals.historyTokens = sectionTokens;
@@ -175,7 +201,8 @@ export function accountRequestPlan(
     readonly safetyMarginTokens?: number | undefined;
   },
 ): RequestAccounting {
-  const totals = accountTimeline(plan);
+  const replayedArtifactTokens = replayedArtifactTokensByMessage(plan);
+  const totals = accountTimeline(plan, replayedArtifactTokens);
   const toolsTokens = estimateToolSchemaTokens(plan.tools.definitions);
   const rawRequestTokens =
     totals.instructionsTokens +
@@ -192,8 +219,8 @@ export function accountRequestPlan(
     route.model,
     rawRequestTokens,
   );
-  const artifactTokens = plan.timeline.messages.reduce(
-    (sum, message) => sum + reasoningArtifactTokensForMessage(message),
+  const artifactTokens = [...replayedArtifactTokens.values()].reduce(
+    (sum, tokens) => sum + tokens,
     0,
   );
   const imageTokens = plan.timeline.messages.reduce(

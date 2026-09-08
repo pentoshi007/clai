@@ -171,6 +171,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     options.providerId === "openrouter" ||
     options.providerId === "fireworks" ||
     options.providerId === "merge-gateway" ||
+    options.providerId === "tokenrouter" ||
     options.providerId === "openai"
       ? affinitySession
         ? sessionCacheAffinityKey(affinitySession)
@@ -195,7 +196,9 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
     affinityKey
       ? { session_id: affinityKey }
       : {}),
-    ...(options.providerId === "openai" && affinityKey
+    ...((options.providerId === "openai" ||
+      options.providerId === "tokenrouter") &&
+    affinityKey
       ? { prompt_cache_key: affinityKey }
       : {}),
     ...(options.providerId === "fireworks"
