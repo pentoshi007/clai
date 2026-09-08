@@ -3,11 +3,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   explabsAuthHeaders,
   explabsBaseUrl,
+  explabsCatalogIndex,
   explabsCatalogUrl,
   explabsFallbackModels,
   explabsProvider,
   resetExplabsCatalogCache,
 } from "../../src/llm/explabs.js";
+import { ProviderError } from "../../src/llm/http.js";
 import { defaultModels, envVars, normalizeProvider } from "../../src/llm/provider.js";
 import { providers } from "../../src/llm/router.js";
 import { providerCategory } from "../../src/store/config.js";
@@ -136,6 +138,159 @@ describe("Experiential Labs provider registration", () => {
     await expect(
       explabsProvider.stream?.({ messages: [] }, { apiKey: undefined }, () => undefined),
     ).rejects.toThrow(/API key is required/);
+  });
+});
+
+describe("Experiential Labs catalog sampling facts", () => {
+  function entryFor(row: unknown): Record<string, unknown> | undefined {
+    return explabsCatalogIndex([row]).entries.get(
+      (row as { model: { slug: string } }).model.slug,
+    );
+  }
+
+  it("omits temperature when a serving rung pins it to a single value", () => {
+    const entry = entryFor({
+      model: {
+        slug: "claude-fable-5",
+        output_modalities: ["text"],
+        supported_params: { reasoning: true },
+      },
+      providers: [
+        {
+          provider: "anthropic",
+          capabilities: {
+            supports_reasoning: true,
+            supports_temperature: true,
+            minimum_temperature: 1.0,
+            maximum_temperature: 1.0,
+          },
+        },
+      ],
+    });
+    expect(entry).toMatchObject({ default_parameters: { temperature: null } });
+  });
+
+  it("omits temperature when the model declares it unsupported even without rung caps", () => {
+    const entry = entryFor({
+      model: {
+        slug: "pinned-model",
+        output_modalities: ["text"],
+        supported_params: { temperature: false },
+      },
+      providers: [],
+    });
+    expect(entry).toMatchObject({ default_parameters: { temperature: null } });
+  });
+
+  it("omits temperature when any serving rung rejects it", () => {
+    const entry = entryFor({
+      model: {
+        slug: "mixed-rungs",
+        output_modalities: ["text"],
+        supported_params: { temperature: true },
+      },
+      providers: [
+        {
+          provider: "openai",
+          capabilities: {
+            supports_temperature: true,
+            minimum_temperature: 0,
+            maximum_temperature: 2,
+          },
+        },
+        {
+          provider: "openrouter",
+          capabilities: { supports_temperature: false },
+        },
+      ],
+    });
+    expect(entry).toMatchObject({ default_parameters: { temperature: null } });
+  });
+
+  it("keeps temperature when every rung accepts a real range", () => {
+    const entry = entryFor({
+      model: {
+        slug: "deepseek-v4-flash",
+        output_modalities: ["text"],
+        supported_params: { temperature: true },
+      },
+      providers: [
+        {
+          provider: "experiential_cloud",
+          capabilities: {
+            supports_temperature: true,
+            minimum_temperature: 0,
+            maximum_temperature: 2,
+          },
+        },
+      ],
+    });
+    expect(entry?.default_parameters).toBeUndefined();
+  });
+
+  it("omits top_p when any serving rung rejects it", () => {
+    const entry = entryFor({
+      model: {
+        slug: "topp-model",
+        output_modalities: ["text"],
+        supported_params: {},
+      },
+      providers: [
+        { provider: "openai", capabilities: { supports_top_p: true } },
+        { provider: "openrouter", capabilities: { supports_top_p: false } },
+      ],
+    });
+    expect(entry).toMatchObject({ default_parameters: { top_p: null } });
+  });
+
+  it("suppresses temperature in the compiled request plan once the catalog is ingested", async () => {
+    const { clearModelCatalogFacts } = await import(
+      "../../src/llm/capabilities.js"
+    );
+    const { compileRequestPlan } = await import(
+      "../../src/llm/request-plan.js"
+    );
+    const { ingestOpenAiModelCatalog } = await import(
+      "../../src/llm/wire/model-catalog.js"
+    );
+    try {
+      const row = {
+        model: {
+          slug: "claude-fable-5",
+          output_modalities: ["text"],
+          supported_params: { reasoning: true, temperature: false },
+        },
+        providers: [
+          {
+            provider: "anthropic",
+            capabilities: {
+              supports_reasoning: true,
+              supports_temperature: true,
+              minimum_temperature: 1.0,
+              maximum_temperature: 1.0,
+            },
+          },
+        ],
+      };
+      const entry = explabsCatalogIndex([row]).entries.get("claude-fable-5");
+      expect(entry).toMatchObject({
+        default_parameters: { temperature: null },
+      });
+      ingestOpenAiModelCatalog("explabs", [entry]);
+      const plan = compileRequestPlan({
+        provider: "explabs",
+        model: "claude-fable-5",
+        messages: [{ role: "user", content: "hi" }],
+        stream: true,
+        endpoint: "https://api.experientiallabs.ai/v1",
+        temperature: 0.2,
+        maxTokens: 64,
+      });
+      expect(plan.controls.temperature).toBeUndefined();
+      expect(plan.policy.sampling.omit).toContain("temperature");
+    } finally {
+      clearModelCatalogFacts();
+    }
   });
 });
 
@@ -494,5 +649,188 @@ describe("Experiential Labs wire behavior over real HTTP", () => {
       { apiKey: "xpl_wirekey10000000000000000000000000000000000" },
     );
     expect(captured[0]!.body.reasoning_effort).toBe("none");
+  });
+});
+
+describe("Experiential Labs 429 throttle retry", () => {
+  const auth = { apiKey: "xpl_wirekey10000000000000000000000000000000000" };
+  const request = {
+    model: "claude-fable-5.1",
+    messages: [{ role: "user", content: "hi" }],
+  };
+
+  function throttled(retryAfter?: string): Response {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message:
+            "provider throttled the request; retry after the delay in the Retry-After header",
+          type: "api_error",
+          code: "unavailable_route",
+        },
+      }),
+      {
+        status: 429,
+        headers: retryAfter === undefined ? {} : { "retry-after": retryAfter },
+      },
+    );
+  }
+
+  function completed(): Response {
+    return new Response(
+      JSON.stringify({
+        model: "claude-fable-5.1",
+        choices: [{ index: 0, message: { role: "assistant", content: "ok" } }],
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
+  }
+
+  function streamed(): Response {
+    const frames = [
+      { choices: [{ index: 0, delta: { role: "assistant", content: "Hi" } }] },
+      { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+    ];
+    return new Response(
+      frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") +
+        "data: [DONE]\n\n",
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("retries a 429 honoring the advertised wait and then completes", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(throttled("3"))
+      .mockResolvedValueOnce(completed());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = explabsProvider.complete(request, auth);
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2);
+    const result = await pending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.text).toBe("ok");
+  });
+
+  it("retries a 429 on the stream path and then streams tokens", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(throttled("0.05"))
+      .mockResolvedValueOnce(streamed());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tokens: string[] = [];
+    const result = await explabsProvider.stream!(request, auth, (token) =>
+      tokens.push(token),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(tokens.join("")).toBe("Hi");
+    expect(result.text).toBe("Hi");
+  });
+
+  it("gives up after two 429 retries and surfaces the ProviderError", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => throttled("1"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = explabsProvider.complete(request, auth);
+    const expectation = expect(pending).rejects.toMatchObject({
+      name: "ProviderError",
+      status: 429,
+      retryAfterSeconds: 1,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expectation;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("falls back to bounded default waits without a retry hint", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => throttled());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = explabsProvider.complete(request, auth);
+    const expectation = expect(pending).rejects.toBeInstanceOf(ProviderError);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await expectation;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("caps a long advertised retry hint at twenty seconds", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => throttled("30"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = explabsProvider.complete(request, auth);
+    const expectation = expect(pending).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 30,
+    });
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(19_999);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await expectation;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a generic rate-limit 429 without a throttle signature", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: { message: "conformance rate limit", type: "rate_limit_error" },
+          }),
+          { status: 429 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(explabsProvider.complete(request, auth)).rejects.toMatchObject(
+      { name: "ProviderError", status: 429 },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry non-429 failures", async () => {
+    for (const status of [400, 500]) {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: { message: "no" } }), {
+            status,
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(explabsProvider.complete(request, auth)).rejects.toMatchObject(
+        { name: "ProviderError", status },
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
   });
 });

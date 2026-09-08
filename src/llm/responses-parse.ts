@@ -51,11 +51,18 @@ export function parseResponsesUsage(raw: unknown): TokenUsage | undefined {
     Record<string, unknown> | undefined;
   const completionDetails = u.completion_tokens_details as
     Record<string, unknown> | undefined;
-  const cached = inputDetails?.cached_tokens ?? promptDetails?.cached_tokens;
+  const cached =
+    inputDetails?.cached_tokens ??
+    promptDetails?.cached_tokens ??
+    u.prompt_cache_hit_tokens ??
+    u.cache_read_input_tokens;
   const cacheCreation =
     inputDetails?.cache_creation_tokens ??
     promptDetails?.cache_creation_tokens ??
-    u.cache_creation_input_tokens;
+    inputDetails?.cache_write_tokens ??
+    promptDetails?.cache_write_tokens ??
+    u.cache_creation_input_tokens ??
+    u.cache_write_input_tokens;
   const uncached =
     inputDetails?.uncached_tokens ??
     promptDetails?.uncached_tokens ??

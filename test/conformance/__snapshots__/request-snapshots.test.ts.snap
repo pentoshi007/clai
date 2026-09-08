@@ -2079,6 +2079,7 @@ exports[`serialized request snapshots > explabs / images 1`] = `
       },
     ],
     "model": "claude-fable-5.1",
+    "prompt_cache_key": "clai-563eab4299e45d250a02db420eb2c8a2b41e9b8e",
     "reasoning_effort": "none",
     "stream": false,
     "temperature": 0.2,
@@ -2116,6 +2117,7 @@ exports[`serialized request snapshots > explabs / minimal 1`] = `
       },
     ],
     "model": "claude-fable-5.1",
+    "prompt_cache_key": "clai-563eab4299e45d250a02db420eb2c8a2b41e9b8e",
     "reasoning_effort": "none",
     "stream": false,
     "temperature": 0.2,
@@ -2153,6 +2155,7 @@ exports[`serialized request snapshots > explabs / reasoning-control 1`] = `
       },
     ],
     "model": "claude-fable-5.1",
+    "prompt_cache_key": "clai-563eab4299e45d250a02db420eb2c8a2b41e9b8e",
     "reasoning_effort": "high",
     "stream": false,
     "temperature": 0.2,
@@ -2210,6 +2213,7 @@ exports[`serialized request snapshots > explabs / tool-loop-replay 1`] = `
       },
     ],
     "model": "claude-fable-5.1",
+    "prompt_cache_key": "clai-563eab4299e45d250a02db420eb2c8a2b41e9b8e",
     "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
@@ -2311,6 +2315,7 @@ exports[`serialized request snapshots > explabs / tool-loop-replay-unsigned 1`] 
       },
     ],
     "model": "claude-fable-5.1",
+    "prompt_cache_key": "clai-563eab4299e45d250a02db420eb2c8a2b41e9b8e",
     "reasoning_effort": "medium",
     "stream": false,
     "temperature": 0.2,
@@ -2391,6 +2396,7 @@ exports[`serialized request snapshots > explabs / tools 1`] = `
       },
     ],
     "model": "claude-fable-5.1",
+    "prompt_cache_key": "clai-563eab4299e45d250a02db420eb2c8a2b41e9b8e",
     "reasoning_effort": "none",
     "stream": false,
     "temperature": 0.2,
@@ -5160,12 +5166,8 @@ exports[`serialized request snapshots > meta / images 1`] = `
         "type": "message",
       },
       {
-        "content": [
-          {
-            "text": "first assistant answer",
-            "type": "output_text",
-          },
-        ],
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
         "role": "assistant",
         "type": "message",
       },
@@ -5233,12 +5235,8 @@ exports[`serialized request snapshots > meta / minimal 1`] = `
         "type": "message",
       },
       {
-        "content": [
-          {
-            "text": "first assistant answer",
-            "type": "output_text",
-          },
-        ],
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
         "role": "assistant",
         "type": "message",
       },
@@ -5301,12 +5299,8 @@ exports[`serialized request snapshots > meta / reasoning-control 1`] = `
         "type": "message",
       },
       {
-        "content": [
-          {
-            "text": "first assistant answer",
-            "type": "output_text",
-          },
-        ],
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
         "role": "assistant",
         "type": "message",
       },
@@ -5370,12 +5364,8 @@ exports[`serialized request snapshots > meta / tool-loop-replay 1`] = `
         "type": "message",
       },
       {
-        "content": [
-          {
-            "text": "first assistant answer",
-            "type": "output_text",
-          },
-        ],
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
         "role": "assistant",
         "type": "message",
       },
@@ -5490,12 +5480,8 @@ exports[`serialized request snapshots > meta / tool-loop-replay-unsigned 1`] = `
         "type": "message",
       },
       {
-        "content": [
-          {
-            "text": "first assistant answer",
-            "type": "output_text",
-          },
-        ],
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
         "role": "assistant",
         "type": "message",
       },
@@ -5610,12 +5596,8 @@ exports[`serialized request snapshots > meta / tools 1`] = `
         "type": "message",
       },
       {
-        "content": [
-          {
-            "text": "first assistant answer",
-            "type": "output_text",
-          },
-        ],
+        "content": "first assistant answer",
+        "id": "msg_0944600c7487f237",
         "role": "assistant",
         "type": "message",
       },

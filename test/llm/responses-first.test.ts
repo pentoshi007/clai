@@ -218,6 +218,76 @@ describe("responses-first transport", () => {
     expect(retryBody.include).toBeUndefined();
   });
 
+  it("keeps prompt_cache_key on the bare retry for explabs", async () => {
+    const fetchMock = routeByPath((path, init) => {
+      if (path !== "responses") return chatJson("nope");
+      const body = init.body as string;
+      if (body.includes('"store"') || body.includes('"include"')) {
+        return responsesJson(
+          { error: { message: "Unknown parameter: store" } },
+          400,
+        );
+      }
+      return responsesCompleted("bare-ok");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await openAiCompatibleComplete({
+      provider: "Experiential Labs",
+      providerId: "explabs" as const,
+      baseUrl: BASE_URL,
+      apiKey: "key-123",
+      model: "deepseek-v4-flash-0731",
+      messages: [{ role: "user" as const, content: "hi" }],
+      responsesFirst: true,
+    });
+
+    expect(result.text).toBe("bare-ok");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = await requestBody(
+      fetchMock.mock.calls[1]![1] as RequestInit,
+    );
+    expect(typeof retryBody.prompt_cache_key).toBe("string");
+    expect(retryBody.store).toBeUndefined();
+    expect(retryBody.include).toBeUndefined();
+  });
+
+  it("retries without temperature when the route rejects it", async () => {
+    const fetchMock = routeByPath((path, init) => {
+      if (path !== "responses") return chatJson("nope");
+      const body = init.body as string;
+      if (body.includes('"temperature"')) {
+        return responsesJson(
+          {
+            error: {
+              message:
+                "The value 0.2 for 'temperature' is not supported by this model route. Supported values are between 1.0 and 1.0.",
+            },
+          },
+          400,
+        );
+      }
+      return responsesCompleted("temp-ok");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await openAiCompatibleComplete({
+      ...completeOptions("m4"),
+      temperature: 0.2,
+    });
+
+    expect(result.text).toBe("temp-ok");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = await requestBody(
+      fetchMock.mock.calls[0]![1] as RequestInit,
+    );
+    expect(firstBody.temperature).toBe(0.2);
+    const retryBody = await requestBody(
+      fetchMock.mock.calls[1]![1] as RequestInit,
+    );
+    expect(retryBody.temperature).toBeUndefined();
+  });
+
   it("falls back to chat completions when the probe fails with an unreliable status", async () => {
     const fetchMock = routeByPath((path) =>
       path === "responses"

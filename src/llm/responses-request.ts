@@ -106,6 +106,17 @@ export const fallbackToolCallId = (message: ChatMessage): string => {
   return `call_${digest}`;
 };
 
+export const assistantMessageId = (message: ChatMessage): string => {
+  const digest = createHash("sha256")
+    .update(message.role, "utf8")
+    .update("\0", "utf8")
+    .update(message.content ?? "", "utf8");
+  for (const toolCall of message.toolCalls ?? []) {
+    digest.update("\0", "utf8").update(toolCall.id, "utf8");
+  }
+  return `msg_${digest.digest("hex").slice(0, 16)}`;
+};
+
 function appendUserImageBlock(
   blocks: Array<Record<string, unknown>>,
   img: NonNullable<ChatMessage["images"]>[number],
@@ -177,9 +188,9 @@ function appendAssistantToolTurn(
   if (message.content && message.content.trim()) {
     input.push({
       type: "message",
+      id: assistantMessageId(message),
       role: "assistant",
-      phase: "commentary",
-      content: [{ type: "output_text", text: message.content }],
+      content: message.content,
     });
   }
   for (const [toolCallIndex, tc] of message.toolCalls!.entries()) {
@@ -207,8 +218,9 @@ function appendAssistantInput(
   if (message.content !== undefined && message.content !== null) {
     input.push({
       type: "message",
+      id: assistantMessageId(message),
       role: "assistant",
-      content: [{ type: "output_text", text: message.content }],
+      content: message.content,
     });
   }
 }
@@ -310,8 +322,10 @@ export function buildResponsesBody(
     }),
   );
   body.max_output_tokens = responsesMaxOutputTokens(plan);
-  body.temperature = plan.controls.temperature;
-  if (plan.controls.topP !== undefined) body.top_p = plan.controls.topP;
+  if (!config.omitSampling) {
+    body.temperature = plan.controls.temperature;
+    if (plan.controls.topP !== undefined) body.top_p = plan.controls.topP;
+  }
   if (reasoning) body.reasoning = reasoning;
   if (options.stream) body.stream = true;
   applyResponsesTools(body, tools, options.parallelToolCalls);

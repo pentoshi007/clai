@@ -90,6 +90,7 @@ function genericResponsesConfig(
     displayName,
     artifactDialect: "openai-compatible",
     terminalPolicy: RESPONSES_STREAM_TERMINAL,
+    omitSampling: extras === "bare",
     buildHeaders(auth: ProviderAuth, accept: ResponsesAccept) {
       return {
         "content-type": "application/json",
@@ -104,11 +105,16 @@ function genericResponsesConfig(
       return { effort, summary: responsesReasoningSummary(effort) };
     },
     bodyExtras(context: ResponsesBodyExtrasContext) {
-      if (extras === "bare") return {};
+      const promptCacheKey = `${context.purpose === "auxiliary" ? "aux-" : ""}${cacheAffinityKey(providerId, context.model, context.messages)}`;
+      if (extras === "bare") {
+        return providerId === "explabs"
+          ? { prompt_cache_key: promptCacheKey }
+          : {};
+      }
       return {
         store: false,
         include: ["reasoning.encrypted_content"],
-        prompt_cache_key: `${context.purpose === "auxiliary" ? "aux-" : ""}${cacheAffinityKey(providerId, context.model, context.messages)}`,
+        prompt_cache_key: promptCacheKey,
       };
     },
   };
@@ -194,13 +200,6 @@ function hasVisibleReasoning(
   return text.length > 0 && !text.startsWith(PRIVATE_REASONING_NOTE_PREFIX);
 }
 
-class ReasoningAbsentOnResponsesSignal extends Error {
-  constructor() {
-    super("Responses stream produced no visible reasoning before output");
-    this.name = "ReasoningAbsentOnResponsesSignal";
-  }
-}
-
 async function runResponsesFirst(
   options: ResponsesFirstOptions,
   run: ResponsesRunner,
@@ -215,31 +214,15 @@ async function runResponsesFirst(
 
   const reasoningDeltas = { count: 0 };
   const emittedVisible = { count: 0 };
-  const shouldEarlyCheck =
-    thinkingRequested && stream !== undefined && state.thinkingWire === "unknown";
   const countingStream: StreamBridgeOptions | undefined = stream
     ? {
         onToken: (token) => {
-          if (
-            shouldEarlyCheck &&
-            reasoningDeltas.count === 0 &&
-            emittedVisible.count === 0
-          ) {
-            throw new ReasoningAbsentOnResponsesSignal();
-          }
           emittedVisible.count += 1;
           stream.onToken(token);
         },
         ...(stream.onToolCallDelta
           ? {
               onToolCallDelta: (delta) => {
-                if (
-                  shouldEarlyCheck &&
-                  reasoningDeltas.count === 0 &&
-                  emittedVisible.count === 0
-                ) {
-                  throw new ReasoningAbsentOnResponsesSignal();
-                }
                 stream.onToolCallDelta!(delta);
               },
             }
@@ -290,10 +273,6 @@ async function runResponsesFirst(
   try {
     result = await withUnrecordedTransport(() => attempt(state.extras));
   } catch (error) {
-    if (error instanceof ReasoningAbsentOnResponsesSignal) {
-      rememberChatThinkingWire();
-      return undefined;
-    }
     if (isChatShapedResponsesPayload(error)) {
       return fallback({
         kind: "responses-fallback-shape",
@@ -347,10 +326,6 @@ async function runResponsesFirst(
       try {
         result = await withUnrecordedTransport(() => attempt("bare"));
       } catch (retryError) {
-        if (retryError instanceof ReasoningAbsentOnResponsesSignal) {
-          rememberChatThinkingWire();
-          return undefined;
-        }
         const retryStatus = providerStatusCode(retryError);
         if (
           retryStatus !== undefined &&

@@ -4,20 +4,30 @@ import {
   type LlmProvider,
   type ProviderAuth,
 } from "./provider.js";
+import { bareModelId } from "./model-families.js";
 import { singleLeadingSystemMessages } from "./system-messages.js";
 import {
   ingestOpenAiModelCatalog,
   openAiCompatibleComplete,
   openAiCompatiblePing,
   openAiCompatibleStream,
+  ProviderError,
   readJson,
   toCompletionResult,
 } from "./http.js";
+import { sleep } from "./routing/error-classification.js";
+import { streamAlreadyEmitted } from "./stream-progress.js";
 
 const API_ROOT = "https://api.experientiallabs.ai";
 
 export const explabsBaseUrl = `${API_ROOT}/v1`;
 export const explabsCatalogUrl = `${API_ROOT}/api/models`;
+
+const RESPONSES_NATIVE_MODEL = /(?:^|[-./])(?:gpt-5|gpt-6|o[1-4])(?![a-z])/;
+
+function responsesFirstForModel(model: string): boolean {
+  return RESPONSES_NATIVE_MODEL.test(bareModelId(model));
+}
 
 export const explabsFallbackModels = [
   "claude-fable-5.1",
@@ -129,14 +139,28 @@ function reasoningFacts(
 }
 
 function samplingFacts(
+  model: Record<string, unknown>,
   caps: readonly Record<string, unknown>[],
 ): Record<string, null> | undefined {
-  if (caps.length === 0) return undefined;
+  const params = asRecord(model.supported_params);
+  const pinnedTemperature = caps.some(
+    (capsEntry) =>
+      typeof capsEntry.minimum_temperature === "number" &&
+      typeof capsEntry.maximum_temperature === "number" &&
+      capsEntry.minimum_temperature === capsEntry.maximum_temperature,
+  );
   const omit: Record<string, null> = {};
-  if (caps.every((capsEntry) => capsEntry.supports_temperature === false)) {
+  if (
+    params?.temperature === false ||
+    pinnedTemperature ||
+    caps.some((capsEntry) => capsEntry.supports_temperature === false)
+  ) {
     omit.temperature = null;
   }
-  if (caps.every((capsEntry) => capsEntry.supports_top_p === false)) {
+  if (
+    params?.top_p === false ||
+    caps.some((capsEntry) => capsEntry.supports_top_p === false)
+  ) {
     omit.top_p = null;
   }
   return Object.keys(omit).length > 0 ? omit : undefined;
@@ -159,7 +183,7 @@ function catalogFactsEntry(
 
   const caps = providerCapabilities(row);
   const reasoning = reasoningFacts(model, caps);
-  const sampling = samplingFacts(caps);
+  const sampling = samplingFacts(model, caps);
   const contextWindow = positiveInteger(model.context_window);
   const maxOutput = positiveInteger(model.max_output_tokens);
   const inputModalities = stringList(model.input_modalities);
@@ -296,6 +320,50 @@ async function fetchModels(
   return ingestOpenAiModelCatalog("explabs", entries);
 }
 
+const THROTTLE_MAX_RETRIES = 2;
+const THROTTLE_MAX_WAIT_MS = 20_000;
+const THROTTLE_DEFAULT_WAIT_MS: readonly number[] = [5_000, 10_000];
+const THROTTLE_SIGNATURE = /unavailable_route|provider throttled/i;
+
+function isGatewayThrottle(error: unknown): error is ProviderError {
+  if (!(error instanceof ProviderError) || error.status !== 429) return false;
+  if (streamAlreadyEmitted(error)) return false;
+  return (
+    error.retryAfterSeconds !== undefined ||
+    THROTTLE_SIGNATURE.test(`${error.message}\n${error.body ?? ""}`)
+  );
+}
+
+function throttleRetryWaitMs(error: ProviderError, attempt: number): number {
+  const seconds = error.retryAfterSeconds;
+  const advertised =
+    seconds !== undefined && Number.isFinite(seconds) && seconds >= 0
+      ? Math.ceil(seconds * 1000)
+      : undefined;
+  if (advertised === undefined) {
+    return THROTTLE_DEFAULT_WAIT_MS[
+      Math.min(attempt, THROTTLE_DEFAULT_WAIT_MS.length - 1)
+    ]!;
+  }
+  return Math.min(advertised, THROTTLE_MAX_WAIT_MS);
+}
+
+async function dispatchWithThrottleRetry<T>(
+  dispatch: () => Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await dispatch();
+    } catch (error) {
+      if (attempt >= THROTTLE_MAX_RETRIES || !isGatewayThrottle(error)) {
+        throw error;
+      }
+      await sleep(throttleRetryWaitMs(error, attempt), signal);
+    }
+  }
+}
+
 export const explabsProvider: LlmProvider = {
   id: "explabs",
   reasoningStyle: "openai",
@@ -327,25 +395,29 @@ export const explabsProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     const apiKey = requireKey(auth);
     const model = request.model ?? defaultModels.explabs;
-    const payload = await openAiCompatibleComplete({
-      responsesFirst: true,
-      provider: "Experiential Labs",
-      providerId: "explabs",
-      baseUrl: explabsBaseUrl,
-      apiKey,
-      model,
-      messages: singleLeadingSystemMessages(request.messages),
-      maxTokens: request.maxTokens,
-      temperature: request.temperature,
-      signal: request.signal,
-      reasoning: request.thinking,
-      reasoningStyle: "openai",
-      tools: request.tools,
-      toolChoice: request.toolChoice,
-      parallelToolCalls: request.parallelToolCalls,
-      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-    });
+    const payload = await dispatchWithThrottleRetry(
+      () =>
+        openAiCompatibleComplete({
+          responsesFirst: responsesFirstForModel(model),
+          provider: "Experiential Labs",
+          providerId: "explabs",
+          baseUrl: explabsBaseUrl,
+          apiKey,
+          model,
+          messages: singleLeadingSystemMessages(request.messages),
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+          signal: request.signal,
+          reasoning: request.thinking,
+          reasoningStyle: "openai",
+          tools: request.tools,
+          toolChoice: request.toolChoice,
+          parallelToolCalls: request.parallelToolCalls,
+          reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+          ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+        }),
+      request.signal,
+    );
     return toCompletionResult("explabs", model, payload);
   },
   async stream(
@@ -355,28 +427,32 @@ export const explabsProvider: LlmProvider = {
   ): Promise<CompletionResult> {
     const apiKey = requireKey(auth);
     const model = request.model ?? defaultModels.explabs;
-    const payload = await openAiCompatibleStream({
-      responsesFirst: true,
-      provider: "Experiential Labs",
-      providerId: "explabs",
-      baseUrl: explabsBaseUrl,
-      apiKey,
-      model,
-      messages: singleLeadingSystemMessages(request.messages),
-      maxTokens: request.maxTokens,
-      temperature: request.temperature,
-      signal: request.signal,
-      onToken,
-      onToolCallDelta: request.onToolCallDelta,
-      onStreamEvent: request.onStreamEvent,
-      reasoning: request.thinking,
-      reasoningStyle: "openai",
-      tools: request.tools,
-      toolChoice: request.toolChoice,
-      parallelToolCalls: request.parallelToolCalls,
-      reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
-      ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
-    });
+    const payload = await dispatchWithThrottleRetry(
+      () =>
+        openAiCompatibleStream({
+          responsesFirst: responsesFirstForModel(model),
+          provider: "Experiential Labs",
+          providerId: "explabs",
+          baseUrl: explabsBaseUrl,
+          apiKey,
+          model,
+          messages: singleLeadingSystemMessages(request.messages),
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+          signal: request.signal,
+          onToken,
+          onToolCallDelta: request.onToolCallDelta,
+          onStreamEvent: request.onStreamEvent,
+          reasoning: request.thinking,
+          reasoningStyle: "openai",
+          tools: request.tools,
+          toolChoice: request.toolChoice,
+          parallelToolCalls: request.parallelToolCalls,
+          reasoningArtifactReplayObserver: request.onReasoningArtifactReplayDecision,
+          ...(request.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+        }),
+      request.signal,
+    );
     return toCompletionResult("explabs", model, payload);
   },
 };

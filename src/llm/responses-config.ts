@@ -23,6 +23,7 @@ export interface ResponsesDialectConfig {
   readonly displayName: string;
   readonly artifactDialect: ReasoningArtifactDialect;
   readonly terminalPolicy: StreamTerminalPolicy;
+  readonly omitSampling?: boolean | undefined;
   buildHeaders(
     auth: ProviderAuth,
     accept: ResponsesAccept,

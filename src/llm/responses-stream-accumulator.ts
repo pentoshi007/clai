@@ -113,7 +113,12 @@ export function absorbResponseOutput(
     const position = out.reasoningItemPositions[index];
     noteReasoningItem(state, item, position?.sequence, position?.toolCallIndex);
   }
-  // reasoningSummary is only emitted via dispatchReasoningEvent for streams; absorb here is for non-stream fallback
+  if (out.reasoningSummary && !state.reasoningSeen.includes(out.reasoningSummary)) {
+    const remaining = out.reasoningSummary.startsWith(state.reasoningSeen)
+      ? out.reasoningSummary.slice(state.reasoningSeen.length)
+      : out.reasoningSummary;
+    if (remaining) emitReasoningDelta(remaining);
+  }
   if (out.text && !state.visible.trim()) emitVisible(out.text);
   for (const tc of out.toolCalls) {
     const exists = [...state.toolCallState.values()].some(

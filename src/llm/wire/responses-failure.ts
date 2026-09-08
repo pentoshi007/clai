@@ -9,7 +9,7 @@ const ENDPOINT_UNSUPPORTED_STATUS = new Set([404, 405, 501]);
 export const PROBE_UNRELIABLE_STATUS = new Set([500, 502, 503, 504]);
 
 const EXTRA_FIELD_PATTERN =
-  /prompt_cache_key|encrypted_content|\binclude\b|\bstore\b|\breasoning\b|reasoning_effort/i;
+  /prompt_cache_key|encrypted_content|\binclude\b|\bstore\b|\breasoning\b|reasoning_effort|\btemperature\b|\btop_p\b/i;
 
 const PARAMETER_REJECTION_PATTERN =
   /unknown (?:parameter|field|argument)|unrecognized (?:parameter|field|request)|not supported|unsupported|invalid parameter|unexpected (?:parameter|field)|does not accept|not a valid (?:parameter|field)|must be one of|expected one of/i;

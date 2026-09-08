@@ -20,7 +20,7 @@ function handleReasoningItemAdded(
 ): void {
   noteReasoningItem(ctx.state, item, outputIndex);
   const s = extractReasoningSummary(item);
-  if (s) {
+  if (s && !ctx.state.reasoningSeen.includes(s)) {
     ctx.watchdog.resetIdleTimer();
     ctx.emitReasoningDelta(s);
   }
