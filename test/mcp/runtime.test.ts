@@ -273,18 +273,100 @@ describe("McpRuntime calls and guidance", () => {
     runtime.selectAll();
     const native = runtime.promptContext({ nativeTools: true });
     expect(native).toContain("Live servers: 2/2");
-    expect(native).toContain("mcp_alpha_lookup");
+    expect(native).toContain("Active tools: 2");
+    expect(native).toContain("attached to this request as native functions");
     expect(native).toContain("stronger direct result than a generic substitute");
     expect(native).toContain("untrusted data");
     expect(native).toContain("normal confirmation policy");
     expect(native).toContain("never invent unavailable MCP names");
     expect(native).not.toContain("args={");
+    expect(native).not.toContain("mcp_alpha_lookup");
+    expect(native).not.toContain("mcp.beta.change");
 
     runtime.selectServer("alpha");
     const text = runtime.promptContext({ nativeTools: false });
     expect(text).toContain("args={");
     expect(text).toContain("mcp.alpha.lookup");
     expect(text).not.toContain("mcp.beta.change");
+    await runtime.closeAll();
+  });
+
+  it("keeps native MCP context bounded while the tool payload carries the schemas", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    runtime.selectAll();
+
+    const native = runtime.promptContext({ nativeTools: true }) ?? "";
+    const text = runtime.promptContext({ nativeTools: false }) ?? "";
+    expect(native.length).toBeLessThan(text.length);
+
+    const definitions = runtime.toolDefinitions();
+    const lookup = definitions.find(
+      (definition) => definition.name === "mcp.alpha.lookup",
+    );
+    expect(lookup?.wireName).toBe("mcp_alpha_lookup");
+    expect(lookup?.description).toBe(
+      "MCP alpha [read-only]: Look up an indexed record",
+    );
+    expect(lookup?.parameters).toEqual({
+      type: "object",
+      properties: {
+        filter: { type: "object" },
+        id: { type: "string" },
+        limit: { type: "number" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    });
+    await runtime.closeAll();
+  });
+
+  it("stops a live server, frees its tools, and restarts it on demand", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    runtime.selectServers(["alpha", "beta"]);
+    expect(runtime.toolNames()).toEqual(["mcp.alpha.lookup", "mcp.beta.change"]);
+
+    const stopped = await runtime.stopServer("alpha");
+    expect(runtime.isStopped("alpha")).toBe(true);
+    expect(stopped.selection).toEqual({ mode: "servers", serverNames: ["beta"] });
+    expect(runtime.toolNames()).toEqual(["mcp.beta.change"]);
+    expect(
+      stopped.snapshot.statuses.find((status) => status.name === "alpha")?.status,
+    ).toBe("stopped");
+    expect(closeCounts.get("alpha")).toBeGreaterThanOrEqual(1);
+    expect(runtime.serverNames()).toEqual(new Set(["beta"]));
+
+    const kept = await runtime.refresh({ force: true });
+    expect(
+      kept.snapshot.statuses.find((status) => status.name === "alpha")?.status,
+    ).toBe("stopped");
+
+    const restarted = await runtime.reconnect("alpha");
+    expect(runtime.isStopped("alpha")).toBe(false);
+    expect(
+      restarted.snapshot.statuses.find((status) => status.name === "alpha")?.status,
+    ).toBe("ready");
+    runtime.selectServers(["alpha", "beta"]);
+    expect(runtime.toolNames()).toEqual(["mcp.alpha.lookup", "mcp.beta.change"]);
+    await runtime.closeAll();
+  });
+
+  it("keeps a mentioned selection through an in-flight refresh", async () => {
+    const runtime = makeRuntime();
+    await runtime.refresh();
+    runtime.selectServer("alpha");
+    const pending = runtime.refresh({ force: true });
+    expect(runtime.getState().selection).toEqual({
+      mode: "servers",
+      serverNames: ["alpha"],
+    });
+    await pending;
+    expect(runtime.getState().selection).toEqual({
+      mode: "servers",
+      serverNames: ["alpha"],
+    });
+    expect(runtime.toolNames()).toEqual(["mcp.alpha.lookup"]);
     await runtime.closeAll();
   });
 

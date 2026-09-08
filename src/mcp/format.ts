@@ -60,6 +60,8 @@ function statusSymbol(status: McpServerStatusKind): string {
       return "degraded";
     case "disabled":
       return "disabled";
+    case "stopped":
+      return "stopped";
     case "connecting":
       return "connecting";
     default:

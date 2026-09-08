@@ -67,7 +67,7 @@ function selectServer(services: AppServices, status: McpServerStatus): void {
   if (status.status !== "ready") {
     services.session.notice(
       "warn",
-      `MCP server ${status.name} is ${status.status}${status.detail ? ` · ${status.detail}` : ""} · use /mcp reconnect ${status.name}`,
+      `MCP server ${status.name} is ${status.status}${status.detail ? ` · ${status.detail}` : ""} · use /mcp ${status.status === "stopped" ? "start" : "reconnect"} ${status.name}`,
     );
     return;
   }
@@ -480,6 +480,32 @@ async function reconnect(
   }
 }
 
+async function stopCommand(services: AppServices, tail: string): Promise<void> {
+  const status = resolveConfiguredServer(services, tail);
+  if (!status) {
+    services.session.notice(
+      "warn",
+      tail
+        ? `no unique MCP server matching "${tail}"`
+        : "usage: /mcp stop <server>",
+    );
+    return;
+  }
+  if (status.status === "stopped") {
+    services.session.notice(
+      "info",
+      `MCP server ${status.name} is already stopped · /mcp start ${status.name} reconnects it`,
+    );
+    return;
+  }
+  const before = status.toolCount;
+  const state = await services.mcp.stopServer(status.name);
+  services.session.notice(
+    "info",
+    `stopped MCP server ${status.name} · ${before} tool${before === 1 ? "" : "s"} removed from requests · ${state.activeToolCount} active · /mcp start ${status.name} reconnects it`,
+  );
+}
+
 type McpSubcommandHandler = (
   services: AppServices,
   tail: string,
@@ -614,6 +640,9 @@ const MCP_SUBCOMMANDS = new Map<string, McpSubcommandHandler>([
   ["refresh", refreshCommand],
   ["reload", refreshCommand],
   ["reconnect", reconnect],
+  ["start", reconnect],
+  ["stop", stopCommand],
+  ["disconnect", stopCommand],
 ]);
 
 export async function handleMcp(

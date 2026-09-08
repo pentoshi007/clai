@@ -441,7 +441,7 @@ export async function runAgentTurn(
         inputTokenBudget,
         getMcpContext: () =>
           mcpRuntime?.promptContext({
-            nativeTools: false,
+            nativeTools: nativeToolsActive,
             ...(agentMode === "ask" ? { askMode: true } : {}),
           }),
         getProjectRoot: getActiveProjectRoot,

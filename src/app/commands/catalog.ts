@@ -119,7 +119,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/mcp",
     usage:
-      "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|login <server>|add [json|notion]]",
+      "[server|all|off|list|status|tools [server]|locations|refresh|reconnect <server>|stop <server>|start <server>|login <server>|add [json|notion]]",
     description: "manage MCP servers (.clai/mcp.json, off by default)",
   },
   {

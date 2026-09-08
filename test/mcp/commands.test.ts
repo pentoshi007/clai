@@ -445,6 +445,23 @@ describe("/mcp shared command", () => {
     app.dispose();
   });
 
+  it("stops a live server from the command surface and starts it again", async () => {
+    const app = services();
+    await app.commands.dispatch({ name: "mcp", args: "all" });
+    expect(runtime.toolNames()).toEqual(["mcp.docs.search"]);
+
+    await app.commands.dispatch({ name: "mcp", args: "stop docs" });
+    expect(runtime.isStopped("docs")).toBe(true);
+    expect(runtime.toolNames()).toEqual([]);
+    expect(runtime.getState().activeToolCount).toBe(0);
+
+    await app.commands.dispatch({ name: "mcp", args: "stop docs" });
+    await app.commands.dispatch({ name: "mcp", args: "start docs" });
+    expect(runtime.isStopped("docs")).toBe(false);
+    expect(runtime.toolNames()).toEqual(["mcp.docs.search"]);
+    app.dispose();
+  });
+
   it("adds the official Notion endpoint with OAuth from the preset", async () => {
     const app = services();
 

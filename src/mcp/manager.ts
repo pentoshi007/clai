@@ -40,6 +40,9 @@ const DEFAULT_CONNECT_CONCURRENCY = 4;
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
+const STOPPED_DETAIL =
+  "stopped for this session; its tools are removed from model requests";
+
 export type McpTransportFactory = (definition: McpServerDefinition) => McpTransport;
 
 export interface McpManagerOptions {
@@ -90,6 +93,7 @@ export class McpManager {
   private readonly connections = new Map<string, ConnectionState>();
   private readonly authProviders = new Map<string, McpAuthProvider>();
   private readonly authSignatures = new Map<string, string>();
+  private readonly stopped = new Set<string>();
   private discovery: McpDiscoveryResult = {
     servers: [],
     shadowed: [],
@@ -221,18 +225,15 @@ export class McpManager {
 
     const toConnect: McpServerDefinition[] = [];
     for (const definition of this.discovery.servers) {
-      if (definition.disabled) {
+      const idle: McpServerStatusKind | undefined = definition.disabled
+        ? "disabled"
+        : this.stopped.has(definition.name)
+          ? "stopped"
+          : undefined;
+      if (idle !== undefined) {
         const existing = this.connections.get(definition.name);
         if (existing) await this.disposeConnection(existing);
-        this.connections.set(definition.name, {
-          definition,
-          client: undefined,
-          status: "disabled",
-          tools: [],
-          detail: "disabled by configuration",
-          serverInfo: undefined,
-          protocolVersion: undefined,
-        });
+        this.setIdleConnection(definition, idle);
         continue;
       }
       const existing = this.connections.get(definition.name);
@@ -271,22 +272,45 @@ export class McpManager {
     return this.refresh({ force: true });
   }
 
+  private setIdleConnection(
+    definition: McpServerDefinition,
+    status: Extract<McpServerStatusKind, "disabled" | "stopped">,
+  ): void {
+    this.connections.set(definition.name, {
+      definition,
+      client: undefined,
+      status,
+      tools: [],
+      detail:
+        status === "disabled" ? "disabled by configuration" : STOPPED_DETAIL,
+      serverInfo: undefined,
+      protocolVersion: undefined,
+    });
+  }
+
+  isStopped(serverName: string): boolean {
+    return this.stopped.has(this.resolveServerName(serverName) ?? serverName);
+  }
+
+  async stop(serverName: string): Promise<McpSnapshot> {
+    const definition = this.findDefinition(serverName);
+    if (!definition) return this.snapshot();
+    const existing = this.connections.get(definition.name);
+    if (existing) await this.disposeConnection(existing);
+    this.stopped.add(definition.name);
+    this.setIdleConnection(definition, "stopped");
+    return this.snapshot();
+  }
+
   async reconnect(name: string): Promise<McpSnapshot> {
     const definition = this.findDefinition(name);
     if (!definition) return this.snapshot();
     const resolved = definition.name;
+    this.stopped.delete(resolved);
     const existing = this.connections.get(resolved);
     if (existing) await this.disposeConnection(existing);
     if (definition.disabled) {
-      this.connections.set(resolved, {
-        definition,
-        client: undefined,
-        status: "disabled",
-        tools: [],
-        detail: "disabled by configuration",
-        serverInfo: undefined,
-        protocolVersion: undefined,
-      });
+      this.setIdleConnection(definition, "disabled");
       return this.snapshot();
     }
     this.connections.set(resolved, {
@@ -433,6 +457,7 @@ export class McpManager {
   async closeAll(): Promise<void> {
     const states = [...this.connections.values()];
     this.connections.clear();
+    this.stopped.clear();
     await Promise.all(states.map((state) => this.disposeConnection(state)));
   }
 

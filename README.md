@@ -549,7 +549,7 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/effort [level]` · `/reasoning [level]` | Thinking / reasoning effort |
 | `/freeonly [on\|off]` · `/fallback [on\|off]` | Free-only filter · cross-provider fallback |
 | `/search [provider]` · `/search-provider` | Choose web-search backend |
-| `/mcp [server\|all\|off\|list\|status\|tools\|locations\|refresh\|login <server>\|add notion]` | Browse/select MCP servers, sign in with OAuth, or connect official Notion MCP |
+| `/mcp [server\|all\|off\|list\|status\|tools\|locations\|refresh\|stop <server>\|start <server>\|login <server>\|add notion]` | Browse/select MCP servers, stop or restart one, sign in with OAuth, or connect official Notion MCP |
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
@@ -661,11 +661,13 @@ clai also inherits compatible configuration from `CLAI_MCP_CONFIG` (an OS-delimi
 /mcp locations               # project and inherited configuration paths
 /mcp refresh                 # rediscover configs and live tools
 /mcp reconnect docs          # restart one server connection
+/mcp stop docs               # shut the server down and drop its tools from every request
+/mcp start docs              # bring a stopped server back
 /mcp login docs              # run OAuth browser sign-in, store the token, reconnect
 /mcp add notion              # add https://mcp.notion.com/mcp and sign in
 ```
 
-Static built-in tools always remain first; selected MCP definitions are appended in deterministic order as `mcp.<server>.<tool>`. A tool explicitly annotated read-only can run under the normal safe/parallel policy. Unmarked, mutating, or destructive MCP tools require the usual confirmation, and ask mode exposes only safe tools. Server descriptions and results are treated as untrusted data, secrets are redacted, response sizes and lifecycles are bounded, and HTTP credentials are never forwarded through redirects.
+Static built-in tools always remain first; selected MCP definitions are appended in deterministic order as `mcp.<server>.<tool>`. Each schema is normalised once — documentation-only keywords dropped, descriptions bounded, keywords canonically ordered — and sent exactly once per request in the native function payload rather than repeated as prompt text, so a large server such as GitHub MCP costs a stable, cacheable prefix instead of tens of thousands of duplicated tokens per turn. Selection is never silently widened or dropped mid-refresh, and `/mcp stop <server>` closes the connection and removes its tools from every subsequent request until `/mcp start <server>`. A tool explicitly annotated read-only can run under the normal safe/parallel policy. Unmarked, mutating, or destructive MCP tools require the usual confirmation, and ask mode exposes only safe tools. Server descriptions and results are treated as untrusted data, secrets are redacted, response sizes and lifecycles are bounded, and HTTP credentials are never forwarded through redirects.
 
 ---
 

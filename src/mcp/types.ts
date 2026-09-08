@@ -239,6 +239,7 @@ export type McpServerStatusKind =
   | "ready"
   | "degraded"
   | "disabled"
+  | "stopped"
   | "error"
   | "connecting";
 
