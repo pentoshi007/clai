@@ -140,32 +140,88 @@ export function globToPathRegExp(glob: string): RegExp | undefined {
   }
 }
 
-function pathFromResultLine(
-  line: string,
-  filesOnly: boolean,
-): string | undefined {
-  if (filesOnly) return line.trim() || undefined;
-  return /^(.*?)[:-]\d+[:-]/.exec(line)?.[1];
+export interface SearchHit {
+  readonly path: string;
+  readonly line: number;
+  readonly match: boolean;
+  readonly text: string;
 }
 
-function filterLinesByGlob(
-  lines: readonly string[],
-  glob: string | undefined,
+const GROUP_SEPARATOR = /^--$/;
+
+const HIT_LINE = /^(.+?)([:-])(\d+)\2(.*)$/;
+
+export function parseHitLine(raw: string): SearchHit | undefined {
+  const parsed = HIT_LINE.exec(raw);
+  if (!parsed) return undefined;
+  const line = Number(parsed[3]);
+  if (!Number.isFinite(line)) return undefined;
+  return {
+    path: parsed[1]!,
+    line,
+    match: parsed[2] === ":",
+    text: parsed[4]!,
+  };
+}
+
+export function parseEngineOutput(
+  stdout: string,
   filesOnly: boolean,
-): string[] {
-  if (!glob) return [...lines];
+): SearchHit[] {
+  const hits: SearchHit[] = [];
+  for (const raw of stdout.split("\n")) {
+    if (!raw.length || GROUP_SEPARATOR.test(raw)) continue;
+    if (filesOnly) {
+      const path = raw.trim();
+      if (path) hits.push({ path, line: 0, match: true, text: "" });
+      continue;
+    }
+    const hit = parseHitLine(raw);
+    if (hit) hits.push(hit);
+  }
+  return hits;
+}
+
+export function filterHitsByGlob(
+  hits: readonly SearchHit[],
+  glob: string | undefined,
+): SearchHit[] {
+  if (!glob) return [...hits];
   const negated = glob.startsWith("!");
   const matcher = globToPathRegExp(negated ? glob.slice(1) : glob);
-  if (!matcher) return [...lines];
-  return lines.filter((line) => {
-    const path = pathFromResultLine(line, filesOnly);
-    if (path === undefined) return true;
-    return matcher.test(path) !== negated;
-  });
+  if (!matcher) return [...hits];
+  return hits.filter((hit) => matcher.test(hit.path) !== negated);
 }
 
-function resultLines(stdout: string): string[] {
-  return stdout.split("\n").filter((line) => line.length > 0);
+export function capHits(
+  hits: readonly SearchHit[],
+  maxMatches: number,
+): { readonly hits: SearchHit[]; readonly matches: number; readonly truncated: boolean } {
+  const kept: SearchHit[] = [];
+  let matches = 0;
+  let truncated = false;
+  for (const hit of hits) {
+    if (hit.match) {
+      if (matches === maxMatches) {
+        truncated = true;
+        break;
+      }
+      matches += 1;
+    }
+    kept.push(hit);
+  }
+  while (kept.length > 0 && !kept[kept.length - 1]!.match) kept.pop();
+  return { hits: kept, matches, truncated };
+}
+
+export function hasHits(stdout: string, filesOnly: boolean): boolean {
+  return parseEngineOutput(stdout, filesOnly).length > 0;
+}
+
+export function renderHit(hit: SearchHit, filesOnly: boolean): string {
+  if (filesOnly) return hit.path;
+  const separator = hit.match ? ":" : "-";
+  return `${hit.path}${separator}${hit.line}${separator}${hit.text}`;
 }
 
 function firstStderrLine(stderr: string): string {
@@ -185,12 +241,13 @@ function formatMatches(input: {
   readonly pattern: string;
   readonly resolved: string;
   readonly lines: readonly string[];
+  readonly matches: number;
   readonly truncated: boolean;
   readonly maxMatches: number;
   readonly notes: readonly string[];
 }): ToolResult {
   const header =
-    `# fs.search pattern=${JSON.stringify(input.pattern)} path=${input.resolved} hits=${input.lines.length}` +
+    `# fs.search pattern=${JSON.stringify(input.pattern)} path=${input.resolved} hits=${input.matches}` +
     (input.truncated ? ` (capped at ${input.maxMatches})` : "");
   const notes = input.notes.map((note) => `# note: ${note}`);
   return {
@@ -329,15 +386,14 @@ export async function fsSearch(
   let literal = options.fixedString === true;
 
   const finish = (outcome: EngineOutcome, engineGlobbed: boolean): ToolResult => {
-    const lines = filterLinesByGlob(
-      resultLines(outcome.stdout),
+    const parsed = filterHitsByGlob(
+      parseEngineOutput(outcome.stdout, filesOnly),
       engineGlobbed ? undefined : options.glob,
-      filesOnly,
     );
-    if (outcome.stderr.trim() && outcome.exitCode === 2 && lines.length > 0) {
+    if (outcome.stderr.trim() && outcome.exitCode === 2 && parsed.length > 0) {
       notes.push(`partial results; search reported: ${firstStderrLine(outcome.stderr)}`);
     }
-    if (lines.length === 0) {
+    if (parsed.length === 0) {
       return formatEmpty({
         pattern,
         resolved,
@@ -346,19 +402,23 @@ export async function fsSearch(
         notes,
       });
     }
-    const capped = lines.slice(0, maxMatches);
+    const capped = capHits(parsed, maxMatches);
     return formatMatches({
       pattern,
       resolved,
-      lines: capped,
-      truncated: lines.length > maxMatches,
+      lines: capped.hits.map((hit) => renderHit(hit, filesOnly)),
+      matches: capped.matches,
+      truncated: capped.truncated,
       maxMatches,
       notes,
     });
   };
 
   const timeoutResult = (outcome: EngineOutcome): ToolResult => {
-    const lines = resultLines(outcome.stdout).slice(0, maxMatches);
+    const lines = capHits(
+      parseEngineOutput(outcome.stdout, filesOnly),
+      maxMatches,
+    ).hits.map((hit) => renderHit(hit, filesOnly));
     return {
       ok: false,
       output: [
@@ -384,7 +444,7 @@ export async function fsSearch(
   );
   if (ripgrep.timedOut) return timeoutResult(ripgrep);
 
-  if (ripgrep.exitCode === 2 && resultLines(ripgrep.stdout).length === 0) {
+  if (ripgrep.exitCode === 2 && !hasHits(ripgrep.stdout, filesOnly)) {
     if (!literal && UNSUPPORTED_SYNTAX.test(ripgrep.stderr)) {
       const pcre = await runEngine(
         "rg",
@@ -404,7 +464,7 @@ export async function fsSearch(
         !pcre.unavailable &&
         (pcre.exitCode === 0 ||
           pcre.exitCode === 1 ||
-          resultLines(pcre.stdout).length > 0)
+          hasHits(pcre.stdout, filesOnly))
       ) {
         notes.push("pattern needed PCRE2 features; searched with rg --pcre2");
         ripgrep = pcre;
@@ -445,7 +505,7 @@ export async function fsSearch(
     !ripgrep.unavailable &&
     (ripgrep.exitCode === 0 ||
       ripgrep.exitCode === 1 ||
-      resultLines(ripgrep.stdout).length > 0)
+      hasHits(ripgrep.stdout, filesOnly))
   ) {
     return finish(ripgrep, true);
   }
@@ -465,7 +525,7 @@ export async function fsSearch(
     !literal &&
     grep.exitCode !== undefined &&
     grep.exitCode > 1 &&
-    resultLines(grep.stdout).length === 0 &&
+    !hasHits(grep.stdout, filesOnly) &&
     REGEX_SYNTAX_ERROR.test(grep.stderr)
   ) {
     const asLiteral = await runEngine(
@@ -500,7 +560,7 @@ export async function fsSearch(
   if (
     grep.exitCode !== undefined &&
     grep.exitCode > 1 &&
-    resultLines(grep.stdout).length === 0
+    !hasHits(grep.stdout, filesOnly)
   ) {
     const detail = firstStderrLine(grep.stderr) || ripgrepFailure;
     return {
