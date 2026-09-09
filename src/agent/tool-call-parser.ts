@@ -1,8 +1,5 @@
 import type { ChatMessage, ToolCall } from "../types.js";
-import { isCompactionMemoryMessage } from "./context-manager.js";
 import { projectToolHistory } from "./tool-history.js";
-import { isDurableInjectedBlock } from "./durable-blocks.js";
-import { isResponderResultLedgerMessage } from "./responder-context.js";
 import { preprocessJson } from "./parser/xml-protocol.js";
 import { salvageTruncatedWrite } from "./parser/salvage.js";
 export { isMutatingToolName, looksLikeTruncatedToolCall, parseAllToolCalls, parseToolCall, sameToolCall } from "./parser/parse-entry.js";
@@ -97,13 +94,7 @@ export function buildTurnHistory(
   messages: ChatMessage[],
   answer: string,
 ): ChatMessage[] {
-  const convo = messages.filter(
-    (m) =>
-      m.role !== "system" ||
-      isCompactionMemoryMessage(m) ||
-      isResponderResultLedgerMessage(m) ||
-      isDurableInjectedBlock(m),
-  );
+  const convo = messages.slice(messages[0]?.role === "system" ? 1 : 0);
   const last = convo[convo.length - 1];
   if (
     answer &&

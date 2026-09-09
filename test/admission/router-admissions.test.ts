@@ -698,7 +698,9 @@ describe("operation attempt usage", () => {
       const bodyReadStarted = new Promise<void>((resolve) => {
         notifyBodyRead = resolve;
       });
-      const transport = installTransport(() => stalledJsonResponse(notifyBodyRead));
+      const transport = provider === "nvidia"
+        ? installScript(() => stalledJsonResponse(notifyBodyRead))
+        : installTransport(() => stalledJsonResponse(notifyBodyRead));
       const recorder = new OperationUsageRecorder();
       const controller = new AbortController();
 

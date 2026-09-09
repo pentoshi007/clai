@@ -1,9 +1,15 @@
 import type { ChatMessage, ProviderId, ReasoningEffort } from "../../types.js";
 import { modelAcceptsImages } from "../capabilities.js";
-import { isMissingReasoningContentError } from "../reasoning-errors.js";
+import {
+  isInvalidReasoningContentError,
+  isMissingReasoningContentError,
+} from "../reasoning-errors.js";
 
 export function isReasoningUnsupportedError(error: unknown): boolean {
-  if (isMissingReasoningContentError(error)) return false;
+  if (
+    isMissingReasoningContentError(error) ||
+    isInvalidReasoningContentError(error)
+  ) return false;
   const status =
     error && typeof error === "object" && "status" in error
       ? Number((error as { status?: number }).status)
@@ -104,11 +110,13 @@ export function isImageInputUnsupportedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const hay = `${message}\n${body}`.toLowerCase();
 
+  const textOnlyContentType =
+    /(?:content(?:\[\d+\]|\.\d+)?(?:\.type)?|(?:\*+\.)+type|content[_ ]?type)[^\n]{0,100}(?:取值范围|(?:allowed|supported|expected|valid)(?:\s+\w+){0,3}|must be(?: one of)?|only)\s*[:：]?\s*\[\s*['"]text['"]\s*\]/.test(hay);
   const mentionsImageInput =
     /image_url|image url|inlinedata|inline_data|\bimages?\b|multimodal|\bvision\b|media_type|image content|content\[\d+\]|content\.\d+|parts\[\d+\]/.test(
       hay,
     );
-  if (!mentionsImageInput) return false;
+  if (!mentionsImageInput && !textOnlyContentType) return false;
   if (
     status !== undefined &&
     status !== 400 &&
@@ -117,7 +125,7 @@ export function isImageInputUnsupportedError(error: unknown): boolean {
   ) {
     return false;
   }
-  return /not support|unsupported|does not accept|cannot process|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field|type|value)?|unknown|unrecognized|not a valid|not allowed|only text|text[- ]only|expected a string|must be a string|additional propert/.test(
+  return textOnlyContentType || /not support|unsupported|does not accept|cannot process|invalid[_ ]?(?:request[_ ]?)?(?:argument|parameter|field|type|value)?|unknown|unrecognized|not a valid|not allowed|only text|text[- ]only|expected a string|must be a string|additional propert/.test(
     hay,
   );
 }
@@ -128,7 +136,13 @@ export function stripImagesFromMessages(
   return messages.map((message) => {
     if (!message.images?.length) return message;
     const { images: _images, ...rest } = message;
-    return rest;
+    return {
+      ...rest,
+      content: [
+        message.content,
+        `[Image input unavailable: ${message.images.length} attached image(s) were not sent to this model. Do not infer their contents; use a vision-capable model to inspect them.]`,
+      ].filter(Boolean).join("\n\n"),
+    };
   });
 }
 

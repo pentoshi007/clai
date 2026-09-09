@@ -34,6 +34,7 @@ import {
   hasImageInput,
   preservedFailure,
   reasoningWireKey,
+  requestForRoute,
   revertVisionSubstitution,
   runRecordedProviderAttempt,
   successfulRequestSnapshot,
@@ -74,7 +75,7 @@ export async function tryStreamOnce(
     downstreamEvents?.(event);
   };
   const activeRequest = {
-    ...request,
+    ...requestForRoute(request, providerId, model),
     provider: providerId,
     model,
     ...(onToolCallDelta || downstreamEvents
@@ -189,6 +190,30 @@ export async function tryStreamOnce(
     learnVisionOnSuccess();
     return result;
   } catch (error) {
+    if (
+      emittedBytes === 0 &&
+      hasImageInput(activeRequest) &&
+      isImageInputUnsupportedError(error)
+    ) {
+      learnModelVisionCapability(providerId, model, false);
+      if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected image input — continuing without images; their contents are unavailable to this model`,
+      );
+      const textOnlyRequest = requestForRoute(
+        withoutImages(activeRequest),
+        providerId,
+        model,
+      );
+      try {
+        return await runAttempt(textOnlyRequest, "adaptation");
+      } catch (retryError) {
+        throw markStreamEmittedBytes(
+          preservedFailure(retryError, error),
+          emittedBytes,
+        );
+      }
+    }
     if (
       emittedBytes === 0 &&
       activeRequest.tools?.length &&
@@ -330,26 +355,6 @@ export async function tryStreamOnce(
       );
       try {
         return await runAttempt(withoutReasoning(activeRequest), "adaptation");
-      } catch (retryError) {
-        throw markStreamEmittedBytes(
-          preservedFailure(retryError, error),
-          emittedBytes,
-        );
-      }
-    }
-    if (
-      emittedBytes === 0 &&
-      hasImageInput(activeRequest) &&
-      isImageInputUnsupportedError(error)
-    ) {
-      learnModelVisionCapability(providerId, model, false);
-      if (singleDispatch) throw markStreamEmittedBytes(error, emittedBytes);
-      onStatus?.(
-        `ℹ ${providerId}/${model} rejected image input — retrying without the attached image(s)`,
-      );
-      const textOnlyRequest = withoutImages(activeRequest);
-      try {
-        return await runAttempt(textOnlyRequest, "adaptation");
       } catch (retryError) {
         throw markStreamEmittedBytes(
           preservedFailure(retryError, error),

@@ -11,6 +11,9 @@ import {
   openAiCompatibleStream,
 } from "../../src/llm/http.js";
 import { resetResponsesWireStatesForTesting } from "../../src/llm/wire/responses-first.js";
+import { sessionCacheAffinityKey } from "../../src/llm/cache-affinity.js";
+import { withSessionAffinity } from "../../src/llm/session-affinity.js";
+import { textStreamResponse } from "../conformance/wire-fixtures.js";
 
 const BASE_URL = "https://gateway.test/v1";
 
@@ -154,6 +157,50 @@ describe("responses-first transport", () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    ["complete", "answer"],
+    ["complete", "tool"],
+    ["stream", "answer"],
+    ["stream", "tool"],
+  ] as const)("retains successful %s %s responses without visible reasoning or protocol churn", async (mode, kind) => {
+    const output = kind === "answer"
+      ? [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "done" }] }]
+      : [{ type: "function_call", id: "fc_1", call_id: "call_1", name: "fs_read", arguments: '{"path":"README.md"}' }];
+    const response = { status: "completed", output, usage: { input_tokens: 115_000, output_tokens: 12, total_tokens: 115_012 } };
+    const fetchMock = routeByPath((path) => {
+      if (path !== "responses") return mode === "stream" ? chatSse("duplicate") : chatJson("duplicate");
+      return mode === "complete"
+        ? responsesJson(response)
+        : textStreamResponse([`data: ${JSON.stringify({ type: "response.completed", response })}\n\n`]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const options = {
+      ...completeOptions("glm-5.3"),
+      providerId: "agentrouter" as const,
+      reasoning: { enabled: true, effort: "high" as const },
+    };
+    const run = () => mode === "complete"
+      ? openAiCompatibleComplete(options)
+      : openAiCompatibleStream({ ...options, onToken: vi.fn() });
+    const first = await run();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(first.usage?.promptTokens).toBe(115_000);
+    if (kind === "answer") expect(first.text).toBe("done");
+    else expect(first.toolCalls?.[0]?.id).toBe("call_1");
+    const firstBodies = await Promise.all(
+      fetchMock.mock.calls.map(([, init]) => requestBody(init as RequestInit)),
+    );
+    expect(firstBodies[0]?.max_output_tokens).toBe(512);
+    expect(JSON.stringify(firstBodies[0]?.input)).toContain("smallest positive integer");
+    expect(JSON.stringify(firstBodies[2]?.input)).toContain("hi");
+    await run();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/responses");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/chat/completions");
+    expect(fetchMock.mock.calls.slice(2).every(([url]) => String(url).endsWith("/responses"))).toBe(true);
+    expect(fetchMock.mock.calls[3]?.[1]?.body).toEqual(fetchMock.mock.calls[2]?.[1]?.body);
+  });
+
   it("attempts /responses first and maps the result", async () => {
     const fetchMock = routeByPath((path) =>
       path === "responses" ? responsesCompleted("hello") : chatJson("nope"),
@@ -164,11 +211,44 @@ describe("responses-first transport", () => {
 
     expect(result.text).toBe("hello");
     expect(String(fetchMock.mock.calls[0]![0])).toBe(`${BASE_URL}/responses`);
-    const body = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
+    const preflight = await requestBody(fetchMock.mock.calls[0]![1] as RequestInit);
+    const body = await requestBody(fetchMock.mock.calls[1]![1] as RequestInit);
+    expect(preflight.max_output_tokens).toBe(512);
+    expect(JSON.stringify(preflight.input)).toContain("smallest positive integer");
     expect(body.store).toBe(false);
     expect(body.include).toEqual(["reasoning.encrypted_content"]);
     expect(String(body.prompt_cache_key)).toMatch(/^clai-/);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the Responses cache key stable when compaction changes the opening message", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses" ? responsesCompleted("ok") : chatJson("nope"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withSessionAffinity("ses_responses_cache", async () => {
+      await openAiCompatibleComplete({
+        ...completeOptions("m-session-cache"),
+        providerId: "agentrouter",
+        messages: [{ role: "user", content: "original opening request" }],
+      });
+      await openAiCompatibleComplete({
+        ...completeOptions("m-session-cache"),
+        providerId: "agentrouter",
+        messages: [{ role: "user", content: "compacted session summary" }],
+      });
+    });
+
+    const bodies = await Promise.all(
+      fetchMock.mock.calls.map(([, init]) => requestBody(init as RequestInit)),
+    );
+    expect(bodies).toHaveLength(3);
+    expect(bodies[0]?.max_output_tokens).toBe(512);
+    expect(bodies[1]?.prompt_cache_key).toBe(
+      sessionCacheAffinityKey("ses_responses_cache"),
+    );
+    expect(bodies[2]?.prompt_cache_key).toBe(bodies[1]?.prompt_cache_key);
   });
 
   it("falls back to chat completions when the endpoint is missing and remembers it", async () => {
@@ -209,9 +289,9 @@ describe("responses-first transport", () => {
     const result = await openAiCompatibleComplete(completeOptions("m3"));
 
     expect(result.text).toBe("bare-ok");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const retryBody = await requestBody(
-      fetchMock.mock.calls[1]![1] as RequestInit,
+      fetchMock.mock.calls[2]![1] as RequestInit,
     );
     expect(retryBody.prompt_cache_key).toBeUndefined();
     expect(retryBody.store).toBeUndefined();
@@ -243,9 +323,9 @@ describe("responses-first transport", () => {
     });
 
     expect(result.text).toBe("bare-ok");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const retryBody = await requestBody(
-      fetchMock.mock.calls[1]![1] as RequestInit,
+      fetchMock.mock.calls[2]![1] as RequestInit,
     );
     expect(typeof retryBody.prompt_cache_key).toBe("string");
     expect(retryBody.store).toBeUndefined();
@@ -277,33 +357,32 @@ describe("responses-first transport", () => {
     });
 
     expect(result.text).toBe("temp-ok");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const firstBody = await requestBody(
       fetchMock.mock.calls[0]![1] as RequestInit,
     );
     expect(firstBody.temperature).toBe(0.2);
     const retryBody = await requestBody(
-      fetchMock.mock.calls[1]![1] as RequestInit,
+      fetchMock.mock.calls[2]![1] as RequestInit,
     );
     expect(retryBody.temperature).toBeUndefined();
   });
 
-  it("falls back to chat completions when the probe fails with an unreliable status", async () => {
+  it.each([401, 403, 429, 500])("surfaces transient or authentication preflight failures without caching a chat fallback (%i)", async (status) => {
     const fetchMock = routeByPath((path) =>
       path === "responses"
-        ? responsesJson({ error: { message: "Internal server error" } }, 500)
+        ? responsesJson({ error: { message: "Internal server error" } }, status)
         : chatJson("chat-ok"),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await openAiCompatibleComplete(completeOptions("m8"));
-
-    expect(result.text).toBe("chat-ok");
+    await expect(openAiCompatibleComplete(completeOptions("m8"))).rejects.toThrow(/Internal server error/);
+    await expect(openAiCompatibleComplete(completeOptions("m8"))).rejects.toThrow(/Internal server error/);
     expect(String(fetchMock.mock.calls[0]![0])).toContain("/responses");
-    expect(String(fetchMock.mock.calls[1]![0])).toContain("/chat/completions");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("falls back to chat completions when the bare retry fails with an unreliable status", async () => {
+  it("surfaces an unreliable bare preflight failure without caching a chat fallback", async () => {
     const fetchMock = routeByPath((path, init) => {
       if (path !== "responses") return chatJson("chat-ok");
       const body = init.body as string;
@@ -320,16 +399,13 @@ describe("responses-first transport", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await openAiCompatibleComplete(completeOptions("m9"));
-
-    expect(result.text).toBe("chat-ok");
+    await expect(openAiCompatibleComplete(completeOptions("m9"))).rejects.toThrow(/Internal server error/);
     const responsesCalls = fetchMock.mock.calls.filter((call) =>
       String(call[0]).includes("/responses"),
     );
     expect(responsesCalls).toHaveLength(2);
-    expect(String(fetchMock.mock.calls.at(-1)![0])).toContain(
-      "/chat/completions",
-    );
+    await expect(openAiCompatibleComplete(completeOptions("m9"))).rejects.toThrow(/Internal server error/);
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes("/responses"))).toHaveLength(4);
   });
 
   it("propagates request-content errors instead of falling back", async () => {
@@ -408,6 +484,7 @@ describe("responses-first transport", () => {
 
   it("surfaces an empty payload once the endpoint is known to work", async () => {
     const responses = [
+      responsesCompleted("first-ok"),
       responsesCompleted("first-ok"),
       responsesJson({
         status: "completed",

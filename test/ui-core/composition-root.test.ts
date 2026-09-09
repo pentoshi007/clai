@@ -289,7 +289,7 @@ describe("createCompositionRoot", () => {
     services.dispose();
   });
 
-  it("keeps the footer stable until compaction succeeds", async () => {
+  it("keeps the reported footer stable through compaction estimates", async () => {
     const observed: Array<[string, number | undefined]> = [];
     let services: ReturnType<typeof createCompositionRoot>;
     services = createCompositionRoot({
@@ -313,12 +313,12 @@ describe("createCompositionRoot", () => {
 
     expect(observed).toEqual([
       ["compaction-started", 78_200],
-      ["compaction-completed", 10_371],
+      ["compaction-completed", 78_200],
     ]);
     expect(services.session.getState().contextSnapshot).toMatchObject({
-      contextTokens: 10_371,
-      scope: "assembled-request",
-      precision: "estimate",
+      contextTokens: 78_200,
+      scope: "provider-request",
+      precision: "provider-exact",
     });
     services.dispose();
   });

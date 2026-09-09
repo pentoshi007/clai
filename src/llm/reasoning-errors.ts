@@ -1,6 +1,9 @@
 const MISSING_REASONING_CONTENT_RE =
   /reasoning[_ ]?(?:content|text).*(?:must be )?(?:passed|sent|included|provided)\s*back|missing\s+reasoning[_ ]?(?:content|text)|reasoning[_ ]?(?:content|text)\s+is\s+required/i;
 
+const INVALID_REASONING_CONTENT_RE =
+  /(?:reasoning[_ ]?(?:content|text)|thinking\s+(?:block|signature)s?|thought[_ ]?signature|signature).{0,120}(?:invalid|expired|mismatch|does not match|verification failed|failed verification|cannot be verified|not authentic|authentic continuation)|(?:invalid|expired|mismatch|does not match|verification failed|failed verification|cannot be verified|not authentic).{0,120}(?:reasoning[_ ]?(?:content|text)|thinking\s+(?:block|signature)s?|thought[_ ]?signature|signature)/i;
+
 function errorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== "object" || !("status" in error)) return undefined;
   const status = Number((error as { status?: number }).status);
@@ -20,6 +23,13 @@ export function isMissingReasoningContentError(error: unknown): boolean {
   const status = errorStatus(error);
   if (status !== undefined && status !== 400 && status !== 422) return false;
   return MISSING_REASONING_CONTENT_RE.test(errorHaystack(error));
+}
+
+export function isInvalidReasoningContentError(error: unknown): boolean {
+  const status = errorStatus(error);
+  if (status !== undefined && status !== 400 && status !== 422) return false;
+  if (isMissingReasoningContentError(error)) return false;
+  return INVALID_REASONING_CONTENT_RE.test(errorHaystack(error));
 }
 
 export function mentionsReasoning(error: unknown): boolean {

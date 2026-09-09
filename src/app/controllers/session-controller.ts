@@ -371,12 +371,13 @@ export class SessionController implements Disposable {
     this.notifyState();
   }
 
-  noteContextEstimate(estimatedTokens: number): void {
+  noteContextEstimate(estimatedTokens: number, promptUsageMissing = false): void {
     const next = estimatedContextSnapshot(
       this.usageTarget,
       this.contextSnapshot,
       estimatedTokens,
       () => this.contextTimestamp(),
+      promptUsageMissing,
     );
     if (next !== this.contextSnapshot) {
       this.setContextSnapshot(next);

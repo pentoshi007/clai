@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isInvalidReasoningContentError,
   isMissingReasoningContentError,
   mentionsReasoning,
 } from "../../src/llm/reasoning-errors.js";
@@ -50,6 +51,35 @@ describe("a missing-reasoning_content rejection is not an unsupported-reasoning 
   it("still classifies a genuine parameter rejection as unsupported", () => {
     const error = providerError(400, UNSUPPORTED_400);
     expect(isMissingReasoningContentError(error)).toBe(false);
+    expect(isReasoningUnsupportedError(error)).toBe(true);
+  });
+
+  it.each(["thinking signature verification failed", "Invalid thinking signature"])("recognizes an invalid signed continuation without treating controls as unsupported: %s", (message) => {
+    const error = providerError(
+      400,
+      JSON.stringify({ error: { message } }),
+    );
+    expect(isInvalidReasoningContentError(error)).toBe(true);
+    expect(isReasoningUnsupportedError(error)).toBe(false);
+    expect(isEffortRejectedError(error)).toBe(false);
+  });
+
+  it("does not confuse a missing continuation with an invalid one", () => {
+    expect(isInvalidReasoningContentError(providerError(400, DEEPSEEK_400))).toBe(
+      false,
+    );
+  });
+
+  it("recognizes the exact ExLabs authenticity rejection without an error envelope", () => {
+    const error = providerError(400, "'messages.reasoning_content' must be an authentic continuation for this route.");
+    expect(isInvalidReasoningContentError(error)).toBe(true);
+    expect(isReasoningUnsupportedError(error)).toBe(false);
+    expect(isEffortRejectedError(error)).toBe(false);
+  });
+
+  it.each(["Invalid enable_thinking value", "thinking.budget_tokens is invalid", "Invalid reasoning_effort"])("does not confuse control rejection with replay rejection: %s", (body) => {
+    const error = providerError(400, body);
+    expect(isInvalidReasoningContentError(error)).toBe(false);
     expect(isReasoningUnsupportedError(error)).toBe(true);
   });
 

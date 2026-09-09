@@ -256,7 +256,10 @@ export function createCompositionRoot(
       );
     }
     if (event.type === "context-estimate" && sessionRef) {
-      sessionRef.noteContextEstimate(event.payload.estimatedTokens);
+      sessionRef.noteContextEstimate(
+        event.payload.estimatedTokens,
+        event.payload.promptUsageMissing,
+      );
     }
     if (event.type === "notice") {
       const level = event.payload.level === "warn" ? "warn" : "info";

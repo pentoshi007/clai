@@ -28,6 +28,7 @@ import {
 import {
   hasImageInput,
   reasoningWireKey,
+  requestForRoute,
   revertVisionSubstitution,
   runRecordedProviderAttempt,
   withoutImages,
@@ -50,7 +51,11 @@ export async function tryCompleteOnce(
   onStatus: ((message: string) => void) | undefined,
   singleDispatch = false,
 ): Promise<CompletionResult> {
-  const activeRequest = { ...request, provider: providerId, model };
+  const activeRequest = {
+    ...requestForRoute(request, providerId, model),
+    provider: providerId,
+    model,
+  };
   const runAttempt = (
     candidate: CompletionRequest,
     attemptReason: GenerationAttemptReason,
@@ -72,6 +77,17 @@ export async function tryCompleteOnce(
     }
     return result;
   } catch (error) {
+    if (hasImageInput(activeRequest) && isImageInputUnsupportedError(error)) {
+      learnModelVisionCapability(providerId, model, false);
+      if (singleDispatch) throw error;
+      onStatus?.(
+        `ℹ ${providerId}/${model} rejected image input — continuing without images; their contents are unavailable to this model`,
+      );
+      return await runAttempt(
+        requestForRoute(withoutImages(activeRequest), providerId, model),
+        "adaptation",
+      );
+    }
     if (activeRequest.tools?.length && isToolsUnsupportedError(error)) {
       markTextOnlyModel(providerId, model);
       if (singleDispatch) throw error;
@@ -177,11 +193,6 @@ export async function tryCompleteOnce(
         `ℹ ${providerId}/${model} rejected the request body — retrying without reasoning options`,
       );
       return await runAttempt(withoutReasoning(activeRequest), "adaptation");
-    }
-    if (hasImageInput(activeRequest) && isImageInputUnsupportedError(error)) {
-      learnModelVisionCapability(providerId, model, false);
-      if (singleDispatch) throw error;
-      return await runAttempt(withoutImages(activeRequest), "adaptation");
     }
     if (!singleDispatch) {
       const restored = revertVisionSubstitution(

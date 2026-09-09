@@ -3,6 +3,7 @@ import { providerIds } from "../../types.js";
 import type { ProviderId } from "../../types.js";
 import {
   preferredVisionModels,
+  textOnlyPatterns,
   universalVisionPatterns,
   visionPatterns,
 } from "./vision-patterns.js";
@@ -124,6 +125,7 @@ export function modelVisionSupport(
   const normalizedModel = model.trim().replace(/\s+/g, "-");
   const matches = (pattern: RegExp): boolean =>
     pattern.test(model) || pattern.test(normalizedModel);
+  if (textOnlyPatterns.some(matches)) return "no";
   if ((visionPatterns[provider] ?? []).some(matches)) return "yes";
   if (universalVisionPatterns.some(matches)) return "yes";
   return "unknown";

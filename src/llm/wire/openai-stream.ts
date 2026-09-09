@@ -96,7 +96,14 @@ export async function openAiCompatibleStream(options: {
           ? { onToolCallDelta: options.onToolCallDelta }
           : {}),
         ...(options.onStreamEvent ? { onStreamEvent: options.onStreamEvent } : {}),
-      })
+      }, (probe) => openAiCompatibleStream({
+        ...options,
+        ...probe,
+        responsesFirst: false,
+        onToken: () => {},
+        onToolCallDelta: undefined,
+        onStreamEvent: undefined,
+      }))
     : undefined;
   if (viaResponses) return { ...viaResponses, api: "responses" };
   const reasoningOn = Boolean(options.reasoning?.enabled);
@@ -671,6 +678,9 @@ export async function openAiCompatibleStream(options: {
         try {
           parsed = JSON.parse(payload) as typeof parsed;
         } catch {
+          continue;
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
           continue;
         }
         if (parsed.error) {

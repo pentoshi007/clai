@@ -85,6 +85,10 @@ function streamOptions(model: string) {
   };
 }
 
+async function requestBody(init: RequestInit | undefined): Promise<Record<string, unknown>> {
+  return JSON.parse(String(init?.body)) as Record<string, unknown>;
+}
+
 describe("responses stream reasoning handling", () => {
   it("emits reasoning that only arrives in response.completed instead of a private-reasoning note", async () => {
     resetResponsesWireStatesForTesting();
@@ -110,7 +114,7 @@ describe("responses stream reasoning handling", () => {
     expect(reasoningDeltas.join("")).toContain("I multiplied 17 by 23");
     expect(result.reasoningBlock?.text).toContain("I multiplied 17 by 23");
     expect(result.reasoningBlock?.text).not.toMatch(/Reasoning is private/);
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
   });
 
   it("does not abort and re-request when reasoning arrives after visible content", async () => {
@@ -123,12 +127,12 @@ describe("responses stream reasoning handling", () => {
       onToken: () => {},
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the responses result when no reasoning text arrives after visible output was already streamed", async () => {
     resetResponsesWireStatesForTesting();
-    const fetchMock = vi.fn(async (input: unknown) => {
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/responses")) {
         return sseResponse([
@@ -182,7 +186,12 @@ describe("responses stream reasoning handling", () => {
 
     expect(result.text).toBe("ok");
     expect(result.api).toBe("responses");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const preflight = await requestBody(fetchMock.mock.calls[0]?.[1]);
+    const real = await requestBody(fetchMock.mock.calls[2]?.[1]);
+    expect(preflight.max_output_tokens).toBe(64);
+    expect(JSON.stringify(preflight.input)).toContain("smallest positive integer");
+    expect(JSON.stringify(real.input)).toContain("17*23?");
   });
 });
 

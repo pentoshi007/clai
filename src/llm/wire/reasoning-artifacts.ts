@@ -64,16 +64,20 @@ export function artifactRaw(
 export function openAiReasoningText(
   channel:
     | {
-        reasoning_content?: string | undefined;
-        reasoning?: string | undefined;
+        reasoning_content?: unknown;
+        reasoning?: unknown;
         thinking?: unknown;
       }
     | undefined,
 ): string | undefined {
-  const primary = channel?.reasoning_content ?? channel?.reasoning;
-  if (typeof primary === "string" && primary) return primary;
-  const thinking = channel?.thinking;
-  return typeof thinking === "string" && thinking ? thinking : undefined;
+  for (const value of [
+    channel?.reasoning_content,
+    channel?.reasoning,
+    channel?.thinking,
+  ]) {
+    if (typeof value === "string" && value) return value;
+  }
+  return undefined;
 }
 
 export function compatibleReasoningArtifacts(input: {

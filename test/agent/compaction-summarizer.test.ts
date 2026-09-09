@@ -27,6 +27,7 @@ describe("createCompactionSummarizer", () => {
   it("uses source messages and tools for map stages without streaming deltas", async () => {
     const execute = vi.fn<typeof executeCompactionSummary>().mockResolvedValue("map summary");
     const writeDelta = vi.fn();
+    const onUsage = vi.fn();
     const sourceMessages: ChatMessage[] = [{ role: "tool", content: "source" }];
     const summarize = createCompactionSummarizer({
       provider: "openai",
@@ -36,6 +37,7 @@ describe("createCompactionSummarizer", () => {
       currentContextLimitTokens: () => 1000,
       toolsForSourceMessages: () => [tool],
       writeDelta,
+      onUsage,
       execute,
     });
     await expect(
@@ -52,9 +54,12 @@ describe("createCompactionSummarizer", () => {
       sourceMessages,
       tools: [tool],
       qualityRetry: false,
-      retryOnServerError: true,
+      retryOnServerError: false,
+      retryOnTruncation: false,
+      retryOnRequestShapeRejection: false,
       stream: true,
       onToken: undefined,
+      onUsage,
     });
     expect(writeDelta).not.toHaveBeenCalled();
   });
@@ -62,6 +67,7 @@ describe("createCompactionSummarizer", () => {
   it("replays the successful request and streams final-stage tokens", async () => {
     const execute = vi.fn<typeof executeCompactionSummary>().mockResolvedValue("final summary");
     const writeDelta = vi.fn();
+    const onUsage = vi.fn();
     const replay = {
       provider: "openai" as const,
       model: "model",
@@ -76,6 +82,7 @@ describe("createCompactionSummarizer", () => {
       currentContextLimitTokens: () => 2048,
       toolsForSourceMessages: () => [tool],
       writeDelta,
+      onUsage,
       execute,
     });
     await expect(summarize("final prompt", { phase: "reduce" })).resolves.toBe(
@@ -92,10 +99,13 @@ describe("createCompactionSummarizer", () => {
       history,
       contextLimitTokens: 2048,
       qualityRetry: false,
-      retryOnServerError: true,
+      retryOnServerError: false,
+      retryOnTruncation: false,
+      retryOnRequestShapeRejection: false,
       stream: true,
     });
     request.onToken?.("chunk", true);
     expect(writeDelta).toHaveBeenCalledWith("compact-2", "chunk", true);
+    expect(request.onUsage).toBe(onUsage);
   });
 });

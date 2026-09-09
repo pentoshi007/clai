@@ -22,26 +22,26 @@ function okResult() {
   };
 }
 
-describe("compaction server-error retry", () => {
+describe("single-request compaction", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    completeMock.mockReset();
   });
 
-  it("retries once on a 500 and returns the summary when the second attempt succeeds", async () => {
+  it("retains the context after a 500 without dispatching a retry", async () => {
     completeMock
       .mockRejectedValueOnce(new ProviderError("upstream 500", 500))
       .mockResolvedValueOnce(okResult() as never);
 
-    const result = await summarizeForSessionCompact("compact this", {
-      provider: "free",
-      model: "free-1/deepseek-v4-flash-free",
-    });
-
-    expect(result).toContain("release work");
-    expect(completeMock).toHaveBeenCalledTimes(2);
+    await expect(
+      summarizeForSessionCompact("compact this", {
+        provider: "free",
+        model: "free-1/deepseek-v4-flash-free",
+      }),
+    ).rejects.toThrow(/500/);
+    expect(completeMock).toHaveBeenCalledTimes(1);
   });
 
-  it("throws only after the second 500 fails", async () => {
+  it("does not retry repeated server failures", async () => {
     completeMock.mockRejectedValue(new ProviderError("upstream 500", 500));
 
     await expect(
@@ -50,7 +50,7 @@ describe("compaction server-error retry", () => {
         model: "free-1/deepseek-v4-flash-free",
       }),
     ).rejects.toThrow(/500/);
-    expect(completeMock).toHaveBeenCalledTimes(2);
+    expect(completeMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not retry non-server errors", async () => {
@@ -65,19 +65,19 @@ describe("compaction server-error retry", () => {
     expect(completeMock).toHaveBeenCalledTimes(1);
   });
 
-  it("retries on internal-server-error wording without a status", async () => {
+  it("does not retry internal-server-error wording without a status", async () => {
     completeMock
       .mockRejectedValueOnce(
         new Error("Provider request failed — Internal server error"),
       )
       .mockResolvedValueOnce(okResult() as never);
 
-    const result = await summarizeForSessionCompact("compact this", {
-      provider: "free",
-      model: "free-1/deepseek-v4-flash-free",
-    });
-
-    expect(result).toContain("release work");
-    expect(completeMock).toHaveBeenCalledTimes(2);
+    await expect(
+      summarizeForSessionCompact("compact this", {
+        provider: "free",
+        model: "free-1/deepseek-v4-flash-free",
+      }),
+    ).rejects.toThrow(/internal server error/i);
+    expect(completeMock).toHaveBeenCalledTimes(1);
   });
 });

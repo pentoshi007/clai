@@ -169,7 +169,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(est.tokens).toBeGreaterThan(0);
   });
 
-  it("exposes estimated context before the first model turn", () => {
+  it("waits for provider telemetry before displaying context", () => {
     const session = new SessionController({
       agent: fakeAgent(),
       persistence: fakePersistence(),
@@ -178,11 +178,8 @@ describe("SessionController parity helpers (V2-080)", () => {
       model: "moonshotai/Kimi-K3",
     });
     const state = session.getState();
-    expect(state.contextUsage).toMatchObject({
-      contextTokens: 0,
-      exact: false,
-    });
-    expect(state.contextChip).toBe("ctx:~0");
+    expect(state.contextUsage).toBeUndefined();
+    expect(state.contextChip).toBeUndefined();
   });
 
   it("setPlanApproved is readable via isPlanApproved", () => {
@@ -304,6 +301,47 @@ describe("SessionController parity helpers (V2-080)", () => {
     });
   });
 
+  it("reports manual compaction usage before publishing the compacted context", async () => {
+    const usage = {
+      promptTokens: 115_000,
+      completionTokens: 80,
+      totalTokens: 115_080,
+      cachedPromptTokens: 110_000,
+      exact: true,
+    };
+    completeWithProvider.mockResolvedValueOnce({
+      text: "User goals: continue the work. Work completed: inspected the project. Remaining work: verify the changes.",
+      provider: "nvidia",
+      model: "test-model",
+      usage,
+    });
+    const events: AnyAppEvent[] = [];
+    const session = new SessionController({
+      agent: fakeAgent(),
+      persistence: fakePersistence(),
+      emit: (event) => events.push(event),
+      provider: "nvidia",
+      model: "test-model",
+    });
+    session.loadHistory([
+      { role: "user", content: "inspect the project" },
+      { role: "assistant", content: "project inspected" },
+      { role: "user", content: "continue" },
+      { role: "assistant", content: "changes made" },
+    ]);
+    primeCompactionSnapshot(session);
+    await session.compact(undefined, 2);
+    expect(completeWithProvider).toHaveBeenCalledOnce();
+    expect(events.filter((event) => event.type === "token-usage")).toEqual([
+      expect.objectContaining({
+        payload: { ...usage, provider: "nvidia", model: "test-model" },
+      }),
+    ]);
+    expect(events.findIndex((event) => event.type === "token-usage")).toBeLessThan(
+      events.findIndex((event) => event.type === "compaction-completed"),
+    );
+  });
+
   it("fails closed after one reasoning-only manual summary", async () => {
     completeWithProvider.mockResolvedValueOnce({
       text: "<think>reasoning consumed the allowance</think>",
@@ -347,7 +385,7 @@ describe("SessionController parity helpers (V2-080)", () => {
     expect(session.messages).toEqual(original);
   });
 
-  it("retries once after an output-limited manual summary", async () => {
+  it("retains context after an output-limited manual summary", async () => {
     completeWithProvider.mockResolvedValueOnce({
       text: "## User goals\nPreserve the session.\n## Remaining work\nContinue with",
       chunks: ["## User goals\nPreserve the session.", "\n## Remaining work\nContinue with"],
@@ -375,19 +413,18 @@ describe("SessionController parity helpers (V2-080)", () => {
     const original = session.messages.map((message) => ({ ...message }));
     primeCompactionSnapshot(session);
 
-    await expect(session.compact(undefined, 2)).resolves.toMatchObject({
-      summarized: true,
-    });
-    expect(completeWithProvider).toHaveBeenCalledTimes(2);
-    const firstCall = completeWithProvider.mock.calls[0]?.[0];
-    const retryCall = completeWithProvider.mock.calls[1]?.[0];
-    expect(retryCall).toMatchObject({
+    await expect(session.compact(undefined, 2)).rejects.toThrow(
+      /summary output limit/i,
+    );
+    expect(completeWithProvider).toHaveBeenCalledTimes(1);
+    expect(completeWithProvider.mock.calls[0]?.[0]).toMatchObject({
       thinking: { enabled: true, effort: "medium" },
-      messages: firstCall.messages,
     });
-    expect(retryCall.maxTokens).toBeGreaterThan(firstCall.maxTokens);
-    expect(renderedCompaction(events)).toContain("User goals: resumed work");
-    expect(session.messages).not.toEqual(original);
+    expect(renderedCompaction(events)).toContain("Continue with");
+    expect(session.messages).toEqual(original);
+    expect(events.some((event) => event.type === "compaction-completed")).toBe(
+      false,
+    );
   });
 
   it("keeps the exact original messages when a manual summary contains only reasoning", async () => {

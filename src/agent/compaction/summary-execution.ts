@@ -3,7 +3,7 @@ import { completeWithProvider, streamWithProvider } from "../../llm/router.js";
 import { modelMaxOutputTokens } from "../../llm/context-windows.js";
 import { effortReasoningBudgetTokens } from "../../llm/reasoning-controls.js";
 import { streamAlreadyEmitted } from "../../llm/stream-progress.js";
-import type { ChatMessage, CompletionRequest, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
+import type { ChatMessage, CompletionRequest, CompletionResult, ProviderId, SuccessfulRequestSnapshot } from "../../types.js";
 import { createThinkingStreamParser, stripThinking } from "../../ui/thinking.js";
 import { buildCompactionRetryPrompt, COMPACTION_INPUT_SAFETY_TOKENS, isCompactionCompletionTruncated, looksLikeIncompleteCompactionSummary, looksLikeTranscriptReplay, normalizeCompactionSummary } from "../compaction-summary.js";
 import { accountAssembledRequest, RequestOverLimitError } from "../request-accounting.js";
@@ -224,12 +224,15 @@ export interface CompactionSummaryExecution {
   readonly allowModelFallback?: boolean | undefined;
   readonly stream: boolean;
   readonly retryOnServerError?: boolean | undefined;
+  readonly retryOnTruncation?: boolean | undefined;
+  readonly retryOnRequestShapeRejection?: boolean | undefined;
   readonly retryDelayMs?: number | undefined;
   readonly qualityRetry?: boolean | undefined;
   readonly operation?: OperationLedger | undefined;
   readonly onToken?:
     | ((text: string, replace?: boolean) => void)
     | undefined;
+  readonly onUsage?: ((completion: CompletionResult) => void) | undefined;
 }
 
 const FAIL_CLOSED_BY_REASON = {
@@ -484,7 +487,9 @@ export async function executeCompactionSummary(
       ...(execution.operation ? { operation: execution.operation } : {}),
     };
     if (!execution.stream) {
-      return completeWithProvider(attemptRequest, routerOptions);
+      const result = await completeWithProvider(attemptRequest, routerOptions);
+      execution.onUsage?.(result);
+      return result;
     }
     if (replace) execution.onToken?.("", true);
     const parser = createThinkingStreamParser(
@@ -498,6 +503,7 @@ export async function executeCompactionSummary(
       { onStatus: () => undefined, ...routerOptions },
     );
     parser.finish();
+    execution.onUsage?.(result);
     return result;
   };
 
@@ -550,6 +556,7 @@ export async function executeCompactionSummary(
     try {
       return await runTransientAttempt(attemptRequest, replace);
     } catch (error) {
+      if (execution.retryOnRequestShapeRejection === false) throw error;
       if (!isRequestShapeRejection(error, execution.signal)) throw error;
       const compatibility = compactionCompatibilityRequest(attemptRequest);
       if (!compatibility) {
@@ -602,7 +609,10 @@ export async function executeCompactionSummary(
   }
 
   if (retryReason) {
-    if (execution.qualityRetry === false && retryReason !== "truncated") {
+    if (
+      (execution.qualityRetry === false && retryReason !== "truncated") ||
+      (execution.retryOnTruncation === false && retryReason === "truncated")
+    ) {
       throw new Error(FAIL_CLOSED_BY_REASON[retryReason]);
     }
     const retryRequest =

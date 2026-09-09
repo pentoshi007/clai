@@ -20,6 +20,12 @@ import {
 import { compileRequestPlan } from "./request-plan.js";
 import type { RequestPlanV1 } from "./request-plan.js";
 import type { ResponsesDialectConfig } from "./responses-config.js";
+import { stripImagesFromMessages } from "./wire/capability-errors.js";
+import {
+  invalidNativeToolHistoryIndexes,
+  portableToolCallContent,
+  portableToolResultContent,
+} from "./adapters/tool-history.js";
 
 interface ResponsesReplayOptions {
   readonly target: ReasoningArtifactReplayTarget;
@@ -231,15 +237,40 @@ function toResponsesInput(
   replay: ResponsesReplayOptions,
 ): Array<Record<string, unknown>> {
   const input: Array<Record<string, unknown>> = [];
-  for (const message of messages) {
+  const visibleMessages = supportsVision
+    ? messages
+    : stripImagesFromMessages(messages);
+  const invalidHistory = invalidNativeToolHistoryIndexes(visibleMessages);
+  for (const [index, message] of visibleMessages.entries()) {
     if (message.role === "system") {
       input.push(systemInputItem(message));
     } else if (message.role === "user") {
       appendUserInput(input, message, supportsVision);
     } else if (message.role === "assistant") {
-      appendAssistantInput(input, message, replay);
+      if (invalidHistory.has(index)) {
+        input.push({
+          type: "message",
+          id: assistantMessageId(message),
+          role: "assistant",
+          content: portableToolCallContent(message, toWireName),
+        });
+      } else {
+        appendAssistantInput(input, message, replay);
+      }
     } else if (message.role === "tool") {
-      input.push(toolInputItem(message));
+      if (invalidHistory.has(index)) {
+        appendUserInput(
+          input,
+          {
+            ...message,
+            role: "user",
+            content: portableToolResultContent(message, toWireName),
+          },
+          supportsVision,
+        );
+      } else {
+        input.push(toolInputItem(message));
+      }
     }
   }
   return input;

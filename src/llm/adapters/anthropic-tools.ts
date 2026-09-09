@@ -19,6 +19,11 @@ import {
 } from "../tool-protocol.js";
 import "../../tools/definitions.js";
 import { normalizeSystemMessages } from "../system-messages.js";
+import {
+  invalidNativeToolHistoryIndexes,
+  portableToolCallContent,
+  portableToolResultContent,
+} from "./tool-history.js";
 export { parseAnthropicToolUseBlocks } from "./anthropic-wire-blocks.js";
 export {
   finalizeAnthropicToolStream,
@@ -201,11 +206,17 @@ export function toAnthropicToolMessages(
 
   let i = 0;
   const nonSystem = normalizeSystemMessages(messages).rest;
+  const invalidHistory = invalidNativeToolHistoryIndexes(nonSystem);
 
   while (i < nonSystem.length) {
     const message = nonSystem[i]!;
 
     if (message.role === "tool") {
+      if (invalidHistory.has(i)) {
+        push(message, "user", portableToolResultContent(message, toWireName));
+        i += 1;
+        continue;
+      }
       const blocks: AnthropicContentBlock[] = [];
       let source = message;
       while (i < nonSystem.length && nonSystem[i]!.role === "tool") {
@@ -226,6 +237,11 @@ export function toAnthropicToolMessages(
     }
 
     if (message.role === "assistant" && message.toolCalls?.length) {
+      if (invalidHistory.has(i)) {
+        push(message, "assistant", portableToolCallContent(message, toWireName));
+        i += 1;
+        continue;
+      }
       const blocks: AnthropicContentBlock[] = [];
       const thinkingArtifacts = assistantThinkingArtifacts(message, replay);
       const leadingArtifacts = thinkingArtifacts.filter(

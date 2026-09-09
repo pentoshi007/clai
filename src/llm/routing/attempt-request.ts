@@ -112,7 +112,10 @@ export function requestForRoute(
   const forcedImageView =
     typeof request.toolChoice === "object" &&
     request.toolChoice.name === "image.view";
-  const messages = request.messages.map((message) =>
+  const routeMessages = modelAcceptsImages(provider, model)
+    ? request.messages
+    : stripImagesFromMessages(request.messages);
+  const messages = routeMessages.map((message) =>
     message.role === "system" && message.content.includes("image.view")
       ? {
           ...message,

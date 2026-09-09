@@ -1,5 +1,9 @@
 import type { ProviderId } from "../../types.js";
 
+export const textOnlyPatterns: RegExp[] = [
+  /(?:^|\/)glm-?5(?:(?:\.|p)[123])?(?:-fast)?$/i,
+];
+
 export const universalVisionPatterns: RegExp[] = [
   /(?:^|[-/_.])vision(?:$|[-_.])/i,
   /(?:^|[-/_.])vl(?:$|[-_.])/i,
@@ -99,7 +103,6 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /llama-4/i,
     /qwen2?\.?5?-vl/i,
     /glm-4\.?\d*v/i,
-    /glm-?5/i,
   ],
   "aws-mantle": [
     /claude-(?:opus|sonnet|haiku)-(?:3|3-5|3-7|4|4-\d)/i,
@@ -112,7 +115,6 @@ export const visionPatterns: Record<ProviderId, RegExp[]> = {
     /qwen2?\.?5?-vl/i,
     /qwen-vl/i,
     /glm-4\.?\d*v/i,
-    /glm-?5/i,
     /vision/i,
   ],
   bynara: [/mimo-v2\.5/i, /mistral-medium-3-5/i, /agnes-\d/i],
