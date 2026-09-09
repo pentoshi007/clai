@@ -192,10 +192,10 @@ interface GenerationAttemptContext {
 
 const generationAttemptContext = new AsyncLocalStorage<GenerationAttemptContext>();
 
-const unrecordedTransportStorage = new AsyncLocalStorage<true>();
+const unrecordedTransportStorage = new AsyncLocalStorage<{ maxOutputTokens?: number }>();
 
-export function withUnrecordedTransport<T>(run: () => T): T {
-  return unrecordedTransportStorage.run(true, run);
+export function withUnrecordedTransport<T>(run: () => T, maxOutputTokens?: number): T {
+  return unrecordedTransportStorage.run({ ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}) }, run);
 }
 
 export function recordGenerationAttemptOutcome(
@@ -235,7 +235,17 @@ export async function generationFetch(
 ): Promise<Response> {
   const affinity = currentSessionAffinity();
   if (affinity) init = withSessionAffinityHeaders(init, affinity);
-  if (unrecordedTransportStorage.getStore()) return fetch(input, init);
+  const unrecorded = unrecordedTransportStorage.getStore();
+  if (unrecorded) {
+    if (unrecorded.maxOutputTokens !== undefined && typeof init?.body === "string") {
+      const body = JSON.parse(init.body) as Record<string, unknown>;
+      for (const key of ["max_tokens", "max_completion_tokens", "max_output_tokens"]) {
+        if (typeof body[key] === "number") body[key] = Math.min(body[key], unrecorded.maxOutputTokens);
+      }
+      init = { ...init, body: JSON.stringify(body) };
+    }
+    return fetch(input, init);
+  }
   const context = generationAttemptContext.getStore();
   if (!context?.request.attemptUsage) return fetch(input, init);
   if (context.active) {

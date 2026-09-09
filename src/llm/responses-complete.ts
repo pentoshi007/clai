@@ -32,7 +32,7 @@ export async function responsesComplete(
     request.signal ?? null,
     "application/json",
   );
-  const data = await readResponsesJson(config, model, response);
+  const data = await readResponsesJson(config, model, response, request.signal);
   validate?.(data);
   const parsed = parseResponsesOutput(
     data as { output?: unknown; usage?: unknown },

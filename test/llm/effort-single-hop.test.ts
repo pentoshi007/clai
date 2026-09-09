@@ -106,6 +106,7 @@ describe("a route with a declared effort vocabulary takes one hop, not a ladder"
     ).rejects.toThrow();
 
     const efforts = transport.generations
+      .filter((generation) => generation.url.includes("/chat/completions"))
       .map((generation) => effortOf(generation.body))
       .filter((effort) => effort !== undefined);
     expect(efforts[0]).toBe("max");

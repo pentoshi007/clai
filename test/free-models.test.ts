@@ -419,7 +419,9 @@ describe("free provider (zen + kilo)", () => {
     });
 
     it("probes /responses first for kilo free models", async () => {
-      const fetchMock = vi.fn(async (input: unknown) => {
+      const bodies: Record<string, unknown>[] = [];
+      const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         if (String(input).endsWith("/responses")) {
           return new Response(
             JSON.stringify({
@@ -454,10 +456,13 @@ describe("free provider (zen + kilo)", () => {
       );
 
       expect(result.text).toBe("responses-ok");
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(String(fetchMock.mock.calls[0]![0])).toBe(
         "https://api.kilo.ai/api/gateway/responses",
       );
+      expect(bodies[0]?.max_output_tokens).toBe(512);
+      expect(JSON.stringify(bodies[0]?.input)).toContain("smallest positive integer");
+      expect(JSON.stringify(bodies[1]?.input)).toContain("hi");
     });
   });
 });
