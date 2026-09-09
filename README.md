@@ -522,6 +522,10 @@ The composer context chip shows the latest provider-reported input token count, 
 
 Same-route follow-ups retain previously sent request state, and supported cache-affinity keys stay stable for the session. Compaction reuses the previous request prefix when it fits and makes at most one generation attempt; rejected, truncated, or unusable summaries retain the original history rather than silently issuing another request. Cache hits still depend on the provider's expiry, routing, and supported caching behavior. Changing models or replacing history with a compacted summary can require a new cache prefix.
 
+Successful Responses API requests are retained even when the provider does not expose reasoning; clai does not regenerate an answer or silently change protocols merely to obtain visible thinking. Ordinary requests do not evict earlier tool interactions just because their accumulated arguments cross a rolling size threshold. Explicit compaction and context admission checks still apply.
+
+When switching providers or models, incompatible reasoning and interrupted native tool transactions are projected into compatible history without deleting the original conversation. Tool results remain available as text where native replay is unsafe, while compatible new tool transactions stay native. Known text-only GLM-5 routes do not receive image parts or the `image.view` tool. If a route rejects image input, clai can retry once without images and tells both the user and model that the image contents are unavailable; the original attachments remain available when switching back to a vision-capable model.
+
 ### Background sessions, minimise, and SSH reattach
 
 Normal persistent interactive launches use a per-session local PTY broker. The UI and agent run inside that broker-owned terminal, while the shell process you interact with is a disposable client. This keeps the exact same live UI, pending confirmation, queue, tools, MCP connections, and terminal subprocesses alive when the client goes away.

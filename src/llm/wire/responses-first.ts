@@ -28,7 +28,6 @@ import {
   type ResponsesBodyExtrasContext,
   type ResponsesDialectConfig,
 } from "../responses-config.js";
-import { PRIVATE_REASONING_NOTE_PREFIX } from "../responses-http.js";
 import { isChatShapedResponsesPayload } from "../responses-shape.js";
 import { assertResponsesShapedData } from "../responses-shape.js";
 import { isPartialStreamError } from "../stream-terminal.js";
@@ -195,16 +194,6 @@ function compatibleFromCompletion(
   };
 }
 
-function hasVisibleReasoning(
-  result: OpenAiCompatibleResult,
-  reasoningDeltas: number,
-): boolean {
-  if (reasoningDeltas > 0) return true;
-  if (result.reasoningArtifacts?.length) return true;
-  const text = result.reasoningBlock?.text ?? "";
-  return text.length > 0 && !text.startsWith(PRIVATE_REASONING_NOTE_PREFIX);
-}
-
 async function runResponsesFirst(
   options: ResponsesFirstOptions,
   run: ResponsesRunner,
@@ -217,33 +206,6 @@ async function runResponsesFirst(
   if (thinkingRequested && state.thinkingWire === "chat") return undefined;
   const probing = state.endpoint === "unknown";
 
-  const reasoningDeltas = { count: 0 };
-  const emittedVisible = { count: 0 };
-  const countingStream: StreamBridgeOptions | undefined = stream
-    ? {
-        onToken: (token) => {
-          emittedVisible.count += 1;
-          stream.onToken(token);
-        },
-        ...(stream.onToolCallDelta
-          ? {
-              onToolCallDelta: (delta) => {
-                stream.onToolCallDelta!(delta);
-              },
-            }
-          : {}),
-        onStreamEvent: (event) => {
-          if (
-            event.type === "reasoning_delta" &&
-            !event.text.startsWith(PRIVATE_REASONING_NOTE_PREFIX)
-          ) {
-            reasoningDeltas.count += 1;
-          }
-          stream.onStreamEvent?.(event);
-        },
-      }
-    : undefined;
-
   const attempt = async (extras: ExtrasLevel): Promise<OpenAiCompatibleResult> => {
     const config = genericResponsesConfig(
       options.providerId,
@@ -252,9 +214,9 @@ async function runResponsesFirst(
       options.headers,
       extras,
     );
-    const request = bridgeCompletionRequest(options, extras, countingStream);
+    const request = bridgeCompletionRequest(options, extras, stream);
     const auth: ProviderAuth = { apiKey: options.apiKey };
-    const wrappedOnToken = countingStream?.onToken ?? (() => {});
+    const wrappedOnToken = stream?.onToken ?? (() => {});
     return compatibleFromCompletion(await run(config, request, auth, wrappedOnToken));
   };
 
@@ -397,19 +359,6 @@ async function runResponsesFirst(
   state.endpoint = "available";
   recordGenerationAttemptOutcome("success", result.usage);
 
-  if (thinkingRequested && !hasVisibleReasoning(result, reasoningDeltas.count)) {
-    if (stream !== undefined && emittedVisible.count > 0) {
-      state.thinkingWire = "chat";
-      return result;
-    }
-    state.thinkingWire = "chat";
-    emitTransportEvent({
-      kind: "responses-fallback-reasoning",
-      provider: options.provider,
-      model: options.model,
-    });
-    return undefined;
-  }
   if (thinkingRequested) state.thinkingWire = "responses";
   return result;
 }

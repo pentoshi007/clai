@@ -215,16 +215,21 @@ describe("openai tools adapter", () => {
     expect(args).toBe('{"path":"a.ts","content":"x"}');
   });
 
-  it("toOpenAiMessages no longer rewrites tool → user", () => {
+  it("toOpenAiMessages preserves a completed native tool transaction", () => {
     const msgs = toOpenAiMessages([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "c1", name: "fs.read", args: {} }],
+      },
       {
         role: "tool",
         content: "ok",
         toolCallId: "c1",
       },
     ]);
-    expect(msgs[0]!.role).toBe("tool");
-    expect((msgs[0] as { tool_call_id?: string }).tool_call_id).toBe("c1");
+    expect(msgs[1]!.role).toBe("tool");
+    expect((msgs[1] as { tool_call_id?: string }).tool_call_id).toBe("c1");
   });
 
   it("openAiToolBodyFields attaches tools when present", () => {

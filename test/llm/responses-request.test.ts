@@ -98,6 +98,11 @@ describe("buildResponsesBody assistant output identity", () => {
         { role: "system", content: "sys" },
         { role: "user", content: "q" },
         {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_1", name: "fs_read", args: {} }],
+        },
+        {
           role: "tool",
           toolCallId: "call_1",
           content: "tool result",
@@ -116,7 +121,7 @@ describe("buildResponsesBody assistant output identity", () => {
       role: "user",
       content: [{ type: "input_text", text: "q" }],
     });
-    expect(input[2]).toEqual({
+    expect(input[3]).toEqual({
       type: "function_call_output",
       call_id: "call_1",
       output: "tool result",
@@ -155,7 +160,7 @@ describe("buildResponsesBody assistant output identity", () => {
     ]);
   });
 
-  it("omits the assistant message item when a tool turn has no text content", () => {
+  it("projects a final tool call without results instead of leaving it dangling", () => {
     const parsed = body({
       messages: [
         { role: "user", content: "go" },
@@ -168,12 +173,53 @@ describe("buildResponsesBody assistant output identity", () => {
     });
     expect(assistantItems(parsed)).toEqual([
       {
-        type: "function_call",
-        call_id: "call_2",
-        name: "fs_list",
-        arguments: JSON.stringify({ path: "/t" }),
+        type: "message",
+        id: assistantMessageId({
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_2", name: "fs_list", args: { path: "/t" } }],
+        }),
+        role: "assistant",
+        content: '[Tool call: fs_list]\n{"path":"/t"}',
       },
     ]);
+  });
+
+  it("projects an interrupted tool turn instead of sending an orphaned function call", () => {
+    const parsed = body({
+      messages: [
+        { role: "user", content: "go" },
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "call_2", name: "fs_list", args: { path: "/t" } }],
+        },
+        { role: "user", content: "continue" },
+      ],
+    });
+    const input = parsed.input as Array<Record<string, unknown>>;
+    expect(input.some((item) => item.type === "function_call")).toBe(false);
+    expect(input[1]).toMatchObject({
+      type: "message",
+      role: "assistant",
+      content: '[Tool call: fs_list]\n{"path":"/t"}',
+    });
+  });
+
+  it("projects unmatched tool output ids instead of sending orphaned function output", () => {
+    const parsed = body({
+      messages: [
+        { role: "user", content: "go" },
+        { role: "tool", toolCallId: "orphan_1", name: "fs_read", content: "output" },
+      ],
+    });
+    const input = parsed.input as Array<Record<string, unknown>>;
+    expect(input.some((item) => item.type === "function_call_output")).toBe(false);
+    expect(input[1]).toMatchObject({
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "[Tool result: fs_read]\noutput" }],
+    });
   });
 
   it("never serializes the legacy phase or output_text input markers", () => {

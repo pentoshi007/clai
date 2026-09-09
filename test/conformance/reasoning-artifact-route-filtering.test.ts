@@ -67,6 +67,12 @@ function toolHistory(artifact: ReasoningArtifact): ChatMessage[] {
       ],
       reasoningArtifacts: [artifact],
     },
+    {
+      role: "tool",
+      toolCallId: "route-filter-tool",
+      name: "fs.read",
+      content: "synthetic result",
+    },
   ];
 }
 

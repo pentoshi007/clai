@@ -352,6 +352,9 @@ describe("chat-completions bodies compile from plans", () => {
 
   it("produces byte-identical bodies to the legacy serializer outside the profile-driven fields", () => {
     for (const route of chatRoutes) {
+      const model = route.provider === "free"
+        ? route.model.replace(/^[^/]+\//, "")
+        : route.model;
       const style = (CHAT_STYLE_BY_ROUTE[route.id] ?? "none") as
         | "none"
         | "openai"
@@ -363,10 +366,10 @@ describe("chat-completions bodies compile from plans", () => {
         | "bynara";
       for (const requestCase of REQUEST_CASES) {
         for (const stream of [false, true]) {
-          const request = requestFor(route.provider, route.model, requestCase);
+          const request = requestFor(route.provider, model, requestCase);
           const plan = compileRequestPlan({
             provider: route.provider,
-            model: route.model,
+            model,
             messages: request.messages,
             stream,
             reasoning: request.thinking,
@@ -377,11 +380,11 @@ describe("chat-completions bodies compile from plans", () => {
             maxTokens: request.maxTokens,
           });
           const legacy = buildChatBody({
-            model: route.model,
+            model,
             providerId: route.provider,
             replayTarget: createReasoningArtifactReplayTarget({
               provider: route.provider,
-              model: route.model,
+              model,
               dialect: "openai-compatible",
             }),
             messages: request.messages,
@@ -398,7 +401,7 @@ describe("chat-completions bodies compile from plans", () => {
           const planBody = chatCompletionsBodyFromPlan(plan, {
             reasoningStyle: style,
           });
-          expect(JSON.stringify(JSON.parse(planBody).messages)).toBe(
+          expect(JSON.stringify(JSON.parse(planBody).messages), `${route.id}/${requestCase}/${stream}`).toBe(
             JSON.stringify(JSON.parse(legacy).messages),
           );
           expect(withoutControlFields(planBody)).toEqual(

@@ -55,11 +55,14 @@ describe("responses wire determinism", () => {
     });
     expect(second).toBe(first);
     const body = JSON.parse(first) as {
-      input: Array<{ type: string; call_id?: string }>;
+      input: Array<{ type: string; call_id?: string; content?: unknown }>;
     };
     const outputs = body.input.filter((item) => item.type === "function_call_output");
-    expect(outputs).toHaveLength(2);
-    expect(outputs[0]!.call_id).toBe("call_1");
-    expect(outputs[1]!.call_id).toMatch(/^call_[0-9a-f]{16}$/);
+    expect(outputs).toHaveLength(0);
+    expect(body.input).toContainEqual({
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "[Tool result]\ntext-protocol result without an id" }],
+    });
   });
 });

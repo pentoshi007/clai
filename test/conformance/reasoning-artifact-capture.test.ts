@@ -144,6 +144,12 @@ describe("T210 reasoning artifact capture", () => {
     expect(history[0]?.reasoningArtifacts?.[0]?.position.toolCallId).toBe(
       "durable-tool-id",
     );
+    history.push({
+      role: "tool",
+      toolCallId: "durable-tool-id",
+      name: "fs.read",
+      content: "synthetic result",
+    });
     const assistant = toAnthropicToolMessages(history, {
       target: createReasoningArtifactReplayTarget({
         provider: "anthropic",
@@ -421,6 +427,12 @@ describe("T210 reasoning artifact capture", () => {
       complete.reasoningBlock,
       complete.reasoningArtifacts,
     );
+    history.push({
+      role: "tool",
+      toolCallId: complete.toolCalls?.[0]?.id,
+      name: "fs.read",
+      content: "synthetic result",
+    });
     const wire = toOpenAiToolMessages(history, (message) => message.content, {
       target: createReasoningArtifactReplayTarget({
         provider: "openrouter",

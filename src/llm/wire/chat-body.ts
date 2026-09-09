@@ -11,6 +11,7 @@ import {
   openAiToolBodyFields,
   toOpenAiToolMessages,
 } from "../adapters/openai-tools.js";
+import { isTextOnlyModel } from "../tool-protocol.js";
 import { cacheAffinityKey, sessionCacheAffinityKey } from "../cache-affinity.js";
 import { currentSessionAffinity } from "../session-affinity.js";
 import {
@@ -18,9 +19,15 @@ import {
   modelSupportsThinking,
 } from "../capabilities.js";
 import { modelMaxOutputTokens } from "../context-windows.js";
+import {
+  reasoningArtifactText,
+  reasoningArtifactsForMessage,
+  selectReasoningArtifactsForReplay,
+} from "../reasoning-artifacts.js";
 import type { RequestPlanV1 } from "../request-plan.js";
 import { resolveSampling } from "../sampling.js";
 import { singleLeadingSystemMessages } from "../system-messages.js";
+import { stripImagesFromMessages } from "./capability-errors.js";
 import {
   buildReasoningPayload,
   ReasoningControlContext,
@@ -38,10 +45,21 @@ export function toOpenAiMessages(
     target: ReasoningArtifactReplayTarget;
     observe?: ReasoningArtifactReplayObserver | undefined;
     forceScope?: boolean | undefined;
+    portableToolHistory?: ReadonlySet<ChatMessage> | undefined;
   },
 ): Array<Record<string, unknown>> {
+  const wireMessages = supportsVision
+    ? messages
+    : stripImagesFromMessages(messages);
+  const portableToolHistory = replay?.portableToolHistory
+    ? new Set(
+        wireMessages.filter((message, index) =>
+          replay.portableToolHistory!.has(messages[index]!),
+        ),
+      )
+    : undefined;
   return toOpenAiToolMessages(
-    messages,
+    wireMessages,
     (message) => {
       if (supportsVision && message.images && message.images.length > 0) {
         const parts: OpenAiContentPart[] = [];
@@ -60,7 +78,12 @@ export function toOpenAiMessages(
       }
       return message.content;
     },
-    replay,
+    replay
+      ? {
+          ...replay,
+          ...(portableToolHistory ? { portableToolHistory } : {}),
+        }
+      : undefined,
   ) as Array<Record<string, unknown>>;
 }
 
@@ -90,6 +113,7 @@ export interface ChatCompletionsBodyOptions {
   replayTarget?: ReasoningArtifactReplayTarget | undefined;
   reasoningArtifactReplayObserver?: ReasoningArtifactReplayObserver | undefined;
   forceReasoningReplay?: boolean | undefined;
+  portableToolHistory?: ReadonlySet<ChatMessage> | undefined;
   control?: ReasoningControlContext | undefined;
   outputTokenLimit?: number | undefined;
   resolvedSampling?:
@@ -188,6 +212,9 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
             target: options.replayTarget,
             observe: options.reasoningArtifactReplayObserver,
             ...(options.forceReasoningReplay ? { forceScope: true } : {}),
+            ...(options.portableToolHistory
+              ? { portableToolHistory: options.portableToolHistory }
+              : {}),
           }
         : undefined,
     ),
@@ -238,6 +265,59 @@ export function buildChatBody(options: ChatCompletionsBodyOptions): string {
   return emitChatCompletionsBody(options);
 }
 
+function portableToolHistory(
+  plan: RequestPlanV1,
+  forceReasoningReplay: boolean,
+): ReadonlySet<ChatMessage> | undefined {
+  const portable = new Set<ChatMessage>();
+  for (const [index, message] of plan.timeline.messages.entries()) {
+    if (message.role !== "assistant" || !message.toolCalls?.length) continue;
+    const decisions = plan.replay.decisions.filter(
+      (entry) => entry.messageIndex === index,
+    );
+    const foreignArtifact = decisions.some(
+      ({ decision }) =>
+        decision.action === "omitted" &&
+        !decision.source.legacy &&
+        (decision.reason === "provider-mismatch" ||
+          decision.reason === "dialect-mismatch" ||
+          decision.reason === "model-mismatch" ||
+          decision.reason === "endpoint-unknown" ||
+          decision.reason === "endpoint-mismatch"),
+    );
+    const hasCompatibleArtifact = decisions.some(
+      ({ decision }) => decision.action === "replayed",
+    );
+    const replayableText = selectReasoningArtifactsForReplay({
+      artifacts: reasoningArtifactsForMessage(message),
+      target: plan.replay.target,
+      context: { hasToolCalls: true, forceScope: forceReasoningReplay },
+    }).some(
+      (artifact) =>
+        artifact.kind === "plaintext" && Boolean(reasoningArtifactText(artifact)?.trim()),
+    );
+    if (
+      isTextOnlyModel(plan.route.provider, plan.route.model) ||
+      (foreignArtifact && !hasCompatibleArtifact) ||
+      (forceReasoningReplay && !replayableText)
+    ) {
+      portable.add(message);
+      const callIds = new Set(message.toolCalls.map((call) => call.id));
+      for (
+        let resultIndex = index + 1;
+        plan.timeline.messages[resultIndex]?.role === "tool";
+        resultIndex += 1
+      ) {
+        const result = plan.timeline.messages[resultIndex]!;
+        if (result.toolCallId && callIds.has(result.toolCallId)) {
+          portable.add(result);
+        }
+      }
+    }
+  }
+  return portable.size ? portable : undefined;
+}
+
 export function chatCompletionsBodyFromPlan(
   plan: RequestPlanV1,
   extras: {
@@ -248,6 +328,10 @@ export function chatCompletionsBodyFromPlan(
     forceReasoningReplay?: boolean | undefined;
   } = {},
 ): string {
+  const portableHistory = portableToolHistory(
+    plan,
+    Boolean(extras.forceReasoningReplay),
+  );
   return emitChatCompletionsBody({
     model: plan.route.model,
     providerId: plan.route.provider,
@@ -284,5 +368,6 @@ export function chatCompletionsBodyFromPlan(
     replayTarget: plan.replay.target,
     reasoningArtifactReplayObserver: extras.reasoningArtifactReplayObserver,
     ...(extras.forceReasoningReplay ? { forceReasoningReplay: true } : {}),
+    ...(portableHistory ? { portableToolHistory: portableHistory } : {}),
   });
 }

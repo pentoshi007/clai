@@ -3,7 +3,10 @@ import type {
   ReasoningEffort,
   ReasoningPreference,
 } from "../types.js";
-import { isMissingReasoningContentError } from "./reasoning-errors.js";
+import {
+  isInvalidReasoningContentError,
+  isMissingReasoningContentError,
+} from "./reasoning-errors.js";
 
 
 export const EFFORT_LADDER: readonly ReasoningEffort[] = [
@@ -38,7 +41,10 @@ export function effortCandidates(
 }
 
 export function isEffortRejectedError(error: unknown): boolean {
-  if (isMissingReasoningContentError(error)) return false;
+  if (
+    isMissingReasoningContentError(error) ||
+    isInvalidReasoningContentError(error)
+  ) return false;
   const status =
     error && typeof error === "object" && "status" in error
       ? Number((error as { status?: number }).status)

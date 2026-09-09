@@ -13,6 +13,7 @@ import {
 import { resetResponsesWireStatesForTesting } from "../../src/llm/wire/responses-first.js";
 import { sessionCacheAffinityKey } from "../../src/llm/cache-affinity.js";
 import { withSessionAffinity } from "../../src/llm/session-affinity.js";
+import { textStreamResponse } from "../conformance/wire-fixtures.js";
 
 const BASE_URL = "https://gateway.test/v1";
 
@@ -154,6 +155,42 @@ describe("responses-first transport", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["complete", "answer"],
+    ["complete", "tool"],
+    ["stream", "answer"],
+    ["stream", "tool"],
+  ] as const)("retains successful %s %s responses without visible reasoning or protocol churn", async (mode, kind) => {
+    const output = kind === "answer"
+      ? [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "done" }] }]
+      : [{ type: "function_call", id: "fc_1", call_id: "call_1", name: "fs_read", arguments: '{"path":"README.md"}' }];
+    const response = { status: "completed", output, usage: { input_tokens: 115_000, output_tokens: 12, total_tokens: 115_012 } };
+    const fetchMock = routeByPath((path) => {
+      if (path !== "responses") return mode === "stream" ? chatSse("duplicate") : chatJson("duplicate");
+      return mode === "complete"
+        ? responsesJson(response)
+        : textStreamResponse([`data: ${JSON.stringify({ type: "response.completed", response })}\n\n`]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const options = {
+      ...completeOptions("glm-5.3"),
+      providerId: "agentrouter" as const,
+      reasoning: { enabled: true, effort: "high" as const },
+    };
+    const run = () => mode === "complete"
+      ? openAiCompatibleComplete(options)
+      : openAiCompatibleStream({ ...options, onToken: vi.fn() });
+    const first = await run();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(first.usage?.promptTokens).toBe(115_000);
+    if (kind === "answer") expect(first.text).toBe("done");
+    else expect(first.toolCalls?.[0]?.id).toBe("call_1");
+    await run();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every(([url]) => String(url).endsWith("/responses"))).toBe(true);
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toEqual(fetchMock.mock.calls[0]?.[1]?.body);
   });
 
   it("attempts /responses first and maps the result", async () => {

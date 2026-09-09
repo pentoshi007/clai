@@ -17,6 +17,11 @@ import {
   toWireName,
   type ToolChoice,
 } from "../tool-protocol.js";
+import {
+  invalidNativeToolHistoryIndexes,
+  portableToolCallContent,
+  portableToolResultContent,
+} from "./tool-history.js";
 import "../../tools/definitions.js";
 
 export function toOpenAiTools(defs: ToolDefinition[]): Array<{
@@ -61,6 +66,7 @@ interface CompatibleReasoningReplayOptions {
   readonly target: ReasoningArtifactReplayTarget;
   readonly observe?: ReasoningArtifactReplayObserver | undefined;
   readonly forceScope?: boolean | undefined;
+  readonly portableToolHistory?: ReadonlySet<ChatMessage> | undefined;
 }
 
 function compatibleReasoningFields(
@@ -113,8 +119,18 @@ export function toOpenAiToolMessages(
   replay?: CompatibleReasoningReplayOptions,
 ): OpenAiWireMessage[] {
   const out: OpenAiWireMessage[] = [];
-  for (const message of messages) {
+  const invalidHistory = invalidNativeToolHistoryIndexes(messages);
+  for (const [index, message] of messages.entries()) {
+    const portable =
+      replay?.portableToolHistory?.has(message) || invalidHistory.has(index);
     if (message.role === "tool") {
+      if (portable) {
+        out.push({
+          role: "user",
+          content: portableToolResultContent(message, toWireName),
+        });
+        continue;
+      }
       out.push({
         role: "tool",
         tool_call_id: message.toolCallId ?? "",
@@ -124,6 +140,23 @@ export function toOpenAiToolMessages(
       continue;
     }
     if (message.role === "assistant" && message.toolCalls?.length) {
+      if (portable) {
+        if (replay?.observe) {
+          compatibleReasoningFields(message, {
+            ...replay,
+            observe: (decision) => replay.observe?.({
+              ...decision,
+              action: "omitted",
+              reason: decision.action === "replayed" ? "replay-disabled" : decision.reason,
+            }),
+          });
+        }
+        out.push({
+          role: "assistant",
+          content: portableToolCallContent(message, toWireName),
+        });
+        continue;
+      }
       const reasoning = compatibleReasoningFields(message, replay);
       out.push({
         role: "assistant",
