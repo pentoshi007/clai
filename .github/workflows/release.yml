@@ -51,13 +51,28 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&per_page=10" --jq '[.workflow_runs[] | select(.status == "completed")] | sort_by(.updated_at) | last | .conclusion // "missing"')"
-          if [ "${conclusion}" != "success" ]; then
-            echo "CI has not concluded success on ${GITHUB_SHA} (latest: ${conclusion}); refusing to build or publish." >&2
-            echo "Push the tag only after CI is green on the tagged commit." >&2
-            exit 1
-          fi
-          echo "CI is green on ${GITHUB_SHA}."
+          timeout_minutes=15
+          deadline=$(( $(date +%s) + timeout_minutes * 60 ))
+          while :; do
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&per_page=10" --jq '[.workflow_runs[]] | sort_by(.updated_at) | last | if . == null then "missing" else "\(.status) \(.conclusion // "pending")" end')"
+            read -r status conclusion <<<"${state}"
+            if [ "${status}" = "completed" ]; then
+              if [ "${conclusion}" = "success" ]; then
+                echo "CI is green on ${GITHUB_SHA}."
+                exit 0
+              fi
+              echo "CI concluded ${conclusion} on ${GITHUB_SHA}; refusing to build or publish." >&2
+              echo "Push the tag only after CI is green on the tagged commit." >&2
+              exit 1
+            fi
+            if [ "$(date +%s)" -ge "${deadline}" ]; then
+              echo "CI on ${GITHUB_SHA} was still ${status} after ${timeout_minutes}m; refusing to build or publish." >&2
+              echo "Push the tag only after CI is green on the tagged commit." >&2
+              exit 1
+            fi
+            echo "CI on ${GITHUB_SHA} is ${status}; waiting for it to conclude."
+            sleep 30
+          done
 
   build:
     needs: [validate, ci-gate]
