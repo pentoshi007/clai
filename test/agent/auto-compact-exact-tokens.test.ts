@@ -204,6 +204,12 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
             text: "summary text",
             provider: "nvidia",
             model: "test-model",
+            usage: {
+              promptTokens: 77_777,
+              completionTokens: 16,
+              totalTokens: 77_793,
+              exact: true,
+            },
           });
         }
         if (call <= 2) {
@@ -248,6 +254,15 @@ describe("auto-compaction on provider-exact tokens and session limits", () => {
     expect(
       events.some((e) => e.type === "compaction-start"),
       "expected compaction once the mid-run limit lowered the trigger below the current assembled request",
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "token-usage" &&
+          event.usage.promptTokens === 77_777 &&
+          event.provider === "nvidia" &&
+          event.model === "test-model",
+      ),
     ).toBe(true);
   });
 });

@@ -22,7 +22,12 @@ import { DURABLE_ENVELOPE_PREFIX, isDurableEnvelopeContent } from "../durable-en
 import { isDurableInjectedBlock } from "../durable-blocks.js";
 import { estimateMessagesTokens } from "../request-accounting.js";
 import { isResponderResultLedgerMessage, RESPONDER_RESULT_LEDGER_PREFIX } from "../responder-context.js";
-import { expandKeepStartForToolPairs, hasOrphanToolMessages, projectToolHistory } from "../tool-history.js";
+import {
+  collapseOversizedToolHistory,
+  expandKeepStartForToolPairs,
+  hasOrphanToolMessages,
+  projectToolHistory,
+} from "../tool-history.js";
 
 export const POST_COMPACT_SOFT_UPPER_BAND_TOKENS = 20_000;
 
@@ -508,6 +513,8 @@ export async function compactMessagesWithSummary(
       envelopeMsg,
     );
   }
+
+  collapseOversizedToolHistory(compacted);
 
   if (hasOrphanToolMessages(compacted)) {
     throw new Error(

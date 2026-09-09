@@ -352,6 +352,6 @@ describe("Merge Gateway wire behavior over real HTTP", () => {
       },
       { apiKey: "mg_wirekey1" },
     );
-    expect(captured[0]!.body.reasoning_effort).toBe("minimal");
+    expect(captured.at(-1)!.body.reasoning_effort).toBe("minimal");
   });
 });

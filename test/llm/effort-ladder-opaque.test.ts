@@ -11,6 +11,7 @@ import {
   effortCandidatesFor,
   shouldEnterEffortLadder,
 } from "../../src/llm/routing/error-classification.js";
+import { isInvalidReasoningContentError } from "../../src/llm/reasoning-errors.js";
 import { installTransport } from "../conformance/fake-transport.js";
 import {
   jsonResponse,
@@ -137,6 +138,16 @@ describe("effort ladder entry for opaque gateway rejections", () => {
         false,
       ),
     ).toBe(false);
+  });
+
+  it("does not enter the ladder for an invalid reasoning continuation", () => {
+    const error = new ProviderError(
+      "Provider request failed with HTTP 400 — thinking signature verification failed",
+      400,
+      "thinking signature verification failed",
+    );
+    expect(isInvalidReasoningContentError(error)).toBe(true);
+    expect(shouldEnterEffortLadder(error, thinking("xhigh"), "free", MODEL, false)).toBe(false);
   });
 
   it("steps down within the declared efforts when the gateway rejects one", () => {

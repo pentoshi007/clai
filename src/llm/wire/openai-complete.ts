@@ -51,7 +51,8 @@ export async function openAiCompatibleComplete(options: {
   responsesFirst?: boolean | undefined;
 }): Promise<OpenAiCompatibleResult> {
   const viaResponses = options.responsesFirst
-    ? await openAiCompatibleCompleteViaResponses(options)
+    ? await openAiCompatibleCompleteViaResponses(options, (probe) =>
+        openAiCompatibleComplete({ ...options, ...probe, responsesFirst: false }))
     : undefined;
   if (viaResponses) return { ...viaResponses, api: "responses" };
   const plan = compileRequestPlan({
@@ -117,7 +118,7 @@ export async function openAiCompatibleComplete(options: {
     usage?: unknown;
   };
   try {
-    data = await readJson(response);
+    data = await readJson(response, options.signal);
   } catch (error) {
     if (error instanceof ProviderError) {
       throw new ProviderError(

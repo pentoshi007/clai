@@ -128,6 +128,12 @@ export const runTurnRounds = async (
         {
           dispatchedRawRequestTokens: deps.loop.dispatchedRawRequestTokens,
           dispatchedRequestRoute: deps.loop.dispatchedRequestRoute,
+          emitContextFallback: (estimatedTokens) => deps.emit({
+            type: "context-estimate",
+            estimatedTokens,
+            model: completion.model,
+            promptUsageMissing: true,
+          }),
           emitTokenUsage: ({ usage, provider: usageProvider, model: usageModel, api, attempt }) =>
             deps.emit({
               type: "token-usage",

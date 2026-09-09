@@ -189,7 +189,7 @@ describe("cache and reasoning bucket normalization", () => {
     expect(formatContextChip(snapshot, { compact: true })).not.toContain("96k");
   });
 
-  it("folds additive cache counters into the consumed context", () => {
+  it("trusts the reported prompt total even when cache telemetry is inconsistent", () => {
     const inclusive = parseOpenAiUsage(
       openAiUsagePayload({
         promptTokens: 120_000,
@@ -200,22 +200,22 @@ describe("cache and reasoning bucket normalization", () => {
     )!;
     expect(effectivePromptTokens(inclusive)).toBe(120_000);
 
-    const additive = parseOpenAiUsage({
+    const inconsistent = parseOpenAiUsage({
       prompt_tokens: 88_700,
       completion_tokens: 900,
       prompt_tokens_details: { cached_tokens: 132_065 },
     })!;
-    expect(effectivePromptTokens(additive)).toBe(220_765);
+    expect(effectivePromptTokens(inconsistent)).toBe(88_700);
 
     const snapshot = recordContextUsageSnapshot(
       target,
       undefined,
-      additive,
+      inconsistent,
       undefined,
       () => 5,
     );
     expect(snapshot).toMatchObject({
-      contextTokens: 220_765,
+      contextTokens: 88_700,
       scope: "provider-request",
       precision: "provider-exact",
     });
@@ -406,7 +406,7 @@ describe("exactness lifetime", () => {
     });
   });
 
-  it("follows the assembled-request estimate once history outgrows the measurement", () => {
+  it("retains the provider measurement when a local estimate grows", () => {
     const previous = createContextSnapshot({
       contextTokens: 78_200,
       lastCompletionTokens: 100,
@@ -426,10 +426,10 @@ describe("exactness lifetime", () => {
     )!;
 
     expect(refreshed).toMatchObject({
-      contextTokens: 229_182,
-      scope: "assembled-request",
-      precision: "estimate",
-      observedAt: 2,
+      contextTokens: 78_200,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
     });
   });
 
@@ -468,7 +468,7 @@ describe("exactness lifetime", () => {
     });
   });
 
-  it("demotes to an estimate after compaction", () => {
+  it("retains reported context after compaction until a new provider measurement", () => {
     const previous = exactSnapshot();
 
     const compacted = compactedUsageSnapshot(
@@ -478,8 +478,8 @@ describe("exactness lifetime", () => {
       18_000,
     );
 
-    expect(compacted.contextTokens).toBe(18_000);
-    expect(compacted.exact).toBe(false);
+    expect(compacted.contextTokens).toBe(previous.contextTokens);
+    expect(compacted.exact).toBe(true);
     expect(compacted.sessionPromptTokens).toBe(previous.sessionPromptTokens);
   });
 });

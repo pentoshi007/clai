@@ -1,5 +1,6 @@
 import type {
   ChatMessage,
+  CompletionResult,
   ProviderId,
   SuccessfulRequestSnapshot,
   ToolDefinition,
@@ -28,6 +29,7 @@ export interface CompactionSummarizerPorts {
   readonly currentContextLimitTokens: () => number | undefined;
   readonly toolsForSourceMessages: () => ToolDefinition[] | undefined;
   readonly writeDelta: (id: string, text: string, replace?: boolean) => void;
+  readonly onUsage?: ((completion: CompletionResult) => void) | undefined;
   readonly execute?: typeof executeCompactionSummary | undefined;
 }
 
@@ -66,11 +68,14 @@ const summarize = async (
       ...(contextLimitTokens !== undefined ? { contextLimitTokens } : {}),
       ...(ports.state.activeLedger ? { operation: ports.state.activeLedger } : {}),
       qualityRetry: false,
-      retryOnServerError: true,
+      retryOnServerError: false,
+      retryOnTruncation: false,
+      retryOnRequestShapeRejection: false,
       stream: true,
       onToken: compactionId
         ? (text, replace) => ports.writeDelta(compactionId, text, replace)
         : undefined,
+      ...(ports.onUsage ? { onUsage: ports.onUsage } : {}),
   });
 };
 

@@ -28,8 +28,11 @@ import {
   AGENT_INSTRUCTIONS_PREFIX,
   isKeyedBlockMessage,
 } from "./injected-blocks.js";
+import { REQUEST_CONTEXT_PREFIX } from "../llm/system-messages.js";
+import { PLAN_CONTEXT_PREFIX } from "./plan-tool.js";
 
 export {
+  collapseOversizedToolHistory,
   MAX_RETAINED_COMPLETED_TOOL_ARGUMENT_CHARS,
   PROTOCOL_PLACEHOLDER_MARKER,
 };
@@ -37,6 +40,8 @@ export {
 function isBenignTrailingSystemBlock(content: string): boolean {
   return (
     isSessionStateMessage(content) ||
+    content.startsWith(REQUEST_CONTEXT_PREFIX) ||
+    content.startsWith(PLAN_CONTEXT_PREFIX) ||
     isKeyedBlockMessage(content, AGENT_INSTRUCTIONS_PREFIX) ||
     isKeyedBlockMessage(content, ACTIVE_SKILLS_PREFIX)
   );
@@ -436,13 +441,8 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
   let repairs = normalizeToolHistoryEntries(messages);
   const idRepairs = rewriteConflictingToolCallIds(messages);
   repairs += idRepairs;
-  repairs += collapseOversizedToolHistory(messages);
   if (validateToolProtocol(messages).length === 0) {
-    return (
-      repairs +
-      collapseElidedToolHistory(messages) +
-      collapseOversizedToolHistory(messages)
-    );
+    return repairs + collapseElidedToolHistory(messages);
   }
 
   const out: ChatMessage[] = [];
@@ -550,11 +550,7 @@ export function repairToolProtocol(messages: ChatMessage[]): number {
   messages.length = 0;
   messages.push(...out);
 
-  return (
-    repairs +
-    collapseElidedToolHistory(messages) +
-    collapseOversizedToolHistory(messages)
-  );
+  return repairs + collapseElidedToolHistory(messages);
 }
 
 export function projectToolHistory(

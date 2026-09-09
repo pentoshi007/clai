@@ -12,11 +12,11 @@ import {
   classifyResponsesFailure,
   failureText,
   isGenericModelRejection,
-  PROBE_UNRELIABLE_STATUS,
   providerStatusCode,
   type ExtrasLevel,
 } from "./responses-failure.js";
-import { cacheAffinityKey } from "../cache-affinity.js";
+import { cacheAffinityKey, sessionCacheAffinityKey } from "../cache-affinity.js";
+import { currentSessionAffinity } from "../session-affinity.js";
 import { responsesComplete } from "../responses-complete.js";
 import { isResponsesEmptyOutput } from "../responses-empty-output.js";
 import { responsesStream } from "../responses-stream.js";
@@ -27,18 +27,20 @@ import {
   type ResponsesBodyExtrasContext,
   type ResponsesDialectConfig,
 } from "../responses-config.js";
-import { PRIVATE_REASONING_NOTE_PREFIX } from "../responses-http.js";
-import { isChatShapedResponsesPayload } from "../responses-shape.js";
-import { assertResponsesShapedData } from "../responses-shape.js";
-import { isPartialStreamError } from "../stream-terminal.js";
-import {
-  recordGenerationAttemptOutcome,
-  withUnrecordedTransport,
-} from "../operation-usage.js";
-import { emitTransportEvent, type TransportEvent } from "../transport-events.js";
+import { isChatShapedResponsesPayload, assertResponsesShapedData } from "../responses-shape.js";
+import { withUnrecordedTransport } from "../operation-usage.js";
+import { emitTransportEvent, type TransportEventKind } from "../transport-events.js";
 import type { ProviderAuth } from "../provider.js";
 import type { OpenAiCompatibleResult } from "./reasoning-artifacts.js";
 import type { ProviderStreamEventSink } from "../stream-events.js";
+import type { ReasoningStyle } from "./reasoning-payload.js";
+import {
+  hasVisibleReasoning,
+  preflightOptions,
+  resetResponsesPreflight,
+  selectResponsesWire,
+  type ResponsesSelection,
+} from "./responses-preflight.js";
 
 const RESPONSES_FIRST_EXCLUDED: ReadonlySet<ProviderId> = new Set([
   "anthropic",
@@ -50,26 +52,6 @@ const RESPONSES_FIRST_EXCLUDED: ReadonlySet<ProviderId> = new Set([
 
 export function responsesFirstCandidate(providerId: ProviderId): boolean {
   return !RESPONSES_FIRST_EXCLUDED.has(providerId);
-}
-
-type ThinkingWire = "unknown" | "responses" | "chat";
-
-interface ResponsesWireState {
-  endpoint: "unknown" | "available" | "unsupported";
-  extras: ExtrasLevel;
-  thinkingWire: ThinkingWire;
-}
-
-const wireStates = new Map<string, ResponsesWireState>();
-
-function wireState(providerId: ProviderId, model: string): ResponsesWireState {
-  const key = `${providerId}:${model.trim().toLowerCase()}`;
-  let state = wireStates.get(key);
-  if (!state) {
-    state = { endpoint: "unknown", extras: "full", thinkingWire: "unknown" };
-    wireStates.set(key, state);
-  }
-  return state;
 }
 
 const RESPONSES_STREAM_TERMINAL = {
@@ -105,7 +87,11 @@ function genericResponsesConfig(
       return { effort, summary: responsesReasoningSummary(effort) };
     },
     bodyExtras(context: ResponsesBodyExtrasContext) {
-      const promptCacheKey = `${context.purpose === "auxiliary" ? "aux-" : ""}${cacheAffinityKey(providerId, context.model, context.messages)}`;
+      const affinity = currentSessionAffinity();
+      const key = affinity
+        ? sessionCacheAffinityKey(affinity)
+        : cacheAffinityKey(providerId, context.model, context.messages);
+      const promptCacheKey = `${context.purpose === "auxiliary" ? "aux-" : ""}${key}`;
       if (extras === "bare") {
         return providerId === "explabs"
           ? { prompt_cache_key: promptCacheKey }
@@ -132,6 +118,8 @@ export interface ResponsesFirstOptions {
   headers?: Record<string, string> | undefined;
   signal?: AbortSignal | undefined;
   reasoning?: ReasoningPreference | undefined;
+  reasoningStyle?: ReasoningStyle | undefined;
+  includeStreamUsage?: boolean | undefined;
   tools?: ToolDefinition[] | undefined;
   toolChoice?: ToolChoice | undefined;
   parallelToolCalls?: boolean | undefined;
@@ -151,9 +139,10 @@ type ResponsesRunner = (
   onToken: (token: string) => void,
 ) => Promise<CompletionResult>;
 
+type ChatProbe = (options: ResponsesFirstOptions) => Promise<OpenAiCompatibleResult>;
+
 function bridgeCompletionRequest(
   options: ResponsesFirstOptions,
-  _extras: ExtrasLevel,
   stream?: StreamBridgeOptions,
 ): CompletionRequest {
   return {
@@ -190,258 +179,102 @@ function compatibleFromCompletion(
   };
 }
 
-function hasVisibleReasoning(
-  result: OpenAiCompatibleResult,
-  reasoningDeltas: number,
-): boolean {
-  if (reasoningDeltas > 0) return true;
-  if (result.reasoningArtifacts?.length) return true;
-  const text = result.reasoningBlock?.text ?? "";
-  return text.length > 0 && !text.startsWith(PRIVATE_REASONING_NOTE_PREFIX);
-}
-
 async function runResponsesFirst(
   options: ResponsesFirstOptions,
   run: ResponsesRunner,
+  probeChat: ChatProbe,
   stream?: StreamBridgeOptions,
 ): Promise<OpenAiCompatibleResult | undefined> {
   if (!responsesFirstCandidate(options.providerId)) return undefined;
-  const state = wireState(options.providerId, options.model);
-  if (state.endpoint === "unsupported") return undefined;
-  const thinkingRequested = options.reasoning?.enabled === true;
-  if (thinkingRequested && state.thinkingWire === "chat") return undefined;
-  const probing = state.endpoint === "unknown";
-
-  const reasoningDeltas = { count: 0 };
-  const emittedVisible = { count: 0 };
-  const countingStream: StreamBridgeOptions | undefined = stream
-    ? {
-        onToken: (token) => {
-          emittedVisible.count += 1;
-          stream.onToken(token);
-        },
-        ...(stream.onToolCallDelta
-          ? {
-              onToolCallDelta: (delta) => {
-                stream.onToolCallDelta!(delta);
-              },
+  const configFor = (extras: ExtrasLevel): ResponsesDialectConfig =>
+    genericResponsesConfig(options.providerId, options.provider, options.baseUrl, options.headers, extras);
+  const auth: ProviderAuth = { apiKey: options.apiKey };
+  const selection = await selectResponsesWire(options, Boolean(stream), async (signal) => {
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(new DOMException("Capability preflight timed out", "TimeoutError")), 30_000);
+    const probeSignal = AbortSignal.any([signal, timeout.signal]);
+    const probe = preflightOptions(options, probeSignal);
+    const fallback = (kind: TransportEventKind, extras: ExtrasLevel): ResponsesSelection => {
+      emitTransportEvent({ kind, provider: options.provider, model: options.model });
+      return { wire: "chat", extras };
+    };
+    try {
+      return await withUnrecordedTransport(async () => {
+        let extras: ExtrasLevel = "full";
+        let result: OpenAiCompatibleResult;
+        for (;;) {
+          probeSignal.throwIfAborted();
+          try {
+            result = compatibleFromCompletion(await run(configFor(extras), bridgeCompletionRequest(probe), auth, () => {}));
+            break;
+          } catch (error) {
+            probeSignal.throwIfAborted();
+            if (isChatShapedResponsesPayload(error) || isResponsesEmptyOutput(error)) {
+              return fallback("responses-fallback-shape", extras);
             }
-          : {}),
-        onStreamEvent: (event) => {
-          if (
-            event.type === "reasoning_delta" &&
-            !event.text.startsWith(PRIVATE_REASONING_NOTE_PREFIX)
-          ) {
-            reasoningDeltas.count += 1;
+            const verdict = classifyResponsesFailure(error, extras);
+            if (verdict === "unsupported-endpoint") return fallback("responses-fallback-endpoint", extras);
+            if (verdict === "unsupported-extras") {
+              extras = "bare";
+              emitTransportEvent({ kind: "responses-downgrade-extras", provider: options.provider, model: options.model });
+              continue;
+            }
+            if (classifyResponsesFailure(error, "full") === "unsupported-extras" ||
+              isGenericModelRejection(providerStatusCode(error), failureText(error))) {
+              return fallback("responses-fallback-error", extras);
+            }
+            throw error;
           }
-          stream.onStreamEvent?.(event);
-        },
-      }
-    : undefined;
-
-  const attempt = async (extras: ExtrasLevel): Promise<OpenAiCompatibleResult> => {
-    const config = genericResponsesConfig(
-      options.providerId,
-      options.provider,
-      options.baseUrl,
-      options.headers,
-      extras,
-    );
-    const request = bridgeCompletionRequest(options, extras, countingStream);
-    const auth: ProviderAuth = { apiKey: options.apiKey };
-    const wrappedOnToken = countingStream?.onToken ?? (() => {});
-    return compatibleFromCompletion(await run(config, request, auth, wrappedOnToken));
-  };
-
-  const fallback = (event: TransportEvent): undefined => {
-    state.endpoint = "unsupported";
-    emitTransportEvent(event);
-    return undefined;
-  };
-
-  const rememberChatThinkingWire = (): void => {
-    state.thinkingWire = "chat";
-    state.endpoint = "available";
-    emitTransportEvent({
-      kind: "responses-fallback-reasoning",
-      provider: options.provider,
-      model: options.model,
-    });
-  };
-
-  let result: OpenAiCompatibleResult;
-  try {
-    result = await withUnrecordedTransport(() => attempt(state.extras));
-  } catch (error) {
-    if (isChatShapedResponsesPayload(error)) {
-      return fallback({
-        kind: "responses-fallback-shape",
-        provider: options.provider,
-        model: options.model,
-      });
-    }
-    if (
-      probing &&
-      isPartialStreamError(error) &&
-      error.answerBytes === 0 &&
-      error.reasoningBytes === 0 &&
-      error.toolArgumentBytes === 0
-    ) {
-      return fallback({
-        kind: "responses-fallback-shape",
-        provider: options.provider,
-        model: options.model,
-      });
-    }
-    if (probing && isResponsesEmptyOutput(error)) {
-      return fallback({
-        kind: "responses-fallback-shape",
-        provider: options.provider,
-        model: options.model,
-      });
-    }
-    const status = providerStatusCode(error);
-    if (status !== undefined && PROBE_UNRELIABLE_STATUS.has(status)) {
-      return fallback({
-        kind: "responses-fallback-error",
-        provider: options.provider,
-        model: options.model,
-        detail: `HTTP ${status}`,
-      });
-    }
-    const verdict = classifyResponsesFailure(error, state.extras);
-    if (verdict === "unsupported-extras") {
-      const text = failureText(error);
-      const isReasoningRejection = /reasoning/i.test(text);
-      if (thinkingRequested && isReasoningRejection) {
-        rememberChatThinkingWire();
-        return undefined;
-      }
-      state.extras = "bare";
-      emitTransportEvent({
-        kind: "responses-downgrade-extras",
-        provider: options.provider,
-        model: options.model,
-      });
-      try {
-        result = await withUnrecordedTransport(() => attempt("bare"));
-      } catch (retryError) {
-        const retryStatus = providerStatusCode(retryError);
-        if (
-          retryStatus !== undefined &&
-          PROBE_UNRELIABLE_STATUS.has(retryStatus)
-        ) {
-          return fallback({
-            kind: "responses-fallback-error",
-            provider: options.provider,
-            model: options.model,
-            detail: `HTTP ${retryStatus}`,
-          });
         }
-        const retryText = failureText(retryError);
-        if (thinkingRequested && /reasoning/i.test(retryText) && classifyResponsesFailure(retryError, "bare") !== "other") {
-          rememberChatThinkingWire();
-          return undefined;
+        probeSignal.throwIfAborted();
+        if (options.reasoning?.enabled && !hasVisibleReasoning(result)) {
+          try {
+            const chat = await probeChat(probe);
+            probeSignal.throwIfAborted();
+            if (hasVisibleReasoning(chat)) return fallback("responses-fallback-reasoning", extras);
+          } catch (error) {
+            signal.throwIfAborted();
+            const status = providerStatusCode(error);
+            if (status === 401 || status === 403 || status === 429) throw error;
+          }
         }
-        if (
-          classifyResponsesFailure(retryError, "bare") ===
-          "unsupported-endpoint"
-        ) {
-          return fallback({
-            kind: "responses-fallback-endpoint",
-            provider: options.provider,
-            model: options.model,
-          });
-        }
-        if (
-          probing &&
-          isGenericModelRejection(providerStatusCode(retryError), retryText)
-        ) {
-          return fallback({
-            kind: "responses-fallback-error",
-            provider: options.provider,
-            model: options.model,
-            detail: "HTTP 400",
-          });
-        }
-        recordRethrownFailure(retryError, options.signal);
-        throw retryError;
-      }
-    } else if (verdict === "unsupported-endpoint") {
-      return fallback({
-        kind: "responses-fallback-endpoint",
-        provider: options.provider,
-        model: options.model,
-      });
-    } else if (
-      probing &&
-      isGenericModelRejection(providerStatusCode(error), failureText(error))
-    ) {
-      return fallback({
-        kind: "responses-fallback-error",
-        provider: options.provider,
-        model: options.model,
-        detail: "HTTP 400",
-      });
-    } else {
-      recordRethrownFailure(error, options.signal);
-      throw error;
+        return { wire: "responses", extras };
+      }, probe.maxTokens);
+    } finally {
+      clearTimeout(timer);
     }
-  }
-
-  state.endpoint = "available";
-  recordGenerationAttemptOutcome("success", result.usage);
-
-  if (thinkingRequested && !hasVisibleReasoning(result, reasoningDeltas.count)) {
-    if (stream !== undefined && emittedVisible.count > 0) {
-      state.thinkingWire = "chat";
-      return result;
-    }
-    state.thinkingWire = "chat";
-    emitTransportEvent({
-      kind: "responses-fallback-reasoning",
-      provider: options.provider,
-      model: options.model,
-    });
-    return undefined;
-  }
-  if (thinkingRequested) state.thinkingWire = "responses";
-  return result;
-}
-
-function recordRethrownFailure(
-  error: unknown,
-  signal: AbortSignal | undefined,
-): void {
-  recordGenerationAttemptOutcome(
-    signal?.aborted ? "cancelled" : "failure",
-    undefined,
-    providerStatusCode(error),
-  );
+  });
+  options.signal?.throwIfAborted();
+  if (selection.wire === "chat") return undefined;
+  return compatibleFromCompletion(await run(configFor(selection.extras), bridgeCompletionRequest(options, stream), auth, stream?.onToken ?? (() => {})));
 }
 
 export async function openAiCompatibleCompleteViaResponses(
   options: ResponsesFirstOptions,
+  probeChat: ChatProbe,
 ): Promise<OpenAiCompatibleResult | undefined> {
   return runResponsesFirst(
     options,
     (config, request, auth, _onToken) =>
       responsesComplete(config, request, auth, options.model, assertResponsesShapedData),
+    probeChat,
   );
 }
 
 export async function openAiCompatibleStreamViaResponses(
   options: ResponsesFirstOptions,
   stream: StreamBridgeOptions,
+  probeChat: ChatProbe,
 ): Promise<OpenAiCompatibleResult | undefined> {
   return runResponsesFirst(
     options,
     (config, request, auth, onToken) =>
       responsesStream(config, request, auth, onToken, options.model),
+    probeChat,
     stream,
   );
 }
 
 export function resetResponsesWireStatesForTesting(): void {
-  wireStates.clear();
+  resetResponsesPreflight();
 }

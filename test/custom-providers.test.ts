@@ -211,7 +211,7 @@ describe('custom providers', () => {
 
     expect(result.text).toBe('ok');
     expect(nextResult.text).toBe('ok');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(requests[0]?.stream_options).toEqual({ include_usage: true });
     expect(requests[1]?.stream_options).toBeUndefined();
     expect(requests[2]?.stream_options).toBeUndefined();
@@ -449,7 +449,7 @@ describe('custom providers', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) => {
-        headersSeen.push((init?.headers ?? {}) as Record<string, string>);
+        headersSeen.push(Object.fromEntries(new Headers(init?.headers).entries()));
         return new Response(
           JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
           { headers: { 'content-type': 'application/json' } },
@@ -477,7 +477,7 @@ describe('custom providers', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) => {
-        headersSeen.push((init?.headers ?? {}) as Record<string, string>);
+        headersSeen.push(Object.fromEntries(new Headers(init?.headers).entries()));
         return new Response(
           JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
           { headers: { 'content-type': 'application/json' } },
@@ -494,8 +494,8 @@ describe('custom providers', () => {
     await router
       .getProvider('hdr' as never)
       .complete({ messages: [{ role: 'user', content: 'hi' }] }, {});
-    expect(headersSeen[0]?.['x-api-key']).toBe('tok-123');
-    expect(headersSeen[0]?.authorization).toBeUndefined();
+    expect(headersSeen.at(-1)?.['x-api-key']).toBe('tok-123');
+    expect(headersSeen.at(-1)?.authorization).toBeUndefined();
   });
 
   it('fails locally when a declared header env reference is unset', async () => {
@@ -634,8 +634,14 @@ describe('custom providers', () => {
       'thought-signature',
     ]);
     expect(result.reasoningArtifacts?.[1]?.raw).toEqual(details);
+    expect(result.reasoningArtifacts?.[0]?.provenance).toEqual({
+      provider: 'detailgw',
+      model: 'detail-model',
+      dialect: 'openai-compatible',
+      endpointHash: expect.any(String),
+    });
 
-    const { appendAssistantWithTools } = await import('../src/agent/tool-history.js');
+    const { appendAssistantWithTools, appendToolResult } = await import('../src/agent/tool-history.js');
     const { toOpenAiToolMessages } = await import('../src/llm/adapters/openai-tools.js');
     const { createReasoningArtifactReplayTarget } = await import(
       '../src/llm/reasoning-artifacts.js'
@@ -648,6 +654,7 @@ describe('custom providers', () => {
       result.reasoningBlock,
       result.reasoningArtifacts,
     );
+    appendToolResult(history, 'custom-tool', 'a.md contents', 'fs.read', true);
     const wire = toOpenAiToolMessages(history, (message) => message.content, {
       target: createReasoningArtifactReplayTarget({
         provider: 'detailgw' as never,

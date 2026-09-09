@@ -150,6 +150,25 @@ describe("shared compaction executor", () => {
     expect(tokens.some((entry) => entry.replace === true)).toBe(true);
   });
 
+  it("forwards each model-reported usage when a summary retries", async () => {
+    const first = {
+      ...completion("", "length"),
+      usage: { promptTokens: 900, completionTokens: 50, totalTokens: 950 },
+    };
+    const final = {
+      ...completion("## Work\nDone.\n## Remaining\nMore."),
+      usage: { promptTokens: 1_200, completionTokens: 90, totalTokens: 1_290 },
+    };
+    complete.mockResolvedValueOnce(first).mockResolvedValueOnce(final);
+    const onUsage = vi.fn();
+
+    await executeCompactionSummary(baseExecution({ onUsage }));
+
+    expect(onUsage).toHaveBeenCalledTimes(2);
+    expect(onUsage).toHaveBeenNthCalledWith(1, first);
+    expect(onUsage).toHaveBeenNthCalledWith(2, final);
+  });
+
   it("fails closed after a second truncated summary", async () => {
     complete.mockResolvedValue(completion("", "length"));
 
@@ -157,6 +176,17 @@ describe("shared compaction executor", () => {
       executeCompactionSummary(baseExecution()),
     ).rejects.toThrow(/summary output limit twice/i);
     expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed after one truncated summary when retries are disabled", async () => {
+    complete.mockResolvedValue(completion("", "length"));
+
+    await expect(
+      executeCompactionSummary(
+        baseExecution({ retryOnTruncation: false }),
+      ),
+    ).rejects.toThrow(/summary output limit/i);
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it("accepts a valid textual summary that arrives with tool-call metadata", async () => {

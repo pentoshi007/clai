@@ -13,6 +13,8 @@ import {
   isSessionStateMessage,
   upsertSessionStateMessage,
 } from "../src/agent/session-state.js";
+import { buildTurnHistory } from "../src/agent/tool-call-parser.js";
+import { buildCompactionReplayMessages } from "../src/agent/compaction-executor.js";
 import type { ChatMessage } from "../src/types.js";
 
 /**
@@ -129,6 +131,55 @@ describe("cross-turn prompt cache prefix", () => {
     const first = runTurn([], 1, 1);
     const second = runTurn(first.history, 2, 1);
     expect(sharedPrefixLength(first.sent, second.sent)).toBe(first.sent.length);
+  });
+
+  it("retains injected request state in persisted history for completed follow-ups", () => {
+    const messages: ChatMessage[] = [
+      { role: "system", content: HEAD },
+      { role: "user", content: "user turn 1" },
+    ];
+    refreshSuffix(messages, 1, 0);
+    const sent = structuredClone(messages);
+    messages.push({ role: "assistant", content: "assistant 1" });
+
+    const history = buildTurnHistory(messages, "assistant 1");
+    expect(history.some(isInjected)).toBe(true);
+    expect(history.some((message) => message.content === HEAD)).toBe(false);
+
+    const followUp: ChatMessage[] = [
+      { role: "system", content: HEAD },
+      ...history,
+      { role: "user", content: "user turn 2" },
+    ];
+    refreshSuffix(followUp, 2, 0);
+
+    expect(sharedPrefixLength(sent, followUp)).toBe(sent.length);
+  });
+
+  it("uses the prior request as the prefix of replay compaction", () => {
+    const request: ChatMessage[] = [
+      { role: "system", content: HEAD },
+      { role: "user", content: "user turn 1" },
+    ];
+    refreshSuffix(request, 1, 0);
+    const completed = [...request, { role: "assistant" as const, content: "done" }];
+    const history = buildTurnHistory(completed, "done");
+    const replay = buildCompactionReplayMessages(
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        messages: request,
+      },
+      history,
+      "summarize the session",
+    );
+
+    expect(replay.slice(0, request.length)).toEqual(request);
+    expect(replay.at(-2)).toEqual({ role: "assistant", content: "done" });
+    expect(replay.at(-1)).toEqual({
+      role: "user",
+      content: "summarize the session",
+    });
   });
 
   it("grows the shared prefix monotonically over a multi-turn session", () => {

@@ -1,6 +1,7 @@
 
 import type {
   ChatMessage,
+  CompletionResult,
   ProviderId,
   SuccessfulRequestSnapshot,
 } from "../../types.js";
@@ -24,7 +25,11 @@ import {
 import { projectToolHistory } from "../../agent/tool-history.js";
 import { calibratedRequestTokens } from "../../llm/token-estimate-calibration.js";
 import { modelContextWindow } from "../../llm/token-usage.js";
-import { OperationLedger } from "../../llm/operation-ledger.js";
+import { contextAttemptFromOperationUsage } from "../../llm/context-snapshot.js";
+import {
+  OperationLedger,
+  singleAdmissionOperationPolicy,
+} from "../../llm/operation-ledger.js";
 import type {
   AnyAppEvent,
   AppEventPayloads,
@@ -45,6 +50,7 @@ export async function summarizeForSessionCompact(
     contextLimitTokens?: number | undefined;
     operation?: OperationLedger | undefined;
     onToken?: ((token: string, replace?: boolean) => void) | undefined;
+    onUsage?: ((completion: CompletionResult) => void) | undefined;
   },
 ): Promise<string> {
   const maxTokens =
@@ -71,9 +77,12 @@ export async function summarizeForSessionCompact(
       : {}),
     ...(opts.operation ? { operation: opts.operation } : {}),
     stream: Boolean(opts.onToken),
-    retryOnServerError: true,
+    retryOnServerError: false,
+    retryOnTruncation: false,
+    retryOnRequestShapeRejection: false,
     qualityRetry: false,
     onToken: opts.onToken,
+    onUsage: opts.onUsage,
   });
 }
 
@@ -107,6 +116,7 @@ export async function runSessionCompaction(
   options: RunSessionCompactionOptions,
 ): Promise<CompactResult> {
   type CompactionEventType =
+    | "token-usage"
     | "compaction-started"
     | "compaction-delta"
     | "compaction-completed"
@@ -189,11 +199,9 @@ export async function runSessionCompaction(
   }
 
   let settled = false;
-  const operation = new OperationLedger({
-    kind: "compaction",
-    admissionBudget: 64,
-    continuationBudget: 0,
-  });
+  const operation = new OperationLedger(
+    singleAdmissionOperationPolicy("compaction"),
+  );
   try {
     const execute = (forcePrefixSlice: boolean): Promise<CompactResult> => {
       const replay =
@@ -223,6 +231,17 @@ export async function runSessionCompaction(
                 }),
             contextLimitTokens,
             operation,
+            onUsage: (completion) => {
+              if (!completion.usage || !options.isCurrent()) return;
+              const attempt = contextAttemptFromOperationUsage(completion.operationUsage);
+              emit("token-usage", {
+                ...completion.usage,
+                provider: completion.provider,
+                model: completion.model,
+                ...(completion.api ? { api: completion.api } : {}),
+                ...(attempt.kind === "generation" ? { attempt } : {}),
+              });
+            },
             ...(options.persist && stage?.phase !== "map"
               ? {
                   onToken: (text: string, replace?: boolean) => {

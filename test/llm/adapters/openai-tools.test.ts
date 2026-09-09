@@ -13,6 +13,7 @@ import {
 } from "../../../src/llm/tool-protocol.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createReasoningArtifact, createReasoningArtifactProvenance } from "../../../src/llm/reasoning-artifacts.js";
 
 const compatibleReplay = {
   target: {
@@ -21,6 +22,15 @@ const compatibleReplay = {
     dialect: "openai-compatible",
   },
 } as const;
+
+function compatibleReasoning(text: string) {
+  return [createReasoningArtifact({
+    kind: "plaintext",
+    raw: text,
+    provenance: createReasoningArtifactProvenance(compatibleReplay.target),
+    replay: { scope: "all-history", persistence: "all-turns" },
+  })];
+}
 
 describe("openai tools adapter", () => {
   it("toOpenAiTools shape", () => {
@@ -75,14 +85,14 @@ describe("openai tools adapter", () => {
     });
   });
 
-  it("replays unsigned reasoning as reasoning_content on tool-call turns", () => {
+  it("replays matching route reasoning as reasoning_content on tool-call turns", () => {
     const wire = toOpenAiToolMessages(
       [
         { role: "user", content: "hi" },
         {
           role: "assistant",
           content: "",
-          reasoningBlock: { text: "let me think" },
+          reasoningArtifacts: compatibleReasoning("let me think"),
           toolCalls: [{ id: "call_1", name: "fs.read", args: { path: "a.ts" } }],
         },
         { role: "tool", toolCallId: "call_1", name: "fs.read", content: "x" },
@@ -113,14 +123,14 @@ describe("openai tools adapter", () => {
     expect(wire[1]).not.toHaveProperty("reasoning_content");
   });
 
-  it("replays unsigned reasoning on plain assistant turns", () => {
+  it("replays matching route reasoning on plain assistant turns", () => {
     const wire = toOpenAiToolMessages(
       [
         { role: "user", content: "hi" },
         {
           role: "assistant",
           content: "done",
-          reasoningBlock: { text: "reasoning" },
+          reasoningArtifacts: compatibleReasoning("reasoning"),
         },
       ],
       (m) => m.content,
@@ -205,16 +215,21 @@ describe("openai tools adapter", () => {
     expect(args).toBe('{"path":"a.ts","content":"x"}');
   });
 
-  it("toOpenAiMessages no longer rewrites tool → user", () => {
+  it("toOpenAiMessages preserves a completed native tool transaction", () => {
     const msgs = toOpenAiMessages([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "c1", name: "fs.read", args: {} }],
+      },
       {
         role: "tool",
         content: "ok",
         toolCallId: "c1",
       },
     ]);
-    expect(msgs[0]!.role).toBe("tool");
-    expect((msgs[0] as { tool_call_id?: string }).tool_call_id).toBe("c1");
+    expect(msgs[1]!.role).toBe("tool");
+    expect((msgs[1] as { tool_call_id?: string }).tool_call_id).toBe("c1");
   });
 
   it("openAiToolBodyFields attaches tools when present", () => {

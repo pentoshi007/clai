@@ -140,6 +140,7 @@ export interface AppEventPayloads {
   "context-estimate": {
     readonly estimatedTokens: number;
     readonly model?: string | undefined;
+    readonly promptUsageMissing?: boolean | undefined;
   };
   "turn-ended": { readonly finalAnswer: string; readonly steps: number };
   "turn-aborted": { readonly reason?: string | undefined };

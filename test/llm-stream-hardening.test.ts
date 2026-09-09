@@ -69,6 +69,23 @@ describe("openAiCompatibleStream error frames", () => {
     expect(result.text).toBe("ok");
   });
 
+  it("ignores null keepalive frames after delivering an answer", async () => {
+    stubFetch(
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+        "data: null\n\n",
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const tokens: string[] = [];
+    const result = await openAiCompatibleStream({
+      ...baseOptions,
+      onToken: (token) => tokens.push(token),
+    });
+    expect(result.text).toBe("ok");
+    expect(tokens).toEqual(["ok"]);
+  });
+
   it("releases the response body on the success path", async () => {
     const response = sseResponse([
       'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',

@@ -11,6 +11,7 @@ import {
   estimatedContextSnapshot,
   recordContextUsageSnapshot,
   restoredContextSnapshot,
+  resolveContextSnapshot,
   type ContextUsageTarget,
 } from "../../src/app/controllers/session-context-usage.js";
 import { persistedContextUsage } from "../../src/app/controllers/session-persistence.js";
@@ -54,6 +55,53 @@ const operationUsage: OperationUsageSnapshot = {
 };
 
 describe("ContextSnapshotV1", () => {
+  it("waits for the first provider response before displaying a local estimate", () => {
+    expect(resolveContextSnapshot(target, [{ role: "user", content: "hello" }], undefined)).toBeUndefined();
+    expect(estimatedContextSnapshot(target, undefined, 720)).toBeUndefined();
+    expect(estimatedContextSnapshot(target, undefined, 720, () => 1, true)).toMatchObject({
+      contextTokens: 720,
+      precision: "estimate",
+    });
+  });
+  it("preserves zero reported context without replacing it with history estimates", () => {
+    const current = recordContextUsageSnapshot(
+      target,
+      undefined,
+      { promptTokens: 0, completionTokens: 0, totalTokens: 0, exact: true },
+      undefined,
+      () => 1,
+    );
+    expect(resolveContextSnapshot(target, [{ role: "user", content: "hello" }], current)).toBe(current);
+    expect(estimatedContextSnapshot(target, current, 200)).toBe(current);
+    expect(restoredContextSnapshot(target, current)).toMatchObject({
+      contextTokens: 0,
+      precision: "provider-exact",
+    });
+  });
+
+  it("uses an estimate only after a completed response omits prompt usage", () => {
+    const current = recordContextUsageSnapshot(target, undefined, usage, undefined, () => 1);
+    const fallback = estimatedContextSnapshot(target, current, 720, () => 2, true);
+    expect(fallback).toMatchObject({
+      contextTokens: 720,
+      precision: "estimate",
+      scope: "assembled-request",
+    });
+    expect(recordContextUsageSnapshot(target, fallback, usage, undefined).contextTokens).toBe(600);
+  });
+
+  it.each(["message-history", "assembled-request"] as const)(
+    "uses %s compaction estimates when no provider measurement exists",
+    (scope) => {
+      const current = estimatedContextSnapshot(target, undefined, 720, () => 1, true);
+      expect(compactedContextSnapshot(target, current, [], 320, scope)).toMatchObject({
+        contextTokens: 320,
+        precision: "estimate",
+        scope,
+      });
+    },
+  );
+
   it("records provider cache/reasoning telemetry and projects the frozen legacy shape", () => {
     const attempt = contextAttemptFromOperationUsage(operationUsage);
     const snapshot = recordContextUsageSnapshot(
@@ -132,7 +180,7 @@ describe("ContextSnapshotV1", () => {
     expect(snapshot.reasoning).toEqual({ kind: "reported", outputTokens: 0 });
   });
 
-  it("uses the same schema for manual and automatic compaction scopes", () => {
+  it("preserves provider-reported context through manual and automatic compaction", () => {
     const current = recordContextUsageSnapshot(
       target,
       undefined,
@@ -157,29 +205,8 @@ describe("ContextSnapshotV1", () => {
       () => 3,
     );
 
-    expect(manual).toMatchObject({
-      version: 1,
-      contextTokens: 320,
-      scope: "message-history",
-      precision: "estimate",
-      limit: { source: "session-override", tokens: 1_000 },
-      headroom: { kind: "unknown" },
-      cache: { kind: "unknown" },
-      reasoning: { kind: "unknown" },
-      attempt: { kind: "unavailable" },
-      observedAt: 2,
-    });
-    expect(automatic).toMatchObject({
-      version: 1,
-      contextTokens: 320,
-      scope: "assembled-request",
-      precision: "estimate",
-      headroom: { kind: "known", remainingTokens: 680 },
-      cache: { kind: "unknown" },
-      reasoning: { kind: "unknown" },
-      attempt: { kind: "unavailable" },
-      observedAt: 3,
-    });
+    expect(manual).toBe(current);
+    expect(automatic).toBe(current);
   });
 
   it("persists V1 additively, honors a live limit on restore, and migrates old records", () => {
@@ -243,7 +270,7 @@ describe("ContextSnapshotV1", () => {
     });
   });
 
-  it("adopts a larger in-flight estimate and re-anchors on the next measurement", () => {
+  it("ignores a larger in-flight estimate and updates on the next measurement", () => {
     const current = recordContextUsageSnapshot(
       target,
       undefined,
@@ -261,10 +288,10 @@ describe("ContextSnapshotV1", () => {
     );
 
     expect(inFlight).toMatchObject({
-      contextTokens: 720,
-      scope: "assembled-request",
-      precision: "estimate",
-      observedAt: 2,
+      contextTokens: 600,
+      scope: "provider-request",
+      precision: "provider-exact",
+      observedAt: 1,
     });
     expect(completed).toMatchObject({
       contextTokens: 640,

@@ -116,8 +116,7 @@ describe("replaying signed thinking", () => {
         reasoningBlock: { text: "unsigned" },
       },
     ]);
-    const blocks = messages[0]!.content as Array<Record<string, unknown>>;
-    expect(blocks.some((b) => b.type === "thinking")).toBe(false);
+    expect(messages[0]!.content).toBe("x\n\n[Tool call: fs_read]\n{}");
   });
 });
 

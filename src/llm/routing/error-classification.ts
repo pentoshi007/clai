@@ -7,6 +7,7 @@ import {
   isReasoningUnsupported,
   learnedRouteEfforts,
 } from "../capabilities.js";
+import { isInvalidReasoningContentError } from "../reasoning-errors.js";
 import { fallbackEffortsFor } from "../effort-fallback.js";
 import {
   isReasoningUnsupportedError,
@@ -128,6 +129,7 @@ function isOpaqueParameterRejection(
 }
 
 export function shouldContinueEffortLadder(error: unknown): boolean {
+  if (isInvalidReasoningContentError(error)) return false;
   return (
     isReasoningUnsupportedError(error) || isReasoningRelatedServerError(error)
   );
@@ -171,6 +173,7 @@ export function shouldEnterEffortLadder(
   model: string,
   singleDispatch: boolean,
 ): boolean {
+  if (isInvalidReasoningContentError(error)) return false;
   if (isReasoningUnsupportedError(error)) return true;
   if (singleDispatch) return false;
   if (!thinking?.enabled) return false;
