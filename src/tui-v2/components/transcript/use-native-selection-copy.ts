@@ -1,12 +1,10 @@
 /** @jsxImportSource @opentui/react */
 
-import { useRenderer, useSelectionHandler } from "@opentui/react";
+import { useSelectionHandler } from "@opentui/react";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import { transcriptScrollPort } from "./transcript-scroll-port.js";
 
 export function useNativeSelectionCopy(services: AppServices): void {
-  const renderer = useRenderer();
-
   useSelectionHandler((selection) => {
     if (selection.isDragging) return;
 
@@ -21,10 +19,6 @@ export function useNativeSelectionCopy(services: AppServices): void {
           key: "clipboard",
           durationMs: 1600,
         });
-        try {
-          renderer.clearSelection();
-        } catch {
-        }
       },
       () => {
         services.toast.error("Copy failed", {
