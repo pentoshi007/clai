@@ -29,7 +29,9 @@ jobs:
           echo "CLAI_ARTIFACT_DIR=${RUNNER_TEMP}/clai/artifacts" >> "$GITHUB_ENV"
           echo "CLAI_LOG_DIR=${RUNNER_TEMP}/clai/logs" >> "$GITHUB_ENV"
       - name: Install ripgrep (fs.search engine tests)
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        run: |
+          sudo apt-get update -o Acquire::Retries=3 || echo "::warning::apt-get update hit a mirror mismatch; continuing with cached indexes"
+          sudo apt-get install -y ripgrep
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
