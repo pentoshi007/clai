@@ -1,4 +1,8 @@
 import type { ChatMessage, CompletionRequest, ToolDefinition } from "../../src/types.js";
+import {
+  createReasoningArtifact,
+  createReasoningArtifactProvenance,
+} from "../../src/llm/reasoning-artifacts.js";
 import type { ConformanceRoute } from "./routes.js";
 
 export type RequestCase =
@@ -53,7 +57,29 @@ const STABLE_PREFIX: ChatMessage[] = [
   { role: "assistant", content: "first assistant answer" },
 ];
 
-function replayMessages(signed: boolean): ChatMessage[] {
+function replayMessages(route: ConformanceRoute, signed: boolean): ChatMessage[] {
+  const sourceModel =
+    route.provider === "free" ? route.model.replace(/^[^/]+\//, "") : route.model;
+  const reasoningArtifacts =
+    signed || route.family !== "chat_completions"
+    ? undefined
+    : [
+        createReasoningArtifact({
+          kind: "plaintext",
+          raw: "the file must be inspected first",
+          provenance: createReasoningArtifactProvenance({
+            provider: route.provider,
+            model: sourceModel,
+            dialect: "openai-compatible",
+          }),
+          replay: { scope: "all-history", persistence: "all-turns" },
+          position: {
+            sequence: 0,
+            placement: "before-tool-call",
+            toolCallIndex: 0,
+          },
+        }),
+      ];
   return [
     ...STABLE_PREFIX,
     { role: "user", content: "read the example file" },
@@ -73,6 +99,7 @@ function replayMessages(signed: boolean): ChatMessage[] {
         text: "the file must be inspected first",
         ...(signed ? { signature: "signature_placeholder" } : {}),
       },
+      ...(reasoningArtifacts ? { reasoningArtifacts } : {}),
     },
     {
       role: "tool",
@@ -129,7 +156,7 @@ export function requestForCase(
     case "tool-loop-replay-unsigned":
       return {
         ...base,
-        messages: replayMessages(requestCase === "tool-loop-replay"),
+        messages: replayMessages(route, requestCase === "tool-loop-replay"),
         tools: [...SNAPSHOT_TOOLS],
         toolChoice: "auto",
         thinking: { enabled: true, effort: "medium" },

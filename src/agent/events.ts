@@ -68,4 +68,9 @@ export type AgentEvent =
       api?: string | undefined;
       attempt?: ContextAttemptReference | undefined;
     }
-  | { type: "context-estimate"; estimatedTokens: number; model?: string | undefined };
+  | {
+      type: "context-estimate";
+      estimatedTokens: number;
+      model?: string | undefined;
+      promptUsageMissing?: boolean | undefined;
+    };

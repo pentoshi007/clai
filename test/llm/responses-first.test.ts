@@ -11,6 +11,8 @@ import {
   openAiCompatibleStream,
 } from "../../src/llm/http.js";
 import { resetResponsesWireStatesForTesting } from "../../src/llm/wire/responses-first.js";
+import { sessionCacheAffinityKey } from "../../src/llm/cache-affinity.js";
+import { withSessionAffinity } from "../../src/llm/session-affinity.js";
 
 const BASE_URL = "https://gateway.test/v1";
 
@@ -169,6 +171,35 @@ describe("responses-first transport", () => {
     expect(body.include).toEqual(["reasoning.encrypted_content"]);
     expect(String(body.prompt_cache_key)).toMatch(/^clai-/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the Responses cache key stable when compaction changes the opening message", async () => {
+    const fetchMock = routeByPath((path) =>
+      path === "responses" ? responsesCompleted("ok") : chatJson("nope"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await withSessionAffinity("ses_responses_cache", async () => {
+      await openAiCompatibleComplete({
+        ...completeOptions("m-session-cache"),
+        providerId: "agentrouter",
+        messages: [{ role: "user", content: "original opening request" }],
+      });
+      await openAiCompatibleComplete({
+        ...completeOptions("m-session-cache"),
+        providerId: "agentrouter",
+        messages: [{ role: "user", content: "compacted session summary" }],
+      });
+    });
+
+    const bodies = await Promise.all(
+      fetchMock.mock.calls.map(([, init]) => requestBody(init as RequestInit)),
+    );
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]?.prompt_cache_key).toBe(
+      sessionCacheAffinityKey("ses_responses_cache"),
+    );
+    expect(bodies[1]?.prompt_cache_key).toBe(bodies[0]?.prompt_cache_key);
   });
 
   it("falls back to chat completions when the endpoint is missing and remembers it", async () => {

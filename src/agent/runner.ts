@@ -11,6 +11,7 @@ import type {
   ToolResult,
 } from "../types.js";
 import { providerInputTokenBudget } from "../llm/context-windows.js";
+import { contextAttemptFromOperationUsage } from "../llm/context-snapshot.js";
 import { createStreamRecoveryState } from "./stream-recovery.js";
 import type {
   SingleToolResult,
@@ -736,6 +737,20 @@ export async function runAgentTurn(
           lastCompactionMsgCount = count;
         },
         writeDelta: writeCompactionDelta,
+        onUsage: (completion) => {
+          if (!completion.usage) return;
+          const attempt = contextAttemptFromOperationUsage(
+            completion.operationUsage,
+          );
+          emit({
+            type: "token-usage",
+            usage: completion.usage,
+            provider: completion.provider,
+            model: completion.model,
+            ...(completion.api ? { api: completion.api } : {}),
+            ...(attempt.kind === "generation" ? { attempt } : {}),
+          });
+        },
         writeStarted: writeCompactionStarted,
         writeFailed: writeCompactionFailed,
         writeCompleted: writeCompactionCompleted,

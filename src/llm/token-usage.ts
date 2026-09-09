@@ -137,11 +137,7 @@ export function effectivePromptTokens(
   usage: TokenUsage | undefined,
 ): number | undefined {
   if (!usage || usage.promptTokensKnown === false) return undefined;
-  const cached = usage.cachedPromptTokens ?? 0;
-  const created = usage.cacheCreationTokens ?? 0;
-  return cached + created > usage.promptTokens
-    ? usage.promptTokens + cached + created
-    : usage.promptTokens;
+  return usage.promptTokens;
 }
 
 export function estimateUsageFromMessages(

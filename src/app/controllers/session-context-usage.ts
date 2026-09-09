@@ -127,8 +127,12 @@ export function resolveContextSnapshot(
   current: ContextSnapshotV1 | undefined,
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 | undefined {
+  if (!current) return undefined;
   const limit = limitFor(target);
-  if (current && current.contextTokens > 0 && REQUEST_SCOPES.has(current.scope)) {
+  if (
+    REQUEST_SCOPES.has(current.scope) &&
+    measuredOnTargetRoute(target, current)
+  ) {
     return sameLimit(current.limit, limit)
       ? current
       : withContextSnapshotLimit(current, limit);
@@ -181,6 +185,14 @@ export function compactedContextSnapshot(
   scope: Extract<ContextSnapshotScope, "message-history" | "assembled-request">,
   now: ContextClock = systemNow,
 ): ContextSnapshotV1 {
+  if (
+    current?.precision === "provider-exact" &&
+    measuredOnTargetRoute(target, current)
+  ) {
+    return sameLimit(current.limit, limitFor(target))
+      ? current
+      : withContextSnapshotLimit(current, limitFor(target));
+  }
   const contextTokens =
     typeof afterTokens === "number" && Number.isFinite(afterTokens) && afterTokens > 0
       ? Math.floor(afterTokens)
@@ -214,13 +226,16 @@ export function estimatedContextSnapshot(
   current: ContextSnapshotV1 | undefined,
   estimatedTokens: number,
   now: ContextClock = systemNow,
+  promptUsageMissing = false,
 ): ContextSnapshotV1 | undefined {
+  if (!current && !promptUsageMissing) return undefined;
   if (!Number.isFinite(estimatedTokens) || estimatedTokens <= 0) return current;
   const tokens = Math.floor(estimatedTokens);
   if (
     current &&
+    !promptUsageMissing &&
     current.scope === "provider-request" &&
-    current.contextTokens >= tokens &&
+    current.precision === "provider-exact" &&
     measuredOnTargetRoute(target, current)
   ) {
     return sameLimit(current.limit, limitFor(target))
@@ -328,15 +343,20 @@ export function restoredContextSnapshot(
 ): ContextSnapshotV1 | undefined {
   if (!usage) return undefined;
   if (isContextSnapshotV1(usage)) {
-    return usage.contextTokens > 0
+    return usage.contextTokens > 0 || usage.precision === "provider-exact"
       ? withContextSnapshotLimit(usage, limitFor(target))
       : undefined;
   }
   const persisted = (usage as PartialUsageSnapshot).contextSnapshot;
-  if (isContextSnapshotV1(persisted) && persisted.contextTokens > 0) {
+  if (
+    isContextSnapshotV1(persisted) &&
+    (persisted.contextTokens > 0 || persisted.precision === "provider-exact")
+  ) {
     return withContextSnapshotLimit(persisted, limitFor(target));
   }
-  if (usage.contextTokens <= 0) return undefined;
+  if (usage.contextTokens < 0 || (usage.contextTokens === 0 && !usage.exact)) {
+    return undefined;
+  }
   return contextSnapshotFromLegacy(
     {
       contextTokens: usage.contextTokens,

@@ -97,7 +97,7 @@ describe("automatic compaction single-admission policy", () => {
     vi.restoreAllMocks();
   });
 
-  it("retries an output-limited summary once per operation and never quality-retries", async () => {
+  it("retains context after one output-limited summary request", async () => {
     const compactionPrompts: string[] = [];
     stream.mockImplementation(
       (
@@ -156,7 +156,7 @@ describe("automatic compaction single-admission policy", () => {
       (event) => event.type === "compaction-start",
     ).length;
     expect(starts).toBeGreaterThan(0);
-    expect(compactionPrompts).toHaveLength(starts * 2);
+    expect(compactionPrompts).toHaveLength(starts);
     expect(new Set(compactionPrompts).size).toBe(starts);
     expect(
       compactionPrompts.every((prompt) => !prompt.includes("QUALITY RETRY")),
@@ -284,7 +284,7 @@ describe("automatic compaction single-admission policy", () => {
       (event) => event.type === "compaction-start",
     ).length;
     expect(compactionStarts).toBeGreaterThan(0);
-    expect(compactionDispatches).toBe(compactionStarts * 2);
+    expect(compactionDispatches).toBe(compactionStarts);
     expect(turnDispatches).toBeGreaterThan(0);
     expect(events.some((event) => event.type === "compaction-failed")).toBe(true);
     expect(events.some((event) => event.type === "turn-end")).toBe(true);

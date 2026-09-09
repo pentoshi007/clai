@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   ChatMessage,
+  CompletionResult,
   ProviderId,
   SuccessfulRequestSnapshot,
   ToolDefinition,
@@ -61,6 +62,7 @@ export interface CompactionServicesInput {
   readonly refreshSessionState: (plan?: SessionPlan | undefined) => void;
   readonly setLastCompactionMsgCount: (count: number) => void;
   readonly writeDelta: (id: string, text: string, replace?: boolean) => void;
+  readonly onUsage: (completion: CompletionResult) => void;
   readonly writeStarted: (id: string, beforeTokens: number) => void;
   readonly writeFailed: (
     id: string,
@@ -99,6 +101,7 @@ export const createCompactionServices = (
     currentContextLimitTokens: input.contextLimitTokens,
     toolsForSourceMessages: input.selectTools,
     writeDelta: input.writeDelta,
+    onUsage: input.onUsage,
   });
 
   const estimateNextRequestTokens = createCompactionRequestEstimator({

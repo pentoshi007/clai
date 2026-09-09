@@ -613,7 +613,18 @@ describe("reasoning content replay survives the effort strip", () => {
       {
         role: "assistant",
         content: "here is the answer",
-        reasoningBlock: { text: "hidden chain of thought" },
+        reasoningArtifacts: [
+          createReasoningArtifact({
+            kind: "plaintext",
+            raw: "hidden chain of thought",
+            provenance: createReasoningArtifactProvenance({
+              provider: "tokenrouter",
+              model: "qwen3-coder",
+              dialect: "openai-compatible",
+            }),
+            replay: { scope: "all-history", persistence: "all-turns" },
+          }),
+        ],
       },
     ];
 

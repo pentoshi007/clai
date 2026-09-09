@@ -104,6 +104,7 @@ export class AgentEventAdapter {
         this.push("context-estimate", {
           estimatedTokens: event.estimatedTokens,
           ...(event.model !== undefined ? { model: event.model } : {}),
+          ...(event.promptUsageMissing ? { promptUsageMissing: true } : {}),
         });
         return;
       case "thinking-delta":

@@ -488,6 +488,53 @@ describe("T210 reasoning artifact capture", () => {
     ).toMatchObject({ placement: "on-tool-call", toolCallIndex: 0 });
   });
 
+  it("uses the first non-empty compatible reasoning alias in complete and stream responses", async () => {
+    installTransport(() =>
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: "complete answer",
+              reasoning_content: "",
+              reasoning: "complete reasoning",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+    );
+    const complete = await openAiCompatibleComplete({
+      provider: "Experiential Labs",
+      providerId: "explabs",
+      baseUrl: "https://api.experientiallabs.ai/v1",
+      apiKey: "synthetic-key",
+      model: "deepseek-v4-flash-vision-exp",
+      messages: REQUEST.messages,
+    });
+    expect(complete.reasoningBlock?.text).toBe("complete reasoning");
+    expect(complete.reasoningArtifacts?.[0]?.raw).toBe("complete reasoning");
+
+    vi.unstubAllGlobals();
+    installTransport(() =>
+      textStreamResponse([
+        sse({ choices: [{ delta: { reasoning_content: {}, reasoning: "stream reasoning" } }] }),
+        sse({ choices: [{ delta: { content: "stream answer" }, finish_reason: "stop" }] }),
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const streamed = await openAiCompatibleStream({
+      provider: "Experiential Labs",
+      providerId: "explabs",
+      baseUrl: "https://api.experientiallabs.ai/v1",
+      apiKey: "synthetic-key",
+      model: "deepseek-v4-flash-vision-exp",
+      messages: REQUEST.messages,
+      onToken: () => {},
+    });
+    expect(streamed.reasoningBlock?.text).toBe("stream reasoning");
+    expect(streamed.reasoningArtifacts?.[0]?.raw).toBe("stream reasoning");
+  });
+
   it("replays deduplicated Bynara Qwen reasoning on the next tool turn", async () => {
     const first = "I've grasped";
     const second = `${first} the requested change.`;

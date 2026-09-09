@@ -22,14 +22,6 @@ export function reasoningArtifactReplayDecision(
   }
 
   const source = artifact.provenance;
-  const legacyPlaintext =
-    source.legacy === true &&
-    (artifact.kind === "plaintext" || artifact.kind === "summary");
-  if (legacyPlaintext) {
-    return target.dialect === "openai-compatible"
-      ? decision(artifact, target, "replayed")
-      : decision(artifact, target, "omitted", "dialect-mismatch");
-  }
   if (source.provider !== target.provider) {
     return decision(artifact, target, "omitted", "provider-mismatch");
   }

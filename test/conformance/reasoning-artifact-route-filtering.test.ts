@@ -9,7 +9,10 @@ import type {
 } from "../../src/types.js";
 import { buildAnthropicBody } from "../../src/llm/anthropic.js";
 import { geminiBody } from "../../src/llm/gemini.js";
-import { openAiCompatibleComplete } from "../../src/llm/http.js";
+import {
+  openAiCompatibleComplete,
+  openAiCompatibleStream,
+} from "../../src/llm/http.js";
 import { metaProvider } from "../../src/llm/meta.js";
 import {
   createReasoningArtifact,
@@ -18,12 +21,18 @@ import {
   selectReasoningArtifactsForReplay,
 } from "../../src/llm/reasoning-artifacts.js";
 import { installTransport } from "./fake-transport.js";
-import { jsonResponse } from "./wire-fixtures.js";
+import { jsonResponse, textStreamResponse } from "./wire-fixtures.js";
 
 const OPAQUE_MARKER = "opaque-route-artifact-placeholder";
 
 function createArtifact(input: {
-  provider: "anthropic" | "aws-mantle" | "gemini" | "meta" | "openrouter";
+  provider:
+    | "anthropic"
+    | "aws-mantle"
+    | "explabs"
+    | "gemini"
+    | "meta"
+    | "openrouter";
   model: string;
   dialect: ReasoningArtifactDialect;
   endpoint: string;
@@ -268,5 +277,122 @@ describe("T220 route compatibility filtering", () => {
       compatibleArtifact,
     );
     expect(compatibleArtifact.raw).toBe(originalRaw);
+  });
+
+  it("round-trips matching Experiential Labs reasoning through a tool loop", async () => {
+    const decisions: ReasoningArtifactReplayDecision[] = [];
+    let callCount = 0;
+    const transport = installTransport(() => {
+      callCount += 1;
+      if (callCount === 1) {
+        return textStreamResponse([
+          'data: {"choices":[{"delta":{"reasoning_content":"authenticated reasoning"}}]}\n\n',
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"fs_read","arguments":"{\\"path\\":\\"README.md\\"}"}}]}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]);
+      }
+      return jsonResponse({
+        choices: [{ message: { content: "done" }, finish_reason: "stop" }],
+      });
+    });
+    const first = await openAiCompatibleStream({
+      provider: "Experiential Labs",
+      providerId: "explabs",
+      baseUrl: "https://api.experientiallabs.ai/v1",
+      apiKey: "synthetic-key",
+      model: "deepseek-v4-flash-vision-exp",
+      messages: [{ role: "user", content: "first request" }],
+      onToken: () => {},
+    });
+    await openAiCompatibleComplete({
+      provider: "Experiential Labs",
+      providerId: "explabs",
+      baseUrl: "https://api.experientiallabs.ai/v1",
+      apiKey: "synthetic-key",
+      model: "deepseek-v4-flash-vision-exp",
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          toolCalls: first.toolCalls,
+          reasoningArtifacts: first.reasoningArtifacts,
+        },
+        {
+          role: "tool",
+          toolCallId: "call_1",
+          name: "fs.read",
+          content: "# README",
+        },
+        { role: "user", content: "second request" },
+      ],
+      reasoningArtifactReplayObserver: (decision) => decisions.push(decision),
+    });
+    const assistant = transport.generations[1]?.body.messages[0];
+    expect(assistant).toMatchObject({
+      reasoning_content: "authenticated reasoning",
+      tool_calls: [
+        {
+          id: "call_1",
+          function: { name: "fs_read", arguments: '{"path":"README.md"}' },
+        },
+      ],
+    });
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({ action: "replayed" });
+  });
+
+  it("does not replay Experiential Labs plaintext reasoning after a model switch", async () => {
+    const artifact = createArtifact({
+      provider: "explabs",
+      model: "deepseek-v4-flash-vision-exp",
+      dialect: "openai-compatible",
+      endpoint: "https://api.experientiallabs.ai/v1",
+      kind: "plaintext",
+      raw: "prior model reasoning",
+    });
+    const decisions: ReasoningArtifactReplayDecision[] = [];
+    const transport = installTransport(() =>
+      jsonResponse({
+        choices: [{ message: { content: "done" }, finish_reason: "stop" }],
+      }),
+    );
+    await openAiCompatibleComplete({
+      provider: "Experiential Labs",
+      providerId: "explabs",
+      baseUrl: "https://api.experientiallabs.ai/v1",
+      apiKey: "synthetic-key",
+      model: "deepseek-v4-flash-vision-exp-2",
+      messages: toolHistory(artifact),
+      reasoningArtifactReplayObserver: (decision) => decisions.push(decision),
+    });
+    const assistant = transport.generations[0]?.body.messages[0];
+    expect(assistant).not.toHaveProperty("reasoning_content");
+    expectOmission(decisions, "model-mismatch");
+  });
+
+  it("does not replay unproven legacy plaintext reasoning across routes", () => {
+    const artifact = createReasoningArtifact({
+      kind: "plaintext",
+      raw: "legacy reasoning",
+      provenance: createReasoningArtifactProvenance({
+        provider: "legacy",
+        dialect: "openai-compatible",
+        legacy: true,
+      }),
+      replay: { scope: "all-history", persistence: "all-turns" },
+    });
+    const decisions: ReasoningArtifactReplayDecision[] = [];
+    const selected = selectReasoningArtifactsForReplay({
+      artifacts: [artifact],
+      target: createReasoningArtifactReplayTarget({
+        provider: "openrouter",
+        model: "route-target",
+        dialect: "openai-compatible",
+        endpoint: "https://route-target.example/v1",
+      }),
+      observe: (decision) => decisions.push(decision),
+    });
+    expect(selected).toEqual([]);
+    expectOmission(decisions, "provider-mismatch");
   });
 });

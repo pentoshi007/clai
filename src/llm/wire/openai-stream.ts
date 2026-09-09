@@ -673,6 +673,9 @@ export async function openAiCompatibleStream(options: {
         } catch {
           continue;
         }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          continue;
+        }
         if (parsed.error) {
           const detail =
             typeof parsed.error === "string"

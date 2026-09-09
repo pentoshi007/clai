@@ -516,6 +516,12 @@ Tool cards show the command/input clearly, with a live elapsed timer next to the
 
 On exit, both interactive surfaces leave the alternate screen and print a sign-off card on the normal terminal: the wordmark beside a labelled block — session title, folder, elapsed time and message count, reasoning/cache token notes, and the command that reopens the session — followed by the same per-provider/model token table `/usage` shows. Resuming is `clai --resume <id>` (a unique id prefix is enough, and `-c/--continue` picks the newest session for the current directory). Sessions that were never persisted (`--no-history`, private mode, or nothing sent) say so instead of offering a resume command. The card is borderless and reflows down to very narrow terminals: the wordmark drops from six rows to four, then the block stacks beneath it, and labels give way before the resume command is ever shortened.
 
+### Context usage and prompt caching
+
+The composer context chip shows the latest provider-reported input token count, including during follow-ups and compaction. It waits for the first response instead of showing a speculative count. Local estimates are marked `~` and used when prompt usage is unavailable; internal request-size checks remain separate. A new provider measurement can legitimately be lower after compaction. Cached tokens are part of the reported prompt total, not an extra context bucket to add again.
+
+Same-route follow-ups retain previously sent request state, and supported cache-affinity keys stay stable for the session. Compaction reuses the previous request prefix when it fits and makes at most one generation attempt; rejected, truncated, or unusable summaries retain the original history rather than silently issuing another request. Cache hits still depend on the provider's expiry, routing, and supported caching behavior. Changing models or replacing history with a compacted summary can require a new cache prefix.
+
 ### Background sessions, minimise, and SSH reattach
 
 Normal persistent interactive launches use a per-session local PTY broker. The UI and agent run inside that broker-owned terminal, while the shell process you interact with is a disposable client. This keeps the exact same live UI, pending confirmation, queue, tools, MCP connections, and terminal subprocesses alive when the client goes away.
