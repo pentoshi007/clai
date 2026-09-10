@@ -41,6 +41,7 @@ import { createToolWatchdog } from "../../turn/tool-watchdog.js";
 import { scopeTargetForToolCall } from "../../../safety/classifier.js";
 import { engagementActionsForToolCall } from "../../../safety/engagement-policy.js";
 import type { SingleToolDeps } from "./deps.js";
+import { isSubagentTool, runSubagentTool } from "../../subagents/tools.js";
 
 const safeScopeTargetForToolCall = (call: ToolCall): string | undefined => {
   try {
@@ -108,6 +109,17 @@ export const runSingleTool = async (
       contextOutput: invalid.reason,
       suppressedRepeat: true,
     };
+  }
+
+  if (isSubagentTool(call.name)) {
+    const result = await runSubagentTool(call, {
+      manager: deps.session.subagents,
+      provider: deps.provider(),
+      model: deps.model(),
+      cwd: getActiveProjectRoot() ?? safeCwd(),
+    }, parentSignal);
+    emitVisibleSyntheticReceipt(result, result.output);
+    return { ok: result.ok, call, result, contextOutput: result.output };
   }
 
   if (call.name === "image.ocr" && !deps.imageOcrEnabled) {

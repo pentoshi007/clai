@@ -46,6 +46,7 @@ export const dropSectionsAlreadyInHistory = (
   if (sent.length === 0) return [...sections];
   const kept = sections.filter(
     (section) =>
+      section.content.startsWith("ORCHESTRATION:") ||
       section.content.includes(prompt) ||
       !sent.some((prior) => prior.includes(section.content)),
   );

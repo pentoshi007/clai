@@ -117,6 +117,7 @@ export function Picker(props: PickerProps): ReactNode {
   }
 
   useKeyboard((key) => {
+    if (key.defaultPrevented) return;
     if (key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
 

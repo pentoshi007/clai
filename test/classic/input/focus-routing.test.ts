@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { ActionContext, ActionId } from "../../../src/ui-core/actions/action-id.js";
 import { ActionRouter } from "../../../src/ui-core/actions/action-router.js";
 import { FocusController } from "../../../src/ui-core/controllers/focus-controller.js";
+import { OverlayController } from "../../../src/ui-core/controllers/overlay-controller.js";
 import { CancelCoordinator } from "../../../src/app/controllers/cancel-coordinator.js";
 import { CancelLadder } from "../../../src/classic/input/cancel-ladder.js";
 import { InputRouter } from "../../../src/classic/input/input-router.js";
 import { keyEvent, type MouseEvent } from "../../../src/classic/input/key-event.js";
 import { RawDecoder } from "../../../src/classic/input/raw-decoder.js";
 
-function build(options: { acceptsText?: boolean; hasSelection?: boolean } = {}) {
+function build(options: { acceptsText?: boolean; hasSelection?: boolean; running?: boolean; now?: () => number } = {}) {
   const calls: string[] = [];
   const focus = new FocusController();
+  const overlay = new OverlayController(focus);
   const session = {
     sessionId: "s1",
-    getState: () => ({ running: false, compacting: false, queued: [] as string[] }),
+    getState: () => ({ running: options.running === true, compacting: false, queued: [] as string[] }),
     abort: () => calls.push("session.abort"),
     cancelAll: async () => {
       calls.push("session.cancelAll");
@@ -21,6 +23,7 @@ function build(options: { acceptsText?: boolean; hasSelection?: boolean } = {}) 
     },
   };
   const ladder = new CancelLadder({
+    now: options.now,
     coordinator: new CancelCoordinator({
       session,
       sessionId: () => "s1",
@@ -47,7 +50,10 @@ function build(options: { acceptsText?: boolean; hasSelection?: boolean } = {}) 
     onPaste: (text) => calls.push(`paste:${text.length}`),
     onMouse: (event: MouseEvent) => calls.push(`mouse:${event.x},${event.y}`),
     onToast: (text) => calls.push(`toast:${text}`),
-    closeOverlay: () => calls.push("overlay.close"),
+    closeOverlay: () => {
+      calls.push("overlay.close");
+      overlay.close();
+    },
     dismissBlockingPrompt: () => {
       calls.push("overlay.dismissBlockingPrompt");
       return false;
@@ -56,7 +62,7 @@ function build(options: { acceptsText?: boolean; hasSelection?: boolean } = {}) 
     acceptsText: () => options.acceptsText !== false,
     hasSelection: () => options.hasSelection === true,
   });
-  return { calls, focus, router, ladder };
+  return { calls, focus, router, ladder, overlay };
 }
 
 function feed(router: InputRouter, bytes: string): void {
@@ -126,11 +132,45 @@ describe("non-blocking overlays", () => {
     expect(calls).toEqual(["action:pager.line-down"]);
   });
 
-  it("closes on escape and runs the cancel ladder", () => {
+  it("closes on escape without arming cancellation", () => {
     const { calls, focus, router } = build();
     focus.pushOverlay("picker");
     feed(router, "\x1b");
-    expect(calls).toEqual(["overlay.close", "notify:Closed · Esc"]);
+    expect(calls).toEqual(["overlay.close"]);
+  });
+
+  it.each([false, true])("returns through pager and picker on raw Escape without cancelling a running turn (previously armed=%s)", async (armed) => {
+    let now = 1000;
+    const { calls, focus, router, ladder, overlay } = build({ running: true, now: () => now });
+    if (armed) ladder.escape(false);
+    overlay.openPicker({ title: "Agents", options: [{ value: "child", label: "Child" }] }, () => undefined);
+    overlay.openPager("Child output", "Live finding");
+    expect(focus.activeContext()).toBe("pager");
+
+    now += 500;
+    feed(router, "\x1b");
+    expect(overlay.getState().kind).toBe("picker");
+    expect(focus.activeContext()).toBe("picker");
+    expect(ladder.escapeArmed).toBe(false);
+    now += 500;
+    feed(router, "\x1b");
+    await Promise.resolve();
+    expect(overlay.getState().kind).toBe("none");
+    expect(focus.activeContext()).toBe("composer");
+    expect(ladder.escapeArmed).toBe(false);
+    expect(calls).not.toContain("session.cancelAll");
+    expect(calls).not.toContain("session.abort");
+    expect(calls).not.toContain("requestExit");
+
+    now += 500;
+    feed(router, "\x1b");
+    expect(ladder.escapeArmed).toBe(true);
+    expect(calls).not.toContain("session.cancelAll");
+    now += 500;
+    feed(router, "\x1b");
+    await Promise.resolve();
+    expect(calls.filter((call) => call === "session.cancelAll")).toHaveLength(1);
+    overlay.dispose();
   });
 
   it("never falls through to a global action from a trapping context", () => {

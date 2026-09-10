@@ -202,7 +202,7 @@ export function App(): ReactNode {
   }, [focusContext, planRendered, services.focus]);
 
   useKeyboard((key) => {
-    if (isKeyEventRelease(key)) return;
+    if (key.defaultPrevented || isKeyEventRelease(key)) return;
 
     const chord = chordFromKeyEvent(key);
     if (consumeCancellationKeyRepeat(key, chord)) return;

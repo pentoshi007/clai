@@ -204,7 +204,7 @@ describe("automatic compaction single-admission policy", () => {
       session: makeSession("session-auto-single-admission"),
       history: bigHistory(),
       maxSteps: 2,
-      contextLimitTokens: 30_000,
+      contextLimitTokens: 40_000,
       onEvent: (event) => events.push(event),
     }).catch((error: unknown) => {
       if (!(error instanceof Error) || !/exceeds the effective safe context/i.test(error.message)) {

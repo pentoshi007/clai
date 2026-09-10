@@ -1,5 +1,11 @@
 import { EventEmitter } from "node:events";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +22,11 @@ let exitStatus = 0;
 let stdinText = "";
 
 vi.mock("node:child_process", () => ({
-  spawn: (cmd: string, args: readonly string[], options: { stdio?: unknown }) => {
+  spawn: (
+    cmd: string,
+    args: readonly string[],
+    options: { stdio?: unknown },
+  ) => {
     calls.push({ cmd, args, stdio: options?.stdio });
     const child = new EventEmitter() as EventEmitter & {
       kill: () => void;
@@ -38,6 +48,15 @@ vi.mock("node:child_process", () => ({
   },
 }));
 
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    accessSync: vi.fn(),
+    renameSync: vi.fn(actual.renameSync),
+  };
+});
+
 vi.mock("../src/tools/sudo-session.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../src/tools/sudo-session.js")>();
@@ -49,20 +68,28 @@ async function obtainMock() {
   return vi.mocked(mod.obtainSudoPassword);
 }
 
+async function accessMock() {
+  const mod = await import("node:fs");
+  return vi.mocked(mod.accessSync);
+}
+
+async function renameMock() {
+  const mod = await import("node:fs");
+  return vi.mocked(mod.renameSync);
+}
+
 const ASSET = "clai-bun-darwin-arm64";
 const PAYLOAD = Buffer.from("new-clai-binary");
 
 let root = "";
 let execPath = "";
-let lockedDir = "";
 
 async function runInstall(
   stdio: "inherit" | "pipe",
   extra?: Partial<PerformUpdateOptions>,
 ) {
-  const { installDirectBinary, currentPlatformTarget } = await import(
-    "../src/commands/update-install.js"
-  );
+  const { installDirectBinary, currentPlatformTarget } =
+    await import("../src/commands/update-install.js");
   return installDirectBinary({
     version: "4.6.1",
     method: { type: "binary" },
@@ -79,13 +106,25 @@ beforeEach(async () => {
   exitStatus = 0;
   stdinText = "";
   (await obtainMock()).mockReset();
+  if (process.getuid) vi.spyOn(process, "getuid").mockReturnValue(1000);
+  (await accessMock()).mockImplementation(() => {
+    const error = new Error("permission denied") as NodeJS.ErrnoException;
+    error.code = "EACCES";
+    throw error;
+  });
   root = mkdtempSync(join(tmpdir(), "clai-escalation-"));
-  lockedDir = join(root, "bin");
+  const lockedDir = join(root, "bin");
   execPath = join(lockedDir, "clai");
-  const { mkdirSync } = await import("node:fs");
   mkdirSync(lockedDir);
   writeFileSync(execPath, "old", { mode: 0o755 });
-  chmodSync(lockedDir, 0o500);
+  const rename = await renameMock();
+  const realRename = rename.getMockImplementation()!;
+  rename.mockImplementation((from, to) => {
+    if (to !== execPath) return realRename(from, to);
+    const error = new Error("permission denied") as NodeJS.ErrnoException;
+    error.code = "EACCES";
+    throw error;
+  });
 
   const { createHash } = await import("node:crypto");
   const digest = createHash("sha256").update(PAYLOAD).digest("hex");
@@ -102,10 +141,9 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  expect(readFileSync(execPath, "utf8")).toBe("old");
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  try {
-    chmodSync(lockedDir, 0o700);
-  } catch {}
   rmSync(root, { recursive: true, force: true });
 });
 
