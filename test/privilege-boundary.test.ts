@@ -1,6 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runToolCall } from "../src/tools/registry.js";
 import { getAllowInteractiveStdinInherit } from "../src/tools/shell.js";
+
+vi.mock("../src/os/pkgmgr.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/os/pkgmgr.js")>(),
+  commandAvailable: vi.fn(async () => true),
+}));
+
+beforeEach(() => {
+  if (process.getuid) vi.spyOn(process, "getuid").mockReturnValue(1000);
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("universal managed privilege boundary", () => {
   it("disables unmanaged inherited password prompts by default in every frontend", async () => {

@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectSystem, isWindows } from '../src/os/detect.js';
 
 describe('OS detection', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it('returns a valid system info object', () => {
     const info = detectSystem();
     expect(info.platform).toBeTruthy();
@@ -19,9 +21,15 @@ describe('OS detection', () => {
   });
 
   it('reports shell from environment', () => {
+    vi.stubEnv('SHELL', '/bin/test-shell');
     const info = detectSystem();
-    expect(info.shell).toBeTruthy();
-    expect(info.shell).not.toBe('unknown');
+    expect(info.shell).toBe('/bin/test-shell');
+  });
+
+  it('reports an unknown shell when the environment supplies none', () => {
+    vi.stubEnv('SHELL', undefined);
+    vi.stubEnv('ComSpec', undefined);
+    expect(detectSystem().shell).toBe('unknown');
   });
 
   it('isWindows returns boolean', () => {
