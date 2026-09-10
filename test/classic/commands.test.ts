@@ -505,6 +505,27 @@ describe("classic command parity (W12)", () => {
     }
   });
 
+  spec(["orchestration"], "/orchestration reports status and enables only on explicit opt-in", async () => {
+    const { services } = open();
+    await run(services, "orchestration");
+    expect(services.session.subagents.enabled).toBe(false);
+    expect(noticed(services, "Orchestration off")).toBe(true);
+    await run(services, "orchestration", "on");
+    expect(services.session.subagents.enabled).toBe(true);
+    await run(services, "orchestration", "off");
+    expect(services.session.subagents.enabled).toBe(false);
+  });
+
+  spec(["agents"], "/agents opens the shared picker and returns to the main conversation", async () => {
+    const { services } = open();
+    await run(services, "agents");
+    const state = services.overlay.getState();
+    expect(state.kind).toBe("picker");
+    if (state.kind === "picker") expect(state.request.options[0]?.value).toBe("main");
+    services.overlay.selectPicker("main");
+    expect(services.overlay.getState().kind).toBe("none");
+  });
+
   it("exercises every catalogue command, aliases included", () => {
     const registry = buildDefaultCommandRegistry();
     const missing = slashCommands

@@ -185,7 +185,7 @@ export class OverlayController {
       ...(highlightPath ? { highlightPath } : {}),
       ...(markdown ? { markdown } : {}),
     };
-    const stackable = this.state.kind === "confirm" || this.state.kind === "jobs";
+    const stackable = this.state.kind === "confirm" || this.state.kind === "jobs" || this.state.kind === "picker";
     const opened =
       stackable && !this.suspended
         ? this.suspendUnder(pager, "pager")
