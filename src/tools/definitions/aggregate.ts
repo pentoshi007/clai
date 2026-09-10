@@ -7,6 +7,7 @@ import { TOOL_DEFINITIONS_NETWORK } from "./network.js";
 import { TOOL_DEFINITIONS_ORCHESTRATION } from "./orchestration.js";
 import { TOOL_DEFINITIONS_SHELL } from "./shell.js";
 import { TOOL_DEFINITIONS_TERMINAL } from "./terminal.js";
+import { TOOL_DEFINITIONS_SUBAGENTS } from "./subagents.js";
 import { TOOL_DEFINITIONS_WEB_1 } from "./web-1.js";
 import { TOOL_DEFINITIONS_WEB_2 } from "./web-2.js";
 
@@ -19,6 +20,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   ...TOOL_DEFINITIONS_CONTEXT_1,
   ...TOOL_DEFINITIONS_ORCHESTRATION,
   ...TOOL_DEFINITIONS_CONTEXT_2,
+  ...TOOL_DEFINITIONS_SUBAGENTS,
   def(
     "skill.load",
     "Read the full instructions of one Agent Skill listed in the AVAILABLE SKILLS block, then follow them. Load a skill when its description covers the work you are about to do — before starting that work, not after. Never guess a skill's contents, never load a skill unrelated to the task, and never load the same skill twice in a session.",

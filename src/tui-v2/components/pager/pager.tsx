@@ -154,11 +154,13 @@ export function Pager(props: PagerProps): ReactNode {
     }
     let active = true;
     setPageBusy(true);
+    const growing = source.isGrowing?.() ?? canFollow;
     const first = canFollow && source.readTail ? source.readTail() : source.readPage(0);
     void first.then((page) => {
       if (!active) return;
       setArtifactPage(page);
       setDisplayBody(page.body || "(no output yet)");
+      setFollowing(growing);
       if (canFollow) {
         queueMicrotask(() => {
           const box = scrollRef.current;
@@ -176,15 +178,22 @@ export function Pager(props: PagerProps): ReactNode {
     if (!source?.watch || !following) return;
     let active = true;
     let reading = false;
+    let pending = false;
     const pull = (): void => {
-      if (!active || reading || !source.readTail) return;
+      if (!active || !source.readTail) return;
+      if (reading) {
+        pending = true;
+        return;
+      }
       reading = true;
+      const growing = source.isGrowing?.() ?? true;
       void source
         .readTail()
         .then((page) => {
           if (!active) return;
           setArtifactPage(page);
           setDisplayBody(page.body || "(no output yet)");
+          setFollowing(growing);
           queueMicrotask(() => {
             const box = scrollRef.current;
             if (!box) return;
@@ -195,6 +204,10 @@ export function Pager(props: PagerProps): ReactNode {
         .catch(() => undefined)
         .finally(() => {
           reading = false;
+          if (pending) {
+            pending = false;
+            pull();
+          }
         });
     };
     const unwatch = source.watch(pull);
@@ -204,11 +217,6 @@ export function Pager(props: PagerProps): ReactNode {
       unwatch();
     };
   }, [source, following]);
-
-  useEffect(() => {
-    if (!following || !source?.isGrowing) return;
-    if (!source.isGrowing()) setFollowing(false);
-  }, [following, source, artifactPage]);
 
   async function loadArtifactPage(
     offset: number,
@@ -373,7 +381,7 @@ export function Pager(props: PagerProps): ReactNode {
   }
 
   useKeyboard((key) => {
-    if (key.eventType === "release") return;
+    if (key.defaultPrevented || key.eventType === "release") return;
     const chord = chordFromKeyEvent(key);
 
     if (searchOpen) {

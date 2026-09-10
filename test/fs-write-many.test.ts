@@ -59,8 +59,7 @@ describe("fsWriteMany", () => {
     dirs.push(dir);
     const result = await fsWriteMany([
       { path: join(dir, "ok.txt"), content: "ok" },
-      // Outside the sandbox -> ensureWriteAllowed throws, captured as failure.
-      { path: "/etc/definitely-not-allowed.txt", content: "nope" },
+      { path: join(dir, "ok.txt", "child.txt"), content: "nope" },
     ]);
     expect(result.ok).toBe(false);
     expect(existsSync(join(dir, "ok.txt"))).toBe(true);

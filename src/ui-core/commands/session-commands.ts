@@ -61,6 +61,7 @@ export async function handleClear(services: AppServices): Promise<void> {
 
   clearActiveProjectRoot();
   services.plan.clear();
+  services.session.subagents.purge();
   services.session.reset({ mintNewId: true });
   resetResponsesWireStatesForTesting();
   if (beforeProvider) {
@@ -326,6 +327,8 @@ export async function handleSave(
 }
 
 export async function handleReset(services: AppServices): Promise<void> {
+  services.session.subagents.purge();
+  services.session.subagents.setEnabled(false);
   const result = await clearAllHistory();
   notice(services, "info", `history cleared · ${result.detail || "ok"}`);
 }

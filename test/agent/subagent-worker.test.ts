@@ -1,0 +1,325 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import type { CompletionRequest, CompletionResult, NativeToolCall, ToolResult } from "../../src/types.js";
+import type { SubagentRun, SubagentWorkerInput } from "../../src/agent/subagents/types.js";
+
+vi.mock("../../src/llm/router.js", () => ({ streamWithProvider: vi.fn() }));
+vi.mock("../../src/tools/registry.js", () => ({ runToolCall: vi.fn() }));
+vi.mock("../../src/llm/capability/tool-dialect.js", () => ({ resolveToolDialect: vi.fn(() => "openai") }));
+vi.mock("../../src/llm/context-windows.js", () => ({ modelContextWindow: vi.fn(() => 128_000), modelMaxOutputTokens: vi.fn(() => 4096) }));
+
+import { streamWithProvider } from "../../src/llm/router.js";
+import { runToolCall } from "../../src/tools/registry.js";
+import { resolveToolDialect } from "../../src/llm/capability/tool-dialect.js";
+import { modelContextWindow } from "../../src/llm/context-windows.js";
+import { currentSessionAffinity, withSessionAffinity } from "../../src/llm/session-affinity.js";
+import { createReasoningArtifact } from "../../src/llm/reasoning-artifacts.js";
+import { runReadOnlySubagent } from "../../src/agent/subagents/worker.js";
+
+const REPORT = `Status: complete
+## Findings
+Verified: src/example.ts exports the answer constant. Hypothesis: its consumer uses it as a default; no consumer was examined.
+## Evidence
+src/example.ts:1 exports answer = 42. The read result proves this export contract; no further call flow was established.
+## Next steps
+Inspect the importing module before modifying the answer contract.
+## Coverage gaps
+No tests were run and consumers were not examined.`;
+
+function completion(text = REPORT, toolCalls?: NativeToolCall[]): CompletionResult {
+  return { provider: "openai", model: "gpt-4.1", text, toolCalls, finishReason: toolCalls ? "tool_calls" : "stop" };
+}
+
+function call(name: string, args: Record<string, unknown> = {}, id = "call-1"): NativeToolCall {
+  return { id, name, args };
+}
+
+describe("isolated read-only subagent worker", () => {
+  let temporary: string;
+  let cwd: string;
+  let input: SubagentWorkerInput;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.mocked(resolveToolDialect).mockReturnValue("openai");
+    vi.mocked(modelContextWindow).mockReturnValue(128_000);
+    vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "src/example.ts:1: export const answer = 42;" });
+    temporary = await mkdtemp(join(tmpdir(), "subagent-worker-"));
+    cwd = join(temporary, "workspace");
+    await mkdir(join(cwd, "src"), { recursive: true });
+    await writeFile(join(cwd, "src/example.ts"), "export const answer = 42;\n");
+    await writeFile(join(temporary, "outside.txt"), "private outside data");
+    const run: SubagentRun = {
+      id: "child-1", parentSessionId: "parent", attempt: 1, title: "Inspect export",
+      prompt: "Inspect the answer contract", context: "Research only", cwd,
+      provider: "openai", model: "gpt-4.1", status: "running", createdAt: 1, updatedAt: 1, events: [],
+    };
+    input = { run, signal: new AbortController().signal, emit: vi.fn() };
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await rm(temporary, { recursive: true, force: true });
+  });
+
+  it("keeps its system, tools, and sent history stable, preserving native ids and reasoning", async () => {
+    const requests: CompletionRequest[] = [];
+    const snapshots: CompletionRequest["messages"][] = [];
+    const reasoningBlock = { text: "child-only reasoning" };
+    const reasoningArtifacts = [createReasoningArtifact({
+      kind: "plaintext", raw: "child-only",
+      provenance: { provider: "openai", model: "gpt-4.1", dialect: "openai-compatible" },
+      replay: { scope: "tool-turn", persistence: "tool-turn" },
+    })];
+    vi.mocked(streamWithProvider).mockImplementation(async (request, onToken, options) => {
+      requests.push(request);
+      snapshots.push(structuredClone(request.messages));
+      expect(options).toMatchObject({ singleDispatch: true, adoptFallback: false, maxRetries: 0, retryRateLimits: false });
+      onToken(requests.length === 1 ? "Inspecting export" : REPORT);
+      return requests.length === 1
+        ? { ...completion("Inspecting export", [call("fs.read", { path: "src/example.ts" }, "native-42")]), reasoningBlock, reasoningArtifacts }
+        : completion();
+    });
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.messages).toEqual(snapshots[0]);
+    expect(requests[1]!.messages.slice(0, 2)).toEqual(snapshots[0]);
+    expect(requests[0]!.tools).toBe(requests[1]!.tools);
+    expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "web.fetch", "web.search"]);
+    expect(requests[0]!.messages[0]!.content).not.toContain(input.run.prompt);
+    expect(requests[0]!.messages[0]!.content).not.toContain(cwd);
+    expect(requests[0]!.messages[1]!.content).toContain(input.run.prompt);
+    expect(requests[1]!.messages[2]).toMatchObject({ role: "assistant", toolCalls: [{ id: "native-42" }], reasoningBlock, reasoningArtifacts });
+    expect(requests[1]!.messages[3]).toMatchObject({ role: "tool", toolCallId: "native-42", ok: true });
+    expect(runToolCall).toHaveBeenCalledWith(expect.objectContaining({ name: "fs.read", args: expect.objectContaining({ path: join(cwd, "src/example.ts"), maxBytes: 12_000 }) }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(input.emit).toHaveBeenCalledWith({ kind: "assistant", text: "Inspecting export", append: true });
+    expect(input.emit).toHaveBeenCalledWith({ kind: "assistant", text: REPORT });
+    expect(await readFile(join(cwd, "src/example.ts"), "utf8")).toBe("export const answer = 42;\n");
+  });
+
+  it.each([
+    call("shell.exec", { command: "rm -rf ." }),
+    call("fs.write", { path: "src/example.ts", content: "overwrite" }),
+    call("http.fetch", { url: "https://example.com", method: "POST" }),
+    call("tool.batch", { calls: [{ name: "tool.batch", args: { calls: [{ name: "fs.read", args: { path: "src/example.ts" } }] } }] }),
+    call("mcp.remote.write", {}),
+    call("subagent.spawn", { prompt: "delegate again" }),
+    call("fs_read", { path: "src/example.ts" }),
+    call("functions.fs.read", { path: "src/example.ts" }),
+  ])("denies $name before any registry execution", async (malicious) => {
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [malicious])).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent(input);
+    expect(runToolCall).not.toHaveBeenCalled();
+    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "tool", text: expect.stringContaining("Tool denied") }));
+  });
+
+  it.each([
+    call("fs.read", { path: "../outside.txt" }),
+    call("fs.search", { path: ".", pattern: "private", fileList: ["../outside.txt"] }),
+    call("fs.search", { path: ".", pattern: "private", followSymlinks: true }),
+    call("fs.search", { path: ".", pattern: "private", symlinks: true }),
+  ])("blocks traversal and unvalidated search options: $args", async (malicious) => {
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [malicious])).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent(input);
+    expect(runToolCall).not.toHaveBeenCalled();
+  });
+
+  it("blocks absolute outside paths and escaping symlinks, including recursive search", async () => {
+    await symlink(join(temporary, "outside.txt"), join(cwd, "src/escape"));
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [
+      call("fs.read", { path: join(temporary, "outside.txt") }, "a"),
+      call("fs.read", { path: "src/escape" }, "b"),
+      call("fs.search", { path: "src", pattern: "private" }, "c"),
+    ])).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent(input);
+    expect(runToolCall).not.toHaveBeenCalled();
+  });
+
+  it("supports fenced tools with stable schemas in text mode", async () => {
+    vi.mocked(resolveToolDialect).mockReturnValue("none");
+    vi.mocked(streamWithProvider)
+      .mockResolvedValueOnce(completion('```tool\n{"name":"fs.search","args":{"path":"src","pattern":"answer"}}\n```'))
+      .mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    const first = vi.mocked(streamWithProvider).mock.calls[0]![0];
+    const second = vi.mocked(streamWithProvider).mock.calls[1]![0];
+    expect(first.tools).toBeUndefined();
+    expect(first.messages[0]!.content).toContain("Available tool schemas");
+    expect(second.messages.slice(0, 2)).toEqual(first.messages);
+    expect(second.messages[3]).toMatchObject({ role: "user", content: expect.stringContaining("Untrusted tool result") });
+    expect(runToolCall).toHaveBeenCalledOnce();
+  });
+
+  it("does not let the fenced parser canonicalize an alias into authority", async () => {
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion('```tool\n{"name":"functions.fs.read","args":{"path":"src/example.ts"}}\n```'));
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("aliases");
+    expect(runToolCall).not.toHaveBeenCalled();
+  });
+
+  it("uses independent child affinity without inheriting parent messages", async () => {
+    const affinities: string[] = [];
+    vi.mocked(streamWithProvider).mockImplementation(async (request) => {
+      affinities.push(currentSessionAffinity()!);
+      await Promise.resolve();
+      expect(currentSessionAffinity()).toBe(affinities.find((affinity) => affinity.includes(JSON.parse(request.messages[1]!.content).context)));
+      expect(request.messages).toHaveLength(2);
+      return completion();
+    });
+    await withSessionAffinity("parent-affinity", async () => {
+      await Promise.all(["child-a", "child-b"].map((id) => runReadOnlySubagent({ ...input, run: { ...input.run, id, context: id } })));
+      expect(currentSessionAffinity()).toBe("parent-affinity");
+    });
+    expect(new Set(affinities).size).toBe(2);
+    expect(affinities.every((affinity) => affinity.includes("parent") && affinity !== "parent-affinity")).toBe(true);
+  });
+
+  it("suppresses repeated successful tools and bounds every tool result", async () => {
+    const repeated = call("fs.read", { path: "src/example.ts" });
+    vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(50_000) });
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [repeated])).mockResolvedValueOnce(completion("", [repeated])).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent(input);
+    expect(runToolCall).toHaveBeenCalledOnce();
+    const messages = vi.mocked(streamWithProvider).mock.calls[2]![0].messages;
+    expect(messages.filter((message) => message.role === "tool").every((message) => message.content.length <= 12_000)).toBe(true);
+    expect(messages.some((message) => message.content.includes("Repeated successful tool call blocked"))).toBe(true);
+  });
+
+  it("stops at 24 rounds instead of reporting false completion", async () => {
+    let round = 0;
+    vi.mocked(streamWithProvider).mockImplementation(async () => completion("", [call("web.search", { query: `query ${++round}` }, `call-${round}`)]));
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("24-round budget exhausted");
+    expect(streamWithProvider).toHaveBeenCalledTimes(24);
+    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "notice", text: expect.stringContaining("did not complete") }));
+  });
+
+  it("enforces the model context limit before dispatch", async () => {
+    vi.mocked(modelContextWindow).mockReturnValue(10_000);
+    await expect(runReadOnlySubagent({ ...input, run: { ...input.run, context: "x".repeat(40_000) } })).rejects.toThrow("context budget");
+    expect(streamWithProvider).not.toHaveBeenCalled();
+  });
+
+  it.each(["resolve", "reject"])("waits for the stopped provider to %s before releasing the worker", async (outcome) => {
+    const stop = new AbortController();
+    let dispatch!: () => void;
+    let resolveProvider!: (result: CompletionResult) => void;
+    let rejectProvider!: (error: Error) => void;
+    let lateDelta!: (text: string) => void;
+    const started = new Promise<void>((resolve) => { dispatch = resolve; });
+    const provider = new Promise<CompletionResult>((resolve, reject) => {
+      resolveProvider = resolve;
+      rejectProvider = reject;
+    });
+    vi.mocked(streamWithProvider).mockImplementation(async (_request, onToken) => {
+      lateDelta = onToken;
+      dispatch();
+      return provider;
+    });
+    const pending = runReadOnlySubagent({ ...input, signal: stop.signal });
+    const settled = vi.fn();
+    void pending.then(settled, settled);
+    const assertion = expect(pending).rejects.toThrow("stop requested");
+    await started;
+    stop.abort(new Error("stop requested"));
+    lateDelta("late provider output");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).not.toHaveBeenCalled();
+    expect(input.emit).not.toHaveBeenCalled();
+    if (outcome === "resolve") resolveProvider(completion("", [call("fs.read", { path: "src/example.ts" })]));
+    else rejectProvider(new Error("provider stopped"));
+    await assertion;
+    expect(settled).toHaveBeenCalledOnce();
+    expect(runToolCall).not.toHaveBeenCalled();
+    expect(streamWithProvider).toHaveBeenCalledOnce();
+    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "notice", text: expect.stringContaining("stop requested") }));
+  });
+
+  it("aborts at ten minutes but waits for the active provider to settle", async () => {
+    vi.useFakeTimers();
+    let dispatch!: () => void;
+    let resolveProvider!: (result: CompletionResult) => void;
+    let requestSignal!: AbortSignal;
+    const started = new Promise<void>((resolve) => { dispatch = resolve; });
+    const provider = new Promise<CompletionResult>((resolve) => { resolveProvider = resolve; });
+    vi.mocked(streamWithProvider).mockImplementation(async (request) => {
+      requestSignal = request.signal!;
+      dispatch();
+      return provider;
+    });
+    const pending = runReadOnlySubagent(input);
+    const settled = vi.fn();
+    void pending.then(settled, settled);
+    const assertion = expect(pending).rejects.toThrow("ten-minute deadline");
+    await started;
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(requestSignal.aborted).toBe(true);
+    expect(settled).not.toHaveBeenCalled();
+    resolveProvider(completion());
+    await assertion;
+    expect(runToolCall).not.toHaveBeenCalled();
+  });
+
+  it("waits for a stopped registry call and suppresses its result and subsequent tools", async () => {
+    const stop = new AbortController();
+    let dispatch!: () => void;
+    let resolveTool!: (result: ToolResult) => void;
+    const started = new Promise<void>((resolve) => { dispatch = resolve; });
+    const tool = new Promise<ToolResult>((resolve) => { resolveTool = resolve; });
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion("", [
+      call("fs.read", { path: "src/example.ts" }, "first"),
+      call("fs.list", { path: "src" }, "second"),
+    ]));
+    vi.mocked(runToolCall).mockImplementation(async () => {
+      dispatch();
+      return tool;
+    });
+    const pending = runReadOnlySubagent({ ...input, signal: stop.signal });
+    const settled = vi.fn();
+    void pending.then(settled, settled);
+    const assertion = expect(pending).rejects.toThrow("stop requested");
+    await started;
+    vi.mocked(input.emit).mockClear();
+    stop.abort(new Error("stop requested"));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).not.toHaveBeenCalled();
+    expect(input.emit).not.toHaveBeenCalled();
+    resolveTool({ ok: true, output: "late tool result" });
+    await assertion;
+    expect(runToolCall).toHaveBeenCalledOnce();
+    expect(streamWithProvider).toHaveBeenCalledOnce();
+    expect(input.emit).toHaveBeenCalledOnce();
+    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "notice", text: expect.stringContaining("stop requested") }));
+  });
+
+  it.each(["Done", "I will investigate next", REPORT.replace("Status: complete", "Status: partial")])("rejects missing or incomplete reports", async (text) => {
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(text));
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("no complete report");
+  });
+
+  it("does not retry router errors or accept fallback routes", async () => {
+    vi.mocked(streamWithProvider).mockRejectedValueOnce(new Error("provider unavailable"));
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("provider unavailable");
+    expect(streamWithProvider).toHaveBeenCalledOnce();
+    vi.mocked(streamWithProvider).mockResolvedValueOnce({ ...completion(), provider: "anthropic" });
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("route changed");
+  });
+
+  it("ignores assistant deltas arriving after the response settled", async () => {
+    let lateDelta!: (text: string) => void;
+    vi.mocked(streamWithProvider).mockImplementation(async (_request, onToken) => {
+      lateDelta = onToken;
+      return completion();
+    });
+    await runReadOnlySubagent(input);
+    vi.mocked(input.emit).mockClear();
+    lateDelta("late provider progress");
+    expect(input.emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed final heading without a section body", async () => {
+    const text = REPORT.slice(0, REPORT.indexOf("## Coverage gaps")) + "## Coverage gaps!";
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(text));
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("no complete report");
+  });
+});

@@ -37,6 +37,7 @@ import {
 } from "./turn/setup/turn-state-machine.js";
 import { ResponderClaimLedger } from "./turn/responder-claims.js";
 import { buildSystemSections } from "./turn/system-sections.js";
+import { orchestrationContext } from "./subagents/tools.js";
 import { createToolRouting } from "./turn/tool-routing.js";
 import { runSingleTool } from "./turn/tool-execution/single-tool.js";
 import { runTurnRounds } from "./turn/loop/run-rounds.js";
@@ -449,6 +450,7 @@ export async function runAgentTurn(
         getRunningJobs: () => jobManager.getRunningJobs(session.sessionId),
         getRecentJobs: () => jobManager.getRecentJobs(12, session.sessionId),
       });
+    systemSections.push(orchestrationContext(session.subagents?.enabled ?? false));
     const composeCurrentSystemPrompt = (native: boolean): string =>
       buildStableSystemContent(native);
     const composed = composeTurnMessages({

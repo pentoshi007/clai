@@ -1,4 +1,7 @@
+import type { SubagentManager } from "./subagents/manager.js";
+
 export interface SessionPolicy {
+  subagents?: SubagentManager;
   allow: Set<string>;
   pentestAuthorized: { value: boolean };
   sessionId: string;

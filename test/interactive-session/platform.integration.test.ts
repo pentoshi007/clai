@@ -198,7 +198,15 @@ describe.skipIf(!platformSupported)(`supported-platform integration (${platformS
       confirm: approve,
     });
     const result = await send(manager, started.sessionId, `tree ${evidenceDir}`);
-    const match = /tree root=(\d+) child=(\d+) grandchild=(\d+)/.exec(textOf(result.page));
+    let output = textOf(result.page);
+    let cursor = result.page!.nextCursor;
+    const identities = /tree root=(\d+) child=(\d+) grandchild=(\d+)/;
+    for (let attempt = 0; attempt < 10 && !identities.test(output); attempt += 1) {
+      const read = await manager.read({ ownerId: OWNER, id: started.sessionId, cursor, waitMs: 300 });
+      output += textOf(read.page);
+      cursor = read.page!.nextCursor;
+    }
+    const match = identities.exec(output);
     expect(match, "fixture must report all three process identities").not.toBeNull();
     const pids = match!.slice(1).map(Number);
     const heartbeatPaths = ["root.heartbeat", "child.heartbeat", "grandchild.heartbeat"].map((name) =>

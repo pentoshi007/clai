@@ -35,6 +35,7 @@ const MANDATORY_PREFIXES = [
   "MCP TOOL CONTEXT",
   "ENGAGEMENT SCOPE",
   "REQUEST ENVIRONMENT",
+  "ORCHESTRATION:",
   "Project context from .clai/context.md:",
   "ACTIVE PROJECT ROOT:",
   "USER DESTINATION:",

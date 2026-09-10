@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "../../types.js";
 import { TOOL_DEFINITIONS } from "./aggregate.js";
 import { NON_REGISTRY_TOOL_NAMES } from "../definitions.js";
+import { SUBAGENT_TOOL_NAMES } from "./subagents.js";
 
 export const byName = new Map(TOOL_DEFINITIONS.map((d) => [d.name, d]));
 
@@ -19,6 +20,7 @@ export function getToolDefinitions(filter?: {
   }
   if (filter?.compact) {
     const core = new Set([
+      ...SUBAGENT_TOOL_NAMES,
       "fs.read",
       "fs.write",
       "fs.writeMany",
