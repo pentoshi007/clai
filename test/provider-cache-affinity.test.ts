@@ -108,4 +108,22 @@ describe("provider cache affinity", () => {
     expect(payload).not.toHaveProperty("prompt_cache_key");
     expect(payload).not.toHaveProperty("prompt_cache_isolation_key");
   });
+
+  it("isolates concurrent sessions while preserving affinity through awaited follow-ups", async () => {
+    const revisions: ChatMessage[] = [...BASE, { role: "user", content: "one more revision" }];
+    const [first, second] = await Promise.all(
+      ["session-one", "session-two"].map((sessionId) =>
+        withSessionAffinity(sessionId, async () => {
+          const initial = body("openrouter");
+          await Promise.resolve();
+          const followUp = body("openrouter", revisions);
+          expect(followUp.session_id).toBe(initial.session_id);
+          expect(followUp.session_id).toBe(sessionCacheAffinityKey(sessionId));
+          return followUp.session_id;
+        }),
+      ),
+    );
+    expect(first).not.toBe(second);
+    expect(body("openrouter").session_id).toBe(cacheAffinityKey("openrouter", "stealth/ox-alpha", BASE));
+  });
 });

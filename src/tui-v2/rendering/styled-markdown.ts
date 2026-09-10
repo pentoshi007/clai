@@ -9,6 +9,7 @@ import {
   type MarkdownStreamCache,
 } from "../../ui-core/rendering/streaming-markdown.js";
 import { ansiToStyledText } from "./ansi-to-styled.js";
+import { RenderCache } from "../../ui-core/rendering/render-cache.js";
 
 export type StyledLine = StyledText;
 
@@ -16,17 +17,18 @@ export interface StyledMarkdownOptions extends RenderMarkdownLinesOptions {
   readonly defaultFg?: string | undefined;
 }
 
-const CACHE_LIMIT = 4096;
-
-const styledCache = new Map<string, StyledText>();
+const styledCache = new RenderCache<StyledText>(4096, 8 * 1024 * 1024);
 
 export function styleAnsiLine(line: AnsiLine, defaultFg: string | undefined): StyledText {
   const key = `${defaultFg ?? ""}\u0000${line}`;
   const hit = styledCache.get(key);
   if (hit) return hit;
   const styled = ansiToStyledText(line, { defaultFg });
-  if (styledCache.size >= CACHE_LIMIT) styledCache.clear();
-  styledCache.set(key, styled);
+  const weight = styled.chunks.reduce(
+    (total, chunk) => total + chunk.text.length * 2 + 256,
+    64,
+  );
+  styledCache.set(key, styled, weight);
   return styled;
 }
 

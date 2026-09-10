@@ -364,6 +364,42 @@ describe('custom providers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['complete', 'stream'] as const)('does not add an undeclared cache hint to explicit Responses %s requests', async (method) => {
+    const { config, router } = await loadModules();
+    const bodies: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://responses.example/v1/responses');
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      if ('prompt_cache_key' in body) {
+        return Response.json({ error: { message: 'Unsupported parameter: prompt_cache_key' } }, { status: 400 });
+      }
+      const response = {
+        id: 'resp-test', object: 'response', status: 'completed',
+        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }],
+      };
+      if (!body.stream) return Response.json(response);
+      const events = [{ type: 'response.output_text.delta', delta: 'ok' }, { type: 'response.completed', response }];
+      return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''), {
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    config.addCustomProvider({
+      id: 'responses-no-cache', displayName: 'Responses without cache hints',
+      baseUrl: 'https://responses.example/v1', defaultModel: 'r1', api: 'responses',
+    });
+    const provider = router.getProvider('responses-no-cache' as never);
+    const request = { messages: [{ role: 'user' as const, content: 'hi' }] };
+    const auth = { apiKey: 'test-key' };
+    const result = method === 'complete'
+      ? await provider.complete(request, auth)
+      : await provider.stream(request, auth, () => {});
+    expect(result.text).toBe('ok');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(bodies[0]).not.toHaveProperty('prompt_cache_key');
+  });
+
   it('uses the selected Anthropic Messages API at the configured endpoint', async () => {
     const { config, router } = await loadModules();
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {

@@ -56,7 +56,7 @@ const buildRecoveryUserMessage = (
   return message;
 };
 
-const replaceActionCycleRecovery = (
+const appendActionCycleRecovery = (
   ports: TurnHistoryPorts,
   content: string,
 ): void => {
@@ -68,7 +68,7 @@ const replaceActionCycleRecovery = (
       message.internal &&
       message.content.startsWith(prefix)
     ) {
-      ports.messages.splice(index, 1);
+      if (message.content === prefix + content) return;
       break;
     }
   }
@@ -127,7 +127,7 @@ export const createTurnHistoryWriter = (
 ): TurnHistoryWriter => ({
   recoveryUserMessage: (content) => buildRecoveryUserMessage(ports, content),
   upsertActionCycleRecovery: (content) =>
-    replaceActionCycleRecovery(ports, content),
+    appendActionCycleRecovery(ports, content),
   recoveryProse: recoveryProseFrom,
   pushAssistantHistory: (content, reasoning, hasToolCalls) =>
     appendAssistantHistory(ports, content, reasoning, hasToolCalls),

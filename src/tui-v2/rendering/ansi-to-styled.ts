@@ -1,6 +1,7 @@
 
 import { RGBA, StyledText, TextAttributes } from "@opentui/core";
 import type { TextChunk } from "@opentui/core";
+import { copyString } from "../../os/copy-string.js";
 
 const BOLD = TextAttributes.BOLD;
 const DIM = TextAttributes.DIM;
@@ -80,7 +81,7 @@ export function ansiToStyledText(
 
   const flush = (): void => {
     if (buf.length === 0) return;
-    const chunk: TextChunk = { __isChunk: true, text: buf };
+    const chunk: TextChunk = { __isChunk: true, text: copyString(buf) };
     const useFg = fg ?? defaultFg;
     if (useFg) chunk.fg = useFg;
     if (bg) chunk.bg = bg;

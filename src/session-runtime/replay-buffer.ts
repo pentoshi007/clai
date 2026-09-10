@@ -1,7 +1,8 @@
 export const DEFAULT_REPLAY_BYTES = 2 * 1024 * 1024;
 
 export class TerminalReplayBuffer {
-  private chunks: Buffer[] = [];
+  private buffer: Buffer | undefined;
+  private writeOffset = 0;
   private byteLengthValue = 0;
 
   constructor(private readonly limitBytes = DEFAULT_REPLAY_BYTES) {
@@ -16,38 +17,35 @@ export class TerminalReplayBuffer {
 
   append(value: Uint8Array): void {
     if (value.byteLength === 0) return;
-    let chunk = Buffer.from(value);
-    if (chunk.length >= this.limitBytes) {
-      chunk = chunk.subarray(chunk.length - this.limitBytes);
-      this.chunks = [chunk];
-      this.byteLengthValue = chunk.length;
+    const buffer = this.buffer ??= Buffer.allocUnsafe(this.limitBytes);
+    if (value.byteLength >= this.limitBytes) {
+      buffer.set(value.subarray(value.byteLength - this.limitBytes));
+      this.writeOffset = 0;
+      this.byteLengthValue = this.limitBytes;
       return;
     }
-    this.chunks.push(chunk);
-    this.byteLengthValue += chunk.length;
-    this.trim();
+    const firstLength = Math.min(value.byteLength, this.limitBytes - this.writeOffset);
+    buffer.set(value.subarray(0, firstLength), this.writeOffset);
+    if (firstLength < value.byteLength) buffer.set(value.subarray(firstLength));
+    this.writeOffset = (this.writeOffset + value.byteLength) % this.limitBytes;
+    this.byteLengthValue = Math.min(this.limitBytes, this.byteLengthValue + value.byteLength);
   }
 
   snapshot(): Buffer {
-    return Buffer.concat(this.chunks, this.byteLengthValue);
+    const snapshot = Buffer.allocUnsafe(this.byteLengthValue);
+    if (!this.buffer || this.byteLengthValue === 0) return snapshot;
+    const start = this.byteLengthValue === this.limitBytes ? this.writeOffset : 0;
+    const firstLength = Math.min(this.byteLengthValue, this.limitBytes - start);
+    this.buffer.copy(snapshot, 0, start, start + firstLength);
+    if (firstLength < this.byteLengthValue) {
+      this.buffer.copy(snapshot, firstLength, 0, this.byteLengthValue - firstLength);
+    }
+    return snapshot;
   }
 
   clear(): void {
-    this.chunks = [];
+    this.buffer = undefined;
+    this.writeOffset = 0;
     this.byteLengthValue = 0;
-  }
-
-  private trim(): void {
-    while (this.byteLengthValue > this.limitBytes && this.chunks.length > 0) {
-      const first = this.chunks[0]!;
-      const excess = this.byteLengthValue - this.limitBytes;
-      if (first.length <= excess) {
-        this.chunks.shift();
-        this.byteLengthValue -= first.length;
-        continue;
-      }
-      this.chunks[0] = first.subarray(excess);
-      this.byteLengthValue -= excess;
-    }
   }
 }

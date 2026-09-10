@@ -16,6 +16,8 @@ import {
   type ExtrasLevel,
 } from "./responses-failure.js";
 import { cacheAffinityKey, sessionCacheAffinityKey } from "../cache-affinity.js";
+import { cachePolicyFields } from "../cache-policy-fields.js";
+import { customProfileSpecFor } from "../custom-profile-resolver.js";
 import { currentSessionAffinity } from "../session-affinity.js";
 import { responsesComplete } from "../responses-complete.js";
 import { isResponsesEmptyOutput } from "../responses-empty-output.js";
@@ -92,6 +94,7 @@ function genericResponsesConfig(
         ? sessionCacheAffinityKey(affinity)
         : cacheAffinityKey(providerId, context.model, context.messages);
       const promptCacheKey = `${context.purpose === "auxiliary" ? "aux-" : ""}${key}`;
+      const customCache = customProfileSpecFor(providerId)?.cache;
       if (extras === "bare") {
         return providerId === "explabs"
           ? { prompt_cache_key: promptCacheKey }
@@ -100,7 +103,13 @@ function genericResponsesConfig(
       return {
         store: false,
         include: ["reasoning.encrypted_content"],
-        prompt_cache_key: promptCacheKey,
+        ...(customCache ? cachePolicyFields({
+          provider: providerId,
+          model: context.model,
+          messages: context.messages,
+          purpose: context.purpose,
+          policy: { ...customCache, kind: customCache.kind ?? "unknown" },
+        }) : { prompt_cache_key: promptCacheKey }),
       };
     },
   };

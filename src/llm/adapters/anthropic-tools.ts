@@ -94,16 +94,20 @@ interface AnthropicReasoningReplayOptions {
   readonly cacheTtl?: "1h" | undefined;
 }
 
-function conversationCacheTarget(
-  messages: readonly ChatMessage[],
-): ChatMessage | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]!;
-    if (message.role !== "system" && !isInternalChatMessage(message)) {
-      return message;
+const CACHE_LOOKBACK_BLOCKS = 20;
+const MAX_CONVERSATION_BREAKPOINTS = 3;
+
+function cacheableContentBlockIndex(
+  content: string | AnthropicContentBlock[],
+): number {
+  if (typeof content === "string") return content.trim() ? 0 : -1;
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    const block = content[index]!;
+    if (block.type !== "thinking" && (block.type !== "text" || block.text.trim())) {
+      return index;
     }
   }
-  return undefined;
+  return -1;
 }
 
 function withConversationCacheBreakpoint(
@@ -124,15 +128,7 @@ function withConversationCacheBreakpoint(
       } as AnthropicContentBlock,
     ];
   }
-  let target = content.length - 1;
-  while (
-    target >= 0 &&
-    (content[target]!.type === "thinking" ||
-      (content[target]!.type === "text" &&
-        !(content[target] as { text: string }).text.trim()))
-  ) {
-    target -= 1;
-  }
+  const target = cacheableContentBlockIndex(content);
   if (target < 0) return content;
   const blocks = [...content];
   blocks[target] = {
@@ -187,21 +183,29 @@ export function toAnthropicToolMessages(
     role: "user" | "assistant";
     content: string | AnthropicContentBlock[];
   }> = [];
-  const cacheTarget = replay?.cacheConversation
-    ? conversationCacheTarget(messages)
-    : undefined;
+  const cacheCandidates: Array<{ index: number; offset: number }> = [];
+  const cacheableSources = new WeakSet<ChatMessage>();
+  if (replay?.cacheConversation) {
+    for (const message of messages) {
+      if (message.role !== "system" && !isInternalChatMessage(message)) {
+        cacheableSources.add(message);
+      }
+    }
+  }
+  let blockOffset = 0;
   const push = (
     source: ChatMessage,
     role: "user" | "assistant",
     content: string | AnthropicContentBlock[],
   ): void => {
-    out.push({
-      role,
-      content:
-        source === cacheTarget
-          ? withConversationCacheBreakpoint(content, replay?.cacheTtl)
-          : content,
-    });
+    if (cacheableSources.has(source)) {
+      const target = cacheableContentBlockIndex(content);
+      if (target >= 0) {
+        cacheCandidates.push({ index: out.length, offset: blockOffset + target });
+      }
+    }
+    out.push({ role, content });
+    blockOffset += typeof content === "string" ? 1 : content.length;
   };
 
   let i = 0;
@@ -300,6 +304,23 @@ export function toAnthropicToolMessages(
     i += 1;
   }
 
+  let lastBreakpoint = Infinity;
+  let breakpoints = 0;
+  for (
+    let index = cacheCandidates.length - 1;
+    index >= 0 && breakpoints < MAX_CONVERSATION_BREAKPOINTS;
+    index -= 1
+  ) {
+    const candidate = cacheCandidates[index]!;
+    if (lastBreakpoint - candidate.offset < CACHE_LOOKBACK_BLOCKS) continue;
+    const message = out[candidate.index]!;
+    message.content = withConversationCacheBreakpoint(
+      message.content,
+      replay?.cacheTtl,
+    );
+    lastBreakpoint = candidate.offset;
+    breakpoints += 1;
+  }
   return out;
 }
 

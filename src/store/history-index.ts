@@ -135,23 +135,26 @@ export async function writeIndexedJsonl(
   records: readonly HistoryRecordShape[],
 ): Promise<void> {
   const entries: HistoryIndexEntry[] = [];
-  const lines: Buffer[] = [];
-  let offset = 0;
-  for (const record of records) {
-    const line = Buffer.from(`${JSON.stringify(record)}\n`, "utf8");
-    entries.push({
-      id: record.id,
-      offset,
-      length: line.length,
-      summary: historySummary(record),
-    });
-    lines.push(line);
-    offset += line.length;
-  }
-
   const token = `${process.pid}.${randomUUID()}`;
   const jsonlTemp = `${jsonlPath}.${token}.tmp`;
-  await writeFile(jsonlTemp, Buffer.concat(lines), { mode: 0o600 });
+  const handle = await open(jsonlTemp, "wx", 0o600);
+  let offset = 0;
+  try {
+    for (const record of records) {
+      const line = Buffer.from(`${JSON.stringify(record)}\n`, "utf8");
+      await handle.writeFile(line);
+      entries.push({
+        id: record.id,
+        offset,
+        length: line.length,
+        summary: historySummary(record),
+      });
+      offset += line.length;
+    }
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   await rename(jsonlTemp, jsonlPath);
   await writeHistoryIndexFile(jsonlPath, indexPath, entries);
 }
@@ -236,7 +239,10 @@ export async function scanHistoryJsonl<T extends HistoryRecordShape>(
   jsonlPath: string,
   visit: (record: T, offset: number, length: number) => void,
 ): Promise<HistoryIndexScanResult> {
-  const handle = await open(jsonlPath, "r").catch(() => undefined);
+  const handle = await open(jsonlPath, "r").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
   if (!handle) return { malformed: false };
   const chunk = Buffer.allocUnsafe(64 * 1024);
   let carryChunks: Buffer[] = [];
