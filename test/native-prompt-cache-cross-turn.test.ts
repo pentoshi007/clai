@@ -20,7 +20,7 @@ interface WireBody {
 
 const SYSTEM = `SYSTEM CONSTITUTION\n${"Stable rules.\n".repeat(400)}`;
 
-function turnMessages(turn: number, history?: ChatMessage[]): ChatMessage[] {
+function turnMessages(turn: number, history: ChatMessage[] | undefined, steps: number): ChatMessage[] {
   const { messages } = composeTurnMessages({
     prompt: `revision ${turn}`,
     displayPrompt: undefined,
@@ -37,7 +37,7 @@ function turnMessages(turn: number, history?: ChatMessage[]): ChatMessage[] {
     plan: undefined,
     planApproved: false,
   });
-  for (let step = 0; step < 12; step += 1) {
+  for (let step = 0; step < steps; step += 1) {
     const id = `call-${turn}-${step}`;
     messages.push({
       role: "assistant",
@@ -70,7 +70,7 @@ function conversationBlocks(body: WireBody): unknown[] {
   });
 }
 
-describe("native provider wire cache prefix across completed revisions", () => {
+describe.each([0, 1, 2, 12])("native wire cache prefix across revisions (%i tool steps)", (steps) => {
   afterEach(() => vi.unstubAllGlobals());
 
   it.each([
@@ -123,7 +123,7 @@ describe("native provider wire cache prefix across completed revisions", () => {
       let history: ChatMessage[] | undefined;
       let previous: WireBody | undefined;
       for (let turn = 1; turn <= 3; turn += 1) {
-        const messages = turnMessages(turn, history);
+        const messages = turnMessages(turn, history, steps);
         const before = structuredClone(messages);
         const body = await serialize(messages);
         const serialized = JSON.stringify(body);
@@ -136,7 +136,7 @@ describe("native provider wire cache prefix across completed revisions", () => {
         }
         for (let revision = 1; revision <= turn; revision += 1) {
           expect(serialized).toContain(`revision ${revision}`);
-          for (let step = 0; step < 12; step += 1) {
+          for (let step = 0; step < steps; step += 1) {
             expect(serialized).toContain(`result ${revision}.${step}`);
           }
         }
