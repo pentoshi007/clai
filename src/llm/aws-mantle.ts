@@ -30,11 +30,7 @@ import {
   parseAnthropicToolUseBlocks,
   toAnthropicToolMessages,
 } from "./adapters/anthropic-tools.js";
-import {
-  firstSystemPrompt,
-  requestContextSystemPrompts,
-  withoutRequestContextSystemMessages,
-} from "./system-messages.js";
+import { firstSystemPrompt } from "./system-messages.js";
 import { anthropicMaxTokens, anthropicSystemBlocks } from "./anthropic.js";
 import {
   emitStreamReasoningArtifacts,
@@ -172,7 +168,6 @@ export const mantleProvider: LlmProvider = {
     }
     const system = anthropicSystemBlocks(
       firstSystemPrompt(request.messages),
-      requestContextSystemPrompts(request.messages),
     );
     const reasoningArtifactReplay = {
       target: createReasoningArtifactReplayTarget({
@@ -185,9 +180,7 @@ export const mantleProvider: LlmProvider = {
       cacheConversation: true,
     };
     const messages = toAnthropicToolMessages(
-      withoutRequestContextSystemMessages(
-        imageCapableMessages("aws-mantle", model, request.messages),
-      ),
+      imageCapableMessages("aws-mantle", model, request.messages),
       reasoningArtifactReplay,
     );
     const thinking = anthropicThinkingField(request.thinking, model);
@@ -293,7 +286,6 @@ export const mantleProvider: LlmProvider = {
     }
     const system = anthropicSystemBlocks(
       firstSystemPrompt(request.messages),
-      requestContextSystemPrompts(request.messages),
     );
     const reasoningArtifactReplay = {
       target: createReasoningArtifactReplayTarget({
@@ -306,9 +298,7 @@ export const mantleProvider: LlmProvider = {
       cacheConversation: true,
     };
     const messages = toAnthropicToolMessages(
-      withoutRequestContextSystemMessages(
-        imageCapableMessages("aws-mantle", model, request.messages),
-      ),
+      imageCapableMessages("aws-mantle", model, request.messages),
       reasoningArtifactReplay,
     );
     const thinking = anthropicThinkingField(request.thinking, model);

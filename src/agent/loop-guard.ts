@@ -1,5 +1,6 @@
 import type { ToolCall } from "../types.js";
 import { slimToolArgs } from "./message-slim.js";
+import { copyString } from "../os/copy-string.js";
 import {
   completedOperationObservationDigest,
   completedOperationSignature,
@@ -583,6 +584,9 @@ export class LoopGuard {
       output !== undefined
         ? completedOperationObservationDigest(name, output)
         : undefined;
+    const observation = ok && output !== undefined
+      ? copyString(output.trim().slice(0, 8_000))
+      : "";
     this.attempts.push({
       step,
       callName: name,
@@ -598,9 +602,9 @@ export class LoopGuard {
     this.signatureCount.set(sig, (this.signatureCount.get(sig) ?? 0) + 1);
     if (ok) {
       this.signatureSuccess.set(sig, true);
-      if (output?.trim()) {
+      if (observation) {
         this.successfulOutputs.delete(sig);
-        this.successfulOutputs.set(sig, output.trim().slice(0, 8_000));
+        this.successfulOutputs.set(sig, observation);
         if (this.successfulOutputs.size > MAX_ATTEMPT_HISTORY) {
           const oldest = this.successfulOutputs.keys().next().value;
           if (oldest !== undefined) this.successfulOutputs.delete(oldest);
@@ -638,7 +642,7 @@ export class LoopGuard {
         prior?.digest === digest && prior.stateKey === context?.stateKey;
       this.successfulProbes.set(probeSignature, {
         digest,
-        observation: output.trim().slice(0, 8_000),
+        observation,
         unchangedRepeats: unchanged ? (prior?.unchangedRepeats ?? 0) + 1 : 0,
         ...(context?.stateKey ? { stateKey: context.stateKey } : {}),
         compareAfterRestore: false,

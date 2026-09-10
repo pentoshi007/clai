@@ -96,26 +96,27 @@ export function upsertResponderResultLedger(
   notification: ResponderNotification,
 ): void {
   const entries: string[] = [];
+  let previous: string | undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (!isResponderResultLedgerMessage(message)) continue;
+    previous = message.content;
     entries.unshift(
       ...message.content
         .split("\n")
         .slice(1)
         .filter((line) => line.startsWith("- notification=")),
     );
-    messages.splice(index, 1);
+    break;
   }
   const marker = `notification=${notification.id} `;
   const next = entries.filter((line) => !line.includes(marker));
   next.push(responderResultLedgerEntry(notification));
-  messages.push({
-    role: "system",
-    content: `${RESPONDER_RESULT_LEDGER_PREFIX}\n${next
-      .slice(-MAX_LEDGER_ENTRIES)
-      .join("\n")}`,
-  });
+  const content = `${RESPONDER_RESULT_LEDGER_PREFIX}\n${next
+    .slice(-MAX_LEDGER_ENTRIES)
+    .join("\n")}`;
+  if (previous === content) return;
+  messages.push({ role: "system", content });
 }
 
 export function upsertResponderContextMessage(

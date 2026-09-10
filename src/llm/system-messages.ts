@@ -11,20 +11,6 @@ export function isRequestContextSystemMessage(message: ChatMessage): boolean {
   );
 }
 
-export function requestContextSystemPrompts(
-  messages: readonly ChatMessage[],
-): string[] {
-  return messages
-    .filter(isRequestContextSystemMessage)
-    .map((message) => message.content);
-}
-
-export function withoutRequestContextSystemMessages(
-  messages: readonly ChatMessage[],
-): ChatMessage[] {
-  return messages.filter((message) => !isRequestContextSystemMessage(message));
-}
-
 export function upsertRequestContextMessage(
   messages: ChatMessage[],
   content: string,

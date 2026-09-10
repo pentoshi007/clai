@@ -9,6 +9,7 @@ import type { Mode, ProviderId, ReasoningPreference } from "../../types.js";
 import Conf from "conf";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { DEFAULT_AUTO_COMPACT_REQUEST_TOKENS } from "./compaction.js";
 
 export interface ProviderEndpoints {
   urls: string[];
@@ -122,7 +123,7 @@ const defaults: ClaiConfig = {
   permissions: "allow-all",
   toolCalling: "auto",
   softEarlyCompact: true,
-  autoCompactRequestTokens: 180_000,
+  autoCompactRequestTokens: DEFAULT_AUTO_COMPACT_REQUEST_TOKENS,
   fsPassthroughCapChars: 64_000,
   adaptiveMaxTokens: true,
   freeTierContextGuard: true,
@@ -188,8 +189,6 @@ function cloneConfig(config: ClaiConfig): ClaiConfig {
   };
 }
 
-const COMPACTION_DEFAULT_TOKENS = 180_000;
-
 function migrateCompactionBudgetKeys(): void {
   let raw: Record<string, unknown>;
   try {
@@ -200,12 +199,14 @@ function migrateCompactionBudgetKeys(): void {
   const stale = (value: unknown): value is number =>
     typeof value === "number" &&
     Number.isFinite(value) &&
-    value < COMPACTION_DEFAULT_TOKENS;
+    value <= 180_000;
   const auto = raw.autoCompactRequestTokens;
   const legacy = raw.softCompactTokenBudget;
   if (!stale(auto) && !stale(legacy)) return;
   const next: Record<string, unknown> = { ...raw };
-  if (stale(auto)) delete next.autoCompactRequestTokens;
+  if (stale(auto) || (auto === undefined && stale(legacy))) {
+    next.autoCompactRequestTokens = DEFAULT_AUTO_COMPACT_REQUEST_TOKENS;
+  }
   if (stale(legacy)) delete next.softCompactTokenBudget;
   try {
     writeFileSync(store.path, `${JSON.stringify(next, null, 2)}\n`, "utf8");

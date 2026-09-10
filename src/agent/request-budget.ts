@@ -1,4 +1,5 @@
 import { getConfig, hasExplicitConfigKey } from "../store/config.js";
+import { DEFAULT_AUTO_COMPACT_REQUEST_TOKENS } from "../store/config/compaction.js";
 import { modelContextWindow } from "../llm/token-usage.js";
 import type { ProviderId } from "../types.js";
 import {
@@ -12,7 +13,7 @@ import {
 
 export { RESERVED_OUTPUT_TOKENS, SAFETY_MARGIN_TOKENS };
 
-export const DEFAULT_AUTO_COMPACT_REQUEST_TOKENS = 180_000;
+export { DEFAULT_AUTO_COMPACT_REQUEST_TOKENS };
 
 export const AUTO_COMPACT_HEADROOM_TOKENS =
   COMPACTION_MAX_COMPLETION_TOKENS + COMPACTION_INPUT_SAFETY_TOKENS;
@@ -115,7 +116,9 @@ export function resolveRequestBudget(input?: {
   }
   const resolved = configuredRequestTokens();
   const raw = input?.overrideTokens ?? resolved.tokens;
-  const configured = Math.max(MIN_AUTO_COMPACT_REQUEST_TOKENS, raw);
+  const configured = Number.isFinite(raw)
+    ? Math.max(MIN_AUTO_COMPACT_REQUEST_TOKENS, Math.floor(raw))
+    : DEFAULT_AUTO_COMPACT_REQUEST_TOKENS;
   const modelSafe = modelSafeRequestTokens(input?.provider, input?.model);
   const effectiveTrigger = effectiveAutoCompactTrigger(configured, modelSafe);
   return {

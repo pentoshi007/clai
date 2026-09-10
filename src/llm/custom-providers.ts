@@ -22,6 +22,7 @@ import {
 import { CHAT_COMPLETIONS_STREAM_TERMINAL } from "./stream-terminal.js";
 import { anthropicProvider } from "./anthropic.js";
 import type { CompatibleUsageAliases } from "./token-usage.js";
+import { cachePolicyFields } from "./cache-policy-fields.js";
 import {
   customReasoningStyle,
   endpointPrivacyHash,
@@ -100,8 +101,20 @@ function responsesConfig(
       const effort = mapResponsesEffort(reasoning.effort);
       return { effort, summary: responsesReasoningSummary(effort) };
     },
-    bodyExtras(_context: ResponsesBodyExtrasContext) {
-      return { store: false, include: ["reasoning.encrypted_content"] };
+    bodyExtras(context: ResponsesBodyExtrasContext) {
+      return {
+        store: false,
+        include: ["reasoning.encrypted_content"],
+        ...cachePolicyFields({
+          provider: def.id as ProviderId,
+          model: context.model,
+          messages: context.messages,
+          purpose: context.purpose,
+          policy: def.profile?.cache
+            ? { ...def.profile.cache, kind: def.profile.cache.kind ?? "unknown" }
+            : { kind: "unknown" },
+        }),
+      };
     },
   };
 }

@@ -1,6 +1,7 @@
 import chalk, { Chalk, type ChalkInstance } from "chalk";
 import type { ColorMode } from "../../app/ports/terminal-port.js";
 import { renderColumns } from "./text-width.js";
+import { RenderCache } from "./render-cache.js";
 import { detectThemeHint } from "../bootstrap/capabilities.js";
 import { themeFor, type Theme } from "./theme.js";
 import {
@@ -411,8 +412,10 @@ function leadingSpaces(line: string): number {
   return match ? match[0].length : 0;
 }
 
-const ROW_CACHE = new Map<string, { rows: readonly string[]; carry: HighlightCarry }>();
-const ROW_CACHE_MAX = 4096;
+const ROW_CACHE = new RenderCache<{
+  rows: readonly string[];
+  carry: HighlightCarry;
+}>(4096, 8 * 1024 * 1024);
 
 function carryKey(carry: HighlightCarry): string {
   return `${carry.inBlockComment ? 1 : 0}${carry.inTripleString ? 1 : 0}${carry.tripleQuote ?? ""}`;
@@ -433,11 +436,8 @@ function restoreCarry(target: HighlightCarry, source: HighlightCarry): void {
 }
 
 function cacheRows(key: string, rows: readonly string[], carry: HighlightCarry): void {
-  if (ROW_CACHE.size >= ROW_CACHE_MAX) {
-    const oldest = ROW_CACHE.keys().next();
-    if (!oldest.done) ROW_CACHE.delete(oldest.value);
-  }
-  ROW_CACHE.set(key, { rows, carry: snapshotCarry(carry) });
+  const weight = rows.reduce((total, row) => total + row.length * 2 + 64, 64);
+  ROW_CACHE.set(key, { rows, carry: snapshotCarry(carry) }, weight);
 }
 
 export function codeBlockRows(

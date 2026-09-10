@@ -34,19 +34,19 @@ afterEach(() => {
 });
 
 describe("reliability policy (E1–E6)", () => {
-  it("E1: soft early compact defaults to 180k, clamped to the model's safe window", () => {
+  it("E1: soft early compact defaults to 200k, clamped to the model's safe window", () => {
     const p = getReliabilityPolicy();
     expect(p.softEarlyCompact).toBe(true);
     expect(p.softCompactTokenBudget).toBe(DEFAULT_SOFT_COMPACT_TOKEN_BUDGET);
-    expect(DEFAULT_SOFT_COMPACT_TOKEN_BUDGET).toBe(180_000);
-    expect(autoCompactTriggerTokens(p)).toBe(180_000);
+    expect(DEFAULT_SOFT_COMPACT_TOKEN_BUDGET).toBe(200_000);
+    expect(autoCompactTriggerTokens(p)).toBe(200_000);
     expect(autoCompactTriggerTokens(p)).toBe(HARD_COMPACT_TOKEN_BUDGET);
     expect(
       autoCompactTriggerTokens(p, {
         provider: "modal",
         model: "moonshotai/Kimi-K3",
       }),
-    ).toBe(180_000);
+    ).toBe(200_000);
     expect(
       autoCompactTriggerTokens(p, {
         provider: "nvidia",
