@@ -3,10 +3,10 @@ import type { TranscriptItem } from "../../app/ports/transcript-item.js";
 import { canonicalizeChatMessageReasoningArtifacts } from "../../llm/reasoning-artifacts.js";
 import { fixOwner, handlePermissionError, safeExists } from "../../os/permissions.js";
 import type { ChatMessage, ProviderId, ReasoningPreference } from "../../types.js";
-import { readValidatedHistoryIndex, rebuildHistoryIndexWithStatus, writeIndexedJsonl } from "../history-index.js";
+import { readValidatedHistoryIndex, rebuildHistoryIndexWithStatus, scanHistoryJsonl, writeIndexedJsonl } from "../history-index.js";
 import type { HistorySummary } from "../history-index.js";
 import { acquireJsonlWriteLock, historyDirPath } from "./jsonl-lock.js";
-import { copyFile, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 export function jsonlFilePath(): string {
@@ -142,22 +142,24 @@ export function sortHistoryByUpdatedDesc(
   return [...records].sort((a, b) => updatedAtMs(b) - updatedAtMs(a));
 }
 
+async function scanLatestHistoryRecords(path: string): Promise<{
+  records: HistoryRecord[];
+  malformed: boolean;
+}> {
+  const byId = new Map<string, HistoryRecord>();
+  const scan = await scanHistoryJsonl<HistoryRecord>(path, (record) => {
+    if (!record?.id) return;
+    const previous = byId.get(record.id);
+    if (!previous || compareHistoryFreshness(record, previous) > 0) {
+      byId.set(record.id, hydrateHistoryRecord(record));
+    }
+  });
+  return { records: [...byId.values()], malformed: scan.malformed };
+}
+
 export async function readJsonlRecordsFrom(path: string): Promise<HistoryRecord[]> {
-  if (!(await safeExists(path))) return [];
   try {
-    const raw = await readFile(path, "utf8");
-    return raw
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return JSON.parse(line) as HistoryRecord;
-        } catch {
-          return null;
-        }
-      })
-      .filter((record): record is HistoryRecord => record !== null)
-      .map(hydrateHistoryRecord);
+    return (await scanLatestHistoryRecords(path)).records;
   } catch (err: any) {
     if (err && err.code === "EACCES") handlePermissionError(err);
     return [];
@@ -218,17 +220,9 @@ export async function recoverOrphanedHistory(): Promise<{
     let active: HistoryRecord[] = [];
     if (activeExists) {
       try {
-        const raw = await readFile(activePath, "utf8");
-        const lines = raw.split("\n").filter((line) => line.trim().length > 0);
-        for (const line of lines) {
-          try {
-            active.push(
-              hydrateHistoryRecord(JSON.parse(line) as HistoryRecord),
-            );
-          } catch {
-            activeCorrupt = true;
-          }
-        }
+        const scan = await scanLatestHistoryRecords(activePath);
+        active = scan.records;
+        activeCorrupt = scan.malformed;
       } catch (error: any) {
         if (error?.code === "EACCES") handlePermissionError(error);
         activeCorrupt = true;

@@ -13,6 +13,7 @@ import {
 } from "../adapters/openai-tools.js";
 import { isTextOnlyModel } from "../tool-protocol.js";
 import { cacheAffinityKey, sessionCacheAffinityKey } from "../cache-affinity.js";
+import { cachePolicyFields } from "../cache-policy-fields.js";
 import { currentSessionAffinity } from "../session-affinity.js";
 import {
   isReasoningUnsupported,
@@ -116,6 +117,7 @@ export interface ChatCompletionsBodyOptions {
   portableToolHistory?: ReadonlySet<ChatMessage> | undefined;
   control?: ReasoningControlContext | undefined;
   outputTokenLimit?: number | undefined;
+  cacheFields?: Record<string, string> | undefined;
   resolvedSampling?:
     | {
         readonly temperature?: number | undefined;
@@ -203,6 +205,7 @@ function emitChatCompletionsBody(options: ChatCompletionsBodyOptions): string {
         : cacheAffinityKey(options.providerId, options.model, options.messages)
       : undefined;
   const body: Record<string, unknown> = {
+    ...options.cacheFields,
     model: options.model,
     messages: toOpenAiMessages(
       singleLeadingSystemMessages(options.messages),
@@ -339,6 +342,12 @@ export function chatCompletionsBodyFromPlan(
     maxTokens: plan.controls.requestedMaxTokens,
     temperature: plan.controls.temperature,
     stream: plan.controls.stream,
+    cacheFields: cachePolicyFields({
+      provider: plan.route.provider,
+      model: plan.route.model,
+      messages: plan.timeline.messages,
+      policy: plan.policy.cache,
+    }),
     includeStreamUsage: extras.includeStreamUsage,
     reasoning: plan.controls.reasoning,
     reasoningStyle: extras.reasoningStyle,

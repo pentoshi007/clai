@@ -30,11 +30,7 @@ import {
   withReasoningObservation,
 } from "./token-usage.js";
 import { generationFetch } from "./operation-usage.js";
-import {
-  firstSystemPrompt,
-  requestContextSystemPrompts,
-  withoutRequestContextSystemMessages,
-} from "./system-messages.js";
+import { firstSystemPrompt } from "./system-messages.js";
 import { resolveSampling } from "./sampling.js";
 import {
   emitStreamReasoningArtifacts,
@@ -116,31 +112,23 @@ const CACHE_BREAKPOINT_MIN_CHARS = 4_000;
 
 export function anthropicSystemBlocks(
   system: string | undefined,
-  requestContexts: readonly string[] = [],
   cacheTtl?: "1h" | undefined,
 ): string | Array<Record<string, unknown>> | undefined {
-  if (!system && requestContexts.length === 0) return undefined;
-  if (system && system.length < CACHE_BREAKPOINT_MIN_CHARS && requestContexts.length === 0) {
+  if (!system) return undefined;
+  if (system.length < CACHE_BREAKPOINT_MIN_CHARS) {
     return system;
   }
   const cacheControl = {
     type: "ephemeral",
     ...(cacheTtl ? { ttl: cacheTtl } : {}),
   } as const;
-  const blocks: Array<Record<string, unknown>> = [];
-  if (system) {
-    blocks.push({
+  return [
+    {
       type: "text",
       text: system,
-      ...(system.length >= CACHE_BREAKPOINT_MIN_CHARS
-        ? { cache_control: cacheControl }
-        : {}),
-    });
-  }
-  for (const text of requestContexts) {
-    blocks.push({ type: "text", text });
-  }
-  return blocks;
+      cache_control: cacheControl,
+    },
+  ];
 }
 
 export function buildAnthropicBody(
@@ -162,10 +150,8 @@ export function buildAnthropicBody(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
   });
-  const requestContexts = requestContextSystemPrompts(request.messages);
   const system = anthropicSystemBlocks(
     firstSystemPrompt(request.messages),
-    requestContexts,
     "1h",
   );
   const reasoningArtifactReplay = {
@@ -175,9 +161,7 @@ export function buildAnthropicBody(
     cacheTtl: "1h" as const,
   };
   const messages = toAnthropicToolMessages(
-    withoutRequestContextSystemMessages(
-      imageCapableMessages(provider, model, [...plan.timeline.messages]),
-    ),
+    imageCapableMessages(provider, model, [...plan.timeline.messages]),
     reasoningArtifactReplay,
   );
   const thinking = anthropicThinkingField(plan.controls.reasoning, model);

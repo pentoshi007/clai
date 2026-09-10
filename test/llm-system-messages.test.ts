@@ -109,7 +109,7 @@ describe("provider wire bodies deliver every system message", () => {
     expect(JSON.stringify(parsed.messages)).toContain(SYSTEM_TURN_MARKER);
   });
 
-  it("promotes current request context into Anthropic and Gemini system authority", () => {
+  it("preserves request context in place without rewriting the provider system prefix", () => {
     const messages: ChatMessage[] = [
       { role: "system", content: "stable constitution" },
       { role: "user", content: "prior history" },
@@ -120,16 +120,14 @@ describe("provider wire bodies deliver every system message", () => {
       { role: "user", content: "current request" },
     ];
     const anthropic = JSON.parse(buildAnthropicBody({ messages }, false)) as {
-      system: Array<{ text: string }>;
+      system: string;
       messages: unknown[];
     };
-    expect(anthropic.system.map((part) => part.text)).toEqual([
-      "stable constitution",
-      `${REQUEST_CONTEXT_PREFIX}\nCURRENT MODE: AGENT`,
-    ]);
-    expect(JSON.stringify(anthropic.messages)).not.toContain(
-      REQUEST_CONTEXT_PREFIX,
-    );
+    expect(anthropic.system).toBe("stable constitution");
+    expect(anthropic.messages[1]).toEqual({
+      role: "user",
+      content: `${SYSTEM_TURN_MARKER}\n${REQUEST_CONTEXT_PREFIX}\nCURRENT MODE: AGENT`,
+    });
 
     const gemini = JSON.parse(geminiBody({ messages })) as {
       systemInstruction: { parts: Array<{ text: string }> };
@@ -137,9 +135,15 @@ describe("provider wire bodies deliver every system message", () => {
     };
     expect(gemini.systemInstruction.parts.map((part) => part.text)).toEqual([
       "stable constitution",
-      `${REQUEST_CONTEXT_PREFIX}\nCURRENT MODE: AGENT`,
     ]);
-    expect(JSON.stringify(gemini.contents)).not.toContain(REQUEST_CONTEXT_PREFIX);
+    expect(gemini.contents[0]).toEqual({
+      role: "user",
+      parts: [
+        { text: "prior history" },
+        { text: `${SYSTEM_TURN_MARKER}\n${REQUEST_CONTEXT_PREFIX}\nCURRENT MODE: AGENT` },
+        { text: "current request" },
+      ],
+    });
   });
 
   it("gemini", () => {

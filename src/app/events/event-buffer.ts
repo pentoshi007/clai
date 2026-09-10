@@ -1,4 +1,5 @@
 import type { OutputChunkRef, ToolCallId } from "./app-event.js";
+import { copyString } from "../../os/copy-string.js";
 
 
 export interface BoundedTextState {
@@ -27,7 +28,7 @@ export class BoundedText {
     }
     const overflow = combined.length - this.maxChars;
     this.dropped += Buffer.byteLength(combined.slice(0, overflow), "utf8");
-    this.tailBuf = combined.slice(overflow);
+    this.tailBuf = copyString(combined.slice(overflow));
   }
 
   replace(text: string): void {

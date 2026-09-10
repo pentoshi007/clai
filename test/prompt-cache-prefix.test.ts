@@ -64,7 +64,7 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
     expect(systemOf(first)).not.toContain(PLAN_CONTEXT_PREFIX);
   });
 
-  it("keeps mutable request context authoritative after the cached system block", () => {
+  it("keeps mutable request context in the conversation after the cached system block", () => {
     const body = JSON.parse(
       buildAnthropicBody(
         request([
@@ -84,15 +84,16 @@ describe("stable cache prefix and cache telemetry (CTX-007)", () => {
     };
 
     expect(body).not.toHaveProperty("cache_control");
-    expect(body.system).toHaveLength(2);
+    expect(body.system).toHaveLength(1);
     expect(body.system[0]).toMatchObject({
       text: CONSTITUTION,
       cache_control: { type: "ephemeral" },
     });
-    expect(body.system[1]).toMatchObject({
-      text: expect.stringContaining("OUTCOME CONTRACT"),
+    expect(body.messages[1]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("OUTCOME CONTRACT"),
     });
-    expect(JSON.stringify(body.messages)).not.toContain(REQUEST_CONTEXT_PREFIX);
+    expect(JSON.stringify(body.messages)).toContain(REQUEST_CONTEXT_PREFIX);
     expect(body.messages.at(-1)).toEqual({
       role: "user",
       content: [

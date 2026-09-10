@@ -36,11 +36,7 @@ import {
   emitStreamReasoningDelta,
 } from "./stream-events.js";
 import { GEMINI_STREAM_TERMINAL, requireTerminalProof } from "./stream-terminal.js";
-import {
-  firstSystemPrompt,
-  requestContextSystemPrompts,
-  withoutRequestContextSystemMessages,
-} from "./system-messages.js";
+import { firstSystemPrompt } from "./system-messages.js";
 import {
   createReasoningArtifact,
   createReasoningArtifactProvenance,
@@ -94,7 +90,7 @@ function geminiContents(
   target: RequestPlanV1["replay"]["target"],
 ): Array<{ role: "user" | "model"; parts: GeminiPart[] }> {
   return toGeminiToolContents(
-    withoutRequestContextSystemMessages(messages),
+    messages,
     {
       target,
       observe,
@@ -108,10 +104,7 @@ function geminiContents(
 function systemInstruction(
   messages: ChatMessage[],
 ): { parts: Array<{ text: string }> } | undefined {
-  const parts = [
-    firstSystemPrompt(messages),
-    ...requestContextSystemPrompts(messages),
-  ]
+  const parts = [firstSystemPrompt(messages)]
     .filter((text): text is string => Boolean(text))
     .map((text) => ({ text }));
   return parts.length > 0 ? { parts } : undefined;

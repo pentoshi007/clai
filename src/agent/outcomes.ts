@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getDataDir } from "../store/paths.js";
 import { redactSecrets } from "../llm/provider.js";
+import { copyString } from "../os/copy-string.js";
 
 export type OutcomeKind = "answer" | "build" | "bugfix" | "operation" | "pentest";
 export type OutcomeStatus = "active" | "succeeded" | "partial" | "blocked" | "failed" | "aborted" | "paused_budget";
@@ -505,8 +506,8 @@ export function recordCompletedOperation(
   const operation: CompletedOperation = {
     signature,
     tool: input.tool,
-    summary: `${input.tool} ${canonicalArgs}`.slice(0, 240),
-    observation: input.output.replace(/\s+/g, " ").trim().slice(0, 240),
+    summary: copyString(`${input.tool} ${canonicalArgs}`.slice(0, 240)),
+    observation: copyString(input.output.replace(/\s+/g, " ").trim().slice(0, 240)),
     ok: input.ok !== false,
     ...(input.exitCode !== undefined ? { exitCode: input.exitCode } : {}),
     observationDigest: digest,
@@ -564,7 +565,7 @@ export function recordToolEvidence(
       kind,
       freshness: "current",
       strength,
-      observation: input.output.slice(0, 4_000),
+      observation: copyString(input.output.slice(0, 4_000)),
       result: input.ok ? "pass" : "fail",
     });
     envelope.evidence.push(evidence);
@@ -610,7 +611,7 @@ export function recordAnswerEvidence(
     kind: "observation",
     freshness: "current",
     strength: "decisive",
-    observation: answer.slice(0, 4_000),
+    observation: copyString(answer.slice(0, 4_000)),
     result: "pass",
   });
   envelope.evidence.push(evidence);

@@ -23,6 +23,7 @@ import {
 import {
   accountAssembledRequest,
   RequestOverLimitError,
+  resolveEffectiveContextLimit,
 } from "../../request-accounting.js";
 
 export interface RequestAssemblyState {
@@ -94,7 +95,7 @@ export const assembleRequest = async (
     provider: ports.provider,
     model: ports.model,
   }).limits.outputTokens;
-  const stepMaxTokens = resolveStepMaxTokens({
+  const requestedStepMaxTokens = resolveStepMaxTokens({
     nativeToolsActive: ports.nativeToolsActive,
     toolsAttached,
     recoveryNudge: state.retryWithoutThinking,
@@ -106,6 +107,15 @@ export const assembleRequest = async (
       ? { outputTokenLimit: routeOutputTokenLimit }
       : {}),
   });
+  const contextLimit = resolveEffectiveContextLimit({
+    provider: ports.provider,
+    model: ports.model,
+    contextLimitTokens: ports.contextLimitTokens,
+  });
+  const stepMaxTokens = contextLimit.limitTokens !== undefined &&
+    requestedStepMaxTokens + contextLimit.safetyMarginTokens >= contextLimit.limitTokens
+    ? Math.max(1, Math.min(requestedStepMaxTokens, contextLimit.reservedOutputTokens))
+    : requestedStepMaxTokens;
 
   await ports.audit("agent.turn", {
     provider: ports.provider,
@@ -135,6 +145,11 @@ export const assembleRequest = async (
     model: ports.model,
     messages: ports.messages,
     stream: true,
+    reservedOutputTokens: stepMaxTokens,
+    reasoning:
+      state.retryWithoutThinking && ports.thinking
+        ? { ...ports.thinking, enabled: false, effort: "low" }
+        : ports.thinking,
     ...(toolsAttached && tools?.length
       ? { tools, toolChoice: "auto" as const, parallelToolCalls: true }
       : {}),
