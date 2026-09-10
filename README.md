@@ -575,6 +575,8 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
+| `/orchestration [on\|off\|status]` | Opt into background subagent delegation for this session (default off) |
+| `/agents [id\|stop id\|restart id]` | Pick a subagent to inspect live output, or stop/restart its assignment |
 | `/compact` · `/context` | Compact history now · show context size |
 | `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle (`/clear` deletes the current session outright) |
 | `/allow <tool>` · `/disallow <tool>` · `/permissions` | Tool permissions |
@@ -583,6 +585,28 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/privacy [...]` | Private mode · clear history/logs/artifacts |
 | `/minimise` · `/minimize` | Detach this terminal while the live session continues in the background |
 | `/update` · `/help` · `/shortcuts` · `/exit` | Housekeeping |
+
+Orchestration is off in new and restored sessions. Use `/orchestration on` to let
+the main agent delegate independent work; `/orchestration` explains the current
+state without changing it. `/agents` opens the same live inspector in Classic and
+OpenTUI: select a child, press `Esc` to return to the picker, then select another
+child or **Main agent**. Inspecting output never interrupts the main turn. The
+pager follows live output; `l` toggles follow. Turning orchestration off stops
+active children and prevents new starts and restarts. `/agents stop <id>` stops
+an individual child. `/agents restart <id>` reruns the assignment when orchestration
+is enabled. Saved child reports can be inspected after resuming their parent
+session; `--no-history` keeps child records in memory only.
+
+Children share a hard limit of three active executions, including workers still
+stopping after cancellation. They inherit the parent's provider/model and project
+root, with independent histories and stable cache prefixes. Their only tools are
+confined file reads/listings/searches and web search/fetch; shell, editing, MCP,
+arbitrary HTTP actions, and further delegation are unavailable. Investigations
+are bounded to 24 rounds and ten minutes; oversized reads and incomplete searches
+are reported as coverage gaps, not successful exhaustive coverage. Status,
+reports, and recent events are available through `subagent.list/read/wait`; the
+default read returns the last three events without injecting full child histories
+into the parent conversation.
 
 ---
 

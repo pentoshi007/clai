@@ -77,14 +77,9 @@ export class InputRouter {
     }
 
     if (OVERLAY_CONTEXTS.has(context)) {
-      if (chord === "ctrl+c") {
+      if (chord === "ctrl+c" || chord === "escape") {
+        this.deps.ladder.disarmEscape();
         this.deps.closeOverlay();
-        this.deps.ladder.escape(true);
-        return;
-      }
-      if (chord === "escape") {
-        this.deps.closeOverlay();
-        this.deps.ladder.escape(true);
         return;
       }
       this.dispatchOrPanel(key, chord, context);

@@ -6,6 +6,7 @@ interface FakeOptions {
   readonly compacting?: boolean;
   readonly queued?: readonly string[];
   readonly runningJobs?: number;
+  readonly subagents?: readonly string[];
   readonly pendingNotifications?: number;
   readonly interruptibleWork?: boolean;
   readonly cancelAllOk?: boolean;
@@ -18,6 +19,7 @@ function build(options: FakeOptions = {}) {
   let interruptible = options.interruptibleWork === true;
   const coordinator = new CancelCoordinator({
     session: {
+      subagents: { list: () => (options.subagents ?? []).map((status) => ({ status })) },
       getState: () => ({
         running,
         compacting: options.compacting === true,
@@ -72,6 +74,7 @@ describe("CancelCoordinator", () => {
       compaction: true,
       queuedPrompts: 2,
       responderJobs: 2,
+      subagents: 0,
       pendingNotifications: 1,
       interruptible: true,
     });
@@ -95,6 +98,17 @@ describe("CancelCoordinator", () => {
     const { coordinator } = build({ queued: ["next"] });
     expect(coordinator.hasCancelableWork()).toBe(false);
     expect(coordinator.snapshot().queuedPrompts).toBe(1);
+  });
+
+  it("exposes child-only work to the shared Classic and OpenTUI cancellation gate", async () => {
+    for (const status of ["running", "stopping"]) {
+      const { coordinator, calls } = build({ subagents: [status, "completed", "error", "stopped"] });
+      expect(coordinator.snapshot().subagents).toBe(1);
+      expect(coordinator.hasCancelableWork()).toBe(true);
+      await coordinator.cancelAll();
+      expect(calls).toContain("session.cancelAll");
+    }
+    expect(build({ subagents: ["completed", "error", "stopped"] }).coordinator.hasCancelableWork()).toBe(false);
   });
 
   it("cancels interruptible work before aborting a running turn", () => {

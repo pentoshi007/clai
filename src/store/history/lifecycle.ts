@@ -41,6 +41,7 @@ export async function clearAllHistory(): Promise<{
         name === "history.index.json" ||
         name === "history-archive.jsonl" ||
         name === "history-backups" ||
+        name === "subagents" ||
         name.startsWith("history-cleared-") ||
         (name.startsWith("history.jsonl.") && name.endsWith(".tmp")),
     );
@@ -278,6 +279,12 @@ export async function deleteSession(sessionId: string): Promise<{ deleted: boole
     };
   }
 
+  try {
+    const { createSubagentStore } = await import("../subagents.js");
+    createSubagentStore().remove(id);
+  } catch (error) {
+    return { deleted: false, detail: `could not remove subagent history: ${error instanceof Error ? error.message : String(error)}` };
+  }
   invalidateSessionListCache();
   if (!deletedFromJsonl && !deletedFromArchive && !deletedFromBackup && !deletedFromSqlite) {
     const existing = await getSession(id);

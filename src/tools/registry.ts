@@ -32,6 +32,7 @@ import { toolRegistry_SHELL_2 } from "./handlers/shell-2.js";
 import { toolRegistry_WEB } from "./handlers/web.js";
 import { toolRegistry_CONTEXT_1 } from "./handlers/context-1.js";
 import { toolRegistry_ORCHESTRATION_1 } from "./handlers/orchestration-1.js";
+import { SUBAGENT_TOOL_NAMES } from "./definitions/subagents.js";
 import { toolRegistry_NETWORK_3 } from "./handlers/network-3.js";
 import { toolRegistry_ORCHESTRATION_2 } from "./handlers/orchestration-2.js";
 import { toolRegistry_CONTEXT_2 } from "./handlers/context-2.js";
@@ -50,6 +51,11 @@ export {
 } from "./batch-fail-policy.js";
 
 export const toolRegistry: Record<string, ToolHandler> = {
+  ...Object.fromEntries(SUBAGENT_TOOL_NAMES.map((name) => [name, async () => ({
+    ok: false,
+    exitCode: 1,
+    output: "Subagent tools require the active parent session with /orchestration on. Call them directly, not through tool.batch.",
+  })])),
   ...createInteractiveSessionHandlers(),
   ...toolRegistry_SHELL_1,
   ...toolRegistry_FILES_1,

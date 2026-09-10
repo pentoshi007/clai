@@ -34,6 +34,8 @@ import {
   type ContextUsageTarget,
 } from "./session-context-usage.js";
 import { createSessionPolicy, type SessionPolicy } from "../../agent/session-policy.js";
+import { SubagentManager } from "../../agent/subagents/manager.js";
+import { createSubagentStore } from "../../store/subagents.js";
 import { previousTurnSignal } from "./turn-continuation.js";
 import type { PreviousTurnSignal } from "../../agent/continue-orient.js";
 import { buildTurnRequest } from "./session-turn-request.js";
@@ -137,6 +139,7 @@ export class SessionController implements Disposable {
   private readonly sequencer: EventSequencer;
   private readonly turn: TurnController;
   private policy: SessionPolicy;
+  private subagentsValue: SubagentManager;
   private readonly disposables = new CompositeDisposable();
   private readonly turnEndListeners = new Set<TurnEndListener>();
   private readonly stateListeners = new Set<SessionStateListener>();
@@ -177,6 +180,8 @@ export class SessionController implements Disposable {
     this.model = deps.model;
     this.mode = deps.mode ?? "agent";
     this.policy = createSessionPolicy(this.sessionIdValue);
+    this.subagentsValue = this.createSubagents();
+    this.policy.subagents = this.subagentsValue;
     void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     beginSessionWorkspace();
     void prefetchProviderCatalog(this.provider);
@@ -485,6 +490,7 @@ export class SessionController implements Disposable {
       this.persistence.rebind(options.persistenceRevision);
       void this.deps.interactiveSessions?.activateOwner(this.sessionIdValue).catch(() => undefined);
     }
+    this.replaceSubagents();
     beginSessionWorkspace({
       folderName: options.workspaceFolder,
       code: options.workspaceCode,
@@ -521,6 +527,22 @@ export class SessionController implements Disposable {
     return [...this.policy.allow];
   }
 
+  get subagents(): SubagentManager {
+    return this.subagentsValue;
+  }
+
+  private createSubagents(): SubagentManager {
+    return new SubagentManager(this.sessionIdValue, {
+      ...(this.deps.noHistory ? {} : { store: createSubagentStore() }),
+    });
+  }
+
+  private replaceSubagents(): void {
+    this.subagentsValue.dispose();
+    this.subagentsValue = this.createSubagents();
+    this.policy.subagents = this.subagentsValue;
+  }
+
   reset(options: { mintNewId?: boolean } = {}): void {
     this.beginLifecycleGeneration();
     this.sequencer.rebind(this.sessionIdValue);
@@ -546,6 +568,7 @@ export class SessionController implements Disposable {
       publishRouteReasoningVocabulary(this.provider, this.model);
     }
     this.policy = createSessionPolicy(this.sessionIdValue);
+    this.replaceSubagents();
     this.notifyState();
   }
 
@@ -715,12 +738,17 @@ export class SessionController implements Disposable {
     this.prompts.preservePendingPriority();
     this.turn.abort();
     this.compactAbort?.abort();
+    const children = this.subagentsValue.list().filter((run) => run.status === "running");
+    for (const child of children) this.subagentsValue.stop(child.id);
     this.notifyState();
     const [jobs, interactive] = await Promise.all([
       this.deps.jobs?.cancelAll(this.sessionIdValue),
       this.deps.interactiveSessions?.cancelOwner(this.sessionIdValue),
     ]);
-    return mergeCancelAllResult(jobs, interactive);
+    const result = mergeCancelAllResult(jobs, interactive);
+    return children.length > 0
+      ? { ...result, output: `${result.output}\nRequested stop for ${children.length} subagent(s).` }
+      : result;
   }
 
   private fenceInteractiveOwner(ownerId: string): void {
@@ -907,6 +935,7 @@ export class SessionController implements Disposable {
 
   dispose(): void {
     this.beginLifecycleGeneration();
+    this.subagentsValue.dispose();
     this.fenceInteractiveOwner(this.sessionIdValue);
     this.turnEndListeners.clear();
     this.stateListeners.clear();

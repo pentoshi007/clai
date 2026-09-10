@@ -5,6 +5,7 @@ export interface CancelWorkSnapshot {
   readonly compaction: boolean;
   readonly queuedPrompts: number;
   readonly responderJobs: number;
+  readonly subagents: number;
   readonly pendingNotifications: number;
   readonly interruptible: boolean;
 }
@@ -23,6 +24,7 @@ export interface CancelAllOutcome {
 }
 
 export interface CancelCoordinatorSession {
+  readonly subagents?: { list(): readonly { readonly status: string }[] };
   getState(): {
     readonly running: boolean;
     readonly compacting: boolean;
@@ -60,6 +62,7 @@ export class CancelCoordinator {
       compaction: state.compacting,
       queuedPrompts: state.queued.length,
       responderJobs: this.deps.jobs.running(sessionId).length,
+      subagents: this.deps.session.subagents?.list().filter((run) => run.status === "running" || run.status === "stopping").length ?? 0,
       pendingNotifications: this.deps.jobs.pendingNotifications(sessionId).length,
       interruptible: this.deps.interruptible.hasWork(),
     };
@@ -71,6 +74,7 @@ export class CancelCoordinator {
       snap.turn ||
       snap.compaction ||
       snap.responderJobs > 0 ||
+      snap.subagents > 0 ||
       snap.pendingNotifications > 0 ||
       snap.interruptible
     );

@@ -33,6 +33,7 @@ import {
   textEditorPaste,
 } from "./text-editor-panel.js";
 import { OVERLAY_MIN_ROWS } from "../chrome/row-budget.js";
+import { panelBodyHeight } from "./panel-frame.js";
 
 export type { PanelControllerDeps, PanelKind, PanelSnapshot } from "./panel-types.js";
 
@@ -41,6 +42,8 @@ export class PanelController {
   private readonly listeners = new Set<() => void>();
   private tracked: OverlayState;
   private unsubscribe: (() => void) | undefined;
+  private unwatchPager: (() => void) | undefined;
+  private pullPager: (() => void) | undefined;
 
   constructor(private readonly deps: PanelControllerDeps) {
     this.tracked = deps.overlay.getState();
@@ -66,6 +69,9 @@ export class PanelController {
   };
 
   dispose(): void {
+    this.unwatchPager?.();
+    this.unwatchPager = undefined;
+    this.pullPager = undefined;
     this.unsubscribe?.();
     this.unsubscribe = undefined;
     this.listeners.clear();
@@ -177,6 +183,7 @@ export class PanelController {
         });
         if (!result.handled) return false;
         this.publish({ ...snapshot, pager: result.state });
+        if (result.state.follow && !snapshot.pager.follow) this.pullPager?.();
         this.apply(result.effects);
         return true;
       }
@@ -299,6 +306,9 @@ export class PanelController {
   }
 
   private syncOverlay(state: OverlayState): void {
+    this.unwatchPager?.();
+    this.unwatchPager = undefined;
+    this.pullPager = undefined;
     const base: PanelSnapshot = {
       ...this.snapshot,
       overlay: state,
@@ -315,12 +325,16 @@ export class PanelController {
           pager: {
             ...PAGER_INITIAL_STATE,
             format: pagerMarkdown === "force" ? "formatted" : "raw",
+            follow: state.source?.isGrowing?.() ?? false,
           },
           pagerBody: state.body,
           pagerMarkdown,
           pagerLive: state.source?.watch !== undefined,
         });
-        if (state.source) void this.loadPagerPage(state, 0);
+        if (state.source?.watch && state.source.readTail) {
+          this.watchPager(state);
+          if (!this.snapshot.pager.follow) void this.loadPagerPage(state, 0);
+        } else if (state.source) void this.loadPagerPage(state, 0);
         return;
       }
       case "jobs":
@@ -355,6 +369,49 @@ export class PanelController {
     } catch {
       this.deps.onToast("could not read artifact page");
     }
+  }
+
+  private watchPager(state: Extract<OverlayState, { kind: "pager" }>): void {
+    const source = state.source!;
+    let active = true;
+    let reading = false;
+    let pending = false;
+    const pull = (): void => {
+      if (!active || !this.snapshot.pager.follow) return;
+      if (reading) {
+        pending = true;
+        return;
+      }
+      reading = true;
+      const growing = source.isGrowing?.() ?? true;
+      void source.readTail!().then((page) => {
+        if (!active || this.deps.overlay.getState() !== state || !this.snapshot.pager.follow) return;
+        const lines = pagerViewModel(page.body, this.deps.columns(), this.deps.rows(), this.snapshot.pager.format).lines;
+        this.publish({
+          ...this.snapshot,
+          pagerBody: page.body,
+          pager: {
+            ...this.snapshot.pager,
+            caret: Math.max(0, lines.length - 1),
+            top: Math.max(0, lines.length - panelBodyHeight(this.deps.rows())),
+            follow: growing,
+          },
+        });
+      }).catch(() => undefined).finally(() => {
+        reading = false;
+        if (pending) {
+          pending = false;
+          pull();
+        }
+      });
+    };
+    const unwatch = source.watch!(pull);
+    this.pullPager = pull;
+    this.unwatchPager = () => {
+      active = false;
+      unwatch();
+    };
+    pull();
   }
 
   private apply(effects: readonly PanelEffect[]): void {

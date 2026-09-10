@@ -31,6 +31,7 @@ import {
 import { handleInfo, handleKeys, handleSet, handleUnset } from "./key-commands.js";
 import { handleMcp } from "./mcp-commands.js";
 import { handleSkills } from "./skill-commands.js";
+import { handleAgents, handleOrchestration } from "./subagent-commands.js";
 import {
   handleHistory,
   handleModel,
@@ -70,6 +71,8 @@ export function attachCommandHandlers(services: AppServices): void {
   const c = services.commands;
   c.setHandler("ask", () => handleMode(services, "ask"));
   c.setHandler("agent", () => handleMode(services, "agent"));
+  c.setHandler("orchestration", (i) => handleOrchestration(services, i));
+  c.setHandler("agents", (i) => handleAgents(services, i));
   c.setHandler("model", (i) => handleModel(services, i));
   c.setHandler("provider", (i) => handleProvider(services, i));
   c.setHandler("search", (i) => handleSearch(services, i));
