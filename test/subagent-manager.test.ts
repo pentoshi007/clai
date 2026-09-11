@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubagentManager } from "../src/agent/subagents/manager.js";
+import { mintSessionId } from "../src/app/controllers/session-persistence.js";
 import type { SubagentAssignment, SubagentCheckpoint, SubagentRun, SubagentStore, SubagentWorkerInput } from "../src/agent/subagents/types.js";
 
 const assignment: SubagentAssignment = { title: "Investigate", prompt: "Read the implementation", cwd: "/tmp", provider: "openai", model: "test" };
@@ -25,6 +26,23 @@ afterEach(async () => {
 });
 
 describe("SubagentManager", () => {
+  it("accepts generated session IDs at a secret-prefix clock collision", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1789126537844);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      const id = mintSessionId();
+      expect(id).toBe("sess-mtwvqvsk-i");
+      expect(controlled(undefined, id).manager.parentSessionId).toBe(id);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it.each(["sk-secretvalue", "sess-mtwvqvsk-secretvalue", "sess-mtwvqvsk-abc\x1b[0m"])("still rejects secret-like or unsafe parent IDs: %s", (id) => {
+    expect(() => new SubagentManager(id)).toThrow("Invalid parent session ID");
+  });
+
   it("is off by default and synchronously reserves three slots", async () => {
     const { manager, work } = controlled();
     expect(manager.enabled).toBe(false);

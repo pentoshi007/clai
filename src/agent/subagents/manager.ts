@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
-import { restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../../store/subagents.js";
+import { isValidSubagentParentId, restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../../store/subagents.js";
 import { subagentReportStatus } from "./report.js";
 import type { SubagentAssignment, SubagentCheckpoint, SubagentEvent, SubagentRun, SubagentStore, SubagentWorker } from "./types.js";
 
@@ -31,7 +31,7 @@ export class SubagentManager {
   private readonly store: SubagentStore | undefined;
 
   constructor(readonly parentSessionId: string, options: { worker?: SubagentWorker; store?: SubagentStore } = {}) {
-    if (!parentSessionId || parentSessionId.length > 256 || sanitizeSubagentText(parentSessionId) !== parentSessionId) throw new Error("Invalid parent session ID");
+    if (!isValidSubagentParentId(parentSessionId)) throw new Error("Invalid parent session ID");
     this.worker = options.worker ?? defaultWorker;
     this.store = options.store;
     if (this.store) {
