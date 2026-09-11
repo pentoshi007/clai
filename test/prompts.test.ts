@@ -117,6 +117,18 @@ describe("prompt rendering", () => {
     expect(prompt).toMatch(/Never mark done before evidence|done only when|Never mark done because/i);
   });
 
+  it("guides lean, scoped subagent briefs without prescribing a fixed workflow", () => {
+    const prompt = renderAgentSystemPrompt("subagent.start, subagent.read");
+    expect(prompt).toMatch(/target goal and deliverable/i);
+    expect(prompt).toMatch(/relevant surfaces and non-goals/i);
+    expect(prompt).toMatch(/appropriate depth and technicality/i);
+    expect(prompt).toMatch(/not mandatory phases, step counts, or completion gates/i);
+    expect(prompt).toMatch(/never the whole conversation or parent system, project, or skill boilerplate/i);
+    expect(prompt).toMatch(/standalone read-only system/i);
+    expect(prompt).toMatch(/Reuse gathered evidence when relevant to avoid needless reads/i);
+    expect(prompt).toMatch(/do not assume calls are deduplicated at runtime/i);
+  });
+
   it("agent prompt preserves explicit whole-program and phase-only boundaries", () => {
     const prompt = renderAgentSystemPrompt("task.add, task.update, fs.read");
     expect(prompt).toMatch(/entire roadmap\/folder\/program|whole roadmap\/program/i);
