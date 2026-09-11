@@ -92,6 +92,21 @@ describe("pager rows", () => {
 });
 
 describe("pager source normalization and width", () => {
+  it.each([[32, 10], [16, 5], [8, 4], [1, 1]])("retains and scrolls full raw commands at %i by %i", (columns, rows) => {
+    const body = `printf '%s' '  full    command  ' ${"nested/path/".repeat(12)} FINAL`;
+    const lines = pagerLines(body, columns, rows, "raw");
+    expect(lines.join("")).toBe(body);
+    let state: PagerPanelState = { ...PAGER_INITIAL_STATE, format: "raw" };
+    const visited = new Set<number>();
+    for (let i = 0; i <= lines.length; i++) {
+      const frame = pagerView({ ink, columns, rows, title: "Output", lines, state });
+      for (const row of panelFrameRows(frame).rows) expect(displayWidth(row)).toBeLessThanOrEqual(columns);
+      for (let offset = 0; offset < frame.body.length; offset++) visited.add(state.top + offset);
+      state = pagerKey({ state, chord: "down", lines, rows, live: false, body }).state;
+    }
+    expect(visited.size).toBe(lines.length);
+  });
+
   it("cleans fs.read and diff gutters only in formatted mode", () => {
     const fsRead = [
       "# fs.read path=/tmp/notes.md lines=1-3 of 3",

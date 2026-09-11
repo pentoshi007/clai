@@ -12,7 +12,7 @@ export const slashCommands: SlashCommand[] = [
   {
     command: "/orchestration",
     usage: "[on|off|status]",
-    description: "enable or inspect session subagent orchestration (default off)",
+    description: "open orchestration options or set on/off/status (default off)",
   },
   {
     command: "/agents",

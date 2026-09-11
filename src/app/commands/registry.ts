@@ -9,6 +9,7 @@ import {
 
 
 const ALIAS_GROUPS: Record<string, readonly string[]> = {
+  orchestration: ["orchestrator", "orchastrator"],
   search: ["search-provider"],
   effort: ["reasoning"],
   think: ["thinking"],

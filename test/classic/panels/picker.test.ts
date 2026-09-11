@@ -7,6 +7,7 @@ import {
   pickerView,
 } from "../../../src/classic/panels/picker-panel.js";
 import { createHarness, ink, rowsOf } from "./harness.js";
+import { renderColumns } from "../../../src/ui-core/rendering/text-width.js";
 
 const MODELS: PickerRequest = {
   title: "Select model",
@@ -49,9 +50,9 @@ describe("picker panel rows", () => {
     expect(rows[rows.length - 1]).toContain("esc cancel");
   });
 
-  it("drops descriptions below 68 columns", () => {
+  it("retains descriptions below 68 columns", () => {
     expect(render(MODELS, pickerInitialState(MODELS), 80).rows[1]).toContain("nvidia");
-    expect(render(MODELS, pickerInitialState(MODELS), 44).rows[1]).not.toContain("nvidia");
+    expect(render(MODELS, pickerInitialState(MODELS), 44).rows[1]).toContain("nvidia");
   });
 
   it("puts the description on its own row for twoLine requests", () => {
@@ -92,6 +93,28 @@ describe("picker panel rows", () => {
 });
 
 describe("picker panel keys", () => {
+  it.each([[32, 10], [16, 5], [8, 4], [1, 1]])("scrolls every character of a tall option at %i by %i", (columns, height) => {
+    const label = `command --include=${"very-long-path/".repeat(8)} --complete`;
+    const description = "A complete description without any clipping. ".repeat(8) + "FINAL";
+    const request: PickerRequest = { title: "Pick", twoLine: true, options: [{ value: "long", label, description }] };
+    let state = pickerInitialState(request);
+    let seen = "";
+    for (let i = 0; i < 700; i++) {
+      const view = pickerView({ ink, columns, rows: height, request, state });
+      const rows = rowsOf(panelFrameRows(view.frame).rows);
+      expect(rows.length).toBeLessThanOrEqual(height);
+      for (const row of rows) expect(renderColumns(row)).toBeLessThanOrEqual(columns);
+      seen += view.frame.body.join("").replace(/\s/g, "");
+      const next = pickerKey({ request, state, chord: "right", columns, rows: height }).state;
+      if (next.top === state.top) break;
+      state = next;
+    }
+    expect(seen).not.toContain("…");
+    expect(seen).toContain(columns === 1 ? "L" : "FINAL".slice(-Math.max(1, columns - 6)));
+    expect(state.top).toBeGreaterThan(0);
+    expect(pickerKey({ request, state, chord: "enter", columns, rows: height }).effects).toEqual([{ kind: "picker-select", value: "long" }]);
+  });
+
   it("selects through the overlay controller", () => {
     const harness = createHarness();
     const onSelect = vi.fn();

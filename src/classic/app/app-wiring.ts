@@ -1,4 +1,5 @@
 import { safeCwd } from "../../os/cwd.js";
+import { overlaySize } from "../../ui-core/layout/overlay-size.js";
 import type { AppServices } from "../../ui-core/bootstrap/composition-root.js";
 import { maybeShowUpdateToast } from "../../ui-core/commands/startup-update.js";
 import { notify } from "../../ui-core/notify.js";
@@ -126,8 +127,10 @@ export class ClassicAppWiring implements WiringHost {
       jobs: this.services.ports.jobs,
       transcript: () => this.services.transcript.getState(),
       plan: () => this.services.plan.current(),
-      columns: () => gutterShellWidth(this.columns),
-      rows: () => this.rows,
+      columns: () => this.services.overlay.getState().kind === "picker" || this.services.overlay.getState().kind === "pager"
+        ? overlaySize(this.columns, this.rows).width : gutterShellWidth(this.columns),
+      rows: () => this.services.overlay.getState().kind === "picker" || this.services.overlay.getState().kind === "pager"
+        ? overlaySize(this.columns, this.rows).height : this.rows,
       onToast: (text) => notify(this.services, text),
       onEditPrompt: (text) => {
         this.composer.setText(text);
