@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useKeyboard } from "@opentui/react";
 import { useTerminalDimensionsContext } from "../../hooks/terminal-dimensions.js";
+import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
@@ -54,11 +55,11 @@ const HIDDEN_SCROLLBARS = {
 } as const;
 
 const PAGER_HELP_FULL =
-  "↑↓:scroll  ·  pg↑↓:page  ·  ^r:search  ·  n/N:next  ·  f:format  ·  r:raw  ·  c:copy  ·  s:scrollback  ·  e:editor  ·  q/esc:close";
+  "↑↓:scroll  ·  pg↑↓:page  ·  ^r:search  ·  q/esc:close";
 const PAGER_HELP_MED =
-  "↑↓:scroll  ·  ^r:search  ·  f:format  ·  r:raw  ·  c:copy  ·  e:editor  ·  q/esc:close";
+  "↑↓:scroll  ·  ^r:search  ·  q/esc:close";
 const PAGER_HELP_SHORT =
-  "↑↓:scroll  ·  ^r:search  ·  f:format  ·  r:raw  ·  c:copy  ·  q/esc:close";
+  "↑↓ · ^r:search · q:close";
 const PAGER_HELP_MIN = "^r:search  ·  q/esc:close";
 
 const PAGER_FOOTER_FULL =
@@ -78,7 +79,7 @@ export function Pager(props: PagerProps): ReactNode {
     markdown = "auto",
   } = props;
   const colorMode = services.capabilities.colorMode;
-  const { width: termWidth } = useTerminalDimensionsContext();
+  const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [displayBody, setDisplayBody] = useState(body);
   const [artifactPage, setArtifactPage] = useState<ArtifactPage | undefined>(undefined);
@@ -86,9 +87,12 @@ export function Pager(props: PagerProps): ReactNode {
   const [viewMode, setViewMode] = useState<PagerViewMode>(() =>
     markdown === "force" ? "formatted" : "raw",
   );
-  const pagerOuterCols = Math.max(40, Math.floor(termWidth * 0.96));
-  const contentCols = Math.max(24, pagerOuterCols - 10);
-  const chromeCols = Math.max(20, contentCols - 4);
+  const size = overlaySize(termWidth, termHeight);
+  const border = size.width >= 5 && size.height >= 3;
+  const innerH = Math.max(1, size.height - (border ? 2 : 0));
+  const padding = size.width >= 8 ? 1 : 0;
+  const contentCols = Math.max(1, size.width - (border ? 2 : 0) - padding * 2);
+  const chromeCols = contentCols;
 
   const display = useMemo(() => {
     if (viewMode === "formatted") {
@@ -123,7 +127,7 @@ export function Pager(props: PagerProps): ReactNode {
   const pathForHighlight =
     viewMode === "raw" && highlightPath ? highlightPath : title;
   const useDiffGutters =
-    viewMode === "raw" && Boolean(highlightPath) && display.mode === "plain";
+    viewMode === "raw" && Boolean(highlightPath) && display.mode === "plain" && contentCols >= 16;
   const searchLines = useMemo(() => {
     if (display.mode === "markdown" || !useDiffGutters) return lines;
     return lines.map((line) => {
@@ -549,9 +553,7 @@ export function Pager(props: PagerProps): ReactNode {
   const metaLeft = hasQuery
     ? fitOneLine(
         [
-          statusFlash
-            ? `${statusFlash}  ·  find:${query.trim()} ${matchStatus}`
-            : `find:${query.trim()} ${matchStatus}`,
+          `find:${query.trim()} ${matchStatus}`,
           `find:${matchStatus}`,
           matchStatus || "find",
         ],
@@ -559,9 +561,7 @@ export function Pager(props: PagerProps): ReactNode {
       )
     : fitOneLine(
         [
-          statusFlash
-            ? `${PAGER_HELP_SHORT}  ·  ${statusFlash}`
-            : PAGER_HELP_FULL,
+          PAGER_HELP_FULL,
           PAGER_HELP_MED,
           PAGER_HELP_SHORT,
           PAGER_HELP_MIN,
@@ -650,7 +650,8 @@ export function Pager(props: PagerProps): ReactNode {
         if (parsed) {
           const codeChunks = wrapPagerLine(
             parsed.code,
-            Math.max(12, contentCols - (parsed.gutter.length + 3)),
+            Math.max(1, contentCols - (parsed.gutter.length + 3)),
+            { preserveWhitespace: true },
           );
           return codeChunks.map((codeChunk, part) => {
             const mark =
@@ -682,7 +683,7 @@ export function Pager(props: PagerProps): ReactNode {
             );
           });
         }
-        return wrapPagerLine(line, contentCols).map((chunk, part) => (
+        return wrapPagerLine(line, contentCols, { preserveWhitespace: true }).map((chunk, part) => (
           <PagerLine
             key={`${index}-${part}`}
             line={chunk}
@@ -693,6 +694,7 @@ export function Pager(props: PagerProps): ReactNode {
             hasQuery={hasQuery}
             highlightPath={pathForHighlight}
             carry={syntaxCarry}
+            diffGutters={false}
           />
         ));
       }),
@@ -710,38 +712,36 @@ export function Pager(props: PagerProps): ReactNode {
     ],
   );
 
-  const borderTitle =
-    title.length > 72 ? ` ${title.slice(0, 69)}… ` : ` ${title} `;
+  const borderTitle = ` ${fitOneLine([title], Math.max(1, size.width - 4))} `;
 
   return (
     <box
-      border
+      border={border}
       borderStyle="rounded"
       title={borderTitle}
       titleAlignment="left"
       titleColor={theme.cyan}
       style={{
         flexDirection: "column",
-        width: "96%",
-        height: "92%",
+        width: size.width,
+        height: size.height,
         borderColor: theme.border,
         backgroundColor: theme.statusBackground,
-        paddingLeft: 2,
-        paddingRight: 2,
+        paddingLeft: 0,
+        paddingRight: 0,
         paddingTop: 0,
         paddingBottom: 0,
       }}
     >
-      {}
-      <box
+      {innerH >= 3 ? <box
         style={{
           flexDirection: "row",
           width: "100%",
           height: 1,
           flexShrink: 0,
           backgroundColor: theme.rowB,
-          paddingLeft: 1,
-          paddingRight: 1,
+          paddingLeft: padding,
+          paddingRight: padding,
         }}
       >
         {searchOpen ? (
@@ -791,7 +791,7 @@ export function Pager(props: PagerProps): ReactNode {
             style={{ fg: theme.muted, height: 1, width: "100%" }}
           />
         )}
-      </box>
+      </box> : null}
 
       <scrollbox
         ref={scrollRef}
@@ -806,41 +806,28 @@ export function Pager(props: PagerProps): ReactNode {
           flexGrow: 1,
           flexShrink: 1,
           width: "100%",
-          minHeight: 8,
+          minHeight: 1,
           backgroundColor: theme.background,
           marginTop: 0,
           marginBottom: 0,
-          paddingLeft: 1,
-          paddingRight: 1,
-          paddingTop: useDiffGutters ? 0 : 1,
+          paddingLeft: padding,
+          paddingRight: padding,
+          paddingTop: 0,
         }}
         onMouseScroll={() => refreshScrollHint()}
       >
-        {!useDiffGutters ? (
-          <text
-            content=" "
-            style={{ height: 1, width: "100%", bg: theme.background }}
-          />
-        ) : null}
         {bodyRows}
-        {!useDiffGutters ? (
-          <text
-            content=" "
-            style={{ height: 1, width: "100%", bg: theme.background }}
-          />
-        ) : null}
       </scrollbox>
 
-      {}
-      <box
+      {innerH >= 2 ? <box
         style={{
           flexDirection: "row",
           width: "100%",
           height: 1,
           flexShrink: 0,
           backgroundColor: theme.rowB,
-          paddingLeft: 1,
-          paddingRight: 1,
+          paddingLeft: padding,
+          paddingRight: padding,
         }}
       >
         <text
@@ -852,7 +839,7 @@ export function Pager(props: PagerProps): ReactNode {
             width: "100%",
           }}
         />
-      </box>
+      </box> : null}
     </box>
   );
 }

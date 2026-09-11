@@ -72,9 +72,44 @@ async function flush(): Promise<void> {
 }
 
 describe("shared orchestration commands", () => {
+  it.each(["orchestration", "orchestrator", "orchastrator"])("/%s opens described options and defaults to a non-mutating status action", async (command) => {
+    const f = fixture();
+    await f.dispatch(`/${command}`);
+    expect(f.manager.enabled).toBe(false);
+    expect(f.notice).not.toHaveBeenCalled();
+    const state = f.overlay.getState();
+    expect(state.kind).toBe("picker");
+    if (state.kind !== "picker") throw new Error("expected picker");
+    expect(state.request.options.map((option) => option.value)).toEqual(["status", "on", "off"]);
+    expect(state.request.options.every((option) => option.description)).toBe(true);
+    f.press("enter");
+    expect(f.manager.enabled).toBe(false);
+    expect(f.overlay.getState().kind).toBe("none");
+    expect(f.notice).toHaveBeenLastCalledWith("info", expect.stringContaining("Orchestration off"));
+    await f.dispatch(`/${command}`);
+    f.overlay.selectPicker("on");
+    expect(f.manager.enabled).toBe(true);
+    await f.dispatch(`/${command}`);
+    f.overlay.selectPicker("status");
+    expect(f.manager.enabled).toBe(true);
+    await f.dispatch(`/${command} off`);
+    expect(f.manager.enabled).toBe(false);
+  });
+
+  it("does not enable after dismissal or through a stale session picker", async () => {
+    const f = fixture();
+    await f.dispatch("/orchestrator");
+    f.overlay.close();
+    expect(f.manager.enabled).toBe(false);
+    await f.dispatch("/orchestrator");
+    f.replaceSession();
+    f.overlay.selectPicker("on");
+    expect(f.manager.enabled).toBe(false);
+  });
+
   it("shows default-off status without enabling, validates arguments, and gates restart", async () => {
     const f = fixture();
-    await f.dispatch("/orchestration");
+    await f.dispatch("/orchestration status");
     expect(f.manager.enabled).toBe(false);
     expect(f.notice).toHaveBeenLastCalledWith("info", expect.stringContaining("Orchestration off"));
     await f.dispatch("/orchestration invalid");

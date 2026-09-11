@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { padChromeRow } from "../src/ui-core/rendering/pager-chrome.js";
+import { padChromeRow, wrapPagerLine } from "../src/ui-core/rendering/pager-chrome.js";
+import { renderColumns } from "../src/ui-core/rendering/text-width.js";
 
 describe("padChromeRow", () => {
   it("returns exactly width columns", () => {
@@ -25,5 +26,18 @@ describe("padChromeRow", () => {
       50,
     );
     expect(row.length).toBe(50);
+  });
+
+  it.each([1, 2, 4, 7])("fits tiny chrome into %i columns", (width) => {
+    expect(renderColumns(padChromeRow("search and close", "100 lines", width))).toBeLessThanOrEqual(width);
+  });
+});
+
+describe("lossless pager wrapping", () => {
+  it.each([1, 3, 8, 24, 80])("preserves complete commands and quoted whitespace at %i columns", (width) => {
+    const command = `  printf '%s' '  value    with  spaces  ' | rg --glob '*.ts' ${"nested/path/".repeat(12)}  `;
+    const rows = wrapPagerLine(command, width, { preserveWhitespace: true });
+    expect(rows.join("")).toBe(command);
+    for (const row of rows) expect(renderColumns(row)).toBeLessThanOrEqual(width);
   });
 });

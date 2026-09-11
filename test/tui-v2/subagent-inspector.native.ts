@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 import { act, createElement } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import { SubagentManager } from "../../src/agent/subagents/manager.js";
@@ -60,11 +61,27 @@ try {
   const second = manager.start({ title: "Second inspector", prompt: "inspect second", cwd: process.cwd(), provider: "openai", model: "test" });
   await settle(() => { main = services.session.submit("Keep the main turn running"); });
   assert.equal(services.session.getState().running, true);
-  assert.match(await settle(() => services.commands.dispatch({ name: "agents" })), /First inspector/);
+  const pickerFrame = await settle(() => {
+    services.toast.info("Orchestration on · independent research continues while inspecting agents", { sticky: true });
+    services.commands.dispatch({ name: "agents" });
+  });
+  assert.match(pickerFrame, /First inspector/);
+  assert.match(pickerFrame.split("\n")[0]!, /Orchestration on/);
+  assert.match(pickerFrame, /Main agent/);
+  assert.match(pickerFrame, /Second inspector/);
   await settle(() => setup.mockInput.pressArrow("down"));
   await settle(() => setup.mockInput.pressEnter());
   assert.equal(services.overlay.getState().kind, "pager");
   assert.match(await settle(() => workers.get(first.id)!.emit({ kind: "assistant", text: "FIRST LIVE FINDING" })), /FIRST LIVE FINDING/);
+  const activityFrame = await settle(() => {
+    const worker = workers.get(first.id)!;
+    worker.emit({ kind: "tool", text: 'Calling fs.read: {"path":"src/agent/subagents/worker.ts","offset":81,"limit":80}' });
+    worker.emit({ kind: "tool", text: "Success: PRIVATE_FILE_BODY_MUST_NOT_APPEAR" });
+  });
+  assert.match(activityFrame, /fs\.read src\/agent\/subagents\/worker\.ts/);
+  assert.match(activityFrame, /offset=81, limit=80/);
+  assert.doesNotMatch(activityFrame, /PRIVATE_FILE_BODY_MUST_NOT_APPEAR/);
+  if (process.env.CLAI_SUBAGENT_CAPTURE_PATH) await writeFile(process.env.CLAI_SUBAGENT_CAPTURE_PATH, activityFrame);
   await settle(() => setup.mockInput.pressEscape());
   assert.equal(services.overlay.getState().kind, "picker");
   const frame = await settle(() => {

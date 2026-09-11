@@ -21,11 +21,11 @@ export interface PanelFrameRows {
 }
 
 export function panelBodyHeight(rows: number): number {
-  return Math.max(0, rows - 2);
+  return Math.max(0, rows < 3 ? rows : rows - 2);
 }
 
 export function panelBodyWidth(columns: number): number {
-  return Math.max(1, Math.floor(columns) - 4);
+  return Math.max(1, Math.floor(columns) < 5 ? Math.floor(columns) : Math.floor(columns) - 4);
 }
 
 export function panelFrameRows(input: PanelFrameInput): PanelFrameRows {
@@ -33,8 +33,15 @@ export function panelFrameRows(input: PanelFrameInput): PanelFrameRows {
   const glyphs = ink.glyphs;
   const token: ThemeToken = input.borderColor ?? "inputBorder";
   const width = Math.max(1, Math.floor(input.columns));
-  const bodyWidth = Math.max(1, width - 4);
+  const bodyWidth = panelBodyWidth(width);
   const bodyHeight = panelBodyHeight(input.rows);
+  if (width < 5 || input.rows < 3) {
+    return {
+      rows: input.body.slice(0, Math.max(0, input.rows)).map((row) => padToWidth(row, width)),
+      bodyHeight,
+      bodyWidth,
+    };
+  }
   const paint = (text: string): string => ink.fg(token, text);
 
   const head = input.title === "" ? "" : ` ${input.title} `;
@@ -47,9 +54,10 @@ export function panelFrameRows(input: PanelFrameInput): PanelFrameRows {
     1,
     width - 2 - layoutWidth(head) - layoutWidth(tail),
   );
-  const top = paint(
+  const top = paint(clipToWidth(
     `${glyphs.boxTopLeft}${clipToWidth(head, Math.max(0, width - 3), glyphs.ellipsis)}${glyphs.rule.repeat(fillWidth)}${tail}${glyphs.boxTopRight}`,
-  );
+    width,
+  ));
 
   const hintText = (input.hints ?? []).join(` ${glyphs.separator} `);
   const hintBudget = Math.max(0, width - 5);

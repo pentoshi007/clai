@@ -13,11 +13,31 @@ export function handleOrchestration(services: AppServices, invocation: CommandIn
     return;
   }
   const manager = services.session.subagents;
-  if (action === "on" || action === "off") manager.setEnabled(action === "on");
-  services.session.notice(
-    "info",
-    `Orchestration ${manager.enabled ? "on" : "off"} · session-only, default off. When enabled, the main agent can delegate independent assignments to background subagents. /agents inspects their live output. Turning off stops active children and prevents new starts/restarts.`,
-  );
+  const apply = (value: string): void => {
+    if (services.session.subagents !== manager) return;
+    if (value === "on" || value === "off") manager.setEnabled(value === "on");
+    services.session.notice(
+      "info",
+      `Orchestration ${manager.enabled ? "on" : "off"} · session-only, default off. When enabled, the main agent can delegate independent assignments to background subagents. /agents inspects their live output. Turning off stops active children and prevents new starts/restarts.`,
+    );
+  };
+  if (action === "") {
+    services.overlay.openPicker({
+      title: `Orchestration · ${manager.enabled ? "on" : "off"}`,
+      twoLine: true,
+      searchDescription: true,
+      options: [
+        { value: "status", label: "Status", description: "Show the current session setting without changing it" },
+        { value: "on", label: "On", description: "Allow the main agent to delegate independent read-only research for this session" },
+        { value: "off", label: "Off", description: "Stop active subagents and prevent new starts or restarts" },
+      ],
+    }, (value) => {
+      services.overlay.close();
+      apply(value);
+    });
+    return;
+  }
+  apply(action);
 }
 
 export function handleAgents(services: AppServices, invocation: CommandInvocation): void {
@@ -54,11 +74,11 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
       return false;
     }
     return services.overlay.openPager(
-      `${run.title} · ${id} · Esc to return`,
+      `${run.title} · ${id}`,
       formatSubagentRun(run),
       createSubagentPagerSource(manager, id),
       undefined,
-      "plain",
+      "force",
     );
   };
   if (args[0] === "main") return;
@@ -83,7 +103,7 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
   };
   const opened = args[0]
     ? openRun(args[0])
-    : services.overlay.openPicker({ title: "Agents · select to inspect · Esc returns", options: options() }, select);
+    : services.overlay.openPicker({ title: "Agents", options: options() }, select);
   if (!opened) return;
 
   let signature = JSON.stringify(options());
