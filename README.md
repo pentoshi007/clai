@@ -575,7 +575,7 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
-| `/orchestration [on\|off\|status]` | Opt into background subagent delegation for this session (default off) |
+| `/orchestration [on\|off\|status]` · `/orchestrator` | Open orchestration options or opt into session-only delegation (default off) |
 | `/agents [id\|stop id\|restart id]` | Pick a subagent to inspect live output, or stop/restart its assignment |
 | `/compact` · `/context` | Compact history now · show context size |
 | `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle (`/clear` deletes the current session outright) |
@@ -587,8 +587,11 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/update` · `/help` · `/shortcuts` · `/exit` | Housekeeping |
 
 Orchestration is off in new and restored sessions. Use `/orchestration on` to let
-the main agent delegate independent work; `/orchestration` explains the current
-state without changing it. `/agents` opens the same live inspector in Classic and
+the main agent delegate independent work. Bare `/orchestration`, `/orchestrator`,
+or `/orchastrator` opens described **Status**, **On**, and **Off** options; Status
+is selected initially and never changes the setting. Explicit `/orchestration status`
+reports the setting directly. See [picker and pager controls](docs/ui-overlays.md).
+`/agents` opens the same live inspector in Classic and
 OpenTUI: select a child, press `Esc` to return to the picker, then select another
 child or **Main agent**. Inspecting output never interrupts the main turn. The
 pager follows live output; `l` toggles follow. Turning orchestration off stops

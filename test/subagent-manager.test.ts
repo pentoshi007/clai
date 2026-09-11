@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubagentManager } from "../src/agent/subagents/manager.js";
-import type { SubagentAssignment, SubagentRun, SubagentStore, SubagentWorkerInput } from "../src/agent/subagents/types.js";
+import { mintSessionId } from "../src/app/controllers/session-persistence.js";
+import type { SubagentAssignment, SubagentCheckpoint, SubagentRun, SubagentStore, SubagentWorkerInput } from "../src/agent/subagents/types.js";
 
 const assignment: SubagentAssignment = { title: "Investigate", prompt: "Read the implementation", cwd: "/tmp", provider: "openai", model: "test" };
 const managers: SubagentManager[] = [];
@@ -25,6 +26,23 @@ afterEach(async () => {
 });
 
 describe("SubagentManager", () => {
+  it("accepts generated session IDs at a secret-prefix clock collision", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1789126537844);
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      const id = mintSessionId();
+      expect(id).toBe("sess-mtwvqvsk-i");
+      expect(controlled(undefined, id).manager.parentSessionId).toBe(id);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it.each(["sk-secretvalue", "sess-mtwvqvsk-secretvalue", "sess-mtwvqvsk-abc\x1b[0m"])("still rejects secret-like or unsafe parent IDs: %s", (id) => {
+    expect(() => new SubagentManager(id)).toThrow("Invalid parent session ID");
+  });
+
   it("is off by default and synchronously reserves three slots", async () => {
     const { manager, work } = controlled();
     expect(manager.enabled).toBe(false);
@@ -133,6 +151,71 @@ describe("SubagentManager", () => {
     await tick();
     work[1]!.reject(new Error("sk-privatefailure"));
     expect(await manager.wait(first.id)).toMatchObject({ status: "error", error: "sk-••••••" });
+  });
+
+  it("keeps exact checkpoints private, isolated and recoverable after an error or stop", async () => {
+    const saved: SubagentRun[] = [];
+    const { manager, work } = controlled({ load: () => [], save: (run) => saved.push(run), remove: vi.fn() });
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    const checkpoint: SubagentCheckpoint = {
+      messages: [{ role: "assistant", content: "private evidence", reasoningBlock: { text: "opaque provider artifact" } }],
+      pending: { native: true, next: 1, calls: [{ name: "fs.list", args: { path: "/tmp" } }] },
+    };
+    const original = structuredClone(checkpoint);
+    work[0]!.input.saveCheckpoint!(checkpoint);
+    checkpoint.messages[0]!.content = "mutation outside the manager";
+    work[0]!.reject(new Error("Transient provider failure"));
+    expect(await manager.wait(run.id)).toMatchObject({ status: "error", recovery: "exact" });
+    expect(JSON.stringify([saved, manager.list()])).not.toMatch(/private evidence|opaque provider artifact|messages/);
+    expect(manager.restart(run.id)).toMatchObject({ attempt: 2, recovery: "exact" });
+    await tick();
+    expect(work[1]!.input.checkpoint).toEqual(original);
+    work[1]!.input.checkpoint!.messages[0]!.content = "mutation in the next worker";
+    manager.stop(run.id);
+    work[1]!.input.saveCheckpoint!({ ...original, messages: [{ role: "assistant", content: "late checkpoint" }] });
+    work[1]!.resolve("Late report");
+    expect((await manager.wait(run.id)).status).toBe("stopped");
+    manager.restart(run.id);
+    await tick();
+    expect(work[2]!.input.checkpoint).toEqual(original);
+  });
+
+  it("bounds private checkpoints without replacing the last usable checkpoint", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    const checkpoint: SubagentCheckpoint = { messages: [] };
+    work[0]!.input.saveCheckpoint!(checkpoint);
+    expect(() => work[0]!.input.saveCheckpoint!({ ...checkpoint, messages: [{ role: "user", content: "x".repeat(1_048_576) }] })).toThrow("checkpoint budget");
+    work[0]!.reject(new Error("Checkpoint budget reached"));
+    await manager.wait(run.id);
+    manager.restart(run.id);
+    await tick();
+    expect(work[1]!.input.checkpoint).toEqual(checkpoint);
+  });
+
+  it("settles partial reports without advertising successful completion", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    const report = "Status: partial\n## Findings\nThe selected runtime exports a worker; its consumers remain unverified.\n## Evidence\nsrc/worker.ts:1 exports the worker factory.\n## Next steps\nInspect callers before changing its contract.\n## Coverage gaps\nThe investigation ended before callers were examined.";
+    work[0]!.resolve(report);
+    expect(await manager.wait(run.id)).toMatchObject({ status: "partial", report, error: undefined });
+    expect((await manager.wait(run.id, 0)).status).toBe("partial");
+    expect(manager.restart(run.id)).toMatchObject({ attempt: 2, recovery: "history" });
+  });
+
+  it.each(["Status: partial\nNo evidence", "Status: complete\nNo evidence"])("rejects invalid structured reports: %s", async (report) => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve(report);
+    expect(await manager.wait(run.id)).toMatchObject({ status: "error", report: undefined, error: "Worker returned an invalid report" });
   });
 
   it("cancels and times out waits without stopping the worker", async () => {

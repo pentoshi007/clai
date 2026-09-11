@@ -158,6 +158,7 @@ export class PanelController {
           chord,
           text,
           rows,
+          columns: this.deps.columns(),
         });
         if (!result.handled) return false;
         this.publish({ ...snapshot, picker: result.state });

@@ -842,6 +842,7 @@ export function App(): ReactNode {
         theme={theme}
         termWidth={terminalWidth}
         termHeight={height}
+        compact={overlay.kind === "picker" || overlay.kind === "pager"}
       />
     </box>
     </TerminalDimensionsContext.Provider>
