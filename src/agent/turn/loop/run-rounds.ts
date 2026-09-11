@@ -51,11 +51,18 @@ import { createStreamSession } from "./stream-session.js";
 import type { TurnOutcome } from "../../turn-outcome.js";
 import type { TurnLoopDeps } from "./deps.js";
 import { resolveAnswerPath } from "./answer-path.js";
+import { SubagentInbox } from "../subagent-inbox.js";
+import { resolveEffectiveContextLimit } from "../../request-accounting.js";
 
 export const runTurnRounds = async (
   deps: TurnLoopDeps,
   input: { readonly delay: (ms: number) => Promise<void> },
 ): Promise<TurnOutcome> => {
+  const subagentInbox = new SubagentInbox(
+    deps.session.subagents,
+    deps.session.sessionId,
+    deps.messages,
+  );
   for (let iteration = 0; iteration < deps.maxIterations; iteration += 1) {
 
     deps.outputState.visibleCommitted = false;
@@ -82,6 +89,15 @@ export const runTurnRounds = async (
 
       await deps.maybeAutoCompact("auto-token-budget");
       const responderDelivery = deps.refreshResponderInbox();
+      const inboxLimit = resolveEffectiveContextLimit({
+        provider: deps.loop.provider,
+        model: deps.loop.model,
+        contextLimitTokens: deps.currentContextLimitTokens(),
+      }).effectiveSafeTokens;
+      const subagentDeliveries = subagentInbox.prepare({
+        maxRequestTokens: inboxLimit ?? deps.estimateNextRequestTokens(deps.messages) + 8_192,
+        estimateTokens: deps.estimateNextRequestTokens,
+      });
 
       const streamLabel =
         deps.loop.step === 0 ? "waiting" : `step ${deps.loop.step + 1}`;
@@ -116,6 +132,8 @@ export const runTurnRounds = async (
       });
       if (requested.kind === "continue") continue;
       const completion = requested.completion;
+      deps.options.signal?.throwIfAborted();
+      subagentInbox.acknowledge(subagentDeliveries);
       toolsAttached = requested.toolsAttached;
       if (responderDelivery) {
         if (!jobManager.markDelivered(responderDelivery.id, deps.session.sessionId)) {
@@ -446,6 +464,13 @@ export const runTurnRounds = async (
         }
       }
       if (!call) {
+        if (await subagentInbox.beforeFinal(deps.options.signal, () => {
+          deps.emit({ type: "status", text: "waiting for delegated work" });
+        })) {
+          commitAssistantRetry(assistantText.visible);
+          deps.counters.consecutiveModelOnlyRounds = 0;
+          continue;
+        }
         const answer = await resolveAnswerPath(deps, {
           assistantText,
           canonicalAssistantVisible,
