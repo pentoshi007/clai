@@ -19,6 +19,7 @@ import {
   isReasoningUnsupportedError,
 } from "../http.js";
 import type { LlmProvider, ProviderAuth } from "../provider.js";
+import { withRequestOptionFallback } from "./request-option-fallback.js";
 import {
   isMissingReasoningContentError,
   isUnattributableRequestBodyError,
@@ -126,7 +127,7 @@ export async function tryStreamOnce(
       learnModelVisionCapability(providerId, model, true);
     }
   };
-  const runAttempt = async (
+  const dispatchAttempt = async (
     candidate: CompletionRequest,
     attemptReason: GenerationAttemptReason,
   ): Promise<CompletionResult> => {
@@ -185,6 +186,23 @@ export async function tryStreamOnce(
     } catch {}
     return result;
   };
+  const runAttempt = (
+    candidate: CompletionRequest,
+    attemptReason: GenerationAttemptReason,
+  ): Promise<CompletionResult> =>
+    withRequestOptionFallback(
+      candidate,
+      attemptReason,
+      dispatchAttempt,
+      () => !singleDispatch && emittedBytes === 0,
+      onStatus,
+    );
+  const initialReasoningWireKey = reasoningWireKey(
+    activeRequest.thinking,
+    provider.reasoningStyle ?? "none",
+    model,
+    providerId,
+  );
   try {
     const result = await runAttempt(activeRequest, reason);
     learnVisionOnSuccess();
@@ -281,22 +299,23 @@ export async function tryStreamOnce(
       }
       if (advice?.mandatory) markReasoningMandatory(providerId, model);
       if (singleDispatch) {
-        if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
+        if (!advice?.mandatory && activeRequest.thinking?.effort !== "none") {
+          markReasoningUnsupported(providerId, model);
+        }
         throw markStreamEmittedBytes(error, emittedBytes);
       }
       const thinking = activeRequest.thinking;
       let attemptedRung = false;
-      if (thinking?.enabled) {
+      if (thinking && (thinking.enabled || thinking.effort === "none")) {
         const style = provider.reasoningStyle ?? "none";
-        const seen = new Set<string>([
-          reasoningWireKey(thinking, style, model, providerId),
-        ]);
+        const seen = new Set<string>([initialReasoningWireKey]);
+        const rejectedEfforts = [thinking.effort];
         for (const effort of effortCandidatesFor(
           providerId,
           model,
           thinking.effort,
         )) {
-          const candidate = { ...thinking, effort };
+          const candidate = { ...thinking, enabled: effort !== "none", effort };
           const key = reasoningWireKey(candidate, style, model, providerId);
           if (seen.has(key)) continue;
           seen.add(key);
@@ -310,7 +329,9 @@ export async function tryStreamOnce(
           };
           try {
             const result = await runAttempt(retryRequest, "adaptation");
-            learnRejectedEffort(providerId, model, thinking.effort);
+            for (const rejected of rejectedEfforts) {
+              learnRejectedEffort(providerId, model, rejected);
+            }
             return result;
           } catch (retryError) {
             if (!shouldContinueEffortLadder(retryError)) {
@@ -319,6 +340,7 @@ export async function tryStreamOnce(
                 emittedBytes,
               );
             }
+            rejectedEfforts.push(effort);
           }
         }
       }
@@ -328,7 +350,9 @@ export async function tryStreamOnce(
       if (!attemptedRung && !reasoningAttributed) {
         throw markStreamEmittedBytes(error, emittedBytes);
       }
-      if (!advice?.mandatory) markReasoningUnsupported(providerId, model);
+      if (!advice?.mandatory && thinking?.effort !== "none") {
+        markReasoningUnsupported(providerId, model);
+      }
       onStatus?.(
         advice?.mandatory
           ? `ℹ ${providerId}/${model} requires reasoning — retrying at its lowest accepted effort`
