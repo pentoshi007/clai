@@ -21,6 +21,12 @@ export function sanitizeSubagentText(value: string): string {
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, "[redacted private key]");
 }
 
+export function isValidSubagentParentId(value: unknown): value is string {
+  if (typeof value !== "string" || !value || value.length > 256) return false;
+  // Generated session IDs can contain sk- across the timestamp/entropy boundary.
+  return /^sess-[a-z0-9]{8,11}-[a-z0-9]{0,6}$/.test(value) || sanitizeSubagentText(value) === value;
+}
+
 export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
   const clean = (value: string, maximum: number): string => sanitizeSubagentText(value).slice(0, maximum);
   const base = {
@@ -51,7 +57,7 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
   if (!value || typeof value !== "object") return false;
   const run = value as SubagentRun;
   const bounded = (text: unknown, maximum: number): text is string => typeof text === "string" && text.length <= maximum;
-  return bounded(parentSessionId, 256) && !!parentSessionId && sanitizeSubagentText(parentSessionId) === parentSessionId
+  return isValidSubagentParentId(parentSessionId)
     && run.parentSessionId === parentSessionId && typeof run.id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(run.id) && sanitizeSubagentText(run.id) === run.id
     && Number.isSafeInteger(run.attempt) && run.attempt > 0
     && Number.isFinite(run.createdAt) && Number.isFinite(run.updatedAt)

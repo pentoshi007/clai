@@ -20,6 +20,15 @@ function run(overrides: Partial<SubagentRun> = {}): SubagentRun {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("FileSubagentStore", () => {
+  it("round-trips generated session IDs without changing content redaction", () => {
+    const { store } = fixture();
+    const parentSessionId = "sess-mtwvqvsk-abcdef";
+    store.save(run({ parentSessionId, prompt: "Inspect sk-secretvalue" }));
+    expect(store.load(parentSessionId)[0]).toMatchObject({ parentSessionId, prompt: "Inspect sk-••••••" });
+    expect(sanitizeSubagentText(parentSessionId)).toBe("sess-mtwvqvsk-••••••");
+    expect(() => store.save(run({ parentSessionId: "sk-secretvalue" }))).toThrow("Invalid subagent record");
+  });
+
   it("atomically stores private redacted records in parent-separated hashed directories", () => {
     const { store, directory } = fixture();
     store.save(run({ title: "\x1b[31mResearch\x1b[0m", prompt: "sk-secretprompt", context: "password=private", report: "sk-secretreport\x1b]52;c;attack\x07", events: [{ kind: "tool", text: "Authorization: Bearer secretvalue", sequence: 1, timestamp: 1 }] }));
