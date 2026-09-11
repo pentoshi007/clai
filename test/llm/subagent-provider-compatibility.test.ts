@@ -169,6 +169,8 @@ describe("lowest reasoning requests", () => {
     expect(lowestReasoningPreference("free", "kimi-k3")).toEqual({ enabled: true, effort: "low" });
     registerWireRejectionEfforts("free", "kimi-k3", ["high", "medium", "low"]);
     expect(lowestReasoningPreference("free", "kimi-k3")).toEqual({ enabled: true, effort: "low" });
+    registerWireRejectionEfforts("free", "kimi-k3", ["medium"]);
+    expect(lowestReasoningPreference("free", "kimi-k3")).toEqual({ enabled: true, effort: "medium" });
   });
 
   it("does not retry after visible stream output", async () => {
