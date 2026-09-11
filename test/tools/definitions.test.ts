@@ -99,6 +99,21 @@ describe("tool definitions", () => {
     expect(exec.parameters.properties.timeoutMs).toBeDefined();
   });
 
+  it("guides subagent briefs without adding mandatory assignment gates", () => {
+    const start = TOOL_DEFINITIONS.find((definition) => definition.name === "subagent.start")!;
+    const prompt = start.parameters.properties.prompt as { description?: string };
+    const context = start.parameters.properties.context as { description?: string };
+
+    expect(start.parameters.required).toEqual(["title", "prompt"]);
+    expect(start.description).toMatch(/target deliverable/i);
+    expect(start.description).toMatch(/relevant surfaces and non-goals/i);
+    expect(start.description).toMatch(/not a fixed procedure or completion gate/i);
+    expect(prompt.description).toMatch(/appropriate depth\/technicality/i);
+    expect(context.description).toMatch(/never send the whole conversation or parent system\/project\/skill boilerplate/i);
+    const restart = TOOL_DEFINITIONS.find((definition) => definition.name === "subagent.restart")!;
+    expect(restart.description).toMatch(/do not assume runtime call deduplication/i);
+  });
+
   it("distinguishes finite, unattended, and prompt-driven execution tools", () => {
     const exec = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.exec")!;
     const start = TOOL_DEFINITIONS.find((definition) => definition.name === "shell.start")!;

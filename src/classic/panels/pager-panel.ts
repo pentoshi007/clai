@@ -76,11 +76,11 @@ export function pagerLines(
   format: PagerFormat = "formatted",
 ): readonly string[] {
   const width = panelBodyWidth(columns);
-  const textWidth = Math.max(1, width - 2);
+  const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
   const lines = logicalPagerLines(body, textWidth, format).flatMap((line) =>
     format === "formatted"
       ? wrapAnsiLine(line, textWidth)
-      : wrapPagerLine(line, textWidth),
+      : wrapPagerLine(line, textWidth, { preserveWhitespace: true }),
   );
   return lines.length === 0 ? [" "] : lines;
 }
@@ -264,7 +264,7 @@ export function pagerView(input: PagerViewInput): PanelFrameInput {
         ? sealStyle(raw)
         : paintSegments(ink, plain, index, matches, state.matchIndex);
     const caret = index === state.caret ? ink.fg("inputBorder", ink.glyphs.caret) : " ";
-    body.push(sealStyle(`${caret} ${painted}`));
+    body.push(sealStyle(`${panelBodyWidth(input.columns) >= 3 ? `${caret} ` : ""}${painted}`));
   }
 
   const tags: string[] = [state.format === "raw" ? "raw" : "md"];

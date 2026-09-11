@@ -26,6 +26,7 @@ import { CompletionPanel } from "../panels/CompletionPanel.js";
 import { PanelHost } from "../panels/panel-host.js";
 import { PlanPanel } from "../panels/PlanPanel.js";
 import { completionOverlayRows } from "../panels/completion-rows.js";
+import { overlaySize } from "../../ui-core/layout/overlay-size.js";
 import { createClassicAppWiring, overlayDemandContext, type ClassicAppWiring } from "./app-wiring.js";
 import { introInputFor, useFeed } from "./use-feed.js";
 
@@ -57,6 +58,8 @@ export function ClassicApp(
   }, [providedWiring, wiring]);
   const snapshot = useSyncExternalStore(wiring.subscribe, wiring.getSnapshot, wiring.getSnapshot);
   const { session, composer, panel, plan, columns, rows } = snapshot;
+  const expanded = panel.kind === "picker" || panel.kind === "pager";
+  const expandedSize = overlaySize(columns, rows);
   const shellPadding = horizontalPadding(columns);
   const shellWidth = gutterShellWidth(columns);
   const completionOpen = panel.kind === "none" && composer.menu.kind !== "none";
@@ -87,7 +90,7 @@ export function ClassicApp(
     services,
     state: snapshot.transcript,
     columns: shellWidth,
-    liveBudgetRows: layout.liveTail,
+    liveBudgetRows: expanded ? 0 : layout.liveTail,
     now: snapshot.feedNow,
     generation: snapshot.feedGeneration,
     liveOffset: snapshot.liveOffset,
@@ -126,10 +129,12 @@ export function ClassicApp(
   useEffect(() => wiring.setComposerTextWidth(frame.textWidth), [wiring, frame.textWidth]);
 
   const panelSlot = panelContext ? (
-    <PanelHost controller={wiring.panels} ink={feed.ink} columns={shellWidth} rows={layout.overlay} jobs={snapshot.jobs} transcript={snapshot.transcript} now={snapshot.now} />
+    <PanelHost controller={wiring.panels} ink={feed.ink} columns={expanded ? expandedSize.width : shellWidth} rows={expanded ? expandedSize.height : layout.overlay} jobs={snapshot.jobs} transcript={snapshot.transcript} now={snapshot.now} />
   ) : completionOpen ? (
     <CompletionPanel ink={feed.ink} menu={composer.menu} active={composer.active} columns={shellWidth} rows={layout.overlay} />
   ) : undefined;
+
+  if (expanded) return <Box width={columns} height={rows} paddingX={expandedSize.marginX} paddingY={expandedSize.marginY}>{panelSlot}</Box>;
 
   return <Box flexDirection="row" width={columns}>
     <Box width={columns - SCROLLBAR_GUTTER_COLS} paddingLeft={shellPadding} paddingRight={Math.max(0, shellPadding - SCROLLBAR_GUTTER_COLS)} flexDirection="column">
