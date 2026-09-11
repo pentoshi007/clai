@@ -39,7 +39,8 @@ export function fitOneLine(candidates: readonly string[], maxCols: number): stri
 }
 
 export function padChromeRow(left: string, right: string, width: number): string {
-  const w = Math.max(8, width);
+  const w = Math.max(1, width);
+  if (w < 8) return fitOneLine([left], w);
   const rightBudget = Math.min(
     Math.max(columns(right), 4),
     Math.max(8, Math.floor(w * 0.4)),
@@ -59,7 +60,11 @@ export function padChromeRow(left: string, right: string, width: number): string
   return row + " ".repeat(w - rowWidth);
 }
 
-export function wrapPagerLine(line: string, width: number): string[] {
+export function wrapPagerLine(
+  line: string,
+  width: number,
+  options: { preserveWhitespace?: boolean } = {},
+): string[] {
   const max = Math.max(1, width);
   if (!line) return [" "];
   if (columns(line) <= max) return [line];
@@ -87,15 +92,12 @@ export function wrapPagerLine(line: string, width: number): string[] {
     }
     const cut =
       space > start && space - start >= minBreak ? space : Math.max(end, start + 1);
-    out.push(
-      cells
-        .slice(start, cut)
-        .map((c) => c.ch)
-        .join("")
-        .replace(/\s+$/, ""),
-    );
+    const chunk = cells.slice(start, cut).map((c) => c.ch).join("");
+    out.push(options.preserveWhitespace ? chunk : chunk.replace(/\s+$/, ""));
     start = cut;
-    while (start < cells.length && cells[start]!.ch === " ") start += 1;
+    if (!options.preserveWhitespace) {
+      while (start < cells.length && cells[start]!.ch === " ") start += 1;
+    }
   }
 
   return out.length > 0 ? out : [" "];

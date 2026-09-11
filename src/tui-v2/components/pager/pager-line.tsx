@@ -85,6 +85,7 @@ export function PagerLine(props: {
   carry: ReturnType<typeof emptyCarry>;
   styled?: PagerDisplayLine["styled"];
   markdownMode?: boolean | undefined;
+  diffGutters?: boolean | undefined;
 }): ReactNode {
   const {
     line,
@@ -111,7 +112,7 @@ export function PagerLine(props: {
           id={`pager-line-${index}`}
           content={styled}
           selectable
-          wrapMode="none"
+          wrapMode="word"
           style={{ width: "100%", bg: theme.background }}
         />
       );
@@ -125,7 +126,7 @@ export function PagerLine(props: {
         id={`pager-line-${index}`}
         content={body}
         selectable
-        wrapMode="none"
+        wrapMode="word"
         style={{
           width: "100%",
           fg: isActiveLine ? theme.background : theme.foreground,
@@ -142,7 +143,7 @@ export function PagerLine(props: {
     );
   }
 
-  const parsed = parseDiffLine(line);
+  const parsed = props.diffGutters === false ? null : parseDiffLine(line);
 
   if (parsed) {
     const bg =

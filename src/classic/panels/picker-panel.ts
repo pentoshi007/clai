@@ -5,8 +5,9 @@ import {
   type PickerOption,
 } from "../../ui-core/rendering/picker-filter.js";
 import type { InkTheme } from "../render/ink-theme.js";
-import { emptyRow, filterRow, listRow, listSubRow } from "./list-rows.js";
-import { listWindow, windowCounter } from "./list-window.js";
+import { emptyRow, filterRow } from "./list-rows.js";
+import { windowCounter } from "./list-window.js";
+import { layoutPickerOptions, pickerScrollTop } from "../../ui-core/rendering/picker-layout.js";
 import { panelBodyHeight, panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, unhandled, type PanelKeyResult } from "./panel-effect.js";
 
@@ -39,6 +40,7 @@ export interface PickerKeyInput {
   readonly chord: string;
   readonly text?: string | undefined;
   readonly rows: number;
+  readonly columns?: number | undefined;
 }
 
 export function isPrintable(chord: string, text: string | undefined): boolean {
@@ -47,33 +49,42 @@ export function isPrintable(chord: string, text: string | undefined): boolean {
   return [...text].every((char) => char >= " " && char !== "\x7f");
 }
 
-function itemCapacity(request: PickerRequest, rows: number, query: string): number {
-  const body = panelBodyHeight(rows) - (query.length > 0 ? 1 : 0);
-  return Math.max(1, Math.floor(Math.max(1, body) / pickerRowHeight(request)));
+function itemCapacity(rows: number, query: string): number {
+  const height = panelBodyHeight(rows);
+  return Math.max(1, height - (query.length > 0 && height > 1 ? 1 : 0));
 }
 
 export function pickerKey(input: PickerKeyInput): PanelKeyResult<PickerPanelState> {
   const { request, state, chord } = input;
   const filtered = pickerFiltered(request, state.query);
   const count = filtered.length;
-  const capacity = itemCapacity(request, input.rows, state.query);
+  const capacity = itemCapacity(input.rows, state.query);
+  const items = layoutPickerOptions(filtered, panelBodyWidth(input.columns ?? 80), pickerRowHeight(request) === 2);
 
   const move = (delta: number): PanelKeyResult<PickerPanelState> => {
     if (count === 0) return handled(state);
-    const cursor = (state.cursor + delta + count) % count;
-    const window = listWindow({
-      count,
-      active: cursor,
-      height: capacity,
-      previousTop: state.top,
-    });
-    return handled({ ...state, cursor, top: window.top });
+    const cursor = ((state.cursor + delta) % count + count) % count;
+    return handled({ ...state, cursor, top: pickerScrollTop(items, cursor, capacity, items[cursor]?.top ?? 0) });
+  };
+
+  const scroll = (delta: number): PanelKeyResult<PickerPanelState> => {
+    const last = items.at(-1);
+    const top = Math.max(0, Math.min(state.top + delta, (last ? last.top + last.height : 0) - capacity));
+    const current = items[state.cursor];
+    const cursor = current && current.top + current.height > top && current.top < top + capacity
+      ? state.cursor
+      : Math.max(0, items.findIndex((item) => item.top + item.height > top));
+    return handled({ ...state, cursor, top });
   };
 
   if (chord === "up") return move(-1);
   if (chord === "down") return move(1);
-  if (chord === "pageup") return move(-capacity);
-  if (chord === "pagedown") return move(capacity);
+  if (chord === "pageup") return scroll(-capacity);
+  if (chord === "pagedown") return scroll(capacity);
+  if (chord === "left") return scroll(-1);
+  if (chord === "right") return scroll(1);
+  if (chord === "home") return move(-state.cursor);
+  if (chord === "end") return move(count - 1 - state.cursor);
   if (chord === "enter") {
     const option = filtered[Math.min(state.cursor, Math.max(0, count - 1))];
     return option
@@ -125,6 +136,7 @@ function pickerHints(ink: InkTheme, request: PickerRequest): readonly string[] {
   ];
   if (request.rowAction) hints.push(request.rowAction.hint);
   hints.push("esc cancel", "type to filter");
+  hints.push("pg↑↓ scroll");
   return hints;
 }
 
@@ -135,15 +147,11 @@ export function pickerView(input: PickerViewInput): PickerView {
   const count = filtered.length;
   const twoLine = pickerRowHeight(request) === 2;
   const bodyHeight = panelBodyHeight(input.rows);
-  const filterRows = state.query.length > 0 ? 1 : 0;
-  const capacity = itemCapacity(request, input.rows, state.query);
-
-  const window = listWindow({
-    count,
-    active: state.cursor,
-    height: capacity,
-    previousTop: state.top,
-  });
+  const filterRows = state.query.length > 0 && bodyHeight > 1 ? 1 : 0;
+  const capacity = itemCapacity(input.rows, state.query);
+  const items = layoutPickerOptions(filtered, width, twoLine);
+  const cursor = Math.min(state.cursor, Math.max(0, count - 1));
+  const top = pickerScrollTop(items, cursor, capacity, state.top);
 
   const body: string[] = [];
   if (filterRows === 1) body.push(filterRow(ink, width, "filter", state.query));
@@ -151,30 +159,17 @@ export function pickerView(input: PickerViewInput): PickerView {
   if (count === 0) {
     body.push(emptyRow(ink, width));
   } else {
-    const visible = filtered.slice(window.top, window.top + window.height);
-    visible.forEach((option, offset) => {
-      const index = window.top + offset;
-      const active = index === state.cursor;
-      body.push(
-        listRow({
-          ink,
-          width,
-          columns: input.columns,
-          label: option.active === true ? `${option.label} ${ink.glyphs.separator} current` : option.label,
-          description: twoLine ? undefined : option.description,
-          active,
-        }),
-      );
-      if (twoLine) {
-        body.push(
-          listSubRow({
-            ink,
-            width,
-            text: option.description ?? "",
-            active,
-          }),
-        );
-      }
+    items.forEach((item, index) => {
+      if (item.top + item.height <= top || item.top >= top + capacity) return;
+      const active = index === cursor;
+      item.lines.forEach((line, offset) => {
+        if (item.top + offset < top || item.top + offset >= top + capacity) return;
+        const marker = width >= 3 ? active && offset === 0 ? `${ink.glyphs.promptMark} ` : "  " : "";
+        body.push(ink.style(`${marker}${line.text}`, {
+          fg: line.description ? "muted" : active ? "accent" : "foreground",
+          bold: active,
+        }));
+      });
     });
   }
 
@@ -188,7 +183,7 @@ export function pickerView(input: PickerViewInput): PickerView {
       hints: pickerHints(ink, request),
       body: body.slice(0, Math.max(0, bodyHeight)),
     },
-    top: window.top,
+    top,
     count,
   };
 }
