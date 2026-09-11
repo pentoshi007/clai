@@ -52,6 +52,16 @@ describe("FileSubagentStore", () => {
     }
   });
 
+  it("retains partial status and exposes history recovery rather than a nonexistent exact checkpoint", () => {
+    const { store, directory } = fixture();
+    const report = "Status: partial\nBounded prior-attempt findings";
+    store.save({ ...run({ status: "partial", report, recovery: "exact" }), checkpoint: { messages: [{ content: "private provider artifact" }] } } as SubagentRun);
+    expect(store.load("parent")[0]).toMatchObject({ status: "partial", report, recovery: "history" });
+    expect(readFileSync(join(directory(), `${hash("child")}.json`), "utf8")).not.toMatch(/checkpoint|messages|private provider artifact/);
+    store.save(run({ id: "fresh", events: [], report: undefined, recovery: "exact" }));
+    expect(store.load("parent").find((child) => child.id === "fresh")?.recovery).toBe("fresh");
+  });
+
   it("ignores corrupt, oversized, cross-parent, symlinked, and mismatched records", () => {
     const { root, store, directory } = fixture();
     store.save(run());

@@ -1,6 +1,6 @@
-import type { ProviderId } from "../../types.js";
+import type { ChatMessage, ProviderId, ToolCall } from "../../types.js";
 
-export type SubagentStatus = "running" | "stopping" | "completed" | "stopped" | "error";
+export type SubagentStatus = "running" | "stopping" | "completed" | "partial" | "stopped" | "error";
 
 export interface SubagentEvent {
   readonly sequence: number;
@@ -28,11 +28,29 @@ export interface SubagentRun extends SubagentAssignment {
   readonly events: readonly SubagentEvent[];
   readonly report?: string | undefined;
   readonly error?: string | undefined;
+  readonly recovery?: "exact" | "history" | "fresh" | undefined;
+}
+
+export interface SubagentCheckpoint {
+  readonly messages: readonly ChatMessage[];
+  readonly nativeTools?: boolean | undefined;
+  readonly successfulCalls: readonly string[];
+  readonly researchRounds: number;
+  readonly reportRounds: number;
+  readonly reportReason?: string | undefined;
+  readonly finished?: boolean | undefined;
+  readonly pending?: {
+    readonly calls: readonly ToolCall[];
+    readonly native: boolean;
+    readonly next: number;
+  } | undefined;
 }
 
 export interface SubagentWorkerInput {
   readonly run: SubagentRun;
   readonly signal: AbortSignal;
+  readonly checkpoint?: SubagentCheckpoint | undefined;
+  readonly saveCheckpoint?: ((checkpoint: SubagentCheckpoint) => void) | undefined;
   readonly emit: (event: {
     kind: SubagentEvent["kind"];
     text: string;
