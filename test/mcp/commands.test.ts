@@ -164,9 +164,9 @@ describe("/mcp shared command", () => {
       expect(overlay.request.title).toContain("1/1 live");
       expect(overlay.request.title).toContain("0 active tools");
       expect(overlay.request.options.find((option) => option.value === "__mcp_add__")?.label)
-        .toBe("+ add MCP server");
+        .toBe("add MCP server");
       expect(overlay.request.options.find((option) => option.value === "__mcp_known__:notion"))
-        .toMatchObject({ label: "+ add Notion" });
+        .toMatchObject({ label: "add Notion" });
       expect(overlay.request.options.find((option) => option.value === "__mcp_off__"))
         .toMatchObject({ active: true });
       const docs = overlay.request.options.find((option) => option.value === "docs");
