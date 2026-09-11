@@ -70,6 +70,7 @@ export interface StreamWithProviderOptions {
     ((snapshot: OperationUsageSnapshot) => void) | undefined;
   readonly maxRetries?: number | undefined;
   readonly singleDispatch?: boolean | undefined;
+  readonly allowProviderFallback?: boolean | undefined;
   readonly retryRateLimits?: boolean | undefined;
   readonly onSuccessfulRequest?:
     ((snapshot: SuccessfulRequestSnapshot) => void) | undefined;
@@ -98,10 +99,11 @@ async function completeWithProviderOperation(
     !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
     !singleDispatch &&
+    options.allowProviderFallback !== false &&
     config.providerFallback &&
     (await requestedRealKeyCount(requested)) !== 1 &&
     (isDefaultModel || request.allowModelFallback === true);
-  const order = singleDispatch
+  const order = singleDispatch || options.allowProviderFallback === false
     ? [requested]
     : buildFallbackChain(
         requested,
@@ -262,10 +264,11 @@ async function streamWithProviderOperation(
     !request.model || request.model === providerImpl.defaultModel;
   const fallbackEnabled =
     !singleDispatch &&
+    options.allowProviderFallback !== false &&
     config.providerFallback &&
     (await requestedRealKeyCount(requested)) !== 1 &&
     (isDefaultModel || request.allowModelFallback === true);
-  const order = singleDispatch
+  const order = singleDispatch || options.allowProviderFallback === false
     ? [requested]
     : buildFallbackChain(
         requested,

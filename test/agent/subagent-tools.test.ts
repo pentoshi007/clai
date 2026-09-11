@@ -58,6 +58,52 @@ describe("parent subagent tool boundary", () => {
     expect(data(report.output).report).toBe(run.report);
   });
 
+  it("continues a child without follow-up arguments for backward compatibility", async () => {
+    const { manager, context, signal } = fixture();
+    const result = await runSubagentTool({ name: "subagent.restart", args: { id: run.id } }, context, signal);
+    expect(result.ok).toBe(true);
+    expect(manager.restart).toHaveBeenCalledExactlyOnceWith(run.id);
+  });
+
+  it.each([
+    { prompt: "Inspect the caller" },
+    { context: "The route has changed" },
+    { prompt: "Inspect the caller", context: "The route has changed" },
+  ])("forwards focused restart instructions without changing the original route: %j", async (followup) => {
+    const { manager, context, signal } = fixture();
+    const result = await runSubagentTool({ name: "subagent.restart", args: { id: run.id, ...followup, cwd: "/", model: "other" } }, context, signal);
+    expect(result.ok).toBe(true);
+    expect(manager.restart).toHaveBeenCalledExactlyOnceWith(run.id, { prompt: followup.prompt, context: followup.context });
+    expect(manager.start).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { prompt: "" }, { prompt: 42 }, { prompt: "x".repeat(12001) },
+    { context: " " }, { context: false }, { context: "x".repeat(24001) },
+  ])("rejects invalid restart instructions before launching ($#)", async (followup) => {
+    const { manager, context, signal } = fixture();
+    const result = await runSubagentTool({ name: "subagent.restart", args: { id: run.id, ...followup } }, context, signal);
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("non-empty string");
+    expect(manager.restart).not.toHaveBeenCalled();
+  });
+
+  it("advertises optional bounded follow-ups in both tool definition formats", () => {
+    for (const definitions of [getToolDefinitions(), getCompactToolDefinitions()]) {
+      const restart = definitions.find((definition) => definition.name === "subagent.restart")!;
+      expect(restart.parameters).toMatchObject({
+        required: ["id"],
+        additionalProperties: false,
+        properties: {
+          prompt: { type: "string", minLength: 1, maxLength: 12000 },
+          context: { type: "string", minLength: 1, maxLength: 24000 },
+        },
+      });
+    }
+    expect(orchestrationContext(true)).toContain("subagent.restart");
+    expect(orchestrationContext(true)).toContain("follow-up");
+  });
+
   it("exposes partial status and recovery with reports instead of promoting them to completed", async () => {
     const { manager, context, signal } = fixture();
     const partial: SubagentRun = { ...run, status: "partial", recovery: "exact", report: "Status: partial\nPrior evidence and coverage gaps" };

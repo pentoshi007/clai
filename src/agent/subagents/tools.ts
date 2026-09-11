@@ -11,7 +11,7 @@ export function isSubagentTool(name: string): boolean {
 
 export function orchestrationContext(enabled: boolean): string {
   return `ORCHESTRATION: ${enabled ? "ON" : "OFF"}. ${enabled
-    ? "Read-only subagents are available for independent research; at most three may run. Delegate only useful independent work. Continue non-overlapping parent work, then join at its dependency; wait if nothing useful remains rather than busywork or polling. Inspect partial reports and stopped/error tails before deciding whether an explicit restart is useful."
+    ? "Read-only subagents are available for independent research; at most three may run. Delegate only useful independent work. Continue non-overlapping parent work, then join at its dependency; wait if nothing useful remains rather than busywork or polling. Inspect reports and stopped/error tails before restarting. Reuse settled children for continuation or follow-up questions with subagent.restart; supply optional prompt/context for the new request."
     : "Subagent tools are disabled. Only the user can enable them with /orchestration on."}`;
 }
 
@@ -65,7 +65,9 @@ export async function runSubagentTool(
           manager.stop(id);
           value = summary(manager.get(id)!);
         } else if (call.name === "subagent.restart") {
-          value = summary(manager.restart(id));
+          const prompt = args.prompt === undefined ? undefined : text(args.prompt, "prompt", 12000);
+          const details = args.context === undefined ? undefined : text(args.context, "context", 24000);
+          value = summary(prompt === undefined && details === undefined ? manager.restart(id) : manager.restart(id, { prompt, context: details }));
         } else if (call.name === "subagent.wait") {
           value = summary(await manager.wait(id, integer(args.timeoutMs, 30000, 30000), signal));
         } else if (call.name === "subagent.read") {

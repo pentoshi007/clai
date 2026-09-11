@@ -9,7 +9,7 @@ import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import { activeIndex, filterPickerOptions } from "../../../ui-core/rendering/picker-filter.js";
 import { layoutPickerOptions, pickerItemAtRow, pickerScrollTop, pickerWindow } from "../../../ui-core/rendering/picker-layout.js";
-import { fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
+import { centerChromeRow, fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
 import type { PickerRequest } from "../../../ui-core/controllers/overlay-controller.js";
 
@@ -172,9 +172,10 @@ export function Picker(props: PickerProps): ReactNode {
     }}>
       {innerH >= 4 ? (
         <text
+          id="picker-title"
           selectable={false}
-          content={fitOneLine([request.title], innerW)}
-          style={{ fg: theme.white, bg: isHistory ? theme.chipIndigo : theme.magenta, height: 1, flexShrink: 0 }}
+          content={centerChromeRow(request.title, innerW)}
+          style={{ fg: theme.white, bg: isHistory ? theme.chipIndigo : theme.magenta, width: "100%", height: 1, flexShrink: 0 }}
         />
       ) : null}
       {innerH >= 3 ? (
@@ -235,7 +236,7 @@ export function Picker(props: PickerProps): ReactNode {
         <text
           selectable={false}
           content={fitOneLine([hints, "↑↓ move · pg↑↓ scroll · enter select · esc close", "↑↓ · enter · esc"], innerW)}
-          style={{ fg: theme.muted, bg: theme.rowB, height: 1, flexShrink: 0 }}
+          style={{ fg: theme.muted, bg: theme.rowB, width: "100%", height: 1, flexShrink: 0 }}
         />
       ) : null}
     </box>

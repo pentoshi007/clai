@@ -60,6 +60,14 @@ export function padChromeRow(left: string, right: string, width: number): string
   return row + " ".repeat(w - rowWidth);
 }
 
+export function centerChromeRow(text: string, width: number): string {
+  const budget = Math.max(1, width);
+  const fitted = fitOneLine([text], budget);
+  const space = Math.max(0, budget - columns(fitted));
+  const left = Math.floor(space / 2);
+  return `${" ".repeat(left)}${fitted}${" ".repeat(space - left)}`;
+}
+
 export function wrapPagerLine(
   line: string,
   width: number,

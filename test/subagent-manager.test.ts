@@ -182,6 +182,166 @@ describe("SubagentManager", () => {
     expect(work[2]!.input.checkpoint).toEqual(original);
   });
 
+  it.each(["completed", "partial", "error", "stopped"] as const)("passes focused follow-ups to %s children without replacing their evidence or native checkpoint", async (status) => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start({ ...assignment, context: "Original scope" });
+    await tick();
+    const checkpoint: SubagentCheckpoint = {
+      messages: [
+        { role: "assistant", content: "", toolCalls: [{ id: "first", name: "fs.list", args: {} }, { id: "second", name: "fs.read", args: { path: "source.ts" } }] },
+        { role: "tool", toolCallId: "first", content: "source.ts" },
+      ],
+      nativeTools: true,
+      pending: { native: true, next: 1, calls: [{ id: "first", name: "fs.list", args: {} }, { id: "second", name: "fs.read", args: { path: "source.ts" } }] },
+    };
+    work[0]!.input.emit({ kind: "tool", text: "source.ts:12: original evidence" });
+    work[0]!.input.saveCheckpoint!(checkpoint);
+    if (status === "stopped") manager.stop(run.id);
+    if (status === "error") work[0]!.reject(new Error("Temporary failure"));
+    else work[0]!.resolve(status === "partial" ? "Status: partial\n## Findings\nThe original implementation exports the selected handler.\n## Evidence\nsource.ts:12 exports the handler function.\n## Next steps\nInspect the caller before changing the contract.\n## Coverage gaps\nThe caller has not been inspected." : "Original findings");
+    expect((await manager.wait(run.id)).status).toBe(status);
+    const followup = { prompt: "Check the caller", context: "Focus on the changed route" };
+    expect(manager.restart(run.id, followup)).toMatchObject({ id: run.id, attempt: 2, recovery: "exact", prompt: assignment.prompt, context: "Original scope" });
+    followup.prompt = "Mutated by caller";
+    await tick();
+    expect(work[1]!.input.followup).toEqual({ prompt: "Check the caller", context: "Focus on the changed route" });
+    expect(Object.isFrozen(work[1]!.input.followup)).toBe(true);
+    expect(work[1]!.input.checkpoint).toEqual({ ...checkpoint, pendingFollowup: { prompt: "Check the caller", context: "Focus on the changed route" } });
+    expect(work[1]!.input.run.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: "source.ts:12: original evidence" }),
+      expect.objectContaining({ text: expect.stringContaining(`Attempt 1: ${status}`) }),
+      expect.objectContaining({ text: expect.stringContaining("Check the caller") }),
+    ]));
+  });
+
+  it("does not resend prior follow-up instructions on a plain continuation", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve("Original findings");
+    await manager.wait(run.id);
+    manager.restart(run.id, { context: "Inspect the caller" });
+    await tick();
+    expect(work[1]!.input.followup).toEqual({ context: "Inspect the caller" });
+    const checkpoint: SubagentCheckpoint = { messages: [{ role: "user", content: "Inspect the caller" }] };
+    work[1]!.input.saveCheckpoint!(checkpoint);
+    work[1]!.reject(new Error("Temporary failure"));
+    await manager.wait(run.id);
+    manager.restart(run.id);
+    await tick();
+    expect(work[2]!.input.followup).toBeUndefined();
+    expect(work[2]!.input.checkpoint).toEqual(checkpoint);
+    expect(work[2]!.input.run.attempt).toBe(3);
+  });
+
+  it("merges durable follow-up fields while delivering only the new delta", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve("Original findings");
+    await manager.wait(run.id);
+    manager.restart(run.id, { prompt: "Inspect the caller", context: "Original caller context" });
+    await tick();
+    work[1]!.resolve("Caller findings");
+    await manager.wait(run.id);
+    const updated = manager.restart(run.id, { context: "The caller moved to routes.ts" });
+    expect(updated.followup).toEqual({ prompt: "Inspect the caller", context: "The caller moved to routes.ts" });
+    expect(Object.isFrozen(updated.followup)).toBe(true);
+    await tick();
+    expect(work[2]!.input.followup).toEqual({ context: "The caller moved to routes.ts" });
+    expect(work[2]!.input.run.followup).toEqual(updated.followup);
+    work[2]!.resolve("Updated caller findings");
+    await manager.wait(run.id);
+    expect(manager.restart(run.id, { prompt: "Inspect the caller tests" }).followup).toEqual({
+      prompt: "Inspect the caller tests", context: "The caller moved to routes.ts",
+    });
+  });
+
+  it("retains queued follow-ups when stopped before the worker starts", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    const checkpoint: SubagentCheckpoint = { messages: [{ role: "assistant", content: "Prior findings" }], finished: true };
+    work[0]!.input.saveCheckpoint!(checkpoint);
+    work[0]!.resolve("Prior findings");
+    await manager.wait(run.id);
+    manager.restart(run.id, { prompt: "Inspect the caller" });
+    manager.stop(run.id);
+    await manager.wait(run.id);
+    expect(work).toHaveLength(1);
+    manager.restart(run.id);
+    await tick();
+    expect(work[1]!.input.followup).toBeUndefined();
+    expect(work[1]!.input.checkpoint).toEqual({ ...checkpoint, pendingFollowup: { prompt: "Inspect the caller" } });
+  });
+
+  it("rejects follow-ups until a stopped attempt actually settles", async () => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    expect(() => manager.restart(run.id, { prompt: "Inspect the caller" })).toThrow("previous attempt");
+    manager.stop(run.id);
+    expect(() => manager.restart(run.id, { prompt: "Inspect the caller" })).toThrow("previous attempt");
+    expect(manager.get(run.id)).toMatchObject({ attempt: 1, status: "stopping" });
+    expect(work).toHaveLength(1);
+    work[0]!.resolve("Late findings");
+    await manager.wait(run.id);
+    expect(manager.restart(run.id, { prompt: "Inspect the caller" })).toMatchObject({ attempt: 2, status: "running" });
+    await tick();
+    expect(work[1]!.input.followup).toEqual({ prompt: "Inspect the caller" });
+  });
+
+  it("retains redacted follow-up history across session restoration", async () => {
+    const saved = new Map<string, SubagentRun>();
+    const store: SubagentStore = { load: () => [...saved.values()], save: (run) => { saved.set(run.id, run); }, remove: vi.fn() };
+    const { manager, work } = controlled(store);
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve("Original findings");
+    await manager.wait(run.id);
+    manager.restart(run.id, { context: "Inspect the caller; api_key=private-token" });
+    await tick();
+    expect(work[1]!.input.followup).toEqual({ context: "Inspect the caller; api_key=[redacted]" });
+    work[1]!.reject(new Error("Interrupted follow-up"));
+    await manager.wait(run.id);
+    manager.dispose();
+    const restored = controlled(store);
+    restored.manager.setEnabled(true);
+    expect(restored.manager.restart(run.id)).toMatchObject({ id: run.id, attempt: 3, recovery: "history" });
+    await tick();
+    const input = restored.work[0]!.input;
+    expect(input.checkpoint).toBeUndefined();
+    expect(input.followup).toBeUndefined();
+    expect(input.run.followup).toEqual({ context: "Inspect the caller; api_key=[redacted]" });
+    expect(Object.isFrozen(input.run.followup)).toBe(true);
+    expect(saved.get(run.id)?.followup).toEqual(input.run.followup);
+    expect(JSON.stringify(input.run.events)).toContain("Inspect the caller");
+    expect(JSON.stringify([...saved.values()])).not.toContain("private-token");
+    expect(input.run.events.some((event) => event.text.includes("Original findings"))).toBe(true);
+  });
+
+  it.each([
+    { prompt: "" }, { prompt: " \n " }, { prompt: "\x1b[31m" }, { prompt: "x".repeat(12001) },
+    { context: "" }, { context: "\x1b[31m" }, { context: "x".repeat(24001) },
+  ])("rejects invalid follow-ups without changing a settled child ($#)", async (followup) => {
+    const { manager, work } = controlled();
+    manager.setEnabled(true);
+    const run = manager.start(assignment);
+    await tick();
+    work[0]!.resolve("Original findings");
+    const settled = await manager.wait(run.id);
+    expect(() => manager.restart(run.id, followup)).toThrow(/non-empty string/);
+    expect(manager.get(run.id)).toBe(settled);
+    await tick();
+    expect(work).toHaveLength(1);
+  });
+
   it("bounds private checkpoints without replacing the last usable checkpoint", async () => {
     const { manager, work } = controlled();
     manager.setEnabled(true);

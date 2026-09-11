@@ -38,5 +38,12 @@ export const TOOL_DEFINITIONS_SUBAGENTS = [
     properties: { id, timeoutMs: { type: "integer", minimum: 1, maximum: 30000 } },
   }, { readOnly: true }),
   def("subagent.stop", "Request cancellation of one child; its slot stays occupied until execution actually stops. Requires /orchestration on; call directly.", identified, { readOnly: true }),
-  def("subagent.restart", "Explicitly resume a settled child after inspecting its report/error and recovery mode. Exact recovery retains completed messages and the pending tool position in memory; history recovery uses bounded redacted evidence after session restoration, not an exact checkpoint. A completed or partial child resumes its assigned investigation only after this explicit restart. Reuse relevant evidence efficiently, but do not assume runtime call deduplication. Do not repeatedly restart unrecoverable failures. Requires /orchestration on and an available slot; call directly.", identified, { readOnly: true }),
+  def("subagent.restart", "Explicitly resume an existing completed, partial, stopped, or errored child after inspecting its report/error and recovery mode. Omit prompt/context to continue its investigation, or supply focused follow-up instructions and relevant new context without discarding prior evidence. Exact recovery retains completed messages and the pending tool position in memory; history recovery uses bounded redacted evidence after session restoration, not an exact checkpoint. Reuse relevant evidence efficiently, but do not assume runtime call deduplication. Do not repeatedly restart unrecoverable failures. Requires /orchestration on and an available slot; call directly.", {
+    ...identified,
+    properties: {
+      id,
+      prompt: { type: "string", minLength: 1, maxLength: 12000, description: "Optional focused continuation or follow-up request for this existing child." },
+      context: { type: "string", minLength: 1, maxLength: 24000, description: "Optional new task-relevant facts and constraints; prior evidence is retained automatically." },
+    },
+  }, { readOnly: true }),
 ];
