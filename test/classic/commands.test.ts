@@ -488,7 +488,7 @@ describe("classic command parity (W12)", () => {
     if (overlay.kind === "picker") {
       expect(overlay.request.title).toContain(".clai/mcp.json");
       expect(overlay.request.options.map((option) => option.label)).toEqual(
-        expect.arrayContaining(["+ add MCP server", "MCP tools off"]),
+        expect.arrayContaining(["add MCP server", "MCP tools off"]),
       );
     }
   });
