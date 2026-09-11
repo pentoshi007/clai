@@ -65,7 +65,7 @@ export function reasoningRejectionAdvice(
     );
 
   const clause =
-    /(?:please\s+use|must\s+be\s+one\s+of|must\s+be|one\s+of|supported\s+values?(?:\s+are)?|valid\s+values?(?:\s+are)?|allowed\s+values?(?:\s+are)?|use)\s*:?\s*([^.;\n}"]{0,120})/.exec(
+    /(?:please\s+use|must\s+be\s+one\s+of|must\s+be|one\s+of|supported\s+values?(?:\s+are)?|valid\s+values?(?:\s+are)?|allowed\s+values?(?:\s+are)?|use)\s*:?\s*([^.;\n}]{0,120})/.exec(
       hay,
     );
   const acceptedEfforts = clause

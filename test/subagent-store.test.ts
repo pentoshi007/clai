@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FileSubagentStore, sanitizeSubagentText } from "../src/store/subagents.js";
+import { FileSubagentStore, restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../src/store/subagents.js";
 import { SubagentManager } from "../src/agent/subagents/manager.js";
 import type { SubagentRun } from "../src/agent/subagents/types.js";
 
@@ -107,6 +107,51 @@ describe("FileSubagentStore", () => {
     const restored = store.load("parent").find((child) => child.id === "large")!;
     expect(restored).toBeDefined();
     expect(restored.events.reduce((sum, event) => sum + event.text.length, restored.report!.length)).toBeLessThan(128000);
+  });
+
+  it("persists immutable sanitized follow-ups without unexpected fields", () => {
+    const { store, directory } = fixture();
+    const followup = { prompt: "Inspect the caller\x1b[31m", context: "api_key=private-token", extra: "hidden secret" };
+    store.save(run({ followup }));
+    followup.prompt = "Changed after saving";
+    const persisted = readFileSync(join(directory(), `${hash("child")}.json`), "utf8");
+    expect(persisted).not.toMatch(/private-token|hidden secret|Changed after saving/);
+    const restored = store.load("parent")[0]!;
+    expect(restored.followup).toEqual({ prompt: "Inspect the caller", context: "api_key=[redacted]" });
+    expect(Object.isFrozen(restored.followup)).toBe(true);
+    expect(sanitizeSubagentRun(restored).followup).toEqual(restored.followup);
+  });
+
+  it.each([
+    null, [], "prompt", 1, {}, { prompt: 1 }, { context: false },
+    { prompt: "" }, { context: " " }, { prompt: "\x1b[31m" },
+    { prompt: "x".repeat(SUBAGENT_LIMITS.prompt + 1) },
+    { context: "x".repeat(SUBAGENT_LIMITS.context + 1) },
+  ])("rejects invalid persisted follow-ups ($#)", (followup) => {
+    const { store } = fixture();
+    const value = { ...run(), followup };
+    expect(restoreSubagentRun(value, "parent")).toBeUndefined();
+    expect(() => store.save(value as SubagentRun)).toThrow("Invalid subagent record");
+  });
+
+  it.each([{ prompt: "Inspect the caller" }, { context: "The caller changed" }])("restores optional follow-up fields (%j)", (followup) => {
+    const { store } = fixture();
+    store.save(run({ followup, status: "running" }));
+    expect(store.load("parent")[0]).toMatchObject({ status: "stopped", followup });
+  });
+
+  it("budgets durable follow-up instructions before retaining event text", () => {
+    const source = run({
+      followup: { prompt: "p".repeat(SUBAGENT_LIMITS.prompt), context: "c".repeat(SUBAGENT_LIMITS.context) },
+      events: [{ kind: "tool", sequence: 1, timestamp: 1, text: "e".repeat(SUBAGENT_LIMITS.chars) }],
+    });
+    const withFollowup = sanitizeSubagentRun(source);
+    const withoutFollowup = sanitizeSubagentRun({ ...source, followup: undefined });
+    expect(withFollowup.followup).toEqual(source.followup);
+    expect(withoutFollowup.events[0]!.text.length - withFollowup.events[0]!.text.length).toBe(SUBAGENT_LIMITS.prompt + SUBAGENT_LIMITS.context);
+    const { store } = fixture();
+    store.save(source);
+    expect(store.load("parent")[0]!.followup).toEqual(source.followup);
   });
 
   it("drops unexpected fields rather than persisting extra secret data", () => {
