@@ -151,7 +151,15 @@ export function effortCandidatesFor(
   }
   const declared = resolveBuiltInProfile({ provider: providerId, model })
     .reasoning.acceptedEfforts;
-  if (declared.length === 0) return fallbackEffortsFor(requested);
+  if (requested === "none") {
+    const enabled = EFFORT_SCALE.filter(
+      (effort) => effort !== "none" && declared.includes(effort),
+    );
+    return enabled.length ? enabled : ["minimal", "low"];
+  }
+  if (declared.length === 0) {
+    return fallbackEffortsFor(requested);
+  }
   const nearest = nearestAcceptedEffort(requested, declared);
   if (nearest !== undefined && nearest !== requested) {
     const scaled = EFFORT_SCALE.find((effort) => effort === nearest);

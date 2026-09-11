@@ -126,4 +126,28 @@ describe("single-key provider fallback gate", () => {
     expect(result.text).toBe("hetzner-ok");
     expect(hetznerComplete).toHaveBeenCalled();
   });
+
+  it.each(["complete", "stream"])("pins %s requests to the assigned provider while allowing option recovery", async (mode) => {
+    nvidiaKeys = [
+      { id: "n1", value: NVIDIA_KEY, createdAt: 0 },
+      { id: "n2", value: NVIDIA_KEY2, createdAt: 0 },
+    ];
+    const { completeWithProvider, streamWithProvider } = await import("../src/llm/router.js");
+    const options = { allowProviderFallback: false, maxRetries: 0, adoptFallback: false };
+    const invoke = (input: CompletionRequest) => mode === "complete"
+      ? completeWithProvider(input, options)
+      : streamWithProvider(input, () => undefined, options);
+    nvidiaComplete.mockRejectedValue(new ProviderError("server error", 500));
+    await expect(invoke(request())).rejects.toThrow();
+    expect(hetznerComplete).not.toHaveBeenCalled();
+    nvidiaComplete.mockReset();
+    nvidiaComplete.mockImplementation(async (input: CompletionRequest) => {
+      if (input.toolChoice === "required") throw new ProviderError("Request failed", 400, 'only "auto" is supported for tool_choice');
+      return { text: "recovered", provider: input.provider, model: input.model, finishReason: "stop" };
+    });
+    await expect(invoke({ ...request(), toolChoice: "required" })).resolves.toMatchObject({ text: "recovered", provider: "nvidia" });
+    expect(nvidiaComplete).toHaveBeenCalledTimes(2);
+    expect(nvidiaComplete.mock.calls[1]![0].toolChoice).toBe("auto");
+    expect(hetznerComplete).not.toHaveBeenCalled();
+  });
 });

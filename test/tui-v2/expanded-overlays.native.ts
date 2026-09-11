@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { act, createElement } from "react";
 import { writeFile } from "node:fs/promises";
 import { testRender } from "@opentui/react/test-utils";
-import { ScrollBoxRenderable, type Renderable } from "@opentui/core";
+import { RGBA, ScrollBoxRenderable, type Renderable } from "@opentui/core";
 import { createCompositionRoot } from "../../src/ui-core/bootstrap/composition-root.js";
 import { detectCapabilities } from "../../src/ui-core/bootstrap/capabilities.js";
 import { attachCommandHandlers } from "../../src/ui-core/commands/command-handlers.js";
@@ -10,7 +10,8 @@ import { ServicesProvider } from "../../src/ui-core/react/providers.js";
 import { App } from "../../src/tui-v2/app/App.js";
 import { overlaySize } from "../../src/ui-core/layout/overlay-size.js";
 import { layoutPickerOptions } from "../../src/ui-core/rendering/picker-layout.js";
-import { wrapPagerLine } from "../../src/ui-core/rendering/pager-chrome.js";
+import { centerChromeRow, wrapPagerLine } from "../../src/ui-core/rendering/pager-chrome.js";
+import { themeFor } from "../../src/ui-core/rendering/theme.js";
 
 const services = createCompositionRoot({
   noHistory: true,
@@ -30,6 +31,17 @@ const settle = async (action: () => unknown = () => undefined, waitMs = 80): Pro
   return setup.captureCharFrame();
 };
 const evidence: string[] = [];
+const assertPickerTitle = (title: string, width: number, history = false): void => {
+  const heading = setup.renderer.root.findDescendantById("picker-title");
+  assert.ok(heading);
+  assert.equal(heading.width, width);
+  const row = setup.captureSpans().lines[heading.y]!;
+  const text = row.spans.map((span) => span.text).join("");
+  assert.equal(text.slice(heading.x, heading.x + width), centerChromeRow(title, width));
+  const background = RGBA.fromHex(themeFor(services.capabilities.themeHint)[history ? "chipIndigo" : "magenta"]);
+  const cells = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg));
+  assert.ok(cells.slice(heading.x, heading.x + width).every((color) => color.equals(background)));
+};
 const pickerScrollBox = (): ScrollBoxRenderable => {
   const box = setup.renderer.root.findDescendantById("picker-options");
   assert.ok(box instanceof ScrollBoxRenderable);
@@ -55,6 +67,9 @@ try {
     const size = overlaySize(width!, height!);
     if (width! >= 24) {
       assert.match(picker, /Status/);
+      const overlay = services.overlay.getState();
+      assert.equal(overlay.kind, "picker");
+      if (overlay.kind === "picker") assertPickerTitle(overlay.request.title, size.width - 2);
       const border = picker.split("\n").findIndex((row) => row.includes("╭"));
       assert.equal(border, size.marginY, picker);
       assert.equal(picker.split("\n")[border]!.indexOf("╭"), size.marginX, picker);
@@ -78,6 +93,7 @@ try {
       twoLine: true,
       options,
     }, (value) => { selected = value; services.overlay.close(); }));
+    if (height! >= 10) assertPickerTitle("Complete command", size.width - 2);
     await assertNoticeOutsidePane(height!, size.marginY);
     const lines = layoutPickerOptions(options, size.width - 2, true)[0]!.lines;
     const frames = [setup.captureCharFrame()];
@@ -111,6 +127,16 @@ try {
     assert.equal(services.overlay.getState().kind, "none");
   }
   await settle(() => setup.resize(120, 40));
+  for (const title of ["History", "Models · openai · live", "Providers", "Reasoning effort"]) {
+    await settle(() => services.overlay.openPicker({
+      title,
+      historyStyle: title === "History",
+      options: [{ value: "one", label: "First option" }],
+    }, () => services.overlay.close()));
+    assertPickerTitle(title, overlaySize(120, 40).width - 2, title === "History");
+    evidence.push(setup.captureCharFrame());
+    await settle(() => services.overlay.close());
+  }
   const largeOptions = Array.from({ length: 10000 }, (_, index) => ({
     value: String(index), label: `Option ${index}`, description: `Description ${index}\nFull details ${index}`,
   }));

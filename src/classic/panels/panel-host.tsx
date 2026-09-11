@@ -53,6 +53,7 @@ export function PanelHost(props: PanelHostProps): ReactNode {
           searchLines={view.searchLines}
           state={snapshot.pager}
           live={snapshot.pagerLive}
+          subagent={overlay.source?.path.startsWith("memory://subagent/") ?? false}
         />
       );
     }
