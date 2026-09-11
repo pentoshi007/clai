@@ -1,9 +1,13 @@
 
+export type PickerOptionTone = "accent" | "success" | "warn" | "error" | "muted";
+
 export interface PickerOption {
   readonly value: string;
   readonly label: string;
   readonly description?: string | undefined;
   readonly active?: boolean | undefined;
+  readonly icon?: string | undefined;
+  readonly tone?: PickerOptionTone | undefined;
 }
 
 export interface PickerFilterOptions {
