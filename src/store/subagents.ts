@@ -26,6 +26,7 @@ export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
   const base = {
     id: run.id, parentSessionId: run.parentSessionId, attempt: run.attempt,
     status: run.status, createdAt: run.createdAt, updatedAt: run.updatedAt,
+    recovery: run.recovery,
     title: clean(run.title, SUBAGENT_LIMITS.title),
     prompt: clean(run.prompt, SUBAGENT_LIMITS.prompt),
     context: run.context === undefined ? undefined : clean(run.context, SUBAGENT_LIMITS.context),
@@ -54,7 +55,8 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
     && run.parentSessionId === parentSessionId && typeof run.id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(run.id) && sanitizeSubagentText(run.id) === run.id
     && Number.isSafeInteger(run.attempt) && run.attempt > 0
     && Number.isFinite(run.createdAt) && Number.isFinite(run.updatedAt)
-    && ["running", "stopping", "completed", "stopped", "error"].includes(run.status)
+    && ["running", "stopping", "completed", "partial", "stopped", "error"].includes(run.status)
+    && (run.recovery === undefined || ["exact", "history", "fresh"].includes(run.recovery))
     && bounded(run.title, SUBAGENT_LIMITS.title) && !!run.title.trim() && bounded(run.prompt, SUBAGENT_LIMITS.prompt) && !!run.prompt.trim()
     && (run.context === undefined || bounded(run.context, SUBAGENT_LIMITS.context))
     && bounded(run.cwd, 4096) && !!run.cwd.trim() && bounded(run.provider, 128) && !!run.provider.trim() && bounded(run.model, 256) && !!run.model.trim()
@@ -74,6 +76,7 @@ export function restoreSubagentRun(value: unknown, parentSessionId: string): Sub
     status: value.status, createdAt: value.createdAt, updatedAt: value.updatedAt,
     events: value.events.map(({ sequence, kind, text, timestamp }) => ({ sequence, kind, text, timestamp })),
     report: value.report, error: value.error,
+    recovery: value.events.length || value.report ? "history" : "fresh",
   };
   if (run.status !== "running" && run.status !== "stopping") return sanitizeSubagentRun(run);
   return sanitizeSubagentRun({

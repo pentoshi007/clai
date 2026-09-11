@@ -11,14 +11,14 @@ export function isSubagentTool(name: string): boolean {
 
 export function orchestrationContext(enabled: boolean): string {
   return `ORCHESTRATION: ${enabled ? "ON" : "OFF"}. ${enabled
-    ? "Read-only subagents are available for independent research; at most three may run."
+    ? "Read-only subagents are available for independent research; at most three may run. Delegate only useful independent work. Continue non-overlapping parent work, then join at its dependency; wait if nothing useful remains rather than busywork or polling. Inspect partial reports and stopped/error tails before deciding whether an explicit restart is useful."
     : "Subagent tools are disabled. Only the user can enable them with /orchestration on."}`;
 }
 
 function summary(run: SubagentRun) {
   return {
     id: run.id, title: run.title, status: run.status, attempt: run.attempt,
-    updatedAt: run.updatedAt, reportAvailable: Boolean(run.report), error: run.error,
+    updatedAt: run.updatedAt, reportAvailable: Boolean(run.report), error: run.error, recovery: run.recovery,
   };
 }
 
@@ -72,7 +72,7 @@ export async function runSubagentTool(
           if (args.view !== undefined && args.view !== "tail" && args.view !== "report") throw new Error("view must be tail or report.");
           const limit = integer(args.limit, 3, 20);
           if (args.view === "report") {
-            value = { ...summary(run), report: run.report ?? "No completed report available. Inspect status and recent events." };
+            value = { ...summary(run), report: run.report ?? "No report available. Inspect status and recent events." };
           } else {
             let remaining = 12000;
             const events = run.events.slice(-limit).reverse().map((event) => {
