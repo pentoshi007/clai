@@ -31,14 +31,14 @@ const settle = async (action: () => unknown = () => undefined, waitMs = 80): Pro
   return setup.captureCharFrame();
 };
 const evidence: string[] = [];
-const assertPickerTitle = (title: string, width: number, history = false): void => {
+const assertPickerTitle = (title: string, width: number): void => {
   const heading = setup.renderer.root.findDescendantById("picker-title");
   assert.ok(heading);
   assert.equal(heading.width, width);
   const row = setup.captureSpans().lines[heading.y]!;
   const text = row.spans.map((span) => span.text).join("");
   assert.equal(text.slice(heading.x, heading.x + width), centerChromeRow(title, width));
-  const background = RGBA.fromHex(themeFor(services.capabilities.themeHint)[history ? "chipIndigo" : "magenta"]);
+  const background = RGBA.fromHex(themeFor(services.capabilities.themeHint).chipIndigo);
   const cells = row.spans.flatMap((span) => Array.from({ length: span.width }, () => span.bg));
   assert.ok(cells.slice(heading.x, heading.x + width).every((color) => color.equals(background)));
 };
@@ -133,7 +133,7 @@ try {
       historyStyle: title === "History",
       options: [{ value: "one", label: "First option" }],
     }, () => services.overlay.close()));
-    assertPickerTitle(title, overlaySize(120, 40).width - 2, title === "History");
+    assertPickerTitle(title, overlaySize(120, 40).width - 2);
     evidence.push(setup.captureCharFrame());
     await settle(() => services.overlay.close());
   }

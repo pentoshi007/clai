@@ -189,7 +189,7 @@ describe("shared orchestration commands", () => {
     const picker = f.overlay.getState();
     expect(picker.kind).toBe("picker");
     if (picker.kind === "picker") {
-      expect(picker.request.options.find((option) => option.value === run.id)?.label).toContain("stopped");
+      expect(picker.request.options.find((option) => option.value === run.id)?.description).toContain("stopped");
     }
     f.overlay.selectPicker(run.id);
     f.replaceSession();
