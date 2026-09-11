@@ -25,6 +25,8 @@ export class SubagentManager {
   private readonly listeners = new Set<() => void>();
   private readonly snapshots = new WeakMap<SubagentRun, SubagentRun>();
   private readonly waiters = new Set<Waiter>();
+  private readonly results = new Map<string, SubagentRun>();
+  private readonly settledAttempts = new Map<string, SubagentRun>();
   private readonly workerContext = new AsyncLocalStorage<boolean>();
   private notificationTimer?: ReturnType<typeof setTimeout> | undefined;
   private readonly worker: SubagentWorker;
@@ -36,7 +38,7 @@ export class SubagentManager {
     this.store = options.store;
     if (this.store) {
       try {
-        for (const value of this.store.load(parentSessionId).slice(0, SUBAGENT_LIMITS.records)) {
+        for (const value of this.store.load(parentSessionId)) {
           const run = restoreSubagentRun(value, parentSessionId);
           if (!run) continue;
           try {
@@ -73,7 +75,6 @@ export class SubagentManager {
   private assertAvailable(): void {
     if (!this.enabled) throw new Error("Subagent orchestration is disabled");
     if (this.workerContext.getStore()) throw new Error("Recursive subagent launches are forbidden");
-    if (inFlight.size >= 3) throw new Error("At most three subagents may run concurrently across sessions");
   }
 
   private assertUnique(assignment: SubagentAssignment): void {
@@ -84,9 +85,6 @@ export class SubagentManager {
     this.assertAvailable();
     const assignment = this.assignment(value);
     this.assertUnique(assignment);
-    if (this.children.size >= SUBAGENT_LIMITS.records) {
-      throw new Error("Subagent retention limit reached (24 records); restart an existing child or explicitly purge history");
-    }
     const now = Date.now();
     const child: Child = { assignment, run: { ...assignment, id: randomUUID(), parentSessionId: this.parentSessionId, attempt: 1, status: "running", recovery: "fresh", createdAt: now, updatedAt: now, events: [] } };
     this.children.set(child.run.id, child);
@@ -107,9 +105,18 @@ export class SubagentManager {
     return Object.freeze([...this.children.values()].map((child) => this.snapshot(child.run)));
   }
 
-  get(id: string): SubagentRun | undefined {
+  get(id: string, attempt?: number): SubagentRun | undefined {
     const child = this.children.get(id);
+    if (attempt !== undefined && child?.run.attempt !== attempt) return this.settledAttempts.get(`${id}:${attempt}`);
     return child ? this.snapshot(child.run) : undefined;
+  }
+
+  pendingResults(): readonly SubagentRun[] {
+    return Object.freeze([...this.results.values()]);
+  }
+
+  acknowledgeResult(id: string, attempt: number): void {
+    this.results.delete(`${id}:${attempt}`);
   }
 
   private child(id: string): Child {
@@ -133,6 +140,7 @@ export class SubagentManager {
     const followup = this.followup(value);
     this.assertUnique(child.assignment);
     const previous = child.run;
+    this.settledAttempts.set(`${previous.id}:${previous.attempt}`, this.snapshot(previous));
     const summary = `Attempt ${previous.attempt}: ${previous.status}\n${previous.report ?? previous.error ?? "No report"}`;
     const events = [...previous.events, { kind: "notice" as const, text: summary, timestamp: Date.now(), sequence: (previous.events.at(-1)?.sequence ?? 0) + 1 }];
     if (followup) events.push({ kind: "notice", text: `Parent follow-up for attempt ${previous.attempt + 1}:\n${JSON.stringify(followup)}`, timestamp: Date.now(), sequence: events.at(-1)!.sequence + 1 });
@@ -195,7 +203,6 @@ export class SubagentManager {
         checkpoint: child.checkpoint ? structuredClone(child.checkpoint) : undefined,
         saveCheckpoint: (checkpoint) => {
           if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
-          if (Buffer.byteLength(JSON.stringify(checkpoint), "utf8") > 1_048_576) throw new Error("Subagent checkpoint budget exceeded");
           child.checkpoint = structuredClone(checkpoint);
           if (child.run.recovery !== "exact") {
             child.run = { ...child.run, recovery: "exact" };
@@ -217,22 +224,49 @@ export class SubagentManager {
     const stopped = controller.signal.aborted;
     const failed = !stopped && (error !== undefined || typeof report !== "string" || !report.trim());
     const status = typeof report === "string" ? subagentReportStatus(report) : undefined;
+    const oversized = typeof report === "string" && Buffer.byteLength(report) > SUBAGENT_LIMITS.report;
     const invalidReport = !failed && typeof report === "string" && /^Status:/i.test(report.trimStart()) && !status;
-    child.run = this.snapshot({
-      ...child.run, updatedAt: Date.now(), status: stopped ? "stopped" : failed || invalidReport ? "error" : status ?? "completed",
-      report: stopped || failed || invalidReport ? undefined : report,
-      error: stopped ? "Stopped by parent" : invalidReport ? "Worker returned an invalid report" : failed ? sanitizeSubagentText(error instanceof Error ? error.message : error === undefined ? "Worker returned no report" : String(error)).slice(0, 4096) : undefined,
-    });
-    if (!this.disposed) this.changed(child, true);
+    try {
+      child.run = this.snapshot({
+        ...child.run, updatedAt: Date.now(), status: stopped ? "stopped" : failed || invalidReport || oversized ? "error" : status ?? "completed",
+        report: stopped || failed || invalidReport || oversized ? undefined : report,
+        error: stopped ? "Stopped by parent" : oversized ? "Worker report exceeds the storage safety limit" : invalidReport ? "Worker returned an invalid report" : failed ? sanitizeSubagentText(error instanceof Error ? error.message : error === undefined ? "Worker returned no report" : String(error)).slice(0, 4096) : undefined,
+      });
+    } catch (failure) {
+      child.run = this.snapshot({
+        ...child.run, updatedAt: Date.now(), status: "error", report: undefined,
+        error: failure instanceof Error ? failure.message : "Worker report could not be retained",
+      });
+    }
+    if (!this.disposed) {
+      this.settledAttempts.set(`${child.run.id}:${child.run.attempt}`, this.snapshot(child.run));
+      this.results.set(`${child.run.id}:${child.run.attempt}`, this.snapshot(child.run));
+      this.changed(child, true);
+    }
   }
 
-  wait(id: string, timeoutMs = 30_000, signal?: AbortSignal): Promise<SubagentRun> {
-    if (this.disposed) return Promise.reject(new Error("Subagent manager is disposed"));
-    if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 30_000) return Promise.reject(new Error("Wait timeout must be between 0 and 30000 milliseconds"));
-    if (signal?.aborted) return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-    const run = this.get(id);
-    if (!run) return Promise.reject(new Error("Unknown child ID in this session"));
-    if (terminal(run.status) || timeoutMs === 0) return Promise.resolve(run);
+  async wait(id: string, timeoutMs?: number, signal?: AbortSignal): Promise<SubagentRun> {
+    return (await this.waitFor([id], timeoutMs, signal))!;
+  }
+
+  async waitAny(ids?: readonly string[], timeoutMs?: number, signal?: AbortSignal): Promise<SubagentRun | undefined> {
+    this.assertWait(timeoutMs, signal);
+    if (!ids && this.results.size) return this.results.values().next().value;
+    return this.waitFor(ids ?? [...this.children.values()].filter((child) => !terminal(child.run.status)).map((child) => child.run.id), timeoutMs, signal);
+  }
+
+  private assertWait(timeoutMs?: number, signal?: AbortSignal): void {
+    if (this.disposed) throw new Error("Subagent manager is disposed");
+    if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 2_147_483_647)) throw new Error("Wait timeout must be an integer between 0 and 2147483647 milliseconds");
+    signal?.throwIfAborted();
+  }
+
+  private async waitFor(ids: readonly string[], timeoutMs?: number, signal?: AbortSignal): Promise<SubagentRun | undefined> {
+    this.assertWait(timeoutMs, signal);
+    const runs = ids.map((id) => this.get(id));
+    if (runs.some((run) => !run)) throw new Error("Unknown child ID in this session");
+    const ready = runs.find((run) => run && terminal(run.status));
+    if (ready || timeoutMs === 0 || !runs.length) return ready ?? runs[0];
     return new Promise((resolve, reject) => {
       const cleanup = (): void => {
         clearTimeout(timer);
@@ -241,17 +275,16 @@ export class SubagentManager {
       };
       const fail = (error: Error): void => { cleanup(); reject(error); };
       const finish = (): void => {
-        const current = this.get(id);
+        const current = ids.map((id) => this.get(id));
         cleanup();
-        if (current) resolve(current);
-        else reject(new Error("Subagent record was removed"));
+        if (current.some((run) => !run)) reject(new Error("Subagent record was removed"));
+        else resolve(current.find((run) => run && terminal(run.status)) ?? current[0]);
       };
       const abort = (): void => { cleanup(); reject(signal?.reason ?? new DOMException("Aborted", "AbortError")); };
       const waiter: Waiter = { reject: fail, check: () => {
-        const current = this.get(id);
-        if (!current || terminal(current.status)) finish();
+        if (ids.some((id) => { const run = this.get(id); return !run || terminal(run.status); })) finish();
       } };
-      const timer = setTimeout(finish, timeoutMs);
+      const timer = timeoutMs === undefined ? undefined : setTimeout(finish, timeoutMs);
       this.waiters.add(waiter);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -316,6 +349,8 @@ export class SubagentManager {
     for (const child of this.children.values()) child.checkpoint = undefined;
     clearTimeout(this.notificationTimer);
     this.listeners.clear();
+    this.results.clear();
+    this.settledAttempts.clear();
     for (const waiter of [...this.waiters]) waiter.reject(new Error("Subagent manager is disposed"));
   }
 
@@ -326,6 +361,8 @@ export class SubagentManager {
       clearTimeout(child.persistenceTimer);
     }
     this.children.clear();
+    this.results.clear();
+    this.settledAttempts.clear();
     this.checkWaiters();
     this.store?.remove(this.parentSessionId);
     this.notify(true);

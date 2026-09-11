@@ -16,7 +16,7 @@ vi.mock("../../src/llm/context-windows.js", async (importOriginal) => ({
 import { streamWithProvider } from "../../src/llm/router.js";
 import { runToolCall } from "../../src/tools/registry.js";
 import { resolveToolDialect } from "../../src/llm/capability/tool-dialect.js";
-import { modelContextWindow } from "../../src/llm/context-windows.js";
+import { modelContextWindow, modelMaxOutputTokens } from "../../src/llm/context-windows.js";
 import { currentSessionAffinity, withSessionAffinity } from "../../src/llm/session-affinity.js";
 import { createReasoningArtifact } from "../../src/llm/reasoning-artifacts.js";
 import { runReadOnlySubagent } from "../../src/agent/subagents/worker.js";
@@ -299,7 +299,7 @@ describe("isolated read-only subagent worker", () => {
     expect(resumed.tools).toBe(requests[0]!.tools);
     expect(requests.every((request) => request.toolChoice === "auto")).toBe(true);
     for (const [request] of vi.mocked(streamWithProvider).mock.calls) {
-      expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(65_536);
+      expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(128_000);
     }
   });
 
@@ -459,7 +459,6 @@ describe("isolated read-only subagent worker", () => {
     "I will investigate next",
     REPORT.replace(/src\/example.ts:1/g, "the source file"),
     REPORT.slice(0, REPORT.indexOf("## Coverage gaps")) + "## Coverage gaps!",
-    REPORT + "x".repeat(24_000),
   ])("fails closed when context runs out without a valid report", async (text) => {
     vi.mocked(modelContextWindow).mockReturnValue(8192);
     vi.mocked(streamWithProvider).mockResolvedValue(completion(text));
@@ -585,7 +584,7 @@ describe("isolated read-only subagent worker", () => {
     });
     await expect(runReadOnlySubagent(input)).rejects.toThrow("Temporary provider outage");
     const previous = structuredClone(checkpoint!);
-    expect(previous.reportReason).toBe("research context budget exhausted");
+    expect(previous.reportReason).toBe("model context window requires compaction");
     vi.mocked(streamWithProvider).mockResolvedValue(completion());
     const report = await runReadOnlySubagent({ ...input, checkpoint, run: { ...input.run, attempt: 2 } });
     expect(report).toBe(REPORT);
@@ -694,7 +693,7 @@ describe("isolated read-only subagent worker", () => {
     expect(runToolCall).toHaveBeenCalledOnce();
   });
 
-  it("uses bounded untrusted history when an exact checkpoint is unavailable", async () => {
+  it("retains available untrusted history within the provider context when an exact checkpoint is unavailable", async () => {
     vi.mocked(streamWithProvider).mockResolvedValueOnce(completion()).mockResolvedValueOnce(completion());
     await runReadOnlySubagent(input);
     const initial = vi.mocked(streamWithProvider).mock.calls[0]![0];
@@ -708,8 +707,9 @@ describe("isolated read-only subagent worker", () => {
     expect(history).toContain("untrusted prior-attempt history");
     expect(history).toContain("not an exact execution checkpoint");
     expect(history).toContain("prior evidence 11");
-    expect(history).not.toContain("prior evidence 0 ");
-    expect(history.length).toBeLessThan(25_000);
+    expect(history).toContain("prior evidence 0 ");
+    expect(history.length).toBeGreaterThan(24_000);
+    expect(estimateMessagesTokens(resumed.messages) + estimateToolSchemaTokens(resumed.tools) + resumed.maxTokens!).toBeLessThan(128_000);
     expect(resumed.tools).toEqual(initial.tools);
   });
 
@@ -726,6 +726,187 @@ describe("isolated read-only subagent worker", () => {
     lateDelta("late provider progress");
     lateStatus("late provider status");
     expect(input.emit).not.toHaveBeenCalled();
+  });
+
+  it("uses the provider context window beyond the former research cap", async () => {
+    vi.mocked(modelContextWindow).mockReturnValue(1_048_576);
+    vi.mocked(modelMaxOutputTokens).mockReturnValue(32_768);
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent({
+      ...input,
+      checkpoint: { nativeTools: true, messages: [
+        { role: "system", content: "Research the assigned export contract." },
+        { role: "user", content: input.run.prompt },
+        { role: "user", content: `Retained evidence: ${"x".repeat(300_000)}` },
+      ] },
+    })).resolves.toBe(REPORT);
+    const request = vi.mocked(streamWithProvider).mock.calls[0]![0];
+    expect(estimateMessagesTokens(request.messages)).toBeGreaterThan(65_536);
+    expect(isCompacting(request)).toBe(false);
+    expect(request.maxTokens).toBe(32_768);
+    expect(request.messages.at(-1)!.content).toContain("Retained evidence:");
+  });
+
+  it.each([2048, 32_768, undefined])("respects provider output limits without a 4096-token cap: %s", async (outputLimit) => {
+    vi.mocked(modelMaxOutputTokens).mockReturnValue(outputLimit);
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent(input);
+    const request = vi.mocked(streamWithProvider).mock.calls[0]![0];
+    expect(request.maxTokens).toBe(outputLimit ?? 24_576);
+    expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(128_000);
+  });
+
+  it.each(["stop", "length", "tool_calls"] as const)("admits compaction after a response consumes its output allowance: %s", async (finishReason) => {
+    const contextLimit = 16_384;
+    vi.mocked(modelContextWindow).mockReturnValue(contextLimit);
+    vi.mocked(modelMaxOutputTokens).mockReturnValue(32_768);
+    const partial = REPORT.replace("Status: complete", "Status: partial");
+    vi.mocked(streamWithProvider).mockImplementationOnce(async (request) => ({
+      ...completion("x".repeat(Math.floor(request.maxTokens! * 3.3)), finishReason === "tool_calls" ? [call("fs.read", { path: "src/example.ts" })] : undefined),
+      finishReason,
+    })).mockResolvedValueOnce(completion(partial)).mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    const requests = vi.mocked(streamWithProvider).mock.calls.map(([request]) => request);
+    expect(requests).toHaveLength(3);
+    expect(isCompacting(requests[0]!)).toBe(false);
+    expect(isCompacting(requests[1]!)).toBe(true);
+    expect(isCompacting(requests[2]!)).toBe(false);
+    expect(requests[2]!.messages[2]!.content).toContain(partial);
+    expect(checkpoint?.finished).toBe(true);
+    for (const request of requests) {
+      expect(request.maxTokens).toBeGreaterThan(0);
+      expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(contextLimit);
+    }
+  });
+
+  it("keeps streamed compaction and spontaneous partial reports internal", async () => {
+    vi.mocked(modelContextWindow).mockReturnValue(16_384);
+    vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
+    const partial = REPORT.replace("Status: complete", "Status: partial");
+    let compacted = false;
+    let round = 0;
+    vi.mocked(streamWithProvider).mockImplementation(async (request, onToken) => {
+      if (isCompacting(request)) {
+        compacted = true;
+        onToken(partial.slice(0, 10));
+        onToken(partial.slice(10));
+        return completion(partial);
+      }
+      if (compacted) {
+        onToken(REPORT);
+        return completion();
+      }
+      if (++round === 1) {
+        onToken(partial);
+        return completion(partial);
+      }
+      return completion("", [call("web.search", { query: `query ${round}` })]);
+    });
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    expect(compacted).toBe(true);
+    expect(vi.mocked(input.emit).mock.calls.filter(([event]) => event.kind === "assistant")).toEqual([
+      [{ kind: "assistant", text: REPORT, append: false }],
+    ]);
+    const resumed = vi.mocked(streamWithProvider).mock.calls.at(-1)![0];
+    expect(resumed.messages[2]!.content).toContain(partial);
+    expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "notice", text: expect.stringContaining("continuing the assignment") }));
+  });
+
+  it("keeps checkpoint-shaped text internal even when the response also calls tools", async () => {
+    const partial = REPORT.replace("Status: complete", "Status: partial");
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(partial, [call("fs.read", { path: "src/example.ts" })]))
+      .mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    expect(runToolCall).toHaveBeenCalledOnce();
+    expect(vi.mocked(input.emit).mock.calls.filter(([event]) => event.kind === "assistant")).toEqual([
+      [{ kind: "assistant", text: REPORT, append: false }],
+    ]);
+  });
+
+  it("recompacts an oversized checkpoint without retaining the context it replaces", async () => {
+    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    const partial = REPORT.replace("Status: complete", "Status: partial");
+    const oversized = `${partial}\n${"Retained finding. ".repeat(800)}`;
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(oversized))
+      .mockResolvedValueOnce(completion(partial)).mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent({ ...input, checkpoint: {
+      nativeTools: true,
+      messages: [
+        { role: "system", content: "Complete the assigned research." },
+        { role: "user", content: input.run.prompt },
+        { role: "user", content: `Original research: ${"x".repeat(12_500)}` },
+      ],
+    } })).resolves.toBe(REPORT);
+    const requests = vi.mocked(streamWithProvider).mock.calls.map(([request]) => request);
+    expect(requests).toHaveLength(3);
+    expect(isCompacting(requests[0]!)).toBe(true);
+    expect(isCompacting(requests[1]!)).toBe(true);
+    expect(requests[1]!.messages[2]!.content).toContain(oversized);
+    expect(requests[1]!.messages.some((message) => message.content.includes("Original research:"))).toBe(false);
+    expect(requests[2]!.messages[2]!.content).toContain(partial);
+    for (const request of requests) {
+      expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(8192);
+    }
+  });
+
+  it("fits serialized recovery history into a small provider window", async () => {
+    vi.mocked(modelContextWindow).mockReturnValue(8192);
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+    const events = Array.from({ length: 12 }, (_, index) => ({
+      sequence: index, kind: "tool" as const, timestamp: 1, text: `prior evidence ${index} ${'"\\\n'.repeat(10_000)}`,
+    }));
+    await expect(runReadOnlySubagent({ ...input, run: { ...input.run, attempt: 2, recovery: "history", events } })).resolves.toBe(REPORT);
+    const request = vi.mocked(streamWithProvider).mock.calls[0]![0];
+    expect(request.messages[2]!.content).toContain("prior evidence 11");
+    expect(request.messages[2]!.content).not.toContain("prior evidence 0 ");
+    expect(isCompacting(request)).toBe(false);
+    expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(8192);
+  });
+
+  it("accepts provider responses beyond the former text and artifact caps", async () => {
+    const text = "Research progress. ".repeat(2000);
+    const reasoningBlock = { text: "evidence ".repeat(10_000) };
+    vi.mocked(streamWithProvider).mockImplementationOnce(async (_request, onToken) => {
+      onToken(text);
+      return { ...completion(text, [call("fs.read", { path: "src/example.ts" })]), reasoningBlock };
+    }).mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    expect(runToolCall).toHaveBeenCalledOnce();
+    const request = vi.mocked(streamWithProvider).mock.calls[1]![0];
+    expect(request.messages[2]).toMatchObject({ content: text, reasoningBlock });
+  });
+
+  it("returns a complete report beyond the former storage cap without forcing a rewrite", async () => {
+    vi.mocked(modelMaxOutputTokens).mockReturnValue(32_768);
+    const report = `${REPORT}\n${"Verified evidence. ".repeat(5000)}`;
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(report));
+    await expect(runReadOnlySubagent(input)).resolves.toBe(report);
+    expect(streamWithProvider).toHaveBeenCalledOnce();
+    expect(checkpoint?.finished).toBe(true);
+    expect(input.emit).toHaveBeenCalledWith({ kind: "assistant", text: report, append: false });
+  });
+
+  it.each([true, false])("bounds unsafe provider output without publishing it: streamed=%s", async (streamed) => {
+    const text = "x".repeat(4 * 1024 * 1024 + 1);
+    vi.mocked(streamWithProvider).mockImplementation(async (_request, onToken) => {
+      if (streamed) onToken(text);
+      return completion(text);
+    });
+    await expect(runReadOnlySubagent(input)).rejects.toThrow("transport safety limit");
+    expect(checkpoint?.finished).not.toBe(true);
+    expect(checkpoint?.messages).toHaveLength(2);
+    expect(vi.mocked(input.emit).mock.calls.filter(([event]) => event.kind === "assistant")).toHaveLength(0);
+  });
+
+  it("preserves report text at the inclusive byte-safety boundary", async () => {
+    const text = REPORT + "x".repeat(4 * 1024 * 1024 - Buffer.byteLength(REPORT));
+    vi.mocked(streamWithProvider).mockImplementationOnce(async (_request, onToken) => {
+      onToken(text);
+      return completion(text);
+    });
+    await expect(runReadOnlySubagent(input)).resolves.toBe(text);
+    expect(input.emit).toHaveBeenCalledWith({ kind: "assistant", text, append: false });
+    expect(checkpoint?.finished).toBe(true);
   });
 
 });
