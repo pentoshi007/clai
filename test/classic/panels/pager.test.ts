@@ -36,6 +36,20 @@ function press(state: PagerPanelState, chord: string, text?: string, rows = 8) {
 }
 
 describe("pager rows", () => {
+  it.each(["raw", "formatted"] as const)("colors subagent activity in %s mode without changing copy text", (format) => {
+    const source = "## Activity\n✓ fs.read src/index.ts\n✗ web.fetch https://example.test\nNotice: Retrying";
+    const lines = pagerLines(source, 100, 20, format);
+    const input = { ink: colorInk, columns: 100, rows: 20, title: "Agent", lines, state: { ...PAGER_INITIAL_STATE, format } };
+    const frame = pagerView({ ...input, subagent: true });
+    const body = frame.body.join("\n");
+    expect(body).toContain(colorInk.style("fs.read", { fg: "cyan", bold: true }));
+    expect(body).toContain(colorInk.fg("success", "✓ "));
+    expect(body).toContain(colorInk.fg("diffDel", "✗ "));
+    expect(body).toContain(colorInk.fg("activity", "Notice: Retrying"));
+    expect(stripAnsi(body)).toBe(stripAnsi(pagerView(input).body.join("\n")));
+    expect(pagerView({ ...input, ink, subagent: true }).body.join("\n")).not.toContain("\x1b[38;");
+  });
+
   it("renders lines without number gutter", () => {
     expect(render(PAGER_INITIAL_STATE).rows[1]).toMatch(/^│ ▎ line 1/);
     const short = pagerView({

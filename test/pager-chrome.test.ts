@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { padChromeRow, wrapPagerLine } from "../src/ui-core/rendering/pager-chrome.js";
+import { centerChromeRow, padChromeRow, wrapPagerLine } from "../src/ui-core/rendering/pager-chrome.js";
 import { renderColumns } from "../src/ui-core/rendering/text-width.js";
 
 describe("padChromeRow", () => {
@@ -30,6 +30,20 @@ describe("padChromeRow", () => {
 
   it.each([1, 2, 4, 7])("fits tiny chrome into %i columns", (width) => {
     expect(renderColumns(padChromeRow("search and close", "100 lines", width))).toBeLessThanOrEqual(width);
+  });
+});
+
+describe("centerChromeRow", () => {
+  it.each(["History", "Models · Provider · live", "履歴 🧑‍💻", "e\u0301"])("centers %s using terminal columns", (title) => {
+    const row = centerChromeRow(title, 40);
+    expect(renderColumns(row)).toBe(40);
+    expect(row.trim()).toBe(title);
+    expect(Math.abs(row.length - row.trimEnd().length - (row.length - row.trimStart().length))).toBeLessThanOrEqual(1);
+  });
+
+  it.each([1, 2, 4, 8])("clips long titles to %i columns", (width) => {
+    expect(renderColumns(centerChromeRow("Models · Provider · live", width))).toBe(width);
+    expect(centerChromeRow("Models · Provider · live", width)).toContain("…");
   });
 });
 

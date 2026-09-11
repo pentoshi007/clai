@@ -29,6 +29,12 @@ export interface SubagentRun extends SubagentAssignment {
   readonly report?: string | undefined;
   readonly error?: string | undefined;
   readonly recovery?: "exact" | "history" | "fresh" | undefined;
+  readonly followup?: SubagentFollowup | undefined;
+}
+
+export interface SubagentFollowup {
+  readonly prompt?: string | undefined;
+  readonly context?: string | undefined;
 }
 
 export interface SubagentCheckpoint {
@@ -36,6 +42,7 @@ export interface SubagentCheckpoint {
   readonly nativeTools?: boolean | undefined;
   readonly reportReason?: string | undefined;
   readonly finished?: boolean | undefined;
+  readonly pendingFollowup?: SubagentFollowup | undefined;
   readonly pending?: {
     readonly calls: readonly ToolCall[];
     readonly native: boolean;
@@ -46,6 +53,7 @@ export interface SubagentCheckpoint {
 export interface SubagentWorkerInput {
   readonly run: SubagentRun;
   readonly signal: AbortSignal;
+  readonly followup?: SubagentFollowup | undefined;
   readonly checkpoint?: SubagentCheckpoint | undefined;
   readonly saveCheckpoint?: ((checkpoint: SubagentCheckpoint) => void) | undefined;
   readonly emit: (event: {

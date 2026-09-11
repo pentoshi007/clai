@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { isValidSubagentParentId, restoreSubagentRun, sanitizeSubagentRun, sanitizeSubagentText, SUBAGENT_LIMITS } from "../../store/subagents.js";
 import { subagentReportStatus } from "./report.js";
-import type { SubagentAssignment, SubagentCheckpoint, SubagentEvent, SubagentRun, SubagentStore, SubagentWorker } from "./types.js";
+import type { SubagentAssignment, SubagentCheckpoint, SubagentEvent, SubagentFollowup, SubagentRun, SubagentStore, SubagentWorker } from "./types.js";
 
 type Child = {
   run: SubagentRun;
@@ -126,17 +126,33 @@ export class SubagentManager {
     this.changed(child, true);
   }
 
-  restart(id: string): SubagentRun {
+  restart(id: string, value?: SubagentFollowup): SubagentRun {
     this.assertAvailable();
     const child = this.child(id);
     if (child.controller) throw new Error("Wait for the previous attempt to stop before restarting");
+    const followup = this.followup(value);
     this.assertUnique(child.assignment);
     const previous = child.run;
     const summary = `Attempt ${previous.attempt}: ${previous.status}\n${previous.report ?? previous.error ?? "No report"}`;
     const events = [...previous.events, { kind: "notice" as const, text: summary, timestamp: Date.now(), sequence: (previous.events.at(-1)?.sequence ?? 0) + 1 }];
-    child.run = { ...previous, ...child.assignment, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report ? "history" : "fresh", report: undefined, error: undefined, updatedAt: Date.now(), events: this.boundEvents(events) };
-    this.launch(child);
+    if (followup) events.push({ kind: "notice", text: `Parent follow-up for attempt ${previous.attempt + 1}:\n${JSON.stringify(followup)}`, timestamp: Date.now(), sequence: events.at(-1)!.sequence + 1 });
+    if (followup && child.checkpoint) child.checkpoint = { ...child.checkpoint, pendingFollowup: followup };
+    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report ? "history" : "fresh", report: undefined, error: undefined, updatedAt: Date.now(), events: this.boundEvents(events) };
+    this.launch(child, followup);
     return this.snapshot(child.run);
+  }
+
+  private followup(value?: SubagentFollowup): SubagentFollowup | undefined {
+    if (value === undefined) return undefined;
+    const result: { prompt?: string; context?: string } = {};
+    for (const name of ["prompt", "context"] as const) {
+      const text = value[name];
+      if (text === undefined) continue;
+      const clean = typeof text === "string" ? sanitizeSubagentText(text) : "";
+      if (!clean.trim() || text.length > SUBAGENT_LIMITS[name]) throw new Error(`${name} must be a non-empty string of at most ${SUBAGENT_LIMITS[name]} characters`);
+      result[name] = clean;
+    }
+    return Object.keys(result).length ? Object.freeze(result) : undefined;
   }
 
   private boundEvents(events: readonly SubagentEvent[]): readonly SubagentEvent[] {
@@ -146,7 +162,7 @@ export class SubagentManager {
     return retained.map((event) => ({ ...event, text: event.text.slice(0, SUBAGENT_LIMITS.chars) }));
   }
 
-  private launch(child: Child): void {
+  private launch(child: Child, followup?: SubagentFollowup): void {
     const controller = new AbortController();
     child.assistantSequence = undefined;
     child.controller = controller;
@@ -175,7 +191,7 @@ export class SubagentManager {
     void Promise.resolve().then(() => {
       controller.signal.throwIfAborted();
       return this.workerContext.run(true, () => this.worker({
-        run: inputRun, signal: controller.signal, emit,
+        run: inputRun, signal: controller.signal, emit, followup,
         checkpoint: child.checkpoint ? structuredClone(child.checkpoint) : undefined,
         saveCheckpoint: (checkpoint) => {
           if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
