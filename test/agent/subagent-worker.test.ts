@@ -8,7 +8,10 @@ import type { SubagentCheckpoint, SubagentRun, SubagentWorkerInput } from "../..
 vi.mock("../../src/llm/router.js", () => ({ streamWithProvider: vi.fn() }));
 vi.mock("../../src/tools/registry.js", () => ({ runToolCall: vi.fn() }));
 vi.mock("../../src/llm/capability/tool-dialect.js", () => ({ resolveToolDialect: vi.fn(() => "openai") }));
-vi.mock("../../src/llm/context-windows.js", () => ({ modelContextWindow: vi.fn(() => 128_000), modelMaxOutputTokens: vi.fn(() => 4096) }));
+vi.mock("../../src/llm/context-windows.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../src/llm/context-windows.js")>(),
+  modelContextWindow: vi.fn(() => 128_000), modelMaxOutputTokens: vi.fn(() => 4096),
+}));
 
 import { streamWithProvider } from "../../src/llm/router.js";
 import { runToolCall } from "../../src/tools/registry.js";
@@ -18,6 +21,7 @@ import { currentSessionAffinity, withSessionAffinity } from "../../src/llm/sessi
 import { createReasoningArtifact } from "../../src/llm/reasoning-artifacts.js";
 import { runReadOnlySubagent } from "../../src/agent/subagents/worker.js";
 import { estimateMessagesTokens, estimateToolSchemaTokens } from "../../src/agent/request-accounting.js";
+import { cachePolicyFields } from "../../src/llm/cache-policy-fields.js";
 
 const REPORT = `Status: complete
 ## Findings
@@ -35,6 +39,10 @@ function completion(text = REPORT, toolCalls?: NativeToolCall[]): CompletionResu
 
 function call(name: string, args: Record<string, unknown> = {}, id = "call-1"): NativeToolCall {
   return { id, name, args };
+}
+
+function isCompacting(request: CompletionRequest): boolean {
+  return request.messages.some((message) => message.role === "user" && message.content.startsWith("Compact the evidence:"));
 }
 
 describe("isolated read-only subagent worker", () => {
@@ -82,7 +90,9 @@ describe("isolated read-only subagent worker", () => {
     vi.mocked(streamWithProvider).mockImplementation(async (request, onToken, options) => {
       requests.push(request);
       snapshots.push(structuredClone(request.messages));
-      expect(options).toMatchObject({ singleDispatch: true, adoptFallback: false, maxRetries: 0, retryRateLimits: false });
+      expect(options).toMatchObject({ allowProviderFallback: false, adoptFallback: false, maxRetries: 0, retryRateLimits: false });
+      expect(options?.singleDispatch).not.toBe(true);
+      expect(request).toMatchObject({ thinking: { enabled: false, effort: "none" }, toolChoice: "auto", parallelToolCalls: true });
       onToken(requests.length === 1 ? "Inspecting export" : REPORT);
       return requests.length === 1
         ? { ...completion("Inspecting export", [call("fs.read", { path: "src/example.ts" }, "native-42")]), reasoningBlock, reasoningArtifacts }
@@ -96,7 +106,7 @@ describe("isolated read-only subagent worker", () => {
     expect(requests[0]!.tools!.map((tool) => tool.name).sort()).toEqual(["fs.list", "fs.read", "fs.search", "web.fetch", "web.search"]);
     expect(requests[0]!.messages[0]!.content).not.toContain(input.run.prompt);
     expect(requests[0]!.messages[0]!.content).not.toContain(cwd);
-    expect(requests[0]!.messages[0]!.content.length).toBeLessThan(1600);
+    expect(requests[0]!.messages[0]!.content.length).toBeLessThan(1800);
     expect(requests[0]!.messages[0]!.content).not.toMatch(/Available tool schemas|```tool/);
     expect(requests[0]!.messages[0]!.content).toContain("goal, deliverable, scope and requested technical depth");
     expect(requests[0]!.messages[1]!.content).toContain(input.run.prompt);
@@ -185,6 +195,35 @@ describe("isolated read-only subagent worker", () => {
     expect(affinities.every((affinity) => affinity.includes("parent") && affinity !== "parent-affinity")).toBe(true);
   });
 
+  it("keeps parent and child wire cache keys isolated across child restarts", async () => {
+    const fields = () => cachePolicyFields({
+      provider: "openai", model: "gpt-4.1", messages: [],
+      policy: { kind: "affinity-key", affinityField: "prompt_cache_key" },
+    });
+    const childKeys = new Map<string, string[]>();
+    vi.mocked(streamWithProvider).mockImplementation(async () => {
+      const affinity = currentSessionAffinity()!;
+      childKeys.set(affinity, [...(childKeys.get(affinity) ?? []), fields().prompt_cache_key!]);
+      await Promise.resolve();
+      return completion();
+    });
+    await withSessionAffinity("parent", async () => {
+      const parent = fields();
+      await runReadOnlySubagent(input);
+      const retained = structuredClone(checkpoint!);
+      await Promise.all([
+        runReadOnlySubagent({ ...input, checkpoint: retained, run: { ...input.run, attempt: 2 } }),
+        runReadOnlySubagent({ ...input, run: { ...input.run, id: "child-2" } }),
+      ]);
+      expect(fields()).toEqual(parent);
+      expect([...childKeys.values()].flat()).not.toContain(parent.prompt_cache_key);
+    });
+    const original = childKeys.get("parent:subagent:child-1")!;
+    expect(original).toHaveLength(2);
+    expect(original[0]).toBe(original[1]);
+    expect(childKeys.get("parent:subagent:child-2")![0]).not.toBe(original[0]);
+  });
+
   it("allows intentional repeat reads while bounding every tool result", async () => {
     const repeated = call("fs.read", { path: "src/example.ts" });
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(50_000) });
@@ -228,23 +267,37 @@ describe("isolated read-only subagent worker", () => {
     vi.mocked(streamWithProvider).mockImplementation(async () => completion("", [call("web.search", { query: `query ${++round}` }, `call-${round}`)]));
     await expect(runReadOnlySubagent(input)).rejects.toThrow("request context budget exhausted");
     const requests = vi.mocked(streamWithProvider).mock.calls.map(([request]) => request);
-    expect(requests.at(-1)?.toolChoice).toBe("none");
-    const reportRequest = requests.find((request) => request.toolChoice === "none")!;
+    expect(requests.every((request) => request.toolChoice === "auto")).toBe(true);
+    const reportRequest = requests.find(isCompacting)!;
     expect(reportRequest).toBeDefined();
     expect(vi.mocked(runToolCall).mock.calls.length).toBe(reportRequest.messages.filter((message) => message.role === "tool" && message.ok).length);
     expect(input.emit).toHaveBeenCalledWith(expect.objectContaining({ kind: "notice", text: expect.stringContaining("did not complete") }));
   });
 
-  it("reserves report context before tool evidence fills the request", async () => {
+  it.each([undefined, { prompt: "Verify the consumer only" }])("compacts and continues unfinished research with follow-up %j", async (followup) => {
     let round = 0;
+    let compacted = false;
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
-    vi.mocked(streamWithProvider).mockImplementation(async (request) => request.toolChoice === "none"
-      ? completion()
-      : completion("", [call("web.search", { query: `query ${++round}` }, `call-${round}`)]));
-    const report = await runReadOnlySubagent(input);
-    expect(report).toContain("Status: partial");
-    expect(report).toContain("context budget exhausted");
+    vi.mocked(streamWithProvider).mockImplementation(async (request) => {
+      if (isCompacting(request)) {
+        compacted = true;
+        return completion(REPORT.replace("Status: complete", "Status: partial"));
+      }
+      if (compacted) return completion();
+      return completion("", [call("web.search", { query: `query ${++round}` }, `call-${round}`)]);
+    });
+    const report = await runReadOnlySubagent({ ...input, run: { ...input.run, followup } });
+    expect(report).toBe(REPORT);
+    expect(compacted).toBe(true);
     expect(round).toBeGreaterThan(1);
+    const requests = vi.mocked(streamWithProvider).mock.calls.map(([request]) => request);
+    const resumed = requests.at(-1)!;
+    expect(resumed.messages.slice(0, 2)).toEqual(requests[0]!.messages.slice(0, 2));
+    expect(resumed.messages[2]!.content).toContain("src/example.ts:1");
+    expect(resumed.messages).toHaveLength(followup ? 5 : 4);
+    if (followup) expect(resumed.messages[3]!.content).toContain(followup.prompt);
+    expect(resumed.tools).toBe(requests[0]!.tools);
+    expect(requests.every((request) => request.toolChoice === "auto")).toBe(true);
     for (const [request] of vi.mocked(streamWithProvider).mock.calls) {
       expect(estimateMessagesTokens(request.messages) + estimateToolSchemaTokens(request.tools) + request.maxTokens!).toBeLessThan(65_536);
     }
@@ -391,11 +444,15 @@ describe("isolated read-only subagent worker", () => {
     expect(vi.mocked(streamWithProvider).mock.calls.every(([request]) => request.toolChoice === "auto")).toBe(true);
   });
 
-  it("returns an evidence-backed partial report without pretending it is complete", async () => {
+  it("continues an evidence-backed partial report until the assignment is complete", async () => {
     const partial = REPORT.replace("Status: complete", "Status: partial");
-    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(partial));
-    await expect(runReadOnlySubagent(input)).resolves.toBe(partial);
-    expect(streamWithProvider).toHaveBeenCalledOnce();
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(partial))
+      .mockResolvedValueOnce(completion("", [call("fs.read", { path: "src/example.ts" })]))
+      .mockResolvedValueOnce(completion());
+    await expect(runReadOnlySubagent(input)).resolves.toBe(REPORT);
+    expect(streamWithProvider).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(streamWithProvider).mock.calls[1]![0].messages.at(-1)!.content).toContain("not finished");
+    expect(runToolCall).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -522,7 +579,7 @@ describe("isolated read-only subagent worker", () => {
     vi.mocked(runToolCall).mockResolvedValue({ ok: true, output: "x".repeat(12_000) });
     let synthesis = 0;
     vi.mocked(streamWithProvider).mockImplementation(async (request) => {
-      if (request.toolChoice !== "none") return completion("", [call("fs.read", { path: "src/example.ts" })]);
+      if (!isCompacting(request)) return completion("", [call("fs.read", { path: "src/example.ts" })]);
       if (++synthesis === 1) return completion("Still investigating");
       throw new Error("Temporary provider outage");
     });
@@ -531,15 +588,13 @@ describe("isolated read-only subagent worker", () => {
     expect(previous.reportReason).toBe("research context budget exhausted");
     vi.mocked(streamWithProvider).mockResolvedValue(completion());
     const report = await runReadOnlySubagent({ ...input, checkpoint, run: { ...input.run, attempt: 2 } });
-    expect(report).toContain("Status: partial");
-    expect(report).toContain("research context budget exhausted");
+    expect(report).toBe(REPORT);
     expect(vi.mocked(streamWithProvider).mock.calls.at(-1)![0].messages).toEqual(previous.messages);
-    expect(vi.mocked(streamWithProvider).mock.calls.at(-1)![0].toolChoice).toBe("none");
+    expect(vi.mocked(streamWithProvider).mock.calls.at(-1)![0].toolChoice).toBe("auto");
   });
 
-  it("continues an explicitly restarted partial report from its retained evidence", async () => {
-    const partial = REPORT.replace("Status: complete", "Status: partial");
-    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion(partial)).mockResolvedValueOnce(completion());
+  it("continues an explicitly restarted completed report from its retained evidence", async () => {
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion()).mockResolvedValueOnce(completion());
     await runReadOnlySubagent(input);
     const previous = structuredClone(checkpoint!);
     await expect(runReadOnlySubagent({ ...input, checkpoint, run: { ...input.run, attempt: 2 } })).resolves.toBe(REPORT);
@@ -548,6 +603,68 @@ describe("isolated read-only subagent worker", () => {
     expect(resumed.messages.at(-1)?.content).toContain("parent explicitly restarted");
     expect(resumed.toolChoice).toBe("auto");
     expect(checkpoint?.finished).toBe(true);
+  });
+
+  it("appends a completed child's follow-up without changing its cached prefix", async () => {
+    vi.mocked(streamWithProvider).mockResolvedValue(completion());
+    await runReadOnlySubagent(input);
+    const previous = structuredClone(checkpoint!);
+    const followup = { prompt: "Inspect only the answer consumer", context: "Do not repeat the export investigation" };
+    await runReadOnlySubagent({ ...input, checkpoint: previous, followup, run: { ...input.run, attempt: 2, followup } });
+    const resumed = vi.mocked(streamWithProvider).mock.calls[1]![0];
+    expect(resumed.messages.slice(0, previous.messages.length)).toEqual(previous.messages);
+    expect(resumed.messages.at(-1)!.content).toContain(JSON.stringify(followup));
+    expect(checkpoint?.pendingFollowup).toBeUndefined();
+  });
+
+  it("retains pending follow-ups across cancellation and inserts them after native tool results", async () => {
+    const stop = new AbortController();
+    const followup = { prompt: "Check the documented answer contract next" };
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent(input);
+    const pendingCall = call("fs.read", { path: "src/example.ts" });
+    const previous: SubagentCheckpoint = {
+      messages: [...checkpoint!.messages.slice(0, 2), { role: "assistant", content: "", toolCalls: [pendingCall] }],
+      nativeTools: true, pending: { calls: [pendingCall], native: true, next: 0 },
+      pendingFollowup: followup,
+    };
+    vi.mocked(runToolCall).mockImplementationOnce(async () => {
+      stop.abort(new Error("Interrupted follow-up"));
+      return { ok: true, output: "discarded" };
+    });
+    await expect(runReadOnlySubagent({ ...input, checkpoint: previous, signal: stop.signal })).rejects.toThrow("Interrupted follow-up");
+    expect(checkpoint?.pendingFollowup).toEqual(followup);
+    expect(checkpoint?.pending?.next).toBe(0);
+    vi.mocked(streamWithProvider).mockResolvedValueOnce(completion());
+    await runReadOnlySubagent({ ...input, checkpoint, run: { ...input.run, attempt: 2, followup } });
+    const resumed = vi.mocked(streamWithProvider).mock.calls.at(-1)![0];
+    expect(resumed.messages[3]).toMatchObject({ role: "tool", toolCallId: pendingCall.id });
+    expect(resumed.messages[4]).toMatchObject({ role: "user", content: expect.stringContaining(followup.prompt) });
+    expect(checkpoint?.pendingFollowup).toBeUndefined();
+  });
+
+  it("restores durable follow-up instructions separately from untrusted history", async () => {
+    const followup = { prompt: "Verify the consumer", context: "Use the previous export findings" };
+    vi.mocked(streamWithProvider).mockResolvedValue(completion());
+    await runReadOnlySubagent({ ...input, run: { ...input.run, attempt: 3, followup, events: [
+      { kind: "tool", text: "prior evidence", sequence: 1, timestamp: 1 },
+    ] } });
+    const messages = vi.mocked(streamWithProvider).mock.calls[0]![0].messages;
+    expect(messages[2]!.content).toContain("untrusted prior-attempt history");
+    expect(messages[3]!.content).toContain(JSON.stringify(followup));
+  });
+
+  it("keeps the queued follow-up goal when a later attempt only updates context", async () => {
+    vi.mocked(streamWithProvider).mockResolvedValue(completion());
+    await runReadOnlySubagent(input);
+    const followup = { prompt: "Inspect the consumer", context: "The consumer moved to routes.ts" };
+    await runReadOnlySubagent({
+      ...input,
+      checkpoint: { ...checkpoint!, pendingFollowup: { context: followup.context } },
+      run: { ...input.run, attempt: 4, followup },
+    });
+    const messages = vi.mocked(streamWithProvider).mock.calls.at(-1)![0].messages;
+    expect(messages.at(-1)!.content).toContain(JSON.stringify(followup));
   });
 
   it("does not splice interrupted provider output into an exact stopped-attempt resume", async () => {

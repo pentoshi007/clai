@@ -36,13 +36,17 @@ export function sanitizeSubagentRun(run: SubagentRun): SubagentRun {
     title: clean(run.title, SUBAGENT_LIMITS.title),
     prompt: clean(run.prompt, SUBAGENT_LIMITS.prompt),
     context: run.context === undefined ? undefined : clean(run.context, SUBAGENT_LIMITS.context),
+    followup: run.followup === undefined ? undefined : Object.freeze({
+      prompt: run.followup.prompt === undefined ? undefined : clean(run.followup.prompt, SUBAGENT_LIMITS.prompt),
+      context: run.followup.context === undefined ? undefined : clean(run.followup.context, SUBAGENT_LIMITS.context),
+    }),
     cwd: clean(run.cwd, 4096),
     provider: clean(run.provider, 128) as SubagentRun["provider"],
     model: clean(run.model, 256),
     report: run.report === undefined ? undefined : clean(run.report, SUBAGENT_LIMITS.report),
     error: run.error === undefined ? undefined : clean(run.error, 4096),
   };
-  let remaining = SUBAGENT_LIMITS.chars - [base.title, base.prompt, base.context, base.cwd, base.provider, base.model, base.report, base.error, base.id, base.parentSessionId].reduce<number>((sum, value) => sum + (value?.length ?? 0), 0);
+  let remaining = SUBAGENT_LIMITS.chars - [base.title, base.prompt, base.context, base.followup?.prompt, base.followup?.context, base.cwd, base.provider, base.model, base.report, base.error, base.id, base.parentSessionId].reduce<number>((sum, value) => sum + (value?.length ?? 0), 0);
   const events: SubagentEvent[] = [];
   for (const event of run.events.slice(-SUBAGENT_LIMITS.events).reverse()) {
     if (remaining <= 0) break;
@@ -57,6 +61,11 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
   if (!value || typeof value !== "object") return false;
   const run = value as SubagentRun;
   const bounded = (text: unknown, maximum: number): text is string => typeof text === "string" && text.length <= maximum;
+  const followup = run.followup;
+  if (followup !== undefined && (!followup || typeof followup !== "object" || Array.isArray(followup)
+    || (followup.prompt === undefined && followup.context === undefined)
+    || !(["prompt", "context"] as const).every((name) => followup[name] === undefined
+      || (bounded(followup[name], SUBAGENT_LIMITS[name]) && !!sanitizeSubagentText(followup[name]).trim())))) return false;
   return isValidSubagentParentId(parentSessionId)
     && run.parentSessionId === parentSessionId && typeof run.id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(run.id) && sanitizeSubagentText(run.id) === run.id
     && Number.isSafeInteger(run.attempt) && run.attempt > 0
@@ -77,7 +86,7 @@ function validRun(value: unknown, parentSessionId: string): value is SubagentRun
 export function restoreSubagentRun(value: unknown, parentSessionId: string): SubagentRun | undefined {
   if (!validRun(value, parentSessionId)) return undefined;
   const run: SubagentRun = {
-    id: value.id, parentSessionId, title: value.title, prompt: value.prompt, context: value.context,
+    id: value.id, parentSessionId, title: value.title, prompt: value.prompt, context: value.context, followup: value.followup,
     cwd: value.cwd, provider: value.provider, model: value.model, attempt: value.attempt,
     status: value.status, createdAt: value.createdAt, updatedAt: value.updatedAt,
     events: value.events.map(({ sequence, kind, text, timestamp }) => ({ sequence, kind, text, timestamp })),

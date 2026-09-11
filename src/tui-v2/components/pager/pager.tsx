@@ -79,6 +79,7 @@ export function Pager(props: PagerProps): ReactNode {
     markdown = "auto",
   } = props;
   const colorMode = services.capabilities.colorMode;
+  const isSubagent = source?.path.startsWith("memory://subagent/") ?? false;
   const { width: termWidth, height: termHeight } = useTerminalDimensionsContext();
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const [displayBody, setDisplayBody] = useState(body);
@@ -641,6 +642,7 @@ export function Pager(props: PagerProps): ReactNode {
               highlightPath=""
               carry={syntaxCarry}
               styled={row?.styled}
+              subagent={isSubagent}
               markdownMode
             />,
           ];
@@ -695,6 +697,7 @@ export function Pager(props: PagerProps): ReactNode {
             highlightPath={pathForHighlight}
             carry={syntaxCarry}
             diffGutters={false}
+            subagent={isSubagent}
           />
         ));
       }),
@@ -709,6 +712,7 @@ export function Pager(props: PagerProps): ReactNode {
       syntaxCarry,
       theme,
       useDiffGutters,
+      isSubagent,
     ],
   );
 

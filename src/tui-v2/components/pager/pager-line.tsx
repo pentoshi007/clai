@@ -13,6 +13,7 @@ import {
   highlightLineForPath,
 } from "../../../ui-core/rendering/syntax-highlight.js";
 import type { PagerDisplayLine } from "../../rendering/pager-markdown.js";
+import { subagentLineSpans } from "../../../ui-core/rendering/subagent-presentation.js";
 
 const DIFF_SPLIT_RE = /^(?<gutter>[\d ]{0,8}) │ (?<rest>.*)$/;
 
@@ -86,6 +87,7 @@ export function PagerLine(props: {
   styled?: PagerDisplayLine["styled"];
   markdownMode?: boolean | undefined;
   diffGutters?: boolean | undefined;
+  subagent?: boolean | undefined;
 }): ReactNode {
   const {
     line,
@@ -103,6 +105,24 @@ export function PagerLine(props: {
     hasQuery &&
     activeMatchIndex >= 0 &&
     matches[activeMatchIndex]?.line === index;
+
+  const subagentSpans = props.subagent && !hasQuery ? subagentLineSpans(line) : undefined;
+  if (subagentSpans) {
+    return (
+      <text
+        id={`pager-line-${index}`}
+        selectable
+        wrapMode="word"
+        style={{ width: "100%", bg: theme.background }}
+      >
+        {subagentSpans.map((span, i) => (
+          <span key={i} style={{ fg: theme[span.fg], attributes: span.bold ? TextAttributes.BOLD : 0 }}>
+            {span.text}
+          </span>
+        ))}
+      </text>
+    );
+  }
 
   if (markdownMode) {
     const body = line.length > 0 ? line : " ";
