@@ -127,6 +127,19 @@ try {
     assert.equal(services.overlay.getState().kind, "none");
   }
   await settle(() => setup.resize(120, 40));
+  await settle(() => services.overlay.openPager("Searchable", "alpha line\nbeta line\ngamma line", undefined, undefined, "plain"));
+  assert.equal(services.focus.activeContext(), "pager");
+  const searchBarFrame = await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
+  assert.match(searchBarFrame, /\^R/, "ctrl+r must open the pager search bar while the pager overlay is active");
+  assert.equal(services.focus.activeContext(), "pager", "transcript search must not steal ctrl+r from the pager");
+  for (const char of "beta") await settle(() => setup.mockInput.pressKey(char), 5);
+  const afterSubmit = await settle(() => setup.mockInput.pressEnter());
+  assert.doesNotMatch(afterSubmit, / \^R /, "submitting the query closes the pager search bar");
+  await settle(() => setup.mockInput.pressKey("r", { ctrl: true }));
+  const afterEscape = await settle(() => setup.mockInput.pressEscape());
+  assert.doesNotMatch(afterEscape, / \^R /, "escape closes the pager search bar");
+  await settle(() => setup.mockInput.pressEscape());
+  assert.equal(services.overlay.getState().kind, "none");
   for (const title of ["History", "Models · openai · live", "Providers", "Reasoning effort"]) {
     await settle(() => services.overlay.openPicker({
       title,
