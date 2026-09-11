@@ -1,5 +1,6 @@
 import type { PickerOption } from "./picker-filter.js";
 import { wrapPagerLine } from "./pager-chrome.js";
+import { renderColumns } from "./text-width.js";
 
 export interface PickerLine {
   readonly text: string;
@@ -32,11 +33,15 @@ export function layoutPickerOptions(
       top += item.height;
       return item;
     }
-    const label = `${option.label}${option.active ? " · current" : ""}`;
+    const iconPrefix = option.icon ? `${option.icon} ` : "";
+    const descriptionPad = " ".repeat(renderColumns(iconPrefix));
+    const label = `${iconPrefix}${option.label}${option.active ? " · current" : ""}`;
     const wrap = (text: string, description: boolean): PickerLine[] =>
-      text.replace(/\r\n?/g, "\n").split("\n").flatMap((line) =>
-        wrapPagerLine(line, textWidth, { preserveWhitespace: true }).map((text) => ({ text, description })),
-      );
+      text.replace(/\r\n?/g, "\n").split("\n").flatMap((line) => {
+        const pad = description ? descriptionPad : "";
+        return wrapPagerLine(line, Math.max(1, textWidth - pad.length), { preserveWhitespace: true })
+          .map((text) => ({ text: `${pad}${text}`, description }));
+      });
     const lines = twoLine
       ? [...wrap(label, false), ...wrap(option.description ?? "", true)]
       : wrap(`${label}${option.description ? `  ${option.description}` : ""}`, false);

@@ -313,10 +313,22 @@ function canSignIn(
   return status.status === "error" || status.status === "degraded";
 }
 
+const MCP_STATUS_ICON: Record<McpServerStatus["status"], { icon: string; tone: PickerOption["tone"] }> = {
+  ready: { icon: "●", tone: "success" },
+  connecting: { icon: "⟳", tone: "warn" },
+  degraded: { icon: "◐", tone: "warn" },
+  error: { icon: "✗", tone: "error" },
+  disabled: { icon: "■", tone: "muted" },
+  stopped: { icon: "■", tone: "muted" },
+};
+
 function serverPickerOptions(services: AppServices): PickerOption[] {
   const state = services.mcp.getState();
   return state.snapshot.statuses.map((status) => {
     const signIn = canSignIn(services, status);
+    const style = signIn
+      ? { icon: "→", tone: "warn" as const }
+      : MCP_STATUS_ICON[status.status];
     return {
       value: signIn ? `${LOGIN_PREFIX}${status.name}` : status.name,
       label: `${signIn ? "sign in" : status.status === "ready" ? "live" : status.status} · ${status.name}`,
@@ -326,6 +338,8 @@ function serverPickerOptions(services: AppServices): PickerOption[] {
       active:
         state.selection.mode === "servers" &&
         state.selection.serverNames.includes(status.name),
+      icon: style.icon,
+      tone: style.tone,
     };
   });
 }
@@ -338,8 +352,10 @@ function knownPickerOptions(
     (server) => !configured.has(server.id) && !configured.has(server.title.toLowerCase()),
   ).map((server) => ({
     value: `${KNOWN_PREFIX}${server.id}`,
-    label: `+ add ${server.title}`,
+    label: `add ${server.title}`,
     description: `${server.summary}${server.oauth ? " · OAuth sign-in" : server.secrets.length > 0 ? " · needs API key" : " · no auth needed"}`,
+    icon: "+",
+    tone: "accent",
   }));
 }
 
@@ -349,8 +365,10 @@ function pickerOptions(services: AppServices): PickerOption[] {
   return [
     {
       value: ADD_VALUE,
-      label: "+ add MCP server",
+      label: "add MCP server",
       description: `paste one JSON server object · merge into ${target}`,
+      icon: "+",
+      tone: "accent",
     },
     ...knownPickerOptions(state.snapshot.statuses),
     {
@@ -358,12 +376,16 @@ function pickerOptions(services: AppServices): PickerOption[] {
       label: "MCP tools off",
       description: "default · hide MCP tools from agent requests for this session",
       active: state.selection.mode === "off",
+      icon: "○",
+      tone: "muted",
     },
     {
       value: ALL_VALUE,
       label: "all live servers",
       description: "expose every ready MCP tool for this session",
       active: state.selection.mode === "all",
+      icon: "●",
+      tone: "success",
     },
     ...serverPickerOptions(services),
   ];

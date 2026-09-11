@@ -8,6 +8,7 @@ import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import { activeIndex, filterPickerOptions } from "../../../ui-core/rendering/picker-filter.js";
+import { pickerToneColor } from "../../../ui-core/rendering/picker-style.js";
 import { layoutPickerOptions, pickerItemAtRow, pickerScrollTop, pickerWindow } from "../../../ui-core/rendering/picker-layout.js";
 import { centerChromeRow, fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
@@ -167,7 +168,7 @@ export function Picker(props: PickerProps): ReactNode {
       height: size.height,
       border,
       borderStyle: "rounded",
-      borderColor: isHistory ? theme.accent : theme.modalBorder,
+      borderColor: theme.modalBorder,
       backgroundColor: theme.statusBackground,
     }}>
       {innerH >= 4 ? (
@@ -175,7 +176,7 @@ export function Picker(props: PickerProps): ReactNode {
           id="picker-title"
           selectable={false}
           content={centerChromeRow(request.title, innerW)}
-          style={{ fg: theme.white, bg: isHistory ? theme.chipIndigo : theme.magenta, width: "100%", height: 1, flexShrink: 0 }}
+          style={{ fg: theme.white, bg: theme.chipIndigo, width: "100%", height: 1, flexShrink: 0 }}
         />
       ) : null}
       {innerH >= 3 ? (
@@ -184,7 +185,7 @@ export function Picker(props: PickerProps): ReactNode {
           content={fitOneLine([
             `${query ? `filter: ${query}█` : "type to filter"} · ${filtered.length}/${request.options.length}`,
           ], innerW)}
-          style={{ fg: theme.cyan, height: 1, flexShrink: 0 }}
+          style={{ fg: query ? theme.cyan : theme.muted, height: 1, flexShrink: 0 }}
         />
       ) : null}
       <scrollbox
@@ -203,7 +204,13 @@ export function Picker(props: PickerProps): ReactNode {
         {window.rows.map(({ itemIndex: index, lineIndex, line }) => {
           const focused = index === selected;
           const option = filtered[index]!;
-          const bg = focused ? theme.selection : index % 2 === 1 ? theme.rowB : theme.background;
+          const bg = focused ? theme.chipIndigo : index % 2 === 1 ? theme.rowB : theme.background;
+          const gutter = innerW >= 3 ? (focused && lineIndex === 0 ? "❯ " : "  ") : "";
+          const icon = lineIndex === 0 && option.icon && line.text.startsWith(option.icon) ? option.icon : undefined;
+          const body = icon ? line.text.slice(icon.length) : line.text;
+          const bodyFg = line.description
+            ? focused ? theme.cyan : theme.muted
+            : focused || option.active ? theme.white : theme.foreground;
           return (
             <box
               key={`${option.value}:${lineIndex}`}
@@ -215,18 +222,11 @@ export function Picker(props: PickerProps): ReactNode {
                 services.overlay.selectPicker(option.value);
               }}
             >
-              <text
-                selectable={false}
-                content={`${innerW >= 3 ? focused && lineIndex === 0 ? "❯ " : "  " : ""}${line.text}`}
-                style={{
-                  fg: line.description
-                    ? focused ? theme.cyan : theme.muted
-                    : focused || option.active ? theme.white : theme.foreground,
-                  bg,
-                  height: 1,
-                  flexShrink: 0,
-                }}
-              />
+              <text selectable={false} wrapMode="none" style={{ fg: bodyFg, bg, height: 1, flexShrink: 0 }}>
+                {gutter ? <span style={{ fg: focused ? theme.white : theme.muted, bg }}>{gutter}</span> : null}
+                {icon ? <span style={{ fg: pickerToneColor(option.tone, theme), bg }}>{icon}</span> : null}
+                {body}
+              </text>
             </box>
           );
         })}
