@@ -600,16 +600,22 @@ an individual child. `/agents restart <id>` reruns the assignment when orchestra
 is enabled. Saved child reports can be inspected after resuming their parent
 session; `--no-history` keeps child records in memory only.
 
-Children share a hard limit of three active executions, including workers still
-stopping after cancellation. They inherit the parent's provider/model and project
+Children have no fixed concurrency, step, or assignment-time budget. They inherit the parent's provider/model and project
 root, with independent histories and stable cache prefixes. Their only tools are
 confined file reads/listings/searches and web search/fetch; shell, editing, MCP,
-arbitrary HTTP actions, and further delegation are unavailable. Investigations
-are bounded to 24 rounds and ten minutes; oversized reads and incomplete searches
-are reported as coverage gaps, not successful exhaustive coverage. Status,
-reports, and recent events are available through `subagent.list/read/wait`; the
-default read returns the last three events without injecting full child histories
-into the parent conversation.
+arbitrary HTTP actions, and further delegation are unavailable. Provider context
+and transport safety limits still apply. Context compaction retains evidence and
+continues research without displaying internal partial reports as deliverables.
+
+The parent leaves delegated investigations to their children and continues only
+necessary non-overlapping work. Results arrive automatically at safe model
+boundaries or wake an idle parent. When no independent work remains,
+`subagent.wait` suspends without polling or a default deadline; omit the ID to
+receive whichever child completes, fails, or stops first. Healthy work should not
+be cancelled for slowness or because the parent repeated it. Reports are retained
+whole and paged with `subagent.read`; use the returned attempt and `nextOffset`
+to continue reading. Activity reads default to three recent events. See
+[orchestration architecture and recovery](docs/subagent-orchestration.md).
 
 ---
 

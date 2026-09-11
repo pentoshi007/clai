@@ -8,7 +8,7 @@ export default defineConfig({
     // checkout's test matrix. Without this exclusion Vitest discovers stale
     // copies with independently generated version metadata.
     //
-    exclude: [...configDefaults.exclude, "**/.kiro/**"],
+    exclude: [...configDefaults.exclude, "**/.kiro/**", "**/.hoplite/**"],
     // Seed isolated, writable clai storage roots for every test file before
     // its modules load, so no test writes to (or races on) the developer's
     // real home-directory config/data. See test/vitest.setup.ts.
