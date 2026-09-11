@@ -34,9 +34,6 @@ export interface SubagentRun extends SubagentAssignment {
 export interface SubagentCheckpoint {
   readonly messages: readonly ChatMessage[];
   readonly nativeTools?: boolean | undefined;
-  readonly successfulCalls: readonly string[];
-  readonly researchRounds: number;
-  readonly reportRounds: number;
   readonly reportReason?: string | undefined;
   readonly finished?: boolean | undefined;
   readonly pending?: {

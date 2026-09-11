@@ -143,7 +143,6 @@ describe("SubagentManager", () => {
     await tick();
     const checkpoint: SubagentCheckpoint = {
       messages: [{ role: "assistant", content: "private evidence", reasoningBlock: { text: "opaque provider artifact" } }],
-      successfulCalls: ["private call"], researchRounds: 2, reportRounds: 0,
       pending: { native: true, next: 1, calls: [{ name: "fs.list", args: { path: "/tmp" } }] },
     };
     const original = structuredClone(checkpoint);
@@ -151,7 +150,7 @@ describe("SubagentManager", () => {
     checkpoint.messages[0]!.content = "mutation outside the manager";
     work[0]!.reject(new Error("Transient provider failure"));
     expect(await manager.wait(run.id)).toMatchObject({ status: "error", recovery: "exact" });
-    expect(JSON.stringify([saved, manager.list()])).not.toMatch(/private evidence|private call|opaque provider artifact|successfulCalls|messages/);
+    expect(JSON.stringify([saved, manager.list()])).not.toMatch(/private evidence|opaque provider artifact|messages/);
     expect(manager.restart(run.id)).toMatchObject({ attempt: 2, recovery: "exact" });
     await tick();
     expect(work[1]!.input.checkpoint).toEqual(original);
@@ -170,7 +169,7 @@ describe("SubagentManager", () => {
     manager.setEnabled(true);
     const run = manager.start(assignment);
     await tick();
-    const checkpoint: SubagentCheckpoint = { messages: [], successfulCalls: [], researchRounds: 1, reportRounds: 0 };
+    const checkpoint: SubagentCheckpoint = { messages: [] };
     work[0]!.input.saveCheckpoint!(checkpoint);
     expect(() => work[0]!.input.saveCheckpoint!({ ...checkpoint, messages: [{ role: "user", content: "x".repeat(1_048_576) }] })).toThrow("checkpoint budget");
     work[0]!.reject(new Error("Checkpoint budget reached"));
