@@ -58,6 +58,18 @@ describe("parent subagent tool boundary", () => {
     expect(data(report.output).report).toBe(run.report);
   });
 
+  it("exposes partial status and recovery with reports instead of promoting them to completed", async () => {
+    const { manager, context, signal } = fixture();
+    const partial: SubagentRun = { ...run, status: "partial", recovery: "exact", report: "Status: partial\nPrior evidence and coverage gaps" };
+    manager.get.mockReturnValue(partial);
+    manager.wait.mockResolvedValue(partial);
+    const report = await runSubagentTool({ name: "subagent.read", args: { id: run.id, view: "report" } }, context, signal);
+    expect(data(report.output)).toMatchObject({ status: "partial", recovery: "exact", reportAvailable: true, report: partial.report });
+    const waited = await runSubagentTool({ name: "subagent.wait", args: { id: run.id } }, context, signal);
+    expect(data(waited.output)).toMatchObject({ status: "partial", recovery: "exact", reportAvailable: true });
+    expect(data(waited.output).report).toBeUndefined();
+  });
+
   it("caps tail output even after its character budget is exhausted", async () => {
     const { manager, context, signal } = fixture();
     manager.get.mockReturnValue({ ...run, events: run.events.map((event) => ({ ...event, text: "x".repeat(13000) })) });

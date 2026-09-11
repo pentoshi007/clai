@@ -20,6 +20,15 @@ function run(overrides: Partial<SubagentRun> = {}): SubagentRun {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("FileSubagentStore", () => {
+  it("round-trips generated session IDs without changing content redaction", () => {
+    const { store } = fixture();
+    const parentSessionId = "sess-mtwvqvsk-abcdef";
+    store.save(run({ parentSessionId, prompt: "Inspect sk-secretvalue" }));
+    expect(store.load(parentSessionId)[0]).toMatchObject({ parentSessionId, prompt: "Inspect sk-••••••" });
+    expect(sanitizeSubagentText(parentSessionId)).toBe("sess-mtwvqvsk-••••••");
+    expect(() => store.save(run({ parentSessionId: "sk-secretvalue" }))).toThrow("Invalid subagent record");
+  });
+
   it("atomically stores private redacted records in parent-separated hashed directories", () => {
     const { store, directory } = fixture();
     store.save(run({ title: "\x1b[31mResearch\x1b[0m", prompt: "sk-secretprompt", context: "password=private", report: "sk-secretreport\x1b]52;c;attack\x07", events: [{ kind: "tool", text: "Authorization: Bearer secretvalue", sequence: 1, timestamp: 1 }] }));
@@ -50,6 +59,16 @@ describe("FileSubagentStore", () => {
       expect(restored.report).toBeUndefined();
       expect(restored.events.at(-1)?.text).toMatch(/restart explicitly/);
     }
+  });
+
+  it("retains partial status and exposes history recovery rather than a nonexistent exact checkpoint", () => {
+    const { store, directory } = fixture();
+    const report = "Status: partial\nBounded prior-attempt findings";
+    store.save({ ...run({ status: "partial", report, recovery: "exact" }), checkpoint: { messages: [{ content: "private provider artifact" }] } } as SubagentRun);
+    expect(store.load("parent")[0]).toMatchObject({ status: "partial", report, recovery: "history" });
+    expect(readFileSync(join(directory(), `${hash("child")}.json`), "utf8")).not.toMatch(/checkpoint|messages|private provider artifact/);
+    store.save(run({ id: "fresh", events: [], report: undefined, recovery: "exact" }));
+    expect(store.load("parent").find((child) => child.id === "fresh")?.recovery).toBe("fresh");
   });
 
   it("ignores corrupt, oversized, cross-parent, symlinked, and mismatched records", () => {

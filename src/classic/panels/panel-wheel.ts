@@ -64,7 +64,7 @@ export function panelWheelMove(
     }
     case "picker": {
       const request = snapshot.overlay.request;
-      const moved = run(snapshot.picker, (state) => pickerKey({ request, state, chord, rows }));
+      const moved = run(snapshot.picker, (state) => pickerKey({ request, state, chord, rows, columns: deps.columns }));
       return moved ? { patch: { picker: moved.state }, effects: moved.effects } : undefined;
     }
     case "jobs": {

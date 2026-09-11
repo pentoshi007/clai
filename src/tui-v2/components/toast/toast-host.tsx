@@ -11,6 +11,8 @@ import type {
 import { TOAST_ENTER_MS } from "../../../ui-core/controllers/toast-controller.js";
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { useToastState } from "../../../ui-core/react/use-toast.js";
+import { fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
+import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
 import {
   TOAST_BOX_HEIGHT,
   toastAnimAt,
@@ -21,6 +23,7 @@ export interface ToastHostProps {
   readonly theme: Theme;
   readonly termWidth: number;
   readonly termHeight: number;
+  readonly compact?: boolean;
 }
 
 const TOAST_STACK_GAP = 1;
@@ -216,18 +219,34 @@ function ToastPill(props: {
 
 function ToastHostImpl(props: ToastHostProps): ReactNode {
   countRender("ToastHost");
-  const { toast, theme, termWidth, termHeight } = props;
+  const { toast, theme, termWidth, termHeight, compact } = props;
   const items = useToastState(toast);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (items.length === 0) return;
+    if (items.length === 0 || compact) return;
     const id = setInterval(() => setNow(Date.now()), TICK_MS);
     (id as unknown as { unref?: () => void }).unref?.();
     return () => clearInterval(id);
-  }, [items.length > 0]);
+  }, [items.length > 0, compact]);
 
   if (items.length === 0) return null;
+
+  if (compact) {
+    const size = overlaySize(termWidth, termHeight);
+    if (!size.marginY) return null;
+    const item = items.at(-1)!;
+    return (
+      <text
+        selectable={false}
+        content={fitOneLine([`${levelGlyph(item.level)} ${item.message.replace(/\s+/g, " ")}`], size.width)}
+        style={{
+          position: "absolute", top: 0, left: size.marginX, width: size.width, height: 1,
+          zIndex: 1000, fg: theme.white, bg: levelPlate(item.level, theme),
+        }}
+      />
+    );
+  }
 
   const maxWidth = Math.max(20, Math.min(termWidth - 4, Math.floor(termWidth * 0.85)));
   const ordered = [...items].reverse();

@@ -314,7 +314,9 @@ describe("Property 19: activity and lifetime timers are independent", () => {
     }
     // Lifetime is fixed from launch, so activity cannot postpone it.
     await clock.advance(500);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect.poll(() => isTerminalState(
+      manager.status({ ownerId: OWNER, id: started.sessionId }).session.state,
+    ), { timeout: 3000 }).toBe(true);
     const session = manager.status({ ownerId: OWNER, id: started.sessionId }).session;
     expect(isTerminalState(session.state)).toBe(true);
     expect(session.terminationReason).toBe("lifetime-timeout");
@@ -325,7 +327,9 @@ describe("Property 19: activity and lifetime timers are independent", () => {
     const { manager } = build(clock, { idleTimeoutMs: 1_000 });
     const started = await manager.start({ ownerId: OWNER, command: "cmd", confirm: approve });
     await clock.advance(1_000);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect.poll(() => isTerminalState(
+      manager.status({ ownerId: OWNER, id: started.sessionId }).session.state,
+    ), { timeout: 3000 }).toBe(true);
     expect(
       manager.status({ ownerId: OWNER, id: started.sessionId }).session.terminationReason,
     ).toBe("idle-timeout");

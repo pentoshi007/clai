@@ -35,12 +35,16 @@ function build(config: Record<string, unknown> = {}): InteractiveSessionManager 
 }
 
 async function startChild(manager: InteractiveSessionManager) {
-  return await manager.start({
+  const started = await manager.start({
     ownerId: OWNER,
     command: CHILD,
     terminalMode: "pipe",
     confirm: approve,
   });
+  await expect.poll(async () => textOf((await manager.read({
+    ownerId: OWNER, id: started.sessionId, cursor: 0, waitMs: 100,
+  })).page), { timeout: 3000 }).toContain("ready>");
+  return started;
 }
 
 function textOf(page: { events: readonly { content: string }[] } | undefined): string {
