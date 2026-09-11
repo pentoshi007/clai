@@ -22,6 +22,7 @@ import {
   seedSessionModel,
 } from "../../src/store/session-model.js";
 import { getConfig, getProviderModel } from "../../src/store/config.js";
+import * as permissions from "../../src/os/permissions.js";
 
 const SESSION_A = "sess-aaaa1111";
 const SESSION_B = "sess-bbbb2222";
@@ -83,6 +84,32 @@ describe("session model binding", () => {
       provider: "gemini",
       model: "second-model",
     });
+  });
+
+  it("does not let a stale disk read overwrite a concurrently saved binding", async () => {
+    let startRead!: () => void;
+    let releaseRead!: () => void;
+    const started = new Promise<void>((resolve) => { startRead = resolve; });
+    const released = new Promise<void>((resolve) => { releaseRead = resolve; });
+    const exists = vi.spyOn(permissions, "safeExists").mockImplementationOnce(async () => {
+      startRead();
+      await released;
+      return false;
+    });
+    const pending = loadSessionModelBinding(SESSION_A);
+    const binding = { provider: "nvidia" as const, model: "newly-saved-model" };
+    try {
+      await started;
+      await saveSessionModel(SESSION_A, binding);
+      expect(await loadSessionModelBinding(SESSION_A)).toEqual(binding);
+      releaseRead();
+      expect(await pending).toEqual(binding);
+      expect(await loadSessionModelBinding(SESSION_A)).toEqual(binding);
+    } finally {
+      releaseRead();
+      await pending;
+      exists.mockRestore();
+    }
   });
 
   it("survives a cache reset by reading the binding from disk", async () => {

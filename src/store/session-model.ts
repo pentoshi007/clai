@@ -124,6 +124,9 @@ async function readSessionModelState(sessionId: string): Promise<SessionModelSta
     if (err && err.code === "EACCES") handlePermissionError(err);
     return UNBOUND;
   }
+  // A save may have populated the cache while this disk read was pending.
+  const newer = sessionBindings.get(sessionId);
+  if (newer) return newer;
   sessionBindings.set(sessionId, state);
   return state;
 }
