@@ -242,6 +242,22 @@ try {
   await settle(() => setup.mockInput.pressEnter());
   assert.equal(tallSelected, true);
 
+  for (const toast of services.toast.getToasts()) {
+    if (toast.key === "overlay-notice") services.toast.dismiss(toast.id);
+  }
+  const secretAnswer = services.overlay.openSecret({
+    title: "New custom provider · base URL",
+    prompt: "Paste the base URL, e.g. https://api.example.com/v1",
+    reveal: true,
+  });
+  const secretFrame = await settle();
+  assert.ok(secretFrame.includes("▎"), "revealed secret input must show a visible text caret");
+  await settle(() => setup.mockInput.pressKey("h"));
+  assert.ok(setup.captureCharFrame().includes("h▎"), "caret must follow typed input");
+  await settle(() => setup.mockInput.pressEscape());
+  assert.equal(await secretAnswer, undefined);
+  assert.equal(services.overlay.getState().kind, "none");
+
   await settle(() => setup.resize(120, 40));
   const slashMenu = await settle(() => setup.mockInput.pressKey("/"));
   assert.equal(services.overlay.getState().kind, "none");

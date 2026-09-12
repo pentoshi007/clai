@@ -54,6 +54,18 @@ describe("secret rows", () => {
     expect(rows[2]).toContain("https://api.example.com");
   });
 
+  it("always renders a caret at the input position", () => {
+    expect(render(typed("hunter2")).rows[2]).toContain("•••••••▎");
+    expect(
+      render(typed("https://api.example.com"), {
+        title: "Modal endpoint",
+        prompt: "endpoint URL",
+        reveal: true,
+      }).rows[2],
+    ).toContain("https://api.example.com▎");
+    expect(render().rows[2]).toContain("❯ ▎");
+  });
+
   it("seeds a revealed input from the shared request initial value", () => {
     const seeded = secretInitialState("{}");
     expect(seeded.buffer.reveal()).toBe("{}");
