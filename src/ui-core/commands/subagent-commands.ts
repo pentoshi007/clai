@@ -18,36 +18,18 @@ const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOptionTon
 
 export function handleOrchestration(services: AppServices, invocation: CommandInvocation): void {
   const action = invocation.args.trim().toLowerCase();
-  if (!["", "status", "on", "off"].includes(action)) {
-    services.session.notice("warn", "usage: /orchestration [on|off|status]");
-    return;
-  }
-  const manager = services.session.subagents;
-  const apply = (value: string): void => {
-    if (services.session.subagents !== manager) return;
-    if (value === "on" || value === "off") services.session.setOrchestrationEnabled(value === "on");
-    services.session.notice(
-      "info",
-      `Orchestration ${manager.enabled ? "on" : "off"} · session-only, default off. When enabled, the main agent can delegate independent assignments to background subagents. /agents inspects their live output. Turning off stops active children and prevents new starts/restarts.`,
-    );
-  };
   if (action === "") {
-    services.overlay.openPicker({
-      title: `Orchestration · ${manager.enabled ? "on" : "off"}`,
-      twoLine: true,
-      searchDescription: true,
-      options: [
-        { value: "status", label: "Status", description: "Show the current session setting without changing it", icon: "◆", tone: "accent" },
-        { value: "on", label: "On", description: "Allow the main agent to delegate independent read-only research for this session", icon: "●", tone: "success" },
-        { value: "off", label: "Off", description: "Stop active subagents and prevent new starts or restarts", icon: "○", tone: "muted" },
-      ],
-    }, (value) => {
-      services.overlay.close();
-      apply(value);
-    });
+    handleAgents(services, invocation);
     return;
   }
-  apply(action);
+  if (action !== "on" && action !== "off") {
+    services.session.notice("warn", "usage: /orchestrator [on|off]");
+    return;
+  }
+  services.session.setOrchestrationEnabled(action === "on");
+  services.session.notice("info", action === "on"
+    ? "Delegation enabled. /orchestrator inspects agents."
+    : "Delegation disabled. Active children are stopping.");
 }
 
 export function handleAgents(services: AppServices, invocation: CommandInvocation): void {

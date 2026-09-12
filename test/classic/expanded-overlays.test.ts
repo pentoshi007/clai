@@ -24,18 +24,18 @@ describe("Classic expanded overlays", () => {
     const ui = render(createElement(ServicesProvider, { services, children: createElement(ClassicApp, { wiring }) }));
     try {
       const frame = ui.lastFrame() ?? "";
-      if (columns >= 24) expect(frame).toContain("Status");
+      if (columns >= 24) expect(frame).toContain("Main agent");
       expect(frame).not.toContain("ctrl+c twice");
-      expect(services.session.subagents.enabled).toBe(false);
+      expect(services.session.subagents.enabled).toBe(true);
       for (const line of frame.split("\n")) expect(renderColumns(line)).toBeLessThanOrEqual(columns);
       const size = overlaySize(columns, rows);
       if (columns >= 24) {
-        const top = frame.split("\n").findIndex((line) => line.includes("Orchestration"));
+        const top = frame.split("\n").findIndex((line) => line.includes("Agents"));
         expect(top).toBe(size.marginY);
         expect(frame.split("\n").filter((line) => line.includes("│")).length).toBe(size.height - 2);
       }
-      services.overlay.selectPicker("status");
-      expect(services.session.subagents.enabled).toBe(false);
+      services.overlay.selectPicker("main");
+      expect(services.session.subagents.enabled).toBe(true);
       services.overlay.openPager("Output", "body content\n".repeat(50), undefined, undefined, "plain");
       await new Promise((resolve) => setTimeout(resolve, 60));
       const pager = ui.lastFrame() ?? "";
