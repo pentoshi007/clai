@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -76,7 +76,8 @@ describe("FileSubagentStore", () => {
     store.save(run());
     const file = (id: string) => join(directory(), `${hash(id)}.json`);
     writeFileSync(file("corrupt"), "{");
-    writeFileSync(file("oversized"), " ".repeat(1_048_577));
+    writeFileSync(file("oversized"), "");
+    truncateSync(file("oversized"), 6 * (SUBAGENT_LIMITS.report + SUBAGENT_LIMITS.chars) + 65_537);
     writeFileSync(file("foreign"), JSON.stringify(run({ id: "foreign", parentSessionId: "elsewhere" })));
     writeFileSync(file("mismatch"), JSON.stringify(run({ id: "different" })));
     writeFileSync(file("invalid"), JSON.stringify(run({ id: "invalid", events: [{ kind: "tool", text: "x", timestamp: 1, sequence: -1 }] })));
@@ -106,7 +107,34 @@ describe("FileSubagentStore", () => {
     store.save(run({ id: "large", events, report: "r".repeat(24000) }));
     const restored = store.load("parent").find((child) => child.id === "large")!;
     expect(restored).toBeDefined();
-    expect(restored.events.reduce((sum, event) => sum + event.text.length, restored.report!.length)).toBeLessThan(128000);
+    expect(restored.events.reduce((sum, event) => sum + event.text.length, 0)).toBeLessThan(128000);
+    expect(restored.report).toBe("r".repeat(24000));
+  });
+
+  it("retains large reports independently of bounded activity history", () => {
+    const { store, directory } = fixture();
+    const report = `Verified evidence\n${'"\\é\n'.repeat(300_000)}\nFinal citation: src/worker.ts:42\npassword=private`;
+    const expected = sanitizeSubagentText(report);
+    const events = [{ kind: "tool" as const, text: "Read src/worker.ts:42", sequence: 1, timestamp: 1 }];
+    store.save(run({ report, events }));
+    expect(statSync(join(directory(), `${hash("child")}.json`)).size).toBeGreaterThan(1_048_576);
+    const restored = store.load("parent")[0]!;
+    expect(restored.report).toBe(expected);
+    expect(restored.report).toContain("Final citation: src/worker.ts:42");
+    expect(restored.report).not.toContain("private");
+    expect(restored.events).toEqual(events);
+    expect(sanitizeSubagentRun(restored).report).toBe(expected);
+  });
+
+  it("rejects oversized reports rather than silently truncating evidence", () => {
+    const { store } = fixture();
+    store.save(run({ report: "Retained report" }));
+    const report = "😀".repeat(SUBAGENT_LIMITS.report / 4 + 1);
+    expect(report.length).toBeLessThan(SUBAGENT_LIMITS.report);
+    expect(() => sanitizeSubagentRun(run({ report }))).toThrow("storage safety limit");
+    expect(() => store.save(run({ report }))).toThrow("Invalid subagent record");
+    expect(restoreSubagentRun(run({ report }), "parent")).toBeUndefined();
+    expect(store.load("parent")[0]!.report).toBe("Retained report");
   });
 
   it("persists immutable sanitized follow-ups without unexpected fields", () => {
@@ -173,12 +201,12 @@ describe("FileSubagentStore", () => {
     expect(() => store.save(run({ id: "sk-privatechild" }))).toThrow(/Invalid/);
   });
 
-  it("never prunes active records when completed records fill retention", () => {
+  it("retains active records separately from settled history", () => {
     const { store, directory } = fixture();
     store.save(run({ id: "active", status: "running", updatedAt: 0, report: undefined }));
     store.save(run({ id: "stopping", status: "stopping", updatedAt: 0, report: undefined }));
     for (let index = 0; index < 35; index++) store.save(run({ id: `done-${index}`, updatedAt: index + 1 }));
-    expect(readdirSync(directory())).toHaveLength(24);
+    expect(readdirSync(directory())).toHaveLength(26);
     const restored = store.load("parent");
     expect(restored.find((child) => child.id === "active")?.status).toBe("stopped");
     expect(restored.find((child) => child.id === "stopping")?.status).toBe("stopped");
@@ -201,13 +229,27 @@ describe("FileSubagentStore", () => {
       for (let index = 0; index < 23; index++) {
         await manager.wait(manager.start({ ...run(), title: `Completed ${index}`, prompt: `Task ${index}` }).id);
       }
-      expect(() => manager.start({ ...run(), prompt: "Another task" })).toThrow(/retention limit/);
+      await manager.wait(manager.start({ ...run(), prompt: "Another task" }).id);
       const restored = store.load("parent");
       expect(restored.map((child) => child.id).sort()).toEqual(manager.list().map((child) => child.id).sort());
       expect(restored.find((child) => child.id === active.id)?.status).toBe("stopped");
     } finally {
       manager.dispose();
       clock.mockRestore();
+    }
+  });
+
+  it("restores every interrupted assignment even above the history retention count", () => {
+    const { store, directory } = fixture();
+    for (let index = 0; index < 30; index++) store.save(run({ id: `active-${index}`, status: "running", report: undefined }));
+    expect(readdirSync(directory())).toHaveLength(30);
+    const manager = new SubagentManager("parent", { store });
+    try {
+      expect(manager.list()).toHaveLength(30);
+      expect(manager.list().every((child) => child.status === "stopped")).toBe(true);
+      expect(manager.pendingResults()).toEqual([]);
+    } finally {
+      manager.dispose();
     }
   });
 });

@@ -25,7 +25,7 @@ export function handleOrchestration(services: AppServices, invocation: CommandIn
   const manager = services.session.subagents;
   const apply = (value: string): void => {
     if (services.session.subagents !== manager) return;
-    if (value === "on" || value === "off") manager.setEnabled(value === "on");
+    if (value === "on" || value === "off") services.session.setOrchestrationEnabled(value === "on");
     services.session.notice(
       "info",
       `Orchestration ${manager.enabled ? "on" : "off"} · session-only, default off. When enabled, the main agent can delegate independent assignments to background subagents. /agents inspects their live output. Turning off stops active children and prevents new starts/restarts.`,
@@ -65,7 +65,7 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
       }
       if (!manager.get(args[1]!)) throw new Error(`Unknown subagent: ${args[1]}`);
       if (args[0] === "stop") manager.stop(args[1]!);
-      else manager.restart(args[1]!);
+      else services.session.restartSubagent(args[1]!);
       services.session.notice("info", `${args[0]} requested · ${args[1]}`);
     } catch (error) {
       services.session.notice("warn", error instanceof Error ? error.message : String(error));
