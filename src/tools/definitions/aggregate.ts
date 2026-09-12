@@ -301,6 +301,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     { readOnly: true, askMode: true },
   ),
   def(
+    "mcp.call",
+    "Call one active MCP tool. Use the exact dotted tool name and its object arguments from MCP TOOL CONTEXT or mcp.tools. This stable wrapper keeps MCP catalog changes from changing the native tool schema.",
+    {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Exact dotted MCP tool name from MCP TOOL CONTEXT.",
+        },
+        arguments: {
+          type: "object",
+          description: "Arguments for that MCP tool, matching its listed schema.",
+          additionalProperties: true,
+        },
+      },
+      required: ["name", "arguments"],
+      additionalProperties: false,
+    },
+    { mutates: true },
+  ),
+  def(
     "mcp.enable",
     'Enable MCP tools for this session so their tools become callable. Pass server (one name) or servers (several names) to select specific servers, "all" to enable every live server, or "off" to disable. Changes only this session\'s selection; it never edits configuration.',
     {

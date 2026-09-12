@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ToolDefinition } from "../../src/types.js";
 import { availableToolNames } from "../../src/tools/registry.js";
 import { RUNNER_META_TOOL_NAMES } from "../../src/tools/definitions.js";
 import {
@@ -7,18 +6,10 @@ import {
   type ToolRoutingInput,
 } from "../../src/agent/turn/tool-routing.js";
 
-const mcpDefinition: ToolDefinition = {
-  name: "mcp.docs.search",
-  description: "search docs",
-  parameters: { type: "object", properties: {} },
-};
-
 const routing = (overrides: Partial<ToolRoutingInput> = {}) =>
   createToolRouting({
     mode: "agent",
     mcpPresent: false,
-    mcpToolNames: [],
-    mcpToolDefinitions: [],
     toolCalling: "auto",
     useCompactSystemPrompt: () => false,
     ...overrides,
@@ -41,17 +32,15 @@ describe("tool routing", () => {
     }
   });
 
-  it("appends mcp tool names and agent tools only when a runtime exists", () => {
-    const withoutRuntime = routing({
-      mcpToolNames: ["mcp.docs.search"],
-    }).routeToolNames("nvidia", "test-model");
-    expect(withoutRuntime).toContain("mcp.docs.search");
+  it("adds the stable MCP wrapper and controls only when a runtime exists", () => {
+    const withoutRuntime = routing().routeToolNames("nvidia", "test-model");
+    expect(withoutRuntime).not.toContain("mcp.call");
     expect(withoutRuntime).not.toContain("mcp.list");
 
     const withRuntime = routing({
       mcpPresent: true,
-      mcpToolNames: ["mcp.docs.search"],
     }).routeToolNames("nvidia", "test-model");
+    expect(withRuntime).toContain("mcp.call");
     expect(withRuntime).toContain("mcp.list");
   });
 
@@ -73,23 +62,30 @@ describe("tool routing", () => {
     ).toBeUndefined();
   });
 
-  it("allows routed names plus runner meta tools and includes mcp definitions", () => {
+  it("allows routed names plus runner meta tools and includes the MCP wrapper", () => {
     const defs = routing({
       mcpPresent: true,
-      mcpToolNames: ["mcp.docs.search"],
-      mcpToolDefinitions: [mcpDefinition],
     }).selectToolDefs(true, false, "nvidia", "test-model");
 
     expect(defs).toBeDefined();
     const names = defs!.map((definition) => definition.name);
-    expect(names).toContain("mcp.docs.search");
+    expect(names).toContain("mcp.call");
     for (const name of names) {
       const routed = routing({
         mcpPresent: true,
-        mcpToolNames: ["mcp.docs.search"],
       }).routeToolNames("nvidia", "test-model");
       expect(routed.includes(name) || RUNNER_META_TOOL_NAMES.has(name)).toBe(true);
     }
+  });
+
+  it("retains the MCP wrapper in compact native tool sets", () => {
+    const defs = routing({ mcpPresent: true }).selectToolDefs(
+      true,
+      true,
+      "nvidia",
+      "test-model",
+    );
+    expect(defs?.some((definition) => definition.name === "mcp.call")).toBe(true);
   });
 
   it("selects the compact constitution only when compact prompts are enabled", () => {

@@ -164,6 +164,7 @@ describe("MCP agent tool ask-mode filtering", () => {
     expect(mcpAgentToolNames(false)).toEqual([
       "mcp.list",
       "mcp.tools",
+      "mcp.call",
       "mcp.enable",
       "mcp.connect",
       "mcp.login",
@@ -172,6 +173,7 @@ describe("MCP agent tool ask-mode filtering", () => {
     const askNames = new Set(getToolDefinitions({ askMode: true }).map((d) => d.name));
     expect(askNames.has("mcp.list")).toBe(true);
     expect(askNames.has("mcp.tools")).toBe(true);
+    expect(askNames.has("mcp.call")).toBe(false);
     expect(askNames.has("mcp.enable")).toBe(false);
     expect(askNames.has("mcp.login")).toBe(false);
     expect(askNames.has("mcp.add")).toBe(false);
