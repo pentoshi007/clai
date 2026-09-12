@@ -258,6 +258,7 @@ export function mapToolChoiceToGemini(choice: ToolChoice | undefined): {
 }
 
 const textOnlyModels = new Set<string>();
+const degradedToolModels = new Set<string>();
 
 export function textOnlyKey(provider: ProviderId, model: string): string {
   return `${provider}::${model}`;
@@ -267,12 +268,25 @@ export function markTextOnlyModel(provider: ProviderId, model: string): void {
   textOnlyModels.add(textOnlyKey(provider, model));
 }
 
+export function markDegradedToolModel(
+  provider: ProviderId,
+  model: string,
+): void {
+  degradedToolModels.add(textOnlyKey(provider, model));
+}
+
 export function isTextOnlyModel(provider: ProviderId, model: string): boolean {
-  return textOnlyModels.has(textOnlyKey(provider, model));
+  const key = textOnlyKey(provider, model);
+  return textOnlyModels.has(key) || degradedToolModels.has(key);
+}
+
+export function clearDegradedToolModels(): void {
+  degradedToolModels.clear();
 }
 
 export function clearTextOnlyModels(): void {
   textOnlyModels.clear();
+  degradedToolModels.clear();
 }
 
 export interface OpenAiToolCallAccumulator {

@@ -36,7 +36,11 @@ import { saveOutcomeState } from "../../outcomes.js";
 import { settleUnrunCalls } from "./unrun-calls.js";
 import { suppressRepeatedActionSequence } from "./sequence-suppression.js";
 import type { NativeToolCall, ToolCall } from "../../../types.js";
-import { isTextOnlyModel, markTextOnlyModel } from "../../../llm/tool-protocol.js";
+import {
+  clearDegradedToolModels,
+  isTextOnlyModel,
+  markDegradedToolModel,
+} from "../../../llm/tool-protocol.js";
 import { getConfig } from "../../../store/config.js";
 import { auditLog } from "../../../store/logs.js";
 import { jobManager } from "../../../tools/jobs.js";
@@ -63,6 +67,7 @@ export const runTurnRounds = async (
     deps.session.sessionId,
     deps.messages,
   );
+  clearDegradedToolModels();
   for (let iteration = 0; iteration < deps.maxIterations; iteration += 1) {
 
     deps.outputState.visibleCommitted = false;
@@ -303,10 +308,10 @@ export const runTurnRounds = async (
                 "Native tool arguments were unusable again; nothing ran. Reissue as a fenced tool block.",
               );
             }
-            markTextOnlyModel(deps.loop.provider, deps.loop.model);
+            markDegradedToolModel(deps.loop.provider, deps.loop.model);
             deps.writeNotice(
               "warn",
-              "native tool arguments keep arriving unusable — switching this model to the text tool protocol",
+              "native tool arguments keep arriving unusable — switching this model to the text tool protocol for the rest of this turn",
             );
             commitAssistantRetry(assistantText.visible);
             deps.messages.push(
@@ -401,10 +406,10 @@ export const runTurnRounds = async (
             if (!deferred.shown || deferred.call.name === "…") continue;
             deps.writeToolBlocked(deferred.eventId, deferred.call.name, reason);
           }
-          markTextOnlyModel(deps.loop.provider, deps.loop.model);
+          markDegradedToolModel(deps.loop.provider, deps.loop.model);
           deps.writeNotice(
             "warn",
-            "provider abandoned a native tool call — switching this model to the text tool protocol",
+            "provider abandoned a native tool call — switching this model to the text tool protocol for the rest of this turn",
           );
         }
         const emptyState: EmptyResponseState = {
