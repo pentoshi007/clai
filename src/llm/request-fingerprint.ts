@@ -179,6 +179,8 @@ function serializerId(
       return "gemini-generate-content";
     case "meta":
       return "meta-responses";
+    case "vercel":
+      return "responses";
     case "ollama":
       return "ollama-chat";
     case "aws-mantle":

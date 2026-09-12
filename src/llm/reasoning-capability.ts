@@ -119,6 +119,17 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
     /qwen3/i,
     /aion/i,
   ],
+  vercel: [
+    /gpt-5/i,
+    /gpt-6/i,
+    /claude-(?:opus|sonnet|haiku)/i,
+    /gemini-/i,
+    /deepseek/i,
+    /qwen/i,
+    /kimi/i,
+    /glm/i,
+    /reason/i,
+  ],
 };
 
 export function endpointAcceptedEfforts(

@@ -63,6 +63,10 @@ export const providerAliases: Record<string, ProviderId> = {
   experientiallabs: "explabs",
   "experiential-labs": "explabs",
   exp: "explabs",
+  vercel: "vercel",
+  "ai-gateway": "vercel",
+  "vercel-ai-gateway": "vercel",
+  gateway: "vercel",
 };
 
 export const defaultModels: Record<ProviderId, string> = {
@@ -86,6 +90,7 @@ export const defaultModels: Record<ProviderId, string> = {
   orcarouter: "openai/gpt-4o-mini",
   "merge-gateway": "openai/gpt-5.2",
   explabs: "claude-fable-5.1",
+  vercel: "openai/gpt-5.4-mini",
 };
 
 export const retiredModelReplacements: Partial<
@@ -140,4 +145,5 @@ export const envVars: Record<ProviderId, string | undefined> = {
   orcarouter: "ORCAROUTER_API_KEY",
   "merge-gateway": "MERGE_GATEWAY_API_KEY",
   explabs: "EXPLABS_API_KEY",
+  vercel: "AI_GATEWAY_API_KEY",
 };

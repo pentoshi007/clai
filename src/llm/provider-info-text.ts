@@ -648,5 +648,52 @@ GOOD TO KNOW
   - Env var: EXPLABS_API_KEY (used when nothing is stored).
 
 Docs: https://platform.experientiallabs.ai/docs
-API:  https://api.experientiallabs.ai/v1 (OpenAI-compatible)`,
+  API:  https://api.experientiallabs.ai/v1 (OpenAI-compatible)`,
+  vercel: `Vercel AI Gateway — a unified Responses API for OpenAI, Anthropic,
+Google and other model providers
+
+WHAT IT IS
+  AI Gateway exposes an OpenAI Responses-compatible endpoint that routes
+  provider/model ids such as openai/gpt-5.4-mini and
+  anthropic/claude-sonnet-5 across supported upstream providers.
+
+  Base URL   https://ai-gateway.vercel.sh/v1
+  Auth       Authorization: Bearer <AI Gateway API key>
+  Endpoints  /models · /responses
+
+MODELS
+  /model reads the public live catalog and caches it for one hour. It keeps
+  text-capable language models, registers model context, modalities and
+  reasoning_options, and excludes image-generation, embeddings, audio and
+  video-only entries. Reasoning effort options are model-specific and are
+  discovered from the catalog instead of inferred from a model family.
+
+CAPABILITIES
+  Responses streaming, native function tools, tool-result replay, images,
+  PDFs, structured reasoning and automatic prompt caching are supported.
+  clai sends caching: auto, a stable prompt_cache_key and store: false.
+  The shared key-rotation layer supports up to ten AI_GATEWAY_API_KEY values.
+
+SETUP
+  1. Create an AI Gateway key at https://vercel.com/ai-gateway
+  2. clai set vercel <key>
+  3. clai use vercel
+  4. /model openai/gpt-5.4-mini
+
+MANAGING KEYS IN clai
+  clai set vercel <key>       add a key (up to 10, rotated on failure)
+  clai set vercel <key2>      add another; the last that worked is sticky
+  clai keys                   masked keys
+  clai unset vercel           remove every stored key
+  /set vercel                 TUI: multi-key editor
+  /info vercel                this page
+
+GOOD TO KNOW
+  - Aliases: vercel, ai-gateway, vercel-ai-gateway, gateway.
+  - The API accepts none, minimal, low, medium, high, xhigh and max effort,
+    but each catalog model advertises its own supported subset.
+  - Env var: AI_GATEWAY_API_KEY (used when nothing is stored).
+
+Docs: https://vercel.com/docs/ai-gateway
+API: https://ai-gateway.vercel.sh/v1/responses`,
 };

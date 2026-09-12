@@ -432,6 +432,49 @@ export const FAMILY_LAYERS: Partial<Record<ProviderId, ProviderProfileLayer>> = 
       naturalEofAccepted: false,
     },
   },
+  vercel: {
+    evidence: providerDoc("vercel-ai-gateway-responses"),
+    transport: { authType: "bearer", systemPolicy: "developer-fallback" },
+    capabilities: {
+      tools: "supported",
+      images: "unknown",
+      structuredOutput: "supported",
+    },
+    reasoning: {
+      control: {
+        dialect: "openai-nested-reasoning",
+        status: "supported",
+        evidence: providerDoc("vercel-ai-gateway-reasoning-options"),
+      },
+      acceptedEfforts: [],
+      disable: "supported",
+      disableForm: "omit-control",
+      outputShapes: ["encrypted-reasoning-items"],
+      replayScope: "tool-turn",
+      finalTurnPreservation: "unsupported",
+    },
+    cache: {
+      kind: "automatic-prefix",
+      affinityField: "prompt_cache_key",
+      cacheAffectingFields: [
+        "input",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "prompt_cache_key",
+        "caching",
+        "cache_ttl",
+      ],
+    },
+    usage: {
+      cachedInput: ["usage.input_tokens_details.cached_tokens"],
+      cacheWrite: ["usage.input_tokens_details.cache_creation_tokens"],
+    },
+    terminal: {
+      proofs: ["response-completed", "response-incomplete"],
+      naturalEofAccepted: false,
+    },
+  },
   orcarouter: {
     evidence: providerDoc("orcarouter-reasoning"),
     capabilities: { tools: "supported", images: "unknown" },

@@ -38,6 +38,7 @@ export const providerCategory: Record<ProviderId, ProviderCategory> = {
   orcarouter: "paid-cloud",
   "merge-gateway": "paid-cloud",
   explabs: "paid-cloud",
+  vercel: "paid-cloud",
 };
 
 export function resolveProviderCategory(provider: ProviderId): ProviderCategory {

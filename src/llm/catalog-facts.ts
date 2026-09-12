@@ -99,8 +99,11 @@ function parseVision(entry: Record<string, unknown>): boolean | undefined {
 
 function parseModalities(entry: Record<string, unknown>): readonly string[] | undefined {
   const architecture = asRecord(entry.architecture);
+  const modalities = asRecord(entry.modalities);
   return (
-    stringList(architecture?.input_modalities) ?? stringList(entry.input_modalities)
+    stringList(architecture?.input_modalities) ??
+    stringList(entry.input_modalities) ??
+    stringList(modalities?.input)
   );
 }
 
@@ -185,6 +188,12 @@ function parseReasoning(
     facts.supportedEfforts = optionEfforts;
   }
   if (optionEfforts) facts.supported = true;
+
+  const reasoningOptionList = entry.reasoning_options;
+  const reasoningOptions = Array.isArray(reasoningOptionList)
+    && reasoningOptionList.length > 0;
+  const tags = (stringList(entry.tags) ?? []).map((tag) => tag.trim().toLowerCase());
+  if (reasoningOptions || tags.includes("reasoning")) facts.supported = true;
 
   if (facts.supported !== true) {
     const declared = featureContainersDeclareReasoning(entry);

@@ -82,9 +82,21 @@ export function ClassicApp(
     overlay,
   };
   const layout = allocateChrome(demand);
+  const cfg = getConfig();
   const intro = useMemo(
     () => introInputFor(services),
-    [services, snapshot.feedGeneration, session.mode, session.provider, session.model],
+    [
+      services,
+      snapshot.feedGeneration,
+      session.mode,
+      session.provider,
+      session.model,
+      cfg.defaultModel,
+      cfg.defaultProvider,
+      cfg.permissions,
+      cfg.thinking.enabled,
+      cfg.thinking.effort,
+    ],
   );
   const feed = useFeed({
     services,
@@ -103,7 +115,6 @@ export function ClassicApp(
   const selection = services.selection.getState();
   const standaloneLabel = providedWiring === undefined ? "clai classic · Ctrl+C twice to exit" : undefined;
   const phase = wiring.contextLimitEditingValue ? "suspended" : session.running ? "running" : "idle";
-  const cfg = getConfig();
   const metaLabel = formatComposerMeta(
     session.provider ?? cfg.defaultProvider,
     session.model ?? cfg.defaultModel,

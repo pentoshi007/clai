@@ -19,6 +19,7 @@ export const providerIds = [
   "orcarouter",
   "merge-gateway",
   "explabs",
+  "vercel",
 ] as const;
 
 export type ProviderId = (typeof providerIds)[number];
@@ -216,6 +217,7 @@ export type RequestFingerprintSerializerId =
   | "anthropic-messages"
   | "gemini-generate-content"
   | "meta-responses"
+  | "responses"
   | "ollama-chat";
 
 export type RequestFingerprintSectionKind =
