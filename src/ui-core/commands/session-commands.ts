@@ -22,6 +22,7 @@ import type { Mode } from "../../types.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
 import { usageCacheHitRate } from "../../app/controllers/session-usage-ledger.js";
 import { formatSessionUsage } from "../rendering/format-usage.js";
+import { createUsagePagerSource } from "../rendering/usage-pager-source.js";
 import { serializeTranscriptForCompaction } from "../state/transcript-compaction.js";
 import { conversationItemCount } from "../state/transcript-types.js";
 
@@ -231,16 +232,21 @@ export function handleContext(services: AppServices): void {
 }
 
 export function handleUsage(services: AppServices): void {
-  const state = services.session.getState();
+  const renderUsageBody = (): string => {
+    const state = services.session.getState();
+    return formatSessionUsage(services.session.usageReport(), {
+      sessionId: state.sessionId,
+      ...(state.title ? { title: state.title } : {}),
+    });
+  };
   const report = services.session.usageReport();
-  const body = formatSessionUsage(report, {
-    sessionId: state.sessionId,
-    ...(state.title ? { title: state.title } : {}),
-  });
   const opened = services.overlay.openPager(
     "Session usage",
-    body,
-    undefined,
+    renderUsageBody(),
+    createUsagePagerSource({
+      subscribe: (listener) => services.session.subscribe(listener),
+      renderBody: renderUsageBody,
+    }),
     undefined,
     "force",
   );
