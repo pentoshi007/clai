@@ -39,16 +39,49 @@ export function formatFsReadLineRange(
   return undefined;
 }
 
+const FS_READ_OPTION_KEYS = [
+  "offset",
+  "limit",
+  "startLine",
+  "endLine",
+  "pattern",
+  "context",
+  "maxMatches",
+  "caseInsensitive",
+  "maxBytes",
+] as const;
+
+function formatFsReadOption(key: (typeof FS_READ_OPTION_KEYS)[number], value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") return `${key}=${JSON.stringify(value)}`;
+  if (typeof value === "number" || typeof value === "boolean") return `${key}=${String(value)}`;
+  return undefined;
+}
+
+function formatFsReadArgs(args: Record<string, unknown>): string {
+  const path = String(args.path ?? "");
+  const range = formatFsReadLineRange(args);
+  const lineKeys = new Set(["offset", "limit", "startLine", "endLine"]);
+  const options = FS_READ_OPTION_KEYS
+    .filter((key) => !lineKeys.has(key))
+    .map((key) => formatFsReadOption(key, args[key]))
+    .filter((option): option is string => option !== undefined);
+  if (!range && options.length === 0) return path;
+  if (range && options.length === 0) return `${path}  lines ${range}`;
+  const lineOptions = FS_READ_OPTION_KEYS
+    .filter((key) => lineKeys.has(key))
+    .map((key) => formatFsReadOption(key, args[key]))
+    .filter((option): option is string => option !== undefined);
+  if (range) lineOptions.push(`lines=${range}`);
+  return `${path}\n${[...lineOptions, ...options].join(" · ")}`;
+}
+
 export function formatToolArgs(call: ToolCall): string {
   if (call.name === "terminal.send") {
     return `id=${String(call.args.id ?? "")} kind=${String(call.args.kind ?? "")}`;
   }
   if (call.name === "shell.exec") return String(call.args.command ?? "");
-  if (call.name === "fs.read") {
-    const path = String(call.args.path ?? "");
-    const range = formatFsReadLineRange(call.args);
-    return range ? `${path}  lines ${range}` : path;
-  }
+  if (call.name === "fs.read") return formatFsReadArgs(call.args);
   if (
     call.name === "fs.write" ||
     call.name === "fs.append" ||

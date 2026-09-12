@@ -106,6 +106,34 @@ describe("cleanArgsLabel / pathFromArgsDisplay", () => {
     expect(pathFromArgsDisplay("npm test && echo done")).toBeUndefined();
   });
 
+  it("opens fs.read cards through the source-file pager", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clai-fs-read-card-"));
+    tempDirs.push(dir);
+    const path = join(dir, "notes.txt");
+    const content = "first line\nsecond line\n";
+    await writeFile(path, content);
+    let opened: { body: string } | undefined;
+    const services = {
+      overlay: {
+        openPager(_title: string, body: string) {
+          opened = { body };
+          return true;
+        },
+      },
+      session: { spool: { tail: () => "" }, notice() {} },
+    } as never;
+
+    await openToolOutputPager(services, {
+      toolCallId: "fs-read-card",
+      name: "fs.read",
+      argsDisplay: `${path}\noffset=2 · limit=1 · lines=2`,
+      artifactPath: undefined,
+    } as never);
+
+    expect(opened?.body).toContain(content);
+    expect(opened?.body).toContain("full file");
+  });
+
   it("keeps the full shell command for pager body headers (no ellipsis)", () => {
     const cmd = [
       'echo "=== localhost ===" && curl -s -o /dev/null -w "HTTP %{http_code}\\n"',

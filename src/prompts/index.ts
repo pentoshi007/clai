@@ -150,6 +150,14 @@ Read: small files → fs.read {path}. Large/unknown → expect auto-head; if has
 
 `;
 
+const FS_EDIT_DISCIPLINE = `# FILE EDIT DISCIPLINE
+
+- Use fs.edit only when both the exact current oldText and intended newText are known from recent file evidence.
+- Copy oldText literally from fs.read or fs.search, including indentation, whitespace, and line endings; never reconstruct it from memory or a stale preview.
+- If the exact oldText is not visible, inspect the file first. After a no-match error, do not repeat the same oldText.
+
+`;
+
 const agentPromptNative =
   sectionBefore(agentPrompt, "# TOOL CALLS — HOW TO USE TOOLS") +
   agentNativeToolsHeader +
@@ -375,7 +383,11 @@ export function renderAgentSystemPrompt(
     ...promptEnvironmentValues(Boolean(options?.stableEnvironment)),
     tool_list: toolList,
   });
-  return applyImageViewAvailability(rendered, options?.imageView !== false);
+  const stablePrompt = applyImageViewAvailability(
+    rendered,
+    options?.imageView !== false,
+  );
+  return `${stablePrompt}\n\n${FS_EDIT_DISCIPLINE}`;
 }
 
 
@@ -394,7 +406,11 @@ export function renderCompactAgentSystemPrompt(
       tool_list: toolList,
     },
   );
-  return applyImageViewAvailability(rendered, options?.imageView !== false);
+  const stablePrompt = applyImageViewAvailability(
+    rendered,
+    options?.imageView !== false,
+  );
+  return `${stablePrompt}\n\n${FS_EDIT_DISCIPLINE}`;
 }
 
 export function toolNudge(native: boolean): string {

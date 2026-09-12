@@ -14,6 +14,7 @@ import type { FileChange } from "../../tools/file-diff.js";
 import { formatModalPlainText } from "./file-diff-view.js";
 import { defaultPagerMarkdownMode } from "./pager-view-policy.js";
 import { extractFsReadFileBody, stripPagerLineGutters } from "./pager-source.js";
+import { presentFsReadArgs } from "./tool-presenter.js";
 
 interface SearchHit {
   readonly title?: string | undefined;
@@ -89,6 +90,7 @@ export function cleanArgsLabel(
   };
   const raw = (argsDisplay ?? "").trim();
   if (!raw) return "";
+  if (name === "fs.read") return clip(presentFsReadArgs(raw).path);
   if (!raw.startsWith("{")) {
     return clip(raw);
   }
@@ -118,7 +120,7 @@ export function cleanArgsLabel(
 }
 
 export function pathFromArgsDisplay(argsDisplay: string | undefined): string | undefined {
-  const label = cleanArgsLabel("fs.read", argsDisplay);
+  const label = presentFsReadArgs(argsDisplay).path;
   if (!label || label.includes("\0") || /[\r\n]/.test(label) || label.includes("://")) {
     return undefined;
   }

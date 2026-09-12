@@ -29,6 +29,20 @@ export type { HistoryRecord, PersistedContextUsage } from "./history/recovery.js
 
 export type { HistorySummary } from "./history-index.js";
 
+const FALLBACK_SESSION_NAME_LIMIT = 96;
+
+function fallbackSessionName(messages: ChatMessage[]): string | undefined {
+  const firstUser = messages.find(
+    (message) => message.role === "user" && !isInternalChatMessage(message),
+  );
+  if (!firstUser) return undefined;
+  const preview = firstUser.content
+    .slice(0, FALLBACK_SESSION_NAME_LIMIT)
+    .replace(/\n/g, " ")
+    .trim();
+  return preview + (firstUser.content.length > FALLBACK_SESSION_NAME_LIMIT ? "…" : "");
+}
+
 function workspaceFieldsFromActive(existing?: HistoryRecord): {
   workspaceFolder?: string | undefined;
   workspaceCode?: string | undefined;
@@ -191,15 +205,7 @@ export async function saveSession(
   previousTurn?: PreviousTurnSignal | null | undefined,
   sessionModel?: SessionModelSelection | undefined,
 ): Promise<HistoryRecord> {
-  if (!name) {
-    const firstUser = messages.find(
-      (m) => m.role === "user" && !isInternalChatMessage(m),
-    );
-    if (firstUser) {
-      const preview = firstUser.content.slice(0, 60).replace(/\n/g, " ").trim();
-      name = preview + (firstUser.content.length > 60 ? "…" : "");
-    }
-  }
+  if (!name) name = fallbackSessionName(messages);
 
   const now = new Date().toISOString();
   const workspace = workspaceFieldsFromActive();
@@ -252,13 +258,7 @@ export async function upsertSession(
     typeof revision === "number" && Number.isSafeInteger(revision) && revision > 0
       ? revision
       : undefined;
-  const firstUser = messages.find(
-    (message) => message.role === "user" && !isInternalChatMessage(message),
-  );
-  const derivedName = firstUser
-    ? firstUser.content.slice(0, 60).replace(/\n/g, " ").trim() +
-      (firstUser.content.length > 60 ? "…" : "")
-    : undefined;
+  const derivedName = fallbackSessionName(messages);
   const now = new Date().toISOString();
   const workspace = workspaceFieldsFromActive(existing);
   const effectiveWriterGeneration =

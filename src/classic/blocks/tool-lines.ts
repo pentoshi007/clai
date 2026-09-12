@@ -3,9 +3,15 @@ import {
   type ToolItem,
   type ToolStatus,
 } from "../../ui-core/state/transcript-types.js";
-import { presentOutput, presentTool } from "../../ui-core/rendering/tool-presenter.js";
+import {
+  presentFsReadArgs,
+  presentOutput,
+  presentTool,
+  TOOL_PREVIEW_HEAD_LINES,
+  TOOL_PREVIEW_TAIL_LINES,
+} from "../../ui-core/rendering/tool-presenter.js";
 import { shouldShowToolElapsed } from "../../ui-core/rendering/duration.js";
-import { alignEnds, clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
+import { clipToWidth, trimTrailingSpaces } from "../render/ansi-text.js";
 import type { ThemeToken } from "../render/ink-theme.js";
 import { adaptPresenterGlyphs } from "../render/glyphs.js";
 import { wrapAnsiLine } from "../render/wrap.js";
@@ -18,7 +24,8 @@ import {
   type BlockContext,
 } from "./block-context.js";
 
-export const TOOL_COLLAPSED_BODY_ROWS = 3;
+export const TOOL_COLLAPSED_BODY_ROWS =
+  TOOL_PREVIEW_HEAD_LINES + TOOL_PREVIEW_TAIL_LINES + 1;
 export const TOOL_EXPANDED_BODY_ROWS = 40;
 export const TOOL_LIVE_BODY_ROWS = 8;
 const BODY_INDENT = 4;
@@ -66,33 +73,64 @@ export function toolSuffix(
   return body === "" ? "" : ctx.ink.fg(STATUS_TOKEN[item.status], body);
 }
 
-export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
-  const presented = presentTool(item);
+function toolHeadline(
+  ctx: BlockContext,
+  item: ToolItem,
+  presented: ReturnType<typeof presentTool>,
+): string {
   const glyph = ctx.ink.fg(STATUS_TOKEN[item.status], toolGlyph(ctx, item.status));
   const name = ctx.ink.style(presented.name, { fg: "cyan", bold: true });
   const head = `${glyph} ${name}`;
   const suffix = toolSuffix(ctx, item, presented.statusLabel);
-  if (suffix.length === 0) {
+  if (!suffix) return clipToWidth(head, ctx.width, ctx.glyphs.ellipsis);
+  const budget = Math.max(8, ctx.width - layoutWidth(suffix) - 3);
+  const clipped = clipToWidth(head, budget, ctx.glyphs.ellipsis);
+  const line = `${clipped}  ${suffix}`;
+  return layoutWidth(line) > ctx.width ? clipToWidth(line, ctx.width, ctx.glyphs.ellipsis) : line;
+}
+
+function fsReadFieldLines(
+  ctx: BlockContext,
+  label: string,
+  value: string,
+  token: ThemeToken,
+): string[] {
+  const prefix = `  ${ctx.ink.fg("muted", `${label}: `)}`;
+  const budget = Math.max(8, ctx.width - layoutWidth(prefix));
+  return wrapAnsiLine(ctx.ink.fg(token, value), budget).map((row, index) =>
+    clipRow(ctx, index === 0 ? `${prefix}${row}` : `  ${row}`),
+  );
+}
+
+function fsReadHeaderLines(
+  ctx: BlockContext,
+  item: ToolItem,
+  presented: ReturnType<typeof presentTool>,
+): string[] {
+  const args = presentFsReadArgs(presented.argsDisplay);
+  const lines = [toolHeadline(ctx, item, presented)];
+  if (args.options) lines.push(...fsReadFieldLines(ctx, "options", args.options, "inputBorder"));
+  if (args.path) lines.push(...fsReadFieldLines(ctx, "file", args.path, "inputBorder"));
+  return lines;
+}
+
+export function toolHeaderLines(ctx: BlockContext, item: ToolItem): string[] {
+  const presented = presentTool(item);
+  if (item.name === "fs.read") return fsReadHeaderLines(ctx, item, presented);
+  const head = toolHeadline(ctx, item, presented);
+  const suffix = toolSuffix(ctx, item, presented.statusLabel);
+  if (!suffix) {
     const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-    if (argsLines.length === 0) return [clipToWidth(head, ctx.width, ctx.glyphs.ellipsis)];
+    if (argsLines.length === 0) return [head];
     const budget = Math.max(8, ctx.width - 2);
     const rows = argsLines.flatMap((l) => wrapAnsiLine(ctx.ink.fg("muted", `(${l})`), budget));
-    return [clipToWidth(head, ctx.width, ctx.glyphs.ellipsis), ...rows.map((r) => trimTrailingSpaces(`  ${r}`))];
+    return [head, ...rows.map((r) => trimTrailingSpaces(`  ${r}`))];
   }
-  const suffixWidth = layoutWidth(suffix);
-  const gap = "  ";
-  const headBudget = Math.max(8, ctx.width - suffixWidth - layoutWidth(gap) - 1);
-  const clippedHead = layoutWidth(head) > headBudget ? clipToWidth(head, headBudget, ctx.glyphs.ellipsis) : head;
   const argsLines = (presented.argsDisplay ?? "").split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  if (argsLines.length === 0) {
-    const first = `${clippedHead}${gap}${suffix}`;
-    return [layoutWidth(first) > ctx.width ? clipToWidth(first, ctx.width, ctx.glyphs.ellipsis) : first];
-  }
+  if (argsLines.length === 0) return [head];
   const argsBudget = Math.max(8, ctx.width - 2);
   const argRows = argsLines.flatMap((l) => wrapAnsiLine(ctx.ink.fg("muted", `(${l})`), argsBudget));
-  const first = `${clippedHead}${gap}${suffix}`;
-  const clippedFirst = layoutWidth(first) > ctx.width ? clipToWidth(first, ctx.width, ctx.glyphs.ellipsis) : first;
-  return [clippedFirst, ...argRows.map((r) => trimTrailingSpaces(`  ${r}`))];
+  return [head, ...argRows.map((r) => trimTrailingSpaces(`  ${r}`))];
 }
 
 export interface ToolBodyOptions {
@@ -109,6 +147,9 @@ export function buildToolBodyLines(
   options: ToolBodyOptions = {},
 ): string[] {
   const expanded = isItemExpanded(ctx.state, item);
+  if (item.name === "fs.read" && !expanded) {
+    return [clipRow(ctx, `  ${ctx.ink.fg("muted", outputToggleLabel(false))}`)];
+  }
   const tail = ctx.spool.tail(item.toolCallId);
   const detail = item.status === "blocked" ? item.reason : item.summary;
   const source = tail.trim().length > 0 ? tail : (detail ?? "");
