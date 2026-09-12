@@ -191,7 +191,7 @@ export const MODEL_FAMILIES: readonly ModelFamilyContract[] = [
   },
   {
     id: "openai-reasoning",
-    pattern: /(?:^|[-./])(?:gpt-5|o[1-4])(?![a-z])/,
+    pattern: /(?:^|[-./])(?:gpt-[56]|o[1-4])(?![a-z])/,
     generation: "optional",
     dialect: "openai-effort",
     acceptedEfforts: ["minimal", "low", "medium", "high"],

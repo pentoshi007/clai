@@ -91,7 +91,7 @@ export function toOpenAiMessages(
 export function isOpenAiReasoningModel(model: string): boolean {
   const m = model.toLowerCase();
   return (
-    /(?:^|\/)gpt-5(?:\.|-|$)/.test(m) ||
+    /(?:^|\/)gpt-[56](?:\.|-|$)/.test(m) ||
     /(?:^|\/)o[134](?:\.|-|$)/.test(m) ||
     /muse-spark/.test(m)
   );

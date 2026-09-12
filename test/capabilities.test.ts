@@ -29,6 +29,11 @@ describe("modelSupportsThinking", () => {
     expect(modelSupportsThinking("openai", "o3-mini")).toBe(true);
   });
 
+  it("recognizes GPT-6 on AgentRouter", () => {
+    expect(modelSupportsThinking("agentrouter", "gpt-6-astra")).toBe(true);
+    expect(modelSupportsThinking("agentrouter", "gpt-6")).toBe(true);
+  });
+
   it("recognizes MiniMax M3 on TokenRouter", () => {
     expect(modelSupportsThinking("tokenrouter", "MiniMax-M3")).toBe(true);
     expect(modelSupportsVision("tokenrouter", "MiniMax-M3")).toBe(true);

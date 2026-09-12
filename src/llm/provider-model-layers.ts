@@ -94,6 +94,22 @@ function agentrouterModelLayer(
   model: string,
 ): ProviderProfileLayer | undefined {
   const m = model.toLowerCase();
+  if (/(?:^|\/)gpt-6/.test(m)) {
+    return {
+      evidence: codeFact("agentrouter-gpt-effort"),
+      reasoning: {
+        generation: "default-on",
+        control: {
+          dialect: "openai-effort",
+          status: "supported",
+          evidence: codeFact("agentrouter-gpt-effort"),
+        },
+        acceptedEfforts: ["minimal", "low", "medium", "high", "xhigh"],
+        disable: "unsupported",
+        disableForm: "effort-minimal-floor",
+      },
+    };
+  }
   if (/(?:^|\/)gpt-5|(?:^|\/)o[134](?:\b|-)/.test(m)) {
     return {
       evidence: codeFact("agentrouter-gpt-effort"),
