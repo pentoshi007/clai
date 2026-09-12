@@ -19,7 +19,7 @@ const inFlight = new Map<AbortController, string>();
 const fingerprint = (assignment: SubagentAssignment): string => createHash("sha256").update(JSON.stringify([assignment.prompt, assignment.context ?? "", assignment.cwd, assignment.provider, assignment.model])).digest("hex");
 
 export class SubagentManager {
-  private active = false;
+  private active = true;
   private disposed = false;
   private readonly children = new Map<string, Child>();
   private readonly listeners = new Set<() => void>();
@@ -43,6 +43,8 @@ export class SubagentManager {
           if (!run) continue;
           try {
             this.children.set(run.id, { run, assignment: this.assignment(run) });
+            this.settledAttempts.set(`${run.id}:${run.attempt}`, this.snapshot(run));
+            if (!run.resultAcknowledged) this.results.set(`${run.id}:${run.attempt}`, this.snapshot(run));
           } catch {
           }
         }
@@ -117,6 +119,11 @@ export class SubagentManager {
 
   acknowledgeResult(id: string, attempt: number): void {
     this.results.delete(`${id}:${attempt}`);
+    const child = this.children.get(id);
+    if (child?.run.attempt === attempt && terminal(child.run.status) && !child.run.resultAcknowledged) {
+      child.run = { ...child.run, resultAcknowledged: true };
+      this.flush(child);
+    }
   }
 
   private child(id: string): Child {
@@ -145,7 +152,7 @@ export class SubagentManager {
     const events = [...previous.events, { kind: "notice" as const, text: summary, timestamp: Date.now(), sequence: (previous.events.at(-1)?.sequence ?? 0) + 1 }];
     if (followup) events.push({ kind: "notice", text: `Parent follow-up for attempt ${previous.attempt + 1}:\n${JSON.stringify(followup)}`, timestamp: Date.now(), sequence: events.at(-1)!.sequence + 1 });
     if (followup && child.checkpoint) child.checkpoint = { ...child.checkpoint, pendingFollowup: followup };
-    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report ? "history" : "fresh", report: undefined, error: undefined, updatedAt: Date.now(), events: this.boundEvents(events) };
+    child.run = { ...previous, ...child.assignment, followup: followup ? Object.freeze({ ...previous.followup, ...followup }) : previous.followup, attempt: previous.attempt + 1, status: "running", recovery: child.checkpoint ? "exact" : previous.events.length || previous.report || previous.lastKnownSummary ? "history" : "fresh", report: undefined, resultAcknowledged: false, error: undefined, updatedAt: Date.now(), events: this.boundEvents(events) };
     this.launch(child, followup);
     return this.snapshot(child.run);
   }
@@ -201,6 +208,13 @@ export class SubagentManager {
       return this.workerContext.run(true, () => this.worker({
         run: inputRun, signal: controller.signal, emit, followup,
         checkpoint: child.checkpoint ? structuredClone(child.checkpoint) : undefined,
+        saveSummary: (report) => {
+          if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
+          const status = subagentReportStatus(report);
+          if (!status) throw new Error("Worker returned an invalid summary");
+          child.run = this.snapshot({ ...child.run, lastKnownSummary: { attempt: child.run.attempt, status, report } });
+          this.changed(child, true);
+        },
         saveCheckpoint: (checkpoint) => {
           if (this.disposed || this.children.get(child.run.id) !== child || child.controller !== controller || controller.signal.aborted) return;
           child.checkpoint = structuredClone(checkpoint);
@@ -230,6 +244,9 @@ export class SubagentManager {
       child.run = this.snapshot({
         ...child.run, updatedAt: Date.now(), status: stopped ? "stopped" : failed || invalidReport || oversized ? "error" : status ?? "completed",
         report: stopped || failed || invalidReport || oversized ? undefined : report,
+        lastKnownSummary: stopped || failed || invalidReport || oversized ? child.run.lastKnownSummary
+          : { attempt: child.run.attempt, status: status ?? "completed", report: report! },
+        resultAcknowledged: false,
         error: stopped ? "Stopped by parent" : oversized ? "Worker report exceeds the storage safety limit" : invalidReport ? "Worker returned an invalid report" : failed ? sanitizeSubagentText(error instanceof Error ? error.message : error === undefined ? "Worker returned no report" : String(error)).slice(0, 4096) : undefined,
       });
     } catch (failure) {

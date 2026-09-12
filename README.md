@@ -514,6 +514,8 @@ Completed thinking collapses to one clickable `✦ Thought for 3.2s` line; click
 
 Tool cards show the command/input clearly, with a live elapsed timer next to the command name while they run (the final duration stays visible afterwards), and keep long scan tails in an expandable OUTPUT pager (search, copy, export). File writes show a diff preview. When the agent finishes each prompt — naturally or aborted — a `✻ Worked for 1m16s` row is appended under the response, and it is restored when the session is resumed from `/history`. The status line names what the agent is actually doing right now — `responding` while streaming, `compacting` during auto or manual context compaction — instead of holding the last tool name. Prompts typed while the agent is busy are queued and run automatically in order once the turn settles; the queue pauses only when the previous turn was cancelled, errored, or stopped by the loop guard. Compaction cards preserve session memory without dropping the plan, and `/history` restores full sessions — prompts, tool results, and the matching plan — even after an abort or autosave.
 
+Automatic session titles describe the conversation's combined tasks, rather than replacing earlier work with the latest topic. Related follow-ups are grouped into shared themes, aiming for at most 12 words and 96 characters. Naming uses balanced request excerpts and the saved conversation transcript, including prompts inside compacted sections, so earlier tasks remain available after compaction and resume. Titles are first generated after two user prompts and reconsidered every three prompts; manually naming a session disables further automatic updates until it is reset or restored.
+
 On exit, both interactive surfaces leave the alternate screen and print a sign-off card on the normal terminal: the wordmark beside a labelled block — session title, folder, elapsed time and message count, reasoning/cache token notes, and the command that reopens the session — followed by the same per-provider/model token table `/usage` shows. Resuming is `clai --resume <id>` (a unique id prefix is enough, and `-c/--continue` picks the newest session for the current directory). Sessions that were never persisted (`--no-history`, private mode, or nothing sent) say so instead of offering a resume command. The card is borderless and reflows down to very narrow terminals: the wordmark drops from six rows to four, then the block stacks beneath it, and labels give way before the resume command is ever shortened.
 
 ### Context usage and prompt caching
@@ -575,7 +577,7 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/scope [show\|add\|new\|clear]` | Engagement scope |
 | `/output [last\|id\|list]` | Open full tool output (also `Ctrl+O`) |
 | `/jobs` | Background jobs (also `Ctrl+J`) |
-| `/orchestration [on\|off\|status]` · `/orchestrator` | Open orchestration options or opt into session-only delegation (default off) |
+| `/orchestrator` · `/orchestration` | Inspect delegated agents (delegation is enabled by default) |
 | `/agents [id\|stop id\|restart id]` | Pick a subagent to inspect live output, or stop/restart its assignment |
 | `/compact` · `/context` | Compact history now · show context size |
 | `/history` · `/save <name>` · `/new` · `/clear` · `/reset` | Session lifecycle (`/clear` deletes the current session outright) |
@@ -586,11 +588,11 @@ CLAI_DISABLE_SESSION_RUNTIME=1        # force legacy direct foreground ownership
 | `/minimise` · `/minimize` | Detach this terminal while the live session continues in the background |
 | `/update` · `/help` · `/shortcuts` · `/exit` | Housekeeping |
 
-Orchestration is off in new and restored sessions. Use `/orchestration on` to let
-the main agent delegate independent work. Bare `/orchestration`, `/orchestrator`,
-or `/orchastrator` opens described **Status**, **On**, and **Off** options; Status
-is selected initially and never changes the setting. Explicit `/orchestration status`
-reports the setting directly. See [picker and pager controls](docs/ui-overlays.md).
+Orchestration is enabled in new and restored sessions. `/orchestrator`,
+`/orchestration`, and `/orchastrator` open the agent inspector directly, without
+a status or toggle picker. Explicit `/orchestrator off` stops active children and
+disables delegation for this session; `/orchestrator on` enables it again.
+See [picker and pager controls](docs/ui-overlays.md).
 `/agents` opens the same live inspector in Classic and
 OpenTUI: select a child, press `Esc` to return to the picker, then select another
 child or **Main agent**. Inspecting output never interrupts the main turn. The
@@ -599,6 +601,12 @@ active children and prevents new starts and restarts. `/agents stop <id>` stops
 an individual child. `/agents restart <id>` reruns the assignment when orchestration
 is enabled. Saved child reports can be inspected after resuming their parent
 session; `--no-history` keeps child records in memory only.
+
+The last usable child summary is stored separately from activity and survives
+stop, restart, and compaction. `subagent.read` with `view=summary` recovers it with
+its original attempt and completion status; a prior summary never marks a stopped
+attempt complete. Undelivered terminal results return through the parent inbox on
+session restore, and acknowledged results are not replayed on later restores.
 
 Children have no fixed concurrency, step, or assignment-time budget. They inherit the parent's provider/model and project
 root, with independent histories and stable cache prefixes. Their only tools are

@@ -6,8 +6,7 @@ const managers: SubagentManager[] = [];
 const deliveries: SessionSubagents[] = [];
 const tick = async (): Promise<void> => { for (let index = 0; index < 20; index++) await Promise.resolve(); };
 
-function setup() {
-  const manager = new SubagentManager("parent", { worker: async () => "Verified evidence" });
+function setup(manager = new SubagentManager("parent", { worker: async () => "Verified evidence" })) {
   managers.push(manager);
   manager.setEnabled(true);
   const state = { busy: false, queued: false, sessionId: "parent" };
@@ -37,6 +36,22 @@ afterEach(async () => {
 });
 
 describe("SessionSubagents", () => {
+  it("wakes once for a restored result and persists its acknowledgement", async () => {
+    const save = vi.fn();
+    const manager = new SubagentManager("parent", { store: { save, remove: () => undefined, load: () => [{
+      id: "restored", parentSessionId: "parent", title: "Saved research", prompt: "Inspect source",
+      cwd: "/tmp", provider: "openai", model: "test", attempt: 1, status: "completed",
+      createdAt: 1, updatedAt: 2, events: [], report: "Verified evidence", resultAcknowledged: false,
+    }] } });
+    const { delivery, runTurn } = setup(manager);
+    await tick();
+    expect(runTurn).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: "restored", resultAcknowledged: true }));
+    delivery.scheduleWake();
+    await tick();
+    expect(runTurn).toHaveBeenCalledOnce();
+  });
+
   it("wakes once on a terminal result without timer polling", async () => {
     const { start, delivery, runTurn } = setup();
     await tick();

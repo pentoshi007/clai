@@ -19,6 +19,7 @@ function summary(run: SubagentRun) {
   return {
     id: run.id, title: run.title, status: run.status, attempt: run.attempt,
     updatedAt: run.updatedAt, reportAvailable: Boolean(run.report), error: run.error, recovery: run.recovery,
+    lastKnownSummaryAttempt: run.lastKnownSummary?.attempt,
   };
 }
 
@@ -49,7 +50,7 @@ export async function runSubagentTool(
   signal: AbortSignal,
 ): Promise<ToolResult> {
   const manager = context.manager;
-  if (!manager?.enabled) return { ok: false, exitCode: 1, output: orchestrationContext(false) };
+  if (!manager || (!manager.enabled && call.name !== "subagent.read" && call.name !== "subagent.list")) return { ok: false, exitCode: 1, output: orchestrationContext(false) };
   try {
     signal.throwIfAborted();
     const args = call.args ?? {};
@@ -76,7 +77,7 @@ export async function runSubagentTool(
       default: {
         const id = text(args.id, "id", 128);
         const attempt = call.name === "subagent.read" && args.attempt !== undefined ? integer(args.attempt, 1, Number.MAX_SAFE_INTEGER) : undefined;
-        const run = manager.get(id, attempt);
+        const run = manager.get(id, args.view === "summary" ? undefined : attempt);
         if (!run) throw new Error("Unknown child ID or attempt in this session.");
         if (call.name === "subagent.stop") {
           manager.stop(id);
@@ -86,14 +87,18 @@ export async function runSubagentTool(
           const details = args.context === undefined ? undefined : text(args.context, "context", 24000);
           value = summary(prompt === undefined && details === undefined ? manager.restart(id) : manager.restart(id, { prompt, context: details }));
         } else if (call.name === "subagent.read") {
-          if (args.view !== undefined && args.view !== "tail" && args.view !== "report") throw new Error("view must be tail or report.");
+          if (args.view !== undefined && args.view !== "tail" && args.view !== "report" && args.view !== "summary") throw new Error("view must be tail, report, or summary.");
           const limit = integer(args.limit, 3, 20);
-          if (args.view === "report") {
+          if (args.view === "report" || args.view === "summary") {
+            const saved = args.view === "summary" ? run.lastKnownSummary : undefined;
+            if (args.view === "summary" && attempt !== undefined && saved?.attempt !== attempt) throw new Error("No stored summary for that attempt.");
+            const reportRun = args.view === "summary" ? { ...run, report: saved?.report } : run;
             const offset = args.offset ?? 0;
-            if (typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0 || offset > (run.report?.length ?? 0)) throw new Error("offset must be a valid character position in the report.");
-            const page = subagentResult(run, offset, integer(args.length, 24_000, 24_000));
-            value = { ...page, report: page.report ?? "No report available. Inspect status and recent events." };
-            manager.acknowledgeResult(run.id, run.attempt);
+            if (typeof offset !== "number" || !Number.isSafeInteger(offset) || offset < 0 || offset > (reportRun.report?.length ?? 0)) throw new Error("offset must be a valid character position in the report.");
+            const page = subagentResult(reportRun, offset, integer(args.length, 24_000, 24_000));
+            value = { ...page, summaryAttempt: saved?.attempt, summaryStatus: saved?.status,
+              report: page.report ?? (args.view === "summary" ? "No stored summary is recoverable." : "No report available. Use view=summary to recover the last usable summary.") };
+            if (args.view === "report") manager.acknowledgeResult(run.id, run.attempt);
           } else {
             let remaining = 12000;
             const events = run.events.slice(-limit).reverse().map((event) => {

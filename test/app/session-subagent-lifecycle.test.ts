@@ -20,6 +20,8 @@ function setup(sessionId: string) {
     agent: {
       async runTurn(_request, handlers) {
         seen.push(handlers.session?.subagents);
+        const manager = handlers.session?.subagents;
+        if (manager) for (const run of manager.pendingResults()) manager.acknowledgeResult(run.id, run.attempt);
         return createTurnOutcome({ status: "succeeded", answer: "done", steps: 0, remainingCriteria: [] });
       },
     },
@@ -45,14 +47,16 @@ describe("production session subagent lifecycle", () => {
     const { session, seen } = setup(parentSessionId);
     const manager = session.subagents;
     expect(manager.get("restored-child")?.report).toBe("Saved evidence");
-    expect(manager.enabled).toBe(false);
+    expect(manager.enabled).toBe(true);
     session.setOrchestrationEnabled(true);
     await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(seen).toEqual([manager]);
+    expect(manager.pendingResults()).toEqual([]);
     await session.submit("Explain the saved evidence");
     await session.submit("Follow up without changing the session");
     expect(session.subagents).toBe(manager);
     expect(manager.enabled).toBe(true);
-    expect(seen).toEqual([manager, manager]);
+    expect(seen).toEqual([manager, manager, manager]);
   });
 
   it("replaces the manager only at explicit history-load and reset boundaries", async () => {
@@ -63,7 +67,7 @@ describe("production session subagent lifecycle", () => {
     const restored = session.subagents;
     expect(restored).not.toBe(previous);
     expect(previous.enabled).toBe(false);
-    expect(restored.enabled).toBe(false);
+    expect(restored.enabled).toBe(true);
     expect(restored.parentSessionId).toBe("subagent-session-after-restore");
     session.setOrchestrationEnabled(true);
     await session.submit("Continue this restored session");
@@ -72,6 +76,6 @@ describe("production session subagent lifecycle", () => {
     session.reset();
     expect(session.subagents).not.toBe(restored);
     expect(restored.enabled).toBe(false);
-    expect(session.subagents.enabled).toBe(false);
+    expect(session.subagents.enabled).toBe(true);
   });
 });
