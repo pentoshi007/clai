@@ -27,9 +27,17 @@ export interface SubagentRun extends SubagentAssignment {
   readonly updatedAt: number;
   readonly events: readonly SubagentEvent[];
   readonly report?: string | undefined;
+  readonly lastKnownSummary?: SubagentSummary | undefined;
+  readonly resultAcknowledged?: boolean | undefined;
   readonly error?: string | undefined;
   readonly recovery?: "exact" | "history" | "fresh" | undefined;
   readonly followup?: SubagentFollowup | undefined;
+}
+
+export interface SubagentSummary {
+  readonly attempt: number;
+  readonly status: "completed" | "partial";
+  readonly report: string;
 }
 
 export interface SubagentFollowup {
@@ -56,6 +64,7 @@ export interface SubagentWorkerInput {
   readonly followup?: SubagentFollowup | undefined;
   readonly checkpoint?: SubagentCheckpoint | undefined;
   readonly saveCheckpoint?: ((checkpoint: SubagentCheckpoint) => void) | undefined;
+  readonly saveSummary?: ((report: string) => void) | undefined;
   readonly emit: (event: {
     kind: SubagentEvent["kind"];
     text: string;

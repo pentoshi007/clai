@@ -600,6 +600,12 @@ an individual child. `/agents restart <id>` reruns the assignment when orchestra
 is enabled. Saved child reports can be inspected after resuming their parent
 session; `--no-history` keeps child records in memory only.
 
+The last usable child summary is stored separately from activity and survives
+stop, restart, and compaction. `subagent.read` with `view=summary` recovers it with
+its original attempt and completion status; a prior summary never marks a stopped
+attempt complete. Undelivered terminal results return through the parent inbox on
+session restore, and acknowledged results are not replayed on later restores.
+
 Children have no fixed concurrency, step, or assignment-time budget. They inherit the parent's provider/model and project
 root, with independent histories and stable cache prefixes. Their only tools are
 confined file reads/listings/searches and web search/fetch; shell, editing, MCP,
