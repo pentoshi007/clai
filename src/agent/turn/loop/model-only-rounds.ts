@@ -1,7 +1,7 @@
 import type { ChatMessage, ProviderId } from "../../../types.js";
 import type { SessionPlan } from "../../../store/plan.js";
 import { foregroundRemaining } from "../../../store/plan.js";
-import { markTextOnlyModel } from "../../../llm/tool-protocol.js";
+import { markDegradedToolModel } from "../../../llm/tool-protocol.js";
 
 export interface ModelOnlyRoundPorts {
   readonly messages: ChatMessage[];
@@ -73,11 +73,11 @@ export const handleModelOnlyRound = (
     ports.toolsAttached &&
     input.consecutiveModelOnlyRounds === 2
   ) {
-    markTextOnlyModel(ports.provider, ports.model);
+    markDegradedToolModel(ports.provider, ports.model);
     ports.commitAssistantRetry(input.assistantVisible);
     ports.notify(
       "warn",
-      "model repeatedly returned prose instead of a native tool call — switching this model to the text tool protocol",
+      "model repeatedly returned prose instead of a native tool call — switching this model to the text tool protocol for the rest of this turn",
     );
     ports.messages.push(ports.recoveryUserMessage(NATIVE_FALLBACK_NUDGE));
     return { kind: "continue-round" };

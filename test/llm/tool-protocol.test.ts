@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   accumulateOpenAiToolCallDelta,
+  clearDegradedToolModels,
   clearTextOnlyModels,
   finalizeOpenAiToolCalls,
   fromWireName,
   isToolsUnsupportedError,
+  markDegradedToolModel,
   markTextOnlyModel,
   isTextOnlyModel,
   parseToolArguments,
@@ -44,6 +46,37 @@ describe("tool-protocol helpers", () => {
     expect(parseToolArguments('{"path":"x"}')).toEqual({ path: "x" });
     expect(parseToolArguments("")).toEqual({});
     expect(parseToolArguments("{broken")._parseError).toBe(true);
+  });
+
+  it("recovers malformed native arguments leniently instead of failing the call", () => {
+    expect(parseToolArguments('{"command":"echo line1\nline2"}')).toEqual({
+      command: "echo line1\nline2",
+    });
+    expect(parseToolArguments("{“command”:“echo hi”}")).toEqual({
+      command: "echo hi",
+    });
+    expect(parseToolArguments("{'command':'echo hi'}")).toEqual({
+      command: "echo hi",
+    });
+    expect(parseToolArguments('{"command":"echo hi",}')).toEqual({
+      command: "echo hi",
+    });
+    expect(
+      parseToolArguments('{"path":"/tmp/a.ts","content":"half')._parseError,
+    ).toBe(true);
+  });
+
+  it("degrades a model to text tools for the rest of the turn only", () => {
+    clearTextOnlyModels();
+    markDegradedToolModel("agentrouter", "deepseek-v4");
+    expect(isTextOnlyModel("agentrouter", "deepseek-v4")).toBe(true);
+    clearDegradedToolModels();
+    expect(isTextOnlyModel("agentrouter", "deepseek-v4")).toBe(false);
+    markTextOnlyModel("agentrouter", "deepseek-v4");
+    clearDegradedToolModels();
+    expect(isTextOnlyModel("agentrouter", "deepseek-v4")).toBe(true);
+    clearTextOnlyModels();
+    expect(isTextOnlyModel("agentrouter", "deepseek-v4")).toBe(false);
   });
 
   it("reassembles streaming tool_call argument deltas", () => {

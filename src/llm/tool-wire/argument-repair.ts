@@ -1,3 +1,5 @@
+import { lenientJsonParse } from "../../agent/parser/xml-protocol.js";
+
 function splitJsonObjectSegments(raw: string): string[] | undefined {
   const segments: string[] = [];
   let depth = 0;
@@ -151,6 +153,10 @@ export function parseToolArguments(raw: unknown): Record<string, unknown> {
     }
     const repaired = repairConcatenatedToolArguments(t);
     if (repaired) return repaired;
+    const lenient = lenientJsonParse(t);
+    if (lenient && typeof lenient === "object" && !Array.isArray(lenient)) {
+      return lenient as Record<string, unknown>;
+    }
     return { _parseError: true, _raw: t };
   }
   return {};
