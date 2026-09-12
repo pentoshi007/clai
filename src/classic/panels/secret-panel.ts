@@ -1,8 +1,8 @@
 import { SecretBuffer } from "../../ui-core/composer/secret-buffer.js";
 import type { SecretRequestView } from "../../ui-core/controllers/overlay-controller.js";
-import { clipToWidth, sealStyle } from "../render/ansi-text.js";
+import { sealStyle } from "../render/ansi-text.js";
 import type { InkTheme } from "../render/ink-theme.js";
-import { stripAnsi } from "../render/measure.js";
+import { layoutWidth, stripAnsi } from "../render/measure.js";
 import { wrapWithPrefixes } from "../render/wrap.js";
 import { panelBodyWidth, type PanelFrameInput } from "./panel-frame.js";
 import { handled, type PanelKeyResult } from "./panel-effect.js";
@@ -41,6 +41,21 @@ export function secretKey(input: SecretKeyInput): PanelKeyResult<SecretPanelStat
   if (chord === "backspace") {
     return handled({ ...state, cursor: state.buffer.deleteBackward(state.cursor) });
   }
+  if (chord === "delete") {
+    return handled({ ...state, cursor: state.buffer.deleteForward(state.cursor) });
+  }
+  if (chord === "left") {
+    return handled({ ...state, cursor: Math.max(0, state.cursor - 1) });
+  }
+  if (chord === "right") {
+    return handled({ ...state, cursor: Math.min(state.buffer.length, state.cursor + 1) });
+  }
+  if (chord === "home") {
+    return handled({ ...state, cursor: 0 });
+  }
+  if (chord === "end") {
+    return handled({ ...state, cursor: state.buffer.length });
+  }
   if (chord === "ctrl+u") {
     state.buffer.clear();
     return handled({ ...state, cursor: 0 });
@@ -71,22 +86,44 @@ export function secretRowsWanted(input: SecretViewInput): number {
   return secretBody(input).length + 2;
 }
 
-function secretBody(input: SecretViewInput): readonly string[] {
+export interface CaretWindow {
+  readonly start: number;
+  readonly end: number;
+}
+
+export function caretWindow(length: number, cursor: number, width: number): CaretWindow {
+  const budget = Math.max(1, width);
+  if (length <= budget) return { start: 0, end: length };
+  const clamped = Math.min(Math.max(0, cursor), length);
+  const start = Math.min(Math.max(0, clamped - budget + 1), length - budget);
+  return { start, end: start + budget };
+}
+
+function secretField(input: SecretViewInput): string {
   const { ink, state } = input;
+  const width = panelBodyWidth(input.columns);
+  const value =
+    input.request.reveal === true ? state.buffer.reveal() : state.buffer.masked();
+  const cursor = Math.min(state.cursor, value.length);
+  const inner = Math.max(1, width - 3);
+  const ellipsis = ink.glyphs.ellipsis;
+  const mark = value.length > inner ? layoutWidth(ellipsis) : 0;
+  const win = caretWindow(value.length, cursor, Math.max(1, inner - 2 * mark));
+  const lead = win.start > 0 ? ellipsis : "";
+  const tail = win.end < value.length ? ellipsis : "";
+  const before = value.slice(win.start, cursor);
+  const after = value.slice(cursor, win.end);
+  return sealStyle(
+    `${ink.fg("inputBorder", ink.glyphs.promptMark)} ${lead}${before}${ink.fg("inputBorder", ink.glyphs.caret)}${after}${tail}`,
+  );
+}
+
+function secretBody(input: SecretViewInput): readonly string[] {
   const width = panelBodyWidth(input.columns);
   const prompt = wrapWithPrefixes(input.request.prompt.replace(/\r/g, "").trim(), {
     width,
   });
-  const value =
-    input.request.reveal === true ? state.buffer.reveal() : state.buffer.masked();
-  const field = sealStyle(
-    `${ink.fg("inputBorder", ink.glyphs.promptMark)} ${clipToWidth(
-      value,
-      Math.max(1, width - 3),
-      ink.glyphs.ellipsis,
-    )}${ink.fg("inputBorder", ink.glyphs.caret)}`,
-  );
-  return [...prompt, field];
+  return [...prompt, secretField(input)];
 }
 
 export function secretView(input: SecretViewInput): PanelFrameInput {

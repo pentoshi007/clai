@@ -15,6 +15,12 @@ export class SecretBuffer {
     return cursorOffset - 1;
   }
 
+  deleteForward(cursorOffset: number): number {
+    if (cursorOffset >= this.value.length) return cursorOffset;
+    this.value = this.value.slice(0, cursorOffset) + this.value.slice(cursorOffset + 1);
+    return cursorOffset;
+  }
+
   clear(): void {
     this.value = "";
   }

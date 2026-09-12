@@ -142,3 +142,91 @@ describe("secret keys", () => {
     expect(JSON.stringify(harness.panels.getSnapshot())).not.toContain("s3cr3t");
   });
 });
+
+describe("secret cursor editing", () => {
+  it("moves the caret with arrows, home, and end", () => {
+    let state = typed("abcd");
+    state = secretKey({ state, chord: "left" }).state;
+    state = secretKey({ state, chord: "left" }).state;
+    expect(state.cursor).toBe(2);
+    state = secretKey({ state, chord: "right" }).state;
+    expect(state.cursor).toBe(3);
+    state = secretKey({ state, chord: "home" }).state;
+    expect(state.cursor).toBe(0);
+    state = secretKey({ state, chord: "end" }).state;
+    expect(state.cursor).toBe(4);
+    for (let i = 0; i < 6; i += 1) {
+      state = secretKey({ state, chord: "left" }).state;
+    }
+    expect(state.cursor).toBe(0);
+    state = secretKey({ state, chord: "right" }).state;
+    state = secretKey({ state, chord: "right" }).state;
+    state = secretKey({ state, chord: "right" }).state;
+    state = secretKey({ state, chord: "right" }).state;
+    state = secretKey({ state, chord: "right" }).state;
+    expect(state.cursor).toBe(4);
+  });
+
+  it("deletes from the middle with backspace and delete", () => {
+    let state = typed("abcd");
+    state = secretKey({ state, chord: "left" }).state;
+    state = secretKey({ state, chord: "left" }).state;
+    state = secretKey({ state, chord: "backspace" }).state;
+    expect(state.buffer.reveal()).toBe("acd");
+    expect(state.cursor).toBe(1);
+    state = secretKey({ state, chord: "delete" }).state;
+    expect(state.buffer.reveal()).toBe("ad");
+    expect(state.cursor).toBe(1);
+    state = secretKey({ state, chord: "delete" }).state;
+    expect(state.buffer.reveal()).toBe("a");
+    state = secretKey({ state, chord: "delete" }).state;
+    expect(state.buffer.reveal()).toBe("a");
+    state = secretKey({ state, chord: "backspace" }).state;
+    state = secretKey({ state, chord: "backspace" }).state;
+    expect(state.buffer.reveal()).toBe("");
+    expect(state.cursor).toBe(0);
+  });
+
+  it("inserts at the cursor, not at the end", () => {
+    let state = typed("ad");
+    state = secretKey({ state, chord: "home" }).state;
+    state = secretKey({ state, chord: "right" }).state;
+    state = secretKey({ state, chord: "x", text: "x" }).state;
+    expect(state.buffer.reveal()).toBe("axd");
+    expect(state.cursor).toBe(2);
+    state = secretPaste(state, "XY");
+    expect(state.buffer.reveal()).toBe("axXYd");
+    expect(state.cursor).toBe(4);
+  });
+
+  it("renders the caret at the cursor position", () => {
+    let state = typed("abcdef");
+    state = secretKey({ state, chord: "left" }).state;
+    state = secretKey({ state, chord: "left" }).state;
+    state = secretKey({ state, chord: "left" }).state;
+    expect(render(state).rows[2]).toContain("•••▎•••");
+    expect(
+      render(state, { title: "Modal endpoint", prompt: "endpoint URL", reveal: true }).rows[2],
+    ).toContain("abc▎def");
+  });
+
+  it("keeps the caret visible when the value overflows the field", () => {
+    const long = `${"a".repeat(70)}TAIL`;
+    let state = typed(long);
+    const endView = render(state, {
+      title: "Modal endpoint",
+      prompt: "endpoint URL",
+      reveal: true,
+    });
+    expect(endView.rows[2]).toContain("…");
+    expect(endView.rows[2]).toContain("TAIL▎");
+    state = secretKey({ state, chord: "home" }).state;
+    const homeView = render(state, {
+      title: "Modal endpoint",
+      prompt: "endpoint URL",
+      reveal: true,
+    });
+    expect(homeView.rows[2]).toContain("❯ ▎aaa");
+    expect(homeView.rows[2]).toContain("T…");
+  });
+});
