@@ -188,7 +188,8 @@ describe("exit epilogue + session resume", () => {
     const written: string[] = [];
     const epilogue = createExitEpilogue({
       services,
-      startedAt: Date.now() - 95_000,
+      startedAt: 0,
+      now: () => 95_000,
       write: (text) => void written.push(text),
     });
 
