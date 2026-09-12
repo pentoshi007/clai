@@ -110,6 +110,23 @@ function agentrouterModelLayer(
       },
     };
   }
+  if (/deepseek/.test(m)) {
+    return {
+      evidence: codeFact("agentrouter-deepseek-thinking"),
+      reasoning: {
+        generation: "default-on",
+        control: {
+          dialect: "deepseek-thinking",
+          status: "supported",
+          evidence: codeFact("agentrouter-deepseek-thinking"),
+        },
+        acceptedEfforts: ["low", "high", "max"],
+        defaultEffort: "high",
+        disable: "supported",
+        disableForm: "thinking-disabled",
+      },
+    };
+  }
   if (/glm/.test(m)) {
     return {
       evidence: codeFact("agentrouter-glm-disabled"),

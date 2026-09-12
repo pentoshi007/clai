@@ -1,10 +1,20 @@
 import type { CommandInvocation } from "../../app/commands/command.js";
 import type { AppServices } from "../bootstrap/composition-root.js";
+import type { PickerOption, PickerOptionTone } from "../rendering/picker-filter.js";
 import {
   createSubagentPagerSource,
   formatSubagentRun,
   watchSubagents,
 } from "../rendering/subagent-source.js";
+
+const SUBAGENT_STATUS_ICON: Record<string, { icon: string; tone: PickerOptionTone }> = {
+  running: { icon: "⟳", tone: "warn" },
+  stopping: { icon: "⊗", tone: "warn" },
+  completed: { icon: "✓", tone: "success" },
+  partial: { icon: "◐", tone: "warn" },
+  stopped: { icon: "■", tone: "muted" },
+  error: { icon: "✗", tone: "error" },
+};
 
 export function handleOrchestration(services: AppServices, invocation: CommandInvocation): void {
   const action = invocation.args.trim().toLowerCase();
@@ -27,9 +37,9 @@ export function handleOrchestration(services: AppServices, invocation: CommandIn
       twoLine: true,
       searchDescription: true,
       options: [
-        { value: "status", label: "Status", description: "Show the current session setting without changing it" },
-        { value: "on", label: "On", description: "Allow the main agent to delegate independent read-only research for this session" },
-        { value: "off", label: "Off", description: "Stop active subagents and prevent new starts or restarts" },
+        { value: "status", label: "Status", description: "Show the current session setting without changing it", icon: "◆", tone: "accent" },
+        { value: "on", label: "On", description: "Allow the main agent to delegate independent read-only research for this session", icon: "●", tone: "success" },
+        { value: "off", label: "Off", description: "Stop active subagents and prevent new starts or restarts", icon: "○", tone: "muted" },
       ],
     }, (value) => {
       services.overlay.close();
@@ -83,14 +93,19 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
   };
   if (args[0] === "main") return;
   let selectedId = "main";
-  const options = () => [
-    { value: "main", label: "Main agent", active: selectedId === "main", description: "Return to the conversation; all running work continues" },
-    ...manager.list().map((run) => ({
-      value: run.id,
-      active: selectedId === run.id,
-      label: `${run.title} · ${run.status}`,
-      description: `${run.id} · attempt ${run.attempt} · ${run.provider}/${run.model}`,
-    })),
+  const options = (): PickerOption[] => [
+    { value: "main", label: "Main agent", active: selectedId === "main", icon: "◆", tone: "accent", description: "Return to the conversation; all running work continues" },
+    ...manager.list().map((run) => {
+      const status = SUBAGENT_STATUS_ICON[run.status] ?? { icon: "•", tone: "muted" as const };
+      return {
+        value: run.id,
+        active: selectedId === run.id,
+        icon: status.icon,
+        tone: status.tone,
+        label: run.title,
+        description: `${run.status} · ${run.id} · attempt ${run.attempt} · ${run.provider}/${run.model}`,
+      };
+    }),
   ];
   const select = (id: string): void => {
     if (services.session.subagents !== manager) return;
@@ -103,7 +118,7 @@ export function handleAgents(services: AppServices, invocation: CommandInvocatio
   };
   const opened = args[0]
     ? openRun(args[0])
-    : services.overlay.openPicker({ title: "Agents", options: options() }, select);
+    : services.overlay.openPicker({ title: "Agents", twoLine: true, searchDescription: true, options: options() }, select);
   if (!opened) return;
 
   let signature = JSON.stringify(options());

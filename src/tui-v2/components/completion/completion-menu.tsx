@@ -85,7 +85,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
             : `  files & dirs · ${menu.items.length}  ·  ↑↓:select  ·  wheel:scroll  ·  enter:attach  ·  click:open/attach  ·  esc:dismiss`,
           contentWidth,
         )}
-        style={{ fg: theme.muted, bg: theme.rowA }}
+        style={{ fg: theme.white }}
       />
       {}
       <text
@@ -108,7 +108,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
         const focused = itemIndex === selected;
         const hovered = itemIndex === hoveredIndex;
         const bg = focused
-          ? theme.selection
+          ? theme.chipTeal
           : hovered
             ? theme.chip
             : i % 2 === 0
@@ -152,7 +152,7 @@ export function CompletionMenuView(props: CompletionMenuViewProps): ReactNode {
             <text
               content={line}
               style={{
-                fg: focused || hovered ? theme.white : theme.foreground,
+                fg: focused ? theme.white : hovered ? theme.white : theme.foreground,
                 bg,
               }}
             />

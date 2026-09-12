@@ -1,9 +1,11 @@
 import type { PickerOption } from "./picker-filter.js";
 import { wrapPagerLine } from "./pager-chrome.js";
+import { renderColumns } from "./text-width.js";
 
 export interface PickerLine {
   readonly text: string;
   readonly description: boolean;
+  readonly padding?: boolean;
 }
 
 export interface PickerItemLayout {
@@ -15,33 +17,43 @@ export interface PickerItemLayout {
 const lineCache = new WeakMap<PickerOption, {
   width: number;
   twoLine: boolean;
-  lines: readonly PickerLine[];
+  rowPadding: number;
+  contentLines: readonly PickerLine[];
 }>();
 
 export function layoutPickerOptions(
   options: readonly PickerOption[],
   width: number,
   twoLine: boolean,
+  rowPadding = 0,
 ): readonly PickerItemLayout[] {
   const textWidth = Math.max(1, width - (width >= 3 ? 2 : 0));
   let top = 0;
-  return options.map((option) => {
+  return options.map((option, index) => {
     const cached = lineCache.get(option);
-    if (cached?.width === width && cached.twoLine === twoLine) {
-      const item = { lines: cached.lines, top, height: cached.lines.length };
-      top += item.height;
-      return item;
+    let contentLines: readonly PickerLine[];
+    if (cached?.width === width && cached.twoLine === twoLine && cached.rowPadding === rowPadding) {
+      contentLines = cached.contentLines;
+    } else {
+      const iconPrefix = option.icon ? `${option.icon} ` : "";
+      const descriptionPad = " ".repeat(renderColumns(iconPrefix));
+      const label = `${iconPrefix}${option.label}${option.active ? " · current" : ""}`;
+      const wrap = (text: string, description: boolean): PickerLine[] =>
+        text.replace(/\r\n?/g, "\n").split("\n").flatMap((line) => {
+          const pad = description ? descriptionPad : "";
+          return wrapPagerLine(line, Math.max(1, textWidth - pad.length), { preserveWhitespace: true })
+            .map((text) => ({ text: `${pad}${text}`, description }));
+        });
+      contentLines = twoLine
+        ? [...wrap(label, false), ...wrap(option.description ?? "", true)]
+        : wrap(`${label}${option.description ? `  ${option.description}` : ""}`, false);
+      lineCache.set(option, { width, twoLine, rowPadding, contentLines });
     }
-    const label = `${option.label}${option.active ? " · current" : ""}`;
-    const wrap = (text: string, description: boolean): PickerLine[] =>
-      text.replace(/\r\n?/g, "\n").split("\n").flatMap((line) =>
-        wrapPagerLine(line, textWidth, { preserveWhitespace: true }).map((text) => ({ text, description })),
-      );
-    const lines = twoLine
-      ? [...wrap(label, false), ...wrap(option.description ?? "", true)]
-      : wrap(`${label}${option.description ? `  ${option.description}` : ""}`, false);
+    const paddingLine = (): PickerLine => ({ text: "", description: false, padding: true });
+    const lines = index > 0 && rowPadding > 0
+      ? [...Array.from({ length: rowPadding }, paddingLine), ...contentLines]
+      : contentLines;
     const item = { lines, top, height: lines.length };
-    lineCache.set(option, { width, twoLine, lines });
     top += item.height;
     return item;
   });

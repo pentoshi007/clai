@@ -58,6 +58,19 @@ describe("fsSearch", () => {
     expect(result.output).not.toMatch(/Unmatched|not balanced/i);
   });
 
+  it("keeps filename context when searching one file", async () => {
+    const dir = makeTree();
+    dirs.push(dir);
+    const path = join(dir, "evidence.txt");
+    writeFileSync(path, "Picker spacing\ntype to filter\nFirst option\n");
+    const result = await fsSearch("Picker spacing|type to filter|First option", path);
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain(`${path}:1:Picker spacing`);
+    expect(result.output).toContain(`${path}:2:type to filter`);
+    expect(result.output).toContain(`${path}:3:First option`);
+    expect(result.output).not.toContain("# no matches");
+  });
+
   it.runIf(process.platform !== "win32")(
     "matches the same pattern through the grep fallback",
     async () => {
@@ -125,6 +138,14 @@ describe("fsSearch", () => {
     expect(result.ok).toBe(true);
     expect(result.output).toContain("# no matches");
     expect(result.output).toContain("fixedString=true");
+  });
+
+  it("reports engine errors instead of returning a false no-match result", async () => {
+    const missing = join(process.cwd(), ".test-missing-fs-search-target");
+    const result = await fsSearch("needle", missing, { confirmed: true });
+    expect(result.ok).toBe(false);
+    expect(result.output).toMatch(/fs\.search failed/);
+    expect(result.output).not.toContain("# no matches");
   });
 
   it("treats fixedString patterns literally", async () => {

@@ -8,6 +8,7 @@ import type { AppServices } from "../../../ui-core/bootstrap/composition-root.js
 import type { Theme } from "../../../ui-core/rendering/theme.js";
 import { chordFromKeyEvent } from "../../input/chord-from-opentui-key.js";
 import { activeIndex, filterPickerOptions } from "../../../ui-core/rendering/picker-filter.js";
+import { pickerToneColor } from "../../../ui-core/rendering/picker-style.js";
 import { layoutPickerOptions, pickerItemAtRow, pickerScrollTop, pickerWindow } from "../../../ui-core/rendering/picker-layout.js";
 import { centerChromeRow, fitOneLine } from "../../../ui-core/rendering/pager-chrome.js";
 import { overlaySize } from "../../../ui-core/layout/overlay-size.js";
@@ -40,7 +41,9 @@ export function Picker(props: PickerProps): ReactNode {
   const border = size.width >= 5 && size.height >= 3;
   const innerW = Math.max(1, size.width - (border ? 2 : 0));
   const innerH = Math.max(1, size.height - (border ? 2 : 0));
-  const bodyHeight = innerH - Number(innerH >= 4) - Number(innerH >= 3) - Number(innerH >= 2);
+  const showTitle = innerH >= 4;
+  const showFilter = innerH >= 3;
+  const bodyHeight = innerH - Number(showTitle) - Number(showFilter) - Number(innerH >= 2);
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<number | undefined>(undefined);
   const [cursor, setCursor] = useState(() => activeIndex(request.options));
@@ -48,12 +51,13 @@ export function Picker(props: PickerProps): ReactNode {
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const isHistory = Boolean(request.historyStyle);
+  const twoLineLayout = Boolean(request.twoLine) || isHistory;
   const filtered = useMemo(() => filterPickerOptions(request.options, query, {
     searchDescription: request.searchDescription ?? isHistory,
   }), [request.options, query, request.searchDescription, isHistory]);
   const items = useMemo(
-    () => layoutPickerOptions(filtered, innerW, Boolean(request.twoLine) || isHistory),
-    [filtered, innerW, request.twoLine, isHistory],
+    () => layoutPickerOptions(filtered, innerW, twoLineLayout),
+    [filtered, innerW, twoLineLayout],
   );
   const selected = Math.min(hovered ?? cursor, Math.max(0, filtered.length - 1));
   const window = pickerWindow(items, scrollTop, bodyHeight);
@@ -167,24 +171,28 @@ export function Picker(props: PickerProps): ReactNode {
       height: size.height,
       border,
       borderStyle: "rounded",
-      borderColor: isHistory ? theme.accent : theme.modalBorder,
+      borderColor: theme.modalBorder,
       backgroundColor: theme.statusBackground,
     }}>
-      {innerH >= 4 ? (
+      {showTitle ? (
         <text
           id="picker-title"
           selectable={false}
           content={centerChromeRow(request.title, innerW)}
-          style={{ fg: theme.white, bg: isHistory ? theme.chipIndigo : theme.magenta, width: "100%", height: 1, flexShrink: 0 }}
+          style={{ fg: theme.white, width: "100%", height: 1, flexShrink: 0 }}
         />
       ) : null}
-      {innerH >= 3 ? (
+      {showFilter ? (
         <text
           selectable={false}
           content={fitOneLine([
             `${query ? `filter: ${query}█` : "type to filter"} · ${filtered.length}/${request.options.length}`,
           ], innerW)}
-          style={{ fg: theme.cyan, height: 1, flexShrink: 0 }}
+          style={{
+            fg: query ? theme.aqua : theme.magenta,
+            height: 1,
+            flexShrink: 0,
+          }}
         />
       ) : null}
       <scrollbox
@@ -203,11 +211,25 @@ export function Picker(props: PickerProps): ReactNode {
         {window.rows.map(({ itemIndex: index, lineIndex, line }) => {
           const focused = index === selected;
           const option = filtered[index]!;
-          const bg = focused ? theme.selection : index % 2 === 1 ? theme.rowB : theme.background;
+          const firstLine = lineIndex === 0;
+          const bg = focused ? theme.chipTeal : index % 2 === 1 ? theme.rowB : theme.background;
+          const gutter = innerW >= 3 ? (focused && firstLine ? "❯ " : " ") : "";
+          const icon = firstLine && option.icon && line.text.startsWith(option.icon) ? option.icon : undefined;
+          const body = icon ? line.text.slice(icon.length) : line.text;
+          const bodyFg = line.description
+            ? focused ? theme.white : theme.muted
+            : focused ? theme.white : option.active ? theme.white : theme.foreground;
           return (
             <box
               key={`${option.value}:${lineIndex}`}
-              style={{ width: "100%", height: 1, flexShrink: 0, backgroundColor: bg }}
+              style={{
+                width: "100%",
+                height: 1,
+                flexShrink: 0,
+                flexDirection: "column",
+                justifyContent: "center",
+                backgroundColor: bg,
+              }}
               onMouseOver={() => setHovered(index)}
               onMouseDown={(event) => {
                 event.preventDefault();
@@ -215,18 +237,13 @@ export function Picker(props: PickerProps): ReactNode {
                 services.overlay.selectPicker(option.value);
               }}
             >
-              <text
-                selectable={false}
-                content={`${innerW >= 3 ? focused && lineIndex === 0 ? "❯ " : "  " : ""}${line.text}`}
-                style={{
-                  fg: line.description
-                    ? focused ? theme.cyan : theme.muted
-                    : focused || option.active ? theme.white : theme.foreground,
-                  bg,
-                  height: 1,
-                  flexShrink: 0,
-                }}
-              />
+              {line.padding ? null : (
+                <text selectable={false} wrapMode="none" style={{ fg: bodyFg, bg, height: 1, flexShrink: 0 }}>
+                  {gutter ? <span style={{ fg: focused ? theme.white : theme.muted, bg }}>{gutter}</span> : null}
+                  {icon ? <span style={{ fg: focused ? theme.white : pickerToneColor(option.tone, theme), bg }}>{icon}</span> : null}
+                  {body}
+                </text>
+              )}
             </box>
           );
         })}

@@ -4,6 +4,7 @@ import type { ToolItem } from "../../../src/ui-core/state/transcript-types.js";
 import {
   cleanToolOutputLines,
   evidencePreviewLines,
+  presentFsReadArgs,
   presentOutput,
   presentTool,
 } from "../../../src/ui-core/rendering/tool-presenter.js";
@@ -77,6 +78,19 @@ describe("presentTool (CHAT-004)", () => {
   it("labels non-shell args as input", () => {
     const p = presentTool(toolItem({ name: "fs.read", argsDisplay: "a.ts" }));
     expect(p.argsLabel).toBe("input");
+  });
+
+  it("separates fs.read options from the filename", () => {
+    expect(
+      presentFsReadArgs("src/app.ts\noffset=12 · limit=8 · lines=12–19"),
+    ).toEqual({
+      path: "src/app.ts",
+      options: "offset=12 · limit=8 · lines=12–19",
+    });
+    expect(presentFsReadArgs("src/app.ts  lines 1–8")).toEqual({
+      path: "src/app.ts",
+      options: "lines=1–8",
+    });
   });
 
   it("titles fs.edit with basename and hides JSON args", () => {
@@ -200,12 +214,11 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
     expect(p.lines[0]).toBe("line 1");
     expect(p.lines[1]).toBe("line 2");
     expect(p.lines[2]).toBe("line 3");
-    expect(p.lines[3]).toBe("line 4");
-    expect(p.lines[4]).toBe("··· 2 lines more ···");
-    expect(p.lines[5]).toBe("line 7");
-    expect(p.lines[8]).toBe("line 10");
-    expect(p.lines).toHaveLength(9);
-    expect(p.hiddenAboveCount).toBe(2);
+    expect(p.lines[3]).toBe("··· 4 lines more ···");
+    expect(p.lines[4]).toBe("line 8");
+    expect(p.lines[6]).toBe("line 10");
+    expect(p.lines).toHaveLength(7);
+    expect(p.hiddenAboveCount).toBe(4);
     expect(p.truncatedNotice).toBeUndefined();
   });
 
@@ -264,6 +277,7 @@ describe("presentOutput (CHAT-005, PERF-003)", () => {
     expect(p.lines[0]).toMatch(/duckduckgo|results/i);
     expect(p.lines.some((l) => l.includes("gov.uk"))).toBe(true);
     expect(p.lines.some((l) => l.startsWith("···"))).toBe(true);
+    expect(p.lines.length).toBeLessThanOrEqual(7);
     const ev = evidencePreviewLines("web.search", body.split("\n"));
     expect(ev?.length).toBeGreaterThanOrEqual(2);
   });

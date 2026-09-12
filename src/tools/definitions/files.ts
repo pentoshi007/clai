@@ -175,13 +175,17 @@ export const TOOL_DEFINITIONS_FILES: ToolDefinition[] = [
   ),
   def(
     "fs.edit",
-    "Surgical in-place edit: replace exact oldText with newText.",
+    "Surgical in-place edit. Use only after reading or searching the current file and copying the exact oldText, including whitespace and line endings; if it is not known, use fs.read or fs.search first. After a no-match error, do not retry unchanged oldText.",
     {
       type: "object",
       properties: {
         path: { type: "string" },
-        oldText: { type: "string" },
-        newText: { type: "string" },
+        oldText: {
+          type: "string",
+          minLength: 1,
+          description: "Exact current text to replace, copied from the latest file evidence",
+        },
+        newText: { type: "string", description: "Intended replacement text" },
         expectedReplacements: { type: "integer" },
       },
       required: ["path", "oldText", "newText"],

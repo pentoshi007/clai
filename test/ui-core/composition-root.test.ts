@@ -93,8 +93,20 @@ class CompactionCountAgent implements AgentPort {
       id: "compact-count",
       summary: "condensed",
       beforeTokens: 229_182,
-      afterTokens: 10_371,
+      afterTokens: 4_922,
       contextScope: "assembled-request",
+    });
+    handlers.onEvent({ type: "context-estimate", estimatedTokens: 94_000 });
+    handlers.onEvent({
+      type: "token-usage",
+      provider: "openrouter",
+      model: "stealth/ox-alpha",
+      usage: {
+        promptTokens: 4_800,
+        completionTokens: 50,
+        totalTokens: 4_850,
+        exact: true,
+      },
     });
     handlers.onEvent({
       type: "turn-end",
@@ -288,15 +300,20 @@ describe("createCompositionRoot", () => {
     ).toContain("reasoning output 12");
     services.dispose();
   });
-
-  it("keeps the reported footer stable through compaction estimates", async () => {
+  it("shows the compacted estimate until exact provider usage arrives", async () => {
     const observed: Array<[string, number | undefined]> = [];
+    const estimates: number[] = [];
     let services: ReturnType<typeof createCompositionRoot>;
     services = createCompositionRoot({
       agent: new CompactionCountAgent(),
       persistence: fakePersistence(),
       capabilities: caps,
       emit: (event) => {
+        if (event.type === "context-estimate") {
+          estimates.push(
+            services.session.getState().contextSnapshot?.contextTokens ?? 0,
+          );
+        }
         if (
           event.type === "compaction-started" ||
           event.type === "compaction-completed"
@@ -313,12 +330,32 @@ describe("createCompositionRoot", () => {
 
     expect(observed).toEqual([
       ["compaction-started", 78_200],
-      ["compaction-completed", 78_200],
+      ["compaction-completed", 4_922],
     ]);
+    expect(estimates).toEqual([4_922]);
     expect(services.session.getState().contextSnapshot).toMatchObject({
-      contextTokens: 78_200,
+      contextTokens: 4_800,
       scope: "provider-request",
       precision: "provider-exact",
+    });
+    services.dispose();
+  });
+
+  it("does not preserve a fallback estimate without compacted after-tokens", () => {
+    const services = createCompositionRoot({
+      agent: new StubAgent(),
+      persistence: fakePersistence(),
+      capabilities: caps,
+    });
+
+    services.session.noteContextEstimate(100, true);
+    services.session.noteContextCompacted(undefined);
+    services.session.noteContextEstimate(200);
+
+    expect(services.session.getState().contextSnapshot).toMatchObject({
+      contextTokens: 200,
+      scope: "assembled-request",
+      precision: "estimate",
     });
     services.dispose();
   });

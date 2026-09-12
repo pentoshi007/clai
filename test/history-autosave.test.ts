@@ -136,6 +136,19 @@ describe("history autosave upsert", () => {
     expect(sessions[0]?.name).toBe("how do I reverse a linked list in python");
   });
 
+  it("keeps a longer fallback name before adding an ellipsis", async () => {
+    const { saveSession, upsertSession } = await import("../src/store/history.js");
+    const content = "manual history title ".repeat(8) + "final detail";
+    const expected = `${content.slice(0, 96)}…`;
+    const messages = [{ role: "user" as const, content }];
+
+    const upserted = await upsertSession("fallback-upsert", messages);
+    const saved = await saveSession(messages);
+
+    expect(upserted.name).toBe(expected);
+    expect(saved.name).toBe(expected);
+  });
+
   it("keeps an existing name across later upserts instead of blanking it", async () => {
     const { upsertSession, listSessions } = await import("../src/store/history.js");
 
