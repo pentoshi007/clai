@@ -20,6 +20,8 @@ function setup(sessionId: string) {
     agent: {
       async runTurn(_request, handlers) {
         seen.push(handlers.session?.subagents);
+        const manager = handlers.session?.subagents;
+        if (manager) for (const run of manager.pendingResults()) manager.acknowledgeResult(run.id, run.attempt);
         return createTurnOutcome({ status: "succeeded", answer: "done", steps: 0, remainingCriteria: [] });
       },
     },
@@ -48,11 +50,13 @@ describe("production session subagent lifecycle", () => {
     expect(manager.enabled).toBe(true);
     session.setOrchestrationEnabled(true);
     await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(seen).toEqual([manager]);
+    expect(manager.pendingResults()).toEqual([]);
     await session.submit("Explain the saved evidence");
     await session.submit("Follow up without changing the session");
     expect(session.subagents).toBe(manager);
     expect(manager.enabled).toBe(true);
-    expect(seen).toEqual([manager, manager]);
+    expect(seen).toEqual([manager, manager, manager]);
   });
 
   it("replaces the manager only at explicit history-load and reset boundaries", async () => {
