@@ -468,7 +468,7 @@ describe("exactness lifetime", () => {
     });
   });
 
-  it("retains reported context after compaction until a new provider measurement", () => {
+  it("uses reported after-tokens after compaction instead of the stale measurement", () => {
     const previous = exactSnapshot();
 
     const compacted = compactedUsageSnapshot(
@@ -478,8 +478,8 @@ describe("exactness lifetime", () => {
       18_000,
     );
 
-    expect(compacted.contextTokens).toBe(previous.contextTokens);
-    expect(compacted.exact).toBe(true);
+    expect(compacted.contextTokens).toBe(18_000);
+    expect(compacted.exact).toBe(false);
     expect(compacted.sessionPromptTokens).toBe(previous.sessionPromptTokens);
   });
 });

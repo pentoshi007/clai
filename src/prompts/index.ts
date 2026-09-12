@@ -410,7 +410,7 @@ export function renderCompactAgentSystemPrompt(
     rendered,
     options?.imageView !== false,
   );
-  return `${stablePrompt}\n\n${FS_EDIT_DISCIPLINE}`;
+  return stablePrompt;
 }
 
 export function toolNudge(native: boolean): string {
