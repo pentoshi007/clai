@@ -51,7 +51,7 @@ import { createStreamSession } from "./stream-session.js";
 import type { TurnOutcome } from "../../turn-outcome.js";
 import type { TurnLoopDeps } from "./deps.js";
 import { resolveAnswerPath } from "./answer-path.js";
-import { SubagentInbox } from "../subagent-inbox.js";
+import { SubagentInbox, SubagentInboxCapacityError } from "../subagent-inbox.js";
 import { resolveEffectiveContextLimit } from "../../request-accounting.js";
 
 export const runTurnRounds = async (
@@ -94,10 +94,18 @@ export const runTurnRounds = async (
         model: deps.loop.model,
         contextLimitTokens: deps.currentContextLimitTokens(),
       }).effectiveSafeTokens;
-      const subagentDeliveries = subagentInbox.prepare({
+      const prepareSubagentDeliveries = () => subagentInbox.prepare({
         maxRequestTokens: inboxLimit ?? deps.estimateNextRequestTokens(deps.messages) + 8_192,
         estimateTokens: deps.estimateNextRequestTokens,
       });
+      let subagentDeliveries;
+      try {
+        subagentDeliveries = prepareSubagentDeliveries();
+      } catch (error) {
+        if (!(error instanceof SubagentInboxCapacityError)) throw error;
+        await deps.maybeAutoCompact("subagent-result-delivery", { bypassThreshold: true });
+        subagentDeliveries = prepareSubagentDeliveries();
+      }
 
       const streamLabel =
         deps.loop.step === 0 ? "waiting" : `step ${deps.loop.step + 1}`;
