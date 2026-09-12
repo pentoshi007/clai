@@ -122,6 +122,21 @@ export const runSingleTool = async (
     return { ok: result.ok, call, result, contextOutput: result.output };
   }
 
+  if (
+    deps.options.mode === "ask" &&
+    isCanonicalToolName(call.name) &&
+    !MCP_CONTROL_TOOL_NAMES.has(call.name) &&
+    deps.mcpRuntime?.getTool(call.name)?.readOnly !== true
+  ) {
+    const result = {
+      ok: false,
+      output: `Ask mode permits only active read-only MCP tools. ${call.name} did not run. Switch to agent mode for mutations.`,
+      exitCode: 1,
+    };
+    emitVisibleSyntheticReceipt(result, result.output);
+    return { ok: false, call, result, contextOutput: result.output };
+  }
+
   if (call.name === "image.ocr" && !deps.imageOcrEnabled) {
     deps.writeNotice(
       "info",

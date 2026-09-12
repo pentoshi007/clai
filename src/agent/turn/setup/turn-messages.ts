@@ -47,6 +47,7 @@ export const dropSectionsAlreadyInHistory = (
   const kept = sections.filter(
     (section) =>
       section.content.startsWith("ORCHESTRATION:") ||
+      section.content.startsWith("MCP TOOL CONTEXT") ||
       section.content.includes(prompt) ||
       !sent.some((prior) => prior.includes(section.content)),
   );
