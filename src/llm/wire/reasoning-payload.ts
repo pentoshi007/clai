@@ -139,7 +139,7 @@ export function buildReasoningPayload(
     case "agentrouter": {
       const m = (model ?? "").toLowerCase();
       const clamped = clampEffort(effort);
-      if (/(?:^|\/)gpt-5|(?:^|\/)o[134](?:\b|-)/.test(m)) {
+      if (/(?:^|\/)gpt-[56]|(?:^|\/)o[134](?:\b|-)/.test(m)) {
         if (!enabled) return { reasoning_effort: "minimal" };
         const gptEffort =
           effort === "none"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildReasoningPayload, buildChatBody, ProviderError } from "../src/llm/http.js";
 import { bumpMaxTokensForThinkingBudget } from "../src/llm/agentrouter.js";
+import { compileRequestPlan } from "../src/llm/request-plan.js";
 import type { ChatMessage, ReasoningEffort } from "../src/types.js";
 
 const pref = (enabled: boolean, effort: ReasoningEffort) => ({ enabled, effort });
@@ -39,6 +40,32 @@ describe("agentrouter reasoning payloads (model-aware)", () => {
     expect(buildReasoningPayload(pref(false, "medium"), "agentrouter", "gpt-5.5")).toEqual({
       reasoning_effort: "minimal",
     });
+  });
+
+  it("OpenAI gpt-6: reasoning emits with the same effort mapping as gpt-5", () => {
+    expect(buildReasoningPayload(pref(true, "max"), "agentrouter", "gpt-6-astra")).toEqual({
+      reasoning_effort: "high",
+    });
+    expect(buildReasoningPayload(pref(true, "xhigh"), "agentrouter", "gpt-6-astra")).toEqual({
+      reasoning_effort: "high",
+    });
+    expect(buildReasoningPayload(pref(true, "medium"), "agentrouter", "gpt-6-astra")).toEqual({
+      reasoning_effort: "medium",
+    });
+    expect(buildReasoningPayload(pref(false, "medium"), "agentrouter", "gpt-6-astra")).toEqual({
+      reasoning_effort: "minimal",
+    });
+  });
+
+  it("keeps reasoning controls for agentrouter gpt-6 instead of suppressing them", () => {
+    const plan = compileRequestPlan({
+      provider: "agentrouter",
+      model: "gpt-6-astra",
+      messages: msgs,
+      reasoning: pref(true, "max"),
+    });
+    expect(plan.controls.controlSuppression).toBeUndefined();
+    expect(plan.controls.reasoning).toEqual({ enabled: true, effort: "xhigh" });
   });
 
   it("does NOT emit the redundant reasoning:{effort} object that no routed model reads", () => {

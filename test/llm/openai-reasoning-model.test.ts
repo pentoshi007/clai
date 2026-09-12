@@ -17,6 +17,13 @@ describe("isOpenAiReasoningModel", () => {
     expect(isOpenAiReasoningModel("gpt-5.4-pro")).toBe(true);
   });
 
+  it("matches gpt-6 variants", () => {
+    expect(isOpenAiReasoningModel("gpt-6-astra")).toBe(true);
+    expect(isOpenAiReasoningModel("gpt-6")).toBe(true);
+    expect(isOpenAiReasoningModel("gpt-6.1")).toBe(true);
+    expect(isOpenAiReasoningModel("gpt-6-mini")).toBe(true);
+  });
+
   it("matches o1/o3/o4 series", () => {
     expect(isOpenAiReasoningModel("o1")).toBe(true);
     expect(isOpenAiReasoningModel("o3-mini")).toBe(true);

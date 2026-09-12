@@ -28,6 +28,7 @@ export const REASONING_PATTERNS: Record<ProviderId, RegExp[]> = {
   ollama: [/deepseek-r1/i, /qwen3/i, /qwq/i],
   agentrouter: [
     /gpt-5/i,
+    /gpt-6/i,
     /claude-(?:opus|sonnet|haiku)-4/i,
     /deepseek-(?:v[34]|r1)/i,
     /glm-?[45]/i,
