@@ -44,6 +44,8 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       return buffer;
     })(),
   );
+  const cursorRef = useRef(bufferRef.current.length);
+  const [cursor, setCursor] = useState(cursorRef.current);
   const revealed = request.reveal === true;
   const [mask, setMask] = useState(() =>
     revealed ? bufferRef.current.reveal() : bufferRef.current.masked(),
@@ -51,6 +53,11 @@ export function SecretModal(props: SecretModalProps): ReactNode {
 
   function refreshMask(): void {
     setMask(revealed ? bufferRef.current.reveal() : bufferRef.current.masked());
+  }
+
+  function moveCursor(next: number): void {
+    cursorRef.current = next;
+    setCursor(next);
   }
 
   function cancel(): void {
@@ -85,26 +92,31 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       submit();
       return;
     }
-    if (chord === "backspace" || key.name === "delete") {
+    if (chord === "backspace") {
       key.preventDefault();
-      const buf = bufferRef.current;
-      buf.deleteBackward(buf.length);
+      moveCursor(bufferRef.current.deleteBackward(cursorRef.current));
       refreshMask();
       return;
     }
+    if (chord === "delete") {
+      key.preventDefault();
+      moveCursor(bufferRef.current.deleteForward(cursorRef.current));
+      refreshMask();
+      return;
+    }
+    if (chord === "left" || chord === "home") {
+      key.preventDefault();
+      moveCursor(chord === "left" ? Math.max(0, cursorRef.current - 1) : 0);
+      return;
+    }
+    if (chord === "right" || chord === "end") {
+      key.preventDefault();
+      const end = bufferRef.current.length;
+      moveCursor(chord === "right" ? Math.min(end, cursorRef.current + 1) : end);
+      return;
+    }
     if (key.ctrl || key.meta || key.option || key.super) return;
-    if (
-      [
-        "up",
-        "down",
-        "left",
-        "right",
-        "home",
-        "end",
-        "tab",
-        "escape",
-      ].includes(key.name)
-    ) {
+    if (["up", "down", "tab", "escape"].includes(key.name)) {
       key.preventDefault();
       return;
     }
@@ -118,8 +130,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
         : "";
     if (!seq) return;
     key.preventDefault();
-    const buf = bufferRef.current;
-    buf.insert(seq, buf.length);
+    moveCursor(bufferRef.current.insert(seq, cursorRef.current));
     refreshMask();
   });
 
@@ -131,7 +142,7 @@ export function SecretModal(props: SecretModalProps): ReactNode {
       const cleaned = text.replace(/\r?\n/g, "");
       if (!cleaned) return;
       const buf = bufferRef.current;
-      buf.insert(cleaned, buf.length);
+      moveCursor(buf.insert(cleaned, cursorRef.current));
       refreshMask();
     } catch {
     }
@@ -174,8 +185,9 @@ export function SecretModal(props: SecretModalProps): ReactNode {
         <text style={{ fg: ACCENT, attributes: TextAttributes.BOLD }}>
           {revealed ? "value › " : "password › "}
         </text>
-        <text style={{ fg: theme.foreground }}>{mask}</text>
+        <text style={{ fg: theme.foreground }}>{mask.slice(0, cursor)}</text>
         <text style={{ fg: ACCENT, attributes: TextAttributes.BOLD }}>▎</text>
+        <text style={{ fg: theme.foreground }}>{mask.slice(cursor)}</text>
         <text style={{ fg: theme.muted, attributes: TextAttributes.DIM }}>
           {mask.length > 0
             ? revealed

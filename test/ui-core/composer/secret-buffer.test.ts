@@ -38,6 +38,23 @@ describe("SecretBuffer", () => {
     expect(buf.reveal()).toBe("abc");
   });
 
+  it("deleteForward removes the character at the cursor", () => {
+    const buf = new SecretBuffer();
+    buf.insert("abcd", 0);
+    expect(buf.deleteForward(1)).toBe(1);
+    expect(buf.reveal()).toBe("acd");
+    expect(buf.deleteForward(1)).toBe(1);
+    expect(buf.reveal()).toBe("ad");
+  });
+
+  it("deleteForward at the end is a no-op", () => {
+    const buf = new SecretBuffer();
+    buf.insert("abc", 0);
+    expect(buf.deleteForward(3)).toBe(3);
+    expect(buf.deleteForward(9)).toBe(9);
+    expect(buf.reveal()).toBe("abc");
+  });
+
   it("clear() empties the buffer", () => {
     const buf = new SecretBuffer();
     buf.insert("abc", 0);
