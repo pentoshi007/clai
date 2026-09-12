@@ -35,10 +35,15 @@ function fixture() {
   const notice = vi.fn();
   const cancel = vi.fn();
   const commands = buildDefaultCommandRegistry();
+  const lifecycle = {
+    setOrchestrationEnabled: vi.fn((enabled: boolean) => current.setEnabled(enabled)),
+    restartSubagent: vi.fn((id: string) => { current.restart(id); }),
+  } satisfies Pick<AppServices["session"], "setOrchestrationEnabled" | "restartSubagent">;
   const services = {
     commands,
     overlay: harness.overlay,
     session: {
+      ...lifecycle,
       get subagents() { return current; },
       getState: () => ({ running: true }),
       notice,
@@ -57,7 +62,7 @@ function fixture() {
     current.dispose();
   });
   return {
-    ...harness, manager, workers, notice, cancel, sessionListeners,
+    ...harness, ...lifecycle, manager, workers, notice, cancel, sessionListeners,
     dispatch: (line: string) => commands.dispatch(commands.parse(line)!),
     replaceSession() {
       current = new SubagentManager("next-parent");
@@ -86,14 +91,18 @@ describe("shared orchestration commands", () => {
     expect(f.manager.enabled).toBe(false);
     expect(f.overlay.getState().kind).toBe("none");
     expect(f.notice).toHaveBeenLastCalledWith("info", expect.stringContaining("Orchestration off"));
+    expect(f.setOrchestrationEnabled).not.toHaveBeenCalled();
     await f.dispatch(`/${command}`);
     f.overlay.selectPicker("on");
     expect(f.manager.enabled).toBe(true);
+    expect(f.setOrchestrationEnabled).toHaveBeenCalledExactlyOnceWith(true);
     await f.dispatch(`/${command}`);
     f.overlay.selectPicker("status");
     expect(f.manager.enabled).toBe(true);
+    expect(f.setOrchestrationEnabled).toHaveBeenCalledOnce();
     await f.dispatch(`/${command} off`);
     expect(f.manager.enabled).toBe(false);
+    expect(f.setOrchestrationEnabled).toHaveBeenLastCalledWith(false);
   });
 
   it("does not enable after dismissal or through a stale session picker", async () => {
@@ -105,6 +114,7 @@ describe("shared orchestration commands", () => {
     f.replaceSession();
     f.overlay.selectPicker("on");
     expect(f.manager.enabled).toBe(false);
+    expect(f.setOrchestrationEnabled).not.toHaveBeenCalled();
   });
 
   it("shows default-off status without enabling, validates arguments, and gates restart", async () => {
@@ -123,10 +133,12 @@ describe("shared orchestration commands", () => {
     expect(f.workers.get(run.id)!.signal.aborted).toBe(true);
     await f.dispatch(`/agents restart ${run.id}`);
     expect(f.notice).toHaveBeenLastCalledWith("warn", expect.stringContaining("Orchestration is off"));
+    expect(f.restartSubagent).not.toHaveBeenCalled();
     await flush();
     await f.dispatch("/orchestration on");
     await f.dispatch(`/agents restart ${run.id}`);
     expect(f.manager.get(run.id)?.attempt).toBe(2);
+    expect(f.restartSubagent).toHaveBeenCalledExactlyOnceWith(run.id);
     await f.dispatch(`/agents stop ${run.id}`);
     await flush();
     expect(f.manager.get(run.id)?.status).toBe("stopped");

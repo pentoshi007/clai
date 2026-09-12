@@ -44,6 +44,10 @@ const services = createCompositionRoot({
   }),
 });
 Object.defineProperty(services.session, "subagents", { get: () => manager });
+Object.assign(services.session, {
+  setOrchestrationEnabled: (enabled: boolean) => manager.setEnabled(enabled),
+  restartSubagent: (id: string) => { manager.restart(id); },
+} satisfies Pick<typeof services.session, "setOrchestrationEnabled" | "restartSubagent">);
 attachCommandHandlers(services);
 const node = createElement(ServicesProvider, { services, children: createElement(App) });
 const setup = await testRender(node, { width: 120, height: 40, kittyKeyboard: true, useThread: false });
