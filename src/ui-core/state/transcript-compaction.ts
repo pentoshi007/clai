@@ -17,7 +17,14 @@ export function serializeTranscriptForCompaction(
   toolOutput?: ToolOutputLookup,
 ): string {
   const items = transcriptItems(state);
-  const lastCompactedIndex = items.map((i) => i.kind).lastIndexOf("compacted");
+  let lastCompactedIndex = -1;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]!;
+    if (item.kind === "compacted" && item.summary.trim() && !item.error) {
+      lastCompactedIndex = index;
+      break;
+    }
+  }
   const slice =
     lastCompactedIndex !== -1 ? items.slice(lastCompactedIndex) : items;
 
@@ -56,6 +63,7 @@ function serializeItem(
     case "notice":
       return undefined;
     case "compacted":
+      if (item.error || !item.summary.trim()) return undefined;
       return `COMPACTED CONTEXT:\n${compactField(item.summary)}`;
     case "turn-summary":
       return undefined;

@@ -56,6 +56,16 @@ export function responsesFirstCandidate(providerId: ProviderId): boolean {
   return !RESPONSES_FIRST_EXCLUDED.has(providerId);
 }
 
+function isPreflightTimeout(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: unknown }).name;
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    name === "TimeoutError" ||
+    /timed out|timeout|cold start/i.test(message)
+  );
+}
+
 const RESPONSES_STREAM_TERMINAL = {
   proofs: ["response-completed", "response-incomplete"],
   naturalEofAccepted: false,
@@ -199,10 +209,7 @@ async function runResponsesFirst(
     genericResponsesConfig(options.providerId, options.provider, options.baseUrl, options.headers, extras);
   const auth: ProviderAuth = { apiKey: options.apiKey };
   const selection = await selectResponsesWire(options, Boolean(stream), async (signal) => {
-    const timeout = new AbortController();
-    const timer = setTimeout(() => timeout.abort(new DOMException("Capability preflight timed out", "TimeoutError")), 30_000);
-    const probeSignal = AbortSignal.any([signal, timeout.signal]);
-    const probe = preflightOptions(options, probeSignal);
+    const probe = preflightOptions(options, signal);
     const fallback = (kind: TransportEventKind, extras: ExtrasLevel): ResponsesSelection => {
       emitTransportEvent({ kind, provider: options.provider, model: options.model });
       return { wire: "chat", extras };
@@ -212,14 +219,17 @@ async function runResponsesFirst(
         let extras: ExtrasLevel = "full";
         let result: OpenAiCompatibleResult;
         for (;;) {
-          probeSignal.throwIfAborted();
+          signal.throwIfAborted();
           try {
             result = compatibleFromCompletion(await run(configFor(extras), bridgeCompletionRequest(probe), auth, () => {}));
             break;
           } catch (error) {
-            probeSignal.throwIfAborted();
+            signal.throwIfAborted();
             if (isChatShapedResponsesPayload(error) || isResponsesEmptyOutput(error)) {
               return fallback("responses-fallback-shape", extras);
+            }
+            if (isPreflightTimeout(error)) {
+              return fallback("responses-fallback-error", extras);
             }
             const verdict = classifyResponsesFailure(error, extras);
             if (verdict === "unsupported-endpoint") return fallback("responses-fallback-endpoint", extras);
@@ -235,22 +245,28 @@ async function runResponsesFirst(
             throw error;
           }
         }
-        probeSignal.throwIfAborted();
+        signal.throwIfAborted();
         if (options.reasoning?.enabled && !hasVisibleReasoning(result)) {
           try {
             const chat = await probeChat(probe);
-            probeSignal.throwIfAborted();
+            signal.throwIfAborted();
             if (hasVisibleReasoning(chat)) return fallback("responses-fallback-reasoning", extras);
           } catch (error) {
             signal.throwIfAborted();
+            if (isPreflightTimeout(error)) return fallback("responses-fallback-error", extras);
             const status = providerStatusCode(error);
             if (status === 401 || status === 403 || status === 429) throw error;
           }
         }
         return { wire: "responses", extras };
       }, probe.maxTokens);
-    } finally {
-      clearTimeout(timer);
+    } catch (error) {
+      signal.throwIfAborted();
+      if (isPreflightTimeout(error)) {
+        emitTransportEvent({ kind: "responses-fallback-error", provider: options.provider, model: options.model });
+        return { wire: "chat", extras: "full" };
+      }
+      throw error;
     }
   });
   options.signal?.throwIfAborted();

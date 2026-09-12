@@ -219,6 +219,11 @@ export function Picker(props: PickerProps): ReactNode {
           const bodyFg = line.description
             ? focused ? theme.white : theme.muted
             : focused ? theme.white : option.active ? theme.white : theme.foreground;
+          const inlineTail = !twoLineLayout && !line.description && option.description && body.endsWith(option.description)
+            ? option.description
+            : undefined;
+          const inlineHead = inlineTail ? body.slice(0, body.length - inlineTail.length) : body;
+          const inlineTailFg = focused ? theme.white : theme.muted;
           return (
             <box
               key={`${option.value}:${lineIndex}`}
@@ -241,7 +246,7 @@ export function Picker(props: PickerProps): ReactNode {
                 <text selectable={false} wrapMode="none" style={{ fg: bodyFg, bg, height: 1, flexShrink: 0 }}>
                   {gutter ? <span style={{ fg: focused ? theme.white : theme.muted, bg }}>{gutter}</span> : null}
                   {icon ? <span style={{ fg: focused ? theme.white : pickerToneColor(option.tone, theme), bg }}>{icon}</span> : null}
-                  {body}
+                  {inlineTail ? <>{inlineHead}<span style={{ fg: inlineTailFg, bg }}>{inlineTail}</span></> : body}
                 </text>
               )}
             </box>

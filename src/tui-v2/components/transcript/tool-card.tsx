@@ -486,11 +486,6 @@ export function ToolCard(props: {
         <text content=" " selectable={false} style={{ flexShrink: 0 }} />
         <text
           selectable={false}
-          content="("
-          style={{ fg: statusBadgeBg, attributes: TextAttributes.BOLD, flexShrink: 0 }}
-        />
-        <text
-          selectable={false}
           content={` ${statusLabel} `}
           style={{
             fg: theme.white,
@@ -498,11 +493,6 @@ export function ToolCard(props: {
             attributes: TextAttributes.BOLD,
             flexShrink: 0,
           }}
-        />
-        <text
-          selectable={false}
-          content=")"
-          style={{ fg: statusBadgeBg, attributes: TextAttributes.BOLD, flexShrink: 0 }}
         />
         {isFileDiff ? (
           <>
