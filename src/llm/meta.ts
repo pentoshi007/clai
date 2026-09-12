@@ -4,7 +4,7 @@ import type {
   ReasoningPreference,
 } from "../types.js";
 import { defaultModels, type LlmProvider, type ProviderAuth } from "./provider.js";
-import { cacheAffinityKey } from "./cache-affinity.js";
+import { cachePolicyFields } from "./cache-policy-fields.js";
 import { readJson, ingestOpenAiModelCatalog } from "./http.js";
 import { runGenerationAttempt } from "./operation-usage.js";
 import { META_STREAM_TERMINAL } from "./stream-terminal.js";
@@ -51,7 +51,13 @@ const META_RESPONSES_CONFIG: ResponsesDialectConfig = {
   bodyExtras(context) {
     return {
       store: false,
-      prompt_cache_key: `${context.purpose === "auxiliary" ? "aux-" : ""}${cacheAffinityKey("meta", context.model, context.messages)}`,
+      ...cachePolicyFields({
+        provider: "meta",
+        model: context.model,
+        messages: context.messages,
+        purpose: context.purpose,
+        policy: { kind: "affinity-key", affinityField: "prompt_cache_key" },
+      }),
       prompt_cache_retention: "24h",
       include: ["reasoning.encrypted_content"],
     };
